@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { AXIS_MUTED } from "./Charts";
+// The two ledgers stamp their attempts differently and both mean ET — see etTime.ts for why
+// reading them with one rule silently slides a whole session sideways.
+import { etClock, etMinuteOfDay, parseSuiteTs } from "../lib/etTime";
 
 /**
  * The entry-attempts surfaces: the arm rail and the attempt timeline.
@@ -110,10 +113,44 @@ function useNow(active: boolean): number {
   return now;
 }
 
+const HAS_ZONE = /(?:Z|[+-]\d{2}:?\d{2})$/;
+
+/** How far ahead of ET wall clock UTC runs at a given instant — +4h on EDT, +5h on EST. */
+function etOffsetMs(atMs: number): number {
+  // "sv-SE" renders as "YYYY-MM-DD HH:MM:SS", which parses straight back.
+  const wall = new Date(atMs).toLocaleString("sv-SE", { timeZone: "America/New_York" });
+  const asUtc = Date.parse(`${wall.replace(" ", "T")}Z`);
+  return Number.isNaN(asUtc) ? 0 : atMs - asUtc;
+}
+
+/**
+ * A suite timestamp as a real instant.
+ *
+ * Two formats arrive here and they must not be read alike: flies writes an offset
+ * (`2026-08-13T09:30:15-04:00`), MEIC writes a bare ET wall clock (`09:30`, which the server dates
+ * but cannot zone). An offset-naive stamp is ET by construction — the whole suite is — but
+ * `Date.parse` calls it browser-local, which silently shifts it by the viewer's distance from New
+ * York. Reading the two formats with one rule is what put MEIC's session two hours off its own axis.
+ */
 function parseTs(ts: string | null): number | null {
   if (ts === null) return null;
-  const ms = Date.parse(ts);
-  return Number.isNaN(ms) ? null : ms;
+  const s = ts.trim();
+  if (HAS_ZONE.test(s)) {
+    const ms = Date.parse(s);
+    return Number.isNaN(ms) ? null : ms;
+  }
+  const f = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(s);
+  if (f === null) return null;
+  const wallAsUtc = Date.UTC(
+    Number(f[1]),
+    Number(f[2]) - 1,
+    Number(f[3]),
+    Number(f[4]),
+    Number(f[5]),
+    Number(f[6] ?? 0),
+  );
+  // Offset at the guessed instant; RTH data is never near a DST boundary.
+  return wallAsUtc + etOffsetMs(wallAsUtc);
 }
 
 function fmtGap(seconds: number): string {
