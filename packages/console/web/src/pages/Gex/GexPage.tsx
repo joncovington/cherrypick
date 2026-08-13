@@ -10,6 +10,7 @@ interface GexProfilePayload {
   error?: string;
   symbol?: string;
   spot?: number;
+  spotUpdatedAt?: number | null;
   expiration?: string;
   series?: GexStrikeRow[];
   totals?: {
@@ -33,7 +34,7 @@ interface GexProfilePayload {
   };
 }
 
-function useGexProfile(symbol: string) {
+function useGexProfile(symbol: string, enabled: boolean) {
   return useQuery<GexProfilePayload>({
     queryKey: ["gex-profile", symbol],
     queryFn: async () => {
@@ -42,6 +43,7 @@ function useGexProfile(symbol: string) {
       return (await res.json()) as GexProfilePayload;
     },
     refetchInterval: 15_000,
+    enabled,
   });
 }
 
@@ -120,12 +122,15 @@ const TABS: Array<[GexTab, string]> = [
 ];
 
 export function GexPage() {
-  const { data, isLoading, isError } = useGex();
   const [symbol, setSymbol] = useState("SPX");
   const [view, setView] = useState<GexView>("oivol");
   const [tab, setTab] = useState<GexTab>("gex");
+  // Each query only backs the tab(s) that read it -- the history table needs the overview
+  // endpoint, everything else needs the per-symbol profile, and there's no reason to keep
+  // polling either one for a tab that isn't on screen.
+  const { data, isLoading, isError } = useGex(tab === "history");
   const symbols = useGexSymbols();
-  const profile = useGexProfile(symbol);
+  const profile = useGexProfile(symbol, tab !== "history");
   const p = profile.data;
 
   return (
@@ -142,6 +147,11 @@ export function GexPage() {
         {p?.ok && (
           <span className="chip">
             exp {p.expiration} · spot {p.spot?.toFixed(2)}
+          </span>
+        )}
+        {p?.ok && p.spotUpdatedAt != null && (
+          <span className="chip muted" title="when the underlying's cached spot last updated -- the age of everything on this tab">
+            as of {new Date(p.spotUpdatedAt * 1000).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour12: false })} ET
           </span>
         )}
         <div className="mode-toggle">

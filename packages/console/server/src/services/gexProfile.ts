@@ -62,9 +62,13 @@ export function buildGexProfile(config: ConsoleConfig, symbol: string): Record<s
     db.pragma("busy_timeout = 2000");
 
     const trade = db
-      .prepare<[string], Record<string, unknown>>("SELECT last, volume FROM stream_trades WHERE symbol = ?")
+      .prepare<[string], Record<string, unknown>>(
+        "SELECT last, volume, updated_at FROM stream_trades WHERE symbol = ?",
+      )
       .get(symbol);
     const spot = typeof trade?.["last"] === "number" ? trade["last"] : null;
+    // Seconds-epoch, same as every other reader of this table (meic/flies/earnings providers).
+    const spotUpdatedAt = typeof trade?.["updated_at"] === "number" ? trade["updated_at"] : null;
     if (spot === null) return { ok: false, error: `no cached spot for ${symbol}` };
 
     // Nearest expiration with greeks coverage.
@@ -150,6 +154,7 @@ export function buildGexProfile(config: ConsoleConfig, symbol: string): Record<s
         ok: true,
         symbol,
         spot,
+        spotUpdatedAt,
         expiration,
         series: profile.series,
         totals: profile.totals,

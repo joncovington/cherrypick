@@ -49,7 +49,9 @@ export function useChain(symbol: string, expiration: string | null) {
 }
 
 function fmt(v: number | null, digits = 2): string {
-  return v === null ? "—" : v.toFixed(digits);
+  // v === 0 also catches -0 (negative zero, a floating-point artifact on near-zero deltas) --
+  // toFixed on -0 renders "-0.00", a spurious minus sign on a value that's effectively zero.
+  return v === null ? "—" : (v === 0 ? 0 : v).toFixed(digits);
 }
 
 function fmtOi(v: number | null): string {

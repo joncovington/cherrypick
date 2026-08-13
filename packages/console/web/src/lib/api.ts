@@ -370,10 +370,11 @@ export function useSymbolAnalysis(symbol: string) {
   });
 }
 
-export function useGex() {
+export function useGex(enabled = true) {
   return useQuery<GexPayload>({
     queryKey: ["gex"],
     queryFn: () => getJson<GexPayload>("/api/gex"),
     refetchInterval: 10_000,
+    enabled,
   });
 }

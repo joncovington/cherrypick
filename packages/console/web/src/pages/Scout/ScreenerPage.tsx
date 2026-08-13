@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { mutateJson, useBlacklist, useChainEodStatus, useTtWatchlists } from "../../lib/api";
 import { CollectorBanner } from "../../components/CollectorBanner";
@@ -195,7 +195,15 @@ export function ScreenerPage() {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <SortTh label="score" k="score" sort={sort} />
+                    <SortTh
+                      label={
+                        <span title="returnOnRisk × pop × ivRankFrac × liquidityFactor — a pre-quote ranking heuristic, not the same scale as the score shown once opened in Builder">
+                          screen score
+                        </span>
+                      }
+                      k="score"
+                      sort={sort}
+                    />
                     <SortTh label="sym" k="sym" sort={sort} />
                     <SortTh label="strategy" k="strategy" sort={sort} />
                     <th>legs</th>
@@ -212,7 +220,11 @@ export function ScreenerPage() {
                   {sortedRows.map((r, i) => (
                     <tr key={i}>
                       <td>{r.candidate.score !== null ? r.candidate.score.toFixed(3) : "—"}</td>
-                      <td>{r.symbol}</td>
+                      <td>
+                        <Link to={`/scout/builder?symbol=${encodeURIComponent(r.symbol)}`} className="link">
+                          {r.symbol}
+                        </Link>
+                      </td>
                       <td>{r.candidate.strategy.replace(/_/g, " ")}</td>
                       <td className="muted">{legsLabel(r.candidate.legs)}</td>
                       <td className="muted">
