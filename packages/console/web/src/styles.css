@@ -1081,20 +1081,244 @@ select.text-input {
   border-radius: 2px;
 }
 
-/* The narrative note. Prose, not data — so it wraps and gets a readable measure, unlike the
-   nowrap tables above it. `overflow-wrap` catches the long unbroken tokens a model sometimes
-   emits (a path, a symbol list) that would otherwise force a horizontal scrollbar on the card. */
-.note {
-  max-width: 74ch;
-  line-height: 1.55;
+/* ---------------------------------------------------------------- suite review
+   Composed from the existing primitives (card / stats-grid / data-table / chip / dot) rather than
+   a parallel look. Only what the page genuinely adds lives here, and it uses the same tokens:
+   the accent stays reserved for things that need attention, per the palette's own note. */
+
+/* The attention card leads the page, so it earns a left rule — cherry only when something is
+   actually flagged, green when the day is clear. A card that always looks urgent stops meaning
+   anything. */
+.review-attention {
+  border-left: 2px solid var(--ok);
+}
+
+.review-attention-flagged {
+  border-left-color: var(--accent);
+}
+
+.review-flags {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.review-flags li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  line-height: 1.5;
+}
+
+/* A caveat is prose the reader must not skip, but it is not a finding — muted, with the same dot
+   vocabulary the findings use so the severity reads the same way. */
+.review-caveat {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0.55rem 0 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+  max-width: 88ch;
+}
+
+.review-module .stats-grid {
+  margin-bottom: 0.9rem;
+}
+
+.review-subhead {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0.9rem 0 0.45rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--row-line);
+}
+
+/* The proportion bar behind an arm's net. Scaled to the largest ABSOLUTE net in the group, so a
+   loss and a win of equal size carry equal weight in opposite colours — scaling losses against
+   wins would make a bad arm look small, which is the opposite of the point. */
+.arm-bar-cell {
+  width: 6rem;
+  min-width: 6rem;
+}
+
+.arm-bar {
+  display: block;
+  height: 6px;
+  background: var(--row-line);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.arm-bar-fill {
+  display: block;
+  height: 100%;
+}
+
+.arm-bar-pos {
+  background: var(--ok);
+  opacity: 0.75;
+}
+
+.arm-bar-neg {
+  background: var(--err);
+  opacity: 0.75;
+}
+
+.review-expected {
+  margin-top: 0.9rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--row-line);
+}
+
+.review-expected-figures {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+}
+
+.review-session-select {
+  background: var(--bg-card);
+  color: var(--text);
+  font-family: var(--num-face);
+  cursor: pointer;
+}
+
+.review-note-line {
+  font-size: 12.5px;
+  max-width: 92ch;
+  margin: 0.6rem 0 0.9rem;
+}
+
+/* The narrative. Prose, not data — so it wraps and takes a readable measure, unlike the nowrap
+   tables above it. `overflow-wrap` catches the long unbroken tokens a model occasionally emits
+   (a path, a symbol list) that would otherwise put a horizontal scrollbar on the card. */
+.review-note .note {
+  max-width: 76ch;
+  line-height: 1.6;
   white-space: normal;
   overflow-wrap: anywhere;
+  color: var(--text);
 }
-.note p {
+
+.review-note .note p {
   margin: 0 0 0.85rem;
 }
-.note h3 {
-  margin: 1.2rem 0 0.5rem;
-  font-size: 0.95rem;
-  letter-spacing: 0.02em;
+
+/* A standalone-bold paragraph ("**What happened**" alone on its line) is a section label, not
+   emphasis — the same divider the module cards use for "By arm", so the note reads as a sequence
+   of sections rather than one wall of prose. No border on the first one; it sits right under the
+   card head and a rule there would fight the card's own border. */
+.note-section {
+  margin: 1.1rem 0 0.6rem;
+}
+
+.note > .note-section:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* A bold span that IS a signed figure, or contains one, gets the console's own pnl vocabulary
+   rather than a new color — the same green/red the stat tiles and arm table already use. Only '+'
+   and the true minus sign (−) count as a sign, so "width-5" is never read as negative. A span that
+   is nothing BUT the figure also gets tabular numerals, so a bare "+$80,102" sits like a number;
+   a mixed span like "open +0.216" stays in running prose type, since monospacing "open" would look
+   like a typo, not data. */
+.note-figure {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+}
+
+.note-figure-pos {
+  color: var(--ok);
+}
+
+.note-figure-neg {
+  color: var(--err);
+}
+
+.note-list {
+  margin: 0 0 0.85rem;
+  padding-left: 1.1rem;
+}
+
+.note-list li {
+  margin-bottom: 0.5rem;
+  line-height: 1.55;
+}
+
+/* The Recommendations heading. A small warn-colored marker, not the brand accent — a
+   recommendation is "worth a look," not an alert, the same distinction the rest of the page
+   already draws between chip-warn and the accent reserved for genuine flags. */
+.note-recs-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1.3rem 0 0.7rem;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.note-recs-marker {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--warn);
+  flex-shrink: 0;
+}
+
+.note-recs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+/* Each recommendation as its own small card — a numbered index, a title, and the number that
+   argues for it below. A left rule in warn, matching the marker on the heading above, so the
+   card and the section it belongs to read as one idea rather than a bare list of assertions. */
+.note-rec {
+  display: flex;
+  gap: 0.65rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--warn);
+  border-radius: 3px;
+  padding: 0.55rem 0.75rem;
+}
+
+.note-rec-index {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding-top: 0.15rem;
+  flex-shrink: 0;
+}
+
+.note-rec-title {
+  font-weight: 650;
+  margin-bottom: 0.2rem;
+  line-height: 1.4;
+}
+
+.note-rec-body {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.note-rec-none {
+  margin: 0;
 }
