@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 import { TabStrip } from "../../components/ScopeBar";
+import { SignedBar } from "../../components/Charts";
 
 interface Check {
   value: number | null;
@@ -28,6 +29,9 @@ interface Tag {
   reading: Reading;
   qualification: { qualified: boolean; checks: Record<string, Check> };
   role: string;
+  /** "unknown" when the module has no reliable source for this (currently: earnings). Never
+      badged as retired on a guess. */
+  status: "active" | "retired" | "unknown";
 }
 
 interface ModuleCalibration {
@@ -82,21 +86,10 @@ function NetBars({ tags }: { tags: Tag[] }) {
     <div className="netbars">
       {tags.map((t) => {
         const v = t.reading.netPnl;
-        const half = (Math.abs(v) / maxAbs) * 50;
         return (
           <div key={t.tag} className="netbar-row">
             <span className="netbar-label" title={t.tag}>{t.tag}</span>
-            <div className="netbar-track">
-              <div className="netbar-zero" />
-              <div
-                className="netbar-fill"
-                style={
-                  v >= 0
-                    ? { left: "50%", width: `${half}%`, background: "var(--ok)" }
-                    : { right: "50%", width: `${half}%`, background: "var(--err)" }
-                }
-              />
-            </div>
+            <SignedBar value={v} maxAbs={maxAbs} className="netbar-track" />
             <span className={`netbar-value ${v >= 0 ? "pnl-pos" : "pnl-neg"}`}>{fmtMoney(v)}</span>
           </div>
         );
@@ -125,10 +118,11 @@ function RoleBadge({ role }: { role: string }) {
  */
 function VerdictBanner({ m }: { m: ModuleCalibration }) {
   if (m.champion === null) {
+    const current = m.tags.filter((t) => t.status !== "retired").length;
     return (
       <p className="verdict verdict-neutral">
-        No champion declared for <strong>{m.module}</strong>. Its {m.tags.length} arms are qualified independently
-        against the rule and never promoted against each other — nothing here is a comparison.
+        No champion declared for <strong>{m.module}</strong>. Its {current} current arms are qualified
+        independently against the rule and never promoted against each other — nothing here is a comparison.
       </p>
     );
   }
@@ -142,11 +136,21 @@ function VerdictBanner({ m }: { m: ModuleCalibration }) {
 }
 
 function ModuleTab({ m }: { m: ModuleCalibration }) {
-  const qualified = m.tags.filter((t) => t.qualification.qualified);
+  // Retired arms (config-declared, currently: meic/flies only -- see calibrate.ts's
+  // tagStatusReaders) get their own section rather than reading as a live comparison of arms
+  // actually competing today. "unknown" (no reliable source for this module, e.g. earnings)
+  // stays with the active list rather than being hidden on a guess.
+  const currentTags = m.tags.filter((t) => t.status !== "retired");
+  const retiredTags = m.tags.filter((t) => t.status === "retired");
+
+  // Every headline figure below is scoped to CURRENT arms -- a retired arm's historical net
+  // (often the largest in the ledger, simply from having traded the longest) should not read as
+  // this module's "best net" today, and it is not being qualified against anything any more.
+  const qualified = currentTags.filter((t) => t.qualification.qualified);
   // Clearing the rule means the evidence is sufficient, not that the arm makes
   // money. Say so where it happens, since the badge alone reads as approval.
   const qualifiedButLosing = qualified.filter((t) => t.reading.netPnl < 0);
-  const rule = m.tags[0]?.qualification.checks;
+  const rule = currentTags[0]?.qualification.checks;
 
   return (
     <div className="cards cards-wide">
@@ -155,7 +159,7 @@ function ModuleTab({ m }: { m: ModuleCalibration }) {
         <div className="stats-grid">
           <div className="stat-tile">
             <span className="stat-label">arms</span>
-            <span className="stat-value">{m.tags.length}</span>
+            <span className="stat-value">{currentTags.length}</span>
           </div>
           <div className="stat-tile">
             <span className="stat-label">qualified</span>
@@ -167,8 +171,8 @@ function ModuleTab({ m }: { m: ModuleCalibration }) {
           </div>
           <div className="stat-tile">
             <span className="stat-label">best net</span>
-            <span className={`stat-value ${(m.tags[0]?.reading.netPnl ?? 0) >= 0 ? "pnl-pos" : "pnl-neg"}`}>
-              {m.tags.length > 0 ? fmtMoney(m.tags[0]!.reading.netPnl) : "—"}
+            <span className={`stat-value ${(currentTags[0]?.reading.netPnl ?? 0) >= 0 ? "pnl-pos" : "pnl-neg"}`}>
+              {currentTags.length > 0 ? fmtMoney(currentTags[0]!.reading.netPnl) : "—"}
             </span>
           </div>
         </div>
@@ -188,71 +192,101 @@ function ModuleTab({ m }: { m: ModuleCalibration }) {
       </Card>
 
       <Card title="Net P&L by arm (after fees, all-time)">
-        <NetBars tags={m.tags} />
+        <NetBars tags={currentTags} />
+        {retiredTags.length > 0 && (
+          <p className="muted" style={{ fontSize: 12, margin: "0.6rem 0 0" }}>
+            {retiredTags.length} retired {retiredTags.length === 1 ? "arm" : "arms"} kept out of this
+            comparison — see below.
+          </p>
+        )}
       </Card>
 
-      <DataCard
-        title={`All arms — ${m.tags.length} ranked by net`}
-        headers={["arm", "role", "trades", "sessions", "win %", "net", "2× slip", "RoC", "Sharpe", "max DD"]}
-        numFrom={2}
-        tableClass="data-table-labelled"
-        loading={false}
-        rowCount={m.tags.length}
-        empty="no tagged trades for this module"
-      >
-        {m.tags.map((t) => (
-          <tr key={t.tag}>
-            <td>{t.tag}</td>
-            <td><RoleBadge role={t.role} /></td>
-            <td>{t.reading.sample}</td>
-            <td className="muted">{t.reading.days}</td>
-            <td>{t.reading.winRate !== null ? `${(t.reading.winRate * 100).toFixed(0)}%` : "—"}</td>
-            <td><PnlCell v={t.reading.netPnl} /></td>
-            <td className="muted">
-              {t.reading.slippageCoverage > 0 ? fmtMoney(t.reading.netPnl2xSlippage) : "—"}
-            </td>
-            <td>{t.reading.returnOnCapital !== null ? `${(t.reading.returnOnCapital * 100).toFixed(1)}%` : "—"}</td>
-            <td>{t.reading.sharpe !== null ? t.reading.sharpe.toFixed(2) : "—"}</td>
-            <td className="pnl-neg">{fmtMoney(-t.reading.maxDrawdown)}</td>
-          </tr>
-        ))}
-      </DataCard>
+      <ArmTable title={`All arms — ${currentTags.length} ranked by net`} tags={currentTags} />
 
       <Card title="Qualification progress — every arm, and what each still needs">
-        <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(21rem, 1fr))", gap: "0.6rem" }}>
-          {m.tags.map((t) => (
-            <div key={t.tag} className={`arm-card ${t.qualification.qualified ? "arm-card-qualified" : ""}`}>
-              <div className="arm-head">
-                <strong>{t.tag}</strong>
-                <RoleBadge role={t.role} />
-                <span className={`arm-net ${t.reading.netPnl >= 0 ? "pnl-pos" : "pnl-neg"}`}>
-                  {fmtMoney(t.reading.netPnl)}
-                </span>
-              </div>
-              {Object.entries(t.qualification.checks).map(([name, c]) => (
-                <CheckBar key={name} name={name} c={c} />
-              ))}
-              <div className="arm-foot muted">
-                {Object.entries(t.qualification.checks)
-                  .map(([name, c]) => {
-                    const s = shortfall(name, c);
-                    return s === null ? null : `${CHECK_LABEL[name] ?? name}: ${s}`;
-                  })
-                  .filter((s): s is string => s !== null)
-                  .join(" · ") || "all checks clear"}
-              </div>
-              <div className="arm-foot muted">
-                RoC {t.reading.returnOnCapital !== null ? `${(t.reading.returnOnCapital * 100).toFixed(1)}%` : "—"}
-                {" · "}Sharpe {t.reading.sharpe !== null ? t.reading.sharpe.toFixed(2) : "—"}
-                {" · "}max DD {fmtMoney(t.reading.maxDrawdown)}
-                {t.reading.capitalCoverage < t.reading.sample && (
-                  <> {" · "}capital on {fmtNum((t.reading.capitalCoverage / Math.max(1, t.reading.sample)) * 100, 0)}% of trades</>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+        <QualificationGrid tags={currentTags} />
       </Card>
+
+      {retiredTags.length > 0 && (
+        <>
+          <ArmTable
+            title={`Retired arms — ${retiredTags.length} kept for historical record, not currently traded`}
+            tags={retiredTags}
+          />
+          <Card title="Retired arms — qualification progress at the time they stopped">
+            <QualificationGrid tags={retiredTags} />
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ArmTable({ title, tags }: { title: string; tags: Tag[] }) {
+  return (
+    <DataCard
+      title={title}
+      headers={["arm", "role", "trades", "sessions", "win %", "net", "2× slip", "RoC", "Sharpe", "max DD"]}
+      numFrom={2}
+      tableClass="data-table-labelled"
+      loading={false}
+      rowCount={tags.length}
+      empty="no tagged trades for this module"
+    >
+      {tags.map((t) => (
+        <tr key={t.tag}>
+          <td>{t.tag}</td>
+          <td><RoleBadge role={t.role} /></td>
+          <td>{t.reading.sample}</td>
+          <td className="muted">{t.reading.days}</td>
+          <td>{t.reading.winRate !== null ? `${(t.reading.winRate * 100).toFixed(0)}%` : "—"}</td>
+          <td><PnlCell v={t.reading.netPnl} /></td>
+          <td className="muted">
+            {t.reading.slippageCoverage > 0 ? fmtMoney(t.reading.netPnl2xSlippage) : "—"}
+          </td>
+          <td>{t.reading.returnOnCapital !== null ? `${(t.reading.returnOnCapital * 100).toFixed(1)}%` : "—"}</td>
+          <td>{t.reading.sharpe !== null ? t.reading.sharpe.toFixed(2) : "—"}</td>
+          <td className="pnl-neg">{fmtMoney(-t.reading.maxDrawdown)}</td>
+        </tr>
+      ))}
+    </DataCard>
+  );
+}
+
+function QualificationGrid({ tags }: { tags: Tag[] }) {
+  return (
+    <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(21rem, 1fr))", gap: "0.6rem" }}>
+      {tags.map((t) => (
+        <div key={t.tag} className={`arm-card ${t.qualification.qualified ? "arm-card-qualified" : ""}`}>
+          <div className="arm-head">
+            <strong>{t.tag}</strong>
+            <RoleBadge role={t.role} />
+            <span className={`arm-net ${t.reading.netPnl >= 0 ? "pnl-pos" : "pnl-neg"}`}>
+              {fmtMoney(t.reading.netPnl)}
+            </span>
+          </div>
+          {Object.entries(t.qualification.checks).map(([name, c]) => (
+            <CheckBar key={name} name={name} c={c} />
+          ))}
+          <div className="arm-foot muted">
+            {Object.entries(t.qualification.checks)
+              .map(([name, c]) => {
+                const s = shortfall(name, c);
+                return s === null ? null : `${CHECK_LABEL[name] ?? name}: ${s}`;
+              })
+              .filter((s): s is string => s !== null)
+              .join(" · ") || "all checks clear"}
+          </div>
+          <div className="arm-foot muted">
+            RoC {t.reading.returnOnCapital !== null ? `${(t.reading.returnOnCapital * 100).toFixed(1)}%` : "—"}
+            {" · "}Sharpe {t.reading.sharpe !== null ? t.reading.sharpe.toFixed(2) : "—"}
+            {" · "}max DD {fmtMoney(t.reading.maxDrawdown)}
+            {t.reading.capitalCoverage < t.reading.sample && (
+              <> {" · "}capital on {fmtNum((t.reading.capitalCoverage / Math.max(1, t.reading.sample)) * 100, 0)}% of trades</>
+            )}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

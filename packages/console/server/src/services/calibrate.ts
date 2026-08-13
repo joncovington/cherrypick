@@ -24,8 +24,75 @@ export interface ModuleCalibration {
   module: string;
   champion: string | null;
   /** Per tag: the evidence bundle plus its qualification checks. */
-  tags: Array<{ tag: string; reading: CalibrationReading; qualification: Qualification; role: string }>;
+  tags: Array<{
+    tag: string;
+    reading: CalibrationReading;
+    qualification: Qualification;
+    role: string;
+    /** "unknown" when this module has no reliable machine-readable source for it (earnings: three
+        independently-hardcoded Python strategy lists, no JSON flag, and a profile/strategy grain
+        mismatch -- see readEarningsStrategyStatus). Never guessed at; a wrong "retired" badge on a
+        still-trading arm is worse than no badge. */
+    status: "active" | "retired" | "unknown";
+  }>;
   verdict: ChampionVerdict | null;
+}
+
+/** MEIC: packages/meic/config.risk.json's profiles.<tag>.enabled -- the literal switch
+ *  paper.py's all_profile_names() reads each tick (`.get("enabled", True) is not False`), not
+ *  just documentation. Lives in the module's own source tree, not ~/.cherrypick. Null (not {})
+ *  on any read/parse failure, so a missing/broken file reports "unknown" for every tag rather
+ *  than silently mislabeling every currently-active tag "retired". */
+function readMeicProfileStatus(config: ConsoleConfig): Record<string, boolean> | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(config.paths.meicRiskConfig, "utf-8")) as Record<string, unknown>;
+    const profiles = raw["profiles"];
+    if (typeof profiles !== "object" || profiles === null) return null;
+    const out: Record<string, boolean> = {};
+    for (const [tag, v] of Object.entries(profiles as Record<string, unknown>)) {
+      if (tag.startsWith("_")) continue;
+      const enabled = (v as Record<string, unknown> | undefined)?.["enabled"];
+      out[tag] = enabled !== false;
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/** Flies: ~/.cherrypick/config/flies.json's arms.<tag>.enabled -- what cli.py's enabled_arms()
+ *  reads. A tag with no entry in this object at all (retired arms like iron/bwb-atm are dropped
+ *  from the deployed config, not kept with enabled:false) counts the same as enabled:false. Null
+ *  (not {}) on any read/parse failure -- see readMeicProfileStatus for why that distinction
+ *  matters. */
+function readFliesArmStatus(config: ConsoleConfig): Record<string, boolean> | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(config.paths.fliesConfig, "utf-8")) as Record<string, unknown>;
+    const arms = raw["arms"];
+    if (typeof arms !== "object" || arms === null) return null;
+    const out: Record<string, boolean> = {};
+    for (const [tag, v] of Object.entries(arms as Record<string, unknown>)) {
+      if (tag.startsWith("_") || typeof v !== "object" || v === null) continue;
+      const enabled = (v as Record<string, unknown>)["enabled"];
+      out[tag] = enabled !== false;
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/** Per-module tag-status lookup, keyed the same way ModuleCalibration's own `module` field is.
+ *  Earnings deliberately has no entry: retirement there is a strategy-level fact inferred from
+ *  three hardcoded Python lists, while Champions' tags are profile-level (`default`/`strat_test`/
+ *  `strat_test:<strategy>`) -- a mixed-strategy profile can't be classified active-or-retired at
+ *  this grain without guessing, so every earnings tag reports "unknown" rather than a badge that
+ *  might be wrong. */
+function tagStatusReaders(config: ConsoleConfig): Record<string, Record<string, boolean> | null> {
+  return {
+    meic: readMeicProfileStatus(config),
+    flies: readFliesArmStatus(config),
+  };
 }
 
 function readChampionMap(config: ConsoleConfig): Record<string, string | null> {
@@ -137,6 +204,7 @@ function roleOf(tag: string, champion: string | null, q: Qualification, verdict:
 
 export function buildCalibration(config: ConsoleConfig): ModuleCalibration[] {
   const champions = readChampionMap(config);
+  const statusReaders = tagStatusReaders(config);
   const sources: Array<[string, Record<string, NormalizedRecord[]>]> = [
     ["meic", meicRecords(config)],
     ["earnings", earningsRecords(config)],
@@ -152,10 +220,16 @@ export function buildCalibration(config: ConsoleConfig): ModuleCalibration[] {
     // A module with a declared champion gets the promotion comparison; parallel
     // arms are qualified independently and never promoted against each other.
     const verdict = champion !== null ? recommendChampion(readings, champion) : null;
+    const statusOf = statusReaders[module];
     const tags = Object.entries(readings)
       .map(([tag, reading]) => {
         const qualification = qualifyOne(reading);
-        return { tag, reading, qualification, role: roleOf(tag, champion, qualification, verdict) };
+        // statusOf null/undefined: no source for this module, or the source failed to read --
+        // either way "unknown" for every tag, never a guessed "retired". statusOf present but this
+        // TAG absent from it: a real fact (the config no longer lists it at all) -- retired.
+        const status: "active" | "retired" | "unknown" =
+          statusOf == null ? "unknown" : statusOf[tag] === undefined ? "retired" : statusOf[tag] ? "active" : "retired";
+        return { tag, reading, qualification, role: roleOf(tag, champion, qualification, verdict), status };
       })
       .sort((a, b) => b.reading.netPnl - a.reading.netPnl);
     return { module, champion, tags, verdict };
