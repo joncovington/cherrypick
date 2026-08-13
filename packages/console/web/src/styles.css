@@ -30,9 +30,15 @@ body {
   font-size: 14px;
 }
 
+/* The content pane scrolls, not the window. This is what makes `position: sticky` work at all:
+   .shell-content sets an overflow (for wide content), which makes it the sticky containing block —
+   so while the WINDOW was the thing that scrolled, a sticky page header had a scrollport that never
+   moved and could never stick. Bounding the shell to the viewport puts the scrolling where the
+   sticky elements already expect it, and keeps the nav and status header in view as a bonus. */
 .shell {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .nav {
@@ -44,6 +50,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  /* The shell no longer scrolls, so a nav taller than a short window would be unreachable. */
+  overflow-y: auto;
 }
 
 .nav-brand {
@@ -78,6 +86,9 @@ body {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* Without this a flex child refuses to shrink below its content, and the pane below never
+     scrolls — it just grows and pushes the shell past the viewport. */
+  min-height: 0;
 }
 
 .status-header {
@@ -140,7 +151,9 @@ body {
 
 .shell-content {
   padding: 1.25rem;
-  overflow-x: auto;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .page-title-row {
