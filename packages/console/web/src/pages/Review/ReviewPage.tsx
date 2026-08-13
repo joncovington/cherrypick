@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useReview } from "../../lib/api";
 import type { ReviewArm, ReviewModule } from "@console/shared";
+import { NoteMarkdown } from "./NoteMarkdown";
 
 /**
  * The suite review. Renders the fact set and computes nothing.
@@ -245,7 +246,7 @@ export function ReviewPage() {
                 Interpretation, not measurement — written from the fact set above, which is the only input. Where the
                 two disagree, the artifact is right.
               </p>
-              <pre className="note">{current.note}</pre>
+              <NoteMarkdown text={current.note} />
             </section>
           )}
         </>

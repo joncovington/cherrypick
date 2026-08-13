@@ -129,6 +129,11 @@ def _run_claude(payload: str) -> tuple[str | None, str | None]:
             input=payload,
             capture_output=True,
             text=True,
+            # UTF-8 explicitly. `text=True` alone decodes with the LOCALE encoding, which is cp1252
+            # on Windows -- so every em dash the model emits came back as mojibake and was then
+            # written out faithfully as UTF-8, baking the corruption into the note.
+            encoding="utf-8",
+            errors="replace",
             timeout=TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
@@ -169,7 +174,7 @@ def _file_issues(recs: list[str], session: str, dry_run: bool) -> list[dict]:
         existing = subprocess.run(
             [gh, "issue", "list", "--label", ISSUE_LABEL, "--state", "open",
              "--json", "title", "--limit", "100"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
         )
         titles = {i["title"] for i in json.loads(existing.stdout or "[]")}
     except Exception:  # noqa: BLE001
@@ -189,7 +194,7 @@ def _file_issues(recs: list[str], session: str, dry_run: bool) -> list[dict]:
             body = f"{rec}\n\n---\nFrom the end-of-day review for {session}. Facts: `eod-{session}.json`."
             proc = subprocess.run(
                 [gh, "issue", "create", "--title", title, "--body", body, "--label", ISSUE_LABEL],
-                capture_output=True, text=True, timeout=60,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
             )
             results.append({"ok": proc.returncode == 0, "title": title,
                             "url": (proc.stdout or "").strip() or None,
