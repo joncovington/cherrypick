@@ -81,6 +81,11 @@ class JobSpec:
     enabled: bool = True
     enabled_reason: str = ""
     tags: tuple[str, ...] = field(default=())
+    # None → the supervisor's own default cap (10 min). A per-job override for the one case that
+    # earns it: a resident job under active development, restarted by hand far more often than a
+    # crash backoff was ever sized for. Never widens the general "no broken command hot-loops"
+    # guarantee -- it only ever lowers the cap, and a job with no override behaves exactly as before.
+    backoff_cap_seconds: int | None = None
 
     def __post_init__(self) -> None:
         """Validate at construction so a malformed config block fails inside `derive_jobs`'s
@@ -98,6 +103,8 @@ class JobSpec:
         if self.window_start and self.window_end:
             if _hhmm(self.window_start) >= _hhmm(self.window_end):
                 raise ValueError(f"{self.id}: window end must follow its start")
+        if self.backoff_cap_seconds is not None and int(self.backoff_cap_seconds) <= 0:
+            raise ValueError(f"{self.id}: backoff_cap_seconds must be positive")
 
     def describe(self) -> str:
         if self.kind == KIND_INTERVAL:
@@ -378,6 +385,7 @@ def derive_jobs(
             silence_seconds=con["silence_seconds"],
             enabled=not con_reason,
             enabled_reason=con_reason,
+            backoff_cap_seconds=con["dev_backoff_seconds"],
         ),
     )
 

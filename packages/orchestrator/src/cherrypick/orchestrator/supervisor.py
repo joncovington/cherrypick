@@ -243,14 +243,14 @@ class Supervisor:
             elif pid:
                 st["running_pid"] = None
 
-    def _job_running(self, jid: str, st: dict[str, Any]) -> bool:
-        handle = self._handles.get(jid)
+    def _job_running(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> bool:
+        handle = self._handles.get(spec.id)
         if handle is not None:
             code = handle.poll()
             if code is None:
                 return True
-            self._record_exit(jid, st, code)
-            del self._handles[jid]
+            self._record_exit(spec, st, code)
+            del self._handles[spec.id]
             return False
         pid = st.get("running_pid")
         if pid and pid_alive(pid):
@@ -261,7 +261,7 @@ class Supervisor:
             st["last_exit_at"] = _utc_iso()
         return False
 
-    def _record_exit(self, jid: str, st: dict[str, Any], code: int) -> None:
+    def _record_exit(self, spec: jobspec.JobSpec, st: dict[str, Any], code: int) -> None:
         st["running_pid"] = None
         st["last_exit_code"] = code
         st["last_exit_at"] = _utc_iso()
@@ -271,9 +271,10 @@ class Supervisor:
         else:
             n = int(st.get("consecutive_failures") or 0) + 1
             st["consecutive_failures"] = n
-            delay = min(_BACKOFF_CAP_SECONDS, _BACKOFF_BASE_SECONDS * (2 ** (n - 1)))
+            cap = spec.backoff_cap_seconds or _BACKOFF_CAP_SECONDS
+            delay = min(cap, _BACKOFF_BASE_SECONDS * (2 ** (n - 1)))
             st["backoff_until"] = time.time() + delay
-            _log(f"{jid}: exit {code} (failure #{n}), backoff {delay}s")
+            _log(f"{spec.id}: exit {code} (failure #{n}), backoff {delay}s")
 
     def _spawn(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> bool:
         try:
@@ -285,7 +286,7 @@ class Supervisor:
                 creationflags=CREATE_NO_WINDOW,
             )
         except OSError as exc:
-            self._record_exit(spec.id, st, -1)
+            self._record_exit(spec, st, -1)
             _log(f"{spec.id}: spawn failed: {exc}")
             return False
         self._handles[spec.id] = handle
@@ -328,7 +329,7 @@ class Supervisor:
                 if self._manage_resident(spec, st, now, holidays):
                     started.append(spec.id)
                 continue
-            if self._job_running(spec.id, st):
+            if self._job_running(spec, st):
                 continue  # overlap guard — schtasks' no-double-fire, preserved
             if st.get("backoff_until") and time.time() < float(st["backoff_until"]):
                 continue
@@ -348,7 +349,7 @@ class Supervisor:
         self, spec: jobspec.JobSpec, st: dict[str, Any], now: datetime, holidays: set[str]
     ) -> bool:
         want, why = jobspec.resident_should_run(spec, now, holidays)
-        alive = self._job_running(spec.id, st)
+        alive = self._job_running(spec, st)
         if not want:
             # Outside its window the child exits on its own (the module loop is session-scoped);
             # never terminate here — a settlement or final write may still be in flight.
@@ -371,7 +372,7 @@ class Supervisor:
                         handle.wait(timeout=10)
                     except subprocess.TimeoutExpired:
                         handle.kill()
-                self._record_exit(spec.id, st, -2)  # silence counts as a failure → backoff
+                self._record_exit(spec, st, -2)  # silence counts as a failure → backoff
                 return False
             return False
         if st.get("backoff_until") and time.time() < float(st["backoff_until"]):

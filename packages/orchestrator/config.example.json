@@ -221,7 +221,9 @@
     "enabled": true,
     "path": "../console",
     "_silence_comment": "Liveness is a heartbeat FILE (state/console.heartbeat), rewritten by the server every ~15s, not an HTTP probe: a Node event loop can wedge while the process stays alive and answering nothing, and the supervisor's reliability path stays free of network calls. Restart if the file goes untouched this long. Several heartbeats wide, so one slow pass is never read as a wedge.",
-    "silence_seconds": 60
+    "silence_seconds": 60,
+    "_dev_backoff_comment": "Unset by default -- crashes back off up to the supervisor's normal 10-minute cap, same as every other job. Set dev_backoff_seconds (e.g. 20) only while actively iterating on packages/console, so a crash or a manual 'cherrypick restart-console' comes back in seconds instead of minutes. Remove it again once the checkout is stable.",
+    "dev_backoff_seconds": null
   },
   "settings_header": "x",
   "settings": {
