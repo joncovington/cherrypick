@@ -42,6 +42,23 @@ report and the console's TypeScript port each computed flies' P&L from a differe
   session D+1. The narrative only ever runs on `final` sets, which is what lets it be written once
   and frozen as the record of what was concluded that day.
 
+## Trends stop at breaks, and suspected breaks get flagged
+
+A trend never crosses a journaled measurement break — results either side are not the same
+experiment, so a line through one describes neither side. Both earnings and MEIC have breaks within
+days of the current session, so most windows currently report one or two usable sessions. That
+thinness is the output, not a defect: a five-session trend spanning a policy change looks more
+informative than a two-session trend that stops where the evidence stops, and is worth less.
+
+Review also **detects** regime changes nobody journaled and reports them — it never writes one,
+because deciding that a book changed is a judgement about what the module did. The detector needs
+all three of its conditions to stay useful: a departure from the trailing median, a departure from
+the immediately preceding session, and an absolute floor. Without the second it re-reports one
+event every session until the median catches up (MEIC's launch flagged three times); without the
+third it fires on ratios between trivial counts (earnings going from 6 trades to 2). With all
+three, 24 backfilled sessions produce two flags, both real: flies on 2026-07-29 and MEIC on
+2026-08-07 — the four-stream launch, which its journal records as 2026-08-11.
+
 ## Reconciliation is not optional
 
 `reconcile` re-counts each module's totals with **independent SQL** — a different route to the same
@@ -72,6 +89,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 |---|---|
 | `python -m cherrypick.review build [--session YYYY-MM-DD] [--final]` | Build and write one session's fact set. Defaults to today, `provisional` unless `--final`. |
 | `python -m cherrypick.review backfill [--since YYYY-MM-DD]` | Build every session any module has a closed trade for. Backfilled sessions are `final` by definition — everything that was going to settle has. |
+| `python -m cherrypick.review render [--session YYYY-MM-DD]` | Re-render one session's markdown from its fact set. `build` and `backfill` render automatically. |
 | `python -m cherrypick.review reconcile [--since YYYY-MM-DD]` | Check every written fact set against independently-computed ledger totals. Reports the delta per module and field. |
 
 ## Where the shared rules live

@@ -31,13 +31,14 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import statistics
 from datetime import UTC, date, datetime
 
 from cherrypick.core import ledgers as _ledgers
 
 from cherrypick.review import paths as _paths
 
-FACT_VERSION = 1
+FACT_VERSION = 2
 
 STATUS_PROVISIONAL = "provisional"
 STATUS_FINAL = "final"
@@ -218,6 +219,74 @@ def _measurement_breaks(conn) -> list[str] | None:
     return sorted({r["break_date"] for r in rows})
 
 
+def _suspected_break(
+    all_records: list[dict],
+    session: str,
+    lookback: int = 10,
+    factor: float = 3.0,
+    min_trades: int = 10,
+) -> dict | None:
+    """A session whose scale departs sharply from the recent past, where no break is journaled.
+
+    MEIC's trade count and capital both stepped up roughly tenfold on 2026-08-07 when the
+    four-stream forward test launched, and its `measurement_breaks` records 2026-08-11 — so the
+    largest regime change in the book is not journaled, and a trend drawn through it pools a
+    20-trade-a-day book with a 700-trade-a-day one.
+
+    This detects that shape and reports it with the numbers behind the suspicion. It never writes a
+    break: journaling one is a judgement about what the module did and belongs to the module. The
+    trigger is deliberately crude — `factor`x the trailing median — because a detector nobody can
+    reason about produces flags nobody trusts.
+    """
+    by_session: dict[str, list[dict]] = {}
+    for r in all_records:
+        if r.get("session"):
+            by_session.setdefault(r["session"], []).append(r)
+    if session not in by_session:
+        return None
+
+    earlier = sorted(s for s in by_session if s < session)
+    prior = earlier[-lookback:]
+    if len(prior) < 3:  # too little history to call anything a departure from it
+        return None
+
+    def _scale(rows: list[dict]) -> float:
+        return float(len(rows))
+
+    today_scale = _scale(by_session[session])
+    baseline = statistics.median(_scale(by_session[s]) for s in prior)
+    if baseline <= 0 or today_scale <= 0:
+        return None
+
+    # An absolute floor before any ratio is believed. Earnings going from 6 trades to 2 is a 0.33x
+    # "departure" and means nothing; at these counts the ratio is arithmetic, not evidence.
+    if max(today_scale, baseline) < min_trades:
+        return None
+
+    ratio = today_scale / baseline
+    if (1 / factor) < ratio < factor:
+        return None
+
+    # Flag the step, not the plateau after it. The trailing median takes many sessions to catch up
+    # to a tenfold change, so comparing only against it re-reports one regime change every session
+    # until it does -- MEIC's launch flagged on 08-07, 08-10 and 08-12 for a single event. A shift
+    # that already happened yesterday is not news today.
+    previous = _scale(by_session[earlier[-1]])
+    if previous > 0:
+        step = today_scale / previous
+        if (1 / factor) < step < factor:
+            return None
+
+    return {
+        "session": session,
+        "trades": int(today_scale),
+        "trailing_median_trades": baseline,
+        "ratio": round(ratio, 2),
+        "basis": f"trade count vs median of prior {len(prior)} sessions, and vs the session before",
+        "note": "suspected regime change with no journaled measurement break",
+    }
+
+
 def _sample(records: list[dict]) -> dict:
     """Raw count beside the count of independent events.
 
@@ -280,8 +349,15 @@ def build_module_facts(module: str, session: str, db_path=None) -> dict:
         health = HEALTH_READERS[module](conn, session)
         expected = EXPECTED_READERS[module](conn, session)
         breaks = _measurement_breaks(conn)
+        # Unbounded read: the suspicion is about how this session compares with the recent past,
+        # so it needs the past. Cheap at these table sizes (MEIC's is the largest at ~2.6k rows).
+        history = _ledgers.READERS[spec["schema"]](conn)
     finally:
         conn.close()
+
+    suspected = _suspected_break(history, session)
+    if suspected and breaks and session in breaks:
+        suspected = None  # already journaled; nothing to flag
 
     gross = sum(r.get("gross_pnl") or 0.0 for r in closed)
     cost = sum(r.get("cost") or 0.0 for r in closed)
@@ -305,7 +381,7 @@ def build_module_facts(module: str, session: str, db_path=None) -> dict:
         },
         "return": _returns(closed),
         "expected_vs_observed": expected,
-        "sample": {**_sample(closed), "breaks": breaks},
+        "sample": {**_sample(closed), "breaks": breaks, "suspected_break": suspected},
     }
 
 
@@ -319,9 +395,12 @@ def build(session: str, status: str = STATUS_PROVISIONAL, modules=None) -> dict:
         "status": status,
         "fact_version": FACT_VERSION,
         "generated_at": datetime.now(UTC).isoformat(),
+        # Deliberately no suite net. Three modules at these scales do not sum into anything
+        # meaningful: on 2026-08-12 the combined figure was $82,629 of which MEIC was $80,102, so
+        # the total tracked one module with noise attached and read as though it described three.
         "suite": {
-            "net": round(sum(m["results"]["net"] for m in readable), 2),
             "closed": sum(m["results"]["closed"] for m in readable),
+            "net_by_module": {n: m["results"]["net"] for n, m in per_module.items() if m.get("ok")},
             "modules_read": len(readable),
             "modules_unreadable": [n for n, m in per_module.items() if not m.get("ok")],
         },
