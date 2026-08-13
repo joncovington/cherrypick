@@ -10,6 +10,7 @@ import { SymbolCard } from "../../components/SymbolCard";
 import { StrategyCards, type ApiLeg } from "../../components/StrategyCards";
 import { CollectorBanner } from "../../components/CollectorBanner";
 import { StrategyReadout } from "./StrategyReadout";
+import { dteOf, fmtExpiry } from "../../lib/optionFormat";
 
 interface LegDraft {
   id: number;
@@ -63,20 +64,6 @@ let nextId = 1;
 
 function extremum(e: { value: number | null; unbounded: boolean }): string {
   return e.unbounded ? "unbounded" : fmtMoney(e.value);
-}
-
-function dteOf(expiration: string | null): number | null {
-  if (expiration === null) return null;
-  const t = Date.parse(expiration);
-  if (Number.isNaN(t)) return null;
-  return Math.max(0, Math.round((t - Date.now()) / 86_400_000));
-}
-
-function fmtExpiry(expiration: string | null): string {
-  if (expiration === null) return "—";
-  const t = Date.parse(expiration);
-  if (Number.isNaN(t)) return expiration;
-  return new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
 export function BuilderPage() {
@@ -139,7 +126,14 @@ export function BuilderPage() {
       mutateJson<{ ticket: { id: string; dryRun: { ok: boolean; error?: string; skipped?: boolean } } }>("/api/orders/stage", "POST", {
         symbol,
         strategy: null,
-        legs: legs.map((l) => ({ symbol: l.occSymbol, quantity: l.quantity, price: Number(l.price) })),
+        legs: legs.map((l) => ({
+          symbol: l.occSymbol,
+          quantity: l.quantity,
+          price: Number(l.price),
+          expiration: l.expiration,
+          strike: l.kind === "stock" || l.strike === "" ? null : Number(l.strike),
+          kind: l.kind,
+        })),
         credit: data?.maxProfit.value ?? null,
         maxRisk: data?.maxLoss.value ?? null,
       }),

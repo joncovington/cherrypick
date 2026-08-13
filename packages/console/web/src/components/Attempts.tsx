@@ -52,7 +52,12 @@ export interface AttemptsPayload {
   tradeDate: string | null;
   breaks: Array<{ arm: string; reason: string }>;
   arms: ArmRailEntry[];
+  /** Thinned for transport to the chart's own resolution -- never a source for an exact count.
+      See blockedByStrike below. */
   timeline: AttemptRow[];
+  /** Exact `sign_rule_blocked` counts per "arm|strike", computed server-side from the untinned
+      rows -- what OccupancyMap reads instead of tallying timeline itself. */
+  blockedByStrike: Record<string, number>;
 }
 
 /**

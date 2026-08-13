@@ -870,6 +870,30 @@ export interface CompletionBlock {
   medianSpotMove: number | null;
 }
 
+/** One bucket's (or the whole scope's) improvement summary -- `analytics.left_on_table`'s
+ *  `summarize()`, mirrored exactly. */
+export interface LeftOnTableSummary {
+  n: number;
+  improved: number;
+  medianImprovementPts: number | null;
+  maxImprovementPts: number | null;
+  medianImprovementDollars: number | null;
+  totalImprovementDollars: number | null;
+}
+
+/** How much better the completing price got AFTER the first qualifying tick was taken -- the
+ *  counterfactual behind debit-first's wait-for-better completion rule. Mirrors
+ *  `cherrypick.flies.analytics.left_on_table` exactly (same columns, same floor-at-zero, same
+ *  gex-bucket split); this package can't import that Python function, so the query is
+ *  reimplemented here rather than shelled out to it. Null when the scope holds no debit_first
+ *  completions, same convention as `roll`. */
+export interface LeftOnTable {
+  entryMode: "debit_first";
+  untracked: number;
+  overall: LeftOnTableSummary;
+  byGexBucket: Record<string, LeftOnTableSummary>;
+}
+
 export interface FliesPerformance {
   mode: TradingMode;
   tiles: FliesSummary & { completionRatePct: number | null };
@@ -885,6 +909,7 @@ export interface FliesPerformance {
    * everywhere else too.
    */
   roll: CompletionBlock | null;
+  leftOnTable: LeftOnTable | null;
   completion: {
     leggedEntries: number;
     completed: number;
@@ -947,6 +972,7 @@ export function readFliesPerformance(
       floorBlocked: 0, unknown: 0, medianLatencyMin: null, minLatencyMin: null, maxLatencyMin: null, medianSpotMove: null,
     },
     roll: null,
+    leftOnTable: null,
     completionTrend: [],
     rollTrend: [],
     liveVsPaper: null,
@@ -1064,6 +1090,63 @@ export function readFliesPerformance(
     const legged = conversionFor("legged");
     const rollBlock = conversionFor("bwb_roll");
 
+    const round = (v: number | null, digits = 2): number | null => (v === null ? null : Math.round(v * 10 ** digits) / 10 ** digits);
+
+    const summarizeImprovement = (pairs: Array<{ pts: number; dollars: number }>): LeftOnTableSummary => {
+      const pts = pairs.map((p) => p.pts);
+      const dollars = pairs.map((p) => p.dollars);
+      return {
+        n: pairs.length,
+        improved: pts.filter((p) => p > 0).length,
+        medianImprovementPts: round(median(pts), 4),
+        maxImprovementPts: pts.length > 0 ? round(Math.max(...pts), 4) : null,
+        medianImprovementDollars: round(median(dollars)),
+        totalImprovementDollars: round(dollars.reduce((s, v) => s + v, 0)),
+      };
+    };
+
+    // Only debit_first completions carry the wait-for-better hypothesis this measures -- dealer
+    // pinning (positive-gamma pull toward the centre) is the regime where waiting should have paid,
+    // so the split by completion_gex_bucket is the whole point, not an afterthought.
+    const leftOnTableRows = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT credit, debit, quantity, completion_gex_bucket, post_best_completing_debit, post_best_completing_credit
+           FROM fly_positions WHERE entry_mode = 'debit_first' AND kind = 'fly'${sc.and}`,
+      )
+      .all(...sc.params);
+    let leftOnTableUntracked = 0;
+    const leftOnTableAll: Array<{ pts: number; dollars: number }> = [];
+    const leftOnTableByBucket = new Map<string, Array<{ pts: number; dollars: number }>>();
+    for (const r of leftOnTableRows) {
+      const postCredit = num(r["post_best_completing_credit"]);
+      const credit = num(r["credit"]);
+      if (postCredit === null || credit === null) {
+        leftOnTableUntracked += 1;
+        continue;
+      }
+      const pts = Math.max(0, postCredit - credit);
+      const qty = num(r["quantity"]) ?? 1;
+      const pair = { pts, dollars: pts * 100 * qty };
+      leftOnTableAll.push(pair);
+      const bucket = str(r["completion_gex_bucket"]) ?? "untagged";
+      const list = leftOnTableByBucket.get(bucket);
+      if (list === undefined) leftOnTableByBucket.set(bucket, [pair]);
+      else list.push(pair);
+    }
+    const leftOnTable: LeftOnTable | null =
+      leftOnTableRows.length > 0
+        ? {
+            entryMode: "debit_first",
+            untracked: leftOnTableUntracked,
+            overall: summarizeImprovement(leftOnTableAll),
+            byGexBucket: Object.fromEntries(
+              [...leftOnTableByBucket.entries()]
+                .sort((a, b) => a[0].localeCompare(b[0]))
+                .map(([bucket, pairs]) => [bucket, summarizeImprovement(pairs)]),
+            ),
+          }
+        : null;
+
     const trendFor = (mode: string) =>
       db
         .prepare<string[], Record<string, unknown>>(
@@ -1089,6 +1172,7 @@ export function readFliesPerformance(
       // Null rather than a block of zeros when the scope holds no bwb entries: an empty panel that
       // says "0% roll rate" is a claim, and there is nothing to claim.
       roll: rollBlock.leggedEntries > 0 ? rollBlock : null,
+      leftOnTable,
       completionTrend: trendFor("legged"),
       rollTrend: trendFor("bwb_roll"),
       liveVsPaper: null,

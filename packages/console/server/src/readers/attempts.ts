@@ -89,8 +89,14 @@ export interface AttemptsPayload {
    *  know which module stores it where. */
   breaks: MeasurementBreak[];
   arms: ArmRailEntry[];
-  /** Every attempt for the day, oldest first — the attempt timeline's source. */
+  /** Every attempt for the day, oldest first, THINNED for transport -- see downsampleTimeline.
+   *  The attempt timeline chart's source; never the source for an exact count (that's
+   *  blockedByStrike below), since thinning can drop repeated same-outcome rows. */
   timeline: AttemptRow[];
+  /** Exact `sign_rule_blocked` counts per "arm|strike", computed from the FULL (untinned) rows --
+   *  OccupancyMap's "refused N entries today" reads this instead of counting timeline rows itself,
+   *  so thinning the timeline for the chart can never silently undercount it. */
+  blockedByStrike: Record<string, number>;
 }
 
 /**
@@ -114,6 +120,36 @@ function normalizeTs(ts: string | null, tradeDate: string | null): string | null
     return `${tradeDate}T${ts.length === 5 ? `${ts}:00` : ts}`;
   }
   return ts;
+}
+
+/**
+ * Thin the timeline for transport, matching what the chart can actually show rather than what the
+ * ledger recorded. AttemptTimeline draws a 1150px-wide SVG across a ~390-minute session -- about
+ * 2.7px/minute -- so consecutive same-outcome ticks inside one minute (flies polls every 15s,
+ * i.e. up to 4 identical marks a minute while an arm just sits refused) round to the same one or
+ * two pixels and are visually indistinguishable already. Capping each (arm, outcome) to one row
+ * per minute is a real reduction with no visible difference at this chart's own resolution.
+ *
+ * `filled` rows are NEVER dropped -- they're rare, they're the highest-value mark on the chart,
+ * and unlike a refusal an entry's fill is the whole point of the day. Order is preserved (input is
+ * already ts ASC), so the kept row per bucket is always the first one seen.
+ */
+function downsampleTimeline(rows: AttemptRow[]): AttemptRow[] {
+  const seen = new Set<string>();
+  const out: AttemptRow[] = [];
+  for (const row of rows) {
+    if (row.outcome === "filled") {
+      out.push(row);
+      continue;
+    }
+    const ms = row.ts !== null ? Date.parse(row.ts) : NaN;
+    const bucket = Number.isNaN(ms) ? row.ts : Math.floor(ms / 60_000);
+    const key = `${row.arm}|${row.outcome}|${bucket}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
 }
 
 interface TableSpec {
@@ -160,7 +196,15 @@ export function readEntryAttempts(
 ): AttemptsPayload {
   const spec = SPECS[module];
   const dbPath = path.join(spec.dir(config), spec.file(mode));
-  const empty: AttemptsPayload = { mode, module, tradeDate: null, breaks: [], arms: [], timeline: [] };
+  const empty: AttemptsPayload = {
+    mode,
+    module,
+    tradeDate: null,
+    breaks: [],
+    arms: [],
+    timeline: [],
+    blockedByStrike: {},
+  };
 
   return withReadOnlyDb<AttemptsPayload>(dbPath, empty, (db) => {
     if (!hasColumn(db, spec.table, "outcome")) return empty;
@@ -306,13 +350,23 @@ export function readEntryAttempts(
       }
     }
 
+    // Computed from the FULL rows, before thinning -- OccupancyMap's "refused N entries today"
+    // reads this instead of counting timeline rows itself.
+    const blockedByStrike: Record<string, number> = {};
+    for (const row of timeline) {
+      if (row.outcome !== "sign_rule_blocked" || row.blockingStrike === null) continue;
+      const key = `${row.arm}|${row.blockingStrike}`;
+      blockedByStrike[key] = (blockedByStrike[key] ?? 0) + 1;
+    }
+
     return {
       mode,
       module,
       tradeDate,
       breaks,
       arms: [...byArm.values()].sort((a, b) => a.arm.localeCompare(b.arm)),
-      timeline,
+      timeline: downsampleTimeline(timeline),
+      blockedByStrike,
     };
   });
 }

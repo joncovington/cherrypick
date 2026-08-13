@@ -48,6 +48,21 @@ interface Performance {
     completionGapPct: number | null;
     abort: { minLiveEntries: number; gapLimitPct: number; armed: boolean; triggered: boolean };
   } | null;
+  leftOnTable: {
+    entryMode: "debit_first";
+    untracked: number;
+    overall: LeftOnTableSummary;
+    byGexBucket: Record<string, LeftOnTableSummary>;
+  } | null;
+}
+
+interface LeftOnTableSummary {
+  n: number;
+  improved: number;
+  medianImprovementPts: number | null;
+  maxImprovementPts: number | null;
+  medianImprovementDollars: number | null;
+  totalImprovementDollars: number | null;
 }
 
 const GRANULARITIES = ["daily", "weekly", "monthly"] as const;
@@ -171,6 +186,7 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
   const c = data?.completion;
   const roll = data?.roll ?? null;
   const lvp = data?.liveVsPaper ?? null;
+  const lot = data?.leftOnTable ?? null;
 
   return (
     <div className="cards cards-wide">
@@ -270,6 +286,48 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
               Read against <code>best_roll_debit</code>: "the market never made the roll cheap enough"
               and "our own gate refused a roll that was offered" are identical in the P&amp;L and call
               for opposite fixes.
+            </p>
+          </section>
+        )}
+
+        {/* debit_first's wait-for-better hypothesis: how much better the completing price got AFTER
+            the first qualifying tick, split by the dealer-gamma regime at completion -- pinning
+            (positive gamma) is the regime where waiting should have paid. Hidden when the scope
+            holds no debit_first completions, same convention as the roll cards above. */}
+        {lot !== null && (
+          <section className="card">
+            <h2>Left on table (debit-first — waiting past the first qualifying tick)</h2>
+            <table className="data-table">
+              <tbody>
+                <tr><td className="muted">completions tracked</td><td>{lot.overall.n}</td></tr>
+                <tr><td className="muted">improved by waiting</td><td>{lot.overall.improved}</td></tr>
+                <tr><td className="muted">median improvement</td><td>{lot.overall.medianImprovementDollars !== null ? fmtMoney(lot.overall.medianImprovementDollars) : "—"}</td></tr>
+                <tr><td className="muted">total left on table</td><td>{lot.overall.totalImprovementDollars !== null ? fmtMoney(lot.overall.totalImprovementDollars) : "—"}</td></tr>
+                <tr><td className="muted">untracked (pre-2026-08-03, or iron/bwb)</td><td className="muted">{lot.untracked}</td></tr>
+              </tbody>
+            </table>
+            {Object.keys(lot.byGexBucket).length > 0 && (
+              <table className="data-table data-table-labelled" style={{ marginTop: "0.6rem" }}>
+                <thead><tr><th>gex bucket at completion</th><th>n</th><th>improved</th><th>median</th><th>total</th></tr></thead>
+                <tbody>
+                  {Object.entries(lot.byGexBucket).map(([bucket, s]) => (
+                    <tr key={bucket}>
+                      <td>{bucket}</td>
+                      <td>{s.n}</td>
+                      <td>{s.improved}</td>
+                      <td>{s.medianImprovementDollars !== null ? fmtMoney(s.medianImprovementDollars) : "—"}</td>
+                      <td>{s.totalImprovementDollars !== null ? fmtMoney(s.totalImprovementDollars) : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <p className="muted" style={{ fontSize: 12, margin: "0.4rem 0 0" }}>
+              Improvement is floored at 0 per position — the completion tick itself seeds the tracker,
+              so a price that never got better records as no improvement, not a loss. If pinning
+              (positive gamma) shows the largest improvement here, that is the evidence waiting pays
+              for debit-first; if the split shows no conditional difference, first-tick completion
+              already captures it.
             </p>
           </section>
         )}

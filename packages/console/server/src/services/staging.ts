@@ -26,6 +26,13 @@ export interface TicketLeg {
   quantity: number;
   /** Per share. */
   price: number;
+  /** The structured fields Builder already has before it flattens a leg to an OCC symbol --
+      carried through staging so a staged ticket can render expiry/strike/DTE the way Builder
+      does, instead of asking a reader to decode the OCC symbol by hand. Optional and unused by
+      the order spec/dry-run below; purely for staged-ticket display. */
+  expiration?: string | null;
+  strike?: number | null;
+  kind?: "call" | "put" | "stock" | null;
 }
 
 function maskAccount(value: unknown): string {
