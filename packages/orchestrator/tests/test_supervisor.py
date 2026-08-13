@@ -168,6 +168,32 @@ def test_nonzero_exit_backs_off_exponentially(spawned):
     assert "watchdog" in res["started"]
 
 
+def test_job_backoff_cap_override_shortens_the_wait(spawned, monkeypatch):
+    """A job's own backoff_cap_seconds (e.g. the console dev knob) wins over the supervisor's normal
+    10-minute cap, without needing enough consecutive failures to reach it exponentially."""
+    real_derive_jobs = supervisor.jobspec.derive_jobs
+
+    def capped_derive_jobs(*a, **kw):
+        jobs, errors = real_derive_jobs(*a, **kw)
+        jobs = [
+            supervisor.jobspec.replace(j, backoff_cap_seconds=5) if j.id == "watchdog" else j
+            for j in jobs
+        ]
+        return jobs, errors
+
+    monkeypatch.setattr(supervisor.jobspec, "derive_jobs", capped_derive_jobs)
+
+    sup = supervisor.Supervisor(base_cfg())
+    sup.pass_once(now=MONDAY_NOON)
+    watchdog_proc = next(p for p in spawned if "watchdog" in p.argv)
+    watchdog_proc.exit(1)
+    sup._state["watchdog"]["next_run_epoch"] = 0
+    sup.pass_once(now=MONDAY_NOON)
+    st = sup._state["watchdog"]
+    delay = st["backoff_until"] - time.time()
+    assert 0 < delay <= 5  # not the normal 30s first-failure delay, let alone the 600s cap
+
+
 def test_adopts_alive_orphan_and_clears_dead_one(spawned):
     """A restarted supervisor never kills or duplicates a prior child (the MEIC lock lesson)."""
     supervisor.Supervisor(base_cfg()).pass_once(now=MONDAY_NOON)  # leaves a registry behind

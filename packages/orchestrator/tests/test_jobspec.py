@@ -428,6 +428,23 @@ def test_console_can_be_turned_off_and_stays_visible(tmp_path):
     assert not con.enabled and "disabled in config" in con.enabled_reason
 
 
+def test_console_dev_backoff_seconds_overrides_the_default_cap(tmp_path):
+    """Opt-in dev knob: a checkout under active iteration gets restarted by hand far more often than
+    the supervisor's normal 10-minute crash-backoff cap was ever sized for."""
+    cfg = suite_cfg(
+        console={"path": str(_built_console(tmp_path)), "dev_backoff_seconds": 20}
+    )
+    con = next(j for j in derive(cfg)[0] if j.id == "console")
+    assert con.backoff_cap_seconds == 20
+
+
+def test_console_backoff_cap_is_unset_by_default(tmp_path):
+    """Unset means the supervisor's own default cap -- every other job's behavior, untouched."""
+    cfg = suite_cfg(console={"path": str(_built_console(tmp_path))})
+    con = next(j for j in derive(cfg)[0] if j.id == "console")
+    assert con.backoff_cap_seconds is None
+
+
 def test_review_runs_two_passes_on_by_default():
     """Two passes because the modules do not finish together: the provisional one captures the 0DTE
     books complete with earnings still carrying overnight, the final one closes that session out the

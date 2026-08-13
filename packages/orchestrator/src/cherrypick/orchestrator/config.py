@@ -410,11 +410,17 @@ def console_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     rewrites `state/console.heartbeat` every ~15s and the supervisor's existing silence machinery
     watches its mtime. That also keeps the reliability path free of network calls, per the suite
     invariant. `silence_seconds` is several heartbeats wide so one slow pass never reads as a wedge.
+
+    `dev_backoff_seconds` (default unset) shortens just this job's crash-backoff cap from the
+    supervisor's normal 10 minutes -- a dev-only knob for a checkout under active iteration, where a
+    real person is restarting it far more often than a crash backoff was ever sized for. Unset means
+    the normal cap; leave it that way outside active console development.
     """
     con = cfg.get("console", {}) or {}
     raw = con.get("path") or "../console"
     p = Path(raw)
     root = p.resolve() if p.is_absolute() else (ROOT / p).resolve()
+    dev_backoff = con.get("dev_backoff_seconds")
     return {
         "enabled": con.get("enabled", True),
         "root": root,
@@ -423,6 +429,7 @@ def console_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # disabled job with a reason -- never a crash-loop.
         "server_entry": root / "server" / "dist" / "index.js",
         "silence_seconds": int(con.get("silence_seconds", 60)),
+        "dev_backoff_seconds": int(dev_backoff) if dev_backoff else None,
     }
 
 
