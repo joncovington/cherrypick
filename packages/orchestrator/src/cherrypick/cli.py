@@ -29,19 +29,16 @@ Subcommands:
                        --eod (today ET) or --date YYYY-MM-DD restricts to one session; default all-time.
                        --live reads the live-tagged ledgers (modules' live_db) instead — a separate
                        view that never feeds calibrate/promotion (those read paper only).
-  eod-digest           Write the suite end-of-day digest (logs/eod-digest-<day>.md): one session's
-                       cross-module P&L + links to each module's paper-eod file. --date; default today.
-  notify-eod           Write the digest and push a one-line summary through the notify channels (the
-                       scheduled cherrypick-eod-digest task runs this). --date; default today.
+  review               Build the cross-module end-of-day fact set (packages/review) and its render.
+                       --final marks the session final and re-runs reconciliation; without it the
+                       pass is provisional. What the two daily review-provisional/review-final
+                       supervisor jobs run.
   archive              End-of-month rotation: zip each finished month's dated reports + rotated log
                        backups into logs/archive/<YYYY-MM>/<scope>.zip and remove the originals (the
                        scheduled cherrypick-log-archive task runs this). --month YYYY-MM; --dry-run.
-  eod-insight          AI synthesis over the day's deterministic reports → logs/eod-insight-<day>.md
-                       (opt-in; needs Claude Code on PATH + eod_insight.enabled). --date; default today.
-  advise               Bounded next-session parameter proposals per module → state/advice/
-                       <module>-<session>.json, validated against each module's advice_bounds
-                       (opt-in twice: advise.enabled + advise.modules.<m>.enabled; needs Claude
-                       Code on PATH). Loops re-validate and fall back to baseline. --date.
+  restart-console      Dev convenience: kill the console's process tree so the supervisor replaces
+                       it on its next tick, picking up whatever the checkout currently builds to.
+                       Never scheduled, never called from the watchdog.
   reconcile            Paper↔live isolation guard: query the real broker account (read-only) and flag
                        any open positions/BP a paper-only suite shouldn't have. On-demand; never trades.
   connect              Guided per-module onboarding (--module): set OAuth creds (via the module's own
@@ -89,13 +86,14 @@ from cherrypick.orchestrator import (
     report,
     servicecfg,
     settings_serve,
+    supervisor,
     tasks,
     timeutil,
     trade_notifier,
     watchdog,
 )
 from cherrypick.orchestrator import config as cfgmod
-from cherrypick.orchestrator.util import CREATE_NO_WINDOW, first_json
+from cherrypick.orchestrator.util import CREATE_NO_WINDOW, first_json, pid_alive, read_json
 
 # The OS scheduler invokes the in-place launcher `pythonw <repo>/run.py <cmd>`. This module is
 # <repo>/src/cherrypick/cli.py, so the repo-root launcher is two parents up. (Renamed from
@@ -695,6 +693,112 @@ def _run_review(cfg, *, final: bool) -> None:
     _emit(rec)
 
 
+def _console_port(cfg) -> int:
+    """The console's listen port: `serve.port` in console.json, else 5070.
+
+    Mirrors `packages/console/shared/src/paths.ts`'s `consolePort()` exactly -- same config path
+    (`cherrypick.core.home`, the same resolver this package already uses for `CHERRYPICK_HOME`), same
+    default -- so this can never disagree with what the console itself resolved. `cfg` is unused
+    today (the port is not itself a `config.json` key) but kept so a future config-level override
+    does not change this function's signature. Only reached by `cmd_restart_console`'s port-scan
+    fallback; every other command in this file spawns the console without ever needing its port.
+    """
+    from cherrypick.core import home as corehome
+
+    try:
+        raw = json.loads(corehome.config_path("console").read_text(encoding="utf-8"))
+        port = (raw.get("serve") or {}).get("port")
+        if isinstance(port, int) and 0 < port < 65536:
+            return port
+    except (OSError, ValueError, AttributeError):
+        pass
+    return 5070  # DEFAULT_CONSOLE_PORT in packages/console/shared/src/paths.ts
+
+
+def _find_listening_pid(port: int) -> int | None:
+    """Whoever is listening on `port` right now, independent of what the supervisor's own registry
+    believes.
+
+    Windows only (`netstat -ano`): every box this suite runs unattended on is Windows, and this is a
+    manual dev command, never a scheduled one, so a POSIX gap here costs nothing on the reliability
+    path. Returns None rather than guessing when nothing matches or the probe itself fails.
+    """
+    if os.name != "nt":
+        return None
+    try:
+        out = subprocess.run(
+            ["netstat", "-ano"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=CREATE_NO_WINDOW,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    needle = f":{port} "
+    for line in (out or "").splitlines():
+        if "LISTENING" in line and needle in line:
+            parts = line.split()
+            if parts:
+                try:
+                    return int(parts[-1])
+                except ValueError:
+                    continue
+    return None
+
+
+def cmd_restart_console(cfg) -> None:
+    """Kill the console's process tree so the supervisor replaces it on its next tick (~60s),
+    picking up whatever the checkout currently builds to.
+
+    A manual dev convenience for iterating on the console -- never invoked from the watchdog or any
+    scheduled path, and the only place in this file that reaches for a raw kill rather than the
+    supervisor's own spawn/reap loop. Writes `state/restart_console.last.json` alongside the usual
+    `_emit`, the same breadcrumb-on-disk convention every other command here leaves.
+
+    Kills the TREE, via `supervisor._terminate_tree`, for the exact reason that function's own
+    docstring gives: `run.py` is a launcher and Node is its CHILD, so terminating only the tracked
+    PID leaves Node alive and still bound to the port -- the supervisor's replacement then dies on
+    `EADDRINUSE`, and what was meant as a restart becomes a permanent outage.
+
+    Finds the PID to kill two ways, in order. First, the supervisor's own registry
+    (`state/supervisor-jobs.json`) -- the normal case, and the same PID the supervisor itself would
+    act on. Second, whoever is actually LISTENING on the console's configured port, if the
+    registry's PID is stale, unset, or dead -- the registry can lose track of a resident child
+    across an unrelated restart (observed live 2026-08-13: the registry held one PID while a
+    different process was the real listener, and killing only the registry's PID would have left
+    the old build still serving).
+    """
+    jobs = read_json(supervisor.jobs_path(), {}) or {}
+    console_job = (jobs.get("jobs") or {}).get("console") or {}
+    tracked = console_job.get("running_pid")
+
+    pid = tracked if pid_alive(tracked) else None
+    source = "supervisor registry" if pid else None
+    if pid is None:
+        port = _console_port(cfg)
+        found = _find_listening_pid(port)
+        if found:
+            pid, source = found, f"port {port}"
+
+    if pid is None:
+        rec = {"ok": True, "skipped": "console is not running (nothing tracked, nothing listening)"}
+    else:
+        ok = supervisor._terminate_tree(pid)
+        rec = {
+            "ok": ok,
+            "killed_pid": pid,
+            "found_via": source,
+            "next": "the supervisor respawns it on its next tick (~60s)" if ok else None,
+            "error": None if ok else "terminate failed -- see logs/supervisor.log",
+        }
+
+    cfgmod.state_file("restart_console.last.json").write_text(
+        json.dumps(rec, indent=2), encoding="utf-8"
+    )
+    _emit(rec)
+
+
 # --------------------------------------------------------------------------- misc
 def cmd_init(force: bool) -> None:
     result = init.run(force=force)
@@ -1056,6 +1160,7 @@ def main() -> None:
             "run-earnings-exit",
             "run-earnings-symbol-watch",
             "review",
+            "restart-console",
             "ensure-dolt",
             "notify-test",
             "notify-trades",
@@ -1078,8 +1183,8 @@ def main() -> None:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="For init: overwrite an existing config.json. For notify-eod/eod-insight: run even on a "
-        "non-trading day (weekend/holiday), which they otherwise skip.",
+        help="For init: overwrite an existing config.json. For install: proceed while flies is "
+        "live-armed today.",
     )
     parser.add_argument(
         "--date", default=None, help="For report/eod-digest: a session day 'YYYY-MM-DD' (default today)"
@@ -1177,6 +1282,7 @@ def main() -> None:
         "run-earnings-exit": lambda: _run_earnings(cfg, "exit"),
         "run-earnings-symbol-watch": lambda: _run_earnings_symbol_watch(cfg),
         "review": lambda: _run_review(cfg, final="--final" in sys.argv),
+        "restart-console": lambda: cmd_restart_console(cfg),
         "ensure-dolt": lambda: _ensure_dolt(cfg),
         "notify-test": lambda: cmd_notify_test(cfg),
         "secrets-set": lambda: cmd_secrets_set(args.channel, args.url),
