@@ -67,18 +67,66 @@ def test_classify_tier_near_miss_bands(overrides):
     "overrides",
     [
         {"price": 3.0, "expected_move_pct": 0.5},  # below near-miss floor ($1.50 move, still clears $0.90)
-        {"combined_open_interest": 500},
-        {"term_structure": 0.01},  # positive, above the -0.004 gate
-        {"expected_move_pct": 0.001},  # $0.05 on a $50 stock, below $0.90
-        {"iv_rv_ratio": 0.5},  # below the near-miss floor
         {"winrate": 0.2},
         {"avg_volume": 100_000},
     ],
 )
-def test_classify_tier_fail_cases(overrides):
+def test_classify_tier_fails_only_on_stable_criteria(overrides):
+    """Price, winrate and average volume are settled by the time this scan runs — a name under
+    those bars at 06:30 is still under them at 15:35, so it can be called out."""
     tier, reasons = symbol_watch.classify_tier(_clean_entry(**overrides), {})
     assert tier == "fail"
     assert len(reasons) == 1
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"combined_open_interest": 500},
+        {"term_structure": 0.01},  # positive, above the -0.004 gate
+        {"expected_move_pct": 0.001},  # $0.05 on a $50 stock, below $0.90
+        {"iv_rv_ratio": 0.5},  # below the near-miss floor
+    ],
+)
+def test_classify_tier_will_not_fail_a_name_on_a_perishable_reading(overrides):
+    """Implied vol rises into an announcement, and term structure, expected move and open interest
+    move with it. A morning reading under those bars is real but provisional — calling it a fail
+    would state a verdict this scan cannot support. COHR on 2026-08-12 was marked fail on iv/rv
+    0.96 against a 1.00 floor, hours before the print that would move it."""
+    tier, reasons = symbol_watch.classify_tier(_clean_entry(**overrides), {})
+    assert tier == "near_miss"
+    assert len(reasons) == 1
+    assert "may still clear by the entry window" in reasons[0]
+
+
+def test_classify_tier_thresholds_come_from_the_strategies_own_config():
+    """The badge must answer against the bars that will really be applied. A parallel ladder can
+    agree today and drift silently tomorrow."""
+    config = {"strategies": {"iron_fly": {"min_avg_volume": 5_000_000}}}
+    tier, reasons = symbol_watch.classify_tier(_clean_entry(avg_volume=2_000_000), config)
+    assert tier == "near_miss"
+    assert "avg volume" in reasons[0]
+
+
+def test_classify_tier_takes_the_loosest_bar_across_strategies():
+    """The forced-sampling book takes every strategy that clears on a name, so one strategy's
+    willingness is enough for the name to be worth showing."""
+    config = {
+        "strategies": {
+            "iron_fly": {"min_avg_volume": 1_000_000},
+            "double_calendar": {"min_avg_volume": 5_000_000},
+        }
+    }
+    tier, _ = symbol_watch.classify_tier(_clean_entry(avg_volume=2_000_000), config)
+    assert tier == "recommended"
+
+
+def test_classify_tier_ignores_config_strategies_the_registry_no_longer_has():
+    """`reverse_fly` sits in config with enabled: true and has not been in the registry for some
+    time. Taking the loosest bar across raw config would let a dead strategy set the badge."""
+    config = {"strategies": {"reverse_fly": {"min_avg_volume": 1}}}
+    tier, _ = symbol_watch.classify_tier(_clean_entry(avg_volume=100_000), config)
+    assert tier == "fail"
 
 
 def test_classify_tier_multiple_near_misses_still_near_miss_not_fail():
