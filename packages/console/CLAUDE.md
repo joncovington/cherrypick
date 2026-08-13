@@ -55,6 +55,26 @@ pnpm --filter @console/desktop start   # the desktop window
 - **Read-only over every other package's data.** Module SQLite stores are opened with
   better-sqlite3 `readonly: true`; JSON state is only ever read. The console's sole writable store is
   `~/.cherrypick/data/console/`.
+- **The Config page is the one bounded exception, and it holds no write logic of its own.** Every
+  config edit and the halt toggle go out through the orchestrator's own surface as a subprocess
+  (`python -m cherrypick.orchestrator.configcli`, JSON in/out — `services/configBridge.ts`, the same
+  bridging pattern and the same reason as `auth/suiteBridge.ts`). That is what makes the exception
+  narrow: the guarded-pointer table, the byte-span splicing that preserves each config's
+  `_note`/`_header` documentation and key order, the timestamped backup and the atomic write all stay
+  in `configedit.py`, where they are already tested. **Never port any of that into this package** —
+  a second copy of a live-safety rule is a second copy free to drift. It follows that this surface
+  **still cannot touch `enable_live_trading`, flies' `live.enabled`/`gate0_confirmed`, or the live
+  loss/deploy limits** in either direction: `configedit.GUARDED` refuses them, and the page renders
+  them as locked rows carrying that table's own hint. The halt flag (`state/halt-live.flag`) is
+  reachable, because its whole design is that a click may toggle it — via `liveops.set_halt`, with
+  **asymmetric friction**: setting it is one click (a stop that takes two steps arrives late),
+  clearing it requires the typed `RESUME LIVE` confirmation, checked on the server and not only in
+  the browser. Clearing it arms nothing by itself, and the page says so. What the page *offers* to
+  edit is an allow-list (`web/src/pages/Config/fieldMeta.ts`) covering the settings that actually
+  change between sessions; the suite has no JSON schema anywhere, so that map is the form's schema.
+  Config writes are gated exactly as the orchestrator's settings server gates its own (loopback Host,
+  CSRF, JSON content type) and deliberately **not** on the broker credential scope — that describes
+  what a token may do at the broker, and a config file is not the broker.
 - **Paper/live isolation**: every trade payload carries `mode` taken from its source DB
   (`paper_trades.db` vs the live DB). Mode is never merged across sources or inferred client-side.
 - **A module's own evidence window is the default.** Where a module narrows its analytics to a

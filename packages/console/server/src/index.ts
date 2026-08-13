@@ -17,6 +17,7 @@ import { registerPayoffRoutes } from "./routes/payoff.js";
 import { registerOrderRoutes } from "./routes/orders.js";
 import { registerScreenerRoutes } from "./routes/screener.js";
 import { registerTtWatchlistRoutes } from "./routes/ttWatchlists.js";
+import { registerConfigRoutes } from "./routes/configOps.js";
 import { startChainEodScheduler } from "./services/chainEod.js";
 import { startCandleWarmScheduler } from "./services/candleWarm.js";
 import { startHeartbeat } from "./services/heartbeat.js";
@@ -44,6 +45,7 @@ registerStatusRoutes(app, config, market);
 registerOverviewRoutes(app, config);
 registerReviewRoutes(app, config);
 registerModuleRoutes(app, config);
+registerConfigRoutes(app, config);
 app.get("/api/health", async () => ({ ok: true }));
 
 // Daily EOD chain snapshot (~15:30 ET weekdays) on the console's own session.

@@ -204,6 +204,16 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   onboarding exception below, it never places an order and is never started by the watchdog or a
   scheduled task — it runs only when a human runs `cherrypick settings` in the foreground, and `--organize` (reorder a config into its example's sections) is
   the only other thing it does outside the server.
+  **`configcli.py` is a second front-end to the same two modules, for callers that aren't Python** —
+  one JSON request on stdin, one JSON response on stdout, no HTTP and no server. It exists because
+  the console (Node) needs a config surface and the alternative was a TypeScript reimplementation of
+  `configedit`, i.e. a second copy of the guard table and the splicing rules, free to drift from this
+  one. It is dispatch only: every guarantee above (GUARDED in both directions, backups, atomic
+  writes, validation, mtime concurrency) is inherited rather than restated, `secretsops` is
+  deliberately NOT wired in so no secret can transit it, and a refusal is returned as data
+  (`ok: false` plus a machine-readable `code`) on exit 0, so a caller can tell "the config said no"
+  from "the bridge is broken". Keep any new op thin for the same reason: logic added there is logic
+  living outside the module that owns it.
 - **The onboarding surface (`connect`/`account`) is the one narrow live-config exception.**
   `cherrypick connect --module <m>` and `cherrypick account --module <m>` (`orchestrator/connect.py`,
   `orchestrator/accounts.py`) let a user set up a module for eventual **live** trading: they run the

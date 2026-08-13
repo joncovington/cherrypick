@@ -23,7 +23,7 @@ async function getJson<T>(url: string): Promise<T> {
 
 let csrfToken: string | null = null;
 
-async function getCsrf(): Promise<string> {
+export async function getCsrf(): Promise<string> {
   if (csrfToken !== null) return csrfToken;
   const { token } = await getJson<{ token: string }>("/api/csrf");
   csrfToken = token;

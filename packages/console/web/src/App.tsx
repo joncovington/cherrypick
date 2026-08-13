@@ -12,6 +12,7 @@ import { SymbolPage } from "./pages/Scout/SymbolPage";
 import { BuilderPage } from "./pages/Scout/BuilderPage";
 import { OrdersPage } from "./pages/Scout/OrdersPage";
 import { ScreenerPage } from "./pages/Scout/ScreenerPage";
+import { ConfigPage } from "./pages/Config/ConfigPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 
 export default function App() {
@@ -31,6 +32,7 @@ export default function App() {
         <Route path="scout/orders" element={<OrdersPage />} />
         <Route path="scout/screener" element={<ScreenerPage />} />
         <Route path="scout/*" element={<PlaceholderPage title="Scout" />} />
+        <Route path="config" element={<ConfigPage />} />
       </Route>
     </Routes>
   );

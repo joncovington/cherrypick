@@ -93,6 +93,11 @@ function open(config: ConsoleConfig): Database.Database {
       captured_at TEXT NOT NULL,
       PRIMARY KEY (trade_date, symbol)
     );
+    CREATE TABLE IF NOT EXISTS console_prefs (
+      key        TEXT PRIMARY KEY,
+      value_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
   addColumns("tt_metrics", ["liquidity REAL", "pe REAL", "div_yield REAL", "earnings_date TEXT"]);
   return db;
@@ -514,4 +519,34 @@ export function importScoutWatchlist(config: ConsoleConfig): { imported: number;
     if (before === undefined) imported += 1;
   }
   return { imported, symbols };
+}
+
+/**
+ * The console's own preferences — display choices that belong to this UI and to nothing else.
+ * Deliberately separate from the suite config the Config page edits through the orchestrator's
+ * editor: these have no blast radius beyond a browser, so they save on change rather than through
+ * a staged section save.
+ */
+export function getPrefs(config: ConsoleConfig): Record<string, unknown> {
+  const rows = open(config)
+    .prepare<[], { key: string; value_json: string }>("SELECT key, value_json FROM console_prefs")
+    .all();
+  const out: Record<string, unknown> = {};
+  for (const r of rows) {
+    try {
+      out[r.key] = JSON.parse(r.value_json);
+    } catch {
+      /* a value we can't parse is a value we don't have */
+    }
+  }
+  return out;
+}
+
+export function setPref(config: ConsoleConfig, key: string, value: unknown): void {
+  open(config)
+    .prepare(
+      `INSERT INTO console_prefs (key, value_json, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
+    )
+    .run(key, JSON.stringify(value ?? null), new Date().toISOString());
 }
