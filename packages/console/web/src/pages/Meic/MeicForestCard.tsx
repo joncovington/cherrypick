@@ -36,6 +36,7 @@ interface ForestArm {
   positions: ForestPosition[];
   prices: number[];
   pnl: number[];
+  outcome: { entered: number; stopped: number; expired: number; open: number; realisedNet: number };
   perPosition: Array<{ icOrderId: string; pnl: number[] }>;
 }
 
@@ -100,6 +101,11 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
   const height = 320;
   const pad = { l: 66, r: 12, t: 20, b: 26 };
 
+  // Realised across the arms actually drawn, so the reference line and the legend cannot disagree.
+  const realisedNet = shown.length > 0 ? shown.reduce((sum, a) => sum + (a.outcome?.realisedNet ?? 0), 0) : null;
+  const stopped = shown.reduce((n, a) => n + (a.outcome?.stopped ?? 0), 0);
+  const expired = shown.reduce((n, a) => n + (a.outcome?.expired ?? 0), 0);
+
   let body = null;
   if (shown.length > 0) {
     const prices = shown[0]!.prices;
@@ -142,6 +148,25 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
         }}
         onMouseLeave={() => setHover(null)}
       >
+        {/* What the book ACTUALLY made, against what the curve says it would have made held to
+            expiry. Flat because these trades are closed: their outcome no longer depends on where
+            the underlying settles, which is the whole point the curve alone cannot make. */}
+        {!live && realisedNet !== null && realisedNet >= yMin && realisedNet <= yMax && (
+          <g>
+            <line
+              x1={pad.l}
+              x2={width - pad.r}
+              y1={Y(realisedNet)}
+              y2={Y(realisedNet)}
+              stroke="var(--ok, #43b57a)"
+              strokeWidth={1.5}
+              strokeDasharray="6 4"
+            />
+            <text x={width - pad.r} y={Y(realisedNet) - 5} fontSize={10} fill="var(--ok, #43b57a)" textAnchor="end">
+              actually realised {fmtMoney(realisedNet)}
+            </text>
+          </g>
+        )}
         {ticksFor(yMin, yMax, 5).map((v) => (
           <g key={`y${v}`}>
             <line x1={pad.l} x2={width - pad.r} y1={Y(v)} y2={Y(v)} stroke={v === 0 ? "#3a424e" : "#1e232b"} />
@@ -237,6 +262,11 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
                   }}
                 />
                 {a.profile} — {a.positions.length} {a.positions.length === 1 ? "condor" : "condors"}
+                {!live && a.outcome !== undefined && (
+                  <span className={a.outcome.realisedNet >= 0 ? "pnl-pos" : "pnl-neg"}>
+                    {" "}· made {fmtMoney(a.outcome.realisedNet)}
+                  </span>
+                )}
                 {hover !== null &&
                   ` · ${fmtMoney(
                     a.pnl[
@@ -257,9 +287,17 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
               <>
                 {" "}
                 <strong>No position is open</strong> — a MEIC book resolves entirely at settlement, so this is the
-                day's {data?.tradesToday} trades drawn <strong>as entered</strong>. It shows the structure the session
-                built, not what it earned: a stopped side came off before expiry and its realized P&amp;L is not this
-                curve.
+                day's {data?.tradesToday} trades drawn <strong>as entered</strong>: every one priced as if it had been
+                held to expiry.{" "}
+                {stopped > 0 && (
+                  <>
+                    {stopped} were <strong>stopped</strong> and never reached it,{" "}
+                  </>
+                )}
+                {expired} expired. For a profile that stops, the wings below are the loss its stops existed to prevent
+                rather than one it ran; for a profile that holds to expiry they are real. Which is which is in the
+                legend — each arm's realised figure sits beside it, and the dashed line is the total
+                {realisedNet !== null && <> at {fmtMoney(realisedNet)}</>}.
               </>
             )}
           </p>

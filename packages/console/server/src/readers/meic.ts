@@ -862,6 +862,15 @@ export interface MeicForestArm {
   pnl: number[];
   /** Each position's own curve, drawn faintly behind the aggregate. */
   perPosition: Array<{ icOrderId: string; pnl: number[] }>;
+  /**
+   * What actually became of these trades, and what they actually made (net of fees).
+   *
+   * The as-entered curve prices every trade as if it were held to expiry, which for MEIC is the one
+   * thing that reliably did NOT happen — stop management is the strategy, and on a normal session
+   * most of the book comes off before settlement. Without these counts beside it, the curve's wing
+   * losses read as risk the book ran rather than as risk the stops existed to prevent.
+   */
+  outcome: { entered: number; stopped: number; expired: number; open: number; realisedNet: number };
 }
 
 export interface MeicForest {
@@ -966,7 +975,8 @@ export function readMeicForest(
     const rows = db
       .prepare<string[], Record<string, unknown>>(
         `SELECT ic_order_id, risk_profile, symbol, put_strike, call_strike, wing_width,
-                net_credit, quantity, status, underlying_price_entry
+                net_credit, quantity, status, underlying_price_entry,
+                pnl, COALESCE(fees, 0) AS fees
            FROM ic_trades
           WHERE trade_date = ?${and}`,
       )
@@ -1011,7 +1021,20 @@ export function readMeicForest(
             pnl: prices.map((sp) => payoffAt(icLegs(pp), sp) * pp.quantity),
           }));
           const pnl = prices.map((_, i) => perPosition.reduce((sum, pp) => sum + (pp.pnl[i] ?? 0), 0));
-          return { profile, positions, prices, pnl, perPosition };
+          // What these trades actually did, beside what the curve says they would have done.
+          const statusOf = (r: Record<string, unknown>) => str(r["status"]) ?? "";
+          const outcome = {
+            entered: list.length,
+            stopped: list.filter((r) => statusOf(r) === "stopped").length,
+            expired: list.filter((r) => statusOf(r) === "expired").length,
+            open: list.filter((r) => statusOf(r) === "open").length,
+            // pnl - fees, the same net every other MEIC surface reports.
+            realisedNet: list.reduce(
+              (sum, r) => sum + (num(r["pnl"]) === null ? 0 : (num(r["pnl"]) ?? 0) - (num(r["fees"]) ?? 0)),
+              0,
+            ),
+          };
+          return { profile, positions, prices, pnl, perPosition, outcome };
         });
     };
 
