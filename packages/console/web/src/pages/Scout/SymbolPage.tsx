@@ -10,6 +10,7 @@ import {
 import { useSymbolAnalysis } from "../../lib/api";
 import { AnalysisCard } from "./AnalysisCard";
 import { useQuote } from "../../lib/useQuote";
+import { SymbolCard } from "../../components/SymbolCard";
 
 const SMA_COLORS: Record<string, string> = {
   sma20: "#d9a13b",
@@ -128,6 +129,8 @@ export function SymbolPage() {
       </div>
 
       <div className="cards cards-wide">
+        <SymbolCard symbol={sym} />
+
         <section className="card">
           <h2>Daily — SMA 20/50/200, support/resistance</h2>
           {isError ? (

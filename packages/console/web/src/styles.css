@@ -1040,11 +1040,28 @@ select.text-input {
   animation: roll-in 0.18s ease-out;
 }
 
+/* Route/tab body handoff: a brief fade so switching between MEIC/Flies/GEX (or a page's own tabs)
+   doesn't read as a flicker, without adding enough delay to cost perceived responsiveness. Applied
+   to a freshly-mounted view (keyed by route or tab), never to the switch control itself. */
+@keyframes view-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.view-fade {
+  animation: view-fade-in 150ms ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .skeleton,
   .flash-up,
   .flash-down,
-  .roll {
+  .roll,
+  .view-fade {
     animation: none;
   }
 }

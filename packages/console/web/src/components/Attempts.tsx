@@ -171,7 +171,13 @@ export function ArmRail({
     <section className="card">
       <div className="panel-head-row">
         <h2>Arms{data?.tradeDate != null ? ` (${data.tradeDate})` : ""}</h2>
-        <span className="muted lbl">one portfolio each · unbounded capital · paced by cadence</span>
+        <span className="muted lbl">
+          {mode === "paper"
+            ? "one portfolio each · unbounded capital · paced by cadence"
+            : module === "flies"
+              ? "live pilot — real capital, one arm, one position at a time"
+              : "live — real capital, under the configured concurrency cap"}
+        </span>
       </div>
       {/* Measurement breaks, stated where the numbers are read rather than left in a journal
           nobody opens. A cadence change or an arm added mid-session makes this day non-poolable

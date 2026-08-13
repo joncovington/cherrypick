@@ -139,16 +139,18 @@ interface CardProps {
   updatedAt?: number;
   isError?: boolean;
   controls?: ReactNode;
+  /** Extra class on the outer section — e.g. "view-fade" for a tab body that should fade in. */
+  className?: string;
   children: ReactNode;
 }
 
 /** Card shell with the house header: collapse caret, title, controls, freshness stamp. */
-export function Card({ title, collapseKey, updatedAt, isError = false, controls, children }: CardProps) {
+export function Card({ title, collapseKey, updatedAt, isError = false, controls, className, children }: CardProps) {
   const key = collapseKey ?? (typeof title === "string" ? title : "card");
   const [collapsed, toggle] = useCollapsed(key);
   const asOf = asOfLabel(updatedAt);
   return (
-    <section className={`card ${isError ? "card-stale" : ""}`}>
+    <section className={`card ${className ?? ""} ${isError ? "card-stale" : ""}`}>
       <div className="card-head">
         <button
           type="button"
@@ -190,6 +192,8 @@ interface DataCardProps {
   busy?: boolean;
   updatedAt?: number;
   controls?: ReactNode;
+  /** Extra class on the outer card — e.g. "view-fade" for a tab body that should fade in. */
+  className?: string;
   children: ReactNode;
 }
 
@@ -211,10 +215,11 @@ export function DataCard({
   busy = false,
   updatedAt,
   controls,
+  className,
   children,
 }: DataCardProps) {
   return (
-    <Card title={title} updatedAt={updatedAt} isError={isError} controls={controls}>
+    <Card title={title} updatedAt={updatedAt} isError={isError} controls={controls} className={className}>
       <div className={`table-scroll ${busy ? "table-busy" : ""}`}>
         <table
           className={`data-table ${numFrom !== undefined ? `num-from-${Math.min(numFrom, 6)}` : ""} ${tableClass}`}

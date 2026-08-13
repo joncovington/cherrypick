@@ -11,8 +11,9 @@ interface SystemPanel {
   halted: { active: boolean; path: string };
 }
 
-export function SystemCard() {
-  const { data, isLoading, dataUpdatedAt } = useQuery<SystemPanel>({
+/** Shared with the page-title row's halt/live chips, so both read one fetch of the same data. */
+export function useSystem() {
+  return useQuery<SystemPanel>({
     queryKey: ["system"],
     queryFn: async () => {
       const res = await fetch("/api/system");
@@ -21,6 +22,10 @@ export function SystemCard() {
     },
     refetchInterval: 60_000,
   });
+}
+
+export function SystemCard() {
+  const { data, isLoading, dataUpdatedAt } = useSystem();
 
   return (
     <Card title="System" collapseKey="system" updatedAt={dataUpdatedAt}>

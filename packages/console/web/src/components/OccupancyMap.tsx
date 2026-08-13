@@ -75,8 +75,8 @@ function useBlockingStrikes(module: "meic" | "flies", mode: TradingMode, date: s
   });
 }
 
-const LONG = "#43b57a";
-const SHORT = "#d23f57";
+const LONG = "var(--ok)";
+const SHORT = "var(--err)";
 
 export function OccupancyMap({
   module,

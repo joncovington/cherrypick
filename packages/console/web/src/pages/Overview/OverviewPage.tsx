@@ -1,7 +1,7 @@
 import { useOverview } from "../../lib/api";
 import { LiveQuoteRow } from "../../components/LiveQuote";
 import { EquityCard, LogsCard } from "./EquityCard";
-import { SystemCard, EodCard } from "./SuiteCards";
+import { SystemCard, EodCard, useSystem } from "./SuiteCards";
 import type { WatchdogFinding } from "@console/shared";
 
 const WATCH_SYMBOLS = ["SPX", "XSP", "QQQ", "IWM"];
@@ -20,7 +20,7 @@ function FindingRow({ f }: { f: WatchdogFinding }) {
         <span className={`dot ${statusClass(f.status)}`} />
       </td>
       <td>{f.title}</td>
-      <td className="muted">{f.message}</td>
+      <td className="muted" style={{ whiteSpace: "normal" }}>{f.message}</td>
     </tr>
   );
 }
@@ -42,6 +42,8 @@ function SkeletonRows({ n }: { n: number }) {
 export function OverviewPage() {
   const { data, isError, dataUpdatedAt } = useOverview();
   const wd = data?.watchdog;
+  const { data: system } = useSystem();
+  const liveCount = system?.modules.filter((m) => m.liveTrading === true).length ?? 0;
 
   return (
     <div className="page">
@@ -58,6 +60,14 @@ export function OverviewPage() {
             {wd.isTradingDay ? (wd.inSession ? "market open" : "trading day, closed") : "non-trading day"}
           </span>
         )}
+        {/* The single most safety-relevant fact on the page, promoted here so it's never below
+            the fold -- SystemCard further down still carries the full module-by-module table. */}
+        {system && (
+          <span className={`chip ${system.halted.active ? "chip-missing" : "chip-ok"}`}>
+            {system.halted.active ? "LIVE HALTED" : "halt flag clear"}
+          </span>
+        )}
+        {liveCount > 0 && <span className="chip chip-missing">{liveCount} module{liveCount === 1 ? "" : "s"} LIVE</span>}
       </div>
 
       <div className="cards cards-wide" style={{ marginBottom: "0.75rem" }}>

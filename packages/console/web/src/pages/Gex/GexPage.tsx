@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useGex } from "../../lib/api";
 import { DataCard, fmtNum } from "../../components/DataTable";
+import { useFlashOnChange } from "../../lib/useFlashOnChange";
 import { GexProfileChart, IvSkewChart, StrikeBarsChart, fmtGexDollars, type GexStrikeRow, type GexView } from "./GexProfileChart";
 
 interface GexProfilePayload {
@@ -62,6 +63,7 @@ function Metric({
   colored,
   tone,
   emphasis,
+  flashValue,
 }: {
   label: string;
   value: string;
@@ -71,6 +73,9 @@ function Metric({
   tone?: "pos" | "neg";
   /** Slightly larger row for headline metrics (net GEX). */
   emphasis?: boolean;
+  /** Raw number to flash on when it changes tick to tick -- omit for metrics with no clean single
+      numeric value to compare (e.g. a formatted string with no backing number passed through). */
+  flashValue?: number | null;
 }) {
   const cls =
     tone !== undefined
@@ -82,10 +87,11 @@ function Metric({
         : colored >= 0
           ? "pnl-pos"
           : "pnl-neg";
+  const flashRef = useFlashOnChange<HTMLSpanElement>(flashValue);
   return (
     <div className={`gex-metric ${emphasis === true ? "gex-metric-em" : ""}`}>
       <span className="muted">{label}</span>
-      <span className={`gex-metric-value ${cls}`}>{value}</span>
+      <span ref={flashRef} className={`gex-metric-value ${cls}`}>{value}</span>
     </div>
   );
 }
@@ -158,7 +164,7 @@ export function GexPage() {
 
       <div className="cards cards-wide">
         {tab === "gex" && (
-        <section className="card">
+        <section className="card view-fade">
           <h2>
             GEX by strike — {view === "net" ? "net (green = call heavy, red = put heavy)" : view === "oivol" ? "net GEX, OI vs volume" : "absolute"}
           </h2>
@@ -184,7 +190,7 @@ export function GexPage() {
                   <h2>open interest (positioning)</h2>
                   <Metric label="total call GEX" value={fmtGexDollars(p.totals.total_call_gex)} tone="pos" />
                   <Metric label="total put GEX" value={fmtGexDollars(-p.totals.total_put_gex)} tone="neg" />
-                  <Metric label="net GEX" value={fmtGexDollars(p.totals.net_gex)} colored={p.totals.net_gex} emphasis />
+                  <Metric label="net GEX" value={fmtGexDollars(p.totals.net_gex)} colored={p.totals.net_gex} flashValue={p.totals.net_gex} emphasis />
                   <Metric label="max GEX strike" value={String(p.totals.max_gex_strike ?? "—")} />
                   <Metric label="call wall" value={String(p.totals.call_wall ?? "—")} tone="pos" />
                   <Metric label="put wall" value={String(p.totals.put_wall ?? "—")} tone="neg" />
@@ -194,7 +200,7 @@ export function GexPage() {
                   <h2>volume (flow)</h2>
                   <Metric label="total call GEX" value={fmtGexDollars(p.volumeTotals?.total_call_gex_vol ?? 0)} tone="pos" />
                   <Metric label="total put GEX" value={fmtGexDollars(-(p.volumeTotals?.total_put_gex_vol ?? 0))} tone="neg" />
-                  <Metric label="net GEX" value={fmtGexDollars(p.volumeTotals?.net_gex_vol ?? 0)} colored={p.volumeTotals?.net_gex_vol} emphasis />
+                  <Metric label="net GEX" value={fmtGexDollars(p.volumeTotals?.net_gex_vol ?? 0)} colored={p.volumeTotals?.net_gex_vol} flashValue={p.volumeTotals?.net_gex_vol} emphasis />
                   <Metric label="call wall" value={String(p.volumeTotals?.call_wall_vol ?? "—")} tone="pos" />
                   <Metric label="put wall" value={String(p.volumeTotals?.put_wall_vol ?? "—")} tone="neg" />
                   <Metric label="zero gamma" value={p.volumeTotals?.zero_gamma_vol != null ? p.volumeTotals.zero_gamma_vol.toFixed(0) : "—"} />
@@ -211,7 +217,7 @@ export function GexPage() {
 
         {tab === "skew" && (
         <>
-        <section className="card">
+        <section className="card view-fade">
           <h2>IV skew — call vs put by strike</h2>
           {p?.ok && p.series && p.spot !== undefined ? (
             <IvSkewChart series={p.series} spot={p.spot} />
@@ -220,7 +226,7 @@ export function GexPage() {
           )}
         </section>
 
-        <section className="card">
+        <section className="card view-fade">
           <h2>Open interest by strike (calls right, puts left; volume lighter)</h2>
           {p?.ok && p.series && p.spot !== undefined ? (
             <StrikeBarsChart
@@ -241,7 +247,7 @@ export function GexPage() {
         )}
 
         {tab === "volume" && (
-        <section className="card">
+        <section className="card view-fade">
           <h2>Volume by strike (calls vs puts)</h2>
           {p?.ok && p.series && p.spot !== undefined ? (
             <StrikeBarsChart
@@ -268,6 +274,7 @@ export function GexPage() {
           isError={isError}
           rowCount={data?.latest.length ?? 0}
           skeletonRows={3}
+          className="view-fade"
         >
           {data?.latest.map((g) => (
             <tr key={g.symbol}>
@@ -291,6 +298,7 @@ export function GexPage() {
           isError={isError}
           rowCount={data?.recent.length ?? 0}
           skeletonRows={10}
+          className="view-fade"
         >
           {data?.recent.map((g, i) => (
             <tr key={`${g.symbol}-${g.ts}-${i}`}>
