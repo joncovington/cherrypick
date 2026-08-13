@@ -98,9 +98,51 @@ _TIER_DEFAULTS = {
 }
 
 
+# Strategies whose bars this badge answers for. Held as a literal rather than imported from
+# rank_strategies.STRATEGY_REGISTRY, which imports this module -- and config alone cannot stand in,
+# because config carries entries for strategies the registry no longer has (`reverse_fly` is in
+# config with enabled: true and has not existed in the registry for some time). Same literal-list
+# convention as strategy_report.STRATEGY_NAMES and screen_metrics.CURRENT_STRATEGIES.
+_TIER_STRATEGIES = (
+    "iron_fly",
+    "double_calendar",
+    "iron_condor",
+    "atm_calendar",
+    "directional_credit_spread",
+    "broken_wing_butterfly",
+)
+
+# Criteria whose 06:30 reading cannot decide the 15:35 verdict.
+#
+# Implied vol RISES into an announcement, so a name under the IV/RV floor this morning can clear it
+# by the entry window -- the same reasoning that keeps iv_rv_ratio out of `_STABLE_PREFILTER`. Term
+# structure steepens with it, expected move moves with both, and open interest builds through the
+# day. Calling any of those a "fail" before noon states a verdict the reading cannot support, so
+# here they can only ever reach near_miss. Only the stable criteria -- price, winrate, average
+# volume -- can disqualify a name outright this early.
+_PERISHABLE_TIER_CRITERIA = frozenset(
+    {"iv_rv_ratio", "term_structure", "expected_move", "combined_open_interest"}
+)
+
+
 def _tier_thresholds(config: dict) -> dict:
+    """The loosest bar any live strategy actually applies, per criterion.
+
+    Derived from the strategies' own config rather than held as an independent ladder: the badge
+    should answer "could anything trade this tonight" against the bars that will really be applied,
+    not against a parallel set that can drift from them silently. Loosest, because the forced-
+    sampling book takes every strategy that clears on a name, so one strategy's willingness is
+    enough for the name to matter. `_TIER_DEFAULTS` remains the fallback for criteria no strategy
+    declares (`near_miss_min_price`, for instance -- price is a hard filter with no near-miss band).
+    """
+    thresholds = dict(_TIER_DEFAULTS)
+    strategies = [config.get("strategies", {}).get(name) or {} for name in _TIER_STRATEGIES]
+    for key in _TIER_DEFAULTS:
+        declared = [s[key] for s in strategies if isinstance(s.get(key), (int, float))]
+        if declared:
+            thresholds[key] = max(declared) if key.startswith("max_") else min(declared)
     overrides = (config.get("symbol_watch") or {}).get("tier_thresholds") or {}
-    return {**_TIER_DEFAULTS, **overrides}
+    return {**thresholds, **overrides}
 
 
 # Criteria the entry scan may pre-filter on, hours after this snapshot was taken.
@@ -222,6 +264,11 @@ def classify_tier(entry: dict, config: dict) -> tuple[str | None, list[str]]:
     universe filter in refresh_symbol_watch) or which rows scout displays; it just ranks what's
     already there.
 
+    Thresholds are the loosest bar any live strategy actually applies (`_tier_thresholds`), not an
+    independent ladder, so the badge and the entry scan cannot drift apart. A criterion that will
+    move between this scan and the entry window can only reach near_miss, never fail -- see
+    `_PERISHABLE_TIER_CRITERIA`.
+
     Returns `(None, [reason])` when a chain-dependent mandatory input never resolved (price,
     term_structure, expected_move_pct, or combined_open_interest all come from the same
     broker-chain branch in `_compute_symbol_entry` -- if the chain fetch failed, the entry's own
@@ -250,26 +297,38 @@ def classify_tier(entry: dict, config: dict) -> tuple[str | None, list[str]]:
     fails: list[str] = []
     near_misses: list[str] = []
 
+    def miss(criterion: str, message: str) -> None:
+        """Record a criterion below even its loosest bar. A perishable one lands in near_misses:
+        it is genuinely under the bar right now, and equally genuinely may not be by 15:35."""
+        if criterion in _PERISHABLE_TIER_CRITERIA:
+            near_misses.append(f"{message} (may still clear by the entry window)")
+        else:
+            fails.append(message)
+
     if price < t["near_miss_min_price"]:
         fails.append(f"price ${price:.2f} below ${t['near_miss_min_price']:.2f}")
     elif price < t["min_price"]:
         near_misses.append(f"price ${price:.2f} in near-miss band (<${t['min_price']:.2f})")
 
     if oi < t["min_combined_open_interest"]:
-        fails.append(f"open interest {oi:.0f} below {t['min_combined_open_interest']}")
+        miss("combined_open_interest", f"open interest {oi:.0f} below {t['min_combined_open_interest']}")
 
     if term_structure > t["min_term_structure"]:
-        fails.append(f"term structure {term_structure:.4f} above {t['min_term_structure']:.4f}")
+        miss(
+            "term_structure",
+            f"term structure {term_structure:.4f} above {t['min_term_structure']:.4f}",
+        )
 
     if expected_move_dollars < t["min_expected_move_dollars"]:
-        fails.append(
-            f"expected move ${expected_move_dollars:.2f} below ${t['min_expected_move_dollars']:.2f}"
+        miss(
+            "expected_move",
+            f"expected move ${expected_move_dollars:.2f} below ${t['min_expected_move_dollars']:.2f}",
         )
 
     if iv_rv_ratio is None:
         near_misses.append("iv/rv ratio unavailable")
     elif iv_rv_ratio < t["near_miss_min_iv_rv_ratio"]:
-        fails.append(f"iv/rv {iv_rv_ratio:.2f} below {t['near_miss_min_iv_rv_ratio']:.2f}")
+        miss("iv_rv_ratio", f"iv/rv {iv_rv_ratio:.2f} below {t['near_miss_min_iv_rv_ratio']:.2f}")
     elif iv_rv_ratio < t["min_iv_rv_ratio"]:
         near_misses.append(f"iv/rv {iv_rv_ratio:.2f} in near-miss band (<{t['min_iv_rv_ratio']:.2f})")
 
