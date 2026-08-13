@@ -52,14 +52,12 @@ from cherrypick.core import home as _core_home  # the shared state dir
 from cherrypick.core import logs as _logs
 from cherrypick.core import viz as _viz  # the suite's one money formatter
 
-from cherrypick.meic import analytics as _an
 from cherrypick.meic import (
     paper,
     regime,  # market-dimension tagging for the per-iteration (uncensored) regime row
     stream_request,  # declares symbols + open paper legs to the streamer
 )
 from cherrypick.meic import paths as _paths  # ~/.cherrypick/data/meic or MEIC_DATA_DIR
-from cherrypick.meic import stop_policies as _sp
 
 
 def _now_et():
@@ -511,8 +509,16 @@ def _format_iteration(now_et, vix, vix1d_ratio, delta_target, summary):
 # ---------------------------------------------------------------------------
 
 
-def _eod_report_path(day):
-    return _LOG_FILE.parent / f"paper-eod-{day}.md"
+# Day already rolled up in THIS process. Replaces a file-exists guard on the retired EOD report --
+# a marker for "this ran" must be written by the thing that ran, and the old one was settable by
+# anything that could create a file of the right name (flies records the same bug: a test run made
+# the marker mid-session and the loop read its own day as finished). Process-local is enough
+# because `rollup_daily_summary` is idempotent by design, so a restart simply redoes it.
+_ROLLED_UP_DAY: str | None = None
+
+
+def _rolled_up(day) -> bool:
+    return _ROLLED_UP_DAY == day
 
 
 def _money(x):
@@ -602,303 +608,12 @@ def _entry_attempts_section(conn, day) -> list:
     return L
 
 
-def _write_eod_report(day):
-    """Write a deterministic end-of-day paper report for `day` to logs/paper-eod-<day>.md.
-    Code-generated (no agent) so it runs unattended from the daemon's settlement pass. Uses
-    db.py get_range_summary for the tested per-profile metrics, plus a direct read for the
-    exit-reason breakdown and per-symbol P&L. Returns the path written."""
-    summ = _run_json(_DB + ["get_range_summary", "--start", day, "--end", day])
-    profiles = summ.get("profiles", {}) if summ.get("ok") else {}
-
-    exits, by_symbol, prof_symbols = {}, {}, {}
-    entries = open_n = 0
-    net_total = 0.0
-    try:
-        con = sqlite3.connect(_PAPER_DB)
-        con.row_factory = sqlite3.Row
-        rows = con.execute(
-            "SELECT symbol, risk_profile, status, exit_reason, pnl, fees FROM ic_trades WHERE trade_date=?",
-            (day,),
-        ).fetchall()
-        con.close()
-    except sqlite3.Error:
-        rows = []
-    for r in rows:
-        st = r["status"]
-        if st == "cancelled":
-            continue
-        entries += 1
-        net = (r["pnl"] or 0) - (r["fees"] or 0)
-        net_total += net
-        by_symbol[r["symbol"]] = by_symbol.get(r["symbol"], 0.0) + net
-        prof_symbols.setdefault(r["risk_profile"], set()).add(r["symbol"])
-        if st in ("open", "partial", "pending", "partial_entry"):
-            open_n += 1
-            reason = "(still open)"
-        else:
-            reason = r["exit_reason"] or st
-        exits[reason] = exits.get(reason, 0) + 1
-
-    L = [f"# Paper Trading - EOD Report {day}", ""]
-    L.append(
-        "_Deterministic parallel-shadow engine. MEIC has no profit target - exits are "
-        "per-side stops, non-cash-settled time force-close, or cash-settled "
-        "expiration-settlement._"
-    )
-    L.append("")
-    L.append("## Account-wide (all profiles)")
-    L.append(f"- Entries filled: **{entries}**")
-    L.append(f"- Net P&L (net of fees): **{_money(round(net_total, 2))}**")
-    L.append(f"- Still open at report time: {open_n}")
-    if by_symbol:
-        L.append(
-            "- By symbol: " + ", ".join(f"{s} {_money(round(v, 2))}" for s, v in sorted(by_symbol.items()))
-        )
-    L.append("")
-
-    # Per-(profile × symbol) portfolios — the atomic unit the paper study runs on. Each pair is its
-    # own book with its own max_concurrent_ics and daily-target budget, so nothing nets across
-    # profiles OR symbols here; the sections below are roll-up lenses over these same trades.
-    portfolios = summ.get("portfolios", {}) if summ.get("ok") else {}
-    L.append("## Per portfolio (profile × symbol)")
-    L.append(
-        "_Each pair is a standalone book — these never net against one another. The per-profile "
-        "and by-symbol views below are lenses over the same trades, not separate accounting._"
-    )
-    L.append(
-        "| Profile | Symbol | Trades | Wins | Losses | Win % | Net P&L | Expectancy/IC | Profit Factor | Max DD |"
-    )
-    L.append("|---|---|---|---|---|---|---|---|---|---|")
-    for _, s in sorted(portfolios.items(), key=lambda kv: -(kv[1].get("net_pnl") or 0)):
-        wr = f"{s['win_rate_pct']:.0f}%" if s.get("win_rate_pct") is not None else "-"
-        pf = f"{s['profit_factor']:.2f}" if s.get("profit_factor") is not None else "-"
-        exp = _money(s.get("expectancy_per_trade")) if s.get("expectancy_per_trade") is not None else "-"
-        L.append(
-            f"| {s.get('profile', '-')} | {s.get('symbol', '-')} | {s.get('total_trades', 0)} | "
-            f"{s.get('win_count', 0)} | {s.get('loss_count', 0)} | {wr} | {_money(s.get('net_pnl'))} | "
-            f"{exp} | {pf} | {_money(s.get('max_drawdown'))} |"
-        )
-    if not portfolios:
-        L.append("| _(none)_ | - | 0 | - | - | - | $0.00 | - | - | - |")
-    L.append("")
-
-    # Roster order: the canonical ladder first, then experiment/exploratory profiles, then any
-    # tag present in the data but not the registry (e.g. 'unassigned'). Empty profiles are noted,
-    # not tabled.
-    try:
-        ordered = paper.all_profile_names()
-    except Exception:
-        ordered = list(profiles.keys())
-    for tag in profiles:
-        if tag not in ordered:
-            ordered.append(tag)
-
-    L.append("## Per profile (roll-up across symbols)")
-    L.append(
-        "| Profile | Symbol | Trades | Wins | Losses | Win % | Net P&L | Expectancy/IC | Profit Factor | Max DD |"
-    )
-    L.append("|---|---|---|---|---|---|---|---|---|---|")
-    active_names = [n for n in ordered if profiles.get(n)]
-    for name in active_names:
-        s = profiles[name]
-        syms = ",".join(sorted(prof_symbols.get(name, set()))) or "-"
-        wr = f"{s['win_rate_pct']:.0f}%" if s.get("win_rate_pct") is not None else "-"
-        pf = f"{s['profit_factor']:.2f}" if s.get("profit_factor") is not None else "-"
-        exp = _money(s.get("expectancy_per_trade")) if s.get("expectancy_per_trade") is not None else "-"
-        L.append(
-            f"| {name} | {syms} | {s.get('total_trades', 0)} | {s.get('win_count', 0)} | "
-            f"{s.get('loss_count', 0)} | {wr} | {_money(s.get('net_pnl'))} | {exp} | {pf} | "
-            f"{_money(s.get('max_drawdown'))} |"
-        )
-    if not active_names:
-        L.append("| _(none)_ | - | 0 | - | - | - | $0.00 | - | - | - |")
-    idle = [n for n in ordered if not profiles.get(n)]
-    if idle:
-        L.append("")
-        L.append(f"_No entries today: {', '.join(idle)}._")
-    L.append("")
-
-    L.append("## Exits by reason")
-    if exits:
-        L.append("| Reason | Count |")
-        L.append("|---|---|")
-        for reason, cnt in sorted(exits.items(), key=lambda kv: -kv[1]):
-            L.append(f"| {reason} | {cnt} |")
-    else:
-        L.append("_No entries today - flat session._")
-    L.append("")
-
-    L.extend(_eod_supplement(day))
-
-    L.append(
-        f"_Generated {_now_et().strftime('%Y-%m-%d %H:%M:%S %Z')} · paper DB only; live account untouched._"
-    )
-
-    path = _eod_report_path(day)
-    path.write_text("\n".join(L), encoding="utf-8")
-    return path
-
-
 # ---------------------------------------------------------------------------
 # EOD supplement -- arm scorecard (breakeven identity), gate ledger, stop-policy
 # table, regime coverage, iteration duration/peak positions. Isolated in its own
 # function (rather than threaded through _write_eod_report's existing tables) so
 # it's independently testable and the diff against the pre-arms report stays legible.
 # ---------------------------------------------------------------------------
-
-
-def _eod_supplement(day) -> list[str]:
-    try:
-        conn = sqlite3.connect(_PAPER_DB)
-        conn.row_factory = sqlite3.Row
-    except sqlite3.Error:
-        return []
-    try:
-        return _eod_supplement_lines(conn, day)
-    finally:
-        conn.close()
-
-
-def _eod_supplement_lines(conn, day) -> list[str]:
-    L = []
-
-    # --- Arm scorecard: the breakeven identity, per stream, read per-session rather than
-    # waiting on a bootstrap. ---
-    L.append("## Arm scorecard (breakeven identity)")
-    L.append(
-        "_P(clean OTM) - P(double stop) vs. the fees/credit bar - the health line for each "
-        "stream. See docs/paper-experiments.md for the derivation._"
-    )
-    arms = _an.by_arm(conn, start=day, end=day)
-    if arms:
-        L.append(
-            "| Arm | Trades | Sessions | Net P&L | Win % | Clean % | Double-stop % | "
-            "Breakeven bar % | Margin % |"
-        )
-        L.append("|---|---|---|---|---|---|---|---|---|")
-        for a in arms:
-            bc = _an.breakeven_scorecard(conn, start=day, end=day, arm=a["arm"])
-            wr = f"{a['win_rate'] * 100:.0f}%" if a.get("win_rate") is not None else "-"
-            clean = f"{bc['clean_pct']:.1f}%" if bc.get("clean_pct") is not None else "-"
-            double = f"{bc['double_stop_pct']:.1f}%" if bc.get("double_stop_pct") is not None else "-"
-            bar = f"{bc['breakeven_bar_pct']:.1f}%" if bc.get("breakeven_bar_pct") is not None else "-"
-            margin = f"{bc['margin_pct']:+.1f}%" if bc.get("margin_pct") is not None else "-"
-            L.append(
-                f"| {a['arm']} | {a['trades']} | {a['sessions']} | {_money(a['net_pnl'])} | {wr} | "
-                f"{clean} | {double} | {bar} | {margin} |"
-            )
-    else:
-        L.append("_No resolved trades today._")
-    L.append("")
-
-    # --- Gate ledger: per-stream block/fill/exit outcomes from the gate_block loop_log rows,
-    # so a zero-entry stream states which gate held it back instead of a collapsed "N skip". ---
-    L.append("## Gate ledger")
-    blocks = _an.gate_blocks(conn, day)
-    if blocks:
-        L.append("| Stream | Outcomes |")
-        L.append("|---|---|")
-        for stream in sorted(blocks):
-            parts = ", ".join(
-                f"{label} x{count}" for label, count in sorted(blocks[stream].items(), key=lambda kv: -kv[1])
-            )
-            L.append(f"| {stream} | {parts} |")
-    else:
-        L.append("_No gate_block rows logged today (pre-Phase-1d data, or the loop didn't run)._")
-    L.append("")
-
-    L += _entry_attempts_section(conn, day)
-
-    # --- Stop-policy table: read-side derivations from `open`'s recorded paths, not separate
-    # entry streams -- see stop_policies.py and analytics.stop_counterfactual. ---
-    L.append("## Stop-policy table (derived from `open`)")
-    L.append(
-        "_Computed read-side from `open`'s recorded per-side paths, not separate entry "
-        "streams; validated against `control`'s real 0.95x-net mechanism (see "
-        "analytics.validate_stop_derivation)._"
-    )
-    open_today = _an.stats_for_period(conn, start=day, end=day, arm="open")
-    if open_today.get("trades"):
-        L.append(
-            "| Policy | Derivable | Actual net (`open`) | Derived net | Delta | Put fires | Call fires |"
-        )
-        L.append("|---|---|---|---|---|---|---|")
-        for name in _sp.POLICIES:
-            if name == "control":
-                continue
-            sc = _an.stop_counterfactual(conn, name, start=day, end=day, arm="open")
-            L.append(
-                f"| {name} | {sc['derivable']}/{sc['trades']} | {_money(sc['actual_net_pnl'])} | "
-                f"{_money(sc['derived_net_pnl'])} | {_money(sc['delta'])} | {sc['put_fired']} | "
-                f"{sc['call_fired']} |"
-            )
-    else:
-        L.append("_`open` entered no trades today - nothing to derive against._")
-    L.append("")
-
-    # --- Regime coverage: tagged/untagged/degenerate per dimension; a degenerate dimension's
-    # P&L-by-bucket table is withheld since it reports no contrast, not no effect. ---
-    L.append("## Regime coverage")
-    cov = _an.regime_coverage(conn, start=day, end=day)
-    if cov["resolved_trades"]:
-        L.append("| Dimension | Tagged | Untagged | Coverage % | Sessions | Effective n | Degenerate |")
-        L.append("|---|---|---|---|---|---|---|")
-        non_degenerate, underpowered = [], []
-        for dim, d in cov["dimensions"].items():
-            cov_pct = f"{d['coverage_pct']:.0f}%" if d.get("coverage_pct") is not None else "-"
-            eff = f"{d['effective_n']}" + (" (daily)" if d.get("daily_scale") else "")
-            L.append(
-                f"| {dim} | {d['tagged']} | {d['untagged']} | {cov_pct} | {d['sessions']} | {eff} "
-                f"| {'yes' if d['degenerate'] else 'no'} |"
-            )
-            if d["tagged"] and not d["degenerate"]:
-                non_degenerate.append(dim)
-            if d.get("underpowered"):
-                underpowered.append(dim)
-        if underpowered:
-            # Stated rather than left to be inferred from a row count. A trade count in the
-            # thousands and a session count of two look identical in the table above unless the
-            # sessions column is read, and the second is what bounds any threshold re-cut: rows
-            # inside one session share that session's market. Distinct from `degenerate` on
-            # purpose — that one says re-cut the float, this one says collect more sessions.
-            L.append("")
-            L.append(
-                f"⚠️ **{', '.join(underpowered)}** rest on fewer than {_an.MIN_EFFECTIVE_N} sessions. "
-                "Rows are not independent draws — a dimension marked `(daily)` above moves only "
-                "between sessions, so its effective n IS the session count. Do not re-cut a "
-                "threshold against a sample this size; the split below is a description of these "
-                "days, not evidence about the strategy."
-            )
-        for dim in non_degenerate:
-            rows = _an.by_regime(conn, dim, start=day, end=day)
-            if not rows:
-                continue
-            L.append("")
-            L.append(f"**{dim}** by bucket:")
-            L.append("| Bucket | Trades | Net P&L | Win % |")
-            L.append("|---|---|---|---|")
-            for r in rows:
-                wr = f"{r['win_rate'] * 100:.0f}%" if r.get("win_rate") is not None else "-"
-                L.append(f"| {r['bucket']} | {r['trades']} | {_money(r['net_pnl'])} | {wr} |")
-    else:
-        L.append("_No resolved trades today._")
-    L.append("")
-
-    # --- Iteration duration & peak open positions, from Phase 0's loop_log instrumentation. ---
-    L.append("## Iteration duration & peak open positions")
-    stats = conn.execute(
-        "SELECT COUNT(*) n, AVG(duration_ms) avg_ms, MAX(duration_ms) max_ms, "
-        "MAX(open_trades_n) peak_open FROM loop_log WHERE loop_date = ? AND duration_ms IS NOT NULL",
-        (day,),
-    ).fetchone()
-    if stats and stats["n"]:
-        L.append(f"- Iterations timed: {stats['n']} · avg {stats['avg_ms']:.0f}ms · max {stats['max_ms']}ms")
-        L.append(f"- Peak open positions (account-wide, any timed iteration): {stats['peak_open']}")
-    else:
-        L.append("_No timed iterations today (pre-instrumentation, or the loop didn't run)._")
-    L.append("")
-
-    return L
 
 
 # ---------------------------------------------------------------------------
@@ -990,369 +705,6 @@ def _intraday_path(active: list) -> str | None:
         f"({span:.2f} pts, **{pct:.2f}%** of spot) and {direction} {abs(drift):.2f} pts from first "
         f"entry to last. Judge the session by this path, not by the close-to-close change: {calm}."
     )
-
-
-def _write_eod_analysis(day):
-    """Write a conversational 7-section end-of-day analysis for `day` to logs/eod-analysis-<day>.md.
-    Deterministic templated prose (no agent/LLM/network) so it runs unattended from the settlement
-    pass, sitting alongside the terse paper-eod-<day>.md. Reads only the paper DB + the day's captured
-    market_context, so its numbers reconcile with the paper report and the suite digest."""
-    cfg = _load_config()
-    cash_settled = {str(s).upper() for s in cfg.get("cash_settled_symbols", ["SPX", "XSP", "NDX", "RUT"])}
-
-    try:
-        con = sqlite3.connect(_PAPER_DB)
-        con.row_factory = sqlite3.Row
-        rows = [
-            dict(r)
-            for r in con.execute(
-                "SELECT * FROM ic_trades WHERE trade_date=? ORDER BY entry_time", (day,)
-            ).fetchall()
-        ]
-        # EXITED legs, by the vocabulary the writer actually uses. `ic_spread_legs.status` is only
-        # ever 'expired', 'stopped' or 'force_closed' -- 'closed' has never been written, not once in
-        # 3,934 legs. This filter said `status='closed'` until 2026-08-11, so it matched nothing on
-        # every session ever generated, `exit_counts` was always empty, and the report fell through
-        # to its "No side stops fired - the ICs rode to settlement" branch UNCONDITIONALLY. It
-        # printed that on 2026-08-11 while 430 legs stopped for -$31k gross, and on 08-10 (345
-        # stops), 08-07 (173) and 08-04 (54). A report that cannot express a stop is worse than one
-        # that omits them: the deterministic file is the source of record, and the EOD insight layer
-        # read this line and built a whole narrative on it.
-        #
-        # 'expired' is deliberately EXCLUDED: it is the intended 0DTE path, not an exit event, and
-        # folding it in would make every clean settlement read as an "exit" and drown the signal the
-        # side-attribution below exists to surface.
-        legs = [
-            dict(r)
-            for r in con.execute(
-                "SELECT l.side, l.exit_time, l.exit_reason, l.exit_price, l.pnl, l.ic_order_id "
-                "FROM ic_spread_legs l JOIN ic_trades t ON l.ic_order_id=t.ic_order_id "
-                "WHERE t.trade_date=? AND l.status IN ('stopped', 'force_closed')",
-                (day,),
-            ).fetchall()
-        ]
-        con.close()
-    except sqlite3.Error:
-        rows, legs = [], []
-    active = [r for r in rows if r.get("status") != "cancelled"]
-
-    def _net(r):
-        return (r.get("pnl") or 0.0) - (r.get("fees") or 0.0)
-
-    nets = [_net(r) for r in active]
-    gross = sum(r.get("pnl") or 0.0 for r in active)
-    fees = sum(r.get("fees") or 0.0 for r in active)
-    net_total = sum(nets)
-    wins = [n for n in nets if n > 0]
-    losses = [n for n in nets if n <= 0]
-    avg_win = sum(wins) / len(wins) if wins else None
-    avg_loss = sum(losses) / len(losses) if losses else None
-    open_n = sum(1 for r in active if r.get("status") in ("open", "partial", "pending", "partial_entry"))
-    by_symbol = {}
-    for r in active:
-        by_symbol[r["symbol"]] = by_symbol.get(r["symbol"], 0.0) + _net(r)
-
-    today_ctx, prior_ctx = _read_market_context(day)
-    loop_iters, gate_tail = _loop_gate_tail(day)
-
-    L = [f"# MEIC Paper - EOD Analysis {day}", ""]
-    L.append(
-        "_Plain-English read on the paper session. Auto-generated from the paper DB (no agent) - "
-        "conversational, but rule-based, not a hand-written synthesis. MEIC has no profit target: "
-        "exits are per-side stops, non-cash-settled time force-close, or cash-settled expiration._"
-    )
-    L.append("")
-
-    # 1. Executive snapshot ----------------------------------------------------
-    L.append("## 1. Executive snapshot")
-    if not active:
-        L.append(
-            "Flat session - no ICs were filled today. A day with no trade is a decision, not a gap: "
-            "the entry gates (IV-rank floor, credit floor, VIX/ATR/GEX regime, late-entry bias) held "
-            "the book out."
-        )
-        if gate_tail:
-            L.append(
-                f"Across **{loop_iters}** loop iterations, the end-of-session gate by symbol was: "
-                f"`{gate_tail}`. (e.g. `regime_gex_negative` = net GEX below the gamma flip, the "
-                "trending regime where short condors are gated off; `skip`/IV-rank = below the "
-                "premium floor.)"
-            )
-    else:
-        best = max(by_symbol.items(), key=lambda kv: kv[1]) if by_symbol else None
-        worst = min(by_symbol.items(), key=lambda kv: kv[1]) if by_symbol else None
-        drag = (
-            f" - fees were {_money(round(fees, 2))}, {(fees / gross * 100):.0f}% of the {_money(round(gross, 2))} gross"
-            if gross > 0
-            else f" - fees added {_money(round(fees, 2))} on top of a losing gross"
-        )
-        L.append(
-            f"The book filled **{len(active)}** IC{'s' if len(active) != 1 else ''} today and closed the "
-            f"session **{_money(round(net_total, 2))}** net of fees ({len(wins)} up, {len(losses)} down"
-            f"{f', {open_n} still open at report time' if open_n else ''}){drag}."
-        )
-        line = "Average winner ran " + (_money(round(avg_win, 2)) if avg_win is not None else "-")
-        line += ", average loser " + (_money(round(avg_loss, 2)) if avg_loss is not None else "-") + "."
-        if best and worst and best[0] != worst[0]:
-            line += f" {best[0]} carried the day ({_money(round(best[1], 2))}); {worst[0]} lagged ({_money(round(worst[1], 2))})."
-        elif best:
-            line += f" All of it came from {best[0]}."
-        L.append(line)
-        path_line = _intraday_path(active)
-        if path_line:
-            L.append(path_line)
-    L.append("")
-
-    # 2. Position-level detail -------------------------------------------------
-    L.append("## 2. Position-level detail")
-    L.append(
-        "_Iron condors, 0DTE. Greeks are captured at entry; there is no end-of-day greek snapshot "
-        "because the positions settle the same day._"
-    )
-    if active:
-        L.append("")
-        L.append(
-            "| Symbol | Profile | Put / Call strikes | Width | Net credit | Short-call Δ | Call OTM | IV rank | Net P&L |"
-        )
-        L.append("|---|---|---|---|---|---|---|---|---|")
-        for r in active:
-            up = r.get("underlying_price_entry")
-            call_otm = f"{((r['call_strike'] - up) / up * 100):.2f}%" if up and r.get("call_strike") else "-"
-            cd = f"{r['call_delta_at_entry']:.2f}" if r.get("call_delta_at_entry") is not None else "-"
-            ivr = f"{r['iv_rank_at_entry'] * 100:.0f}%" if r.get("iv_rank_at_entry") is not None else "-"
-            strikes = f"{r.get('put_strike', '-')} / {r.get('call_strike', '-')}"
-            L.append(
-                f"| {r['symbol']} | {r.get('risk_profile', '-')} | {strikes} | "
-                f"{r.get('wing_width', '-')} | {_money(r.get('net_credit'))} | {cd} | {call_otm} | "
-                f"{ivr} | {_money(round(_net(r), 2))} |"
-            )
-    else:
-        L.append("")
-        L.append("_No open or closed positions to detail._")
-    L.append("")
-
-    # 3. Trade activity log ----------------------------------------------------
-    L.append("## 3. Trade activity log")
-    if active:
-        L.append("**Entries** (credit collected, fees at open):")
-        L.append("")
-        L.append("| Entry time | Symbol | Profile | Net credit | Open fees |")
-        L.append("|---|---|---|---|---|")
-        for r in active:
-            et = (r.get("entry_time") or "")[11:19] or (r.get("entry_time") or "-")
-            L.append(
-                f"| {et} | {r['symbol']} | {r.get('risk_profile', '-')} | "
-                f"{_money(r.get('net_credit'))} | {_money(r.get('fees'))} |"
-            )
-        if legs:
-            L.append("")
-            L.append("**Side exits** (per-side stops / settlements):")
-            L.append("")
-            L.append("| Exit time | Side | Reason | Exit price | Side P&L |")
-            L.append("|---|---|---|---|---|")
-            for lg in sorted(legs, key=lambda x: x.get("exit_time") or ""):
-                xt = (lg.get("exit_time") or "")[11:19] or (lg.get("exit_time") or "-")
-                px = f"{lg['exit_price']:.2f}" if lg.get("exit_price") is not None else "-"
-                L.append(
-                    f"| {xt} | {lg.get('side', '-')} | {lg.get('exit_reason', '-')} | {px} | "
-                    f"{_money(lg.get('pnl'))} |"
-                )
-    else:
-        L.append("_No fills - nothing to log._")
-    L.append("")
-
-    # 4. Risk metrics ----------------------------------------------------------
-    L.append("## 4. Risk metrics")
-    if active:
-        # Net position delta at entry: short legs contribute the negative of the option's delta.
-        net_delta = 0.0
-        have_delta = False
-        for r in active:
-            q = r.get("quantity") or 1
-            parts = [
-                (-1, r.get("call_delta_at_entry")),
-                (-1, r.get("put_delta_at_entry")),
-                (1, r.get("long_call_delta_at_entry")),
-                (1, r.get("long_put_delta_at_entry")),
-            ]
-            for sign, d in parts:
-                if d is not None:
-                    net_delta += sign * d * q
-                    have_delta = True
-        max_loss = sum(
-            ((r.get("wing_width") or 0) - (r.get("net_credit") or 0))
-            * (r.get("dollar_multiplier") or 100)
-            * (r.get("quantity") or 1)
-            for r in active
-        )
-        max_gain = sum(
-            (r.get("net_credit") or 0) * (r.get("dollar_multiplier") or 100) * (r.get("quantity") or 1)
-            for r in active
-        )
-        delta_txt = (
-            f"**{_signed(net_delta)}** (short legs negated; near zero = the book entered delta-balanced)"
-            if have_delta
-            else "not available (entry greeks missing)"
-        )
-        L.append(f"- Net position delta at entry: {delta_txt}.")
-        L.append(
-            f"- Defined risk on the book: max loss **{_money(round(max_loss, 2))}**, max credit "
-            f"**{_money(round(max_gain, 2))}** (wing width minus credit, times the multiplier - "
-            f"paper carries no NLV/buying-power basis, so defined risk stands in for margin used)."
-        )
-        conc = ", ".join(
-            f"{s} {len([r for r in active if r['symbol'] == s])} IC(s), {_money(round(v, 2))}"
-            for s, v in sorted(by_symbol.items())
-        )
-        L.append(f"- Concentration by underlying: {conc}.")
-        if len(by_symbol) == 1:
-            L.append(
-                "  - Single-underlying day: all risk sat in one name (no cross-symbol diversification, "
-                "but also no correlated double-up)."
-            )
-    else:
-        L.append("- No open risk - the book is flat.")
-    L.append("")
-
-    # 5. Market context --------------------------------------------------------
-    L.append("## 5. Market context")
-    if today_ctx and today_ctx.get("vix") is not None:
-        vix = today_ctx["vix"]
-        dv = (
-            f" ({_signed(vix - prior_ctx['vix'])} vs the prior session)"
-            if (prior_ctx and prior_ctx.get("vix") is not None)
-            else ""
-        )
-        line = f"VIX sat around **{vix:.1f}**{dv}."
-        if today_ctx.get("vix1d_ratio") is not None:
-            line += f" VIX1D/VIX ratio {today_ctx['vix1d_ratio']:.2f} (>1.30 flags an event-day regime)."
-        L.append(line)
-        try:
-            syms = json.loads(today_ctx.get("symbols_json") or "{}")
-            prior_syms = json.loads(prior_ctx.get("symbols_json") or "{}") if prior_ctx else {}
-        except (TypeError, ValueError):
-            syms, prior_syms = {}, {}
-        for s, info in sorted(syms.items()):
-            px = info.get("price")
-            ivr = info.get("iv_rank")
-            move = ""
-            if px is not None and prior_syms.get(s, {}).get("price"):
-                pv = prior_syms[s]["price"]
-                move = f", {((px - pv) / pv * 100):+.2f}% vs prior close" if pv else ""
-            ivr_txt = f"IV rank {ivr * 100:.0f}%" if ivr is not None else "IV rank -"
-            L.append(f"- {s}: last ~{px}{move}; {ivr_txt}.")
-    else:
-        L.append(
-            "No market-context snapshot was captured for this session (the loop records VIX / VIX1D / "
-            "per-symbol IV rank each iteration - none landed, e.g. a backfilled or pre-capture day)."
-        )
-    try:
-        d = datetime.strptime(day, "%Y-%m-%d").date()
-        catalysts = []
-        if _cal.is_fomc_day(d):
-            catalysts.append("FOMC decision day")
-        if _cal.is_triple_witching(d):
-            catalysts.append("triple-witching expiry")
-        elif _cal.is_quarterly_expiry(d):
-            catalysts.append("quarterly expiry")
-        if catalysts:
-            L.append(
-                f"- Calendar catalyst: {', '.join(catalysts)} - the loop applies its blackout / "
-                "tightened-gate rules on these dates."
-            )
-    except ValueError:
-        pass
-    if gate_tail:
-        L.append(
-            f"- Entry gates at the last of **{loop_iters}** iterations: `{gate_tail}` "
-            "(what the regime/IV/GEX gates decided per symbol - the reason entries did or didn't fire)."
-        )
-    L.append("")
-
-    # 6. Tax / accounting notes ------------------------------------------------
-    L.append("## 6. Tax / accounting notes")
-    L.append("_Informational only - not tax advice. Paper book, so nothing here is a real taxable event._")
-    if active:
-        syms = sorted({r["symbol"] for r in active})
-        s1256 = [s for s in syms if s in cash_settled]
-        equity = [s for s in syms if s not in cash_settled]
-        if s1256:
-            L.append(
-                f"- **Section 1256** (broad-based cash-settled index options): {', '.join(s1256)}. "
-                "These mark-to-market at 60% long-term / 40% short-term regardless of holding period "
-                "and are exempt from the wash-sale rule."
-            )
-        if equity:
-            L.append(
-                f"- **Equity-option treatment** (not 1256): {', '.join(equity)}. Ordinary "
-                "short-term/long-term rules apply and wash-sale can bite on repeated same-name losses."
-            )
-        L.append(
-            "- Holding period: every position is 0DTE (opened and settled same day) - short-term / "
-            "intraday across the board."
-        )
-    else:
-        L.append("- No positions - no lots to classify.")
-    L.append("")
-
-    # 7. Notes / journal -------------------------------------------------------
-    L.append("## 7. Notes / journal")
-    if not active:
-        L.append(
-            "- Quiet by design. Worth a glance at the loop log to confirm the gates that fired match "
-            "the day's conditions (a flat day and a silently-broken entry check look identical in P&L)."
-        )
-    else:
-        # Which exit reasons dominated, and on which side.
-        exit_counts = {}
-        side_counts = {"put": 0, "call": 0}
-        for lg in legs:
-            exit_counts[lg.get("exit_reason") or "?"] = exit_counts.get(lg.get("exit_reason") or "?", 0) + 1
-            if lg.get("side") in side_counts:
-                side_counts[lg["side"]] += 1
-        if exit_counts:
-            top = max(exit_counts.items(), key=lambda kv: kv[1])
-            L.append(
-                f"- Exits were dominated by **{top[0]}** ({top[1]} of {sum(exit_counts.values())} side "
-                f"exits). Put-side stops: {side_counts['put']}, call-side: {side_counts['call']}."
-            )
-            if side_counts["call"] > side_counts["put"] and side_counts["call"] >= 2:
-                L.append(
-                    "  - Call side did most of the stopping - consistent with an up-drift pressing the "
-                    "short calls. Wider call OTM (or the VIX-band delta scale) is the lever if this repeats."
-                )
-            elif side_counts["put"] > side_counts["call"] and side_counts["put"] >= 2:
-                L.append("  - Put side did most of the stopping - a down-move pressed the short puts.")
-        else:
-            L.append(
-                "- No side stops fired - the ICs rode to settlement (the intended path for cash-settled "
-                "names with an OTM close)."
-            )
-        if gross > 0 and fees / gross > 0.30:
-            L.append(
-                f"- **Recommendation:** fees ate {(fees / gross * 100):.0f}% of gross - lean toward wider "
-                "widths / fewer narrow entries, where the fixed per-contract fee is a smaller drag."
-            )
-        if avg_loss is not None and avg_win is not None and abs(avg_loss) > 2 * avg_win:
-            L.append(
-                "- **Recommendation:** average loser is more than 2x the average winner - the stop is "
-                "letting losses run relative to the credit; revisit stop_trigger_ratio for these profiles."
-            )
-        if net_total < 0 and not wins:
-            L.append(
-                "- Every fill lost today. One session is noise, but if the pattern holds, check whether "
-                "entries are clearing the fee-adjusted credit floor with real margin."
-            )
-    L.append("")
-    L.append(
-        f"_Generated {_now_et().strftime('%Y-%m-%d %H:%M:%S %Z')} · paper DB only; live account "
-        "untouched. Companion to paper-eod-" + day + ".md._"
-    )
-
-    path = _analysis_path(day)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(L), encoding="utf-8")
-    return path
 
 
 def _open_advised_tags():
@@ -1604,14 +956,17 @@ def run_iteration(cfg, force=False):
     except Exception:
         pass
 
-    # Once-per-day EOD report, written on the first pass at/after the settlement time (16:00),
-    # i.e. after positions have settled. The file-exists guard makes it fire exactly once even
-    # though the daemon keeps ticking through the 16:00–16:05 settlement window.
+    # Once-per-day daily_summary roll-up, on the first pass at/after the settlement time (16:00).
+    #
+    # The per-module EOD reports were retired 2026-08-13 — packages/review builds one fact set across
+    # every module and renders from that, so a module writing its own prose was a second,
+    # unreconciled account of the same session. The roll-up stays and matters MORE now: the review
+    # reads daily_summary for this module's expected-vs-observed, so it is the source of record the
+    # reports used to be. Guarded on the summary row rather than a report file — a marker for "this
+    # ran" must be written by the thing that ran.
     sett = cfg.get("expiration_settlement_time", "16:00")
-    if (now.hour * 60 + now.minute) >= paper._time_to_minutes(sett) and not _eod_report_path(today).exists():
-        # Roll the session's numbers into daily_summary FIRST, so the reports and any surface reading
-        # that table describe the same settled session. Best-effort like everything else on this
-        # pass: a failed roll-up must not cost the EOD reports, which are the source of record.
+    if (now.hour * 60 + now.minute) >= paper._time_to_minutes(sett) and not _rolled_up(today):
+        global _ROLLED_UP_DAY
         try:
             res = subprocess.run(
                 [*_DB, "rollup_daily_summary", "--date", today],
@@ -1623,19 +978,9 @@ def run_iteration(cfg, force=False):
                 logger.warning("daily_summary roll-up failed: %s", (res.stderr or "").strip()[:200])
             else:
                 logger.info("rolled up daily_summary for %s", today)
+                _ROLLED_UP_DAY = today
         except Exception as exc:
             logger.warning("daily_summary roll-up failed: %s", exc)
-        try:
-            p = _write_eod_report(today)
-            logger.info("wrote EOD report: %s", p)
-        except Exception as exc:
-            logger.warning("EOD report failed: %s", exc)
-        # Companion conversational analysis, written the same once-per-day pass (guarded on its own file).
-        try:
-            pa = _write_eod_analysis(today)
-            logger.info("wrote EOD analysis: %s", pa)
-        except Exception as exc:
-            logger.warning("EOD analysis failed: %s", exc)
     return summary
 
 
@@ -1942,35 +1287,12 @@ def main():
     parser.add_argument(
         "--force", action="store_true", help="With --once, run even outside market hours (for testing)"
     )
-    parser.add_argument(
-        "--eod-report",
-        action="store_true",
-        help="Write the deterministic paper report AND the conversational analysis now (regenerates both)",
-    )
-    parser.add_argument(
-        "--eod-analysis",
-        action="store_true",
-        help="Write only the conversational 7-section EOD analysis now (regenerates)",
-    )
-    parser.add_argument(
-        "--date", default=None, help="With --eod-report/--eod-analysis, the day (YYYY-MM-DD); default today"
-    )
+    parser.add_argument("--date", default=None, help="A session day (YYYY-MM-DD); default today")
     parser.add_argument("--_run", action="store_true", help=argparse.SUPPRESS)  # internal: the detached child
     args = parser.parse_args()
 
     if args.status:
         _cmd_status()
-        return
-    if args.eod_report:
-        day = args.date or _now_et().strftime("%Y-%m-%d")
-        path = _write_eod_report(day)
-        analysis = _write_eod_analysis(day)
-        _emit({"ok": True, "report": str(path), "analysis": str(analysis)})
-        return
-    if args.eod_analysis:
-        day = args.date or _now_et().strftime("%Y-%m-%d")
-        analysis = _write_eod_analysis(day)
-        _emit({"ok": True, "analysis": str(analysis)})
         return
     if args.stop:
         _cmd_stop()

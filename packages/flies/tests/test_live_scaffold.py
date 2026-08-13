@@ -1967,23 +1967,6 @@ def test_abort_rule_arms_and_triggers(live_conn):
     paper.close()
 
 
-def test_live_eod_report_written_on_settle(live_conn, monkeypatch):
-    from cherrypick.flies import provider as providermod
-
-    dbmod.save_position(
-        live_conn,
-        {**_open_entry_row(entry_fill_status="filled"), "kind": "fly", "net": 0.25, "debit": 0.80},
-    )
-    monkeypatch.setattr(providermod, "read_spot", lambda *a, **k: 7495.5)
-    out = live_loop.run_settle_live(_settle_cfg(), live_conn, cache_path="unused")
-    assert out["ok"] and out["report"] is not None
-    text = Path(out["report"]["live_eod"]).read_text(encoding="utf-8")
-    assert "Flies LIVE EOD" in text
-    assert "last_trade_provisional" in text and "PROVISIONAL" in text
-    assert "Live vs contemporaneous paper" in text
-    assert "Abort rule not yet armed" in text
-
-
 # --------------------------------------------------------------------------- orphan sweep
 def test_orphan_sweep_flags_unknown_working_orders(live_conn):
     dbmod.save_position(live_conn, _open_entry_row(order_id="ORD-KNOWN"))

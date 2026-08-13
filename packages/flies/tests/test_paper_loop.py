@@ -224,7 +224,6 @@ def test_after_the_close_the_loop_settles_itself(cache_with_chain, conn, home):
     out = paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(16, 30))
     assert out.get("settled_session") is True
     assert conn.execute("SELECT COUNT(*) FROM fly_positions WHERE status='settled'").fetchone()[0] == 1
-    assert (home / f"paper-eod-{TRADING_DAY.date().isoformat()}.md").exists()
 
 
 def test_settlement_happens_exactly_once(cache_with_chain, conn, home):
@@ -243,7 +242,6 @@ def test_settlement_is_checked_before_the_rth_gate(cache_with_chain, conn, home)
     inside run_once is load-bearing, not incidental."""
     out = paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(16, 30))
     assert out.get("settled_session") is True
-    assert (home / f"paper-eod-{TRADING_DAY.date().isoformat()}.md").exists()
 
 
 def test_before_the_settle_time_an_out_of_hours_run_stays_a_no_op(cache_with_chain, conn, home):
@@ -281,7 +279,6 @@ def test_a_weekday_still_settles(cache_with_chain, conn, home):
     monday = datetime(2026, 7, 20, 16, 30, tzinfo=provider._ET)
     out = paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=monday)
     assert out.get("settled_session") is True
-    assert (home / "paper-eod-2026-07-20.md").exists()
 
 
 def test_market_holidays_are_skipped_too(cache_with_chain, conn, home):
@@ -344,7 +341,6 @@ def test_a_refused_settlement_does_not_block_the_retry(cache_with_chain, conn, h
     c.close()
     out = paper_loop.run_once(config(), conn, cache_path=str(cache_with_chain), when=at(16, 32))
     assert out.get("settled_session") is True
-    assert (home / f"paper-eod-{day}.md").exists()
 
 
 def test_a_stray_report_file_does_not_block_settlement(cache_with_chain, conn, home):

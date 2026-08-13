@@ -45,7 +45,7 @@ def loop_env(monkeypatch, tmp_path):
     monkeypatch.setattr(paper_loop, "_fetch_vix", lambda: 15.0)
     monkeypatch.setattr(paper_loop, "_fetch_overview", lambda s: (6040.0, 0.42, 0.61))
     monkeypatch.setattr(paper_loop, "_build_candidates", lambda *a, **k: ([{"wing_width": 5}], {}, None))
-    monkeypatch.setattr(paper_loop, "_eod_report_path", lambda day: tmp_path / "eod.md")
+    monkeypatch.setattr(paper_loop, "_rolled_up", lambda day: True)
 
     def capture(snapshot, db_path, mode, extra_profiles=None):
         captured["snapshot"] = snapshot

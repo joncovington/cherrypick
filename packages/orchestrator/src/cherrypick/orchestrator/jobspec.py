@@ -459,6 +459,10 @@ def derive_jobs(
             kind=KIND_DAILY,
             at_et=rv["provisional_at"],
             catchup_minutes=CATCHUP_MINUTES["review-provisional"],
+            # A daily job fires every calendar day. Without this a Saturday pass writes a fact set
+            # for a session that never happened -- the same weekend problem the deleted suite EOD
+            # tasks needed a guard for, and the reason they needed one at all.
+            trading_days_only=True,
             enabled=rv["enabled"],
             enabled_reason="" if rv["enabled"] else "disabled in config (review)",
         ),
@@ -471,6 +475,10 @@ def derive_jobs(
             kind=KIND_DAILY,
             at_et=rv["final_at"],
             catchup_minutes=CATCHUP_MINUTES["review-final"],
+            # A daily job fires every calendar day. Without this a Saturday pass writes a fact set
+            # for a session that never happened -- the same weekend problem the deleted suite EOD
+            # tasks needed a guard for, and the reason they needed one at all.
+            trading_days_only=True,
             enabled=rv["enabled"],
             enabled_reason="" if rv["enabled"] else "disabled in config (review)",
         ),

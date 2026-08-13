@@ -330,18 +330,6 @@ def test_the_entry_scan_writes_the_sla_heartbeat_the_watchdog_reads(monkeypatch,
     assert record["date"] == "2026-08-12" and record["ok"] is True
 
 
-def test_the_eod_reports_are_written_before_the_digest_deadline(monkeypatch):
-    """The suite digest fires once every module has written its paper-eod file, with a 16:45
-    backstop. Writing at 16:00-16:30 keeps earnings inside it."""
-    written = []
-    monkeypatch.setattr(harness, "_write_eod_report", lambda day: written.append(("report", day)))
-    monkeypatch.setattr(harness, "_write_eod_analysis", lambda day: written.append(("analysis", day)))
-
-    result = paper_loop.run_iteration(CONFIG, at("16:05"))
-    assert result["phase"] == "eod"
-    assert written == [("report", "2026-08-12"), ("analysis", "2026-08-12")]
-
-
 def test_a_busy_tick_reports_ok_rather_than_failing(wired):
     """The entry scan holds the lock for up to twenty-five minutes. A supervisor logging that as
     failure for twenty-five ticks teaches everyone to ignore the log."""

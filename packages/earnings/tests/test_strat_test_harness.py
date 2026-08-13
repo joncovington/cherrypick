@@ -79,8 +79,6 @@ def test_entry_to_close_round_trip_prices_the_bwb_ratio_correctly(tmp_path, monk
     monkeypatch.setattr(runner, "_run_bounded", lambda fn, timeout, *a, **k: [])
     monkeypatch.setattr(runner, "_capture_market_context", lambda day: None)
     monkeypatch.setattr(runner, "_save_entry_review", lambda *a, **k: None)
-    monkeypatch.setattr(runner, "_write_eod_report", lambda day: None)
-    monkeypatch.setattr(runner, "_write_eod_analysis", lambda day: None)
 
     near, body, far = 2.00, 3.00, 1.20
     order = {
