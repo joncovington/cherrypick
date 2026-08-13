@@ -21,7 +21,9 @@ diff against except that tag. The gaps were accepted knowingly at deletion time 
   scorecard, and stop-policy counterfactuals.
 - Flies symbol filter and the voided-rows accounting line.
 - GEX WebSocket push (console polls at 15s, the cache cadence).
-- Scout's narrative/describe prose — the one gap with a port already planned.
+- ~~Scout's narrative/describe prose~~ — **closed 2026-08-12**; see the scout section below.
+- The recorded-earnings screen (scout's `/api/earnings-screens`) has no console equivalent and its
+  backing services went with the package. `/api/earnings/upcoming` covers only the upcoming half.
 
 One thing worth pinning: the deleted suite dashboard's log card had a merge bug that took two rounds
 to fix (plain-text stamps parsing as undated, and earnings' log resolving to the wrong directory).
