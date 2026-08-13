@@ -1,0 +1,82 @@
+# cherrypick-review — Operational Instructions
+
+> Operating contract for the suite's cross-module **end-of-day review**. Suite-wide context is in
+> the root [documentation index](../../docs/README.md).
+
+This package answers one question every session: **what did the suite do today, was it what we
+expected, and what should change.** It covers MEIC, flies and earnings together, because the
+question is a suite question and answering it inside each package produced six report families that
+could not be compared and two normalisation layers that had already drifted apart.
+
+**It is read-only over every other package.** It reads each module's ledger through
+`cherrypick.core.ledgers` and writes only into its own home (`~/.cherrypick/data/review`). It never
+opens, closes, adjusts or cancels anything, never writes to a module's database, and has no
+broker credentials or network access of any kind.
+
+## The artifact is the product
+
+The output is a **fact set**, not a document: one versioned JSON per session, plus renders of it.
+
+```
+~/.cherrypick/data/review/eod-<date>.json        the facts — the only thing any surface reads
+~/.cherrypick/data/review/eod-<date>.md          human render of those facts
+~/.cherrypick/data/review/eod-<date>.note.md     the narrative, beside the facts, never inside them
+```
+
+Nothing downstream re-derives. The markdown render, the console page and the narrative all read the
+same JSON, so they cannot disagree — which is exactly what went wrong before, when the orchestrator's
+report and the console's TypeScript port each computed flies' P&L from a different table.
+
+## Rules the fact set enforces
+
+- **`None` is not zero.** A field with no recorded value is null. The earnings paper book holds 46
+  trades whose slippage predates the column; averaging those as zero understated cost by ~90% and
+  produced a confident, wrong conclusion about which strategies were viable.
+- **Effective sample sits beside raw N.** Trades sharing a symbol and session share one market
+  event. MEIC books 673 trades on a single session — that is one day, not 673 observations.
+- **Measurement breaks travel with the numbers.** Results either side of a break must never be
+  pooled. Earnings and MEIC record them; flies has no such table, and the fact set reports `null`
+  rather than `[]` so a trend line cannot silently assume continuity it never verified.
+- **A session is `provisional` before it is `final`.** MEIC and flies are 0DTE and complete at the
+  close; earnings opens before the close and settles the next morning, so session D is finalised on
+  session D+1. The narrative only ever runs on `final` sets, which is what lets it be written once
+  and frozen as the record of what was concluded that day.
+
+## Reconciliation is not optional
+
+`reconcile` re-counts each module's totals with **independent SQL** — a different route to the same
+question than the readers took — and reports deltas rather than merely failing. Proving the code
+equals itself is worthless; the failures worth catching are scope differences, and it earned its
+place on its first run by catching one (the earnings reader deliberately does no SQL date pushdown,
+so trusting its bounds reported every trade the book had ever closed as though it settled today).
+
+Run it after any change to a collector, and after any module changes its schema.
+
+---
+CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
+---
+
+> ⚠️ This file is strictly for build commands, tech-stack reference, and project guidelines:
+> - **No code here** — no Python, no scripts, no logic, and no scratchpad content, changelogs, or task trackers.
+> - **Mask account numbers** to the last 4 digits (`****1234`) anywhere they surface.
+> - **Portable paths only** — never hardcode absolute paths, usernames, hostnames, or drive letters.
+> - **Human-voice docs & commits** — never add AI/co-author attribution to commit messages.
+> - **No AI or network on any loop-decision or reliability path.** The narrative is deliberately
+>   generated *outside* this package by a scheduled agent reading the fact set, so no suite package
+>   ever acquires an API key or a network dependency, and a failed narrative can never damage a
+>   report.
+
+## Tool Reference
+
+| Command | Purpose |
+|---|---|
+| `python -m cherrypick.review build [--session YYYY-MM-DD] [--final]` | Build and write one session's fact set. Defaults to today, `provisional` unless `--final`. |
+| `python -m cherrypick.review backfill [--since YYYY-MM-DD]` | Build every session any module has a closed trade for. Backfilled sessions are `final` by definition — everything that was going to settle has. |
+| `python -m cherrypick.review reconcile [--since YYYY-MM-DD]` | Check every written fact set against independently-computed ledger totals. Reports the delta per module and field. |
+
+## Where the shared rules live
+
+`cherrypick.core.ledgers` is the single Python home for per-schema net, cost, capital and session
+rules across `meic_ic`, `fly_book` and `earnings`. The orchestrator's report imports from there;
+so does this package. **Do not add a fourth implementation** — that module's docstring records what
+happened the first three times.
