@@ -49,9 +49,13 @@ or produced a scan_log row (see docs/strat-test-portfolios.md) -- lets many isol
 share this one file without ever mixing their P&L or candidate history. `quantity` and
 `capital_at_risk` come from sizing.compute_position_size; `entry_cost`/`exit_cost` come from
 costs.py's tastytrade fee+slippage model (kept separate from entry_credit/exit_debit/pnl so
-cost impact is analyzable on its own). `entry_context` is a small JSON blob of the market
-conditions at entry (iv_rv_ratio, dispersion, skew, winrate_sample_size) for regime slicing
-in strategy_metrics.py -- stored verbatim, never parsed by db_paper.py itself.
+cost impact is analyzable on its own). `entry_context` is a JSON blob of the conditions a
+position was opened into -- signal strength, implied-vs-realized, execution quality, liquidity
+band, sample quality (see strat_test_harness._entry_context) -- for regime slicing in
+strategy_metrics.py, stored verbatim and never parsed by db_paper.py itself. It does not repeat
+costs, which have their own columns, nor market-wide regime, which `market_context` holds per
+scan_date. Note the older rows are thinner: until 2026-08-12 this captured five keys and no
+spread at all, so a slice on `bid_ask_spread_pct` sees nothing before that date.
 """
 
 import argparse

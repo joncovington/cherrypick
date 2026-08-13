@@ -395,6 +395,84 @@ def coverage_gaps(rows: list[dict]) -> list[dict]:
     ]
 
 
+def load_trade_costs(
+    db_path: Path | str,
+    profile: str | None = None,
+    strategy: str | None = None,
+    since: str | None = None,
+) -> list[dict]:
+    """Closed trades reduced to what a cost gate would have judged them on, plus what they made.
+
+    No new column is stored for this: `entry_cost`, `entry_slippage` and `capital_at_risk` are
+    already on `trades`, so cost-to-risk is a query over what is recorded rather than a second copy
+    to drift. That also makes it retroactive -- it answers for all 64 existing trades, unlike every
+    other measurement added this week, which only starts accumulating now.
+    """
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        query = "SELECT * FROM trades WHERE closed_at IS NOT NULL AND capital_at_risk > 0"
+        params: list = []
+        if profile:
+            frag, fparams = _sm.book_family_filter(profile)
+            query += f" AND {frag}"
+            params.extend(fparams)
+        if strategy:
+            query += " AND strategy = ?"
+            params.append(strategy)
+        if since:
+            query += " AND date(opened_at, 'unixepoch', 'localtime') >= ?"
+            params.append(since)
+        rows = conn.execute(query + " ORDER BY opened_at", params).fetchall()
+    finally:
+        conn.close()
+
+    out = []
+    for row in rows:
+        t = dict(row)
+        risk = t["capital_at_risk"] or 0
+        entry_cost = t["entry_cost"] or 0
+        cost = entry_cost + (t["exit_cost"] or 0)
+        out.append(
+            {
+                "symbol": t["symbol"],
+                "strategy": t["strategy"],
+                "capital_at_risk": risk,
+                # The entry-side ratio is what a gate could actually read: it is known when the
+                # order is built. The round trip is not -- exit cost depends on the spread hours
+                # later, and on the 18 trades with full attribution the exit was often the more
+                # expensive side, so doubling the entry would understate rather than bound it.
+                "entry_cost_to_risk": entry_cost / risk if risk else None,
+                "round_trip_cost_to_risk": cost / risk if risk else None,
+                "gross_pnl": t["pnl"] or 0,
+                "net_pnl": (t["pnl"] or 0) - cost,
+            }
+        )
+    return out
+
+
+def cost_gate_counterfactual(trades: list[dict], threshold: float) -> dict:
+    """What an entry-side cost-to-risk ceiling would have excluded, and what it cost or saved.
+
+    Unlike `counterfactual`, this one may honestly report P&L: every trade here was actually taken,
+    so the excluded set has real outcomes rather than none. `net_pnl_excluded` is what the book
+    would have given up (if positive) or avoided (if negative) -- at 14 independent earnings events
+    on file, treat the sign as a hint and the magnitude as noise.
+    """
+    judged = [t for t in trades if t["entry_cost_to_risk"] is not None]
+    excluded = [t for t in judged if t["entry_cost_to_risk"] > threshold]
+    kept = [t for t in judged if t["entry_cost_to_risk"] <= threshold]
+    return {
+        "threshold": threshold,
+        "judged": len(judged),
+        "excluded": len(excluded),
+        "kept": len(kept),
+        "net_pnl_excluded": round(sum(t["net_pnl"] for t in excluded), 2),
+        "net_pnl_kept": round(sum(t["net_pnl"] for t in kept), 2),
+        "strategies_excluded": sorted({t["strategy"] for t in excluded}),
+    }
+
+
 def measurement_coverage(rows: list[dict]) -> dict:
     """What fraction of rejections carry the numbers behind their reasons.
 

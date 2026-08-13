@@ -413,13 +413,46 @@ def test_entry_context_extracts_expected_fields():
         "avg_volume": 999999,
     }
     ctx = runner._entry_context(criteria, composite_score=0.76)
-    assert ctx == {
-        "iv_rv_ratio": 1.1,
-        "dispersion": 0.12,
-        "skew_abs": 0.03,
-        "winrate": 0.6,
-        "composite_score": 0.76,
-    }
+    assert ctx["iv_rv_ratio"] == 1.1
+    assert ctx["dispersion"] == 0.12
+    assert ctx["skew_abs"] == 0.03
+    assert ctx["winrate"] == 0.6
+    assert ctx["avg_volume"] == 999999
+    assert ctx["composite_score"] == 0.76
+
+
+def test_entry_context_captures_the_spread_the_fill_faced():
+    """The gap this closes: 0 of the first 64 trades recorded bid_ask_spread_pct, and modelled
+    slippage — 91% of cost — is a function of spread. A condition not captured at entry cannot be
+    recovered later, so the omission cost the whole existing sample."""
+    ctx = runner._entry_context(
+        {"bid_ask_spread_pct": 0.12, "net_combo_spread_pct": 0.08}, composite_score=None
+    )
+    assert ctx["bid_ask_spread_pct"] == 0.12
+    assert ctx["net_combo_spread_pct"] == 0.08
+
+
+def test_entry_context_records_a_winrates_sample_size_beside_it():
+    """A winrate without its sample size is not a claim you can weight — 1.0 on two quarters and
+    1.0 on twelve are different facts. db_paper's schema notes claimed this was captured; it was
+    not."""
+    ctx = runner._entry_context({"winrate": 1.0, "winrate_sample_size": 2}, composite_score=None)
+    assert (ctx["winrate"], ctx["winrate_sample_size"]) == (1.0, 2)
+
+
+def test_entry_context_does_not_duplicate_cost_columns():
+    """entry_cost, entry_slippage and capital_at_risk are columns on `trades`, so cost-to-risk is a
+    query over stored data. Copying it here would create a second copy to drift."""
+    ctx = runner._entry_context({"entry_cost": 40.0, "capital_at_risk": 1000.0}, composite_score=None)
+    assert "entry_cost" not in ctx and "capital_at_risk" not in ctx
+
+
+def test_entry_context_missing_criteria_record_as_none_not_absent():
+    """A key that is present-and-null says "we looked and could not measure it"; an absent key is
+    indistinguishable from a field that did not exist yet at write time."""
+    ctx = runner._entry_context({}, composite_score=None)
+    assert ctx["bid_ask_spread_pct"] is None
+    assert "iv_rank" in ctx and ctx["iv_rank"] is None
 
 
 def test_avg_sold_iv_averages_only_short_legs():
