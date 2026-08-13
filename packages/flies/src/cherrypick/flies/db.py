@@ -214,6 +214,31 @@ CREATE TABLE IF NOT EXISTS fly_stream_window (
     last_miss_at                TEXT,
     updated_at                  TEXT
 );
+
+-- Dates whose either side must never be pooled: a cadence change, an arm added, a gate retuned.
+-- MEIC added this table citing THIS module's own tick-cadence cutover as the motivating example,
+-- and this module never got one -- so flies is the only book whose arm comparisons have no record
+-- of when the rules underneath them changed. The cross-module review reports that absence rather
+-- than assuming continuity, which is honest but no substitute for the record itself.
+--
+-- Schema mirrors MEIC's deliberately (break_date, scope, kind, reason, detail) so a reader moving
+-- between the two ledgers meets one shape. `scope` is an arm name or '*' for the whole book.
+--
+-- Its own table rather than a fly_decisions row: decisions are per-iteration and rotate with
+-- volume, while a measurement break is a permanent property of the ledger and must outlive any
+-- retention applied to the iteration log.
+CREATE TABLE IF NOT EXISTS measurement_breaks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    break_date  TEXT NOT NULL,
+    scope       TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    reason      TEXT NOT NULL,
+    detail      TEXT,
+    created_at  TEXT NOT NULL,
+    UNIQUE (break_date, scope, kind)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fly_measurement_breaks_date ON measurement_breaks (break_date);
 """
 
 
@@ -690,6 +715,47 @@ def record_iteration(
         (iteration_ts, trade_date, symbol, arm, center, center_reason, underlying_price),
     )
     conn.commit()
+
+
+def record_measurement_break(
+    conn,
+    *,
+    break_date: str,
+    kind: str,
+    reason: str,
+    scope: str = "*",
+    detail: str | None = None,
+    created_at: str | None = None,
+) -> None:
+    """Record that sessions either side of `break_date` cannot be pooled.
+
+    Idempotent on (break_date, scope, kind), so a loop that notices the same change on every tick
+    writes one row. `scope` is an arm name, or '*' for the whole book.
+
+    A break that lives only in a commit message is invisible to every read surface and to whoever
+    reads a per-arm ranking three weeks from now -- which is exactly the state this module was in:
+    it had a tick-cadence cutover and two arms added with nothing in the ledger to say so.
+    """
+    conn.execute(
+        "INSERT INTO measurement_breaks (break_date, scope, kind, reason, detail, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(break_date, scope, kind) DO UPDATE SET "
+        "  reason = excluded.reason, detail = COALESCE(excluded.detail, detail)",
+        (break_date, scope, kind, reason, detail, created_at or _now()),
+    )
+    conn.commit()
+
+
+def measurement_breaks(conn, *, scope: str | None = None) -> list[dict]:
+    """Every recorded break, oldest first. `scope` filters to one arm plus the book-wide ones."""
+    if scope:
+        rows = conn.execute(
+            "SELECT * FROM measurement_breaks WHERE scope IN (?, '*') ORDER BY break_date",
+            (scope,),
+        ).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM measurement_breaks ORDER BY break_date").fetchall()
+    return [dict(r) for r in rows]
 
 
 def record_snapshot(
