@@ -208,7 +208,12 @@ h2 {
 }
 
 .cards-wide {
-  grid-template-columns: 1fr;
+  /* A bare `1fr` track's minimum width is content-based (`auto`), not 0 -- one long unbroken line
+     (a log line, a JSON blob) blows the whole track out past the viewport instead of ever being
+     constrained by it, which is what let a wide card grow to 10500px+ wide in practice. `minmax(0,
+     1fr)` is the fix: it gives the track an explicit 0 floor so its content is actually squeezed to
+     the available width, which is what lets a child's own overflow:hidden/ellipsis do anything. */
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .card {
@@ -951,6 +956,8 @@ select.text-input {
 }
 
 .log-text {
+  flex: 1 1 0;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1131,7 +1138,7 @@ select.text-input {
 }
 
 .review-subhead {
-  font-size: 10.5px;
+  font-size: 13px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -1198,8 +1205,14 @@ select.text-input {
 /* The narrative. Prose, not data — so it wraps and takes a readable measure, unlike the nowrap
    tables above it. `overflow-wrap` catches the long unbroken tokens a model occasionally emits
    (a path, a symbol list) that would otherwise put a horizontal scrollbar on the card. */
+/* Centered on a 10/80/10 split of the card, not the viewport — `width` is a percentage of the
+   card's own content box (inside its padding), so the gutter scales with however wide the card
+   itself ends up. `max-width` still clamps the line length on a very wide card, since 80% of a
+   wide window is still too long to read comfortably; margin: auto centers whichever bound binds. */
 .review-note .note {
+  width: 80%;
   max-width: 76ch;
+  margin: 0 auto;
   line-height: 1.6;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -1261,7 +1274,7 @@ select.text-input {
   align-items: center;
   gap: 0.5rem;
   margin: 1.3rem 0 0.7rem;
-  font-size: 11px;
+  font-size: 13px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
