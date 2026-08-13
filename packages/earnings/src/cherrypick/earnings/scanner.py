@@ -1126,6 +1126,114 @@ def apply_liquidity_gates(criteria: dict, config: dict, hard_fail: list) -> None
             hard_fail.append("no_weekly_options")
 
 
+# Which measurement each reject reason is about: reason -> (criteria key, threshold, comparator).
+#
+# `threshold` is a key in the calling strategy's own sub-config, or a (strict, near_miss) pair for
+# the five soft criteria -- which bar actually applied depends on that criterion's symbol_screen
+# level, resolved per call in `explain_reject_reasons`. `comparator` reads as "measured {cmp}
+# threshold was required": "<" a floor the value fell under, ">" a ceiling it went over, "flag" a
+# boolean with no numeric bar.
+#
+# Deliberately a lookup table rather than plumbing the numbers out of every gate: the gates live
+# across scanner.py and six strategy files and mutate a plain list of strings, so threading a
+# structured accumulator through all of them would touch every screening path at once. This is
+# derived at logging time instead, and `test_reject_reason_map_covers_every_gate` sweeps every
+# strategy's apply_tiering to fail if a gate ever emits a reason that is missing here. A reason not
+# in the map still records -- as a name with no measurement -- rather than being dropped.
+_SOFT_REJECT_CRITERIA = ("avg_volume", "winrate", "iv_rv_ratio", "market_cap", "combined_option_volume")
+
+_REJECT_REASON_MAP: dict[str, tuple[str, object, str]] = {
+    "price_below_minimum": ("price", "min_price", "<"),
+    "term_structure_insufficient": ("term_structure", "min_term_structure", ">"),
+    "expected_move_below_minimum": ("expected_move_dollars", "min_expected_move_dollars", "<"),
+    "expected_move_pct_below_minimum": ("expected_move_pct", "min_expected_move_pct", "<"),
+    "atm_delta_abs_above_maximum": ("atm_delta_abs", "max_atm_delta_abs", ">"),
+    "front_expiration_days_too_far_out": ("front_expiration_days", "max_front_expiration_days", ">"),
+    "combined_open_interest_below_minimum": (
+        "combined_open_interest",
+        "min_combined_open_interest",
+        "<",
+    ),
+    "bid_ask_spread_too_wide": ("bid_ask_spread_pct", "max_bid_ask_spread_pct", ">"),
+    "no_weekly_options": ("has_weekly_options", None, "flag"),
+    "insufficient_skew_signal": ("skew_abs", "min_skew_abs", "<"),
+    "realized_move_too_inconsistent": (
+        "realized_move_dispersion_pct",
+        "max_realized_move_dispersion_pct",
+        ">",
+    ),
+    "move_tail_veto": ("move_tail_veto", "move_tail_multiple", "flag"),
+    "chain_complete_unverified": ("chain_complete", None, "flag"),
+    **{
+        f"{name}_below_minimum": (name, (f"min_{name}", f"near_miss_min_{name}"), "<")
+        for name in _SOFT_REJECT_CRITERIA
+    },
+    # Every gate's "we could not measure this" branch. The criterion is what was missing; there is
+    # no threshold, because nothing was compared to one. Listed as (reason prefix, criteria key)
+    # because the two are not always the same word -- iron_fly reports `expected_move_unverified`
+    # for a missing `expected_move_dollars`.
+    **{
+        f"{prefix}_unverified": (criterion, None, "unverified")
+        for prefix, criterion in (
+            *((name, name) for name in _SOFT_REJECT_CRITERIA),
+            ("price", "price"),
+            ("term_structure", "term_structure"),
+            ("expected_move", "expected_move_dollars"),
+            ("expected_move_pct", "expected_move_pct"),
+            ("atm_delta_abs", "atm_delta_abs"),
+            ("front_expiration_days", "front_expiration_days"),
+            ("combined_open_interest", "combined_open_interest"),
+            ("bid_ask_spread_pct", "bid_ask_spread_pct"),
+            ("has_weekly_options", "has_weekly_options"),
+            ("skew_abs", "skew_abs"),
+        )
+    },
+}
+
+
+# Reasons that carry no measurement BY DESIGN, not by omission. `no_listed_options` is the whole
+# reason there is no criteria dict to measure -- the name has no option chain, so every chain-derived
+# criterion is absent rather than out of range. Listed explicitly so the drift test can tell a
+# deliberate blank from a gate someone forgot to map.
+UNMEASURABLE_REJECT_REASONS = frozenset({"no_listed_options"})
+
+
+def explain_reject_reasons(reasons: list[str], criteria: dict, strategy_config: dict) -> list[dict]:
+    """Attach the measured value and the threshold it missed to each reason in `reasons`.
+
+    A reason name says which gate fired. It cannot say whether the name was a hair under the bar or
+    two orders of magnitude under it -- and that distance is the only thing that tells you a
+    threshold is mistuned rather than doing its job. Recording it at scan time also pins the
+    threshold as it stood that night, so a later analysis is not silently re-deriving today's config
+    against last month's decisions.
+
+    Returns one dict per reason: `{reason, criterion, measured, threshold, comparator}`, with
+    `criterion`/`threshold` absent for a reason the map doesn't know (retired names live on in the
+    ledger -- `avg_volume_below_near_miss` has 1,036 rows and no producer in the source any more).
+    """
+    levels = _screen_levels(strategy_config)
+    out: list[dict] = []
+    for reason in reasons:
+        spec = _REJECT_REASON_MAP.get(reason)
+        if spec is None:
+            out.append({"reason": reason})
+            continue
+        criterion, threshold_key, comparator = spec
+        if isinstance(threshold_key, tuple):
+            strict, near_miss = threshold_key
+            threshold_key = near_miss if levels.get(criterion) == "near_miss" else strict
+        out.append(
+            {
+                "reason": reason,
+                "criterion": criterion,
+                "measured": criteria.get(criterion),
+                "threshold": strategy_config.get(threshold_key) if threshold_key else None,
+                "comparator": comparator,
+            }
+        )
+    return out
+
+
 def apply_move_tail_gate(criteria: dict, config: dict, hard_fail: list) -> None:
     """Optional reject for a name whose historical earnings moves include a blowout quarter
     (see compute_historical_move_stats' move_tail_veto: at least one of the last

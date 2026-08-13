@@ -1112,9 +1112,25 @@ def _parallel_scan(calendar, config, workers, symbol_timeout, budget_seconds):
     return out
 
 
-def _log_prefilter_skip(scan_date: str, symbol: str, reason: str) -> None:
-    """Record a name the morning scan disqualified, so a symbol missing from the evening's candidate
-    list is explained rather than simply absent. Best-effort: telemetry must never fail a scan."""
+def _log_scan_row(
+    scan_date: str,
+    symbol: str,
+    strategy: str,
+    profile: str,
+    *,
+    stage: str,
+    outcome: str,
+    reason: str | None,
+    tier: str | None = None,
+    reject_details: list | None = None,
+) -> None:
+    """Append one scan_log row. Best-effort: telemetry must never fail a scan.
+
+    `stage` separates the two halves of a candidate's life -- 'screen' for the accept/reject
+    verdict, 'execution' for what became of an accepted one. Both are recorded for every
+    (symbol, strategy) that gets that far, so the funnel from calendar to open position can be
+    read off this table alone rather than inferred from what is missing.
+    """
     try:
         db_paper.cmd_log_scan(
             argparse.Namespace(
@@ -1122,15 +1138,36 @@ def _log_prefilter_skip(scan_date: str, symbol: str, reason: str) -> None:
                     {
                         "scan_date": scan_date,
                         "symbol": symbol,
-                        "strategy": "_prefilter",
-                        "tier": "prefilter",
-                        "outcome": "skipped",
+                        "strategy": strategy,
+                        "tier": tier if tier is not None else outcome,
+                        "outcome": outcome,
                         "reason": reason,
+                        "stage": stage,
+                        "reject_details": reject_details or None,
                         "logged_at": time.time(),
-                        "profile": TEST_PROFILE,
-                    }
+                        "profile": profile,
+                    },
+                    default=str,
                 )
             )
+        )
+    except Exception:
+        pass
+
+
+def _log_prefilter_skip(scan_date: str, symbol: str, reason: str) -> None:
+    """Record a name the morning scan disqualified, so a symbol missing from the evening's candidate
+    list is explained rather than simply absent. Best-effort: telemetry must never fail a scan."""
+    try:
+        _log_scan_row(
+            scan_date,
+            symbol,
+            "_prefilter",
+            TEST_PROFILE,
+            stage="prefilter",
+            outcome="skipped",
+            reason=reason,
+            tier="prefilter",
         )
     except Exception:
         pass
@@ -1199,43 +1236,49 @@ def cmd_run_entries(args) -> dict:
             reasons = r["reject_reasons"]
             decision = "accepted" if r["accepted"] else "rejected"
             book = _book_tag(config, strategy_name)
-            db_paper.cmd_log_scan(
-                argparse.Namespace(
-                    data=json.dumps(
-                        {
-                            "scan_date": scan_date,
-                            "strategy": strategy_name,
-                            "symbol": symbol,
-                            "tier": decision,
-                            "outcome": decision,
-                            "reason": "; ".join(reasons) if reasons else None,
-                            "logged_at": time.time(),
-                            "profile": book,
-                        }
-                    )
-                )
+            _log_scan_row(
+                scan_date,
+                symbol,
+                strategy_name,
+                book,
+                stage="screen",
+                outcome=decision,
+                reason="; ".join(reasons) if reasons else None,
+                reject_details=scanner.explain_reject_reasons(
+                    reasons, r["criteria"], config["strategies"].get(strategy_name, {})
+                ),
             )
 
             if not r["accepted"]:
-                skipped.append({"symbol": symbol, "strategy": strategy_name, "reason": "screen_rejected"})
+                # The actual gates, not the word "screen_rejected" -- they are right here in scope,
+                # and this is what the per-symbol review summarises for the EOD table.
+                skipped.append(
+                    {"symbol": symbol, "strategy": strategy_name, "reason": "; ".join(reasons) or "rejected"}
+                )
                 continue
+
+            # From here the candidate has passed the screen, so every remaining exit is an EXECUTION
+            # outcome. Those went unrecorded until now: 2,349 accepted screenings against 64 trades
+            # ever opened, with nothing saying what happened to the rest.
+            # Defaults bind this iteration's symbol/strategy/book -- `drop` is only ever called
+            # within the iteration that defines it, but binding makes that independent of where a
+            # future edit moves the call.
+            def drop(reason: str, _sym=symbol, _s=strategy_name, _b=book) -> None:
+                skipped.append({"symbol": _sym, "strategy": _s, "reason": reason})
+                _log_scan_row(
+                    scan_date, _sym, _s, _b, stage="execution", outcome="dropped", reason=reason
+                )
 
             try:
                 order = _ORDER_FNS[strategy_name](symbol, earnings_date, timing, config)
                 if not order.get("ok"):
-                    skipped.append(
-                        {
-                            "symbol": symbol,
-                            "strategy": strategy_name,
-                            "reason": f"order_build_failed: {order.get('error')}",
-                        }
-                    )
+                    drop(f"order_build_failed: {order.get('error')}")
                     continue
 
                 strategy_config = config["strategies"][strategy_name]
                 size = sizing.compute_position_size(order, strategy_config, config)
                 if not size["ok"]:
-                    skipped.append({"symbol": symbol, "strategy": strategy_name, "reason": size["reason"]})
+                    drop(size["reason"])
                     continue
                 quantity = size["quantity"]
 
@@ -1244,9 +1287,7 @@ def cmd_run_entries(args) -> dict:
                 price = order.get("underlying_price", 0.0)
                 leg_quotes = _leg_quotes_for_symbols(symbol, leg_symbols, price)
                 if leg_quotes is None:
-                    skipped.append(
-                        {"symbol": symbol, "strategy": strategy_name, "reason": "leg_quotes_unavailable"}
-                    )
+                    drop("leg_quotes_unavailable")
                     continue
 
                 entry_costs = costs.apply_entry_costs(
@@ -1287,15 +1328,18 @@ def cmd_run_entries(args) -> dict:
                     ]
                 save_result = db_paper.cmd_save_trade(argparse.Namespace(data=json.dumps(save_spec)))
                 if not save_result.get("ok"):
-                    skipped.append(
-                        {
-                            "symbol": symbol,
-                            "strategy": strategy_name,
-                            "reason": f"save_trade_failed: {save_result.get('error')}",
-                        }
-                    )
+                    drop(f"save_trade_failed: {save_result.get('error')}")
                     continue
 
+                _log_scan_row(
+                    scan_date,
+                    symbol,
+                    strategy_name,
+                    book,
+                    stage="execution",
+                    outcome="opened",
+                    reason=None,
+                )
                 opened.append(
                     {
                         "order_id": order_id,
@@ -1311,9 +1355,7 @@ def cmd_run_entries(args) -> dict:
                 # must not lose every other candidate's already-accumulated results for
                 # the night -- log and move on, same discipline as the evaluate_symbol
                 # try/except above.
-                skipped.append(
-                    {"symbol": symbol, "strategy": strategy_name, "reason": f"unexpected_error: {exc}"}
-                )
+                drop(f"unexpected_error: {exc}")
 
         # After all of this symbol's strategies: record the per-symbol review (data reviewed + the
         # chosen/rejected decision) for the notifier and the EOD analysis.

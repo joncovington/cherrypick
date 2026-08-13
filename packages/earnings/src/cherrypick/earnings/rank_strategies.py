@@ -430,6 +430,7 @@ def _log_symbol_decision(scan_date: str, symbol_result: dict, paper_mode: bool) 
     the cross-strategy decision itself.
     """
     symbol = symbol_result["symbol"]
+    config = scanner._load_config()
     for r in symbol_result["strategies"]:
         reasons = r["reject_reasons"]
         decision = "accepted" if r["accepted"] else "rejected"
@@ -445,8 +446,15 @@ def _log_symbol_decision(scan_date: str, symbol_result: dict, paper_mode: bool) 
                         "tier": decision,
                         "outcome": decision,
                         "reason": "; ".join(reasons) if reasons else None,
+                        "stage": "screen",
+                        # Same measurement trail the harness records, so an analysis of rejections
+                        # doesn't depend on which path ran the scan.
+                        "reject_details": scanner.explain_reject_reasons(
+                            reasons, r.get("criteria") or {}, config["strategies"].get(r["name"], {})
+                        ),
                         "logged_at": time.time(),
-                    }
+                    },
+                    default=str,
                 ),
             ],
             paper_mode,

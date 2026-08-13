@@ -125,15 +125,17 @@ CREATE TABLE IF NOT EXISTS trade_legs (
 );
 
 CREATE TABLE IF NOT EXISTS scan_log (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    scan_date   TEXT NOT NULL,
-    strategy    TEXT NOT NULL DEFAULT 'iron_fly',
-    symbol      TEXT NOT NULL,
-    tier        TEXT,
-    outcome     TEXT,
-    reason      TEXT,
-    logged_at   REAL,
-    profile     TEXT NOT NULL DEFAULT 'default'
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_date      TEXT NOT NULL,
+    strategy       TEXT NOT NULL DEFAULT 'iron_fly',
+    symbol         TEXT NOT NULL,
+    tier           TEXT,
+    outcome        TEXT,
+    reason         TEXT,
+    stage          TEXT NOT NULL DEFAULT 'screen',
+    reject_details TEXT,
+    logged_at      REAL,
+    profile        TEXT NOT NULL DEFAULT 'default'
 );
 
 CREATE TABLE IF NOT EXISTS daily_summary (
@@ -301,6 +303,15 @@ _MIGRATIONS = [
     ("trades", "entry_slippage", "ALTER TABLE trades ADD COLUMN entry_slippage REAL"),
     ("trades", "exit_slippage", "ALTER TABLE trades ADD COLUMN exit_slippage REAL"),
     ("scan_log", "profile", "ALTER TABLE scan_log ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
+    # A candidate's life has two stages and only the first was ever recorded: 2,349 screenings said
+    # "accepted" against 64 trades ever opened, and nothing said why the other ~97% never became a
+    # position. 'screen' rows carry the accept/reject verdict, 'execution' rows what happened after
+    # it. Defaulting historical rows to 'screen' is accurate -- that is the only stage that existed.
+    ("scan_log", "stage", "ALTER TABLE scan_log ADD COLUMN stage TEXT NOT NULL DEFAULT 'screen'"),
+    # The measured value and the threshold it missed, per reason (scanner.explain_reject_reasons).
+    # A reason name alone says a gate fired; it cannot say whether the name was one basis point or
+    # two orders of magnitude away, which is the only thing that tells you a threshold is mistuned.
+    ("scan_log", "reject_details", "ALTER TABLE scan_log ADD COLUMN reject_details TEXT"),
     # Extended entry_reviews columns (research-backed screening metrics: implied-vs-historical
     # move, bid-ask spread quality, IV rank/percentile, move-history tail flag) added for an
     # entry_reviews table that pre-existed these columns -- see docs/screening-criteria.md.
@@ -1086,8 +1097,8 @@ def cmd_log_scan(args) -> dict:
     conn = _conn()
     try:
         conn.execute(
-            "INSERT INTO scan_log (scan_date, strategy, symbol, tier, outcome, reason, logged_at, profile) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO scan_log (scan_date, strategy, symbol, tier, outcome, reason, stage, "
+            "reject_details, logged_at, profile) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 spec["scan_date"],
                 spec.get("strategy", "iron_fly"),
@@ -1095,6 +1106,8 @@ def cmd_log_scan(args) -> dict:
                 spec.get("tier"),
                 spec.get("outcome"),
                 spec.get("reason"),
+                spec.get("stage", "screen"),
+                json.dumps(spec["reject_details"]) if spec.get("reject_details") else None,
                 spec.get("logged_at", time.time()),
                 spec.get("profile", "default"),
             ),
