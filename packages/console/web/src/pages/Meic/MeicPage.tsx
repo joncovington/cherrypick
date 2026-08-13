@@ -8,6 +8,7 @@ import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { ScopeSelect, EraSelect, TabStrip, LoopPill, Pager, usePage } from "../../components/ScopeBar";
 import { MeicDeepCards } from "./MeicDeepCards";
+import { ExperimentGuideView } from "../../components/ExperimentGuide";
 import { ArmRail, AttemptTimeline } from "../../components/Attempts";
 import { OccupancyMap } from "../../components/OccupancyMap";
 import { MeicForestCard } from "./MeicForestCard";
@@ -56,7 +57,7 @@ function useMeicAnalytics(mode: TradingMode, symbol: string | null, profile: str
   });
 }
 
-const TABS = ["today", "history", "performance"] as const;
+const TABS = ["today", "history", "performance", "help"] as const;
 const OUTCOMES = ["all", "wins", "losses", "open"] as const;
 
 /** Status reads at a glance: stopped is the loss branch, expired is the win branch. */
@@ -207,6 +208,16 @@ export function MeicPage() {
       {tab === "performance" && (
         <div className="view-fade">
           <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />
+        </div>
+      )}
+
+      {tab === "help" && (
+        <div className="view-fade">
+          <ExperimentGuideView
+            url="/api/meic/profiles"
+            mode={mode}
+            intro="Every ENABLED risk profile is evaluated on every tick — they are parallel arms of one experiment, not a ladder you pick a rung from, and active_profile no longer selects between them. Each description below is the module's own, read from config.risk.json, and 'what makes it different' is derived from the profile's settings: the values it does not share with the module's base config or with most of its siblings."
+          />
         </div>
       )}
 

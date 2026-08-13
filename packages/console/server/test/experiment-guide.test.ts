@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { ConsoleConfig } from "../src/config.js";
-import { readFliesArmGuide } from "../src/readers/flies.js";
+import { readFliesArmGuide, readMeicProfileGuide } from "../src/readers/experimentGuide.js";
 
 /**
  * The arm guide answers "what makes this arm different from the others", and the whole value of it
@@ -86,7 +86,7 @@ beforeAll(() => {
   };
 });
 
-const armOf = (name: string) => readFliesArmGuide(config, "paper").arms.find((a) => a.arm === name)!;
+const armOf = (name: string) => readFliesArmGuide(config, "paper").entries.find((e) => e.name === name)!;
 
 describe("what distinguishes an arm", () => {
   it("a setting most arms share is not a distinguisher", () => {
@@ -115,8 +115,10 @@ describe("what distinguishes an arm", () => {
   it("centring follows the engine: center_rule if set, otherwise the arm's own name", () => {
     // The `gex` arm carries no center_rule key at all — a pure config diff reports nothing
     // separating it from control, when the centring rule IS the experiment.
-    expect(armOf("bwb")).toMatchObject({ centring: "gex", centringFromName: false });
-    expect(armOf("control")).toMatchObject({ centring: "atm", centringFromName: true });
+    const centringOf = (name: string) => armOf(name).derived.find((d) => d.label === "centres on")!;
+    expect(centringOf("bwb")).toMatchObject({ value: "GEX", detail: "set by center_rule" });
+    expect(centringOf("control").value).toBe("ATM");
+    expect(centringOf("control").detail).toContain("own name");
   });
 
   it("the baseline has nothing left once shared and default settings are set aside", () => {
@@ -144,8 +146,8 @@ describe("running versus finished", () => {
 
   it("running arms come first, and carry their own ledger span", () => {
     const guide = readFliesArmGuide(config, "paper");
-    expect(guide.arms.map((a) => a.arm)).toEqual(["control", "bwb", "width-5"]);
-    expect(guide.arms[0]).toMatchObject({ firstSession: "2026-08-11", lastSession: "2026-08-13", positions: 2 });
+    expect(guide.entries.map((e) => e.name)).toEqual(["control", "bwb", "width-5"]);
+    expect(guide.entries[0]).toMatchObject({ firstSession: "2026-08-11", lastSession: "2026-08-13", positions: 2 });
     // Configured but never traded is its own state — neither running-with-history nor retired.
     expect(armOf("bwb")).toMatchObject({ enabled: true, retired: false, positions: 0, firstSession: null });
   });
@@ -162,6 +164,79 @@ describe("a missing config", () => {
     const gone: ConsoleConfig = { ...config, paths: { ...config.paths, fliesConfig: "/nope/flies.json" } };
     const guide = readFliesArmGuide(gone, "paper");
     expect(guide.configMissing).toBe(true);
-    expect(guide.arms).toHaveLength(0);
+    expect(guide.entries).toHaveLength(0);
+  });
+});
+
+/**
+ * MEIC's shape differs from flies' in two ways that matter: a profile states every parameter rather
+ * than overriding a `defaults` block (so the majority rule does the work), and its book carries
+ * profiles the config no longer defines at all.
+ */
+describe("MEIC risk profiles", () => {
+  let meicConfig: ConsoleConfig;
+
+  beforeAll(() => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "console-meicguide-"));
+    fs.mkdirSync(path.join(tmp, "config"), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmp, "config", "meic.json"),
+      JSON.stringify({ min_iv_rank: 0.3, stop_trigger_ratio: 0.95 }),
+    );
+    fs.writeFileSync(
+      path.join(tmp, "config.risk.json"),
+      JSON.stringify({
+        _description: "Parallel arms of one experiment, not a ladder.",
+        active_profile: "control",
+        profiles: {
+          control: { enabled: true, min_iv_rank: 0.3, stop_trigger_ratio: 0.95, _note: "The baseline." },
+          open: { enabled: true, min_iv_rank: 0.0, stop_trigger_ratio: 0.95, _note: "Removes the IV floor." },
+          sign: { enabled: true, min_iv_rank: 0.3, stop_trigger_ratio: 0.95, _note: "Same gates as control." },
+        },
+      }),
+    );
+    const dir = path.join(tmp, "meic");
+    fs.mkdirSync(dir, { recursive: true });
+    const db = new Database(path.join(dir, "paper_trades.db"));
+    db.exec(`
+      CREATE TABLE ic_trades (id INTEGER PRIMARY KEY, risk_profile TEXT, trade_date TEXT);
+      CREATE TABLE measurement_breaks (
+        id INTEGER PRIMARY KEY, break_date TEXT, scope TEXT, kind TEXT, reason TEXT, detail TEXT, created_at TEXT
+      );
+    `);
+    const ins = db.prepare("INSERT INTO ic_trades (risk_profile, trade_date) VALUES (?, ?)");
+    ins.run("control", "2026-08-12");
+    ins.run("open", "2026-08-13");
+    ins.run("large-spx", "2026-07-13");
+    db.close();
+
+    meicConfig = { ...config, paths: { ...config.paths, meicDir: dir, cherrypick: tmp, meicRiskConfig: path.join(tmp, "config.risk.json") } };
+  });
+
+  const guide = () => readMeicProfileGuide(meicConfig, "paper");
+
+  it("distinguishes on the value the profile does not share with its siblings", () => {
+    const open = guide().entries.find((e) => e.name === "open")!;
+    const distinguishing = open.overrides.filter((o) => !o.sharedByMostArms && !o.matchesDefault);
+    expect(distinguishing.map((o) => o.key)).toEqual(["min_iv_rank"]);
+    // The base value comes from the module's own config, since risk profiles have no defaults block.
+    expect(distinguishing[0]!.fallback).toBe(0.3);
+  });
+
+  it("a profile matching the base and its siblings has nothing distinguishing", () => {
+    const control = guide().entries.find((e) => e.name === "control")!;
+    expect(control.overrides.filter((o) => !o.sharedByMostArms && !o.matchesDefault)).toHaveLength(0);
+  });
+
+  it("lists profiles the book still holds but the config has dropped", () => {
+    const gone = guide().entries.find((e) => e.name === "large-spx")!;
+    expect(gone).toMatchObject({ removed: true, positions: 1, enabled: false });
+    // Nothing to describe it with — that is the point of flagging it rather than omitting it.
+    expect(gone.notes).toHaveLength(0);
+  });
+
+  it("takes the set-level notes from the config root", () => {
+    expect(guide().groupNotes.map((n) => n.key)).toContain("description");
+    expect(guide().unit).toBe("risk profile");
   });
 });

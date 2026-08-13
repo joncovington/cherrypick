@@ -1830,3 +1830,13 @@ select.text-input {
   margin: 0.35rem 0 0.1rem;
   font-size: 12px;
 }
+
+.arm-common-details {
+  margin-top: 0.5rem;
+}
+
+.arm-common-details summary {
+  cursor: pointer;
+  font-size: 11px;
+  list-style: revert;
+}

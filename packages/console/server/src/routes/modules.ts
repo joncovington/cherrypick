@@ -3,6 +3,7 @@ import type { TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { readMeicForest } from "../readers/meic.js";
 import { readEntryAttempts } from "../readers/attempts.js";
+import { readFliesArmGuide, readMeicProfileGuide } from "../readers/experimentGuide.js";
 import { readOccupancy } from "../readers/occupancy.js";
 import {
   readMeic,
@@ -27,7 +28,6 @@ import {
   readArmDivergence,
   readFliesTradeLog,
   type FliesFilter,
-  readFliesArmGuide,
 } from "../readers/flies.js";
 import { readEarnings, readSymbolWatch, readEarningsAnalytics, readEarningsDetail } from "../readers/earnings.js";
 import { readEarningsLive } from "../readers/earningsLive.js";
@@ -143,9 +143,10 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       search: typeof q["search"] === "string" ? q["search"].slice(0, 60) : "",
     });
   });
-  // The arm guide: what each experiment arm is and how it got there. Config + ledger only, so it
-  // costs nothing and never needs the market.
+  // The experiment guides: what each arm/profile is and how it got there. Config + ledger only, so
+  // they cost nothing and never need the market.
   app.get("/api/flies/arms", async (req) => readFliesArmGuide(config, parseMode(req.query)));
+  app.get("/api/meic/profiles", async (req) => readMeicProfileGuide(config, parseMode(req.query)));
 
   app.get("/api/flies/analytics", async (req) =>
     readFliesAnalytics(config, parseMode(req.query), parseFliesFilter(req.query)),
