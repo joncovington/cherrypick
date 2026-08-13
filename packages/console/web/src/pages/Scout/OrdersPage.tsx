@@ -1,11 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { mutateJson } from "../../lib/api";
 import { SkeletonRows, fmtMoney } from "../../components/DataTable";
+import { dteOf, fmtExpiry } from "../../lib/optionFormat";
 
 interface TicketLeg {
   symbol: string;
   quantity: number;
   price: number;
+  /** Present on tickets staged after structured leg capture landed; absent on older ones, which
+      fall back to showing the raw OCC symbol the way this page always has. */
+  expiration?: string | null;
+  strike?: number | null;
+  kind?: "call" | "put" | "stock" | null;
 }
 
 interface StagedTicket {
@@ -77,7 +83,19 @@ export function OrdersPage() {
                           <span className={`chain-badge ${l.quantity < 0 ? "chain-badge-short" : "chain-badge-long"}`}>
                             {l.quantity < 0 ? "STO" : "BTO"} {Math.abs(l.quantity)}
                           </span>{" "}
-                          {l.symbol.trim()} @ {l.price.toFixed(2)}
+                          {l.kind && l.kind !== "stock" && l.strike != null ? (
+                            <>
+                              {l.strike.toFixed(0)}
+                              {l.kind === "call" ? "C" : "P"} {fmtExpiry(l.expiration ?? null)}
+                              {(() => {
+                                const dte = dteOf(l.expiration ?? null);
+                                return dte !== null ? ` (${dte}d)` : "";
+                              })()}
+                            </>
+                          ) : (
+                            l.symbol.trim()
+                          )}{" "}
+                          @ {l.price.toFixed(2)}
                         </div>
                       ))}
                     </td>

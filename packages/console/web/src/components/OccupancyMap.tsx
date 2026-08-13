@@ -69,14 +69,10 @@ export function OccupancyMap({
   const arms = [...new Set(all.map((l) => l.arm))].sort();
   const strikes = [...new Set(all.map((l) => l.strike))].sort((a, b) => b - a);
 
-  // Strikes that actually refused an entry today, per arm — the map's whole
-  // point is to show what was sitting there when they did.
-  const blocked = new Map<string, number>();
-  for (const row of attempts?.timeline ?? []) {
-    if (row.outcome !== "sign_rule_blocked" || row.blockingStrike === null) continue;
-    const key = `${row.arm}|${row.blockingStrike}`;
-    blocked.set(key, (blocked.get(key) ?? 0) + 1);
-  }
+  // Strikes that actually refused an entry today, per arm — the map's whole point is to show what
+  // was sitting there when they did. Server-computed from the full (untinned) rows, since the
+  // timeline itself is thinned for the chart and would silently undercount a raw client-side tally.
+  const blocked = new Map<string, number>(Object.entries(attempts?.blockedByStrike ?? {}));
 
   return (
     <section className="card">

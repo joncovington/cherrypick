@@ -4,6 +4,8 @@ import type { ConsoleConfig } from "../config.js";
 import { listStaged, insertStaged, deleteStaged } from "../store/consoleDb.js";
 import { dryRunOrder, type TicketLeg } from "../services/staging.js";
 
+const LEG_KINDS = new Set(["call", "put", "stock"]);
+
 function parseTicketLegs(raw: unknown): TicketLeg[] | null {
   if (!Array.isArray(raw) || raw.length === 0) return null;
   const legs: TicketLeg[] = [];
@@ -14,7 +16,10 @@ function parseTicketLegs(raw: unknown): TicketLeg[] | null {
     const price = Number(l["price"]);
     if (typeof symbol !== "string" || symbol === "") return null;
     if (!Number.isFinite(quantity) || quantity === 0 || !Number.isFinite(price)) return null;
-    legs.push({ symbol, quantity, price });
+    const expiration = typeof l["expiration"] === "string" ? l["expiration"] : null;
+    const strike = typeof l["strike"] === "number" && Number.isFinite(l["strike"]) ? l["strike"] : null;
+    const kind = typeof l["kind"] === "string" && LEG_KINDS.has(l["kind"]) ? (l["kind"] as TicketLeg["kind"]) : null;
+    legs.push({ symbol, quantity, price, expiration, strike, kind });
   }
   return legs;
 }
