@@ -124,10 +124,16 @@ function fmtGap(seconds: number): string {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
+/** ET, like the axis and like every other time the suite prints — never the viewer's local clock. */
 function clockOf(ts: string | null): string {
   const ms = parseTs(ts);
   if (ms === null) return "—";
-  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new Date(ms).toLocaleTimeString("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 /**
@@ -346,11 +352,40 @@ const LANE_H = 22;
 const SESSION_START_MIN = 9 * 60 + 30;
 const SESSION_END_MIN = 16 * 60;
 
+/**
+ * Minute of the day in ET — the only clock this chart's axis knows.
+ *
+ * This used to read the browser's local clock, which is right only for a viewer sitting in ET.
+ * Two zones west, an attempt stamped 10:00 ET became 08:00 and was plotted 120 minutes left of a
+ * 09:30-anchored axis: off the left edge of the viewBox entirely for the first hour and a half of
+ * the session, and over the arm-label gutter for the hour after that. On 2026-08-13 that put 15 of
+ * the day's 34 fills outside the canvas and 11 more underneath the labels, which reads exactly like
+ * an arm that barely traded.
+ */
+const ET_CLOCK = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+});
+
+function etParts(ms: number): { h: number; m: number; s: number } | null {
+  const parts = ET_CLOCK.formatToParts(new Date(ms));
+  const of = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  const h = of("hour");
+  const m = of("minute");
+  const s = of("second");
+  if (!Number.isFinite(h) || !Number.isFinite(m) || !Number.isFinite(s)) return null;
+  // hourCycle h23 reports midnight as 24 in some engines.
+  return { h: h === 24 ? 0 : h, m, s };
+}
+
 function minuteOfDay(ts: string | null): number | null {
   const ms = parseTs(ts);
   if (ms === null) return null;
-  const d = new Date(ms);
-  return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
+  const p = etParts(ms);
+  return p === null ? null : p.h * 60 + p.m + p.s / 60;
 }
 
 /**
@@ -434,6 +469,12 @@ export function AttemptTimeline({
                   />
                   {rows
                     .filter((r) => r.arm === arm)
+                    // Fills last, so they paint OVER the refusals rather than under them. SVG draws
+                    // in document order and the rows arrive in time order, so a fill was buried by
+                    // any refusal landing on the same pixel column a few seconds later — and at a
+                    // 15s poll there are always several. The sort is stable, so time order survives
+                    // within each group.
+                    .sort((x, y) => Number(x.outcome === "filled") - Number(y.outcome === "filled"))
                     .map((r, j) => {
                       const min = minuteOfDay(r.ts);
                       if (min === null) return null;

@@ -45,6 +45,16 @@ function useFliesAnalytics(mode: TradingMode, filter: FliesFilter) {
 
 type FliesTab = "today" | "history" | "performance";
 
+/**
+ * Why a per-arm table is empty. Both tables count settled positions, so an open session shows
+ * nothing — which is a different fact from an arm that never traded, and the page has to say which.
+ */
+function emptyReason(a: FliesAnalytics | undefined): string {
+  const open = a?.today.positions ?? 0;
+  if (open === 0) return "no positions on this session";
+  return `${open} position${open === 1 ? "" : "s"} entered, none settled yet — per-arm results fill in as the book settles`;
+}
+
 export function FliesPage() {
   const [mode, setMode] = useMode();
   const [arm, setArm] = useState<string | null>(null);
@@ -226,9 +236,13 @@ export function FliesPage() {
           <DataCard
             title="By arm"
             headers={["arm", "trades", "net", "win %", "avg", "PF"]}
-          numFrom={1}
+            numFrom={1}
             loading={analytics.isLoading}
             rowCount={a?.byArm.length ?? 0}
+            // These count SETTLED positions, so they are legitimately empty for most of a live
+            // session. Say which kind of empty it is: "no rows" beside a card reporting 34 open
+            // positions reads as an arm that did nothing.
+            empty={emptyReason(a)}
           >
             {a?.byArm.map((r) => (
               <tr key={r.arm}>
@@ -245,9 +259,10 @@ export function FliesPage() {
           <DataCard
             title="Fee drag by arm"
             headers={["arm", "gross", "fees", "net", "drag %"]}
-          numFrom={1}
+            numFrom={1}
             loading={analytics.isLoading}
             rowCount={a?.feeDrag.length ?? 0}
+            empty={emptyReason(a)}
           >
             {a?.feeDrag.map((r) => (
               <tr key={r.arm}>

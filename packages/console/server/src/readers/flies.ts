@@ -61,6 +61,19 @@ function filterSql(filter: FliesFilter): { where: string; params: string[] } {
   return { where: clauses.length > 0 ? clauses.join(" AND ") : "1=1", params };
 }
 
+/**
+ * The most recent session in the book. Deliberately unscoped by arm or era: every card on the Today
+ * tab has to name the SAME day, and a per-arm "latest" would let the books table show one session
+ * while the arm rail beside it showed another.
+ */
+function latestTradeDate(dbPath: string): string | null {
+  return withReadOnlyDb<string | null>(
+    dbPath,
+    null,
+    (db) => db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM fly_positions").get()?.d ?? null,
+  );
+}
+
 export function readFlies(
   config: ConsoleConfig,
   mode: TradingMode,
@@ -69,7 +82,13 @@ export function readFlies(
 ): FliesPayload {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
-  const { where, params } = filterSql(filter);
+  // "latest day" (a null date) is a DAY, not the absence of one. Left unresolved it reached the SQL
+  // as no date clause at all, so the Today tab's books and positions quietly answered for every
+  // session in the era while the cards above them answered for one — 289 rows beside a 34-position
+  // day, both correctly labelled and irreconcilable. Resolve it here, exactly the way the analytics
+  // and the arm rail already do (an unscoped MAX, so every card on the tab names the same day).
+  const scoped: FliesFilter = { ...filter, date: filter.date ?? latestTradeDate(dbPath) };
+  const { where, params } = filterSql(scoped);
 
   const books = withReadOnlyDb<Paged<FliesBookRow>>(dbPath, emptyPage(page.books), (db) =>
     pagedQuery<FliesBookRow>(
@@ -1315,8 +1334,11 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
       };
     }
 
-    const dateClause = filter.date !== null ? " AND trade_date = ?" : "";
-    const dateParams: string[] = filter.date !== null ? [filter.date] : [];
+    // The RESOLVED day, not the raw filter: these two tables sit directly under the session card on
+    // the Today tab, and scoping them to "every day in the era" while that card showed one session
+    // put two different questions side by side under one date select.
+    const dateClause = tradeDate !== null ? " AND trade_date = ?" : "";
+    const dateParams: string[] = tradeDate !== null ? [tradeDate] : [];
     const armRows = db
       .prepare<string[], Record<string, unknown>>(
         `SELECT arm, COUNT(*) AS trades, COALESCE(SUM(pnl), 0) AS net,
