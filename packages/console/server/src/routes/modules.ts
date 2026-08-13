@@ -27,6 +27,7 @@ import {
   readArmDivergence,
   readFliesTradeLog,
   type FliesFilter,
+  readFliesArmGuide,
 } from "../readers/flies.js";
 import { readEarnings, readSymbolWatch, readEarningsAnalytics, readEarningsDetail } from "../readers/earnings.js";
 import { readEarningsLive } from "../readers/earningsLive.js";
@@ -142,6 +143,10 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       search: typeof q["search"] === "string" ? q["search"].slice(0, 60) : "",
     });
   });
+  // The arm guide: what each experiment arm is and how it got there. Config + ledger only, so it
+  // costs nothing and never needs the market.
+  app.get("/api/flies/arms", async (req) => readFliesArmGuide(config, parseMode(req.query)));
+
   app.get("/api/flies/analytics", async (req) =>
     readFliesAnalytics(config, parseMode(req.query), parseFliesFilter(req.query)),
   );

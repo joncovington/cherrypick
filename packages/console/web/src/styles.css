@@ -1714,3 +1714,119 @@ select.text-input {
   line-height: 1.55;
   max-width: 86ch;
 }
+
+/* ---- Flies arm guide (Help tab) -------------------------------------------------------- */
+/* Reference text, so it reads as prose at a comfortable measure rather than as table furniture —
+   these notes carry the reasoning behind each arm and are meant to be read, not scanned. */
+
+.arm-intro {
+  max-width: 88ch;
+  line-height: 1.6;
+  margin: 0 0 1rem;
+}
+
+.arm-section-head {
+  font-size: 0.95rem;
+  margin: 1.5rem 0 0.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.arm-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.arm-facts {
+  font-family: var(--num-face);
+  font-size: 11.5px;
+  margin-bottom: 0.6rem;
+}
+
+.arm-diff {
+  margin-bottom: 0.75rem;
+}
+
+.arm-diff-table {
+  margin-top: 0.3rem;
+}
+
+.arm-diff-table td {
+  vertical-align: top;
+  padding: 0.18rem 0.5rem 0.18rem 0;
+}
+
+.arm-diff-key {
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.arm-diff-value {
+  font-family: var(--num-face);
+  font-size: 11.5px;
+}
+
+.arm-diff-was {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.arm-diff-none {
+  margin: 0.3rem 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  max-width: 80ch;
+}
+
+.arm-lead {
+  margin: 0 0 0.7rem;
+  line-height: 1.6;
+  max-width: 86ch;
+}
+
+.arm-note {
+  margin-top: 0.7rem;
+  padding-left: 0.7rem;
+  border-left: 1px solid var(--border);
+}
+
+.arm-note p {
+  margin: 0.2rem 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  max-width: 86ch;
+}
+
+.arm-note-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+.arm-group-note {
+  margin-bottom: 0.9rem;
+  border-left-color: var(--warn);
+}
+
+.arm-diff-common {
+  margin: 0.45rem 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  max-width: 86ch;
+}
+
+.arm-diff-common code {
+  font-family: var(--num-face);
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.arm-centring {
+  margin: 0.35rem 0 0.1rem;
+  font-size: 12px;
+}
