@@ -256,3 +256,57 @@ def test_the_render_omits_the_arm_table_for_a_single_arm_module(store):
     """One arm is not a comparison, and a table of one row implies one."""
     _arm_session("2026-08-12", {"default": (10, 100.0, 8)}, breaks=[])
     assert "## By arm" not in render.render("2026-08-12")
+
+
+# --------------------------------------------------------------------------- degraded arms
+
+
+def test_an_arm_that_used_one_centring_rule_all_session_is_marked():
+    """A GEX-centred flies arm degrades to ATM when the streamer has no OI cached, at which point
+    it is the control arm under a different name. On 2026-08-12 `gex-intrinsic` centred `atm` on all
+    four entries and reported results identical to `control` to the cent."""
+    records = [{"center_reason": "atm"} for _ in range(4)]
+    assert facts._degraded_to(records) == "atm"
+
+
+def test_an_arm_that_mixed_centring_rules_is_not_marked():
+    """Mixed reasons mean the arm was making its own choice at least some of the time, so it is not
+    collapsed into another arm."""
+    records = [{"center_reason": "atm"}, {"center_reason": "max_total_gamma"}]
+    assert facts._degraded_to(records) is None
+
+
+def test_an_arm_with_no_centring_reason_recorded_is_not_marked():
+    """MEIC records none — absent is not the same as degraded, and inventing a rule here would
+    label every MEIC arm as collapsed."""
+    assert facts._degraded_to([{"net_pnl": 1.0}, {"net_pnl": 2.0}]) is None
+
+
+def test_the_render_calls_out_arms_that_shared_a_centring_rule(store):
+    """Two arms agreeing to the cent reads as corroboration. It is one arm run twice, and the
+    reader has to be told which."""
+    facts.write(
+        {
+            "session": "2026-08-12", "status": "final", "fact_version": 4,
+            "modules": {"flies": {
+                "ok": True,
+                "results": {"closed": 8, "net": 20.0, "wins": 8, "gross": 20.0, "cost": 0},
+                "return": {"capital_at_risk": None, "on_max_risk": None},
+                "carried_overnight": {"positions": 0, "capital_at_risk": None},
+                "expected_vs_observed": {"basis": "modeled_pnl", "expected": None, "observed": 20.0},
+                "health": {"loop_ticked": True},
+                "sample": {"n": 8, "effective_n": 1, "breaks": [], "suspected_break": None},
+                "by_profile": {
+                    "control": {"closed": 4, "net": 10.0, "wins": 4, "centred_by": "atm",
+                                "return": {"capital_at_risk": None, "on_max_risk": None},
+                                "sample": {"n": 4, "effective_n": 1}},
+                    "gex-intrinsic": {"closed": 4, "net": 10.0, "wins": 4, "centred_by": "atm",
+                                      "return": {"capital_at_risk": None, "on_max_risk": None},
+                                      "sample": {"n": 4, "effective_n": 1}},
+                },
+            }},
+        }
+    )
+    out = render.render("2026-08-12")
+    assert "not independent that session" in out
+    assert "control, gex-intrinsic all centred `atm`" in out

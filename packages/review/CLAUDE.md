@@ -77,6 +77,33 @@ third it fires on ratios between trivial counts (earnings going from 6 trades to
 three, 24 backfilled sessions produce two flags, both real: flies on 2026-07-29 and MEIC on
 2026-08-07 — the four-stream launch, which its journal records as 2026-08-11.
 
+## The narrative lives outside every package
+
+`scripts/eod_narrative.py` writes `eod-<day>.note.md` beside the fact set. It is deliberately **not**
+a package: `packages/*` is what the trading loops import, so a script the scheduler runs cannot be
+imported by a loop, no package gains an API key or a network dependency, and deleting the file costs
+a note and nothing else. That is the distinction that retired `orchestrator/eod_insight.py` rather
+than moving it — it lived in the package whose watchdog fired it, one refactor from the reliability
+path.
+
+Four constraints hold it in place. It is given **the fact set JSON and nothing else** — no database,
+no ledger, no shell — so every claim traces to a recorded number. It runs on **final sessions only**,
+because a narrative written against numbers that will still move records something that never
+happened. It is **written once and frozen**: an existing note is left alone unless `--force`, which
+stamps a new version rather than pretending. And it can only ever **fail to write a note** — no exit
+path touches the fact set, a ledger or a loop.
+
+Recommendations become tracked issues with `--file-issues` (label `eod-finding`), capped per run and
+deduped against open issues: an unattended agent filing the same standing observation daily produces
+a backlog nobody reads.
+
+**It earned its place on the first run.** Reading only the artifact, it noticed that flies'
+`gex-intrinsic` and `control` reported byte-identical results and called it a probable attribution
+bug. It was not a bug — `gex-intrinsic` had degraded to ATM centring for the whole session, which is
+this module's documented fallback — but it *was* a real problem: the arm was running the control's
+strategy under another name, and the fact set was counting it as an independent observation. The
+`centred_by` field and the render's collapsed-arms note exist because of that.
+
 ## Reconciliation is not optional
 
 `reconcile` re-counts each module's totals with **independent SQL** — a different route to the same

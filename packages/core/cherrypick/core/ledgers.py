@@ -171,7 +171,7 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
     appears here without a change on this side."""
     where, params = _session_where("trade_date", start, end)
     rows = conn.execute(
-        "SELECT symbol, arm, entry_mode, gross_pnl, fees, trade_date "
+        "SELECT symbol, arm, entry_mode, center_reason, gross_pnl, fees, trade_date "
         f"FROM fly_positions WHERE status = 'settled'{where}",
         params,
     ).fetchall()
@@ -182,6 +182,13 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
             # legged vs outright: the two entry mechanisms perform differently enough that
             # aggregating them would average away the finding.
             "strategy": r["entry_mode"],
+            # How the centre was actually chosen. A GEX-centred arm degrades to ATM when the
+            # streamer has no OI cached, at which point it IS the control arm under a different
+            # name -- the module records this precisely so those samples can be excluded, and
+            # nothing was excluding them. On 2026-08-12 `gex-intrinsic` centred `atm` on all four
+            # entries and reported results identical to `control` to the cent, which a reader
+            # would otherwise take as two arms agreeing rather than one arm run twice.
+            "center_reason": r["center_reason"],
             "gross_pnl": (r["gross_pnl"] or 0.0),
             "cost": (r["fees"] or 0.0),
             "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),

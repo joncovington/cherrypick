@@ -39,7 +39,7 @@ from cherrypick.core.profiles import compare_profiles as _compare_profiles
 
 from cherrypick.review import paths as _paths
 
-FACT_VERSION = 3
+FACT_VERSION = 4
 
 STATUS_PROVISIONAL = "provisional"
 STATUS_FINAL = "final"
@@ -334,7 +334,25 @@ def _summarize(records: list[dict]) -> dict:
         "wins": sum(1 for r in records if (r.get("net_pnl") or 0) > 0),
         "return": _returns(records),
         "sample": _sample(records),
+        # Present only when every entry used one centring rule -- the tell for an arm that
+        # degraded into another arm for the session. See _degraded_to.
+        "centred_by": _degraded_to(records),
     }
+
+
+def _degraded_to(records: list[dict]) -> str | None:
+    """The centring rule an arm actually used, when every one of its entries fell back to the same
+    one — otherwise None.
+
+    A GEX-centred flies arm degrades to ATM whenever the streamer has no open interest cached, and
+    at that point it is the control arm under a different name. The module records `center_reason`
+    exactly so those samples can be excluded; nothing was excluding them, so on 2026-08-12
+    `gex-intrinsic` centred `atm` on all four entries and reported results identical to `control`
+    to the cent. Read as an arm comparison that is two arms agreeing; read correctly it is one arm
+    run twice, carrying no information about the variable it exists to test.
+    """
+    reasons = {r.get("center_reason") for r in records if r.get("center_reason")}
+    return reasons.pop() if len(reasons) == 1 else None
 
 
 def _by_profile(records: list[dict]) -> dict:

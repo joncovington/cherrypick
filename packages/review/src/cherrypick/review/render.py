@@ -146,17 +146,37 @@ def render(session: str, window: int = _trends.DEFAULT_WINDOW) -> str:
             "more than their sample size alone suggests._"
         )
         L.append("")
-        L.append("| Module | Arm | Closed | Net | Capital at risk | Return on risk | Wins |")
-        L.append("|---|---|---:|---:|---:|---:|---:|")
+        L.append("| Module | Arm | Centred by | Closed | Net | Capital at risk | Return on risk | Wins |")
+        L.append("|---|---|---|---:|---:|---:|---:|---:|")
+        collapsed: list[str] = []
         for name, arms in arm_blocks.items():
+            # An arm whose entries all used one centring rule, where another arm used the same one,
+            # ran that arm's strategy under a different name for the session.
+            by_rule: dict[str, list[str]] = {}
+            for arm, g in arms.items():
+                if g.get("centred_by"):
+                    by_rule.setdefault(g["centred_by"], []).append(arm)
+            for rule, sharing in by_rule.items():
+                if len(sharing) > 1:
+                    collapsed.append(f"**{name}**: {', '.join(sorted(sharing))} all centred `{rule}`")
             for arm, g in sorted(arms.items(), key=lambda kv: -kv[1]["net"]):
                 ret = g.get("return") or {}
                 L.append(
-                    f"| {name} | {arm} | {_count(g['closed'])} | {_money(g['net'])} | "
-                    f"{_money(ret.get('capital_at_risk'))} | {_pct(ret.get('on_max_risk'))} | "
-                    f"{_count(g['wins'])} |"
+                    f"| {name} | {arm} | {g.get('centred_by') or '—'} | {_count(g['closed'])} | "
+                    f"{_money(g['net'])} | {_money(ret.get('capital_at_risk'))} | "
+                    f"{_pct(ret.get('on_max_risk'))} | {_count(g['wins'])} |"
                 )
         L.append("")
+        if collapsed:
+            L.append(
+                "_Arms sharing a centring rule for a whole session are **not independent that "
+                "session** — a GEX-centred arm degrades to ATM when the streamer has no open "
+                "interest cached, at which point it is the control arm under another name. Read "
+                "their agreement as one arm run twice, not as two arms concurring:_"
+            )
+            for item in collapsed:
+                L.append(f"- {item}")
+            L.append("")
 
     # --- expected vs observed ------------------------------------------------
     L.append("## Expected against observed")
