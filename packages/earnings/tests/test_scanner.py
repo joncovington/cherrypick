@@ -529,6 +529,83 @@ def test_fetch_entry_window_calendar_merges_today_amc_and_tomorrow_bmo(monkeypat
     result = scanner.fetch_entry_window_calendar({}, today=date(2026, 7, 7))
     symbols = [r["symbol"] for r in result]
     assert symbols == ["AMC_TODAY", "BMO_TOMORROW"]
+    assert all(r["timing_assumed"] is False for r in result)
+
+
+def _timing_calendar(monkeypatch, by_date):
+    """Mock fetch_dolthub_calendar with `{iso_date: [row, ...]}`, empty for any other date."""
+    monkeypatch.setattr(
+        scanner, "fetch_dolthub_calendar", lambda iso_date, config: list(by_date.get(iso_date, []))
+    )
+
+
+def test_fetch_entry_window_calendar_bmo_half_is_the_next_TRADING_day(monkeypatch):
+    """Friday's BMO half must reach Monday. Using `today + 1` landed it on Saturday, a date the
+    calendar has no rows for, so Friday could never see a Monday-morning reporter."""
+    _timing_calendar(
+        monkeypatch,
+        {
+            "2026-07-10": [{"symbol": "FRI_AMC", "timing": "After market close"}],
+            "2026-07-11": [{"symbol": "SAT_GHOST", "timing": "Before market open"}],
+            "2026-07-13": [{"symbol": "MON_BMO", "timing": "Before market open"}],
+        },
+    )
+    result = scanner.fetch_entry_window_calendar({}, today=date(2026, 7, 10))  # a Friday
+    assert [r["symbol"] for r in result] == ["FRI_AMC", "MON_BMO"]
+
+
+def test_fetch_entry_window_calendar_admits_blank_timing_only_for_covered_symbols(monkeypatch):
+    """A missing `when` on the scan date is read as AMC, but only for symbols this morning's
+    forward scan measured -- that set is what keeps the ~8s-per-symbol scan inside its window."""
+    _timing_calendar(
+        monkeypatch,
+        {
+            "2026-07-07": [
+                {"symbol": "COVERED", "timing": None},
+                {"symbol": "ALSO_COVERED", "timing": ""},
+                {"symbol": "UNCOVERED", "timing": None},
+            ],
+        },
+    )
+    result = scanner.fetch_entry_window_calendar(
+        {}, today=date(2026, 7, 7), assume_amc_for={"COVERED", "ALSO_COVERED"}
+    )
+    assert [r["symbol"] for r in result] == ["COVERED", "ALSO_COVERED"]
+    # Normalized, not left blank: reaction_date/select_front_expiration branch on the exact string,
+    # and a blank one would pick a front expiration that expires before the event's move.
+    assert all(r["timing"] == scanner.TIMING_AMC for r in result)
+    assert all(r["timing_assumed"] is True for r in result)
+
+
+def test_fetch_entry_window_calendar_blank_timing_on_the_next_session_is_not_admitted(monkeypatch):
+    """Only the scan date's blanks are assumed. A blank on the next session could be that day's
+    AMC, and entering it tonight would hold it through an exit check that fires before the event."""
+    _timing_calendar(
+        monkeypatch,
+        {
+            "2026-07-08": [{"symbol": "COVERED_TOMORROW", "timing": None}],
+        },
+    )
+    result = scanner.fetch_entry_window_calendar(
+        {}, today=date(2026, 7, 7), assume_amc_for={"COVERED_TOMORROW"}
+    )
+    assert result == []
+
+
+def test_fetch_entry_window_calendar_without_a_covered_set_falls_back_to_exact_timing(monkeypatch):
+    """No snapshot (or a stale one) degrades to the old exact-timing behavior -- never to an
+    unbounded scan of every unannotated row on the calendar."""
+    _timing_calendar(
+        monkeypatch,
+        {
+            "2026-07-07": [
+                {"symbol": "BLANK", "timing": None},
+                {"symbol": "ANNOTATED", "timing": "After market close"},
+            ],
+        },
+    )
+    result = scanner.fetch_entry_window_calendar({}, today=date(2026, 7, 7))
+    assert [r["symbol"] for r in result] == ["ANNOTATED"]
 
 
 # --- compute_historical_move_stats (mocked DB layer, via compute_winrate) --------

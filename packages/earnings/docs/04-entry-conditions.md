@@ -32,8 +32,10 @@ that then picks a bucket. Instead:
    all on the same night. Opening more than one of those on the same underlying would just be
    the same overnight gap risk twice, not diversification. `cherrypick/earnings/rank_strategies.py` resolves
    this: it runs every registered strategy's `apply_tiering()` against every symbol on the
-   merged today-AMC/tomorrow-BMO calendar, keeps only the accepted results, and picks each
-   symbol's single highest-scoring strategy.
+   merged calendar — tonight's after-the-close reporters plus the next trading session's
+   before-the-open reporters, including names the calendar left unannotated (see
+   [Screening Criteria](./screening-criteria.md)'s Layer 0) — keeps only the accepted results,
+   and picks each symbol's single highest-scoring strategy.
 
 ```bash
 python -m cherrypick.earnings.rank_strategies get_ranked_symbols --date MM/DD/YYYY

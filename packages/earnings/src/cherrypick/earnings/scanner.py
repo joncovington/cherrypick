@@ -27,7 +27,12 @@ import time
 from datetime import date as _date
 from datetime import datetime, timedelta
 
+from cherrypick.core import calendar as _calendar
+
 from cherrypick.earnings import paths as _paths
+
+TIMING_AMC = "After market close"
+TIMING_BMO = "Before market open"
 
 
 def _load_config(profile: str | None = None) -> dict:
@@ -100,28 +105,84 @@ def fetch_dolthub_calendar_range(start: _date, end: _date, config: dict) -> list
         conn.close()
 
 
-def fetch_entry_window_calendar(config: dict, today: _date | None = None) -> list[dict]:
-    """Merges today's After-market-close earnings with tomorrow's
+def fetch_entry_window_calendar(
+    config: dict,
+    today: _date | None = None,
+    *,
+    assume_amc_for: set[str] | None = None,
+) -> list[dict]:
+    """Merges today's After-market-close earnings with the NEXT TRADING DAY's
     Before-market-open earnings into one entry-window candidate list --
     generalizes the merge that previously only existed as CLAUDE.md prose
     (Step 4b's "merge two calendar dates" bullet, iron_fly-specific) into
     shared, testable code any strategy/orchestrator can call.
 
     A same-day BMO report already happened this morning and must not be
-    re-entered; a report tomorrow morning is still ahead of us this
-    afternoon -- same reasoning CLAUDE.md's Step 4b already documented,
+    re-entered; a report on the next session's morning is still ahead of us
+    this afternoon -- same reasoning CLAUDE.md's Step 4b already documented,
     just executable now instead of hand-derived each time.
+
+    **Next trading day, not `today + 1`.** A calendar day was silently wrong every
+    Friday: the BMO half of the window landed on Saturday, a date the earnings
+    calendar has no rows for, so Friday afternoon could never see a Monday-morning
+    reporter. Holidays did the same thing less predictably.
+
+    **Missing `when` values (`assume_amc_for`).** The Dolt earnings calendar's
+    `when` column is populated by a third-party dataset and its coverage decays:
+    it ran ~90% populated through mid-July 2026 and reached 0.4% by 2026-08-12
+    (247 of 248 rows NULL), which collapsed the entry universe from ~50 names a
+    night to one or two and silently dropped names like CSCO on its own earnings
+    day. Requiring an exact timing string therefore stopped meaning "this reports
+    tonight" and started meaning "this row happens to be annotated".
+
+    So a row on the scan date whose `when` is missing is admitted and READ AS AMC,
+    but only if its symbol is in `assume_amc_for` -- the callers pass the set of
+    symbols this morning's forward scan actually measured (`symbol_watch.
+    covered_symbols`), which is already narrowed to tastytrade's liquid-symbol
+    universe. That bound matters: today's raw calendar carries ~250 rows, and at
+    the entry scan's measured ~8s per symbol, admitting all of them would run
+    ~33 minutes and finish long past the entry window. Without the set (no
+    snapshot, or a stale one) this degrades to the old exact-timing behavior
+    rather than to an unbounded scan.
+
+    Reading a missing value as AMC rather than BMO is the safe direction, twice
+    over. A name that in fact reported BMO this morning is already post-event: its
+    front IV has collapsed and its term structure has flipped out of backwardation,
+    so the screen's own term-structure and IV/RV gates reject it on live data --
+    this assumption never reaches an accept decision unscreened. The opposite
+    default would be worse than a miss: an unknown-timing row is only ever
+    considered on its own earnings date, so guessing BMO would enter a genuinely
+    AMC name a session early and hold it through an exit check that fires before
+    the event -- corrupting the sample rather than merely missing it.
+
+    Every returned row carries `timing` normalized to one of the two exact strings
+    (`reaction_date`/`select_front_expiration` branch on them, and an unnormalized
+    blank there would pick a front expiration that expires before the event's move)
+    plus `timing_assumed`, so the review trail records where the timing came from
+    rather than presenting a guess as calendar fact.
 
     `today` is a test hook (real callers omit it and get `_date.today()`).
     """
     today = today or _date.today()
-    tomorrow = today + timedelta(days=1)
+    next_session = _calendar.next_trading_day(today)
 
     today_rows = fetch_dolthub_calendar(str(today), config)
-    tomorrow_rows = fetch_dolthub_calendar(str(tomorrow), config)
+    next_rows = fetch_dolthub_calendar(str(next_session), config)
 
-    merged = [r for r in today_rows if r.get("timing") == "After market close"]
-    merged += [r for r in tomorrow_rows if r.get("timing") == "Before market open"]
+    assumable = {str(s).upper() for s in (assume_amc_for or ())}
+
+    merged = []
+    for row in today_rows:
+        timing = (row.get("timing") or "").strip()
+        if timing == TIMING_AMC:
+            merged.append({**row, "timing": TIMING_AMC, "timing_assumed": False})
+        elif not timing and str(row.get("symbol") or "").upper() in assumable:
+            merged.append({**row, "timing": TIMING_AMC, "timing_assumed": True})
+    merged += [
+        {**row, "timing": TIMING_BMO, "timing_assumed": False}
+        for row in next_rows
+        if (row.get("timing") or "").strip() == TIMING_BMO
+    ]
     return merged
 
 
@@ -1179,6 +1240,7 @@ def build_entry_review_spec(
     reason: str | None,
     composite_score: float | None = None,
     logged_at: float | None = None,
+    timing_assumed: bool | None = None,
 ) -> dict:
     """Assembles one entry_reviews row (db.py/db_paper.py's save_entry_review payload) from
     a symbol's richest per-strategy criteria dict -- the data reviewed during an entry scan
@@ -1188,11 +1250,16 @@ def build_entry_review_spec(
     symbol's full metric vector is recorded identically regardless of which caller ran the
     scan. `criteria_json` keeps the full dict verbatim for fields not promoted to their own
     column (e.g. per-strategy skew_abs, chain_complete).
+
+    `timing_assumed` records whether `timing` came from the earnings calendar or from
+    `fetch_entry_window_calendar`'s missing-`when` fallback -- the screening trail should never
+    read as though the calendar stated a timing it did not.
     """
     return {
         "scan_date": scan_date,
         "symbol": symbol,
         "timing": timing,
+        "timing_assumed": timing_assumed,
         "strategy": strategy,
         "price": criteria.get("price"),
         "volume": criteria.get("avg_volume"),
