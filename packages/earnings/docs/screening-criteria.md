@@ -5,6 +5,23 @@
 
 Two layers, run in this order: **(1) universe hard filters** (cheap, run against every ticker on the day's earnings calendar to cut the list down fast) then **(2) entry-time re-verification** (run only against candidates that survive layer 1, right before submitting an order — see `CLAUDE.md`'s Step 4b). A candidate must clear both layers; layer 1 alone is not sufficient to trade on.
 
+Before either layer there is the question of which tickers are on "the day's earnings calendar" at all — see below, because getting that wrong is invisible in every downstream report.
+
+## Layer 0 — Which names reach the screen (`scanner.fetch_entry_window_calendar`)
+
+The entry window is one afternoon: names reporting **after tonight's close**, plus names reporting **before the next trading session's open**. The second half is the next *trading* day, not `today + 1` — as a calendar day it landed on Saturday every Friday, a date with no calendar rows, so Friday afternoon could never see a Monday-morning reporter.
+
+Which half a name falls in comes from Dolt's `earnings_calendar.when` column, and **that column's coverage is not reliable**. It ran ~90% populated through mid-July 2026 and had decayed to 0.4% by 2026-08-12 (247 of 248 rows NULL). Requiring an exact timing string therefore stopped meaning "this reports tonight" and started meaning "this row happens to be annotated": the nightly universe collapsed from ~50 names to one or two, and liquid names were dropped on their own earnings day — CSCO on 2026-08-12 (term structure -1.80, IV/RV 1.32, winrate 0.92 on 12 quarters, 3% net combo spread) never reached the screen at all.
+
+So a row on the scan date whose `when` is blank is admitted and **read as after-the-close**, under two constraints:
+
+- **Bounded by the morning forward scan.** Only symbols that pass's snapshot actually measured are admissible (`symbol_watch.covered_symbols`), which is already narrowed to tastytrade's liquid-symbol watchlist union. The raw calendar carries ~250 rows a night and the entry scan costs ~8s per symbol; admitting all of them would run ~33 minutes and finish past the entry window. With no snapshot, or a stale one, this degrades to exact-timing-only — never to an unbounded scan.
+- **Assumed AMC, never assumed BMO.** A name that in fact reported before this morning's open is post-event: its front IV has collapsed and its term structure is out of backwardation, so hard filter #4 rejects it on live data. The assumption never reaches an accept decision unscreened. Guessing BMO would be worse than a miss — an unannotated row is only ever considered on its own earnings date, so that guess would enter a genuinely AMC name a session early and hold it through an exit check that fires before the event.
+
+The broker is not an alternative source here, contrary to the suite's usual preference for tastytrade data over Dolt: `get_market_metrics`'s `earnings.time_of_day` was checked on 2026-08-12 and is `null` for CSCO, AMAT, JD, NU and CORZ, and stale where present (WULF carried a `time_of_day` against an `expected_report_date` nine days past). Its `expected_report_date` *is* reliable; only the time of day is missing.
+
+Every row the entry scan sees carries a normalized `timing` plus a `timing_assumed` flag, and that flag is recorded on the `entry_reviews` row and marked in the EOD analysis table — a screening trail must not read as though the calendar stated a timing it did not.
+
 ## Layer 1 — Universe hard filters (no exceptions)
 
 Run once per ticker per scan, in this order (cheapest/fastest-to-reject first, matching EarningsEdgeDetection's own performance-optimized ordering):

@@ -133,3 +133,29 @@ def test_a_symbol_absent_from_the_snapshot_is_kept(snapshot):
     snapshot({"OTHER": _entry("OTHER")}, time.time())
     keep, _ = symbol_watch.prefilter_symbols(["UNSEEN"], CONFIG)
     assert keep == ["UNSEEN"]
+
+
+# --------------------------------------------------------------------------- covered_symbols
+def test_covered_symbols_is_this_mornings_measured_universe(snapshot):
+    snapshot({"CSCO": _entry("CSCO"), "AMAT": _entry("AMAT")}, time.time())
+    assert symbol_watch.covered_symbols() == {"CSCO", "AMAT"}
+
+
+def test_covered_symbols_keeps_a_name_whose_own_scan_errored(snapshot):
+    """Still in the liquid universe, and the entry scan re-screens every survivor on live data —
+    a failed morning chain fetch is not grounds to make it unreachable all day."""
+    broken = {**_entry("CSCO"), "error": "chain fetch failed"}
+    snapshot({"CSCO": broken}, time.time())
+    assert symbol_watch.covered_symbols() == {"CSCO"}
+
+
+def test_a_stale_snapshot_covers_nothing(snapshot):
+    """Empty degrades the entry calendar to exact-timing-only, which is the safe direction: the
+    alternative is admitting every unannotated row on a ~250-name calendar."""
+    snapshot({"CSCO": _entry("CSCO")}, time.time() - 7 * 86400)
+    assert symbol_watch.covered_symbols() == set()
+
+
+def test_a_never_written_snapshot_covers_nothing(snapshot):
+    snapshot({}, None)
+    assert symbol_watch.covered_symbols() == set()

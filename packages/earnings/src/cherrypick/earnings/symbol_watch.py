@@ -149,24 +149,56 @@ def stable_prefilter_verdict(entry: dict, config: dict) -> tuple[bool, str | Non
     return False, None
 
 
-def prefilter_symbols(symbols, config: dict, *, session: str | None = None) -> tuple[list, dict]:
-    """Split `symbols` into `(keep, {dropped_symbol: reason})` using today's snapshot.
+def fresh_snapshot(session: str | None = None) -> dict | None:
+    """This morning's snapshot, or None if the last pass did not COMPLETE today.
 
-    Only a snapshot whose pass COMPLETED today is consulted. A stale one is ignored entirely rather
-    than partially trusted — filtering today's calendar against last week's readings is exactly the
-    kind of quiet wrongness this module exists to avoid.
+    A stale snapshot is ignored entirely rather than partially trusted — reading today's calendar
+    against last week's readings is exactly the kind of quiet wrongness this module exists to
+    avoid. Shared by every caller that consults the snapshot as *input to today's entry scan*
+    (`prefilter_symbols`, `covered_symbols`), so they can never disagree about what counts as
+    fresh.
     """
     snapshot = read_snapshot()
     completed = snapshot.get("pass_completed_at")
-    fresh = False
-    if completed:
-        try:
-            fresh = _dt.date.fromtimestamp(float(completed)).isoformat() == (
-                session or _dt.date.today().isoformat()
-            )
-        except (TypeError, ValueError, OSError, OverflowError):
-            fresh = False
-    if not fresh:
+    if not completed:
+        return None
+    try:
+        if _dt.date.fromtimestamp(float(completed)).isoformat() != (
+            session or _dt.date.today().isoformat()
+        ):
+            return None
+    except (TypeError, ValueError, OSError, OverflowError):
+        return None
+    return snapshot
+
+
+def covered_symbols(session: str | None = None) -> set[str]:
+    """Every symbol this morning's forward scan actually measured — the bound the entry scan
+    uses when the earnings calendar leaves a row's `when` blank (see
+    `scanner.fetch_entry_window_calendar`'s `assume_amc_for`).
+
+    This set is the pass's own universe: the symbols reporting inside the forward window that
+    survived `symbol_watch.liquid_only`'s tastytrade watchlist union. Using it as the bound keeps
+    an unannotated calendar row admissible only if it is a name this suite would trade anyway,
+    which is what keeps the entry scan's ~8s-per-symbol cost inside the entry window.
+
+    Rows whose own scan errored are deliberately kept: they are still in the liquid universe, and
+    the entry scan re-screens every survivor on live data regardless. An empty set (no snapshot,
+    or a stale one) degrades the caller to exact-timing-only, never to an unbounded scan.
+    """
+    snapshot = fresh_snapshot(session)
+    if not snapshot:
+        return set()
+    return set(snapshot.get("symbols") or {})
+
+
+def prefilter_symbols(symbols, config: dict, *, session: str | None = None) -> tuple[list, dict]:
+    """Split `symbols` into `(keep, {dropped_symbol: reason})` using today's snapshot.
+
+    Only a snapshot whose pass COMPLETED today is consulted (`fresh_snapshot`).
+    """
+    snapshot = fresh_snapshot(session)
+    if not snapshot:
         return list(symbols), {}
 
     rows = snapshot.get("symbols") or {}

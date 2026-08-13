@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS entry_reviews (
     scan_date      TEXT NOT NULL,
     symbol         TEXT NOT NULL,
     timing         TEXT,
+    timing_assumed INTEGER,
     strategy       TEXT,
     price          REAL,
     volume         REAL,
@@ -161,6 +162,9 @@ _MIGRATIONS = [
     ("trades", "entry_iv", "ALTER TABLE trades ADD COLUMN entry_iv REAL"),
     ("trades", "exit_iv", "ALTER TABLE trades ADD COLUMN exit_iv REAL"),
     ("scan_log", "profile", "ALTER TABLE scan_log ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
+    # Nullable and deliberately not backfilled -- NULL means "predates the distinction", which is
+    # the truth; see db_paper.py's copy of this migration for the full reasoning.
+    ("entry_reviews", "timing_assumed", "ALTER TABLE entry_reviews ADD COLUMN timing_assumed INTEGER"),
 ]
 
 
@@ -345,6 +349,7 @@ _ENTRY_REVIEW_COLUMNS = (
     "scan_date",
     "symbol",
     "timing",
+    "timing_assumed",
     "strategy",
     "price",
     "volume",
@@ -386,6 +391,7 @@ def _entry_review_values(spec: dict) -> tuple:
         spec["scan_date"],
         spec["symbol"],
         spec.get("timing"),
+        (1 if spec.get("timing_assumed") else (0 if spec.get("timing_assumed") is not None else None)),
         spec.get("strategy"),
         spec.get("price"),
         spec.get("volume"),

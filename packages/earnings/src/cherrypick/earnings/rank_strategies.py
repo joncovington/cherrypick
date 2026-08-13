@@ -42,7 +42,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from cherrypick.earnings import scanner
+from cherrypick.earnings import scanner, symbol_watch
 from cherrypick.earnings.strategies import (
     atm_calendar,
     broken_wing_butterfly,
@@ -492,6 +492,7 @@ def _save_entry_review(scan_date: str, symbol_result: dict, paper_mode: bool) ->
         selected,
         symbol_result["reason"],
         composite_score=score,
+        timing_assumed=symbol_result.get("timing_assumed"),
     )
     try:
         _call_db(["save_entry_review", "--data", json.dumps(spec, default=str)], paper_mode)
@@ -525,7 +526,13 @@ def cmd_get_ranked_symbols(args) -> dict:
 
     config = scanner._load_config()
     paper_mode = not config.get("enable_live_trading", False)
-    calendar = scanner.fetch_entry_window_calendar(config)
+    # This morning's forward scan bounds which unannotated calendar rows are admissible as AMC --
+    # the earnings calendar's `when` column is mostly NULL now, and requiring it dropped liquid
+    # names on their own earnings day (see scanner.fetch_entry_window_calendar).
+    calendar = scanner.fetch_entry_window_calendar(
+        config, assume_amc_for=symbol_watch.covered_symbols()
+    )
+    timing_assumed_by_symbol = {e["symbol"]: e.get("timing_assumed") for e in calendar}
 
     per_symbol = []
     max_workers = min(4, len(calendar))
@@ -603,6 +610,7 @@ def cmd_get_ranked_symbols(args) -> dict:
 
     scan_date = str(scanner._date.today())
     for s in per_symbol:
+        s["timing_assumed"] = timing_assumed_by_symbol.get(s["symbol"])
         _log_symbol_decision(scan_date, s, paper_mode)
         _save_entry_review(scan_date, s, paper_mode)
 

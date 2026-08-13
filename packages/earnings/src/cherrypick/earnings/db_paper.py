@@ -244,6 +244,7 @@ CREATE TABLE IF NOT EXISTS entry_reviews (
     scan_date      TEXT NOT NULL,
     symbol         TEXT NOT NULL,
     timing         TEXT,
+    timing_assumed INTEGER,
     strategy       TEXT,
     price          REAL,
     volume         REAL,
@@ -350,6 +351,11 @@ _MIGRATIONS = [
     ("entry_reviews", "iv_rank", "ALTER TABLE entry_reviews ADD COLUMN iv_rank REAL"),
     ("entry_reviews", "iv_percentile", "ALTER TABLE entry_reviews ADD COLUMN iv_percentile REAL"),
     ("entry_reviews", "composite_score", "ALTER TABLE entry_reviews ADD COLUMN composite_score REAL"),
+    # Nullable on purpose, and NOT backfilled: rows written before the entry calendar started
+    # admitting unannotated `when` values genuinely had a calendar-stated timing, but so did most
+    # rows after it. NULL here means "this row predates the distinction", which is the truth --
+    # defaulting it to 0 would assert every historical row's timing was calendar-sourced.
+    ("entry_reviews", "timing_assumed", "ALTER TABLE entry_reviews ADD COLUMN timing_assumed INTEGER"),
     # Position lifecycle: a position is now MANAGED between entry and exit rather than force-closed
     # the next morning, so how it ended and how long it was held are facts worth keeping. `status`
     # is deliberately nullable here (the fresh-DB DDL defaults it to 'open') so the backfill below
@@ -928,6 +934,7 @@ _ENTRY_REVIEW_COLUMNS = (
     "scan_date",
     "symbol",
     "timing",
+    "timing_assumed",
     "strategy",
     "price",
     "volume",
@@ -969,6 +976,7 @@ def _entry_review_values(spec: dict) -> tuple:
         spec["scan_date"],
         spec["symbol"],
         spec.get("timing"),
+        (1 if spec.get("timing_assumed") else (0 if spec.get("timing_assumed") is not None else None)),
         spec.get("strategy"),
         spec.get("price"),
         spec.get("volume"),

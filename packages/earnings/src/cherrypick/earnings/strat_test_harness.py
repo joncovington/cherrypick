@@ -236,7 +236,9 @@ def _summarize_skips(reasons: list[str]) -> str:
     return f"{top} ({n} strateg{'y' if n == 1 else 'ies'} evaluated)"
 
 
-def _save_entry_review(scan_date, symbol, timing, results, opened_strategies, skip_reasons) -> None:
+def _save_entry_review(
+    scan_date, symbol, timing, results, opened_strategies, skip_reasons, timing_assumed=None
+) -> None:
     """Persist one per-symbol review — the reviewed data + the chosen/rejected decision — for the
     orchestrator's per-symbol notification and the EOD analysis. Best-effort; never breaks the scan.
     Delegates the spec shape to scanner.build_entry_review_spec, shared with rank_strategies.py's own
@@ -251,7 +253,15 @@ def _save_entry_review(scan_date, symbol, timing, results, opened_strategies, sk
         else _summarize_skips(skip_reasons)
     )
     spec = scanner.build_entry_review_spec(
-        scan_date, symbol, timing, crit, strategy, selected, reason, composite_score=score
+        scan_date,
+        symbol,
+        timing,
+        crit,
+        strategy,
+        selected,
+        reason,
+        composite_score=score,
+        timing_assumed=timing_assumed,
     )
     spec["profile"] = TEST_PROFILE
     try:
@@ -945,9 +955,18 @@ def _write_eod_analysis(day: str) -> Path:
             term = f"{rv['term_structure']:.3f}" if rv.get("term_structure") is not None else "-"
             mcap = f"{int(rv['market_cap']):,}" if rv.get("market_cap") is not None else "-"
             decision = "✅ chosen" if rv.get("selected") else "⚪ rejected"
+            symbol = rv["symbol"] + (" †" if rv.get("timing_assumed") else "")
             L.append(
-                f"| {rv['symbol']} | {decision} | {price} | {vol} | {wr} | {ivrv} | {term} | "
+                f"| {symbol} | {decision} | {price} | {vol} | {wr} | {ivrv} | {term} | "
                 f"{mcap} | {rv.get('best_tier') or '-'} | {rv.get('reason') or '-'} |"
+            )
+        if any(rv.get("timing_assumed") for rv in reviews):
+            L.append("")
+            L.append(
+                "_† The earnings calendar carried no report time for this name; the scan read it as "
+                "after-the-close on its earnings date. The screen still judged it entirely on live "
+                "data — a name that had in fact already reported shows no backwardation and is "
+                "rejected on term structure._"
             )
     else:
         L.append(
@@ -1125,14 +1144,23 @@ def cmd_run_entries(args) -> dict:
 
     config = scanner._load_config()
 
+    scan_date = str(_date.today())
     calendar_timeout = config.get("dolt_calendar_timeout_seconds", 30)
+    # This morning's forward scan also bounds which UNANNOTATED calendar rows are admissible as AMC:
+    # the earnings calendar's `when` column is mostly NULL now, and requiring it dropped liquid names
+    # on their own earnings day (see scanner.fetch_entry_window_calendar).
+    assume_amc_for = symbol_watch.covered_symbols(session=scan_date)
     try:
-        calendar = _run_bounded(scanner.fetch_entry_window_calendar, calendar_timeout, config)
+        calendar = _run_bounded(
+            scanner.fetch_entry_window_calendar,
+            calendar_timeout,
+            config,
+            assume_amc_for=assume_amc_for,
+        )
     except _OpTimeout:
         # Dolt could not return the entry calendar in time -- fail fast with a clear cause rather than
         # letting the scheduled task hang to its 30-minute kill (which logs only an opaque timeout).
         return {"ok": False, "error": f"dolt calendar fetch exceeded {calendar_timeout}s"}
-    scan_date = str(_date.today())
     _capture_market_context(scan_date)  # entry-evening VIX for the next close session's analysis
 
     # Narrow the list using this morning's forward scan before paying for a live chain per name.
@@ -1158,10 +1186,11 @@ def cmd_run_entries(args) -> dict:
 
     for entry, results, scan_reason in scanned:
         symbol, earnings_date, timing = entry["symbol"], entry["date"], entry["timing"]
+        timing_assumed = entry.get("timing_assumed")
         if scan_reason is not None:
             # Timed out, errored, or past the overall budget -- skip cleanly, keep everything else.
             skipped.append({"symbol": symbol, "strategy": None, "reason": scan_reason})
-            _save_entry_review(scan_date, symbol, timing, [], [], [scan_reason])
+            _save_entry_review(scan_date, symbol, timing, [], [], [scan_reason], timing_assumed)
             continue
 
         op0, sk0 = len(opened), len(skipped)  # this symbol's slice of the run-wide result lists
@@ -1295,6 +1324,7 @@ def cmd_run_entries(args) -> dict:
             results,
             [o["strategy"] for o in opened[op0:]],
             [s.get("reason", "") for s in skipped[sk0:]],
+            timing_assumed,
         )
 
     # Regenerate today's EOD report to fold in the positions just opened. The morning close pass
