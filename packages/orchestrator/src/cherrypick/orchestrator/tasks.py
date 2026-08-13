@@ -432,15 +432,9 @@ def registry_snapshot(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         tn = cfg.get(section, {}).get("task_name")
         if tn:
             out[tn] = query_verbose(tn)
-    ed = cfgmod.eod_digest_settings(cfg)
-    if ed["enabled"]:
-        out[ed["task_name"]] = query_verbose(ed["task_name"])
     la = cfgmod.archive_settings(cfg)
     if la["enabled"]:
         out[la["task_name"]] = query_verbose(la["task_name"])
-    ei = cfgmod.insight_settings(cfg)
-    if ei["enabled"]:
-        out[ei["task_name"]] = query_verbose(ei["task_name"])
     ff = cfgmod.follow_feed_settings(cfg)
     if ff["enabled"]:
         out[ff["task_name"]] = query_verbose(ff["task_name"])
@@ -475,8 +469,6 @@ def legacy_task_names(cfg: dict[str, Any]) -> list[str]:
         if tn:
             names.append(tn)
     names.append(cfgmod.preopen_settings(cfg)["task_name"])
-    names.append(cfgmod.eod_digest_settings(cfg)["task_name"])
-    names.append(cfgmod.insight_settings(cfg)["task_name"])
     names.append(cfgmod.archive_settings(cfg)["task_name"])
     names.append(cfgmod.reconcile_schedule_settings(cfg)["task_name"])
     names.append(cfgmod.symbol_watch_settings(cfg)["task_name"])

@@ -471,9 +471,11 @@ def run_settle(config: dict, conn, *, cache_path: str, when=None, price: float |
         _log("nothing settled — not writing EOD reports; will retry on the next tick")
         return {"ok": False, "settled": 0, "results": out, "reason": "no_settlement_price"}
 
-    reports = eodmod.write_reports(conn, trade_date)
-    _log(f"wrote {reports['paper_eod']} and {reports['eod_analysis']}")
-    return {"ok": True, "settled": len(out), "results": out, "reports": reports}
+    # The per-module EOD reports were retired 2026-08-13: packages/review builds one fact set
+    # across every module and renders from that, so a module writing its own prose was a second,
+    # unreconciled account of the same session. Settlement itself is unchanged and is what the
+    # review reads.
+    return {"ok": True, "settled": len(out), "results": out}
 
 
 # --------------------------------------------------------------------------- scheduled task
@@ -620,12 +622,7 @@ def main(argv=None) -> int:
         help=f"register the recurring {_TASK_NAME} task (every {_TASK_INTERVAL_MIN} min; Windows)",
     )
     ap.add_argument("--uninstall-task", action="store_true")
-    ap.add_argument(
-        "--eod-reports",
-        action="store_true",
-        help="rewrite paper-eod / eod-analysis for a day without re-settling",
-    )
-    ap.add_argument("--date", help="with --eod-reports, the day (YYYY-MM-DD); default today")
+    ap.add_argument("--date", help="a session day (YYYY-MM-DD); default today")
     ap.add_argument("--force", action="store_true", help="ignore the RTH session gate")
     args = ap.parse_args(argv)
 
@@ -656,10 +653,6 @@ def main(argv=None) -> int:
 
     if args.status:
         print(json.dumps(run_status(config, conn, cache_path=cache_path), indent=2, default=str))
-        return 0
-    if args.eod_reports:
-        day = args.date or provider.now_et().date().isoformat()
-        print(json.dumps(eodmod.write_reports(conn, day), indent=2, default=str))
         return 0
     if args.settle:
         print(

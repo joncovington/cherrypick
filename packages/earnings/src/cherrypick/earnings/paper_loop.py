@@ -568,9 +568,11 @@ def run_iteration(config: dict | None = None, now: datetime | None = None) -> di
         # `pre_open` picks them up tomorrow, ahead of the first mark that needs them.
 
     elif phase == PHASE_EOD:
-        harness._write_eod_report(session)
-        harness._write_eod_analysis(session)
-        record["eod"] = "written"
+        # The per-module EOD reports were retired 2026-08-13: the suite review (packages/review)
+        # builds one fact set across every module and renders from that, so a module writing its
+        # own prose was a second, unreconciled account of the same session. The phase is kept --
+        # it still bounds the session and records an iteration -- it simply writes nothing now.
+        record["eod"] = "superseded by packages/review"
 
     duration_ms = int((time.time() - started) * 1000)
     db_paper.cmd_record_iteration(

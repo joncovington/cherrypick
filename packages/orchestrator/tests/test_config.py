@@ -78,19 +78,6 @@ def test_runtime_paths_resolve_under_home_not_repo():
     assert c.ROOT not in c.CONFIG_PATH.parents
 
 
-def test_eod_digest_settings_default_on():
-    # A config with no eod_digest section still enables the digest (on by default) with the deadline
-    # backstop the watchdog uses when a module's paper-eod is late/absent.
-    s = c.eod_digest_settings({"modules": {}})
-    assert s == {"enabled": True, "task_name": "cherrypick-eod-digest", "deadline": "16:45"}
-
-
-def test_eod_digest_settings_opt_out_and_overrides():
-    assert c.eod_digest_settings({"eod_digest": {"enabled": False}})["enabled"] is False
-    s = c.eod_digest_settings({"eod_digest": {"task_name": "my-eod", "deadline": "17:00"}})
-    assert s["enabled"] is True and s["task_name"] == "my-eod" and s["deadline"] == "17:00"
-
-
 def test_reconcile_schedule_settings_off_by_default():
     s = c.reconcile_schedule_settings({})
     assert s == {"enabled": False, "task_name": "cherrypick-reconcile", "at": "16:30"}

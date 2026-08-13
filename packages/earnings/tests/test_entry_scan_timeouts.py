@@ -48,8 +48,6 @@ def stub_entry_scan(monkeypatch):
     monkeypatch.setattr(rank_strategies, "_verify_tastytrade_connection", lambda: True)
     monkeypatch.setattr(r, "_capture_market_context", lambda day: None)
     monkeypatch.setattr(r, "_save_entry_review", lambda *a, **k: None)
-    monkeypatch.setattr(r, "_write_eod_report", lambda *a, **k: None)
-    monkeypatch.setattr(r, "_write_eod_analysis", lambda *a, **k: None)
 
 
 def _config(**overrides):

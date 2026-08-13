@@ -69,21 +69,18 @@ import json
 import os
 import subprocess
 import sys
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from cherrypick.notify import Notifier
 from cherrypick.notify import secrets as notify_secrets
 from cherrypick.orchestrator import (
     accounts,
-    advise,
     calibrate,
     configedit,
     connect,
     desk_notifier,
     doctor,
-    eod_digest,
-    eod_insight,
     follow_notifier,
     init,
     logrotate,
@@ -942,96 +939,11 @@ def cmd_report(cfg, args) -> None:
     _emit(report.run(cfg, session=_resolve_session(args)))
 
 
-def cmd_eod_digest(cfg, args) -> None:
-    # --date selects the day; otherwise today (ET). (--eod is redundant here but accepted.)
-    day = args.date or (timeutil.now_et().strftime("%Y-%m-%d"))
-    _emit(eod_digest.run(cfg, day=day))
-
-
-def _non_trading_day_skip(day: str, force: bool) -> dict | None:
-    """Skip envelope if `day` is a weekend/holiday and not forced, else None.
-
-    The suite EOD tasks (`cherrypick-eod-digest`, `cherrypick-eod-insight`) are plain DAILY schtasks
-    tasks, so they fire every calendar day. Without this guard a Saturday tick writes a flat
-    `eod-digest-<weekend>.md`, pushes a "0 trades" notification, and — for insight — burns a paid
-    Claude call synthesizing a session that never happened. The trading modules already guard
-    `is_trading_day` for exactly this reason (see the flies paper loop, whose own docs warn the suite
-    digest "would ingest weekends and holidays as real sessions"); these suite surfaces must too.
-
-    `--force` (or an explicit `--date` on a day that *is* a trading day) still runs, so a manual
-    weekend backfill of a real prior session works. An unparseable day is not blocked — the command
-    itself reports that."""
-    # Imported lazily, not at module top: `cherrypick.core` is only on sys.path once the
-    # `cherrypick.orchestrator` package import (below) has run its bootstrap, which is after this
-    # module's own top-level imports. By call time that has happened. (Same ordering trap the flies
-    # test conftest documents.)
-    from cherrypick.core import calendar as _cal
-
-    try:
-        d = date.fromisoformat(day)
-    except ValueError:
-        return None
-    if force or _cal.is_trading_day(d):
-        return None
-    return {"ok": True, "skipped": "not_a_trading_day", "session": day}
-
-
-def cmd_notify_eod(cfg, args) -> None:
-    """Write the suite EOD digest, then push a one-line summary through the notify channels. This is
-    what the scheduled `cherrypick-eod-digest` task runs. The digest write and the push are both
-    best-effort: a notify hiccup never fails the file write."""
-    day = args.date or (timeutil.now_et().strftime("%Y-%m-%d"))
-    skip = _non_trading_day_skip(day, args.force)
-    if skip is not None:
-        _emit(skip)
-        return
-    res = eod_digest.run(cfg, day=day)
-    suite = res.get("suite", {})
-    net = suite.get("net_pnl")
-    money = "-" if net is None else (f"-${abs(net):,.2f}" if net < 0 else f"${net:,.2f}")
-    # The pushed message can leave the machine (Slack/Discord), so it names only the report *file*,
-    # never its absolute path — an absolute path leaks the OS username and directory layout to a
-    # third-party service. The full path stays in this command's local stdout envelope below.
-    digest_name = Path(res.get("digest", "")).name or f"eod-digest-{day}.md"
-    message = (
-        f"Paper suite {day}: {suite.get('trades', 0)} trades closed, net {money}, "
-        f"{suite.get('wins', 0)}W/{suite.get('losses', 0)}L. See {digest_name} in the cherrypick logs."
-    )
-    channels = Notifier(cfg.get("notify")).notify("INFO", f"eod_{day}", f"EOD digest {day}", message)
-    _emit({"ok": True, "session": day, "digest": res.get("digest"), "suite": suite, "channels": channels})
-
-
 def cmd_archive(cfg, args) -> None:
     """End-of-month log/report rotation: zip each finished month's dated reports + rotated log backups
     into logs/archive/ and remove the originals. What the scheduled `cherrypick-log-archive` task runs.
     Read/maintenance side, files only — never touches the current month or an active .log."""
     _emit(logrotate.run(cfg, month=args.month, dry_run=args.dry_run))
-
-
-def cmd_eod_insight(cfg, args) -> None:
-    """AI synthesis over the day's deterministic reports → logs/eod-insight-<day>.md. What the scheduled
-    `cherrypick-eod-insight` task runs. Opt-in + feature-detected (Claude Code on PATH); read-only, no
-    dangerous tools, off the reliability path. Best-effort: prints a `skipped`/`error` envelope rather
-    than failing when Claude is absent, disabled, or the reports aren't written yet."""
-    day = args.date or (timeutil.now_et().strftime("%Y-%m-%d"))
-    skip = _non_trading_day_skip(day, args.force)
-    if skip is not None:
-        _emit(skip)
-        return
-    _emit(eod_insight.run(cfg, day=day))
-
-
-def cmd_advise(cfg, args) -> None:
-    """Bounded parameter advice for the NEXT session, per advise-enabled module. Opt-in twice +
-    feature-detected (Claude Code on PATH); deterministic inputs only, all tools denied; the
-    orchestrator validates against advice_bounds and writes the artifact. Best-effort envelope,
-    off the reliability path -- loops re-validate and treat absent/invalid advice as baseline."""
-    day = args.date or (timeutil.now_et().strftime("%Y-%m-%d"))
-    skip = _non_trading_day_skip(day, args.force)
-    if skip is not None:
-        _emit(skip)
-        return
-    _emit(advise.run(cfg, day=day))
 
 
 def cmd_settings(cfg, args) -> None:
@@ -1134,11 +1046,7 @@ def main() -> None:
             "supervise",
             "ensure-supervisor",
             "report",
-            "eod-digest",
-            "notify-eod",
             "archive",
-            "eod-insight",
-            "advise",
             "reconcile",
             "connect",
             "account",
@@ -1256,11 +1164,7 @@ def main() -> None:
         "supervise": lambda: cmd_supervise(cfg, stop=args.stop),
         "ensure-supervisor": lambda: cmd_ensure_supervisor(cfg),
         "report": lambda: cmd_report(cfg, args),
-        "eod-digest": lambda: cmd_eod_digest(cfg, args),
-        "notify-eod": lambda: cmd_notify_eod(cfg, args),
         "archive": lambda: cmd_archive(cfg, args),
-        "eod-insight": lambda: cmd_eod_insight(cfg, args),
-        "advise": lambda: cmd_advise(cfg, args),
         "reconcile": lambda: cmd_reconcile(cfg, scheduled=args.scheduled),
         "connect": lambda: cmd_connect(cfg, args),
         "account": lambda: cmd_account(cfg, args),

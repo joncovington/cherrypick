@@ -1033,18 +1033,6 @@ def run_settle_live(
     # The live day's written record — refreshed on the official re-settle too. Best-effort:
     # a report hiccup must never fail the settlement itself.
     report = None
-    try:
-        from cherrypick.flies import eod as eodmod
-
-        paper_conn = dbmod.connect(dbmod.default_db_path())
-        try:
-            report = eodmod.write_live_report(conn, paper_conn, day)
-            _log(f"wrote {report['live_eod']}")
-        finally:
-            paper_conn.close()
-    except Exception as exc:  # noqa: BLE001
-        _log(f"live EOD report failed ({type(exc).__name__}: {exc}) — settlement itself is recorded")
-
     return {
         "ok": True,
         "book_id": book_id,

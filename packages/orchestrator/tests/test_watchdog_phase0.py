@@ -166,15 +166,3 @@ def _cfg():
     }
 
 
-def test_failed_eod_launch_still_marks_fired_but_notifies(eod_env, monkeypatch):
-    monkeypatch.setattr(wd, "_eod_launch", lambda verb: False)
-    wd._check_eod(_cfg(), datetime(2026, 7, 21, 16, 30, tzinfo=_ET), is_trading=True)
-    state = json.loads((eod_env["tmp"] / "state.json").read_text())
-    assert state[wd._EOD_FIRED_KEY] == "2026-07-21"  # no per-tick retry loop
-    assert any(key == "eod.launch" for _, key, _t in eod_env["notices"])
-
-
-def test_successful_eod_launch_stays_quiet(eod_env, monkeypatch):
-    monkeypatch.setattr(wd, "_eod_launch", lambda verb: True)
-    wd._check_eod(_cfg(), datetime(2026, 7, 21, 16, 30, tzinfo=_ET), is_trading=True)
-    assert eod_env["notices"] == []
