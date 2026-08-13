@@ -18,6 +18,7 @@ export interface ConsoleConfig {
     earningsDir: string;
     gexDir: string;
     scoutDir: string;
+    reviewDir: string;
   };
 }
 
@@ -36,6 +37,7 @@ export function loadConfig(): ConsoleConfig {
       earningsDir: path.join(data, "earnings"),
       gexDir: path.join(data, "gex"),
       scoutDir: path.join(data, "scout"),
+      reviewDir: path.join(data, "review"),
     },
   };
 }

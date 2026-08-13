@@ -1,4 +1,5 @@
 import { Routes, Route } from "react-router-dom";
+import { ReviewPage } from "./pages/Review/ReviewPage";
 import { Shell } from "./components/shell/Shell";
 import { OverviewPage } from "./pages/Overview/OverviewPage";
 import { MeicPage } from "./pages/Meic/MeicPage";
@@ -18,6 +19,7 @@ export default function App() {
     <Routes>
       <Route element={<Shell />}>
         <Route index element={<OverviewPage />} />
+        <Route path="review" element={<ReviewPage />} />
         <Route path="meic" element={<MeicPage />} />
         <Route path="flies" element={<FliesPage />} />
         <Route path="earnings" element={<EarningsPage />} />
