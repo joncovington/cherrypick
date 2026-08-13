@@ -43,6 +43,10 @@ CATCHUP_MINUTES = {
     "symbol-watch": 150,  # 06:30 scheduled; still useful until ~09:00
     "reconcile": 240,
     "log-archive": 7 * 24 * 60,
+    # A missed review is worth catching up on: the fact set is the input to every read surface,
+    # and a session with no artifact is a hole in the trend rather than a late report.
+    "review-provisional": 180,
+    "review-final": 240,
 }
 
 
@@ -444,6 +448,31 @@ def derive_jobs(
             catchup_minutes=CATCHUP_MINUTES["symbol-watch"],
             enabled=sw["enabled"],
             enabled_reason="" if sw["enabled"] else "disabled in config (symbol_watch)",
+        ),
+    )
+    rv = cfgmod.review_settings(cfg)
+    add(
+        "review-provisional",
+        lambda: JobSpec(
+            id="review-provisional",
+            argv=_run_py(pythonw, launcher, "review", "--provisional"),
+            kind=KIND_DAILY,
+            at_et=rv["provisional_at"],
+            catchup_minutes=CATCHUP_MINUTES["review-provisional"],
+            enabled=rv["enabled"],
+            enabled_reason="" if rv["enabled"] else "disabled in config (review)",
+        ),
+    )
+    add(
+        "review-final",
+        lambda: JobSpec(
+            id="review-final",
+            argv=_run_py(pythonw, launcher, "review", "--final"),
+            kind=KIND_DAILY,
+            at_et=rv["final_at"],
+            catchup_minutes=CATCHUP_MINUTES["review-final"],
+            enabled=rv["enabled"],
+            enabled_reason="" if rv["enabled"] else "disabled in config (review)",
         ),
     )
     rs = cfgmod.reconcile_schedule_settings(cfg)

@@ -296,6 +296,8 @@ def test_derive_full_suite_job_table():
         "symbol-watch",
         "reconcile",
         "log-archive",
+        "review-provisional",
+        "review-final",
     }
     assert by_id["watchdog"].interval_seconds == 600
     assert by_id["trade-notify"].interval_seconds == 30
@@ -423,3 +425,22 @@ def test_console_can_be_turned_off_and_stays_visible(tmp_path):
     cfg = suite_cfg(console={"enabled": False, "path": str(_built_console(tmp_path))})
     con = next(j for j in derive(cfg)[0] if j.id == "console")
     assert not con.enabled and "disabled in config" in con.enabled_reason
+
+
+def test_review_runs_two_passes_on_by_default():
+    """Two passes because the modules do not finish together: the provisional one captures the 0DTE
+    books complete with earnings still carrying overnight, the final one closes that session out the
+    next morning. The narrative is only ever written against a final set."""
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    prov, final = by_id["review-provisional"], by_id["review-final"]
+    assert prov.enabled and final.enabled
+    assert (prov.at_et, final.at_et) == ("16:30", "10:15")
+    assert "--final" in final.argv and "--final" not in prov.argv
+
+
+def test_review_can_be_turned_off():
+    cfg = suite_cfg()
+    cfg["review"] = {"enabled": False}
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    assert not by_id["review-provisional"].enabled
+    assert "disabled in config (review)" in by_id["review-provisional"].enabled_reason
