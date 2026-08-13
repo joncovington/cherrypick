@@ -22,6 +22,13 @@ One workspace for the trading-tool suite. Work in the package for your area — 
   over every other package's data (its own store is `~/.cherrypick/data/console/`); reads the shared
   suite credential and never writes one, gating its write-oriented functions on the token's probed
   scope; no order-placement code paths.
+- **packages/review** — the suite's cross-module **end-of-day review**: one versioned fact set per
+  session covering meic/flies/earnings together, plus the renders of it. Read-only over every other
+  package (via `cherrypick.core.ledgers`, the single home for per-schema net/risk rules), writes only
+  into its own store. Exists because answering "what did the suite do today" inside each package
+  produced six incomparable report families and two normalisation layers that had already drifted.
+  No broker credentials, no network, no AI: the narrative is written *outside* the package by a
+  scheduled agent reading the fact set, so a failed narrative can never damage a report.
 - **packages/desk** — ⚠️ **EXPERIMENTAL.** The **manual trading desk** and the suite's only
   *discretionary* live-order path (meic/earnings/flies each have a live loop behind their own
   `enable_live_trading` gate; this has no loop): a foreground, human-initiated CLI for

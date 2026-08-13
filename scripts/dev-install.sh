@@ -15,7 +15,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 echo "==> packages/core (must be first)"
 "$PYTHON" -m pip install -e "$ROOT/packages/core[dev]"
 
-for pkg in orchestrator meic earnings gex flies streamer desk; do
+for pkg in orchestrator meic earnings gex flies streamer desk review; do
     echo "==> packages/$pkg"
     "$PYTHON" -m pip install -e "$ROOT/packages/$pkg[dev]"
 done
