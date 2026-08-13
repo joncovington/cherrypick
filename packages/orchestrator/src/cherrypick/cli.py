@@ -621,6 +621,83 @@ def _run_earnings_symbol_watch(cfg) -> None:
     _emit(rec)
 
 
+def _run_review(cfg, *, final: bool) -> None:
+    """Invoked by the two daily review passes (see cfgmod.review_settings). Runs packages/review,
+    which reads every module's ledger read-only and writes only into its own home.
+
+    Two passes because the modules do not all finish together: the provisional pass captures the
+    0DTE modules complete with earnings still carrying overnight, and the final pass the next
+    morning closes that session out. `--final` also re-runs the reconciliation, which re-counts each
+    module with independent SQL -- a scope difference between the fact set and a ledger is worth
+    knowing about the morning it appears, not whenever someone next looks.
+
+    A failure here is a WARNING, never CRITICAL: nothing downstream of this places, closes or sizes
+    anything, so the cost of a bad pass is a missing report. The suite keeps trading either way.
+    """
+    hb_path = cfgmod.state_file("review.last.json")
+    log_path = _module_log("review")
+    verb = "final" if final else "provisional"
+
+    argv = ["-m", "cherrypick.review", "build"] + (["--final"] if final else [])
+    try:
+        r = subprocess.run(
+            [cfgmod.python_exe(), *argv],
+            capture_output=True,
+            text=True,
+            timeout=900,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        try:
+            result = json.loads(r.stdout or "{}")
+        except json.JSONDecodeError:
+            result = {"raw": (r.stdout or "")[:2000]}
+        ok = r.returncode == 0 and result.get("ok", True) is not False
+        error = None if ok else (result.get("error") or (r.stderr or "")[:500])
+    except Exception as exc:
+        ok, result, error = False, {}, f"{type(exc).__name__}: {exc}"
+
+    reconciled = None
+    if ok and final:
+        try:
+            rr = subprocess.run(
+                [cfgmod.python_exe(), "-m", "cherrypick.review", "reconcile"],
+                capture_output=True,
+                text=True,
+                timeout=900,
+                creationflags=CREATE_NO_WINDOW,
+            )
+            reconciled = json.loads(rr.stdout or "{}")
+        except Exception as exc:  # noqa: BLE001 -- a failed check must not fail the report
+            reconciled = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    rec = {
+        "ok": ok,
+        "pass": verb,
+        "error": error,
+        "session": (result or {}).get("session"),
+        "status": (result or {}).get("status"),
+        "reconciled": reconciled,
+    }
+    hb_path.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    _append_log(log_path, {**rec, "result": result})
+
+    notifier = Notifier(cfg.get("notify"))
+    if not ok:
+        notifier.notify(
+            "WARNING", "review", f"Suite review ({verb}) failed", f"{error or 'see logs/review.log'}"
+        )
+    elif reconciled and reconciled.get("ok") is False:
+        # The fact set built, but it does not agree with the ledgers it claims to summarise. That is
+        # a data-integrity finding, not a cosmetic one -- every surface reads this artifact.
+        notifier.notify(
+            "WARNING",
+            "review",
+            "Suite review reconciliation mismatch",
+            f"{len(reconciled.get('failures') or [])} session(s) disagree with their ledgers",
+        )
+    _emit(rec)
+
+
 # --------------------------------------------------------------------------- misc
 def cmd_init(force: bool) -> None:
     result = init.run(force=force)
@@ -1070,6 +1147,7 @@ def main() -> None:
             "run-earnings-entry",
             "run-earnings-exit",
             "run-earnings-symbol-watch",
+            "review",
             "ensure-dolt",
             "notify-test",
             "notify-trades",
@@ -1194,6 +1272,7 @@ def main() -> None:
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),
         "run-earnings-exit": lambda: _run_earnings(cfg, "exit"),
         "run-earnings-symbol-watch": lambda: _run_earnings_symbol_watch(cfg),
+        "review": lambda: _run_review(cfg, final="--final" in sys.argv),
         "ensure-dolt": lambda: _ensure_dolt(cfg),
         "notify-test": lambda: cmd_notify_test(cfg),
         "secrets-set": lambda: cmd_secrets_set(args.channel, args.url),

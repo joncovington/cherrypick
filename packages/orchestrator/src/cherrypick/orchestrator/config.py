@@ -270,6 +270,28 @@ def eod_digest_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def review_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved cross-module end-of-day review config (packages/review). ON by default.
+
+    Two passes, because the modules do not all finish at the same time. `provisional_at` runs after
+    the 0DTE modules settle and captures MEIC and flies complete, with earnings shown as carried
+    overnight risk; `final_at` runs the next morning once earnings has closed, finalises the prior
+    session, and is the only status the narrative is ever written against — which is what lets that
+    narrative be written once and frozen.
+
+    Read-only over every module's ledger and writes only into review's own home, so neither pass can
+    affect a loop; a failed pass costs a report, never a trade.
+    """
+    rv = cfg.get("review", {}) or {}
+    return {
+        "enabled": rv.get("enabled", True),
+        # ET, box-local like the modules' own entry/exit times. 16:30 is after the 0DTE settles;
+        # 10:15 is after earnings' 09:45 close window has had time to run.
+        "provisional_at": rv.get("provisional_at", "16:30"),
+        "final_at": rv.get("final_at", "10:15"),
+    }
+
+
 def archive_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved end-of-month log/report rotation scheduling. ON by default (opt out with
     `"log_archive": {"enabled": false}`): a monthly task zips each finished month's dated reports and
