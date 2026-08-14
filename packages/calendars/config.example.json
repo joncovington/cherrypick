@@ -1,0 +1,65 @@
+{
+  "_header": "===== cherrypick-calendars — weekly SPX double calendar (paper-only) =====",
+  "_what_this_is": "Every Monday (Tuesday after a Monday holiday) at the entry window, one put calendar at the expected-move-down strike and one call calendar at the expected-move-up strike: short legs expiring that week's Friday, long legs the following Monday. The module is a forward EXIT-PARAMETER EXPERIMENT, not a strategy with an opinion: a `control` book that closes everything at Friday's bell, a permissive `path` book that holds every leg to its expiry and records the full per-tick mark path, and a read-side derivation (exit_policies.py) that replays profit targets, stops, strike-touch, exit-timing and long-disposition variants over that recorded path with exact pairing. Copy to config.json (git-ignored) or ~/.cherrypick/config/calendars.json.",
+
+  "_symbols_note": "v1 is SPX only. The structure needs an index product with Monday AND Friday weekly expirations; single stocks list Fridays only, so the exact 4DTE/7DTE Monday shape does not exist for them. QQQ/IWM have the expirations but are American-style ETFs — see cash_settled_symbols before adding either.",
+  "symbols": ["SPX"],
+
+  "_occ_roots_note": "The OCC root the provider admits per underlying. Load-bearing on third-Friday weeks, when the cache can hold BOTH the AM-settled monthly (root SPX) and the PM-settled weekly (root SPXW) for the same expiration date: the suite's settlement model assumes PM, so only the weekly root is tradeable here. A week where no SPXW Friday is listed is skipped and journaled (`not_weekly_listed`), not traded on the wrong root.",
+  "occ_roots": { "SPX": "SPXW" },
+
+  "_cash_settled_symbols_note": "Symbols whose expiring legs may be cash-settled at intrinsic (European style). The entry refuses any symbol not on this list (`not_cash_settled`): an American-style ETF needs early-exercise handling this module deliberately does not have. Adding QQQ/IWM means building that first — it is a code change dressed as a config edit, which is why the guard exists.",
+  "cash_settled_symbols": ["SPX"],
+
+  "_source_note": "stream_cache_db overrides the shared stream cache path; null means the suite default (~/.cherrypick/data/marketdata/stream_cache.db). This module is a pure READ-ONLY consumer of that cache — its two expirations are served by the streamer's `expirations` request field, declared automatically every tick.",
+  "source": { "stream_cache_db": null },
+
+  "defaults_header": "===== timing, data quality, and structure =====",
+  "_quantity_note": "Contracts per calendar side, per book. 1 keeps the experiment's unit the single structure.",
+  "_em_factor_note": "The straddle-to-expected-move correction, applied to the front ATM straddle mid (cherrypick.core.structures owns the default; this key overrides per-module). 0.85 is the practitioner convention.",
+  "_entry_window_note": "Entry is attempted on the entry day only, inside [entry_window_start, entry_window_end] ET, retried each tick until it fills or the window closes (an exhausted window is a journaled skipped week). 10:00 sits past the opening rotation so the EM is measured on real two-way flow.",
+  "_exit_window_note": "exit_window_start..exit_window_end is the Friday scheduled-exit window the control book closes in (and the terminal every derived policy falls through to). noon_exit_start anchors the derived fri_noon variant. mon_disposition_time is when surviving longs are sold on their own Monday expiration morning. exec_window_start gates ALL management action until the open stabilizes.",
+  "_settle_note": "settle_time is when expiring legs cash-settle off the last streamed trade, refused rather than used if older than settlement_max_age_seconds — a stale print would decide a week's P&L at once. A settlement missed entirely (loop down through Friday evening) is NEVER back-settled from a later print; use `python -m cherrypick.calendars.paper_loop --settle --date <expiration> --price <official print>`.",
+  "_quality_note": "max_quote_age_seconds bounds every quote the module prices against (a 4-7DTE chain ticks slower than 0DTE, hence looser than flies' 120). max_leg_spread_pct is the execution gate's is-this-mark-actionable bar. strike_window_pct bounds the entry snapshot's quote fetch around spot — the EM lands well inside it.",
+  "defaults": {
+    "quantity": 1,
+    "em_factor": 0.85,
+    "entry_window_start": "10:00",
+    "entry_window_end": "10:15",
+    "exit_window_start": "15:45",
+    "exit_window_end": "15:55",
+    "noon_exit_start": "12:00",
+    "mon_disposition_time": "09:45",
+    "exec_window_start": "09:40",
+    "settle_time": "16:20",
+    "settlement_max_age_seconds": 300,
+    "max_quote_age_seconds": 300,
+    "max_leg_spread_pct": 0.25,
+    "strike_window_pct": 0.04
+  },
+
+  "books_header": "===== the books — two real ones, and why only two =====",
+  "_books_note": "Every book shares the SAME entry fills (one plan, N books), so any divergence is exit policy and nothing else. `control` is the user-defined baseline: sell every leg in the Friday exit window, no stops, no targets, no weekend hold. `path` is the permissive superset (MEIC's `open` arm precedent): it never closes — shorts run to Friday cash settlement, longs to the Monday disposition — and its recorded mark path is what exit_policies.py derives every candidate exit rule from, read-side, with exact pairing. That derivation is why there are no pt-20/sl-50/thu-close books: one permissive arm answers the whole grid. Do not disable `path` while any experiment is running — it is the substrate, not a variant. Deliberately NOT one-variable-apart (control differs from path in short AND long handling); the read-side grid answers the single-variable questions, and the module CLAUDE.md states the exemption so nobody 'fixes' it.",
+  "books": {
+    "control": { "enabled": true },
+    "path": { "enabled": true }
+  },
+
+  "_tastytrade_costs_note": "Overrides for the shared cost model (cherrypick.core.fees.DEFAULT_COSTS): slippage_frac_of_spread, slippage_cap_frac_of_mid, commissions. Empty means the suite defaults — SPX carries its $0.60/contract index exchange fee automatically, and cash settlement its $5-per-ITM-symbol assignment fee.",
+  "tastytrade_costs": {},
+
+  "advice_header": "===== the advised book (paper only, off by default) =====",
+  "_advice_note": "When enabled AND the suite's advisor covers this module (advisor.modules.calendars in the orchestrator config — both switches must agree), the entry day's admitted advice opens an `advised:<base_book>` book beside the base, with the admitted params FROZEN on each row at entry and restated through management.effective_params at every later tick — advice lapsing mid-week can never hand an open position to rules nobody chose. Bounds are exit params only, which is exactly the advisor's v1 contract; the entry is unconditional every week, so there is nothing entry-side to advise. An artifact landing on a non-entry day admits params that open nothing until the next entry day — 'advice: baseline' on a Tuesday is the design, not a failure.",
+  "_advice_params_note": "profit_target_pct and stop_loss_pct_of_debit read the COMBINED double (both sides) as fractions of the entry debit. time_exit ∈ thu_close|fri_noon|fri_close schedules the whole-structure close; long_disposition ∈ fri_close|mon_open decides whether the longs go at Friday's bell or ride to Monday (mon_open disables the whole-structure schedule — shorts settle, longs dispose, the path shape). short_strike_touch_exit closes the touched SIDE when spot crosses its strike.",
+  "advice": {
+    "enabled": false,
+    "base_book": "control",
+    "bounds": {
+      "profit_target_pct": { "min": 0.05, "max": 0.5 },
+      "stop_loss_pct_of_debit": { "min": 0.25, "max": 1.0 },
+      "time_exit": { "choices": ["thu_close", "fri_noon", "fri_close"] },
+      "long_disposition": { "choices": ["fri_close", "mon_open"] },
+      "short_strike_touch_exit": { "choices": [true, false] }
+    }
+  }
+}

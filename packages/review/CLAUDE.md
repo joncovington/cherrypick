@@ -4,9 +4,9 @@
 > the root [documentation index](../../docs/README.md).
 
 This package answers one question every session: **what did the suite do today, was it what we
-expected, and what should change.** It covers MEIC, flies and earnings together, because the
-question is a suite question and answering it inside each package produced six report families that
-could not be compared and two normalisation layers that had already drifted apart.
+expected, and what should change.** It covers MEIC, flies, earnings and calendars together, because
+the question is a suite question and answering it inside each package produced six report families
+that could not be compared and two normalisation layers that had already drifted apart.
 
 **It is read-only over every other package.** It reads each module's ledger through
 `cherrypick.core.ledgers` and writes only into its own home (`~/.cherrypick/data/review`). It never
