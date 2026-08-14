@@ -28,6 +28,7 @@ from datetime import date as _date
 from datetime import datetime, timedelta
 
 from cherrypick.core import calendar as _calendar
+from cherrypick.core import structures
 
 from cherrypick.earnings import paths as _paths
 
@@ -900,13 +901,14 @@ def compute_expected_move_and_term_structure(
     (caught live during iron_fly.py's testing: the naive formula would have
     rejected a real earnings candidate whose front IV was ~64% richer than
     back). expected_move applies the standard 0.85x straddle-to-expected-
-    move correction (e.g. AAPL $14.00 straddle -> $11.90 expected move) --
+    move correction (e.g. AAPL $14.00 straddle -> $11.90 expected move),
+    via cherrypick.core.structures so every module shares one factor --
     this only affects screening thresholds, not wing/strike sizing, which
     each strategy's order-builder computes independently from its own
     freshly-fetched straddle/strike prices.
     """
     term_structure = (back_iv - front_iv) / back_iv
-    expected_move = 0.85 * (front_call_mid + front_put_mid)
+    expected_move = structures.expected_move(front_call_mid, front_put_mid)
     return {
         "term_structure": term_structure,
         "expected_move_dollars": expected_move,
