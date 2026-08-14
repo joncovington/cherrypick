@@ -123,6 +123,49 @@ def test_missing_anchor_is_critical_while_supervisor_runs(monkeypatch):
     assert anchor.status == watchdog.CRITICAL and "nothing will restart" in anchor.message
 
 
+# --------------------------------------------------------------------- console (the read surface)
+def test_no_heartbeat_means_console_check_skips_too(monkeypatch):
+    """Pre-cutover box: the console job isn't derived/tracked here yet either."""
+    assert watchdog._check_console({}) == []
+
+
+def test_console_disabled_in_config_is_not_alarmed_on(no_schtasks):
+    write_heartbeat()
+    write_jobs({})
+    assert watchdog._check_console({"console": {"enabled": False}}) == []
+
+
+def test_console_running_is_ok(no_schtasks):
+    write_heartbeat()
+    write_jobs({"console": {"enabled": True, "resident_state": "running"}})
+    task = next(f for f in watchdog._check_console({}) if f.key == "console.task")
+    assert task.status == watchdog.OK and task.message == "running"
+
+
+def test_console_job_missing_or_disabled_is_critical(no_schtasks):
+    write_heartbeat()
+    write_jobs({})
+    task = next(f for f in watchdog._check_console({}) if f.key == "console.task")
+    assert task.status == watchdog.CRITICAL and "missing" in task.title
+
+    write_jobs({"console": {"enabled": False, "enabled_reason": "disabled in config (console)"}})
+    task = next(f for f in watchdog._check_console({}) if f.key == "console.task")
+    assert task.status == watchdog.CRITICAL and "disabled in config (console)" in task.message
+
+
+def test_console_stuck_in_backoff_warns(no_schtasks):
+    """The gap found live on 2026-08-14: the console has no paper writes or log whose staleness
+    would out a stuck restart loop, so this resident_state read is the only thing that can."""
+    write_heartbeat()
+    write_jobs({"console": {"enabled": True, "resident_state": "backoff"}})
+    task = next(f for f in watchdog._check_console({}) if f.key == "console.task")
+    assert task.status == watchdog.WARN and "not running" in task.title.lower()
+
+    write_jobs({"console": {"enabled": True, "resident_state": "start failed"}})
+    task = next(f for f in watchdog._check_console({}) if f.key == "console.task")
+    assert task.status == watchdog.WARN
+
+
 # --------------------------------------------------------------------- doctor's dual-read
 def test_doctor_suite_checks_read_jobs_under_supervisor(monkeypatch):
     write_heartbeat()
@@ -131,6 +174,7 @@ def test_doctor_suite_checks_read_jobs_under_supervisor(monkeypatch):
             "trade-notify": {"enabled": True},
             "log-archive": {"enabled": True},
             "streamer-health": {"enabled": True},
+            "console": {"enabled": True},
             "reconcile": {"enabled": False, "enabled_reason": "disabled in config (reconcile.schedule)"},
             "follow-notify": {"enabled": False, "enabled_reason": "disabled in config (follow_feed)"},
         }
@@ -141,6 +185,7 @@ def test_doctor_suite_checks_read_jobs_under_supervisor(monkeypatch):
     checks = {c.name: c for c in doctor._suite_task_checks({})}
     assert checks["task.trade_notify"].status == doctor.OK
     assert checks["task.streamer_health"].status == doctor.OK  # preopen's replacement
+    assert checks["task.console"].status == doctor.OK
     assert "preopen" not in {c.name for c in doctor._suite_task_checks({})}
     # opted-out features stay healthy-disabled, not warnings
     assert checks["task.reconcile"].status == doctor.OK
@@ -153,6 +198,8 @@ def test_doctor_enabled_but_missing_job_warns():
     checks = {c.name: c for c in doctor._suite_task_checks({})}
     assert checks["task.trade_notify"].status == doctor.WARN
     assert "missing" in checks["task.trade_notify"].detail
+    assert checks["task.console"].status == doctor.WARN
+    assert "missing" in checks["task.console"].detail
 
 
 def test_doctor_supervisor_checks_fast_mode_skips_spawny_parts(monkeypatch):
