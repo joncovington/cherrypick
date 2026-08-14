@@ -356,3 +356,38 @@ def test_registry_drops_jobs_config_no_longer_derives(tmp_path, monkeypatch):
     assert "flies-paper" in s._state, "a row with a running child is never dropped"
     # Missing because it FAILED to derive, not because it was retired — its history is evidence.
     assert "broken-job" in s._state, "a derivation failure keeps its row"
+
+
+@pytest.mark.unit
+def test_daemon_reloads_config_when_the_file_mtime_moves(tmp_path, monkeypatch):
+    """The production daemon (constructed with cfg=None) must pick up a config edit on the next
+    pass -- the whole promise of "a cadence change is a config edit, no install step"."""
+    cfg_file = tmp_path / "config.json"
+    cfg_file.write_text(json.dumps({"marker": "old"}), encoding="utf-8")
+    monkeypatch.setattr(cfgmod, "effective_config_path", lambda: cfg_file)
+    monkeypatch.setattr(cfgmod, "load_config", lambda: json.loads(cfg_file.read_text(encoding="utf-8")))
+
+    s = supervisor.Supervisor(None)
+    assert s._load_cfg()["marker"] == "old"
+
+    cfg_file.write_text(json.dumps({"marker": "new"}), encoding="utf-8")
+    os.utime(cfg_file, (time.time() + 5, time.time() + 5))  # force a distinct mtime
+    assert s._load_cfg()["marker"] == "new"
+
+
+@pytest.mark.unit
+def test_cli_supervise_does_not_pin_the_daemon_to_a_config_snapshot(monkeypatch):
+    """Passing the CLI's pre-loaded cfg into supervisor.run() pins the daemon to that snapshot and
+    silently disables the mtime reload -- config edits then need a restart nobody knows to perform.
+    That is exactly how an enabled notifier sat derived-as-disabled for a day (2026-08-13)."""
+    import cherrypick.cli as cli
+
+    seen = {}
+
+    def fake_run(cfg=None, **kw):
+        seen["cfg"] = cfg
+        return {"ok": True, "passes": 0}
+
+    monkeypatch.setattr(supervisor, "run", fake_run)
+    cli.cmd_supervise({"anything": True}, stop=False)
+    assert seen["cfg"] is None, "supervise must let the daemon load (and reload) its own config"
