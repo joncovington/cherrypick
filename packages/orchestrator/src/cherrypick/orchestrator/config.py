@@ -402,6 +402,22 @@ def follow_feed_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def lossdog_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved Lossdog VIP trade-feed notifier config. OFF by default. Network -> its own
+    supervisor job, never the watchdog tick (the same treatment as follow_feed, for the same
+    reason). Auth is minted per run from the keyring __client cookie, with the LOSSDOG_TOKEN env
+    var as the manual fallback -- neither ever appears in this config."""
+    ld = cfg.get("lossdog", {}) or {}
+    return {
+        "enabled": ld.get("enabled", False),
+        "task_name": ld.get("task_name", "cherrypick-lossdog-notify"),
+        "interval_minutes": ld.get("interval_minutes", 10),
+        "channels": ld.get("channels") or ["log", "discord_follow"],
+        "max_per_run": ld.get("max_per_run", 8),
+        "filters": ld.get("filters", {}) or {},
+    }
+
+
 def desk_notify_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved manual-desk order notifier config. OFF by default. Its own job, never a watchdog-tick
     call: it both pushes to Discord and asks the broker for order status, and the reliability path

@@ -19,9 +19,9 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 | `account` | List, set, or clear the **suite-wide** designated live-trading account (masked) — the default every module inherits through the store fallback chain. Configuration only. | `--set <last4\|index>`, `--clear`, `--yes` |
 | `account --module <m>` | The same, for one module's own designation (its override). Configuration only. | `--module`, `--set <last4\|index>`, `--clear`, `--yes` |
 | `migrate-home` | Move in-repo config into `~/.cherrypick` and sweep leftovers. Dry-run by default. | `--apply` (perform the move) |
-| `secrets-set` | Store a Slack/Discord webhook URL in the OS keyring (prompted without echo if `--url` omitted). `discord_follow` is a **second** Discord webhook so the Follow Feed can post to its own channel. | `--channel slack\|discord\|discord_follow`, `--url` |
-| `secrets-status` | Show which push-channel webhooks are configured (secret-free). | — |
-| `secrets-delete` | Remove a stored webhook. | `--channel` |
+| `secrets-set` | Store a Slack/Discord webhook URL — or the Lossdog Clerk `__client` cookie — in the OS keyring (prompted without echo if `--url` omitted). `discord_follow` is a **second** Discord webhook so the Follow Feed can post to its own channel; `lossdog` is not a webhook but the cookie the Lossdog notifier mints its feed tokens from. | `--channel slack\|discord\|discord_follow\|lossdog`, `--url` |
+| `secrets-status` | Show which push-channel secrets are configured (secret-free). | — |
+| `secrets-delete` | Remove a stored secret. | `--channel` |
 | `settings` | Local web editor for every config file + a keyring secrets manager (loopback `:8804`) — the suite's one mutating HTTP surface, run on demand, never watchdog-started. Live-trading gate fields render read-only. With `--organize` it instead reorders a live config into its example's sections and exits (no server). | `--host`, `--port` (def `8804`), `--no-browser`, `--organize [target]`, `--apply` |
 
 ## Turning the suite on/off
@@ -46,6 +46,7 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 | `notify-test` | Fire a test notification through every configured channel. | — |
 | `notify-trades` | Push new paper entries/exits to the trade channels (also runs best-effort on each watchdog tick). | — |
 | `notify-follow` | Push new [tastylive Follow Feed](https://follow.tastylive.com) orders — other traders' fills, as shown on the platform's Follow page — to their own channel. **Off by default**; the only notifier that makes a network call, so it runs on its own task and *never* on the watchdog tick. Read-only, no auth, no broker. | — |
+| `notify-lossdog` | Push new Lossdog VIP trade-feed trades to the follow channel (`discord_follow`). **Off by default**; a PRIVATE, undocumented API read with a personal token (see [the token section](configuration-and-storage.md#lossdog-vip-feed-token)) — its own task, never on the watchdog tick, and an outage or dead credential degrades to "no notifications". | `--replay-last N` (re-post the newest N regardless of seen state), `--dry-run` (print embeds as JSON instead of posting) |
 | `notify-desk` | Card each manual-desk order on submit and again when it reaches a terminal state (filled / cancelled / rejected / expired). **Off by default**; like `notify-follow` it runs on its own task and *never* on the watchdog tick — it pushes a Discord card **and** asks the broker for order status. Reads the desk's audit journal as a file and never imports `cherrypick.desk`, so observing desk orders cannot make the submit path reachable from scheduled code. | — |
 
 ## Reporting & review (the read side)

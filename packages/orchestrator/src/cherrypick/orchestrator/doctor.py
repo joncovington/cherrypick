@@ -221,6 +221,7 @@ def _suite_task_checks(cfg: dict[str, Any]) -> list[Check]:
             _job_check("task.log_archive", "log-archive", cfgmod.archive_settings(cfg)["enabled"]),
             _job_check("task.reconcile", "reconcile", cfgmod.reconcile_schedule_settings(cfg)["enabled"]),
             _job_check("task.follow_notify", "follow-notify", cfgmod.follow_feed_settings(cfg)["enabled"]),
+            _job_check("task.lossdog_notify", "lossdog-notify", cfgmod.lossdog_settings(cfg)["enabled"]),
             # streamer-health is preopen's whole-session replacement under the supervisor
             _job_check("task.streamer_health", "streamer-health", sh.get("enabled", True)),
         ]
