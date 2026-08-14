@@ -89,9 +89,10 @@ suite once collected $4.00 of credit against $4.96 of fees.
   read models plus interactive screening, the watchlist, and a strategy builder in one app. Read-only over
   every other package's data, and kept running by the supervisor rather than started by hand. It replaced
   the suite dashboard and every per-module dashboard on 2026-08-12.
-- **Reports on disk** — a deterministic end-of-day report per module, a cross-module suite digest, and
-  (opt-in) an AI-written narrative over the day's deterministic reports. The deterministic files stay the
-  source of record.
+- **The end-of-day review on disk** — one versioned, deterministic fact set per session covering every
+  module (`packages/review`), with rendered reports built from it and (opt-in) an AI-written narrative
+  over it. The fact set stays the source of record; it replaced the old per-module EOD reports on
+  2026-08-13.
 
 Every surface binds to loopback only.
 
@@ -150,7 +151,7 @@ kept strictly separate.
 
 ## What's in the repo
 
-One workspace, ten packages. The three strategy engines above plus the pieces that feed, drive, and
+One workspace, eleven packages. The three strategy engines above plus the pieces that feed, drive, and
 read them:
 
 | Package | What it is |
@@ -161,6 +162,8 @@ read them:
 | [packages/streamer](packages/streamer) | The single market-data producer. Everything else reads the cache it writes; nothing else writes it. |
 | [packages/gex](packages/gex) | The GEX engine and spot-trail recorder; the console renders it. |
 | [packages/console](packages/console) | The unified web console (`127.0.0.1:5070`) — every module's read models plus research and screening, in one app. Read-only. |
+| [packages/review](packages/review) | The cross-module end-of-day review: one versioned fact set per session over every engine, plus the renders of it. Read-only over every other package. |
+| [packages/advisor](packages/advisor) | The deterministic half of the AI advisor — fact packs, reply validation, and paper A/B experiments. Contains no AI itself; off by default. |
 | [packages/desk](packages/desk) | ⚠️ **Experimental.** The manual trading desk — the only *discretionary* live-order path, driven by you per order. [Read the warning](#before-you-go-anywhere-near-live-trading). |
 
 ## Requirements
@@ -169,7 +172,7 @@ read them:
 |---|---|
 | A [tastytrade](https://tastytrade.com) account | Supplies the live market data the paper engines fill against (and your real account, if you ever choose to trade live). |
 | **Python 3.11+** | Runs the orchestrator, both strategy engines, and the reporting. |
-| **[Claude Code](https://docs.claude.com/en/docs/claude-code)** | Anthropic's agentic CLI. It drives the interactive and live-trading sessions, the slash-command workflows (`/meic-start`, `/earnings-start`, `/eod-report`), and the agent-synthesized analysis. The unattended **paper** automation runs on its own without it — but the agent-driven features need it. Installs via npm (needs [Node.js](https://nodejs.org) 18+). |
+| **[Claude Code](https://docs.claude.com/en/docs/claude-code)** | Anthropic's agentic CLI. It drives the interactive and live-trading sessions, the slash-command workflows (`/meic-start`, `/earnings-start`, `/console`), and the agent-written review narrative. The unattended **paper** automation runs on its own without it — but the agent-driven features need it. Installs via npm (needs [Node.js](https://nodejs.org) 18+). |
 | A computer that stays awake during market hours | cherrypick runs on your machine on a schedule, so it has to be on to capture a session. **Windows is recommended** — the scheduler and self-healing are most complete there. |
 | **[Node.js](https://nodejs.org) 22+ and [pnpm](https://pnpm.io)** *(console only)* | The unified web console is a Node/TypeScript package. It needs Node **22+** — a higher floor than Claude Code's 18+. Not needed for anything else; every other package is Python. |
 | **[Dolt](https://github.com/dolthub/dolt)** *(earnings engine only)* | The earnings module reads its historical datasets from a local `dolt sql-server`. Not needed for MEIC or GEX. |
@@ -191,7 +194,7 @@ claude --version                           # verify the install
 ```
 
 Then run `claude` from the project directory to use the suite's slash commands (`/meic-start`,
-`/earnings-start`, `/eod-report`, …). See the [Claude Code docs](https://docs.claude.com/en/docs/claude-code) for sign-in and setup.
+`/earnings-start`, `/console`, …). See the [Claude Code docs](https://docs.claude.com/en/docs/claude-code) for sign-in and setup.
 
 ### 1. Install
 
