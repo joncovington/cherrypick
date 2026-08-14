@@ -375,6 +375,19 @@ class Supervisor:
                         handle.kill()
                 self._record_exit(spec, st, -2)  # silence counts as a failure → backoff
                 return False
+            # A resident job never exits cleanly in normal operation, so `_record_exit(code=0)` --
+            # the only other place failure/backoff bookkeeping resets -- never fires for it. Left
+            # alone, a scar from hours-old failures (a crash-loop the night before, say) sits in
+            # `consecutive_failures` forever: it doesn't block anything while the child stays alive,
+            # but the NEXT unrelated failure computes its backoff off that stale count instead of
+            # starting over, jumping straight to the 10-minute cap instead of the normal 30s.
+            # Settled + alive + not silent is this job's version of a clean exit: clear the scar.
+            if self._resident_settled(spec, st) and (
+                st.get("consecutive_failures") or st.get("backoff_until") is not None
+            ):
+                st["consecutive_failures"] = 0
+                st["backoff_until"] = None
+                _log(f"{spec.id}: settled and healthy, failure/backoff history cleared")
             return False
         if st.get("backoff_until") and time.time() < float(st["backoff_until"]):
             st["resident_state"] = "backoff"
@@ -407,11 +420,18 @@ class Supervisor:
             self._state.pop(jid, None)
             _log(f"{jid}: no longer derived from config — registry row dropped")
 
+    def _resident_settled(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> bool:
+        """True once a resident child has been alive long enough to be judged at all -- the
+        streamer's settling grace. Silence and recovery are both decided only past this point."""
+        started = _iso_epoch(st.get("last_start"))
+        if started is None:
+            return False
+        return time.time() - started >= max(_RESIDENT_SETTLE_SECONDS, spec.silence_seconds)
+
     def _resident_silent(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> bool:
         if not spec.silence_file or not spec.silence_seconds:
             return False
-        started = _iso_epoch(st.get("last_start"))
-        if started and time.time() - started < max(_RESIDENT_SETTLE_SECONDS, spec.silence_seconds):
+        if not self._resident_settled(spec, st):
             return False  # settling — never judge a child younger than the silence window
         try:
             age = time.time() - os.path.getmtime(spec.silence_file)

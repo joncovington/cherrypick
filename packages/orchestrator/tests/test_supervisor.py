@@ -265,6 +265,30 @@ def test_silent_resident_child_is_restarted_with_backoff(spawned, tmp_path, monk
     assert "flies-paper" in res["started"]
 
 
+def test_healthy_resident_child_clears_stale_failure_history(spawned, tmp_path):
+    """A resident job never exits cleanly in normal operation, so the only other place
+    consecutive_failures/backoff_until reset (a code-0 exit) never fires for it. Once it has been
+    alive, settled, and not silent, that history must clear -- or a crash-loop from hours ago keeps
+    inflating the backoff on the next unrelated failure long after the job recovered."""
+    sup = supervisor.Supervisor(flies_cfg(tmp_path))
+    sup.pass_once(now=MONDAY_NOON)
+    st = sup._state["flies-paper"]
+    # simulate scar tissue from a crash-loop that happened well before this (still-alive) child
+    st["consecutive_failures"] = 25
+    st["backoff_until"] = time.time() - 5000  # long expired, but never cleared
+    # a fresh, current log keeps it from being judged silent
+    log = cfgmod.module_logs_dir("flies") / "flies_paper.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text("x")
+    from datetime import timedelta, timezone
+
+    old_start = datetime.now(timezone.utc) - timedelta(seconds=1000)
+    st["last_start"] = old_start.isoformat()
+    sup.pass_once(now=MONDAY_NOON)
+    assert st["consecutive_failures"] == 0
+    assert st["backoff_until"] is None
+
+
 def test_fresh_resident_child_is_never_judged_silent(spawned, tmp_path):
     """The settling grace: a just-started child hasn't logged yet and must not be restart-looped
     (the streamer's settling lesson)."""
