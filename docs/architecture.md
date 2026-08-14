@@ -144,6 +144,9 @@ resolved against the config file's directory / the source anchor, not the home. 
 `.claude/`) are gitignored and are never a runtime dependency. The one tracked exception is
 `.claude/commands/` — checked-in slash commands are shared dev conveniences (e.g. `/console`).
 **No AI is invoked from any suite package.** The EOD narrative is generated outside them, by a
-scheduled agent reading `packages/review`'s fact set, so no package holds an API key or a network
-dependency — see [reporting-and-dashboard.md](reporting-and-dashboard.md) and
+scheduled agent reading `packages/review`'s fact set, and the AI advisor's model call lives in
+`scripts/advisor_checkpoint.py` behind the same fence — `packages/advisor` holds only its
+deterministic half (the fact packs, the reply validation, and the paper A/B experiments its admitted
+proposals run as). No package holds an API key or a network dependency — see
+[reporting-and-dashboard.md](reporting-and-dashboard.md) and
 [guardrails-and-modes.md](guardrails-and-modes.md).
