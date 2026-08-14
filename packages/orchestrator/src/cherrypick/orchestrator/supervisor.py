@@ -312,6 +312,7 @@ class Supervisor:
             if self._errors.get(jid) != err:
                 _log(f"{jid}: derivation failed, job disabled: {err}")
         self._errors = errors
+        self._prune_retired(jobs, errors)
 
         started: list[str] = []
         for spec in jobs:
@@ -383,6 +384,28 @@ class Supervisor:
         if ok:
             _log(f"{spec.id}: resident child started (pid {st['running_pid']})")
         return ok
+
+    def _prune_retired(self, jobs: list[jobspec.JobSpec], errors: dict[str, str]) -> None:
+        """Drop registry rows for jobs config no longer derives.
+
+        A retired job's row was kept forever, frozen at whatever it last did — and because it is no
+        longer evaluated, it is never marked missed either. `earnings-entry` sat at `enabled: true`
+        with a fire date from the day before its lifecycle cutover, which is indistinguishable from a
+        scheduled job that has silently stopped firing, and cost a real diagnosis to tell apart.
+        Registry rows are a picture of what the supervisor is driving; a job it is not driving does
+        not belong in it.
+
+        Two things are deliberately NOT pruned. A row whose child is still alive stays, or the
+        overlap guard loses track of a process it would otherwise still reap. And a job whose
+        derivation FAILED this pass stays too: that job is missing because something is broken, not
+        because it was retired, and dropping its history would erase the evidence.
+        """
+        keep = {spec.id for spec in jobs} | set(errors)
+        for jid in [j for j in self._state if j not in keep]:
+            if self._state[jid].get("running_pid"):
+                continue
+            self._state.pop(jid, None)
+            _log(f"{jid}: no longer derived from config — registry row dropped")
 
     def _resident_silent(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> bool:
         if not spec.silence_file or not spec.silence_seconds:

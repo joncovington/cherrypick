@@ -324,3 +324,35 @@ def test_derive_error_disables_one_job_and_is_reported(spawned):
     assert "trade-notify" in res["started"]  # everything else unaffected
     reg = json.loads(supervisor.jobs_path().read_text(encoding="utf-8"))
     assert "watchdog" in reg["derive_errors"]
+
+
+@pytest.mark.unit
+def test_registry_drops_jobs_config_no_longer_derives(tmp_path, monkeypatch):
+    """A retired job's row used to sit at `enabled: true` forever, frozen at its last fire.
+
+    Because it is no longer evaluated it is never marked missed either, so it looks exactly like a
+    scheduled job that has silently stopped firing — the earnings entry/exit rows after the 2026-08-12
+    lifecycle cutover, which cost a real diagnosis to tell apart.
+    """
+    from cherrypick.orchestrator import supervisor as sup
+
+    s = sup.Supervisor.__new__(sup.Supervisor)
+    s._state = {
+        "watchdog": {"enabled": True},
+        "earnings-entry": {"enabled": True, "last_fire_day": "2026-08-11"},
+        "flies-paper": {"enabled": True, "running_pid": 4242},
+        "broken-job": {"enabled": False},
+    }
+
+    class _Spec:
+        def __init__(self, jid):
+            self.id = jid
+
+    s._prune_retired([_Spec("watchdog")], {"broken-job": "config error"})
+
+    assert "watchdog" in s._state, "a derived job stays"
+    assert "earnings-entry" not in s._state, "a retired job's row goes"
+    # A live child must keep its row or the overlap guard loses the process it would reap.
+    assert "flies-paper" in s._state, "a row with a running child is never dropped"
+    # Missing because it FAILED to derive, not because it was retired — its history is evidence.
+    assert "broken-job" in s._state, "a derivation failure keeps its row"

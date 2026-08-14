@@ -415,3 +415,41 @@ def test_closing_a_position_still_refreshes_the_request(priced, monkeypatch):
     paper_loop.run_iteration(CONFIG, at("10:00"))
 
     assert registered == [[]], "the position closed, so its underlying is no longer needed"
+
+
+def test_append_run_log_restores_the_per_run_trail(tmp_path, monkeypatch):
+    """The heartbeats are a LATEST -- overwritten every run, so they answer "is it alive" and
+    nothing else. When entry and exit moved into this loop at the 2026-08-12 cutover, nothing took
+    over the run trail: logs/earnings_paper.log simply stopped, and "did earnings run today, and
+    what did it decide" stopped being answerable from the logs while the loop ran fine.
+    """
+    import json as _json
+
+    from cherrypick.core import home as _home
+
+    from cherrypick.earnings import paper_loop as pl
+
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    monkeypatch.setattr(_home, "logs_dir", lambda: tmp_path / "logs")
+
+    pl.append_run_log(
+        {"ts": "2026-08-13T19:37:56+00:00", "date": "2026-08-13", "phase": "entry", "opened": []}
+    )
+    pl.append_run_log(
+        {"ts": "2026-08-13T19:38:56+00:00", "date": "2026-08-13", "phase": "exit", "closed": []}
+    )
+
+    lines = (tmp_path / "logs" / "earnings_paper.log").read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 2, "one object per line, appended -- not overwritten like the heartbeat"
+    assert [_json.loads(x)["phase"] for x in lines] == ["entry", "exit"]
+
+
+def test_append_run_log_never_breaks_a_session(tmp_path, monkeypatch):
+    """A session that cannot write its log still trades."""
+    from cherrypick.core import home as _home
+
+    from cherrypick.earnings import paper_loop as pl
+
+    monkeypatch.setattr(_home, "logs_dir", lambda: tmp_path / "nope" / "deeper")
+    (tmp_path / "nope").write_text("not a directory", encoding="utf-8")
+    pl.append_run_log({"phase": "entry"})  # must not raise
