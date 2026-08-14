@@ -479,6 +479,39 @@ def test_the_narrative_is_off_by_default_and_tagged_ai():
     assert "ai" in job.tags
 
 
+def test_every_derived_run_py_job_actually_parses():
+    """The guard that was missing: a derived argv the CLI's parser rejects.
+
+    `review-provisional`/`review-final` passed `--final`/`--provisional`, which the parser had never
+    been taught, so both jobs exited 2 at argparse every single day and no fact set was built. The
+    job table looked perfectly healthy — enabled, on schedule, firing — because nothing checked that
+    the command it fires is a command the CLI accepts.
+    """
+    import contextlib
+    import io
+
+    from cherrypick import cli
+
+    cfg = suite_cfg()
+    cfg["review"] = {"narrative": True}
+    cfg["advisor"] = {"enabled": True}
+    parser = cli.build_parser()
+
+    offenders = []
+    for job in derive(cfg)[0]:
+        argv = list(job.argv)
+        # ONLY this package's own launcher. The console job also runs a `run.py` -- its own, with a
+        # completely different command set -- and a module's argv belongs to that module.
+        if argv[1:2] != ["run.py"]:
+            continue
+        with contextlib.redirect_stderr(io.StringIO()):
+            try:
+                parser.parse_args(argv[2:])
+            except SystemExit:
+                offenders.append(f"{job.id}: {' '.join(argv[2:])}")
+    assert not offenders, f"derived argv the CLI would reject at the parser: {offenders}"
+
+
 def test_the_advisor_derives_four_slots_off_by_default():
     """Three light checkpoints and one deep run, all AI-tagged and trading-days-only, all disabled
     until someone turns the advisor on."""

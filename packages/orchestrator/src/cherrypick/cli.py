@@ -1140,7 +1140,13 @@ def cmd_secrets_delete(channel: str | None) -> None:
     _emit({"ok": removed, "channel": channel, "status": notify_secrets.status()})
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
+    """The CLI's argument parser, built separately from `main` so it can be inspected.
+
+    Extracted so a test can assert that every argv the supervisor DERIVES is an argv this parser
+    accepts. It was not, silently: the two review jobs passed flags the parser had never been taught
+    and exited 2 every day while the job table reported them healthy.
+    """
     parser = argparse.ArgumentParser(
         prog="cherrypick", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -1225,6 +1231,20 @@ def main() -> None:
         action="store_true",
         help="For reconcile: notify on a non-FLAT verdict (what the scheduled task passes)",
     )
+    # The two review passes. `_run_review` reads --final off sys.argv, but argparse has to KNOW the
+    # flag or it rejects the whole command first: both scheduled review jobs were exiting 2 at the
+    # parser every day, so no fact set was being built at all. --provisional is accepted and does
+    # nothing, because that is the default and a job whose argv states its intent should not fail.
+    parser.add_argument(
+        "--final",
+        action="store_true",
+        help="For review: finalise the session (the next-morning pass, after earnings settles)",
+    )
+    parser.add_argument(
+        "--provisional",
+        action="store_true",
+        help="For review: build the provisional pass (the default; accepted so the job argv is explicit)",
+    )
     parser.add_argument("--yes", action="store_true", help="For account --set: skip the confirmation prompt")
     parser.add_argument("--host", default=None, help="For settings: bind host (default 127.0.0.1)")
     parser.add_argument("--port", type=int, default=None, help="For settings: bind port (default 8804)")
@@ -1268,7 +1288,11 @@ def main() -> None:
         action="store_true",
         help="For supervise: ask the running supervisor daemon to exit (via its stop file)",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
 
     # `init` scaffolds config.json, so it must run before the config pre-load (a fresh user has none).
     if args.command == "init":
