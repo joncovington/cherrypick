@@ -57,6 +57,7 @@ module is the real reference; this is the index that tells you which one to open
 | `broker` | Shared tastytrade primitives: account resolution, option-chain helpers, and the live write path with its governor. |
 | `risk` | Account-level risk primitives. Fail-closed and opt-in. |
 | `entry` | Entry-permission rules MEIC and flies must apply identically: cadence and the leg-sign rule. |
+| `structures` | Shared option-structure arithmetic — pure formulas (the straddle-based expected move) earnings and calendars must agree on. |
 | `streamer` | The generic persistent DXLink streaming engine. `packages/streamer` is the daemon around this. |
 | `streamcache` | The shared stream-cache schema and its SQLite helpers — the contract between producer and every reader. |
 | `streamrequests` | The subscription registry: how a module declares the symbols it needs, plus the union read the streamer subscribes from and the orchestrator checks staleness against. |

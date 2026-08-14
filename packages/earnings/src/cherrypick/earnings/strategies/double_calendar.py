@@ -34,6 +34,7 @@ Commands (see CLAUDE.md's Tool Reference):
 
 from datetime import date, datetime
 
+from cherrypick.core import structures as _structures
 from cherrypick.earnings import scanner
 
 
@@ -273,7 +274,7 @@ def fetch_double_calendar_order(
         if front_atm_call.get("mid") is None or front_atm_put.get("mid") is None:
             return {"ok": False, "error": "no quote data for front-month ATM strikes"}
 
-        expected_move = 0.85 * (front_atm_call["mid"] + front_atm_put["mid"])
+        expected_move = _structures.expected_move(front_atm_call["mid"], front_atm_put["mid"])
         call_target = price + expected_move
         put_target = price - expected_move
 
