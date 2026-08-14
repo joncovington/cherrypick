@@ -143,6 +143,37 @@
         }
       }
     },
+    "calendars": {
+      "_comment": "Weekly SPX double-calendar paper module (packages/calendars): enters Mondays, holds through the week, so its loop runs Mon-Fri like everything else and self-gates entry to the entry day. Paper-only and credential-free -- no keyring_service, no broker_tool, no live block; its market data comes entirely from the shared stream cache via the streamer's `expirations` request field.",
+      "enabled": true,
+      "path": "../calendars",
+      "paper": {
+        "kind": "self_healing",
+        "_tick_note": "30s resident: the per-tick mark path is the exit study's substrate, and its resolution bounds how precisely the read-side derivation can replay a trigger. Changing this cadence is a journaled measurement break in the module's own ledger.",
+        "tick_interval_seconds": 30,
+        "silence_seconds": 120,
+        "resident_start": "09:30",
+        "resident_end": "16:00",
+        "status_argv": [
+          "-m",
+          "cherrypick.calendars.paper_loop",
+          "--status"
+        ],
+        "once_argv": [
+          "-m",
+          "cherrypick.calendars.paper_loop",
+          "--once"
+        ],
+        "paper_db": "~/.cherrypick/data/calendars/paper_trades.db",
+        "notify_trades": true,
+        "trade_schema": "dc_week",
+        "log": "calendars_paper.log",
+        "freshness_minutes": 10,
+        "_settlement_note": "session_settled is today-scoped: it only reports false on a day this module has open legs expiring (the Friday shorts, the Monday longs), so the settlement check stays quiet the rest of the week. Grace 45: the module settles at 16:20 off a staleness-gated spot read and may retry for a while on a stale feed.",
+        "settlement_check": true,
+        "settlement_grace_minutes": 45
+      }
+    },
     "earnings": {
       "enabled": true,
       "path": "../earnings",
@@ -437,6 +468,9 @@
       },
       "earnings": {
         "enabled": true
+      },
+      "calendars": {
+        "enabled": false
       }
     }
   },

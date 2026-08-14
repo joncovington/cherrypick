@@ -25,6 +25,7 @@ export interface ConsoleConfig {
     meicDir: string;
     fliesDir: string;
     earningsDir: string;
+    calendarsDir: string;
     gexDir: string;
     scoutDir: string;
     reviewDir: string;
@@ -53,6 +54,7 @@ export function loadConfig(): ConsoleConfig {
       meicDir: path.join(data, "meic"),
       fliesDir: path.join(data, "flies"),
       earningsDir: path.join(data, "earnings"),
+      calendarsDir: path.join(data, "calendars"),
       gexDir: path.join(data, "gex"),
       scoutDir: path.join(data, "scout"),
       reviewDir: path.join(data, "review"),

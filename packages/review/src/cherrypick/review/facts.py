@@ -50,6 +50,9 @@ MODULES = {
     "meic": {"schema": "meic_ic", "settles_intraday": True},
     "flies": {"schema": "fly_book", "settles_intraday": True},
     "earnings": {"schema": "earnings", "settles_intraday": False},
+    # calendars carries a position Monday-to-Monday: a Friday short settlement leaves the long
+    # riding the weekend, so a session's book is only fully attributable after the next pass.
+    "calendars": {"schema": "dc_week", "settles_intraday": False},
 }
 
 
@@ -118,7 +121,37 @@ def _earnings_health(conn, session: str) -> dict:
     }
 
 
-HEALTH_READERS = {"meic": _meic_health, "flies": _flies_health, "earnings": _earnings_health}
+def _calendars_health(conn, session: str) -> dict:
+    """calendars enters once a week, so most sessions legitimately show zero entry attempts — the
+    tell for this module is the loop ticking and the mark substrate accumulating (a barren mark
+    day starves the whole exit derivation, whatever the entry calendar said)."""
+    attempts = _rows(
+        conn,
+        "SELECT outcome, COUNT(*) n FROM dc_entry_attempts WHERE trade_date = ? GROUP BY outcome",
+        (session,),
+    )
+    iterations = _scalar(
+        conn, "SELECT COUNT(*) FROM dc_loop_iterations WHERE session_date = ?", (session,)
+    )
+    marks = _scalar(conn, "SELECT COUNT(*) FROM dc_marks WHERE session_date = ?", (session,))
+    refused = _scalar(
+        conn, "SELECT COUNT(*) FROM dc_marks WHERE session_date = ? AND usable = 0", (session,)
+    )
+    return {
+        "loop_ticked": bool(iterations),
+        "iterations": iterations,
+        "entry_attempts": {r["outcome"] or "unknown": r["n"] for r in attempts} or None,
+        "marks": marks or None,
+        "marks_refused": refused or None,
+    }
+
+
+HEALTH_READERS = {
+    "meic": _meic_health,
+    "flies": _flies_health,
+    "earnings": _earnings_health,
+    "calendars": _calendars_health,
+}
 
 
 # --------------------------------------------------------------------------- expected vs observed
@@ -195,7 +228,36 @@ def _earnings_expected(conn, session: str) -> dict:
     }
 
 
-EXPECTED_READERS = {"meic": _meic_expected, "flies": _flies_expected, "earnings": _earnings_expected}
+def _calendars_expected(conn, session: str) -> dict:
+    """calendars' expectation is the expected move measured at entry; the observation is the move
+    actually realized to the front expiration, which lands on the session the shorts settle. Read
+    off the path book only — every book shares the same entry, so counting three books would
+    triple-weight one measurement."""
+    rows = _rows(
+        conn,
+        "SELECT entry_em, entry_spot, settlement_spot FROM dc_positions WHERE book = 'path' "
+        "AND front_expiration = ? AND settlement_spot IS NOT NULL AND side = 'put'",
+        (session,),
+    )
+    pairs = [
+        (r["entry_em"], abs(r["settlement_spot"] - r["entry_spot"]))
+        for r in rows
+        if r["entry_em"] is not None and r["entry_spot"] is not None
+    ]
+    return {
+        "basis": "expected_move_vs_realized",
+        "expected": (sum(p[0] for p in pairs) / len(pairs)) if pairs else None,
+        "observed": (sum(p[1] for p in pairs) / len(pairs)) if pairs else None,
+        "weeks_settled": len(pairs) or None,
+    }
+
+
+EXPECTED_READERS = {
+    "meic": _meic_expected,
+    "flies": _flies_expected,
+    "earnings": _earnings_expected,
+    "calendars": _calendars_expected,
+}
 
 
 # --------------------------------------------------------------------------- sample and breaks

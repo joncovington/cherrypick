@@ -30,7 +30,7 @@ import { withReadOnlyDb } from "./db.js";
 
 /** The advisor's own slot order — chronological, not alphabetical. */
 const SLOT_ORDER = ["am", "midday", "pm", "deep"];
-const MODULES = ["meic", "flies", "earnings"];
+const MODULES = ["meic", "flies", "earnings", "calendars"];
 const HISTORY_LIMIT = 40;
 
 function parse<T>(raw: unknown, fallback: T): T {

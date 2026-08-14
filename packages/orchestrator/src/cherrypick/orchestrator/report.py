@@ -297,6 +297,7 @@ _LATEST_SQL = {
     "meic_ic": "SELECT MAX(substr(exit_time, 1, 10)) FROM ic_trades WHERE exit_time IS NOT NULL",
     "earnings": "SELECT MAX(closed_at) FROM trades WHERE closed_at IS NOT NULL",
     "fly_book": "SELECT MAX(trade_date) FROM fly_positions WHERE status = 'settled'",
+    "dc_week": "SELECT MAX(closed_session) FROM dc_positions WHERE closed_session IS NOT NULL",
 }
 
 

@@ -20,6 +20,13 @@ Every closed reader yields the same record shape, keyed by `paper.trade_schema`:
   - "fly_book" : flies' `fly_positions`; closed = status 'settled'; net = gross_pnl - fees;
                  tag = arm. P&L only -- the module's book-level floor and the price band it holds
                  over live in `fly_books` and are not summarisable as a per-trade number.
+  - "dc_week"  : calendars' `dc_positions`; closed = status 'closed'; net = gross_pnl - fees
+                 (fees is the TOTAL modeled cost, entry+exit+settlement, by that module's own
+                 convention -- one subtraction, no double counting); tag = book (control / path /
+                 advised:control -- comparing the books is the module's point, same reasoning as
+                 flies' arm tag); strategy = the structure tag (dc_4_7 vs dc_3_6), because holiday
+                 variants are distinct trades that must never pool; capital = entry_debit x 100 x
+                 quantity, a long calendar's defined max loss.
 
 `None` never means zero anywhere in here. A row written before an instrumentation column existed
 reports `slippage: None` and `capital: None`, because "not recorded" and "was zero" are different
@@ -208,7 +215,56 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
     ]
 
 
-READERS = {"meic_ic": _meic_closed, "earnings": _earnings_closed, "fly_book": _flies_closed}
+CALENDARS_UNTAGGED = "unassigned"
+
+
+def _calendars_closed(conn, start: str | None = None, end: str | None = None) -> list[dict]:
+    """calendars' `dc_positions`; closed = status 'closed'. The attribution tag is the BOOK
+    (control / path / advised:control) — the exit experiment's contrast, same reasoning as flies'
+    arm tag — and `strategy` carries the structure tag, because a Tuesday-entry dc_3_6 is a
+    different trade from a dc_4_7 and pooling them would blend structures."""
+    where, params = _session_where("closed_session", start, end)
+    rows = conn.execute(
+        f"SELECT symbol, book, structure, gross_pnl, fees, entry_slippage, exit_slippage, "
+        f"entry_debit, quantity, closed_session FROM dc_positions WHERE status = 'closed'{where}",
+        params,
+    ).fetchall()
+
+    def _slip(r):
+        if r["entry_slippage"] is None and r["exit_slippage"] is None:
+            return None  # pre-instrumentation row — unknown, not zero
+        return round((r["entry_slippage"] or 0.0) + (r["exit_slippage"] or 0.0), 2)
+
+    def _capital(r):
+        # A long calendar's defined max loss is the debit paid.
+        if r["entry_debit"] is None:
+            return None
+        return round(float(r["entry_debit"]) * 100 * (r["quantity"] or 1), 2)
+
+    return [
+        {
+            "profile": r["book"] or CALENDARS_UNTAGGED,
+            "symbol": r["symbol"],
+            "strategy": r["structure"],
+            "gross_pnl": (r["gross_pnl"] or 0.0),
+            # `fees` is that module's TOTAL modeled cost (entry+exit+settlement, slippage included),
+            # so net is one subtraction and slippage is NOT additionally deducted here.
+            "cost": (r["fees"] or 0.0),
+            "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
+            "slippage": _slip(r),
+            "capital": _capital(r),
+            "session": r["closed_session"] or "",
+        }
+        for r in rows
+    ]
+
+
+READERS = {
+    "meic_ic": _meic_closed,
+    "earnings": _earnings_closed,
+    "fly_book": _flies_closed,
+    "dc_week": _calendars_closed,
+}
 
 
 # --------------------------------------------------------------------------- per-schema open readers
@@ -248,4 +304,35 @@ def _earnings_open(conn) -> list[dict]:
     ]
 
 
-OPEN_READERS = {"meic_ic": _no_overnight, "earnings": _earnings_open, "fly_book": _no_overnight}
+def _calendars_open(conn) -> list[dict]:
+    """calendars' `dc_positions` still on the book — a weekly structure carries overnight Monday
+    through Friday AND over the weekend (the path book's longs), so this module needs the real
+    overnight view the 0DTE modules are structurally spared. Capital at risk is the entry debit
+    (defined max loss); a `short_settled` position's true remaining risk is smaller, but the debit
+    stays the honest conservative bound without re-deriving marks here."""
+    rows = conn.execute(
+        "SELECT symbol, book, structure, entry_debit, quantity, entry_session FROM dc_positions "
+        "WHERE status != 'closed'"
+    ).fetchall()
+    return [
+        {
+            "profile": r["book"] or CALENDARS_UNTAGGED,
+            "symbol": r["symbol"],
+            "strategy": r["structure"],
+            "capital_at_risk": (
+                round(float(r["entry_debit"]) * 100 * (r["quantity"] or 1), 2)
+                if r["entry_debit"] is not None
+                else 0.0
+            ),
+            "session": r["entry_session"] or "",
+        }
+        for r in rows
+    ]
+
+
+OPEN_READERS = {
+    "meic_ic": _no_overnight,
+    "earnings": _earnings_open,
+    "fly_book": _no_overnight,
+    "dc_week": _calendars_open,
+}

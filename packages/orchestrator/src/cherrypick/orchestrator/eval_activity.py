@@ -176,9 +176,13 @@ _READERS = {"meic_ic": _meic_activity, "fly_book": _flies_activity}
 
 # Schemas with NO eval-activity reader BY DESIGN, stated executably rather than only in
 # the module docstring: earnings is an event-driven daily scan whose "did it run" is the
-# entry-SLA check. The registry coverage test requires every schema to appear in _READERS
-# or here — a new schema wired nowhere fails CI instead of silently reading as healthy.
-NOT_APPLICABLE = frozenset({"earnings"})
+# entry-SLA check, and calendars enters once a week inside a 15-minute window — a
+# per-session evaluation-count reader would read every ordinary day as "not evaluating".
+# Its liveness is the freshness check + settlement_check; its entry health is its own
+# dc_entry_attempts table, read by the review. The registry coverage test requires every
+# schema to appear in _READERS or here — a new schema wired nowhere fails CI instead of
+# silently reading as healthy.
+NOT_APPLICABLE = frozenset({"earnings", "dc_week"})
 
 
 def assess(

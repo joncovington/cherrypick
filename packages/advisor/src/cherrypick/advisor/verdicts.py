@@ -28,7 +28,7 @@ from cherrypick.advisor import paths as _paths
 
 # Module -> ledger schema. The same map review keeps, for the same reason: the schema decides which
 # reader knows this module's net, cost, capital and session rules.
-SCHEMAS = {"meic": "meic_ic", "flies": "fly_book", "earnings": "earnings"}
+SCHEMAS = {"meic": "meic_ic", "flies": "fly_book", "earnings": "earnings", "calendars": "dc_week"}
 
 
 def paper_db(module: str):
