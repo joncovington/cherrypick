@@ -42,7 +42,10 @@ venv/
 # Local-only authoring artifacts (graphify is opt-in tooling, never a runtime dependency).
 graphify-out/
 
-# Runtime output, should anything ever write at the root rather than under ~/.cherrypick.
+# Runtime output, should anything ever write at the root rather than under ~/.cherrypick. `data/` at
+# the ROOT is not suite data -- no package writes there; it is the local agent-memory MCP store,
+# which picks the working directory when it is run from here. Suite data lives under ~/.cherrypick.
+data/
 logs/
 state/
 dashboard.html

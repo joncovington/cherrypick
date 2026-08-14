@@ -159,8 +159,6 @@ export interface EarningsDetail {
     dispersionBuckets: string[];
     cells: Array<{ strategy: string; ivRv: string; dispersion: string; trades: number }>;
   };
-  /** Top rejection reasons, split on ';' like the reference histogram. */
-  rejections: Array<{ reason: string; count: number }>;
   capitalAtRisk: number;
 }
 
@@ -188,7 +186,6 @@ export function readEarningsDetail(config: ConsoleConfig, mode: TradingMode): Ea
     equity: [],
     perStrategy: [],
     regimeHeat: { ivRvBuckets: [], dispersionBuckets: [], cells: [] },
-    rejections: [],
     capitalAtRisk: 0,
   };
   return withReadOnlyDb<EarningsDetail>(dbPath, empty, (db) => {
@@ -301,24 +298,10 @@ export function readEarningsDetail(config: ConsoleConfig, mode: TradingMode): Ea
       return { strategy: strategy!, ivRv: ivRv!, dispersion: dispersion!, trades };
     });
 
-    // --- rejection histogram: reasons are ';'-joined lists ---
-    const reasonCounts = new Map<string, number>();
-    for (const r of db
-      .prepare<[], Record<string, unknown>>(
-        "SELECT reason FROM scan_log WHERE reason IS NOT NULL AND reason != ''",
-      )
-      .all()) {
-      for (const part of String(r["reason"]).split(";")) {
-        const key = part.trim();
-        if (key === "") continue;
-        reasonCounts.set(key, (reasonCounts.get(key) ?? 0) + 1);
-      }
-    }
-    const rejections = [...reasonCounts.entries()]
-      .map(([reason, count]) => ({ reason, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 15);
-
+    // The rejection histogram used to be built here, straight off scan_log. It disagreed with
+    // screen_report about which gate to move -- it pooled four incompatible reason vocabularies and
+    // had no sole-blocker column, so it ranked gates that fire constantly but never alone. The
+    // classified version now comes from the module itself, via /api/earnings/screen.
     const capitalAtRisk =
       num(
         (db
@@ -337,7 +320,6 @@ export function readEarningsDetail(config: ConsoleConfig, mode: TradingMode): Ea
         dispersionBuckets: [...dispSet].sort(),
         cells,
       },
-      rejections,
       capitalAtRisk,
     };
   });
