@@ -49,6 +49,12 @@ export type MeicOutcome = "all" | "wins" | "losses" | "open";
 
 /** The trade log's own query: page-wide scope, plus its filters and its page. */
 export interface MeicTradeQuery extends MeicScopeFilter, PageRequest {
+  /**
+   * The session this log is scoped to; null resolves to the latest, exactly as the forest and
+   * occupancy cards resolve it. The log sits under a tab called "today" and used to answer for the
+   * whole era instead — the same confusion the flies books had.
+   */
+  day: string | null;
   outcome: MeicOutcome;
   /** Exit reason as the analytics card labels it — "open" means no exit reason yet. */
   reason: string | null;
@@ -58,6 +64,7 @@ export interface MeicTradeQuery extends MeicScopeFilter, PageRequest {
 export const NO_TRADE_QUERY: MeicTradeQuery = {
   ...NO_SCOPE,
   ...FIRST_PAGE,
+  day: null,
   outcome: "all",
   reason: null,
   search: "",
@@ -73,6 +80,17 @@ function tradeFilterSql(db: DatabaseHandle, q: MeicTradeQuery): { where: string;
   const clauses = ["1=1"];
   const params = [...sc.params];
   if (sc.and !== "") clauses.push(sc.and.slice(5));
+  // Resolved within the same scope the forest uses, so the two cards can never name different days.
+  const day =
+    q.day ??
+    db
+      .prepare<string[], { d: string | null }>(`SELECT MAX(trade_date) AS d FROM ic_trades WHERE 1=1${sc.and}`)
+      .get(...sc.params)?.d ??
+    null;
+  if (day !== null) {
+    clauses.push("trade_date = ?");
+    params.push(day);
+  }
   if (q.outcome === "wins") clauses.push("pnl IS NOT NULL AND pnl - COALESCE(fees, 0) > 0");
   if (q.outcome === "losses") clauses.push("pnl IS NOT NULL AND pnl - COALESCE(fees, 0) <= 0");
   if (q.outcome === "open") clauses.push("pnl IS NULL");

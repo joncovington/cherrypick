@@ -70,6 +70,8 @@ export function useReview(session?: string) {
 }
 
 export interface MeicTradeQuery {
+  /** null = the latest session, resolved server-side like every other Today card. */
+  day: string | null;
   symbol: string | null;
   profile: string | null;
   era: string | null;
@@ -88,12 +90,13 @@ export function useMeic(mode: TradingMode, q: MeicTradeQuery) {
     limit: String(q.limit),
     offset: String(q.offset),
   });
+  if (q.day !== null) params.set("date", q.day);
   if (q.symbol !== null) params.set("symbol", q.symbol);
   if (q.profile !== null) params.set("profile", q.profile);
   if (q.era !== null) params.set("era", q.era);
   if (q.reason !== null) params.set("reason", q.reason);
   return useQuery<MeicPayload>({
-    queryKey: ["meic", mode, q.symbol, q.profile, q.era, q.outcome, q.reason, q.search, q.limit, q.offset],
+    queryKey: ["meic", mode, q.day, q.symbol, q.profile, q.era, q.outcome, q.reason, q.search, q.limit, q.offset],
     queryFn: () => getJson<MeicPayload>(`/api/meic?${params.toString()}`),
     refetchInterval: 15_000,
     // A page that briefly empties while the next one loads reads as "no

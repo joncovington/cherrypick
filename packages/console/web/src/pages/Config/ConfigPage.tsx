@@ -2,7 +2,8 @@ import { Card } from "../../components/DataTable";
 import { LockHero } from "./LockHero";
 import { ConfigSection } from "./ConfigSection";
 import { SECTIONS } from "./fieldMeta";
-import { useConfigModel, useLockStatus, usePrefs, useSetPref } from "./useConfigModel";
+import { useConfigModel, useLockStatus } from "./useConfigModel";
+import { useBoolPref, writePref } from "../../lib/prefs";
 import { clearAllStaged, useDirtyCount } from "./stagedStore";
 
 /**
@@ -13,13 +14,36 @@ import { clearAllStaged, useDirtyCount } from "./stagedStore";
 
 const PREFS: Array<{ key: string; label: string; help: string }> = [
   { key: "denseTables", label: "Dense tables", help: "Tighter row height across the read pages." },
-  { key: "defaultLiveMode", label: "Default to live tab", help: "Open module pages on live rather than paper." },
+  {
+    key: "defaultLiveMode",
+    label: "Default to live tab",
+    help: "Open module pages on live rather than paper. A ?mode= in the URL always wins over this.",
+  },
 ];
 
+function PrefToggle({ pref }: { pref: { key: string; label: string; help: string } }) {
+  const on = useBoolPref(pref.key);
+  return (
+    <div className="cfg-row">
+      <div className="cfg-row-label">
+        <label>{pref.label}</label>
+        <p className="cfg-help">{pref.help}</p>
+      </div>
+      <div className="cfg-row-control">
+        <div className="mode-toggle" role="group" aria-label={pref.label}>
+          <button type="button" className={`mode-btn ${!on ? "active" : ""}`} onClick={() => void writePref(pref.key, false)}>
+            off
+          </button>
+          <button type="button" className={`mode-btn ${on ? "active" : ""}`} onClick={() => void writePref(pref.key, true)}>
+            on
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConsolePrefsCard({ updatedAt }: { updatedAt?: number }) {
-  const { data } = usePrefs();
-  const setPref = useSetPref();
-  const prefs = data?.prefs ?? {};
   return (
     <Card title="Console preferences" collapseKey="config-prefs" updatedAt={updatedAt}>
       <p className="cfg-section-blurb muted">
@@ -28,30 +52,7 @@ function ConsolePrefsCard({ updatedAt }: { updatedAt?: number }) {
       </p>
       <div className="cfg-fields">
         {PREFS.map((p) => (
-          <div className="cfg-row" key={p.key}>
-            <div className="cfg-row-label">
-              <label>{p.label}</label>
-              <p className="cfg-help">{p.help}</p>
-            </div>
-            <div className="cfg-row-control">
-              <div className="mode-toggle" role="group" aria-label={p.label}>
-                <button
-                  type="button"
-                  className={`mode-btn ${prefs[p.key] !== true ? "active" : ""}`}
-                  onClick={() => setPref.mutate({ key: p.key, value: false })}
-                >
-                  off
-                </button>
-                <button
-                  type="button"
-                  className={`mode-btn ${prefs[p.key] === true ? "active" : ""}`}
-                  onClick={() => setPref.mutate({ key: p.key, value: true })}
-                >
-                  on
-                </button>
-              </div>
-            </div>
-          </div>
+          <PrefToggle key={p.key} pref={p} />
         ))}
       </div>
     </Card>
