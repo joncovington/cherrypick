@@ -67,6 +67,14 @@ resolved **relative to the config file's directory** — never hardcode absolute
   per-job windows/catchup, unit-tested with fake clocks) and spawns them as the same short-lived
   headless ticks the OS scheduler used to fire, recording per-job state in
   `state/supervisor-jobs.json` + its own heartbeat in `state/supervisor.last.json` (atomic writes).
+  That registry is a picture of what the supervisor is **currently** driving, so `_prune_retired`
+  drops rows for jobs config no longer derives: a retired job's row used to sit at `enabled: true`
+  forever, frozen at its last fire and never marked missed (it is no longer evaluated), which is
+  indistinguishable from a scheduled job that has silently stopped firing and cost a real diagnosis
+  to tell apart after the 2026-08-12 earnings lifecycle cutover. Two rows are deliberately **kept**:
+  one whose child is still alive (or the overlap guard loses a process it would otherwise reap), and
+  one whose derivation *failed* this pass — that job is missing because something is broken, not
+  because it was retired, and dropping its history would erase the evidence.
   `orchestrator/watchdog.py` runs as its 10-minute job, checks each module's paper pipeline (job
   present, data fresh in-session, the standalone streamer producer alive, earnings SLA met) plus the
   supervisor/anchor themselves, logs findings, and pushes alerts through `notify/notifier.py`. It has

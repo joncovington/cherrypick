@@ -36,7 +36,7 @@ import sys
 import time
 from dataclasses import dataclass
 from datetime import date as _date
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from cherrypick.core import calendar as _calendar
@@ -211,6 +211,27 @@ def write_heartbeat(phase: str, record: dict) -> None:
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
         tmp.replace(path)
+    except OSError:
+        pass
+
+
+def append_run_log(record: dict) -> None:
+    """Append one JSONL line per completed entry/exit phase to `logs/earnings_paper.log`.
+
+    The heartbeats are a LATEST, deliberately: each is overwritten every run, so they answer "is it
+    alive" and nothing else. The run trail was the scheduled verbs' job, and when entry and exit moved
+    into this loop at the 2026-08-12 cutover nothing took it over -- the log simply stopped on
+    2026-08-11, and "did earnings run today, and what did it decide" became unanswerable from the logs
+    even though the loop was running fine. Same file and same one-object-per-line shape the verbs
+    wrote, so anything already reading it keeps working.
+
+    Best-effort by construction: a session that cannot write its log still trades.
+    """
+    try:
+        path = _home.logs_dir() / "earnings_paper.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            print(json.dumps(record, default=str), file=fh)
     except OSError:
         pass
 
@@ -546,22 +567,25 @@ def run_iteration(config: dict | None = None, now: datetime | None = None) -> di
     elif phase in (PHASE_OPEN_WINDOW, PHASE_MANAGEMENT):
         outcome = manage(config, now, phase=phase, execute=(phase == PHASE_MANAGEMENT))
         record.update(outcome)
-        write_heartbeat("exit", {"date": session, "phase": "exit", "ok": True, **outcome})
+        hb = {"date": session, "phase": "exit", "ok": True, **outcome}
+        write_heartbeat("exit", hb)
+        append_run_log({"ts": datetime.now(timezone.utc).isoformat(), **hb})
 
     elif phase == PHASE_ENTRY:
         entry = harness.cmd_run_entries(_ns(date=now.strftime("%m/%d/%Y")))
         record["entry"] = entry
         record["ok"] = bool(entry.get("ok", True))
-        write_heartbeat(
-            "entry",
-            {
-                "date": session,
-                "phase": "entry",
-                "ok": record["ok"],
-                "error": entry.get("error"),
-                "opened": entry.get("opened"),
-            },
-        )
+        hb = {
+            "date": session,
+            "phase": "entry",
+            "ok": record["ok"],
+            "error": entry.get("error"),
+            "opened": entry.get("opened"),
+        }
+        write_heartbeat("entry", hb)
+        # The heartbeat stays terse -- it is a liveness file. The log carries the whole result,
+        # which is where the per-symbol accept/reject detail lives.
+        append_run_log({"ts": datetime.now(timezone.utc).isoformat(), **hb, "result": entry})
         # Deliberately NOT refreshing the stream request here. Tonight's new underlyings would grow
         # the union and recycle the producer mid-session, blinding the 0DTE modules into their own
         # close -- to make symbols available fourteen hours before this module marks anything.
