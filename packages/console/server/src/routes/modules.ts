@@ -31,6 +31,7 @@ import {
 } from "../readers/flies.js";
 import { readEarnings, readSymbolWatch, readEarningsAnalytics, readEarningsDetail } from "../readers/earnings.js";
 import { readEarningsLive } from "../readers/earningsLive.js";
+import { readScreenMetrics } from "../services/screenBridge.js";
 import { readGex } from "../readers/gex.js";
 import { buildGexProfile, gexSymbols } from "../services/gexProfile.js";
 import { buildSuiteReport } from "../services/report.js";
@@ -68,8 +69,10 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     };
     const outcome = text("outcome", 10);
     const reason = text("reason", 60);
+    const date = text("date", 10);
     return {
       ...parseMeicScope(query),
+      day: date === "" ? null : date,
       outcome: outcome === "wins" || outcome === "losses" || outcome === "open" ? outcome : "all",
       reason: reason === "" ? null : reason,
       search: text("search", 60),
@@ -77,6 +80,13 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       offset: int("offset", 0),
     };
   };
+  // The screening metrics, classified by the module that owns them rather than re-derived here.
+  app.get("/api/earnings/screen", async (req) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const since = typeof q["since"] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(q["since"]) ? q["since"] : null;
+    return readScreenMetrics(parseMode(req.query) === "live" ? "live" : "paper", since);
+  });
+
   app.get("/api/meic", async (req) => readMeic(config, parseMode(req.query), parseMeicTradeQuery(req.query)));
   app.get("/api/meic/analytics", async (req) =>
     readMeicAnalytics(config, parseMode(req.query), parseMeicScope(req.query)),

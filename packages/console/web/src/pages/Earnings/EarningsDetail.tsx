@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ScreenRejections } from "./ScreenRejections";
 import type { TradingMode } from "@console/shared";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { LineChart, SeriesLegend } from "../../components/Charts";
@@ -31,7 +32,6 @@ interface Detail {
     dispersionBuckets: string[];
     cells: Array<{ strategy: string; ivRv: string; dispersion: string; trades: number }>;
   };
-  rejections: Array<{ reason: string; count: number }>;
   capitalAtRisk: number;
 }
 
@@ -82,7 +82,6 @@ export function EarningsDetailCards({ mode }: { mode: TradingMode }) {
 
   const heat = data?.regimeHeat;
   const maxCell = Math.max(...(heat?.cells.map((c) => c.trades) ?? [0]), 1);
-  const maxRejection = Math.max(...(data?.rejections.map((r) => r.count) ?? [0]), 1);
   const strategies = [...new Set(heat?.cells.map((c) => c.strategy) ?? [])].sort();
 
   return (
@@ -218,19 +217,7 @@ export function EarningsDetailCards({ mode }: { mode: TradingMode }) {
           </p>
         </Card>
 
-        <Card title="Why symbols were rejected (top 15 reasons)" updatedAt={dataUpdatedAt}>
-          {data?.rejections.map((r) => (
-            <div key={r.reason} style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.12rem 0" }}>
-              <span className="muted" style={{ width: "16rem", fontSize: 11.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={r.reason}>
-                {r.reason}
-              </span>
-              <div style={{ flex: 1, height: 8, background: "var(--row-line)", borderRadius: 2 }}>
-                <div style={{ width: `${(r.count / maxRejection) * 100}%`, height: "100%", background: "var(--accent)", opacity: 0.7, borderRadius: 2 }} />
-              </div>
-              <span style={{ width: "3rem", textAlign: "right", fontFamily: "var(--num-face)", fontSize: 11.5 }}>{r.count}</span>
-            </div>
-          ))}
-        </Card>
+        <ScreenRejections mode={mode} />
       </div>
 
       <Card title="Reading these numbers" collapseKey="earnings-caveats">

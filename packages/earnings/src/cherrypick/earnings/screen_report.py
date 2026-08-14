@@ -14,7 +14,9 @@ Usage:
 """
 
 import argparse
+import json
 import statistics
+import sys
 
 from cherrypick.earnings import screen_metrics as sm
 from cherrypick.earnings import strategy_metrics as _sm
@@ -56,8 +58,10 @@ def print_funnel(rows: list[dict]) -> None:
     f = sm.funnel(rows)
     print("-- Funnel " + "-" * 68)
     print(f"  Pre-filtered out by the morning scan   {f['prefiltered_symbols']:>6} symbols")
-    print(f"  Screened                               {f['screened_decisions']:>6} decisions "
-          f"across {f['screened_symbols']} symbols")
+    print(
+        f"  Screened                               {f['screened_decisions']:>6} decisions "
+        f"across {f['screened_symbols']} symbols"
+    )
     print(f"    rejected                             {f['rejected']:>6}")
     print(f"    accepted                             {f['accepted']:>6}")
     print(f"  Execution outcomes recorded            {f['execution_recorded']:>6}")
@@ -103,9 +107,11 @@ def print_reasons(rows: list[dict], limit: int) -> None:
 def print_distances(rows: list[dict], limit: int) -> None:
     coverage = sm.measurement_coverage(rows)
     print("-- Distance to the bar " + "-" * 55)
-    print(f"  Measurements available on {coverage['with_details']} of {coverage['rejections']} "
-          f"rejections ({_pct(coverage['fraction'])})"
-          + (f", first on {coverage['first_detailed_scan']}" if coverage["first_detailed_scan"] else ""))
+    print(
+        f"  Measurements available on {coverage['with_details']} of {coverage['rejections']} "
+        f"rejections ({_pct(coverage['fraction'])})"
+        + (f", first on {coverage['first_detailed_scan']}" if coverage["first_detailed_scan"] else "")
+    )
     if not coverage["with_details"]:
         print("  Rejections before 2026-08-12 carry reason names only, so there is nothing to")
         print("  measure distance against yet. This section fills in as new scans run.")
@@ -118,11 +124,14 @@ def print_distances(rows: list[dict], limit: int) -> None:
         dist = sm.threshold_distances(rows, entry["reason"])
         if not dist["measured_rows"]:
             continue
-        print(f"  {dist['reason']}  (bar: {dist['comparator']} {_num(dist['threshold'])}, "
-              f"{dist['measured_rows']} of {dist['rows']} sole rejections measured)")
+        print(
+            f"  {dist['reason']}  (bar: {dist['comparator']} {_num(dist['threshold'])}, "
+            f"{dist['measured_rows']} of {dist['rows']} sole rejections measured)"
+        )
         for b in dist["samples"][:5]:
-            print(f"     {b['scan_date']}  {b['symbol']:<8} {b['strategy']:<26} "
-                  f"measured {_num(b['measured'])}")
+            print(
+                f"     {b['scan_date']}  {b['symbol']:<8} {b['strategy']:<26} measured {_num(b['measured'])}"
+            )
         print()
     print()
 
@@ -170,21 +179,24 @@ def print_cost_to_risk(trades: list[dict], gates: list[float]) -> None:
     for t in judged:
         by.setdefault(t["strategy"], []).append(t)
     print(f"  {'strategy':28}{'n':>4}{'entry':>9}{'round trip':>12}{'net P&L':>11}")
-    for strategy, ts in sorted(by.items(), key=lambda kv: -statistics.mean(
-        t["entry_cost_to_risk"] for t in kv[1]
-    )):
+    for strategy, ts in sorted(
+        by.items(), key=lambda kv: -statistics.mean(t["entry_cost_to_risk"] for t in kv[1])
+    ):
         entry = statistics.mean(t["entry_cost_to_risk"] for t in ts)
         rt = statistics.mean(
             t["round_trip_cost_to_risk"] for t in ts if t["round_trip_cost_to_risk"] is not None
         )
-        print(f"  {strategy:28}{len(ts):>4}{_pct(entry):>9}{_pct(rt):>12}"
-              f"{sum(t['net_pnl'] for t in ts):>11.2f}")
+        print(
+            f"  {strategy:28}{len(ts):>4}{_pct(entry):>9}{_pct(rt):>12}{sum(t['net_pnl'] for t in ts):>11.2f}"
+        )
     print()
     for gate in gates:
         cf = sm.cost_gate_counterfactual(judged, gate)
-        print(f"  A ceiling at {_pct(gate)} would have excluded {cf['excluded']} of {cf['judged']} "
-              f"trades (net {cf['net_pnl_excluded']:+.2f}), keeping {cf['kept']} "
-              f"(net {cf['net_pnl_kept']:+.2f})")
+        print(
+            f"  A ceiling at {_pct(gate)} would have excluded {cf['excluded']} of {cf['judged']} "
+            f"trades (net {cf['net_pnl_excluded']:+.2f}), keeping {cf['kept']} "
+            f"(net {cf['net_pnl_kept']:+.2f})"
+        )
         if cf["strategies_excluded"]:
             print(f"     excluded: {', '.join(cf['strategies_excluded'])}")
     print()
@@ -213,15 +225,19 @@ def print_what_if(rows: list[dict], specs: list[str]) -> None:
         if not cf["measurable"]:
             print(f"  {cf['reason']} at {_num(threshold)}: no measured sole rejections in range")
             continue
-        print(f"  {cf['reason']} at {_num(threshold)}: admits {cf['admitted']} of "
-              f"{cf['measurable']} sole rejections ({cf['symbol_nights']} symbol-nights)")
+        print(
+            f"  {cf['reason']} at {_num(threshold)}: admits {cf['admitted']} of "
+            f"{cf['measurable']} sole rejections ({cf['symbol_nights']} symbol-nights)"
+        )
         if cf["symbols"]:
             print(f"     {', '.join(cf['symbols'][:20])}")
     print()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
         "--mode",
         choices=["live", "paper"],
@@ -238,6 +254,14 @@ def main() -> None:
     parser.add_argument("--strategy", default=None, help="limit to one strategy")
     parser.add_argument("--since", default=None, help="YYYY-MM-DD, only scans on/after this date")
     parser.add_argument("--limit", type=int, default=20, help="rows per table (default 20)")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help=(
+            "emit the classified metrics as one JSON object instead of the report. For the console, "
+            "which cannot import this module and must not re-derive it."
+        ),
+    )
     parser.add_argument(
         "--cost-gate",
         action="append",
@@ -260,6 +284,28 @@ def main() -> None:
     db_path = _sm.db_path_for_mode(args.mode, args.db)
     profile = args.profile or ("strat_test" if args.mode == "paper" else "default")
     rows = sm.load_scan_rows(db_path, profile=profile, strategy=args.strategy, since=args.since)
+
+    if args.json:
+        # The same classified rows the report prints, as data. The console rendered its own
+        # histogram straight off scan_log for a while and disagreed with this tool about which gate
+        # to move -- it pooled four incompatible vocabularies and had no sole-blocker column, so it
+        # named gates that never block alone. One derivation, two renderers.
+        json.dump(
+            {
+                "profile": profile,
+                "since": args.since,
+                "db": str(db_path),
+                "funnel": sm.funnel(rows),
+                "reasons": sm.reason_frequency(rows)[: args.limit],
+                "sole": sm.sole_blockers(rows)[: args.limit],
+                "excluded": sm.excluded_summary(rows),
+                "coverage": sm.measurement_coverage(rows),
+            },
+            sys.stdout,
+            default=str,
+        )
+        print()
+        return
 
     print("=" * 80)
     print(f"SCREEN REPORT -- profile={profile}" + (f" since={args.since}" if args.since else ""))

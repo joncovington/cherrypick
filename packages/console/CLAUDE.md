@@ -75,6 +75,26 @@ pnpm --filter @console/desktop start   # the desktop window
   Config writes are gated exactly as the orchestrator's settings server gates its own (loopback Host,
   CSRF, JSON content type) and deliberately **not** on the broker credential scope — that describes
   what a token may do at the broker, and a config file is not the broker.
+- **Where a module already classifies its own data, ask it — don't re-derive it.** `services/
+  screenBridge.ts` reads the earnings screening metrics by invoking
+  `python -m cherrypick.earnings.screen_report --json` (same bridging pattern and the same reason as
+  `configBridge.ts`), memoised ~2 min because classifying the whole scan history costs a subprocess
+  and the answer moves only when a scan runs. The card it feeds used to build its own histogram
+  straight off `scan_log` and got the answer wrong in a way that looked authoritative — naming gates
+  that have never blocked a candidate **alone**, which a threshold change cannot rescue. Two
+  structural causes, neither fixable in a SQL query here: `scan_log` pools four incompatible reason
+  vocabularies, and a raw count has no sole-blocker column. `screen_metrics` already solves both, so
+  the authority stays there and this package renders it.
+- **Console preferences are read synchronously, from a local mirror.** The server store
+  (`/api/config/prefs`) is the source of truth — it is what makes a preference follow you to the
+  desktop shell — but a preference that only arrives after a fetch cannot decide what the FIRST
+  render looks like. Defaulting the paper/live toggle is the sharp case: reading it late paints the
+  paper book and flips to live a moment later, which on a trading surface is worse than having no
+  preference at all. So `web/src/lib/prefs.ts` keeps a localStorage mirror (hydrated at import,
+  written through on change, reconciled from the server once per session via `usePrefsSync`), the
+  same shape the card-collapse state already uses. Preferences deliberately do **not** live in a
+  react-query hook. A `?mode=` in the URL always outranks the preference — a link to a page is a link
+  to the mode it names — so `useMode` states both directions explicitly.
 - **Paper/live isolation**: every trade payload carries `mode` taken from its source DB
   (`paper_trades.db` vs the live DB). Mode is never merged across sources or inferred client-side.
 - **A module's own evidence window is the default.** Where a module narrows its analytics to a
