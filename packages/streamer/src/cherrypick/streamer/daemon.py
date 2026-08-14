@@ -84,6 +84,12 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
         # missing_leg_quotes) never narrows the configured default -- only ever widens it.
         return max(default_strike_count, _registry.union_window_hints().get(symbol, 0))
 
+    def _expirations_for(symbol: str) -> list[str]:
+        # Extra expirations (e.g. the calendars module's 4DTE/7DTE legs) are dynamic like the legs:
+        # the engine re-reads this every window pass, so a request that rolls to next week's dates
+        # is served with no restart. Past dates are dropped by the union itself.
+        return _registry.union_expirations().get(symbol, [])
+
     return ChainStreamer(
         session_factory=make_session_factory(),
         db_path=_config.cache_path(cfg),
@@ -91,6 +97,7 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
         extra_subscriptions=_extra_subscriptions,
         protected_symbols=_protected_symbols,
         trade_hook=_orb.OpeningRangeTracker(),  # capture each symbol's 9:30-9:35 ET opening range
+        expirations_for=_expirations_for,
         window_strike_count=default_strike_count,
         window_strike_count_for=_window_strike_count_for,
         logger=logger,
@@ -236,6 +243,12 @@ def status(cfg: dict) -> dict:
     info["chain_fetch_errors"] = {
         s: h["chain_fetch_error"] for s, h in symbol_health.items() if h["chain_fetch_error"]
     }
+    # What the registry union currently asks beyond each symbol's nearest expiration. The per-date
+    # serving state is the `SYMBOL@date` rows already present in symbol_health above.
+    try:
+        info["extra_expirations"] = _registry.union_expirations()
+    except Exception:
+        info["extra_expirations"] = {}
     return info
 
 

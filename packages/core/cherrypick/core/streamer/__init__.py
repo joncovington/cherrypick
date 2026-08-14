@@ -11,6 +11,10 @@ Everything MEIC-specific is injected, so the engine itself has no MEIC dependenc
     beyond each symbol's live window (MEIC adds its open-position legs; the default is underlyings only).
   * `protected_symbols()` -> a set never unsubscribed when a window re-centres (MEIC's open legs).
   * `trade_hook(engine, symbol, price, ts)` -> called on every underlying Trade tick (MEIC's ORB capture).
+  * `expirations_for(symbol)` -> extra ISO expiration dates to serve chain metadata plus an ATM quote
+    window for, beyond the nearest expiration served by default (a weekly calendar module's 4DTE/7DTE
+    legs). Re-read every window pass — like the legs above, growth is served with no restart. None
+    (the default) is exactly the historical nearest-expiration-only behavior.
 
 Pure engine: no argparse, no HTTP server, no PID file, no config file — a thin per-consumer wrapper adds
 those. `run()` blocks with reconnect/backoff until `stop()` (or SIGTERM/SIGINT if `install_signals`).
@@ -39,6 +43,10 @@ _COMMIT_BATCH_MAX_PENDING = 25
 # 2+4+8+16+32+60s ~= 2 minutes of retries for a single symbol's chain fetch before giving up and
 # disabling its window for the rest of this connection's lifetime (same as before this existed).
 _CHAIN_FETCH_MAX_ATTEMPTS = 6
+# A requested extra expiration that is not listed yet (a next-Monday weekly asked for up to ~13 days
+# out) re-checks the full chain on this cooldown rather than every window pass — the retry IS the
+# next cooldown lapse, so there is no backoff loop to stall the window task.
+_EXTRA_CHAIN_REFETCH_COOLDOWN_S = 900.0
 
 _ET = ZoneInfo("America/New_York")
 
@@ -60,9 +68,14 @@ class _State:
         self.conn = conn
         self.symbols = list(symbols)
         self.chains: dict[str, dict] = {}  # symbol -> {streamer_symbol: option}
-        self.window_syms: dict[str, list[str]] = {}  # symbol -> subscribed window symbols
-        self.centers: dict[str, float] = {}  # symbol -> price the window is centred on
-        self.window_strike_counts: dict[str, int] = {}  # symbol -> strike count last used to build it
+        # Window tracking is keyed by the underlying symbol for the default nearest-expiration
+        # window, and by "SYMBOL@YYYY-MM-DD" for each extra requested expiration — one key space, so
+        # _total_subscribed and _apply_subscriptions' window-union protection cover both unchanged.
+        self.window_syms: dict[str, list[str]] = {}  # window key -> subscribed window symbols
+        self.centers: dict[str, float] = {}  # window key -> price the window is centred on
+        self.window_strike_counts: dict[str, int] = {}  # window key -> strike count last used
+        self.full_chains: dict[str, dict[str, dict]] = {}  # symbol -> {iso date -> {streamer_symbol: option}}
+        self.last_full_fetch: dict[str, float] = {}  # symbol -> monotonic-ish ts of last full-chain fetch
         self.pending_writes = 0
         self.last_commit_at = 0.0
 
@@ -77,6 +90,7 @@ class ChainStreamer:
         extra_subscriptions: Callable[[list[str]], dict[str, list[str]]] | None = None,
         protected_symbols: Callable[[], set[str]] | None = None,
         trade_hook: Callable[[ChainStreamer, str, float | None, float], None] | None = None,
+        expirations_for: Callable[[str], list[str]] | None = None,
         window_strike_count: int = 60,
         window_strike_count_for: Callable[[str], int] | None = None,
         window_refresh_pts: float = 1.0,
@@ -90,6 +104,7 @@ class ChainStreamer:
         self._extra_subscriptions = extra_subscriptions
         self._protected_symbols = protected_symbols or (lambda: set())
         self._trade_hook = trade_hook
+        self._expirations_for = expirations_for
         self.window_strike_count = window_strike_count
         self._window_strike_count_for = window_strike_count_for
         self.window_refresh_pts = window_refresh_pts
@@ -440,7 +455,12 @@ class ChainStreamer:
                             await streamer.subscribe(Summary, add_list)
                             await streamer.subscribe(Trade, add_list)
                         if remove:
-                            safe_remove = remove - self._protected_symbols()
+                            # Protect the injected set AND any other live window's symbols — on a
+                            # 0DTE Friday an extra-expiration window can hold the same date this
+                            # nearest window serves, and a re-centre here must not tear it down.
+                            safe_remove = (
+                                remove - self._protected_symbols() - self._window_syms_except(state, symbol)
+                            )
                             if safe_remove:
                                 srl = list(safe_remove)
                                 await streamer.unsubscribe(Quote, srl)
@@ -462,7 +482,185 @@ class ChainStreamer:
                     except Exception as exc:
                         self.log.warning("[%s] window update error: %s", symbol, exc)
                 state.centers[symbol] = price
+            if self._expirations_for is not None:
+                try:
+                    await self._refresh_extra_windows(
+                        streamer, state, symbol, price, strike_count, Quote, Greeks, Summary, Trade
+                    )
+                except Exception as exc:
+                    self.log.warning("[%s] extra-expiration refresh error: %s", symbol, exc)
             await asyncio.sleep(self.window_poll_s)
+
+    # -- extra requested expirations (beyond the nearest) ----------------------------------------
+    def _window_syms_except(self, state: _State, key: str) -> set[str]:
+        """Symbols any OTHER live window still wants — never unsubscribed on this window's behalf.
+        Extra-expiration windows share `window_syms` under composite `SYMBOL@date` keys, so one dict
+        answers for every window."""
+        out: set[str] = set()
+        for other_key, syms in state.window_syms.items():
+            if other_key != key:
+                out.update(syms)
+        return out
+
+    async def _fetch_full_chain(self, underlying: str) -> dict[str, dict]:
+        """The whole listed chain for an underlying, keyed by ISO expiration date. One attempt, no
+        backoff loop — the extra-expiration refresher calls this on a cooldown cadence, so the retry
+        IS the next cooldown lapse (unlike the nearest-window fetch, whose 2-minute backoff guards a
+        once-per-connection call)."""
+        from tastytrade.instruments import get_option_chain
+
+        session = self.session_factory()
+        chain = await get_option_chain(session, underlying)
+        out: dict[str, dict] = {}
+        for exp, options in (chain or {}).items():
+            slice_map = {o.streamer_symbol: o for o in options if getattr(o, "streamer_symbol", None)}
+            if slice_map:
+                out[exp.isoformat()] = slice_map
+        return out
+
+    def _wanted_extra_expirations(self, symbol: str) -> list[str]:
+        """Valid, still-current ISO dates the injected policy wants for this symbol. The callable is
+        consumer code reading registry files, so a bad read or a junk entry costs this pass, never
+        the task. A date is dropped only once it is past (ET) — an expiration is its own last valid
+        day."""
+        try:
+            raw = self._expirations_for(symbol) or []
+        except Exception as exc:
+            self.log.warning("[%s] expirations_for error: %s", symbol, exc)
+            return []
+        today = datetime.now(tz=_ET).date()
+        wanted: set[str] = set()
+        for value in raw:
+            try:
+                parsed = date.fromisoformat(str(value).strip())
+            except ValueError:
+                continue
+            if parsed >= today:
+                wanted.add(parsed.isoformat())
+        return sorted(wanted)
+
+    async def _refresh_extra_windows(
+        self, streamer, state: _State, symbol: str, price: float, strike_count: int, Quote, Greeks, Summary, Trade
+    ) -> None:
+        """Maintain an ATM window per extra requested expiration, beside the nearest-expiration one.
+
+        Called every window pass from `_symbol_refresher` (same task — one task per symbol
+        serializes every subscribe/unsubscribe for it, so windows can never race each other). Each
+        served date gets its chain slice written to `stream_chain`, a health row under the composite
+        `SYMBOL@date` key, and the same Quote/Greeks/Summary/Trade window the nearest expiration
+        gets, re-centred off the shared spot with the same strike count (window_hints apply). A
+        wanted date the broker does not list yet gets a health error and a re-check on the fetch
+        cooldown; a date that rolled past or left the request is unsubscribed, minus anything the
+        protected set or another window still wants."""
+        wanted = self._wanted_extra_expirations(symbol)
+        prefix = f"{symbol}@"
+
+        for key in [k for k in state.window_syms if k.startswith(prefix)]:
+            if key[len(prefix):] not in wanted:
+                await self._retire_extra_window(streamer, state, key, Quote, Greeks, Summary, Trade)
+        if not wanted:
+            return
+
+        known = state.full_chains.get(symbol) or {}
+        missing = [d for d in wanted if d not in known]
+        now = time.time()
+        if missing and now - state.last_full_fetch.get(symbol, 0.0) >= _EXTRA_CHAIN_REFETCH_COOLDOWN_S:
+            state.last_full_fetch[symbol] = now
+            try:
+                known = await self._fetch_full_chain(symbol)
+                state.full_chains[symbol] = known
+            except Exception as exc:
+                for d in missing:
+                    streamcache.upsert_symbol_health(state.conn, f"{symbol}@{d}", chain_fetch_error=str(exc))
+                self.log.warning("[%s] full chain fetch failed: %s", symbol, exc)
+                return
+            for d in [d for d in wanted if d not in known]:
+                streamcache.upsert_symbol_health(
+                    state.conn, f"{symbol}@{d}", chain_fetch_error="expiration not listed"
+                )
+                self.log.warning("[%s] requested expiration %s not listed yet", symbol, d)
+
+        nearest_syms = set(state.chains.get(symbol) or {})
+        for d in wanted:
+            slice_map = known.get(d)
+            if not slice_map:
+                continue  # unlisted — health row above, re-checked on the cooldown
+            if set(slice_map) == nearest_syms:
+                continue  # the nearest-expiration window already serves this exact date (0DTE Friday)
+            key = f"{symbol}@{d}"
+            first_build = key not in state.window_syms
+            center = state.centers.get(key)
+            prev_strike_count = state.window_strike_counts.get(key)
+            if (
+                center is not None
+                and abs(price - center) < self.window_refresh_pts
+                and strike_count == prev_strike_count
+            ):
+                continue
+            new_syms = streamcache.atm_window_syms(slice_map, price, strike_count)
+            state.window_strike_counts[key] = strike_count
+            current_syms = state.window_syms.get(key, [])
+            if new_syms != current_syms:
+                old_set, new_set = set(current_syms), set(new_syms)
+                add, remove = new_set - old_set, old_set - new_set
+                try:
+                    if add:
+                        add_list = list(add)
+                        await streamer.subscribe(Quote, add_list)
+                        await streamer.subscribe(Greeks, add_list)
+                        await streamer.subscribe(Summary, add_list)
+                        await streamer.subscribe(Trade, add_list)
+                    if remove:
+                        safe_remove = (
+                            remove - self._protected_symbols() - self._window_syms_except(state, key)
+                        )
+                        if safe_remove:
+                            srl = list(safe_remove)
+                            await streamer.unsubscribe(Quote, srl)
+                            await streamer.unsubscribe(Greeks, srl)
+                            await streamer.unsubscribe(Summary, srl)
+                            await streamer.unsubscribe(Trade, srl)
+                    state.window_syms[key] = new_syms
+                    streamcache.upsert_status(state.conn, subscribed_symbols=self._total_subscribed(state))
+                    self.log.info(
+                        "[%s] extra window %s re-centered at %.2f (+%d/-%d symbols, total: %d)",
+                        symbol,
+                        d,
+                        price,
+                        len(add),
+                        len(remove),
+                        len(new_syms),
+                    )
+                except Exception as exc:
+                    self.log.warning("[%s] extra window %s update error: %s", symbol, d, exc)
+            if first_build and key in state.window_syms:
+                streamcache.write_chain(state.conn, slice_map)
+                streamcache.upsert_symbol_health(
+                    state.conn, key, chain_loaded_at=datetime.now(UTC).isoformat(), chain_fetch_error=None
+                )
+            state.centers[key] = price
+
+    async def _retire_extra_window(
+        self, streamer, state: _State, key: str, Quote, Greeks, Summary, Trade
+    ) -> None:
+        """Unsubscribe a departed extra-expiration window (its date rolled past, or the request
+        shrank), keeping anything the protected set or another live window still wants. Its
+        stream_chain rows stay — chain metadata is history, not a subscription."""
+        syms = set(state.window_syms.pop(key, []))
+        state.centers.pop(key, None)
+        state.window_strike_counts.pop(key, None)
+        safe_remove = syms - self._protected_symbols() - self._window_syms_except(state, key)
+        if safe_remove:
+            try:
+                srl = list(safe_remove)
+                await streamer.unsubscribe(Quote, srl)
+                await streamer.unsubscribe(Greeks, srl)
+                await streamer.unsubscribe(Summary, srl)
+                await streamer.unsubscribe(Trade, srl)
+            except Exception as exc:
+                self.log.warning("extra window %s retire error: %s", key, exc)
+        streamcache.upsert_status(state.conn, subscribed_symbols=self._total_subscribed(state))
+        self.log.info("extra window %s retired (-%d symbols)", key, len(safe_remove))
 
     async def _flush_status(self, state: _State) -> None:
         while not state.stop_event.is_set():

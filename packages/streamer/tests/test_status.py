@@ -118,6 +118,27 @@ def test_status_surfaces_chain_fetch_errors(home):
     assert st["symbol_health"]["XSP"]["chain_fetch_error"] == "Couldn't parse response: <html>"
 
 
+def test_status_echoes_extra_expirations_and_their_health_rows(home):
+    """The registry's extra-expiration requests surface in --status two ways: the union itself
+    (what is currently being asked for) and the per-date `SYMBOL@date` symbol_health rows (how the
+    serving is going), so a calendars-shaped module's missing chain is diagnosable from one JSON."""
+    from cherrypick.core import streamcache
+
+    from cherrypick.streamer import registry as _registry
+
+    _registry.write_request("calendars", ["SPX"], expirations={"SPX": ["2099-01-15"]})
+    cache = _config.cache_path({})
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    conn = streamcache.connect(cache)
+    streamcache.upsert_symbol_health(conn, "SPX@2099-01-15", chain_fetch_error="expiration not listed")
+    conn.close()
+
+    st = _daemon.status({})
+    assert st["extra_expirations"] == {"SPX": ["2099-01-15"]}
+    assert st["chain_fetch_errors"]["SPX@2099-01-15"] == "expiration not listed"
+    assert json.loads(json.dumps(st)) == st  # still exactly one JSON-serializable object
+
+
 def test_stop_when_not_running(home):
     result = _daemon.stop({})
     assert result == {"ok": False, "error": "Streamer not running"}

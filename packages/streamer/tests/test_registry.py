@@ -182,4 +182,17 @@ def test_write_request_schema_is_flat_json(home):
         "legs": [],
         "leg_sources": [],
         "window_hints": {},
+        "expirations": {},
     }
+
+
+def test_write_request_carries_expirations(home):
+    path = _registry.write_request("calendars", ["SPX"], expirations={"spx": ["2099-01-15"]})
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["expirations"] == {"SPX": ["2099-01-15"]}
+
+
+def test_union_expirations_reads_across_module_files(home):
+    _registry.write_request("calendars", ["SPX"], expirations={"SPX": ["2099-01-15", "2099-01-18"]})
+    _registry.write_request("other", ["SPX"], expirations={"SPX": ["2099-01-18", "2099-01-22"]})
+    assert _registry.union_expirations() == {"SPX": ["2099-01-15", "2099-01-18", "2099-01-22"]}

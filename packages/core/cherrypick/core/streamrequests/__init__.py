@@ -29,14 +29,24 @@ Payload shape (see ``packages/streamer/src/registry.py``, the reader):
     per-symbol ATM window (e.g. flies escalating after repeated ``missing_leg_quotes`` refusals). The
     streamer takes the max hint per symbol across every module's file, so one module's need is never
     narrowed by another's silence on that symbol. Absent/empty is the common case (accept the default).
+  - ``expirations``: optional ``{symbol: [ISO dates]}`` — extra option expirations a module needs chain
+    metadata and an ATM quote window for, beyond the nearest expiration the producer serves by default
+    (e.g. a weekly calendar's 4DTE short / 7DTE long legs). Unioned per symbol across every module's
+    file; the streamer re-reads the union every window pass, so a newly requested date is served with no
+    restart. Dates already past (ET) are dropped at union time, so a file nobody rewrote over a weekend
+    cannot pin dead subscriptions.
 """
 
 from __future__ import annotations
 
 import json
+from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from cherrypick.core import home as _home
+
+_ET = ZoneInfo("America/New_York")
 
 
 def requests_dir() -> Path:
@@ -69,7 +79,29 @@ def clean_window_hints(window_hints) -> dict[str, int]:
     return out
 
 
-def write_request(module: str, symbols, legs=(), leg_sources=(), window_hints=None) -> Path:
+def clean_expirations(expirations) -> dict[str, list[str]]:
+    """Deduped/uppercased/validated ``{symbol: [ISO dates]}`` — non-string symbols, unparseable dates
+    and empty lists are dropped rather than crashed on, same posture as `clean_symbols`. Dates come
+    back normalized (``date.fromisoformat`` then ``.isoformat()``) and sorted, so two writers of the
+    same calendar date can never disagree byte-wise."""
+    out: dict[str, list[str]] = {}
+    for symbol, dates in (expirations or {}).items():
+        if not (isinstance(symbol, str) and symbol.strip()):
+            continue
+        cleaned: set[str] = set()
+        for value in dates if isinstance(dates, (list, tuple)) else []:
+            if not isinstance(value, str):
+                continue
+            try:
+                cleaned.add(date.fromisoformat(value.strip()).isoformat())
+            except ValueError:
+                continue
+        if cleaned:
+            out[symbol.strip().upper()] = sorted(cleaned)
+    return out
+
+
+def write_request(module: str, symbols, legs=(), leg_sources=(), window_hints=None, expirations=None) -> Path:
     """Atomically (over)write a module's request file and return its path.
 
     Write-then-rename so a concurrent reader never sees a partial file. Raises on I/O failure —
@@ -82,6 +114,7 @@ def write_request(module: str, symbols, legs=(), leg_sources=(), window_hints=No
         "legs": [str(leg) for leg in legs],
         "leg_sources": [dict(source) for source in leg_sources],
         "window_hints": clean_window_hints(window_hints),
+        "expirations": clean_expirations(expirations),
     }
     tmp = path.with_name(f"{path.name}.tmp")
     tmp.write_text(json.dumps(payload), encoding="utf-8")
@@ -131,6 +164,21 @@ def union_window_hints() -> dict[str, int]:
     return hints
 
 
+def union_expirations(*, today: date | None = None) -> dict[str, list[str]]:
+    """Per-symbol extra expirations: the set union across every module's file, with dates already past
+    (ET) dropped — a request file nobody rewrote over a weekend must not pin dead subscriptions. The
+    streamer's engine re-reads this every window pass, so growth is served with no restart.
+
+    ``today`` is injectable for tests; the default is the current ET calendar date (a date is dropped
+    only once it is over — an expiration IS its own last valid day)."""
+    cutoff = (today or datetime.now(tz=_ET).date()).isoformat()
+    out: dict[str, set[str]] = {}
+    for data in read_all():
+        for symbol, dates in clean_expirations(data.get("expirations")).items():
+            out.setdefault(symbol, set()).update(d for d in dates if d >= cutoff)
+    return {symbol: sorted(dates) for symbol, dates in out.items() if dates}
+
+
 def subscription_snapshot(seed_symbols=None) -> dict:
     """The half of the registry union that only a producer **restart** can change.
 
@@ -138,6 +186,8 @@ def subscription_snapshot(seed_symbols=None) -> dict:
     window at the same time — so a new symbol or a widened hint reaches the file and never the running
     process. ``legs``/``leg_sources`` are deliberately absent: the engine re-reads those every
     subscription poll, so a position opening or closing is served with no restart and must not be made
-    to look like a reason for one.
+    to look like a reason for one. ``expirations`` are absent for the same reason — the engine re-reads
+    the union every window pass, and a calendar module's request *rolls forward every week by design*,
+    so tracking it here would recycle a healthy producer once a week for nothing.
     """
     return {"symbols": union_symbols(seed_symbols), "window_hints": union_window_hints()}
