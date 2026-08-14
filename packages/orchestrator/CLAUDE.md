@@ -76,9 +76,11 @@ resolved **relative to the config file's directory** — never hardcode absolute
   one whose derivation *failed* this pass — that job is missing because something is broken, not
   because it was retired, and dropping its history would erase the evidence.
   `orchestrator/watchdog.py` runs as its 10-minute job, checks each module's paper pipeline (job
-  present, data fresh in-session, the standalone streamer producer alive, earnings SLA met) plus the
-  supervisor/anchor themselves, logs findings, and pushes alerts through `notify/notifier.py`. It has
-  a **dedup / re-notify / recovery state machine** (`_process_notifications` in watchdog.py, state in
+  present, data fresh in-session, the standalone streamer producer alive, earnings SLA met), the
+  supervisor/anchor themselves, and the console's resident-job state (added 2026-08-14: unlike a
+  module it writes no trade data whose staleness would out a stuck restart loop by proxy, so this is
+  the only signal that job kind gets), logs findings, and pushes alerts through `notify/notifier.py`.
+  It has a **dedup / re-notify / recovery state machine** (`_process_notifications` in watchdog.py, state in
   `state/watchdog_state.json`). The supervisor itself is stdlib + local files only — no broker, no
   network, no AI — and every registration check dual-reads (schtasks fallback) until the transition
   window closes.

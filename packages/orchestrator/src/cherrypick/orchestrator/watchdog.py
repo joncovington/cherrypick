@@ -122,6 +122,58 @@ def _check_supervisor(cfg: dict[str, Any]) -> list[Finding]:
     return findings
 
 
+def _check_console(cfg: dict[str, Any]) -> list[Finding]:
+    """The console (the suite's only read surface since 2026-08-12) is a supervisor-managed
+    resident job like a module's paper loop, but with no paper-freshness backstop: a module's own
+    (b) check would eventually flag a stalled resident loop by proxy (no new trade writes), while
+    the console produces no other artifact whose staleness would out it. Found live on 2026-08-14:
+    its job sat un-running (backoff/orphaned bookkeeping) for ~21 hours with nothing surfacing it,
+    because process-liveness/HTTP checks were deliberately never added here (console_settings:
+    "keeps the reliability path free of network calls") and nothing else read `resident_state`.
+    This reads the same registry the supervisor already keeps, same as `_check_meic`'s job-presence
+    check, just for the one job kind (resident) a module-style freshness check can't backstop."""
+    from . import supersnap
+
+    settings = cfgmod.console_settings(cfg)
+    if not settings["enabled"]:
+        return []
+    if not _supervisor_driving():
+        return []  # pre-cutover box: the console job isn't derived/tracked here yet either
+    st = supersnap.job_state("console")
+    if st is None:
+        return [
+            Finding(
+                "console.task",
+                CRITICAL,
+                "Console job missing",
+                "Supervisor has no 'console' job. Check config + logs/supervisor.log.",
+            )
+        ]
+    if not st.get("enabled", False):
+        return [
+            Finding(
+                "console.task",
+                CRITICAL,
+                "Console job disabled",
+                f"Supervisor job 'console' is disabled: {st.get('enabled_reason') or 'unknown'}",
+            )
+        ]
+    state = st.get("resident_state")
+    if state in ("backoff", "start failed"):
+        return [
+            Finding(
+                "console.task",
+                WARN,
+                "Console is not running",
+                f"Resident state '{state}' — the suite's only read surface is down. Check "
+                "logs/supervisor.log and logs/console/.",
+            )
+        ]
+    # "running" is healthy; "idle" never applies (console declares no window); an unset state means
+    # the supervisor hasn't evaluated it on this box yet. None of those are worth alarming on.
+    return [Finding("console.task", OK, "Console", state or "not yet evaluated")]
+
+
 def _file_age_minutes(path: Path) -> float | None:
     try:
         if not path.exists():
@@ -1381,6 +1433,15 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     except Exception as exc:
         findings.append(
             Finding("supervisor.error", WARN, "Supervisor check failed", f"{type(exc).__name__}: {exc}")
+        )
+
+    # The console: the suite's only read surface, and the one resident job with no other artifact
+    # (paper writes, a log) whose staleness would catch it if its restart loop got stuck.
+    try:
+        findings += _check_console(cfg)
+    except Exception as exc:
+        findings.append(
+            Finding("console.error", WARN, "Console check failed", f"{type(exc).__name__}: {exc}")
         )
 
     # Drift alert: report-driven paper-drawdown check (opt-in). Flows through the same notify path.

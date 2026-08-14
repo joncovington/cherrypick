@@ -224,6 +224,10 @@ def _suite_task_checks(cfg: dict[str, Any]) -> list[Check]:
             _job_check("task.lossdog_notify", "lossdog-notify", cfgmod.lossdog_settings(cfg)["enabled"]),
             # streamer-health is preopen's whole-session replacement under the supervisor
             _job_check("task.streamer_health", "streamer-health", sh.get("enabled", True)),
+            # The suite's only read surface had no entry here at all until 2026-08-14 — a green
+            # doctor never meant "the console is registered", same gap this function's docstring
+            # describes for the other jobs below.
+            _job_check("task.console", "console", cfgmod.console_settings(cfg)["enabled"]),
         ]
     resolved = [
         ("trade_notify", (cfg.get("trade_notify", {}) or {}).get("task_name"), True),
