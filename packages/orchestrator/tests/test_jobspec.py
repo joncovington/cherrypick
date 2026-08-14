@@ -299,6 +299,10 @@ def test_derive_full_suite_job_table():
         "review-provisional",
         "review-final",
         "review-narrative",
+        "advisor-am",
+        "advisor-midday",
+        "advisor-pm",
+        "advisor-deep",
     }
     assert by_id["watchdog"].interval_seconds == 600
     assert by_id["trade-notify"].interval_seconds == 30
@@ -472,6 +476,68 @@ def test_the_narrative_is_off_by_default_and_tagged_ai():
     assert not job.enabled
     assert "review.narrative" in job.enabled_reason
     assert "ai" in job.tags
+
+
+def test_the_advisor_derives_four_slots_off_by_default():
+    """Three light checkpoints and one deep run, all AI-tagged and trading-days-only, all disabled
+    until someone turns the advisor on."""
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    slots = ["advisor-am", "advisor-midday", "advisor-pm", "advisor-deep"]
+    for job_id in slots:
+        job = by_id[job_id]
+        assert not job.enabled
+        assert "disabled in config (advisor)" in job.enabled_reason
+        assert "ai" in job.tags
+        assert job.trading_days_only
+        assert job.kind == "daily"
+        assert "advisor_checkpoint.py" in " ".join(job.argv)
+
+    assert [by_id[s].at_et for s in slots] == ["10:30", "12:30", "14:30", "17:00"]
+
+
+def test_the_scheduled_scripts_resolve_to_files_that_exist():
+    """`scripts/` sits at the repo root, two levels above the launcher. A path that points at a
+    directory which has never existed spawns nothing and reports success — which is exactly how the
+    narrative's broken path went unnoticed until the advisor was about to inherit it."""
+    import os
+
+    from cherrypick.orchestrator.jobspec import _advisor_script, _narrative_script
+
+    launcher = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "run.py"
+    )
+    assert os.path.exists(_narrative_script(launcher))
+    assert os.path.exists(_advisor_script(launcher))
+
+
+def test_the_deep_slot_runs_after_the_reviews_provisional_pass():
+    """The deep pack carries that fact set. Running before it would carry yesterday's."""
+    cfg = suite_cfg()
+    cfg["advisor"] = {"enabled": True}
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    assert by_id["advisor-deep"].enabled
+    assert by_id["advisor-deep"].at_et > by_id["review-provisional"].at_et
+
+
+def test_the_light_slots_carry_the_light_model_and_the_deep_slot_the_deep_one():
+    """Model names live in config and travel on argv — no model id appears in this suite's code."""
+    cfg = suite_cfg()
+    cfg["advisor"] = {"enabled": True, "light_model": "haiku", "deep_model": "opus",
+                      "modules": {"flies": {"enabled": True}}}
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    assert "haiku" in by_id["advisor-am"].argv
+    assert "opus" in by_id["advisor-deep"].argv
+    # Only the modules the suite enabled for the advisor are passed through.
+    modules = by_id["advisor-am"].argv[by_id["advisor-am"].argv.index("--modules") + 1]
+    assert set(modules.split(",")) == {"meic", "flies", "earnings"}
+
+
+def test_a_missed_light_checkpoint_goes_stale_but_a_missed_deep_run_does_not():
+    """A light slot describes the session as it stands; the deep slot issues tomorrow's advice, so
+    it stays worth firing until late evening."""
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    assert by_id["advisor-am"].catchup_minutes == 45
+    assert by_id["advisor-deep"].catchup_minutes == 300
 
 
 def test_the_narrative_runs_after_the_final_pass_never_with_it():

@@ -925,7 +925,15 @@ def live_vs_paper(live_conn, paper_conn, arm: str = "gex") -> dict:
     arm traded, so a quiet week can't dilute either side. Live entries count ESTABLISHED
     spreads only (an entry order that cancelled unfilled never held risk); paper's fill model
     is instantaneous, so its entries are all accepted rows — that asymmetry is inherent to
-    what the two ledgers record, not a bug here."""
+    what the two ledgers record, not a bug here.
+
+    **There is one deliberate, labelled duplicate of this shape.** `packages/advisor`'s fact pack
+    computes a live-vs-paper summary with its own read-only SQL, tagged
+    `"shape": "flies.analytics.live_vs_paper/v1"`. It cannot call this function: that package
+    depends on `cherrypick.core` alone and spawns no subprocess, which is what keeps it unable to
+    reach anything but a paper advice artifact. Its copy is facts-for-context handed to a model,
+    never a report surface — this remains the one place a live-vs-paper number is *reported* from.
+    If the shape here changes, bump that tag."""
     days = [
         r[0]
         for r in live_conn.execute(

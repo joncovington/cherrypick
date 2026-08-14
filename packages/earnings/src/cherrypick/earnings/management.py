@@ -108,6 +108,35 @@ def policy_for(strategy: str, config: dict) -> dict:
     return {**POLICY_DEFAULTS, **common, **per_strategy}
 
 
+def effective_config(trade: dict, config: dict) -> dict:
+    """`config` with this trade's frozen advised params overlaid onto its own strategy block.
+
+    The advised book is a TWIN: an `advised:strat_test:<strategy>` row opened beside the control
+    with identical fill economics, differing only in the management params stamped on it at entry.
+    This is the single choke point where that difference is applied, so an advised position is
+    managed under its own terms at every later tick and the control is never touched.
+
+    Pure, and deliberately per-trade rather than per-session: exit thresholds are read at DECISION
+    time, so a session-level overlay would stop governing an open position the moment advice lapsed
+    and hand it to rules nobody chose. A row with no `advice_params` returns `config` unchanged.
+    """
+    raw = trade.get("advice_params")
+    if not raw:
+        return config
+    try:
+        params = json.loads(raw) if isinstance(raw, str) else dict(raw)
+    except (TypeError, ValueError):
+        return config  # an unreadable stamp is the control's config, never a guess
+    strategy = trade.get("strategy")
+    if not params or not strategy:
+        return config
+    strategies = config.get("strategies") or {}
+    return {
+        **config,
+        "strategies": {**strategies, strategy: {**(strategies.get(strategy) or {}), **params}},
+    }
+
+
 def strategy_config(strategy: str, config: dict, policy: dict) -> dict:
     """The config a strategy's own `evaluate_position` should see.
 
@@ -203,6 +232,10 @@ def evaluate(
     if strategy not in _EVALUATORS:
         return Decision("hold", "unknown_strategy", {"strategy": strategy})
 
+    # An advised twin carries its own management params, frozen on the row at entry. Applied here,
+    # once, so every rule below — the policy, the strategy's own thresholds, the session cap — sees
+    # the same config. A control row is untouched by this line.
+    config = effective_config(trade, config)
     policy = policy_for(strategy, config)
     legs = json.loads(trade.get("legs_json") or "[]")
     quotes = snapshot["quotes"]

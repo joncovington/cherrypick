@@ -59,6 +59,8 @@ beforeAll(() => {
       gexDir: path.join(tmp, "gex"),
       scoutDir: path.join(tmp, "scout"),
       reviewDir: path.join(tmp, "review"),
+      advisorDir: path.join(tmp, "advisor"),
+      adviceDir: path.join(tmp, "state", "advice"),
       meicRiskConfig: path.join(tmp, "config.risk.json"),
       fliesConfig: path.join(tmp, "config", "flies.json"),
     },

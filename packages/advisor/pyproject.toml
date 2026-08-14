@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cherrypick-advisor"
+version = "0.1.0"
+description = "Deterministic AI-advisor machinery — fact packs, proposals, paper experiments, bounded advice artifacts"
+requires-python = ">=3.11"
+# cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.
+# Not on PyPI (Private :: Do Not Upload) -- packages/core must be installed first, or resolution fails.
+# core is the ONLY dependency, deliberately: this package never invokes AI and never opens a socket,
+# so it has no client library, no API key, and nothing to configure. The AI touchpoint is
+# scripts/advisor_checkpoint.py, outside every package.
+dependencies = ["cherrypick-core"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+testpaths  = ["tests"]
+pythonpath = ["tests", "src"]
+
+[tool.ruff]
+# line-length + lint.select come from the suite-wide ../../ruff.toml.
+extend = "../../ruff.toml"
+target-version = "py311"
+
+[tool.hatch.build.targets.wheel]
+# src-layout PEP 420 namespace: src/cherrypick/ has NO __init__.py, so cherrypick.advisor composes
+# with cherrypick.core (and every other module) under one cherrypick.* root. `sources = ["src"]` maps
+# the src/ prefix away, so src/cherrypick/advisor/... installs as cherrypick/advisor/... .
+only-include = ["src/cherrypick"]
+sources = ["src"]

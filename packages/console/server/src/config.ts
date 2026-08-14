@@ -28,6 +28,9 @@ export interface ConsoleConfig {
     gexDir: string;
     scoutDir: string;
     reviewDir: string;
+    advisorDir: string;
+    /** `state/advice/` — the artifacts the advisor issues and every module's loop reads. */
+    adviceDir: string;
     /** packages/meic/config.risk.json (source tree) -- profiles.<tag>.enabled is the literal
         switch paper.py's all_profile_names() reads each tick. */
     meicRiskConfig: string;
@@ -53,6 +56,8 @@ export function loadConfig(): ConsoleConfig {
       gexDir: path.join(data, "gex"),
       scoutDir: path.join(data, "scout"),
       reviewDir: path.join(data, "review"),
+      advisorDir: path.join(data, "advisor"),
+      adviceDir: path.join(CHERRYPICK, "state", "advice"),
       meicRiskConfig: path.join(REPO_ROOT, "packages", "meic", "config.risk.json"),
       fliesConfig: path.join(CHERRYPICK, "config", "flies.json"),
     },

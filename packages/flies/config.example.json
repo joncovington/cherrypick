@@ -305,5 +305,12 @@
         ]
       ]
     }
+  },
+  "advice_header": "===== AI advisor (paper only) =====",
+  "_advice_note": "The loop side of the agentic layer: an out-of-band advisor (packages/advisor) proposes parameter values, and paper_loop.advice_decision re-validates them with cherrypick.core.advice against the 'bounds' manifest below before ANY of them reach a book. OFF by default, and off twice over -- the suite's own advisor.modules.flies switch must also be on. What it does when on: the admitted params run as a SYNTHETIC ARM, 'advised:<base_arm>', beside the un-advised base, so the comparison is paired on the same sessions and the same underlying and `control` never changes meaning mid-experiment. An advised arm is a NEW BOOK, not a measurement break in an existing one. Absent, stale, expired or invalid advice all mean baseline -- the loop reads once at session start (data/flies/advice_active.json pins the day's decision so it cannot change mid-session) and never waits for, retries, or alerts about advice. There is no management twin because this module has no exits: a book holds to settlement, and settlement covers any advised book that still has rows for the day whatever today's advice says. Only keys listed in 'bounds' can move, only inside their declared closed range, and ONE out-of-range value rejects the whole artifact. Entry-side geometry that changes WHICH structures open is a legitimate thing to test, but keep the bounds narrow: an advised book that differs from control on five axes measures nothing.",
+  "advice": {
+    "enabled": false,
+    "base_arm": "control",
+    "bounds": {}
   }
 }

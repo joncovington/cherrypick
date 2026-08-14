@@ -61,7 +61,17 @@ from pathlib import Path
 
 from cherrypick.core import viz
 
-from cherrypick.earnings import costs, db_paper, paths, rank_strategies, scanner, sizing, symbol_watch
+from cherrypick.earnings import (
+    advice,
+    costs,
+    db_paper,
+    management,
+    paths,
+    rank_strategies,
+    scanner,
+    sizing,
+    symbol_watch,
+)
 from cherrypick.earnings import strategy_metrics as metrics
 from cherrypick.earnings.strategies import (
     atm_calendar,
@@ -659,6 +669,11 @@ def cmd_run_entries(args) -> dict:
     opened: list[dict] = []
     skipped: list[dict] = []
 
+    # Derived ONCE for the session, here, where the entries are decided. Management ticks never
+    # consult it -- their params ride on the rows they manage (advice.py), which is what makes an
+    # advised position's exits continue after advice lapses.
+    advice_decision = advice.decision(config, scan_date)
+
     workers = config.get("entry_scan_workers", 4)
     symbol_timeout = config.get("dolt_symbol_timeout_seconds", 90)
     budget = config.get("entry_scan_budget_seconds", 1500)
@@ -776,6 +791,20 @@ def cmd_run_entries(args) -> dict:
                 if not save_result.get("ok"):
                     drop(f"save_trade_failed: {save_result.get('error')}")
                     continue
+
+                # The advised twin, when today's admitted advice names this strategy. Identical
+                # fills by construction (the same save_spec), so the pair differs in exactly the
+                # management params stamped on the twin — see advice.py on why they ride the row.
+                # Best-effort: a twin that fails to save costs a comparison, never the real entry.
+                advised_params = advice.params_for(advice_decision, strategy_name)
+                if advised_params:
+                    twin = advice.twin_spec(save_spec, advised_params)
+                    twin_result = db_paper.cmd_save_trade(
+                        argparse.Namespace(data=json.dumps(twin, default=str))
+                    )
+                    if not twin_result.get("ok"):
+                        print(f"advised twin not saved for {symbol} {strategy_name}: "
+                              f"{twin_result.get('error')}")
 
                 _log_scan_row(
                     scan_date,
@@ -934,6 +963,10 @@ def cmd_run_closes(args) -> dict:
             # reason keeps the _close_all suffix so the two are distinguishable in the log.
             strategy_name = trade.get("strategy") or ""
             exit_reason = "close_window"
+            # An advised twin is managed under the params frozen on its own row, at every later
+            # tick, whether or not advice is still being issued. A control row gets `config` back
+            # unchanged, so this line is invisible to every book but the advised ones.
+            trade_config = management.effective_config(dict(trade), config)
             manager = _MULTI_DAY.get(strategy_name)
             if manager is not None:
                 if strategy_name == "double_calendar":
@@ -941,11 +974,11 @@ def cmd_run_closes(args) -> dict:
                         "legs", []
                     )
                     decision = manager.evaluate_position(
-                        dict(trade), open_legs, full_quotes, config, is_first_check_of_day=True
+                        dict(trade), open_legs, full_quotes, trade_config, is_first_check_of_day=True
                     )
                 else:
                     decision = manager.evaluate_position(
-                        dict(trade), full_quotes, config, is_first_check_of_day=True
+                        dict(trade), full_quotes, trade_config, is_first_check_of_day=True
                     )
                 action = decision.get("action")
                 if action == "hold":
@@ -960,10 +993,10 @@ def cmd_run_closes(args) -> dict:
                 if overnight_manager is not None:
                     if strategy_name == "broken_wing_butterfly":
                         decision = overnight_manager.evaluate_position(
-                            dict(trade), full_quotes, config, is_first_check_of_day=True
+                            dict(trade), full_quotes, trade_config, is_first_check_of_day=True
                         )
                     else:
-                        decision = overnight_manager.evaluate_position(dict(trade), full_quotes, config)
+                        decision = overnight_manager.evaluate_position(dict(trade), full_quotes, trade_config)
                     if decision.get("action") == "close_all":
                         exit_reason = decision.get("reason") or "close_all"
 

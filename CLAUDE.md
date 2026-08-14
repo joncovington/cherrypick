@@ -32,6 +32,15 @@ One workspace for the trading-tool suite. Work in the package for your area — 
   produced six incomparable report families and two normalisation layers that had already drifted.
   No broker credentials, no network, no AI: the narrative is written *outside* the package by a
   scheduled agent reading the fact set, so a failed narrative can never damage a report.
+- **packages/advisor** — the deterministic half of the **AI advisor**: the fact packs a model reads
+  four times a trading day, the validation of what it replies, and the paper A/B experiments its
+  admitted proposals run as. It contains **no AI** — the model is invoked by
+  `scripts/advisor_checkpoint.py`, outside every package, the same fence that holds
+  `scripts/eod_narrative.py`. Read-only over every other package (live data too, clearly labelled
+  and only in `factpack.py`); the one thing it can emit toward a loop is a bounded, expiring paper
+  advice artifact through `cherrypick.core.advice`, which each module applies to a synthetic
+  `advised:<base>` book beside its control. Off by default twice over: the suite must schedule it,
+  and each module must declare its own `advice` bounds.
 - **packages/desk** — ⚠️ **EXPERIMENTAL.** The **manual trading desk** and the suite's only
   *discretionary* live-order path (meic/earnings/flies each have a live loop behind their own
   `enable_live_trading` gate; this has no loop): a foreground, human-initiated CLI for

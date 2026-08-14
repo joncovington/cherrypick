@@ -75,6 +75,19 @@ pnpm --filter @console/desktop start   # the desktop window
   Config writes are gated exactly as the orchestrator's settings server gates its own (loopback Host,
   CSRF, JSON content type) and deliberately **not** on the broker credential scope — that describes
   what a token may do at the broker, and a config file is not the broker.
+- **The Advisor page's two buttons are the second bounded exception, and they hold no logic either.**
+  Kill an experiment, dismiss a proposal — both POST to `routes/advisorOps.ts`, which invokes
+  `python -m cherrypick.advisor <verb>` as a subprocess (`services/advisorBridge.ts`, the same
+  shape and the same reason as `configBridge.ts`). Killing an experiment journals a reason, stops
+  tonight's artifact being issued for it, and lets a queued experiment take its slot; that
+  lifecycle lives in one place in Python, and the scheduled runs and the browser go through the
+  same door. Both actions only ever make the advisor do LESS — there is deliberately no way to
+  start, tune or enact anything from the browser, because those are the directions that add
+  exposure and they belong to the validated, scheduled path. Everything else on the page is a
+  read of `data/advisor/advisor.db` (read-only) plus the advice artifacts, and it **computes no
+  verdicts**: those come from `packages/advisor`, through the suite's own
+  ledger-readers → `compare_profiles` → `qualify_readings` chain. A TypeScript re-derivation would
+  be a second opinion free to drift, which is the mistake `services/report.ts` already made once.
 - **Where a module already classifies its own data, ask it — don't re-derive it.** `services/
   screenBridge.ts` reads the earnings screening metrics by invoking
   `python -m cherrypick.earnings.screen_report --json` (same bridging pattern and the same reason as

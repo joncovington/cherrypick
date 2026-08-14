@@ -35,6 +35,7 @@ Install-Editable "packages\flies[dev]"        "packages/flies"
 Install-Editable "packages\streamer[dev]"     "packages/streamer"
 Install-Editable "packages\desk[dev]"         "packages/desk"
 Install-Editable "packages\review[dev]"       "packages/review"
+Install-Editable "packages\advisor[dev]"      "packages/advisor"
 
 # The console UI is the one Node package. Optional: skipped with a notice when pnpm is absent,
 # so the Python-only setup stays one command with no new required toolchain.
