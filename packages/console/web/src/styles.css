@@ -1178,6 +1178,24 @@ select.text-input {
   line-height: 1.5;
 }
 
+/* A spec the reader is meant to COPY, not read as prose: the advisor's creative proposals arrive
+   as ready-to-paste JSON, and a wrapped, proportional rendering of one is useless. Scrolls inside
+   its own box rather than widening the card. */
+.spec-block {
+  font-family: var(--num-face);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0.55rem 0 0;
+  padding: 0.6rem 0.7rem;
+  color: var(--text);
+  background: var(--row-hover);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow-x: auto;
+  white-space: pre;
+  user-select: text;
+}
+
 /* A caveat is prose the reader must not skip, but it is not a finding — muted, with the same dot
    vocabulary the findings use so the severity reads the same way. */
 .review-caveat {

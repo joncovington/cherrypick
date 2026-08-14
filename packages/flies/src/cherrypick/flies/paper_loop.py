@@ -307,6 +307,124 @@ def _note_entry_cadence_change(conn, config: dict) -> None:
         _log(f"entry-cadence journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
+# --------------------------------------------------------------------------- advised arms
+# The loop side of the agentic layer. An out-of-band advisor proposes parameter values; this
+# re-validates them with the SAME core code the producer used (`cherrypick.core.advice`) against
+# this module's own `advice.bounds` manifest, and runs the admitted set as a SYNTHETIC ARM beside
+# the un-advised base. Absent, stale, or invalid advice means baseline — no synthetic arm at all.
+#
+# An advised arm is a NEW BOOK, not a change to an existing one. That convention is what keeps the
+# comparison honest: `control` never changes meaning mid-experiment, so its history stays poolable,
+# and `fly_books`/`fly_positions` key on the arm STRING, so `advised:control` needs no `engine.ARMS`
+# entry and attribution comes free from the stored tag.
+#
+# There is deliberately no management twin (MEIC has one). Flies has no exits — a position is held
+# to settlement — so an advised book that stops receiving advice has nothing left to decide. It just
+# needs to settle, which `session_arms` guarantees by including any advised arm that still has rows
+# for the day being processed, whatever today's advice says.
+
+
+def _advice_decision_path() -> str:
+    return os.path.join(_paper_data_dir(), "advice_active.json")
+
+
+def advice_decision(config: dict, today: str) -> dict:
+    """Today's advice decision, derived ONCE per session and replayed thereafter.
+
+    Read-once matters across `--once` processes: the first tick of the day records what it decided,
+    and every later tick replays that record, so advice can never start, stop, or change mid-session
+    however late an artifact lands or however the config is flipped intraday.
+    """
+    acfg = config.get("advice") or {}
+    base = acfg.get("base_arm", "control")
+    path = _advice_decision_path()
+
+    decision = None
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as handle:
+                decision = json.load(handle)
+        except (OSError, ValueError):
+            decision = None
+        if decision is not None and decision.get("day") != today:
+            decision = None  # yesterday's decision; today re-derives its own
+    if decision is not None:
+        return decision
+
+    if acfg.get("enabled") and acfg.get("bounds"):
+        from cherrypick.core import advice as _core_advice
+        from cherrypick.core import home as _core_home
+
+        result = _core_advice.load(_core_home.state_dir(), "flies", today, acfg.get("bounds") or {})
+        params = {p["param"]: p["value"] for p in result["proposals"]} or None
+        decision = {
+            "day": today,
+            "base_arm": base,
+            "params": params,
+            "reason": result["reason"],
+            "proposals": result["proposals"],
+            "rejected": result.get("rejected") or [],
+        }
+        for proposal in result["proposals"]:
+            _log(f"advice applied: {proposal['param']}={proposal['value']!r} — {proposal.get('rationale', '')}")
+        if not result["proposals"]:
+            _log(f"advice: baseline ({result['reason'] or 'no proposals'})")
+    else:
+        decision = {"day": today, "base_arm": base, "params": None, "reason": "advice_disabled"}
+
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(decision, handle, indent=2)
+    except OSError:
+        pass  # the decision still applies to this process; the next --once re-derives it
+    return decision
+
+
+def _advised_arms_with_books(conn, trade_date: str) -> list[str]:
+    """Advised arms that already hold positions for this day — they must settle whatever today's
+    advice says, or a book opened this morning would be stranded by an afternoon config change."""
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT arm FROM fly_positions WHERE trade_date = ? AND arm LIKE 'advised:%'",
+            (trade_date,),
+        ).fetchall()
+    except Exception:  # noqa: BLE001 — a missing table is a module that has not traded yet
+        return []
+    return [r[0] for r in rows]
+
+
+def session_arms(config: dict, conn, trade_date: str) -> list[str]:
+    """The arms this session runs: the enabled roster, plus any advised arm.
+
+    ONE helper, called by both the tick and settlement, because those two call sites reading
+    different rosters is precisely how an advised book gets entered and never settled. It mutates
+    `config["arms"]` so `engine.merged_params` resolves the synthetic arm the ordinary way — the
+    alternative is a second params path that only the advised book takes, which is a second thing
+    that can differ from the control for reasons the experiment did not intend.
+    """
+    arms = climod.enabled_arms(config)
+    decision = advice_decision(config, trade_date)
+    base = decision.get("base_arm") or "control"
+    overlay = decision.get("params")
+
+    advised: list[str] = []
+    if overlay:
+        tag = f"advised:{base}"
+        config.setdefault("arms", {})[tag] = {**(config.get("arms", {}).get(base) or {}), **overlay}
+        advised.append(tag)
+
+    for tag in _advised_arms_with_books(conn, trade_date):
+        if tag in advised:
+            continue
+        # A book from an earlier decision today. Its positions carry their own recorded economics;
+        # the base arm's params are the honest reconstruction of everything else about it.
+        tag_base = tag.split(":", 1)[1]
+        config.setdefault("arms", {}).setdefault(tag, dict(config.get("arms", {}).get(tag_base) or {}))
+        advised.append(tag)
+
+    return arms + advised
+
+
 def settle_time_min(config: dict) -> int:
     at = config.get("defaults", {}).get("settle_time")
     if not at:
@@ -375,7 +493,7 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
             _log(f"{day} settled — idle until the next session")
         return {"ok": True, "skipped": "outside_rth", "now_min": now_min, "session_settled": settled}
 
-    arms = climod.enabled_arms(config)
+    arms = session_arms(config, conn, day)
     results = []
     for symbol in config.get("symbols", ["SPX"]):
         snapshot = provider.build_snapshot(
@@ -453,7 +571,9 @@ def run_settle(config: dict, conn, *, cache_path: str, when=None, price: float |
             out.append({"symbol": symbol, "ok": False, "reason": "no_settlement_price"})
             continue
         source = "explicit" if price is not None else "last_trade"
-        for arm in climod.enabled_arms(config):
+        # The same roster the tick entered on, including any advised arm — settling a narrower list
+        # than the one that traded would strand an advised book open with no way to close it.
+        for arm in session_arms(config, conn, trade_date):
             result = bookmod.settle_book(conn, trade_date, arm, symbol, settlement, config)
             _log(
                 f"{symbol} [{arm}] settled at {settlement:.2f} ({source}): "

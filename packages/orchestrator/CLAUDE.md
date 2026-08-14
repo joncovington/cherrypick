@@ -107,13 +107,26 @@ resolved **relative to the config file's directory** — never hardcode absolute
   two places it was, and both went with the EOD cutover. The narrative and the recommendations they
   produced are now `packages/review`'s job, generated **outside every suite package** by a scheduled
   agent reading review's fact set — so no package holds an API key or a network dependency, and the
-  "no AI on the reliability path" invariant holds by construction rather than by fencing.
+  "no AI on the reliability path" invariant holds by construction rather than by fencing. The same
+  is true of the advisor added 2026-08-14: this package schedules `scripts/advisor_checkpoint.py`
+  and nothing more. Both scripts are jobs like any other — spawned, never imported, never on the
+  watchdog's health tick, which is what the retired `eod-insight` trigger was.
 
   **The advice CONSUMERS are still live and still correct.** `cherrypick.core.advice`, each module's
   `advice_bounds` manifest, and the paper loops' session-start re-validation are untouched. With no
   producer writing `state/advice/<module>-<session>.json`, every loop simply sees absent advice and
-  runs baseline — which is exactly the documented degrade, not a new failure mode. Re-pointing a
-  producer at those bounds later needs no change on the consumer side.
+  runs baseline — which is exactly the documented degrade, not a new failure mode.
+
+  **A producer exists again since 2026-08-14, and it is not this package.** `packages/advisor`
+  writes those artifacts, through the same `cherrypick.core.advice` contract — which is why the
+  claim above about re-pointing a producer needing no consumer change was testable and turned out
+  true: MEIC's consumer took zero edits. This package's role is *scheduling*, exactly as with the
+  review: four supervisor jobs (`advisor-am`/`-midday`/`-pm` at 10:30/12:30/14:30 and `advisor-deep`
+  at 17:00, trading days only, tagged `ai`) invoke `scripts/advisor_checkpoint.py`. See
+  `cfgmod.advisor_settings`; OFF by default, and the module names travel on argv so no model id
+  appears in code. **This package holds no advisor logic** — not the fact packs, not the validation,
+  not the experiment lifecycle. It starts a script and reads the exit code, the same relationship it
+  has with the narrative.
 
 **Per-schema dispatch.** Each module's paper DB has a different schema, selected by
 `paper.trade_schema` in config (`"meic_ic"` → MEIC's `ic_trades`; `"earnings"` → the Earnings module's

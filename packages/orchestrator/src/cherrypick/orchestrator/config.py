@@ -282,6 +282,51 @@ def review_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def advisor_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved AI-advisor scheduling (packages/advisor + scripts/advisor_checkpoint.py). OFF by default.
+
+    Four daily slots: three light intraday checkpoints on a cheap model, and one deep post-close run
+    on the strong one. The deep slot follows the review's provisional pass (16:30) so it can read
+    that fact set, and it is the slot that issues the next session's advice.
+
+    Off by default twice over, because two independent things have to be true before anything
+    happens: the suite has to schedule the advisor (this block), and each module has to declare an
+    `advice` block of its own saying which parameters it will accept advice about and between which
+    values. Neither implies the other.
+
+    Model names live here and travel on argv. No model id appears anywhere in this suite's code, so
+    changing which model runs a slot is a config edit.
+
+    The governance keys (`max_experiments_per_module`, `experiment_sessions*`) are read by the
+    advisor package itself, not by the scheduler; they are resolved here too so `run.py status` and
+    the config surfaces show one complete block rather than half of one.
+    """
+    av = cfg.get("advisor", {}) or {}
+    return {
+        "enabled": av.get("enabled", False),
+        # ET, box-local like every other schedule in this file.
+        "checkpoints": list(av.get("checkpoints", ["10:30", "12:30", "14:30"])),
+        "deep_at": av.get("deep_at", "17:00"),
+        "light_model": av.get("light_model", "sonnet"),
+        "deep_model": av.get("deep_model", "opus"),
+        "timeout_seconds": int(av.get("timeout_seconds", 600)),
+        # One per module by construction: each consumer builds exactly one advised book from the
+        # day's artifact, so a second concurrent experiment would have nowhere to be measured.
+        "max_experiments_per_module": int(av.get("max_experiments_per_module", 1)),
+        # 15 so an experiment that runs its course can satisfy the promotion gate (14 days, 20
+        # trades) rather than expiring structurally underpowered.
+        "experiment_sessions": int(av.get("experiment_sessions", 15)),
+        "experiment_sessions_min": int(av.get("experiment_sessions_min", 5)),
+        "experiment_sessions_max": int(av.get("experiment_sessions_max", 30)),
+        "modules": {
+            "meic": {"enabled": True},
+            "flies": {"enabled": False},
+            "earnings": {"enabled": True},
+            **(av.get("modules") or {}),
+        },
+    }
+
+
 def archive_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved end-of-month log/report rotation scheduling. ON by default (opt out with
     `"log_archive": {"enabled": false}`): a monthly task zips each finished month's dated reports and

@@ -397,34 +397,32 @@
     "day": 1,
     "at": "03:30"
   },
-  "advise_header": "x",
-  "advise": {
-    "_comment": "Per-session parameter advice (`cherrypick advise`) - Tier 1 of the agentic layer: agent advises, loop decides. Runs Claude headless over the day's DETERMINISTIC artifacts only (module EOD reports, suite digest, report/calibrate JSON, the shared market calendar; ALL tools denied, unlike eod_insight's research mode) and asks for parameter proposals for the NEXT session, restricted to each module's 'advice_bounds' manifest of closed legal ranges. The orchestrator validates with cherrypick.core.advice and writes state/advice/<module>-<session>.json; the module's paper loop re-validates with the SAME core code at session start and treats absent/stale/invalid advice as baseline - one bad proposal rejects the whole set (the rejections are still written, for audit). OFF by default TWICE: 'enabled' here AND per-module 'modules.<name>.enabled' must both be true. Kill switch: flip either flag, or delete the advice file. Paper loops only; advice can never widen behavior beyond the declared bounds.",
+  "advisor_header": "x",
+  "advisor": {
+    "_comment": "The AI advisor (packages/advisor + scripts/advisor_checkpoint.py) - agent advises, loop decides. Four scheduled slots per trading day: three light intraday checkpoints ('checkpoints', ET) on 'light_model' that observe and draft, and one deep post-close run ('deep_at', after review-provisional at 16:30) on 'deep_model' that designs experiments, passes verdicts, and issues the NEXT session's advice. Each run builds a deterministic fact pack in-package, pipes it to Claude headless on stdin with ALL acting tools denied, and hands the reply back to the package to validate - the AI never gets a file handle, a database, or a tool. Admitted proposals run as paper A/B experiments: a synthetic 'advised:<base>' book beside its un-advised control, scored by the same qualification gate everything else uses. The artifact is state/advice/<module>-<session>.json, validated by cherrypick.core.advice and re-validated by the loop at session start; absent/stale/invalid means baseline, and one out-of-bounds value rejects the whole set (rejections are still written, for audit). OFF by default TWICE: 'enabled' here AND the module's OWN 'advice' block (in ~/.cherrypick/config/<module>.json), which is where the bounds manifest now lives - the module declares what it will accept advice about, not this file. Kill switch: flip either flag, delete the advice file, or `python -m cherrypick.advisor kill <experiment_id>`. Paper only: nothing here can reach a live account, and the deep slot's enact step runs even when the AI call fails so an outage cannot truncate an active A/B sample. 'max_experiments_per_module' is 1 by construction (each consumer builds exactly one advised book); over-cap specs queue and activate FIFO. 'experiment_sessions' defaults to 15 so an expiring experiment can satisfy the promotion gate (14 days, 20 trades) instead of expiring underpowered.",
     "enabled": false,
-    "model": null,
-    "timeout_seconds": 180,
+    "checkpoints": [
+      "10:30",
+      "12:30",
+      "14:30"
+    ],
+    "deep_at": "17:00",
+    "light_model": "sonnet",
+    "deep_model": "opus",
+    "timeout_seconds": 600,
+    "max_experiments_per_module": 1,
+    "experiment_sessions": 15,
+    "experiment_sessions_min": 5,
+    "experiment_sessions_max": 30,
     "modules": {
       "meic": {
-        "enabled": false,
-        "advice_bounds": {
-          "stop_trigger_ratio": {
-            "min": 0.85,
-            "max": 0.95
-          },
-          "daily_ic_trade_target": {
-            "min": 0,
-            "max": 3
-          },
-          "entry_price_strategy": {
-            "choices": [
-              "mid",
-              "natural_bid",
-              "ioc_step",
-              "day_improve",
-              "auto"
-            ]
-          }
-        }
+        "enabled": true
+      },
+      "flies": {
+        "enabled": false
+      },
+      "earnings": {
+        "enabled": true
       }
     }
   },

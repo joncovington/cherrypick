@@ -306,6 +306,15 @@ _MIGRATIONS = [
     # = net - (entry_slippage + exit_slippage) exactly.
     ("trades", "entry_slippage", "ALTER TABLE trades ADD COLUMN entry_slippage REAL"),
     ("trades", "exit_slippage", "ALTER TABLE trades ADD COLUMN exit_slippage REAL"),
+    # The advised params this row was opened under, frozen at entry (JSON, strategy-local names).
+    # Deliberately NOT folded into entry_context, whose meaning is entry-time MARKET conditions.
+    #
+    # Frozen on the row because exit thresholds are read from config at DECISION time, not from the
+    # trade: a read-once overlay held in memory would govern entries and then quietly stop governing
+    # exits the moment advice lapsed, leaving a position managed by rules nobody chose. With the
+    # params on the row, `management.effective_config` can restate them at every later tick, and an
+    # advised position keeps being managed under its own terms until it closes.
+    ("trades", "advice_params", "ALTER TABLE trades ADD COLUMN advice_params TEXT"),
     ("scan_log", "profile", "ALTER TABLE scan_log ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
     # A candidate's life has two stages and only the first was ever recorded: one that cleared the
     # screen and then died in order building, sizing, the risk cap or a missing quote left no trace.
@@ -481,8 +490,9 @@ def cmd_save_trade(args) -> dict:
             "INSERT INTO trades "
             "(order_id, strategy, symbol, expiration, short_strike, long_call_strike, "
             " long_put_strike, legs_json, entry_credit, opened_at, profile, quantity, "
-            " capital_at_risk, entry_cost, entry_slippage, entry_context, entry_iv, status) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')",
+            " capital_at_risk, entry_cost, entry_slippage, entry_context, entry_iv, "
+            " advice_params, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')",
             (
                 spec["order_id"],
                 spec.get("strategy", "iron_fly"),
@@ -501,6 +511,8 @@ def cmd_save_trade(args) -> dict:
                 spec.get("entry_slippage"),
                 json.dumps(entry_context) if entry_context is not None else None,
                 spec.get("entry_iv"),
+                # Already a JSON string when the caller froze an advised overlay onto this row.
+                spec.get("advice_params"),
             ),
         )
         for leg in spec.get("legs", []):

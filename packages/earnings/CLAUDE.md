@@ -58,6 +58,36 @@ You are the cherrypick **Earnings** agent, an autonomous options trading agent f
   the entry/exit loop, never touches a ledger. It writes `symbol_watch.json` for the console's read-only
   Earnings page "Upcoming" section to read.
 
+## The advised twin (paper only, off by default)
+
+When config's `advice.enabled` is true, the entry scan looks ONCE for
+`state/advice/earnings-<session>.json` (written by `packages/advisor`), re-validates it with
+`cherrypick.core.advice` against this module's own `advice.bounds` manifest, and for each admitted
+strategy opens an **advised twin** beside the ordinary strat_test entry: identical legs, credit,
+quantity and modelled costs, tagged `advised:strat_test:<strategy>`. The twin exists so the
+comparison is paired — same fills, same session, same name — which makes the management params the
+only thing separating it from its control.
+
+Three properties, each of which a simpler design gets wrong:
+
+- **Dotted param names, `"<strategy>.<param>"`.** This module reads exit thresholds from
+  `strategies.<name>` at decision time, so a param has to name its strategy. `cherrypick.core.advice`
+  treats a param name as opaque, so the convention costs no contract change; `advice.py` splits on
+  the first dot, and a dotted name for a strategy nobody declared is refused by the bounds check.
+- **Params are frozen ON THE ROW at entry** (`trades.advice_params`, additive migration).
+  Deliberately not in `entry_context`, whose meaning is entry-time *market* conditions. A read-once
+  overlay held in memory would govern entries today and silently stop governing exits tomorrow,
+  leaving an open position managed by rules nobody chose.
+- **One choke point restates them: `management.effective_config(trade, config)`**, called from
+  `management.evaluate` and from the harness's `run_closes`. A control row gets its config back
+  unchanged. **Exit continuity is therefore free**: advice stops, no new twins open, and the twins
+  already on the book keep being marked, managed and closed under the params they were opened with.
+  No twin profile, no orphan handling.
+
+**v1 bounds are management/exit params only.** Entry-side screens, tiering and sizing change *which*
+trades open, and a twin cannot express that — both books would have to face the same fills to be
+comparable. Those stay propose-only; a human reads them and decides.
+
 ## Orchestrator & shared core
 
 - **`cherrypick.core.*` is an installed dependency, `packages/core` in this monorepo.** Shared logic

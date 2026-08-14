@@ -7,7 +7,7 @@ import { useDirtyCount } from "../../pages/Config/stagedStore";
  * the suite as a whole, one module's read models, the research tools, and the one page that writes.
  */
 const groups: Array<{ label: string | null; links: Array<{ to: string; label: string; end?: boolean }> }> = [
-  { label: null, links: [{ to: "/", label: "Overview", end: true }, { to: "/review", label: "Review" }] },
+  { label: null, links: [{ to: "/", label: "Overview", end: true }, { to: "/review", label: "Review" }, { to: "/advisor", label: "Advisor" }] },
   {
     label: "Modules",
     links: [

@@ -13,6 +13,7 @@ import type {
   TtWatchlistRow,
   SymbolCardPayload,
   ReviewPayload,
+  AdvisorPayload,
 } from "@console/shared";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -67,6 +68,26 @@ export function useReview(session?: string) {
     // The fact set changes twice a day, not continuously — polling it hard would be noise.
     refetchInterval: 60_000,
   });
+}
+
+export function useAdvisor(session?: string) {
+  return useQuery<AdvisorPayload>({
+    queryKey: ["advisor", session ?? "latest"],
+    queryFn: () => getJson<AdvisorPayload>(`/api/advisor${session ? `?session=${session}` : ""}`),
+    // Four checkpoints a day and one nightly enact — a minute is already far finer than the data.
+    refetchInterval: 60_000,
+  });
+}
+
+// Both actions carry an empty JSON body they have no use for: the mutating-surface guard in
+// security.ts requires `content-type: application/json` on every POST, and mutateJson only sets
+// that header when there is a body to send.
+export async function killAdvisorExperiment(id: string): Promise<AdvisorPayload> {
+  return mutateJson<AdvisorPayload>(`/api/advisor/experiments/${encodeURIComponent(id)}/kill`, "POST", {});
+}
+
+export async function dismissAdvisorProposal(id: number): Promise<AdvisorPayload> {
+  return mutateJson<AdvisorPayload>(`/api/advisor/proposals/${String(id)}/dismiss`, "POST", {});
 }
 
 export interface MeicTradeQuery {

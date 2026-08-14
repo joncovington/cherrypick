@@ -95,11 +95,26 @@ the stdlib + the OS shell — no MCP, no HTTP client, no AI tooling — so it ha
 modules' loop decisions depend only on their local tools + their instructions, for the same reason.
 
 - **No AI runs inside any suite package**, which is stronger than the fencing this used to describe.
-  The EOD narrative is generated *outside* them by a scheduled agent reading `packages/review`'s fact
-  set, so no package holds an API key or a network dependency and a failed narrative cannot damage a
-  report. The deterministic fact set and its render are the guaranteed artifacts.
+  There are exactly **two** AI touchpoints in the suite and both are scripts, outside every package:
+  `scripts/eod_narrative.py` (the EOD narrative, over `packages/review`'s fact set) and
+  `scripts/advisor_checkpoint.py` (the advisor's four daily checkpoints, over `packages/advisor`'s
+  fact packs). No package holds an API key or a network dependency, and a failed AI call can only
+  ever cost a note or a day's advice. The deterministic artifacts — the fact set, the fact pack, the
+  advice artifact — are the guaranteed ones.
+- **`packages/advisor` is 100% deterministic.** It builds what the model reads and validates what it
+  replies; it never invokes AI, holds no API key, and opens no socket. A source scan
+  (`packages/advisor/tests/test_guardrails.py`) enforces that rather than trusting the prose.
+- **Paper arms are the dry run.** An advisor proposal is not simulated or replayed — it runs as a
+  next-session paper arm beside its control (`advised:<base>`), scored by the same qualification
+  gate every other promotion decision uses. There is no replay engine and there will not be one.
+- **The advisor reads live, and cannot act on it.** Live databases and live config keys are opened
+  read-only and only in `factpack.py`, so the model sees live posture as clearly-labelled context.
+  Enactment is structurally paper-only: the single loop-facing output the package can produce is a
+  bounded advice artifact at `state/advice/<module>-<session>.json`, and every consumer applies it
+  to a synthetic book beside its control — never to the control, never to a live loop.
 - **The one sanctioned network exception is gone with it.** The retired `eod_insight` granted its
-  agent `WebSearch` by default; nothing in the suite does that now.
+  agent `WebSearch` by default; nothing in the suite does that now — both scripts deny every acting
+  tool and hand the model its facts on stdin.
 
 **Read surfaces read files, never the broker.** `report`/`calibrate`/`dashboard`/EOD reports read paper
 DBs (SQLite read-only), watchdog state, logs, and report files. The static dashboard render reads the

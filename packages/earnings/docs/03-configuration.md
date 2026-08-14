@@ -297,6 +297,41 @@ which side to sell. The short strike itself is chosen so that *breakeven* (short
 credit received) lands at the expected-move boundary, not the strike itself — a genuinely
 different strike-selection convention from `iron_condor`'s.
 
+## `advice` — the AI advisor's bounds manifest (paper only, off by default)
+
+The one block that decides what an out-of-band advisor may change about this module, and between
+which values. Two keys: `enabled` and `bounds`.
+
+**Param names are dotted, `"<strategy>.<param>"`.** This module reads exit thresholds from
+`strategies.<name>` at decision time, so a param has to say which strategy it belongs to.
+`cherrypick.core.advice` treats a param name as an opaque string, so the convention costs the shared
+contract nothing; `cherrypick/earnings/advice.py` splits on the first dot, and a dotted name naming a
+strategy nobody declared is refused like any other out-of-bounds param.
+
+```json
+"advice": {
+  "enabled": false,
+  "bounds": {
+    "iron_fly.profit_target_pct":         { "min": 0.15, "max": 0.50 },
+    "iron_fly.stop_loss_credit_multiple": { "min": 1.25, "max": 2.50 }
+  }
+}
+```
+
+Every range is **closed** and every value must fall inside it; one violation rejects the whole
+artifact, so a good proposal padded with a speculative one loses both. Ranges are re-read from this
+file every evening, so tightening one takes effect the next morning without touching whatever
+experiment is running inside it.
+
+**Keep it to management/exit params.** An advised entry runs as a *twin* of a real entry — identical
+legs, credit and quantity — so the only difference the comparison can attribute is how the position
+is managed. A param that changes which candidates open changes what the two books face, and the
+comparison stops meaning anything. Entry-side ideas are still worth having; they arrive as
+propose-only `creative` memos on the console's Advisor page.
+
+Draft manifests for every module, and the supervised sequence for turning this on, are in
+[docs/advisor-bounds-draft.md](../../../docs/advisor-bounds-draft.md).
+
 ## `management` — the position lifecycle
 
 Common keys apply to every strategy; `management.<strategy>` overrides them for one. Full rules in

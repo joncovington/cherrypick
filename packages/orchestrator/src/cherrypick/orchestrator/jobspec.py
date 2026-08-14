@@ -49,6 +49,11 @@ CATCHUP_MINUTES = {
     "review-provisional": 180,
     "review-final": 240,
     "review-narrative": 240,
+    # A light checkpoint describes the session as it stands, so catching one up past the next slot
+    # would produce two checkpoints describing nearly the same afternoon. The deep slot is
+    # different: it issues the next session's advice, so it stays worth firing until late evening.
+    "advisor-light": 45,
+    "advisor-deep": 300,
 }
 
 
@@ -224,11 +229,37 @@ def _run_py(pythonw: str, launcher: str, *args: str) -> tuple[str, ...]:
     return (pythonw, launcher, *args)
 
 
+def _suite_script(launcher: str, name: str) -> str:
+    """A script from the monorepo's own `scripts/` directory, located from the launcher.
+
+    Derived from the launcher rather than from a package path on purpose: these scripts deliberately
+    are NOT packages (that fence is what keeps an AI call unimportable by a trading loop), so there
+    is nothing importable to resolve them from.
+
+    It walks up rather than assuming a depth. The launcher is `<repo>/packages/orchestrator/run.py`
+    and `scripts/` sits at the repo root, two levels above -- a plain `dirname(launcher)/scripts`
+    pointed at `packages/orchestrator/scripts`, which has never existed. That went unnoticed because
+    the one job using it (review-narrative) is off by default, so the bad path was never spawned.
+    The last-resort fallback keeps the old shape for an unrecognised layout.
+    """
+    directory = os.path.dirname(os.path.abspath(launcher))
+    for _ in range(4):
+        candidate = os.path.join(directory, "scripts", name)
+        if os.path.exists(candidate):
+            return candidate
+        parent = os.path.dirname(directory)
+        if parent == directory:
+            break
+        directory = parent
+    return os.path.join(os.path.dirname(launcher), "scripts", name)
+
+
 def _narrative_script(launcher: str) -> str:
-    """`scripts/eod_narrative.py` beside the launcher. Derived from the launcher rather than a
-    package path on purpose -- the narrative deliberately is not a package, so there is nothing
-    importable to resolve it from."""
-    return os.path.join(os.path.dirname(launcher), "scripts", "eod_narrative.py")
+    return _suite_script(launcher, "eod_narrative.py")
+
+
+def _advisor_script(launcher: str) -> str:
+    return _suite_script(launcher, "advisor_checkpoint.py")
 
 
 def _module_tick_argv(paper: dict[str, Any]) -> list[str] | None:
@@ -518,6 +549,53 @@ def derive_jobs(
             enabled_reason=(
                 "" if (rv["enabled"] and rv["narrative"]) else "disabled in config (review.narrative)"
             ),
+            tags=("ai",),
+        ),
+    )
+    av = cfgmod.advisor_settings(cfg)
+    advisor_modules = ",".join(
+        name for name, mod in av["modules"].items() if (mod or {}).get("enabled")
+    )
+    advisor_reason = "" if av["enabled"] else "disabled in config (advisor)"
+    for index, at in enumerate(av["checkpoints"]):
+        # Three light slots share one shape; only the time differs. Named am/midday/pm regardless
+        # of the configured hours so the store's filenames stay legible.
+        slot = ("am", "midday", "pm")[index] if index < 3 else f"slot{index + 1}"
+        add(
+            f"advisor-{slot}",
+            lambda slot=slot, at=at: JobSpec(
+                id=f"advisor-{slot}",
+                # scripts/, not a package -- same fence as review-narrative: nothing a loop can
+                # import is allowed to reach an AI call.
+                argv=(
+                    pythonw, _advisor_script(launcher), "--slot", slot,
+                    "--model", av["light_model"], "--timeout", str(av["timeout_seconds"]),
+                ) + (("--modules", advisor_modules) if advisor_modules else ()),
+                kind=KIND_DAILY,
+                at_et=at,
+                catchup_minutes=CATCHUP_MINUTES["advisor-light"],
+                trading_days_only=True,
+                enabled=av["enabled"],
+                enabled_reason=advisor_reason,
+                tags=("ai",),
+            ),
+        )
+    add(
+        "advisor-deep",
+        lambda: JobSpec(
+            id="advisor-deep",
+            argv=(
+                pythonw, _advisor_script(launcher), "--slot", "deep",
+                "--model", av["deep_model"], "--timeout", str(av["timeout_seconds"]),
+            ) + (("--modules", advisor_modules) if advisor_modules else ()),
+            kind=KIND_DAILY,
+            # After review-provisional (16:30) on purpose: the deep pack carries that fact set, and
+            # the prompt tells the model it is provisional.
+            at_et=av["deep_at"],
+            catchup_minutes=CATCHUP_MINUTES["advisor-deep"],
+            trading_days_only=True,
+            enabled=av["enabled"],
+            enabled_reason=advisor_reason,
             tags=("ai",),
         ),
     )

@@ -548,6 +548,31 @@ and the per-window ranking had nothing to rank. `max_positions_per_window` (off 
 `time_window` at 2) caps what any one window may spend. This is the same failure the arm's config
 `_history_note` already records once — a shared cap being exhausted before the contrast can happen.
 
+## The advised arm (paper only, off by default)
+
+When config's `advice.enabled` is true, the paper loop looks ONCE at session start for
+`state/advice/flies-<session>.json` (written by `packages/advisor`), re-validates it with
+`cherrypick.core.advice` against this module's own `advice.bounds` manifest, and runs the admitted
+params as a **synthetic arm**, `advised:<base_arm>`, beside the un-advised base. Absent, stale,
+expired or invalid advice all mean baseline; one out-of-bounds value rejects the whole artifact; and
+the day's decision is pinned in `data/flies/advice_active.json` so advice can never start, stop or
+change mid-session across the resident loop's restarts and the off-session `--once` ticks.
+
+**An advised arm is a new BOOK, not a measurement break in an existing one.** That is the convention
+that keeps this compatible with everything above: `control` never changes meaning mid-experiment, so
+its history stays poolable, and `fly_books`/`fly_positions` key on the arm *string*, so
+`advised:control` needs no `engine.ARMS` entry and attribution comes free from the stored tag.
+
+**There is no management twin, because this module has no exits.** MEIC needs one — an advised
+position there still has stops to run when advice lapses. A fly is held to settlement, so an advised
+book that stops receiving advice has nothing left to decide; it only has to close. That is why the
+tick and settlement share ONE roster helper (`paper_loop.session_arms`), which includes any advised
+arm still holding rows for the day whatever today's advice says: a settlement pass reading a
+narrower roster than the tick entered on would strand a real book open with no path to settling it.
+
+Keep the bounds narrow. An advised book that differs from control on five axes measures nothing —
+the same one-variable rule the arms above are built on.
+
 ## The honesty rules
 
 These are the constraints the module exists to enforce. Breaking one makes the numbers worthless.
