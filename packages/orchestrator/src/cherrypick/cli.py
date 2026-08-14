@@ -839,7 +839,11 @@ def cmd_supervise(cfg, stop: bool = False) -> None:
     if stop:
         _emit(supervisor.request_stop())
         return
-    _emit(supervisor.run(cfg))
+    # Deliberately NOT the pre-loaded cfg: a non-None cfg PINS the daemon to that snapshot (the
+    # test affordance in Supervisor.__init__), and passing it here silently disabled the mtime
+    # reload — every config edit needed a daemon restart nobody knew to perform. The daemon loads
+    # its own config so edits apply on the next pass, as the scheduling docs promise.
+    _emit(supervisor.run())
 
 
 def _spawn_supervisor_detached() -> bool:
