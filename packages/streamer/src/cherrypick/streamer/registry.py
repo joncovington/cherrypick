@@ -73,7 +73,9 @@ def _clean_window_hints(window_hints) -> dict[str, int]:
     return out
 
 
-def write_request(module: str, symbols, legs=None, leg_sources=None, window_hints=None) -> Path:
+def write_request(
+    module: str, symbols, legs=None, leg_sources=None, window_hints=None, expirations=None
+) -> Path:
     """Consumer-side: (over)write this module's request file atomically.
 
     Called by a module at startup with its underlyings and (if it has open positions) the ``leg_sources``
@@ -87,6 +89,7 @@ def write_request(module: str, symbols, legs=None, leg_sources=None, window_hint
         "legs": _clean(legs, upper=False),
         "leg_sources": _clean_sources(leg_sources),
         "window_hints": _clean_window_hints(window_hints),
+        "expirations": _streamrequests.clean_expirations(expirations),
     }
     tmp = path.with_name(f"{path.name}.tmp")
     tmp.write_text(json.dumps(payload), encoding="utf-8")
@@ -103,6 +106,7 @@ _read_all = _streamrequests.read_all
 # every poll from module-declared DBs, which is this package's own sqlite concern, not core's.
 union_symbols = _streamrequests.union_symbols
 union_window_hints = _streamrequests.union_window_hints
+union_expirations = _streamrequests.union_expirations
 
 
 def union_legs() -> list[str]:
