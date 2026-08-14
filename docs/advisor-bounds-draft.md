@@ -40,9 +40,9 @@ first advise pipeline, and this is that list narrowed to a single parameter:
 ```json
 "advice": {
   "enabled": true,
-  "base_profile": "control",
+  "base_profile": "width-5",
   "bounds": {
-    "stop_trigger_ratio": { "min": 0.85, "max": 0.95 }
+    "stop_trigger_ratio": { "min": 0.85, "max": 1.25 }
   }
 }
 ```
@@ -50,9 +50,24 @@ first advise pipeline, and this is that list narrowed to a single parameter:
 **Why this one.** The per-side stop is the single largest loss mechanism in the paper book and the
 one parameter the ledger already instruments well enough to judge a change by (`put_max_cost`,
 `call_max_cost`, `put_settle_value`, `call_settle_value` — "would a wider trigger have fired?" is
-answerable from stored rows). Deployed is 0.95, the ceiling here, so the advisor can only propose
-triggering *earlier* — a tighten-only range on the loss mechanism, which is the right asymmetry for
-a first experiment.
+answerable from stored rows).
+
+**The base is `width-5`, and it started as `control` — which was wrong, and the advisor's own first
+deep run is what caught it.** It flagged CRITICAL that `control` has been blocked 390/390 on
+`iv_rank_below_floor` for five straight sessions and appears nowhere in `review_today.by_profile`
+from 08-07 on, so an `advised:control` book would take zero entries and the experiment could never
+measure anything however good the proposal. `width-5` trades heavily (234 fills on 08-13) *and* runs
+`per_side_stop_management`, so the bounded parameter actually bites. `open` was the other candidate
+and is the wrong one: it has `per_side_stop_management: false`, so a `stop_trigger_ratio` bound is
+inert there and the advised book would be byte-identical to its control.
+
+**The range moves in both directions, which the first version did not.** The stop fires at
+`cost >= ratio × credit`, so a value *above* the deployed 0.95 lets a side run further before
+stopping. A tighten-only 0.85–0.95 could only ever propose stopping earlier — and on 2026-08-13
+width-5 stopped **230 of 234** fills while all four survivors were profitable, i.e. the stop was the
+entire loss and "stop later" is the direction the evidence points. The ceiling is 1.25 rather than
+higher so a stop always still exists; *no stop at all* is the `open` profile's posture and is
+deliberately not something advice can reach.
 
 **`daily_ic_trade_target` was dropped, not floored.** The question was whether to allow 0 (an arm
 that takes no trades) and the answer was no — but the deployed value is **200**, i.e. effectively
@@ -137,9 +152,15 @@ Run on 2026-08-14. Each config was backed up beside itself before its block was 
 3. ✅ `advice.enabled: true` per module, `advisor.enabled: true` in the suite config.
 4. ✅ One supervised light run (`--slot am --force`).
 5. ✅ One supervised deep run (`--slot deep --force`), enacted artifact inspected.
-6. **Still to confirm, next morning:** `advised:control` in MEIC's `advice_active.json` and in its
-   book rows. One morning further: an `advised:strat_test:*` twin opening at the 15:35 scan, and its
-   overlaid target governing the following morning's verdict.
+6. ✅ First real proposals: `exp-2026-08-13-flies-1` (`min_floor_dollars` 1.0 → 0.0) and
+   `exp-2026-08-13-earnings-1` (`double_calendar.stop_loss_pct_of_debit` 1.0 → 0.65), both enacted
+   for 2026-08-14 and confirmed to round-trip through `cherrypick.core.advice.load`. MEIC got
+   nothing, correctly — see the base-profile note above.
+7. **Still to confirm, next session:** an `advised:control` book in flies' ledger for 2026-08-14, an
+   `advised:strat_test:double_calendar` twin opening at the 15:35 earnings scan with
+   `advice_params` stamped on the row, and the overlaid stop governing that twin's exit. MEIC's own
+   first proposal can only come from the next deep run, now that its base points at an arm that
+   trades.
 
 Kill switches, in increasing order of blast radius: `python -m cherrypick.advisor kill <id>` (or the
 console button) stops one experiment; `advice.enabled: false` in a module's config stops that
