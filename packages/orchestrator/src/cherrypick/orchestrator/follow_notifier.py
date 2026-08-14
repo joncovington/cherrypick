@@ -17,7 +17,7 @@ symbols, a futures price that is a level rather than a credit) was found by watc
 each has now been fixed twice. Treat the two as one implementation in two places: when you change a
 formatter here, port it there in the same session, and vice versa. Verify by rendering the live feed
 through both and diffing — they should be byte-identical, glyphs included (`×`, not `x`; `–`, not
-`-`). Last verified identical across all 50 feed orders, text and embeds: 2026-08-06.
+`-`). Last verified identical across all 50 feed orders, text and embeds: 2026-08-13.
 
 Endpoints (undocumented, discovered in the tastytrade web platform's own bundle; no auth required
 for the two GETs used here):
@@ -165,11 +165,14 @@ def fetch_orders(filters: dict) -> list[dict]:
 # the Discord push is a colored embed card rather than a plain text blob). Kept as one push per order
 # — the standalone runs its own poll loop, this module still owns the watermark/lock/task wiring.
 
-# Stripe colors for the Discord embed. Deliberately not green/red: the feed never tells us the P&L,
-# only the direction, and a red dot on a winning close would actively lie.
-COLOR_OPEN = 0x3B82F6  # blue — a position went on
-COLOR_CLOSE = 0xF59E0B  # amber — a position came off
-COLOR_MIXED = 0x8B5CF6  # violet — legs on both sides (a roll, usually)
+# Stripe colors for the Discord embed. Green/red is CASH direction, the same language as the
+# Lossdog cards: the feed never tells us the P&L, so the stripe answers "which way did money move on
+# this order", never "did the trade win" — buying back a winning credit spread still stripes red,
+# because money went out. A futures outright quotes a level, not cash (nobody pays $29,728.75 to buy
+# one MNQ), and an order whose direction the feed didn't say has no answer; both stay neutral.
+COLOR_CREDIT = 0x22C55E  # green — money came in (a net credit)
+COLOR_DEBIT = 0xEF4444  # red — money went out (a net debit)
+COLOR_NEUTRAL = 0x6B7280  # slate — futures (a level, not cash), or a direction the feed didn't say
 
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
@@ -211,16 +214,36 @@ def _open_close(order: dict) -> str:
     return ""
 
 
+def _stripe_color(order: dict) -> int:
+    """Cash direction as the stripe. Futures are checked first: `_direction` still reads
+    Bought/Sold on an outright, but no premium changed hands, so coloring it would invent a cash
+    flow — the same reason `_price` drops the db/cr suffix on those rows. A roll gets the color of
+    its NET (the order_type tiebreak inside `_direction`), which is the one thing green/red can say
+    about it honestly."""
+    if _is_futures(order):
+        return COLOR_NEUTRAL
+    match _direction(order):
+        case "Sold":
+            return COLOR_CREDIT
+        case "Bought":
+            return COLOR_DEBIT
+        case _:
+            return COLOR_NEUTRAL
+
+
 def _lifecycle(order: dict) -> tuple[str, str, int]:
-    """(marker, headline word, embed color). Falls back to the Bought/Sold verb when the legs sit on
-    both sides — an honest "something happened" beats guessing at a roll."""
+    """(marker, headline word, embed color). The marker and word carry the lifecycle, the color
+    carries the cash direction — two independent facts about the order. Falls back to the
+    Bought/Sold verb when the legs sit on both sides — an honest "something happened" beats guessing
+    at a roll."""
+    color = _stripe_color(order)
     match _open_close(order):
         case "OPEN":
-            return "➕", "OPEN", COLOR_OPEN
+            return "➕", "OPEN", color
         case "CLOSE":
-            return "➖", "CLOSE", COLOR_CLOSE
+            return "➖", "CLOSE", color
         case _:
-            return "\U0001f501", _direction(order), COLOR_MIXED
+            return "\U0001f501", _direction(order), color
 
 
 def _is_opening(order: dict) -> bool:

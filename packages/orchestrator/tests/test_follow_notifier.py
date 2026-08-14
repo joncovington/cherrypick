@@ -324,15 +324,25 @@ def test_embed_timestamp_is_the_fill_time_in_a_shape_discord_accepts():
     assert ff.build_embed(_order(10), {166462: "Jim Schultz"})["timestamp"] == "2026-08-04T12:10:00Z"
 
 
-def test_embed_color_tracks_the_lifecycle():
-    def color(**over):
-        return ff.build_embed(_order(11, **over), {166462: "Jim Schultz"})["color"]
+def test_embed_color_is_the_cash_direction_not_the_lifecycle():
+    """The stripe answers "which way did money move", the headline answers open/close — two
+    independent facts. Futures quote a level rather than cash, so they stay neutral, as does an
+    order whose direction the feed didn't say."""
 
-    assert color() == ff.COLOR_OPEN
+    def embed(**over):
+        return ff.build_embed(_order(11, **over), {166462: "Jim Schultz"})
+
+    assert embed()["color"] == ff.COLOR_CREDIT  # the default order is a net_credit
+    assert embed()["title"].startswith("OPEN")  # ...and the lifecycle still leads the headline
+    assert embed(order_type="net_debit")["color"] == ff.COLOR_DEBIT
     closed = [dict(leg, open_close="C") for leg in _order(0)["order_legs"]]
-    assert color(order_legs=closed) == ff.COLOR_CLOSE
+    assert embed(order_type="net_debit", order_legs=closed)["color"] == ff.COLOR_DEBIT
     rolled = [dict(_order(0)["order_legs"][0]), dict(_order(0)["order_legs"][1], open_close="C")]
-    assert color(order_legs=rolled) == ff.COLOR_MIXED
+    assert embed(order_legs=rolled)["color"] == ff.COLOR_CREDIT  # a roll takes the color of its net
+    futures = [{"underlying_symbol": "/MNQU6", "asset_type": "/", "quantity": "1.0", "action": "buytoopen"}]
+    assert embed(order_type="limit", order_legs=futures)["color"] == ff.COLOR_NEUTRAL
+    unsaid = [dict(leg, action=None) for leg in _order(0)["order_legs"]]
+    assert embed(order_type="limit", order_legs=unsaid)["color"] == ff.COLOR_NEUTRAL
 
 
 def test_embed_omits_empty_fields_rather_than_showing_blanks():
