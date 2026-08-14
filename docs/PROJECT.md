@@ -72,9 +72,9 @@ The orchestrator can run flies, gex, and the streamer **in place** without insta
 setup is core plus the orchestrator — the `dev-install` script installs them anyway so their own CLIs
 and test suites work.
 
-Three more surfaces are optional and set up separately when you want them: `packages/console` (the
-unified web console — Node/TypeScript, so it installs with `npm`, not pip)
-(screening and strategy exploration), and `packages/desk` (⚠️ **experimental** — the manual trading
+Two more surfaces are optional and set up separately when you want them: `packages/console` (the
+unified web console — Node/TypeScript, so it builds with `pnpm`, not pip; the research and screening
+surfaces live inside it), and `packages/desk` (⚠️ **experimental** — the manual trading
 desk, which places real orders on your explicit per-order confirmation; read its README in full first).
 
 ---
