@@ -36,7 +36,7 @@ from cherrypick.advisor import verdicts as _verdicts
 
 PACK_VERSION = 1
 
-LIGHT_SLOTS = ("am", "midday", "pm")
+LIGHT_SLOTS = ("open", "am1", "am2", "midday", "pm1", "pm2", "close")
 DEEP_SLOT = "deep"
 SLOTS = (*LIGHT_SLOTS, DEEP_SLOT)
 
@@ -481,8 +481,8 @@ def _experiments_running(conn) -> list[dict[str, Any]]:
 
 def _pending_proposals(conn, session: str) -> list[dict[str, Any]]:
     """Drafts from earlier slots today. Light output compounds into the deep slot rather than
-    evaporating — three checkpoints that cannot see each other produce the same shallow observation
-    three times."""
+    evaporating — checkpoints that cannot see each other produce the same shallow observation over
+    and over."""
     return _store.rows(
         conn,
         "SELECT p.id, p.module, p.kind, p.payload_json, p.status, c.slot FROM proposals p"

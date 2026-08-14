@@ -110,7 +110,7 @@ def test_a_clean_reply_runs_the_whole_pipeline(home, tmp_path):
 
 
 def test_json_wrapped_in_prose_still_admits(home, tmp_path):
-    result = _run("--slot", "am", "--session", SESSION, shim="prose", tmp_path=tmp_path)
+    result = _run("--slot", "open", "--session", SESSION, shim="prose", tmp_path=tmp_path)
     assert result["ok"] is True and result["admitted"] == 1
 
 
@@ -118,19 +118,19 @@ def test_a_non_trading_day_never_reaches_the_model(home, tmp_path):
     """The calendar gate is first, before anything is built and before a paid call is possible."""
     from cherrypick.advisor import paths
 
-    result = _run("--slot", "am", "--session", SATURDAY, tmp_path=tmp_path)
+    result = _run("--slot", "open", "--session", SATURDAY, tmp_path=tmp_path)
     assert result["skipped"] == "not a trading day"
-    assert not paths.pack_path(SATURDAY, "am").exists()
+    assert not paths.pack_path(SATURDAY, "open").exists()
 
 
 def test_a_recorded_slot_is_frozen_until_forced(home, tmp_path):
-    first = _run("--slot", "am", "--session", SESSION, tmp_path=tmp_path)
+    first = _run("--slot", "open", "--session", SESSION, tmp_path=tmp_path)
     assert first["ok"] is True
 
-    again = _run("--slot", "am", "--session", SESSION, tmp_path=tmp_path)
+    again = _run("--slot", "open", "--session", SESSION, tmp_path=tmp_path)
     assert "frozen" in again["skipped"]
 
-    forced = _run("--slot", "am", "--session", SESSION, "--force", tmp_path=tmp_path)
+    forced = _run("--slot", "open", "--session", SESSION, "--force", tmp_path=tmp_path)
     assert forced["ok"] is True
 
 
@@ -141,7 +141,7 @@ def test_a_recorded_slot_is_frozen_until_forced(home, tmp_path):
     (None, "claude not on PATH"),
 ])
 def test_every_ai_failure_is_an_envelope_not_a_crash(home, tmp_path, shim, expected):
-    result = _run("--slot", "am", "--session", SESSION, shim=shim, tmp_path=tmp_path)
+    result = _run("--slot", "open", "--session", SESSION, shim=shim, tmp_path=tmp_path)
     assert result["ok"] is False
     assert expected in result["error"]
 
@@ -177,7 +177,7 @@ def test_dry_run_prints_the_prompt_and_writes_nothing_but_the_pack(home, tmp_pat
 
 
 def test_the_light_and_deep_prompts_differ_in_what_they_ask_for(home, tmp_path):
-    light = _run("--slot", "am", "--session", SESSION, "--dry-run", tmp_path=tmp_path)["stdout"]
+    light = _run("--slot", "open", "--session", SESSION, "--dry-run", tmp_path=tmp_path)["stdout"]
     deep = _run("--slot", "deep", "--session", SESSION, "--dry-run", tmp_path=tmp_path)["stdout"]
     assert "intraday observer" in light and "post-close analyst" in deep
     assert "PROVISIONAL at this hour" in deep

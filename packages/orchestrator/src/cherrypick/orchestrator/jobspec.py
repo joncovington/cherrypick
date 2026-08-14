@@ -56,6 +56,12 @@ CATCHUP_MINUTES = {
     "advisor-deep": 300,
 }
 
+# Mirrors packages/advisor/src/cherrypick/advisor/factpack.py's LIGHT_SLOTS. Not imported -- this
+# package drives the advisor by subprocess, never by import (see packages/advisor/CLAUDE.md's
+# fence) -- so the two lists are kept in sync by hand, the same way advisor_checkpoint.py carries
+# its own copy rather than importing the package.
+ADVISOR_LIGHT_SLOTS = ("open", "am1", "am2", "midday", "pm1", "pm2", "close")
+
 
 @dataclass(frozen=True)
 class JobSpec:
@@ -572,9 +578,13 @@ def derive_jobs(
     )
     advisor_reason = "" if av["enabled"] else "disabled in config (advisor)"
     for index, at in enumerate(av["checkpoints"]):
-        # Three light slots share one shape; only the time differs. Named am/midday/pm regardless
-        # of the configured hours so the store's filenames stay legible.
-        slot = ("am", "midday", "pm")[index] if index < 3 else f"slot{index + 1}"
+        # Light slots share one shape; only the time differs. Named from ADVISOR_LIGHT_SLOTS
+        # regardless of the configured hours so the store's filenames stay legible. A checkpoints
+        # list longer than ADVISOR_LIGHT_SLOTS falls back to a generic name the advisor package
+        # will reject -- that job's own derivation fails and is reported, nothing else is affected.
+        slot = (
+            ADVISOR_LIGHT_SLOTS[index] if index < len(ADVISOR_LIGHT_SLOTS) else f"slot{index + 1}"
+        )
         add(
             f"advisor-{slot}",
             lambda slot=slot, at=at: JobSpec(
