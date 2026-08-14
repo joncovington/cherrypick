@@ -796,9 +796,7 @@ def cmd_restart_console(cfg) -> None:
             "error": None if ok else "terminate failed -- see logs/supervisor.log",
         }
 
-    cfgmod.state_file("restart_console.last.json").write_text(
-        json.dumps(rec, indent=2), encoding="utf-8"
-    )
+    cfgmod.state_file("restart_console.last.json").write_text(json.dumps(rec, indent=2), encoding="utf-8")
     _emit(rec)
 
 
@@ -1252,9 +1250,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--yes", action="store_true", help="For account --set: skip the confirmation prompt")
     parser.add_argument("--host", default=None, help="For settings: bind host (default 127.0.0.1)")
     parser.add_argument("--port", type=int, default=None, help="For settings: bind port (default 8804)")
-    parser.add_argument(
-        "--no-browser", action="store_true", help="For settings: do not open a browser"
-    )
+    parser.add_argument("--no-browser", action="store_true", help="For settings: do not open a browser")
     parser.add_argument(
         "--organize",
         nargs="?",
@@ -1296,6 +1292,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    # A default Windows console is cp1252, and the help text and several reports carry glyphs it
+    # cannot encode (↔, ×, –) — argparse printing usage tracebacked before any command ran, which
+    # made `--help` the first command a new user saw fail. Degrade the odd glyph to '?' instead;
+    # a UTF-8 console is unaffected.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, OSError):
+            pass
+
     args = build_parser().parse_args()
 
     # `init` scaffolds config.json, so it must run before the config pre-load (a fresh user has none).
