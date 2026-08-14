@@ -377,6 +377,20 @@ def derive_jobs(
         ),
     )
 
+    # --- lossdog-notify (network → its own job, never on the watchdog tick)
+    ld = cfgmod.lossdog_settings(cfg)
+    add(
+        "lossdog-notify",
+        lambda: JobSpec(
+            id="lossdog-notify",
+            argv=_run_py(pythonw, launcher, "notify-lossdog"),
+            kind=KIND_INTERVAL,
+            interval_seconds=int(ld["interval_minutes"]) * 60,
+            enabled=ld["enabled"],
+            enabled_reason="" if ld["enabled"] else "disabled in config (lossdog)",
+        ),
+    )
+
     # --- desk-notify (broker call + webhook → its own job, never on the watchdog tick)
     dn = cfgmod.desk_notify_settings(cfg)
     add(

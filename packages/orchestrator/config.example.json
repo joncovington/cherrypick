@@ -341,6 +341,25 @@
       "strategy": null
     }
   },
+  "lossdog": {
+    "_comment": "Push Lossdog VIP trade-feed trades (the traders' own fills as they sync) to the follow Discord channel. Reads a PRIVATE, undocumented API (api.app.lossdog.com) with a personal bearer token - scripted polling may violate Lossdog's terms of service; this is a personal convenience, used at your own risk. Like follow_feed it makes a NETWORK call, so it is its own supervisor job (lossdog-notify) and never rides the watchdog tick; an outage or a dead credential degrades to 'no notifications'. OFF by default; set enabled=true - the channel reuses the existing discord_follow webhook, no new webhook secret.",
+    "_token_note": "Auth is minted per run from the Clerk __client cookie stored in the OS keyring (cherrypick secrets-set --channel lossdog; capture steps in docs/configuration-and-storage.md) - no daily manual step. Fallback: the LOSSDOG_TOKEN environment variable (a browser-minted ~24h JWT), read from the process env with a live HKCU\\Environment read each run so `setx LOSSDOG_TOKEN ...` reaches running jobs without a restart. On 401 the notifier warns ONCE per credential, then stays silent until it changes.",
+    "_filters_note": "All filters are LOCAL - the API ignores filter params, so narrowing happens client-side and filtered-out trades are watermarked silently. 'traders' matches trader display names ('Tony Battista'); 'underlying_symbols' an equity symbol list; 'strategy' matches strategyName or strategySlug ('Short Strangle' / 'short_strangle'); 'open_close' is 'O' (all legs *_TO_OPEN) or 'C' (all legs *_TO_CLOSE).",
+    "enabled": false,
+    "task_name": "cherrypick-lossdog-notify",
+    "interval_minutes": 10,
+    "channels": [
+      "log",
+      "discord_follow"
+    ],
+    "max_per_run": 8,
+    "filters": {
+      "traders": [],
+      "underlying_symbols": [],
+      "open_close": null,
+      "strategy": null
+    }
+  },
   "notify": {
     "_channels_note": "push channels: 'log' (always on, the floor), 'desktop', 'slack', 'discord', 'discord_follow'. Slack/Discord webhook URLs live in the OS keyring (cherrypick secrets-set --channel slack|discord|discord_follow), never in this file or env vars. 'discord_follow' is a SECOND Discord webhook with its own keyring entry so the Follow Feed can post to its own channel instead of sharing the trade channel.",
     "channels": [
