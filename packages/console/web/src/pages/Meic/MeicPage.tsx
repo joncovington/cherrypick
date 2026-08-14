@@ -131,9 +131,11 @@ export function MeicPage() {
   const resolvedEra = era ?? defaultEra ?? null;
 
   // page; changing what is matched resets to page one.
-  const { page, setOffset, setLimit } = usePage([mode, symbol, profile, resolvedEra, outcome, reason, debouncedSearch]);
+  const { page, setOffset, setLimit } = usePage([mode, day, symbol, profile, resolvedEra, outcome, reason, debouncedSearch]);
 
   const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useMeic(mode, {
+    // The log lives under the Today tab, so it answers for the day the rest of that tab shows.
+    day,
     symbol,
     profile,
     era: resolvedEra,
@@ -317,7 +319,7 @@ export function MeicPage() {
           </div>
 
           <DataCard
-            title={`Trades — ${total.toLocaleString()} matching`}
+            title={`Trades — ${total.toLocaleString()} matching${day !== null ? ` on ${day}` : " on the latest session"}`}
             headers={["date", "entry", "sym", "put", "call", "wing", "credit", "qty", "IVR", "status", "P&L", "exit reason"]}
             numFrom={3}
             loading={isLoading}

@@ -1840,3 +1840,14 @@ select.text-input {
   font-size: 11px;
   list-style: revert;
 }
+
+/* Dense tables — the console preference. Rows only: headers and card chrome keep their spacing, so
+   the page stays legible rather than merely smaller. */
+.shell.dense .data-table th,
+.shell.dense .data-table td {
+  padding: 0.13rem 0.45rem;
+}
+
+.shell.dense .data-table td {
+  font-size: 12px;
+}

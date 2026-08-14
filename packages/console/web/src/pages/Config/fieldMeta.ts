@@ -54,7 +54,13 @@ export const SECTIONS: SectionMeta[] = [
     blurb: "Entry windows and loop pacing. A change lands on the next supervisor pass — no reinstall.",
   },
   { id: "notify", title: "Notifications & jobs", blurb: "Where alerts go, and how often the scheduled checks run." },
-  { id: "dev", title: "Dev knobs", blurb: "Temporary switches. If one of these has outlived its reason, delete it." },
+  {
+    id: "dev",
+    title: "Dev knobs",
+    blurb:
+      "Temporary switches. If one of these has outlived its reason, delete it — advise.enabled did, " +
+      "when the advice producer went with the 2026-08-13 EOD cutover, and is no longer offered here.",
+  },
 ];
 
 export const FIELDS: FieldMeta[] = [
@@ -201,7 +207,6 @@ export const FIELDS: FieldMeta[] = [
     min: 1,
     section: "dev",
   },
-  { target: "orchestrator", pointer: "/advise/enabled", label: "Advice producer", type: "boolean", section: "dev" },
 ];
 
 /** The value at a JSON pointer in a parsed document, or `undefined` when the path is absent. */

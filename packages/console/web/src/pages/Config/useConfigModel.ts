@@ -91,18 +91,6 @@ export function useSaveSection() {
   });
 }
 
-export function usePrefs() {
-  return useQuery<{ prefs: Record<string, unknown> }>({
-    queryKey: ["config-prefs"],
-    queryFn: () => getJson<{ prefs: Record<string, unknown> }>("/api/config/prefs"),
-  });
-}
-
-export function useSetPref() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: { key: string; value: unknown }) =>
-      postConfig<{ prefs: Record<string, unknown> }>("/api/config/prefs", vars),
-    onSuccess: (data) => qc.setQueryData(["config-prefs"], data),
-  });
-}
+// Console-owned preferences deliberately do NOT live here: they must be readable synchronously on
+// the first render (defaulting the paper/live toggle late means painting the wrong book, then
+// flipping), so they run off a localStorage mirror in lib/prefs.ts instead of a query.
