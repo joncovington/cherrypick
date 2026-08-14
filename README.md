@@ -181,6 +181,7 @@ read them:
 
 > **You'll need** the pieces listed under [Requirements](#requirements) — a tastytrade account, Python 3.11+,
 > Claude Code, and a machine that stays on during market hours — plus a few minutes in a terminal.
+> Already know the drill? [INSTALL.md](INSTALL.md) is the same path as just the commands.
 
 ### 0. Install Claude Code (optional)
 
