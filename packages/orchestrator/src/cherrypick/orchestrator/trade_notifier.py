@@ -852,11 +852,118 @@ def _flies_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     return counts
 
 
+# cherrypick-calendars keys on a text `position_id` and lives across a week, so a position has
+# three notifiable moments: it opens (Monday's double-calendar entry), its short leg may cash-settle
+# at the Friday bell (the position survives as a long into the weekend — worth a distinct ping,
+# since it is the one moment the structure's shape changes without a trade), and it finally closes
+# (the control's scheduled Friday exit, an advised trigger, or the Monday long disposition).
+def _calendars_seed(conn) -> dict:
+    rows = conn.execute("SELECT position_id, settlement_spot, status FROM dc_positions").fetchall()
+    return {
+        "notified_entry_ids": [r["position_id"] for r in rows],
+        "notified_settlement_ids": [r["position_id"] for r in rows if r["settlement_spot"] is not None],
+        "notified_exit_ids": [r["position_id"] for r in rows if r["status"] == "closed"],
+    }
+
+
+def _fmt_calendars_entry(r) -> str:
+    return (
+        f"\U0001f7e2 Calendars paper ENTRY — {r['symbol']} {r['structure']} {r['side']} calendar "
+        f"{r['strike']:.0f} for ${r['entry_debit']:.2f} debit (EM {r['entry_em']:.1f}) [{r['book']}]"
+    )
+
+
+def _embed_calendars_entry(r) -> dict:
+    details = (
+        f"{r['side']} {r['strike']:.0f} · short {r['front_expiration']} / long {r['back_expiration']} "
+        f"· debit ${r['entry_debit']:.2f} · spot {r['entry_spot']:.2f} ± EM {r['entry_em']:.1f}"
+    )
+    title = f"ENTRY · {r['symbol']} {r['structure']} {r['side']} {r['strike']:.0f}"[:256]
+    return _embed(COLOR_ENTRY, title, details, footer=r["book"])
+
+
+def _fmt_calendars_settlement(r) -> str:
+    itm = "ITM" if (r["itm_settlements"] or 0) > 0 else "OTM"
+    return (
+        f"⚖️ Calendars SHORT SETTLED — {r['symbol']} {r['side']} {r['strike']:.0f} "
+        f"{itm} at {r['settlement_spot']:.2f}; the long rides to {r['back_expiration']} [{r['book']}]"
+    )
+
+
+def _embed_calendars_settlement(r) -> dict:
+    details = (
+        f"settled {r['settlement_spot']:.2f} · {r['itm_settlements'] or 0} ITM · "
+        f"long open to {r['back_expiration']}"
+    )
+    title = f"SHORT SETTLED · {r['symbol']} {r['side']} {r['strike']:.0f}"[:256]
+    return _embed(COLOR_COMPLETE, title, details, footer=r["book"])
+
+
+def _fmt_calendars_exit(r) -> str:
+    net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
+    return (
+        f"\U0001f3c1 Calendars paper CLOSED — {r['symbol']} {r['structure']} {r['side']} "
+        f"{r['strike']:.0f} net ${net:+.2f} ({r['exit_reason']}) [{r['book']}]"
+    )
+
+
+def _embed_calendars_exit(r) -> dict:
+    net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
+    details = (
+        f"net ${net:+.2f} (gross ${r['gross_pnl'] or 0:+.2f}, fees ${r['fees'] or 0:.2f}) · "
+        f"{r['exit_reason']} · week {r['week_of']}"
+    )
+    title = f"CLOSED · {r['symbol']} {r['structure']} {r['side']} {r['strike']:.0f}"[:256]
+    return _embed(COLOR_EXIT, title, details, footer=r["book"])
+
+
+def _calendars_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
+    counts = {}
+    stages = [
+        (
+            "notified_entry_ids",
+            "entry",
+            "Paper entry",
+            _fmt_calendars_entry,
+            _embed_calendars_entry,
+            "SELECT * FROM dc_positions",
+        ),
+        (
+            "notified_settlement_ids",
+            "settlement",
+            "Short settled",
+            _fmt_calendars_settlement,
+            _embed_calendars_settlement,
+            "SELECT * FROM dc_positions WHERE settlement_spot IS NOT NULL",
+        ),
+        (
+            "notified_exit_ids",
+            "exit",
+            "Paper closed",
+            _fmt_calendars_exit,
+            _embed_calendars_exit,
+            "SELECT * FROM dc_positions WHERE status = 'closed'",
+        ),
+    ]
+    for key, event, title, fmt, embed_fn, query in stages:
+        notified = set(st.get(key, []))
+        rows = [r for r in conn.execute(query).fetchall() if r["position_id"] not in notified]
+        for r in rows:
+            notifier.notify(
+                "INFO", f"trade.{name}.{event}.{r['position_id']}", title, fmt(r), embed=embed_fn(r)
+            )
+            notified.add(r["position_id"])
+        st[key] = sorted(notified)[-_ID_CAP:]
+        counts[f"{event}s_notified"] = len(rows)
+    return counts
+
+
 # Registry: paper.trade_schema -> (seed_fn, process_fn). Schemas not listed here skip cleanly.
 _SCHEMAS = {
     "meic_ic": (_meic_seed, _meic_process),
     "earnings": (_earnings_seed, _earnings_process),
     "fly_book": (_flies_seed, _flies_process),
+    "dc_week": (_calendars_seed, _calendars_process),
 }
 
 

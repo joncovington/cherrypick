@@ -40,7 +40,7 @@ LIGHT_SLOTS = ("am", "midday", "pm")
 DEEP_SLOT = "deep"
 SLOTS = (*LIGHT_SLOTS, DEEP_SLOT)
 
-MODULES = ("meic", "flies", "earnings")
+MODULES = ("meic", "flies", "earnings", "calendars")
 
 # How many rows a "top N" section may carry. Refusal reasons have a long tail of one-offs; the head
 # is the story, and the tail costs tokens that the deep sections need.
@@ -304,7 +304,68 @@ def _earnings(session: str) -> dict[str, Any]:
     return out
 
 
-_MODULE_SECTIONS = {"meic": _meic, "flies": _flies, "earnings": _earnings}
+def _calendars(session: str) -> dict[str, Any]:
+    """Weekly double calendars: the advisable surface is exit parameters only (the entry is
+    unconditional every week), so the pack carries what an exit judgement needs — each open
+    position's entry economics and latest usable mark, the closed books' results by exit reason,
+    and the mark-substrate health that decides whether the module's own derived policy table
+    (`python -m cherrypick.calendars.cli policies`) is currently trustworthy."""
+
+    def read(conn):
+        open_rows = _store.rows(
+            conn,
+            "SELECT p.position_id, p.book, p.side, p.structure, p.strike, p.entry_debit,"
+            " p.entry_em, p.entry_spot, p.status, p.front_expiration, p.back_expiration,"
+            " (SELECT m.mid FROM dc_marks m WHERE m.position_id = p.position_id AND m.usable = 1"
+            "   AND m.leg_role LIKE 'back%' ORDER BY m.marked_at DESC LIMIT 1) last_back_mid,"
+            " (SELECT m.mid FROM dc_marks m WHERE m.position_id = p.position_id AND m.usable = 1"
+            "   AND m.leg_role LIKE 'front%' ORDER BY m.marked_at DESC LIMIT 1) last_front_mid,"
+            " (SELECT m.spot FROM dc_marks m WHERE m.position_id = p.position_id AND m.usable = 1"
+            "   ORDER BY m.marked_at DESC LIMIT 1) last_spot"
+            " FROM dc_positions p WHERE p.status != 'closed' ORDER BY p.book, p.side",
+        )
+        closed = _store.rows(
+            conn,
+            "SELECT book, structure, exit_reason, COUNT(*) n, SUM(gross_pnl) gross, SUM(fees) fees"
+            " FROM dc_positions WHERE status = 'closed' GROUP BY book, structure, exit_reason"
+            " ORDER BY book",
+        )
+        attempts = _store.rows(
+            conn,
+            "SELECT outcome, COUNT(*) n FROM dc_entry_attempts WHERE trade_date = ?"
+            " GROUP BY outcome ORDER BY n DESC",
+            (session,),
+        )
+        events = _store.rows(
+            conn,
+            "SELECT action, reason, executed, gate, COUNT(*) n FROM dc_management_events"
+            " WHERE session_date = ? GROUP BY action, reason, executed, gate ORDER BY n DESC LIMIT ?",
+            (session, TOP_N),
+        )
+        marks = _store.rows(
+            conn,
+            "SELECT usable, COUNT(*) n FROM dc_marks WHERE session_date = ? GROUP BY usable",
+            (session,),
+        )
+        return {
+            "open_positions": open_rows,
+            "closed_by_exit_reason": closed,
+            "entry_attempts": attempts,
+            "management_events": events,
+            "mark_coverage": marks,
+            "_note": (
+                "entries are weekly and unconditional; only exit params are advisable, and the "
+                "module's read-side derivation already scores the standard grid over the recorded "
+                "mark path — propose values, not new machinery"
+            ),
+        }
+
+    out = _read(_paper_db("calendars"), read) or {"_absent": "no calendars paper ledger"}
+    out["advice_active"] = _store.read_json(_advice_active("calendars"), default=None)
+    return out
+
+
+_MODULE_SECTIONS = {"meic": _meic, "flies": _flies, "earnings": _earnings, "calendars": _calendars}
 
 
 # --------------------------------------------------------------------------- live (read-only)

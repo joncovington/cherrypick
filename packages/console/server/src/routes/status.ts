@@ -34,6 +34,7 @@ export function registerStatusRoutes(
       fileFreshness("meic.paper", "MEIC paper", path.join(config.paths.meicDir, "paper_trades.db")),
       fileFreshness("flies.paper", "Flies paper", path.join(config.paths.fliesDir, "paper_trades.db")),
       fileFreshness("earnings.paper", "Earnings paper", path.join(config.paths.earningsDir, "paper_trades.db")),
+      fileFreshness("calendars.paper", "Calendars paper", path.join(config.paths.calendarsDir, "paper_trades.db")),
       fileFreshness("gex", "GEX history", path.join(config.paths.gexDir, "gex_history.db")),
     ];
     const marketData =

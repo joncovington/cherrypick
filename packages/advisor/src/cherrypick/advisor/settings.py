@@ -28,7 +28,13 @@ DEFAULTS: dict[str, Any] = {
     "experiment_sessions": 15,
     "experiment_sessions_min": 5,
     "experiment_sessions_max": 30,
-    "modules": {"meic": {"enabled": True}, "flies": {"enabled": False}, "earnings": {"enabled": True}},
+    "modules": {
+        "meic": {"enabled": True},
+        "flies": {"enabled": False},
+        "earnings": {"enabled": True},
+        # Off until the module's own advice block is turned on too — the two switches must agree.
+        "calendars": {"enabled": False},
+    },
 }
 
 

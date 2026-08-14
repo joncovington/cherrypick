@@ -18,6 +18,12 @@ Three shapes, one contract:
   ``"<strategy>.<param>"``. ``core.advice`` treats a param name as opaque, so the dotted convention
   needs no contract change; the consumer splits on the first dot. v1 bounds are management/exit
   params only — entry-side screens change *which* trades open, which a twin book cannot express.
+* **calendars** — ``advice.{enabled, base_book, bounds}``; params are that module's management/exit
+  keys (profit target, stop, time exit, long disposition, strike-touch), and the advised book is
+  ``advised:<base_book>``. Exit-only by construction — the module's entry is unconditional every
+  week, so there is nothing entry-side to advise, which makes it the cleanest fit for the v1
+  management-params-only contract. Entries only happen on the weekly entry day, so an artifact
+  landing any other session admits params that open nothing — expected, not a failure.
 """
 
 from __future__ import annotations
@@ -34,6 +40,7 @@ _BASE_KEY = {
     "meic": ("base_profile", "control"),
     "flies": ("base_arm", "control"),
     "earnings": ("base_prefix", "strat_test"),
+    "calendars": ("base_book", "control"),
 }
 
 MODULES = tuple(_BASE_KEY)
