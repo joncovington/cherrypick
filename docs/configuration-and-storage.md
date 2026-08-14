@@ -25,6 +25,7 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   data/earnings/earnings_trades.db# Earnings live ledger
   data/flies/paper_trades.db      # Flies paper ledger (fly_positions / fly_books)
   data/flies/live_trades.db       # Flies live ledger (the live pilot writes here; armed per day)
+  data/calendars/paper_trades.db  # Calendars paper ledger (dc_positions / dc_legs / dc_marks)
   data/gex/gex_history.db         # GEX spot trail + regime history
   logs/                           # suite logs
   data/review/                    # eod-<day>.json fact sets + renders + notes

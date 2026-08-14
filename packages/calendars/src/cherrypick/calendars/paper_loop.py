@@ -353,6 +353,15 @@ def _unsettled_today(conn, day: str) -> bool:
 def _try_entry(config: dict, conn, *, cache_path: str, when: datetime, week: dict) -> int:
     day = week["entry_session"]
     symbol = (config.get("symbols") or ["SPX"])[0].strip().upper()
+    # The settlement model is European cash settlement (Friday shorts settle at intrinsic, longs
+    # ride the weekend). An American-style ETF (QQQ/IWM) needs early-exercise handling this module
+    # deliberately does not have — refuse the entry rather than book a structure whose bookkeeping
+    # would be wrong at its first Friday.
+    if symbol not in {s.strip().upper() for s in config.get("cash_settled_symbols") or ["SPX"]}:
+        db.record_entry_attempt(
+            conn, trade_date=day, week_of=week["week_of"], symbol=symbol, outcome="not_cash_settled"
+        )
+        return 0
     books, advice_params = session_books(config, day)
     already = {(p["book"], p["side"]) for p in db.positions_for_week(conn, week["week_of"])}
     if all((b, s) in already for b in books for s in ("put", "call")):

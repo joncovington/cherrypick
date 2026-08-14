@@ -82,6 +82,11 @@ suite once collected $4.00 of credit against $4.96 of fees.
   manufactured credit survives real trading costs. See [packages/flies](packages/flies). It is built so a
   *negative* result is usable: floors are measured after fees, and a book-level floor always carries the
   price band over which it actually holds.
+- **Calendars** — weekly SPX double calendars entered every Monday at the expected-move strikes (shorts
+  expiring Friday, longs the following Monday), built as a forward *exit-parameter experiment*: a
+  mechanical control book, a permissive path book recording every tick, and a read-side replay that
+  scores profit targets, stops and exit timings over the recorded path — validated against the real
+  books to the cent. Paper-only and credential-free. See [packages/calendars](packages/calendars).
 
 ## Where you look at the results
 
@@ -158,7 +163,7 @@ read them:
 |---|---|
 | [packages/orchestrator](packages/orchestrator) | The supervisor, watchdog, notifications, and the read side (report / calibrate / EOD). Drives the engines by subprocess. |
 | [packages/core](packages/core) | The shared `cherrypick.core` library — calendar, fees, profiles, GEX math, broker, auth. Install it first. |
-| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) | The three strategy engines. |
+| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) · [packages/calendars](packages/calendars) | The four strategy engines (calendars is paper-only). |
 | [packages/streamer](packages/streamer) | The single market-data producer. Everything else reads the cache it writes; nothing else writes it. |
 | [packages/gex](packages/gex) | The GEX engine and spot-trail recorder; the console renders it. |
 | [packages/console](packages/console) | The unified web console (`127.0.0.1:5070`) — every module's read models plus research and screening, in one app. Read-only. |
