@@ -27,7 +27,7 @@ def seeded(tmp_home):
 def test_a_pack_builds_against_an_empty_home_and_says_so(tmp_home):
     """Nothing has ever run. Every section must be present and empty rather than absent or raising
     -- the model needs to be able to tell "no trades" from "no data"."""
-    pack = factpack.build(SESSION, "am")
+    pack = factpack.build(SESSION, "open")
     assert pack["pack_version"] == factpack.PACK_VERSION
     assert set(pack) >= {"market", "paper", "live", "experiments", "pending_proposals"}
     assert pack["paper"]["meic"]["_absent"]
@@ -57,12 +57,12 @@ def test_the_light_pack_carries_each_modules_day(seeded):
 
 def test_todays_range_only(seeded):
     """`stream_summary` keys on the ET trade date. A row from another day is stale by definition."""
-    pack = factpack.build(SESSION, "am")
+    pack = factpack.build(SESSION, "open")
     assert [r["trade_date"] for r in pack["market"]["day_range"]] == [SESSION]
 
 
 def test_live_facts_are_present_and_labeled(seeded):
-    pack = factpack.build(SESSION, "am")
+    pack = factpack.build(SESSION, "open")
     live = pack["live"]
     assert "enactment is paper-only" in live["_note"]
     assert live["flies_live"]["shape"] == "flies.analytics.live_vs_paper/v1"
@@ -73,7 +73,7 @@ def test_live_facts_are_present_and_labeled(seeded):
 def test_the_halt_flag_shows_up(seeded, tmp_home):
     (tmp_home / "state").mkdir(exist_ok=True)
     (tmp_home / "state" / "halt-live.flag").write_text("", encoding="utf-8")
-    assert factpack.build(SESSION, "am")["live"]["halt_flag_present"] is True
+    assert factpack.build(SESSION, "open")["live"]["halt_flag_present"] is True
 
 
 def test_the_deep_pack_adds_what_the_deep_slot_reasons_from(seeded, tmp_home):
@@ -84,7 +84,7 @@ def test_the_deep_pack_adds_what_the_deep_slot_reasons_from(seeded, tmp_home):
     review.write_text(json.dumps({"session": SESSION, "status": "provisional", "modules": {}}),
                       encoding="utf-8")
 
-    light = factpack.build(SESSION, "pm")
+    light = factpack.build(SESSION, "close")
     deep = factpack.build(SESSION, "deep")
 
     assert "arm_readings" not in light
@@ -111,14 +111,14 @@ def test_the_journal_carries_dismissals_so_they_are_not_re_proposed(seeded):
 
 def test_pending_proposals_compound_into_the_next_slot(seeded):
     conn = store.connect()
-    cid = store.record_checkpoint(conn, session=SESSION, slot="am", model="sonnet", ok=True)
+    cid = store.record_checkpoint(conn, session=SESSION, slot="open", model="sonnet", ok=True)
     store.add_proposal(conn, checkpoint_id=cid, module="flies", kind="bounded_adjustment",
                        payload={"params": [{"param": "fee_buffer", "value": 0.1}]},
                        status="proposed")
     conn.close()
 
-    pack = factpack.build(SESSION, "midday")
-    assert pack["pending_proposals"][0]["slot"] == "am"
+    pack = factpack.build(SESSION, "am1")
+    assert pack["pending_proposals"][0]["slot"] == "open"
     assert pack["pending_proposals"][0]["kind"] == "bounded_adjustment"
 
 
@@ -131,8 +131,8 @@ def test_packs_stay_inside_their_token_budget(seeded, tmp_home):
     ]
     fakes.insert(tmp_home / "data" / "meic" / "paper_trades.db", "entry_attempts", busy)
 
-    light = paths.pack_path(SESSION, "am")
-    factpack.write(SESSION, "am")
+    light = paths.pack_path(SESSION, "open")
+    factpack.write(SESSION, "open")
     assert light.stat().st_size < LIGHT_MAX_BYTES, "light pack is dumping rows"
 
     factpack.write(SESSION, "deep")
@@ -140,9 +140,9 @@ def test_packs_stay_inside_their_token_budget(seeded, tmp_home):
 
 
 def test_write_puts_the_pack_where_the_script_looks_for_it(seeded):
-    path = factpack.write(SESSION, "am")
-    assert path == paths.pack_path(SESSION, "am")
-    assert json.loads(path.read_text(encoding="utf-8"))["slot"] == "am"
+    path = factpack.write(SESSION, "open")
+    assert path == paths.pack_path(SESSION, "open")
+    assert json.loads(path.read_text(encoding="utf-8"))["slot"] == "open"
 
 
 def test_an_unknown_slot_is_a_programming_error_not_a_pack():

@@ -285,7 +285,7 @@ def review_settings(cfg: dict[str, Any]) -> dict[str, Any]:
 def advisor_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved AI-advisor scheduling (packages/advisor + scripts/advisor_checkpoint.py). OFF by default.
 
-    Four daily slots: three light intraday checkpoints on a cheap model, and one deep post-close run
+    Eight daily slots: seven light intraday checkpoints on a cheap model, and one deep post-close run
     on the strong one. The deep slot follows the review's provisional pass (16:30) so it can read
     that fact set, and it is the slot that issues the next session's advice.
 
@@ -305,7 +305,9 @@ def advisor_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     return {
         "enabled": av.get("enabled", False),
         # ET, box-local like every other schedule in this file.
-        "checkpoints": list(av.get("checkpoints", ["10:30", "12:30", "14:30"])),
+        "checkpoints": list(av.get("checkpoints", [
+            "09:45", "10:30", "11:30", "12:30", "13:30", "14:30", "15:30",
+        ])),
         "deep_at": av.get("deep_at", "17:00"),
         "light_model": av.get("light_model", "sonnet"),
         "deep_model": av.get("deep_model", "opus"),

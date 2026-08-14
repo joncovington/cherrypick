@@ -45,7 +45,7 @@ DST-correct, and no longer bound by the OS scheduler's 1-minute floor.
 | `symbol-watch` | daily 06:30 — opt-in | `run.py run-earnings-symbol-watch` | catchup until ~09:00 |
 | `reconcile` | daily 16:30 — opt-in | `run.py reconcile --scheduled` | catchup 4 h |
 | `log-archive` | monthly day 1 @ 03:30 | `run.py archive` | catchup 7 days (idempotent, finished months only) |
-| `advisor-am` / `advisor-midday` / `advisor-pm` | daily 10:30 / 12:30 / 14:30, trading days — **opt-in** | `pythonw scripts/advisor_checkpoint.py --slot <s>` | the AI advisor's light intraday checkpoints, on the cheap model. Catchup 45 min: a checkpoint describes the session as it stands, so one caught up past the next slot describes the same afternoon twice |
+| `advisor-open` / `-am1` / `-am2` / `-midday` / `-pm1` / `-pm2` / `-close` | daily 09:45 / 10:30 / 11:30 / 12:30 / 13:30 / 14:30 / 15:30, trading days — **opt-in** | `pythonw scripts/advisor_checkpoint.py --slot <s>` | the AI advisor's light intraday checkpoints, on the cheap model. Catchup 45 min: a checkpoint describes the session as it stands, so one caught up past the next slot describes the same afternoon twice |
 | `advisor-deep` | daily 17:00, trading days — **opt-in** | `pythonw scripts/advisor_checkpoint.py --slot deep` | the post-close run, on the strong model, after `review-provisional` so it reads that fact set. It also ISSUES the next session's advice, and does so even when the AI call failed. Catchup 300 min |
 
 Missed-fire policy after sleep/hibernate: interval jobs fire once immediately and resume cadence
@@ -60,8 +60,8 @@ re-runs reconciliation. Failures are WARNING, never CRITICAL — a bad pass cost
 trade. The event-driven `eod-digest`/`eod-insight`/`advise` trigger that used to live in the
 watchdog was removed with those commands.
 
-**The AI advisor is four more ordinary supervisor jobs**, all off by default (`advisor.enabled`).
-Three light checkpoints through the session and one deep run after the close; each builds a
+**The AI advisor is eight more ordinary supervisor jobs**, all off by default (`advisor.enabled`).
+Seven light checkpoints through the session and one deep run after the close; each builds a
 deterministic fact pack with `python -m cherrypick.advisor factpack`, pipes it to `claude -p` with
 every acting tool denied, and hands the reply back to the package to validate against bounds each
 module declared in its own config. Admitted proposals run as paper A/B experiments — an

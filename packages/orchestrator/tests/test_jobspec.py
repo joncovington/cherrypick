@@ -300,9 +300,13 @@ def test_derive_full_suite_job_table():
         "review-provisional",
         "review-final",
         "review-narrative",
-        "advisor-am",
+        "advisor-open",
+        "advisor-am1",
+        "advisor-am2",
         "advisor-midday",
-        "advisor-pm",
+        "advisor-pm1",
+        "advisor-pm2",
+        "advisor-close",
         "advisor-deep",
     }
     assert by_id["watchdog"].interval_seconds == 600
@@ -512,11 +516,14 @@ def test_every_derived_run_py_job_actually_parses():
     assert not offenders, f"derived argv the CLI would reject at the parser: {offenders}"
 
 
-def test_the_advisor_derives_four_slots_off_by_default():
-    """Three light checkpoints and one deep run, all AI-tagged and trading-days-only, all disabled
+def test_the_advisor_derives_eight_slots_off_by_default():
+    """Seven light checkpoints and one deep run, all AI-tagged and trading-days-only, all disabled
     until someone turns the advisor on."""
     by_id = {j.id: j for j in derive(suite_cfg())[0]}
-    slots = ["advisor-am", "advisor-midday", "advisor-pm", "advisor-deep"]
+    slots = [
+        "advisor-open", "advisor-am1", "advisor-am2", "advisor-midday",
+        "advisor-pm1", "advisor-pm2", "advisor-close", "advisor-deep",
+    ]
     for job_id in slots:
         job = by_id[job_id]
         assert not job.enabled
@@ -526,7 +533,9 @@ def test_the_advisor_derives_four_slots_off_by_default():
         assert job.kind == "daily"
         assert "advisor_checkpoint.py" in " ".join(job.argv)
 
-    assert [by_id[s].at_et for s in slots] == ["10:30", "12:30", "14:30", "17:00"]
+    assert [by_id[s].at_et for s in slots] == [
+        "09:45", "10:30", "11:30", "12:30", "13:30", "14:30", "15:30", "17:00",
+    ]
 
 
 def test_the_scheduled_scripts_resolve_to_files_that_exist():
@@ -559,10 +568,10 @@ def test_the_light_slots_carry_the_light_model_and_the_deep_slot_the_deep_one():
     cfg["advisor"] = {"enabled": True, "light_model": "haiku", "deep_model": "opus",
                       "modules": {"flies": {"enabled": True}}}
     by_id = {j.id: j for j in derive(cfg)[0]}
-    assert "haiku" in by_id["advisor-am"].argv
+    assert "haiku" in by_id["advisor-open"].argv
     assert "opus" in by_id["advisor-deep"].argv
     # Only the modules the suite enabled for the advisor are passed through.
-    modules = by_id["advisor-am"].argv[by_id["advisor-am"].argv.index("--modules") + 1]
+    modules = by_id["advisor-open"].argv[by_id["advisor-open"].argv.index("--modules") + 1]
     assert set(modules.split(",")) == {"meic", "flies", "earnings"}
 
 
@@ -570,7 +579,7 @@ def test_a_missed_light_checkpoint_goes_stale_but_a_missed_deep_run_does_not():
     """A light slot describes the session as it stands; the deep slot issues tomorrow's advice, so
     it stays worth firing until late evening."""
     by_id = {j.id: j for j in derive(suite_cfg())[0]}
-    assert by_id["advisor-am"].catchup_minutes == 45
+    assert by_id["advisor-open"].catchup_minutes == 45
     assert by_id["advisor-deep"].catchup_minutes == 300
 
 

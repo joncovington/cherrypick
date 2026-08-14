@@ -2,9 +2,9 @@
 
 The deterministic half of the suite's AI advisor: fact packs in, bounded paper experiments out.
 
-Four times a trading day a scheduled script shows an AI model a **fact pack** — a deterministic,
+Eight times a trading day a scheduled script shows an AI model a **fact pack** — a deterministic,
 aggregate-only snapshot of what the paper books did today (plus clearly-labeled read-only live
-context) — and asks it what it notices and what it would change. Three light checkpoints run
+context) — and asks it what it notices and what it would change. Seven light checkpoints run
 intraday; one deep run after the close designs experiments and passes verdicts.
 
 This package builds those packs, validates every reply, and runs the resulting proposals as paper
@@ -41,7 +41,7 @@ store.py        advisor.db (SQLite WAL) and the one read-only opener for everyon
 
 ```
 python -m cherrypick.advisor init-db
-python -m cherrypick.advisor factpack --slot am        # writes data/advisor/packs/<session>-am.json
+python -m cherrypick.advisor factpack --slot open       # writes data/advisor/packs/<session>-open.json
 python -m cherrypick.advisor status
 ```
 

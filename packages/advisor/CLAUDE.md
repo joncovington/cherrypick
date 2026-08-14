@@ -95,7 +95,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | Command | Purpose |
 |---|---|
 | `python -m cherrypick.advisor init-db` | Create/migrate `data/advisor/advisor.db`. Idempotent. |
-| `python -m cherrypick.advisor factpack --slot {am,midday,pm,deep} [--session D]` | Build one deterministic fact pack and print its path. |
+| `python -m cherrypick.advisor factpack --slot {open,am1,am2,midday,pm1,pm2,close,deep} [--session D]` | Build one deterministic fact pack and print its path. |
 | `python -m cherrypick.advisor admit --slot S [--session D] --raw <path>` | Parse a raw model reply, validate every proposal against module bounds, record admissions and rejections. |
 | `python -m cherrypick.advisor enact [--session D]` | Issue the next session's advice artifact for every active experiment. Runs nightly, unconditionally. |
 | `python -m cherrypick.advisor verdicts [--session D]` | Compute deterministic verdicts for expiring experiments. |

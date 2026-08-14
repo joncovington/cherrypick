@@ -7,10 +7,10 @@ acquires an API key or a network dependency, and deleting this file costs the ad
 else. Everything deterministic lives in `cherrypick.advisor`, which this script drives by
 subprocess and which contains no AI at all.
 
-Four checkpoints a day: three light ones through the session (~10:30 / 12:30 / 14:30 ET) on a cheap
-model, and one deep run after the close on the strong one. The light slots observe and draft; the
-deep slot designs experiments, passes verdicts over numbers it was given, and issues tomorrow's
-advice.
+Eight checkpoints a day: seven light ones through the session (~9:45 / 10:30 / 11:30 / 12:30 / 13:30
+/ 14:30 / 15:30 ET) on a cheap model, and one deep run after the close on the strong one. The light
+slots observe and draft; the deep slot designs experiments, passes verdicts over numbers it was
+given, and issues tomorrow's advice.
 
 What holds this together:
 
@@ -29,9 +29,9 @@ missing `claude` binary.
 loops run baseline when advice is absent, which is exactly what `core.advice` guarantees.
 
 Usage:
-    python scripts/advisor_checkpoint.py --slot {am,midday,pm,deep} [--session YYYY-MM-DD]
-                                         [--model NAME] [--timeout SECONDS] [--modules csv]
-                                         [--force] [--dry-run]
+    python scripts/advisor_checkpoint.py --slot {open,am1,am2,midday,pm1,pm2,close,deep}
+                                         [--session YYYY-MM-DD] [--model NAME] [--timeout SECONDS]
+                                         [--modules csv] [--force] [--dry-run]
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ STORE = Path(
 # never the agent -- puts anything on disk.
 DISALLOWED = ["Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Task"]
 TIMEOUT_SECONDS = 600
-LIGHT_SLOTS = ("am", "midday", "pm")
+LIGHT_SLOTS = ("open", "am1", "am2", "midday", "pm1", "pm2", "close")
 DEEP_SLOT = "deep"
 
 # Windows: keep every child headless. The scheduled parent is pythonw, which has no console, so a
