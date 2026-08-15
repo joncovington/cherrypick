@@ -94,6 +94,27 @@ def test_the_deep_pack_adds_what_the_deep_slot_reasons_from(seeded, tmp_home):
     assert "advised:control" in deep["arm_readings"]["meic"]["readings"]
     assert deep["advice_audit"]["meic"]["for_next_session"] is None
     assert deep["advisor_journal"]["proposals"] == []
+    assert deep["arm_readings"]["meic"]["collisions"] == []  # seed_suite's arms don't collide
+
+
+def test_the_deep_pack_flags_identically_reading_arms(seeded, tmp_home):
+    """Found live 2026-08-14: meic's gex-open/gex-blocked read identical in every field despite
+    naming opposite gate conditions. The fact pack must surface that as a collision, not let the
+    model read two tags as two independent pieces of evidence."""
+    meic_db = tmp_home / "data" / "meic" / "paper_trades.db"
+    twin_trades = [
+        {"trade_date": SESSION, "symbol": "SPX", "risk_profile": profile, "net_credit": 2.4,
+         "wing_width": 20, "quantity": 1, "pnl": pnl, "fees": 6.0, "status": "closed",
+         "exit_time": f"{SESSION}T20:10:00", "ic_order_id": order_id, "created_at": f"{SESSION}T14:31:00"}
+        for profile in ("gex-open", "gex-blocked")
+        for order_id, pnl in [(f"{profile}-1", 20.0), (f"{profile}-2", -6.0)]
+    ]
+    fakes.insert(meic_db, "ic_trades", twin_trades)
+
+    deep = factpack.build(SESSION, "deep")
+    collisions = deep["arm_readings"]["meic"]["collisions"]
+    assert len(collisions) == 1
+    assert collisions[0]["tags"] == ["gex-open", "gex-blocked"]
 
 
 def test_the_journal_carries_dismissals_so_they_are_not_re_proposed(seeded):

@@ -1,7 +1,8 @@
 """CLI for the AI advisor's deterministic half.
 
     python -m cherrypick.advisor init-db
-    python -m cherrypick.advisor factpack --slot {open,am1,am2,midday,pm1,pm2,close,deep} [--session YYYY-MM-DD]
+    python -m cherrypick.advisor factpack --slot {open,am1,am2,midday,pm1,pm2,close,deep}
+                                          [--session YYYY-MM-DD]
     python -m cherrypick.advisor admit --slot S --raw <path> [--session YYYY-MM-DD]
     python -m cherrypick.advisor enact [--session YYYY-MM-DD]
     python -m cherrypick.advisor verdicts [--session YYYY-MM-DD]
