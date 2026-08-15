@@ -83,6 +83,60 @@ def test_calibration_reading_orders_by_session_for_the_drawdown_path():
     assert metrics.calibration_reading(records)["max_drawdown"] == 8.0
 
 
+def test_net_pnl_2x_slippage_is_none_when_slippage_was_never_recorded():
+    """Found live 2026-08-14: several arms reported net_pnl_2x_slippage identical to net_pnl
+    because every record's slippage was None -- sum-of-nothing read as zero cost, not as
+    unmeasured. Zero coverage must render None, not a silently-copied net_pnl."""
+    records = [_rec(20.0, session="2026-07-21"), _rec(-8.0, session="2026-07-22")]
+    r = metrics.calibration_reading(records)
+    assert r["slippage_coverage"] == 0
+    assert r["net_pnl"] == 12.0
+    assert r["net_pnl_2x_slippage"] is None
+
+
+def test_net_pnl_2x_slippage_is_none_under_partial_coverage():
+    records = [
+        _rec(20.0, session="2026-07-21", slippage=4.0),
+        _rec(-8.0, session="2026-07-22", slippage=None),
+    ]
+    r = metrics.calibration_reading(records)
+    assert r["slippage_coverage"] == 1
+    assert r["net_pnl_2x_slippage"] is None
+
+
+def test_net_pnl_2x_slippage_is_none_when_full_coverage_sums_to_exactly_zero():
+    """Same defect, second shape: full coverage but every recorded value is 0.0. A real
+    per-trade slippage model essentially never nets to precisely zero across multiple trades,
+    so this reads as never-wired-up rather than measured-and-happened-to-be-zero."""
+    records = [
+        _rec(20.0, session="2026-07-21", slippage=0.0),
+        _rec(-8.0, session="2026-07-22", slippage=0.0),
+    ]
+    r = metrics.calibration_reading(records)
+    assert r["slippage_coverage"] == 2
+    assert r["net_pnl_2x_slippage"] is None
+
+
+def test_net_pnl_2x_slippage_is_zero_for_an_empty_group():
+    """n=0 is a true zero (no trades, no cost), not a stand-in for missing data."""
+    assert metrics.calibration_reading([])["net_pnl_2x_slippage"] == 0.0
+
+
+def test_return_on_capital_is_none_under_partial_capital_coverage():
+    """Previously computed silently from the subset of records that carried capital -- honest
+    per-record, but the bundled reading gave no signal that the average excluded some trades.
+    calibration_reading now requires full coverage before exposing return_on_capital at all."""
+    records = [
+        _rec(15.0, capital=300.0, session="2026-07-21"),
+        _rec(9.0, capital=None, session="2026-07-22"),
+    ]
+    r = metrics.calibration_reading(records)
+    assert r["capital_coverage"] == 1
+    assert r["return_on_capital"] is None
+    # the raw function still computes the subset average -- only the bundled reading gates it
+    assert metrics.return_on_capital(records) == pytest.approx(0.05)
+
+
 # --- hardened qualification checks ---------------------------------------------
 # Ported from recommend_promotion to qualify_readings 2026-08-01 (champion/challenger revision):
 # these checks test the shared _qualify_one logic, which is exactly what qualify_readings exposes

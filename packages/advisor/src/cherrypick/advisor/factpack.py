@@ -592,8 +592,16 @@ def _arm_readings() -> dict[str, Any]:
 
     Computed through the suite's own chain (ledger readers → compare_profiles → qualify_readings),
     so the model is looking at exactly what `verdicts.py` will compute when an experiment expires.
+
+    `collisions` (added 2026-08-14) flags tags whose readings are byte-identical across sample,
+    win_rate, days, net_pnl, sharpe and max_drawdown — either the same underlying book trading
+    under two names, or a config mistake that never actually differentiated them. Found live the
+    same day: meic's `gex-open`/`gex-blocked` and `small-xsp`/`explore-xsp-loosecredit` read
+    identical in every field. Detected, never merged — `readings` keeps one row per tag so nothing
+    downstream (verdicts, qualification) changes shape; this is a warning laid alongside it so the
+    model doesn't read two names as two independent pieces of evidence.
     """
-    from cherrypick.core.profiles import qualify_readings
+    from cherrypick.core.profiles import find_identical_readings, qualify_readings
 
     out: dict[str, Any] = {}
     for module in MODULES:
@@ -601,6 +609,7 @@ def _arm_readings() -> dict[str, Any]:
         out[module] = {
             "readings": readings,
             "qualification": qualify_readings(readings) if readings else {},
+            "collisions": find_identical_readings(readings) if readings else [],
         }
     return out
 

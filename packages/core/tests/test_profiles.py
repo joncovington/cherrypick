@@ -288,6 +288,76 @@ def test_qualify_readings_empty_readings_returns_empty_dict():
     assert profiles.qualify_readings({}) == {}
 
 
+# --------------------------------------------------------------------------- find_identical_readings
+def _full_reading(**over):
+    base = {
+        "sample": 13,
+        "win_rate": 0.1538,
+        "days": 1,
+        "net_pnl": 5.63,
+        "sharpe": 0.008,
+        "max_drawdown": 169.98,
+    }
+    base.update(over)
+    return base
+
+
+def test_find_identical_readings_groups_byte_identical_arms():
+    # Found live 2026-08-14: gex-open/gex-blocked read identical in every field despite naming
+    # opposite gate conditions.
+    readings = {
+        "gex-open": _full_reading(),
+        "gex-blocked": _full_reading(),
+        "distinct-arm": _full_reading(net_pnl=99.0),
+    }
+    collisions = profiles.find_identical_readings(readings)
+    assert collisions == [
+        {
+            "tags": ["gex-open", "gex-blocked"],
+            "fields": {
+                "sample": 13,
+                "win_rate": 0.1538,
+                "days": 1,
+                "net_pnl": 5.63,
+                "sharpe": 0.008,
+                "max_drawdown": 169.98,
+            },
+        }
+    ]
+
+
+def test_find_identical_readings_no_collision_is_empty_list():
+    readings = {"a": _full_reading(net_pnl=1.0), "b": _full_reading(net_pnl=2.0)}
+    assert profiles.find_identical_readings(readings) == []
+
+
+def test_find_identical_readings_ignores_readings_with_any_unmeasured_field():
+    """Two zero-sample arms both read win_rate/sharpe as None -- an unmeasured field can't
+    certify two readings are the same, so this must never report a false collision."""
+    empty = {"sample": 0, "win_rate": None, "days": 0, "net_pnl": 0.0, "sharpe": None, "max_drawdown": 0.0}
+    readings = {"a": empty, "b": dict(empty)}
+    assert profiles.find_identical_readings(readings) == []
+
+
+def test_find_identical_readings_skips_empty_or_missing_readings():
+    readings = {"a": _full_reading(), "b": {}, "c": None}
+    assert profiles.find_identical_readings(readings) == []
+
+
+def test_find_identical_readings_supports_three_way_collisions():
+    readings = {"a": _full_reading(), "b": _full_reading(), "c": _full_reading()}
+    collisions = profiles.find_identical_readings(readings)
+    assert len(collisions) == 1
+    assert collisions[0]["tags"] == ["a", "b", "c"]
+
+
+def test_find_identical_readings_custom_fields():
+    readings = {"a": {"net_pnl": 5.0, "days": 9}, "b": {"net_pnl": 5.0, "days": 1}}
+    assert profiles.find_identical_readings(readings, fields=("net_pnl",)) == [
+        {"tags": ["a", "b"], "fields": {"net_pnl": 5.0}}
+    ]
+
+
 # --------------------------------------------------------------------------- merge_profile (flat / MEIC)
 def test_merge_profile_flat_override_skips_underscore_and_leaves_base():
     base = {"min_iv_rank": 0.3, "max_ics": 4, "force_close_time": "15:45"}

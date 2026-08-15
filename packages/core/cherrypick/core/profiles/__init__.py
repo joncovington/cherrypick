@@ -107,6 +107,56 @@ def compare_profiles(rows, *, tag_key: str, summarize, untagged: str = UNTAGGED)
     return {tag: summarize(group) for tag, group in groups.items()}
 
 
+# The fields an arm-identity collision is judged on (2026-08-14). Deliberately the metrics that
+# summarize a whole book rather than raw per-trade rows -- two arms sharing these by coincidence
+# across more than a couple of trades is far less likely than two arms sharing the same underlying
+# trades under different tags, or a config mistake that never differentiated them.
+IDENTITY_FIELDS = ("sample", "win_rate", "days", "net_pnl", "sharpe", "max_drawdown")
+
+
+def find_identical_readings(
+    readings: Mapping[str, Mapping], *, fields: tuple = IDENTITY_FIELDS
+) -> list[dict]:
+    """Detect tags whose reading is identical across `fields` — a config-collision check, not a
+    comparison. Two arms that read byte-identical are either the same book trading under two
+    names, or a config mistake that never actually differentiated them; either way, a reader
+    (human or model) comparing them concludes there is independent evidence where there is none.
+
+    Found live 2026-08-14: meic's `gex-open`/`gex-blocked` and `small-xsp`/
+    `explore-xsp-loosecredit` read identical in every field despite naming opposite/different gate
+    conditions — this is the suite-level fix for that, since a reporting-layer defect like it can
+    recur in any module, not just the one it was first noticed in.
+
+    Pure and additive: does not mutate `readings`, does not change what `compare_profiles`,
+    `qualify_readings` or `recommend_champion` return — callers decide what to do with a
+    collision (the fact pack surfaces it as a warning; nothing here forces a merge).
+
+    A tag whose reading carries `None` on any of `fields` is never grouped with anything — an
+    unmeasured value cannot certify two readings are the same, so two zero-sample arms (which
+    read `None` for `win_rate`/`sharpe`) are correctly never reported as colliding.
+
+    Returns one entry per collision group of size >= 2, in first-seen tag order:
+    `[{"tags": [...], "fields": {name: value, ...}}]`. Empty list when nothing collides.
+    """
+    seen: dict[tuple, list[str]] = {}
+    order: list[tuple] = []
+    for tag, reading in readings.items():
+        if not reading:
+            continue
+        key = tuple(reading.get(f) for f in fields)
+        if any(v is None for v in key):
+            continue
+        if key not in seen:
+            seen[key] = []
+            order.append(key)
+        seen[key].append(tag)
+    return [
+        {"tags": seen[key], "fields": dict(zip(fields, key, strict=True))}
+        for key in order
+        if len(seen[key]) >= 2
+    ]
+
+
 # The qualification bar a challenger's reading must clear before its metric is even compared to the
 # champion's (was PROMOTION_RULE — a rung-graduation bar; renamed because these thresholds now gate
 # entry into a COMPARISON, they don't by themselves promote anything anywhere). Overridable per call.

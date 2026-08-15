@@ -79,22 +79,42 @@ def calibration_reading(records: Sequence[Mapping]) -> dict:
     metrics (return_on_capital, sharpe, max_drawdown over the session-ordered path),
     the cost-sensitivity restatement (net at a doubled slippage fraction — linear, so
     it is net minus the recorded slippage), and the coverage counts that keep partial
-    instrumentation honest. Shapes match what `recommend_promotion` reads."""
+    instrumentation honest. Shapes match what `recommend_promotion` reads.
+
+    `net_pnl_2x_slippage` and `return_on_capital` render None rather than a value quietly
+    computed from an incomplete or unmeasured sample (found live 2026-08-14: several arms
+    reported net_pnl_2x_slippage identical to net_pnl because slippage was never recorded on
+    any of their trades — sum-of-nothing summed to 0, indistinguishable from a genuinely
+    zero-slippage arm unless the coverage is checked). `net_pnl_2x_slippage` needs the WHOLE
+    sample's slippage known, same requirement `_qualify_one`'s `require_slippage_survival`
+    check already enforces one level up — this makes the number itself honest rather than
+    leaving an honest reading downstream of a dishonest one. A record's slippage summing to
+    exactly 0 even at full coverage is treated the same way: a real per-trade slippage model
+    essentially never nets to precisely zero over more than a couple of trades, so that pattern
+    reads as "never wired up" rather than "measured and happened to be zero." Both checks are
+    skipped for an empty group (n=0), where a literal 0.0 is not standing in for anything
+    unmeasured."""
     ordered = sorted(records, key=lambda r: r.get("session") or "")
     nets = [r["net_pnl"] for r in ordered]
     n = len(nets)
     wins = sum(1 for v in nets if v > 0)
     sessions = {r.get("session") for r in ordered if r.get("session")}
     known_slips = [r["slippage"] for r in ordered if r.get("slippage") is not None]
+    slippage_coverage = len(known_slips)
+    stressed = round(sum(nets) - sum(known_slips), 2)
+    if n > 0 and (slippage_coverage < n or sum(known_slips) == 0):
+        stressed = None
+    capital_coverage = sum(1 for r in ordered if r.get("capital"))
+    roc = return_on_capital(ordered) if capital_coverage == n and n > 0 else None
     return {
         "sample": n,
         "win_rate": round(wins / n, 4) if n else None,
         "days": len(sessions),
         "net_pnl": round(sum(nets), 2),
-        "net_pnl_2x_slippage": round(sum(nets) - sum(known_slips), 2),
-        "slippage_coverage": len(known_slips),
-        "return_on_capital": return_on_capital(ordered),
-        "capital_coverage": sum(1 for r in ordered if r.get("capital")),
+        "net_pnl_2x_slippage": stressed,
+        "slippage_coverage": slippage_coverage,
+        "return_on_capital": roc,
+        "capital_coverage": capital_coverage,
         "sharpe": sharpe(nets),
         "max_drawdown": max_drawdown(nets),
         "sample_progress": sample_progress(n),

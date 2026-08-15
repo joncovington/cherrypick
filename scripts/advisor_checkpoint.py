@@ -86,6 +86,11 @@ Things about this data that will mislead you if you do not know them:
   one produces a rejected proposal.
 - `advisor_journal` is your own recent history, including proposals a human DISMISSED. Do not
   re-propose those. Build on the threads instead.
+- `arm_readings.<module>.collisions` lists arm tags whose readings are byte-identical across
+  sample/win_rate/days/net_pnl/sharpe/max_drawdown — either the same book trading under two names,
+  or a config mistake that never differentiated them. Treat colliding tags as ONE data point, not
+  two, when reasoning about a module's arms; this list is provided, not something to re-derive by
+  eyeballing the readings yourself.
 """
 
 _OUTPUT_CONTRACT = """
