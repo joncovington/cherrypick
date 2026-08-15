@@ -629,6 +629,13 @@ def _run_review(cfg, *, final: bool) -> None:
     module with independent SQL -- a scope difference between the fact set and a ledger is worth
     knowing about the morning it appears, not whenever someone next looks.
 
+    WHICH session the final pass closes out is review's own contract, not this scheduler's, so no
+    `--session` is passed: `cherrypick.review build --final` resolves the prior trading day itself
+    (facts.session_to_finalise). This docstring described that behaviour for a while before the
+    code did -- review defaulted to today, so the 10:15 pass finalised the session it was running
+    45 minutes into. Keep the knowledge on review's side; a second copy here is a second thing to
+    drift.
+
     A failure here is a WARNING, never CRITICAL: nothing downstream of this places, closes or sizes
     anything, so the cost of a bad pass is a missing report. The suite keeps trading either way.
     """

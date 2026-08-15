@@ -34,6 +34,7 @@ import sqlite3
 import statistics
 from datetime import UTC, date, datetime
 
+from cherrypick.core import calendar as _calendar
 from cherrypick.core import ledgers as _ledgers
 from cherrypick.core.profiles import compare_profiles as _compare_profiles
 
@@ -554,3 +555,24 @@ def sessions_with_activity(module: str, db_path=None) -> list[str]:
 
 def today() -> str:
     return date.today().isoformat()
+
+
+def session_to_finalise(now: str | None = None) -> str:
+    """The session a `--final` pass closes out: the trading day BEFORE `now`, never `now` itself.
+
+    This package's contract is that session D is finalised on session D+1 — earnings opens before
+    the close and settles the next morning, so D's numbers are not final until D+1. The final pass
+    is scheduled at 10:15 ET, i.e. 45 minutes INTO session D+1, which makes "today" the one date it
+    can never mean.
+
+    It defaulted to today anyway until 2026-08-15, and the cost was not a late report but a wrong
+    one. On 08-14 the 10:15 pass built that morning's 45-minute stub and stamped it `final`; the
+    narrative's "final sessions only" guard reads the stamp, so it was defeated by a false one and
+    wrote a note describing a session with nothing in it. The 16:30 provisional pass then replaced
+    the JSON with the real day, and because a note is written once and frozen, it never caught up —
+    leaving "nothing closed today" sitting under a page showing 645 closed trades. The same
+    self-pointing pass is why 08-13 has no note at all: the morning that should have finalised it
+    finalised 08-14 instead.
+    """
+    cursor = date.fromisoformat(now) if now else date.today()
+    return _calendar.previous_trading_day(cursor).isoformat()

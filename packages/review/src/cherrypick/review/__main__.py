@@ -4,6 +4,10 @@
     python -m cherrypick.review backfill [--since YYYY-MM-DD]
     python -m cherrypick.review reconcile [--since YYYY-MM-DD]
 
+`build` defaults to today and writes a `provisional` set. `build --final` defaults to the PRIOR
+trading day instead, because that is the session a final pass closes out — it runs the next morning,
+once earnings has settled overnight.
+
 Read-only over every module's ledger; writes only into review's own home.
 """
 
@@ -19,7 +23,14 @@ from cherrypick.review import render as _render
 
 
 def cmd_build(args) -> dict:
-    session = args.session or _facts.today()
+    # `--final` closes out the PRIOR session, never today's — see facts.session_to_finalise for the
+    # contract and for what defaulting to today cost. An explicit --session always wins.
+    if args.session:
+        session = args.session
+    elif args.final:
+        session = _facts.session_to_finalise()
+    else:
+        session = _facts.today()
     status = _facts.STATUS_FINAL if args.final else _facts.STATUS_PROVISIONAL
     built = _facts.build(session, status=status)
     target = _facts.write(built)
@@ -58,8 +69,10 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_build = sub.add_parser("build")
-    p_build.add_argument("--session", default=None, help="YYYY-MM-DD (default: today)")
-    p_build.add_argument("--final", action="store_true", help="mark the set final, not provisional")
+    p_build.add_argument("--session", default=None,
+                         help="YYYY-MM-DD (default: today, or the prior trading day with --final)")
+    p_build.add_argument("--final", action="store_true",
+                         help="mark the set final, not provisional; closes out the PRIOR session")
 
     p_backfill = sub.add_parser("backfill")
     p_backfill.add_argument("--since", default=None)
