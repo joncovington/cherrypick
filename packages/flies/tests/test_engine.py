@@ -296,18 +296,39 @@ def test_no_fixed_offset_arm_the_gex_arms_already_sweep_that_dimension():
 
 
 def test_width_arms_are_control_twins_sweeping_wing_width():
-    """width-2..width-5 pin wing_width to N strike increments; control at the default width is the
-    1-increment rung, so no width-1 arm exists (it would duplicate control's book under a new name)."""
+    """width-2..width-5, width-10 pin wing_width to N strike increments (wing_width_strikes, resolved
+    by merged_params against strike_increment); control at the default width is the 1-increment rung,
+    so no width-1 arm exists (it would duplicate control's book under a new name)."""
     assert "width-1" not in engine.ARMS
-    for n in (2, 3, 4, 5):
+    for n in (2, 3, 4, 5, 10):
         arm = f"width-{n}"
         assert arm in engine.ARMS
         cfg = dict(BASE_CONFIG)
-        cfg["arms"] = dict(BASE_CONFIG["arms"], **{arm: {"wing_width": n}})
+        cfg["arms"] = dict(BASE_CONFIG["arms"], **{arm: {"wing_width_strikes": n}})
         p = engine.merged_params(cfg, arm)
         center, reason = engine.select_center(snapshot(underlying_price=6002.0), p)
         assert (center, reason) == (6000.0, "atm")
-        assert p["wing_width"] == n
+        # BASE_CONFIG's strike_increment is 5 (SPX), so N strikes is N*5 points.
+        assert p["wing_width"] == n * 5
+
+
+def test_wing_width_strikes_resolves_against_whatever_strike_increment_the_symbol_uses():
+    """The whole point of defining the sweep in strikes rather than points: the same
+    wing_width_strikes=2 arm produces a different wing_width on a symbol with different strike
+    spacing, with no per-symbol config needed."""
+    cfg = dict(BASE_CONFIG)
+    cfg["defaults"] = dict(BASE_CONFIG["defaults"], strike_increment=1)  # XSP-like spacing
+    cfg["arms"] = dict(BASE_CONFIG["arms"], **{"width-2": {"wing_width_strikes": 2}})
+    p = engine.merged_params(cfg, "width-2")
+    assert p["wing_width"] == 2
+
+
+def test_an_arm_with_no_wing_width_strikes_is_unaffected():
+    """Every arm besides the width-N sweep still sets wing_width directly (or inherits the default),
+    and merged_params must leave that alone when wing_width_strikes is absent."""
+    p = engine.merged_params(BASE_CONFIG, "control")
+    assert "wing_width_strikes" not in p
+    assert p["wing_width"] == BASE_CONFIG["defaults"]["wing_width"]
 
 
 def test_entry_respects_the_position_cap():

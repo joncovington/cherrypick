@@ -39,12 +39,16 @@ PUT, CALL = fly.PUT, fly.CALL
 # The mechanism that makes a completion cheap is the one that puts the peak out of reach, and a wing
 # that brackets the observed drift is the obvious test of whether that is fixable or fundamental.
 #
-# The `width-N` arms (2026-07-29, with the XSP move) generalize that single hypothesis into a sweep:
-# each is another control twin pinning `wing_width` to N strike increments, so the wing question is
-# answered as a curve rather than one point. There is no `width-1` arm — `control` at the default
-# width IS the 1-increment rung, and a duplicate ATM book under a second name would double-count it.
-# `wide_wing` stays for the SPX-era books' attribution but is disabled in config on XSP, where its
-# 20-point wing is off-scale (the scaled equivalent of the drift it brackets is covered by width-2).
+# The `width-N` arms (2026-07-29, with the XSP move) generalize that single hypothesis into a sweep.
+# Originally N pinned `wing_width` to N POINTS, which is why the 2026-08-01 SPX move disabled the
+# whole sweep: SPX's 5-point strikes cannot build a 2, 3 or 4-point wing at all. Rebuilt 2026-08-15
+# on `wing_width_strikes` instead (resolved to points by `merged_params`, below) so each rung pins N
+# STRIKE INCREMENTS rather than a raw point value that only made sense on the symbol it was fit
+# against — 10/15/20/25/50 points on SPX today, and it rescales for free if this module ever trades a
+# tighter-strike symbol again. Still no `width-1` arm: 1 strike is exactly control's own default
+# width, so it would duplicate control's book under a second name regardless of symbol.
+# `wide_wing` stays for the SPX-era books' attribution but is superseded by the sweep (its 20-point
+# wing is exactly width-4's 4 strikes on SPX) and left disabled.
 ARMS = (
     "gex",
     "gex-intrinsic",
@@ -56,6 +60,7 @@ ARMS = (
     "width-3",
     "width-4",
     "width-5",
+    "width-10",
     "debit-first",
     "iron",
     "bwb",
@@ -75,9 +80,16 @@ ARMS = (
 # --------------------------------------------------------------------------- config
 def merged_params(config: dict, arm: str) -> dict:
     """Base defaults overlaid with this arm's overrides. Arms are thin by design — an arm that
-    redefined the gates as well as the centring would confound what the comparison measures."""
+    redefined the gates as well as the centring would confound what the comparison measures.
+
+    `wing_width_strikes`, when an arm sets it, resolves HERE to `wing_width = strike_increment *
+    wing_width_strikes` -- the width-N arms are defined in STRIKES so the sweep means the same thing
+    on any symbol's chain regardless of that symbol's own strike spacing, rather than naming a point
+    value fit against one symbol (see the `width-N` note above ARMS)."""
     params = dict(config.get("defaults", {}))
     params.update(config.get("arms", {}).get(arm, {}))
+    if "wing_width_strikes" in params:
+        params["wing_width"] = params["strike_increment"] * params["wing_width_strikes"]
     params["arm"] = arm
     return params
 
@@ -839,7 +851,7 @@ def evaluate_credit_spread_entry(
     # an occupied centre, and the duplicate rule below is its generalization: it keys on the full
     # geometry (kind, side, centre, wings) rather than the centre alone. The two coincide exactly
     # today, because `wing_width` is a scalar per arm -- width variation is expressed as SEPARATE
-    # arms (width-2..width-5, wide_wing) precisely to keep the sweep one-variable, so within one arm
+    # arms (width-2..width-5, width-10, wide_wing) precisely to keep the sweep one-variable, so within one arm
     # the same centre implies the same wings implies the same trade. Written as the general rule
     # anyway, because that is what "never enter the same trade twice" actually means, and it stays
     # correct the day an arm sweeps width internally.

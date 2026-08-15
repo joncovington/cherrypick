@@ -98,7 +98,9 @@ see "Status" below.)*
 The module runs several parallel copies of the strategy side by side, each changing exactly one
 variable from the `control` baseline, so results from one variant can be compared cleanly rather
 than a mix of confounded changes. `gex` picks its centre by dealer gamma positioning, `time_window`
-by trading only inside specific windows, and `width-2`..`width-5` sweep the wing width — those
+by trading only inside specific windows, and `width-2`..`width-5`/`width-10` sweep the wing width
+(in strike increments, so the sweep means the same thing regardless of the traded symbol's own
+strike spacing) — those
 change WHERE or WHEN a position is centred. `debit-first`, `iron`, and `bwb` instead change HOW the
 net credit is manufactured in the first place (buying the debit leg first, completing with an iron
 butterfly, or entering a broken-wing butterfly whole and rolling it in) — see

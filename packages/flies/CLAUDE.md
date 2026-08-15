@@ -14,8 +14,9 @@ flat $5-per-ITM-strike assignment fee does not. But SPX 0DTE strikes are **5 poi
 width vs XSP's 12.0%), so this is close to the same trade five times larger. Two caveats kept
 deliberately visible: measured *per dollar of risk* the two are within noise (1.41% vs 1.49% per
 trade), and the two samples come from different weeks — so the fee argument is solid while the
-risk-adjusted case is not yet established. The width-sweep arms are disabled: 2/3/4 are not multiples
-of 5 and cannot be built on SPX at all.
+risk-adjusted case is not yet established. The width-sweep arms were disabled at the SPX move — their
+XSP-era point values (2/3/4) are not multiples of 5 and cannot be built on SPX at all — and re-enabled
+2026-08-15 on a strike-count axis instead (see "The arms" below).
 
 ## What the strategy actually is
 
@@ -174,20 +175,31 @@ comparison measures one variable rather than a bundle of confounded changes.
   control opens, one overlapping, one after control closes); nested windows made the two arms
   identical in everything but opportunity count.
 - `control` — ATM, all day. The shared baseline: `gex` vs `control` isolates the **centring**,
-  `time_window` vs `control` the **timing**, `wide_wing` vs `control` the **width**. Without a naive
+  `time_window` vs `control` the **timing**, `width-N` vs `control` the **width**. Without a naive
   baseline a profitable arm would prove nothing.
-- `width-2` … `width-5` — control's twins (ATM, same window and cap) pinning `wing_width` to 2–5
-  strike increments; `control` at the default width is the sweep's 1-increment rung, so there is no
-  `width-1` arm (it would duplicate control's book under a second name). Added 2026-07-29 with the
-  XSP move, generalizing `wide_wing`'s single-point hypothesis into a curve. The signal behind it
-  (2026-07-27, first five SPX sessions): completions arrive only after spot has walked away from the
-  centre (median drift 15.3–17.3 SPX points against a 5-point wing), so 19 of 23 completed flies
-  settled outside their wings and the book collected its floor and nothing more. It is a hypothesis,
-  not a fix — wider wings cost more to build and risk more per structure, and if no width produces a
+- `width-2` … `width-5`, `width-10` — control's twins (ATM, same window and cap) pinning
+  `wing_width_strikes` to 2/3/4/5/10 STRIKE increments (`engine.merged_params` resolves that to
+  `wing_width = strike_increment × wing_width_strikes` — 10/15/20/25/50 points on SPX today);
+  `control` at the default width is the sweep's 1-strike rung, so there is no `width-1` arm (it would
+  duplicate control's book under a second name). Added 2026-07-29 with the XSP move, generalizing
+  `wide_wing`'s single-point hypothesis into a curve — but that first version pinned `wing_width`
+  directly to a raw POINT value (2..5), which is why the 2026-08-01 SPX move disabled the whole
+  sweep: those point values aren't multiples of SPX's 5-point strikes and can't be built there at
+  all. **Rebuilt 2026-08-15 on the strike-count axis above instead**, specifically so the sweep's
+  meaning survives a symbol switch rather than needing hand-rescaled point values every time. The
+  XSP-era rows under these same arm names used the old point-value meaning and are a different era's
+  geometry —
+  not poolable with the SPX rows that follow; the console's era filter (`CURRENT_ERA`) already keys
+  on symbol, so the two never blend on a read surface. The signal behind reviving it (2026-07-27,
+  first five SPX sessions): completions arrive only after spot has walked away from the centre
+  (median drift 15.3–17.3 SPX points against a 5-point wing), so 19 of 23 completed flies settled
+  outside their wings and the book collected its floor and nothing more. It is a hypothesis, not a
+  fix — wider wings cost more to build and risk more per structure, and if no width produces a
   fee-positive floor then the drift is fundamental to the mechanism, which is itself a result (rule 6).
 - `wide_wing` — the SPX-era single-point version of the width question (a 20-point wing bracketing
-  the observed drift). **Disabled** since the sweep; kept in `ARMS` so its books' attribution stays
-  readable. On XSP its scaled equivalent (~2 points) is exactly `width-2`.
+  the observed drift — exactly `width-4`'s 4 strikes on SPX). **Disabled**, superseded by the sweep;
+  kept in `ARMS` so its books' attribution stays readable. On XSP its scaled equivalent (~2 points)
+  was exactly `width-2`'s old, pre-2026-08-15 meaning.
 - `debit-first` — added 2026-07-31 (`entry_modes: ["debit_first"]`,
   `fly.debit_vertical_payoff`/`engine.evaluate_debit_vertical_entry`/`evaluate_debit_completion`),
   isolating the **legging order**: `legged` sells the credit spread first and buys the completing

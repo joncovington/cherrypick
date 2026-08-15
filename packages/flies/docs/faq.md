@@ -91,7 +91,7 @@ gate, is now expected to be the binding constraint on entry.
 A larger notional — SPY (~$550–600) or the E-mini/Micro E-mini S&P 500 futures (/ES ~$250k+,
 /MES ~$25k notional per contract, vs. XSP's ~$70–80) — would shrink the $5-per-strike
 exercise-assignment fee's bite as a fraction of a structure's value. That's the same lever the
-width-arm sweep (`control` through `width-5`) is already testing, just applied to the underlying
+width-arm sweep (`control` through `width-10`) is already testing, just applied to the underlying
 instead of the wing. It doesn't work for any of these three, and the reason has nothing to do
 with fee size: **SPX and XSP are European and cash-settled. SPY and futures options on
 /ES and /MES are all American-style, and none of them settle to cash on exercise.** That
