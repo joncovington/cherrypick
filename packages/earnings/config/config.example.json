@@ -156,7 +156,8 @@
       "_note": "Stricter liquidity/expected-move floors than iron_fly -- execution cost matters more across two expirations, and a single tail-risk surprise hurts a debit trade more than iron_fly's width-defined max loss. Reasoned starting points, not backtested for this strategy.",
 
       "min_price": 10.00,
-      "min_term_structure": -0.004,
+      "_min_term_structure_note": "Tightened -0.004 -> -0.15 on 2026-08-15 (advisor creative proposal #5); atm_calendar carries the same change. term_structure is (back_iv - front_iv) / back_iv, so NEGATIVE means the front is richer than the back -- the earnings IV premium a calendar exists to sell -- and the gate refuses anything ABOVE this value. -0.004 asked for 0.4% of front richness, i.e. 'any backwardation at all', which is effectively no gate: a calendar is a long-vega term-structure trade and loses at roughly the observed rate whenever that structure is not actually there. -0.15 is the proposal's front/back >= 1.15 restated in this convention (front/back >= 1.15 <=> term_structure <= -0.15). The proposal's stated premise was wrong -- it claimed nothing in the screen tests term structure, when both calendar strategies have always hard-failed on it; the threshold was the problem, not its absence. The number is a suggestion, NOT measured, so it ships with a review: term_structure is recorded on every entry_context, so after 20 sessions the admitted entries can be scored against it. If fewer than 5 entries clear it in 20 sessions, retire both calendar strategies from strat_test and give the slots to iron_condor. Prompted by atm_calendar 1 win in 14 and double_calendar 0 in 7, -3,079.50 together -- thin and unqualified on every check, so this tests a mechanism rather than settling calendars. Deliberately NOT applied to iron_fly/iron_condor/directional_credit_spread.",
+      "min_term_structure": -0.15,
       "min_expected_move_pct": 0.05,
       "min_combined_open_interest": 2000,
       "back_month_min_days_after": 21,
@@ -227,7 +228,8 @@
       "_note": "Sell a front-month ATM call, buy the same strike in a later monthly expiration -- same front/back term-structure edge as double_calendar, one option type instead of two, always the call side (config-fixed, not skew-selected -- call/put ATM calendars perform virtually identically). Always closes as a single 2-leg unit (legs_json only, never trade_legs), unlike double_calendar's independently-closeable sides. No expected-move-boundary filter -- this is a pure ATM term-structure play, not targeting where the stock lands. Reasoned starting points, not backtested for this strategy.",
 
       "min_price": 10.00,
-      "min_term_structure": -0.004,
+      "_min_term_structure_note": "Tightened -0.004 -> -0.15 on 2026-08-15 (advisor creative proposal #5). See double_calendar's _min_term_structure_note above for the convention, the reasoning, the 20-session review and the retire rule -- the two move together on purpose, because they are the same term-structure bet at different strikes and gating one alone would just move the losses.",
+      "min_term_structure": -0.15,
       "min_combined_open_interest": 2000,
       "back_month_min_days_after": 21,
       "require_weekly_options": true,

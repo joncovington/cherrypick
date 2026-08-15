@@ -94,6 +94,12 @@ Things about this data that will mislead you if you do not know them:
 - `arm_readings.<module>.rule` is the qualification bar THAT module is judged against, and modules
   differ. Read `qualification` against its own module's rule, never against another's or against a
   remembered default. A check that is absent from a module's rule was not applied to it.
+- `paper.meic.control_fired` says whether the baseline arm traded at all today. control carries a
+  stricter IV-rank floor than open/width-5/width-10, so on a low-IV-rank day it goes dark while the
+  looser arms trade. When it is false, a width-vs-control comparison drawn on that session has no
+  same-session baseline: the result could be width, regime, or simply that the looser floor allowed
+  a trade on a day control would not have taken one. Say so and BUCKET those sessions separately.
+  Never propose dropping them — a session control sat out is evidence about the gate.
 """
 
 _OUTPUT_CONTRACT = """

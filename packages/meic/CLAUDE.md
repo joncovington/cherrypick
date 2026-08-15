@@ -140,6 +140,44 @@ for the full design, the breakeven identity the test is measuring against, and t
 policies (`stop-none`/`stop-0.75-net`/`stop-2.0-side`/`strike-touch`, computed from `open`'s
 recorded paths, never run as separate entry streams).
 
+**The whole `stop_trigger_ratio` curve is derivable, not just those four named points
+(2026-08-15, `analytics.stop_grid` / `stop_policies.score_grid`).** A bounded stop experiment tests
+one threshold and needs 15 sessions to say anything; the same question is answered exactly from rows
+already recorded, because `*_max_cost` says whether a threshold would have fired and
+`*_settle_value` says what the side was worth unstopped — **and both are recorded for stopped sides
+too**. So one session yields the *shape* of the curve rather than one sampled point, at zero risk
+and no extra position cost, and the bounded experiment becomes a confirmation rather than a search.
+`analytics.stop_session_rollup` puts the same thing per session as
+realized-vs-shadow with a `stop_cost`, per session because a session is one market event and the
+answer is regime-dependent.
+
+**The trap in that, and the reason `open` is the arm it is scored over.** `*_max_cost` is a running
+maximum recorded *while a side is open*, so a side that actually stopped stopped being observed at
+that moment — the path above its stop was never seen. Scoring a looser ratio against it would
+answer "that threshold never fired" when the truth is "we cut the recording off before it could",
+which is the opposite conclusion. `stop_policies.censored_above` returns the ratio past which a
+stopped row can say nothing, and every censored point is reported as `censored` and excluded from
+the totals rather than summed as a non-fire. `open` runs with `per_side_stop_management: false`, so
+its paths run to settlement and censor nothing — which is what makes it the sweep's home.
+Everything here remains the documented **max-cost proxy** for any threshold other than the one an
+arm really ran (~$2–8/side replay error), and `analytics.validate_stop_derivation` is what to run
+before trusting a range: it re-derives control's REAL mechanism from control's own paths and checks
+it against control's recorded P&L.
+
+**Max FAVOURABLE excursion is not recorded and reads `None`, deliberately.** Only the adverse
+running maximum is stored, and the stream cache keeps no quote history to reconstruct the other
+side from; a `0.0` there would be the misleadingly-precise zero this suite already has a rule
+about. It needs its own write-path instrumentation change, not a read-side fix.
+
+**A width comparison must be bucketed on whether `control` fired that session
+(`analytics.control_fired`, 2026-08-15).** `control`/`control-drift` carry a stricter `min_iv_rank`
+than `open`/`width-5`/`width-10`, so on a low-IV-rank day control goes completely dark — 0 of 297
+on 2026-08-14 — while the looser arms trade. Those sessions have **no same-session baseline**, so a
+loss on one could be width, regime, or simply that the looser floor allowed a trade on a day
+control would not have taken one. Bucket on the tag; **never drop the dark sessions**. A session
+control sat out is evidence about the gate, not a gap in the width evidence, and choosing the
+sample to get an answer is the same class of error as reading a structural identity as a finding.
+
 **Retired arms stay in this file, disabled, with a written verdict — not deleted.** The four-tier
 risk ladder (`conservative`/`moderate`/`aggressive`/`very-aggressive`), the GEX study pair
 (`gex-open`/`gex-blocked`, superseded by `open`'s own regime tagging), and the original four-way

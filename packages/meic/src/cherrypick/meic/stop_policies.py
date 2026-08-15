@@ -36,6 +36,12 @@ POLICIES = {
     "strike-touch": ("touch", None),
 }
 
+# The stop_trigger_ratio sweep (2026-08-15, advisor creative proposal #12). Same "net" basis the
+# real per-side stop uses -- a side's cost against the WHOLE IC's net credit -- so a grid point is
+# the deployed mechanism at a different number, not a different mechanism. Brackets the deployed
+# 0.95 in both directions, matching the advice bounds meic already declares for this parameter.
+GRID_RATIOS = (0.85, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.20, 1.25)
+
 
 _MULT = 100  # dollar_multiplier is 100 on every recorded row (MEIC trades whole contracts only)
 
@@ -53,17 +59,19 @@ def _side_pnl(credit, fired, max_cost, settle_value):
     return round((credit - settle_value) * _MULT, 2)
 
 
-def derive(row: dict, policy_name: str, *, fee_one_side, fee_full_ic) -> dict:
+def derive(row: dict, policy_name: str | tuple, *, fee_one_side, fee_full_ic) -> dict:
     """Score one ic_trades row (a plain dict — pass dict(sqlite_row) for a sqlite3.Row) under
-    `policy_name` from POLICIES. Returns {"derivable", "put_fired", "call_fired", "pnl", "fee"}.
-    `derivable` is False (pnl None) when a side that needed to be priced is missing the recorded
-    field the policy requires -- e.g. a pre-Phase-1e row with no put_max_cost/put_settle_value.
+    `policy_name` from POLICIES, or under a raw ``(basis, multiple)`` spec (what the grid passes,
+    so a swept ratio needs no entry in POLICIES). Returns
+    {"derivable", "put_fired", "call_fired", "pnl", "fee"}. `derivable` is False (pnl None) when a
+    side that needed to be priced is missing the recorded field the policy requires -- e.g. a
+    pre-Phase-1e row with no put_max_cost/put_settle_value.
 
     fee_one_side(symbol)/fee_full_ic(symbol) are paper.close_fees_one_side/close_fees_full_ic,
     injected rather than imported to keep this module free of the fee-schedule dependency (a
     caller iterating many rows for the same symbol should compute the fee once, not per row).
     """
-    basis, multiple = POLICIES[policy_name]
+    basis, multiple = POLICIES[policy_name] if isinstance(policy_name, str) else policy_name
     put_credit, call_credit, net_credit = row.get("put_credit"), row.get("call_credit"), row.get("net_credit")
     put_max, call_max = row.get("put_max_cost"), row.get("call_max_cost")
     put_settle, call_settle = row.get("put_settle_value"), row.get("call_settle_value")
@@ -115,6 +123,108 @@ def derive(row: dict, policy_name: str, *, fee_one_side, fee_full_ic) -> dict:
         "pnl": round(put_pnl + call_pnl, 2),
         "fee": fee,
     }
+
+
+def censored_above(row: dict) -> float | None:
+    """The net-credit ratio above which THIS row's recorded path says nothing, or None if the row
+    can answer any ratio.
+
+    The trap the grid would otherwise walk into. `*_max_cost` is a running maximum recorded *while
+    the side is open*, so a side that actually stopped stopped being observed at that moment: its
+    max_cost is the stop fill and the path beyond it was never seen. Scoring a LOOSER ratio against
+    it would silently answer "that threshold never fired" when the truth is "we cut the recording
+    off before it could." A side held to settlement has a complete path and censors nothing.
+
+    So this returns max(recorded max_cost) / net_credit for a row whose status is 'stopped' — every
+    ratio at or below that is answerable, everything above it is not — and None otherwise. Note the
+    permissive `open` arm runs with per_side_stop_management off, which is exactly why it is the
+    arm the sweep is scored over: none of its rows censor anything.
+    """
+    if row.get("status") != "stopped":
+        return None
+    net_credit = row.get("net_credit")
+    if not net_credit:
+        return None
+    costs = [c for c in (row.get("put_max_cost"), row.get("call_max_cost")) if c is not None]
+    return round(max(costs) / net_credit, 6) if costs else None
+
+
+def capital_at_risk(row: dict) -> float | None:
+    """An IC's defined max loss: (wing_width - net_credit) x 100 x quantity. Exact from the row --
+    both inputs are recorded -- so the grid's result is reportable on max risk rather than only in
+    dollars, which is what makes it comparable with any other arm's return_on_capital."""
+    width, credit = row.get("wing_width"), row.get("net_credit")
+    if width is None or credit is None:
+        return None
+    return round((width - credit) * _MULT * (row.get("quantity") or 1), 2)
+
+
+def shadow_settle(row: dict, *, fee_one_side, fee_full_ic) -> dict:
+    """The per-fill shadow ledger: what this fill would have been worth held to expiry with no stop
+    at all, beside what it really did, plus the excursion the stop threshold is actually compared
+    against.
+
+    The counterfactual is not an estimate — `*_settle_value` is recorded for stopped sides too, so
+    a stopped fill's held-to-expiry value is a stored number rather than a reconstruction.
+
+    `mae_over_credit` is max_cost over net_credit, NOT the spot-based `*_mae_spot` columns. The
+    proposal that asked for this called it "the empirical value stop_trigger_ratio is compared
+    against", and that value is a COST ratio: the stop fires when a side's cost-to-close reaches
+    ratio x net_credit. Spot excursion is a different quantity that no threshold here reads.
+
+    `mfe_over_credit` is always None, and deliberately: favourable excursion is not recorded
+    anywhere (only the adverse running maximum is), and the stream cache keeps no quote history to
+    reconstruct it from. Rendering it as 0.0 would be the "misleadingly precise zero" this suite
+    already has a rule about. It needs its own instrumentation change on the write path.
+    """
+    none_out = derive(row, "stop-none", fee_one_side=fee_one_side, fee_full_ic=fee_full_ic)
+    net_credit = row.get("net_credit")
+    puts, calls = row.get("put_max_cost"), row.get("call_max_cost")
+    worst = max([c for c in (puts, calls) if c is not None], default=None)
+    real_pnl, real_fee = row.get("pnl"), row.get("fees")
+
+    shadow_net = None if none_out["pnl"] is None else round(none_out["pnl"] - none_out["fee"], 2)
+    real_net = None if real_pnl is None else round(real_pnl - (real_fee or 0.0), 2)
+    return {
+        "ic_order_id": row.get("ic_order_id"),
+        "trade_date": row.get("trade_date"),
+        "risk_profile": row.get("risk_profile"),
+        "symbol": row.get("symbol"),
+        "stop_fired": row.get("status") == "stopped",
+        "credit_at_entry": net_credit,
+        "capital_at_risk": capital_at_risk(row),
+        "realized_net": real_net,
+        "shadow_settle_net": shadow_net,
+        # Positive means the stop COST money: holding would have paid more than stopping did.
+        "stop_cost": None if (shadow_net is None or real_net is None) else round(shadow_net - real_net, 2),
+        "mae_over_credit": (
+            None if (worst is None or not net_credit) else round(worst / net_credit, 4)
+        ),
+        "mfe_over_credit": None,  # not recorded; see the docstring
+        "censored_above": censored_above(row),
+    }
+
+
+def score_grid(
+    row: dict, *, fee_one_side, fee_full_ic, ratios: tuple = GRID_RATIOS
+) -> dict[float, dict]:
+    """Score one row at every ratio in `ratios` on the net basis — the whole stop curve for one
+    fill, from one recorded path, at zero risk and zero extra position cost.
+
+    A ratio this row cannot answer comes back `derivable: False` with `censored: True` rather than
+    a number (see `censored_above`). That distinction is the point: "this threshold would not have
+    fired" and "we stopped watching before it could" are opposite conclusions.
+    """
+    limit = censored_above(row)
+    out: dict[float, dict] = {}
+    for ratio in ratios:
+        if limit is not None and ratio > limit:
+            out[ratio] = {"derivable": False, "censored": True, "pnl": None, "fee": None,
+                          "put_fired": None, "call_fired": None}
+            continue
+        scored = derive(row, ("net", ratio), fee_one_side=fee_one_side, fee_full_ic=fee_full_ic)
+        out[ratio] = {**scored, "censored": False}
+    return out
 
 
 def validate_against_control(rows: list[dict], *, fee_one_side, fee_full_ic, tolerance: float = 0.5) -> dict:
