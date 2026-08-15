@@ -201,3 +201,27 @@ def test_reconcile_passes_when_the_ledger_agrees(store, monkeypatch):
 
 def test_reconcile_says_so_when_there_is_no_fact_set(store):
     assert reconcile.check_session("1999-01-01")["ok"] is False
+
+
+# --------------------------------------------------------------------------- which session --final closes
+def test_a_final_pass_closes_out_the_prior_trading_day_never_today():
+    """The bug that put "nothing closed today" under a page showing 645 closed trades.
+
+    `--final` runs at 10:15 ET, 45 minutes INTO the next session, and its job is to close out the
+    PREVIOUS one — earnings settles overnight, so session D is not final until D+1. It defaulted to
+    today instead, stamped a 45-minute stub `final`, and that false stamp defeated the narrative's
+    own "final sessions only" guard.
+    """
+    # Wednesday 2026-08-12 -> Tuesday. A plain weekday step, no weekend involved.
+    assert facts.session_to_finalise("2026-08-12") == "2026-08-11"
+    # Monday 2026-08-17 -> Friday: the weekend is skipped, so Friday is not left unfinalised.
+    assert facts.session_to_finalise("2026-08-17") == "2026-08-14"
+    # Never the day it was asked about, which is the one answer it can never be.
+    for day in ("2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-17"):
+        assert facts.session_to_finalise(day) != day
+
+
+def test_the_final_default_is_a_trading_day_even_when_run_on_a_weekend():
+    """A manual `build --final` on a Saturday must still name a real session."""
+    assert facts.session_to_finalise("2026-08-15") == "2026-08-14"  # Saturday -> Friday
+    assert facts.session_to_finalise("2026-08-16") == "2026-08-14"  # Sunday   -> Friday
