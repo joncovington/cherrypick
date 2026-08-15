@@ -593,3 +593,107 @@ def test_daily_rollup_is_era_scoped_like_every_other_reader(conn):
 
     assert analytics.daily_rollup(conn, "2026-08-11", era="sample")["gross_pnl"] == pytest.approx(10.0)
     assert analytics.daily_rollup(conn, "2026-08-11", era="ALL")["gross_pnl"] == pytest.approx(1009.0)
+
+
+# --------------------------------------------------------------------------- the stop curve (#12)
+
+
+def test_stop_grid_scores_the_whole_curve_from_one_recorded_path(conn):
+    """One session yields the SHAPE of the stop curve, not one sampled point — which is the whole
+    argument for deriving it read-side rather than running a 15-session bounded experiment per
+    threshold."""
+    _insert(
+        conn, ic_order_id="1", risk_profile="open", status="expired",
+        put_max_cost=1.71, call_max_cost=0.2,        # 1.71 / 1.8 = exactly 0.95x
+        put_settle_value=2.0, call_settle_value=0.0,
+        pnl=-20.0, fees=0.0,
+    )
+    out = analytics.stop_grid(conn)
+    assert out["arm"] == "open" and out["trades"] == 1
+    assert [p["ratio"] for p in out["curve"]] == list(analytics_grid_ratios())
+
+    by_ratio = {p["ratio"]: p for p in out["curve"]}
+    # Nothing censored: `open` holds to settlement, so every threshold is answerable.
+    assert all(p["censored"] == 0 for p in out["curve"])
+    # A tighter threshold stops more often than a looser one over the same path.
+    assert by_ratio[0.85]["stop_out_rate"] >= by_ratio[1.25]["stop_out_rate"]
+    assert by_ratio[1.25]["stop_out_rate"] == 0.0     # 1.71 never reached 1.25 x 1.8 = 2.25
+    # Capital is known on every row, so the curve is reportable on max risk.
+    assert by_ratio[0.95]["on_max_risk"] is not None
+
+
+def analytics_grid_ratios():
+    from cherrypick.meic import stop_policies
+
+    return stop_policies.GRID_RATIOS
+
+
+def test_stop_grid_reports_censored_points_instead_of_folding_them_into_totals(conn):
+    """On an arm that really stops, the path above where it stopped was never observed. Those
+    points must be counted as censored, never summed as "did not fire"."""
+    _insert(
+        conn, ic_order_id="1", risk_profile="width-5", status="stopped",
+        put_max_cost=1.8, call_max_cost=0.1,          # stopped at 1.0x net credit
+        put_settle_value=0.0, call_settle_value=0.0,
+        pnl=-90.0, fees=4.49,
+    )
+    out = analytics.stop_grid(conn, arm="width-5")
+    by_ratio = {p["ratio"]: p for p in out["curve"]}
+    assert by_ratio[0.95]["censored"] == 0 and by_ratio[0.95]["derivable"] == 1
+    for ratio in (1.05, 1.10, 1.15, 1.20, 1.25):
+        assert by_ratio[ratio]["censored"] == 1, ratio
+        assert by_ratio[ratio]["derivable"] == 0, ratio
+        assert by_ratio[ratio]["net_pnl"] == 0.0     # nothing summed into it
+
+
+def test_stop_session_rollup_names_what_the_stop_cost_per_session(conn):
+    _insert(
+        conn, ic_order_id="1", risk_profile="open", status="expired", trade_date="2026-08-13",
+        put_max_cost=1.8, call_max_cost=0.1, put_settle_value=0.0, call_settle_value=0.0,
+        pnl=180.0, fees=0.0,
+    )
+    _insert(
+        conn, ic_order_id="2", risk_profile="open", status="expired", trade_date="2026-08-14",
+        put_max_cost=0.2, call_max_cost=0.2, put_settle_value=0.0, call_settle_value=0.0,
+        pnl=180.0, fees=0.0,
+    )
+    rows = analytics.stop_session_rollup(conn)
+    assert [r["session"] for r in rows] == ["2026-08-13", "2026-08-14"]
+    for r in rows:
+        # `open` never stops, so realized and shadow are the same book and the stop cost nothing.
+        assert r["stop_cost"] == 0.0
+        assert r["shadow_pnl_without_stop"] == r["realized_pnl_with_stop"]
+
+
+# --------------------------------------------------------------------------- control_fired (#6)
+
+
+def test_control_fired_tags_the_sessions_control_sat_out(conn):
+    """The asymmetry proposal #6 is about: control's stricter iv_rank floor can leave it dark while
+    the looser arms trade, so those sessions have no same-session baseline."""
+    # 08-13: control traded alongside width-5.
+    _insert(conn, ic_order_id="1", risk_profile="control", trade_date="2026-08-13")
+    _insert(conn, ic_order_id="2", risk_profile="width-5", trade_date="2026-08-13")
+    # 08-14: control gated out entirely; width-5 and open still traded.
+    _insert(conn, ic_order_id="3", risk_profile="width-5", trade_date="2026-08-14")
+    _insert(conn, ic_order_id="4", risk_profile="open", trade_date="2026-08-14")
+
+    out = analytics.control_fired(conn)
+    assert out["n_sessions"] == 2
+    assert out["n_control_fired"] == 1 and out["n_control_dark"] == 1
+
+    by_session = {s["session"]: s for s in out["sessions"]}
+    assert by_session["2026-08-13"]["control_fired"] is True
+    assert by_session["2026-08-13"]["unbaselined_arms"] == []
+    assert by_session["2026-08-14"]["control_fired"] is False
+    assert by_session["2026-08-14"]["control_fills"] == 0
+    assert by_session["2026-08-14"]["unbaselined_arms"] == ["open", "width-5"]
+
+
+def test_control_fired_buckets_rather_than_excludes(conn):
+    """A dark session is a real session with a real result. It has to come back in the list so a
+    caller can group on it — dropping it would decide the answer by choosing the sample."""
+    _insert(conn, ic_order_id="1", risk_profile="width-5", trade_date="2026-08-14")
+    out = analytics.control_fired(conn)
+    assert out["n_sessions"] == 1, "the dark session is still reported, not filtered away"
+    assert out["sessions"][0]["by_arm"] == {"width-5": 1}

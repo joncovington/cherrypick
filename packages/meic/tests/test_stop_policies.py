@@ -218,3 +218,94 @@ def test_validate_against_control_excludes_force_closed_and_other_profiles():
     assert result["compared"] == 0
     assert result["skipped_force_closed"] == 1
     assert result["ok"] is False  # no rows compared -> not a pass
+
+
+# --------------------------------------------------------------------------- the ratio grid (#12)
+def test_a_raw_spec_scores_the_same_as_the_named_policy_it_matches():
+    """The grid passes (basis, multiple) instead of a name, so a swept ratio needs no POLICIES
+    entry. At 0.95 on the net basis that must be control's own policy, byte for byte."""
+    row = _row(put_max_cost=2.0, call_max_cost=0.2, put_settle_value=2.5, call_settle_value=0.0)
+    named = stop_policies.derive(row, "control", fee_one_side=_fee_one_side, fee_full_ic=_fee_full_ic)
+    spec = stop_policies.derive(row, ("net", 0.95), fee_one_side=_fee_one_side, fee_full_ic=_fee_full_ic)
+    assert named == spec
+
+
+def test_a_stopped_row_censors_every_ratio_above_where_it_actually_stopped():
+    """The trap the grid would otherwise walk into. `*_max_cost` stops being recorded the moment a
+    side stops, so a looser threshold's answer was never observed. Reporting "did not fire" there
+    would be exactly backwards: nothing was watched, so nothing can be concluded."""
+    # Stopped with a max cost of 1.80 against a 1.80 net credit -> the path says nothing above 1.0x.
+    row = _row(status="stopped", put_max_cost=1.8, call_max_cost=0.1,
+               put_settle_value=2.4, call_settle_value=0.0)
+    assert stop_policies.censored_above(row) == 1.0
+
+    grid = stop_policies.score_grid(
+        row, fee_one_side=_fee_one_side, fee_full_ic=_fee_full_ic, ratios=(0.85, 0.95, 1.0, 1.05, 1.25)
+    )
+    # At or below where it stopped: answerable, and the put side is known to have fired.
+    for ratio in (0.85, 0.95, 1.0):
+        assert grid[ratio]["censored"] is False, ratio
+        assert grid[ratio]["derivable"] is True and grid[ratio]["put_fired"] is True
+    # Above it: refused, not answered.
+    for ratio in (1.05, 1.25):
+        assert grid[ratio]["censored"] is True, ratio
+        assert grid[ratio]["derivable"] is False and grid[ratio]["pnl"] is None
+
+
+def test_a_row_that_ran_to_settlement_censors_nothing():
+    """`open` runs with no per-side stop, so its paths are complete and every ratio is answerable.
+    That is why the sweep is scored over that arm."""
+    row = _row(status="expired", put_max_cost=1.2, call_max_cost=0.3,
+               put_settle_value=0.0, call_settle_value=0.0)
+    assert stop_policies.censored_above(row) is None
+    grid = stop_policies.score_grid(
+        row, fee_one_side=_fee_one_side, fee_full_ic=_fee_full_ic, ratios=stop_policies.GRID_RATIOS
+    )
+    assert all(not p["censored"] and p["derivable"] for p in grid.values())
+
+
+def test_the_grid_fires_less_as_the_threshold_loosens():
+    """The curve's basic shape, and the thing the whole sweep is for: a looser stop cannot fire
+    more often than a tighter one over the same path."""
+    row = _row(status="expired", put_max_cost=1.71, call_max_cost=0.2,
+               put_settle_value=2.0, call_settle_value=0.0)  # 1.71 / 1.8 = 0.95x exactly
+    grid = stop_policies.score_grid(
+        row, fee_one_side=_fee_one_side, fee_full_ic=_fee_full_ic, ratios=(0.85, 0.95, 1.05)
+    )
+    assert grid[0.85]["put_fired"] is True
+    assert grid[0.95]["put_fired"] is True    # >= threshold, so it fires at exactly 0.95
+    assert grid[1.05]["put_fired"] is False   # never reached 1.89
+
+
+# --------------------------------------------------------------------------- the shadow ledger (#12)
+def test_shadow_settle_prices_the_unstopped_counterfactual_and_names_the_stop_cost():
+    row = _row(status="stopped", ic_order_id="ic-1", trade_date="2026-08-14", risk_profile="width-5",
+               put_max_cost=1.8, call_max_cost=0.1, put_settle_value=0.0, call_settle_value=0.0,
+               wing_width=20, quantity=1, pnl=-90.0, fees=4.49)
+    out = stop_policies.shadow_settle(row, fee_one_side=_fee_one_side, fee_full_ic=_fee_full_ic)
+
+    assert out["stop_fired"] is True
+    assert out["realized_net"] == -94.49                      # -90.00 pnl - 4.49 fees
+    # Unstopped, both sides settle worthless: the whole 1.80 credit is kept, and expiry costs no fee.
+    assert out["shadow_settle_net"] == 180.0
+    assert out["stop_cost"] == 274.49                         # holding would have paid this much more
+    assert out["capital_at_risk"] == (20 - 1.8) * 100         # (width - credit) x 100 x qty
+
+
+def test_max_adverse_excursion_is_measured_in_credit_not_spot():
+    """stop_trigger_ratio is compared against COST over net credit. The *_mae_spot columns measure
+    a different quantity that no threshold in this module reads."""
+    row = _row(put_max_cost=2.7, call_max_cost=0.9, put_settle_value=0.0, call_settle_value=0.0,
+               put_mae_spot=5000.0, pnl=0.0, fees=0.0)
+    out = stop_policies.shadow_settle(row, fee_one_side=_fee_one_side, fee_full_ic=_fee_full_ic)
+    assert out["mae_over_credit"] == 1.5                      # worst side 2.70 / 1.80 net credit
+
+
+def test_favourable_excursion_is_null_rather_than_zero():
+    """It is not recorded anywhere and the stream cache keeps no quote history to rebuild it from.
+    A 0.0 here would be the misleadingly-precise zero this suite has a rule about."""
+    row = _row(put_max_cost=1.0, call_max_cost=0.5, put_settle_value=0.0, call_settle_value=0.0,
+               pnl=10.0, fees=1.0)
+    assert stop_policies.shadow_settle(
+        row, fee_one_side=_fee_one_side, fee_full_ic=_fee_full_ic
+    )["mfe_over_credit"] is None

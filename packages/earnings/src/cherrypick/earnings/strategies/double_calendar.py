@@ -35,6 +35,7 @@ Commands (see CLAUDE.md's Tool Reference):
 from datetime import date, datetime
 
 from cherrypick.core import structures as _structures
+
 from cherrypick.earnings import scanner
 
 

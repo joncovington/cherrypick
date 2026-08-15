@@ -193,6 +193,18 @@ def _meic(session: str) -> dict[str, Any]:
             " AND exit_time IS NOT NULL GROUP BY risk_profile",
             (session,),
         )
+        # Did the baseline trade at all today? control/control-drift carry a stricter iv_rank floor
+        # than open/width-5/width-10, so on a low-IV-rank day control can go completely dark while
+        # the looser arms trade -- 0 of 297 on 2026-08-14 -- and a width comparison drawn on such a
+        # session has no same-session baseline under it. Stated as its own flag rather than left to
+        # be inferred from book_by_profile's absent row: an absent row reads as "nothing to report"
+        # far more easily than as "the control was gated out", which is the whole finding.
+        fills = _store.rows(
+            conn,
+            "SELECT risk_profile, COUNT(*) n FROM ic_trades WHERE trade_date = ? GROUP BY risk_profile",
+            (session,),
+        )
+        by_profile = _counts(fills, "risk_profile")
         return {
             "entry_attempts": [
                 {"profile": r["risk_profile"], "outcome": r["outcome"], "n": r["n"]} for r in attempts
@@ -201,6 +213,11 @@ def _meic(session: str) -> dict[str, Any]:
             "book_by_profile": book,
             "latest_regime": regime[0] if regime else None,
             "closed_with_stop_instrumentation": _counts(stops, "risk_profile"),
+            "control_fired": {
+                "fired": by_profile.get("control", 0) > 0,
+                "fills_by_profile": by_profile,
+                "_note": "bucket width comparisons on this; never drop a session because it is false",
+            },
         }
 
     out = _read(_paper_db("meic"), read) or {"_absent": "no meic paper ledger"}

@@ -481,6 +481,215 @@ def validate_stop_derivation(conn, start=None, end=None, era=CURRENT_ERA, tolera
     )
 
 
+# --------------------------------------------------------------------------- the stop curve
+
+
+def stop_grid(
+    conn, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="open", ratios=None
+) -> dict:
+    """The whole `stop_trigger_ratio` curve, scored over already-recorded paths (proposal #12).
+
+    The bounded stop experiment tests ONE point on this curve and needs 15 sessions to say
+    anything. Every point is already answerable from rows the module has: `*_max_cost` says whether
+    a threshold would have fired, `*_settle_value` says what the side was worth unstopped, and both
+    are recorded for stopped sides too. So this is a read-side derivation — no new instrumentation,
+    nothing on the write path, no risk — and one session yields the SHAPE of the curve rather than
+    one sampled point.
+
+    Defaults to `open` for the same reason `stop_counterfactual` does, and here it is load-bearing
+    rather than conventional: `open` runs with per_side_stop_management off, so its paths run to
+    settlement uncensored and every ratio is answerable. On an arm that really stops, ratios above
+    where it stopped are `censored` — see `stop_policies.censored_above`. Those are reported, never
+    folded into the totals, because a censored point and a point that did not fire look identical
+    in a sum and mean opposite things.
+
+    Read `validate_stop_derivation` before trusting these numbers: it re-derives control's REAL
+    mechanism from control's own paths and checks it against control's recorded P&L.
+    """
+    from cherrypick.meic import paper as _paper
+    from cherrypick.meic import stop_policies as _sp
+
+    ratios = tuple(ratios or _sp.GRID_RATIOS)
+    where, params = _period_clause(start, end, arm, symbol, era)
+    rows = [dict(r) for r in conn.execute(f"SELECT * FROM ic_trades WHERE {where}", params).fetchall()]
+
+    points = {
+        r: {"ratio": r, "derivable": 0, "censored": 0, "stopped_sides": 0,
+            "pnl": 0.0, "fees": 0.0, "capital": 0.0, "capital_known": 0}
+        for r in ratios
+    }
+    for row in rows:
+        capital = _sp.capital_at_risk(row)
+        scored = _sp.score_grid(
+            row, fee_one_side=_paper.close_fees_one_side, fee_full_ic=_paper.close_fees_full_ic,
+            ratios=ratios,
+        )
+        for ratio, out in scored.items():
+            bucket = points[ratio]
+            if out["censored"]:
+                bucket["censored"] += 1
+                continue
+            if not out["derivable"]:
+                continue
+            bucket["derivable"] += 1
+            bucket["pnl"] += out["pnl"]
+            bucket["fees"] += out["fee"]
+            bucket["stopped_sides"] += int(out["put_fired"]) + int(out["call_fired"])
+            if capital is not None:
+                bucket["capital"] += capital
+                bucket["capital_known"] += 1
+
+    curve = []
+    for ratio in ratios:
+        b = points[ratio]
+        n = b["derivable"]
+        net = b["pnl"] - b["fees"]
+        # on_max_risk only when capital is known for EVERY scored row -- a return computed over a
+        # subset of the capital is not this arm's return, it is a different arm's.
+        full_capital = n > 0 and b["capital_known"] == n and b["capital"] > 0
+        curve.append({
+            "ratio": ratio,
+            "derivable": n,
+            "censored": b["censored"],
+            "net_pnl": _round(net),
+            "fees": _round(b["fees"]),
+            # Sides stopped out of 2 per derivable trade -- the cost side of a tighter threshold.
+            "stop_out_rate": _rate(b["stopped_sides"], n * 2) if n else None,
+            "on_max_risk": _round(net / b["capital"], 4) if full_capital else None,
+        })
+
+    return {
+        "arm": arm,
+        "trades": len(rows),
+        "sessions": len({r["trade_date"] for r in rows if r.get("trade_date")}),
+        "ratios": list(ratios),
+        "curve": curve,
+        "_note": (
+            "Exact for the policy an arm really ran; a MAX-COST PROXY for any other threshold "
+            "(stop_policies' module docstring measures ~$2-8/side replay error). Censored points "
+            "are excluded from every total rather than counted as not-fired."
+        ),
+    }
+
+
+def stop_session_rollup(
+    conn, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="open"
+) -> list[dict]:
+    """Per session: what the book really made, what it would have made with no stop at all, and the
+    difference. `stop_cost` positive means the stop COST money that session.
+
+    Per session rather than pooled because a session is one market event — pooling asks the stop
+    question of an average day that never happened, and the whole reason this arm exists is that
+    the answer is regime-dependent.
+    """
+    from cherrypick.meic import paper as _paper
+    from cherrypick.meic import stop_policies as _sp
+
+    where, params = _period_clause(start, end, arm, symbol, era)
+    rows = [dict(r) for r in conn.execute(f"SELECT * FROM ic_trades WHERE {where}", params).fetchall()]
+
+    by_session: dict[str, dict] = {}
+    for row in rows:
+        session = row.get("trade_date")
+        if not session:
+            continue
+        shadow = _sp.shadow_settle(
+            row, fee_one_side=_paper.close_fees_one_side, fee_full_ic=_paper.close_fees_full_ic
+        )
+        bucket = by_session.setdefault(session, {
+            "session": session, "arm": arm, "trades": 0, "derivable": 0, "stops_fired": 0,
+            "realized_net": 0.0, "shadow_net": 0.0, "real_fees": 0.0, "shadow_fees": 0.0,
+        })
+        bucket["trades"] += 1
+        bucket["stops_fired"] += int(shadow["stop_fired"])
+        bucket["real_fees"] += row.get("fees") or 0.0
+        if shadow["realized_net"] is None or shadow["shadow_settle_net"] is None:
+            continue
+        bucket["derivable"] += 1
+        bucket["realized_net"] += shadow["realized_net"]
+        bucket["shadow_net"] += shadow["shadow_settle_net"]
+        # A held-to-settlement side pays no closing fee, so the shadow book's fees are whatever
+        # stop-none itself incurs -- which is 0 when neither side fires.
+        none_out = _sp.derive(row, "stop-none", fee_one_side=_paper.close_fees_one_side,
+                              fee_full_ic=_paper.close_fees_full_ic)
+        bucket["shadow_fees"] += none_out["fee"] or 0.0
+
+    out = []
+    for session in sorted(by_session):
+        b = by_session[session]
+        out.append({
+            "session": session,
+            "arm": arm,
+            "trades": b["trades"],
+            "derivable": b["derivable"],
+            "stops_fired": b["stops_fired"],
+            "realized_pnl_with_stop": _round(b["realized_net"]),
+            "shadow_pnl_without_stop": _round(b["shadow_net"]),
+            "stop_cost": _round(b["shadow_net"] - b["realized_net"]),
+            "fee_delta": _round(b["real_fees"] - b["shadow_fees"]),
+        })
+    return out
+
+
+# --------------------------------------------------------------------------- session conditioning
+
+
+def control_fired(conn, start=None, end=None, symbol=None, era=CURRENT_ERA) -> dict:
+    """Per session: did `control` take a single fill, and how many did each other arm take?
+
+    Proposal #6. control/control-drift/sign carry a stricter iv_rank floor than open/width-5/
+    width-10, so on a low-IV-rank day control can go completely dark (0 of 297 on 2026-08-14) while
+    the looser arms trade and lose. On such a session a width comparison has no same-session
+    baseline at all, and a loss could be width, regime, or simply that the looser floor let a trade
+    happen on a day control would not have traded.
+
+    BUCKETED, NEVER EXCLUDED. This returns the tag and the counts; scoring code groups by it. A
+    session where control was fully gated is a real session with a real result — dropping it would
+    be deciding the answer by choosing the sample, which is the failure this module already records
+    against reading a structural identity as a finding.
+    """
+    where, params = _period_clause(start, end, None, symbol, era)
+    rows = conn.execute(
+        f"SELECT trade_date, risk_profile, COUNT(*) n FROM ic_trades WHERE {where}"
+        " GROUP BY trade_date, risk_profile",
+        params,
+    ).fetchall()
+
+    sessions: dict[str, dict] = {}
+    for row in rows:
+        r = dict(row)
+        bucket = sessions.setdefault(r["trade_date"], {"session": r["trade_date"], "by_arm": {}})
+        bucket["by_arm"][r["risk_profile"]] = r["n"]
+
+    out = []
+    for session in sorted(sessions):
+        by_arm = sessions[session]["by_arm"]
+        fired = by_arm.get("control", 0) > 0
+        out.append({
+            "session": session,
+            "control_fired": fired,
+            "control_fills": by_arm.get("control", 0),
+            "by_arm": by_arm,
+            # The arms that traded a day control did not — the ones whose result cannot be read
+            # against a same-session baseline.
+            "unbaselined_arms": sorted(a for a, n in by_arm.items() if n > 0 and a != "control")
+            if not fired else [],
+        })
+
+    fired_sessions = [s for s in out if s["control_fired"]]
+    return {
+        "sessions": out,
+        "n_sessions": len(out),
+        "n_control_fired": len(fired_sessions),
+        "n_control_dark": len(out) - len(fired_sessions),
+        "_note": (
+            "Bucket on control_fired when scoring width-5/width-10/open against control; never "
+            "drop the dark sessions. A session control sat out is evidence about the gate, not a "
+            "gap in the width evidence."
+        ),
+    }
+
+
 # --------------------------------------------------------------------------- gate ledger
 
 
