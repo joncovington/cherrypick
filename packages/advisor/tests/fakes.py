@@ -15,6 +15,31 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from cherrypick.advisor import clock as _clock
+
+
+def anchor_session() -> str:
+    """The session every test builds its world around — **derived from the clock, never a literal**.
+
+    These tests pinned `SESSION = "2026-08-13"` until 2026-08-15, and it rotted exactly as a
+    hardcoded date does: advice is single-session by contract, so the moment that date fell into
+    the past every `admit` in the suite was correctly refused with `advice expired` and 25 tests
+    went red on the same day. Nothing was wrong with the code — the tests had simply started
+    asserting that the past is the present. A rotting suite on a component that runs eight times a
+    trading day is worse than no suite, because it hides the regression it exists to catch.
+
+    Anchored to the most recent TRADING day rather than to bare `session_today()`: a run on a
+    Saturday would otherwise pick a non-trading session and fail a different set of tests for a
+    different wrong reason.
+    """
+    today = _clock.session_today()
+    return today if _clock.is_trading_session(today) else _clock.previous_sessions(today, 1)[0]
+
+
+def next_session(session: str | None = None) -> str:
+    """The trading day after `anchor_session()` — where tomorrow's advice artifact lands."""
+    return _clock.next_session(session or anchor_session())
+
 MEIC_DDL = """
 CREATE TABLE ic_trades (
     id INTEGER PRIMARY KEY AUTOINCREMENT, trade_date TEXT NOT NULL, entry_time TEXT,
@@ -255,10 +280,14 @@ def advice_block(bounds: dict, *, enabled: bool = True, base_key: str = "base_pr
     return {"advice": {"enabled": enabled, base_key: base, "bounds": bounds}}
 
 
-def write_suite_config(home: Path, advisor: dict) -> Path:
-    """The orchestrator's `~/.cherrypick/config.json`, carrying an `advisor` block."""
+def write_suite_config(home: Path, advisor: dict, modules: dict | None = None) -> Path:
+    """The orchestrator's `~/.cherrypick/config.json`, carrying an `advisor` block — and, when a
+    test needs it, the `modules` block whose `calibration.rule` the advisor qualifies against."""
     import json
 
     path = home / "config.json"
-    path.write_text(json.dumps({"advisor": advisor}, indent=2), encoding="utf-8")
+    body: dict = {"advisor": advisor}
+    if modules is not None:
+        body["modules"] = modules
+    path.write_text(json.dumps(body, indent=2), encoding="utf-8")
     return path

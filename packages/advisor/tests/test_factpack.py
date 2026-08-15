@@ -97,6 +97,29 @@ def test_the_deep_pack_adds_what_the_deep_slot_reasons_from(seeded, tmp_home):
     assert deep["arm_readings"]["meic"]["collisions"] == []  # seed_suite's arms don't collide
 
 
+def test_each_module_is_qualified_against_its_own_configured_rule(seeded, tmp_home):
+    """The pack used to call qualify_readings() bare, so the model saw the library default while
+    `calibrate` applied the module's configured rule to the same numbers — the two surfaces
+    disagreed about which arms were qualified. The rule travels with the verdict now, so the model
+    can cite what it was judged against."""
+    fakes.write_suite_config(
+        tmp_home,
+        {"enabled": True},
+        modules={"flies": {"calibration": {"rule": {"min_net_pnl": 0.0, "margin": 0.25}}}},
+    )
+    deep = factpack.build(SESSION, "deep")
+
+    flies_rule = deep["arm_readings"]["flies"]["rule"]
+    assert flies_rule["min_net_pnl"] == 0.0
+    assert "margin" not in flies_rule, "margin belongs to the champion comparison, not the checks"
+    assert flies_rule["min_days"] == 14, "the configured rule overlays the default, never replaces it"
+    # A module with no calibration block is unaffected and still reports the default it was judged by.
+    assert "min_net_pnl" not in deep["arm_readings"]["meic"]["rule"]
+
+    for tag, verdict in deep["arm_readings"]["flies"]["qualification"].items():
+        assert "net_pnl" in verdict["checks"], f"{tag} was not judged on money"
+
+
 def test_the_deep_pack_flags_identically_reading_arms(seeded, tmp_home):
     """Found live 2026-08-14: meic's gex-open/gex-blocked read identical in every field despite
     naming opposite gate conditions. The fact pack must surface that as a collision, not let the

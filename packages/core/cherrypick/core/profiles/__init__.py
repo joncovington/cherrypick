@@ -170,14 +170,26 @@ def _check(value, threshold) -> dict:
 def _qualify_one(reading: Mapping, thresholds: Mapping) -> dict:
     """The threshold checks shared by `recommend_champion` and `qualify_readings` — factored out so
     the two public functions cannot drift on what "qualified" means. Same three base checks as the
-    old `recommend_promotion` (sample/win_rate/days) plus the two opt-in hardened checks, unchanged:
+    old `recommend_promotion` (sample/win_rate/days) plus the three opt-in hardened checks:
 
+    - `min_net_pnl` — net-of-cost P&L must clear the bar. Opt in with 0.0 to mean "an arm that lost
+      money does not qualify, whatever its win rate." The base three cannot see that case at all,
+      and the failure is not hypothetical: on 2026-08-14 flies' control, gex and time_window all
+      read `qualified: true` while lifetime-negative (-1,698.61 / -1,697.94 / -87.69), because a
+      butterfly book wins often and loses big — precisely the shape a win-rate gate is blind to.
+      A threshold rather than a hardcoded `> 0` so a module can demand a real margin instead of
+      break-even; note `_check` is `>=`, so 0.0 admits an exactly-flat book.
     - `min_return_on_capital` — net P&L as a fraction of capital at risk must clear the bar. A
       reading whose records carry no capital reads None and FAILS: unknown capital cannot certify a
       capital-efficiency threshold.
     - `require_slippage_survival` — the reading must stay profitable with the modeled slippage
       fraction DOUBLED (`net_pnl_2x_slippage > 0`), and the recorded slippage must cover the whole
       sample: a stress test over part of the evidence certifies nothing.
+
+    The last two are deliberately un-satisfiable by an uninstrumented module — a book with no
+    recorded slippage or capital cannot pass them at any threshold. That is the intended reading:
+    they certify a measurement, so switching them on for a module states "nothing here may qualify
+    until it is measured", not "these are nice to have."
 
     Returns `{"qualified": bool, "checks": {name: {value, threshold, pass}}}`.
     """
@@ -186,6 +198,8 @@ def _qualify_one(reading: Mapping, thresholds: Mapping) -> dict:
         "win_rate": _check(reading.get("win_rate"), thresholds["min_win_rate"]),
         "days": _check(reading.get("days"), thresholds["min_days"]),
     }
+    if "min_net_pnl" in thresholds:
+        checks["net_pnl"] = _check(reading.get("net_pnl"), thresholds["min_net_pnl"])
     if "min_return_on_capital" in thresholds:
         checks["return_on_capital"] = _check(
             reading.get("return_on_capital"), thresholds["min_return_on_capital"]

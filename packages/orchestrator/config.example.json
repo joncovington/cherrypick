@@ -135,11 +135,15 @@
         "settlement_grace_minutes": 30
       },
       "calibration": {
-        "_comment": "These tags are parallel experiment arms (control/gex/time_window/width-N), not a risk sequence -- there is no currently-live 'champion' among them, so no 'champion' key is set: cherrypick calibrate produces per-arm qualification readings with NO champion/challenger recommendation. width-2..width-5 are the wing-width sweep (control at the default width is its 1-increment rung); wide_wing is the retired SPX-era single-point width arm, listed so its historical books stay readable.",
+        "_comment": "These tags are parallel experiment arms (control/gex/time_window/width-N), not a risk sequence -- there is no currently-live 'champion' among them, so no 'champion' key is set: cherrypick calibrate produces per-arm qualification readings with NO champion/challenger recommendation. width-2..width-5 and width-10 are the wing-width sweep, pinned in STRIKE increments via wing_width_strikes (control at the default width is its 1-strike rung); wide_wing is the retired SPX-era single-point width arm, listed so its historical books stay readable.",
+        "_rule_note": "All three hardened checks enabled 2026-08-15 (advisor creative proposal #4). min_net_pnl = 0.0 states the thing the base three structurally cannot see: on 2026-08-14 control, gex and time_window all read qualified=true while lifetime-negative (-1,698.61 / -1,697.94 / -87.69), because a butterfly book wins often and loses big and a win-rate gate is blind to exactly that shape. min_return_on_capital = 0.0 and require_slippage_survival are NOT second profitability bars -- both are un-satisfiable while a reading carries no capital or no recorded slippage, and every flies arm today carries neither (capital_at_risk is null module-wide, slippage_coverage is 0 on every arm). Enabling them therefore states 'no flies arm may qualify until it is instrumented', deliberately: an arm certified on one real number and two absent ones is the failure this closes. Expect flies to qualify NOTHING until fly_positions records capital at risk and per-fill slippage -- that is the intended reading, not a regression.",
         "rule": {
           "min_days": 14,
           "min_win_rate": 0.6,
-          "min_sample": 20
+          "min_sample": 20,
+          "min_net_pnl": 0.0,
+          "min_return_on_capital": 0.0,
+          "require_slippage_survival": true
         }
       }
     },

@@ -540,7 +540,8 @@ class ChainStreamer:
         return sorted(wanted)
 
     async def _refresh_extra_windows(
-        self, streamer, state: _State, symbol: str, price: float, strike_count: int, Quote, Greeks, Summary, Trade
+        self, streamer, state: _State, symbol: str, price: float, strike_count: int,
+        Quote, Greeks, Summary, Trade,
     ) -> None:
         """Maintain an ATM window per extra requested expiration, beside the nearest-expiration one.
 
