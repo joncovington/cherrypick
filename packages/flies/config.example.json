@@ -33,7 +33,7 @@
   ],
   "defaults_header": "===== Entry & Sizing Defaults =====",
   "defaults": {
-    "_wing_width": "Points per wing -- the width of the control/gex/time_window books. Scale with the symbol, and note the floor is set by the underlying's own strike spacing: SPX 0DTE strikes are 5 points apart (measured: 302 of 479 gaps), so 5 is the TIGHTEST structure SPX offers and the minimum per-contract risk is $500. XSP's 1-point strikes allowed 1 ($100). Moving to SPX on 2026-08-01 therefore raised per-contract risk 5x -- unavoidable, and accepted deliberately for the fee economics in _symbols_note. Credit scaled with it (12.6% of width on SPX vs 12.0% on XSP), so it is close to the same trade 5x larger rather than a different one.",
+    "_wing_width": "Points per wing -- the width of the control/gex/time_window books. Scale with the symbol, and note the floor is set by the underlying's own strike spacing: SPX 0DTE strikes are 5 points apart (measured: 302 of 479 gaps), so 5 is the TIGHTEST structure SPX offers and the minimum per-contract risk is $500. XSP's 1-point strikes allowed 1 ($100). Moving to SPX on 2026-08-01 therefore raised per-contract risk 5x -- unavoidable, and accepted deliberately for the fee economics in _symbols_note. Credit scaled with it (12.6% of width on SPX vs 12.0% on XSP), so it is close to the same trade 5x larger rather than a different one. The width-N sweep arms (below, in 'arms') set 'wing_width_strikes' instead of this key -- N strike increments, resolved to points against strike_increment by engine.merged_params -- specifically so their meaning survives a symbol whose strikes are not 5 points apart; this key is a raw point value and only ever applies to the arm it is set on.",
     "wing_width": 5,
     "strike_increment": 5,
     "quantity": 1,
@@ -107,7 +107,7 @@
     "entry_windows": []
   },
   "arms_header": "===== Arms =====",
-  "_arms_note": "Each arm differs from control in EXACTLY one thing, each with its own book. control is what makes every other arm falsifiable: gex vs control isolates centring, time_window vs control isolates timing, and the width-N arms vs control sweep wing width (control at the default width is the sweep's 1-increment rung — a width-1 arm would duplicate its book under a second name). wide_wing was the single-point version of the width question; it stays for the SPX-era books' attribution but is disabled now the sweep covers it.",
+  "_arms_note": "Each arm differs from control in EXACTLY one thing, each with its own book. control is what makes every other arm falsifiable: gex vs control isolates centring, time_window vs control isolates timing, and the width-N arms vs control sweep wing width in STRIKE increments, not points (control at the default width is the sweep's 1-strike rung — a width-1 arm would duplicate its book under a second name). wide_wing was the single-point version of the width question; it stays for the SPX-era books' attribution but is disabled now the sweep covers it.",
   "arms": {
     "gex": {
       "enabled": true,
@@ -264,10 +264,10 @@
         ]
       ]
     },
-    "_width_arms_note": "The width sweep, DISABLED 2026-08-01 with the move to SPX: the arms pinned wing_width to 2..5, which are not multiples of SPX's 5-point strike spacing and so cannot be built there at all. Definitions kept rather than deleted -- resuming the sweep on SPX means rescaling to 10/15/20/25 (control at 5 is rung one), which is a deliberate choice about carrying $1,000-$2,500 per contract, not a rename. XSP-era books stay in the ledger.",
+    "_width_arms_note": "The width sweep, DISABLED 2026-08-01 with the move to SPX: the arms pinned wing_width to a raw POINT value (2..5), which are not multiples of SPX's 5-point strike spacing and so could not be built there at all. RE-ENABLED 2026-08-15 on a different axis: wing_width_strikes pins the wing to N STRIKE INCREMENTS instead of N points (resolved to points by engine.merged_params against strike_increment), so the sweep means the same thing on any symbol's chain regardless of that symbol's own strike spacing -- 10/15/20/25/50 points on SPX today (control's default wing_width of 5 is the 1-strike rung, which is why there is still no width-1 arm: it would duplicate control's book under a second name). The XSP-era rows under these same arm names used the OLD point-value meaning and are not poolable with the SPX rows that follow; the console's era filter already separates them by symbol.",
     "width-2": {
-      "enabled": false,
-      "wing_width": 2,
+      "enabled": true,
+      "wing_width_strikes": 2,
       "entry_windows": [
         [
           "10:00",
@@ -276,8 +276,8 @@
       ]
     },
     "width-3": {
-      "enabled": false,
-      "wing_width": 3,
+      "enabled": true,
+      "wing_width_strikes": 3,
       "entry_windows": [
         [
           "10:00",
@@ -286,8 +286,8 @@
       ]
     },
     "width-4": {
-      "enabled": false,
-      "wing_width": 4,
+      "enabled": true,
+      "wing_width_strikes": 4,
       "entry_windows": [
         [
           "10:00",
@@ -296,8 +296,18 @@
       ]
     },
     "width-5": {
-      "enabled": false,
-      "wing_width": 5,
+      "enabled": true,
+      "wing_width_strikes": 5,
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "width-10": {
+      "enabled": true,
+      "wing_width_strikes": 10,
       "entry_windows": [
         [
           "10:00",

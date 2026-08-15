@@ -176,10 +176,12 @@ export interface FliesForest {
  * Distinct arms and trade dates, for the page's filter selects — narrowed to the same era as the
  * data itself.
  *
- * The selects have to agree with the scope or they lie about what is reachable: several arms are
- * XSP-era only (`width-2`/`width-3`/`width-4` cannot be built on SPX at all, whose strikes are 5
- * points apart), so an unfiltered list offers arms that select nothing and dates that return an
- * empty page. An option that yields no rows reads as "nothing happened" rather than "not in this
+ * The selects have to agree with the scope or they lie about what is reachable: `width-2`..`width-4`
+ * traded XSP-era under a different meaning of the name (a raw point wing_width, disabled on the SPX
+ * move because those point values aren't buildable on SPX's 5-point strikes) and only resumed
+ * 2026-08-15 on SPX under a strike-count sweep (`wing_width_strikes`) — so an unfiltered list mixes
+ * two eras' worth of geometry under the same arm tag and dates that return an empty page for the
+ * narrower one. An option that yields no rows reads as "nothing happened" rather than "not in this
  * era", which is exactly the confusion the scope control exists to remove.
  */
 export function readFliesMeta(
