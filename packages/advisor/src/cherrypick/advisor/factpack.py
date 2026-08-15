@@ -28,9 +28,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core import home as _home
+
 from cherrypick.advisor import bounds as _bounds
 from cherrypick.advisor import clock as _clock
 from cherrypick.advisor import paths as _paths
+from cherrypick.advisor import settings as _settings
 from cherrypick.advisor import store as _store
 from cherrypick.advisor import verdicts as _verdicts
 
@@ -600,15 +603,25 @@ def _arm_readings() -> dict[str, Any]:
     identical in every field. Detected, never merged — `readings` keeps one row per tag so nothing
     downstream (verdicts, qualification) changes shape; this is a warning laid alongside it so the
     model doesn't read two names as two independent pieces of evidence.
+
+    Each module is qualified against ITS OWN configured rule (2026-08-15, acting on proposal #4).
+    This used to call `qualify_readings(readings)` bare, which applied the library default and
+    showed the model a weaker gate than `calibrate` applies on the same numbers — the pack said an
+    arm was qualified while the suite's own calibration said it was not. The resolved thresholds
+    travel beside the verdict as `rule` so the model can cite what it was actually judged against
+    rather than assuming the default three.
     """
-    from cherrypick.core.profiles import find_identical_readings, qualify_readings
+    from cherrypick.core.profiles import QUALIFICATION_RULE, find_identical_readings, qualify_readings
 
     out: dict[str, Any] = {}
+    cfg = _store.read_json(_home.config_path(), default={}) or {}
     for module in MODULES:
         readings = _verdicts.readings(module)
+        rule = _settings.calibration_rule(module, cfg)
         out[module] = {
             "readings": readings,
-            "qualification": qualify_readings(readings) if readings else {},
+            "qualification": qualify_readings(readings, rule=rule) if readings else {},
+            "rule": {**QUALIFICATION_RULE, **rule},
             "collisions": find_identical_readings(readings) if readings else [],
         }
     return out

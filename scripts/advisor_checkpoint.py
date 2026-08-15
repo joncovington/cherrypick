@@ -91,6 +91,9 @@ Things about this data that will mislead you if you do not know them:
   or a config mistake that never differentiated them. Treat colliding tags as ONE data point, not
   two, when reasoning about a module's arms; this list is provided, not something to re-derive by
   eyeballing the readings yourself.
+- `arm_readings.<module>.rule` is the qualification bar THAT module is judged against, and modules
+  differ. Read `qualification` against its own module's rule, never against another's or against a
+  remembered default. A check that is absent from a module's rule was not applied to it.
 """
 
 _OUTPUT_CONTRACT = """

@@ -7,6 +7,7 @@ deterministic half of this package is the half that must not be able to go wrong
 from __future__ import annotations
 
 import json
+from datetime import date
 
 import fakes
 import pytest
@@ -14,8 +15,11 @@ from cherrypick.core import advice as core_advice
 
 from cherrypick.advisor import bounds, clock, enact, experiments, paths, settings, store
 
-SESSION = "2026-08-13"  # a Thursday
-FRIDAY = "2026-08-14"
+# Derived from the clock, never a literal date — see fakes.anchor_session for what a hardcoded one
+# cost this suite. FRIDAY keeps its name for the readers of the assertions below; what it means is
+# "the next trading day", which is where an artifact issued on SESSION lands.
+SESSION = fakes.anchor_session()
+FRIDAY = fakes.next_session(SESSION)
 MEIC_BOUNDS = {
     "stop_trigger_ratio": {"min": 0.85, "max": 0.95},
     "entry_price_strategy": {"choices": ["mid", "auto"]},
@@ -207,9 +211,21 @@ def test_enact_writes_the_next_sessions_artifact_and_the_loop_can_read_it(home, 
 
 
 def test_advice_is_written_for_the_next_TRADING_day(home, conn):
-    """Friday's run lands on Monday, and a holiday is skipped — the NYSE calendar, not +1 day."""
-    experiments.admit_spec(conn, session=FRIDAY, module="meic", params={"stop_trigger_ratio": 0.9})
-    assert enact.run(conn, FRIDAY)["target_session"] == "2026-08-17"  # Monday
+    """Friday's run lands on Monday, and a holiday is skipped — the NYSE calendar, not +1 day.
+
+    The Friday is found forward from the anchor rather than written down, so the weekend skip is
+    genuinely exercised on a session that has not expired. The holiday pair below IS pinned, and
+    correctly so: those are facts about the NYSE calendar rather than about today, and
+    `clock.next_session` is a pure calendar call with no expiry in it to rot.
+    """
+    friday = SESSION
+    while date.fromisoformat(friday).weekday() != 4:
+        friday = clock.next_session(friday)
+
+    experiments.admit_spec(conn, session=friday, module="meic", params={"stop_trigger_ratio": 0.9})
+    monday = enact.run(conn, friday)["target_session"]
+    assert monday == clock.next_session(friday)
+    assert date.fromisoformat(monday).weekday() == 0, "a +1 day walk would have landed on Saturday"
 
     thanksgiving_eve = "2026-11-25"
     assert clock.next_session(thanksgiving_eve) == "2026-11-27"  # Thursday is the holiday

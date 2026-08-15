@@ -21,7 +21,7 @@ import fakes
 
 from cherrypick.advisor import store
 
-SESSION = "2026-08-13"
+SESSION = fakes.anchor_session()  # clock-derived: a literal date expires and reds the suite
 
 ADMITTED_REPLY = {
     "observations": ["control is taking fewer stops than width-5"],

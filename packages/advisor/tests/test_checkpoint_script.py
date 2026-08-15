@@ -20,7 +20,12 @@ import fakes
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "advisor_checkpoint.py"
-SESSION = "2026-08-13"   # a Thursday
+# Clock-derived: the deep slot enacts, and a literal date expires out from under that (see
+# fakes.anchor_session). NEXT_SESSION is where the artifact it issues lands.
+SESSION = fakes.anchor_session()
+NEXT_SESSION = fakes.next_session(SESSION)
+# Pinned, and correctly so: this test asserts the calendar gate SKIPS a non-trading day, and
+# "2026-08-15 is a Saturday" is a permanent fact with no expiry in it to rot.
 SATURDAY = "2026-08-15"
 
 GOOD_REPLY = {
@@ -99,10 +104,10 @@ def test_a_clean_reply_runs_the_whole_pipeline(home, tmp_path):
 
     assert result["ok"] is True
     assert result["admitted"] == 1 and result["rejected"] == 0
-    assert result["target_session"] == "2026-08-14"
+    assert result["target_session"] == NEXT_SESSION
     assert paths.pack_path(SESSION, "deep").exists()
     assert paths.raw_path(SESSION, "deep").exists()
-    assert paths.advice_path("meic", "2026-08-14").exists()
+    assert paths.advice_path("meic", NEXT_SESSION).exists()
 
     conn = store.connect()
     assert store.experiments(conn, status="active")[0]["module"] == "meic"
@@ -159,7 +164,7 @@ def test_the_deep_slot_enacts_even_when_the_ai_failed(home, tmp_path, shim):
 
     result = _run("--slot", "deep", "--session", SESSION, shim=shim, tmp_path=tmp_path)
     assert result["ok"] is False, "the failure is still reported"
-    assert paths.advice_path("meic", "2026-08-14").exists(), "but tomorrow's advice was issued"
+    assert paths.advice_path("meic", NEXT_SESSION).exists(), "but tomorrow's advice was issued"
     assert result["enacted"][0]["module"] == "meic"
 
 
@@ -173,7 +178,7 @@ def test_dry_run_prints_the_prompt_and_writes_nothing_but_the_pack(home, tmp_pat
     assert '"pack_version": 1' in out
     assert not paths.raw_path(SESSION, "deep").exists()
     assert not paths.checkpoint_path(SESSION, "deep").exists()
-    assert not paths.advice_path("meic", "2026-08-14").exists()
+    assert not paths.advice_path("meic", NEXT_SESSION).exists()
 
 
 def test_the_light_and_deep_prompts_differ_in_what_they_ask_for(home, tmp_path):

@@ -148,15 +148,16 @@ def test_every_enact_output_path_is_a_paper_advice_artifact():
 
     from cherrypick.advisor import enact, experiments, paths, store
 
+    session = fakes.anchor_session()  # clock-derived: a literal date expires and reds the suite
     home = paths.state_dir().parent
-    fakes.seed_suite(home, "2026-08-13")
+    fakes.seed_suite(home, session)
     fakes.write_config(home, "meic", fakes.advice_block({"stop_trigger_ratio": {"min": 0.85, "max": 0.95}}))
     fakes.write_suite_config(home, {"enabled": True, "modules": {"meic": {"enabled": True}}})
 
     conn = store.connect()
-    experiments.admit_spec(conn, session="2026-08-13", module="meic",
+    experiments.admit_spec(conn, session=session, module="meic",
                            params={"stop_trigger_ratio": 0.9})
-    result = enact.run(conn, "2026-08-13")
+    result = enact.run(conn, session)
     conn.close()
 
     written = [m["path"] for m in result["enacted"] if m.get("written")]

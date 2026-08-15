@@ -6,6 +6,11 @@ module may run at once, and how long one runs for — so a human can retune the 
 touching code, and so both sides read the same block rather than each keeping their own defaults.
 
 Everything is off or conservative by default. An absent config produces exactly the shape below.
+
+`calibration_rule` reads a *different* block of the same file, for the same reason: the
+qualification thresholds a module is actually judged by live in `modules.<name>.calibration.rule`,
+and the advisor has to apply the module's own rule rather than the library default or it shows the
+model a weaker gate than the suite uses.
 """
 
 from __future__ import annotations
@@ -59,6 +64,31 @@ def module_enabled(module: str, settings: dict[str, Any] | None = None) -> bool:
     """
     settings = settings if settings is not None else load()
     return bool((settings["modules"].get(module) or {}).get("enabled"))
+
+
+def calibration_rule(module: str, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The qualification thresholds this module is actually judged by, from the suite config's
+    `modules.<name>.calibration.rule` — the same block `orchestrator.calibrate` reads.
+
+    Why this exists (found 2026-08-14 acting on advisor proposal #4): the fact pack computed
+    `qualify_readings(readings)` with NO rule, so the model was shown the library default
+    (sample/win_rate/days) while `calibrate` applied each module's configured rule on the same
+    readings. meic's config has demanded `min_return_on_capital` and `require_slippage_survival`
+    since the fork cutover, so the two surfaces disagreed about which arms were qualified — and the
+    advisor reasoned, correctly but from the weaker gate, that arms passing qualification were
+    losing money. The fix is to read the rule rather than to restate its defaults here.
+
+    `margin` is stripped: it belongs to `recommend_champion`'s comparison, not to the per-tag
+    threshold check, and `calibrate` pops it off the same way before passing the rule down.
+    """
+    if cfg is None:
+        cfg = _store.read_json(_home.config_path(), default={}) or {}
+    modules = cfg.get("modules")
+    mcfg = (modules or {}).get(module) if isinstance(modules, dict) else None
+    rule = ((mcfg or {}).get("calibration") or {}).get("rule")
+    if not isinstance(rule, dict):
+        return {}
+    return {k: v for k, v in rule.items() if k != "margin"}
 
 
 def clamp_sessions(requested: Any, settings: dict[str, Any] | None = None) -> int:

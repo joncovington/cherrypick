@@ -164,6 +164,26 @@ def test_default_rule_is_unchanged_by_the_new_keys():
     assert set(out["conservative"]["checks"]) == {"sample", "win_rate", "days"}
 
 
+def test_min_net_pnl_refuses_a_book_that_wins_often_and_loses_money():
+    """The case the base three cannot see, and the reason this check exists (flies' control, gex
+    and time_window all read qualified=true on 2026-08-14 while lifetime-negative). A 70%-win
+    reading that nets -1,698 must fail on money alone."""
+    rule = {"min_net_pnl": 0.0}
+    losing = qualify_readings({"control": _good_reading(net_pnl=-1698.61)}, rule=rule)
+    assert losing["control"]["qualified"] is False
+    assert losing["control"]["checks"]["net_pnl"]["pass"] is False
+    # ...and the win rate, which is what let it through before, still passes on its own.
+    assert losing["control"]["checks"]["win_rate"]["pass"] is True
+    assert qualify_readings({"control": _good_reading()}, rule=rule)["control"]["qualified"] is True
+
+
+def test_min_net_pnl_is_a_threshold_not_a_hardcoded_sign_test():
+    """0.0 admits an exactly-flat book (_check is >=); a module wanting a real margin sets one."""
+    flat = {"control": _good_reading(net_pnl=0.0)}
+    assert qualify_readings(flat, rule={"min_net_pnl": 0.0})["control"]["qualified"] is True
+    assert qualify_readings(flat, rule={"min_net_pnl": 500.0})["control"]["qualified"] is False
+
+
 def test_min_return_on_capital_gates_when_enabled():
     rule = {"min_return_on_capital": 0.10}
     out = qualify_readings({"conservative": _good_reading()}, rule=rule)
