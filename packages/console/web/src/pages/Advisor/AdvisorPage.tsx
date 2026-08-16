@@ -8,6 +8,7 @@ import type {
   AdvisorProposal,
 } from "@console/shared";
 import { dismissAdvisorProposal, killAdvisorExperiment, useAdvisor } from "../../lib/api";
+import { otherFields, paramRows, scalar } from "./proposalPayload";
 
 /**
  * The AI advisor. Renders what it observed, proposed and ran — and judges none of it here.
@@ -162,6 +163,31 @@ function CheckpointCard({ c }: { c: AdvisorCheckpoint }) {
 
 // --------------------------------------------------------------------------- proposals
 
+/** Payload entries no card field covers — shown verbatim so nothing is silently lost. */
+function OtherFields({ payload }: { payload: Record<string, unknown> }) {
+  const rest = otherFields(payload);
+  if (rest === null) {
+    return <pre className="spec-block">{JSON.stringify(payload, null, 2)}</pre>;
+  }
+  if (rest.length === 0) return null;
+  return (
+    <div className="table-scroll">
+      <table className="data-table advisor-params">
+        <tbody>
+          {rest.map(([k, v]) => (
+            <tr key={k}>
+              <td>
+                <code>{k}</code>
+              </td>
+              <td className="muted">{scalar(v)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ProposalCard({
   p,
   onDismiss,
@@ -171,20 +197,43 @@ function ProposalCard({
   onDismiss: (id: number) => void;
   busy: boolean;
 }) {
-  const params = (p.payload["params"] ?? null) as unknown;
+  const rows = paramRows(p.payload["params"] ?? null);
   const spec = p.payload["spec_json"];
+  // What the proposal is ABOUT, which is not always its module: an experiment_spec names the
+  // experiment it would start, and a tune or a verdict names the one it addresses. Same shape the
+  // experiment cards use, so a proposal and the experiment it became read as the same subject.
+  const subject =
+    typeof p.payload["name"] === "string"
+      ? p.payload["name"]
+      : typeof p.payload["experiment_id"] === "string"
+        ? p.payload["experiment_id"]
+        : null;
+  const recommendation = p.payload["recommendation"];
+  const sessions = p.payload["sessions"];
 
   return (
     <section className="card">
       <div className="card-head">
         <h2>
-          {p.kind} {p.module !== null && <span className="muted">· {p.module}</span>}
+          {p.kind}
+          {p.module !== null && <span className="muted"> · {p.module}</span>}
+          {subject !== null && <span className="muted"> · {subject}</span>}
         </h2>
         <span className={`chip ${p.status === "rejected" ? "chip-warn" : p.status === "dismissed" ? "chip-missing" : ""}`}>
           {p.status}
         </span>
+        {/* A verdict IS its recommendation — a card that shows only the rationale makes the reader
+            infer the call from the prose. Labelled as the model's, per this page's whole posture:
+            the numbers it argues over were computed in `packages/advisor`, and they are on the
+            experiment's own card. */}
+        {typeof recommendation === "string" && recommendation !== "" && (
+          <span className={`chip ${recommendation === "kill" ? "chip-warn" : ""}`}>
+            model recommends {recommendation}
+          </span>
+        )}
         <span className="card-asof">
-          {p.slot ?? "—"} · #{p.id}
+          {p.slot ?? "—"}
+          {typeof sessions === "number" ? ` · ${sessions} sessions` : ""} · #{p.id}
         </span>
       </div>
 
@@ -196,8 +245,11 @@ function ProposalCard({
       {typeof p.payload["rationale"] === "string" && (
         <p className="muted">{String(p.payload["rationale"])}</p>
       )}
+      {typeof p.payload["success_metric"] === "string" && (
+        <p className="muted">success metric: {String(p.payload["success_metric"])}</p>
+      )}
 
-      {Array.isArray(params) && (
+      {rows !== null && rows.length > 0 && (
         <div className="table-scroll">
           <table className="data-table advisor-params">
             <thead>
@@ -208,13 +260,13 @@ function ProposalCard({
               </tr>
             </thead>
             <tbody>
-              {(params as Array<Record<string, unknown>>).map((row, i) => (
+              {rows.map((row, i) => (
                 <tr key={i}>
                   <td>
-                    <code>{String(row["param"])}</code>
+                    <code>{row.param}</code>
                   </td>
-                  <td>{String(row["value"])}</td>
-                  <td className="muted">{String(row["rationale"] ?? "—")}</td>
+                  <td>{scalar(row.value)}</td>
+                  <td className="muted">{row.rationale ?? "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -227,6 +279,8 @@ function ProposalCard({
       {spec !== undefined && spec !== null && (
         <pre className="spec-block">{JSON.stringify(spec, null, 2)}</pre>
       )}
+
+      <OtherFields payload={p.payload} />
 
       {p.rejectReason !== null && (
         <p className="review-caveat">
