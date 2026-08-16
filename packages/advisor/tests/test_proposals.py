@@ -50,6 +50,26 @@ def test_both_param_shapes_are_accepted():
     assert proposals.parse(json.dumps(as_map))["proposals"][0]["params"] == {"stop_trigger_ratio": 0.92}
 
 
+def test_one_bare_param_entry_is_not_read_as_a_map_of_its_own_field_names():
+    """A single {param, value} entry sent without the enclosing list. Read as a map it would become
+    three params called `param`, `value` and `rationale`, and the bounds check would refuse it with
+    `param 'param' not in advice_bounds` — a reason that describes nothing the model did wrong."""
+    bare = {"proposals": [{"kind": "tune", "experiment_id": "exp-1",
+                           "params": {"param": "stop_trigger_ratio", "value": 1.2,
+                                      "rationale": "one lever only"}}]}
+    parsed = proposals.parse(json.dumps(bare))["proposals"][0]
+    assert parsed["params"] == {"stop_trigger_ratio": 1.2}
+    assert parsed["rationales"] == {"stop_trigger_ratio": "one lever only"}
+
+
+def test_a_map_whose_keys_merely_resemble_an_entry_is_still_a_map():
+    """The disambiguation keys off a STRING `param`, so a module that really did declare bounds on
+    keys named `value` or `rationale` keeps the map reading."""
+    as_map = {"proposals": [{"kind": "tune", "experiment_id": "exp-1",
+                             "params": {"value": 3, "rationale": 4}}]}
+    assert proposals.parse(json.dumps(as_map))["proposals"][0]["params"] == {"value": 3, "rationale": 4}
+
+
 def test_malformed_proposals_are_kept_with_their_reason():
     """Never silently dropped: a rejection the model sees next session is worth more than a clean
     checkpoint."""
