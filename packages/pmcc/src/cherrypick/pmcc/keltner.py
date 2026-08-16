@@ -13,10 +13,13 @@ one's) so the filter's counterfactual stays readable from the control book.
 
 Daily bars come from the shared cache's `stream_summary` (exchange-official OHLC per (symbol,
 trade_date)), MIRRORED into this module's own `pmcc_daily_bars` on every tick: the cache offers no
-retention guarantee (the flies 2026-08-05 correction records this), so whatever window it holds at
-first run seeds the history and the module accumulates its own from there. Until
-`keltner_min_history` completed days exist the book refuses entries (`insufficient_bar_history`) —
-an honest cold start of ~21 trading days, by design, not a failure.
+retention guarantee (the flies 2026-08-05 correction records this), so whatever it holds at each
+tick seeds the history and the module retains its own from there. Until `keltner_min_history`
+completed days exist the book refuses entries (`insufficient_bar_history`) — an honest cold start,
+not a failure. In practice that cold start collapses to one streamer pass: the stream request
+declares `history_days` (see stream_request.py) and the producer backfills the series from DXLink
+daily candles, which this mirror then sweeps in unchanged; the refusal remains the honest state for
+whatever window the backfill has not yet covered.
 
 Pure math over rows plus one telemetry-class writer; no clock, no network.
 """

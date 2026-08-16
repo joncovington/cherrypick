@@ -20,9 +20,11 @@ Three books, one variable each, plus the advisor's synthetic twin:
 - **`keltner`** — control's management exactly; only the **entry** differs: spot within
   0.5×ATR of the Keltner midline (20-EMA of daily closes) AND above yesterday's close AND bounced
   ≥ 0.25×ATR off today's low (the user's pullback-and-reversal spec, 2026-08-16). It refuses
-  everything for its first ~21 trading days while daily bars accumulate — **the cold start is
-  design, not failure** — and every book's rows carry the keltner measures, so the filter's
-  counterfactual stays readable from control.
+  entries (`insufficient_bar_history`) until ~21 completed daily bars exist — **the refusal is the
+  honest state, not a failure** — and in practice that history arrives in one pass: the stream
+  request's `history_days` field has the producer backfill the daily series from DXLink candles
+  (2026-08-16), so the cold start only persists if the backfill has nothing to serve. Every book's
+  rows carry the keltner measures, so the filter's counterfactual stays readable from control.
 - **`roll`** — control's entry exactly; only the **breach handling** differs: it rolls the short
   down/out (once per position per session, same yield search at the current spot, never past the
   long's expiration) instead of holding, and closes (`roll_exhausted`) once the long is under
@@ -163,8 +165,12 @@ Prerequisites, not enhancements.
 3. **Early assignment** — rule 2. The paper result is an upper bound.
 4. **Dividend calendar upkeep** — three symbols, quarterly, hand-refreshed; lapse halts entries.
 5. **Splits mid-position** — unmodelled; manual settle + break.
-6. **The keltner book is underpowered for ~21 trading days** (cold start) and its comparison
-   against control is entry-timing only.
+6. **The keltner book's history depends on the candle backfill** — its bars arrive via the
+   producer's `history_days` backfill (DXLink daily candles; absent dates only, today never), and
+   until that runs the book idles on `insufficient_bar_history`. Its comparison against control is
+   entry-timing only either way. Note the backfilled bars and the live Summary rows come off
+   different consolidation feeds; the insert-only rule keeps provenance clean, and a mixed series
+   is expected.
 
 ## Status
 
