@@ -55,9 +55,27 @@ def locate_json(raw: str) -> dict[str, Any]:
     return payload
 
 
+def _is_single_entry(value: Any) -> bool:
+    """The third shape a model reaches for: ONE ``{"param": ..., "value": ...}`` entry sent bare
+    instead of wrapped in a list.
+
+    Read as the ``{param: value}`` map it superficially resembles, it becomes params literally named
+    ``param``, ``value`` and ``rationale`` — which the bounds check then refuses with
+    ``param 'param' not in advice_bounds``, a reason that describes nothing the model did wrong and
+    so teaches it nothing. The two shapes are told apart with certainty rather than by preference: a
+    map reading would require a module to have declared a bound on a key called ``param``, and a
+    bound is a strategy parameter name, so that key cannot exist. This is an ambiguity about shape,
+    not about meaning, and resolving it belongs with the tolerant locating rather than the strict
+    read.
+    """
+    return isinstance(value, dict) and isinstance(value.get("param"), str) and bool(value["param"])
+
+
 def _as_params(value: Any) -> tuple[dict[str, Any], str | None]:
     """Both shapes the contract allows: the list-of-objects the prompt asks for, and the plain
     ``{param: value}`` map a model reaches for anyway. Anything else is a rejection reason."""
+    if _is_single_entry(value):
+        value = [value]
     if isinstance(value, dict):
         return dict(value), None
     if isinstance(value, list):
@@ -76,6 +94,8 @@ def _rationales(value: Any) -> dict[str, str]:
     """Per-param rationale, when the model supplied one. Not required — a missing rationale is a
     thin proposal, not an invalid one — but kept when present, because it is what makes the advice
     artifact readable by a human three weeks later."""
+    if _is_single_entry(value):
+        value = [value]
     if not isinstance(value, list):
         return {}
     return {
