@@ -4,7 +4,7 @@
 > the root [documentation index](../../docs/README.md).
 
 This package answers one question every session: **what did the suite do today, was it what we
-expected, and what should change.** It covers MEIC, flies, earnings and calendars together, because
+expected, and what should change.** It covers MEIC, flies, earnings, calendars and pmcc together, because
 the question is a suite question and answering it inside each package produced six report families
 that could not be compared and two normalisation layers that had already drifted apart.
 

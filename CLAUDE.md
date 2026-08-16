@@ -27,6 +27,19 @@ One workspace for the trading-tool suite. Work in the package for your area — 
   across the weekend — and refuses at entry any symbol declared as neither. Ex-dividend weeks are
   skipped outright, from a declared issuer calendar refreshed annually, rather than modelling early
   assignment. There is no live path.
+- **packages/pmcc** — PMCC-99 deep-ITM covered-call module on leveraged ETFs (TNA/TQQQ/UPRO),
+  **paper-only** and credential-free in the calendars posture: a pure stream-cache consumer whose
+  ~9DTE/~21DTE chains come from the streamer's `expirations` request field and whose 30–45%-ITM
+  strikes come from its `window_hints` field. Buys the deepest ~99-delta call as a stock substitute,
+  sells the deepest ITM call whose weekly time-value yield clears a declared floor, and closes both
+  legs when that time value is exhausted. Three books isolate one variable each — `control` (as
+  taught), `keltner` (entry gated on a pullback-and-reversal read of the Keltner channel; cold-starts
+  ~21 trading days while daily bars accumulate), `roll` (rolls the short on a breach instead of
+  holding; shares control's fills for exact pairing). American physical settlement is modelled with
+  the calendars decomposition (assigned short shares ride to the next session's combined disposal);
+  **early assignment is measured, never modelled** — ex-dividend spans are refused from a declared
+  issuer calendar refreshed quarterly, and every mark with near-zero short extrinsic is flagged
+  assignment-exposed, so the paper result is an explicit upper bound. There is no live path.
 - **packages/console** — the reactive web UI (Node + TypeScript, React SPA on 127.0.0.1:5070) and the
   suite's **only** read surface since 2026-08-12: every module's read models plus the research and
   screening surfaces in one app. The supervisor keeps it running as an always-on resident job, restarted on
@@ -38,7 +51,7 @@ One workspace for the trading-tool suite. Work in the package for your area — 
   allow-list of frequently-changed settings, both applied by invoking the orchestrator's own config
   editor as a subprocess, so the guarded live-trading fields stay unreachable from here.
 - **packages/review** — the suite's cross-module **end-of-day review**: one versioned fact set per
-  session covering meic/flies/earnings/calendars together, plus the renders of it. Read-only over every other
+  session covering meic/flies/earnings/calendars/pmcc together, plus the renders of it. Read-only over every other
   package (via `cherrypick.core.ledgers`, the single home for per-schema net/risk rules), writes only
   into its own store. Exists because answering "what did the suite do today" inside each package
   produced six incomparable report families and two normalisation layers that had already drifted.
