@@ -14,6 +14,12 @@ Writes ``~/.cherrypick/state/stream_requests/pmcc.json``. Four fields matter her
 - ``window_hints`` — LOAD-BEARING here, unlike most modules: the 99-delta long lives 30–45% below
   spot, far outside any default ATM window, so entry-time quotes for it exist only if the producer
   honors the widened per-symbol window ``stream_window.py`` computes and escalates.
+- ``history_days`` — the keltner book's daily-bar lookback, derived from its own channel params
+  (twice the longest of EMA period / ATR period / min history, so the seeded averages have a full
+  extra period to converge). The producer backfills a ``stream_summary`` deficit once from DXLink
+  daily candles — absent dates only, never a live-written row — which collapses the book's ~21
+  trading-day cold start to one backfill; the module's bar mirror then sweeps the rows in on its
+  next tick with no code of its own. Requested only while the keltner book is enabled.
 
 Best-effort by design: a failed write must never break the paper loop. An unregistered symbol or
 date is a data-availability problem the provider already surfaces as a refusal, not a crash.
@@ -27,10 +33,25 @@ from pathlib import Path
 
 from cherrypick.core import streamrequests as _sr
 
-from cherrypick.pmcc import clock, db, provider, stream_window
+from cherrypick.pmcc import clock, db, keltner, provider, stream_window
 
 _MODULE = "pmcc"
 _log = logging.getLogger("pmcc_paper_loop")
+
+
+def wanted_history_days(config: dict) -> int:
+    """Daily bars the keltner math needs, or 0 when the book is off: twice the longest lookback
+    among its channel params, so the SMA-seeded EMA and the Wilder ATR both converge before the
+    gate starts reading them."""
+    books = config.get("books") or {}
+    if not (books.get("keltner") or {}).get("enabled", True):
+        return 0
+    params = {**keltner.PARAM_DEFAULTS, **(config.get("defaults") or {}), **(books.get("keltner") or {})}
+    return 2 * max(
+        int(params["keltner_min_history"]),
+        int(params["keltner_ema_period"]),
+        int(params["keltner_atr_period"]),
+    )
 
 
 def wanted_expirations(
@@ -68,12 +89,14 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
         config,
         deep_window_pct=defaults.get("deep_window_pct", provider.DEFAULT_DEEP_WINDOW_PCT),
     )
+    history = wanted_history_days(config)
     return _sr.write_request(
         _MODULE,
         symbols,
         leg_sources=leg_sources,
         window_hints=hints,
         expirations=wanted_expirations(conn, symbols, today, defaults),
+        history_days={s: history for s in symbols} if history else None,
     )
 
 

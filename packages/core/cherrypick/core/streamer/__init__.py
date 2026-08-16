@@ -15,6 +15,11 @@ Everything MEIC-specific is injected, so the engine itself has no MEIC dependenc
     window for, beyond the nearest expiration served by default (a weekly calendar module's 4DTE/7DTE
     legs). Re-read every window pass — like the legs above, growth is served with no restart. None
     (the default) is exactly the historical nearest-expiration-only behavior.
+  * `history_days_for(symbol)` -> how many completed daily OHLC rows `stream_summary` should hold for
+    an underlying (a consumer indicator's lookback, e.g. pmcc's Keltner channel). A deficit is
+    backfilled once per connection from DXLink daily Candle events — filling only dates the live
+    Summary listener has not written, never overwriting a row, and never today's (partial) candle.
+    None/0 (the default) backfills nothing.
 
 Pure engine: no argparse, no HTTP server, no PID file, no config file — a thin per-consumer wrapper adds
 those. `run()` blocks with reconnect/backoff until `stop()` (or SIGTERM/SIGINT if `install_signals`).
@@ -47,6 +52,10 @@ _CHAIN_FETCH_MAX_ATTEMPTS = 6
 # out) re-checks the full chain on this cooldown rather than every window pass — the retry IS the
 # next cooldown lapse, so there is no backoff loop to stall the window task.
 _EXTRA_CHAIN_REFETCH_COOLDOWN_S = 900.0
+# Daily-candle backfill: the history arrives as one front-loaded burst after subscribe, so the
+# collector stops after a quiet gap once anything has arrived, bounded by a hard deadline either way.
+_HISTORY_QUIET_GAP_S = 5.0
+_HISTORY_MAX_WAIT_S = 90.0
 
 _ET = ZoneInfo("America/New_York")
 
@@ -91,6 +100,7 @@ class ChainStreamer:
         protected_symbols: Callable[[], set[str]] | None = None,
         trade_hook: Callable[[ChainStreamer, str, float | None, float], None] | None = None,
         expirations_for: Callable[[str], list[str]] | None = None,
+        history_days_for: Callable[[str], int] | None = None,
         window_strike_count: int = 60,
         window_strike_count_for: Callable[[str], int] | None = None,
         window_refresh_pts: float = 1.0,
@@ -105,6 +115,7 @@ class ChainStreamer:
         self._protected_symbols = protected_symbols or (lambda: set())
         self._trade_hook = trade_hook
         self._expirations_for = expirations_for
+        self._history_days_for = history_days_for
         self.window_strike_count = window_strike_count
         self._window_strike_count_for = window_strike_count_for
         self.window_refresh_pts = window_refresh_pts
@@ -145,7 +156,7 @@ class ChainStreamer:
     # -- connection lifetime ---------------------------------------------------------------------
     async def _run_stream(self, state: _State) -> None:
         from tastytrade import DXLinkStreamer
-        from tastytrade.dxfeed import Greeks, Quote, Summary, Trade
+        from tastytrade.dxfeed import Candle, Greeks, Quote, Summary, Trade
 
         session = self.session_factory()
         self.log.info("Connecting DXLinkStreamer…")
@@ -168,6 +179,8 @@ class ChainStreamer:
                 tg.create_task(self._poll_subscriptions(streamer, state, Trade, Quote, Greeks, Summary))
                 tg.create_task(self._flush_status(state))
                 tg.create_task(self._watch_stop(state))
+                if self._history_days_for is not None:
+                    tg.create_task(self._backfill_history(streamer, state, Candle))
                 for sym in self.symbols:
                     tg.create_task(
                         self._symbol_refresher(streamer, state, sym, Quote, Greeks, Summary, Trade)
@@ -356,6 +369,92 @@ class ChainStreamer:
             except Exception as exc:
                 self.log.warning("Summary write error: %s", exc)
 
+    # -- daily-history backfill ------------------------------------------------------------------
+    async def _backfill_history(self, streamer, state: _State, Candle) -> None:
+        """Fill each symbol's `stream_summary` history deficit from DXLink daily Candle events,
+        once per connection. Telemetry-class by construction: everything is wrapped, the candle
+        subscription is torn down whatever happens, and a failure costs the backfill — never the
+        stream. The write path (`streamcache.backfill_summary`) only ever inserts ABSENT dates and
+        never today's, so the live Summary listener stays the sole owner of current rows.
+
+        Once per connection rather than once ever: the deficit check short-circuits to nothing as
+        soon as enough rows exist, so re-running on a reconnect is a cheap no-op that also happens
+        to repair a history lost to a deleted cache file."""
+        try:
+            today = datetime.now(tz=_ET).date().isoformat()
+            deficits: dict[str, int] = {}
+            for symbol in self.symbols:
+                try:
+                    wanted = int(self._history_days_for(symbol) or 0)
+                except Exception as exc:
+                    self.log.warning("[%s] history_days_for error: %s", symbol, exc)
+                    continue
+                if wanted <= 0:
+                    continue
+                if streamcache.completed_summary_days(state.conn, symbol, today=today) >= wanted:
+                    continue
+                deficits[symbol] = wanted
+            if not deficits:
+                return
+            # Trading days -> calendar days: x2 + margin covers weekends/holidays comfortably; the
+            # insert path drops anything already held, so over-fetching costs bytes, not rows.
+            from datetime import timedelta
+
+            start = datetime.now(tz=UTC) - timedelta(days=max(deficits.values()) * 2 + 10)
+            self.log.info("Backfilling daily history %s from %s", deficits, start.date().isoformat())
+            await streamer.subscribe_candle(list(deficits), interval="1d", start_time=start)
+            bars: dict[str, list[dict]] = {}
+            listener = streamer.listen(Candle).__aiter__()
+            deadline = time.monotonic() + _HISTORY_MAX_WAIT_S
+            try:
+                while time.monotonic() < deadline:
+                    try:
+                        event = await asyncio.wait_for(listener.__anext__(), timeout=_HISTORY_QUIET_GAP_S)
+                    except TimeoutError:
+                        if bars:
+                            break  # the burst has gone quiet — history is delivered front-loaded
+                        continue  # nothing yet; keep waiting until the deadline
+                    except StopAsyncIteration:
+                        break
+                    base = str(event.event_symbol or "").split("{", 1)[0]
+                    if base not in deficits:
+                        continue
+                    stamp = streamcache.to_float(event.time)
+                    if stamp is None:
+                        continue
+                    # Daily candles are stamped at the session's start; the UTC calendar date reads
+                    # correctly whether that start is midnight UTC or midnight ET, where the ET date
+                    # of a midnight-UTC stamp would land on the previous day.
+                    day = datetime.fromtimestamp(stamp / 1000.0, tz=UTC).date().isoformat()
+                    bars.setdefault(base, []).append(
+                        {
+                            "date": day,
+                            "open": streamcache.to_float(event.open),
+                            "high": streamcache.to_float(event.high),
+                            "low": streamcache.to_float(event.low),
+                            "close": streamcache.to_float(event.close),
+                        }
+                    )
+            finally:
+                for symbol in deficits:
+                    try:
+                        await streamer.unsubscribe_candle(symbol, interval="1d")
+                    except Exception as exc:  # noqa: BLE001 — teardown is best-effort
+                        self.log.warning("[%s] candle unsubscribe error: %s", symbol, exc)
+            for symbol, series in bars.items():
+                added = streamcache.backfill_summary(state.conn, symbol, series, today=today)
+                self.log.info(
+                    "[%s] daily history backfilled: %d candle(s) received, %d row(s) added",
+                    symbol,
+                    len(series),
+                    added,
+                )
+            for symbol in deficits:
+                if symbol not in bars:
+                    self.log.warning("[%s] daily-history backfill received no candles", symbol)
+        except Exception as exc:  # noqa: BLE001 — the backfill must never cost the stream
+            self.log.warning("daily-history backfill failed (non-fatal): %s", exc)
+
     # -- per-symbol ATM/GEX window ---------------------------------------------------------------
     async def _fetch_dte0_chain(self, underlying: str) -> dict:
         from tastytrade.instruments import get_option_chain
@@ -540,8 +639,16 @@ class ChainStreamer:
         return sorted(wanted)
 
     async def _refresh_extra_windows(
-        self, streamer, state: _State, symbol: str, price: float, strike_count: int,
-        Quote, Greeks, Summary, Trade,
+        self,
+        streamer,
+        state: _State,
+        symbol: str,
+        price: float,
+        strike_count: int,
+        Quote,
+        Greeks,
+        Summary,
+        Trade,
     ) -> None:
         """Maintain an ATM window per extra requested expiration, beside the nearest-expiration one.
 
@@ -557,7 +664,7 @@ class ChainStreamer:
         prefix = f"{symbol}@"
 
         for key in [k for k in state.window_syms if k.startswith(prefix)]:
-            if key[len(prefix):] not in wanted:
+            if key[len(prefix) :] not in wanted:
                 await self._retire_extra_window(streamer, state, key, Quote, Greeks, Summary, Trade)
         if not wanted:
             return

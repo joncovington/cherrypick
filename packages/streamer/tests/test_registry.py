@@ -183,7 +183,22 @@ def test_write_request_schema_is_flat_json(home):
         "leg_sources": [],
         "window_hints": {},
         "expirations": {},
+        "history_days": {},
     }
+
+
+def test_write_request_carries_history_days_and_union_takes_max(home):
+    path = _registry.write_request("pmcc", ["TNA"], history_days={"tna": 42})
+    assert json.loads(path.read_text(encoding="utf-8"))["history_days"] == {"TNA": 42}
+    _registry.write_request("other", ["TNA"], history_days={"TNA": 60})
+    assert _registry.union_history_days() == {"TNA": 60}
+
+
+def test_build_streamer_history_days_for_reads_the_union(home):
+    _registry.write_request("pmcc", ["TNA"], history_days={"TNA": 42})
+    streamer = _daemon.build_streamer({"symbols": ["TNA"]})
+    assert streamer._history_days_for("TNA") == 42
+    assert streamer._history_days_for("QQQ") == 0  # no request -> no backfill
 
 
 def test_write_request_carries_expirations(home):

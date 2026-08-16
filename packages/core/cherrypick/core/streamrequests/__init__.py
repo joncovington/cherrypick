@@ -35,6 +35,12 @@ Payload shape (see ``packages/streamer/src/registry.py``, the reader):
     file; the streamer re-reads the union every window pass, so a newly requested date is served with no
     restart. Dates already past (ET) are dropped at union time, so a file nobody rewrote over a weekend
     cannot pin dead subscriptions.
+  - ``history_days``: optional ``{symbol: days}`` — how many COMPLETED daily OHLC rows the module needs
+    ``stream_summary`` to hold for a symbol (e.g. pmcc's Keltner channel needing ~40 sessions of bars).
+    The producer backfills a deficit once from DXLink daily candles — filling only dates the live
+    Summary feed has not written, never overwriting a row — so a newly requested symbol's indicator
+    history exists on day one instead of accruing over a month of sessions. Max per symbol across every
+    module's file, same reasoning as ``window_hints``.
 """
 
 from __future__ import annotations
@@ -79,6 +85,16 @@ def clean_window_hints(window_hints) -> dict[str, int]:
     return out
 
 
+def clean_history_days(history_days) -> dict[str, int]:
+    """Deduped/uppercased/validated ``{symbol: days}`` — same posture (and same shape) as
+    `clean_window_hints`: junk symbols and non-positive or non-integer counts are dropped."""
+    out: dict[str, int] = {}
+    for symbol, days in (history_days or {}).items():
+        if isinstance(symbol, str) and symbol.strip() and isinstance(days, int) and days > 0:
+            out[symbol.strip().upper()] = days
+    return out
+
+
 def clean_expirations(expirations) -> dict[str, list[str]]:
     """Deduped/uppercased/validated ``{symbol: [ISO dates]}`` — non-string symbols, unparseable dates
     and empty lists are dropped rather than crashed on, same posture as `clean_symbols`. Dates come
@@ -101,7 +117,9 @@ def clean_expirations(expirations) -> dict[str, list[str]]:
     return out
 
 
-def write_request(module: str, symbols, legs=(), leg_sources=(), window_hints=None, expirations=None) -> Path:
+def write_request(
+    module: str, symbols, legs=(), leg_sources=(), window_hints=None, expirations=None, history_days=None
+) -> Path:
     """Atomically (over)write a module's request file and return its path.
 
     Write-then-rename so a concurrent reader never sees a partial file. Raises on I/O failure —
@@ -115,6 +133,7 @@ def write_request(module: str, symbols, legs=(), leg_sources=(), window_hints=No
         "leg_sources": [dict(source) for source in leg_sources],
         "window_hints": clean_window_hints(window_hints),
         "expirations": clean_expirations(expirations),
+        "history_days": clean_history_days(history_days),
     }
     tmp = path.with_name(f"{path.name}.tmp")
     tmp.write_text(json.dumps(payload), encoding="utf-8")
@@ -162,6 +181,18 @@ def union_window_hints() -> dict[str, int]:
         for symbol, count in clean_window_hints(data.get("window_hints")).items():
             hints[symbol] = max(hints.get(symbol, 0), count)
     return hints
+
+
+def union_history_days() -> dict[str, int]:
+    """Per-symbol daily-history need: the MAX days per symbol across every module's file, so one
+    module's need is never narrowed by another module's silence on that symbol. Deliberately absent
+    from `subscription_snapshot` — the engine re-reads this and backfills with no restart, so a
+    changed request must never look like a reason to recycle a healthy producer."""
+    out: dict[str, int] = {}
+    for data in read_all():
+        for symbol, days in clean_history_days(data.get("history_days")).items():
+            out[symbol] = max(out.get(symbol, 0), days)
+    return out
 
 
 def union_expirations(*, today: date | None = None) -> dict[str, list[str]]:
