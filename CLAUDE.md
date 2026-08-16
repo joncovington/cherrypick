@@ -15,14 +15,16 @@ One workspace for the trading-tool suite. Work in the package for your area — 
   deliberately narrow, per-day-armed live pilot (one arm, one symbol, one incomplete position at a
   time); deliberately built to make a negative result usable: floors are measured after fees, and a
   book-level floor always carries the price band over which it holds.
-- **packages/calendars** — weekly SPX double-calendar module, **paper-only** and credential-free: a
+- **packages/calendars** — weekly SPY double-calendar module, **paper-only** and credential-free: a
   pure stream-cache consumer whose 4DTE/7DTE chains come from the streamer's `expirations` request
   field. Built as a forward exit-parameter experiment rather than a strategy with an opinion — a
   mechanical `control` book (close everything at Friday's bell), a permissive `path` book that holds
   every leg to expiry and records a per-tick mark path, and a read-side replay (`exit_policies.py`)
   that scores profit targets, stops, strike-touch and exit timings over that path with exact
   pairing, validated to the cent against the real books on every run. Holiday weeks are tagged
-  distinct structures and never pooled. There is no live path.
+  distinct structures and never pooled. Models both settlement styles — European cash and, since
+  the 2026-08-15 move off SPX, American physical delivery, where an ITM short hands over shares held
+  across the weekend — and refuses at entry any symbol declared as neither. There is no live path.
 - **packages/console** — the reactive web UI (Node + TypeScript, React SPA on 127.0.0.1:5070) and the
   suite's **only** read surface since 2026-08-12: every module's read models plus the research and
   screening surfaces in one app. The supervisor keeps it running as an always-on resident job, restarted on
@@ -69,3 +71,5 @@ files hold no code; account numbers masked to `****1234`; portable paths only; h
 (the orchestrator only drives paper; its one live-config action is onboarding/account selection).
 
 Any developer initiated documentation review and update must also review and update package documentation.
+
+For front-end UI/UX testing, use a browser to confirm the build performs as expected. Don't rely solely on code tests.

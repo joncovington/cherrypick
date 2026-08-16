@@ -142,3 +142,100 @@ def test_settlement_fee_is_per_itm_symbol():
     assert engine.settlement_fee(0) == 0.0
     assert engine.settlement_fee(1) == 5.0
     assert engine.settlement_fee(2) == 10.0
+
+
+# --------------------------------------------------------------------- physical settlement
+def _short(option_type, strike, entry_mid):
+    return {
+        "option_type": option_type,
+        "strike": float(strike),
+        "action": "Sell to Open",
+        "entry_mid": float(entry_mid),
+    }
+
+
+def test_settlement_style_is_declared_never_assumed():
+    assert engine.settlement_style({"settlement_style": {"SPY": "physical"}}, "SPY") == "physical"
+    assert engine.settlement_style({"settlement_style": {"SPX": "cash"}}, "SPX") == "cash"
+    # Declared, and this symbol is not in it — that is an answer, and the answer is no.
+    assert engine.settlement_style({"settlement_style": {"SPX": "cash"}}, "SPY") is None
+    # A style the module does not implement is a refusal, not a fallback.
+    assert engine.settlement_style({"settlement_style": {"SPY": "handwave"}}, "SPY") is None
+    # The pre-SPY spelling still reads, including its SPX-cash default when nothing is declared.
+    assert engine.settlement_style({"cash_settled_symbols": ["SPX"]}, "SPX") == "cash"
+    assert engine.settlement_style({}, "SPX") == "cash"
+    assert engine.settlement_style({}, "SPY") is None
+
+
+def test_only_an_itm_leg_delivers_shares_and_the_direction_follows_the_contract():
+    # Short put assigned -> you bought shares. Short call assigned -> you sold them.
+    assert engine.assignment_from(_short("put", 780, 3.0), 770.0, 1)["direction"] == "long"
+    assert engine.assignment_from(_short("call", 760, 3.0), 770.0, 1)["direction"] == "short"
+    # A long option exercised is the mirror of the short being assigned.
+    long_call = {"option_type": "call", "strike": 760.0, "action": "Buy to Open", "entry_mid": 4.0}
+    long_put = {"option_type": "put", "strike": 780.0, "action": "Buy to Open", "entry_mid": 4.0}
+    assert engine.assignment_from(long_call, 770.0, 1)["direction"] == "long"
+    assert engine.assignment_from(long_put, 770.0, 1)["direction"] == "short"
+    # OTM expires worthless: nothing is delivered.
+    assert engine.assignment_from(_short("put", 760, 3.0), 770.0, 1) is None
+    assert engine.assignment_from(_short("call", 780, 3.0), 770.0, 1) is None
+
+
+def test_shares_are_delivered_at_the_settlement_spot_not_the_strike():
+    """The decomposition's load-bearing choice. Basis = strike would double-count it against the
+    intrinsic the option leg already booked."""
+    a = engine.assignment_from(_short("put", 780, 3.0), 770.0, 2)
+    assert a["basis"] == 770.0
+    assert a["strike"] == 780.0
+    assert a["shares"] == 200
+
+
+@pytest.mark.parametrize("option_type,strike", [("put", 780.0), ("call", 760.0)])
+def test_option_leg_plus_share_leg_equals_the_true_physical_cash_flow(option_type, strike):
+    """The whole reason physical settlement could be added without restating the option accounting.
+
+    Truth for a short put: +credit, buy 100 at K, sell at the disposal price. For a short call:
+    +credit, sell 100 at K, buy back at the disposal price. The model has to reproduce it out of
+    an intrinsic-priced option leg plus a share leg based at the settlement spot.
+    """
+    credit, settle_spot, dispose_spot = 3.0, 770.0, 774.5
+    leg = _short(option_type, strike, credit)
+
+    intrinsic = engine.settle_intrinsic(strike, option_type, settle_spot)
+    option_dollars = engine.leg_pnl({**leg, "close_value": intrinsic}) * 100
+    a = engine.assignment_from(leg, settle_spot, 1)
+    model = option_dollars + engine.share_pnl(a["direction"], a["shares"], a["basis"], dispose_spot)
+
+    if option_type == "put":
+        truth = 100 * (credit - strike + dispose_spot)
+    else:
+        truth = 100 * (credit + strike - dispose_spot)
+    assert round(model, 6) == round(truth, 6)
+
+
+def test_cash_settlement_is_the_share_term_going_to_zero():
+    """Disposal at the settlement spot leaves exactly the cash-settled answer — which is why the
+    two styles can share one settlement path, one derivation and one validation."""
+    leg = _short("put", 780, 3.0)
+    a = engine.assignment_from(leg, 770.0, 1)
+    assert engine.share_pnl(a["direction"], a["shares"], a["basis"], 770.0) == 0.0
+
+
+def test_an_assignment_costs_the_settlement_event_plus_the_equity_pass_throughs():
+    """$5 for the event, as cash settlement pays, and the SEC/TAF pass-throughs on the sell fill —
+    the disposal for delivered longs, the assignment itself for delivered shorts."""
+    long_shares = {"direction": "long", "shares": 100, "basis": 770.0}
+    fee = engine.assignment_fee(long_shares, 774.5)
+    assert fee > _fees.ASSIGNMENT_FEE_PER_SETTLEMENT
+    assert fee == round(
+        _fees.ASSIGNMENT_FEE_PER_SETTLEMENT
+        + _fees.stock_trade_fee(100, 774.5, side="sell", ndigits=4),
+        2,
+    )
+    # A short delivery's sell happened at assignment, so its pass-through is priced there.
+    short_shares = {"direction": "short", "shares": 100, "basis": 770.0}
+    assert engine.assignment_fee(short_shares, 774.5) == round(
+        _fees.ASSIGNMENT_FEE_PER_SETTLEMENT
+        + _fees.stock_trade_fee(100, 770.0, side="sell", ndigits=4),
+        2,
+    )

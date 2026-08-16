@@ -298,3 +298,96 @@ def test_execution_gate():
         management.execution_gate({"ok": True, "max_spread_pct": 0.60}, params, now=now) == "spread_too_wide"
     )
     assert management.execution_gate({"ok": True, "max_spread_pct": 0.03}, params, now=now) is None
+
+
+# --------------------------------------------------------------- physical settlement (SPY shape)
+SPY_CONFIG = {"settlement_style": {"SPY": "physical"}}
+
+
+def _spy_plan():
+    """The same structure priced as SPY: strikes near 780, so a 770 settlement puts the PUT side
+    ITM and leaves the call side worthless — one assignment, one expiry, per week."""
+    plan = _plan()
+    plan["symbol"] = "SPY"
+    plan["spot"] = 780.0
+    for side, strike in (("put", 776.0), ("call", 784.0)):
+        plan["sides"][side]["strike"] = strike
+        for leg in plan["sides"][side]["legs"]:
+            leg["strike"] = strike
+    return plan
+
+
+def test_physical_settlement_delivers_shares_and_holds_the_week_open(conn):
+    book.enter_week(conn, _spy_plan(), SPY_CONFIG, ["path"], week=WEEK, advice_params=None)
+    book.settle_expiring_legs(conn, "2026-08-21", 770.0, SPY_CONFIG, symbol="SPY")
+
+    rows = {r["leg_role"]: r for r in conn.execute("SELECT * FROM dc_assignments")}
+    assert set(rows) == {"front_put"}, "only the ITM short delivers; the OTM call expires worthless"
+    assigned = rows["front_put"]
+    assert assigned["direction"] == "long"  # a short put assigned means you bought the shares
+    assert assigned["shares"] == 100
+    assert assigned["basis"] == 770.0  # the settlement spot, not the 776 strike
+    assert assigned["status"] == "open"
+
+    # The option leg still books at intrinsic under either style; only its kind records the delivery.
+    front_put = conn.execute(
+        "SELECT * FROM dc_legs WHERE leg_role = 'front_put' AND position_id LIKE '%:put'"
+    ).fetchone()
+    assert front_put["close_kind"] == "assigned"
+    assert front_put["close_value"] == 6.0  # 776 - 770
+
+    # No $5 charged yet: a physical assignment pays at disposal, when the price is known.
+    put_pos = conn.execute("SELECT * FROM dc_positions WHERE side = 'put'").fetchone()
+    assert (put_pos["exit_cost"] or 0.0) == 0.0
+
+
+def test_a_week_cannot_close_while_its_shares_are_still_held(conn):
+    book.enter_week(conn, _spy_plan(), SPY_CONFIG, ["control"], week=WEEK, advice_params=None)
+    book.settle_expiring_legs(conn, "2026-08-21", 770.0, SPY_CONFIG, symbol="SPY")
+    # Close the surviving long so every OPTION leg is done — the shares alone must hold it open.
+    pid = "2026-08-17:control:put"
+    db.save_leg(conn, {"position_id": pid, "leg_role": "back_put", "status": "closed",
+                       "close_kind": "traded", "close_value": 8.0})
+    assert book.finalize_if_done(conn, pid, reason="test", session_date="2026-08-24") is False
+    assert conn.execute(
+        "SELECT status FROM dc_positions WHERE position_id = ?", (pid,)
+    ).fetchone()["status"] != "closed"
+
+
+def test_disposal_books_the_weekend_move_and_then_the_week_closes(conn):
+    book.enter_week(conn, _spy_plan(), SPY_CONFIG, ["control"], week=WEEK, advice_params=None)
+    book.settle_expiring_legs(conn, "2026-08-21", 770.0, SPY_CONFIG, symbol="SPY")
+    pid = "2026-08-17:control:put"
+    db.save_leg(conn, {"position_id": pid, "leg_role": "back_put", "status": "closed",
+                       "close_kind": "traded", "close_value": 8.0})
+
+    assignment = db.open_assignments(conn, before_session="2026-08-24")[0]
+    result = book.dispose_assignment(conn, assignment, 774.5, session_date="2026-08-24")
+
+    # Long 100 shares based at 770 sold at 774.50.
+    assert result["share_pnl"] == 450.0
+    row = conn.execute("SELECT * FROM dc_assignments").fetchone()
+    assert row["status"] == "disposed" and row["disposal_price"] == 774.5
+    assert row["disposed_session"] == "2026-08-24" and row["assigned_session"] == "2026-08-21"
+
+    position = conn.execute("SELECT * FROM dc_positions WHERE position_id = ?", (pid,)).fetchone()
+    assert position["status"] == "closed"
+    # Options: short put 20 -> 6 (+14), long put 25 -> 8 (-17) = -3.00/share = -300, plus +450.
+    assert position["gross_pnl"] == 150.0
+
+
+def test_shares_delivered_tonight_are_not_disposable_tonight(conn):
+    """The weekend exposure is the point, not an artefact — settlement hands the shares over after
+    the close, so the earliest disposal is the next session."""
+    book.enter_week(conn, _spy_plan(), SPY_CONFIG, ["path"], week=WEEK, advice_params=None)
+    book.settle_expiring_legs(conn, "2026-08-21", 770.0, SPY_CONFIG, symbol="SPY")
+    assert db.open_assignments(conn, before_session="2026-08-21") == []
+    assert len(db.open_assignments(conn, before_session="2026-08-24")) == 1
+
+
+def test_a_cash_settled_week_never_grows_a_share_row(conn):
+    book.enter_week(conn, _plan(), {}, ["path"], week=WEEK, advice_params=None)
+    book.settle_expiring_legs(conn, "2026-08-21", 6440.0, {}, symbol="SPX")
+    assert conn.execute("SELECT COUNT(*) FROM dc_assignments").fetchone()[0] == 0
+    put_pos = conn.execute("SELECT * FROM dc_positions WHERE side = 'put'").fetchone()
+    assert put_pos["exit_cost"] == 5.00  # the ITM cash settlement still pays at settlement

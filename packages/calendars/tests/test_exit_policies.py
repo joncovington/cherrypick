@@ -248,3 +248,93 @@ def test_comparison_table_shape(week_conn):
     assert pt10["weeks"] == 1
     assert pt10["derivable"] == 1
     assert pt10["win_rate"] in (0.0, 1.0)
+
+
+# ------------------------------------------------------- physical settlement inside the derivation
+SPY_CONFIG = {"settlement_style": {"SPY": "physical"}}
+SPY_SETTLE_SPOT = 6440.0   # same shape as SETTLE_SPOT: the put finishes 25 ITM, the call worthless
+SPY_DISPOSE_SPOT = 6470.0  # Monday's print, where the delivered shares are sold
+
+
+def _spy_plan():
+    plan = _plan()
+    plan["symbol"] = "SPY"
+    return plan
+
+
+@pytest.fixture()
+def spy_week_conn(tmp_path):
+    """The same lived week on a physically-settled underlying: the ITM short delivers shares on
+    Friday and they are disposed Monday alongside the longs."""
+    conn = db.connect(str(tmp_path / "paper.db"))
+    book.enter_week(conn, _spy_plan(), SPY_CONFIG, ["control", "path"], week=WEEK, advice_params=None)
+    _tick(conn, "2026-08-17", "10:05", 6500.0, {"front": 20.0, "back": 25.0})
+    _tick(conn, "2026-08-21", "15:50", 6445.0, {"front": 5.0, "back": 20.0})
+    for side in ("put", "call"):
+        position = dict(conn.execute(
+            "SELECT * FROM dc_positions WHERE position_id = ?", (f"2026-08-17:control:{side}",)
+        ).fetchone())
+        book.close_open_legs(conn, position, _snapshot_from({"front": 5.0, "back": 20.0}, 6445.0),
+                             SPY_CONFIG, reason="scheduled_exit", session_date="2026-08-21")
+
+    book.settle_expiring_legs(conn, "2026-08-21", SPY_SETTLE_SPOT, SPY_CONFIG, symbol="SPY")
+    _tick(conn, "2026-08-24", "09:50", SPY_DISPOSE_SPOT, {"back": 26.0}, books=("path",))
+    for assignment in db.open_assignments(conn, before_session="2026-08-24"):
+        book.dispose_assignment(conn, assignment, SPY_DISPOSE_SPOT, session_date="2026-08-24")
+    for side in ("put", "call"):
+        position = dict(conn.execute(
+            "SELECT * FROM dc_positions WHERE position_id = ?", (f"2026-08-17:path:{side}",)
+        ).fetchone())
+        book.close_open_legs(conn, position, _snapshot_from({"back": 26.0}, SPY_DISPOSE_SPOT),
+                             SPY_CONFIG, reason="long_disposition", session_date="2026-08-24")
+    return conn
+
+
+def test_expiry_derivation_carries_the_delivered_shares(spy_week_conn):
+    """Physical settlement is additive: the derived expiry policy must differ from its cash-settled
+    twin by exactly the weekend share move, and by nothing else."""
+    week = exit_policies.week_data(spy_week_conn, WEEK["week_of"], "path")
+    derived = exit_policies.derive(week, "expiry-longs-mon", SPY_CONFIG)
+    assert derived["derivable"]
+    assert derived["exits"]["front_put"]["kind"] == "assigned"
+    assert derived["exits"]["front_call"]["kind"] == "cash_settled"  # OTM: nothing delivered
+
+    # Long 100 shares based at Friday's 6440 print, sold into Monday's 6470.
+    share_move = (SPY_DISPOSE_SPOT - SPY_SETTLE_SPOT) * 100
+    option_only = sum(
+        (leg["entry_mid"] - derived["exits"][role]["value"])
+        if leg["action"] == "Sell to Open"
+        else (derived["exits"][role]["value"] - leg["entry_mid"])
+        for role, leg in week["legs"].items()
+    ) * 100
+    assert round(derived["gross_pnl"] - option_only, 2) == round(share_move, 2)
+
+
+def test_the_derivation_still_reproduces_the_books_it_sits_beside(spy_week_conn):
+    """The module's one guarantee, under the new settlement style: a derivation that cannot
+    reproduce the real books has no business ranking the policies between them."""
+    validation = exit_policies.validate_against_control(spy_week_conn, SPY_CONFIG)
+    assert validation["compared"] == 2
+    assert validation["ok"], validation["mismatches"]
+
+
+def test_undisposed_shares_are_a_hole_not_a_zero(spy_week_conn):
+    """A week whose shares are still outstanding cannot be scored — pricing them at zero would let
+    an unfinished week masquerade as a flat one."""
+    spy_week_conn.execute(
+        "UPDATE dc_assignments SET status = 'open', share_pnl = NULL, disposal_price = NULL"
+    )
+    spy_week_conn.commit()
+    week = exit_policies.week_data(spy_week_conn, WEEK["week_of"], "path")
+    derived = exit_policies.derive(week, "expiry-longs-mon", SPY_CONFIG)
+    assert derived["derivable"] is False
+    assert derived["reason"] == "no_settlement_on_file"
+
+
+def test_a_pre_expiry_policy_never_touches_the_share_leg(spy_week_conn):
+    """Every policy that exits before Friday's bell closes the shorts rather than letting them be
+    assigned, so no delivered shares can enter its number."""
+    week = exit_policies.week_data(spy_week_conn, WEEK["week_of"], "path")
+    derived = exit_policies.derive(week, "control", SPY_CONFIG)
+    assert derived["derivable"]
+    assert all(exit["kind"] == "traded" for exit in derived["exits"].values())

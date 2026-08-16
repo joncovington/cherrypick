@@ -146,36 +146,64 @@ def close_open_legs(
 def settle_expiring_legs(
     conn, day: str, spot: float, config: dict, *, symbol: str | None = None
 ) -> list[dict]:
-    """Cash-settle every open leg expiring `day` at the settlement print — scoped to one underlying
-    when `symbol` is given, because the print is per-symbol. Front legs leave the position
+    """Settle every open leg expiring `day` at the settlement print — scoped to one underlying when
+    `symbol` is given, because the print is per-symbol. Front legs leave the position
     `short_settled` (the long survives the weekend); a back leg still open at its own expiry
     settles the same way and finalizes the position (`longs_expired` — the disposition was missed
-    or refused all day, and intrinsic at the bell is the honest outcome)."""
+    or refused all day, and intrinsic at the bell is the honest outcome).
+
+    Under a PHYSICAL settlement style an ITM leg also delivers shares. The option leg still books
+    at intrinsic — that is its value at expiry under either style — and the delivered shares become
+    a `dc_assignments` row carrying the settlement spot as their basis, so the share leg contributes
+    exactly the disposal-vs-settlement move and nothing that intrinsic already counted. The $5
+    event charge moves with it: it is levied at disposal (`engine.assignment_fee`, which folds in
+    the equity pass-throughs) rather than here, so one assignment is never charged twice.
+    """
     now = clock.now_iso()
     results = []
     by_position: dict[str, dict] = {}
     for leg in db.expiring_open_legs(conn, day):
         if symbol is not None and leg["position_symbol"] != symbol:
             continue
+        style = engine.settlement_style(config, leg["position_symbol"]) or "cash"
         intrinsic = engine.settle_intrinsic(leg["strike"], leg["option_type"], spot)
+        physical = style == "physical"
         db.save_leg(
             conn,
             {
                 "position_id": leg["position_id"],
                 "leg_role": leg["leg_role"],
                 "status": "settled",
-                "close_kind": "cash_settled",
+                "close_kind": "assigned" if (physical and intrinsic > 0) else "cash_settled",
                 "closed_at": now,
                 "close_value": intrinsic,
             },
         )
-        entry = by_position.setdefault(leg["position_id"], {"itm": 0, "legs": 0})
+        entry = by_position.setdefault(leg["position_id"], {"itm": 0, "legs": 0, "assigned": 0})
         entry["legs"] += 1
         if intrinsic > 0:
             entry["itm"] += 1
+            if physical:
+                quantity = _position_quantity(conn, leg["position_id"])
+                assignment = engine.assignment_from(leg, spot, quantity)
+                if assignment is not None:
+                    db.save_assignment(
+                        conn,
+                        {
+                            "position_id": leg["position_id"],
+                            "leg_role": leg["leg_role"],
+                            "symbol": leg["position_symbol"],
+                            "assigned_session": day,
+                            "assigned_at": now,
+                            "status": "open",
+                            **assignment,
+                        },
+                    )
+                    entry["assigned"] += 1
 
     for pid, info in by_position.items():
-        fee = engine.settlement_fee(info["itm"])
+        # Only the CASH-settled ITM legs pay here; a physical one pays at disposal.
+        fee = engine.settlement_fee(info["itm"] - info["assigned"])
         _accumulate_exit_costs(conn, pid, fee=fee, slippage=0.0)
         prev_itm = conn.execute(
             "SELECT itm_settlements FROM dc_positions WHERE position_id = ?", (pid,)
@@ -213,12 +241,24 @@ def _accumulate_exit_costs(conn, pid: str, *, fee: float, slippage: float) -> No
     )
 
 
+def _position_quantity(conn, pid: str) -> int:
+    row = conn.execute("SELECT quantity FROM dc_positions WHERE position_id = ?", (pid,)).fetchone()
+    return int((row["quantity"] if row else 1) or 1)
+
+
 def finalize_if_done(conn, pid: str, *, reason: str, session_date: str) -> bool:
-    """Once no leg is open, the position closes: gross P&L from the recorded per-leg closes, the
-    exit reason from whichever path finished it. `closed_session` is what the ledger reader reports
-    as the session — the day the LAST leg closed, which is the day the result became a fact."""
+    """Once nothing is open, the position closes: gross P&L from the recorded per-leg closes plus
+    any delivered shares' realized move, the exit reason from whichever path finished it.
+    `closed_session` is what the ledger reader reports as the session — the day the LAST leg closed,
+    which is the day the result became a fact.
+
+    An undisposed share position holds the close open exactly as an open option leg does. Closing a
+    week while its shares are still outstanding would book a result the account has not yet realized
+    — and on a physically-settled underlying that gap spans a weekend."""
     legs = db.legs_for(conn, pid)
     if any(leg["status"] == "open" for leg in legs):
+        return False
+    if db.open_assignment_count(conn, pid):
         return False
     position = conn.execute("SELECT * FROM dc_positions WHERE position_id = ?", (pid,)).fetchone()
     if position is None or position["status"] == "closed":
@@ -232,6 +272,8 @@ def finalize_if_done(conn, pid: str, *, reason: str, session_date: str) -> bool:
             return False  # an unpriced close — never finalize on a guess
         per_share += pnl
         exit_value += leg["close_value"] * (1 if leg["action"] == "Buy to Open" else -1)
+    # Already in dollars (shares x move), so it is added AFTER the per-share legs are scaled.
+    shares_pnl = sum(a["share_pnl"] or 0.0 for a in db.assignments_for(conn, pid))
     db.save_position(
         conn,
         {
@@ -241,7 +283,35 @@ def finalize_if_done(conn, pid: str, *, reason: str, session_date: str) -> bool:
             "closed_at": clock.now_iso(),
             "closed_session": session_date,
             "exit_value": round(exit_value, 4),
-            "gross_pnl": round(per_share * 100 * quantity, 2),
+            "gross_pnl": round(per_share * 100 * quantity + shares_pnl, 2),
         },
     )
     return True
+
+
+def dispose_assignment(conn, assignment: dict, price: float, *, session_date: str) -> dict:
+    """Close one delivered share position at `price` and finalize its week if that was the last
+    thing outstanding. The fee lands here rather than at settlement because only now is the disposal
+    price known, and the equity pass-throughs are computed on it."""
+    pnl = engine.share_pnl(
+        assignment["direction"], assignment["shares"], assignment["basis"], price
+    )
+    fee = engine.assignment_fee(assignment, price)
+    db.save_assignment(
+        conn,
+        {
+            "position_id": assignment["position_id"],
+            "leg_role": assignment["leg_role"],
+            "status": "disposed",
+            "disposed_session": session_date,
+            "disposed_at": clock.now_iso(),
+            "disposal_price": round(float(price), 4),
+            "share_pnl": pnl,
+            "fees": fee,
+        },
+    )
+    _accumulate_exit_costs(conn, assignment["position_id"], fee=fee, slippage=0.0)
+    finalize_if_done(
+        conn, assignment["position_id"], reason="shares_disposed", session_date=session_date
+    )
+    return {"position_id": assignment["position_id"], "share_pnl": pnl, "fee": fee, "price": price}

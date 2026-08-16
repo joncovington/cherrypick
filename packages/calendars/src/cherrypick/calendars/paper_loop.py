@@ -295,6 +295,11 @@ def run_once(
     # enter week N, so the overlap day never contends.
     disposition_min = clock.hhmm_to_min(defaults.get("mon_disposition_time"), 9 * 60 + 45)
     if now_min >= disposition_min:
+        # Delivered shares go first and on EVERY session, not only Mondays: a physically-settled
+        # week hands them over at Friday's settlement, and the account carries them until they are
+        # sold. Ordering them ahead of the longs keeps the overlap day's sequence
+        # shares -> longs -> entry, oldest obligation first.
+        actions += _dispose_shares(config, conn, cache_path=cache_path, when=when, day=day)
         actions += _dispose_longs(config, conn, cache_path=cache_path, when=when, day=day)
 
     # Phase: entry, only on the entry day inside the window.
@@ -353,13 +358,14 @@ def _unsettled_today(conn, day: str) -> bool:
 def _try_entry(config: dict, conn, *, cache_path: str, when: datetime, week: dict) -> int:
     day = week["entry_session"]
     symbol = (config.get("symbols") or ["SPX"])[0].strip().upper()
-    # The settlement model is European cash settlement (Friday shorts settle at intrinsic, longs
-    # ride the weekend). An American-style ETF (QQQ/IWM) needs early-exercise handling this module
-    # deliberately does not have — refuse the entry rather than book a structure whose bookkeeping
-    # would be wrong at its first Friday.
-    if symbol not in {s.strip().upper() for s in config.get("cash_settled_symbols") or ["SPX"]}:
+    # Two settlement models are implemented: European cash (shorts settle at intrinsic) and American
+    # physical (an ITM short delivers shares, held until the next session's disposal). A symbol the
+    # config declares NEITHER for is refused rather than assumed into one — the original guard's
+    # point, and the reason it survives the arrival of the second model: bookkeeping that is wrong
+    # at its first Friday is wrong quietly.
+    if engine.settlement_style(config, symbol) is None:
         db.record_entry_attempt(
-            conn, trade_date=day, week_of=week["week_of"], symbol=symbol, outcome="not_cash_settled"
+            conn, trade_date=day, week_of=week["week_of"], symbol=symbol, outcome="unknown_settlement"
         )
         return 0
     books, advice_params = session_books(config, day)
@@ -608,6 +614,62 @@ def _dispose_longs(config: dict, conn, *, cache_path: str, when: datetime, day: 
     return actions
 
 
+def _dispose_shares(config: dict, conn, *, cache_path: str, when: datetime, day: str) -> int:
+    """Sell out every share position a physically-settled expiry delivered on an EARLIER session.
+
+    Shares handed over by tonight's settlement cannot be sold tonight, so `before_session=day` is
+    the rule rather than an optimisation — and the interval it creates, Friday's settlement to the
+    next session's disposal, is precisely the weekend exposure a cash-settled underlying never has.
+    It is left visible in the ledger (`assigned_session` against `disposed_session`) instead of
+    being netted away.
+
+    A spot that will not print is a refusal, not a guess: the shares stay open and the next tick
+    retries. Nothing here is gated on the option execution gate — that gate reads an option
+    snapshot, and these are shares.
+    """
+    open_shares = db.open_assignments(conn, before_session=day)
+    if not open_shares:
+        return 0
+    max_age = (config.get("defaults") or {}).get("max_quote_age_seconds", 300)
+    actions = 0
+    spots: dict[str, float | None] = {}
+    for assignment in open_shares:
+        symbol = assignment["symbol"]
+        if symbol not in spots:
+            spots[symbol] = provider.read_spot(cache_path, symbol, max_age_seconds=max_age)
+        spot = spots[symbol]
+        if spot is None:
+            db.record_management_event(
+                conn,
+                position_id=assignment["position_id"],
+                occurred_at=time.time(),
+                session_date=day,
+                action="dispose_shares",
+                reason="share_disposition",
+                executed=0,
+                gate="no_spot",
+            )
+            continue
+        result = bookmod.dispose_assignment(conn, assignment, spot, session_date=day)
+        actions += 1
+        _log(
+            f"[{assignment['book']}] {assignment['position_id']}: disposed "
+            f"{assignment['shares']} {assignment['direction']} {symbol} shares at {spot:.2f} "
+            f"(assigned {assignment['assigned_session']} at {assignment['basis']:.2f}, "
+            f"share P&L {result['share_pnl']:+.2f}, fee {result['fee']:.2f})"
+        )
+        db.record_management_event(
+            conn,
+            position_id=assignment["position_id"],
+            occurred_at=time.time(),
+            session_date=day,
+            action="dispose_shares",
+            reason="share_disposition",
+            executed=1,
+        )
+    return actions
+
+
 def run_settle(
     config: dict,
     conn,
@@ -617,7 +679,7 @@ def run_settle(
     price: float | None = None,
     day: str | None = None,
 ) -> dict:
-    """Cash-settle every open leg expiring `day` (default: today) at the settlement print.
+    """Settle every open leg expiring `day` (default: today) at the settlement print.
 
     The print is the last streamed trade, staleness-gated (`settlement_max_age_seconds`) — refused
     rather than settled stale, so the next tick retries and the day settles itself when the feed
