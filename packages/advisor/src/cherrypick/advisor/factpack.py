@@ -43,7 +43,7 @@ LIGHT_SLOTS = ("open", "am1", "am2", "midday", "pm1", "pm2", "close")
 DEEP_SLOT = "deep"
 SLOTS = (*LIGHT_SLOTS, DEEP_SLOT)
 
-MODULES = ("meic", "flies", "earnings", "calendars")
+MODULES = ("meic", "flies", "earnings", "calendars", "pmcc")
 
 # How many rows a "top N" section may carry. Refusal reasons have a long tail of one-offs; the head
 # is the story, and the tail costs tokens that the deep sections need.
@@ -385,7 +385,82 @@ def _calendars(session: str) -> dict[str, Any]:
     return out
 
 
-_MODULE_SECTIONS = {"meic": _meic, "flies": _flies, "earnings": _earnings, "calendars": _calendars}
+def _pmcc(session: str) -> dict[str, Any]:
+    """PMCC-99 deep-ITM covered calls: the advisable surface is the tv-close threshold and the
+    entry yield floor. The pack carries each open position's worksheet economics and its latest
+    short time value (the number the exit rule reads), the closed books' results by exit reason,
+    the assignment-exposure telemetry (the module measures early assignment, it does not model it —
+    exposure beside net is the honest read), and the entry attempts, which this module makes most
+    sessions."""
+
+    def read(conn):
+        open_rows = _store.rows(
+            conn,
+            "SELECT p.position_id, p.book, p.symbol, p.long_strike, p.long_expiration,"
+            " p.short_strike, p.short_expiration, p.net_debit, p.entry_net_tv,"
+            " p.entry_weekly_yield_pct, p.entry_downside_protection_pct, p.roll_count, p.status,"
+            " (SELECT m.short_tv FROM pmcc_marks m WHERE m.position_id = p.position_id"
+            "   AND m.usable = 1 AND m.short_tv IS NOT NULL ORDER BY m.marked_at DESC LIMIT 1)"
+            "   last_short_tv,"
+            " (SELECT m.spot FROM pmcc_marks m WHERE m.position_id = p.position_id AND m.usable = 1"
+            "   ORDER BY m.marked_at DESC LIMIT 1) last_spot"
+            " FROM pmcc_positions p WHERE p.status != 'closed' ORDER BY p.book, p.symbol",
+        )
+        closed = _store.rows(
+            conn,
+            "SELECT book, symbol, exit_reason, COUNT(*) n, SUM(gross_pnl) gross, SUM(fees) fees,"
+            " SUM(roll_count) rolls FROM pmcc_positions WHERE status = 'closed'"
+            " GROUP BY book, symbol, exit_reason ORDER BY book",
+        )
+        attempts = _store.rows(
+            conn,
+            "SELECT book, outcome, COUNT(*) n FROM pmcc_entry_attempts WHERE trade_date = ?"
+            " GROUP BY book, outcome ORDER BY n DESC",
+            (session,),
+        )
+        events = _store.rows(
+            conn,
+            "SELECT action, reason, executed, gate, COUNT(*) n FROM pmcc_management_events"
+            " WHERE session_date = ? GROUP BY action, reason, executed, gate ORDER BY n DESC LIMIT ?",
+            (session, TOP_N),
+        )
+        exposure = _store.rows(
+            conn,
+            "SELECT position_id, COUNT(*) exposed_ticks FROM pmcc_marks"
+            " WHERE session_date = ? AND assignment_exposed = 1 GROUP BY position_id",
+            (session,),
+        )
+        marks = _store.rows(
+            conn,
+            "SELECT usable, COUNT(*) n FROM pmcc_marks WHERE session_date = ? GROUP BY usable",
+            (session,),
+        )
+        return {
+            "open_positions": open_rows,
+            "closed_by_exit_reason": closed,
+            "entry_attempts": attempts,
+            "management_events": events,
+            "assignment_exposure": exposure,
+            "mark_coverage": marks,
+            "_note": (
+                "early assignment is measured (assignment_exposure), never modelled — treat paper "
+                "net as an upper bound; the roll-vs-hold choice is the book contrast and is not "
+                "advisable, only tv_close_threshold and target_weekly_yield_min are"
+            ),
+        }
+
+    out = _read(_paper_db("pmcc"), read) or {"_absent": "no pmcc paper ledger"}
+    out["advice_active"] = _store.read_json(_advice_active("pmcc"), default=None)
+    return out
+
+
+_MODULE_SECTIONS = {
+    "meic": _meic,
+    "flies": _flies,
+    "earnings": _earnings,
+    "calendars": _calendars,
+    "pmcc": _pmcc,
+}
 
 
 # --------------------------------------------------------------------------- live (read-only)

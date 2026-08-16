@@ -958,12 +958,151 @@ def _calendars_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     return counts
 
 
+# cherrypick-pmcc keys on a text `position_id` and lives ~1-2 weeks with four notifiable moments:
+# it opens, its short may be ROLLED (the roll book's whole point — keyed position_id:roll_count so
+# every roll pings once), its short may settle at a Friday bell (assignment delivers short shares
+# that ride the weekend — the one moment the structure changes without a trade), and it closes.
+def _pmcc_seed(conn) -> dict:
+    rows = conn.execute(
+        "SELECT position_id, roll_count, settlement_spot, status FROM pmcc_positions"
+    ).fetchall()
+    return {
+        "notified_entry_ids": [r["position_id"] for r in rows],
+        "notified_roll_ids": [
+            f"{r['position_id']}:{n}" for r in rows for n in range(1, (r["roll_count"] or 0) + 1)
+        ],
+        "notified_settlement_ids": [r["position_id"] for r in rows if r["settlement_spot"] is not None],
+        "notified_exit_ids": [r["position_id"] for r in rows if r["status"] == "closed"],
+    }
+
+
+def _fmt_pmcc_entry(r) -> str:
+    return (
+        f"\U0001f7e2 PMCC-99 paper ENTRY — {r['symbol']} long {r['long_strike']:.0f} "
+        f"({r['long_expiration']}) / short {r['short_strike']:.0f} ({r['short_expiration']}) "
+        f"for ${r['net_debit']:.2f} debit, TV ${r['entry_net_tv'] or 0:.2f} [{r['book']}]"
+    )
+
+
+def _embed_pmcc_entry(r) -> dict:
+    details = (
+        f"long {r['long_strike']:.0f} {r['long_expiration']} / short {r['short_strike']:.0f} "
+        f"{r['short_expiration']} · debit ${r['net_debit']:.2f} · net TV ${r['entry_net_tv'] or 0:.2f} "
+        f"· protection {(r['entry_downside_protection_pct'] or 0) * 100:.1f}% · spot {r['entry_spot']:.2f}"
+    )
+    title = f"ENTRY · {r['symbol']} PMCC {r['long_strike']:.0f}/{r['short_strike']:.0f}"[:256]
+    return _embed(COLOR_ENTRY, title, details, footer=r["book"])
+
+
+def _fmt_pmcc_roll(r) -> str:
+    return (
+        f"\U0001f504 PMCC-99 ROLLED — {r['symbol']} short now {r['short_strike']:.0f} "
+        f"({r['short_expiration']}), roll #{r['roll_count']} [{r['book']}]"
+    )
+
+
+def _embed_pmcc_roll(r) -> dict:
+    details = f"short now {r['short_strike']:.0f} {r['short_expiration']} · roll #{r['roll_count']}"
+    title = f"ROLLED · {r['symbol']} PMCC short {r['short_strike']:.0f}"[:256]
+    return _embed(COLOR_COMPLETE, title, details, footer=r["book"])
+
+
+def _fmt_pmcc_settlement(r) -> str:
+    itm = "ITM (shares delivered)" if (r["itm_settlements"] or 0) > 0 else "OTM"
+    return (
+        f"⚖️ PMCC-99 SHORT SETTLED — {r['symbol']} {r['short_strike']:.0f} {itm} "
+        f"at {r['settlement_spot']:.2f}; the long rides to the next session [{r['book']}]"
+    )
+
+
+def _embed_pmcc_settlement(r) -> dict:
+    details = (
+        f"settled {r['settlement_spot']:.2f} · {r['itm_settlements'] or 0} ITM · "
+        f"long open to {r['long_expiration']}"
+    )
+    title = f"SHORT SETTLED · {r['symbol']} PMCC {r['short_strike']:.0f}"[:256]
+    return _embed(COLOR_COMPLETE, title, details, footer=r["book"])
+
+
+def _fmt_pmcc_exit(r) -> str:
+    net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
+    return (
+        f"\U0001f3c1 PMCC-99 paper CLOSED — {r['symbol']} "
+        f"{r['long_strike']:.0f}/{r['short_strike']:.0f} net ${net:+.2f} "
+        f"({r['exit_reason']}) [{r['book']}]"
+    )
+
+
+def _embed_pmcc_exit(r) -> dict:
+    net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
+    details = (
+        f"net ${net:+.2f} (gross ${r['gross_pnl'] or 0:+.2f}, fees ${r['fees'] or 0:.2f}) · "
+        f"{r['exit_reason']} · entered {r['entry_session']}"
+    )
+    title = f"CLOSED · {r['symbol']} PMCC {r['long_strike']:.0f}/{r['short_strike']:.0f}"[:256]
+    return _embed(COLOR_EXIT, title, details, footer=r["book"])
+
+
+def _pmcc_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
+    counts = {}
+    stages = [
+        (
+            "notified_entry_ids",
+            "entry",
+            "Paper entry",
+            _fmt_pmcc_entry,
+            _embed_pmcc_entry,
+            "SELECT * FROM pmcc_positions",
+            lambda r: r["position_id"],
+        ),
+        (
+            "notified_roll_ids",
+            "roll",
+            "Short rolled",
+            _fmt_pmcc_roll,
+            _embed_pmcc_roll,
+            "SELECT * FROM pmcc_positions WHERE roll_count > 0",
+            lambda r: f"{r['position_id']}:{r['roll_count']}",
+        ),
+        (
+            "notified_settlement_ids",
+            "settlement",
+            "Short settled",
+            _fmt_pmcc_settlement,
+            _embed_pmcc_settlement,
+            "SELECT * FROM pmcc_positions WHERE settlement_spot IS NOT NULL",
+            lambda r: r["position_id"],
+        ),
+        (
+            "notified_exit_ids",
+            "exit",
+            "Paper closed",
+            _fmt_pmcc_exit,
+            _embed_pmcc_exit,
+            "SELECT * FROM pmcc_positions WHERE status = 'closed'",
+            lambda r: r["position_id"],
+        ),
+    ]
+    for key, event, title, fmt, embed_fn, query, notif_id in stages:
+        notified = set(st.get(key, []))
+        rows = [r for r in conn.execute(query).fetchall() if notif_id(r) not in notified]
+        for r in rows:
+            notifier.notify(
+                "INFO", f"trade.{name}.{event}.{notif_id(r)}", title, fmt(r), embed=embed_fn(r)
+            )
+            notified.add(notif_id(r))
+        st[key] = sorted(notified)[-_ID_CAP:]
+        counts[f"{event}s_notified"] = len(rows)
+    return counts
+
+
 # Registry: paper.trade_schema -> (seed_fn, process_fn). Schemas not listed here skip cleanly.
 _SCHEMAS = {
     "meic_ic": (_meic_seed, _meic_process),
     "earnings": (_earnings_seed, _earnings_process),
     "fly_book": (_flies_seed, _flies_process),
     "dc_week": (_calendars_seed, _calendars_process),
+    "pmcc_99": (_pmcc_seed, _pmcc_process),
 }
 
 

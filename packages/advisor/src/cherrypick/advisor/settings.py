@@ -39,6 +39,7 @@ DEFAULTS: dict[str, Any] = {
         "earnings": {"enabled": True},
         # Off until the module's own advice block is turned on too — the two switches must agree.
         "calendars": {"enabled": False},
+        "pmcc": {"enabled": False},
     },
 }
 

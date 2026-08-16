@@ -75,6 +75,7 @@ export function readLogTail(config: ConsoleConfig, limit = DEFAULT_LINES): LogLi
     sources.push([mod, fs.existsSync(inModule) ? inModule : atRoot]);
   }
   sources.push(["calendars", path.join(logsRoot, "calendars", "calendars_paper.log")]);
+  sources.push(["pmcc", path.join(logsRoot, "pmcc", "pmcc_paper.log")]);
 
   const lines: LogLine[] = [];
   for (const [source, p] of sources) {

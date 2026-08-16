@@ -24,6 +24,10 @@ Three shapes, one contract:
   week, so there is nothing entry-side to advise, which makes it the cleanest fit for the v1
   management-params-only contract. Entries only happen on the weekly entry day, so an artifact
   landing any other session admits params that open nothing — expected, not a failure.
+* **pmcc** — ``advice.{enabled, base_book, bounds}``; params are that module's management keys plus
+  the entry yield floor (``tv_close_threshold``, ``target_weekly_yield_min``), and the advised book
+  is ``advised:<base_book>``. The roll-vs-hold choice is NOT advisable — it is the module's own
+  book contrast, not a parameter.
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ _BASE_KEY = {
     "flies": ("base_arm", "control"),
     "earnings": ("base_prefix", "strat_test"),
     "calendars": ("base_book", "control"),
+    "pmcc": ("base_book", "control"),
 }
 
 MODULES = tuple(_BASE_KEY)

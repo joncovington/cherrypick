@@ -109,7 +109,7 @@ export function readLockStatus(config: ConsoleConfig): LockStatus {
   const ids =
     typeof modulesRaw === "object" && modulesRaw !== null && !Array.isArray(modulesRaw)
       ? Object.keys(modulesRaw as Record<string, unknown>)
-      : ["meic", "flies", "earnings", "calendars"]; // calendars is paper-only; its gate reads as absent
+      : ["meic", "flies", "earnings", "calendars", "pmcc"]; // calendars/pmcc are paper-only; their gates read as absent
 
   const arm = readJson(path.join(config.paths.cherrypick, "state", "flies-live-arm.json"));
   const armDate = typeof arm?.["date"] === "string" ? (arm["date"] as string) : null;

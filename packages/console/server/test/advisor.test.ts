@@ -152,7 +152,13 @@ describe("the advisor reader", () => {
     expect(payload.sessions).toEqual([]);
     expect(payload.experiments).toEqual([]);
     // The apply banner still lists every module, saying why each is not accepting advice.
-    expect(payload.applyStatus.map((s) => s.module)).toEqual(["meic", "flies", "earnings", "calendars"]);
+    expect(payload.applyStatus.map((s) => s.module)).toEqual([
+      "meic",
+      "flies",
+      "earnings",
+      "calendars",
+      "pmcc",
+    ]);
     expect(payload.applyStatus[0]?.disabledReason).toContain("no deployed config");
   });
 

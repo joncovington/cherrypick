@@ -53,12 +53,20 @@ def _calendars_open(conn) -> list[dict]:
     return [{"symbol": r["symbol"], "profile": r["book"]} for r in rows]
 
 
+def _pmcc_open(conn) -> list[dict]:
+    rows = conn.execute(
+        "SELECT symbol, book FROM pmcc_positions WHERE status != 'closed'"
+    ).fetchall()
+    return [{"symbol": r["symbol"], "profile": r["book"]} for r in rows]
+
+
 # Same registry shape as report._READERS, but for OPEN (not-yet-closed) rows, keyed by paper.trade_schema.
 _OPEN_READERS = {
     "meic_ic": _meic_open,
     "earnings": _earnings_open,
     "fly_book": _flies_open,
     "dc_week": _calendars_open,
+    "pmcc_99": _pmcc_open,
 }
 
 
