@@ -45,6 +45,46 @@ def settlement_style(config: dict, symbol: str) -> str | None:
     return "cash" if symbol.upper() in {str(s).strip().upper() for s in legacy} else None
 
 
+# --------------------------------------------------------------------------- the dividend calendar
+#
+# A physically-settled underlying pays dividends, and an ITM short call is really assigned at the
+# close BEFORE the ex-date — a session before this module books anything. The module does not model
+# that; it SKIPS the week (user decision 2026-08-15: this is a paper experiment testing exit rules,
+# and an ex-div week is a different trade — excluding it is cheaper and more honest than
+# approximating it).
+#
+# The dates are DECLARED config data from the issuer's own distribution schedule, refreshed by hand
+# annually. They cannot be computed — the "third Friday" rule fails on SSGA's own Jun 2026 ex-date —
+# and cannot be fetched, because nothing on a loop-decision path may touch the network. A missing
+# table and "no dividend that week" must not look alike, so coverage is explicit: a symbol with no
+# dividends block is never covered, and a week past `declared_through` is refused rather than
+# assumed dividend-free.
+
+
+def ex_dividend_dates(config: dict, symbol: str) -> list[str]:
+    """The declared ex-dates for `symbol`, else empty."""
+    block = (config.get("dividends") or {}).get(symbol.upper()) or {}
+    return [str(d) for d in (block.get("ex_dates") or [])]
+
+
+def dividend_coverage_ok(config: dict, symbol: str, through_day: str) -> bool:
+    """Whether the declared calendar can answer questions up to `through_day` (ISO date). No block,
+    or a horizon short of the day, is not-covered — never "probably no dividend"."""
+    block = (config.get("dividends") or {}).get(symbol.upper()) or {}
+    declared_through = block.get("declared_through")
+    return isinstance(declared_through, str) and str(through_day) <= declared_through
+
+
+def ex_date_in_span(config: dict, symbol: str, start_day: str, end_day: str) -> str | None:
+    """The first declared ex-date inside the CLOSED span [start_day, end_day], or None. The span is
+    the whole week — entry through the back expiration — because shares delivered at a Friday
+    expiry ride the weekend, so a Monday ex-date is crossed too."""
+    for d in sorted(ex_dividend_dates(config, symbol)):
+        if str(start_day) <= d <= str(end_day):
+            return d
+    return None
+
+
 def merged_params(config: dict, book: str) -> dict:
     """`defaults` overlaid with the book's own block — the flies `merged_params` shape, so an
     advised book resolves through the same path as every other."""

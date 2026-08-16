@@ -239,3 +239,33 @@ def test_an_assignment_costs_the_settlement_event_plus_the_equity_pass_throughs(
         + _fees.stock_trade_fee(100, 770.0, side="sell", ndigits=4),
         2,
     )
+
+
+# --------------------------------------------------------------------- the dividend calendar
+DIV_CFG = {
+    "dividends": {
+        "SPY": {"declared_through": "2026-12-31", "ex_dates": ["2026-09-18", "2026-12-18", "2026-12-31"]}
+    }
+}
+
+
+def test_coverage_is_declared_never_assumed():
+    # No block at all is NOT covered — a missing table and "no dividend" must never look alike.
+    assert engine.dividend_coverage_ok({}, "SPY", "2026-09-18") is False
+    assert engine.dividend_coverage_ok(DIV_CFG, "SPY", "2026-12-31") is True
+    assert engine.dividend_coverage_ok(DIV_CFG, "SPY", "2027-01-04") is False
+    # A block without a horizon covers nothing, even with dates listed.
+    assert engine.dividend_coverage_ok(
+        {"dividends": {"SPY": {"ex_dates": ["2026-09-18"]}}}, "SPY", "2026-09-18"
+    ) is False
+
+
+def test_ex_date_in_span_hits_the_span_closed_on_both_ends():
+    # The 09-18 ex-date IS that week's short expiry.
+    assert engine.ex_date_in_span(DIV_CFG, "SPY", "2026-09-14", "2026-09-21") == "2026-09-18"
+    # Boundary days are IN: entry day and back expiration both count.
+    assert engine.ex_date_in_span(DIV_CFG, "SPY", "2026-09-18", "2026-09-25") == "2026-09-18"
+    assert engine.ex_date_in_span(DIV_CFG, "SPY", "2026-09-11", "2026-09-18") == "2026-09-18"
+    # An ex-free week misses cleanly, as does a symbol with no dates.
+    assert engine.ex_date_in_span(DIV_CFG, "SPY", "2026-08-17", "2026-08-24") is None
+    assert engine.ex_date_in_span(DIV_CFG, "SPX", "2026-09-14", "2026-09-21") is None

@@ -24,7 +24,9 @@ One workspace for the trading-tool suite. Work in the package for your area — 
   pairing, validated to the cent against the real books on every run. Holiday weeks are tagged
   distinct structures and never pooled. Models both settlement styles — European cash and, since
   the 2026-08-15 move off SPX, American physical delivery, where an ITM short hands over shares held
-  across the weekend — and refuses at entry any symbol declared as neither. There is no live path.
+  across the weekend — and refuses at entry any symbol declared as neither. Ex-dividend weeks are
+  skipped outright, from a declared issuer calendar refreshed annually, rather than modelling early
+  assignment. There is no live path.
 - **packages/console** — the reactive web UI (Node + TypeScript, React SPA on 127.0.0.1:5070) and the
   suite's **only** read surface since 2026-08-12: every module's read models plus the research and
   screening surfaces in one app. The supervisor keeps it running as an always-on resident job, restarted on
