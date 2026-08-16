@@ -363,11 +363,32 @@ def _try_entry(config: dict, conn, *, cache_path: str, when: datetime, week: dic
     # config declares NEITHER for is refused rather than assumed into one — the original guard's
     # point, and the reason it survives the arrival of the second model: bookkeeping that is wrong
     # at its first Friday is wrong quietly.
-    if engine.settlement_style(config, symbol) is None:
+    style = engine.settlement_style(config, symbol)
+    if style is None:
         db.record_entry_attempt(
             conn, trade_date=day, week_of=week["week_of"], symbol=symbol, outcome="unknown_settlement"
         )
         return 0
+    # A physically-settled underlying pays dividends, and an ITM short call is really assigned at
+    # the close BEFORE the ex-date — which this module deliberately does not model. Ex-div weeks
+    # are SKIPPED, from a declared issuer calendar (see engine.py's dividend block for why the
+    # dates are data, not a rule). Two refusals, both journaled: a week the calendar cannot answer
+    # for, and a week it answers with an ex-date. Cash-settled symbols never reach this — SPX
+    # needs no dividends block.
+    if style == "physical":
+        if not engine.dividend_coverage_ok(config, symbol, week["back_expiration"]):
+            db.record_entry_attempt(
+                conn, trade_date=day, week_of=week["week_of"], symbol=symbol,
+                outcome="dividend_calendar_lapsed",
+            )
+            return 0
+        hit = engine.ex_date_in_span(config, symbol, week["entry_session"], week["back_expiration"])
+        if hit is not None:
+            db.record_entry_attempt(
+                conn, trade_date=day, week_of=week["week_of"], symbol=symbol,
+                outcome="ex_dividend_week", block_detail=f"ex-date {hit}",
+            )
+            return 0
     books, advice_params = session_books(config, day)
     already = {(p["book"], p["side"]) for p in db.positions_for_week(conn, week["week_of"])}
     if all((b, s) in already for b in books for s in ("put", "call")):

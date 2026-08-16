@@ -76,10 +76,37 @@ Two consequences worth knowing before touching this: a week does **not** close w
 outstanding (`finalize_if_done` treats them exactly as an open leg), and an undisposed share
 position makes an expiry policy `derivable: False` rather than scoring it at zero.
 
-**Not modelled: early assignment.** A physical short can be assigned before expiry — for SPY the
-realistic driver is a short call across a quarterly ex-dividend. The module assigns only at expiry.
-That is a stated limitation, not an oversight; closing it needs a dividend calendar the module has
-no way to fetch on a decision path.
+**Ex-dividend weeks are excluded, not modelled.** An ITM short call on a physical underlying is
+really assigned at the close *before* the ex-date — a session before this module books anything —
+and every 2026 SPY ex-date (09-18, 12-18, potential excise 12-31) lands exactly on the module's
+short-expiry Friday. Rather than approximate that (user decision 2026-08-15: this is a paper
+experiment testing exit rules, and an ex-div week is a different trade), entry **refuses the whole
+week** when a declared ex-date falls inside `[entry_session, back_expiration]` — the full span,
+because Friday-delivered shares ride the weekend. The dates live in the config's `dividends` block,
+declared from the issuer's own distribution schedule and **refreshed annually by hand**: they
+cannot be computed (the third-Friday rule fails on SSGA's own Jun 2026 date, and aggregators
+disagree with each other by a day) and cannot be fetched (no network on a loop path). A week past
+`declared_through` refuses entry too (`dividend_calendar_lapsed`) — a missing table and "no
+dividend that week" must never look alike.
+
+**The skips bias the sample, deliberately.** Roughly four weeks a year go untraded, and they are
+exactly the quarterly-expiration (quad-witching-adjacent) weeks. The pooled policy table therefore
+says nothing about that regime — read it as covering ordinary weeks only.
+
+**Weighed and left unmodelled: the other assignment drivers.** Interest-carry exercise of deep-ITM
+short puts and random assignment of any ITM short both exist. Neither gets a mechanism: the P&L
+transfer is the extrinsic the exerciser abandons (pennies, in our favor, by the trigger condition
+itself); a same-strike calendar's deep-ITM short is hedged by an equally-ITM long, so assignment
+reshuffles bookkeeping more than P&L; and the timing error runs conservative — shares assigned
+Thursday would dispose Friday with *no* weekend hold, while the expiry model books one.
+
+**Live-trading prerequisites (user directive 2026-08-16 — gates any future live plan here).**
+Skipping ex-div weeks is a *paper-experiment* simplification only. A live path for this strategy
+MUST first have: (a) **post-assignment management** — detecting a surprise/early assignment in the
+account and a defined disposal/repair procedure for the delivered shares, because live assignment
+cannot be excluded by skipping weeks; and (b) a **calculated ex-div decision** — trading through an
+ex-div week priced as expected assignment cost against the week's edge, never as a default. Neither
+exists today. Both are prerequisites, not enhancements, for any `enable_live_trading` rung.
 
 **`capital` is no longer the whole risk story for `path`.** `cherrypick.core.ledgers` reports
 `dc_week` capital as `entry_debit × 100 × quantity`, a long calendar's defined max loss — still

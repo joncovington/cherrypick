@@ -14,14 +14,14 @@ BACK = "2026-08-24"
 
 
 class _Opt:
-    def __init__(self, streamer_symbol, occ, strike, otype, expiration):
+    def __init__(self, streamer_symbol, occ, strike, otype, expiration, underlying="SPX"):
         self._d = {
             "streamer_symbol": streamer_symbol,
             "symbol": occ,
             "strike_price": strike,
             "option_type": otype,
             "expiration_date": expiration,
-            "underlying_symbol": "SPX",
+            "underlying_symbol": underlying,
         }
         self.streamer_symbol = streamer_symbol
 
@@ -29,23 +29,23 @@ class _Opt:
         return dict(self._d)
 
 
-def _seed_cache(tmp_path, *, spot=6500.0):
+def _seed_cache(tmp_path, *, spot=6500.0, symbol="SPX", root="SPXW"):
     """Front quotes at 20 mid, back at 25 — a 5.00 debit calendar at every strike."""
     cache = tmp_path / "stream_cache.db"
     conn = streamcache.connect(cache)
     now = time.time()
     conn.execute(
         "INSERT OR REPLACE INTO stream_trades(symbol, last, change, volume, updated_at) VALUES (?,?,?,?,?)",
-        ("SPX", spot, 0.0, 0.0, now),
+        (symbol, spot, 0.0, 0.0, now),
     )
     chain = {}
     for expiration, tag, mid in ((FRONT, "F", 20.0), ((BACK), "B", 25.0)):
         for i in range(-20, 21):
-            strike = 6500.0 + 5 * i
+            strike = spot + 5 * i
             for otype in ("put", "call"):
-                sym = f".SPXW{tag}{otype[0].upper()}{strike:g}"
-                occ = f"SPXW  26{tag}{otype[0].upper()}{strike:08.0f}"
-                chain[sym] = _Opt(sym, occ, strike, otype, expiration)
+                sym = f".{root}{tag}{otype[0].upper()}{strike:g}"
+                occ = f"{root:<6}26{tag}{otype[0].upper()}{strike:08.0f}"
+                chain[sym] = _Opt(sym, occ, strike, otype, expiration, underlying=symbol)
                 conn.execute(
                     "INSERT OR REPLACE INTO stream_quotes"
                     "(symbol, bid, ask, mid, bid_size, ask_size, updated_at) VALUES (?,?,?,?,?,?,?)",
@@ -170,3 +170,73 @@ def test_stream_request_carries_expirations_and_leg_source(tmp_path, managed_hom
     assert payload["symbols"] == ["SPX"]
     assert payload["expirations"] == {"SPX": [FRONT, BACK]}
     assert "dc_legs" in payload["leg_sources"][0]["query"]
+
+
+# ---------------------------------------------------------------- the ex-dividend week guards
+SPY_DIVS = {
+    "settlement_style": {"SPY": "physical"},
+    "dividends": {"SPY": {"declared_through": "2026-12-31", "ex_dates": ["2026-08-21"]}},
+}
+
+
+def test_a_physical_week_containing_an_ex_date_is_skipped_and_journaled(tmp_path):
+    cache = _seed_cache(tmp_path, spot=780.0, symbol="SPY", root="SPY")
+    conn = db.connect(str(tmp_path / "paper.db"))
+    config = {"symbols": ["SPY"], **SPY_DIVS}  # ex-date 08-21 IS the week's short expiry
+    paper_loop.run_once(config, conn, cache_path=cache, when=_at("2026-08-17", "10:05"))
+    assert conn.execute("SELECT COUNT(*) FROM dc_positions").fetchone()[0] == 0
+    attempt = conn.execute(
+        "SELECT outcome, block_detail FROM dc_entry_attempts ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert attempt["outcome"] == "ex_dividend_week"
+    assert "2026-08-21" in attempt["block_detail"]
+
+
+def test_a_physical_week_past_the_declared_horizon_is_refused_not_assumed_dividend_free(tmp_path):
+    cache = _seed_cache(tmp_path, spot=780.0, symbol="SPY", root="SPY")
+    conn = db.connect(str(tmp_path / "paper.db"))
+    lapsed = {
+        "symbols": ["SPY"],
+        "settlement_style": {"SPY": "physical"},
+        # The horizon ends mid-week: the back expiration (08-24) is past it.
+        "dividends": {"SPY": {"declared_through": "2026-08-21", "ex_dates": []}},
+    }
+    paper_loop.run_once(lapsed, conn, cache_path=cache, when=_at("2026-08-17", "10:05"))
+    assert conn.execute("SELECT COUNT(*) FROM dc_positions").fetchone()[0] == 0
+    outcome = conn.execute("SELECT outcome FROM dc_entry_attempts ORDER BY id DESC LIMIT 1").fetchone()
+    assert outcome["outcome"] == "dividend_calendar_lapsed"
+
+
+def test_a_physical_week_with_no_dividends_block_is_lapsed_not_dividend_free(tmp_path):
+    """A missing table and 'no dividend that week' must never look alike."""
+    cache = _seed_cache(tmp_path, spot=780.0, symbol="SPY", root="SPY")
+    conn = db.connect(str(tmp_path / "paper.db"))
+    config = {"symbols": ["SPY"], "settlement_style": {"SPY": "physical"}}
+    paper_loop.run_once(config, conn, cache_path=cache, when=_at("2026-08-17", "10:05"))
+    assert conn.execute("SELECT COUNT(*) FROM dc_positions").fetchone()[0] == 0
+    outcome = conn.execute("SELECT outcome FROM dc_entry_attempts ORDER BY id DESC LIMIT 1").fetchone()
+    assert outcome["outcome"] == "dividend_calendar_lapsed"
+
+
+def test_a_covered_ex_free_physical_week_enters_normally(tmp_path):
+    cache = _seed_cache(tmp_path, spot=780.0, symbol="SPY", root="SPY")
+    conn = db.connect(str(tmp_path / "paper.db"))
+    config = {
+        "symbols": ["SPY"],
+        "settlement_style": {"SPY": "physical"},
+        "dividends": {"SPY": {"declared_through": "2026-12-31", "ex_dates": ["2026-09-18"]}},
+    }
+    out = paper_loop.run_once(config, conn, cache_path=cache, when=_at("2026-08-17", "10:05"))
+    assert out["ok"]
+    assert conn.execute("SELECT COUNT(*) FROM dc_positions").fetchone()[0] == 4
+    outcomes = [r["outcome"] for r in conn.execute("SELECT outcome FROM dc_entry_attempts")]
+    assert outcomes == ["filled"]
+
+
+def test_a_cash_symbol_needs_no_dividends_block(tmp_path):
+    """SPX weeks must be untouched by the dividend guards — cash settlement has no assignment."""
+    cache = _seed_cache(tmp_path)
+    conn = db.connect(str(tmp_path / "paper.db"))
+    config = {"symbols": ["SPX"], "occ_roots": {"SPX": "SPXW"}}  # no dividends block anywhere
+    paper_loop.run_once(config, conn, cache_path=cache, when=_at("2026-08-17", "10:05"))
+    assert conn.execute("SELECT COUNT(*) FROM dc_positions").fetchone()[0] == 4

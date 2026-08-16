@@ -11,6 +11,14 @@
   "_settlement_style_note": "How each underlying's expiring legs settle. `cash` is European intrinsic at the bell (SPX, XSP). `physical` is American delivery (SPY, QQQ, IWM): an ITM short hands over 100 shares per contract, held until the next session's disposal — so a Friday short carries its shares over the WEEKEND, exposure a cash-settled leg never has. Both styles are modelled; a symbol declared as NEITHER is refused at entry (`unknown_settlement`) rather than assumed into one, because bookkeeping that is wrong at its first Friday is wrong quietly. Delivered shares are booked at the SETTLEMENT SPOT, not the strike — see the decomposition in engine.py, which is what keeps the option accounting and the read-side derivation unchanged and additive. Replaces `cash_settled_symbols`, which is still read for older configs.",
   "settlement_style": { "SPY": "physical", "SPX": "cash", "XSP": "cash" },
 
+  "_dividends_note": "Weeks containing an ex-dividend date are SKIPPED, not modelled: an ITM short call on a physical underlying is really assigned at the close BEFORE the ex-date — a session before this module books anything — and every 2026 SPY ex-date lands exactly on the module's short-expiry Friday. The skip spans the whole week (entry through back expiration), because shares delivered at a Friday expiry ride the weekend. Dates are DECLARED from the issuer's own distribution schedule (SSGA Dividend Distribution Schedule PDF) and never computed — the third-Friday rule fails on SSGA's own Jun 2026 date — and never fetched (no network on a loop path). 12-31 is the potential excise distribution; skipping its week costs nothing if it pays $0. REFRESH THIS BLOCK ANNUALLY: a week past `declared_through` refuses entry (`dividend_calendar_lapsed`) rather than assuming itself dividend-free, so a lapsed table stops entries loudly, by design.",
+  "dividends": {
+    "SPY": {
+      "declared_through": "2026-12-31",
+      "ex_dates": ["2026-09-18", "2026-12-18", "2026-12-31"]
+    }
+  },
+
   "_source_note": "stream_cache_db overrides the shared stream cache path; null means the suite default (~/.cherrypick/data/marketdata/stream_cache.db). This module is a pure READ-ONLY consumer of that cache — its two expirations are served by the streamer's `expirations` request field, declared automatically every tick.",
   "source": { "stream_cache_db": null },
 
