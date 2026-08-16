@@ -18,9 +18,31 @@ from cherrypick.core import structures as _structures
 
 BOOKS = ("control", "path")
 
+# How an expiring leg settles, per underlying. The module models both styles and refuses a symbol it
+# has been told nothing about — the guard's original point, kept: an unmodelled settlement produces
+# bookkeeping that is wrong at its first Friday, and wrong quietly.
+SETTLEMENT_STYLES = ("cash", "physical")
+
 # Leg roles per side. The front leg is SOLD, the back leg is BOUGHT — a long calendar, paid for as
 # a net debit, whose maximum loss is that debit (defined risk with no margin beyond it).
 SIDE_ROLES = {"put": ("front_put", "back_put"), "call": ("front_call", "back_call")}
+
+
+def settlement_style(config: dict, symbol: str) -> str | None:
+    """How `symbol` settles, or None if nothing declares it — which is a refusal, not a default.
+
+    `settlement_style` is the current form. `cash_settled_symbols` is the pre-SPY spelling and still
+    reads as a list of cash-settled names, down to its own fallback: a config declaring NEITHER key
+    means SPX-cash, exactly as the original guard did, so an untouched config behaves identically.
+    A config that declares one and omits this symbol from it has said something, and the answer is
+    no.
+    """
+    declared = config.get("settlement_style")
+    if isinstance(declared, dict) and declared:
+        style = declared.get(symbol.upper())
+        return style if style in SETTLEMENT_STYLES else None
+    legacy = config.get("cash_settled_symbols") or ["SPX"]
+    return "cash" if symbol.upper() in {str(s).strip().upper() for s in legacy} else None
 
 
 def merged_params(config: dict, book: str) -> dict:
@@ -166,10 +188,67 @@ def combo_value(leg_marks: dict) -> float | None:
 
 
 def settle_intrinsic(strike: float, option_type: str, spot: float) -> float:
-    """Cash-settlement value of one leg at the settlement print."""
+    """Intrinsic value of one leg at the settlement print.
+
+    Under CASH settlement this is the whole story. Under PHYSICAL settlement it is still the option's
+    own value at expiry — what changes is that the leg also delivers stock, which `assignment_from`
+    books separately. Keeping intrinsic as the option half of both models is what lets one settlement
+    path, one derivation, and one validation serve both styles.
+    """
     if option_type == "put":
         return round(max(0.0, strike - spot), 4)
     return round(max(0.0, spot - strike), 4)
+
+
+# --------------------------------------------------------------------------- physical settlement
+#
+# An American-style option that finishes ITM delivers SHARES, and the shares are held until they can
+# be disposed of — for a Friday short that means over the weekend, which is real exposure the cash
+# model does not have.
+#
+# The decomposition this module uses, and the reason the change is additive rather than a rewrite:
+# book the delivered shares with a basis of the SETTLEMENT SPOT, not the strike. Then for a short put
+# at strike K, credit E, settlement spot S_f, disposal S_m:
+#
+#     option leg  E - (K - S_f)      the existing intrinsic accounting, untouched
+#     share leg   S_m - S_f          long shares, basis S_f
+#     total       E - K + S_m        = +E premium, buy at K, sell at S_m -- the true cash flow
+#
+# and symmetrically for a short call (short shares, total E + K - S_m). Booking the shares at the
+# strike instead would double-count K. So physical settlement is exactly cash settlement PLUS a share
+# leg, and cash settlement is the special case where the share term is zero. Every existing number --
+# the ledger's leg P&L, the derivation's `_settle_shorts`, the to-the-cent validation between them --
+# stays correct and gains one additive term.
+#
+# Direction: you end up LONG shares when a short put is assigned or a long call is exercised, SHORT
+# shares when a short call is assigned or a long put is exercised.
+
+
+def assignment_from(leg: dict, spot: float, quantity: int) -> dict | None:
+    """The share position one ITM leg delivers at expiry, or None if it expires worthless.
+
+    `basis` is the settlement spot, per the decomposition above. `strike` rides along unused by the
+    arithmetic because an assignment that cannot be tied back to the contract it came from is not
+    auditable.
+    """
+    option_type = leg["option_type"]
+    if settle_intrinsic(leg["strike"], option_type, spot) <= 0:
+        return None
+    sold = leg.get("action") == "Sell to Open"
+    long_shares = (sold and option_type == "put") or (not sold and option_type == "call")
+    return {
+        "direction": "long" if long_shares else "short",
+        "shares": 100 * int(quantity or 1),
+        "basis": round(float(spot), 4),
+        "strike": leg["strike"],
+        "option_type": option_type,
+    }
+
+
+def share_pnl(direction: str, shares: int, basis: float, price: float) -> float:
+    """Dollar P&L of a delivered share position disposed at `price`. Long earns the rise."""
+    move = price - basis if direction == "long" else basis - price
+    return round(move * shares, 2)
 
 
 def leg_pnl(leg: dict) -> float | None:
@@ -220,3 +299,14 @@ def close_cost(symbol: str, leg_quotes: list[dict], quantity: int, config: dict,
 def settlement_fee(itm_settlements: int) -> float:
     """$5 per DISTINCT ITM settlement symbol (never per contract), charged the next business day."""
     return _fees.ic_expire_fee(itm_settlements)
+
+
+def assignment_fee(assignment: dict, dispose_price: float) -> float:
+    """Everything one physical assignment costs from delivery to disposal: the same $5 event charge
+    a cash settlement pays, plus the equity pass-throughs on whichever share fill is a sell."""
+    return _fees.assignment_round_trip_fee(
+        assignment["shares"],
+        assignment["basis"],
+        dispose_price,
+        direction=assignment["direction"],
+    )

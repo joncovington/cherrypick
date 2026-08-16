@@ -1,10 +1,17 @@
 # cherrypick-calendars
 
-Weekly SPX double calendars — a **paper-only forward exit-parameter experiment**. Every Monday
+Weekly SPY double calendars — a **paper-only forward exit-parameter experiment**. Every Monday
 (Tuesday after a Monday holiday) at 10:00 ET: one put calendar at the expected-move-down strike, one
 call calendar at the expected-move-up strike; short legs expiring that week's Friday, long legs the
 following Monday. The entry is deliberately unconditional and mechanical — the module exists to
 answer one question honestly: **which exit rule makes this structure worth anything, net of costs?**
+
+**The underlying was SPX until 2026-08-15**, changed for buying power: a calendar's requirement is
+its debit, and SPY is a tenth of SPX's notional for the same structure. XSP is the same tenth and
+would have needed no code at all, and was rejected on measured liquidity — median option spread 26%
+of mid against a `max_leg_spread_pct` of 0.25, so the median leg would fail the execution gate;
+SPY's median measured 3%, tighter than SPX's own 4%. What SPY did cost is the settlement model:
+see **Two settlement styles** below.
 
 Suite-wide context is the root [documentation index](../../docs/README.md).
 
@@ -17,7 +24,7 @@ construction and any divergence between books is exit policy and nothing else.
 - **`control`** (user-defined baseline): sell every leg in the Friday exit window. No stops, no
   targets, no weekend hold.
 - **`path`** (permissive superset — MEIC's `open` arm precedent): never closes. Shorts run to
-  Friday cash settlement, longs ride the weekend and are sold on their own Monday expiration
+  Friday settlement, longs ride the weekend and are sold on their own Monday expiration
   morning. Its job is the **recorded per-tick mark path** (`dc_marks`), the substrate everything
   else derives from.
 - **`advised:control`** (paper, off by default): the AI advisor's admitted exit params, frozen on
@@ -41,15 +48,55 @@ AND long handling at once. That is the permissive-superset design, not an oversi
 single-variable questions are answered by the read-side grid, not by pairing these two books. Do not
 "fix" it by adding intermediate books.
 
+## Two settlement styles, one set of numbers
+
+`settlement_style` declares per underlying how an expiring leg settles. **`cash`** (SPX, XSP) is
+European intrinsic at the bell. **`physical`** (SPY) is American delivery: an ITM short hands over
+100 shares per contract, and they are held until the next session's disposal — so a Friday short
+carries stock across the **weekend**, exposure a cash-settled leg simply does not have. A symbol
+declared as neither is refused at entry (`unknown_settlement`); that guard predates SPY and survives
+it, because bookkeeping that is wrong at its first Friday is wrong quietly.
+
+**Delivered shares are booked at the settlement spot, not the strike.** That one choice is why
+adding an entire settlement style did not restate anything. For a short put at strike K, credit E,
+settlement spot S_f, disposal S_m:
+
+| | |
+|---|---|
+| option leg | `E − (K − S_f)` — the existing intrinsic accounting, untouched |
+| share leg | `S_m − S_f` — long shares, basis S_f |
+| total | `E − K + S_m` — which is the true cash flow: take E, buy at K, sell at S_m |
+
+Basing the shares at K instead would double-count it. So physical settlement is exactly cash
+settlement **plus** a share leg, and cash settlement is the special case where the share term is
+zero — which is what lets one settlement path, one derivation and one validation serve both styles.
+`tests/test_engine.py` asserts the equivalence against the raw cash flow for both sides.
+
+Two consequences worth knowing before touching this: a week does **not** close while its shares are
+outstanding (`finalize_if_done` treats them exactly as an open leg), and an undisposed share
+position makes an expiry policy `derivable: False` rather than scoring it at zero.
+
+**Not modelled: early assignment.** A physical short can be assigned before expiry — for SPY the
+realistic driver is a short call across a quarterly ex-dividend. The module assigns only at expiry.
+That is a stated limitation, not an oversight; closing it needs a dividend calendar the module has
+no way to fetch on a decision path.
+
+**`capital` is no longer the whole risk story for `path`.** `cherrypick.core.ledgers` reports
+`dc_week` capital as `entry_debit × 100 × quantity`, a long calendar's defined max loss — still
+exactly right for `control` and for every derived policy that exits before the bell, because none of
+them can be assigned. A book that holds to expiry under physical settlement can be, and the
+delivered shares' weekend move is not bounded by the debit. Read a `path` or `expiry-*` drawdown as
+including that; do not read its `capital` as a cap on it.
+
 ## Layout
 
 | file | role |
 |---|---|
 | `src/cherrypick/calendars/clock.py` | ET clock + the week anchors: entry session, front/back expirations, holiday shifts, structure tags. Pure. |
-| `src/cherrypick/calendars/engine.py` | EM targeting, strike **intersection**, structure math, the SPX fee stack. Pure. |
+| `src/cherrypick/calendars/engine.py` | EM targeting, strike **intersection**, structure math, the settlement decomposition, the fee stack. Pure. |
 | `src/cherrypick/calendars/provider.py` | snapshots from the shared stream cache, read-only, refuses rather than guesses. |
 | `src/cherrypick/calendars/management.py` | per-book verdicts + the execution gate + the advised-params choke point. Pure. |
-| `src/cherrypick/calendars/book.py` | engine decisions → ledger rows: entries, traded closes, cash settlement. |
+| `src/cherrypick/calendars/book.py` | engine decisions → ledger rows: entries, traded closes, settlement, share disposal. |
 | `src/cherrypick/calendars/paper_loop.py` | the session driver: mark, manage, enter on the entry day, settle at the bell. |
 | `src/cherrypick/calendars/exit_policies.py` | the read-side derivation and its validation — the module's point. |
 | `src/cherrypick/calendars/analytics.py` | the one query layer every read surface goes through. Read-only. |
@@ -77,9 +124,10 @@ keys before changing a value.
 
 ## The honesty rules
 
-1. **Every result is net of the modeled fee and slippage stack** — the SPX index exchange fee, the
-   $5-per-ITM-symbol cash-settlement fee, and the suite's slippage model included. Gross is not a
-   result.
+1. **Every result is net of the modeled fee and slippage stack** — the per-symbol index exchange fee
+   (SPX $0.60/contract; SPY, an ETF, none), the $5-per-ITM-symbol settlement/assignment event, the
+   SEC and FINRA pass-throughs on a delivered share disposal, and the suite's slippage model.
+   Gross is not a result.
 2. **Exit rules are declared up front and measured, never tuned mid-experiment.** A removed rule
    keeps its negative result on the record (the flies pre-close-ITM-exit discipline).
 3. **A hole in the mark path is `derivable: False`, never zero.** "Not recorded" and "was zero" are
@@ -113,9 +161,9 @@ skipped and journaled (`not_weekly_listed`), never traded on the AM-settled mont
 - **Paper only. There is no live path** — no `enable_live_trading`, no live loop, no order code.
 - **No AI, no MCP, no network on any decision path.** `engine.py` and `management.py` are pure
   functions over pre-fetched snapshots.
-- **Cash-settled symbols only** (`cash_settled_symbols`): the settlement model is European
-  intrinsic-at-the-bell. An American-style ETF (QQQ/IWM) is refused at entry until early-exercise
-  handling exists — that expansion is a code change, not a config edit.
+- **Declared settlement only** (`settlement_style`): `cash` and `physical` are both modelled; a
+  symbol declared as neither is refused at entry (`unknown_settlement`). Adding a style is a code
+  change, not a config edit. `cash_settled_symbols` is the pre-SPY spelling and still reads.
 - **Two couplings the orchestrator depends on — don't change silently:** the paper DB path
   (`~/.cherrypick/data/calendars/paper_trades.db`, also load-bearing for review and the advisor
   fact pack) and its `dc_week` schema, read through `cherrypick.core.ledgers`.

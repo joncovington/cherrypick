@@ -80,10 +80,15 @@ def week_data(conn, week_of: str, book: str) -> dict | None:
                 tick["spot"] = row["spot"]
             if row["usable"]:
                 tick["legs"][row["leg_role"]] = {"bid": row["bid"], "ask": row["ask"], "mid": row["mid"]}
+    assignments: dict[str, dict] = {}
+    for position in positions.values():
+        for row in db.assignments_for(conn, position["position_id"]):
+            assignments[row["leg_role"]] = row
     return {
         "week_of": week_of,
         "positions": positions,
         "legs": legs,
+        "assignments": assignments,
         "ticks": [ticks[ts] for ts in sorted(ticks)],
     }
 
@@ -145,10 +150,20 @@ def _close_roles(week: dict, tick: dict, roles: tuple[str, ...], config: dict, e
     return engine.close_cost(position["symbol"], leg_quotes, quantity, config, sell_legs=sell_legs)
 
 
-def _settle_shorts(week: dict, exits: dict) -> tuple[float, str] | None:
-    """Price the shorts at cash settlement off the PATH book's recorded settlement — the position
-    row carries the settlement spot, and intrinsic is recomputed from it so the derived number and
-    the recorded leg agree by construction. None when settlement never happened (derivation hole)."""
+def _settle_shorts(week: dict, exits: dict) -> tuple[float, float, str] | None:
+    """Price the shorts at settlement off the PATH book's recorded settlement, as
+    `(exit_costs, share_pnl_dollars, label)`.
+
+    The position row carries the settlement spot and intrinsic is recomputed from it, so the derived
+    number and the recorded leg agree by construction. Under a PHYSICAL style the option half is
+    unchanged — intrinsic is the option's value at expiry either way — and what the policy also
+    inherits is the delivered shares, taken from the recorded assignment rather than re-simulated:
+    the disposal happened at a price the record holds, and inventing one would be the same guess the
+    `mon_open` fallback below already refuses to make.
+
+    None when settlement never happened, or when shares were delivered and not yet disposed — both
+    are derivation holes, not zeros.
+    """
     position = next(iter(week["positions"].values()))
     spot = position["settlement_spot"]
     for p in week["positions"].values():
@@ -157,15 +172,27 @@ def _settle_shorts(week: dict, exits: dict) -> tuple[float, str] | None:
     if spot is None:
         return None
     itm = 0
+    costs = 0.0
+    share_pnl = 0.0
     for role in ("front_put", "front_call"):
         leg = week["legs"].get(role)
         if leg is None:
             return None
         intrinsic = engine.settle_intrinsic(leg["strike"], leg["option_type"], spot)
-        exits[role] = {"value": intrinsic, "kind": "cash_settled", "session": leg["expiration"]}
-        if intrinsic > 0:
+        assignment = (week.get("assignments") or {}).get(role)
+        exits[role] = {
+            "value": intrinsic,
+            "kind": "assigned" if assignment is not None else "cash_settled",
+            "session": leg["expiration"],
+        }
+        if assignment is not None:
+            if assignment["status"] != "disposed" or assignment["share_pnl"] is None:
+                return None
+            share_pnl += assignment["share_pnl"]
+            costs += assignment["fees"] or 0.0
+        elif intrinsic > 0:
             itm += 1
-    return engine.settlement_fee(itm), "settled"
+    return costs + engine.settlement_fee(itm), round(share_pnl, 2), "settled"
 
 
 # --------------------------------------------------------------------------- the derivation
@@ -187,6 +214,10 @@ def derive(week: dict, policy_name: str, config: dict) -> dict:
 
     exits: dict[str, dict] = {}
     exit_costs = 0.0
+    # Dollars, not per-share: delivered shares are a whole-position quantity, so this is added after
+    # the per-share legs are scaled. Zero for every policy that exits before expiry, which is every
+    # policy that never lets a short be assigned.
+    share_pnl = 0.0
     trigger = None
 
     if spec["kind"] in ("pt", "sl"):
@@ -231,6 +262,7 @@ def derive(week: dict, policy_name: str, config: dict) -> dict:
         if settled is None:
             return _not_derivable(week, policy_name, "no_settlement_on_file")
         exit_costs += settled[0]
+        share_pnl += settled[1]
         long_roles = ("back_put", "back_call")
         if spec["longs"] == "fri_close":
             day = _terminal_day(week, "fri_close")
@@ -274,7 +306,7 @@ def derive(week: dict, policy_name: str, config: dict) -> dict:
         exit_value = exits[role]["value"]
         entry_mid = leg["entry_mid"]
         per_share += (entry_mid - exit_value) if leg["action"] == "Sell to Open" else (exit_value - entry_mid)
-    gross = round(per_share * 100 * quantity, 2)
+    gross = round(per_share * 100 * quantity + share_pnl, 2)
     entry_costs = sum((p["entry_cost"] or 0) + (p["entry_slippage"] or 0) for p in week["positions"].values())
     fees = round(entry_costs + exit_costs, 2)
     return {

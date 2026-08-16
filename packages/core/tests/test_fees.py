@@ -161,3 +161,48 @@ def test_ic_expire_fee_charges_five_dollars_per_settlement_event():
     centre finishes ITM contributes 1 here, not 2."""
     assert fees.ic_expire_fee(1) == 5.00
     assert fees.ic_expire_fee(3) == 15.00
+
+
+# --------------------------------------------------------------------------- the share side
+def test_only_stock_sells_carry_a_pass_through():
+    """tastytrade charges no stock commission, so a buy is free and the whole cost sits on the
+    sell: SEC fee on principal plus the per-share FINRA TAF."""
+    assert fees.stock_trade_fee(100, 774.50, side="buy") == 0.0
+    sell = fees.stock_trade_fee(100, 774.50, side="sell")
+    expected = 100 * 774.50 * fees.SEC_FEE_PER_DOLLAR_SOLD + 100 * fees.EQUITY_TAF_PER_SHARE_SOLD
+    assert sell == round(expected, 2)
+
+
+def test_the_equity_taf_is_per_share_and_capped():
+    """An order of magnitude below the per-CONTRACT option TAF — mixing the two would overstate a
+    share disposal by ~20x."""
+    assert fees.EQUITY_TAF_PER_SHARE_SOLD < fees.TAF_PER_SELL_CONTRACT
+    huge = fees.stock_trade_fee(10_000_000, 1.00, side="sell")
+    assert huge == round(10_000_000 * fees.SEC_FEE_PER_DOLLAR_SOLD + fees.EQUITY_TAF_CAP_PER_TRADE, 2)
+
+
+def test_a_zero_or_negative_fill_is_free_rather_than_an_error():
+    assert fees.stock_trade_fee(0, 774.50, side="sell") == 0.0
+    assert fees.stock_trade_fee(100, 0.0, side="sell") == 0.0
+
+
+def test_an_assignment_round_trip_charges_the_event_once_and_the_sell_once():
+    """The $5 is the same per-EVENT charge cash settlement pays. Which share fill is the sell
+    depends on the direction: a delivered long sells at disposal, a delivered short sold at
+    assignment and buys back."""
+    long_side = fees.assignment_round_trip_fee(100, 770.0, 774.5, direction="long")
+    short_side = fees.assignment_round_trip_fee(100, 770.0, 774.5, direction="short")
+    assert long_side == round(
+        fees.ASSIGNMENT_FEE_PER_SETTLEMENT + fees.stock_trade_fee(100, 774.5, side="sell", ndigits=4), 2
+    )
+    assert short_side == round(
+        fees.ASSIGNMENT_FEE_PER_SETTLEMENT + fees.stock_trade_fee(100, 770.0, side="sell", ndigits=4), 2
+    )
+    assert long_side > short_side  # the long sold into a higher price, so a larger SEC fee
+
+
+def test_an_etf_pays_no_index_exchange_fee():
+    """SPY is not on the broad-based index schedule, so the option side of the move to it is
+    already correct — `ic_open_fee` falls through to the plain equity/ETF stack."""
+    assert fees.ic_open_fee("SPY") == fees.ic_open_fee("__unlisted__")
+    assert fees.ic_open_fee("SPY") < fees.ic_open_fee("SPX")

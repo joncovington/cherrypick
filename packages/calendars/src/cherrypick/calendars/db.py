@@ -131,6 +131,40 @@ CREATE TABLE IF NOT EXISTS dc_marks (
 CREATE INDEX IF NOT EXISTS idx_dc_marks_position ON dc_marks(position_id, marked_at);
 CREATE INDEX IF NOT EXISTS idx_dc_marks_session ON dc_marks(session_date);
 
+-- Shares delivered by a PHYSICALLY-settled leg that finished ITM, and their disposal. Empty for a
+-- cash-settled underlying, which is the whole reason it is its own table rather than columns on
+-- `dc_legs`: an SPX week must not grow nullable share fields it can never use, and the streamer's
+-- `leg_sources` SELECT over dc_legs must keep returning option symbols only.
+--
+-- `basis` is the SETTLEMENT SPOT, not the strike — see the decomposition in engine.py. It is what
+-- makes this table purely additive to the option accounting instead of a restatement of it.
+-- `assigned_session` is the expiry that delivered the shares; disposal is a later session, so the
+-- gap between them IS the weekend exposure the cash model never had.
+CREATE TABLE IF NOT EXISTS dc_assignments (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    position_id      TEXT NOT NULL,
+    leg_role         TEXT NOT NULL,
+    symbol           TEXT NOT NULL,
+    assigned_session TEXT NOT NULL,
+    assigned_at      TEXT,
+    direction        TEXT NOT NULL,
+    shares           INTEGER NOT NULL,
+    basis            REAL NOT NULL,
+    strike           REAL NOT NULL,
+    option_type      TEXT NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'open',
+    disposed_session TEXT,
+    disposed_at      TEXT,
+    disposal_price   REAL,
+    share_pnl        REAL,
+    fees             REAL,
+    created_at       TEXT,
+    updated_at       TEXT,
+    UNIQUE(position_id, leg_role)
+);
+CREATE INDEX IF NOT EXISTS idx_dc_assignments_status ON dc_assignments(status, assigned_session);
+CREATE INDEX IF NOT EXISTS idx_dc_assignments_position ON dc_assignments(position_id);
+
 -- Every management verdict, including the ones an execution gate held back (executed=0 with the
 -- gate) — the only record that an exit was SEEN before it was allowed (the earnings pattern).
 CREATE TABLE IF NOT EXISTS dc_management_events (
@@ -238,6 +272,10 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     "dc_positions": {},
     "dc_legs": {},
     "dc_marks": {},
+    # New table rather than new columns, so nothing to migrate — `CREATE TABLE IF NOT EXISTS` in
+    # _SCHEMA adds it to an existing ledger on the next connect. Listed so the stale-writer guard
+    # covers it too.
+    "dc_assignments": {},
 }
 
 
@@ -329,6 +367,44 @@ def save_position(conn, row: dict) -> None:
 
 def save_leg(conn, row: dict) -> None:
     _upsert(conn, "dc_legs", ("position_id", "leg_role"), row)
+
+
+def save_assignment(conn, row: dict) -> None:
+    """Not wrapped like the telemetry writers below: a delivered share position is POSITION STATE,
+    not a record of one. Losing it silently would leave a week whose option legs are settled and
+    whose shares nobody knows are held."""
+    _upsert(conn, "dc_assignments", ("position_id", "leg_role"), row)
+
+
+def open_assignments(conn, before_session: str | None = None) -> list[dict]:
+    """Share positions still held. `before_session` restricts to those delivered on an EARLIER
+    session — the disposal rule, since shares delivered by tonight's settlement cannot be sold
+    until the next session opens."""
+    sql = "SELECT a.*, p.book, p.quantity FROM dc_assignments a "
+    sql += "JOIN dc_positions p ON p.position_id = a.position_id WHERE a.status = 'open'"
+    args: list = []
+    if before_session is not None:
+        sql += " AND a.assigned_session < ?"
+        args.append(before_session)
+    return [dict(r) for r in conn.execute(sql + " ORDER BY a.assigned_session, a.position_id", args)]
+
+
+def assignments_for(conn, position_id: str) -> list[dict]:
+    return [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM dc_assignments WHERE position_id = ? ORDER BY leg_role", (position_id,)
+        )
+    ]
+
+
+def open_assignment_count(conn, position_id: str) -> int:
+    return int(
+        conn.execute(
+            "SELECT COUNT(*) FROM dc_assignments WHERE position_id = ? AND status = 'open'",
+            (position_id,),
+        ).fetchone()[0]
+    )
 
 
 # --------------------------------------------------------------------------- telemetry writers

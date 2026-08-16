@@ -1,6 +1,6 @@
 """cherrypick.core.fees — tastytrade cost model (one home for the fee schedule).
 
-Two related pieces the suite previously kept in two places:
+Three related pieces, the first two of which the suite previously kept in two places:
 
 1. **Cost-adjusted paper fills** (originally from EarningsAgent's `costs.py`): tastytrade's open-only
    commission ($1/contract open, $0 close, $10/leg cap) + clearing/regulatory pass-throughs + a slippage
@@ -11,6 +11,10 @@ Two related pieces the suite previously kept in two places:
    constants): the same tastytrade schedule plus the per-symbol *broad-based index exchange fee* that
    makes SPX materially pricier per IC than XSP. `ic_open_fee` computes those constants from the
    schedule (SPX→6.89, XSP/DEFAULT→4.49, NDX→5.49, RUT→5.21) instead of hand-maintaining them.
+
+3. **The share side** (added for calendars' move to SPY): what an AMERICAN-style option costs once it
+   finishes ITM and delivers stock rather than cash. A cash-settled symbol never reaches this, which is
+   why the suite had no equity pass-throughs at all until a module needed to hold delivered shares.
 
 Source: tastytrade.com/pricing + the Commissions & Fees doc (rates change — re-check and update here).
 Pure functions; no broker, no I/O.
@@ -208,3 +212,53 @@ def ic_open_fee_table(symbols=("SPX", "XSP", "NDX", "RUT")) -> dict:
     table = {s: ic_open_fee(s) for s in symbols}
     table["DEFAULT"] = ic_open_fee("__default__")  # unknown symbol -> 0.0 exchange fee
     return table
+
+
+# --------------------------------------------------------------------------- 3. the SHARE side
+# What a cash-settled symbol never reaches: an American-style option that finishes ITM delivers
+# STOCK, and the stock then has to be disposed of. Two pass-throughs land on the disposal, both on
+# SELLS only, and neither is on the option schedule above:
+#
+#   SEC Section 31 fee   $27.80 per $1,000,000 of principal, sells only. Re-rated annually by the
+#                        SEC -- this is the FY2024 rate and it is the one line here most likely to
+#                        be stale; it is a constant rather than a config key so that a suite-wide
+#                        re-check updates every consumer at once.
+#   FINRA TAF (equity)   $0.000166 per share sold, capped at $8.30 per trade. Note this is the
+#                        SHARE rate, an order of magnitude below the per-contract option TAF above.
+#
+# tastytrade charges no commission on stock, so there is no open-side charge and no per-share
+# commission on the close: the disposal cost is these two pass-throughs and nothing else.
+SEC_FEE_PER_DOLLAR_SOLD = 27.80 / 1_000_000
+EQUITY_TAF_PER_SHARE_SOLD = 0.000166
+EQUITY_TAF_CAP_PER_TRADE = 8.30
+
+
+def stock_trade_fee(shares: int, price: float, *, side: str, ndigits: int = 2) -> float:
+    """Pass-through cost of one stock fill. Buys are free at tastytrade; sells carry the SEC fee on
+    principal plus the per-share FINRA TAF, capped.
+
+    `side` is the direction of THIS fill ("buy" or "sell"), not of the position it closes — a short
+    share position is opened by a sell and closed by a buy, so the charge lands on the opening
+    fill, and a long one is the other way round.
+    """
+    if side != "sell" or shares <= 0 or price <= 0:
+        return 0.0
+    sec = shares * price * SEC_FEE_PER_DOLLAR_SOLD
+    taf = min(shares * EQUITY_TAF_PER_SHARE_SOLD, EQUITY_TAF_CAP_PER_TRADE)
+    return round(sec + taf, ndigits)
+
+
+def assignment_round_trip_fee(shares: int, assign_price: float, dispose_price: float, *, direction: str,
+                              ndigits: int = 2) -> float:
+    """Every pass-through one assignment costs, from delivery to disposal.
+
+    `ASSIGNMENT_FEE_PER_SETTLEMENT` for the exercise/assignment event itself -- the same charge and
+    the same per-event (not per-contract) rule as cash settlement, which is why it is the constant
+    above and not a second one -- plus `stock_trade_fee` on whichever of the two share fills is a
+    sell. A long delivery sells at disposal; a short delivery sold at assignment and buys back.
+    """
+    if direction == "long":
+        share_side = stock_trade_fee(shares, dispose_price, side="sell", ndigits=4)
+    else:
+        share_side = stock_trade_fee(shares, assign_price, side="sell", ndigits=4)
+    return round(ASSIGNMENT_FEE_PER_SETTLEMENT + share_side, ndigits)
