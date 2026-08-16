@@ -196,6 +196,91 @@ def write_chain(conn: sqlite3.Connection, option_map: dict) -> int:
     return len(rows)
 
 
+# --------------------------------------------------------------------------- daily-history backfill
+#
+# `stream_summary` accumulates one OHLC row per (symbol, trade_date) from the live Summary event —
+# a series that starts EMPTY the day a symbol is first requested, which starves any consumer whose
+# math needs history (a 20-day ATR waits ~a month of sessions). DXLink daily Candle events carry the
+# same series back as far as asked, so the engine backfills a requested number of days once per
+# symbol. Two rules keep the two sources honest side by side:
+#
+# - **Backfill only ever fills ABSENT dates.** The live Summary event is the exchange-official
+#   session record and candles come off a different consolidation feed; the two can disagree
+#   slightly, so a row the live feed wrote (or a backfill already wrote) is never overwritten —
+#   INSERT ... DO NOTHING, enforced here rather than trusted to callers.
+# - **Today's date is never backfilled.** The current session's candle is partial; today's row
+#   belongs to the live Summary listener alone.
+
+
+def summary_backfill_rows(bars: list[dict], *, today: str) -> list[dict]:
+    """Normalise raw daily bars ({date, open, high, low, close}) into insertable rows: sorted,
+    deduped (last wins), dates before `today` only, `prev_day_close` chained from the prior bar's
+    close. Pure — the transform the backfill test pins."""
+    by_date: dict[str, dict] = {}
+    for bar in bars:
+        day = str(bar.get("date") or "")
+        if not day or day >= str(today):
+            continue
+        by_date[day] = bar
+    out: list[dict] = []
+    prev_close = None
+    for day in sorted(by_date):
+        bar = by_date[day]
+        out.append(
+            {
+                "trade_date": day,
+                "day_open": to_float(bar.get("open")),
+                "day_high": to_float(bar.get("high")),
+                "day_low": to_float(bar.get("low")),
+                "day_close": to_float(bar.get("close")),
+                "prev_day_close": prev_close,
+            }
+        )
+        prev_close = to_float(bar.get("close"))
+    return out
+
+
+def backfill_summary(conn: sqlite3.Connection, symbol: str, bars: list[dict], *, today: str) -> int:
+    """Insert `bars` (see `summary_backfill_rows`) for dates `stream_summary` does not already hold.
+    Existing rows — live-written or previously backfilled — are never touched. Returns rows added."""
+    rows = summary_backfill_rows(bars, today=today)
+    now = time.time()
+    added = 0
+    for r in rows:
+        cur = conn.execute(
+            "INSERT INTO stream_summary (symbol, trade_date, day_open, day_high, day_low, "
+            "day_close, prev_day_close, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(symbol, trade_date) DO NOTHING",
+            (
+                symbol,
+                r["trade_date"],
+                r["day_open"],
+                r["day_high"],
+                r["day_low"],
+                r["day_close"],
+                r["prev_day_close"],
+                now,
+            ),
+        )
+        added += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+    conn.commit()
+    return added
+
+
+def completed_summary_days(conn: sqlite3.Connection, symbol: str, *, today: str) -> int:
+    """How many COMPLETED daily rows (close present, date before `today`) the cache holds for one
+    symbol — the backfill's deficit check."""
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM stream_summary WHERE symbol = ? AND trade_date < ? "
+            "AND day_close IS NOT NULL",
+            (symbol, today),
+        ).fetchone()
+        return int(row[0] or 0)
+    except sqlite3.Error:
+        return 0
+
+
 def current_underlying_price(conn: sqlite3.Connection, underlying: str) -> float | None:
     """Latest last-trade price for an underlying from the cache (used to centre the ATM window)."""
     try:

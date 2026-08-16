@@ -74,7 +74,13 @@ def _clean_window_hints(window_hints) -> dict[str, int]:
 
 
 def write_request(
-    module: str, symbols, legs=None, leg_sources=None, window_hints=None, expirations=None
+    module: str,
+    symbols,
+    legs=None,
+    leg_sources=None,
+    window_hints=None,
+    expirations=None,
+    history_days=None,
 ) -> Path:
     """Consumer-side: (over)write this module's request file atomically.
 
@@ -90,6 +96,7 @@ def write_request(
         "leg_sources": _clean_sources(leg_sources),
         "window_hints": _clean_window_hints(window_hints),
         "expirations": _streamrequests.clean_expirations(expirations),
+        "history_days": _streamrequests.clean_history_days(history_days),
     }
     tmp = path.with_name(f"{path.name}.tmp")
     tmp.write_text(json.dumps(payload), encoding="utf-8")
@@ -107,6 +114,7 @@ _read_all = _streamrequests.read_all
 union_symbols = _streamrequests.union_symbols
 union_window_hints = _streamrequests.union_window_hints
 union_expirations = _streamrequests.union_expirations
+union_history_days = _streamrequests.union_history_days
 
 
 def union_legs() -> list[str]:

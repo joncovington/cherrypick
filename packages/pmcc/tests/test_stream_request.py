@@ -18,6 +18,18 @@ def test_request_payload_shape(cache, config, tmp_path):
     assert payload["expirations"] == {"TNA": ["2026-09-04", "2026-09-11"]}
     assert payload["leg_sources"][0]["db"] == db_path
     assert "streamer_symbol" in payload["leg_sources"][0]["query"]
+    # The keltner lookback travels as a daily-history backfill request: twice the longest of its
+    # EMA / ATR / min-history params (all default 20/20/21 -> 42).
+    assert payload["history_days"] == {"TNA": 42}
+
+
+def test_history_days_absent_when_keltner_disabled(cache, config, tmp_path):
+    config["books"]["keltner"]["enabled"] = False
+    db_path = str(tmp_path / "paper.db")
+    conn = db.connect(db_path)
+    path = stream_request.write(config, conn, db_path, cache_path=cache.path, today=date(2026, 8, 24))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["history_days"] == {}
 
 
 def test_open_leg_expirations_stay_requested(cache, config, tmp_path):

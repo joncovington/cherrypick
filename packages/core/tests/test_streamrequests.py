@@ -18,6 +18,7 @@ def test_write_request_shape_and_cleaning(tmp_path, monkeypatch):
         "leg_sources": [],
         "window_hints": {},
         "expirations": {},
+        "history_days": {},
     }
 
 
@@ -36,6 +37,20 @@ def test_clean_window_hints_drops_junk_entries():
 
 def test_clean_window_hints_handles_none():
     assert streamrequests.clean_window_hints(None) == {}
+
+
+def test_write_request_carries_history_days(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    path = streamrequests.write_request("demo", ["TNA"], history_days={"tna": 42, "bad": 0, 7: 5})
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["history_days"] == {"TNA": 42}
+
+
+def test_union_history_days_takes_max_per_symbol(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    streamrequests.write_request("pmcc", ["TNA"], history_days={"TNA": 42})
+    streamrequests.write_request("other", ["TNA", "QQQ"], history_days={"TNA": 30, "QQQ": 20})
+    assert streamrequests.union_history_days() == {"TNA": 42, "QQQ": 20}
 
 
 def test_write_request_carries_legs_and_leg_sources(tmp_path, monkeypatch):

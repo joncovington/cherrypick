@@ -90,6 +90,12 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
         # is served with no restart. Past dates are dropped by the union itself.
         return _registry.union_expirations().get(symbol, [])
 
+    def _history_days_for(symbol: str) -> int:
+        # Daily-history depth a consumer indicator needs (e.g. pmcc's Keltner lookback). The engine
+        # backfills a stream_summary deficit once per connection from DXLink daily candles — absent
+        # dates only, never a row the live Summary feed wrote, never today's partial candle.
+        return _registry.union_history_days().get(symbol, 0)
+
     return ChainStreamer(
         session_factory=make_session_factory(),
         db_path=_config.cache_path(cfg),
@@ -98,6 +104,7 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
         protected_symbols=_protected_symbols,
         trade_hook=_orb.OpeningRangeTracker(),  # capture each symbol's 9:30-9:35 ET opening range
         expirations_for=_expirations_for,
+        history_days_for=_history_days_for,
         window_strike_count=default_strike_count,
         window_strike_count_for=_window_strike_count_for,
         logger=logger,
