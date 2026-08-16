@@ -23,7 +23,7 @@
 
   "defaults_header": "===== timing, data quality, and structure =====",
   "_dte_note": "The short lands on the soonest Friday with DTE in [short_dte_min, short_dte_max] (~9 days); the long on the Friday in [long_dte_min, long_dte_max] nearest long_dte_target (~21 days). Computed from the calendar, asserted against the cache — never nearest-matched from the chain.",
-  "_selection_note": "long_delta_min + max_long_extrinsic define 'deep': the long is the HIGHEST strike below spot with extrinsic ≤ max_long_extrinsic $/share and (where greeks exist) delta ≥ long_delta_min; with no greeks on file the extrinsic bound alone selects and the row records long_selected_by='extrinsic' so degraded entries stay excludable. target_weekly_yield_min is the short-strike search's floor: the DEEPEST ITM strike whose net time value yields at least this per week on the net debit (max protection subject to yield). target_weekly_yield_max is a telemetry band edge, never a gate. yield_unreachable refusals record the best yield the chain actually offered.",
+  "_selection_note": "long_delta_min + max_long_extrinsic define 'deep': the long is the HIGHEST strike below spot with extrinsic ≤ max_long_extrinsic $/share and (where greeks exist) delta ≥ long_delta_min; with no greeks on file the extrinsic bound alone selects and the row records long_selected_by='extrinsic' so degraded entries stay excludable. target_weekly_yield_min is the short-strike search's floor: the DEEPEST ITM strike whose net time value yields at least this per week on the net debit (max protection subject to yield) — a richer market is simply taken, and the achieved yield is recorded on every entry so any ceiling question is answerable read-side. yield_unreachable refusals record the best yield the chain actually offered.",
   "_management_note": "tv_close_threshold: when the short's time value decays to this ($/share) with spot still above the strike, BOTH legs close together (the strategy's one exit; never roll — except the roll book). assignment_exposure_tv: marks with short extrinsic under this are flagged assignment-exposed — pure telemetry bounding what unmodelled early assignment could have touched. disposition_time is when delivered shares are covered and orphan longs sold the session after a settlement. exec_window_start gates ALL management action until the open stabilizes; max_leg_spread_pct is the is-this-mark-actionable bar (deep-ITM spreads on leveraged ETFs are the module's known risk #2 — the attempts table measures how often this refuses).",
   "_window_note": "deep_window_pct bounds the entry snapshot's quote fetch: strikes in [spot*(1-deep_window_pct), spot*1.02]. The 99-delta long lives 30-45% below spot, so this, via stream_window's window_hints, is what makes the module's quotes exist at all.",
   "defaults": {
@@ -38,7 +38,6 @@
     "long_delta_min": 0.97,
     "max_long_extrinsic": 0.15,
     "target_weekly_yield_min": 0.012,
-    "target_weekly_yield_max": 0.015,
     "tv_close_threshold": 0.10,
     "assignment_exposure_tv": 0.05,
     "entry_window_start": "10:00",

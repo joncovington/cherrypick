@@ -149,8 +149,9 @@ def select_short(
 
     Per share: `tv = short_mid − (spot − K)`, `capital = long_mid − short_mid` (the net debit),
     `net_tv = tv − long_extrinsic` (the long's extrinsic is paid time value and comes out of the
-    harvest), `weekly_yield = (net_tv / capital) × (7 / short_dte)`. `target_weekly_yield_max` is a
-    telemetry band edge, never a gate — a richer market is taken, and recorded.
+    harvest), `weekly_yield = (net_tv / capital) × (7 / short_dte)`. There is deliberately no
+    ceiling — a richer market is taken, and the achieved yield is recorded on the entry so any
+    band question stays answerable read-side.
     """
     yield_min = params.get("target_weekly_yield_min", 0.012)
     best_yield = None
