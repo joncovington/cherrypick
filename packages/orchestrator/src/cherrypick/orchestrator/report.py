@@ -298,6 +298,7 @@ _LATEST_SQL = {
     "earnings": "SELECT MAX(closed_at) FROM trades WHERE closed_at IS NOT NULL",
     "fly_book": "SELECT MAX(trade_date) FROM fly_positions WHERE status = 'settled'",
     "dc_week": "SELECT MAX(closed_session) FROM dc_positions WHERE closed_session IS NOT NULL",
+    "pmcc_99": "SELECT MAX(closed_session) FROM pmcc_positions WHERE closed_session IS NOT NULL",
 }
 
 

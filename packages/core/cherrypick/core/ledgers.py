@@ -27,6 +27,10 @@ Every closed reader yields the same record shape, keyed by `paper.trade_schema`:
                  flies' arm tag); strategy = the structure tag (dc_4_7 vs dc_3_6), because holiday
                  variants are distinct trades that must never pool; capital = entry_debit x 100 x
                  quantity, a long calendar's defined max loss.
+  - "pmcc_99"  : pmcc's `pmcc_positions`; closed = status 'closed'; net = gross_pnl - fees (fees
+                 is the TOTAL modeled cost, entry+exit+rolls+settlement, that module's own
+                 convention); tag = book (control / keltner / roll / advised:control); capital =
+                 net_debit x 100 x quantity, the structure's defined max loss.
 
 `None` never means zero anywhere in here. A row written before an instrumentation column existed
 reports `slippage: None` and `capital: None`, because "not recorded" and "was zero" are different
@@ -259,11 +263,57 @@ def _calendars_closed(conn, start: str | None = None, end: str | None = None) ->
     ]
 
 
+PMCC_UNTAGGED = "unassigned"
+
+
+def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list[dict]:
+    """pmcc's `pmcc_positions`; closed = status 'closed'. The attribution tag is the BOOK
+    (control / keltner / roll / advised:control) — the module's contrast, same reasoning as flies'
+    arm tag; `strategy` is the schema constant, since every position is the same two-leg structure.
+    `fees` is that module's TOTAL modeled cost (entry+exit+rolls+settlement, slippage included), so
+    net is one subtraction. Capital = the net debit paid ×100×qty — the defined max loss of the
+    spread-like structure. A breached position held as a covered call realizes within that bound;
+    the delivered-shares weekend leg is the one exposure not bounded by it (the module CLAUDE.md's
+    caveat, same as calendars' path book)."""
+    where, params = _session_where("closed_session", start, end)
+    rows = conn.execute(
+        f"SELECT symbol, book, gross_pnl, fees, entry_slippage, exit_slippage, "
+        f"net_debit, quantity, closed_session FROM pmcc_positions WHERE status = 'closed'{where}",
+        params,
+    ).fetchall()
+
+    def _slip(r):
+        if r["entry_slippage"] is None and r["exit_slippage"] is None:
+            return None  # pre-instrumentation row — unknown, not zero
+        return round((r["entry_slippage"] or 0.0) + (r["exit_slippage"] or 0.0), 2)
+
+    def _capital(r):
+        if r["net_debit"] is None:
+            return None
+        return round(float(r["net_debit"]) * 100 * (r["quantity"] or 1), 2)
+
+    return [
+        {
+            "profile": r["book"] or PMCC_UNTAGGED,
+            "symbol": r["symbol"],
+            "strategy": "pmcc_99",
+            "gross_pnl": (r["gross_pnl"] or 0.0),
+            "cost": (r["fees"] or 0.0),
+            "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
+            "slippage": _slip(r),
+            "capital": _capital(r),
+            "session": r["closed_session"] or "",
+        }
+        for r in rows
+    ]
+
+
 READERS = {
     "meic_ic": _meic_closed,
     "earnings": _earnings_closed,
     "fly_book": _flies_closed,
     "dc_week": _calendars_closed,
+    "pmcc_99": _pmcc_closed,
 }
 
 
@@ -330,9 +380,36 @@ def _calendars_open(conn) -> list[dict]:
     ]
 
 
+def _pmcc_open(conn) -> list[dict]:
+    """pmcc's `pmcc_positions` still on the book — a position lives ~1–2 weeks and carries
+    overnight throughout, plus the assigned-shares weekend between a Friday settlement and the
+    Monday disposal. Capital at risk is the net debit (defined max loss); a `short_settled`
+    position's delivered shares are the one leg that bound does not cover, per the module's own
+    caveat — the debit stays the honest conservative bound without re-deriving marks here."""
+    rows = conn.execute(
+        "SELECT symbol, book, net_debit, quantity, entry_session FROM pmcc_positions "
+        "WHERE status != 'closed'"
+    ).fetchall()
+    return [
+        {
+            "profile": r["book"] or PMCC_UNTAGGED,
+            "symbol": r["symbol"],
+            "strategy": "pmcc_99",
+            "capital_at_risk": (
+                round(float(r["net_debit"]) * 100 * (r["quantity"] or 1), 2)
+                if r["net_debit"] is not None
+                else 0.0
+            ),
+            "session": r["entry_session"] or "",
+        }
+        for r in rows
+    ]
+
+
 OPEN_READERS = {
     "meic_ic": _no_overnight,
     "earnings": _earnings_open,
     "fly_book": _no_overnight,
     "dc_week": _calendars_open,
+    "pmcc_99": _pmcc_open,
 }

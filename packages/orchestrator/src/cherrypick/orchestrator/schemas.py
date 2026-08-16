@@ -12,4 +12,4 @@ without extending a surface fails CI instead of vanishing silently from that sur
 from __future__ import annotations
 
 # One entry per paper-DB schema in the suite. Keys of every surface registry must match.
-SCHEMAS = ("meic_ic", "earnings", "fly_book", "dc_week")
+SCHEMAS = ("meic_ic", "earnings", "fly_book", "dc_week", "pmcc_99")

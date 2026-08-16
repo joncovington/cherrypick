@@ -40,6 +40,10 @@ _INDEPENDENT = {
         "SELECT COUNT(*) n, COALESCE(SUM(gross_pnl), 0) gross, COALESCE(SUM(fees), 0) cost "
         "FROM dc_positions WHERE status = 'closed' AND closed_session = ?"
     ),
+    "pmcc": (
+        "SELECT COUNT(*) n, COALESCE(SUM(gross_pnl), 0) gross, COALESCE(SUM(fees), 0) cost "
+        "FROM pmcc_positions WHERE status = 'closed' AND closed_session = ?"
+    ),
 }
 
 # Money is compared to the cent. Anything looser hides exactly the rounding drift worth catching.

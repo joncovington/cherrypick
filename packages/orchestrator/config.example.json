@@ -178,6 +178,37 @@
         "settlement_grace_minutes": 45
       }
     },
+    "pmcc": {
+      "_comment": "PMCC-99 deep-ITM covered-call paper module (packages/pmcc): buys a ~99-delta ~21DTE call, sells an ITM ~9DTE call, on TNA/TQQQ/UPRO; enters any day a (symbol, book) slot is free and holds ~1-2 weeks. Paper-only and credential-free -- no keyring_service, no broker_tool, no live block; market data comes entirely from the shared stream cache via the streamer's `expirations` and `window_hints` request fields.",
+      "enabled": true,
+      "path": "../pmcc",
+      "paper": {
+        "kind": "self_healing",
+        "_tick_note": "60s resident: the mark path feeds the tv-exhaustion trigger and the assignment-exposure telemetry, not a replay derivation, so it needs no calendars-grade resolution. Changing this cadence is a journaled measurement break in the module's own ledger.",
+        "tick_interval_seconds": 60,
+        "silence_seconds": 240,
+        "resident_start": "09:30",
+        "resident_end": "16:00",
+        "status_argv": [
+          "-m",
+          "cherrypick.pmcc.paper_loop",
+          "--status"
+        ],
+        "once_argv": [
+          "-m",
+          "cherrypick.pmcc.paper_loop",
+          "--once"
+        ],
+        "paper_db": "~/.cherrypick/data/pmcc/paper_trades.db",
+        "notify_trades": true,
+        "trade_schema": "pmcc_99",
+        "log": "pmcc_paper.log",
+        "freshness_minutes": 10,
+        "_settlement_note": "session_settled is today-scoped: it only reports false on a day this module has open legs expiring (a short's Friday, or the long's own expiry backstop). Grace 45: the module settles at 16:20 off a staleness-gated spot read and may retry for a while on a stale feed.",
+        "settlement_check": true,
+        "settlement_grace_minutes": 45
+      }
+    },
     "earnings": {
       "enabled": true,
       "path": "../earnings",
@@ -478,6 +509,9 @@
         "enabled": true
       },
       "calendars": {
+        "enabled": false
+      },
+      "pmcc": {
         "enabled": false
       }
     }

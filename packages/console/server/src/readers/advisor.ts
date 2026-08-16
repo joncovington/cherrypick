@@ -31,7 +31,7 @@ import { withReadOnlyDb } from "./db.js";
 /** The advisor's own slot order — chronological, not alphabetical. Mirrors
  * packages/advisor/src/cherrypick/advisor/factpack.py's LIGHT_SLOTS + DEEP_SLOT. */
 const SLOT_ORDER = ["open", "am1", "am2", "midday", "pm1", "pm2", "close", "deep"];
-const MODULES = ["meic", "flies", "earnings", "calendars"];
+const MODULES = ["meic", "flies", "earnings", "calendars", "pmcc"];
 const HISTORY_LIMIT = 40;
 
 function parse<T>(raw: unknown, fallback: T): T {

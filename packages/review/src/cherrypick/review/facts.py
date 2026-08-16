@@ -54,6 +54,9 @@ MODULES = {
     # calendars carries a position Monday-to-Monday: a Friday short settlement leaves the long
     # riding the weekend, so a session's book is only fully attributable after the next pass.
     "calendars": {"schema": "dc_week", "settles_intraday": False},
+    # pmcc holds ~1-2 weeks, and a Friday short assignment leaves delivered shares riding to the
+    # next session's disposal — same two-pass shape as calendars.
+    "pmcc": {"schema": "pmcc_99", "settles_intraday": False},
 }
 
 
@@ -147,11 +150,43 @@ def _calendars_health(conn, session: str) -> dict:
     }
 
 
+def _pmcc_health(conn, session: str) -> dict:
+    """pmcc evaluates entry most sessions (any free (symbol, book) slot retries daily), so entry
+    attempts ARE expected here, unlike calendars — plus the mark substrate, whose refusal share is
+    the module's data-quality tell for its unusually deep strikes."""
+    attempts = _rows(
+        conn,
+        "SELECT outcome, COUNT(*) n FROM pmcc_entry_attempts WHERE trade_date = ? GROUP BY outcome",
+        (session,),
+    )
+    iterations = _scalar(
+        conn, "SELECT COUNT(*) FROM pmcc_loop_iterations WHERE session_date = ?", (session,)
+    )
+    marks = _scalar(conn, "SELECT COUNT(*) FROM pmcc_marks WHERE session_date = ?", (session,))
+    refused = _scalar(
+        conn, "SELECT COUNT(*) FROM pmcc_marks WHERE session_date = ? AND usable = 0", (session,)
+    )
+    exposed = _scalar(
+        conn,
+        "SELECT COUNT(*) FROM pmcc_marks WHERE session_date = ? AND assignment_exposed = 1",
+        (session,),
+    )
+    return {
+        "loop_ticked": bool(iterations),
+        "iterations": iterations,
+        "entry_attempts": {r["outcome"] or "unknown": r["n"] for r in attempts} or None,
+        "marks": marks or None,
+        "marks_refused": refused or None,
+        "assignment_exposed_ticks": exposed or None,
+    }
+
+
 HEALTH_READERS = {
     "meic": _meic_health,
     "flies": _flies_health,
     "earnings": _earnings_health,
     "calendars": _calendars_health,
+    "pmcc": _pmcc_health,
 }
 
 
@@ -253,11 +288,47 @@ def _calendars_expected(conn, session: str) -> dict:
     }
 
 
+def _pmcc_expected(conn, session: str) -> dict:
+    """pmcc's expectation is the weekly time-value yield priced at entry; the observation is the
+    realised net return on capital per week held, which lands when positions close. Read off the
+    control book only — control and roll share fills by construction, so counting both would
+    double-weight one measurement, and keltner's entries are its own timing experiment."""
+    rows = _rows(
+        conn,
+        "SELECT entry_weekly_yield_pct, gross_pnl, fees, net_debit, quantity, entry_session "
+        "FROM pmcc_positions WHERE book = 'control' AND status = 'closed' AND closed_session = ?",
+        (session,),
+    )
+    expected, observed = [], []
+    for r in rows:
+        if r["entry_weekly_yield_pct"] is None or not r["net_debit"]:
+            continue
+        capital = float(r["net_debit"]) * 100 * (r["quantity"] or 1)
+        if capital <= 0:
+            continue
+        net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
+        try:
+            days = max(
+                (date.fromisoformat(session) - date.fromisoformat(r["entry_session"])).days, 1
+            )
+        except (TypeError, ValueError):
+            continue
+        expected.append(r["entry_weekly_yield_pct"])
+        observed.append((net / capital) * (7.0 / days))
+    return {
+        "basis": "entry_weekly_yield_vs_realized",
+        "expected": (sum(expected) / len(expected)) if expected else None,
+        "observed": (sum(observed) / len(observed)) if observed else None,
+        "positions_closed": len(expected) or None,
+    }
+
+
 EXPECTED_READERS = {
     "meic": _meic_expected,
     "flies": _flies_expected,
     "earnings": _earnings_expected,
     "calendars": _calendars_expected,
+    "pmcc": _pmcc_expected,
 }
 
 

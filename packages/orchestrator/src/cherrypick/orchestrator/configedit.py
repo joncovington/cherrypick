@@ -53,7 +53,7 @@ GUARDED: dict[str, dict[str, str]] = {
 COUPLED: tuple[str, ...] = ("paper_db", "trade_schema", "keyring_service")
 
 # The module packages whose home config files this surface edits (~/.cherrypick/config/<pkg>.json).
-_MODULE_TARGETS: tuple[str, ...] = ("calendars", "earnings", "flies", "gex", "meic", "streamer")
+_MODULE_TARGETS: tuple[str, ...] = ("calendars", "earnings", "flies", "gex", "meic", "pmcc", "streamer")
 
 # Each target's config.example.json, relative to the orchestrator checkout (cfgmod.ROOT). Used by
 # `organize` as the canonical section order. A module's configured `path` wins when present.
@@ -64,6 +64,7 @@ _EXAMPLE_REL: dict[str, str] = {
     "flies": "../flies/config.example.json",
     "gex": "../gex/config.example.json",
     "meic": "../meic/config.example.json",
+    "pmcc": "../pmcc/config.example.json",
     "streamer": "../streamer/config.example.json",
 }
 
