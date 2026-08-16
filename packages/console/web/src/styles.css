@@ -1178,6 +1178,30 @@ select.text-input {
   line-height: 1.5;
 }
 
+/* A proposal's param table inverts what `data-table-labelled` assumes. There the prose is the FIRST
+   column and the figures follow; here the first column is a config key that must read on one line,
+   and the prose is the LAST column — a rationale the model writes in full sentences, several
+   hundred characters of it. Under the labelled shape that rationale kept the table's default
+   `nowrap` and ran the card four thousand pixels off the page, which in turn squeezed the key
+   column to a sliver where `overflow-wrap: anywhere` broke it one character per line. So the
+   treatment goes where the prose actually is: key and value size to their content, the rationale
+   takes what is left and wraps there. */
+.advisor-params th:first-child,
+.advisor-params td:first-child,
+.advisor-params th:nth-child(2),
+.advisor-params td:nth-child(2) {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.advisor-params th:last-child,
+.advisor-params td:last-child {
+  width: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
 /* A spec the reader is meant to COPY, not read as prose: the advisor's creative proposals arrive
    as ready-to-paste JSON, and a wrapped, proportional rendering of one is useless. Scrolls inside
    its own box rather than widening the card. */
