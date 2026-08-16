@@ -308,12 +308,9 @@ def test_embed_carries_the_numbers_as_fields():
     assert embed["description"] == "> LG!"
     assert embed["footer"]["text"] == "Earnings"
     assert _fields(embed) == {
-        "Trade": "1× 122P/117P",
-        "Price": "$4.98 db",
-        "Expiry": "Aug 7",
-        "Spot": "PLTR 163.86",
-        "IV rank": "36",
-        "POP": "31%",
+        "Trade": "1× 122P/117P · $4.98 db",
+        "Context": "Aug 7 · PLTR 163.86",
+        "Stats": "IVR 36 · POP 31%",
     }
     assert all(f["inline"] for f in embed["fields"])
 
@@ -349,9 +346,10 @@ def test_embed_omits_empty_fields_rather_than_showing_blanks():
     embed = ff.build_embed(
         _order(12, tos_iv_rank=None, underlying_price_string=None, underlying_price=None), {}
     )
-    names = _fields(embed)
-    assert "IV rank" not in names and "Spot" not in names
-    assert "Trade" in names and "Price" in names
+    fields = _fields(embed)
+    assert "Stats" not in fields  # IV rank and POP both empty
+    assert fields["Trade"] == "1× 122P/117P · $0.87 cr"
+    assert fields["Context"] == "Aug 7"  # spot dropped, expiry survives alone
 
 
 def test_embed_survives_an_order_with_almost_nothing_in_it():
@@ -511,6 +509,39 @@ def test_stock_counts_in_shares_not_contracts():
         }
     ]
     assert ff._quantity(_order(7, order_legs=legs)) == "100 sh"
+
+
+def test_butterfly_reports_the_wing_size_not_the_bodys_doubled_quantity():
+    """A 1-lot butterfly's body leg is -2 against two +1 wings by construction, not because two
+    butterflies were bought. The raw max of the legs (2) overstated a screenshot-verified 1-lot
+    337.5/340/342.5 put fly as '2×'."""
+    legs = [
+        {"strike_price": "337.5", "call_or_put": "P", "action": "buytoopen", "quantity": "1.0"},
+        {"strike_price": "340.0", "call_or_put": "P", "action": "selltoopen", "quantity": "2.0"},
+        {"strike_price": "342.5", "call_or_put": "P", "action": "buytoopen", "quantity": "1.0"},
+    ]
+    assert ff._quantity(_order(20, order_legs=legs)) == "1×"
+
+
+def test_scaled_butterfly_still_reports_its_true_lot_count():
+    """The max-based distortion scales with size: 5 lots of the same fly is 5/-10/5, which a raw
+    max would wrongly report as '10×'. The GCD recovers the true lot count at any size."""
+    legs = [
+        {"strike_price": "337.5", "call_or_put": "P", "action": "buytoopen", "quantity": "5.0"},
+        {"strike_price": "340.0", "call_or_put": "P", "action": "selltoopen", "quantity": "10.0"},
+        {"strike_price": "342.5", "call_or_put": "P", "action": "buytoopen", "quantity": "5.0"},
+    ]
+    assert ff._quantity(_order(21, order_legs=legs)) == "5×"
+
+
+def test_two_leg_ratio_spread_still_reports_its_widest_side():
+    """Only 3+-leg structures use the GCD. A two-leg combo has no symmetric 'base structure' for a
+    GCD to recover cleanly, so it keeps the pre-existing widest-leg behavior."""
+    legs = [
+        {"strike_price": "300.0", "call_or_put": "C", "action": "selltoopen", "quantity": "1.0"},
+        {"strike_price": "310.0", "call_or_put": "C", "action": "buytoopen", "quantity": "3.0"},
+    ]
+    assert ff._quantity(_order(22, order_legs=legs)) == "3×"
 
 
 def test_futures_price_is_a_level_not_a_credit():
