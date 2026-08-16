@@ -17,7 +17,11 @@ symbols, a futures price that is a level rather than a credit) was found by watc
 each has now been fixed twice. Treat the two as one implementation in two places: when you change a
 formatter here, port it there in the same session, and vice versa. Verify by rendering the live feed
 through both and diffing — they should be byte-identical, glyphs included (`×`, not `x`; `–`, not
-`-`). Last verified identical across all 50 feed orders, text and embeds: 2026-08-13.
+`-`). Ported 2026-08-14: `build_embed`'s six single-value fields (Trade/Price/Expiry/Spot/IV rank/POP)
+grouped into three (Trade/Context/Stats) so the card is one row instead of two. NOT yet ported:
+2026-08-14 `_quantity` switched from the legs' raw max to their GCD on 3+-leg orders, so a 1-lot
+butterfly (legs 1/-2/1) reports "1×" instead of the body leg's doubled "2×" — port this to the
+sibling repo before trusting "verified identical" again.
 
 Endpoints (undocumented, discovered in the tastytrade web platform's own bundle; no auth required
 for the two GETs used here):
@@ -37,6 +41,7 @@ and a shape change or an outage returns a skip rather than raising.
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 import urllib.error
@@ -277,7 +282,13 @@ def _trim(value) -> str:
 
 
 def _quantity(order: dict) -> str:
-    """Contract count as '2×'. The largest leg quantity, so a ratio spread reports its widest side
+    """Contract count as '2×'. Three-plus legs use the legs' GCD, which recovers how many times the
+    base structure was traded: a 1-lot butterfly's body leg is -2 against two +1 wings, twice the
+    wing size by construction, not because two butterflies were bought — reporting that raw max as
+    "2×" overstated a screenshot-verified 1-lot fly, and the same distortion scales with size (5
+    lots is 5/-10/5, wrongly "10×" under max, correctly "5×" under GCD). A two-leg combo keeps the
+    largest leg instead: a genuine unbalanced ratio spread (e.g. 1x3) has no "base structure" for a
+    GCD to recover cleanly the way a symmetric 3+-leg one does, so it still reports its widest side
     rather than understating the position. An all-equity order counts in shares, not contracts —
     '100×' on a stock trade would read as a 100-lot, a 100x overstatement of the position."""
     legs = order.get("order_legs") or []
@@ -288,7 +299,11 @@ def _quantity(order: dict) -> str:
     # contracts branch and printed the exact "100×" this guard exists to prevent. Both accepted so a
     # future "E" doesn't silently regress it.
     equity = bool(legs) and all(str(leg.get("asset_type") or "").upper() in ("E", "S") for leg in legs)
-    return f"{max(sizes):g} sh" if equity else f"{max(sizes):g}×"
+    if equity:
+        return f"{max(sizes):g} sh"
+    if len(sizes) >= 3 and all(s.is_integer() for s in sizes):
+        return f"{math.gcd(*(int(s) for s in sizes)):g}×"
+    return f"{max(sizes):g}×"
 
 
 def _leg_body(leg: dict) -> str:
@@ -538,8 +553,11 @@ def _embed_field(name: str, value: str) -> dict | None:
 
 
 def build_embed(order: dict, trader_names: dict[int, str]) -> dict:
-    """One order as a Discord embed: a colored card with the comment as the body and the numbers as
-    labeled fields, three to a row.
+    """One order as a Discord embed: a colored card with the comment as the body and the numbers
+    grouped into three fields — Trade, Context, Stats — so the card is one row wide instead of
+    two. Six single-value fields used to wrap onto two rows on both desktop and mobile; grouping
+    related numbers (structure+price, expiry+spot, IVR+POP) into one field each keeps the same
+    information in a single horizontal strip.
 
     `timestamp` is the fill time — Discord renders it in each reader's own timezone, which is the
     honest way to show a time on a message that may arrive well after the fact."""
@@ -547,15 +565,22 @@ def build_embed(order: dict, trader_names: dict[int, str]) -> dict:
     strategy = str(order.get("strategy") or "order")
     title = " · ".join(p for p in (word, f"{_underlyings(order)} {strategy}".strip()) if p)
 
+    trade = " · ".join(p for p in (_structure(order), _price(order)) if p)
+    context = " · ".join(p for p in (_expiry(order), _spot(order)) if p)
+    stats = " · ".join(
+        p
+        for p in (
+            f"IVR {_iv_rank(order)}" if _iv_rank(order) else "",
+            f"POP {_pop(order)}" if _pop(order) else "",
+        )
+        if p
+    )
     fields = [
         f
         for f in (
-            _embed_field("Trade", _structure(order)),
-            _embed_field("Price", _price(order)),
-            _embed_field("Expiry", _expiry(order)),
-            _embed_field("Spot", _spot(order)),
-            _embed_field("IV rank", _iv_rank(order)),
-            _embed_field("POP", _pop(order)),
+            _embed_field("Trade", trade),
+            _embed_field("Context", context),
+            _embed_field("Stats", stats),
         )
         if f
     ]
