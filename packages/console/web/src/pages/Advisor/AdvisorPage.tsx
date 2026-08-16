@@ -61,64 +61,66 @@ function ApplyBanner({ status }: { status: AdvisorApplyStatus[] }) {
         <h2>Advice for the next session</h2>
         <span className="card-asof">{status[0]?.nextSession ?? "nothing issued yet"}</span>
       </div>
-      <table className="data-table data-table-labelled">
-        <thead>
-          <tr>
-            <th>Module</th>
-            <th>Artifact</th>
-            <th>Admitted</th>
-            <th>Rejected</th>
-            <th>The loop&apos;s own decision</th>
-          </tr>
-        </thead>
-        <tbody>
-          {status.map((s) => (
-            <tr key={s.module}>
-              <td>{s.module}</td>
-              <td>
-                {s.disabledReason !== null ? (
-                  <span className="chip chip-missing" title={s.disabledReason}>
-                    not accepting advice
-                  </span>
-                ) : s.artifactWritten ? (
-                  <span className="chip">written</span>
-                ) : (
-                  <span className="chip chip-missing">none</span>
-                )}
-              </td>
-              <td>
-                {s.artifactProposals.length === 0 ? (
-                  <span className="muted">—</span>
-                ) : (
-                  s.artifactProposals.map((p) => (
-                    <div key={p.param}>
-                      <code>{p.param}</code> = {String(p.value)}
-                    </div>
-                  ))
-                )}
-              </td>
-              <td className={s.artifactRejected.length > 0 ? "pnl-neg" : "muted"}>
-                {s.artifactRejected.length === 0
-                  ? "—"
-                  : s.artifactRejected.map((r) => (
-                      <div key={String(r.param)} title={r.reason}>
-                        {String(r.param)}
-                      </div>
-                    ))}
-              </td>
-              <td className="muted">
-                {/* The module froze this at session start and replays it all day. It is the only
-                    evidence that advice actually reached a loop rather than merely being written. */}
-                {s.consumerDecision === null
-                  ? "not read yet"
-                  : `${String(s.consumerDecision["day"] ?? "?")} · ${String(
-                      s.consumerDecision["reason"] ?? "applied",
-                    )}`}
-              </td>
+      <div className="table-scroll">
+        <table className="data-table data-table-labelled">
+          <thead>
+            <tr>
+              <th>Module</th>
+              <th>Artifact</th>
+              <th>Admitted</th>
+              <th>Rejected</th>
+              <th>The loop&apos;s own decision</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {status.map((s) => (
+              <tr key={s.module}>
+                <td>{s.module}</td>
+                <td>
+                  {s.disabledReason !== null ? (
+                    <span className="chip chip-missing" title={s.disabledReason}>
+                      not accepting advice
+                    </span>
+                  ) : s.artifactWritten ? (
+                    <span className="chip">written</span>
+                  ) : (
+                    <span className="chip chip-missing">none</span>
+                  )}
+                </td>
+                <td>
+                  {s.artifactProposals.length === 0 ? (
+                    <span className="muted">—</span>
+                  ) : (
+                    s.artifactProposals.map((p) => (
+                      <div key={p.param}>
+                        <code>{p.param}</code> = {String(p.value)}
+                      </div>
+                    ))
+                  )}
+                </td>
+                <td className={s.artifactRejected.length > 0 ? "pnl-neg" : "muted"}>
+                  {s.artifactRejected.length === 0
+                    ? "—"
+                    : s.artifactRejected.map((r) => (
+                        <div key={String(r.param)} title={r.reason}>
+                          {String(r.param)}
+                        </div>
+                      ))}
+                </td>
+                <td className="muted">
+                  {/* The module froze this at session start and replays it all day. It is the only
+                      evidence that advice actually reached a loop rather than merely being written. */}
+                  {s.consumerDecision === null
+                    ? "not read yet"
+                    : `${String(s.consumerDecision["day"] ?? "?")} · ${String(
+                        s.consumerDecision["reason"] ?? "applied",
+                      )}`}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <p className="muted">
         An artifact that carries nothing is not a failure: reject-all is silent from the loop&apos;s
         side, so a written artifact with zero admitted params runs the baseline — exactly as an
@@ -196,26 +198,28 @@ function ProposalCard({
       )}
 
       {Array.isArray(params) && (
-        <table className="data-table data-table-labelled">
-          <thead>
-            <tr>
-              <th>Param</th>
-              <th>Proposed</th>
-              <th>Why</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(params as Array<Record<string, unknown>>).map((row, i) => (
-              <tr key={i}>
-                <td>
-                  <code>{String(row["param"])}</code>
-                </td>
-                <td>{String(row["value"])}</td>
-                <td className="muted">{String(row["rationale"] ?? "—")}</td>
+        <div className="table-scroll">
+          <table className="data-table advisor-params">
+            <thead>
+              <tr>
+                <th>Param</th>
+                <th>Proposed</th>
+                <th>Why</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {(params as Array<Record<string, unknown>>).map((row, i) => (
+                <tr key={i}>
+                  <td>
+                    <code>{String(row["param"])}</code>
+                  </td>
+                  <td>{String(row["value"])}</td>
+                  <td className="muted">{String(row["rationale"] ?? "—")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {/* A creative idea is only actionable if it arrives ready to paste — so it is shown whole,
@@ -243,46 +247,48 @@ function ProposalCard({
 
 function PairTable({ pairs }: { pairs: AdvisorPair[] }) {
   return (
-    <table className="data-table data-table-labelled">
-      <thead>
-        <tr>
-          <th>Book</th>
-          <th>Net</th>
-          <th>Win rate</th>
-          <th>Trades</th>
-          <th>Sessions</th>
-          <th>Qualified</th>
-        </tr>
-      </thead>
-      <tbody>
-        {pairs.flatMap((pair) =>
-          [
-            { tag: pair.advisedTag, reading: pair.advised },
-            { tag: pair.baseTag, reading: pair.base },
-          ].map(({ tag, reading }) => {
-            const q = (pair.qualification[tag] ?? null) as { qualified?: boolean } | null;
-            return (
-              <tr key={tag}>
-                <td>{tag}</td>
-                <td className={pnlClass(reading?.["net_pnl"])}>{money(reading?.["net_pnl"])}</td>
-                <td>{pct(reading?.["win_rate"])}</td>
-                <td>{count(reading?.["sample"] as number | null)}</td>
-                <td>{count(reading?.["days"] as number | null)}</td>
-                <td>
-                  {reading === null ? (
-                    <span className="muted">no rows</span>
-                  ) : q?.qualified === true ? (
-                    <span className="chip">yes</span>
-                  ) : (
-                    <span className="chip chip-missing">no</span>
-                  )}
-                </td>
-              </tr>
-            );
-          }),
-        )}
-      </tbody>
-    </table>
+    <div className="table-scroll">
+      <table className="data-table data-table-labelled">
+        <thead>
+          <tr>
+            <th>Book</th>
+            <th>Net</th>
+            <th>Win rate</th>
+            <th>Trades</th>
+            <th>Sessions</th>
+            <th>Qualified</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pairs.flatMap((pair) =>
+            [
+              { tag: pair.advisedTag, reading: pair.advised },
+              { tag: pair.baseTag, reading: pair.base },
+            ].map(({ tag, reading }) => {
+              const q = (pair.qualification[tag] ?? null) as { qualified?: boolean } | null;
+              return (
+                <tr key={tag}>
+                  <td>{tag}</td>
+                  <td className={pnlClass(reading?.["net_pnl"])}>{money(reading?.["net_pnl"])}</td>
+                  <td>{pct(reading?.["win_rate"])}</td>
+                  <td>{count(reading?.["sample"] as number | null)}</td>
+                  <td>{count(reading?.["days"] as number | null)}</td>
+                  <td>
+                    {reading === null ? (
+                      <span className="muted">no rows</span>
+                    ) : q?.qualified === true ? (
+                      <span className="chip">yes</span>
+                    ) : (
+                      <span className="chip chip-missing">no</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            }),
+          )}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -324,24 +330,26 @@ function ExperimentCard({
         <p className="muted">success metric: {e.successMetric}</p>
       )}
 
-      <table className="data-table data-table-labelled">
-        <thead>
-          <tr>
-            <th>Param</th>
-            <th>Value</th>
-          </tr>
-        </thead>
-        <tbody>
-          {Object.entries(e.params).map(([k, v]) => (
-            <tr key={k}>
-              <td>
-                <code>{k}</code>
-              </td>
-              <td>{String(v)}</td>
+      <div className="table-scroll">
+        <table className="data-table data-table-labelled">
+          <thead>
+            <tr>
+              <th>Param</th>
+              <th>Value</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {Object.entries(e.params).map(([k, v]) => (
+              <tr key={k}>
+                <td>
+                  <code>{k}</code>
+                </td>
+                <td>{String(v)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {e.verdict !== null && (
         <>
@@ -504,28 +512,30 @@ export function AdvisorPage() {
               {data.checkpoints.filter((c) => c.ok).length} ok of {data.checkpoints.length}
             </span>
           </div>
-          <table className="data-table data-table-labelled">
-            <thead>
-              <tr>
-                <th>Session</th>
-                <th>Slot</th>
-                <th>Model</th>
-                <th>Result</th>
-                <th>Observations</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.checkpoints.map((c) => (
-                <tr key={`${c.session}-${c.slot}`}>
-                  <td>{c.session}</td>
-                  <td>{c.slot}</td>
-                  <td className="muted">{c.model ?? "—"}</td>
-                  <td className={c.ok ? "" : "pnl-neg"}>{c.ok ? "ok" : (c.error ?? "failed")}</td>
-                  <td>{count(c.observations.length)}</td>
+          <div className="table-scroll">
+            <table className="data-table data-table-labelled">
+              <thead>
+                <tr>
+                  <th>Session</th>
+                  <th>Slot</th>
+                  <th>Model</th>
+                  <th>Result</th>
+                  <th>Observations</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.checkpoints.map((c) => (
+                  <tr key={`${c.session}-${c.slot}`}>
+                    <td>{c.session}</td>
+                    <td>{c.slot}</td>
+                    <td className="muted">{c.model ?? "—"}</td>
+                    <td className={c.ok ? "" : "pnl-neg"}>{c.ok ? "ok" : (c.error ?? "failed")}</td>
+                    <td>{count(c.observations.length)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
     </div>
