@@ -108,6 +108,13 @@ cannot be excluded by skipping weeks; and (b) a **calculated ex-div decision** �
 ex-div week priced as expected assignment cost against the week's edge, never as a default. Neither
 exists today. Both are prerequisites, not enhancements, for any `enable_live_trading` rung.
 
+**The config's `live.enabled` field (added 2026-08-16) is an inert placeholder, not a rung.** It
+lets the suite's config/console surfaces show this module as "paper only" instead of "unknown" —
+`readModuleGate`/`liveops._live_enabled` read it the same way they read flies' nested switch — but
+no code anywhere checks it, and it is `configedit.GUARDED` so the settings surface can't touch it.
+Flipping it to `true` by hand does nothing until the prerequisites above are built and a real live
+loop reads the flag.
+
 **`capital` is no longer the whole risk story for `path`.** `cherrypick.core.ledgers` reports
 `dc_week` capital as `entry_debit × 100 × quantity`, a long calendar's defined max loss — still
 exactly right for `control` and for every derived policy that exits before the bell, because none of
@@ -185,7 +192,8 @@ skipped and journaled (`not_weekly_listed`), never traded on the AM-settled mont
 
 ## Guardrails (suite-wide)
 
-- **Paper only. There is no live path** — no `enable_live_trading`, no live loop, no order code.
+- **Paper only. There is no live path** — no live loop, no order code. `live.enabled` in config is
+  a documented placeholder only (see Live-trading prerequisites above); it is not a working gate.
 - **No AI, no MCP, no network on any decision path.** `engine.py` and `management.py` are pure
   functions over pre-fetched snapshots.
 - **Declared settlement only** (`settlement_style`): `cash` and `physical` are both modelled; a
