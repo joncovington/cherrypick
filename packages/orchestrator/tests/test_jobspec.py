@@ -300,6 +300,8 @@ def test_derive_full_suite_job_table():
         "review-provisional",
         "review-final",
         "review-narrative",
+        "morning-factpack",
+        "morning-narrative",
         "advisor-open",
         "advisor-am1",
         "advisor-am2",
@@ -481,6 +483,30 @@ def test_the_narrative_is_off_by_default_and_tagged_ai():
     assert not job.enabled
     assert "review.narrative" in job.enabled_reason
     assert "ai" in job.tags
+
+
+def test_morning_factpack_on_by_default_narrative_off_and_tagged_ai():
+    """The pack is credential-free and read-only, so it defaults on like the review; the narrative
+    shells out to Claude Code (and, unlike the EOD one, does web lookups), so it stays off until
+    someone turns it on. Both are pre-open jobs with a deliberately tight catch-up — a morning pack
+    caught up at 11:00 describes a market that already opened."""
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    pack, note = by_id["morning-factpack"], by_id["morning-narrative"]
+    assert pack.enabled and pack.trading_days_only
+    assert (pack.at_et, note.at_et) == ("08:30", "09:00")
+    assert pack.catchup_minutes == 90
+    assert not note.enabled
+    assert "morning.narrative" in note.enabled_reason
+    assert "ai" in note.tags
+    assert "morning_narrative.py" in note.argv[1]
+
+
+def test_morning_can_be_turned_off():
+    cfg = suite_cfg()
+    cfg["morning"] = {"enabled": False}
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    assert not by_id["morning-factpack"].enabled
+    assert "disabled in config (morning)" in by_id["morning-factpack"].enabled_reason
 
 
 def test_every_derived_run_py_job_actually_parses():

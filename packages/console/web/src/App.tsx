@@ -1,5 +1,6 @@
 import { Routes, Route } from "react-router-dom";
 import { ReviewPage } from "./pages/Review/ReviewPage";
+import { MorningPage } from "./pages/Morning/MorningPage";
 import { AdvisorPage } from "./pages/Advisor/AdvisorPage";
 import { Shell } from "./components/shell/Shell";
 import { OverviewPage } from "./pages/Overview/OverviewPage";
@@ -21,6 +22,7 @@ export default function App() {
     <Routes>
       <Route element={<Shell />}>
         <Route index element={<OverviewPage />} />
+        <Route path="morning" element={<MorningPage />} />
         <Route path="review" element={<ReviewPage />} />
         <Route path="advisor" element={<AdvisorPage />} />
         <Route path="meic" element={<MeicPage />} />

@@ -40,6 +40,15 @@ One workspace for the trading-tool suite. Work in the package for your area — 
   **early assignment is measured, never modelled** — ex-dividend spans are refused from a declared
   issuer calendar refreshed quarterly, and every mark with near-zero short extrinsic is flagged
   assignment-exposed, so the paper result is an explicit upper bound. There is no live path.
+- **packages/overview** — the pre-open **morning market overview**: one deterministic fact pack per
+  session (index/vol/sector readings from the stream cache, gamma flip and walls from the suite's
+  own GEX history) with a mechanical GREEN/YELLOW/RED phase from five declared gates — missing data
+  can never produce RED and always blocks GREEN. A pure stream-cache + GEX consumer in the
+  calendars/pmcc posture: credential-free, network-free, read-only over everything it touches,
+  writing only into its own store. Its breadth symbols (VIX/VIX3M/VVIX, the sector ETFs, USO/GLD as
+  labeled proxies) are declared via `state/stream_requests/`. The morning narrative — with its
+  render-time macro-calendar lookups — is written *outside* the package by
+  `scripts/morning_narrative.py`, the same fence that holds `scripts/eod_narrative.py`.
 - **packages/console** — the reactive web UI (Node + TypeScript, React SPA on 127.0.0.1:5070) and the
   suite's **only** read surface since 2026-08-12: every module's read models plus the research and
   screening surfaces in one app. The supervisor keeps it running as an always-on resident job, restarted on
