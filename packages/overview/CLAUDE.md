@@ -25,8 +25,8 @@ streamer serves the union.
 ~/.cherrypick/data/overview/morning-<date>.note.md  the narrative, beside the facts, never inside them
 ```
 
-The markdown render, the console's Morning page and the narrative all read the same JSON, so they
-cannot disagree. Nothing downstream re-derives: the phase, the gate verdicts and the
+The markdown render, the console's Reports page (Morning tab, beside the EOD review from
+`packages/review`) and the narrative all read the same JSON, so they cannot disagree. Nothing downstream re-derives: the phase, the gate verdicts and the
 strongest/weakest sectors are computed once, in this package, and displayed everywhere else.
 
 ## Rules the fact pack enforces
@@ -117,6 +117,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 |---|---|
 | `python -m cherrypick.overview build [--session YYYY-MM-DD]` | Build and write one session's fact pack and render. Defaults to today's ET trading day. Also refreshes the stream request, best-effort. |
 | `python -m cherrypick.overview render [--session YYYY-MM-DD]` | Re-render one session's markdown from its pack. |
+| `python -m cherrypick.overview score-history [--session YYYY-MM-DD]` | Recompute the deployment score across stored history and report what its zones would have separated, into `score-history.json`. Read-only research over the cache — it schedules nothing and decides nothing. A session's zone comes from the score computed the session BEFORE it, so the overlay cannot look ahead, and the forward return is SPX's own next-session move: a benchmark for whether the zones separate regimes at all, **not** suite P&L, since no trade was taken on any of those sessions. Read `score_distribution` first — a score that puts nearly every session in one zone is a constant, not a signal. |
 | `python -m cherrypick.overview request` | (Re)write `state/stream_requests/overview.json` without building anything. |
 | `python scripts/morning_narrative.py [--session] [--force] [--dry-run]` | Write the narrative beside the pack (run from the repo root; not part of this package). |
 

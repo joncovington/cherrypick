@@ -20,6 +20,14 @@ easy to break:
   must kill the process **tree**; terminating only the tracked PID leaves node holding :5070, and every
   supervised restart then dies on `EADDRINUSE`.
 
+**The two session reports share one page.** `/reports` holds the pre-open morning pack
+(`packages/overview`) and the end-of-day review (`packages/review`) as tabs — the same question
+asked at two ends of a session, and two nav links each leading to half of it made the nav longer
+without making either easier to find. The page holds the tab and nothing else: each tab renders its
+own page component unchanged, so neither report gains a second place where its shape is decided. The
+tab lives in the URL (`?tab=eod`) because a report is a thing you send someone, and the old
+`/morning` and `/review` routes redirect rather than 404 — both appear in the suite's own docs.
+
 Unlike the rest of the suite this package is **Node + TypeScript**, not Python:
 
 - `shared/` — types shared by server and web (`@console/shared`).
