@@ -69,7 +69,17 @@ export function PmccPage() {
               {isLoading ? (
                 <DataCard
                   title="open positions"
-                  headers={["book", "long", "short", "time value", "spot", "weekly yield", "protection", "assignment"]}
+                  headers={[
+                    "book",
+                    "long",
+                    "short",
+                    "time value",
+                    "spot",
+                    "weekly yield",
+                    "entry spread",
+                    "protection",
+                    "assignment",
+                  ]}
                   loading
                   rowCount={0}
                   numFrom={3}
