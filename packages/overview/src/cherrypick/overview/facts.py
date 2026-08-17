@@ -345,6 +345,7 @@ def build(session: str | None = None, now: datetime | None = None) -> dict:
         )
 
         sectors = _sectors(cache, session)
+        # The live score reads the tail of a longer stored series -- only a year of it.
         history = _close_history(cache, _symbols.HISTORY_DAYS, session,
                                  _symbols.HISTORY_LOOKBACK)
     finally:

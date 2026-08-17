@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMorningReport } from "../../lib/api";
 import type { MorningGate, MorningPack, MorningReading, MorningSectorRow } from "@console/shared";
 import { NoteMarkdown } from "../Review/NoteMarkdown";
@@ -112,6 +112,93 @@ function PhaseBanner({ pack }: { pack: MorningPack }) {
   );
 }
 
+const ZONE_LABEL: Record<string, string> = {
+  full: "FULL DEPLOY",
+  reduced: "REDUCED",
+  defensive: "DEFENSIVE",
+};
+
+/**
+ * The deployment score.
+ *
+ * The whole styling problem of this card is that it must not read as an instruction. The number is
+ * record-only — it gates nothing and sizes nothing — and a big confident figure in a trading UI
+ * reads as a directive whether or not the caption says otherwise. So the zone renders as a neutral
+ * chip rather than the ok/warn colours the phase banner uses, the pack's own "governs nothing"
+ * sentence is rendered verbatim beside it, and the card sits BELOW the session phase, which is the
+ * verdict that actually decides anything. The two are free to disagree; that disagreement is the
+ * point of recording this at all.
+ */
+function DeploymentCard({ pack }: { pack: MorningPack }) {
+  const d = pack.deployment;
+  if (d === null) return null;
+  const measured = (s: { status: string }) => s.status === "measured";
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h2>Deployment score</h2>
+        <span className="chip">record-only</span>
+        {d.zone !== null && <span className="chip">{ZONE_LABEL[d.zone] ?? d.zone}</span>}
+        {d.signalsMeasured !== null && d.signalsTotal !== null && (
+          <span className="card-asof">
+            {d.signalsMeasured} of {d.signalsTotal} signals measured
+          </span>
+        )}
+      </div>
+
+      {d.score === null ? (
+        <p className="muted">No score — {d.reason ?? "too few signals measured to blend one."}</p>
+      ) : (
+        <div className="stats-grid">
+          <div className="stat-tile">
+            <span className="stat-label">score</span>
+            <span className="stat-value">{fmt(d.score, 1)}</span>
+            <span className="stat-label muted">of 100</span>
+          </div>
+          {d.signals.map((s) => (
+            <div key={s.id} className="stat-tile">
+              <span className="stat-label">{s.label ?? s.id}</span>
+              <span className={`stat-value ${measured(s) ? "" : "muted"}`}>
+                {measured(s) ? fmt(s.score, 0) : "—"}
+              </span>
+              <span className="stat-label muted">
+                {s.weight === null ? "" : `weight ${(s.weight * 100).toFixed(0)}%`}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {d.signals.length > 0 && (
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Signal</th>
+              <th>Score</th>
+              <th>Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {d.signals.map((s) => (
+              <tr key={s.id}>
+                <td>{s.label ?? s.id}</td>
+                <td className={measured(s) ? "" : "muted"}>{measured(s) ? fmt(s.score, 1) : "—"}</td>
+                <td className="muted">{s.detail ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <p className="muted">
+        {d.note ?? "A recorded measurement — it feeds no gate, no phase and no sizing."}
+        {d.weightsRenormalized === true && " Weights were renormalized over the measured signals."}
+        {d.deferred.length > 0 && ` Deferred: ${d.deferred.join(", ")}.`}
+      </p>
+    </section>
+  );
+}
+
 function CalendarCard({ pack }: { pack: MorningPack }) {
   const c = pack.calendar;
   const yesNo = (v: boolean | null) => (v === null ? "—" : v ? "yes" : "no");
@@ -151,7 +238,9 @@ function CalendarCard({ pack }: { pack: MorningPack }) {
   );
 }
 
-export function MorningPage() {
+/** `tabs` is the Reports page's tab strip, rendered inside this page's own title row. Optional so
+ *  the page still stands alone if it is ever routed to directly. */
+export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
   const [session, setSession] = useState<string | undefined>(undefined);
   const { data, isLoading, isError } = useMorningReport(session);
 
@@ -163,6 +252,7 @@ export function MorningPage() {
     <div className="page">
       <div className="page-title-row">
         <h1>Morning report</h1>
+        {tabs}
         {data && data.sessions.length > 0 && (
           <select
             className="chip review-session-select"
@@ -309,6 +399,8 @@ export function MorningPage() {
               </table>
             )}
           </section>
+
+          <DeploymentCard pack={current} />
 
           <CalendarCard pack={current} />
 

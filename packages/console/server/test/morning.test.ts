@@ -127,6 +127,73 @@ describe("null is never zero", () => {
   });
 });
 
+describe("the deployment block", () => {
+  function withDeployment(session: string, deployment: unknown): Record<string, unknown> {
+    return { ...minimalPack(session), fact_version: 2, deployment };
+  }
+
+  const fullBlock = {
+    signals: [
+      { id: "vix_level", label: "VIX percentile", status: "measured", score: 82.4, value: 14.2, weight: 0.25, detail: "14.2 at the 18th percentile" },
+      { id: "credit", label: "Credit proxy", status: "unknown", score: null, value: null, weight: 0.15, detail: "too little history" },
+    ],
+    signals_measured: 4,
+    signals_total: 5,
+    weights_renormalized: true,
+    deferred: ["factor_crowding"],
+    record_only: true,
+    note: "a recorded measurement -- feeds no gate, no phase, no sizing",
+    score: 71.3,
+    zone: "full",
+    reason: null,
+  };
+
+  it("passes the score, zone and signals through untouched", () => {
+    writePack("2026-08-17", withDeployment("2026-08-17", fullBlock));
+    const d = readMorning(config).current?.deployment;
+    expect(d).toMatchObject({ score: 71.3, zone: "full", signalsMeasured: 4, weightsRenormalized: true });
+    expect(d?.deferred).toEqual(["factor_crowding"]);
+    expect(d?.signals[0]).toMatchObject({ id: "vix_level", status: "measured", score: 82.4, weight: 0.25 });
+  });
+
+  it("an unmeasured signal keeps a null score — never a zero contribution", () => {
+    writePack("2026-08-17", withDeployment("2026-08-17", fullBlock));
+    const credit = readMorning(config).current?.deployment?.signals[1];
+    expect(credit).toMatchObject({ id: "credit", status: "unknown", score: null, value: null });
+  });
+
+  it("an unfamiliar signal status reads as unknown, never as measured", () => {
+    const block = { ...fullBlock, signals: [{ id: "vix_level", label: "VIX", status: "probably", score: 90, value: 1, weight: 0.25, detail: "" }] };
+    writePack("2026-08-17", withDeployment("2026-08-17", block));
+    expect(readMorning(config).current?.deployment?.signals[0].status).toBe("unknown");
+  });
+
+  it("an unfamiliar zone is no zone at all, never a guess", () => {
+    writePack("2026-08-17", withDeployment("2026-08-17", { ...fullBlock, zone: "aggressive" }));
+    expect(readMorning(config).current?.deployment?.zone).toBeNull();
+  });
+
+  it("a scoreless block carries its reason instead of a number", () => {
+    const block = { ...fullBlock, score: null, zone: null, reason: "only 2 of 5 signals measured" };
+    writePack("2026-08-17", withDeployment("2026-08-17", block));
+    const d = readMorning(config).current?.deployment;
+    expect(d).toMatchObject({ score: null, zone: null, reason: "only 2 of 5 signals measured" });
+  });
+
+  it("a pre-v2 pack has no deployment block at all — null, not an empty one", () => {
+    // The page omits the card entirely on these; an empty card would imply a score of nothing.
+    writePack("2026-08-17", minimalPack("2026-08-17"));
+    expect(readMorning(config).current?.deployment).toBeNull();
+  });
+
+  it("a malformed block degrades to nulls rather than taking the reader down", () => {
+    writePack("2026-08-17", withDeployment("2026-08-17", { signals: "nope", score: "high" }));
+    const d = readMorning(config).current?.deployment;
+    expect(d).toMatchObject({ score: null, zone: null, signals: [] });
+    expect(d?.deferred).toEqual([]);
+  });
+});
+
 describe("the narrative", () => {
   it("is null when absent — distinct from an empty note", () => {
     writePack("2026-08-17", minimalPack("2026-08-17"));

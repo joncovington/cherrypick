@@ -23,6 +23,8 @@ import type {
   MorningSectorRow,
   MorningGate,
   MorningPhase,
+  MorningDeployment,
+  MorningSignal,
   MorningCalendar,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
@@ -155,6 +157,40 @@ function shapePhase(raw: unknown): MorningPhase | null {
   };
 }
 
+function shapeSignal(raw: unknown): MorningSignal {
+  const s = rec(raw);
+  const status = str(s["status"]);
+  return {
+    id: str(s["id"]) ?? "unknown",
+    label: str(s["label"]) ?? str(s["id"]) ?? "unknown signal",
+    // Anything unfamiliar reads as unknown — an unrecognised status must never render as measured.
+    status: status === "measured" ? status : "unknown",
+    score: num(s["score"]),
+    value: num(s["value"]),
+    weight: num(s["weight"]),
+    detail: str(s["detail"]),
+  };
+}
+
+function shapeDeployment(raw: unknown): MorningDeployment {
+  const d = rec(raw);
+  const zone = str(d["zone"]);
+  return {
+    score: num(d["score"]),
+    // Only the three zones the pack declares; anything else is no zone at all, never a guess.
+    zone: zone === "full" || zone === "reduced" || zone === "defensive" ? zone : null,
+    signals: Array.isArray(d["signals"]) ? (d["signals"] as unknown[]).map(shapeSignal) : [],
+    signalsMeasured: num(d["signals_measured"]),
+    signalsTotal: num(d["signals_total"]),
+    weightsRenormalized: bool(d["weights_renormalized"]),
+    deferred: Array.isArray(d["deferred"])
+      ? (d["deferred"] as unknown[]).filter((v): v is string => typeof v === "string")
+      : [],
+    reason: str(d["reason"]),
+    note: str(d["note"]),
+  };
+}
+
 function shapeCalendar(raw: unknown): MorningCalendar {
   const c = rec(raw);
   return {
@@ -181,6 +217,8 @@ function shapePack(session: string, facts: Record<string, unknown>): MorningPack
     sectors: facts["sectors"] !== undefined ? shapeSectors(facts["sectors"]) : null,
     gates: Array.isArray(facts["gates"]) ? (facts["gates"] as unknown[]).map(shapeGate) : [],
     phase: shapePhase(facts["phase"]),
+    // Absent on pre-v2 packs; null so the page omits the card rather than rendering an empty one.
+    deployment: facts["deployment"] !== undefined ? shapeDeployment(facts["deployment"]) : null,
     calendar: facts["calendar"] !== undefined ? shapeCalendar(facts["calendar"]) : null,
   };
 }

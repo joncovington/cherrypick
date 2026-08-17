@@ -59,15 +59,23 @@ ALL_SYMBOLS = tuple(sorted({*INDEX_SYMBOLS, *SECTOR_ETFS, *COMMODITY_PROXIES, *C
 # Completed daily rows the deployment score needs stream_summary to hold (the streamer backfills a
 # deficit once from DXLink daily candles, so the series exists on day one). 270 covers a trailing
 # 252-session year for the VIX percentile / HYG-TLT z-score with slack; 220 covers the sector
-# breadth's 200-day SMA. SPX rides along for the read-side zone backtest, not for the score itself.
+# breadth's 200-day SMA.
 HISTORY_LOOKBACK = 270
 HISTORY_LOOKBACK_SMA = 220
+
+# What the read-side zone backtest needs, which is strictly more: every scored day costs a full
+# year of history BEHIND it, so a year of bars yields no scoreable days at all. ~4 years leaves
+# ~3 years of scored sessions after the warmup. Declared as one number per symbol because
+# `history_days` is one number per symbol -- the larger need wins, and the live score simply reads
+# the tail of a longer series. A symbol whose candles do not reach this far degrades to fewer
+# scoreable days, which the backtest reports rather than hides.
+HISTORY_LOOKBACK_BACKTEST = 1000
+
+# Every symbol the score or its backtest reads a series for. VIX3M is here for the backtest alone:
+# the live score takes it from a current quote, but a historical day needs its close.
 HISTORY_DAYS = {
-    "VIX": HISTORY_LOOKBACK,
-    "HYG": HISTORY_LOOKBACK,
-    "TLT": HISTORY_LOOKBACK,
-    "SPX": HISTORY_LOOKBACK,
-    **{etf: HISTORY_LOOKBACK_SMA for etf in SECTOR_ETFS},
+    symbol: HISTORY_LOOKBACK_BACKTEST
+    for symbol in ("VIX", "VIX3M", "HYG", "TLT", "SPX", *SECTOR_ETFS)
 }
 
 

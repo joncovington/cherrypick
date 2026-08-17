@@ -1,6 +1,5 @@
-import { Routes, Route } from "react-router-dom";
-import { ReviewPage } from "./pages/Review/ReviewPage";
-import { MorningPage } from "./pages/Morning/MorningPage";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { ReportsPage } from "./pages/Reports/ReportsPage";
 import { AdvisorPage } from "./pages/Advisor/AdvisorPage";
 import { Shell } from "./components/shell/Shell";
 import { OverviewPage } from "./pages/Overview/OverviewPage";
@@ -22,8 +21,11 @@ export default function App() {
     <Routes>
       <Route element={<Shell />}>
         <Route index element={<OverviewPage />} />
-        <Route path="morning" element={<MorningPage />} />
-        <Route path="review" element={<ReviewPage />} />
+        <Route path="reports" element={<ReportsPage />} />
+        {/* Both routes predate the Reports page and appear in the suite's own docs — redirect
+            rather than 404, and `replace` so Back does not bounce off the old URL. */}
+        <Route path="morning" element={<Navigate to="/reports" replace />} />
+        <Route path="review" element={<Navigate to="/reports?tab=eod" replace />} />
         <Route path="advisor" element={<AdvisorPage />} />
         <Route path="meic" element={<MeicPage />} />
         <Route path="flies" element={<FliesPage />} />

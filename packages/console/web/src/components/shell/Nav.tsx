@@ -7,7 +7,9 @@ import { useDirtyCount } from "../../pages/Config/stagedStore";
  * the suite as a whole, one module's read models, the research tools, and the one page that writes.
  */
 const groups: Array<{ label: string | null; links: Array<{ to: string; label: string; end?: boolean }> }> = [
-  { label: null, links: [{ to: "/", label: "Overview", end: true }, { to: "/morning", label: "Morning" }, { to: "/review", label: "Review" }, { to: "/advisor", label: "Advisor" }] },
+  // Morning and EOD are one entry: they are the same question asked at two ends of a session, and
+  // two links that each lead to half of it made the nav longer without making anything findable.
+  { label: null, links: [{ to: "/", label: "Overview", end: true }, { to: "/reports", label: "Reports" }, { to: "/advisor", label: "Advisor" }] },
   {
     label: "Modules",
     links: [

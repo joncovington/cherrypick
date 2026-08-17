@@ -15,5 +15,9 @@ blended from five macro signals (VIX percentile, vol term structure, sector brea
 credit proxy, VIX rate of change). It is record-only: it gates nothing and sizes nothing, and exists
 so the number can be measured against outcomes before anyone acts on it.
 
+`python -m cherrypick.overview score-history` recomputes that score across stored history and
+reports what its zones would have separated — no look-ahead, and reported as an SPX benchmark
+rather than as suite P&L, since no trade was taken on any of those sessions.
+
 See `CLAUDE.md` for the operating contract, `python -m cherrypick.overview --help` for the CLI,
-and the console's Morning page for the rendered surface.
+and the console's Reports page (Morning tab) for the rendered surface.

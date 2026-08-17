@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useReview } from "../../lib/api";
 import type { ReviewArm, ReviewModule } from "@console/shared";
 import { NoteMarkdown } from "./NoteMarkdown";
@@ -230,7 +230,9 @@ function ModuleCard({ m }: { m: ReviewModule }) {
   );
 }
 
-export function ReviewPage() {
+/** `tabs` is the Reports page's tab strip, rendered inside this page's own title row. Optional so
+ *  the page still stands alone if it is ever routed to directly. */
+export function ReviewPage({ tabs }: { tabs?: ReactNode } = {}) {
   const [session, setSession] = useState<string | undefined>(undefined);
   const { data, isLoading, isError } = useReview(session);
 
@@ -242,6 +244,7 @@ export function ReviewPage() {
     <div className="page">
       <div className="page-title-row">
         <h1>Suite review</h1>
+        {tabs}
         {current && (
           <span className={`chip ${current.status === "final" ? "chip-ok" : "chip-warn"}`}>{current.status}</span>
         )}
