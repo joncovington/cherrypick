@@ -1,7 +1,7 @@
 # console (unified web UI)
 
 The suite's unified reactive web UI: one app covering every module's read models (overview/watchdog,
-MEIC, flies, earnings, PMCC-99, GEX) plus the research surfaces inherited from the retired scout
+MEIC, flies, earnings, PMCC-99, calendars, GEX) plus the research surfaces inherited from the retired scout
 package (watchlist, screener, builder, payoff/POP, staged dry-run tickets). It **replaced** them on 2026-08-12: the suite dashboard, the
 MEIC/flies/GEX dashboards, the earnings strategy dashboard and scout's web app were deleted, and this
 is the suite's only read surface. It still touches none of their code — every module remains a
@@ -130,6 +130,19 @@ pnpm --filter @console/desktop start   # the desktop window
   `python run.py headline`, and its drawn Keltner band at the last completed bar must equal the
   measures the gate stamped on that session's entry rows. Both were verified when the page landed
   (2026-08-17), and the second caught a real off-by-one-bar error before it shipped.
+- **The calendars page is the same question answered the other way, and the split is the point.**
+  `readers/calendars.ts` reads that ledger directly like every other reader here, but two things it
+  will not compute go out through `services/calendarsBridge.ts` as a subprocess: the exit-policy
+  table and the week's calendar anchors. Not because they are expensive — both are memoised at 5–10
+  minutes and neither moves on a poll's timescale — but because both would be *re-derivations*
+  rather than reads. The policy table is a tick-by-tick replay welded to a validation that
+  reproduces the real books to the cent, and a TypeScript second implementation is the one kind of
+  drift that validation could not catch: it would be validating the wrong derivation. The anchors
+  are NYSE holiday arithmetic whose structure tag is the key every result is grouped by, and a
+  second calendar is a second calendar free to disagree. The rule that separates the two pages:
+  **mirror a query, bridge a derivation.** A query can be checked against its source by reading
+  both; a derivation with its own validation can only be checked by being the one that was
+  validated.
 
 - **A module's own evidence window is the default.** Where a module narrows its analytics to a
   current era or study window, the console's reads default to the same narrowing rather than

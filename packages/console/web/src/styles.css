@@ -2103,3 +2103,221 @@ select.text-input {
 .pmcc-detail-row > td {
   white-space: normal;
 }
+
+/* ---------------------------------------------------------------- calendars (dc_week)
+   Deliberately the same restrained palette as the PMCC page: amber for the honest states this
+   module is obliged to show (a skipped ex-dividend week, a lapsing calendar, a thin feed), red
+   only where the derivation and the books actually disagree, and never the cherry accent — that
+   is reserved for brand, live-mode and alerts, and nothing on a paper experiment's page is one. */
+
+.cal-sym {
+  font-family: var(--num-face);
+  color: var(--text);
+  min-width: 3.4rem;
+  display: inline-block;
+}
+
+.cal-warn {
+  color: var(--warn);
+}
+
+.cal-err {
+  color: var(--err);
+}
+
+.cal-ok {
+  color: var(--ok);
+}
+
+.cal-chip {
+  margin-left: 0.4rem;
+  font-size: 11px;
+}
+
+.cal-chip-quiet {
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+.cal-note {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin: 0.35rem 0 0;
+  line-height: 1.5;
+}
+
+/* The same sentence, inline inside a banner rather than under it — a refusal and its explanation
+   belong in one breath, not in a paragraph the eye can skip. */
+.cal-note-inline {
+  color: var(--text-muted);
+}
+
+.cal-integrity-banner {
+  border-left: 2px solid var(--warn);
+  padding: 0.5rem 0 0.5rem 0.75rem;
+  margin-bottom: 0.9rem;
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.cal-integrity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 1.1rem;
+}
+
+.cal-integrity-grid h3 {
+  font-size: 12px;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin: 0 0 0.45rem;
+}
+
+.cal-integrity-alerts {
+  margin-top: 0.9rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.7rem;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.cal-plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12.5px;
+  line-height: 1.85;
+}
+
+/* The week's anchors. A row of labelled dates rather than a table: they are one fact in five
+   parts (entry, both expirations, the tag they imply), not five comparable rows. */
+.cal-plan-anchors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.6rem;
+}
+
+.cal-plan-label {
+  display: block;
+  font-size: 11px;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.cal-plan-value {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.cal-plan-when {
+  margin-left: 0.4rem;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* The entry verdict. Amber-ruled when the week went untraded, green when it entered: for a strategy
+   with one entry attempt a week, whether that attempt landed is the page's first fact. */
+.cal-entry-banner {
+  border-left: 2px solid var(--warn);
+  padding: 0.5rem 0 0.5rem 0.75rem;
+  margin-bottom: 0.7rem;
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.cal-entry-ok {
+  border-left-color: var(--ok);
+}
+
+.cal-feed {
+  font-size: 12.5px;
+  margin: 0 0 0.7rem;
+}
+
+.cal-feed .cal-plan-label {
+  display: inline-block;
+  min-width: 3.2rem;
+}
+
+.cal-attempts {
+  width: 100%;
+}
+
+/* The refusal glossary's affordance. A superscript question mark rather than a dotted underline:
+   the token beside it is monospace and an underline read as part of the identifier. */
+.cal-help {
+  margin-left: 0.3rem;
+  font-size: 10px;
+  vertical-align: super;
+  color: var(--text-muted);
+  cursor: help;
+}
+
+.cal-row-click {
+  cursor: pointer;
+}
+
+.cal-row-click:hover {
+  background: var(--row-hover, rgba(255, 255, 255, 0.03));
+}
+
+/* The expanded week. `.data-table td` is nowrap by house rule; this one holds prose and legs
+   rather than figures, so it wraps inside the card instead of running off it. */
+.cal-detail-row > td {
+  white-space: normal;
+}
+
+.cal-detail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 1.2rem;
+  padding: 0.6rem 0;
+}
+
+.cal-detail h4 {
+  font-size: 12.5px;
+  font-weight: 500;
+  margin: 0 0 0.4rem;
+}
+
+.cal-prose {
+  font-size: 13px;
+  line-height: 1.65;
+  max-width: 78ch;
+}
+
+.cal-prose p {
+  margin: 0 0 0.7rem;
+}
+
+.cal-defs {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1.2rem;
+  font-size: 12.5px;
+  margin: 0;
+}
+
+.cal-defs dt {
+  color: var(--text-muted);
+}
+
+.cal-defs dd {
+  margin: 0;
+  color: var(--text);
+}
+
+.cal-rules {
+  font-size: 13px;
+  line-height: 1.65;
+  margin: 0;
+  padding-left: 1.1rem;
+  max-width: 78ch;
+}
+
+.cal-rules li {
+  margin-bottom: 0.5rem;
+}

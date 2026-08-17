@@ -19,6 +19,10 @@ import type {
   PmccCycleRow,
   PmccMeta,
   PmccAssignment,
+  CalendarsPayload,
+  CalendarsPoliciesPayload,
+  CalendarsPosition,
+  CalendarsWeekRow,
 } from "@console/shared";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -278,6 +282,45 @@ export function usePmccAssignments() {
     queryKey: ["pmcc-assignments"],
     queryFn: () => getJson<{ rows: PmccAssignmentRow[] }>("/api/pmcc/assignments"),
     refetchInterval: 60_000,
+  });
+}
+
+export function useCalendars() {
+  return useQuery<CalendarsPayload>({
+    queryKey: ["calendars"],
+    queryFn: () => getJson<CalendarsPayload>("/api/calendars"),
+    // The loop marks every 30s in session; 15s matches the other module dashboards.
+    refetchInterval: 15_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useCalendarsWeeks() {
+  return useQuery<{ rows: CalendarsWeekRow[] }>({
+    queryKey: ["calendars-weeks"],
+    queryFn: () => getJson<{ rows: CalendarsWeekRow[] }>("/api/calendars/weeks"),
+    // A week finishes once a week. Polling this hard would be noise.
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useCalendarsWeek(week: string | null) {
+  return useQuery<{ rows: CalendarsPosition[] }>({
+    queryKey: ["calendars-week", week],
+    queryFn: () => getJson<{ rows: CalendarsPosition[] }>(`/api/calendars/week?week=${week ?? ""}`),
+    enabled: week !== null,
+    staleTime: 60_000,
+  });
+}
+
+export function useCalendarsPolicies() {
+  return useQuery<CalendarsPoliciesPayload>({
+    queryKey: ["calendars-policies"],
+    queryFn: () => getJson<CalendarsPoliciesPayload>("/api/calendars/policies"),
+    // A replay over the whole mark path, memoised server-side; the answer only moves when a week
+    // completes. Nothing here justifies a poll.
+    staleTime: 300_000,
   });
 }
 
