@@ -59,6 +59,17 @@ describe("no path renders a blank page", () => {
   });
 });
 
+describe("the module routes", () => {
+  it("/pmcc renders its own page, not the catch-all", () => {
+    // Server-rendered with no query data, so what is asserted is the shell the page paints before
+    // anything loads. The module is paper-only by construction — there is no live store to toggle
+    // to — so the badge is fixed rather than driven by a mode preference.
+    const html = render("/pmcc");
+    expect(html).toContain("PMCC-99");
+    expect(html).not.toContain("Page not found");
+  });
+});
+
 describe("the reports routes", () => {
   it("/reports renders the morning report", () => {
     expect(render("/reports")).toContain("Morning report");

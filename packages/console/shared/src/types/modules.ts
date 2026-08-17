@@ -284,3 +284,185 @@ export interface ExperimentGuide {
   /** True when the config could not be read — the page says so rather than showing none. */
   configMissing: boolean;
 }
+
+// ---- PMCC-99 ----
+//
+// Paper-only: there is no live DB and no live loop, so nothing here carries a `mode`. The module's
+// `live.enabled` is a documented placeholder (see packages/pmcc/CLAUDE.md), and offering a mode
+// toggle over a book that cannot exist would be a lie the type system can prevent.
+//
+// Nulls are load-bearing throughout. `analytics.py` states the rule the whole module keeps: `None`
+// never means zero, because "not recorded" and "was zero" are different facts. Every nullable field
+// below is one the reader must leave null rather than defaulting.
+
+/** One open position, mirroring `analytics.worksheet()` plus its latest usable short mark. */
+export interface PmccOpenPosition {
+  positionId: string;
+  symbol: string;
+  book: string;
+  /** `open`, or `short_settled` — the short expired ITM and its shares await next-session disposal. */
+  status: string;
+  longStrike: number | null;
+  longExpiration: string | null;
+  shortStrike: number | null;
+  shortExpiration: string | null;
+  entrySpot: number | null;
+  netDebit: number | null;
+  entryNetTv: number | null;
+  entryWeeklyYieldPct: number | null;
+  downsideProtectionPct: number | null;
+  breakeven: number | null;
+  rollCount: number | null;
+  /** Latest usable short-leg mark. Null means no usable mark yet — never render it as 0. */
+  currentShortTv: number | null;
+  currentSpot: number | null;
+  lastMarkAt: number | null;
+  /** Per-position early-assignment exposure, from `analytics.exposure()`. */
+  exposedTicks: number;
+  markedTicks: number;
+}
+
+/** Per-book, per-symbol results over CLOSED positions — `analytics.headline()`. */
+export interface PmccBookCell {
+  book: string;
+  symbol: string;
+  positions: number;
+  grossPnl: number | null;
+  fees: number | null;
+  /** `gross_pnl - fees`, the suite's one net convention. Null if either side is unrecorded. */
+  netPnl: number | null;
+  winRate: number | null;
+  rolls: number | null;
+}
+
+/** A symbol's declared ex-dividend calendar. A lapsed table refuses entries loudly, by design. */
+export interface PmccDividendRow {
+  symbol: string;
+  declaredThrough: string | null;
+  exDates: string[];
+  /** Within 14 days of lapsing (or already lapsed) — a ~9DTE short can span past it before then. */
+  refreshDue: boolean;
+}
+
+/** Keltner cold-start progress per symbol — `analytics.keltner_readiness()`. */
+export interface PmccKeltnerReadiness {
+  symbol: string;
+  bars: number;
+  required: number;
+}
+
+/** One symbol's Keltner channel, recomputed exactly as `keltner.py` draws it. */
+export interface PmccKeltnerSeries {
+  symbol: string;
+  /** Oldest first. `mid`/`upper`/`lower` are null until enough history exists to seed the channel. */
+  points: Array<{ date: string; close: number | null; mid: number | null; upper: number | null; lower: number | null }>;
+  /** The gate's current verdict, from the day's own attempts — one failing condition, or null when it passed. */
+  gate: { reason: string | null; occurrences: number } | null;
+}
+
+/** The honesty surface: everything that bounds how far the paper net can be trusted. */
+export interface PmccIntegrity {
+  exposure: { positionsWithExposure: number; exposedTicks: number; markedTicks: number };
+  dividends: PmccDividendRow[];
+  keltner: PmccKeltnerReadiness[];
+  markCoverage: {
+    session: string | null;
+    marks: number;
+    refused: number;
+    refusalShare: number | null;
+    refusals: Array<{ reason: string; n: number }>;
+  };
+  /** Columns the ledger has that this console build does not know — the writer is newer than this page. */
+  schemaDrift: string[];
+  measurementBreaks: Array<{ date: string; key: string; note: string | null }>;
+}
+
+export interface PmccPayload {
+  /** The resolved session every card on the page names. Null when the module has never run. */
+  session: string | null;
+  /** False when the store is absent — "has not run here", which is not an error. */
+  dbPresent: boolean;
+  openPositions: PmccOpenPosition[];
+  openCount: number;
+  books: PmccBookCell[];
+  integrity: PmccIntegrity;
+  keltner: PmccKeltnerSeries[];
+  today: {
+    attempts: Array<{ book: string; outcome: string; n: number; blockDetail: string | null; bestYield: number | null }>;
+    events: Array<{ action: string; reason: string; executed: boolean; gate: string | null; n: number }>;
+    lastIteration: { ranAt: number; phase: string; status: string; ageSeconds: number } | null;
+  };
+  /** The declared knobs the cards render against — thresholds, not preferences. */
+  params: {
+    tvCloseThreshold: number | null;
+    assignmentExposureTv: number | null;
+    targetWeeklyYieldMin: number | null;
+    keltnerMinHistory: number | null;
+    symbols: string[];
+  };
+}
+
+/** One short leg in a cycle's chain. Rolls append, so a cycle can hold several. */
+export interface PmccShortLeg {
+  legRole: string;
+  strike: number | null;
+  expiration: string | null;
+  /** traded | rolled | expired | assigned | cash_settled */
+  closeKind: string | null;
+  closeValue: number | null;
+}
+
+export interface PmccRoll {
+  session: string | null;
+  oldStrike: number | null;
+  newStrike: number | null;
+  oldExpiration: string | null;
+  newExpiration: string | null;
+  netRollCredit: number | null;
+}
+
+/** Shares delivered by a physically-settled ITM short, booked at the SETTLEMENT SPOT, not the strike. */
+export interface PmccAssignment {
+  legRole: string;
+  direction: string;
+  shares: number | null;
+  basis: number | null;
+  strike: number | null;
+  status: string;
+  disposedSession: string | null;
+  disposalPrice: number | null;
+  sharePnl: number | null;
+}
+
+/** One completed cycle: entry through exit, with the whole short chain it took to get there. */
+export interface PmccCycleRow {
+  positionId: string;
+  symbol: string;
+  book: string;
+  entrySession: string;
+  closedSession: string | null;
+  status: string;
+  exitReason: string | null;
+  longStrike: number | null;
+  longExpiration: string | null;
+  entrySpot: number | null;
+  settlementSpot: number | null;
+  netDebit: number | null;
+  entryNetTv: number | null;
+  entryWeeklyYieldPct: number | null;
+  rollCount: number | null;
+  itmSettlements: number | null;
+  grossPnl: number | null;
+  fees: number | null;
+  netPnl: number | null;
+  shorts: PmccShortLeg[];
+  rolls: PmccRoll[];
+  assignments: PmccAssignment[];
+}
+
+export interface PmccMeta {
+  books: string[];
+  symbols: string[];
+  sessions: string[];
+}
+
