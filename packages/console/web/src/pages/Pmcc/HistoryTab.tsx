@@ -3,6 +3,7 @@ import type { PmccCycleRow } from "@console/shared";
 import { usePmccAssignments, usePmccHistory, usePmccMeta } from "../../lib/api";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { Pager, ScopeSelect, usePage } from "../../components/ScopeBar";
+import { fmtStrike } from "../../lib/optionFormat";
 
 /**
  * How a short leg left the book.
@@ -46,7 +47,7 @@ function ShortChain({ row }: { row: PmccCycleRow }) {
       {row.shorts.map((s, i) => (
         <span key={s.legRole}>
           {i > 0 && <span className="muted"> → </span>}
-          {fmtNum(s.strike, 0)}
+          {fmtStrike(s.strike)}
         </span>
       ))}{" "}
       {closeKindChip(last.closeKind)}
@@ -62,7 +63,7 @@ function CycleDetail({ row }: { row: PmccCycleRow }) {
           <section>
             <h4>legs</h4>
             <p>
-              <span className="muted">long</span> {fmtNum(row.longStrike, 0)}
+              <span className="muted">long</span> {fmtStrike(row.longStrike)}
               {row.longExpiration !== null && <span className="muted"> @ {row.longExpiration}</span>} ·{" "}
               <span className="muted">entry spot</span> {fmtNum(row.entrySpot, 2)}
               {row.settlementSpot !== null && (
@@ -75,7 +76,7 @@ function CycleDetail({ row }: { row: PmccCycleRow }) {
             <ul className="pmcc-plain-list">
               {row.shorts.map((s) => (
                 <li key={s.legRole}>
-                  <span className="mono">{s.legRole}</span> {fmtNum(s.strike, 0)}
+                  <span className="mono">{s.legRole}</span> {fmtStrike(s.strike)}
                   {s.expiration !== null && <span className="muted"> @ {s.expiration}</span>} ·{" "}
                   <span className="muted">closed at</span> {fmtMoney(s.closeValue)} {closeKindChip(s.closeKind)}
                 </li>
@@ -106,7 +107,7 @@ function CycleDetail({ row }: { row: PmccCycleRow }) {
                   <li key={a.legRole}>
                     {a.direction} {a.shares} shares @ {fmtNum(a.basis, 2)}{" "}
                     <span className="muted" title="Shares are booked at the SETTLEMENT SPOT, not the strike — the decomposition that keeps the option accounting untouched.">
-                      (basis is the settlement print, not the {fmtNum(a.strike, 0)} strike)
+                      (basis is the settlement print, not the {fmtStrike(a.strike)} strike)
                     </span>
                     {a.disposedSession === null ? (
                       <span className="chip chip-warn pmcc-chip">outstanding</span>
@@ -207,7 +208,7 @@ export function HistoryTab() {
               </td>
               <td>{r.symbol}</td>
               <td>{r.book}</td>
-              <td>{fmtNum(r.longStrike, 0)}</td>
+              <td>{fmtStrike(r.longStrike)}</td>
               <td>
                 <ShortChain row={r} />
               </td>
