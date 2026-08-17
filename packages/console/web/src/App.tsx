@@ -7,6 +7,7 @@ import { MeicPage } from "./pages/Meic/MeicPage";
 import { ChampionsPage } from "./pages/Champions/ChampionsPage";
 import { FliesPage } from "./pages/Flies/FliesPage";
 import { PmccPage } from "./pages/Pmcc/PmccPage";
+import { CalendarsPage } from "./pages/Calendars/CalendarsPage";
 import { EarningsPage } from "./pages/Earnings/EarningsPage";
 import { GexPage } from "./pages/Gex/GexPage";
 import { WatchlistPage } from "./pages/Scout/WatchlistPage";
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="meic" element={<MeicPage />} />
         <Route path="flies" element={<FliesPage />} />
         <Route path="pmcc" element={<PmccPage />} />
+        <Route path="calendars" element={<CalendarsPage />} />
         <Route path="earnings" element={<EarningsPage />} />
         <Route path="gex" element={<GexPage />} />
         <Route path="champions" element={<ChampionsPage />} />

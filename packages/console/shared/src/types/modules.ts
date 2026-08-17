@@ -489,3 +489,232 @@ export interface PmccMeta {
   sessions: string[];
 }
 
+// --------------------------------------------------------------------------- calendars (dc_week)
+//
+// The weekly double-calendar module is a forward EXIT-PARAMETER EXPERIMENT, so its read model is
+// shaped around two questions rather than a P&L: did this week enter, and what does the derived
+// policy table say — beside the validation that says whether to believe it.
+
+/** The week's computed anchors. Comes from `clock.week_plan`, never re-derived here. */
+export interface CalendarsWeekPlan {
+  weekOf: string;
+  entrySession: string;
+  frontExpiration: string;
+  backExpiration: string;
+  /** `dc_4_7` for the ordinary week, `dc_3_6` after a Monday holiday. Tags never pool. */
+  structure: string;
+}
+
+export interface CalendarsLeg {
+  legRole: string;
+  occSymbol: string;
+  expiration: string;
+  strike: number | null;
+  optionType: string;
+  action: string;
+  entryMid: number | null;
+  status: string;
+  /** `traded` or `cash_settled` — a sold leg and an expired one are different exits. */
+  closeKind: string | null;
+  closeValue: number | null;
+}
+
+/** One side (put or call) of one book's double calendar. Two of these make a week's structure. */
+export interface CalendarsPosition {
+  positionId: string;
+  weekOf: string;
+  entrySession: string;
+  book: string;
+  side: string;
+  symbol: string;
+  structure: string;
+  frontExpiration: string;
+  backExpiration: string;
+  strike: number | null;
+  quantity: number | null;
+  entryDebit: number | null;
+  entrySpot: number | null;
+  entryEm: number | null;
+  entryEmPct: number | null;
+  entryFrontIv: number | null;
+  entryBackIv: number | null;
+  entryTermStructure: number | null;
+  status: string;
+  exitReason: string | null;
+  closedSession: string | null;
+  settlementSpot: number | null;
+  itmSettlements: number | null;
+  grossPnl: number | null;
+  fees: number | null;
+  /** `gross - fees`. Null if either side is unrecorded — an open week has no net, not a zero one. */
+  netPnl: number | null;
+  legs: CalendarsLeg[];
+}
+
+/** Per-book, per-structure results over CLOSED positions — `analytics.headline()`. */
+export interface CalendarsBookCell {
+  book: string;
+  structure: string;
+  positions: number;
+  weeks: number;
+  grossPnl: number | null;
+  fees: number | null;
+  netPnl: number | null;
+  winRate: number | null;
+}
+
+/**
+ * What the entry day did with its one window.
+ *
+ * Entry is unconditional by design, so a week with no position is never "no setup" — it is a
+ * refusal, and the refusal has a name. This is the card that has to answer it.
+ */
+export interface CalendarsEntryWindow {
+  session: string | null;
+  windowStart: string | null;
+  windowEnd: string | null;
+  attempts: Array<{
+    outcome: string;
+    n: number;
+    firstTs: string | null;
+    lastTs: string | null;
+    spot: number | null;
+    em: number | null;
+    putStrike: number | null;
+    callStrike: number | null;
+    putDebit: number | null;
+    callDebit: number | null;
+  }>;
+  /** True when the session actually opened positions, not merely when it attempted. */
+  entered: boolean;
+  /** The collapsed journal's word for why the week went untraded, with its occurrence count. */
+  skipReason: string | null;
+  skipOccurrences: number;
+  /**
+   * The feed ledger for the entry session (`dc_snapshots`), summed.
+   *
+   * A stretch of refused rows is a feed problem and a stretch with NO rows is the loop not running
+   * — without these counts those two silences look identical, which is the whole reason the module
+   * keeps the table.
+   */
+  feed: { ticks: number; fresh: number; stale: number; spotTicks: number } | null;
+}
+
+/** Per settled week: the expected move measured at entry against the move actually realized. */
+export interface CalendarsEmRow {
+  weekOf: string;
+  structure: string;
+  expectedMove: number | null;
+  realizedMove: number | null;
+  ratio: number | null;
+}
+
+export interface CalendarsIntegrity {
+  markCoverage: {
+    session: string | null;
+    marks: number;
+    refused: number;
+    refusalShare: number | null;
+    refusals: Array<{ reason: string; n: number }>;
+  };
+  schemaDrift: string[];
+  measurementBreaks: Array<{ date: string; key: string; note: string | null }>;
+  /** `tick_cadence.json` — the mark path's resolution, which bounds how precisely a trigger replays. */
+  tickCadence: { seconds: number | null; since: string | null } | null;
+  dividends: Array<{ symbol: string; declaredThrough: string | null; exDates: string[]; refreshDue: boolean }>;
+  /** Declared per symbol. A symbol declared as neither style is refused at entry. */
+  settlement: Array<{ symbol: string; style: string | null }>;
+  /** Delivered shares still held — the weekend exposure a cash-settled leg never has. */
+  openShareAssignments: number;
+}
+
+export interface CalendarsPayload {
+  session: string | null;
+  dbPresent: boolean;
+  /** The next entry's week anchors, from the module's own clock. Null if the bridge could not run. */
+  plan: CalendarsWeekPlan | null;
+  planError: string | null;
+  currentWeek: { weekOf: string | null; positions: CalendarsPosition[] };
+  entryWindow: CalendarsEntryWindow;
+  openPositions: CalendarsPosition[];
+  books: CalendarsBookCell[];
+  emVsRealized: CalendarsEmRow[];
+  integrity: CalendarsIntegrity;
+  today: {
+    lastIteration: { ranAt: number; phase: string; status: string; ageSeconds: number } | null;
+    decisions: Array<{ book: string; reason: string; accepted: boolean; occurrences: number; lastTs: string | null }>;
+  };
+  params: {
+    symbols: string[];
+    quantity: number | null;
+    emFactor: number | null;
+    entryWindowStart: string | null;
+    entryWindowEnd: string | null;
+    exitWindowStart: string | null;
+    exitWindowEnd: string | null;
+    maxQuoteAgeSeconds: number | null;
+    maxLegSpreadPct: number | null;
+    books: Array<{ name: string; enabled: boolean }>;
+    adviceEnabled: boolean;
+  };
+}
+
+/** One policy's result inside one structure tag. Tags are separate buckets and never pool. */
+export interface CalendarsPolicyBucket {
+  structure: string;
+  weeks: number;
+  /** Weeks whose recorded path could answer this policy. A hole is excluded, never scored zero. */
+  derivable: number;
+  totalNet: number | null;
+  avgNet: number | null;
+  winRate: number | null;
+  worst: { weekOf: string; netPnl: number } | null;
+}
+
+export interface CalendarsPolicyRow {
+  policy: string;
+  buckets: CalendarsPolicyBucket[];
+}
+
+/**
+ * The exit-policy table and the validation it travels with.
+ *
+ * The module's seventh honesty rule is that no surface shows the ranking without the reason to
+ * believe it, so these arrive from one call and are rendered together or not at all.
+ */
+export interface CalendarsPoliciesPayload {
+  ok: boolean;
+  error: string | null;
+  weeksConsidered: number;
+  caveat: string | null;
+  policies: CalendarsPolicyRow[];
+  validation: {
+    compared: number;
+    ok: boolean;
+    mismatches: Array<{
+      weekOf: string;
+      book: string;
+      derivedNet: number | null;
+      realNet: number | null;
+      diff: number | null;
+      reason: string | null;
+    }>;
+  } | null;
+}
+
+/** One row per week in the ledger, per book — the history tab's index. */
+export interface CalendarsWeekRow {
+  weekOf: string;
+  structure: string;
+  entrySession: string;
+  book: string;
+  positions: number;
+  closed: number;
+  entryDebit: number | null;
+  entrySpot: number | null;
+  settlementSpot: number | null;
+  grossPnl: number | null;
+  fees: number | null;
+  netPnl: number | null;
+}
+

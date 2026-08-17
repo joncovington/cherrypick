@@ -2,7 +2,7 @@ import { NavLink } from "react-router-dom";
 import { useDirtyCount } from "../../pages/Config/stagedStore";
 
 /**
- * Grouped rather than flat: eleven equal-weight links read as one undifferentiated list, and the
+ * Grouped rather than flat: a dozen equal-weight links read as one undifferentiated list, and the
  * page you want is found by scanning all of them. The groups say what kind of surface each link is —
  * the suite as a whole, one module's read models, the research tools, and the one page that writes.
  */
@@ -16,6 +16,7 @@ const groups: Array<{ label: string | null; links: Array<{ to: string; label: st
       { to: "/meic", label: "MEIC" },
       { to: "/flies", label: "Flies" },
       { to: "/pmcc", label: "PMCC" },
+      { to: "/calendars", label: "Calendars" },
       { to: "/earnings", label: "Earnings" },
       { to: "/champions", label: "Champions" },
       { to: "/gex", label: "GEX" },

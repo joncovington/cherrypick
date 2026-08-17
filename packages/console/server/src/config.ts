@@ -45,6 +45,11 @@ export interface ConsoleConfig {
         then the shipped example). First readable wins -- pmcc/cli.py's load_config resolves the same
         way, and a page showing a threshold the module isn't running would be worse than none. */
     pmccConfigCandidates: string[];
+    /** calendars' config, in the module's OWN resolution order (`cli.load_config`): the managed
+        home, then the repo's config.json, then the shipped example. Same reason as pmcc's -- a page
+        showing an entry window or a dividend table the module isn't running would be worse than
+        none. */
+    calendarsConfigCandidates: string[];
   };
 }
 
@@ -75,6 +80,11 @@ export function loadConfig(): ConsoleConfig {
         path.join(CHERRYPICK, "config", "pmcc.json"),
         path.join(REPO_ROOT, "packages", "pmcc", "config.json"),
         path.join(REPO_ROOT, "packages", "pmcc", "config.example.json"),
+      ],
+      calendarsConfigCandidates: [
+        path.join(CHERRYPICK, "config", "calendars.json"),
+        path.join(REPO_ROOT, "packages", "calendars", "config.json"),
+        path.join(REPO_ROOT, "packages", "calendars", "config.example.json"),
       ],
     },
   };

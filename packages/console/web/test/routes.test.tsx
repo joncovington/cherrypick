@@ -68,6 +68,14 @@ describe("the module routes", () => {
     expect(html).toContain("PMCC-99");
     expect(html).not.toContain("Page not found");
   });
+
+  it("/calendars renders its own page, not the catch-all", () => {
+    // Paper-only by construction for the same structural reason as PMCC: no live loop, no live
+    // store, so nothing a mode toggle could reach and a fixed badge rather than a preference.
+    const html = render("/calendars");
+    expect(html).toContain("Calendars");
+    expect(html).not.toContain("Page not found");
+  });
 });
 
 describe("the reports routes", () => {

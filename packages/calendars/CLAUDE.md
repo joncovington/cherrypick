@@ -214,5 +214,21 @@ Complete and tested: clock/week anchors, entry engine, both books, marking, mana
 disposition, the exit-policy derivation with its validation, analytics, and the suite wiring
 (`dc_week` across every registry, enforced by the orchestrator's schema-coverage test). Paper data
 collection starts with its first scheduled Monday; the policy table is empty until completed weeks
-exist, and underpowered until many do. The console renders this module through the generic Review
-page; a dedicated page is deliberately deferred until real weeks accumulate.
+exist, and underpowered until many do.
+
+The console has a dedicated page (`/calendars`, landed 2026-08-17). It reads this ledger directly
+for state, but it does **not** re-implement two things and must not start: `exit_policies` and
+`clock.week_plan` are invoked as a subprocess through `cli.py`'s `policies` and `status` verbs. The
+first because the derivation arrives welded to the validation that reproduces the real books to the
+cent, and a second implementation would be free to drift in exactly the direction the validation
+could not catch — it would be validating the wrong derivation. The second because the structure tag
+is the key every result is grouped by, and a second holiday calendar is a second calendar free to
+disagree with the one this module trades off. **Keep `cli.py`'s JSON shape stable**, or that page
+degrades to an error banner.
+
+The first scheduled Monday (2026-08-17) took **no position**: every entry attempt in the 10:00–10:15
+window refused with `no_fresh_quotes` — 248 near-spot option quotes present in the stream cache and
+every one of them older than `max_quote_age_seconds` — and the week was journaled
+`week_skipped_entry_window_exhausted`. The module behaved correctly; the cache did not have fresh
+SPY option quotes to price. Worth knowing before reading the first weeks of this ledger, and worth
+watching on the next entry Monday.
