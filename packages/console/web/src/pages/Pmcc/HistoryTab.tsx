@@ -4,6 +4,7 @@ import { usePmccAssignments, usePmccHistory, usePmccMeta } from "../../lib/api";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { Pager, ScopeSelect, usePage } from "../../components/ScopeBar";
 import { fmtStrike } from "../../lib/optionFormat";
+import { EntrySpreadCell } from "./EntrySpread";
 
 /**
  * How a short leg left the book.
@@ -55,10 +56,58 @@ function ShortChain({ row }: { row: PmccCycleRow }) {
   );
 }
 
+/**
+ * The fee stack, split into what was paid and what was given away.
+ *
+ * Commissions are a price list; slippage is the market's width and is the thing a structure choice
+ * can actually change. The first session closed four cycles whose fees were 98% slippage, and a
+ * single "fees" figure made that look like an unremarkable cost of doing business rather than the
+ * whole result. `sum(parts)` is checked against the recorded total instead of assumed: the module
+ * bundles roll and settlement events into `fees` too, and any remainder belongs on screen, not
+ * silently dropped.
+ */
+function FeeSplit({ row }: { row: PmccCycleRow }) {
+  const parts = [row.entryCost, row.exitCost, row.entrySlippage, row.exitSlippage];
+  if (parts.every((p) => p === null)) {
+    return (
+      <p className="muted">
+        no cost breakdown recorded on this cycle — pre-instrumentation rows are not zero-cost ones
+      </p>
+    );
+  }
+  const commissions = (row.entryCost ?? 0) + (row.exitCost ?? 0);
+  const slippage = (row.entrySlippage ?? 0) + (row.exitSlippage ?? 0);
+  const accounted = commissions + slippage;
+  const other = row.fees === null ? null : row.fees - accounted;
+  const slipShare = row.fees !== null && row.fees > 0 ? (slippage / row.fees) * 100 : null;
+  return (
+    <>
+      <p>
+        <span className="muted">commissions</span> {fmtMoney(commissions)} ·{" "}
+        <span className={slipShare !== null && slipShare > 50 ? "pmcc-warn" : ""}>
+          <span className="muted">slippage</span> {fmtMoney(slippage)}
+          {slipShare !== null && <> ({fmtPct(slipShare, 0)} of fees)</>}
+        </span>
+        {other !== null && Math.abs(other) >= 0.005 && (
+          <>
+            {" "}
+            · <span className="muted">other events</span> {fmtMoney(other)}
+          </>
+        )}
+      </p>
+      <p className="muted">
+        Entry {fmtMoney(row.entrySlippage)} + exit {fmtMoney(row.exitSlippage)} of slippage against{" "}
+        {fmtMoney(row.entryNetTv === null ? null : row.entryNetTv * 100)} of time value the structure was sold
+        to capture.
+      </p>
+    </>
+  );
+}
+
 function CycleDetail({ row }: { row: PmccCycleRow }) {
   return (
     <tr className="pmcc-detail-row">
-      <td colSpan={10}>
+      <td colSpan={11}>
         <div className="pmcc-detail">
           <section>
             <h4>legs</h4>
@@ -130,10 +179,7 @@ function CycleDetail({ row }: { row: PmccCycleRow }) {
               <span className="muted">gross</span> {fmtMoney(row.grossPnl)} · <span className="muted">fees</span>{" "}
               {fmtMoney(row.fees)} · <span className="muted">net</span> <PnlCell v={row.netPnl} />
             </p>
-            <p className="muted">
-              Fees are the total modeled stack — entry, exit, every roll, and the settlement event — so net is one
-              subtraction.
-            </p>
+            <FeeSplit row={row} />
           </section>
         </div>
       </td>
@@ -165,6 +211,7 @@ export function HistoryTab() {
           "long",
           "short chain",
           "entry yield",
+          "entry spread",
           "exit reason",
           "net",
           "fees",
@@ -213,6 +260,9 @@ export function HistoryTab() {
                 <ShortChain row={r} />
               </td>
               <td>{fmtPct(r.entryWeeklyYieldPct === null ? null : r.entryWeeklyYieldPct * 100, 2)}</td>
+              <td>
+                <EntrySpreadCell pct={r.entryMaxSpreadPct} abs={r.entryMaxSpreadAbs} netTv={r.entryNetTv} />
+              </td>
               <td>
                 {r.status === "short_settled" ? (
                   <span

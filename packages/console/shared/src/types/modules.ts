@@ -320,6 +320,15 @@ export interface PmccOpenPosition {
   /** Per-position early-assignment exposure, from `analytics.exposure()`. */
   exposedTicks: number;
   markedTicks: number;
+  /**
+   * The widest leg spread AT ENTRY, as a fraction of that leg's mid, and in dollars per share.
+   *
+   * Sits beside the yield because on deep-ITM legs the two are the same size: a structure quoting a
+   * $3.55 spread to capture $0.36 of time value is not a thin edge, it is a negative one, and the
+   * yield alone cannot say so.
+   */
+  entryMaxSpreadPct: number | null;
+  entryMaxSpreadAbs: number | null;
 }
 
 /** Per-book, per-symbol results over CLOSED positions — `analytics.headline()`. */
@@ -455,6 +464,20 @@ export interface PmccCycleRow {
   grossPnl: number | null;
   fees: number | null;
   netPnl: number | null;
+  /**
+   * The fee stack, split.
+   *
+   * `fees` is the total and stays the one number net subtracts, but a total hides which half did the
+   * damage. On this module's first session 98% of it was slippage — the commissions were $2.48
+   * against $123.12 of crossing deep-ITM spreads — and a single figure cannot show that.
+   */
+  entryCost: number | null;
+  exitCost: number | null;
+  entrySlippage: number | null;
+  exitSlippage: number | null;
+  /** Widest leg spread at entry — see PmccOpenPosition for why it rides beside the yield. */
+  entryMaxSpreadPct: number | null;
+  entryMaxSpreadAbs: number | null;
   shorts: PmccShortLeg[];
   rolls: PmccRoll[];
   assignments: PmccAssignment[];

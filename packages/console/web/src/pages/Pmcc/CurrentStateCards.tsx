@@ -2,6 +2,7 @@ import type { PmccBookCell, PmccKeltnerSeries, PmccOpenPosition, PmccPayload } f
 import { Card, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { SignedBar, AXIS_FONT, niceTicks } from "../../components/Charts";
 import { fmtStrike } from "../../lib/optionFormat";
+import { EntrySpreadCell } from "./EntrySpread";
 
 /** The three books whose identity the page knows. Anything else (an `advised:*` twin) rides along generically. */
 const CORE_BOOKS = ["control", "keltner", "roll"];
@@ -66,6 +67,9 @@ function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: Pmcc
             </td>
             <td>{fmtNum(p.currentSpot ?? p.entrySpot, 2)}</td>
             <td>{fmtPct(p.entryWeeklyYieldPct === null ? null : p.entryWeeklyYieldPct * 100, 2)}</td>
+            <td>
+              <EntrySpreadCell pct={p.entryMaxSpreadPct} abs={p.entryMaxSpreadAbs} netTv={p.entryNetTv} />
+            </td>
             <td>{fmtPct(p.downsideProtectionPct === null ? null : p.downsideProtectionPct * 100, 1)}</td>
             <td>
               {p.exposedTicks > 0 ? (
@@ -124,6 +128,7 @@ export function SymbolCards({
                     <th>time value</th>
                     <th>spot</th>
                     <th>weekly yield</th>
+                    <th>entry spread</th>
                     <th>protection</th>
                     <th>assignment</th>
                   </tr>
@@ -131,7 +136,7 @@ export function SymbolCards({
                 <tbody>
                   {rows.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="muted">
+                      <td colSpan={9} className="muted">
                         no open position on {symbol}
                       </td>
                     </tr>

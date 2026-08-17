@@ -192,9 +192,40 @@ function exposureByPosition(db: DatabaseHandle): Map<string, { exposed: number; 
   return out;
 }
 
+/**
+ * The widest leg spread each position was ENTERED at, per position id.
+ *
+ * Not in `analytics.py` — this is the console asking a question that layer does not, and it asks it
+ * off the legs' own recorded entry quotes rather than deriving anything new. The motive is the first
+ * session: a leg quoted 17.55/21.10 was crossed to harvest $0.36 of time value, and no figure on
+ * the page said so. Widest rather than average, because the round trip pays every leg.
+ */
+function entrySpreadByPosition(db: DatabaseHandle, ids: string[] | null): Map<string, { pct: number; abs: number }> {
+  const out = new Map<string, { pct: number; abs: number }>();
+  const sql =
+    "SELECT position_id, entry_bid, entry_ask, entry_mid FROM pmcc_legs" +
+    (ids === null ? "" : ` WHERE position_id IN (${ids.map(() => "?").join(", ")})`);
+  const rows = ids === null
+    ? db.prepare<[], Record<string, unknown>>(sql).all()
+    : db.prepare<string[], Record<string, unknown>>(sql).all(...ids);
+  for (const r of rows) {
+    const bid = num(r["entry_bid"]);
+    const ask = num(r["entry_ask"]);
+    const mid = num(r["entry_mid"]);
+    if (bid === null || ask === null || mid === null || mid <= 0) continue;
+    const abs = ask - bid;
+    const pct = abs / mid;
+    const id = str(r["position_id"]) ?? "";
+    const prev = out.get(id);
+    if (prev === undefined || pct > prev.pct) out.set(id, { pct, abs });
+  }
+  return out;
+}
+
 /** Mirrors `analytics.worksheet()` — open positions plus their latest USABLE short-leg mark. */
 function readOpenPositions(db: DatabaseHandle): PmccOpenPosition[] {
   const exposure = exposureByPosition(db);
+  const spreads = entrySpreadByPosition(db, null);
   const latestMark = db.prepare<[string], Record<string, unknown>>(
     `SELECT short_tv, spot, marked_at FROM pmcc_marks
       WHERE position_id = ? AND short_tv IS NOT NULL AND usable = 1
@@ -231,6 +262,8 @@ function readOpenPositions(db: DatabaseHandle): PmccOpenPosition[] {
         lastMarkAt: mark === undefined ? null : num(mark["marked_at"]),
         exposedTicks: exp?.exposed ?? 0,
         markedTicks: exp?.marked ?? 0,
+        entryMaxSpreadPct: spreads.get(positionId)?.pct ?? null,
+        entryMaxSpreadAbs: spreads.get(positionId)?.abs ?? null,
       };
     });
 }
@@ -614,7 +647,8 @@ export function readPmccHistory(
       {
         columns: `position_id, symbol, book, entry_session, closed_session, status, exit_reason,
                   long_strike, long_expiration, entry_spot, settlement_spot, net_debit, entry_net_tv,
-                  entry_weekly_yield_pct, roll_count, itm_settlements, gross_pnl, fees`,
+                  entry_weekly_yield_pct, roll_count, itm_settlements, gross_pnl, fees,
+                  entry_cost, exit_cost, entry_slippage, exit_slippage`,
         from: "pmcc_positions",
         where: clauses.join(" AND "),
         params,
@@ -645,6 +679,12 @@ export function readPmccHistory(
           fees,
           // Null propagates: an unrecorded gross or fee is not a zero-cost trade.
           netPnl: gross === null || fees === null ? null : gross - fees,
+          entryCost: num(r["entry_cost"]),
+          exitCost: num(r["exit_cost"]),
+          entrySlippage: num(r["entry_slippage"]),
+          exitSlippage: num(r["exit_slippage"]),
+          entryMaxSpreadPct: null,
+          entryMaxSpreadAbs: null,
           shorts: [],
           rolls: [],
           assignments: [],
@@ -727,10 +767,14 @@ export function readPmccHistory(
       assignmentsBy.set(id, list);
     }
 
+    const spreads = entrySpreadByPosition(db, ids);
+
     return {
       ...rows,
       rows: rows.rows.map((r) => ({
         ...r,
+        entryMaxSpreadPct: spreads.get(r.positionId)?.pct ?? null,
+        entryMaxSpreadAbs: spreads.get(r.positionId)?.abs ?? null,
         shorts: shortsBy.get(r.positionId) ?? [],
         rolls: rollsBy.get(r.positionId) ?? [],
         assignments: assignmentsBy.get(r.positionId) ?? [],
