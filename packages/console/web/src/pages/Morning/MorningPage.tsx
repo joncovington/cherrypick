@@ -130,8 +130,13 @@ const ZONE_LABEL: Record<string, string> = {
  * point of recording this at all.
  */
 function DeploymentCard({ pack }: { pack: MorningPack }) {
+  // Absent, not just null. The type says `MorningDeployment | null`, but the payload crosses a wire
+  // from a server process that may be older than this bundle — a long-running console outlives its
+  // own rebuilds — and a server that predates the field omits it entirely. `=== null` sails past
+  // undefined and the whole page dies on the first property read, which is the exact failure the
+  // reader's own "tolerate an unfamiliar shape" rule exists to prevent.
   const d = pack.deployment;
-  if (d === null) return null;
+  if (!d) return null;
   const measured = (s: { status: string }) => s.status === "measured";
   return (
     <section className="card">
