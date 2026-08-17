@@ -45,7 +45,39 @@ strongest/weakest sectors are computed once, in this package, and displayed ever
   macro theme is currently live — belongs to the narrative and is labeled interpretation; it never
   feeds the phase.
 - **Proxies are labeled proxies.** The streamer has no futures path, so crude and gold ride on USO
-  and GLD, and no surface ever prints them as a WTI or gold spot price.
+  and GLD, and no surface ever prints them as a WTI or gold spot price. The credit signal's HYG/TLT
+  and the breadth signal's eleven sector ETFs carry the same label for the same reason.
+
+## The deployment score is a measurement, not a gate
+
+`score.py` blends five macro signals into a 0–100 `deployment` block in the pack — VIX percentile
+against its trailing year, the VIX/VIX3M ratio, sector breadth against 200-day SMAs, an HYG/TLT
+z-score, and VIX's 20-session rate of change. It is **record-only, and the block says so on
+itself**: it feeds no gate, no phase and no sizing, and nothing in the suite reads it to decide
+anything. The five-gate phase remains the operative morning verdict. The point of writing it down
+first is that weeks of scores can be held against outcomes before anyone is allowed to act on one,
+and the phase and the score are free to disagree in the meantime — that disagreement is data.
+
+Three properties worth not breaking:
+
+- **A signal nobody could measure is UNKNOWN, never a default.** The blend renormalizes its
+  declared weights over what it actually measured and records that it did; under four measured
+  signals it refuses to produce a score at all, because two readings do not summarize a market.
+- **The declared weights sum to 0.90 on purpose.** The missing tenth is the deferred
+  factor-crowding signal's seat — it needs ~100 single-name daily histories the streamer has no
+  reason to carry yet — kept visible rather than quietly redistributed, so adding it later does not
+  silently reweight the other five.
+- **The credit signal reads a ratio, and a ratio moves opposite a spread.** High yield falling
+  against Treasuries is stress, and it pushes HYG/TLT *down*, so the stressed end of that z-score is
+  negative. Copying the spread convention's endpoints inverts the signal; the constants name which
+  end is which.
+
+The history behind the percentiles, SMAs and z-scores comes from `stream_summary` via the request
+file's `history_days` field — the streamer backfills a deficit once from DXLink daily candles, so
+the series exists on day one instead of accruing over a year of sessions. Reading that table has one
+trap `facts._close_history` exists to handle: `day_close` belongs to its own row's session, while
+`prev_day_close` belongs to the session *before* its row, and today's row is read for its
+`prev_day_close` (the freshest settle there is) but never appears in the series.
 
 ## The narrative lives outside every package
 

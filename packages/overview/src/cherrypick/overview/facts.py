@@ -35,9 +35,13 @@ from cherrypick.core import db as _db
 
 from . import gates as _gates
 from . import paths as _paths
+from . import score as _score
 from . import symbols as _symbols
 
-FACT_VERSION = 1
+# v2 adds the record-only `deployment` block (and the HYG/TLT credit-proxy readings it reads).
+# Every prior key keeps its meaning, so a v1 pack still renders -- readers must tolerate the block
+# being absent on packs built before this version.
+FACT_VERSION = 2
 PACK = "overview.morning"
 
 # A pre-open quote older than this is not "live". Two hours spans the 07:00 producer start the
@@ -244,6 +248,45 @@ def _sectors(conn, session: str) -> dict:
             "measured": len(measured)}
 
 
+def _close_history(conn, symbols, session: str, days: int) -> dict[str, list[dict]]:
+    """Completed daily closes per symbol, oldest first, for the deployment score's math.
+
+    Two columns carry a close and they are dated DIFFERENTLY, which is the whole subtlety here.
+    The backfill writes ``day_close`` on the row for the session it belongs to. The live producer
+    stops at the bell and never writes ``day_close``, so a live-written session's settle appears
+    only as ``prev_day_close`` on the row for the session AFTER it (see the module docstring).
+    Attributing ``prev_day_close`` to its own row's date would shift the whole series one session
+    and quietly corrupt every SMA and percentile built on it, so it is attributed to the preceding
+    row's date instead, and ``day_close`` wins wherever both exist.
+
+    ``session``'s own row is READ but never appears in the series. It has to be read, because the
+    prior session's settle is precisely what its ``prev_day_close`` carries -- excluding the row
+    outright would leave the series permanently one session stale, comparing today's VIX against a
+    year that stops the day before yesterday. Its own date is then dropped from the result, since
+    today's bar is partial pre-open and is never a completed close.
+    """
+    out: dict[str, list[dict]] = {}
+    if conn is None:
+        return out
+    for symbol in symbols:
+        rows = _rows(conn, "SELECT trade_date, day_close, prev_day_close FROM stream_summary "
+                           "WHERE symbol = ? AND trade_date <= ? "
+                           "ORDER BY trade_date DESC LIMIT ?", (symbol, session, days + 1))
+        rows = list(reversed(rows))
+        closes: dict[str, float] = {}
+        for index, row in enumerate(rows):
+            if row["prev_day_close"] is not None and index > 0:
+                closes[rows[index - 1]["trade_date"]] = float(row["prev_day_close"])
+        for row in rows:  # day_close is the row's own session and outranks the chained value
+            if row["day_close"] is not None:
+                closes[row["trade_date"]] = float(row["day_close"])
+        closes.pop(session, None)  # read for its prev_day_close only; a partial bar is not a close
+        series = [{"session": day, "close": closes[day]} for day in sorted(closes)][-days:]
+        if series:
+            out[symbol] = series
+    return out
+
+
 def _calendar_block(session: str) -> dict:
     day = date.fromisoformat(session)
     year_known = _calendar.fomc_year_known(day.year)
@@ -284,6 +327,10 @@ def build(session: str | None = None, now: datetime | None = None) -> dict:
                                          label=_symbols.COMMODITY_PROXIES["USO"]),
             "gold_proxy": _symbol_reading(cache, "GLD", session, now_ts,
                                           label=_symbols.COMMODITY_PROXIES["GLD"]),
+            "hy_credit_proxy": _symbol_reading(cache, "HYG", session, now_ts,
+                                               label=_symbols.CREDIT_PROXIES["HYG"]),
+            "treasury_proxy": _symbol_reading(cache, "TLT", session, now_ts,
+                                              label=_symbols.CREDIT_PROXIES["TLT"]),
         }
         if readings["vix"]["value"] is None:
             fallback = _vix_fallback(session)
@@ -298,6 +345,8 @@ def build(session: str | None = None, now: datetime | None = None) -> dict:
         )
 
         sectors = _sectors(cache, session)
+        history = _close_history(cache, _symbols.HISTORY_DAYS, session,
+                                 _symbols.HISTORY_LOOKBACK)
     finally:
         if cache is not None:
             cache.close()
@@ -314,6 +363,7 @@ def build(session: str | None = None, now: datetime | None = None) -> dict:
         "sectors": sectors,
         "gates": gate_list,
         "phase": _gates.phase(gate_list),
+        "deployment": _score.evaluate(readings, history, _symbols.SECTOR_ETFS),
         "calendar": _calendar_block(session),
     }
 
