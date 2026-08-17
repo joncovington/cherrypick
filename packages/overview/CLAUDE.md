@@ -72,6 +72,30 @@ Three properties worth not breaking:
   negative. Copying the spread convention's endpoints inverts the signal; the constants name which
   end is which.
 
+## What this package may ask the producer for
+
+**Its breadth is quote-only, and quote-only means `legs`, not `symbols`.** In the streamer's
+contract a `symbols` entry is an UNDERLYING — spot, an ATM window, GEX, and an option-chain fetch
+repeated every subscription poll. Declaring the eleven sector ETFs plus VIX/VVIX/GLD/USO/HYG/TLT
+there had the producer maintaining 0DTE chains for sixteen symbols nothing in the suite reads,
+pushing it to ~20,000 subscriptions; it crash-looped on a locked cache and every trading module's
+quotes went stale behind it, during market hours, on 2026-08-17. Only SPX belongs in `symbols`
+here, and only because half the suite already streams it.
+
+**A history request is a load decision, not a preference.** `history_days` at 1000 across sixteen
+symbols did not merely cost more than 270 — it never finished, because each reconnect restarted the
+backfill from the top, so the producer spent its life re-fetching four years of candles instead of
+serving quotes. 270 covers everything the live score reads (a 252-session year, the 200-day SMAs
+inside it). Raise it only deliberately, outside market hours, watching the producer while it lands.
+The read-side backtest is deliberately decoupled: it reads whatever rows the cache actually holds,
+so a generous history helps it without the request having to ask for one.
+
+One consequence worth knowing: legs are served Quote and Summary events but **not** Trade events, and
+`facts._live_quote` reads `stream_trades`. So the breadth readings render on their prior-session
+basis rather than a live pre-open tick. That is honest (the pack labels every basis) and costs
+nothing the pre-open report actually needs, but it is why those readings say `prior` on a session
+when the producer is plainly up.
+
 The history behind the percentiles, SMAs and z-scores comes from `stream_summary` via the request
 file's `history_days` field — the streamer backfills a deficit once from DXLink daily candles, so
 the series exists on day one instead of accruing over a year of sessions. Reading that table has one
