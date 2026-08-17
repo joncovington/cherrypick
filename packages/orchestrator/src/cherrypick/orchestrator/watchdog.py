@@ -25,7 +25,7 @@ from typing import Any
 from cherrypick.notify import Notifier
 
 from . import config as cfgmod
-from . import eval_activity, servicecfg, tasks, timeutil, util
+from . import eval_activity, jobspec, servicecfg, tasks, timeutil, util
 from .util import CREATE_NO_WINDOW, first_json
 
 _WATCHDOG_LOG = cfgmod.LOGS_DIR / "watchdog.log"
@@ -126,7 +126,16 @@ def _check_console(cfg: dict[str, Any]) -> list[Finding]:
     """The console (the suite's only read surface since 2026-08-12) is a supervisor-managed
     resident job like a module's paper loop, but with no paper-freshness backstop: a module's own
     (b) check would eventually flag a stalled resident loop by proxy (no new trade writes), while
-    the console produces no other artifact whose staleness would out it. Found live on 2026-08-14:
+    the console produces no other artifact whose staleness would out it.
+
+    **That parenthetical was wrong about modules, and cost four days.** A module's freshness check
+    does NOT backstop a stuck resident loop: a restart loop keeps writing (each new child records a
+    loop iteration), so the paper DB reads 0 min old precisely BECAUSE the job is thrashing.
+    `calendars-paper` was restarted 107 times on 2026-08-17 under an unbroken `OK / 0 min old`.
+    `_check_resident_health` is the check that actually covers that, for every resident job
+    including this one; what stays here is the console's job-presence and enabled state.
+
+    Found live on 2026-08-14:
     its job sat un-running (backoff/orphaned bookkeeping) for ~21 hours with nothing surfacing it,
     because process-liveness/HTTP checks were deliberately never added here (console_settings:
     "keeps the reliability path free of network calls") and nothing else read `resident_state`.
@@ -172,6 +181,85 @@ def _check_console(cfg: dict[str, Any]) -> list[Finding]:
     # "running" is healthy; "idle" never applies (console declares no window); an unset state means
     # the supervisor hasn't evaluated it on this box yet. None of those are worth alarming on.
     return [Finding("console.task", OK, "Console", state or "not yet evaluated")]
+
+
+# Starts in one window past which a resident job is churning rather than running. Generous on
+# purpose: a couple of genuine crashes in a session is bad luck, and this must fire on the shape the
+# 2026-08-17 sessions had (49 and 107) rather than on noise.
+_RESIDENT_CHURN_STARTS = 6
+
+
+def _check_resident_health(cfg: dict[str, Any]) -> list[Finding]:
+    """Restart churn and unexpected stops across every resident job.
+
+    The gap this closes was found the hard way. On 2026-08-17 `calendars-paper` was killed and
+    restarted 107 times and the watchdog reported it `OK — supervised, 0 min old` on every single
+    tick. Three reasons, all structural:
+
+    * `_check_console`'s own docstring states the assumption — *"a module's paper loop gets an
+      indirect backstop from its own freshness check (no new trade writes eventually goes stale)"*.
+      **That is false for a restart loop.** The restart's own `record_iteration` write keeps the
+      paper DB fresh, so freshness reads 0 min old precisely BECAUSE the job is thrashing.
+    * `resident_state` reads `"running"` on every pass during a storm, so the one signal that was
+      being read said nothing.
+    * `consecutive_failures` cannot serve either: a clean exit resets it, and a clean exit is the
+      storm's own signature (161 spawns beside 0 failures).
+
+    So this reads `starts_in_window`, which the supervisor keeps for exactly this, plus the two
+    states that are now silent by design rather than by accident: a job the module stopped early,
+    and a job publishing no heartbeat (which is deliberately not silence-supervised — restarting on
+    "I can't tell" is the bug that started all of this, so the diagnosis belongs here instead).
+    """
+    from . import supersnap
+
+    if not _supervisor_driving():
+        return []
+    findings: list[Finding] = []
+    for jid, st in sorted(supersnap.all_job_states().items()):
+        if st.get("kind") != jobspec.KIND_RESIDENT or not st.get("enabled", False):
+            continue
+        starts = int(st.get("starts_in_window") or 0)
+        if starts > _RESIDENT_CHURN_STARTS:
+            findings.append(
+                Finding(
+                    f"{jid}.churn",
+                    WARN,
+                    f"{jid} is restarting repeatedly",
+                    f"{starts} starts since its window opened. A supervised job that keeps being "
+                    "restarted is not running -- check logs/supervisor.log for the reason "
+                    "(silence, or a crash) and the module's own log beside it.",
+                )
+            )
+        # A resident that publishes no heartbeat is not silence-supervised at all. That degrade is
+        # deliberate -- the alternative was killing a process nobody can judge, which is the bug
+        # this area is recovering from, and refusing to derive the job would take a trading loop
+        # down over telemetry. But it is not free, and this is the only place that says so.
+        if st.get("silence_file") and not st.get("heartbeat_seen") and st.get("running_pid"):
+            findings.append(
+                Finding(
+                    f"{jid}.heartbeat",
+                    WARN,
+                    f"{jid} publishes no heartbeat",
+                    f"Nothing has been written to {cfgmod.portable_path(Path(st['silence_file']))}, so a "
+                    "wedged loop here would never be caught. The module should touch it at the top of "
+                    "every tick (cherrypick.core.home.heartbeat_path).",
+                )
+            )
+        # Stopped early by its own exit. The supervisor believes a session-scoped loop that says it
+        # is finished (that is what ended the 16:00 respawn storm), so if it said so WRONGLY nothing
+        # brings it back until the window reopens -- and this is the only thing that would say so.
+        if st.get("module_stopped") and st.get("resident_state") == "module reports session complete":
+            findings.append(
+                Finding(
+                    f"{jid}.stopped",
+                    WARN,
+                    f"{jid} stopped itself mid-window",
+                    "The module exited cleanly and the supervisor is honoring that until its window "
+                    "reopens. Expected at the session's end; anything earlier means the loop's own "
+                    "gate closed early, or another instance held its lock.",
+                )
+            )
+    return findings
 
 
 def _file_age_minutes(path: Path) -> float | None:
@@ -1442,6 +1530,16 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     except Exception as exc:
         findings.append(
             Finding("console.error", WARN, "Console check failed", f"{type(exc).__name__}: {exc}")
+        )
+
+    # Every resident job's restart churn and self-stops. A module's freshness check cannot backstop
+    # these -- a restart loop's own writes keep the paper DB looking fresh -- which is exactly how
+    # 107 restarts in a session went unreported.
+    try:
+        findings += _check_resident_health(cfg)
+    except Exception as exc:
+        findings.append(
+            Finding("resident.error", WARN, "Resident job check failed", f"{type(exc).__name__}: {exc}")
         )
 
     # Drift alert: report-driven paper-drawdown check (opt-in). Flows through the same notify path.

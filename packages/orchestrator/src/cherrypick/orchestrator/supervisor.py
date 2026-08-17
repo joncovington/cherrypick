@@ -360,6 +360,13 @@ class Supervisor:
                 }
             )
             if spec.kind == jobspec.KIND_RESIDENT:
+                # What this job's liveness is judged against, recorded so a reader does not have to
+                # re-derive the whole job table to find out. `heartbeat_seen` false means the module
+                # publishes nothing, which is NOT silence-supervised (deliberately -- restarting on
+                # "I can't tell" is the failure this whole area is recovering from) and so is a gap
+                # only the watchdog can report.
+                st["silence_file"] = spec.silence_file
+                st["heartbeat_seen"] = bool(spec.silence_file and os.path.exists(spec.silence_file))
                 if self._manage_resident(spec, st, now, holidays):
                     started.append(spec.id)
                 continue
@@ -390,8 +397,10 @@ class Supervisor:
             st["resident_state"] = why or "idle"
             # The window is shut, so the module's "I am done" is spent: the next open starts clean.
             # Cleared here rather than on the opening edge because this branch is the only place
-            # that runs for certain between two windows.
+            # that runs for certain between two windows. The start counter resets with it, which is
+            # what makes it mean "starts since this window opened" and therefore readable as churn.
             st.pop("module_stopped", None)
+            st.pop("starts_in_window", None)
             return False
         if alive:
             st["resident_state"] = "running"
@@ -440,6 +449,12 @@ class Supervisor:
         ok = self._spawn(spec, st)
         st["resident_state"] = "running" if ok else "start failed"
         if ok:
+            # Starts since this window opened. Deliberately NOT `consecutive_failures`, which cannot
+            # serve: a clean exit resets it, and a clean exit is exactly the storm's own signature --
+            # the 2026-08-17 registry showed 0 failures beside 161 spawns. This is the only number
+            # that would have made either the churn or the storm legible to anything but a human
+            # reading supervisor.log.
+            st["starts_in_window"] = int(st.get("starts_in_window") or 0) + 1
             _log(f"{spec.id}: resident child started (pid {st['running_pid']})")
         return ok
 

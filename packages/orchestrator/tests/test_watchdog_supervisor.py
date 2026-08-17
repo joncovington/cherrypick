@@ -166,6 +166,77 @@ def test_console_stuck_in_backoff_warns(no_schtasks):
     assert task.status == watchdog.WARN
 
 
+# --------------------------------------------------------------------- resident job health
+def _resident(**over):
+    base = {"enabled": True, "kind": "resident", "resident_state": "running", "heartbeat_seen": True}
+    return {**base, **over}
+
+
+def test_a_thrashing_resident_job_is_reported(no_schtasks):
+    """The whole reason this check exists. On 2026-08-17 calendars-paper was killed and restarted
+    107 times while the watchdog reported it OK / 0 min old on every tick — its restarts kept its own
+    paper DB fresh, so the freshness check read the thrash as health."""
+    write_heartbeat()
+    write_jobs({"calendars-paper": _resident(starts_in_window=107)})
+    churn = next(f for f in watchdog._check_resident_health({}) if f.key == "calendars-paper.churn")
+    assert churn.status == watchdog.WARN and "107 starts" in churn.message
+
+
+def test_a_few_restarts_are_not_churn(no_schtasks):
+    """A couple of genuine crashes in a session is bad luck, not a finding — this must fire on the
+    shape those sessions had, never on noise."""
+    write_heartbeat()
+    write_jobs({"calendars-paper": _resident(starts_in_window=2)})
+    assert not [f for f in watchdog._check_resident_health({}) if f.key.endswith(".churn")]
+
+
+def test_consecutive_failures_could_not_have_caught_it(no_schtasks):
+    """Pins why a new counter was needed. A clean exit resets consecutive_failures, and a clean exit
+    is the storm's own signature — the live registry showed 0 failures beside 161 spawns."""
+    write_heartbeat()
+    write_jobs({"calendars-paper": _resident(starts_in_window=53, consecutive_failures=0)})
+    assert [f for f in watchdog._check_resident_health({}) if f.key.endswith(".churn")]
+
+
+def test_a_module_that_stopped_itself_mid_window_is_reported(no_schtasks):
+    """The trade the supervisor now makes: a session-scoped loop that exits 0 is believed and not
+    restarted. If it said so wrongly nothing brings it back until the window reopens, so this is the
+    only thing that would surface it."""
+    write_heartbeat()
+    write_jobs(
+        {
+            "calendars-paper": _resident(
+                module_stopped=True, resident_state="module reports session complete"
+            )
+        }
+    )
+    stopped = next(f for f in watchdog._check_resident_health({}) if f.key == "calendars-paper.stopped")
+    assert stopped.status == watchdog.WARN
+
+
+def test_a_resident_publishing_no_heartbeat_is_reported(no_schtasks):
+    """A module with no heartbeat is deliberately NOT silence-supervised — restarting a process
+    nobody can judge is the bug this area is recovering from — so the cost of that safe degrade is
+    reported here rather than paid silently."""
+    write_heartbeat()
+    write_jobs(
+        {
+            "flies-paper": _resident(
+                heartbeat_seen=False, silence_file="/tmp/flies.heartbeat", running_pid=4242
+            )
+        }
+    )
+    beat = next(f for f in watchdog._check_resident_health({}) if f.key == "flies-paper.heartbeat")
+    assert beat.status == watchdog.WARN and "no heartbeat" in beat.title
+
+
+def test_interval_jobs_are_not_resident_and_are_left_alone(no_schtasks):
+    """Only residents have this failure mode; an interval job's repeated starts are its schedule."""
+    write_heartbeat()
+    write_jobs({"meic-paper": {"enabled": True, "kind": "interval", "starts_in_window": 900}})
+    assert watchdog._check_resident_health({}) == []
+
+
 # --------------------------------------------------------------------- doctor's dual-read
 def test_doctor_suite_checks_read_jobs_under_supervisor(monkeypatch):
     write_heartbeat()
