@@ -72,6 +72,17 @@ def job_state(job_id: str, snap: dict[str, Any] | None = None) -> dict[str, Any]
     return (snap.get("jobs") or {}).get(job_id)
 
 
+def all_job_states(snap: dict[str, Any] | None = None) -> dict[str, dict[str, Any]]:
+    """Every job's registry entry. For readers that ask a question of the whole table rather than of
+    one job by name — the resident-health checks, which cannot know the job ids in advance. Reads the
+    registry file directly rather than through `supervisor_snapshot`, whose default also shells out
+    to query the anchor task; that cost belongs to callers who want it."""
+    if snap is None:
+        reg = read_json(supervisor.jobs_path())
+        return reg.get("jobs") or {}
+    return snap.get("jobs") or {}
+
+
 def job_run_info(job_id: str, snap: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """The `tasks.last_run_info` equivalent, sourced from the registry: when the job last started
     and how it last exited, with `still_running` standing in for SCHED_S_TASK_RUNNING (267009).

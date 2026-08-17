@@ -578,6 +578,28 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
             except Exception as exc:
                 checks.append(Check("streamer", WARN, f"status error: {exc}"))
 
+    # Resident jobs: churn and self-stops. Same gap and the same reason the console got an entry
+    # here on 2026-08-14 — a green doctor never meant "the loop is actually running", and for a
+    # thrashing job every other signal reads healthy (its restarts keep its own data fresh).
+    try:
+        from . import jobspec as _jobspec  # local imports avoid a cycle at module load, as above
+        from . import supersnap as _supersnap
+        from .watchdog import _RESIDENT_CHURN_STARTS
+
+        for jid, st in sorted(_supersnap.all_job_states().items()):
+            if st.get("kind") != _jobspec.KIND_RESIDENT or not st.get("enabled", False):
+                continue
+            starts = int(st.get("starts_in_window") or 0)
+            state = st.get("resident_state") or "not yet evaluated"
+            if starts > _RESIDENT_CHURN_STARTS:
+                checks.append(Check(f"resident.{jid}", WARN, f"restarting repeatedly — {starts} starts"))
+            elif st.get("silence_file") and not st.get("heartbeat_seen") and st.get("running_pid"):
+                checks.append(Check(f"resident.{jid}", WARN, "running but publishes no heartbeat"))
+            else:
+                checks.append(Check(f"resident.{jid}", OK, state))
+    except Exception as exc:
+        checks.append(Check("resident", WARN, f"resident job check failed: {exc}"))
+
     # background services (e.g. the gex spot-trail recorder): report each enabled daemon's status
     for svc in cfgmod.enabled_services(cfg):
         sid = svc["id"]

@@ -282,6 +282,18 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   makes deliberately: a module that exits 0 *wrongly* now stays down for its window, so
   `watchdog._check_resident_health` reporting that is not optional — a loud silence is the point,
   and without it this is just a quieter bug.
+- **Ambiguity is reported, never remediated — and restart is the most expensive remedy there is.**
+  A streamer recycle reloads every chain and costs a 240s settle; a module restart drops in-flight
+  ticks. So the bar for restarting scales with what the restart costs, and everything below it pages
+  a human instead. `e4f427e` applied this to the producer (a hint-only widening waits out a cooldown,
+  a missing symbol does not); the resident jobs now follow it too — an unjudgeable child is left
+  running rather than killed on suspicion. What makes that safe is `watchdog._check_resident_health`
+  (mirrored in `doctor`), which reports the three states nothing else can see: restart **churn**
+  (`starts_in_window` — a new counter, because `consecutive_failures` is reset by a clean exit and a
+  clean exit is the storm's own signature: 161 spawns beside 0 failures), a module that **stopped
+  itself** mid-window, and a resident **publishing no heartbeat**. None of these have a
+  paper-freshness backstop — a restart loop's own writes keep the DB looking fresh, which is exactly
+  how 107 restarts in a session went unreported under an unbroken `OK / 0 min old`.
 - **Streamer supervision is its own job, never a faster watchdog.** `streamer-health`
   (`watchdog.run_streamer_health`, the supervisor's 60s job, 09:00–16:00 ET on trading days) exists
   because the streamer's failure window is unrecoverable — a producer dead through 09:30–09:35
