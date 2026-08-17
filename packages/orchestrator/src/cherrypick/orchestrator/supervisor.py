@@ -55,6 +55,15 @@ _LAUNCHER = Path(__file__).resolve().parents[3] / "run.py"
 HEARTBEAT_WRITE_SECONDS = 5
 HEARTBEAT_FRESH_SECONDS = 90
 
+# A resident orphan (adopted from a prior supervisor) that died while we held no handle. Not a real
+# exit status -- the code is unknowable by construction -- so it is given one that cannot collide
+# with a child's own, and is treated as a failure purely so the backoff ladder bounds the respawn.
+_EXIT_UNKNOWN = -3
+
+# A windowed resident that exited 0 before it had settled. Not a session end -- a loop cannot finish
+# a session in a second -- so it is recorded distinctly and takes the backoff ladder.
+_EXIT_TOO_SOON = -4
+
 _BACKOFF_BASE_SECONDS = 30
 _BACKOFF_CAP_SECONDS = 600
 # A resident child younger than this is never judged for silence — the settling grace the streamer
@@ -256,15 +265,39 @@ class Supervisor:
         if pid and pid_alive(pid):
             return True  # adopted orphan still going
         if pid:
-            # Orphan finished while we weren't holding a handle: exit code unknowable.
-            st["running_pid"] = None
-            st["last_exit_at"] = _utc_iso()
+            # Orphan finished while we weren't holding a handle: exit code unknowable. This used to
+            # record nothing at all, which left `backoff_until` untouched and so gave a dead orphan
+            # no throttle whatsoever -- the same respawn storm as the clean-exit path, by a second
+            # route. We cannot tell a finished session from a crash here, so take the middle: count
+            # it as a failure so the ladder bounds the rate, but keep restarting it. An unknown is
+            # throttled and made visible, never silently stopped and never hot-looped.
+            self._record_exit(spec, st, _EXIT_UNKNOWN)
         return False
 
     def _record_exit(self, spec: jobspec.JobSpec, st: dict[str, Any], code: int) -> None:
         st["running_pid"] = None
         st["last_exit_code"] = code
         st["last_exit_at"] = _utc_iso()
+        # A WINDOWED resident exiting 0 is a statement -- "my own gate closed", or "another instance
+        # holds my lock" -- not "the run finished, go again". Reading it as the latter is what
+        # produced the 16:00 storm: the module's gate closes on the dot while `in_window` still says
+        # 16:00 (whole minutes, inclusive), so the child exited 0, `code == 0` erased the only
+        # throttle there is, and the ~1s loop respawned it 53 times in that minute -- with flies
+        # doing the same beside it, and not one backoff line between them.
+        #
+        # Believe it only once it has SETTLED, though. A child that exits 0 the instant it starts is
+        # a misconfiguration, not a session end, and taking that at its word would stop the job for
+        # its whole window on the first tick. That one takes the ladder, which bounds the spawn rate
+        # without ever declaring the job done.
+        if code == 0 and self._resident_windowed(spec):
+            if self._resident_settled(spec, st):
+                st["module_stopped"] = True
+                st["consecutive_failures"] = 0
+                st["backoff_until"] = None
+                _log(f"{spec.id}: module reports session complete (exit 0) — idle until its window reopens")
+                return
+            code = _EXIT_TOO_SOON
+
         if code == 0:
             st["consecutive_failures"] = 0
             st["backoff_until"] = None
@@ -355,6 +388,10 @@ class Supervisor:
             # Outside its window the child exits on its own (the module loop is session-scoped);
             # never terminate here — a settlement or final write may still be in flight.
             st["resident_state"] = why or "idle"
+            # The window is shut, so the module's "I am done" is spent: the next open starts clean.
+            # Cleared here rather than on the opening edge because this branch is the only place
+            # that runs for certain between two windows.
+            st.pop("module_stopped", None)
             return False
         if alive:
             st["resident_state"] = "running"
@@ -388,6 +425,14 @@ class Supervisor:
                 st["consecutive_failures"] = 0
                 st["backoff_until"] = None
                 _log(f"{spec.id}: settled and healthy, failure/backoff history cleared")
+            return False
+        if st.get("module_stopped"):
+            # The module said its session was over. Believe it for the rest of this window rather
+            # than restarting it into the same gate once a second. If it said so WRONGLY it now
+            # stays down until the window reopens, which is the trade this makes deliberately --
+            # a loud silence over a quiet restart loop -- and `watchdog._check_resident_health`
+            # is what makes the silence loud.
+            st["resident_state"] = "module reports session complete"
             return False
         if st.get("backoff_until") and time.time() < float(st["backoff_until"]):
             st["resident_state"] = "backoff"
@@ -427,6 +472,18 @@ class Supervisor:
         if started is None:
             return False
         return time.time() - started >= max(_RESIDENT_SETTLE_SECONDS, spec.silence_seconds)
+
+    def _resident_windowed(self, spec: jobspec.JobSpec) -> bool:
+        """A resident job whose clean exit could mean "my session is over".
+
+        Both halves are load-bearing. **Resident**, because an interval job exiting 0 has genuinely
+        finished a run and is gated by `next_run_epoch` — nothing about it needs believing.
+        **Windowed**, because the console declares no window and no trading-day gate on purpose (a
+        read surface only up during RTH cannot read the session that just ended), so "terminal for
+        the window" is meaningless for it and a server exiting cleanly is never expected. Believing
+        an unwindowed resident would take the suite's only read surface down and leave it down.
+        """
+        return spec.kind == jobspec.KIND_RESIDENT and bool(spec.window_start and spec.window_end)
 
     def _resident_silent(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> bool:
         if not spec.silence_file or not spec.silence_seconds:
