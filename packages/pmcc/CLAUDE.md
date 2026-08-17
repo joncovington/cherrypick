@@ -136,16 +136,24 @@ the settlement spot rather than the strike is what keeps the option accounting u
 ## Live-trading prerequisites (none built; gates any future live plan here)
 
 This module is live-pilot-*shaped* (per-position ledger, book strings, argv contract) but has **no
-live path** — no `enable_live_trading`, no order code, no keyring. Before any live rung: (a)
+live path** — no order code, no keyring. Before any live rung: (a)
 **post-assignment management** — detecting a surprise early assignment in the account and a defined
 cover/repair procedure, because live assignment cannot be excluded by skipping ex-div spans; (b) a
 **calculated ex-div decision** priced as expected assignment cost against the span's edge; (c) the
 paper exposure telemetry (rule 2) read as the gap between the paper result and a live expectation.
 Prerequisites, not enhancements.
 
+**The config's `live.enabled` field (added 2026-08-16) is an inert placeholder, not a rung.** It
+lets the suite's config/console surfaces show this module as "paper only" instead of "unknown" —
+`readModuleGate`/`liveops._live_enabled` read it the same way they read flies' nested switch — but
+no code anywhere checks it, and it is `configedit.GUARDED` so the settings surface can't touch it.
+Flipping it to `true` by hand does nothing until the prerequisites above are built and a real live
+loop reads the flag.
+
 ## Guardrails (suite-wide)
 
-- **Paper only. There is no live path.**
+- **Paper only. There is no live path** — no live loop, no order code. `live.enabled` in config is
+  a documented placeholder only (see Live-trading prerequisites above); it is not a working gate.
 - **No AI, no MCP, no network on any decision path.** `engine.py`, `management.py`, `keltner.py`
   are pure functions over pre-fetched data.
 - Declared settlement only (`settlement_style`); a symbol declared as neither style is refused.

@@ -71,6 +71,13 @@ describe("module live gates", () => {
     writeModuleConfig("earnings", "not an object");
     expect(readModuleGate(config, "earnings").liveEnabled).toBeNull();
   });
+
+  it("calendars and pmcc carry the same nested live.enabled placeholder as flies", () => {
+    writeModuleConfig("calendars", { live: { enabled: false } });
+    expect(readModuleGate(config, "calendars")).toMatchObject({ liveEnabled: false });
+    writeModuleConfig("pmcc", { live: { enabled: false } });
+    expect(readModuleGate(config, "pmcc")).toMatchObject({ liveEnabled: false });
+  });
 });
 
 describe("the halt flag", () => {
