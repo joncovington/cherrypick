@@ -265,6 +265,23 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   simply not silence-supervised — because restarting on "I can't tell" is the failure being fixed,
   and refusing to derive the job would take a trading loop down over telemetry. The watchdog reports
   the gap instead; a diagnosis belongs there, not in a kill.
+- **A WINDOWED resident that exits 0 is believed, not restarted.** For a session-scoped loop, exit 0
+  is a statement — "my own gate closed", or "another instance holds my lock" — and both times
+  respawning is wrong. Reading it as "the run finished, go again" caused the 2026-08-17 16:00 storm:
+  the module's gate closes on the dot while `in_window` still says 16:00 (whole minutes, inclusive),
+  the child exited 0, `code == 0` erased the only throttle there is, and the ~1s loop respawned
+  `calendars-paper` 53 times and `flies-paper` 53 times inside that minute with no backoff line
+  between them. `module_stopped` now marks the job idle until its window reopens (cleared in the
+  `not want` branch, the one place guaranteed to run between two windows). Three scoping rules, each
+  load-bearing: **windowed only** — the console declares no window on purpose, so a clean exit there
+  is never expected and still takes the ladder, or the suite's only read surface would go down and
+  stay down; **settled only** — a child exiting 0 the instant it starts is a misconfiguration, not a
+  session end, and takes the ladder (`_EXIT_TOO_SOON`) rather than stopping the job for its whole
+  window on the first tick; **a dead adopted orphan counts as a failure** (`_EXIT_UNKNOWN`) rather
+  than recording nothing, which was a second ungated respawn path by the same shape. The trade this
+  makes deliberately: a module that exits 0 *wrongly* now stays down for its window, so
+  `watchdog._check_resident_health` reporting that is not optional — a loud silence is the point,
+  and without it this is just a quieter bug.
 - **Streamer supervision is its own job, never a faster watchdog.** `streamer-health`
   (`watchdog.run_streamer_health`, the supervisor's 60s job, 09:00–16:00 ET on trading days) exists
   because the streamer's failure window is unrecoverable — a producer dead through 09:30–09:35

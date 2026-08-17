@@ -236,6 +236,105 @@ def test_offsession_tick_fires_outside_window(spawned, tmp_path):
     assert not any("--interval" in p.argv for p in spawned)
 
 
+def _settle(st, seconds=1000):
+    """Back-date a child's start so it counts as settled (the tests' stand-in for a clock)."""
+    from datetime import timedelta, timezone
+
+    st["last_start"] = (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat()
+
+
+def test_a_windowed_resident_that_exits_cleanly_is_believed_not_respawned(spawned, tmp_path):
+    """The 16:00 storm, and the rule that ends it.
+
+    A session-scoped loop exiting 0 is a statement -- "my own gate closed" -- not "the run finished,
+    go again". Read as the latter it erased the only throttle there is (`code == 0` resets backoff)
+    while `in_window` still said 16:00 for the whole inclusive minute, and the ~1s loop respawned
+    calendars 53 times and flies 53 times in that one minute, with no backoff line between them.
+    """
+    sup = supervisor.Supervisor(flies_cfg(tmp_path))
+    sup.pass_once(now=MONDAY_NOON)
+    child = next(p for p in spawned if "--interval" in p.argv)
+    st = sup._state["flies-paper"]
+    _settle(st)  # it ran a full session before its gate closed
+    child.exit(0)
+
+    n = len(spawned)
+    for _ in range(20):  # twenty passes is twenty seconds of the old storm
+        sup.pass_once(now=MONDAY_NOON)
+    assert len(spawned) == n, "a module that says it is finished is believed, not restarted"
+    assert st["resident_state"] == "module reports session complete"
+    assert st["backoff_until"] is None, "this is not a failure and must not scar the ladder"
+
+
+def test_the_next_window_starts_the_module_again(spawned, tmp_path):
+    """Believing it is scoped to THIS window. The mark is spent the moment the window shuts, so
+    tomorrow's session is never suppressed by yesterday's clean exit."""
+    sup = supervisor.Supervisor(flies_cfg(tmp_path))
+    sup.pass_once(now=MONDAY_NOON)
+    child = next(p for p in spawned if "--interval" in p.argv)
+    st = sup._state["flies-paper"]
+    _settle(st)
+    child.exit(0)
+    sup.pass_once(now=MONDAY_NOON)
+    assert st.get("module_stopped")
+
+    sup.pass_once(now=datetime(2026, 8, 10, 16, 20, tzinfo=ET))  # window shut
+    assert not st.get("module_stopped"), "the mark is spent when the window closes"
+    res = sup.pass_once(now=datetime(2026, 8, 11, 12, 0, tzinfo=ET))  # next session
+    assert "flies-paper" in res["started"]
+
+
+def test_a_resident_that_exits_instantly_backs_off_instead_of_declaring_itself_done(spawned, tmp_path):
+    """The backstop. A child exiting 0 the moment it starts is a misconfiguration, not a session
+    end -- and taking it at its word would stop the job for its whole window on the first tick. It
+    takes the ladder instead, which bounds the spawn rate without ever declaring the job finished."""
+    sup = supervisor.Supervisor(flies_cfg(tmp_path))
+    sup.pass_once(now=MONDAY_NOON)
+    child = next(p for p in spawned if "--interval" in p.argv)
+    st = sup._state["flies-paper"]
+    child.exit(0)  # never settled: last_start is now
+    sup.pass_once(now=MONDAY_NOON)
+    assert not st.get("module_stopped")
+    assert st["consecutive_failures"] == 1 and st["backoff_until"] > time.time()
+
+
+def test_an_unwindowed_resident_exiting_cleanly_is_still_restarted(spawned, tmp_path):
+    """The console declares no window on purpose -- a read surface only up during RTH cannot read the
+    session that just ended -- so "terminal for the window" is meaningless for it, and a server
+    exiting cleanly is never expected. Believing it there would take the suite's only read surface
+    down and leave it down."""
+    cfg = base_cfg()
+    cfg["console"] = {"enabled": True, "path": str(tmp_path / "console")}
+    entry = tmp_path / "console" / "server" / "dist"
+    entry.mkdir(parents=True, exist_ok=True)
+    (entry / "index.js").write_text("//")
+    (tmp_path / "console" / "run.py").write_text("#")
+    sup = supervisor.Supervisor(cfg)
+    sup.pass_once(now=MONDAY_NOON)
+    st = sup._state.get("console")
+    assert st is not None and st.get("running_pid"), "console job should be running to test its exit"
+    child = next(p for p in spawned if "dashboard" in p.argv)
+    _settle(st)
+    child.exit(0)
+    res = sup.pass_once(now=MONDAY_NOON)
+    assert not st.get("module_stopped"), "an unwindowed resident never declares a session complete"
+    assert "console" in res["started"], "the read surface is brought back up"
+
+
+def test_a_dead_adopted_orphan_is_throttled_rather_than_hot_looped(spawned, tmp_path):
+    """The second storm path. An orphan adopted from a prior supervisor dies with an unknowable exit
+    code, and this branch used to record nothing at all -- leaving backoff untouched, so the respawn
+    was ungated exactly like the clean-exit case. We cannot tell a finished session from a crash, so
+    it counts as a failure to bound the rate while still being restarted."""
+    sup = supervisor.Supervisor(flies_cfg(tmp_path))
+    st = sup._state.setdefault("flies-paper", {})
+    st.update({"running_pid": 999_999, "kind": "resident"})  # a pid that is not alive
+    sup._handles.pop("flies-paper", None)
+    sup.pass_once(now=MONDAY_NOON)
+    assert st["last_exit_code"] == supervisor._EXIT_UNKNOWN
+    assert st["consecutive_failures"] >= 1 and st["backoff_until"] > time.time()
+
+
 def test_silent_resident_child_is_restarted_with_backoff(spawned, tmp_path, monkeypatch):
     cfg = flies_cfg(tmp_path)
     # The real tree kill shells out to taskkill, which would run against a fake pid here. What the
