@@ -517,10 +517,22 @@ def console_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def resident_heartbeat_path(name: str) -> Path:
+    """Where a supervised resident job publishes its liveness (`state/<name>.heartbeat`).
+
+    The FILENAME convention has exactly one definition, `cherrypick.core.home.heartbeat_path` —
+    stated there because the writer (a module, or the console) and the watcher (this package) have to
+    agree about it and cannot import each other. Only the directory is re-derived here, off
+    `STATE_DIR`, because that is the seam this package's tests redirect (`tests/conftest.py`) and a
+    call straight through to the resolver would ignore it.
+    """
+    return STATE_DIR / _home.heartbeat_path(name).name
+
+
 def console_heartbeat_path() -> Path:
     """Where the console writes its liveness file (`state/console.heartbeat`). One definition, read by
     the supervisor's silence check and by anything reporting whether the read surface is up."""
-    return STATE_DIR / "console.heartbeat"
+    return resident_heartbeat_path("console")
 
 
 def python_exe() -> str:

@@ -250,6 +250,21 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   module's live engine, and never edits a module's code/config files. Account writes are human-confirmed;
   account numbers are masked everywhere (only the write to keyring uses the full number). `reconcile`
   honors the designation — a designated live account is *expected* to hold positions (not drift).
+- **A resident job's liveness is PUBLISHED by the job, never inferred from its log.** Every resident
+  job's `silence_file` is a heartbeat the job itself writes at the top of each tick
+  (`cfgmod.resident_heartbeat_path` → `state/<name>.heartbeat`, the filename convention owned by
+  `cherrypick.core.home.heartbeat_path` so the writer and this watcher cannot drift). It used to be
+  the module's LOG, on an assumption `jobspec` stated as fact and nothing enforced — *"every
+  in-session iteration writes at least one log line per symbol"*. Flies and MEIC happened to satisfy
+  it; calendars, whose lines are all event-driven, did not, and a week holding no position was killed
+  and restarted every two minutes for four days (107 times on 2026-08-17), losing up to 61% of a
+  session's ticks. A log is a side effect of having something to say, so supervising on it makes log
+  verbosity a reliability dependency and makes a quiet healthy loop indistinguishable from a wedged
+  one. **Never point a `silence_file` at a log again.** A module that publishes no heartbeat degrades
+  **safely** rather than loudly — `_resident_silent` returns False for a missing file, so it is
+  simply not silence-supervised — because restarting on "I can't tell" is the failure being fixed,
+  and refusing to derive the job would take a trading loop down over telemetry. The watchdog reports
+  the gap instead; a diagnosis belongs there, not in a kill.
 - **Streamer supervision is its own job, never a faster watchdog.** `streamer-health`
   (`watchdog.run_streamer_health`, the supervisor's 60s job, 09:00–16:00 ET on trading days) exists
   because the streamer's failure window is unrecoverable — a producer dead through 09:30–09:35

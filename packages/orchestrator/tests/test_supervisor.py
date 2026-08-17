@@ -246,12 +246,14 @@ def test_silent_resident_child_is_restarted_with_backoff(spawned, tmp_path, monk
     sup.pass_once(now=MONDAY_NOON)
     child = next(p for p in spawned if "--interval" in p.argv)
     st = sup._state["flies-paper"]
-    # age the child past the settle grace and its log past the silence window
-    log = cfgmod.module_logs_dir("flies") / "flies_paper.log"
-    log.parent.mkdir(parents=True, exist_ok=True)
-    log.write_text("x")
+    # Age the child past the settle grace and its HEARTBEAT past the silence window. Silence is
+    # measured against the loop's published liveness, not its log -- a log is a side effect of having
+    # something to say, and supervising on it killed the quiet module every two minutes for days.
+    beat = cfgmod.resident_heartbeat_path("flies")
+    beat.parent.mkdir(parents=True, exist_ok=True)
+    beat.write_text("x")
     old = time.time() - 1000
-    os.utime(log, (old, old))
+    os.utime(beat, (old, old))
     from datetime import timedelta, timezone
 
     st["last_start"] = (datetime.now(timezone.utc) - timedelta(seconds=1000)).isoformat()
@@ -276,10 +278,10 @@ def test_healthy_resident_child_clears_stale_failure_history(spawned, tmp_path):
     # simulate scar tissue from a crash-loop that happened well before this (still-alive) child
     st["consecutive_failures"] = 25
     st["backoff_until"] = time.time() - 5000  # long expired, but never cleared
-    # a fresh, current log keeps it from being judged silent
-    log = cfgmod.module_logs_dir("flies") / "flies_paper.log"
-    log.parent.mkdir(parents=True, exist_ok=True)
-    log.write_text("x")
+    # a fresh, current heartbeat keeps it from being judged silent
+    beat = cfgmod.resident_heartbeat_path("flies")
+    beat.parent.mkdir(parents=True, exist_ok=True)
+    beat.write_text("x")
     from datetime import timedelta, timezone
 
     old_start = datetime.now(timezone.utc) - timedelta(seconds=1000)
@@ -290,13 +292,35 @@ def test_healthy_resident_child_clears_stale_failure_history(spawned, tmp_path):
 
 
 def test_fresh_resident_child_is_never_judged_silent(spawned, tmp_path):
-    """The settling grace: a just-started child hasn't logged yet and must not be restart-looped
-    (the streamer's settling lesson)."""
+    """The settling grace: a just-started child hasn't published a heartbeat yet and must not be
+    restart-looped (the streamer's settling lesson)."""
     sup = supervisor.Supervisor(flies_cfg(tmp_path))
     sup.pass_once(now=MONDAY_NOON)
     child = next(p for p in spawned if "--interval" in p.argv)
-    sup.pass_once(now=MONDAY_NOON)  # log file doesn't even exist yet
+    sup.pass_once(now=MONDAY_NOON)  # heartbeat file doesn't even exist yet
     assert not child.terminated
+
+
+def test_a_module_that_publishes_no_heartbeat_is_never_judged_silent(spawned, tmp_path):
+    """The safe degrade, and the reason this change could not disable a job instead.
+
+    A module that never writes a heartbeat is simply not silence-supervised: `_resident_silent`
+    returns False for a file that does not exist, so the supervisor leaves it alone rather than
+    killing a process it cannot judge. Restarting on "I can't tell" is what produced the original
+    bug, and refusing to derive the job at all would have taken a trading loop down over telemetry.
+    The gap is reported by the watchdog instead, where a diagnosis belongs.
+    """
+    sup = supervisor.Supervisor(flies_cfg(tmp_path))
+    sup.pass_once(now=MONDAY_NOON)
+    child = next(p for p in spawned if "--interval" in p.argv)
+    st = sup._state["flies-paper"]
+    from datetime import timedelta, timezone
+
+    # Well past both the settle grace and the silence window, with no heartbeat ever written.
+    st["last_start"] = (datetime.now(timezone.utc) - timedelta(seconds=5000)).isoformat()
+    assert not cfgmod.resident_heartbeat_path("flies").exists()
+    sup.pass_once(now=MONDAY_NOON)
+    assert not child.terminated, "an unjudgeable child is left running, never killed on suspicion"
 
 
 def test_run_honors_stop_file_and_lock(spawned, monkeypatch):

@@ -336,7 +336,17 @@ def test_derive_flies_subminute_becomes_resident_plus_offsession():
     assert res.kind == jobspec.KIND_RESIDENT
     assert res.argv == ("pythonw", "-m", "cherrypick.flies.paper_loop", "--interval", "15")
     assert (res.window_start, res.window_end, res.trading_days_only) == ("09:30", "16:00", True)
-    assert res.silence_file and res.silence_file.endswith("flies_paper.log")
+    # Silence is measured against the loop's own heartbeat, never its log. Pointing it at the log
+    # made supervision a function of how talkative a module happened to be, and killed the quiet one
+    # (calendars) every two minutes for four days. Pinned against the module's OWN resolver, so the
+    # writer and the watcher cannot drift apart unnoticed.
+    from cherrypick.core import home as _core_home
+
+    from cherrypick.orchestrator import config as cfgmod
+
+    assert res.silence_file == str(cfgmod.resident_heartbeat_path("flies"))
+    assert res.silence_file.endswith(_core_home.heartbeat_path("flies").name)
+    assert not res.silence_file.endswith(".log")
     off = by_id["flies-paper-offsession"]
     assert off.kind == jobspec.KIND_INTERVAL and off.interval_seconds == 60
     assert off.window_invert and off.argv[-1] == "--once"

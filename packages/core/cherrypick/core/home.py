@@ -86,6 +86,25 @@ def state_dir() -> Path:
     return home() / "state"
 
 
+def heartbeat_path(package: str) -> Path:
+    """Where a supervised resident loop publishes its liveness (``home()/state/<package>.heartbeat``).
+
+    A resident loop is watched by the orchestrator for *silence*, and what silence is measured against
+    has to be something the loop writes unconditionally — not its log. A log file is a side effect of
+    having something to say, so using its mtime makes log verbosity a reliability dependency and makes
+    a quiet-but-healthy loop indistinguishable from a wedged one. The calendars module was killed and
+    restarted every two minutes for four days on exactly that confusion: it holds no position, so it
+    logged nothing, so it looked dead.
+
+    Touched at the TOP of each tick, before any branch, this file means "the loop reached the top of a
+    tick" and nothing else — which is the one thing a restart actually fixes.
+
+    The path convention lives here rather than in either consumer because both the module (writing it)
+    and the orchestrator (watching it) have to agree, and they cannot import each other.
+    """
+    return state_dir() / f"{package}.heartbeat"
+
+
 def modules_dir(*, env: str | None = "CHERRYPICK_MODULES_HOME") -> Path:
     """Installed module checkouts (``home()/modules``), or ``$CHERRYPICK_MODULES_HOME`` if set."""
     override = _env(env)

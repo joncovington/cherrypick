@@ -190,6 +190,27 @@ won't print — each is a recorded refusal the loop steps past, not an error. On
 the OCC-root filter admits only the PM-settled weekly (`SPXW`); if none is listed the week is
 skipped and journaled (`not_weekly_listed`), never traded on the AM-settled monthly.
 
+## Liveness is published, not inferred
+
+The resident loop touches `state/calendars.heartbeat` (`paper_loop._beat`, via
+`cherrypick.core.home.heartbeat_path`) at the **top of every tick**, before any gate, and the
+supervisor measures this job's silence against that file. It means *the loop is turning over* and
+deliberately says nothing about whether the tick did any work.
+
+**This replaced supervising on the module's LOG, which nearly cost the experiment its first real
+week.** Every line this loop writes is event-driven — a refusal, a close, a settlement — so a week
+holding no position writes nothing, and a healthy quiet loop was indistinguishable from a wedged
+one. The supervisor killed and restarted it every two minutes from launch (49 times on 08-14, 107 on
+08-17), and the only thing refreshing the log was the restart's own startup line. Measured against
+the declared 30s cadence, that cost **61% and 28% of those sessions' ticks**, in gaps of up to ten
+minutes.
+
+Nothing in the ledger was corrupted, only because the module had never opened a position — `dc_marks`
+was empty throughout. Had an entry succeeded, the mark path this module exists to record would have
+been shot through with ten-minute holes at a ragged, undeclared, day-varying cadence. **So: keep the
+heartbeat at the top of the tick, and never make this loop's log carry reliability meaning again.**
+The log is free to stay quiet; that is now correct rather than fatal.
+
 ## Guardrails (suite-wide)
 
 - **Paper only. There is no live path** — no live loop, no order code. `live.enabled` in config is
