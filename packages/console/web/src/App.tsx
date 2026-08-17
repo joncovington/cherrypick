@@ -15,6 +15,7 @@ import { OrdersPage } from "./pages/Scout/OrdersPage";
 import { ScreenerPage } from "./pages/Scout/ScreenerPage";
 import { ConfigPage } from "./pages/Config/ConfigPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
+import { NotFoundPage } from "./pages/NotFoundPage";
 
 export default function App() {
   return (
@@ -39,6 +40,10 @@ export default function App() {
         <Route path="scout/screener" element={<ScreenerPage />} />
         <Route path="scout/*" element={<PlaceholderPage title="Scout" />} />
         <Route path="config" element={<ConfigPage />} />
+        {/* Catch-all. Without it an unmatched path renders NOTHING — a blank screen that reads as
+            a crashed app, which is what a tab open across a rebuild sees when it asks the old
+            bundle for a route only the new one has. */}
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
   );
