@@ -37,6 +37,12 @@ from . import symbols as _symbols
 # The score needs a trailing year behind each day it scores; anything shorter is warmup.
 WARMUP_SESSIONS = _score.PERCENTILE_LOOKBACK
 
+# How far back the backtest will READ. Deliberately decoupled from what the module asks the producer
+# to backfill: the request is a load decision made against a live cache every module depends on,
+# while this is a read over rows that already exist. A generous cap costs one query, so the backtest
+# scores whatever landed rather than being clipped to the size of the request that fetched it.
+BACKTEST_MAX_DAYS = 5000
+
 ZONES = ("full", "reduced", "defensive")
 
 
@@ -196,8 +202,10 @@ def build(session: str | None = None) -> dict[str, Any]:
     except Exception:  # noqa: BLE001 -- no cache is an empty result, not a crash
         cache = None
     try:
-        history = _facts._close_history(cache, _symbols.HISTORY_DAYS, session,
-                                        _symbols.HISTORY_LOOKBACK_BACKTEST)
+        # Read every row the cache holds, not the request size. The request bounds what we ASK the
+        # producer to backfill; the backtest should score whatever actually landed, which may be
+        # more (a candle feed over-delivers) or less (it could not reach that far back).
+        history = _facts._close_history(cache, _symbols.HISTORY_DAYS, session, BACKTEST_MAX_DAYS)
     finally:
         if cache is not None:
             cache.close()
@@ -205,5 +213,6 @@ def build(session: str | None = None) -> dict[str, Any]:
     result = run(history, _symbols.SECTOR_ETFS)
     result["session"] = session
     result["generated_at"] = datetime.now(tz=UTC).isoformat()
-    result["history_requested"] = _symbols.HISTORY_LOOKBACK_BACKTEST
+    result["history_requested"] = _symbols.HISTORY_LOOKBACK
+    result["history_read_cap"] = BACKTEST_MAX_DAYS
     return result

@@ -56,25 +56,39 @@ CREDIT_PROXIES = {
 
 ALL_SYMBOLS = tuple(sorted({*INDEX_SYMBOLS, *SECTOR_ETFS, *COMMODITY_PROXIES, *CREDIT_PROXIES}))
 
-# Completed daily rows the deployment score needs stream_summary to hold (the streamer backfills a
-# deficit once from DXLink daily candles, so the series exists on day one). 270 covers a trailing
-# 252-session year for the VIX percentile / HYG-TLT z-score with slack; 220 covers the sector
-# breadth's 200-day SMA.
+# --------------------------------------------------------------------------- what we ask the producer for
+#
+# **This package needs quotes, and `symbols` does not mean quotes.** In the streamer's contract a
+# `symbols` entry is an UNDERLYING: it brings a spot subscription, an ATM window, GEX and an option
+# chain fetch that repeats every subscription poll. Declaring the breadth set there had the producer
+# maintaining 0DTE chains for eleven sector ETFs, VIX, GLD, USO, HYG and TLT -- roughly 1,700 option
+# symbols nothing in this suite reads -- which starved the modules that trade. `legs` is the
+# quote-only field (a static list of streamer symbols, subscribed as-is, no chain machinery), so the
+# breadth rides there.
+#
+# SPX stays an underlying because it genuinely is one for half the suite; the union means this
+# package's entry costs nothing extra.
+QUOTE_ONLY_SYMBOLS = tuple(sorted({*SECTOR_ETFS, *COMMODITY_PROXIES, *CREDIT_PROXIES,
+                                   "VIX", "VIX3M", "VVIX"}))
+UNDERLYING_SYMBOLS = ("SPX",)
+
+# Completed daily rows the deployment score needs stream_summary to hold. 270 covers a trailing
+# 252-session year for the VIX percentile / HYG-TLT z-score with slack, and the sector breadth's
+# 200-day SMA inside the same number.
+#
+# **Deliberately not the ~4 years the zone backtest would prefer.** A backfill is a burst of writes
+# into the cache every live consumer is reading, and 16 symbols x 1000 days did not merely cost more
+# -- it never finished. Each reconnect restarted it from the top, so the producer spent its life
+# re-fetching four years of candles and crash-looping on a locked database, and every module's
+# quotes went stale behind it. The backtest reports a short history honestly; a starved producer is
+# not a trade-off worth making for a record-only score. Raise this only deliberately, off-hours,
+# and watch the producer while it lands.
 HISTORY_LOOKBACK = 270
-HISTORY_LOOKBACK_SMA = 220
 
-# What the read-side zone backtest needs, which is strictly more: every scored day costs a full
-# year of history BEHIND it, so a year of bars yields no scoreable days at all. ~4 years leaves
-# ~3 years of scored sessions after the warmup. Declared as one number per symbol because
-# `history_days` is one number per symbol -- the larger need wins, and the live score simply reads
-# the tail of a longer series. A symbol whose candles do not reach this far degrades to fewer
-# scoreable days, which the backtest reports rather than hides.
-HISTORY_LOOKBACK_BACKTEST = 1000
-
-# Every symbol the score or its backtest reads a series for. VIX3M is here for the backtest alone:
+# Only the symbols whose series the score actually reads. VIX3M is here for the backtest alone --
 # the live score takes it from a current quote, but a historical day needs its close.
 HISTORY_DAYS = {
-    symbol: HISTORY_LOOKBACK_BACKTEST
+    symbol: HISTORY_LOOKBACK
     for symbol in ("VIX", "VIX3M", "HYG", "TLT", "SPX", *SECTOR_ETFS)
 }
 
@@ -88,6 +102,8 @@ def register() -> str | None:
     set) is a reason for the producer to recycle, which is expected and safe outside market hours.
     """
     try:
-        return str(_requests.write_request(MODULE, ALL_SYMBOLS, history_days=HISTORY_DAYS))
+        return str(_requests.write_request(
+            MODULE, UNDERLYING_SYMBOLS, legs=QUOTE_ONLY_SYMBOLS, history_days=HISTORY_DAYS,
+        ))
     except OSError:
         return None
