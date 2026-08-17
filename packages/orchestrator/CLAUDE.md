@@ -286,6 +286,14 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   as staleness would recycle the feed every time a module whose request tracks its open positions
   closed one. The union itself is read through `cherrypick.core.streamrequests`, the same code the
   streamer subscribes from, so the two can never disagree about what was asked for.
+  **A new symbol and a wider window are not the same urgency**, and treating them alike cost a
+  session: on 2026-08-17 pmcc walked its per-symbol window hint up its escalation ladder as its
+  deep-ITM misses accumulated, every step counted as growth, and the producer was stopped and
+  restarted roughly every five minutes for two hours — each restart reloading every chain. That
+  module's hint also *decays* after a quiet hour, so the ladder gets climbed more than once and the
+  loop has no natural end. A new symbol still recycles on sight, because a module that cannot see an
+  instrument at all is blind; a hint-only widening waits out `servicecfg.HINT_RECYCLE_COOLDOWN_S`
+  from the last launch, and the staleness reason says it is holding off rather than going quiet.
 - **Every spawned process is headless.** The scheduled tasks run under `pythonw.exe` (no console), so
   any console-subsystem child launched without `CREATE_NO_WINDOW` pops a visible terminal window on the
   user's screen — on every watchdog tick, daemon restart, and desktop toast. Daemons and `services`
