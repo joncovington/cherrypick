@@ -15,6 +15,7 @@ DASH = "—"
 
 _PHASE_LABEL = {"green": "GREEN", "yellow": "YELLOW", "red": "RED"}
 _STATUS_LABEL = {"met": "Met", "not_met": "Not met", "unknown": "Unknown"}
+_ZONE_LABEL = {"full": "FULL DEPLOY", "reduced": "REDUCED", "defensive": "DEFENSIVE"}
 
 
 def _value(reading: dict | None, fmt: str = "{:,.2f}") -> str:
@@ -94,6 +95,33 @@ def render(session: str) -> str | None:
         status = _STATUS_LABEL.get(gate.get("status"), "Unknown")
         lines.append(f"- **{status}** — {gate.get('label', DASH)}: {gate.get('detail', DASH)}")
     lines.append("")
+
+    deployment = pack.get("deployment") or {}
+    if deployment:
+        lines.append("## Deployment score (record-only)")
+        lines.append("")
+        score, zone = deployment.get("score"), deployment.get("zone")
+        if isinstance(score, (int, float)):
+            lines.append(f"**{score:.1f} / 100 — {_ZONE_LABEL.get(zone, DASH)}**"
+                         + (" _(weights renormalized over measured signals)_"
+                            if deployment.get("weights_renormalized") else ""))
+        else:
+            lines.append(f"**No score** — {deployment.get('reason', DASH)}")
+        lines.append("")
+        lines.append("| Signal | Score | Weight | Detail |")
+        lines.append("|---|---|---|---|")
+        for signal in deployment.get("signals") or []:
+            value = signal.get("score")
+            text = f"{value:.1f}" if isinstance(value, (int, float)) else DASH
+            lines.append(f"| {signal.get('label', DASH)} | {text} | "
+                         f"{signal.get('weight', 0) * 100:.0f}% | {signal.get('detail', DASH)} |")
+        lines.append("")
+        deferred = deployment.get("deferred") or []
+        lines.append(f"_{deployment.get('signals_measured', DASH)} of "
+                     f"{deployment.get('signals_total', DASH)} signals measured"
+                     + (f"; deferred: {', '.join(deferred)}" if deferred else "")
+                     + f". {deployment.get('note', '')}_")
+        lines.append("")
 
     lines.append("## Sector board (prior session)")
     lines.append("")

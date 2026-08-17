@@ -27,10 +27,13 @@ def _cmd_build(session: str | None) -> dict:
     pack = _facts.build(session)
     facts_path = _facts.write(pack)
     render_path = _render.write(pack["session"])
+    deployment = pack.get("deployment") or {}
     return {
         "ok": True,
         "session": pack["session"],
         "phase": (pack.get("phase") or {}).get("phase"),
+        "deployment_score": deployment.get("score"),
+        "deployment_zone": deployment.get("zone"),
         "facts": facts_path,
         "render": render_path,
         "stream_request": request,

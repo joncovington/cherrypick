@@ -153,6 +153,54 @@ def test_gex_levels_and_sector_board_flow_into_gates():
     assert pack["phase"]["phase"] == "green"
 
 
+def test_close_history_dates_each_column_to_its_own_session():
+    # The two columns are dated differently and mixing them up shifts the whole series:
+    # day_close belongs to its OWN row's session (what the candle backfill writes), while
+    # prev_day_close belongs to the session BEFORE its row (what the live producer leaves behind).
+    _make_cache(rows_summary=[
+        ("VIX", "2026-08-10", None, NOW_TS),   # backfilled: day_close set below
+        ("VIX", "2026-08-11", 14.10, NOW_TS),  # live row -> 08-10 settled at 14.10
+        ("VIX", "2026-08-12", 14.20, NOW_TS),  # live row -> 08-11 settled at 14.20
+    ])
+    conn = sqlite3.connect(paths.stream_cache_db())
+    conn.execute("UPDATE stream_summary SET day_close = 13.90 "
+                 "WHERE symbol = 'VIX' AND trade_date = '2026-08-10'")
+    conn.commit()
+    conn.close()
+
+    conn = sqlite3.connect(paths.stream_cache_db())
+    conn.row_factory = sqlite3.Row
+    series = facts._close_history(conn, ["VIX"], SESSION, 270)["VIX"]
+    conn.close()
+
+    # day_close outranks the chained value on 08-10; 08-11 comes from 08-12's prev_day_close.
+    assert series == [{"session": "2026-08-10", "close": 13.90},
+                      {"session": "2026-08-11", "close": 14.20}]
+
+
+def test_close_history_takes_the_freshest_close_off_todays_row():
+    # The prior session's settle lives on TODAY's row. Skipping today's row to avoid its partial
+    # bar would leave the series a session stale -- it is read for prev_day_close, then dropped.
+    _make_cache(rows_summary=[("VIX", PRIOR, 14.10, NOW_TS),
+                              ("VIX", SESSION, 14.50, NOW_TS)])
+    conn = sqlite3.connect(paths.stream_cache_db())
+    conn.row_factory = sqlite3.Row
+    series = facts._close_history(conn, ["VIX"], SESSION, 270)["VIX"]
+    conn.close()
+    assert [row["session"] for row in series] == [PRIOR]
+    assert series[0]["close"] == 14.50
+
+
+def test_deployment_block_is_present_and_records_that_it_governs_nothing():
+    pack = facts.build(SESSION, now=NOW)
+    deployment = pack["deployment"]
+    assert deployment["record_only"] is True
+    # An empty home measures nothing, so the block refuses a score rather than inventing one --
+    # and the phase beside it is still computed by the gates alone.
+    assert deployment["score"] is None
+    assert pack["phase"]["phase"] == "yellow"
+
+
 def test_write_then_read_roundtrip():
     pack = facts.build(SESSION, now=NOW)
     facts.write(pack)

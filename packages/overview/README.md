@@ -10,5 +10,10 @@ A mechanical GREEN/YELLOW/RED phase is computed from five declared gates; missin
 produce RED and always blocks GREEN. Pre-open values are labeled with their provenance — a prior
 session's confirmed close is never passed off as a live quote.
 
+Beside the phase, and deliberately separate from it, the pack records a 0–100 **deployment score**
+blended from five macro signals (VIX percentile, vol term structure, sector breadth, an HYG/TLT
+credit proxy, VIX rate of change). It is record-only: it gates nothing and sizes nothing, and exists
+so the number can be measured against outcomes before anyone acts on it.
+
 See `CLAUDE.md` for the operating contract, `python -m cherrypick.overview --help` for the CLI,
 and the console's Morning page for the rendered surface.

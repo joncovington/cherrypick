@@ -46,7 +46,29 @@ COMMODITY_PROXIES = {
     "GLD": "Gold (ETF proxy)",
 }
 
-ALL_SYMBOLS = tuple(sorted({*INDEX_SYMBOLS, *SECTOR_ETFS, *COMMODITY_PROXIES}))
+# Credit proxies for the deployment score's credit signal -- ETFs standing in for the cash
+# high-yield and long-Treasury markets, same posture as the commodity proxies: the score reads a
+# HYG/TLT ratio z-score and labels it a proxy, never an OAS the suite did not observe.
+CREDIT_PROXIES = {
+    "HYG": "High-yield credit (ETF proxy)",
+    "TLT": "20+yr Treasuries (ETF proxy)",
+}
+
+ALL_SYMBOLS = tuple(sorted({*INDEX_SYMBOLS, *SECTOR_ETFS, *COMMODITY_PROXIES, *CREDIT_PROXIES}))
+
+# Completed daily rows the deployment score needs stream_summary to hold (the streamer backfills a
+# deficit once from DXLink daily candles, so the series exists on day one). 270 covers a trailing
+# 252-session year for the VIX percentile / HYG-TLT z-score with slack; 220 covers the sector
+# breadth's 200-day SMA. SPX rides along for the read-side zone backtest, not for the score itself.
+HISTORY_LOOKBACK = 270
+HISTORY_LOOKBACK_SMA = 220
+HISTORY_DAYS = {
+    "VIX": HISTORY_LOOKBACK,
+    "HYG": HISTORY_LOOKBACK,
+    "TLT": HISTORY_LOOKBACK,
+    "SPX": HISTORY_LOOKBACK,
+    **{etf: HISTORY_LOOKBACK_SMA for etf in SECTOR_ETFS},
+}
 
 
 def register() -> str | None:
@@ -58,6 +80,6 @@ def register() -> str | None:
     set) is a reason for the producer to recycle, which is expected and safe outside market hours.
     """
     try:
-        return str(_requests.write_request(MODULE, ALL_SYMBOLS))
+        return str(_requests.write_request(MODULE, ALL_SYMBOLS, history_days=HISTORY_DAYS))
     except OSError:
         return None
