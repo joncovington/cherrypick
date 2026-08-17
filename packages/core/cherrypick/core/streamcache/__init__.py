@@ -119,16 +119,33 @@ def to_float(value) -> float | None:
         return None
 
 
+# How long a writer waits for a busy database before giving up. SQLite's default is ZERO: a
+# contended write raises `database is locked` on the spot rather than retrying, which is almost
+# never what a daemon wants and was not what this one wanted on 2026-08-17. A burst of history
+# backfill held the write lock long enough that the quote/trade/summary writers and the status
+# flusher all began failing instantly; the status write happens inside the stream's task group, so
+# its exception tore down the DXLink connection, and the producer spent the session reconnecting
+# every 60s while every module's quotes went stale.
+#
+# Five seconds is chosen against what the cache actually does: writes here are single-row upserts
+# and short batches, so a wait this long means something genuinely unusual is in progress (a large
+# backfill, a checkpoint) and waiting for it is strictly better than dropping the tick. A caller
+# that would rather fail fast than block should not be sharing a cache with a daemon.
+BUSY_TIMEOUT_MS = 5000
+
+
 def connect(db_path: Path | str) -> sqlite3.Connection:
     """Open (creating + migrating) the write-side cache. WAL + NORMAL for a daemon that commits often
     while readers open the same file read-only. `check_same_thread=False`: MEIC's daemon touches the
-    connection from its DXLink loop and a status flusher."""
+    connection from its DXLink loop and a status flusher — which is exactly why `busy_timeout` is
+    set here rather than left at SQLite's default of 0 (see BUSY_TIMEOUT_MS)."""
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     for stmt in DDL.split(";"):
         s = stmt.strip()
         if s:

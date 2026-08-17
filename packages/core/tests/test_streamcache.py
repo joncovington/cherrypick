@@ -1,5 +1,11 @@
 """Tests for cherrypick.core.streamcache — schema/connect, status upsert, chain write, ATM window."""
 
+import sqlite3
+import threading
+import time
+
+import pytest
+
 from cherrypick.core import streamcache
 
 
@@ -18,6 +24,63 @@ class _Opt:
 
     def model_dump(self, mode="json"):
         return dict(self._d)
+
+
+def test_connect_sets_a_busy_timeout(tmp_path):
+    conn = streamcache.connect(tmp_path / "sc.db")
+    assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == streamcache.BUSY_TIMEOUT_MS
+    conn.close()
+
+
+def test_a_contended_write_waits_instead_of_raising(tmp_path):
+    """The 2026-08-17 failure in one test: with SQLite's default timeout of 0, a write attempted
+    while another connection holds the lock raises `database is locked` immediately. The producer's
+    status write lives inside its stream task group, so that exception tore down the DXLink
+    connection and the whole suite's quotes went stale behind the reconnect loop."""
+    db = tmp_path / "sc.db"
+    writer = streamcache.connect(db)
+    holder = streamcache.connect(db)
+    released = threading.Event()
+
+    def hold_the_lock():
+        holder.execute("BEGIN IMMEDIATE")
+        holder.execute(
+            "INSERT INTO stream_trades (symbol, last, updated_at) VALUES ('HELD', 1.0, 0)"
+        )
+        time.sleep(0.4)
+        holder.commit()
+        released.set()
+
+    t = threading.Thread(target=hold_the_lock)
+    t.start()
+    time.sleep(0.1)  # let the holder take the write lock first
+    # Without the pragma this raises OperationalError right here.
+    writer.execute("INSERT INTO stream_trades (symbol, last, updated_at) VALUES ('WAITED', 2.0, 0)")
+    writer.commit()
+    t.join()
+
+    assert released.is_set()
+    rows = {r["symbol"] for r in writer.execute("SELECT symbol FROM stream_trades")}
+    assert rows == {"HELD", "WAITED"}
+    writer.close()
+    holder.close()
+
+
+def test_without_the_timeout_the_same_contention_raises(tmp_path):
+    """The control for the test above — proof it is the pragma doing the work, not luck in the
+    scheduling. A bare connection (SQLite's default busy_timeout of 0) fails on the same sequence."""
+    db = tmp_path / "sc.db"
+    streamcache.connect(db).close()  # create the schema
+    holder = sqlite3.connect(db)
+    bare = sqlite3.connect(db)
+    bare.execute("PRAGMA busy_timeout=0")
+    holder.execute("BEGIN IMMEDIATE")
+    holder.execute("INSERT INTO stream_trades (symbol, last, updated_at) VALUES ('HELD', 1.0, 0)")
+    with pytest.raises(sqlite3.OperationalError, match="locked"):
+        bare.execute("INSERT INTO stream_trades (symbol, last, updated_at) VALUES ('X', 2.0, 0)")
+    holder.rollback()
+    holder.close()
+    bare.close()
 
 
 def test_connect_creates_schema_and_is_reusable(tmp_path):
