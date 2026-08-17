@@ -1,13 +1,14 @@
 import type { PmccBookCell, PmccKeltnerSeries, PmccOpenPosition, PmccPayload } from "@console/shared";
 import { Card, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { SignedBar, AXIS_FONT, niceTicks } from "../../components/Charts";
+import { fmtStrike } from "../../lib/optionFormat";
 
 /** The three books whose identity the page knows. Anything else (an `advised:*` twin) rides along generically. */
 const CORE_BOOKS = ["control", "keltner", "roll"];
 
 function strikeAt(strike: number | null, expiration: string | null): string {
   if (strike === null) return "—";
-  return `${fmtNum(strike, 0)}${expiration === null ? "" : ` @ ${expiration.slice(5)}`}`;
+  return `${fmtStrike(strike)}${expiration === null ? "" : ` @ ${expiration.slice(5)}`}`;
 }
 
 /**
