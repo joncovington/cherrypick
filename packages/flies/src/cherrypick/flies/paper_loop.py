@@ -95,8 +95,12 @@ def _setup_logging() -> None:
 
     The scheduled task runs under pythonw.exe with no console, so anything printed to stdout is
     discarded. Without a file the first live session would leave no trace of why it did or didn't
-    trade — and the orchestrator's freshness check watches this exact file to tell "the loop is
-    running quietly" from "the loop is dead", so its absence would also read as an outage.
+    trade.
+
+    This file used to carry a second, unstated job: the supervisor measured the resident loop's
+    silence against its mtime, so how much this logged decided whether the process was allowed to
+    live. It no longer does — liveness is `_beat()`'s heartbeat file — so this log is free to be
+    exactly as talkative as a human reading it needs, and no more.
 
     The file handler is rebuilt if the resolved path has moved since it was attached, so a redirected
     home takes effect even though the logger itself is process-global state.
@@ -118,6 +122,34 @@ def _setup_logging() -> None:
 def _log(message: str) -> None:
     _setup_logging()
     _logger.info(message)
+
+
+def heartbeat_file():
+    """Resolved on every call, never at import — same reason as `log_file` above."""
+    from cherrypick.core import home as _core_home
+
+    return _core_home.heartbeat_path("flies")
+
+
+def _beat() -> None:
+    """Publish liveness: this loop reached the top of a tick.
+
+    Until 2026-08-17 the supervisor measured this module's silence against its LOG, which worked here
+    only by luck — `run_once` happens to log a line per symbol per tick, so the file was never quiet
+    in session. Calendars, whose lines are all event-driven, was killed and restarted every two
+    minutes for four days on the same mechanism. Luck is not a supervision contract, and a change that
+    merely made this loop quieter would have inherited that bug silently.
+
+    Touched at the TOP of the tick, before any branch: it means "the loop is turning over" and nothing
+    about what the tick then decided. Failures are swallowed — a heartbeat that costs a tick would be
+    worse than the problem it solves.
+    """
+    try:
+        path = heartbeat_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(provider.now_et().isoformat(timespec="seconds"), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def in_session(now_min: int) -> bool:
@@ -458,6 +490,7 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
     Also owns end-of-day settlement. The recurring task calls only this, so there is exactly one
     thing to schedule and one thing that can fail.
     """
+    _beat()  # before every gate below: liveness is "the loop is turning over", not "it did work"
     when = when or provider.now_et()
     now_min = provider.minute_of_day(when)
     day = when.date().isoformat()

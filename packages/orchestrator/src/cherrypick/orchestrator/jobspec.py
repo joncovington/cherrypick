@@ -705,8 +705,6 @@ def _add_self_healing_jobs(add, name, mcfg, paper, tick, pythonw, root) -> None:
     the session so settlement, retries, and the idle heartbeat keep the exact shape they have today.
     """
     interval = int(paper.get("tick_interval_seconds", 120))
-    log_name = paper.get("log")
-    silence_file = str(cfgmod.module_logs_dir(name) / log_name) if log_name else None
 
     if interval >= 60:
         add(
@@ -730,12 +728,27 @@ def _add_self_healing_jobs(add, name, mcfg, paper, tick, pythonw, root) -> None:
             kind=KIND_RESIDENT,
             cwd=root,
             interval_seconds=interval,
-            # In-session only: the module's own --interval loop is RTH-scoped, and every in-session
-            # iteration writes at least one log line per symbol, which is what silence watches.
+            # In-session only: the module's own --interval loop is RTH-scoped.
             window_start=paper.get("resident_start", "09:30"),
             window_end=paper.get("resident_end", "16:00"),
             trading_days_only=True,
-            silence_file=silence_file,
+            # Silence is measured against the loop's own HEARTBEAT, never its log. This used to point
+            # at the log file on the assumption -- stated here as fact, enforced nowhere -- that
+            # "every in-session iteration writes at least one log line per symbol". Flies and MEIC
+            # happened to satisfy it; calendars does not, because a week holding no position has
+            # nothing to say, and it was killed and restarted every two minutes for four days as a
+            # result (107 times on 2026-08-17 alone). A log is a side effect of having something to
+            # report, so supervising on it makes verbosity a reliability dependency and makes a quiet
+            # healthy loop look exactly like a wedged one.
+            #
+            # The contract is now the one the console already had: the loop touches this file at the
+            # top of every tick. A module that does NOT publish one degrades safely rather than
+            # loudly -- `_resident_silent` returns False for a file that does not exist, so it simply
+            # is not silence-supervised, and the watchdog reports the gap instead of the supervisor
+            # killing a healthy process over it.
+            # Keyed on the MODULE name, not the job id: the module writes this file and knows only
+            # its own package name (`core.home.heartbeat_path("calendars")`).
+            silence_file=str(cfgmod.resident_heartbeat_path(name)),
             silence_seconds=int(paper.get("silence_seconds", 120)),
         ),
     )

@@ -34,6 +34,23 @@ def at(hour, minute=0):
     return TRADING_DAY.replace(hour=hour, minute=minute, tzinfo=provider._ET)
 
 
+# --------------------------------------------------------------------------- liveness
+def test_every_tick_publishes_a_heartbeat_even_when_it_does_nothing(tmp_path, conn):
+    """Supervision must not depend on how talkative this loop happens to be.
+
+    Silence used to be measured against the module LOG, which worked here only by luck — `run_once`
+    logs a line per symbol per tick, so the file was never quiet in session. Calendars, whose lines
+    are all event-driven, was killed and restarted every two minutes for four days on that same
+    mechanism. A refactor that merely made this loop quieter would have inherited the bug silently,
+    so liveness is published rather than inferred.
+    """
+    beat = paper_loop.heartbeat_file()
+    assert not beat.exists()
+    # Out of hours: returns before any snapshot, any arm, any log line about a symbol.
+    paper_loop.run_once(config(), conn, cache_path=str(tmp_path / "absent.db"), when=at(3))
+    assert beat.exists(), "an early-returning tick still reached the top of the loop"
+
+
 # --------------------------------------------------------------------------- session gate
 def test_out_of_hours_run_is_a_clean_no_op(cache_with_chain, conn):
     """Not merely 'nothing to do': outside RTH the cache holds yesterday's frozen quotes, and an

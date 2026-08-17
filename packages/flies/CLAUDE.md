@@ -686,6 +686,20 @@ These are the constraints the module exists to enforce. Breaking one makes the n
    evaluated per tick, so not every one of the seven was necessarily transactable. **No live money
    was involved** — the live pilot's ledger records no floor-gate refusal.
 
+## Liveness is published, not inferred
+
+The resident loop touches `state/flies.heartbeat` (`paper_loop._beat`, via
+`cherrypick.core.home.heartbeat_path`) at the **top of every tick**, before any gate, and the
+supervisor measures this job's silence against that file rather than against
+`logs/flies/flies_paper.log`.
+
+This module was never broken by the old arrangement, and that is the point: it survived only because
+`run_once` happens to log a line per symbol per tick, so its log was never quiet in session. Calendars,
+whose lines are all event-driven, was killed and restarted every two minutes for four days on the
+identical mechanism. **Luck is not a supervision contract** — and any change that merely made this
+loop quieter would have inherited that bug silently, with the restarts looking like ordinary
+supervision. The log is now free to be exactly as talkative as a human reading it needs.
+
 ## Guardrails (suite-wide)
 
 - Paper by default; live is a deliberately narrow, per-day-armed pilot (one arm, one symbol, one

@@ -66,6 +66,34 @@ def _log(message: str) -> None:
     _logger.info(message)
 
 
+def heartbeat_file():
+    """Resolved on every call for the same reason as `log_file` — never captured at import."""
+    return _home.heartbeat_path("calendars")
+
+
+def _beat() -> None:
+    """Publish liveness: this loop reached the top of a tick.
+
+    The supervisor restarts a resident job whose liveness signal goes quiet, and until 2026-08-17
+    that signal was this module's LOG. Every line this loop writes is event-driven, so a week holding
+    no position wrote nothing and looked exactly like a wedged process — the supervisor killed and
+    restarted it every two minutes for four days (107 times on 08-17), costing ~28-61% of the
+    session's ticks to restart gaps of up to ten minutes.
+
+    So liveness is published rather than inferred, the way the console already does it. This is
+    touched at the TOP of the tick, before any branch: it must mean "the loop is turning over" and
+    nothing about what the tick then decided to do. Failure to write it is swallowed — a heartbeat
+    that costs a tick would be worse than the problem it solves — and a missing file is not judged
+    silent by the supervisor, so the degrade is safe in both directions.
+    """
+    try:
+        path = heartbeat_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(clock.now_iso(), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def in_session(now_min: int) -> bool:
     return RTH_OPEN_MIN <= now_min < RTH_CLOSE_MIN
 
@@ -255,6 +283,7 @@ def run_once(
 ) -> dict:
     """One iteration. Owns the whole week's phase logic — there is exactly one thing to schedule
     and one thing that can fail."""
+    _beat()  # before every gate below: liveness is "the loop is turning over", not "it did work"
     when = when or clock.now_et()
     now_min = clock.minute_of_day(when)
     today = when.date()
