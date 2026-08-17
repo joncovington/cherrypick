@@ -29,6 +29,7 @@ import {
   readFliesTradeLog,
   type FliesFilter,
 } from "../readers/flies.js";
+import { readPmcc, readPmccAssignments, readPmccHistory, readPmccMeta } from "../readers/pmcc.js";
 import { readEarnings, readSymbolWatch, readEarningsAnalytics, readEarningsDetail } from "../readers/earnings.js";
 import { readEarningsLive } from "../readers/earningsLive.js";
 import { readScreenMetrics } from "../services/screenBridge.js";
@@ -183,6 +184,20 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const f = parseFliesFilter(req.query);
     return readFliesForest(config, parseMode(req.query), f.date, f.arm);
   });
+  // PMCC-99. No `mode` on any of these: the module has no live loop and no live store, so a mode
+  // parameter could only ever name a book that does not exist.
+  app.get("/api/pmcc", async () => readPmcc(config));
+  app.get("/api/pmcc/meta", async () => readPmccMeta(config));
+  app.get("/api/pmcc/assignments", async () => ({ rows: readPmccAssignments(config) }));
+  app.get("/api/pmcc/history", async (req) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const pick = (k: string, max: number): string | null => {
+      const v = q[k];
+      return typeof v === "string" && v !== "" && v.length <= max ? v : null;
+    };
+    return readPmccHistory(config, { book: pick("book", 40), symbol: pick("symbol", 12) }, parsePage(req.query));
+  });
+
   app.get("/api/earnings", async (req) =>
     readEarnings(config, { trades: parsePage(req.query, "trades"), reviews: parsePage(req.query, "reviews") }),
   );

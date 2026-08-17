@@ -1,7 +1,7 @@
 # console (unified web UI)
 
 The suite's unified reactive web UI: one app covering every module's read models (overview/watchdog,
-MEIC, flies, earnings, GEX) plus the research surfaces inherited from the retired scout
+MEIC, flies, earnings, PMCC-99, GEX) plus the research surfaces inherited from the retired scout
 package (watchlist, screener, builder, payoff/POP, staged dry-run tickets). It **replaced** them on 2026-08-12: the suite dashboard, the
 MEIC/flies/GEX dashboards, the earnings strategy dashboard and scout's web app were deleted, and this
 is the suite's only read surface. It still touches none of their code — every module remains a
@@ -118,6 +118,19 @@ pnpm --filter @console/desktop start   # the desktop window
   to the mode it names — so `useMode` states both directions explicitly.
 - **Paper/live isolation**: every trade payload carries `mode` taken from its source DB
   (`paper_trades.db` vs the live DB). Mode is never merged across sources or inferred client-side.
+- **Where a module states its read semantics but not a callable surface for them, MIRROR them and
+  say so.** `packages/pmcc` declares `analytics.py` "the one query layer every read surface goes
+  through", but its CLI exposes only part of what a page needs (no keltner series, no per-cycle legs
+  or rolls, no attempts/events), and a subprocess per request at a 15s refetch is not what that
+  layer was built to carry. So `readers/pmcc.ts` re-implements those queries in TypeScript, names
+  the analytics function each one answers for, and keeps that module's stated rule that `None` never
+  means zero — a null time value renders as an em-dash, never `$0.00`, because "not recorded" and
+  "was zero" are different facts. This is a deliberate exception to the bridging rule above and it
+  is only safe while the mirror is checked: the page's headline must equal
+  `python run.py headline`, and its drawn Keltner band at the last completed bar must equal the
+  measures the gate stamped on that session's entry rows. Both were verified when the page landed
+  (2026-08-17), and the second caught a real off-by-one-bar error before it shipped.
+
 - **A module's own evidence window is the default.** Where a module narrows its analytics to a
   current era or study window, the console's reads default to the same narrowing rather than
   showing every row it can reach — MEIC's `CURRENT_ERA` is the case in hand. Earlier eras stay

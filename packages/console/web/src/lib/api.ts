@@ -15,6 +15,10 @@ import type {
   ReviewPayload,
   AdvisorPayload,
   MorningPayload,
+  PmccPayload,
+  PmccCycleRow,
+  PmccMeta,
+  PmccAssignment,
 } from "@console/shared";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -220,6 +224,60 @@ export function useFliesMeta(mode: TradingMode, era: string | null = null) {
         `/api/flies/meta?mode=${mode}${era !== null ? `&era=${era}` : ""}`,
       ),
     staleTime: 300_000,
+  });
+}
+
+/**
+ * PMCC-99. No mode argument anywhere: the module is paper-only by construction, not by preference.
+ */
+export function usePmcc() {
+  return useQuery<PmccPayload>({
+    queryKey: ["pmcc"],
+    queryFn: () => getJson<PmccPayload>("/api/pmcc"),
+    // The loop marks every tick in session; 15s matches the other module dashboards.
+    refetchInterval: 15_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export interface PmccHistoryFilter {
+  book: string | null;
+  symbol: string | null;
+}
+
+export function usePmccHistory(filter: PmccHistoryFilter, page: PageState) {
+  const params = new URLSearchParams();
+  if (filter.book !== null) params.set("book", filter.book);
+  if (filter.symbol !== null) params.set("symbol", filter.symbol);
+  pageParams(params, "", page);
+  return useQuery<Paged<PmccCycleRow>>({
+    queryKey: ["pmcc-history", filter, page],
+    queryFn: () => getJson<Paged<PmccCycleRow>>(`/api/pmcc/history?${params.toString()}`),
+    // A cycle closes a few times a week at most — polling it hard would be noise.
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function usePmccMeta() {
+  return useQuery<PmccMeta>({
+    queryKey: ["pmcc-meta"],
+    queryFn: () => getJson<PmccMeta>("/api/pmcc/meta"),
+    staleTime: 300_000,
+  });
+}
+
+export interface PmccAssignmentRow extends PmccAssignment {
+  positionId: string;
+  symbol: string;
+  assignedSession: string;
+}
+
+export function usePmccAssignments() {
+  return useQuery<{ rows: PmccAssignmentRow[] }>({
+    queryKey: ["pmcc-assignments"],
+    queryFn: () => getJson<{ rows: PmccAssignmentRow[] }>("/api/pmcc/assignments"),
+    refetchInterval: 60_000,
   });
 }
 

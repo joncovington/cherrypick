@@ -183,5 +183,12 @@ loop reads the flag.
 ## Status
 
 Built 2026-08-16; first paper data collection starts with its first scheduled session. The console
-renders this module through the generic Review page; a dedicated page is deliberately deferred
-until real positions accumulate.
+gained a dedicated **PMCC page** (`/pmcc`) on 2026-08-17, once the first session's positions
+existed: current state first (open legs, the short's remaining time value against
+`tv_close_threshold`, the keltner gate's verdict per symbol), a measurement-integrity strip above
+any P&L carrying rule 2's exposure bound, the dividend calendar's refresh state and the keltner
+readiness, and a full cycle history with the short chain, rolls and any delivered shares. Its
+reader mirrors `analytics.py`'s semantics in TypeScript rather than sharing them — the two are
+cross-checked by hand against `python run.py headline`, and the page's drawn Keltner band at the
+last completed bar must equal the `keltner_mid`/`keltner_atr` stamped on that session's entry rows.
+The module still also appears in the generic Review page.

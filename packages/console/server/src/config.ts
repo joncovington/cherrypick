@@ -41,6 +41,10 @@ export interface ConsoleConfig {
     /** ~/.cherrypick/config/flies.json (the deployed config the module actually runs off) --
         arms.<tag>.enabled is what cli.py's enabled_arms() reads. */
     fliesConfig: string;
+    /** pmcc's config, in the module's OWN resolution order (deployed, then the repo's config.json,
+        then the shipped example). First readable wins -- pmcc/cli.py's load_config resolves the same
+        way, and a page showing a threshold the module isn't running would be worse than none. */
+    pmccConfigCandidates: string[];
   };
 }
 
@@ -67,6 +71,11 @@ export function loadConfig(): ConsoleConfig {
       adviceDir: path.join(CHERRYPICK, "state", "advice"),
       meicRiskConfig: path.join(REPO_ROOT, "packages", "meic", "config.risk.json"),
       fliesConfig: path.join(CHERRYPICK, "config", "flies.json"),
+      pmccConfigCandidates: [
+        path.join(CHERRYPICK, "config", "pmcc.json"),
+        path.join(REPO_ROOT, "packages", "pmcc", "config.json"),
+        path.join(REPO_ROOT, "packages", "pmcc", "config.example.json"),
+      ],
     },
   };
 }
