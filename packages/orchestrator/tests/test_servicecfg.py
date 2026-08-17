@@ -321,10 +321,64 @@ def test_a_dropped_underlying_leaves_the_producer_alone(wired, spy, requests):
     assert spy == {"stop": 0, "start": 0} and finding.status == wd.OK
 
 
-def test_a_widened_window_hint_recycles_the_producer(wired, spy, requests):
-    """The ATM window is sized when the symbol is subscribed, so a wider one needs the same restart."""
+def _age_stamp(label: str, seconds: float) -> None:
+    """Backdate a producer's launch stamp, so the hint cooldown can be tested without waiting."""
+    path = sc.stamp_path(label)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["stamped_at"] = payload["stamped_at"] - seconds
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_a_widened_window_hint_is_deferred_right_after_launch(wired, spy, requests):
+    """The 2026-08-17 storm: pmcc walked its window hint up an escalation ladder and every step
+    recycled the producer, roughly one restart per five minutes for two hours. A narrower-than-ideal
+    window is a recorded refusal the module retries, not blindness — so it waits."""
     requests("flies", symbols=["XSP"], window_hints={"XSP": 40})
     _stamp_producer(wired)
+    requests("flies", symbols=["XSP"], window_hints={"XSP": 90})
+
+    finding = wd._recycle_streamer_if_stale("streamer", wired, STREAMER, settling=False)
+    assert spy == {"stop": 0, "start": 0} and finding.status == wd.OK
+    # Deferred is not the same state as unchanged, and the reason has to say so.
+    state = sc.staleness(STREAMER, wired, "streamer", check_subscriptions=True)
+    assert state["stale"] is False
+    assert "holding off" in state["reason"] and "XSP=90" in state["reason"]
+    assert state["deferred"] == {"window_hints": {"XSP": 90}}
+
+
+def test_a_widened_window_hint_recycles_once_the_cooldown_passes(wired, spy, requests):
+    """Deferred, not dropped — the widening is still served, just not on the same minute."""
+    requests("flies", symbols=["XSP"], window_hints={"XSP": 40})
+    _stamp_producer(wired)
+    requests("flies", symbols=["XSP"], window_hints={"XSP": 90})
+    _age_stamp("streamer", sc.HINT_RECYCLE_COOLDOWN_S + 1)
+
+    finding = wd._recycle_streamer_if_stale("streamer", wired, STREAMER, settling=False)
+    assert spy == {"stop": 1, "start": 1}
+    assert "XSP=90" in finding.message
+
+
+def test_a_new_symbol_recycles_even_inside_the_cooldown(wired, spy, requests):
+    """The urgency distinction the cooldown rests on: a module that cannot see an instrument at all
+    is blind, and blindness beats tidiness. Only window widenings wait."""
+    requests("earnings", symbols=["AAPL"])
+    _stamp_producer(wired)
+    requests("earnings", symbols=["AAPL", "MSFT"], window_hints={"AAPL": 90})
+
+    finding = wd._recycle_streamer_if_stale("streamer", wired, STREAMER, settling=False)
+    assert spy == {"stop": 1, "start": 1}
+    assert "MSFT" in finding.message
+
+
+def test_a_stamp_with_no_launch_time_keeps_the_old_behaviour(wired, spy, requests):
+    """Stamps written before the cooldown existed carry no `stamped_at`. An unknown age must not
+    invent a cooldown — it falls back to recycling, exactly as it did before."""
+    requests("flies", symbols=["XSP"], window_hints={"XSP": 40})
+    _stamp_producer(wired)
+    path = sc.stamp_path("streamer")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    del payload["stamped_at"]
+    path.write_text(json.dumps(payload), encoding="utf-8")
     requests("flies", symbols=["XSP"], window_hints={"XSP": 90})
 
     finding = wd._recycle_streamer_if_stale("streamer", wired, STREAMER, settling=False)
