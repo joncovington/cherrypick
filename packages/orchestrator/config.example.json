@@ -464,6 +464,14 @@
     "narrative_at": "10:45",
     "file_issues": false
   },
+  "morning_header": "x",
+  "morning": {
+    "_comment": "Pre-open market overview (packages/overview, `python -m cherrypick.overview`) - the morning sibling of the review. One scheduled pass per trading day at 'factpack_at' (ET, box-local clock) builds a deterministic fact pack (data/overview/morning-<day>.json) plus its render: index/vol/sector readings from the shared stream cache (prior-session values labeled prior, live pre-open quotes labeled live), gamma flip and walls from the suite's own GEX history, and a mechanical GREEN/YELLOW/RED phase computed from five declared gates - missing data can never produce RED and always blocks GREEN. Pure stream-cache + GEX consumer: no credential, no network, writes only into overview's own home, so a failed pass costs a report, never a trade. The pack's breadth symbols (VIX/VIX3M/VVIX, sector ETFs, USO/GLD proxies) are declared via state/stream_requests/overview.json; the FIRST build registers them, and the streamer picks them up on its next producer recycle. ON by default; opt out with enabled=false then re-run `install`. 'narrative' (OFF by default) schedules the agent-written morning note at 'narrative_at' via scripts/morning_narrative.py - it shells out to Claude Code (`claude` on PATH) and, unlike the EOD narrative, is allowed web lookups for the macro calendar; market numbers still come only from the pack, and the note is written BESIDE the facts, never inside them.",
+    "enabled": true,
+    "factpack_at": "08:30",
+    "narrative": false,
+    "narrative_at": "09:00"
+  },
   "data_header": "x",
   "data_epoch": {
     "_comment": "Optional restatement marker. Declare when a correctness fix RESTATES what recorded paper history means (e.g. the phase-0 leg-ratio / fee-count / win-definition fixes): set 'date' to the first session traded on fixed code. `report` stays descriptive (totals still cover all history, plus a pre_epoch_trades count per module); `calibrate` ENFORCES it - promotion readings use only sessions on/after the date, so a rung can never graduate on numbers produced by retired code. Remove or leave date null when no restatement is in effect.",

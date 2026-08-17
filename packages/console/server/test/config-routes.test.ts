@@ -47,6 +47,7 @@ beforeAll(async () => {
       gexDir: path.join(tmp, "gex"),
       scoutDir: path.join(tmp, "scout"),
       reviewDir: path.join(tmp, "review"),
+      overviewDir: path.join(tmp, "overview"),
       advisorDir: path.join(tmp, "advisor"),
       adviceDir: path.join(tmp, "state", "advice"),
       meicRiskConfig: path.join(tmp, "config.risk.json"),

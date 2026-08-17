@@ -282,6 +282,27 @@ def review_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def morning_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved pre-open market-overview config (packages/overview). ON by default for the pack,
+    OFF for the narrative, mirroring the review's posture.
+
+    Two jobs: `factpack_at` builds the deterministic morning pack (a pure stream-cache + GEX
+    consumer — no credential, no network, so it is as safe to run unattended as the review), and
+    `narrative_at` runs scripts/morning_narrative.py against it. The narrative shells out to Claude
+    Code and — unlike the EOD narrative — is allowed web lookups for the macro calendar, which is
+    one more reason it lives outside every package and stays off by default.
+    """
+    mv = cfg.get("morning", {}) or {}
+    return {
+        "enabled": mv.get("enabled", True),
+        # ET, box-local. 08:30 leaves the pack a full hour before the open; the narrative follows
+        # at 09:00 so a human reading pre-open gets facts even when the AI step fails or is off.
+        "factpack_at": mv.get("factpack_at", "08:30"),
+        "narrative": mv.get("narrative", False),
+        "narrative_at": mv.get("narrative_at", "09:00"),
+    }
+
+
 def advisor_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved AI-advisor scheduling (packages/advisor + scripts/advisor_checkpoint.py). OFF by default.
 

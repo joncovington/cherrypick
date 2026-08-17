@@ -49,6 +49,10 @@ CATCHUP_MINUTES = {
     "review-provisional": 180,
     "review-final": 240,
     "review-narrative": 240,
+    # Tight on purpose, unlike the review's: a pre-open pack caught up at 11:00 describes a market
+    # that already opened. Late enough to still fire after a 09:00 wake, dead by mid-morning.
+    "morning-factpack": 90,
+    "morning-narrative": 90,
     # A light checkpoint describes the session as it stands, so catching one up past the next slot
     # would produce two checkpoints describing nearly the same afternoon. The deep slot is
     # different: it issues the next session's advice, so it stays worth firing until late evening.
@@ -266,6 +270,10 @@ def _narrative_script(launcher: str) -> str:
 
 def _advisor_script(launcher: str) -> str:
     return _suite_script(launcher, "advisor_checkpoint.py")
+
+
+def _morning_narrative_script(launcher: str) -> str:
+    return _suite_script(launcher, "morning_narrative.py")
 
 
 def _module_tick_argv(paper: dict[str, Any]) -> list[str] | None:
@@ -568,6 +576,41 @@ def derive_jobs(
             enabled=rv["enabled"] and rv["narrative"],
             enabled_reason=(
                 "" if (rv["enabled"] and rv["narrative"]) else "disabled in config (review.narrative)"
+            ),
+            tags=("ai",),
+        ),
+    )
+    mv = cfgmod.morning_settings(cfg)
+    add(
+        "morning-factpack",
+        lambda: JobSpec(
+            id="morning-factpack",
+            argv=_run_py(pythonw, launcher, "morning"),
+            kind=KIND_DAILY,
+            at_et=mv["factpack_at"],
+            catchup_minutes=CATCHUP_MINUTES["morning-factpack"],
+            # A daily job fires every calendar day; without this a Saturday pass writes a pack for
+            # a session that never happened -- same weekend lesson as the review jobs.
+            trading_days_only=True,
+            enabled=mv["enabled"],
+            enabled_reason="" if mv["enabled"] else "disabled in config (morning)",
+        ),
+    )
+    add(
+        "morning-narrative",
+        lambda: JobSpec(
+            id="morning-narrative",
+            # scripts\, not a package -- same fence as review-narrative: nothing a loop can import
+            # is allowed to reach an AI call. This one additionally does web lookups for the macro
+            # calendar, which is one more reason it can only ever be a spawned script.
+            argv=(pythonw, _morning_narrative_script(launcher)),
+            kind=KIND_DAILY,
+            at_et=mv["narrative_at"],
+            catchup_minutes=CATCHUP_MINUTES["morning-narrative"],
+            trading_days_only=True,
+            enabled=mv["enabled"] and mv["narrative"],
+            enabled_reason=(
+                "" if (mv["enabled"] and mv["narrative"]) else "disabled in config (morning.narrative)"
             ),
             tags=("ai",),
         ),

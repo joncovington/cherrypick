@@ -30,6 +30,8 @@ export interface ConsoleConfig {
     gexDir: string;
     scoutDir: string;
     reviewDir: string;
+    /** `data/overview/` — the morning fact packs (`morning-<session>.json`) and their narratives. */
+    overviewDir: string;
     advisorDir: string;
     /** `state/advice/` — the artifacts the advisor issues and every module's loop reads. */
     adviceDir: string;
@@ -60,6 +62,7 @@ export function loadConfig(): ConsoleConfig {
       gexDir: path.join(data, "gex"),
       scoutDir: path.join(data, "scout"),
       reviewDir: path.join(data, "review"),
+      overviewDir: path.join(data, "overview"),
       advisorDir: path.join(data, "advisor"),
       adviceDir: path.join(CHERRYPICK, "state", "advice"),
       meicRiskConfig: path.join(REPO_ROOT, "packages", "meic", "config.risk.json"),

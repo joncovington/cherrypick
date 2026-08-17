@@ -14,6 +14,7 @@ import type {
   SymbolCardPayload,
   ReviewPayload,
   AdvisorPayload,
+  MorningPayload,
 } from "@console/shared";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -66,6 +67,16 @@ export function useReview(session?: string) {
     queryKey: ["review", session ?? "latest"],
     queryFn: () => getJson<ReviewPayload>(`/api/review${session ? `?session=${session}` : ""}`),
     // The fact set changes twice a day, not continuously — polling it hard would be noise.
+    refetchInterval: 60_000,
+  });
+}
+
+export function useMorningReport(session?: string) {
+  return useQuery<MorningPayload>({
+    queryKey: ["morning", session ?? "latest"],
+    queryFn: () => getJson<MorningPayload>(`/api/morning${session ? `?session=${session}` : ""}`),
+    // The pack is written once before the open (the narrative may land a little later) — a minute
+    // is already far finer than the data.
     refetchInterval: 60_000,
   });
 }

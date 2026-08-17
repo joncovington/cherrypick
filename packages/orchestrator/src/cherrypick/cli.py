@@ -703,6 +703,49 @@ def _run_review(cfg, *, final: bool) -> None:
     _emit(rec)
 
 
+def _run_morning(cfg) -> None:
+    """Invoked by the daily morning-factpack job (see cfgmod.morning_settings). Runs
+    packages/overview, a pure stream-cache + GEX-history consumer that writes only into its own
+    home — so like the review, the cost of a bad pass is a missing report, never a trade.
+
+    WHICH session the pack describes is overview's own contract: `cherrypick.overview build`
+    resolves today's ET trading day itself, so no `--session` is passed."""
+    hb_path = cfgmod.state_file("morning.last.json")
+    log_path = _module_log("overview")
+
+    try:
+        r = subprocess.run(
+            [cfgmod.python_exe(), "-m", "cherrypick.overview", "build"],
+            capture_output=True,
+            text=True,
+            timeout=900,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        try:
+            result = json.loads(r.stdout or "{}")
+        except json.JSONDecodeError:
+            result = {"raw": (r.stdout or "")[:2000]}
+        ok = r.returncode == 0 and result.get("ok", True) is not False
+        error = None if ok else (result.get("error") or (r.stderr or "")[:500])
+    except Exception as exc:
+        ok, result, error = False, {}, f"{type(exc).__name__}: {exc}"
+
+    rec = {
+        "ok": ok,
+        "error": error,
+        "session": (result or {}).get("session"),
+        "phase": (result or {}).get("phase"),
+    }
+    hb_path.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    _append_log(log_path, {**rec, "result": result})
+
+    if not ok:
+        Notifier(cfg.get("notify")).notify(
+            "WARNING", "overview", "Morning overview pack failed", f"{error or 'see logs/overview.log'}"
+        )
+    _emit(rec)
+
+
 def _console_port(cfg) -> int:
     """The console's listen port: `serve.port` in console.json, else 5070.
 
@@ -1183,6 +1226,7 @@ def build_parser() -> argparse.ArgumentParser:
             "run-earnings-exit",
             "run-earnings-symbol-watch",
             "review",
+            "morning",
             "restart-console",
             "ensure-dolt",
             "notify-test",
@@ -1342,6 +1386,7 @@ def main() -> None:
         "run-earnings-exit": lambda: _run_earnings(cfg, "exit"),
         "run-earnings-symbol-watch": lambda: _run_earnings_symbol_watch(cfg),
         "review": lambda: _run_review(cfg, final="--final" in sys.argv),
+        "morning": lambda: _run_morning(cfg),
         "restart-console": lambda: cmd_restart_console(cfg),
         "ensure-dolt": lambda: _ensure_dolt(cfg),
         "notify-test": lambda: cmd_notify_test(cfg),
