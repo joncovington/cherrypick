@@ -43,6 +43,7 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 | `streamer-health` | Streamer liveness only — the supervisor's 60 s in-session job (09:00–16:00 ET, trading days), the whole-session successor to the retired `cherrypick-preopen` windowed task. Still exists so the full 10-minute tick never has to speed up to protect the streamer, whose 09:30–09:35 opening-range window is unrecoverable once missed. Reuses `_check_streamer_health` and the normal notify path; writes no heartbeat; no-ops on a non-trading day. | — |
 | `preopen-check` | Deprecated alias for `streamer-health`, kept so the legacy preopen flag and any external caller still resolve. Same pass, same notify path; prefer `streamer-health` in anything new. | — |
 | `reconcile` | Paper↔live isolation guard: enumerate **every** account on the login (read-only `list_accounts`/`get_positions`/`get_account_info`) and flag any open positions/BP a paper-only suite shouldn't hold. On-demand; never trades; accounts masked. `reconcile.schedule.enabled` promotes it to a daily `cherrypick-reconcile` task (`--scheduled` notifies on any non-FLAT verdict) — the phase-5 posture once anything trades live. | `--scheduled` |
+| `positions` | **Live P/L by underlying for the real broker account** — the question the paper dashboards cannot answer. Prices every open position from the shared stream cache first and the feed only for what the cache lacks (the suite-wide streamer-before-API rule), writing nothing anywhere. Marks are midpoints: legs whose bid/ask is wide relative to their price are flagged with the dollar doubt they carry, and a leg neither source can price is reported and excluded from the totals rather than counted as zero. Read-only broker calls; accounts masked; never scheduled. Exit 2 = broker unreachable, 3 = something went unpriced. | `--detail`, `--account <last4>`, `--json` |
 | `notify-test` | Fire a test notification through every configured channel. | — |
 | `notify-trades` | Push new paper entries/exits to the trade channels (also runs best-effort on each watchdog tick). | — |
 | `notify-follow` | Push new [tastylive Follow Feed](https://follow.tastylive.com) orders — other traders' fills, as shown on the platform's Follow page — to their own channel. **Off by default**; the only notifier that makes a network call, so it runs on its own task and *never* on the watchdog tick. Read-only, no auth, no broker. | — |
@@ -88,7 +89,7 @@ deliberately separate path calibrate can never reach) · `--fast` (doctor) ·
 `--module` / `--set` / `--clear` / `--yes` (connect/account) ·
 `--host` / `--port` / `--no-browser` (settings) · `--apply` (migrate-home,
 settings --organize) · `--organize [target]` (settings) · `--stop` (supervise — ask a running
-supervisor to exit) · `--scheduled` (reconcile — the daily job's mode; notifies on any non-FLAT
+supervisor to exit) · `--detail` / `--account <last4>` / `--json` (positions) · `--scheduled` (reconcile — the daily job's mode; notifies on any non-FLAT
 verdict) · `--month` / `--dry-run` (archive) · `--channel` / `--url` (secrets) · `--force` (init).
 
 ## Slash-command equivalents (Claude Code)
