@@ -117,6 +117,12 @@ decides how its events reach you:
   `interval_minutes`; `profile_prefixes` is ignored. A quiet window pushes nothing rather than an empty
   heartbeat, and wing stops fold into the eventual exit line rather than firing mid-trade.
 
+The digest only fires **intraday on a trading day** (09:15–17:00 ET, the tail running past the bell so
+the day's closing exits still make that day's roll-up). MEIC only trades the session, so an evening or
+weekend push would repeat figures the last in-session digest already carried. A flush that comes due
+outside that window is *held*, not dropped: the pending batch stays in state and goes out as one digest
+on the next tick inside the window.
+
 A digest line reads `MEIC digest 13:45 ET — SPX: 30 entries (open×10 width-10×10 width-5×10) · 2 exits
 net +$48 · day 7 trades net +$61`, with a matching Discord card. Arms are **counted, not listed** — a
 30-entry window would otherwise repeat the same three labels ten times each.
