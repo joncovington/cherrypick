@@ -80,6 +80,7 @@ All tastytrade operations are called via `python -m cherrypick.meic.tt <command>
 | `python -m cherrypick.meic.tt get_account_info` | Buying power, NLV, balances | No |
 | `python -m cherrypick.meic.tt get_positions` | Open positions detail | No |
 | `python -m cherrypick.meic.tt get_working_orders` | Live/unfilled orders | No |
+| `python -m cherrypick.meic.tt get_quotes --symbols .APO260918C120 ...` | Live bid/ask/mid for specific streamer symbols, **without writing the shared cache** — the read-only sibling of `stream_subscribe`. For symbols no module declared (a discretionary position priced by `cherrypick positions`), where seeding the cache would leave rows nothing refreshes. | No |
 | `python -m cherrypick.meic.tt list_accounts` | Account numbers | No |
 | `python -m cherrypick.meic.tt execute_trade --order '<JSON>'` | Dry-run validate an order (default) | No |
 | `python -m cherrypick.meic.tt execute_trade --order '<JSON>' --live` | Place a live order | Yes |

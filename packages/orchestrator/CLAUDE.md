@@ -37,6 +37,7 @@ python run.py report         # unified cross-module paper P&L (read-only); --eod
 python run.py archive        # end-of-month rotation: zip each finished month's reports + rotated logs to logs/archive/ (--dry-run / --month YYYY-MM); scheduled monthly as cherrypick-log-archive
 python run.py settings       # local config editor + secrets manager, loopback:8804 -- the suite's one mutating surface; --organize [target] [--apply] reorders config(s) into their example's sections instead of serving
 python run.py calibrate      # per-profile calibration readings + promotion recommendations
+python run.py positions      # live P/L by underlying for the REAL broker account (read-only, on-demand); marks from the stream cache first, the feed only for the rest; --detail / --account <last4> / --json
 python run.py migrate-home   # dry-run: move config files into ~/.cherrypick + sweep leftovers (--apply to perform)
 python run.py uninstall      # remove cherrypick-managed tasks
 
@@ -208,6 +209,19 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   order), account numbers masked, advisory. It never trades or mutates config. For live operation
   (phase 5), `reconcile.schedule.enabled` promotes it to a daily scheduled task (`reconcile
   --scheduled`, its own task off the watchdog tick) that notifies on any non-FLAT verdict.
+  **`positions.py` (`cherrypick positions`) is the second such read, and the last one that should be
+  added without a reason this explicit.** It answers what no paper dashboard can — what the real account
+  holds right now and what it is worth — and it takes the same posture as `reconcile` rather than a
+  looser one: read-only broker calls (`get_positions`/`get_account_info`/`get_quotes`, never an order),
+  account numbers masked, off the watchdog path, **never scheduled**, and it reuses `reconcile`'s own
+  account enumeration instead of growing a parallel one. It writes nothing at all, the shared stream
+  cache included: marks come from that cache first (the suite-wide streamer-before-API rule) and from
+  the feed only for symbols no module declared, since seeding those undeclared symbols into the cache
+  would leave rows no daemon refreshes. Two failure modes it must never regress on, because a wrong P/L
+  is worse than no P/L: a **stale** cached quote is withheld rather than priced (four SPY legs sat in
+  that cache 21 hours old on 2026-08-18 — an old row does not announce itself, it just reads as live),
+  and a leg **neither source can price** is reported and excluded from the totals, never silently
+  counted as zero.
 - **The settings surface (`cherrypick settings`, port 8804) is the second narrow live-config
   exception — and the suite's only mutating HTTP surface.** Every dashboard server in the suite is
   GET-only; `settings_serve.py` adds config-write and secrets-write routes, so it earns its own

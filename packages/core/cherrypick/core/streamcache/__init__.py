@@ -16,6 +16,7 @@ Pure SQLite + stdlib; no broker, no network, no tastytrade import. A streaming *
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -317,3 +318,88 @@ def atm_window_syms(option_map: dict, center: float, strike_count: int) -> list[
     hi = min(len(strikes), nearest + strike_count + 1)
     keep = set(strikes[lo:hi])
     return [sym for sym, o in option_map.items() if float(o.strike_price) in keep]
+
+
+# --------------------------------------------------------------------------- symbology
+# The cache is keyed by *streamer* symbol (".SPY260918P750"), but positions come back from the broker in
+# OCC 2010 form ("SPY   260918P00750000"). A reader that wants a mark for a position it already holds
+# therefore has to convert, and the conversion has exactly one correct answer — so it lives here rather
+# than being re-derived per consumer.
+#
+# This mirrors `tastytrade.instruments.Option.occ_to_streamer_symbol` deliberately, and a test pins it
+# to that method, because the streamer writes the keys the SDK produced: a converter disagreeing by one
+# trailing zero would miss every fractional strike and read as "no quote available" rather than as a
+# bug. Kept pure stdlib (no SDK import) so stream-cache readers stay credential-free and network-free.
+_OCC_RE = re.compile(r"(\d{6})([CP])(\d{5})(\d{3})")
+
+
+def occ_to_streamer_symbol(occ: str) -> str:
+    """Convert an OCC 2010 option symbol to the DXLink streamer symbol used as a cache key.
+
+    Returns "" when `occ` is not an option symbol, which is the useful answer for a mixed position
+    list: an equity holding ("SCHD") has no OCC form and is already its own streamer symbol, so callers
+    read "" as "not an option" rather than as a failure.
+    """
+    # The SDK indexes `occ[:6].split()[0]` unguarded, which raises on an empty or all-space root. A
+    # converter on a read path must fail closed instead: callers branch on "" already, and a traceback
+    # here would take down a whole report over one malformed symbol.
+    root = (occ[:6].split() or [""])[0]
+    match = _OCC_RE.match(occ[6:])
+    if not root or match is None:
+        return ""
+    exp, right, dollars, thousandths = match.groups()
+    out = f".{root}{exp}{right}{int(dollars)}"
+    if int(thousandths):
+        # 500 -> "0.5" -> ".5". The SDK slices the leading zero off rather than formatting, and the
+        # trailing-zero trim that falls out of float repr is part of the key the streamer wrote.
+        out += str(int(thousandths) / 1000.0)[1:]
+    return out
+
+
+# How old a cached quote may be before a caller pricing a position should refetch rather than trust it.
+# Matches MEIC's own live-path bound (`tt._CACHE_MAX_AGE`) so the two cannot disagree about what
+# "current" means: during market hours the producer refreshes a subscribed symbol far more often than
+# this, so anything older says the symbol stopped updating, not that the market went quiet.
+QUOTE_MAX_AGE_SECONDS = 10.0
+
+
+def quote_mids(
+    conn: sqlite3.Connection,
+    symbols: list[str],
+    *,
+    max_age_seconds: float | None = QUOTE_MAX_AGE_SECONDS,
+) -> dict[str, dict]:
+    """Cached bid/ask/mid per streamer symbol, for the subset the cache holds *currently*.
+
+    Only rows with a usable `mid` are returned: a row present but mid-less is not a mark, and a caller
+    that treated it as one would report a position as worthless. Rows older than `max_age_seconds` are
+    withheld for the same reason — a mark is a claim about now, and a caller that cannot tell a
+    ten-second-old quote from an hour-old one will happily print a stale number as a live one. Pass
+    `max_age_seconds=None` to accept any age (worth it only for symbols too illiquid to requote, and
+    then the caller owns saying so).
+
+    Absent symbols are simply missing from the result, so `set(symbols) - result.keys()` is the list
+    still needing a live fetch.
+    """
+    out: dict[str, dict] = {}
+    now = time.time()
+    for sym in symbols:
+        try:
+            row = conn.execute(
+                "SELECT bid, ask, mid, updated_at FROM stream_quotes WHERE symbol = ?", (sym,)
+            ).fetchone()
+        except sqlite3.Error:
+            continue
+        if row is None or row["mid"] is None:
+            continue
+        age = now - (to_float(row["updated_at"]) or 0.0)
+        if max_age_seconds is not None and age > max_age_seconds:
+            continue
+        out[sym] = {
+            "bid": to_float(row["bid"]),
+            "ask": to_float(row["ask"]),
+            "mid": to_float(row["mid"]),
+            "age_seconds": round(age, 1),
+            "source": "stream_cache",
+        }
+    return out

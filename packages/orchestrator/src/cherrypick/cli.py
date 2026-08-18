@@ -41,6 +41,9 @@ Subcommands:
                        Never scheduled, never called from the watchdog.
   reconcile            Paper↔live isolation guard: query the real broker account (read-only) and flag
                        any open positions/BP a paper-only suite shouldn't have. On-demand; never trades.
+  positions            Live P/L by underlying for the REAL broker account: positions priced from the
+                       stream cache first, the feed only for what the cache lacks. --detail for legs,
+                       --account <last4> for one account, --json. Read-only; never trades.
   connect              Guided per-module onboarding (--module): set OAuth creds (via the module's own
                        hidden-input tool) and select the live-trading account. Never trades.
   account              List (--module), set (--set <last4|index>), or clear (--clear) a module's
@@ -96,6 +99,9 @@ from cherrypick.orchestrator import (
     watchdog,
 )
 from cherrypick.orchestrator import config as cfgmod
+from cherrypick.orchestrator import (
+    positions as positions_mod,
+)
 from cherrypick.orchestrator.util import CREATE_NO_WINDOW, first_json, pid_alive, read_json
 
 # The OS scheduler invokes the in-place launcher `pythonw <repo>/run.py <cmd>`. This module is
@@ -1067,6 +1073,21 @@ def cmd_reconcile(cfg, scheduled: bool = False) -> None:
     sys.exit({reconcile.FLAT: 0, reconcile.DRIFT: 1, reconcile.UNKNOWN: 2}.get(verdict, 2))
 
 
+def cmd_positions(cfg, args) -> None:
+    """Live P/L by underlying. Read-only and advisory, so it exits 0 whenever a report was produced — a
+    losing book is not a failed command. An unreachable broker is the failure (2), and a leg nothing
+    could price exits 3 so a caller notices rather than reading a total that quietly omits it."""
+    result = positions_mod.run(cfg, account=args.account)
+    if args.json:
+        print(json.dumps(result, indent=2, default=str))
+    else:
+        print(positions_mod.format_report(result, detail=args.detail))
+    if not result.get("ok"):
+        sys.exit(2)
+    if any(a.get("unpriced_count") for a in result.get("accounts") or []):
+        sys.exit(3)
+
+
 def cmd_notify_trades(cfg) -> None:
     _emit(trade_notifier.run(cfg))
 
@@ -1218,6 +1239,7 @@ def build_parser() -> argparse.ArgumentParser:
             "report",
             "archive",
             "reconcile",
+            "positions",
             "connect",
             "account",
             "migrate-home",
@@ -1270,6 +1292,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--fast",
         action="store_true",
         help="For doctor: skip the authenticated broker check (local/offline checks only)",
+    )
+    parser.add_argument(
+        "--detail",
+        action="store_true",
+        help="For positions: expand each underlying into its individual legs",
+    )
+    parser.add_argument(
+        "--account",
+        default=None,
+        help="For positions: restrict to one account by its last 4 digits",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="For positions: emit the structured result instead of the text report",
     )
     parser.add_argument("--module", default=None, help="For connect/account: which module to target")
     parser.add_argument(
@@ -1374,6 +1411,7 @@ def main() -> None:
         "report": lambda: cmd_report(cfg, args),
         "archive": lambda: cmd_archive(cfg, args),
         "reconcile": lambda: cmd_reconcile(cfg, scheduled=args.scheduled),
+        "positions": lambda: cmd_positions(cfg, args),
         "connect": lambda: cmd_connect(cfg, args),
         "account": lambda: cmd_account(cfg, args),
         "migrate-home": lambda: cmd_migrate_home(cfg, args.apply),
