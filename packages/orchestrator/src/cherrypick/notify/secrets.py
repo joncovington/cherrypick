@@ -11,6 +11,8 @@ Status/logging never prints a secret itself — only whether an entry is configu
 
 from __future__ import annotations
 
+from typing import Any
+
 import keyring
 import keyring.errors
 
@@ -33,12 +35,28 @@ def _entry(channel: str) -> str:
     return _ENTRIES.get(channel, f"{channel}_webhook")
 
 
-def get_webhook(channel: str) -> str | None:
-    """Return the stored webhook URL for a channel, or None if unset / keyring unavailable."""
+# Distinct from "nothing stored": the keyring itself refused the read. Windows Credential Manager
+# is transiently unavailable often enough to matter (a locked session, a service hiccup), and a
+# caller that ALARMS on a missing secret needs the difference — reporting an outage as "you never
+# configured this" sends the operator to fix something that is not broken.
+KEYRING_UNAVAILABLE = object()
+
+
+def read_entry(channel: str) -> Any:
+    """The raw read: the stored secret, None when nothing is stored, KEYRING_UNAVAILABLE when the
+    keyring itself failed."""
     try:
         return keyring.get_password(SERVICE_NAME, _entry(channel))
     except keyring.errors.KeyringError:
-        return None
+        return KEYRING_UNAVAILABLE
+
+
+def get_webhook(channel: str) -> str | None:
+    """Return the stored webhook URL for a channel, or None if unset / keyring unavailable. Callers
+    that only need "can I post" keep the simple contract; use read_entry when the difference between
+    unset and unavailable changes what you do."""
+    value = read_entry(channel)
+    return None if value is KEYRING_UNAVAILABLE else value
 
 
 def set_webhook(channel: str, url: str) -> None:
@@ -55,10 +73,12 @@ def delete_webhook(channel: str) -> bool:
         return False
 
 
-def get_lossdog_client() -> str | None:
-    """The Clerk __client cookie for the Lossdog feed, or None. A named accessor so the notifier's
-    call site says what it is fetching — `get_webhook("lossdog")` would work and mislead."""
-    return get_webhook("lossdog")
+def get_lossdog_client() -> Any:
+    """The Clerk __client cookie for the Lossdog feed: the cookie, None when unset, or
+    KEYRING_UNAVAILABLE when the keyring failed. A named accessor so the notifier's call site says
+    what it is fetching — `get_webhook("lossdog")` would work, mislead, and flatten away the
+    unavailable case the notifier decides on."""
+    return read_entry("lossdog")
 
 
 def is_set(channel: str) -> bool:

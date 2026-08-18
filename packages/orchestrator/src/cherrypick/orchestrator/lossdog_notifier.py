@@ -29,9 +29,11 @@ restart — `setx` writes the registry, and a long-running daemon's own env bloc
 
 **This notifier makes network calls, so it never rides the watchdog tick** — it is its own
 supervisor job (`lossdog-notify`), the same treatment as follow_notifier and for the same reason:
-the reliability path stays network-free. A dead feed, a dead token, or a Clerk API drift degrades
-to "no notifications". A rejected credential warns ONCE (keyed on the credential itself) and then
-stays silent until the credential changes, so a 10-minute cadence cannot become an alert storm.
+the reliability path stays network-free. A dead feed, a dead token, a Clerk API drift, or an
+OS keyring that will not answer degrades to "no notifications". A rejected credential warns ONCE
+(keyed on the credential itself) and then stays silent until the credential changes, so a 10-minute
+cadence cannot become an alert storm; an unreadable keyring says nothing at all until it has stayed
+unreadable for _KEYRING_OUTAGE_RUNS runs, because "I could not ask" is not "you never stored it".
 """
 
 from __future__ import annotations
@@ -71,6 +73,9 @@ _HTTP_TIMEOUT = 8
 _PAGE_LIMIT = 100  # the server's max; limit=101 is a validation error
 _DEFAULT_MAX_PER_RUN = 8
 _EXPIRY_WARN_HOURS = 2.0
+# Consecutive runs the OS keyring may refuse before it stops being a hiccup and becomes an
+# outage worth waking someone for. At the 10-minute job cadence that is an hour of silence.
+_KEYRING_OUTAGE_RUNS = 6
 _LATE_SYNC_HOURS = 24.0
 
 # Sent explicitly: the default "Python-urllib" User-Agent is the sort of thing a CDN blocks, and an
@@ -630,6 +635,9 @@ def _resolve_token() -> tuple[str | None, str, str, str | None]:
     because a silently dead cookie resurfaces as a mystery outage the day the fallback expires."""
     cookie = notify_secrets.get_lossdog_client()
     dead_cookie = None
+    keyring_down = cookie is notify_secrets.KEYRING_UNAVAILABLE
+    if keyring_down:
+        cookie = None
     if cookie:
         minted = _mint_token(cookie)
         if isinstance(minted, str):
@@ -640,6 +648,10 @@ def _resolve_token() -> tuple[str | None, str, str, str | None]:
     token = _env_token()
     if token:
         return token, "env", _token_fingerprint(token), dead_cookie
+    if keyring_down:
+        # The cookie may be sitting right there — we could not ask. Say "unavailable", not
+        # "missing", so the caller does not accuse the operator of never storing it.
+        return None, "keyring_unavailable", "keyring_unavailable", dead_cookie
     return None, "missing", dead_cookie or "missing", dead_cookie
 
 
@@ -678,19 +690,39 @@ def run(cfg: dict | None = None, *, replay_last: int = 0, dry_run: bool = False)
                 state["cookie_warned_fingerprint"] = dead_cookie
                 _save_state(state)
         if token is None:
-            if not testing and state.get("auth_warned_fingerprint") != fingerprint:
-                notifier.notify(
-                    "WARNING",
-                    "lossdog.auth",
-                    "Lossdog feed has no working credential",
-                    "Store the Clerk __client cookie (cherrypick secrets-set --channel lossdog) or "
-                    'set a fresh token with `setx LOSSDOG_TOKEN "<jwt>"` — see '
-                    "docs/configuration-and-storage.md.",
+            title = "Lossdog feed has no working credential"
+            body = (
+                "Store the Clerk __client cookie (cherrypick secrets-set --channel lossdog) or "
+                'set a fresh token with `setx LOSSDOG_TOKEN "<jwt>"` — see '
+                "docs/configuration-and-storage.md."
+            )
+            if source == "keyring_unavailable":
+                # The keyring refused the read, so the credential is unknown, not absent. Degrade
+                # quietly the way a Clerk outage does — but not forever: a keyring that stays down
+                # silences the feed, so count the consecutive refusals and speak once they stop
+                # being plausibly transient.
+                misses = int(state.get("keyring_unavailable_runs") or 0) + 1
+                state["keyring_unavailable_runs"] = misses
+                _save_state(state)
+                summary["keyring_unavailable_runs"] = misses
+                if misses < _KEYRING_OUTAGE_RUNS:
+                    summary.update({"skipped": "keyring unavailable"})
+                    return summary
+                title = "Lossdog feed cannot read its credential"
+                body = (
+                    f"The OS keyring has refused the stored cookie for {misses} runs in a row, so "
+                    "the feed is silent. The credential itself may be fine — check that Windows "
+                    "Credential Manager is reachable (cherrypick secrets-status)."
                 )
+            if not testing and state.get("auth_warned_fingerprint") != fingerprint:
+                notifier.notify("WARNING", "lossdog.auth", title, body)
                 state["auth_warned_fingerprint"] = fingerprint
                 _save_state(state)
             summary.update({"skipped": "no credential"})
             return summary
+        if state.get("keyring_unavailable_runs"):
+            state["keyring_unavailable_runs"] = 0  # the keyring answered — re-arm the outage count
+            _save_state(state)
 
         hours = _hours_to_expiry(token)
         if hours is not None:
