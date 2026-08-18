@@ -31,6 +31,7 @@ import json
 import os
 import sqlite3
 import time
+from datetime import time as dtime
 from typing import Any
 
 from cherrypick.notify import Notifier
@@ -162,6 +163,21 @@ COLOR_REJECTED = 0x6B7280  # slate — earnings: a symbol was screened and passe
 COLOR_DIGEST = 0x6366F1  # indigo — the periodic MEIC roll-up: many trades, no single lifecycle event
 
 _FIELD_MAX = 1024  # Discord's per-field value limit; over it the whole message is rejected
+
+#: The digest is an intraday push and nothing else: MEIC only trades the session, so a roll-up that
+#: fires at 03:00 on a Saturday carries the same figures the last in-session one already carried.
+#: Outside this ET window — and on any non-trading day — a due flush is *held*, not dropped: the
+#: pending batch stays in state and goes out on the next tick inside the window. The tail runs past
+#: the bell because the day's last exits land at the close and still belong to that day's digest.
+_DIGEST_OPEN = dtime(9, 15)
+_DIGEST_CLOSE = dtime(17, 0)
+
+
+def _digest_window_open(now: float) -> bool:
+    et = timeutil.et_from_epoch(now)
+    if not timeutil.is_trading_day(et, timeutil.load_holidays([et.year])):
+        return False
+    return _DIGEST_OPEN <= et.time() <= _DIGEST_CLOSE
 
 
 def _embed(color: int, title: str, details: str, footer: str | None = None) -> dict:
@@ -411,7 +427,11 @@ def _meic_process(
     last_flush = st.get("last_summary_flush")
     if last_flush is None:
         st["last_summary_flush"] = now  # first activation of the digest path — flush from here on
-    elif pending and (now - last_flush) >= summary_interval_minutes * 60:
+    elif (
+        pending
+        and (now - last_flush) >= summary_interval_minutes * 60
+        and _digest_window_open(now)
+    ):
         et = timeutil.et_from_epoch(now)
         day, hhmm = et.strftime("%Y-%m-%d"), et.strftime("%H:%M")
         notifier.notify(
