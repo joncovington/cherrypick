@@ -378,6 +378,48 @@ def test_missing_credential_warns_once_and_skips(wired, monkeypatch):
     assert len(_warnings(wired, "lossdog.auth")) == 1
 
 
+def test_unreadable_keyring_falls_back_to_the_env_token_silently(wired, monkeypatch):
+    monkeypatch.setattr(
+        ld.notify_secrets, "get_lossdog_client", lambda: ld.notify_secrets.KEYRING_UNAVAILABLE
+    )
+    _serve(monkeypatch, [_trade(1)])
+    res = ld.run(_cfg())
+    assert res["token_source"] == "env" and res["seeded"] is True
+    assert [s for s in wired if s[0] == "WARNING"] == []
+
+
+def test_unreadable_keyring_stays_quiet_for_a_hiccup_then_warns_on_an_outage(wired, monkeypatch):
+    monkeypatch.delenv("LOSSDOG_TOKEN")
+    monkeypatch.setattr(
+        ld.notify_secrets, "get_lossdog_client", lambda: ld.notify_secrets.KEYRING_UNAVAILABLE
+    )
+    for run_no in range(1, ld._KEYRING_OUTAGE_RUNS):
+        res = ld.run(_cfg())
+        assert res["skipped"] == "keyring unavailable" and res["keyring_unavailable_runs"] == run_no
+        assert _warnings(wired, "lossdog.auth") == []  # a Credential Manager hiccup is not an alarm
+    res = ld.run(_cfg())
+    assert res["skipped"] == "no credential" and res["token_source"] == "keyring_unavailable"
+    assert len(_warnings(wired, "lossdog.auth")) == 1
+    ld.run(_cfg())
+    assert len(_warnings(wired, "lossdog.auth")) == 1  # once per outage, not per tick
+
+
+def test_a_keyring_that_answers_again_re_arms_the_outage_count(wired, monkeypatch):
+    monkeypatch.delenv("LOSSDOG_TOKEN")
+    monkeypatch.setattr(
+        ld.notify_secrets, "get_lossdog_client", lambda: ld.notify_secrets.KEYRING_UNAVAILABLE
+    )
+    assert ld.run(_cfg())["keyring_unavailable_runs"] == 1
+    monkeypatch.setattr(ld.notify_secrets, "get_lossdog_client", lambda: "client-cookie")
+    monkeypatch.setattr(ld, "_mint_token", lambda cookie: _jwt(jti="minted"))
+    _serve(monkeypatch, [_trade(1)])
+    assert ld.run(_cfg())["token_source"] == "minted"
+    monkeypatch.setattr(
+        ld.notify_secrets, "get_lossdog_client", lambda: ld.notify_secrets.KEYRING_UNAVAILABLE
+    )
+    assert ld.run(_cfg())["keyring_unavailable_runs"] == 1  # counted from the new outage, not the old
+
+
 def test_401_warns_once_then_stays_silent_until_the_token_changes(wired, monkeypatch):
     monkeypatch.setattr(ld, "_get_page", lambda *_a: ld.AUTH_FAILED)
     assert ld.run(_cfg())["skipped"] == "auth failed (401)"
@@ -428,6 +470,19 @@ def test_a_garbage_token_payload_does_not_crash_the_cycle(wired, monkeypatch):
     _serve(monkeypatch, [_trade(1)])
     res = ld.run(_cfg())
     assert res["seeded"] is True and "token_hours_left" not in res
+
+
+def test_an_unreachable_keyring_reads_as_unavailable_not_unset(monkeypatch):
+    import keyring.errors
+
+    def boom(service, name):
+        raise keyring.errors.KeyringError("Credential Manager is having a moment")
+
+    monkeypatch.setattr(notify_secrets.keyring, "get_password", boom)
+    assert notify_secrets.read_entry("lossdog") is notify_secrets.KEYRING_UNAVAILABLE
+    assert notify_secrets.get_lossdog_client() is notify_secrets.KEYRING_UNAVAILABLE
+    assert notify_secrets.get_webhook("discord") is None  # the "can I post" contract is unchanged
+    assert notify_secrets.is_set("discord") is False
 
 
 def test_secrets_entry_names_are_stable_and_lossdog_is_not_a_webhook():
