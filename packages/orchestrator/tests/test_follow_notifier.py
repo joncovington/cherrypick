@@ -654,3 +654,14 @@ def test_embed_description_carries_both_rationale_lines():
 def test_no_rationale_leaves_the_description_off_entirely():
     embed = ff.build_embed(_order(1, comments=[], reason=None), {})
     assert "description" not in embed
+
+
+def test_replay_last_reposts_regardless_of_seen_state_and_the_enabled_gate(wired, monkeypatch):
+    _feed(monkeypatch, [_order(1), _order(2), _order(3)])
+    ff.run(_cfg())  # seed everything
+    res = ff.run(_cfg(enabled=False), replay_last=2)  # disabled + fully seen: replay still renders
+    assert res == {"ok": True, "replayed": 2, "dry_run": False, "state_untouched": True}
+    assert [k for k, _, _, _ in wired] == ["follow.order.2", "follow.order.3"]
+    _key, _msg, embed, identity = wired[-1]
+    assert identity["username"] == "tastylive Follow"
+    assert embed["title"].endswith("PLTR Vertical")
