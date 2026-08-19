@@ -656,6 +656,26 @@ def test_lifecycle_words_match_the_follow_card():
     assert ld._lifecycle(roll)[1] == "ROLL"
 
 
+def test_money_shows_cents_but_strikes_do_not():
+    # $1.5 read as a typo on a live card; $61.00 on a strike would be noise.
+    assert ld._price_line(_trade(1, price=1.5, priceLabel="credit")) == "$1.50 cr"
+    leg = {
+        "unitQuantity": 1,
+        "action": "SELL_TO_OPEN",
+        "strike": 61,
+        "callOrPut": "CALL",
+        "averageFillPrice": 1.5,
+        "expirationDate": "2026-09-18",
+        "dte": 31,
+    }
+    assert ld._leg_line(leg) == "STO 1× 18 Sep 26 $61 CALL @ $1.50 · 31 DTE"
+    # A sub-cent average fill across partials keeps its own precision instead of rounding to $0.06.
+    assert ld._money(0.055) == "0.055"
+    assert ld._leg_line({"unitQuantity": 100, "action": "BUY_TO_OPEN", "averageFillPrice": 174.2}) == (
+        "BTO 100 sh @ $174.20"
+    )
+
+
 def test_price_uses_the_db_cr_abbreviation():
     assert ld._price_line(_trade(1)) == "$3.26 db"
     assert ld._price_line(_trade(1, priceLabel="credit")) == "$3.26 cr"
