@@ -681,3 +681,85 @@ def test_price_uses_the_db_cr_abbreviation():
     assert ld._price_line(_trade(1, priceLabel="credit")) == "$3.26 cr"
     # An unknown label is passed through rather than dropped — this feed's vocabulary is open-ended.
     assert ld._price_line(_trade(1, priceLabel="level")) == "$3.26 level"
+
+
+def test_a_lone_leg_that_repeats_the_fields_leaves_the_body_empty():
+    # "STO 1x 18 Sep 26 $61 CALL @ $1.50 - 31 DTE" against Trade "1x -61C - $1.50 cr" and Context
+    # "18 Sep 26 - 31 DTE" is the same sentence twice: one leg's fill IS the net price.
+    trade = _trade(
+        1,
+        price=1.5,
+        priceLabel="credit",
+        legs=[
+            {
+                "unitQuantity": 1,
+                "action": "SELL_TO_OPEN",
+                "strike": 61,
+                "callOrPut": "CALL",
+                "expirationDate": "2026-09-18",
+                "dte": 31,
+                "averageFillPrice": 1.5,
+            }
+        ],
+    )
+    embed = ld.build_embed(trade)
+    assert "description" not in embed
+    fields = _fields(embed)
+    assert fields["Trade"] == "1× -61C · $1.50 cr"
+    assert fields["Context"] == "18 Sep 26 · 31 DTE"
+    # The plain-text floor is the canonical record and still carries the leg.
+    assert "STO 1× 18 Sep 26 $61 CALL @ $1.50" in ld.format_trade(trade)
+
+
+def test_two_legs_always_keep_the_body():
+    # Per-leg fills, and which expiry belongs to which strike, exist nowhere else on the card.
+    trade = _trade(
+        1,
+        price=0.85,
+        legs=[
+            {
+                "unitQuantity": 1,
+                "action": "BUY_TO_CLOSE",
+                "strike": 360,
+                "callOrPut": "CALL",
+                "expirationDate": "2026-08-21",
+                "dte": 3,
+                "averageFillPrice": 4.10,
+            },
+            {
+                "unitQuantity": 1,
+                "action": "SELL_TO_OPEN",
+                "strike": 370,
+                "callOrPut": "CALL",
+                "expirationDate": "2026-10-16",
+                "dte": 59,
+                "averageFillPrice": 3.25,
+            },
+        ],
+    )
+    body = ld.build_embed(trade)["description"].split("\n")
+    assert body == [
+        "BTC 1× 21 Aug 26 $360 CALL @ $4.10 · 3 DTE",
+        "STO 1× 16 Oct 26 $370 CALL @ $3.25 · 59 DTE",
+    ]
+
+
+def test_a_lone_leg_keeps_the_body_when_it_still_says_something():
+    # A fill that disagrees with the net price is a fact the fields cannot reconstruct...
+    odd_fill = _trade(1, price=1.95)  # the leg fills at 3.26
+    assert "description" in ld.build_embed(odd_fill)
+    # ...and an action the feed tags as neither a buy nor a sell has no sign in the structure, so
+    # the body is the only place its verb appears at all.
+    exercised = _trade(
+        1,
+        legs=[
+            {
+                "unitQuantity": 1,
+                "action": "EXERCISE",
+                "strike": 360,
+                "callOrPut": "CALL",
+                "averageFillPrice": 3.26,
+            }
+        ],
+    )
+    assert ld.build_embed(exercised)["description"].startswith("Exercise")
