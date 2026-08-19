@@ -627,6 +627,29 @@ def _execution_ts(trade: dict) -> datetime | None:
     return _parse_ts(trade.get("executionTime"))
 
 
+def _body_is_redundant(trade: dict) -> bool:
+    """True when the leg lines would repeat the fields and add nothing.
+
+    Only ever on a single-leg trade, and only when the compressed structure really does carry the
+    whole leg: '1× -61C · $1.50 cr' against 'STO 1× 18 Sep 26 $61 CALL @ $1.50 · 31 DTE' is the same
+    sentence twice, since the date and DTE are already the Context column and one leg's fill IS the
+    net price. Two legs is never redundant — the per-leg fills and the pairing of each strike to its
+    own expiry exist nowhere else on the card.
+
+    The two guards are what keep this from silently eating information. A leg whose `action` the feed
+    doesn't tag as a buy or a sell (an exercise, an assignment) has no sign in the structure, so the
+    body is the only place its verb appears. And a fill that disagrees with the trade's net price is
+    telling us something we can't reconstruct, whatever the reason — so it stays on the card."""
+    legs = trade.get("legs") or []
+    if len(legs) != 1:
+        return False
+    leg = legs[0]
+    if not _leg_sign(leg):
+        return False
+    fill, price = leg.get("averageFillPrice"), trade.get("price")
+    return fill is None or price in (None, "") or _money(fill) == _money(price)
+
+
 def _late_sync_note(trade: dict) -> str:
     """'synced 4d after execution' when syncedAt lags executionTime by more than a day — the feed
     backfills in batches, and a card arriving today for last week's fill should say so."""
@@ -693,7 +716,8 @@ def build_embed(trade: dict) -> dict:
     differs is only what each feed actually publishes: this one carries no underlying price, IV rank
     or POP, so Context is expiry alone and Stats says what kind of trade it is; and it carries no
     trader comment, so the body slot the follow card gives the rationale holds the per-leg detail
-    instead — the one thing this feed has that the other doesn't. Expiries keep their year: this
+    instead — the one thing this feed has that the other doesn't, dropped on the single-leg trades
+    where it only repeats the fields (see `_body_is_redundant`). Expiries keep their year: this
     feed runs far-dated, where 'Oct 16' would be ambiguous.
 
     The renderers are deliberately NOT shared with follow_notifier: that module's formatting half is
@@ -731,7 +755,7 @@ def build_embed(trade: dict) -> dict:
         "color": COLOR_CREDIT if str(trade.get("priceLabel") or "") == "credit" else COLOR_DEBIT,
         "fields": fields,
     }
-    legs = trade.get("legs") or []
+    legs = [] if _body_is_redundant(trade) else (trade.get("legs") or [])
     leg_lines = [_leg_line(leg) for leg in legs[:6] if _leg_line(leg)]
     if len(legs) > 6:
         leg_lines.append(f"+{len(legs) - 6} more legs")
