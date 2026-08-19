@@ -1092,8 +1092,8 @@ def cmd_notify_trades(cfg) -> None:
     _emit(trade_notifier.run(cfg))
 
 
-def cmd_notify_follow(cfg) -> None:
-    _emit(follow_notifier.run(cfg))
+def cmd_notify_follow(cfg, args) -> None:
+    _emit(follow_notifier.run(cfg, replay_last=args.replay_last or 0, dry_run=args.dry_run))
 
 
 def cmd_notify_lossdog(cfg, args) -> None:
@@ -1361,15 +1361,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="For archive: report what would be archived without writing or deleting. "
-        "For notify-lossdog: print embeds as JSON instead of posting (state untouched)",
+        "For notify-follow/notify-lossdog: print embeds as JSON instead of posting (state untouched)",
     )
     parser.add_argument(
         "--replay-last",
         type=int,
         default=0,
         metavar="N",
-        help="For notify-lossdog: re-post the N most recent trades regardless of seen state "
-        "(a rendering test; state untouched)",
+        help="For notify-follow/notify-lossdog: re-post the N most recent trades regardless of "
+        "seen state (a rendering test; state untouched)",
     )
     parser.add_argument(
         "--stop",
@@ -1417,7 +1417,7 @@ def main() -> None:
         "migrate-home": lambda: cmd_migrate_home(cfg, args.apply),
         "calibrate": lambda: cmd_calibrate(cfg),
         "notify-trades": lambda: cmd_notify_trades(cfg),
-        "notify-follow": lambda: cmd_notify_follow(cfg),
+        "notify-follow": lambda: cmd_notify_follow(cfg, args),
         "notify-lossdog": lambda: cmd_notify_lossdog(cfg, args),
         "notify-desk": lambda: cmd_notify_desk(cfg),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),

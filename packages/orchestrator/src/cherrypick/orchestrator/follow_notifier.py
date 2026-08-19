@@ -571,10 +571,16 @@ def _sort_key(order: dict) -> tuple:
     return (str(order.get("executed_at") or ""), int(order.get("id") or 0))
 
 
-def run(cfg: dict | None = None) -> dict:
+def run(cfg: dict | None = None, *, replay_last: int = 0, dry_run: bool = False) -> dict:
+    """One poll cycle. `replay_last`/`dry_run` are the same testing affordances the lossdog
+    notifier has: re-render the newest N orders regardless of seen state, bypassing the enabled
+    gate (so the card can be eyeballed before the job is switched on) and never touching state.
+    `dry_run` only means anything alongside `replay_last` here — the normal pass has a seeding
+    step whose "would I have seeded?" answer is not worth simulating."""
     cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     settings = cfgmod.follow_feed_settings(cfg)
-    if not settings["enabled"]:
+    testing = bool(replay_last)
+    if not settings["enabled"] and not testing:
         return {"ok": True, "skipped": "follow_feed not enabled"}
 
     if not _acquire_lock():
@@ -589,7 +595,36 @@ def run(cfg: dict | None = None) -> dict:
         if not orders:
             # An empty list is indistinguishable from a fetch failure here, and both mean the same
             # thing: nothing to push, state untouched, try again next tick.
+            if testing:  # a replay asked for cards and got none — that IS an error worth saying
+                return {"ok": False, "error": "feed unreachable or empty"}
             return {"ok": True, "orders_seen": 0, "notified": 0}
+
+        if replay_last:
+            newest = sorted(orders, key=_sort_key)[-int(replay_last) :]
+            trader_names = fetch_trader_names()
+            for order in newest:
+                spec = card_spec(order, trader_names)
+                if dry_run:
+                    print(
+                        json.dumps(
+                            {
+                                "message": feedcard.format_text(spec),
+                                "identity": feedcard.identity(spec, avatars),
+                                "embed": feedcard.build_embed(spec),
+                            },
+                            indent=2,
+                        )
+                    )
+                else:
+                    notifier.notify(
+                        "INFO",
+                        f"follow.order.{order['id']}",
+                        "Follow feed",
+                        feedcard.format_text(spec),
+                        embed=feedcard.build_embed(spec),
+                        identity=feedcard.identity(spec, avatars),
+                    )
+            return {"ok": True, "replayed": len(newest), "dry_run": dry_run, "state_untouched": True}
 
         state = util.read_json(_STATE)
         if not state.get("notified_ids"):  # first activation — seed, don't backfill
