@@ -87,8 +87,8 @@ def wired(tmp_path, monkeypatch):
     monkeypatch.setattr(
         ld.Notifier,
         "notify",
-        lambda self, level, key, title, message, embed=None, content=None: (
-            sent.append((level, key, message, embed, content)) or {"log": {"ok": True}}
+        lambda self, level, key, title, message, embed=None: (
+            sent.append((level, key, message, embed)) or {"log": {"ok": True}}
         ),
     )
     monkeypatch.setattr(ld.notify_secrets, "get_lossdog_client", lambda: None)
@@ -120,11 +120,11 @@ def _serve(monkeypatch, trades, calls=None):
 
 
 def _pushed(sent):
-    return [key for _level, key, _msg, _embed, _content in sent if key.startswith("lossdog.trade.")]
+    return [key for _level, key, _msg, _embed in sent if key.startswith("lossdog.trade.")]
 
 
 def _warnings(sent, key):
-    return [k for level, k, _msg, _embed, _content in sent if level == "WARNING" and k == key]
+    return [k for level, k, _msg, _embed in sent if level == "WARNING" and k == key]
 
 
 # --------------------------------------------------------------------------- reliability
@@ -545,7 +545,7 @@ def test_embed_carries_the_whole_trade(wired):
     embed = ld.build_embed(trade)
     assert embed["title"] == "OPEN · TSLA Long Call"
     assert embed["color"] == ld.COLOR_CREDIT
-    assert embed["author"]["name"] == "Tony Battista · Veteran Trader"
+    assert embed["author"]["name"] == f"{ld._TITLE_MARK} Tony Battista · Veteran Trader"
     assert embed["author"]["icon_url"].startswith("https://")
     assert embed["url"] == ld._FEED_URL
     assert embed["description"] == "BTO 1× 21 Aug 26 $360 CALL @ $3.26 · 18 DTE"
@@ -567,7 +567,7 @@ def test_embed_color_is_debit_red_by_default():
 def test_author_without_a_picture_omits_the_icon_key():
     trade = _trade(1, trader={"name": "Tony Battista", "jobPosition": ""})
     embed = ld.build_embed(trade)
-    assert embed["author"] == {"name": "Tony Battista"}
+    assert embed["author"] == {"name": f"{ld._TITLE_MARK} Tony Battista"}
 
 
 def test_late_sync_lands_in_the_footer(wired):
@@ -681,16 +681,3 @@ def test_price_uses_the_db_cr_abbreviation():
     assert ld._price_line(_trade(1, priceLabel="credit")) == "$3.26 cr"
     # An unknown label is passed through rather than dropped — this feed's vocabulary is open-ended.
     assert ld._price_line(_trade(1, priceLabel="level")) == "$3.26 level"
-
-
-def test_the_scan_marker_rides_above_the_card_not_inside_it(wired, monkeypatch):
-    # Discord fixes the embed author row as [avatar][name], so the square can only lead the card
-    # from a message line of its own.
-    _serve(monkeypatch, [_trade(1)])
-    ld.run(_cfg())  # seed
-    _serve(monkeypatch, [_trade(1), _trade(2)])
-    ld.run(_cfg())
-    (call,) = wired
-    _level, _key, _message, embed, content = call
-    assert content == ld._CARD_MARK
-    assert ld._CARD_MARK not in json.dumps(embed)
