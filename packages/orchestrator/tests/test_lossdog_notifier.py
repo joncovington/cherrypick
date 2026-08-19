@@ -299,10 +299,7 @@ def test_dry_run_posts_nothing_and_leaves_state_untouched(wired, monkeypatch, ca
     res = ld.run(_cfg(), dry_run=True)
     assert res["dry_run"] is True and res["would_notify"] == 1
     assert _pushed(wired) == []
-    assert (
-        json.loads(capsys.readouterr().out.strip())["embed"]["title"]
-        == f"{ld._TITLE_MARK} OPEN · TSLA Long Call"
-    )
+    assert json.loads(capsys.readouterr().out.strip())["embed"]["title"] == "OPEN · TSLA Long Call"
     assert ld._STATE.read_text() == before
 
 
@@ -546,9 +543,9 @@ def test_actions_humanize_and_unknown_ones_render_as_words():
 def test_embed_carries_the_whole_trade(wired):
     trade = _trade(7, priceLabel="credit", price=1.95)
     embed = ld.build_embed(trade)
-    assert embed["title"] == f"{ld._TITLE_MARK} OPEN · TSLA Long Call"
+    assert embed["title"] == "OPEN · TSLA Long Call"
     assert embed["color"] == ld.COLOR_CREDIT
-    assert embed["author"]["name"] == "Tony Battista · Veteran Trader"
+    assert embed["author"]["name"] == f"{ld._TITLE_MARK} Tony Battista · Veteran Trader"
     assert embed["author"]["icon_url"].startswith("https://")
     assert embed["url"] == ld._FEED_URL
     assert embed["description"] == "BTO 1× 21 Aug 26 $360 CALL @ $3.26 · 18 DTE"
@@ -570,7 +567,7 @@ def test_embed_color_is_debit_red_by_default():
 def test_author_without_a_picture_omits_the_icon_key():
     trade = _trade(1, trader={"name": "Tony Battista", "jobPosition": ""})
     embed = ld.build_embed(trade)
-    assert embed["author"] == {"name": "Tony Battista"}
+    assert embed["author"] == {"name": f"{ld._TITLE_MARK} Tony Battista"}
 
 
 def test_late_sync_lands_in_the_footer(wired):
@@ -582,9 +579,9 @@ def test_late_sync_lands_in_the_footer(wired):
 
 def test_unknown_strategy_slug_falls_back_to_the_name_then_the_slug():
     named = _trade(1, strategySlug="weird_new_thing")
-    assert ld.build_embed(named)["title"] == f"{ld._TITLE_MARK} OPEN · TSLA Long Call"
+    assert ld.build_embed(named)["title"] == "OPEN · TSLA Long Call"
     slug_only = _trade(1, strategyName=None, strategySlug="call_diagonal_spread")
-    assert ld.build_embed(slug_only)["title"] == f"{ld._TITLE_MARK} OPEN · TSLA Call Diagonal Spread"
+    assert ld.build_embed(slug_only)["title"] == "OPEN · TSLA Call Diagonal Spread"
 
 
 def test_calendar_expiries_render_as_a_range():
