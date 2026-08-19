@@ -70,8 +70,8 @@ def wired(tmp_path, monkeypatch):
     monkeypatch.setattr(
         ff.Notifier,
         "notify",
-        lambda self, level, key, title, message, embed=None: (
-            sent.append((key, message, embed)) or {"log": {"ok": True}}
+        lambda self, level, key, title, message, embed=None, identity=None: (
+            sent.append((key, message, embed, identity)) or {"log": {"ok": True}}
         ),
     )
     monkeypatch.setattr(ff, "fetch_trader_names", lambda: {166462: "Jim Schultz"})
@@ -145,7 +145,7 @@ def test_burst_is_capped_and_remainder_watermarked(wired, monkeypatch):
     _feed(monkeypatch, [_order(i) for i in range(1, 32)])
     res = ff.run(_cfg(max_per_run=3))
     assert res["notified"] == 3 and res["suppressed"] == 27
-    assert [k for k, _, _ in wired] == ["follow.order.29", "follow.order.30", "follow.order.31"]
+    assert [k for k, _, _, _ in wired] == ["follow.order.29", "follow.order.30", "follow.order.31"]
 
     # Suppressed ids are watermarked, not left to resurface on the next tick.
     assert ff.run(_cfg(max_per_run=3))["notified"] == 0
@@ -156,7 +156,7 @@ def test_orders_push_in_chronological_order(wired, monkeypatch):
     ff.run(_cfg())
     _feed(monkeypatch, [_order(1), _order(5), _order(3), _order(4)])
     ff.run(_cfg())
-    assert [k for k, _, _ in wired] == ["follow.order.3", "follow.order.4", "follow.order.5"]
+    assert [k for k, _, _, _ in wired] == ["follow.order.3", "follow.order.4", "follow.order.5"]
 
 
 def test_lock_blocks_a_concurrent_run(wired, monkeypatch):
@@ -182,7 +182,7 @@ def test_line_leads_with_lifecycle_then_carries_the_numbers():
         {166462: "Jim Schultz"},
     )
     head, detail, body = line.split("\n")
-    assert head == "➕ Jim Schultz · OPEN PLTR Vertical"  # open/close leads, not Bought/Sold
+    assert head == "➕ [tastylive] Jim Schultz · OPEN PLTR Vertical"  # open/close leads, not Bought/Sold
     assert "1× 122P/117P" in detail
     assert "exp Aug 7" in detail
     assert "$4.98 db" in detail  # debit/credit survives in the price suffix
@@ -205,20 +205,23 @@ def test_closing_order_is_tagged_close_and_credit():
         }
     ]
     line = ff.format_order(_order(2, order_legs=legs), {166462: "Jim Schultz"})
-    assert line.startswith("➖ Jim Schultz · CLOSE XSP Vertical")
+    assert line.startswith("➖ [tastylive] Jim Schultz · CLOSE XSP Vertical")
     assert "$0.87 cr" in line
     assert "POP" not in line  # POP describes an opening trade only
 
 
-def test_mixed_open_close_falls_back_to_the_verb():
-    """A roll touches both sides. Rather than guess, say what is certain — that it was a sale."""
+def test_mixed_open_close_is_a_roll():
+    """Legs marked on both sides are a close paired with an open — the feed tags every leg, so
+    mixed marks aren't ambiguity, they're a roll. Only an order with NO marks falls to the verb."""
     legs = [
         {"underlying_symbol": "SPX", "strike_price": "6300.0", "call_or_put": "P", "open_close": "C"},
         {"underlying_symbol": "SPX", "strike_price": "6250.0", "call_or_put": "P", "open_close": "O"},
     ]
     line = ff.format_order(_order(3, order_legs=legs), {166462: "Jim"})
-    assert "Sold SPX Vertical" in line
+    assert "ROLL SPX Vertical" in line
     assert "OPEN" not in line and "CLOSE" not in line
+    unmarked = [{"underlying_symbol": "SPX", "strike_price": "6300.0", "call_or_put": "P"}]
+    assert "Sold SPX" in ff.format_order(_order(3, order_legs=unmarked), {166462: "Jim"})
 
 
 def test_unknown_trader_id_still_formats():
@@ -304,13 +307,15 @@ def test_embed_carries_the_numbers_as_fields():
         {166462: "Jim Schultz"},
     )
     assert embed["author"]["name"] == "Jim Schultz"
-    assert embed["title"] == "OPEN · PLTR Vertical"
+    assert embed["title"] == "🟩 OPEN · PLTR Vertical"
     assert embed["description"] == "> LG!"
-    assert embed["footer"]["text"] == "Earnings"
+    # The tags ride the Stats column now; the footer uniformly names the feed.
+    assert "Earnings" in _fields(embed)["Stats"]
+    assert embed["footer"]["text"] == "tastylive Follow Feed"
     assert _fields(embed) == {
         "Trade": "1× 122P/117P · $4.98 db",
         "Context": "Aug 7 · PLTR 163.86",
-        "Stats": "IVR 36 · POP 31%",
+        "Stats": "IVR 36 · POP 31% · Earnings",
     }
     assert all(f["inline"] for f in embed["fields"])
 
@@ -330,7 +335,7 @@ def test_embed_color_is_the_cash_direction_not_the_lifecycle():
         return ff.build_embed(_order(11, **over), {166462: "Jim Schultz"})
 
     assert embed()["color"] == ff.COLOR_CREDIT  # the default order is a net_credit
-    assert embed()["title"].startswith("OPEN")  # ...and the lifecycle still leads the headline
+    assert embed()["title"].startswith("🟩 OPEN")  # ...and the lifecycle still leads the headline
     assert embed(order_type="net_debit")["color"] == ff.COLOR_DEBIT
     closed = [dict(leg, open_close="C") for leg in _order(0)["order_legs"]]
     assert embed(order_type="net_debit", order_legs=closed)["color"] == ff.COLOR_DEBIT

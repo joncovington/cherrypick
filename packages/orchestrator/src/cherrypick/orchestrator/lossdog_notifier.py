@@ -2,19 +2,19 @@
 
 Polls the Lossdog VIP portfolio feed and pushes one card per newly seen trade: a plain text block
 for the log floor and a colored Discord embed for the channel this is actually read in
-(`format_trade`/`build_embed` below). Same event contract as follow_notifier: a per-id watermark
+(`card_spec` below, rendered by `cherrypick.notify.feedcard`). Same event contract as
+follow_notifier: a per-id watermark
 (one-shot, never re-notified), atomic state, a single-writer lock, and seed-don't-backfill on first
 activation so switching it on doesn't blast a hundred historical trades in one burst.
 
-**The card is laid out like the follow-feed card** (`follow_notifier.build_embed`) — same lifecycle
-word in the title, same three inline fields (Trade / Context / Stats), same compact signed-leg
-structure and db/cr price — because both feeds land in the same Discord channel and a reader should
-not have to switch formats mid-scroll. The code is deliberately NOT shared: follow_notifier's
-formatting half is kept byte-identical to a sibling repo, so importing it here would make every
-change to this card a two-repo change. Where the feeds differ, so do the cards, and only where the
-data does: this feed publishes no underlying price, IV rank or POP (Context is expiry alone, Stats
-says what kind of trade it is) and no trader comment (the body slot holds the per-leg detail
-instead), and its expiries keep their year because it runs far-dated.
+**The card renders through the shared feed-card grammar** (`cherrypick.notify.feedcard`, since
+2026-08-18): this module owns only the mapping from the feed's JSON — with all its verified quirks —
+into the neutral card spec (`card_spec` below); the embed, the text floor, and the per-service
+webhook identity are built there, identically for both feeds in the channel. Where the feeds differ,
+so do the specs, and only where the data does: this feed publishes no underlying price, IV rank or
+POP (Context is expiry alone, Stats says what kind of trade it is) and no trader comment (the body
+slot holds the per-leg detail instead, dropped when a lone leg would just repeat the fields), and
+its expiries keep their year because it runs far-dated.
 
 **The API is private and undocumented** (reverse-engineered from the logged-in web app at
 app.lossdog.com); scripted polling may not be permitted under Lossdog's terms of service. This is a
@@ -56,10 +56,10 @@ import os
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
-from cherrypick.notify import Notifier
+from cherrypick.notify import Notifier, feedcard
 from cherrypick.notify import secrets as notify_secrets
 
 from . import config as cfgmod
@@ -96,12 +96,11 @@ _USER_AGENT = "cherrypick-lossdog-notifier/1.0"
 # where an outage means "ask again next tick". Conflating them is how a dead token spins silently.
 AUTH_FAILED = object()
 
-# Stripe colors for the Discord embed, keyed on the trade's own debit/credit label. Tailwind-500s,
-# like the suite's existing stripes (0x3B82F6 / 0xF59E0B / 0x8B5CF6). Debit is red-500 rather than
-# the orange the source UI leans toward: this feed shares a channel with the follow feed, whose
-# CLOSE stripe is amber, and orange next to amber blurs into one color at Discord's stripe width.
-COLOR_CREDIT = 0x22C55E  # green — money came in
-COLOR_DEBIT = 0xEF4444  # red — money went out
+# Stripe colors live in the shared card grammar now; re-exported because they are part of this
+# module's public face (tests and callers key on them).
+COLOR_CREDIT = feedcard.COLOR_CREDIT
+COLOR_DEBIT = feedcard.COLOR_DEBIT
+COLOR_NEUTRAL = feedcard.COLOR_NEUTRAL
 
 _PRICE_SUFFIX = {"credit": "cr", "debit": "db"}  # the follow card's abbreviations
 
@@ -432,22 +431,25 @@ def _open_close(trade: dict) -> str:
     return ""
 
 
-def _lifecycle(trade: dict) -> tuple[str, str]:
-    """(marker, headline word) — the same OPEN/CLOSE/ROLL vocabulary the follow-feed card uses, so
-    the two feeds read as one stream in the channel. The color stays on the cash direction
-    (credit/debit), which is an independent fact from the lifecycle."""
+def _lifecycle_word(trade: dict) -> str:
+    """OPEN / CLOSE / ROLL / FUTURES / '' — the shared card vocabulary (feedcard owns the glyphs).
+    Futures is its own category ahead of open/close, per the card scheme: what kind of thing traded
+    outranks which way, and its price is a level rather than cash. The color stays on the cash
+    direction, an independent fact."""
+    if str(trade.get("assetType") or "").strip().lower().startswith("future"):
+        return "FUTURES"
     match _open_close(trade):
         case "O":
-            return "➕", "OPEN"
+            return "OPEN"
         case "C":
-            return "➖", "CLOSE"
+            return "CLOSE"
         case _:
             legs = trade.get("legs") or []
             actions = {str(leg.get("action") or "").upper() for leg in legs}
             mixed = any(a.endswith("_TO_OPEN") for a in actions) and any(
                 a.endswith("_TO_CLOSE") for a in actions
             )
-            return "🔁", "ROLL" if mixed else ""
+            return "ROLL" if mixed else ""
 
 
 def _leg_sign(leg: dict) -> str:
@@ -522,7 +524,7 @@ def _structure(trade: dict) -> str:
     return " ".join(p for p in (qty, legs) if p)
 
 
-def _stats_field(trade: dict) -> str:
+def _stats(trade: dict) -> list[str]:
     """The card's third column: what kind of instrument, and how many legs. The follow feed spends
     this slot on IV rank and POP; this feed publishes neither, and inventing them would be worse
     than saying what it does know."""
@@ -530,7 +532,7 @@ def _stats_field(trade: dict) -> str:
     parts = [str(trade.get("assetType") or "").strip()]
     if legs:
         parts.append(f"{len(legs)} leg" + ("s" if len(legs) != 1 else ""))
-    return " · ".join(p for p in parts if p)
+    return [p for p in parts if p]
 
 
 def _date_label(iso) -> str:
@@ -606,6 +608,13 @@ def _price_line(trade: dict) -> str:
     return f"${_money(price)} {_PRICE_SUFFIX.get(label, label)}".strip()
 
 
+def _cash(trade: dict) -> str:
+    """'credit' / 'debit' / '' for the stripe. Anything the feed doesn't literally label falls to
+    '' (a slate stripe) rather than a guessed red — an unknown direction is a fact worth showing."""
+    label = str(trade.get("priceLabel") or "").strip().lower()
+    return label if label in ("credit", "debit") else ""
+
+
 def _strategy(trade: dict) -> str:
     """strategyName leads — the slug list is open-ended, and the name is the human string the feed
     already renders. The slug is only a fallback, un-snaked."""
@@ -676,100 +685,55 @@ def _valid_trade(trade) -> bool:
     return isinstance(trade, dict) and bool(trade.get("id"))
 
 
-def format_trade(trade: dict) -> str:
-    """One trade as plain text — the log floor and any non-Discord channel read this. Head line,
-    numbers line, then the legs quoted one per line. Kept UTC (plain text has no way to render in
-    the reader's timezone; the Discord embed does that properly)."""
-    marker, word = _lifecycle(trade)
-    symbol = str(trade.get("underlyingSymbol") or "?")
-    head = f"{marker} {_trader_name(trade)} · {word} {symbol} {_strategy(trade)}".replace("  ", " ")
+def card_spec(trade: dict) -> dict:
+    """One trade as the shared feed-card spec (`cherrypick.notify.feedcard`). Everything
+    feed-specific is settled HERE — the GCD sizing, the signed legs, money-to-the-cent, the
+    redundant-single-leg-body rule, the late-sync warning — and everything about how a card looks
+    is settled THERE, identically for both feeds in the channel.
 
-    when = _execution_ts(trade)
-    detail = [
-        _structure(trade),
-        f"exp {_expiry_field(trade)}" if _expiry_field(trade) else "",
-        _price_line(trade),
-        _stats_field(trade),
-        when.astimezone(timezone.utc).strftime("%H:%M UTC") if when else "",
-    ]
-    lines = [head, " · ".join(p for p in detail if p)]
+    The body carries the per-leg detail (the one thing this feed has that the follow feed doesn't;
+    its comment slot is empty here). When a lone leg would repeat the fields verbatim
+    (`_body_is_redundant`) it stays off the EMBED only — the text floor is the canonical record
+    and always keeps every leg. The late-sync note rides the footer on the embed and its own line
+    on the text floor — a card arriving today for last week's fill should say so in both renders."""
+    trader = trade.get("trader") or {}
     legs = trade.get("legs") or []
-    lines.extend(f"> {_leg_line(leg)}" for leg in legs[:6] if _leg_line(leg))
+    body = [_leg_line(leg) for leg in legs[:6] if _leg_line(leg)]
     if len(legs) > 6:
-        lines.append(f"> +{len(legs) - 6} more legs")
+        body.append(f"+{len(legs) - 6} more legs")
     note = _late_sync_note(trade)
-    if note:
-        lines.append(note)
-    return "\n".join(ln for ln in lines if ln)
+    return {
+        "service": "lossdog",
+        "trader": {
+            "name": _trader_name(trade),
+            "subtitle": str(trader.get("jobPosition") or "").strip(),
+            "icon_url": str(trader.get("profilePictureUrl") or "") or None,
+        },
+        "lifecycle": _lifecycle_word(trade),
+        "symbol": str(trade.get("underlyingSymbol") or "?"),
+        "strategy": _strategy(trade),
+        "structure": _structure(trade),
+        "price": _price_line(trade),
+        "cash": _cash(trade),
+        "expiry": _expiry_field(trade),
+        "stats": _stats(trade),
+        "body": body,
+        "body_in_embed": not _body_is_redundant(trade),
+        "footer": ["Lossdog VIP Trade Feed", note],
+        "note": note,
+        "timestamp": _execution_ts(trade),
+        "url": _FEED_URL,
+    }
 
 
-def _embed_field(name: str, value: str) -> dict | None:
-    return {"name": name, "value": value, "inline": True} if value else None
+def format_trade(trade: dict) -> str:
+    """The plain-text floor for one trade — the spec through the shared renderer."""
+    return feedcard.format_text(card_spec(trade))
 
 
 def build_embed(trade: dict) -> dict:
-    """One trade as a Discord embed, in the follow-feed card's shape: lifecycle word and underlying
-    in the title, the numbers grouped into three inline fields — Trade, Context, Stats — so the card
-    is one horizontal strip rather than two wrapped rows, and the legs in the body.
-
-    The two feeds are read side by side in the same channel, so they are laid out the same way. What
-    differs is only what each feed actually publishes: this one carries no underlying price, IV rank
-    or POP, so Context is expiry alone and Stats says what kind of trade it is; and it carries no
-    trader comment, so the body slot the follow card gives the rationale holds the per-leg detail
-    instead — the one thing this feed has that the other doesn't, dropped on the single-leg trades
-    where it only repeats the fields (see `_body_is_redundant`). Expiries keep their year: this
-    feed runs far-dated, where 'Oct 16' would be ambiguous.
-
-    The renderers are deliberately NOT shared with follow_notifier: that module's formatting half is
-    kept byte-identical to a sibling repo (see its docstring), and reaching into it from here would
-    make every lossdog change a two-repo change. Same silhouette, separate code.
-
-    `timestamp` is the execution time — Discord renders it in each reader's own timezone, which is
-    the honest way to show a time on a message that may arrive days after the fact (`syncedAt`
-    batches); the footer says so explicitly when the lag exceeds a day."""
-    trader = trade.get("trader") or {}
-    author_bits = [str(trader.get("name") or "").strip(), str(trader.get("jobPosition") or "").strip()]
-    author: dict = {"name": " · ".join(b for b in author_bits if b) or "Lossdog trader"}
-    if trader.get("profilePictureUrl"):
-        author["icon_url"] = str(trader["profilePictureUrl"])
-
-    _, word = _lifecycle(trade)
-    symbol = str(trade.get("underlyingSymbol") or "?")
-    title = " · ".join(p for p in (word, f"{symbol} {_strategy(trade)}".strip()) if p)
-
-    trade_field = " · ".join(p for p in (_structure(trade), _price_line(trade)) if p)
-    fields = [
-        f
-        for f in (
-            _embed_field("Trade", trade_field),
-            _embed_field("Context", _expiry_field(trade)),
-            _embed_field("Stats", _stats_field(trade)),
-        )
-        if f
-    ]
-
-    embed: dict = {
-        "author": author,
-        "title": title[:256],
-        "url": _FEED_URL,
-        "color": COLOR_CREDIT if str(trade.get("priceLabel") or "") == "credit" else COLOR_DEBIT,
-        "fields": fields,
-    }
-    legs = [] if _body_is_redundant(trade) else (trade.get("legs") or [])
-    leg_lines = [_leg_line(leg) for leg in legs[:6] if _leg_line(leg)]
-    if len(legs) > 6:
-        leg_lines.append(f"+{len(legs) - 6} more legs")
-    if leg_lines:
-        embed["description"] = "\n".join(leg_lines)[:4096]
-    footer = "Lossdog VIP Trade Feed"
-    note = _late_sync_note(trade)
-    if note:
-        footer += f" · {note}"
-    embed["footer"] = {"text": footer}
-    when = _execution_ts(trade)
-    if when:
-        embed["timestamp"] = when.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-    return embed
+    """The Discord embed for one trade — the spec through the shared renderer."""
+    return feedcard.build_embed(card_spec(trade))
 
 
 # --------------------------------------------------------------------------- entrypoint
@@ -816,6 +780,7 @@ def run(cfg: dict | None = None, *, replay_last: int = 0, dry_run: bool = False)
     try:
         notify_cfg = cfg.get("notify", {})
         notifier = Notifier({**notify_cfg, "channels": settings["channels"]})
+        avatars = notify_cfg.get("feed_avatars") or {}
         max_per_run = max(1, int(settings["max_per_run"] or _DEFAULT_MAX_PER_RUN))
         state = util.read_json(_STATE)
 
@@ -900,15 +865,26 @@ def run(cfg: dict | None = None, *, replay_last: int = 0, dry_run: bool = False)
                 return summary
             trades, _total = result
             for trade in trades:
+                spec = card_spec(trade)
                 if dry_run:
-                    print(json.dumps({"message": format_trade(trade), "embed": build_embed(trade)}, indent=2))
+                    print(
+                        json.dumps(
+                            {
+                                "message": feedcard.format_text(spec),
+                                "identity": feedcard.identity(spec, avatars),
+                                "embed": feedcard.build_embed(spec),
+                            },
+                            indent=2,
+                        )
+                    )
                 else:
                     notifier.notify(
                         "INFO",
                         f"lossdog.trade.{trade['id']}",
                         "Lossdog VIP",
-                        format_trade(trade),
-                        embed=build_embed(trade),
+                        feedcard.format_text(spec),
+                        embed=feedcard.build_embed(spec),
+                        identity=feedcard.identity(spec, avatars),
                     )
             summary.update({"replayed": len(trades), "dry_run": dry_run, "state_untouched": True})
             return summary
@@ -969,7 +945,17 @@ def run(cfg: dict | None = None, *, replay_last: int = 0, dry_run: bool = False)
 
         if dry_run:
             for trade in to_push:
-                print(json.dumps({"message": format_trade(trade), "embed": build_embed(trade)}, indent=2))
+                spec = card_spec(trade)
+                print(
+                    json.dumps(
+                        {
+                            "message": feedcard.format_text(spec),
+                            "identity": feedcard.identity(spec, avatars),
+                            "embed": feedcard.build_embed(spec),
+                        },
+                        indent=2,
+                    )
+                )
             summary.update(
                 {
                     "dry_run": True,
@@ -984,12 +970,14 @@ def run(cfg: dict | None = None, *, replay_last: int = 0, dry_run: bool = False)
             return summary
 
         for trade in to_push:
+            spec = card_spec(trade)
             notifier.notify(
                 "INFO",
                 f"lossdog.trade.{trade['id']}",
                 "Lossdog VIP",
-                format_trade(trade),
-                embed=build_embed(trade),
+                feedcard.format_text(spec),
+                embed=feedcard.build_embed(spec),
+                identity=feedcard.identity(spec, avatars),
             )
         # Watermark everything valid this cycle — pushed, suppressed, and filtered alike. Malformed
         # trades are deliberately NOT marked, so a transiently mangled trade gets another look.
