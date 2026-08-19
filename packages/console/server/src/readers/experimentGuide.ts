@@ -9,6 +9,7 @@ import type {
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, str } from "./db.js";
+import { adviceDeclOf, type AdviceDecl } from "./adviceDecl.js";
 
 /**
  * What each experiment arm (flies) or risk profile (MEIC) is, what makes it different, and when it
@@ -164,6 +165,45 @@ function removedEntries(seen: Map<string, LedgerRow>, known: Set<string>): Exper
   return out.sort((a, b) => (a.name < b.name ? -1 : 1));
 }
 
+/**
+ * The advisor's synthetic books (`advised:<base>`), which exist only in the ledger. They are not
+ * config entries — the paper loop conjures each one at session start from the module config's
+ * `advice` block, overlaying the admitted advice on the base arm/profile's own definition — so
+ * without this they land in removedEntries and read "gone from config" while actively trading.
+ * A book whose base the advice block no longer points at (or with advice off) is retired, which
+ * is the honest reading: it stopped receiving advice, and only its open positions wind down.
+ */
+function advisedEntries(seen: Map<string, LedgerRow>, decl: AdviceDecl | null, unit: string): ExperimentGuideEntry[] {
+  const out: ExperimentGuideEntry[] = [];
+  for (const [name, row] of seen) {
+    if (!name.startsWith("advised:")) continue;
+    const base = name.slice("advised:".length);
+    const active = decl !== null && decl.enabled && decl.base === base;
+    out.push({
+      name,
+      enabled: active,
+      retired: !active,
+      removed: false,
+      notes: [
+        {
+          key: "note",
+          text:
+            `The advisor's synthetic book: the ${base} ${unit}'s own definition with the session's ` +
+            `admitted advice overlaid, run beside the un-advised ${base} as its control. Declared by ` +
+            `the module config's advice block rather than the ${unit} registry, which is why it has ` +
+            `no settings of its own to list here.`,
+        },
+      ],
+      overrides: [],
+      derived: [{ label: "advised twin of", value: base, detail: "from the tag itself — advised:<base>" }],
+      firstSession: row.first,
+      lastSession: row.last,
+      positions: row.n,
+    });
+  }
+  return out.sort((a, b) => (a.name < b.name ? -1 : 1));
+}
+
 // ---------------------------------------------------------------------------------------------
 // flies — arms
 // ---------------------------------------------------------------------------------------------
@@ -220,12 +260,17 @@ export function readFliesArmGuide(config: ConsoleConfig, mode: TradingMode): Exp
     };
   });
 
+  const advised = advisedEntries(seen, adviceDeclOf(doc, "base_arm"), "arm");
   return {
     ...base,
     configMissing: false,
     groupNotes: collectNotes(armsBlock),
     breaks: measurementBreaks(dbPath),
-    entries: order([...entries, ...removedEntries(seen, new Set(entries.map((e) => e.name)))]),
+    entries: order([
+      ...entries,
+      ...advised,
+      ...removedEntries(seen, new Set([...entries, ...advised].map((e) => e.name))),
+    ]),
   };
 }
 
@@ -278,11 +323,16 @@ export function readMeicProfileGuide(config: ConsoleConfig, mode: TradingMode): 
   // The notes describing the profile set live at the root here, not inside `profiles`.
   const groupNotes = [...collectNotes(doc), ...collectNotes(profiles)];
 
+  const advised = advisedEntries(seen, adviceDeclOf(moduleConfig, "base_profile"), "profile");
   return {
     ...base,
     configMissing: false,
     groupNotes,
     breaks: measurementBreaks(dbPath),
-    entries: order([...entries, ...removedEntries(seen, new Set(entries.map((e) => e.name)))]),
+    entries: order([
+      ...entries,
+      ...advised,
+      ...removedEntries(seen, new Set([...entries, ...advised].map((e) => e.name))),
+    ]),
   };
 }

@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb } from "../readers/db.js";
+import { advisedTagStatus, fliesAdviceDecl, meicAdviceDecl, type AdviceDecl } from "../readers/adviceDecl.js";
 import {
   calibrationReading,
   qualifyOne,
@@ -92,6 +93,16 @@ function tagStatusReaders(config: ConsoleConfig): Record<string, Record<string, 
   return {
     meic: readMeicProfileStatus(config),
     flies: readFliesArmStatus(config),
+  };
+}
+
+/** Per-module advice declaration, for the `advised:<base>` tags the registry readers above can
+ *  never see: those books are synthesized at session start by each paper loop, not declared as
+ *  profiles/arms, so registry absence is their NORMAL state and must not read as retirement. */
+function advisedDeclReaders(config: ConsoleConfig): Record<string, AdviceDecl | null> {
+  return {
+    meic: meicAdviceDecl(config),
+    flies: fliesAdviceDecl(config),
   };
 }
 
@@ -205,6 +216,7 @@ function roleOf(tag: string, champion: string | null, q: Qualification, verdict:
 export function buildCalibration(config: ConsoleConfig): ModuleCalibration[] {
   const champions = readChampionMap(config);
   const statusReaders = tagStatusReaders(config);
+  const advisedDecls = advisedDeclReaders(config);
   const sources: Array<[string, Record<string, NormalizedRecord[]>]> = [
     ["meic", meicRecords(config)],
     ["earnings", earningsRecords(config)],
@@ -221,14 +233,20 @@ export function buildCalibration(config: ConsoleConfig): ModuleCalibration[] {
     // arms are qualified independently and never promoted against each other.
     const verdict = champion !== null ? recommendChampion(readings, champion) : null;
     const statusOf = statusReaders[module];
+    const advisedOf = advisedDecls[module] ?? null;
     const tags = Object.entries(readings)
       .map(([tag, reading]) => {
         const qualification = qualifyOne(reading);
-        // statusOf null/undefined: no source for this module, or the source failed to read --
-        // either way "unknown" for every tag, never a guessed "retired". statusOf present but this
-        // TAG absent from it: a real fact (the config no longer lists it at all) -- retired.
-        const status: "active" | "retired" | "unknown" =
-          statusOf == null ? "unknown" : statusOf[tag] === undefined ? "retired" : statusOf[tag] ? "active" : "retired";
+        // Advised books first: `advised:<base>` is synthesized by the paper loop from the module
+        // config's advice block and is never a registry entry, so the registry rule below would
+        // badge the actively-trading advised book "retired". Its status is the advice block's.
+        // For everything else: statusOf null/undefined means no source for this module, or the
+        // source failed to read -- either way "unknown" for every tag, never a guessed "retired".
+        // statusOf present but this TAG absent from it: a real fact (the config no longer lists
+        // it at all) -- retired.
+        const status: "active" | "retired" | "unknown" = tag.startsWith("advised:")
+          ? advisedTagStatus(tag, advisedOf)
+          : statusOf == null ? "unknown" : statusOf[tag] === undefined ? "retired" : statusOf[tag] ? "active" : "retired";
         return { tag, reading, qualification, role: roleOf(tag, champion, qualification, verdict), status };
       })
       .sort((a, b) => b.reading.netPnl - a.reading.netPnl);
