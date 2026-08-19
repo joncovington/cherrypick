@@ -5,6 +5,8 @@ Commands:
   analyze  --order    parse + risk only. Fully offline: no broker, no ticket, no state written
   propose  --order    run the gates, preflight against the broker, mint a ticket + confirmation code
   confirm  --ticket --code --pin    re-check everything and submit
+  orders              working orders on the resolved account — read-only, no PIN
+  cancel   --order-id --pin    pull a resting order
   pin-set / pin-clear PIN management
   purge               drop expired pending tickets
 
@@ -12,6 +14,16 @@ Why two phases: `propose` is the reviewable artifact — it prints the parsed st
 case, the broker's own preflight, and every gate verdict. `confirm` then re-runs the gates and
 re-preflights before submitting, so a market or account change between the two is caught rather than
 ratified by a stale review.
+
+**There is no `replace` command, on purpose.** Repricing an order by mutating it in place would need
+its own answer to "does the new spec still mean the same position" — a question `propose`/`confirm`
+already answer for every order it sees. `cancel` plus a fresh `propose`/`confirm` gets the same
+result (a working order at a new price) by composing two primitives this file already has to get
+right, rather than adding a third authorization path with its own risk surface. `cancel` itself is
+PIN-gated like `confirm` but evaluated through `policy.evaluate_management` rather than `evaluate` —
+see that function's docstring for why it is deliberately exempt from the halt flag and the risk caps
+(pulling a resting order only reduces exposure) while still checking `desk.enabled` and the account
+allowlist.
 
 **This CLI is never scheduled and never invoked by a loop.** It is a foreground, human-initiated
 tool. `tests/test_isolation.py` asserts no module imports this package and that the desk never reads
@@ -291,6 +303,87 @@ def _submit(cfg: dict, spec: dict, account_number: str | None) -> dict:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
+def cmd_orders(args) -> dict:
+    """Working orders on the resolved account. Read-only, no PIN — a status read like `status`
+    itself, not an action, so it carries none of the gates an action needs."""
+    cfg = cfgmod.resolve(cfgmod.load())
+    account = _resolve_account(cfg, args.account_number)
+    if account is None:
+        return {"ok": False, "error": "could not resolve broker account"}
+    try:
+        import asyncio
+
+        from cherrypick.core import broker as _broker
+
+        from .session import get_session, reset
+
+        reset()
+
+        async def _run() -> list[dict]:
+            session = get_session(cfg)
+            acct = await _broker.resolve_account(session, account)
+            return await _broker.working_orders(acct, session)
+
+        orders = asyncio.run(_run())
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    return {"ok": True, "account": policy.mask_account(account), "orders": orders}
+
+
+def cmd_cancel(args) -> dict:
+    """Pull a resting order. See the module docstring for why this exists in place of a `replace`
+    command: cancel here, then a fresh `propose`/`confirm` at the new price, reuses every gate this
+    file already has to get right instead of adding a new authorization path."""
+    cfg = cfgmod.resolve(cfgmod.load())
+
+    supplied_pin = pin.env_pin() or args.pin
+    if not supplied_pin:
+        return {"ok": False, "error": "no PIN supplied (pass --pin or set CHERRYPICK_DESK_PIN)"}
+    if not pin.verify(supplied_pin):
+        journal.record("refused", phase="cancel", reason="bad PIN", order_id=args.order_id)
+        return {"ok": False, "error": "PIN rejected"}
+
+    account = _resolve_account(cfg, args.account_number)
+    refusals = policy.evaluate_management(cfg=cfg, account_number=account)
+    if refusals:
+        journal.record(
+            "refused", phase="cancel", account_number=account, order_id=args.order_id, refusals=refusals
+        )
+        return {"ok": False, "error": "refused by desk policy", "refusals": refusals}
+
+    result = _cancel(cfg, args.order_id, account)
+    journal.record(
+        "cancelled" if result.get("ok") else "cancel_failed",
+        account_number=account,
+        order_id=args.order_id,
+        result=result,
+    )
+    return {"ok": bool(result.get("ok")), "order_id": args.order_id, "result": result}
+
+
+def _cancel(cfg: dict, order_id: int, account_number: str | None) -> dict:
+    """Deletion, not submission — deliberately its own helper rather than routed through `_submit`,
+    so the isolation suite's single-live-submit-site count stays meaningful: cancelling an order is
+    not the live-order-placement invariant that test pins."""
+    try:
+        import asyncio
+
+        from cherrypick.core import broker as _broker
+
+        from .session import get_session, reset
+
+        reset()
+
+        async def _run() -> dict:
+            session = get_session(cfg)
+            account = await _broker.resolve_account(session, account_number)
+            return await _broker.cancel_order(account, session, order_id)
+
+        return asyncio.run(_run())
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
 def cmd_pin_set(args) -> dict:
     import getpass
 
@@ -326,6 +419,16 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--code", required=True)
     sp.add_argument("--pin", default=None, help="prefer CHERRYPICK_DESK_PIN to keep it out of shell history")
     sp.set_defaults(func=cmd_confirm)
+
+    sp = sub.add_parser("orders")
+    sp.add_argument("--account_number", default=None)
+    sp.set_defaults(func=cmd_orders)
+
+    sp = sub.add_parser("cancel")
+    sp.add_argument("--order-id", required=True, type=int)
+    sp.add_argument("--account_number", default=None)
+    sp.add_argument("--pin", default=None, help="prefer CHERRYPICK_DESK_PIN to keep it out of shell history")
+    sp.set_defaults(func=cmd_cancel)
 
     sp = sub.add_parser("pin-set")
     sp.add_argument("--pin", default=None, help="omit to be prompted without echo")

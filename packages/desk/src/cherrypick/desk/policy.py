@@ -41,6 +41,17 @@ def _undefined_text(risk: RiskProfile) -> str:
     return "undefined risk (loss is unbounded to the upside)"
 
 
+def _account_refusals(cfg: dict[str, Any], account_number: str | None) -> list[str]:
+    allowed = cfg.get("allowed_accounts") or []
+    if not allowed:
+        return ["desk.allowed_accounts is empty — no account is authorized for manual orders"]
+    if not account_number:
+        return ["no account resolved to check against the allowlist"]
+    if str(account_number)[-4:] not in allowed:
+        return [f"account {mask_account(account_number)} is not in desk.allowed_accounts"]
+    return []
+
+
 def evaluate(
     risk: RiskProfile,
     *,
@@ -65,13 +76,7 @@ def evaluate(
     if halt_present:
         refusals.append("suite halt flag present (state/halt-live.flag) — all live action halted")
 
-    allowed = cfg.get("allowed_accounts") or []
-    if not allowed:
-        refusals.append("desk.allowed_accounts is empty — no account is authorized for manual orders")
-    elif not account_number:
-        refusals.append("no account resolved to check against the allowlist")
-    elif str(account_number)[-4:] not in allowed:
-        refusals.append(f"account {mask_account(account_number)} is not in desk.allowed_accounts")
+    refusals += _account_refusals(cfg, account_number)
 
     # --- risk gates: opening exposure only -------------------------------------------------
     # "mixed" (a roll) counts as opening: it establishes new legs, so it must clear the same bar.
@@ -101,4 +106,22 @@ def evaluate(
                     f"over desk.max_daily_risk_dollars ${float(max_daily):,.2f}"
                 )
 
+    return refusals
+
+
+def evaluate_management(*, cfg: dict[str, Any], account_number: str | None) -> list[str]:
+    """Gates for cancelling a resting order (and, by composition, the cancel-then-repropose path
+    that stands in for 'replace' — see `cli.py`'s module docstring for why there is no separate
+    replace primitive). Deliberately exempt from the halt flag, for the same reason closing orders
+    are exempt from the risk gates in `evaluate`: pulling a resting order only *reduces* exposure,
+    and a halt that trapped an account inside a stale working order would be the safety flag
+    misfiring in the wrong direction — the same shape of mistake the BKNG close (see `order.py`)
+    exists to prevent, one step earlier in the order's life. Still requires `desk.enabled` and the
+    account allowlist: this is not a blanket bypass, only the one gate whose direction is wrong for
+    a risk-reducing action.
+    """
+    refusals: list[str] = []
+    if not cfg.get("enabled"):
+        refusals.append("desk.enabled is false — the manual desk is switched off")
+    refusals += _account_refusals(cfg, account_number)
     return refusals

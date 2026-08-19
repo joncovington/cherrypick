@@ -214,3 +214,34 @@ def test_every_refusal_is_reported_not_just_the_first():
     cfg = cfgmod.resolve({"enabled": False, "allowed_accounts": [], "max_order_risk_dollars": 1})
     refusals = _evaluate(_risk(NAKED, 1.44, "credit"), cfg, halt=True)
     assert len(refusals) >= 4
+
+
+# --------------------------------------------------------------------------- evaluate_management
+def test_management_is_exempt_from_the_halt_flag():
+    """Pulling a resting order only reduces exposure — the same reason closing orders skip the risk
+    gates in `evaluate`. A halt that trapped an account inside a stale order would be the safety flag
+    misfiring in the direction that increases risk, not the one it exists to guard against.
+
+    (`evaluate_management` has no `halt_present` parameter at all — this test would fail to compile a
+    call with one, which is itself part of the assertion: the halt flag was never plumbed in.)
+    """
+    cfg = _cfg()
+    assert policy.evaluate_management(cfg=cfg, account_number=ACCOUNT) == []
+
+
+def test_management_still_checks_desk_enabled():
+    cfg = _cfg(enabled=False)
+    refusals = policy.evaluate_management(cfg=cfg, account_number=ACCOUNT)
+    assert any("desk.enabled" in r for r in refusals)
+
+
+def test_management_still_checks_the_account_allowlist():
+    cfg = _cfg(allowed_accounts=["9999"])
+    refusals = policy.evaluate_management(cfg=cfg, account_number=ACCOUNT)
+    assert any("allowed_accounts" in r for r in refusals)
+
+
+def test_management_refuses_an_unresolved_account():
+    cfg = _cfg()
+    refusals = policy.evaluate_management(cfg=cfg, account_number=None)
+    assert any("no account resolved" in r for r in refusals)

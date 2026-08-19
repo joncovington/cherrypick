@@ -36,6 +36,8 @@ cherrypick-desk pin-set                     # prompts without echo; --pin for no
 cherrypick-desk analyze --order '<json>'    # OFFLINE structure + worst case. No broker, no state
 cherrypick-desk propose --order '<json>'    # gates + broker preflight -> ticket + confirmation code
 cherrypick-desk confirm --ticket <id> --code <code> --pin <pin>   # re-check everything, submit
+cherrypick-desk orders                      # working orders on the resolved account -- read-only, no PIN
+cherrypick-desk cancel --order-id <id> --pin <pin>   # pull a resting order
 cherrypick-desk purge                       # drop expired pending tickets
 
 # Tests (pytest; markers: unit [default lane], live)
@@ -76,6 +78,16 @@ cap", never as "no risk".
 flag and the account allowlist still do). This is the concrete failure that motivated the package: a
 naive account-level deploy governor refused a risk-*reducing* BKNG close because it only knew "more
 buying power consumed = bad". A roll (`mixed`) is held to the opening bar — it establishes new legs.
+
+**`cancel` is exempt from the halt flag too, for the same reason, one step earlier in an order's
+life.** `policy.evaluate_management` (not `evaluate`) gates it: `desk.enabled` and the account
+allowlist still apply, but there is no `halt_present` parameter to check at all, because pulling a
+resting order only reduces exposure — a halt that trapped an account inside a stale working order
+would be the safety flag misfiring in the direction it exists to prevent. **There is no `replace`
+command.** Repricing an order in place would need its own answer to "does the new spec still mean
+the same position", which `propose`/`confirm` already answer for every order they see; `cancel` then
+a fresh `propose`/`confirm` gets a repriced working order by composing two primitives this package
+already has to get right, rather than adding a third authorization path with its own risk surface.
 
 ## Invariants (do not violate — the reasons are load-bearing)
 
