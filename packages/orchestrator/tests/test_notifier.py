@@ -76,3 +76,22 @@ def test_discord_posts_content_payload_from_keyring(temp_floor, monkeypatch):
     assert captured["url"].endswith("/abc")
     assert "content" in captured["payload"]  # Discord uses `content`, not `text`
     assert "CRITICAL" in captured["payload"]["content"]
+
+
+def test_embed_can_carry_a_line_above_the_card(temp_floor, monkeypatch):
+    """Discord fixes an embed's author row as [avatar][name], so a marker that has to sit left of
+    the avatar can only be a message of its own above the card."""
+    captured = {}
+    monkeypatch.setattr(secrets_mod, "get_webhook", lambda ch: "https://discord.example/webhook/abc")
+    monkeypatch.setattr(
+        Notifier,
+        "_post_json",
+        staticmethod(lambda url, payload: captured.update(payload) or {"ok": True, "status": 204}),
+    )
+    n = Notifier({"channels": ["discord"]})
+    n.notify("INFO", "k", "T", "B", embed={"title": "card"}, content="🟨")
+    assert captured == {"embeds": [{"title": "card"}], "content": "🟨"}
+
+    captured.clear()
+    n.notify("INFO", "k", "T", "B", embed={"title": "card"})
+    assert captured == {"embeds": [{"title": "card"}]}  # no content key when none was asked for
