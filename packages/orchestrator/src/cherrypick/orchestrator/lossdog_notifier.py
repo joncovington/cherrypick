@@ -6,6 +6,16 @@ for the log floor and a colored Discord embed for the channel this is actually r
 (one-shot, never re-notified), atomic state, a single-writer lock, and seed-don't-backfill on first
 activation so switching it on doesn't blast a hundred historical trades in one burst.
 
+**The card is laid out like the follow-feed card** (`follow_notifier.build_embed`) — same lifecycle
+word in the title, same three inline fields (Trade / Context / Stats), same compact signed-leg
+structure and db/cr price — because both feeds land in the same Discord channel and a reader should
+not have to switch formats mid-scroll. The code is deliberately NOT shared: follow_notifier's
+formatting half is kept byte-identical to a sibling repo, so importing it here would make every
+change to this card a two-repo change. Where the feeds differ, so do the cards, and only where the
+data does: this feed publishes no underlying price, IV rank or POP (Context is expiry alone, Stats
+says what kind of trade it is) and no trader comment (the body slot holds the per-leg detail
+instead), and its expiries keep their year because it runs far-dated.
+
 **The API is private and undocumented** (reverse-engineered from the logged-in web app at
 app.lossdog.com); scripted polling may not be permitted under Lossdog's terms of service. This is a
 personal convenience, used at the operator's own risk, and every request is wrapped so a shape
@@ -92,6 +102,8 @@ AUTH_FAILED = object()
 # CLOSE stripe is amber, and orange next to amber blurs into one color at Discord's stripe width.
 COLOR_CREDIT = 0x22C55E  # green — money came in
 COLOR_DEBIT = 0xEF4444  # red — money went out
+
+_PRICE_SUFFIX = {"credit": "cr", "debit": "db"}  # the follow card's abbreviations
 
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
@@ -409,20 +421,105 @@ def _open_close(trade: dict) -> str:
     return ""
 
 
-def _structure_label(trade: dict) -> str:
-    """Leg count and lifecycle together: '2 legs · opening'. Mixed open/close legs read as a roll —
-    the honest label for the only multi-sided shape this feed produces."""
+def _lifecycle(trade: dict) -> tuple[str, str]:
+    """(marker, headline word) — the same OPEN/CLOSE/ROLL vocabulary the follow-feed card uses, so
+    the two feeds read as one stream in the channel. The color stays on the cash direction
+    (credit/debit), which is an independent fact from the lifecycle."""
+    match _open_close(trade):
+        case "O":
+            return "➕", "OPEN"
+        case "C":
+            return "➖", "CLOSE"
+        case _:
+            legs = trade.get("legs") or []
+            actions = {str(leg.get("action") or "").upper() for leg in legs}
+            mixed = any(a.endswith("_TO_OPEN") for a in actions) and any(
+                a.endswith("_TO_CLOSE") for a in actions
+            )
+            return "🔁", "ROLL" if mixed else ""
+
+
+def _leg_sign(leg: dict) -> str:
+    """'+' long, '-' short, '' when the feed didn't say — the most load-bearing character on the
+    compact line. '360C/350C' is a debit spread long the 360 and a credit spread short it, and the
+    net db/cr can't settle it (buying back a credit spread is a debit)."""
+    action = str(leg.get("action") or "").upper()
+    if action.startswith("SELL"):
+        return "-"
+    if action.startswith("BUY"):
+        return "+"
+    return ""
+
+
+def _leg_body(leg: dict) -> str:
+    """One leg as strike+right, e.g. '360C'. A strike-less leg (stock) falls back to its symbol —
+    `_legs_summary` then drops it, because the title already carries the underlying."""
+    strike = leg.get("strike")
+    right = str(leg.get("callOrPut") or leg.get("optionType") or "").upper()
+    if strike is None or not right:
+        return str(leg.get("symbol") or leg.get("underlyingSymbol") or "?")
+    return f"{_trim(strike)}{right[0]}"
+
+
+def _is_stock_leg(leg: dict) -> bool:
+    return leg.get("strike") is None or not (leg.get("callOrPut") or leg.get("optionType"))
+
+
+def _quantity(trade: dict) -> str:
+    """Contract count as '2x'. Three-plus legs use the legs' GCD, which recovers how many times the
+    base structure was traded: a 1-lot butterfly's body leg is 2 against two 1-lot wings, twice the
+    wing size by construction, not because two butterflies were bought. A two-leg combo keeps its
+    largest leg — a genuine 1x3 ratio has no base structure for a GCD to recover cleanly. An
+    all-stock trade counts in shares: '100x' would read as a 100-lot, a 100x overstatement."""
     legs = trade.get("legs") or []
-    if not legs:
+    sizes = [q for q in (_num(leg.get("unitQuantity")) for leg in legs) if q]
+    if not sizes:
         return ""
-    count = f"{len(legs)} leg" + ("s" if len(legs) != 1 else "")
-    word = {"O": "opening", "C": "closing"}.get(_open_close(trade), "")
-    if not word:
-        actions = {str(leg.get("action") or "").upper() for leg in legs}
-        has_open = any(a.endswith("_TO_OPEN") for a in actions)
-        has_close = any(a.endswith("_TO_CLOSE") for a in actions)
-        word = "roll" if has_open and has_close else ""
-    return f"{count} · {word}" if word else count
+    if all(_is_stock_leg(leg) for leg in legs):
+        return f"{max(sizes):g} sh"
+    if len(sizes) >= 3 and all(s.is_integer() for s in sizes):
+        return f"{math.gcd(*(int(s) for s in sizes)):g}×"
+    return f"{max(sizes):g}×"
+
+
+def _common_sign(trade: dict) -> str:
+    """The one sign shared by every leg, or '' if they disagree or the feed didn't say."""
+    signs = {_leg_sign(leg) for leg in trade.get("legs") or []}
+    return signs.pop() if len(signs) == 1 else ""
+
+
+def _legs_summary(trade: dict, max_legs: int = 6) -> str:
+    """'-360C/+370C'. Stock legs contribute nothing here — their body IS the underlying the title
+    already carries, so rendering both gave 'TSLA TSLA'."""
+    legs = trade.get("legs") or []
+    tokens = [f"{_leg_sign(leg)}{_leg_body(leg)}" for leg in legs[:max_legs] if not _is_stock_leg(leg)]
+    if not tokens:
+        return ""
+    shown = "/".join(tokens)
+    if len(legs) > max_legs:
+        shown += f"/+{len(legs) - max_legs}"
+    return shown
+
+
+def _structure(trade: dict) -> str:
+    """Size and legs together: '1× -360C/+370C'. Either half alone is fine. When no leg token
+    survives (stock), the size takes the sign instead, so '-100 sh' still says which way they went.
+    The per-leg detail is not lost — it stays in the card body, one leg per line."""
+    qty, legs = _quantity(trade), _legs_summary(trade)
+    if qty and not legs:
+        qty = _common_sign(trade) + qty
+    return " ".join(p for p in (qty, legs) if p)
+
+
+def _stats_field(trade: dict) -> str:
+    """The card's third column: what kind of instrument, and how many legs. The follow feed spends
+    this slot on IV rank and POP; this feed publishes neither, and inventing them would be worse
+    than saying what it does know."""
+    legs = trade.get("legs") or []
+    parts = [str(trade.get("assetType") or "").strip()]
+    if legs:
+        parts.append(f"{len(legs)} leg" + ("s" if len(legs) != 1 else ""))
+    return " · ".join(p for p in parts if p)
 
 
 def _date_label(iso) -> str:
@@ -490,11 +587,12 @@ def _leg_line(leg: dict) -> str:
 
 
 def _price_line(trade: dict) -> str:
+    """'$3.26 db' — the follow card's abbreviation, so the two feeds' price columns line up."""
     price = trade.get("price")
     if price in (None, ""):
         return ""
-    label = str(trade.get("priceLabel") or "").strip()
-    return f"${_trim(price)} {label}".strip()
+    label = str(trade.get("priceLabel") or "").strip().lower()
+    return f"${_trim(price)} {_PRICE_SUFFIX.get(label, label)}".strip()
 
 
 def _strategy(trade: dict) -> str:
@@ -548,16 +646,16 @@ def format_trade(trade: dict) -> str:
     """One trade as plain text — the log floor and any non-Discord channel read this. Head line,
     numbers line, then the legs quoted one per line. Kept UTC (plain text has no way to render in
     the reader's timezone; the Discord embed does that properly)."""
-    marker = "🟢" if str(trade.get("priceLabel") or "") == "credit" else "🔴"
+    marker, word = _lifecycle(trade)
     symbol = str(trade.get("underlyingSymbol") or "?")
-    head = f"{marker} {_trader_name(trade)} · {symbol} {_strategy(trade)}"
+    head = f"{marker} {_trader_name(trade)} · {word} {symbol} {_strategy(trade)}".replace("  ", " ")
 
     when = _execution_ts(trade)
     detail = [
-        _price_line(trade),
-        str(trade.get("assetType") or ""),
-        _structure_label(trade),
+        _structure(trade),
         f"exp {_expiry_field(trade)}" if _expiry_field(trade) else "",
+        _price_line(trade),
+        _stats_field(trade),
         when.astimezone(timezone.utc).strftime("%H:%M UTC") if when else "",
     ]
     lines = [head, " · ".join(p for p in detail if p)]
@@ -576,8 +674,20 @@ def _embed_field(name: str, value: str) -> dict | None:
 
 
 def build_embed(trade: dict) -> dict:
-    """One trade as a Discord embed: the trader as the author line, the legs as the body, and the
-    numbers as labeled fields, three to a row.
+    """One trade as a Discord embed, in the follow-feed card's shape: lifecycle word and underlying
+    in the title, the numbers grouped into three inline fields — Trade, Context, Stats — so the card
+    is one horizontal strip rather than two wrapped rows, and the legs in the body.
+
+    The two feeds are read side by side in the same channel, so they are laid out the same way. What
+    differs is only what each feed actually publishes: this one carries no underlying price, IV rank
+    or POP, so Context is expiry alone and Stats says what kind of trade it is; and it carries no
+    trader comment, so the body slot the follow card gives the rationale holds the per-leg detail
+    instead — the one thing this feed has that the other doesn't. Expiries keep their year: this
+    feed runs far-dated, where 'Oct 16' would be ambiguous.
+
+    The renderers are deliberately NOT shared with follow_notifier: that module's formatting half is
+    kept byte-identical to a sibling repo (see its docstring), and reaching into it from here would
+    make every lossdog change a two-repo change. Same silhouette, separate code.
 
     `timestamp` is the execution time — Discord renders it in each reader's own timezone, which is
     the honest way to show a time on a message that may arrive days after the fact (`syncedAt`
@@ -588,22 +698,24 @@ def build_embed(trade: dict) -> dict:
     if trader.get("profilePictureUrl"):
         author["icon_url"] = str(trader["profilePictureUrl"])
 
+    _, word = _lifecycle(trade)
     symbol = str(trade.get("underlyingSymbol") or "?")
+    title = " · ".join(p for p in (word, f"{symbol} {_strategy(trade)}".strip()) if p)
+
+    trade_field = " · ".join(p for p in (_structure(trade), _price_line(trade)) if p)
     fields = [
         f
         for f in (
-            _embed_field("Price", _price_line(trade)),
-            _embed_field("Type", str(trade.get("assetType") or "")),
-            _embed_field("Underlying", str(trade.get("underlyingName") or "")),
-            _embed_field("Structure", _structure_label(trade)),
-            _embed_field("Expiry", _expiry_field(trade)),
+            _embed_field("Trade", trade_field),
+            _embed_field("Context", _expiry_field(trade)),
+            _embed_field("Stats", _stats_field(trade)),
         )
         if f
     ]
 
     embed: dict = {
         "author": author,
-        "title": f"{symbol} · {_strategy(trade)}"[:256],
+        "title": title[:256],
         "url": _FEED_URL,
         "color": COLOR_CREDIT if str(trade.get("priceLabel") or "") == "credit" else COLOR_DEBIT,
         "fields": fields,

@@ -299,7 +299,7 @@ def test_dry_run_posts_nothing_and_leaves_state_untouched(wired, monkeypatch, ca
     res = ld.run(_cfg(), dry_run=True)
     assert res["dry_run"] is True and res["would_notify"] == 1
     assert _pushed(wired) == []
-    assert json.loads(capsys.readouterr().out.strip())["embed"]["title"] == "TSLA · Long Call"
+    assert json.loads(capsys.readouterr().out.strip())["embed"]["title"] == "OPEN · TSLA Long Call"
     assert ld._STATE.read_text() == before
 
 
@@ -543,18 +543,19 @@ def test_actions_humanize_and_unknown_ones_render_as_words():
 def test_embed_carries_the_whole_trade(wired):
     trade = _trade(7, priceLabel="credit", price=1.95)
     embed = ld.build_embed(trade)
-    assert embed["title"] == "TSLA · Long Call"
+    assert embed["title"] == "OPEN · TSLA Long Call"
     assert embed["color"] == ld.COLOR_CREDIT
     assert embed["author"]["name"] == "Tony Battista · Veteran Trader"
     assert embed["author"]["icon_url"].startswith("https://")
     assert embed["url"] == ld._FEED_URL
     assert embed["description"] == "BTO 1× 21 Aug 26 $360 CALL @ $3.26 · 18 DTE"
+    # The follow-feed card's shape: three inline fields, one horizontal strip.
     fields = _fields(embed)
-    assert fields["Price"] == "$1.95 credit"
-    assert fields["Type"] == "Options"
-    assert fields["Underlying"] == "Tesla, Inc."
-    assert fields["Structure"] == "1 leg · opening"
-    assert fields["Expiry"] == "21 Aug 26 · 18 DTE"
+    assert [f["name"] for f in embed["fields"]] == ["Trade", "Context", "Stats"]
+    assert all(f["inline"] for f in embed["fields"])
+    assert fields["Trade"] == "1× +360C · $1.95 cr"
+    assert fields["Context"] == "21 Aug 26 · 18 DTE"
+    assert fields["Stats"] == "Options · 1 leg"
     assert embed["timestamp"].endswith("Z")
     assert embed["footer"]["text"] == "Lossdog VIP Trade Feed"
 
@@ -578,9 +579,9 @@ def test_late_sync_lands_in_the_footer(wired):
 
 def test_unknown_strategy_slug_falls_back_to_the_name_then_the_slug():
     named = _trade(1, strategySlug="weird_new_thing")
-    assert ld.build_embed(named)["title"] == "TSLA · Long Call"
+    assert ld.build_embed(named)["title"] == "OPEN · TSLA Long Call"
     slug_only = _trade(1, strategyName=None, strategySlug="call_diagonal_spread")
-    assert ld.build_embed(slug_only)["title"] == "TSLA · Call Diagonal Spread"
+    assert ld.build_embed(slug_only)["title"] == "OPEN · TSLA Call Diagonal Spread"
 
 
 def test_calendar_expiries_render_as_a_range():
@@ -591,12 +592,12 @@ def test_calendar_expiries_render_as_a_range():
             {"action": "BUY_TO_OPEN", "strike": 215, "callOrPut": "PUT", "expirationDate": "2026-10-16"},
         ],
     )
-    assert _fields(ld.build_embed(trade))["Expiry"] == "21 Aug 26 – 16 Oct 26"
+    assert _fields(ld.build_embed(trade))["Context"] == "21 Aug 26 – 16 Oct 26"
 
 
 def test_embed_survives_a_trade_with_almost_nothing_in_it():
     embed = ld.build_embed({"id": "trade_x"})
-    assert embed["title"] == "? · Trade"
+    assert embed["title"] == "? Trade"  # no legs, so no lifecycle word to lead with
     assert "description" not in embed and "timestamp" not in embed
     assert embed["fields"] == []
     assert ld.format_trade({"id": "trade_x"})  # and the text fallback renders too
@@ -605,6 +606,58 @@ def test_embed_survives_a_trade_with_almost_nothing_in_it():
 def test_plain_text_fallback_carries_head_numbers_and_legs():
     text = ld.format_trade(_trade(1))
     head, numbers, leg = text.split("\n")
-    assert head == "🔴 Tony Battista · TSLA Long Call"
-    assert numbers == "$3.26 debit · Options · 1 leg · opening · exp 21 Aug 26 · 18 DTE · 10:01 UTC"
+    assert head == "➕ Tony Battista · OPEN TSLA Long Call"
+    assert numbers == "1× +360C · exp 21 Aug 26 · 18 DTE · $3.26 db · Options · 1 leg · 10:01 UTC"
     assert leg == "> BTO 1× 21 Aug 26 $360 CALL @ $3.26 · 18 DTE"
+
+
+# --------------------------------------------------------------------------- follow-card parity
+def test_compact_structure_signs_every_leg():
+    trade = _trade(
+        1,
+        legs=[
+            {"unitQuantity": 1, "action": "SELL_TO_OPEN", "strike": 82, "callOrPut": "PUT"},
+            {"unitQuantity": 1, "action": "BUY_TO_OPEN", "strike": 89, "callOrPut": "PUT"},
+        ],
+    )
+    # The sign is the whole message: -82P/+89P is a credit spread, +82P/-89P a debit one.
+    assert ld._structure(trade) == "1× -82P/+89P"
+
+
+def test_three_plus_legs_size_by_gcd_not_by_the_body_leg():
+    fly = _trade(
+        1,
+        legs=[
+            {"unitQuantity": 5, "action": "BUY_TO_OPEN", "strike": 457.5, "callOrPut": "PUT"},
+            {"unitQuantity": 10, "action": "SELL_TO_OPEN", "strike": 485, "callOrPut": "PUT"},
+            {"unitQuantity": 5, "action": "BUY_TO_OPEN", "strike": 512.5, "callOrPut": "PUT"},
+        ],
+    )
+    assert ld._structure(fly) == "5× +457.5P/-485P/+512.5P"
+
+
+def test_stock_counts_in_shares_and_keeps_its_side():
+    trade = _trade(1, assetType="Equity", legs=[{"unitQuantity": 100, "action": "BUY_TO_OPEN"}])
+    # "100×" would read as a 100-lot, and the leg body would repeat the underlying.
+    assert ld._structure(trade) == "+100 sh"
+
+
+def test_lifecycle_words_match_the_follow_card():
+    assert ld._lifecycle(_trade(1))[1] == "OPEN"
+    closing = _trade(1, legs=[{"action": "SELL_TO_CLOSE", "strike": 360, "callOrPut": "CALL"}])
+    assert ld._lifecycle(closing)[1] == "CLOSE"
+    roll = _trade(
+        1,
+        legs=[
+            {"action": "BUY_TO_CLOSE", "strike": 360, "callOrPut": "CALL"},
+            {"action": "SELL_TO_OPEN", "strike": 370, "callOrPut": "CALL"},
+        ],
+    )
+    assert ld._lifecycle(roll)[1] == "ROLL"
+
+
+def test_price_uses_the_db_cr_abbreviation():
+    assert ld._price_line(_trade(1)) == "$3.26 db"
+    assert ld._price_line(_trade(1, priceLabel="credit")) == "$3.26 cr"
+    # An unknown label is passed through rather than dropped — this feed's vocabulary is open-ended.
+    assert ld._price_line(_trade(1, priceLabel="level")) == "$3.26 level"
