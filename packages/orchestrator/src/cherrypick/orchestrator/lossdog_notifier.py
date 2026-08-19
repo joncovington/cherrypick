@@ -393,6 +393,17 @@ def _trim(value) -> str:
     return f"{n:g}" if n is not None else str(value)
 
 
+def _money(value) -> str:
+    """Cash to the cent: 1.5 -> '1.50'. `_trim` is right for a strike ($61, not $61.00) and wrong
+    for money, where a stripped zero reads as a typo. A sub-cent value keeps its own precision
+    rather than being rounded away — an average fill across partials can land at 0.055."""
+    n = _num(value)
+    if n is None:
+        return str(value)
+    cents = f"{n:.2f}"
+    return cents if float(cents) == n else f"{n:g}"
+
+
 def _action_abbrev(action) -> str:
     """The trader shorthand everyone reads: BUY_TO_OPEN -> BTO. Unknown actions render as words
     rather than vanishing — the strategy-slug list is open-ended and the action list probably is too."""
@@ -570,7 +581,7 @@ def _leg_line(leg: dict) -> str:
     if strike is None or not right:  # stock (or anything strike-less the feed invents later)
         parts = [abbrev, f"{qty:g} sh" if qty is not None else ""]
         if fill is not None:
-            parts.append(f"@ ${_trim(fill)}")
+            parts.append(f"@ ${_money(fill)}")
         return " ".join(p for p in parts if p)
     parts = [abbrev, f"{qty:g}×" if qty is not None else ""]
     exp = leg.get("expirationDate")
@@ -578,7 +589,7 @@ def _leg_line(leg: dict) -> str:
         parts.append(_date_label(exp))
     parts.append(f"${_trim(strike)} {right}")
     if fill is not None:
-        parts.append(f"@ ${_trim(fill)}")
+        parts.append(f"@ ${_money(fill)}")
     line = " ".join(p for p in parts if p)
     dte = leg.get("dte")
     if dte is not None:
@@ -592,7 +603,7 @@ def _price_line(trade: dict) -> str:
     if price in (None, ""):
         return ""
     label = str(trade.get("priceLabel") or "").strip().lower()
-    return f"${_trim(price)} {_PRICE_SUFFIX.get(label, label)}".strip()
+    return f"${_money(price)} {_PRICE_SUFFIX.get(label, label)}".strip()
 
 
 def _strategy(trade: dict) -> str:
