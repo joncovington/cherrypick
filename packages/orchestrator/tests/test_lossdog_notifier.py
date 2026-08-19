@@ -12,6 +12,7 @@ Every test stubs the HTTP layer (and the registry/keyring reads); nothing here t
 
 import base64
 import json
+import re
 import time
 import urllib.error
 
@@ -68,6 +69,10 @@ def _trade(i, **over):
     }
     t.update(over)
     return t
+
+
+def _strip_ansi(text):
+    return re.sub(re.escape(ld._ESC) + r"\[[0-9;]*m", "", text)
 
 
 def _fields(embed):
@@ -548,7 +553,9 @@ def test_embed_carries_the_whole_trade(wired):
     assert embed["author"]["name"] == "Tony Battista · Veteran Trader"
     assert embed["author"]["icon_url"].startswith("https://")
     assert embed["url"] == ld._FEED_URL
-    assert embed["description"] == "BTO 1× 21 Aug 26 $360 CALL @ $3.26 · 18 DTE"
+    assert embed["description"] == (
+        "```ansi\n" + ld._ANSI_OPEN + "BTO 1× 21 Aug 26 $360 CALL @ $3.26 · 18 DTE" + ld._ANSI_RESET + "\n```"
+    )
     # The follow-feed card's shape: three inline fields, one horizontal strip.
     fields = _fields(embed)
     assert [f["name"] for f in embed["fields"]] == ["Trade", "Context", "Stats"]
@@ -681,3 +688,47 @@ def test_price_uses_the_db_cr_abbreviation():
     assert ld._price_line(_trade(1, priceLabel="credit")) == "$3.26 cr"
     # An unknown label is passed through rather than dropped — this feed's vocabulary is open-ended.
     assert ld._price_line(_trade(1, priceLabel="level")) == "$3.26 level"
+
+
+def test_a_roll_colors_the_leg_it_closes_apart_from_the_leg_it_opens():
+    roll = _trade(
+        1,
+        legs=[
+            {
+                "unitQuantity": 1,
+                "action": "BUY_TO_CLOSE",
+                "strike": 360,
+                "callOrPut": "CALL",
+                "expirationDate": "2026-08-21",
+            },
+            {
+                "unitQuantity": 1,
+                "action": "SELL_TO_OPEN",
+                "strike": 370,
+                "callOrPut": "CALL",
+                "expirationDate": "2026-10-16",
+            },
+        ],
+    )
+    closing, opening = ld._leg_block(roll).splitlines()[1:3]
+    assert closing.startswith(ld._ANSI_CLOSE) and "BTC" in closing
+    assert opening.startswith(ld._ANSI_OPEN) and "STO" in opening
+    # Padded to a common width so the color blocks line up as a table under the code fence.
+    assert len(_strip_ansi(closing)) == len(_strip_ansi(opening))
+
+
+def test_an_untagged_leg_gets_no_highlight_rather_than_a_guessed_one():
+    trade = _trade(1, legs=[{"unitQuantity": 1, "action": "EXERCISE", "strike": 360, "callOrPut": "CALL"}])
+    line = ld._leg_block(trade).splitlines()[1]
+    assert ld._ESC not in line
+
+
+def test_ansi_off_returns_the_same_lines_unfenced():
+    trade = _trade(1)
+    assert ld._leg_block(trade, ansi=False) == "BTO 1× 21 Aug 26 $360 CALL @ $3.26 · 18 DTE"
+    assert ld._ESC not in ld.build_embed(trade, ansi_legs=False)["description"]
+
+
+def test_the_plain_text_floor_stays_plain():
+    # A log line and a non-Discord channel render no escapes — only the embed is fenced.
+    assert ld._ESC not in ld.format_trade(_trade(1))

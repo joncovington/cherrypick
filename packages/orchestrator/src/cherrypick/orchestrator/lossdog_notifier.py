@@ -103,6 +103,14 @@ AUTH_FAILED = object()
 COLOR_CREDIT = 0x22C55E  # green — money came in
 COLOR_DEBIT = 0xEF4444  # red — money went out
 
+_ESC = chr(27)  # spelled out so the source carries no invisible control byte
+# Discord renders ANSI only inside an ```ansi code block, and only from its own 16-color set.
+# Opening legs sit on white and closing legs on gray: on a dark client the opens are the bright
+# blocks and the closes recede, which is the order a reader wants them in.
+_ANSI_OPEN = f"{_ESC}[0;30;47m"  # black on white
+_ANSI_CLOSE = f"{_ESC}[0;37;44m"  # white on gray
+_ANSI_RESET = f"{_ESC}[0m"
+
 _PRICE_SUFFIX = {"credit": "cr", "debit": "db"}  # the follow card's abbreviations
 
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -597,6 +605,44 @@ def _leg_line(leg: dict) -> str:
     return line
 
 
+def _leg_style(leg: dict) -> str:
+    """The ANSI prefix for one leg, by what it does to the position. A leg the feed tagged with
+    neither (an exercise, an assignment, anything it invents later) gets no highlight rather than a
+    guessed one."""
+    action = str(leg.get("action") or "").upper()
+    if action.endswith("_TO_OPEN"):
+        return _ANSI_OPEN
+    if action.endswith("_TO_CLOSE"):
+        return _ANSI_CLOSE
+    return ""
+
+
+def _leg_block(trade: dict, *, ansi: bool = True, max_legs: int = 6) -> str:
+    """The card body: one line per leg, opens on white and closes on gray.
+
+    A roll is the case this earns its keep on — same underlying, same strike ladder, and the only
+    thing separating the leg being closed from the leg being opened is three letters at the head of
+    the line. The highlight makes that the first thing you see instead of the last.
+
+    Lines are padded to a common width so the color blocks line up as a table; the code fence puts
+    them in a monospace font, which is what makes that padding hold. `ansi=False` returns the same
+    lines unfenced, for a client that would show the escapes rather than render them."""
+    legs = trade.get("legs") or []
+    lines = [(_leg_line(leg), _leg_style(leg)) for leg in legs[:max_legs]]
+    lines = [(text, style) for text, style in lines if text]
+    if not lines:
+        return ""
+    if len(legs) > max_legs:
+        lines.append((f"+{len(legs) - max_legs} more legs", ""))
+    if not ansi:
+        return "\n".join(text for text, _ in lines)
+    width = max(len(text) for text, _ in lines)
+    body = "\n".join(
+        f"{style}{text.ljust(width)}{_ANSI_RESET}" if style else text.ljust(width) for text, style in lines
+    )
+    return f"```ansi\n{body}\n```"
+
+
 def _price_line(trade: dict) -> str:
     """'$3.26 db' — the follow card's abbreviation, so the two feeds' price columns line up."""
     price = trade.get("price")
@@ -684,7 +730,7 @@ def _embed_field(name: str, value: str) -> dict | None:
     return {"name": name, "value": value, "inline": True} if value else None
 
 
-def build_embed(trade: dict) -> dict:
+def build_embed(trade: dict, *, ansi_legs: bool = True) -> dict:
     """One trade as a Discord embed, in the follow-feed card's shape: lifecycle word and underlying
     in the title, the numbers grouped into three inline fields — Trade, Context, Stats — so the card
     is one horizontal strip rather than two wrapped rows, and the legs in the body.
@@ -693,7 +739,8 @@ def build_embed(trade: dict) -> dict:
     differs is only what each feed actually publishes: this one carries no underlying price, IV rank
     or POP, so Context is expiry alone and Stats says what kind of trade it is; and it carries no
     trader comment, so the body slot the follow card gives the rationale holds the per-leg detail
-    instead — the one thing this feed has that the other doesn't. Expiries keep their year: this
+    instead — the one thing this feed has that the other doesn't, highlighted by what each leg does
+    to the position (see `_leg_block`). Expiries keep their year: this
     feed runs far-dated, where 'Oct 16' would be ambiguous.
 
     The renderers are deliberately NOT shared with follow_notifier: that module's formatting half is
@@ -731,12 +778,9 @@ def build_embed(trade: dict) -> dict:
         "color": COLOR_CREDIT if str(trade.get("priceLabel") or "") == "credit" else COLOR_DEBIT,
         "fields": fields,
     }
-    legs = trade.get("legs") or []
-    leg_lines = [_leg_line(leg) for leg in legs[:6] if _leg_line(leg)]
-    if len(legs) > 6:
-        leg_lines.append(f"+{len(legs) - 6} more legs")
-    if leg_lines:
-        embed["description"] = "\n".join(leg_lines)[:4096]
+    body = _leg_block(trade, ansi=ansi_legs)
+    if body:
+        embed["description"] = body[:4096]
     footer = "Lossdog VIP Trade Feed"
     note = _late_sync_note(trade)
     if note:
@@ -793,6 +837,7 @@ def run(cfg: dict | None = None, *, replay_last: int = 0, dry_run: bool = False)
         notify_cfg = cfg.get("notify", {})
         notifier = Notifier({**notify_cfg, "channels": settings["channels"]})
         max_per_run = max(1, int(settings["max_per_run"] or _DEFAULT_MAX_PER_RUN))
+        ansi_legs = bool(settings["ansi_legs"])
         state = util.read_json(_STATE)
 
         token, source, fingerprint, dead_cookie = _resolve_token()
@@ -877,14 +922,22 @@ def run(cfg: dict | None = None, *, replay_last: int = 0, dry_run: bool = False)
             trades, _total = result
             for trade in trades:
                 if dry_run:
-                    print(json.dumps({"message": format_trade(trade), "embed": build_embed(trade)}, indent=2))
+                    print(
+                        json.dumps(
+                            {
+                                "message": format_trade(trade),
+                                "embed": build_embed(trade, ansi_legs=ansi_legs),
+                            },
+                            indent=2,
+                        )
+                    )
                 else:
                     notifier.notify(
                         "INFO",
                         f"lossdog.trade.{trade['id']}",
                         "Lossdog VIP",
                         format_trade(trade),
-                        embed=build_embed(trade),
+                        embed=build_embed(trade, ansi_legs=ansi_legs),
                     )
             summary.update({"replayed": len(trades), "dry_run": dry_run, "state_untouched": True})
             return summary
@@ -945,7 +998,12 @@ def run(cfg: dict | None = None, *, replay_last: int = 0, dry_run: bool = False)
 
         if dry_run:
             for trade in to_push:
-                print(json.dumps({"message": format_trade(trade), "embed": build_embed(trade)}, indent=2))
+                print(
+                    json.dumps(
+                        {"message": format_trade(trade), "embed": build_embed(trade, ansi_legs=ansi_legs)},
+                        indent=2,
+                    )
+                )
             summary.update(
                 {
                     "dry_run": True,
@@ -965,7 +1023,7 @@ def run(cfg: dict | None = None, *, replay_last: int = 0, dry_run: bool = False)
                 f"lossdog.trade.{trade['id']}",
                 "Lossdog VIP",
                 format_trade(trade),
-                embed=build_embed(trade),
+                embed=build_embed(trade, ansi_legs=ansi_legs),
             )
         # Watermark everything valid this cycle — pushed, suppressed, and filtered alike. Malformed
         # trades are deliberately NOT marked, so a transiently mangled trade gets another look.
