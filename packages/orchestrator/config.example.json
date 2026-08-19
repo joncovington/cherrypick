@@ -437,6 +437,8 @@
       "discord"
     ],
     "desktop_app_name": "cherrypick",
+    "_feed_avatars_note": "Optional avatar-image overrides for the two feed notifiers' per-message Discord identity ('Lossdog VIP' / 'tastylive Follow' post under their service's own name and picture via the webhook's username/avatar_url override). Keys 'lossdog' and 'tastylive', values https image URLs; the defaults (each service's YouTube channel picture) live in cherrypick.notify.feedcard and only the avatar can be overridden here - the username is the service label itself.",
+    "feed_avatars": {},
     "trade_summary": {
       "_mode_note": "How MEIC trade events reach you: 'per-trade' (default) pushes each entry/stop/exit individually, with profile_prefixes below routing matching study arms to the digest; 'summary' routes EVERY MEIC trade to the periodic digest (one per-symbol roll-up every interval_minutes) and ignores profile_prefixes. Either way the digest is intraday-only: it pushes 09:15-17:00 ET on trading days (the tail covers the closing exits), and a flush due outside that window is held for the next in-window tick rather than dropped.",
       "mode": "per-trade",

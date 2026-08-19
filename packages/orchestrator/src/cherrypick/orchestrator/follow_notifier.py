@@ -2,26 +2,22 @@
 
 Polls the Follow Feed's public read endpoints and pushes one order per newly seen fill: a plain
 three-line message for the log floor and any non-Discord channel, and a colored Discord embed card
-for the channel this is actually read in (`format_order`/`build_embed` below). Same event contract as
+for the channel this is actually read in (`card_spec` below, rendered by
+`cherrypick.notify.feedcard`). Same event contract as
 trade_notifier: a per-id watermark (one-shot, never re-notified), atomic state, a single-writer lock,
 and seed-don't-backfill on first activation so switching it on doesn't blast the last 50 orders in
 one burst.
 
-**The rendering half is shared with a sibling repo and must stay identical.** The repo
-`joncovington/follow-feed-notifier` is a standalone extraction of this feed reader that runs on
-GitHub Actions; it owns the same
-`_direction`/`_leg_sign`/`_quantity`/`_expiry`/`_spot`/`format_order`/`build_embed` logic. The
-formatting is where the bugs live — the feed is undocumented, so every awkward case (a single-leg
-order whose `order_type` contradicts its leg, equity legs tagged "S" not "E", slash-prefixed futures
-symbols, a futures price that is a level rather than a credit) was found by watching real orders, and
-each has now been fixed twice. Treat the two as one implementation in two places: when you change a
-formatter here, port it there in the same session, and vice versa. Verify by rendering the live feed
-through both and diffing — they should be byte-identical, glyphs included (`×`, not `x`; `–`, not
-`-`). Ported 2026-08-14: `build_embed`'s six single-value fields (Trade/Price/Expiry/Spot/IV rank/POP)
-grouped into three (Trade/Context/Stats) so the card is one row instead of two. NOT yet ported:
-2026-08-14 `_quantity` switched from the legs' raw max to their GCD on 3+-leg orders, so a 1-lot
-butterfly (legs 1/-2/1) reports "1×" instead of the body leg's doubled "2×" — port this to the
-sibling repo before trusting "verified identical" again.
+**The sibling repo is retired (2026-08-18).** `joncovington/follow-feed-notifier` was a
+standalone GitHub-Actions extraction of this reader whose formatting half had to be kept
+byte-identical with this file — every formatter change was a two-repo port. It is archived, and
+this file is the feed's only home now. What that constraint protected still matters: the feed is
+undocumented, and every awkward case in the mapping helpers below (a single-leg order whose
+`order_type` contradicts its leg, equity legs tagged "S" not "E", slash-prefixed futures symbols,
+a futures price that is a level rather than a credit) was found by watching real orders. Do not
+re-derive them. Rendering itself moved to the shared card grammar the same day
+(`cherrypick.notify.feedcard`): this module owns only the mapping from feed JSON into the neutral
+card spec, so this card and the lossdog card in the same channel are uniform by construction.
 
 Endpoints (undocumented, discovered in the tastytrade web platform's own bundle; no auth required
 for the two GETs used here):
@@ -47,10 +43,10 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
-from cherrypick.notify import Notifier
+from cherrypick.notify import Notifier, feedcard
 
 from . import config as cfgmod
 from . import util
@@ -175,9 +171,10 @@ def fetch_orders(filters: dict) -> list[dict]:
 # this order", never "did the trade win" — buying back a winning credit spread still stripes red,
 # because money went out. A futures outright quotes a level, not cash (nobody pays $29,728.75 to buy
 # one MNQ), and an order whose direction the feed didn't say has no answer; both stay neutral.
-COLOR_CREDIT = 0x22C55E  # green — money came in (a net credit)
-COLOR_DEBIT = 0xEF4444  # red — money went out (a net debit)
-COLOR_NEUTRAL = 0x6B7280  # slate — futures (a level, not cash), or a direction the feed didn't say
+# Stripe colors live in the shared card grammar; re-exported as this module's public face.
+COLOR_CREDIT = feedcard.COLOR_CREDIT
+COLOR_DEBIT = feedcard.COLOR_DEBIT
+COLOR_NEUTRAL = feedcard.COLOR_NEUTRAL
 
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
@@ -219,36 +216,38 @@ def _open_close(order: dict) -> str:
     return ""
 
 
-def _stripe_color(order: dict) -> int:
-    """Cash direction as the stripe. Futures are checked first: `_direction` still reads
-    Bought/Sold on an outright, but no premium changed hands, so coloring it would invent a cash
-    flow — the same reason `_price` drops the db/cr suffix on those rows. A roll gets the color of
-    its NET (the order_type tiebreak inside `_direction`), which is the one thing green/red can say
-    about it honestly."""
+def _cash(order: dict) -> str:
+    """'credit' / 'debit' / 'level' / '' for the stripe. Futures are checked first: `_direction`
+    still reads Bought/Sold on an outright, but no premium changed hands, so coloring it would
+    invent a cash flow — the same reason `_price` drops the db/cr suffix on those rows. A roll gets
+    the color of its NET (the order_type tiebreak inside `_direction`), which is the one thing
+    green/red can say about it honestly."""
     if _is_futures(order):
-        return COLOR_NEUTRAL
+        return "level"
     match _direction(order):
         case "Sold":
-            return COLOR_CREDIT
+            return "credit"
         case "Bought":
-            return COLOR_DEBIT
+            return "debit"
         case _:
-            return COLOR_NEUTRAL
+            return ""
 
 
-def _lifecycle(order: dict) -> tuple[str, str, int]:
-    """(marker, headline word, embed color). The marker and word carry the lifecycle, the color
-    carries the cash direction — two independent facts about the order. Falls back to the
-    Bought/Sold verb when the legs sit on both sides — an honest "something happened" beats guessing
-    at a roll."""
-    color = _stripe_color(order)
-    match _open_close(order):
-        case "OPEN":
-            return "➕", "OPEN", color
-        case "CLOSE":
-            return "➖", "CLOSE", color
-        case _:
-            return "\U0001f501", _direction(order), color
+def _lifecycle_word(order: dict) -> str:
+    """OPEN / CLOSE / ROLL / FUTURES, or the Bought/Sold verb — the shared card vocabulary
+    (feedcard owns the glyphs). Futures is its own category ahead of open/close: what kind of thing
+    traded outranks which way. Legs marked on BOTH sides are a roll by definition here — the feed
+    tags every leg O or C, so mixed marks mean a close paired with an open; only an order whose
+    legs carry no marks at all falls back to the verb, an honest "something happened"."""
+    if _is_futures(order):
+        return "FUTURES"
+    word = _open_close(order)
+    if word:
+        return word
+    marks = {str(leg.get("open_close") or "") for leg in order.get("order_legs") or []}
+    if {"O", "C"} <= marks:
+        return "ROLL"
+    return _direction(order)
 
 
 def _is_opening(order: dict) -> bool:
@@ -521,85 +520,48 @@ def _trader_name(order: dict, trader_names: dict[int, str]) -> str:
     return trader_names.get(trader_id, f"trader {order.get('trader_id', '?')}")
 
 
-def format_order(order: dict, trader_names: dict[int, str]) -> str:
-    """One order as plain text — the log floor and any non-Discord channel read this.
+def card_spec(order: dict, trader_names: dict[int, str]) -> dict:
+    """One order as the shared feed-card spec (`cherrypick.notify.feedcard`). Everything
+    feed-specific is settled HERE — the direction precedence, the futures level, the GCD sizing,
+    the signed legs, the spot beside the strikes — and everything about how a card looks is
+    settled THERE, identically for both feeds in the channel.
 
-    Three lines: who and what, the numbers, the trader's comment. Kept UTC (plain text has no way to
-    render in the reader's timezone; the Discord embed does that properly)."""
-    marker, word, _ = _lifecycle(order)
+    The body is the trader's own words (`_rationale`), quoted — the most useful part of this feed
+    and the reason it is worth a push at all. The play tags (Earnings/Hedge/Scalp) ride the Stats
+    column beside IVR and POP: they are things the platform says about the trade, and the footer
+    now uniformly names the feed."""
     strategy = str(order.get("strategy") or "order")
-    head = f"{marker} {_trader_name(order, trader_names)} · {word} {_underlyings(order)} {strategy}".replace(
-        "  ", " "
-    )
+    return {
+        "service": "tastylive",
+        "trader": {"name": _trader_name(order, trader_names)},
+        "lifecycle": _lifecycle_word(order),
+        "symbol": _underlyings(order),
+        "strategy": strategy,
+        "structure": _structure(order),
+        "price": _price(order),
+        "cash": _cash(order),
+        "expiry": _expiry(order),
+        "context_extra": [_spot(order)],
+        "stats": [
+            f"IVR {_iv_rank(order)}" if _iv_rank(order) else "",
+            f"POP {_pop(order)}" if _pop(order) else "",
+            *_tags(order),
+        ],
+        "body": _rationale(order),
+        "body_quoted": True,
+        "footer": ["tastylive Follow Feed"],
+        "timestamp": _filled_at(order),
+    }
 
-    when = _filled_at(order)
-    detail = [
-        _structure(order),
-        f"exp {_expiry(order)}" if _expiry(order) else "",
-        _price(order),
-        _spot(order),
-        f"IVR {_iv_rank(order)}" if _iv_rank(order) else "",
-        f"POP {_pop(order)}" if _pop(order) else "",
-        *_tags(order),
-        when.astimezone(timezone.utc).strftime("%H:%M UTC") if when else "",
-    ]
-    lines = [head, " · ".join(p for p in detail if p)]
-    lines.extend(f"> {note}" for note in _rationale(order))
-    return "\n".join(ln for ln in lines if ln)
 
-
-def _embed_field(name: str, value: str) -> dict | None:
-    return {"name": name, "value": value, "inline": True} if value else None
+def format_order(order: dict, trader_names: dict[int, str]) -> str:
+    """The plain-text floor for one order — the spec through the shared renderer."""
+    return feedcard.format_text(card_spec(order, trader_names))
 
 
 def build_embed(order: dict, trader_names: dict[int, str]) -> dict:
-    """One order as a Discord embed: a colored card with the comment as the body and the numbers
-    grouped into three fields — Trade, Context, Stats — so the card is one row wide instead of
-    two. Six single-value fields used to wrap onto two rows on both desktop and mobile; grouping
-    related numbers (structure+price, expiry+spot, IVR+POP) into one field each keeps the same
-    information in a single horizontal strip.
-
-    `timestamp` is the fill time — Discord renders it in each reader's own timezone, which is the
-    honest way to show a time on a message that may arrive well after the fact."""
-    _, word, color = _lifecycle(order)
-    strategy = str(order.get("strategy") or "order")
-    title = " · ".join(p for p in (word, f"{_underlyings(order)} {strategy}".strip()) if p)
-
-    trade = " · ".join(p for p in (_structure(order), _price(order)) if p)
-    context = " · ".join(p for p in (_expiry(order), _spot(order)) if p)
-    stats = " · ".join(
-        p
-        for p in (
-            f"IVR {_iv_rank(order)}" if _iv_rank(order) else "",
-            f"POP {_pop(order)}" if _pop(order) else "",
-        )
-        if p
-    )
-    fields = [
-        f
-        for f in (
-            _embed_field("Trade", trade),
-            _embed_field("Context", context),
-            _embed_field("Stats", stats),
-        )
-        if f
-    ]
-
-    embed: dict = {
-        "author": {"name": _trader_name(order, trader_names)},
-        "title": title[:256],
-        "color": color,
-        "fields": fields,
-    }
-    notes = _rationale(order)
-    if notes:
-        embed["description"] = "\n".join(f"> {n}" for n in notes)[:4096]
-    if _tags(order):
-        embed["footer"] = {"text": " · ".join(_tags(order))}
-    when = _filled_at(order)
-    if when:
-        embed["timestamp"] = when.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-    return embed
+    """The Discord embed for one order — the spec through the shared renderer."""
+    return feedcard.build_embed(card_spec(order, trader_names))
 
 
 # --------------------------------------------------------------------------- entrypoint
@@ -620,6 +582,7 @@ def run(cfg: dict | None = None) -> dict:
     try:
         notify_cfg = cfg.get("notify", {})
         notifier = Notifier({**notify_cfg, "channels": settings["channels"]})
+        avatars = notify_cfg.get("feed_avatars") or {}
         max_per_run = max(1, int(settings["max_per_run"] or _DEFAULT_MAX_PER_RUN))
 
         orders = fetch_orders(settings["filters"])
@@ -646,12 +609,14 @@ def run(cfg: dict | None = None) -> dict:
 
         trader_names = fetch_trader_names() if to_push else {}
         for order in to_push:
+            spec = card_spec(order, trader_names)
             notifier.notify(
                 "INFO",
                 f"follow.order.{order['id']}",
                 "Follow feed",
-                format_order(order, trader_names),
-                embed=build_embed(order, trader_names),
+                feedcard.format_text(spec),
+                embed=feedcard.build_embed(spec),
+                identity=feedcard.identity(spec, avatars),
             )
         for order in fresh:
             seen.add(int(order["id"]))
