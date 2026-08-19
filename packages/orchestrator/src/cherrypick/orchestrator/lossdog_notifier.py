@@ -103,7 +103,9 @@ AUTH_FAILED = object()
 COLOR_CREDIT = 0x22C55E  # green — money came in
 COLOR_DEBIT = 0xEF4444  # red — money went out
 
-_TITLE_MARK = "🟨"  # leads the trader line, so the card is findable at a scroll
+# The scan marker, drawn as a line of its own ABOVE the card: Discord fixes the embed author
+# row as [avatar][name], so nothing inside the embed can sit left of the trader's picture.
+_CARD_MARK = "🟨"
 
 _PRICE_SUFFIX = {"credit": "cr", "debit": "db"}  # the follow card's abbreviations
 
@@ -707,8 +709,7 @@ def build_embed(trade: dict) -> dict:
     batches); the footer says so explicitly when the lag exceeds a day."""
     trader = trade.get("trader") or {}
     author_bits = [str(trader.get("name") or "").strip(), str(trader.get("jobPosition") or "").strip()]
-    name = " · ".join(b for b in author_bits if b) or "Lossdog trader"
-    author: dict = {"name": f"{_TITLE_MARK} {name}"}
+    author: dict = {"name": " · ".join(b for b in author_bits if b) or "Lossdog trader"}
     if trader.get("profilePictureUrl"):
         author["icon_url"] = str(trader["profilePictureUrl"])
 
@@ -880,7 +881,12 @@ def run(cfg: dict | None = None, *, replay_last: int = 0, dry_run: bool = False)
             trades, _total = result
             for trade in trades:
                 if dry_run:
-                    print(json.dumps({"message": format_trade(trade), "embed": build_embed(trade)}, indent=2))
+                    payload = {
+                        "message": format_trade(trade),
+                        "content": _CARD_MARK,
+                        "embed": build_embed(trade),
+                    }
+                    print(json.dumps(payload, indent=2))
                 else:
                     notifier.notify(
                         "INFO",
@@ -888,6 +894,7 @@ def run(cfg: dict | None = None, *, replay_last: int = 0, dry_run: bool = False)
                         "Lossdog VIP",
                         format_trade(trade),
                         embed=build_embed(trade),
+                        content=_CARD_MARK,
                     )
             summary.update({"replayed": len(trades), "dry_run": dry_run, "state_untouched": True})
             return summary
@@ -948,7 +955,12 @@ def run(cfg: dict | None = None, *, replay_last: int = 0, dry_run: bool = False)
 
         if dry_run:
             for trade in to_push:
-                print(json.dumps({"message": format_trade(trade), "embed": build_embed(trade)}, indent=2))
+                payload = {
+                    "message": format_trade(trade),
+                    "content": _CARD_MARK,
+                    "embed": build_embed(trade),
+                }
+                print(json.dumps(payload, indent=2))
             summary.update(
                 {
                     "dry_run": True,
@@ -969,6 +981,7 @@ def run(cfg: dict | None = None, *, replay_last: int = 0, dry_run: bool = False)
                 "Lossdog VIP",
                 format_trade(trade),
                 embed=build_embed(trade),
+                content=_CARD_MARK,
             )
         # Watermark everything valid this cycle — pushed, suppressed, and filtered alike. Malformed
         # trades are deliberately NOT marked, so a transiently mangled trade gets another look.

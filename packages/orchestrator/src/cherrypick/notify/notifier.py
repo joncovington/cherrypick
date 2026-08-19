@@ -161,7 +161,13 @@ class Notifier:
         return self._post_json(url, {"text": f"[{level}] {self.app_name} — {title}\n{message}"})
 
     def _push_discord(
-        self, level: str, title: str, message: str, channel: str = "discord", embed: dict | None = None
+        self,
+        level: str,
+        title: str,
+        message: str,
+        channel: str = "discord",
+        embed: dict | None = None,
+        content: str | None = None,
     ) -> dict[str, Any]:
         url = secrets.get_webhook(channel)
         if not url:
@@ -174,18 +180,31 @@ class Notifier:
             # `[LEVEL] app — title` prefix a plain message gets is dropped here — in a channel
             # dedicated to this kind of push it's the same characters on every message, saying
             # nothing the card doesn't already say better (mirrors the standalone follow-feed-notifier).
-            return self._post_json(url, {"embeds": [embed]})
+            payload: dict[str, Any] = {"embeds": [embed]}
+            if content:
+                # The one line an embed cannot draw: Discord fixes the card's author row as
+                # [avatar][name], so anything that has to sit LEFT of the avatar has to be a
+                # message of its own above the card. Callers use it for a scan marker, nothing more.
+                payload["content"] = content[:1900]
+            return self._post_json(url, payload)
         # Discord caps `content` at 2000 chars; keep well under with a margin for the prefix.
         body = f"**[{level}] {self.app_name} — {title}**\n{message}"[:1900]
         return self._post_json(url, {"content": body})
 
     # -- public --------------------------------------------------------------------
     def notify(
-        self, level: str, key: str, title: str, message: str, embed: dict | None = None
+        self,
+        level: str,
+        key: str,
+        title: str,
+        message: str,
+        embed: dict | None = None,
+        content: str | None = None,
     ) -> dict[str, Any]:
         """Emit a notification. Always writes the log floor first, then any push channels.
 
-        `embed` is a Discord-only enrichment (a colored card — see `follow_notifier.build_embed`).
+        `embed` is a Discord-only enrichment (a colored card — see `follow_notifier.build_embed`);
+        `content` is the short line drawn above such a card, and is ignored without one.
         `message` stays the canonical text: it is what the log floor records and what every
         non-Discord channel receives, so a channel that can't render a card loses nothing but layout.
         """
@@ -201,7 +220,9 @@ class Notifier:
                 elif ch == "slack":
                     results["slack"] = self._push_slack(level, title, message)
                 elif ch in _DISCORD_CHANNELS:
-                    results[ch] = self._push_discord(level, title, message, channel=ch, embed=embed)
+                    results[ch] = self._push_discord(
+                        level, title, message, channel=ch, embed=embed, content=content
+                    )
                 else:
                     results[ch] = {"ok": False, "skipped": f"unknown channel '{ch}'"}
             except Exception as exc:
@@ -216,9 +237,10 @@ def notify(
     title: str,
     message: str,
     embed: dict | None = None,
+    content: str | None = None,
 ) -> dict[str, Any]:
     """Module-level convenience: construct a Notifier and emit one notification."""
-    return Notifier(notify_cfg).notify(level, key, title, message, embed=embed)
+    return Notifier(notify_cfg).notify(level, key, title, message, embed=embed, content=content)
 
 
 if __name__ == "__main__":  # `python notify/notifier.py "message"` fires a test notification
