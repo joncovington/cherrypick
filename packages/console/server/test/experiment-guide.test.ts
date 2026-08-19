@@ -38,6 +38,7 @@ const FLIES_CONFIG = {
       wing_width: 5,
     },
   },
+  advice: { enabled: true, base_arm: "control" },
 };
 
 beforeAll(() => {
@@ -58,6 +59,8 @@ beforeAll(() => {
   pos.run("control", "2026-08-11");
   pos.run("control", "2026-08-13");
   pos.run("width-5", "2026-07-30");
+  pos.run("advised:control", "2026-08-13");
+  pos.run("advised:iron", "2026-08-01");
   db.prepare("INSERT INTO measurement_breaks (break_date, scope, kind, reason) VALUES (?, ?, ?, ?)").run(
     "2026-08-09",
     "*",
@@ -149,10 +152,18 @@ describe("running versus finished", () => {
 
   it("running arms come first, and carry their own ledger span", () => {
     const guide = readFliesArmGuide(config, "paper");
-    expect(guide.entries.map((e) => e.name)).toEqual(["control", "bwb", "width-5"]);
+    expect(guide.entries.map((e) => e.name)).toEqual(["control", "bwb", "advised:control", "width-5", "advised:iron"]);
     expect(guide.entries[0]).toMatchObject({ firstSession: "2026-08-11", lastSession: "2026-08-13", positions: 2 });
     // Configured but never traded is its own state — neither running-with-history nor retired.
     expect(armOf("bwb")).toMatchObject({ enabled: true, retired: false, positions: 0, firstSession: null });
+  });
+
+  it("the advice block's current book runs; a book it no longer produces is retired, not gone", () => {
+    // advised:* books never appear in the arm registry — the paper loop synthesizes them from the
+    // advice block — so registry absence must not read as "gone from config" while one is trading.
+    expect(armOf("advised:control")).toMatchObject({ enabled: true, retired: false, removed: false, positions: 1 });
+    expect(armOf("advised:iron")).toMatchObject({ enabled: false, retired: true, removed: false });
+    expect(armOf("advised:control").derived[0]).toMatchObject({ label: "advised twin of", value: "control" });
   });
 
   it("surfaces the module's own measurement breaks", () => {
@@ -184,7 +195,11 @@ describe("MEIC risk profiles", () => {
     fs.mkdirSync(path.join(tmp, "config"), { recursive: true });
     fs.writeFileSync(
       path.join(tmp, "config", "meic.json"),
-      JSON.stringify({ min_iv_rank: 0.3, stop_trigger_ratio: 0.95 }),
+      JSON.stringify({
+        min_iv_rank: 0.3,
+        stop_trigger_ratio: 0.95,
+        advice: { enabled: true, base_profile: "open" },
+      }),
     );
     fs.writeFileSync(
       path.join(tmp, "config.risk.json"),
@@ -211,6 +226,8 @@ describe("MEIC risk profiles", () => {
     ins.run("control", "2026-08-12");
     ins.run("open", "2026-08-13");
     ins.run("large-spx", "2026-07-13");
+    ins.run("advised:open", "2026-08-14");
+    ins.run("advised:control", "2026-08-13");
     db.close();
 
     meicConfig = { ...config, paths: { ...config.paths, meicDir: dir, cherrypick: tmp, meicRiskConfig: path.join(tmp, "config.risk.json") } };
@@ -236,6 +253,22 @@ describe("MEIC risk profiles", () => {
     expect(gone).toMatchObject({ removed: true, positions: 1, enabled: false });
     // Nothing to describe it with — that is the point of flagging it rather than omitting it.
     expect(gone.notes).toHaveLength(0);
+  });
+
+  it("advised books follow the advice block, not the profile registry", () => {
+    // advice.base_profile is `open`, so advised:open is the running book; advised:control stopped
+    // being produced when the base was re-pointed, so it is retired — but never "gone from config",
+    // because no advised book was ever IN the profile registry to be gone from.
+    expect(guide().entries.find((e) => e.name === "advised:open")!).toMatchObject({
+      enabled: true,
+      retired: false,
+      removed: false,
+    });
+    expect(guide().entries.find((e) => e.name === "advised:control")!).toMatchObject({
+      enabled: false,
+      retired: true,
+      removed: false,
+    });
   });
 
   it("takes the set-level notes from the config root", () => {
