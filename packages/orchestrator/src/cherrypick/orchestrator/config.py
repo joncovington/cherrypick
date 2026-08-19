@@ -437,9 +437,6 @@ def lossdog_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "interval_minutes": ld.get("interval_minutes", 10),
         "channels": ld.get("channels") or ["log", "discord_follow"],
         "max_per_run": ld.get("max_per_run", 8),
-        # Leg lines highlighted by open/close inside an ANSI code block. On by default; set false
-        # for a client that would show the escape codes rather than render them.
-        "ansi_legs": ld.get("ansi_legs", True),
         "filters": ld.get("filters", {}) or {},
     }
 
