@@ -103,6 +103,8 @@ AUTH_FAILED = object()
 COLOR_CREDIT = 0x22C55E  # green — money came in
 COLOR_DEBIT = 0xEF4444  # red — money went out
 
+_TITLE_MARK = "🟨"  # leads the OPEN/CLOSE line, so the card is findable at a scroll
+
 _PRICE_SUFFIX = {"credit": "cr", "debit": "db"}  # the follow card's abbreviations
 
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -712,6 +714,8 @@ def build_embed(trade: dict) -> dict:
     _, word = _lifecycle(trade)
     symbol = str(trade.get("underlyingSymbol") or "?")
     title = " · ".join(p for p in (word, f"{symbol} {_strategy(trade)}".strip()) if p)
+    if word:  # no lifecycle word means no OPEN/CLOSE line for the square to lead
+        title = f"{_TITLE_MARK} {title}"
 
     trade_field = " · ".join(p for p in (_structure(trade), _price_line(trade)) if p)
     fields = [
