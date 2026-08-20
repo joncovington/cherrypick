@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { ConsoleConfig } from "../src/config.js";
-import { readFliesMeta, CURRENT_ERA } from "../src/readers/flies.js";
+import { readFliesMeta, eraClause, CURRENT_ERA } from "../src/readers/flies.js";
 
 /**
  * The scope selects' options, and the day every Today card resolves to.
@@ -84,5 +84,39 @@ describe("the flies scope payload", () => {
     const meta = readFliesMeta(config, "paper");
     expect(meta.dates).toEqual([...meta.dates].sort().reverse());
     expect(meta.dates).toContain(YESTERDAY);
+  });
+});
+
+describe("the era scope", () => {
+  it("offers every declared era, each readable alone", () => {
+    const meta = readFliesMeta(config, "paper");
+    expect(meta.eras.map((e) => e.era)).toEqual(["spx", "xsp", "spx-early"]);
+    expect(meta.currentEra).toBe("spx");
+  });
+
+  it("counts each era against this store rather than dropping the empty ones", () => {
+    const meta = readFliesMeta(config, "paper");
+    const byKey = Object.fromEntries(meta.eras.map((e) => [e.era, e.trades]));
+    expect(byKey["spx"]).toBeGreaterThan(0);
+    // The fixture holds no XSP book. Reporting 0 is the point: an era this store never traded is a
+    // known quantity, where a missing option is indistinguishable from a broken filter.
+    expect(byKey["xsp"]).toBe(0);
+  });
+
+  it("bounds a closed era at both ends", () => {
+    expect(eraClause("xsp")).toEqual({
+      sql: "symbol = ? AND trade_date >= ? AND trade_date <= ?",
+      params: ["XSP", "2026-07-29", "2026-07-31"],
+    });
+    expect(eraClause("spx-early")).toEqual({
+      sql: "symbol = ? AND trade_date <= ?",
+      params: ["SPX", "2026-07-28"],
+    });
+  });
+
+  it("pools only on an explicit ALL, and falls back to the default on anything unknown", () => {
+    expect(eraClause("ALL").sql).toBeNull();
+    expect(eraClause("nonsense")).toEqual(eraClause("spx"));
+    expect(eraClause(null)).toEqual(eraClause("spx"));
   });
 });
