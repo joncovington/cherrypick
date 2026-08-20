@@ -16,6 +16,7 @@ floor), which minimizes capital subject to being a stock substitute.
 from __future__ import annotations
 
 from cherrypick.core import fees as _fees
+from cherrypick.core import settlement as _settlement
 
 BOOKS = ("control", "keltner", "roll")
 
@@ -440,10 +441,9 @@ def assignment_from(leg: dict, spot: float, quantity: int) -> dict | None:
     }
 
 
-def share_pnl(direction: str, shares: int, basis: float, price: float) -> float:
-    """Dollar P&L of a delivered share position disposed at `price`. Long earns the rise."""
-    move = price - basis if direction == "long" else basis - price
-    return round(move * shares, 2)
+# Delivered-share P&L lives in core: calendars and pmcc both model physical settlement and must
+# not disagree about the money. Re-exported under the local name every call site already uses.
+share_pnl = _settlement.share_pnl  # noqa: F401
 
 
 def leg_pnl(leg: dict) -> float | None:
