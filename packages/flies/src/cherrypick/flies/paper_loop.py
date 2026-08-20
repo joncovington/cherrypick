@@ -20,7 +20,9 @@ import subprocess
 import sys
 import time
 
+from cherrypick.core import advice as _core_advice
 from cherrypick.core import calendar as _cal  # noqa: E402
+from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
 
 from cherrypick.flies import book as bookmod  # noqa: E402
@@ -366,50 +368,19 @@ def advice_decision(config: dict, today: str) -> dict:
     Read-once matters across `--once` processes: the first tick of the day records what it decided,
     and every later tick replays that record, so advice can never start, stop, or change mid-session
     however late an artifact lands or however the config is flipped intraday.
+
+    The mechanics live in `cherrypick.core.advice.session_decision` — three modules had written this
+    read-once-and-replay identically, and it carries a safety property rather than a convenience.
     """
-    acfg = config.get("advice") or {}
-    base = acfg.get("base_arm", "control")
-    path = _advice_decision_path()
-
-    decision = None
-    if os.path.exists(path):
-        try:
-            with open(path, encoding="utf-8") as handle:
-                decision = json.load(handle)
-        except (OSError, ValueError):
-            decision = None
-        if decision is not None and decision.get("day") != today:
-            decision = None  # yesterday's decision; today re-derives its own
-    if decision is not None:
-        return decision
-
-    if acfg.get("enabled") and acfg.get("bounds"):
-        from cherrypick.core import advice as _core_advice
-        from cherrypick.core import home as _core_home
-
-        result = _core_advice.load(_core_home.state_dir(), "flies", today, acfg.get("bounds") or {})
-        params = {p["param"]: p["value"] for p in result["proposals"]} or None
-        decision = {
-            "day": today,
-            "base_arm": base,
-            "params": params,
-            "reason": result["reason"],
-            "proposals": result["proposals"],
-            "rejected": result.get("rejected") or [],
-        }
-        for proposal in result["proposals"]:
-            _log(f"advice applied: {proposal['param']}={proposal['value']!r} — {proposal.get('rationale', '')}")
-        if not result["proposals"]:
-            _log(f"advice: baseline ({result['reason'] or 'no proposals'})")
-    else:
-        decision = {"day": today, "base_arm": base, "params": None, "reason": "advice_disabled"}
-
-    try:
-        with open(path, "w", encoding="utf-8") as handle:
-            json.dump(decision, handle, indent=2)
-    except OSError:
-        pass  # the decision still applies to this process; the next --once re-derives it
-    return decision
+    return _core_advice.session_decision(
+        _home.state_dir(),
+        "flies",
+        today,
+        config,
+        _advice_decision_path(),
+        base_key="base_arm",
+        log=_log,
+    )
 
 
 def _advised_arms_with_books(conn, trade_date: str) -> list[str]:
