@@ -525,3 +525,83 @@ def read_spot(db_path, symbol: str, *, max_age_seconds: float | None = None) -> 
         return float(row["last"])
     finally:
         conn.close()
+
+
+def occ_root(occ_symbol: str | None) -> str:
+    """The root of an OCC symbol (`"SPXW  260821P06400000"` -> `"SPXW"`, `"TNA   ..."` -> `"TNA"`).
+
+    The OCC format fixes the root in the first six characters, space-padded.
+    """
+    return (occ_symbol or "")[:6].strip().upper()
+
+
+def chain_for_expiration(conn, symbol: str, expiration: str, root: str) -> list[dict]:
+    """Cached chain entries for exactly this (underlying, expiration), filtered to one OCC root.
+
+    Both filters are correctness rules, and each was added for a different real hazard:
+
+    * `underlying_symbol` — SPX and XSP share expiration dates, so matching on the date alone blends
+      two chains whose strikes differ by 10x.
+    * `root` — one date can carry more than one product. It drops an AM-settled third-Friday monthly
+      that shares its date with the weekly (the calendars case), and a post-split adjusted root such
+      as `TNA1` that shares dates with the standard root (the pmcc case). Either substitution prices
+      a structure against contracts the module is not trading.
+
+    Rows that do not parse, or lack a streamer symbol, strike or OCC symbol, are skipped rather than
+    guessed at.
+    """
+    entries = []
+    for row in conn.execute(
+        "SELECT data_json FROM stream_chain WHERE expiration = ? AND underlying_symbol = ?",
+        (expiration, symbol),
+    ):
+        try:
+            opt = json.loads(row["data_json"])
+        except (ValueError, TypeError):
+            continue
+        sym, strike = opt.get("streamer_symbol"), opt.get("strike_price")
+        occ = opt.get("symbol")
+        if not sym or strike is None or not occ:
+            continue
+        if occ_root(occ) != root:
+            continue
+        otype = str(opt.get("option_type", "")).strip().lower()
+        entries.append(
+            {
+                "strike_price": float(strike),
+                "streamer_symbol": sym,
+                "occ_symbol": occ,
+                "option_type": "call" if otype.startswith("c") else "put",
+            }
+        )
+    return entries
+
+
+def greeks_for(conn, streamer_syms: list[str], *, now_ts: float, max_age_seconds: float) -> dict:
+    """delta/iv/vega per streamer symbol, age-bounded. Missing rows are simply absent.
+
+    The age limit is deliberately looser than a quote's: open interest is a once-a-day snapshot and
+    gamma updates far less often than a bid, so the quote limit would reject a perfectly good
+    surface. Absent greeks are never a gate — callers degrade (context omitted from a record, a
+    selection falling back to extrinsic-only) rather than refuse.
+
+    Chunked under SQLite's 999-variable cap.
+    """
+    out: dict[str, dict] = {}
+    if not streamer_syms:
+        return out
+    for i in range(0, len(streamer_syms), 900):
+        chunk = streamer_syms[i : i + 900]
+        placeholders = ", ".join("?" * len(chunk))
+        for r in conn.execute(
+            f"SELECT symbol, delta, iv, vega, updated_at FROM stream_greeks WHERE symbol IN ({placeholders})",
+            chunk,
+        ):
+            if r["updated_at"] is None or now_ts - float(r["updated_at"]) > max_age_seconds:
+                continue
+            out[r["symbol"]] = {
+                "delta": float(r["delta"]) if r["delta"] is not None else None,
+                "iv": float(r["iv"]) if r["iv"] is not None else None,
+                "vega": float(r["vega"]) if r["vega"] is not None else None,
+            }
+    return out
