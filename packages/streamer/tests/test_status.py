@@ -166,7 +166,11 @@ def test_secrets_status_and_set(fake_keyring):
     assert written == ["client_secret", "refresh_token"]
     assert _credentials.status() == {"client_secret": True, "refresh_token": True}
     # Stored under the shared service + production: prefix, so MEIC/earnings/gex read the same entry.
-    assert fake_keyring[("meicagent", "production:client_secret")] == "value-for-client_secret: "
+    # Asserted on the KEY the prompt named rather than the whole prompt string: the wording is
+    # cherrypick.core.auth's now, shared with flies' onboarding tool, and a test that pins operator
+    # copy fails on an improvement to it.
+    stored = fake_keyring[("meicagent", "production:client_secret")]
+    assert stored.startswith("value-for-client_secret")
 
 
 def test_secrets_set_empty_input_skips(fake_keyring):

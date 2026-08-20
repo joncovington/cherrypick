@@ -13,7 +13,6 @@ CLI:
 
 from __future__ import annotations
 
-import getpass
 import json
 import sys
 
@@ -23,6 +22,7 @@ from cherrypick.core.auth import (
     CredentialError,
     CredentialStore,
     SessionManager,
+    prompt_and_store,
 )
 
 SERVICE_NAME = "fliesagent"
@@ -53,10 +53,7 @@ def main() -> None:
         print(json.dumps({"ok": True, "service": SERVICE_NAME, "secrets": store.secrets_status()}))
         return
     if cmd == "secrets_set":
-        for key in ("client_secret", "refresh_token"):
-            value = getpass.getpass(f"{key} (input hidden, blank to keep current): ").strip()
-            if value:
-                store.set_secret(key, value)
+        prompt_and_store(store, ("client_secret", "refresh_token"))
         print(json.dumps({"ok": True, "service": SERVICE_NAME, "secrets": store.secrets_status()}))
         return
     print(json.dumps({"ok": False, "error": f"unknown command {cmd!r}"}))
