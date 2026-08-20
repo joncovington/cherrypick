@@ -34,6 +34,7 @@ from cherrypick.core import advice as _core_advice
 from cherrypick.core import calendar as _cal
 from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
+from cherrypick.core import looplock
 
 from cherrypick.calendars import book as bookmod
 from cherrypick.calendars import cli as climod
@@ -112,69 +113,20 @@ def _loop_lock_path() -> str:
     return os.path.join(_paper_data_dir(), "paper_loop.lock")
 
 
-def _pid_alive(pid: int) -> bool:
-    """The settled probe chain (psutil → Win32 OpenProcess → os.kill last)."""
-    if pid <= 0:
-        return False
-    try:
-        import psutil  # type: ignore
-
-        return bool(psutil.pid_exists(pid))
-    except ImportError:
-        pass
-    try:
-        import ctypes
-
-        synchronize = 0x00100000
-        handle = ctypes.windll.kernel32.OpenProcess(synchronize, False, pid)
-        if handle:
-            ctypes.windll.kernel32.CloseHandle(handle)
-            return True
-        return False
-    except Exception:
-        try:
-            os.kill(pid, 0)
-            return True
-        except PermissionError:
-            return True
-        except (OSError, SystemError):
-            return False
+_pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch this name)
 
 
 def _acquire_loop_lock(stale_seconds: int = 180) -> bool:
     """Single-instance guard shared by `--interval` and `--once`, so the supervised resident loop
-    and an off-session/manual `--once` can never iterate the same book concurrently. A held-but-
-    ALIVE lock is never stolen regardless of age; the mtime fallback applies only when the holder's
-    PID is unreadable."""
-    path = _loop_lock_path()
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.write(fd, str(os.getpid()).encode())
-        os.close(fd)
-        return True
-    except FileExistsError:
-        try:
-            with open(path, encoding="utf-8") as fh:
-                holder = int(fh.read().strip())
-        except (OSError, ValueError):
-            holder = None
-        if holder is not None and _pid_alive(holder):
-            return False
-        try:
-            if holder is not None or time.time() - os.path.getmtime(path) > stale_seconds:
-                os.unlink(path)
-                return _acquire_loop_lock(stale_seconds)
-        except OSError:
-            pass
-        return False
+    and an off-session/manual `--once` can never iterate the same book concurrently.
+
+    `cherrypick.core.looplock` holds the semantics (a live holder is never stolen, whatever its
+    age); `_pid_alive` is passed explicitly so a test monkeypatching that name still steers it."""
+    return looplock.acquire(_loop_lock_path(), stale_seconds, alive=_pid_alive)
 
 
 def _release_loop_lock() -> None:
-    try:
-        os.unlink(_loop_lock_path())
-    except OSError:
-        pass
+    looplock.release(_loop_lock_path())
 
 
 def _note_cadence_change(conn, interval_seconds: int) -> None:
