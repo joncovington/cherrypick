@@ -126,16 +126,28 @@ def _chain_for_expiration(conn, symbol: str, expiration: str) -> list[dict]:
     return entries
 
 
-def nearest_expiration(conn, symbol: str) -> str | None:
-    """Soonest cached expiration for this underlying.
+def nearest_expiration(conn, symbol: str, today: str) -> str | None:
+    """Soonest cached expiration for this underlying that has not already passed.
 
     Filtering on `underlying_symbol` matters: SPX and XSP share 0DTE dates, so an expiration-only
     match would silently blend two chains with a 10x strike difference between them.
+
+    `today` is the ET trading date and is required rather than derived from SQLite's clock, because
+    getting that comparison wrong is what this function used to do. It ranked candidates by
+    `ABS(JULIANDAY(expiration) - JULIANDAY('now'))` — absolute distance from the current UTC INSTANT,
+    while an expiration is midnight. Past 12:00 UTC (08:00 ET) tomorrow is therefore always "nearer"
+    than today, so from mid-morning on it returned tomorrow's date whenever a chain for it happened
+    to be cached. `stream_chain` retains old rows, so on 2026-08-20 that was a six-day-old copy of
+    the 08-21 chain: every quote in it was stale, the snapshot was refused as `no_fresh_quotes` on
+    every tick, and the module recorded 212 refusals and not one iteration for the session.
+
+    ISO dates sort lexicographically, so plain ordering is chronological and the comparison holds at
+    any time of day.
     """
     row = conn.execute(
-        "SELECT expiration FROM stream_chain WHERE underlying_symbol = ? "
-        "GROUP BY expiration ORDER BY ABS(JULIANDAY(expiration) - JULIANDAY('now')) LIMIT 1",
-        (symbol,),
+        "SELECT expiration FROM stream_chain WHERE underlying_symbol = ? AND expiration >= ? "
+        "GROUP BY expiration ORDER BY expiration LIMIT 1",
+        (symbol, today),
     ).fetchone()
     return row["expiration"] if row else None
 
@@ -186,7 +198,7 @@ def build_snapshot(
             # MEIC hit exactly this with RUT: a subscribed symbol that never streamed a Trade event.
             return _fail(symbol, "no_spot_price")
 
-        expiration = nearest_expiration(conn, symbol)
+        expiration = nearest_expiration(conn, symbol, when.date().isoformat())
         if not expiration:
             return _fail(symbol, "no_chain_cached")
 
