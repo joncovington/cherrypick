@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import type { TradingMode } from "@console/shared";
 import { useEarnings } from "../../lib/api";
+import { useMode } from "../../lib/useMode";
+import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 import { TabStrip, Pager, usePage } from "../../components/ScopeBar";
@@ -74,11 +77,11 @@ interface EarningsAnalytics {
   }>;
 }
 
-function useEarningsAnalytics() {
+function useEarningsAnalytics(mode: TradingMode) {
   return useQuery<EarningsAnalytics>({
-    queryKey: ["earnings-analytics"],
+    queryKey: ["earnings-analytics", mode],
     queryFn: async () => {
-      const res = await fetch("/api/earnings/analytics?mode=paper");
+      const res = await fetch(`/api/earnings/analytics?mode=${mode}`);
       if (!res.ok) throw new Error(`earnings analytics: HTTP ${res.status}`);
       return (await res.json()) as EarningsAnalytics;
     },
@@ -88,11 +91,12 @@ function useEarningsAnalytics() {
 
 export function EarningsPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("open");
+  const [mode, setMode] = useMode();
   const tradesPage = usePage();
   const reviewsPage = usePage();
   const { data, isLoading, isError, isPlaceholderData } = useEarnings(tradesPage.page, reviewsPage.page);
   const upcoming = useUpcoming();
-  const analytics = useEarningsAnalytics();
+  const analytics = useEarningsAnalytics(mode);
   const a = analytics.data;
 
   return (
@@ -100,7 +104,12 @@ export function EarningsPage() {
       <div className="page-title-row">
         <h1>Earnings</h1>
         <TabStrip tabs={TABS} value={tab} onChange={setTab} />
-        <span className="chip">both books</span>
+        {/* The badge and toggle scope the analytics and the strategy detail. The trade and review
+            tables on Overview deliberately span both books and say so in their own titles, with a
+            per-row badge — a single page-level claim of "both books" was wrong for everything
+            else on the page. */}
+        <PaperLiveBadge mode={mode} />
+        <ModeToggle mode={mode} onChange={setMode} />
       </div>
 
       <div className="cards cards-wide">
@@ -110,11 +119,11 @@ export function EarningsPage() {
             <EarningsManagementLog />
           </>
         )}
-        {tab === "strategy detail" && <EarningsDetailCards mode="paper" />}
+        {tab === "strategy detail" && <EarningsDetailCards mode={mode} />}
         {tab === "overview" && (
         <>
         <section className="card">
-          <h2>Strategy test — paper</h2>
+          <h2>Strategy test — {mode}</h2>
           <div className="stats-grid">
             <div className="stat-tile">
               <span className="stat-label">net expectancy / trade</span>
