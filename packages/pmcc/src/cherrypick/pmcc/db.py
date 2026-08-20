@@ -24,8 +24,7 @@ import os
 import sqlite3
 
 from cherrypick.core import db as _core_db
-
-from cherrypick.pmcc import clock
+from cherrypick.core import ledgerstore as _ledgerstore
 
 _SCHEMA = """
 -- One row per position per book: one deep-ITM long call + one ITM short call (the current one —
@@ -333,47 +332,44 @@ def default_db_path() -> str:
     return os.path.join(home, "data", "pmcc", "paper_trades.db")
 
 
-def _migrate(conn: sqlite3.Connection) -> list[str]:
-    """Add any columns missing from an older DB. Returns what it added (for tests and logs)."""
-    added = []
-    for table, columns in _ADDED_COLUMNS.items():
-        existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
-        for column, sql_type in columns.items():
-            if column not in existing:
-                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
-                added.append(f"{table}.{column}")
-    if added:
-        conn.commit()
-    return added
+# ---------------------------------------------------------------------------
+# Row mechanics live in `cherrypick.core.ledgerstore`: 22 of these were byte-identical to pmcc's
+# once the table prefix was normalized. The SCHEMA stays here -- a module owns what its tables ARE,
+# the store owns how rows get into and out of them. Every public name below is the one this
+# module's callers and tests already use.
+_store = _ledgerstore.LedgerStore("pmcc_", _SCHEMA, _ADDED_COLUMNS)
+
+_now = _store.now
+_upsert = _store.upsert
+_migrate = _store.migrate
+_declared_columns = _store.declared_columns
+stale_writer_columns = _store.stale_writer_columns
+
+save_position = _store.save_position
+save_leg = _store.save_leg
+save_assignment = _store.save_assignment
+
+record_mark = _store.record_mark
+record_management_event = _store.record_management_event
+record_decision = _store.record_decision
+record_entry_attempt = _store.record_entry_attempt
+record_snapshot = _store.record_snapshot
+record_iteration = _store.record_iteration
+record_measurement_break = _store.record_measurement_break
+
+open_positions = _store.open_positions
+legs_for = _store.legs_for
+open_legs_for = _store.open_legs_for
+open_leg_expirations = _store.open_leg_expirations
+open_assignments = _store.open_assignments
+assignments_for = _store.assignments_for
+open_assignment_count = _store.open_assignment_count
+# ---------------------------------------------------------------------------
 
 
-def stale_writer_columns(conn: sqlite3.Connection) -> list[str]:
-    """Columns the LEDGER has but this RUNNING CODE does not know. Empty is healthy.
-
-    The flies 2026-08-05 failure shape: migration is additive and permanent, so a ledger opened
-    once by a newer checkout keeps columns an older checkout will silently NULL all week. Reports
-    rather than repairs: a stale checkout cannot fix itself, and refusing to run would turn a
-    telemetry gap into an outage.
-    """
-    drift: list[str] = []
-    for table, extra in _ADDED_COLUMNS.items():
-        known = set(_declared_columns(table)) | set(extra)
-        present = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
-        drift.extend(f"{table}.{c}" for c in sorted(present - known))
-    return drift
 
 
-def _declared_columns(table: str) -> list[str]:
-    """Column names as _SCHEMA declares them, parsed from the DDL text so the two cannot drift."""
-    marker = f"CREATE TABLE IF NOT EXISTS {table} ("
-    start = _SCHEMA.index(marker) + len(marker)
-    body = _SCHEMA[start : _SCHEMA.index(");", start)]
-    cols = []
-    for line in body.splitlines():
-        word = line.strip().split(" ")[0]
-        if word and word.isidentifier() and word.upper() not in ("UNIQUE", "PRIMARY", "FOREIGN"):
-            cols.append(word)
-    return cols
+
 
 
 def connect(db_path: str | None = None) -> sqlite3.Connection:
@@ -392,181 +388,40 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
     return conn
 
 
-def _now() -> str:
-    return clock.now_iso()
 
 
-def _upsert(conn, table: str, keys: tuple[str, ...], row: dict) -> None:
-    """Insert `row`, or update the existing row with the same natural key — a restart mid-session
-    re-writes the same position rather than duplicating it."""
-    row = {**row, "updated_at": _now()}
-    where = " AND ".join(f"{k} = ?" for k in keys)
-    existing = conn.execute(f"SELECT id FROM {table} WHERE {where}", [row[k] for k in keys]).fetchone()
-    if existing is None:
-        row.setdefault("created_at", _now())
-        cols = ", ".join(row)
-        marks = ", ".join("?" for _ in row)
-        conn.execute(f"INSERT INTO {table} ({cols}) VALUES ({marks})", list(row.values()))
-    else:
-        sets = ", ".join(f"{c} = ?" for c in row if c not in keys)
-        vals = [v for c, v in row.items() if c not in keys] + [row[k] for k in keys]
-        conn.execute(f"UPDATE {table} SET {sets} WHERE {where}", vals)
-    conn.commit()
 
 
-def save_position(conn, row: dict) -> None:
-    _upsert(conn, "pmcc_positions", ("position_id",), row)
 
 
-def save_leg(conn, row: dict) -> None:
-    _upsert(conn, "pmcc_legs", ("position_id", "leg_role"), row)
 
 
-def save_assignment(conn, row: dict) -> None:
-    """Not wrapped like the telemetry writers below: a delivered share position is POSITION STATE,
-    not a record of one. Losing it silently would leave a position whose option legs are settled
-    and whose shares nobody knows are held."""
-    _upsert(conn, "pmcc_assignments", ("position_id", "leg_role"), row)
 
 
-def open_assignments(conn, before_session: str | None = None) -> list[dict]:
-    """Share positions still held. `before_session` restricts to those delivered on an EARLIER
-    session — the disposal rule, since shares delivered by tonight's settlement cannot be covered
-    until the next session opens."""
-    sql = "SELECT a.*, p.book, p.quantity FROM pmcc_assignments a "
-    sql += "JOIN pmcc_positions p ON p.position_id = a.position_id WHERE a.status = 'open'"
-    args: list = []
-    if before_session is not None:
-        sql += " AND a.assigned_session < ?"
-        args.append(before_session)
-    return [dict(r) for r in conn.execute(sql + " ORDER BY a.assigned_session, a.position_id", args)]
 
 
-def assignments_for(conn, position_id: str) -> list[dict]:
-    return [
-        dict(r)
-        for r in conn.execute(
-            "SELECT * FROM pmcc_assignments WHERE position_id = ? ORDER BY leg_role", (position_id,)
-        )
-    ]
 
 
-def open_assignment_count(conn, position_id: str) -> int:
-    return int(
-        conn.execute(
-            "SELECT COUNT(*) FROM pmcc_assignments WHERE position_id = ? AND status = 'open'",
-            (position_id,),
-        ).fetchone()[0]
-    )
 
 
 # --------------------------------------------------------------------------- telemetry writers
 # Wrapped: telemetry may never cost a trade or a tick. A decision writer failing is logged by the
 # caller's own log line, never raised into the loop.
-def record_mark(conn, **fields) -> None:
-    try:
-        cols = ", ".join(fields)
-        marks = ", ".join("?" for _ in fields)
-        conn.execute(f"INSERT INTO pmcc_marks ({cols}) VALUES ({marks})", list(fields.values()))
-        conn.commit()
-    except Exception:  # noqa: BLE001, S110 — see the wrapper comment above
-        pass
 
 
-def record_management_event(conn, **fields) -> None:
-    try:
-        fields.setdefault("detail_json", None)
-        cols = ", ".join(fields)
-        marks = ", ".join("?" for _ in fields)
-        conn.execute(f"INSERT INTO pmcc_management_events ({cols}) VALUES ({marks})", list(fields.values()))
-        conn.commit()
-    except Exception:  # noqa: BLE001, S110
-        pass
 
 
-def record_decision(conn, *, trade_date, book, symbol, mode, reason, accepted, detail=None) -> None:
-    """Collapsing journal write: a run of identical (date, book, symbol, mode, reason) rows becomes
-    one row with a count."""
-    try:
-        ts = _now()
-        row = conn.execute(
-            "SELECT id, occurrences FROM pmcc_decisions WHERE trade_date = ? AND book = ? AND "
-            "symbol = ? AND mode = ? AND reason = ? ORDER BY id DESC LIMIT 1",
-            (trade_date, book, symbol, mode, reason),
-        ).fetchone()
-        if row is not None:
-            conn.execute(
-                "UPDATE pmcc_decisions SET occurrences = ?, last_ts = ? WHERE id = ?",
-                (row["occurrences"] + 1, ts, row["id"]),
-            )
-        else:
-            conn.execute(
-                "INSERT INTO pmcc_decisions (trade_date, book, symbol, mode, reason, accepted, "
-                "occurrences, first_ts, last_ts, detail) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)",
-                (trade_date, book, symbol, mode, reason, int(bool(accepted)), ts, ts, detail),
-            )
-        conn.commit()
-    except Exception:  # noqa: BLE001, S110
-        pass
 
 
-def record_entry_attempt(conn, **fields) -> None:
-    try:
-        fields.setdefault("ts", _now())
-        cols = ", ".join(fields)
-        marks = ", ".join("?" for _ in fields)
-        conn.execute(f"INSERT INTO pmcc_entry_attempts ({cols}) VALUES ({marks})", list(fields.values()))
-        conn.commit()
-    except Exception:  # noqa: BLE001, S110
-        pass
 
 
-def record_snapshot(conn, **fields) -> None:
-    try:
-        fields.setdefault("ts", _now())
-        cols = ", ".join(fields)
-        marks = ", ".join("?" for _ in fields)
-        conn.execute(f"INSERT INTO pmcc_snapshots ({cols}) VALUES ({marks})", list(fields.values()))
-        conn.commit()
-    except Exception:  # noqa: BLE001, S110
-        pass
 
 
-def record_iteration(conn, **fields) -> None:
-    try:
-        cols = ", ".join(fields)
-        marks = ", ".join("?" for _ in fields)
-        conn.execute(f"INSERT INTO pmcc_loop_iterations ({cols}) VALUES ({marks})", list(fields.values()))
-        conn.commit()
-    except Exception:  # noqa: BLE001, S110
-        pass
 
 
-def record_measurement_break(conn, *, break_date, key, old_value=None, new_value=None, note=None) -> None:
-    """NOT wrapped in the swallow-everything pattern on the insert itself — a break that fails to
-    record is a real problem — but idempotent: the UNIQUE(break_date, key) makes a re-run a no-op."""
-    import time as _time
-
-    try:
-        conn.execute(
-            "INSERT INTO measurement_breaks (break_date, key, old_value, new_value, note, recorded_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (break_date, key, old_value, new_value, note, _time.time()),
-        )
-        conn.commit()
-    except sqlite3.IntegrityError:
-        pass  # already recorded — the idempotent re-run
 
 
 # --------------------------------------------------------------------------- readers
-def open_positions(conn, statuses: tuple[str, ...] = ("open", "short_settled")) -> list[dict]:
-    marks = ", ".join("?" for _ in statuses)
-    return [
-        dict(r)
-        for r in conn.execute(
-            f"SELECT * FROM pmcc_positions WHERE status IN ({marks}) ORDER BY position_id", list(statuses)
-        )
-    ]
 
 
 def open_position_for(conn, symbol: str, book: str) -> dict | None:
@@ -588,23 +443,8 @@ def open_position_count(conn, book: str) -> int:
     )
 
 
-def legs_for(conn, position_id: str) -> list[dict]:
-    return [
-        dict(r)
-        for r in conn.execute(
-            "SELECT * FROM pmcc_legs WHERE position_id = ? ORDER BY leg_role", (position_id,)
-        )
-    ]
 
 
-def open_legs_for(conn, position_id: str) -> list[dict]:
-    return [
-        dict(r)
-        for r in conn.execute(
-            "SELECT * FROM pmcc_legs WHERE position_id = ? AND status = 'open' ORDER BY leg_role",
-            (position_id,),
-        )
-    ]
 
 
 def next_short_role(conn, position_id: str) -> str:
@@ -621,16 +461,6 @@ def next_short_role(conn, position_id: str) -> str:
     return f"short_call_{n + 1}"
 
 
-def open_leg_expirations(conn) -> list[str]:
-    """Distinct expirations still held open — what the stream request must keep subscribed."""
-    return [
-        r["expiration"]
-        for r in conn.execute(
-            "SELECT DISTINCT l.expiration FROM pmcc_legs l JOIN pmcc_positions p "
-            "ON p.position_id = l.position_id WHERE l.status = 'open' AND p.status != 'closed' "
-            "ORDER BY l.expiration"
-        )
-    ]
 
 
 def expiring_open_legs(conn, day: str) -> list[dict]:
