@@ -21,14 +21,8 @@ import sqlite3
 import sys
 from datetime import datetime
 
-try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
-    from zoneinfo import ZoneInfo
-
-    _ET = ZoneInfo("America/New_York")
-except Exception:  # pragma: no cover - only where zoneinfo has no tz database
-    import pytz
-
-    _ET = pytz.timezone("America/New_York")
+# One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core.clock import ET as _ET  # noqa: E402
 
 
 def _now_et():

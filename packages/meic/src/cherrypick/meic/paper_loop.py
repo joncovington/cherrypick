@@ -36,21 +36,14 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
-    from zoneinfo import ZoneInfo
-
-    _ET = ZoneInfo("America/New_York")
-except Exception:  # pragma: no cover - only where zoneinfo has no tz database
-    import pytz
-
-    _ET = pytz.timezone("America/New_York")
-
-
 from cherrypick.core import advice as _core_advice  # bounded-advice validator
 from cherrypick.core import calendar as _cal  # shared NYSE trading-day calendar
 from cherrypick.core import home as _core_home  # the shared state dir
 from cherrypick.core import logs as _logs
 from cherrypick.core import viz as _viz  # the suite's one money formatter
+
+# One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core.clock import ET as _ET  # noqa: E402
 
 from cherrypick.meic import (
     paper,
