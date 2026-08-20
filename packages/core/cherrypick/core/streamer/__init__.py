@@ -92,6 +92,26 @@ class _State:
         self.pending_writes = 0
         self.last_commit_at = 0.0
 
+    def reset_for_new_connection(self) -> None:
+        """Forget what the PREVIOUS socket was subscribed to.
+
+        Everything below mirrors the state of one DXLink connection, but this object outlives the
+        connection — so after a reconnect it described a socket that no longer exists. Both paths
+        that subscribe work by diffing against it (`_apply_subscriptions` computes `wanted - current`,
+        `_symbol_refresher` computes a window delta and skips entirely while `centers` says the price
+        has not moved), so a stale-but-full picture made both compute an empty delta and subscribe
+        NOTHING to the fresh socket.
+
+        The result was a connection that looked healthy and delivered almost nothing: the underlying
+        Trade subscription was never re-established, so spot froze while a couple of newly-wanted
+        strikes still ticked, and the watchdog recycled the producer ~240s later. Chains and the
+        cache connection are deliberately NOT cleared — they are data, not subscription state.
+        """
+        self.subscribed = {"Trade": [], "Quote": [], "Greeks": [], "Summary": []}
+        self.window_syms.clear()
+        self.centers.clear()
+        self.window_strike_counts.clear()
+
 
 class ChainStreamer:
     def __init__(
@@ -172,6 +192,8 @@ class ChainStreamer:
                 reconnect_count=state.reconnect_count,
             )
             self.log.info("DXLinkStreamer connected (reconnects: %d)", state.reconnect_count)
+            # This socket is subscribed to nothing yet, whatever the last one was carrying.
+            state.reset_for_new_connection()
             await self._apply_subscriptions(
                 streamer, state, self._subscriptions(), Trade, Quote, Greeks, Summary
             )
