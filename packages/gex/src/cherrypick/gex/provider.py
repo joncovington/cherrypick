@@ -54,6 +54,10 @@ def _connect_ro(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+# SQLite's default host-parameter limit is 999; stay under it with room to spare.
+_SPOT_CHUNK = 900
+
+
 def _normalise_iv(raw_iv: float) -> float:
     """Stream cache stores IV as a raw decimal (0.20); the chart wants percent. Values already > 1
     are assumed to be percent already (defensive, matches MEIC's dashboard)."""
@@ -75,6 +79,32 @@ def read_spot(db_path: Path | str, symbol: str) -> float | None:
         return float(r["last"]) if r and r["last"] is not None else None
     finally:
         conn.close()
+
+
+def read_spots(db_path: Path | str, symbols: list[str]) -> dict[str, float]:
+    """Latest spot for several symbols at once, read-only. Absent symbols are simply missing.
+
+    The batched sibling of `read_spot`, for the recorder: it samples every offered symbol on each
+    tick, and asking one at a time meant a fresh connection to the shared cache per symbol per tick.
+    Chunked under SQLite's variable limit, the same way the other providers in the suite do it."""
+    syms = [s.strip().upper() for s in symbols if s and s.strip()]
+    db_path = Path(db_path)
+    if not syms or not db_path.exists():
+        return {}
+    out: dict[str, float] = {}
+    conn = _connect_ro(db_path)
+    try:
+        for i in range(0, len(syms), _SPOT_CHUNK):
+            chunk = syms[i : i + _SPOT_CHUNK]
+            placeholders = ",".join("?" for _ in chunk)
+            for r in conn.execute(
+                f"SELECT symbol, last FROM stream_trades WHERE symbol IN ({placeholders})", chunk
+            ):
+                if r["last"] is not None:
+                    out[str(r["symbol"]).upper()] = float(r["last"])
+    finally:
+        conn.close()
+    return out
 
 
 def snapshot_from_stream_cache(db_path: Path | str, symbol: str) -> GexSnapshot:

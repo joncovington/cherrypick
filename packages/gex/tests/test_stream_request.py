@@ -13,6 +13,8 @@ def test_register_writes_deduped_upper_symbols(managed_home):
         "legs": [],
         "leg_sources": [],
         "window_hints": {},
+        "expirations": {},
+        "history_days": {},
     }
 
 

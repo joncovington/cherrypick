@@ -40,7 +40,17 @@ def _market_open_close_ts() -> tuple[float, float]:
     return open_dt.timestamp(), close_dt.timestamp()
 
 
-def _ensure_history_table(conn: sqlite3.Connection) -> None:
+_ensured_history_dbs: set[str] = set()
+
+
+def _ensure_history_table(conn: sqlite3.Connection, db_path: Path | str | None = None) -> None:
+    """Create the history tables if absent. Idempotent, and skipped once a given file has been
+    prepared in this process — the recorder calls this every tick for the life of the daemon, and
+    a table cannot go missing underneath a process that already made it."""
+    if db_path is not None:
+        key = str(Path(db_path).resolve())
+        if key in _ensured_history_dbs:
+            return
     conn.execute(
         "CREATE TABLE IF NOT EXISTS gex_spot_history ("
         "symbol TEXT NOT NULL, trade_date TEXT NOT NULL, ts REAL NOT NULL, spot REAL NOT NULL)"
@@ -57,6 +67,8 @@ def _ensure_history_table(conn: sqlite3.Connection) -> None:
         "expiration TEXT)"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_grh_sym_date ON gex_regime_history(symbol, trade_date)")
+    if db_path is not None:
+        _ensured_history_dbs.add(str(Path(db_path).resolve()))
 
 
 def _fetch_spot_history(db_path: Path, symbol: str) -> list[dict]:
@@ -88,22 +100,22 @@ def record_spots(cfg: dict, symbols: list[str] | None = None) -> int:
         return 0
     db_path = Path(cfg["history_db_path"])
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    # One read of the shared cache for every symbol, rather than a fresh connection each — the
+    # recorder runs this on a 15s cadence for the whole session.
+    spots = _provider.read_spots(cfg["stream_cache_db"], syms)
+    if not spots:
+        return 0
     conn = sqlite3.connect(db_path)
     try:
-        _ensure_history_table(conn)
+        _ensure_history_table(conn, db_path)
         today = _today()
         now = time.time()
-        n = 0
-        for sym in syms:
-            spot = _provider.read_spot(cfg["stream_cache_db"], sym)
-            if spot is not None:
-                conn.execute(
-                    "INSERT INTO gex_spot_history (symbol, trade_date, ts, spot) VALUES (?,?,?,?)",
-                    (sym, today, now, spot),
-                )
-                n += 1
+        rows = [(sym, today, now, spots[sym]) for sym in syms if sym in spots]
+        conn.executemany(
+            "INSERT INTO gex_spot_history (symbol, trade_date, ts, spot) VALUES (?,?,?,?)", rows
+        )
         conn.commit()
-        return n
+        return len(rows)
     finally:
         conn.close()
 

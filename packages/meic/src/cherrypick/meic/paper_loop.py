@@ -159,9 +159,36 @@ def _run_json(cmd, timeout=90):
         return {"ok": False, "error": (r.stdout[-200:] + r.stderr[-200:]).strip()}
 
 
+_config_cache: tuple[tuple[float, int], dict] | None = None
+
+
 def _load_config():
-    with open(_paths.config_path()) as f:
-        return json.load(f)
+    """Read config, re-parsing only when the file has actually changed.
+
+    The daemon calls this once per iteration on purpose: an edit is meant to take effect on the next
+    iteration without a restart, and that property is preserved here — the cache is keyed on the
+    file's mtime and size, so a rewritten config is picked up exactly as before. What goes away is
+    re-reading and re-parsing an unchanged file every tick for the life of the process.
+
+    Callers must treat the result as READ-ONLY. Iterations used to each get their own freshly parsed
+    dict, so an in-place edit could not outlive one tick; they now share this one, and a mutation
+    would persist for the life of the process. Nothing writes to it today — profile overlays go
+    through `core.profiles.merge_profile`, which returns a new dict — and anything that needs a
+    changed config should keep doing it that way."""
+    global _config_cache
+    path = _paths.config_path()
+    try:
+        st = os.stat(path)
+        stamp = (st.st_mtime, st.st_size)
+    except OSError:
+        stamp = None
+    if stamp is not None and _config_cache is not None and _config_cache[0] == stamp:
+        return _config_cache[1]
+    with open(path) as f:
+        cfg = json.load(f)
+    if stamp is not None:
+        _config_cache = (stamp, cfg)
+    return cfg
 
 
 def _symbols(cfg):
