@@ -24,6 +24,7 @@ from pathlib import Path
 # copies interpolated the path raw, where a '#' truncated the URI and opened a DIFFERENT,
 # empty database — which a provider reports as "nothing cached" rather than as an error.
 from cherrypick.core.db import connect_ro as _connect_ro
+from cherrypick.core.streamcache import read_spot as _core_read_spot
 
 
 @dataclass
@@ -63,33 +64,33 @@ def _normalise_iv(raw_iv: float) -> float:
     return raw_iv if raw_iv > 1 else raw_iv * 100
 
 
-def read_spot(db_path: Path | str, symbol: str) -> float | None:
-    """The underlying's latest spot (``stream_trades.last``) for one symbol, read-only — a light lookup
-    the dashboard's spot-trail recorder uses to sample every offered symbol without building a full
-    snapshot. ``None`` when the cache is missing or the symbol isn't cached."""
-    db_path = Path(db_path)
-    if not db_path.exists():
-        return None
-    conn = _connect_ro(db_path)
-    try:
-        r = conn.execute(
-            "SELECT last FROM stream_trades WHERE symbol = ?", (symbol.strip().upper(),)
-        ).fetchone()
-        return float(r["last"]) if r and r["last"] is not None else None
-    finally:
-        conn.close()
+def read_spot(
+    db_path: Path | str, symbol: str, *, max_age_seconds: float | None = None
+) -> float | None:
+    """The underlying's latest spot (``stream_trades.last``) for one symbol, read-only. ``None``
+    when the cache is missing, the symbol isn't cached, or the print is older than
+    ``max_age_seconds``. Passing ``None`` keeps the last known price whatever its age."""
+    return _core_read_spot(db_path, symbol, max_age_seconds=max_age_seconds)
 
 
-def read_spots(db_path: Path | str, symbols: list[str]) -> dict[str, float]:
+def read_spots(
+    db_path: Path | str, symbols: list[str], *, max_age_seconds: float | None = None
+) -> dict[str, float]:
     """Latest spot for several symbols at once, read-only. Absent symbols are simply missing.
 
-    The batched sibling of `read_spot`, for the recorder: it samples every offered symbol on each
-    tick, and asking one at a time meant a fresh connection to the shared cache per symbol per tick.
-    Chunked under SQLite's variable limit, the same way the other providers in the suite do it."""
+    A symbol whose print is older than ``max_age_seconds`` is treated as absent, which is the point
+    rather than an optimisation. This feeds the spot TRAIL, and the trail is a record of what the
+    market did: writing a frozen print as a fresh sample every tick makes a stalled feed and a
+    quiet market look identical, which is the one thing the suite's recording rules exist to
+    prevent. Skipping leaves a GAP, and a gap is legible as "we were not receiving prices".
+
+    Chunked under SQLite's variable limit, the same way the other providers in the suite do it.
+    """
     syms = [s.strip().upper() for s in symbols if s and s.strip()]
     db_path = Path(db_path)
     if not syms or not db_path.exists():
         return {}
+    now = time.time()
     out: dict[str, float] = {}
     conn = _connect_ro(db_path)
     try:
@@ -97,10 +98,16 @@ def read_spots(db_path: Path | str, symbols: list[str]) -> dict[str, float]:
             chunk = syms[i : i + _SPOT_CHUNK]
             placeholders = ",".join("?" for _ in chunk)
             for r in conn.execute(
-                f"SELECT symbol, last FROM stream_trades WHERE symbol IN ({placeholders})", chunk
+                f"SELECT symbol, last, updated_at FROM stream_trades WHERE symbol IN ({placeholders})",
+                chunk,
             ):
-                if r["last"] is not None:
-                    out[str(r["symbol"]).upper()] = float(r["last"])
+                if r["last"] is None:
+                    continue
+                if max_age_seconds is not None:
+                    updated = r["updated_at"]
+                    if updated is None or (now - float(updated)) > max_age_seconds:
+                        continue
+                out[str(r["symbol"]).upper()] = float(r["last"])
     finally:
         conn.close()
     return out

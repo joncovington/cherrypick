@@ -5,6 +5,7 @@ No streamer, no network — just a temp SQLite shaped like the real stream_cache
 
 import json
 import sqlite3
+import time
 from datetime import date
 
 from cherrypick.core import gex
@@ -35,7 +36,12 @@ def _seed_cache(path) -> None:
         CREATE TABLE stream_trades (symbol TEXT PRIMARY KEY, last REAL, change REAL, volume REAL, updated_at REAL);
         CREATE TABLE stream_oi (symbol TEXT PRIMARY KEY, open_interest INTEGER, updated_at REAL);
     """)
-    conn.execute("INSERT INTO stream_trades (symbol, last, volume, updated_at) VALUES ('SPX', 605.0, 0, 0)")
+    # A FRESH print: the recorder age-gates its samples, so updated_at=0 would now read as a
+    # stalled feed and be skipped (which the dedicated test below covers).
+    conn.execute(
+        "INSERT INTO stream_trades (symbol, last, volume, updated_at) VALUES ('SPX', 605.0, 0, ?)",
+        (time.time(),),
+    )
     for opt in _CHAIN:
         conn.execute(
             "INSERT INTO stream_chain (streamer_symbol, expiration, underlying_symbol, data_json, updated_at)"
@@ -216,3 +222,36 @@ def test_build_gex_reports_missing_cache(tmp_path):
     }
     out = service.build_gex(cfg, "SPX")
     assert out["ok"] is False and "not found" in out["error"]
+
+
+def test_record_spots_skips_a_stale_print(tmp_path):
+    """A frozen print must not be written as a fresh sample.
+
+    The recorder had no age check and sampled through the night and through any stall: on
+    2026-08-19 that produced 5,737 rows of which 4,193 consecutive pairs were the identical value,
+    so a dead feed and a quiet market drew the same flat line. Skipping leaves a gap instead.
+    """
+    cfg = _cfg(tmp_path)
+    conn = sqlite3.connect(cfg["stream_cache_db"])
+    conn.execute("UPDATE stream_trades SET updated_at = ? WHERE symbol = 'SPX'", (time.time() - 600,))
+    conn.commit()
+    conn.close()
+
+    assert service.record_spots(cfg) == 0
+
+
+def test_the_age_gate_can_be_turned_off(tmp_path):
+    """`source.max_spot_age_seconds: null` restores the pre-2026-08-20 behaviour."""
+    cfg = {**_cfg(tmp_path), "source": {"max_spot_age_seconds": None}}
+    conn = sqlite3.connect(cfg["stream_cache_db"])
+    conn.execute("UPDATE stream_trades SET updated_at = ? WHERE symbol = 'SPX'", (time.time() - 600,))
+    conn.commit()
+    conn.close()
+
+    assert service.record_spots(cfg) == 1
+
+
+def test_spot_max_age_default_and_override():
+    assert service.spot_max_age_seconds({}) == service.DEFAULT_SPOT_MAX_AGE_SECONDS
+    assert service.spot_max_age_seconds({"source": {"max_spot_age_seconds": 30}}) == 30.0
+    assert service.spot_max_age_seconds({"source": {"max_spot_age_seconds": None}}) is None

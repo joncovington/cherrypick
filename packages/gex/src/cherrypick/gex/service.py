@@ -88,6 +88,23 @@ def _fetch_spot_history(db_path: Path, symbol: str) -> list[dict]:
         conn.close()
 
 
+
+# Default matches the quote-freshness limit the trading modules use. The recorder samples every
+# ~15s, so anything approaching two minutes without a print means the underlying is not trading —
+# outside RTH, or the producer has stalled. Set `source.max_spot_age_seconds` to null to record
+# whatever the cache holds, which is the pre-2026-08-20 behaviour.
+DEFAULT_SPOT_MAX_AGE_SECONDS = 120
+
+
+def spot_max_age_seconds(cfg: dict) -> float | None:
+    """How old a cached print may be and still count as a sample, or None to accept any age."""
+    source = cfg.get("source") or {}
+    if "max_spot_age_seconds" in source:
+        value = source["max_spot_age_seconds"]
+        return None if value is None else float(value)
+    return DEFAULT_SPOT_MAX_AGE_SECONDS
+
+
 def record_spots(cfg: dict, symbols: list[str] | None = None) -> int:
     """Record the current spot for EVERY offered symbol (default `cfg['symbols']`) into this module's
     history DB — not just the one on screen — so each symbol's trail stays continuous and there is no
@@ -101,7 +118,15 @@ def record_spots(cfg: dict, symbols: list[str] | None = None) -> int:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     # One read of the shared cache for every symbol, rather than a fresh connection each — the
     # recorder runs this on a 15s cadence for the whole session.
-    spots = _provider.read_spots(cfg["stream_cache_db"], syms)
+    #
+    # Age-gated: a print older than this is treated as absent, so the trail gets a GAP rather than
+    # another copy of a frozen price. Before this the recorder had no age check at all and wrote
+    # whatever the cache held — on 2026-08-19 that produced 5,737 samples of which 4,193
+    # consecutive pairs were the identical value, because it kept sampling through the night and
+    # through any stall. A flat line and a dead feed read the same; a gap does not.
+    spots = _provider.read_spots(
+        cfg["stream_cache_db"], syms, max_age_seconds=spot_max_age_seconds(cfg)
+    )
     if not spots:
         return 0
     conn = sqlite3.connect(db_path)
