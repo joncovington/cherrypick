@@ -220,13 +220,19 @@ export function useFliesTradeLog(mode: TradingMode, outcome: string, search: str
 
 /** The filter selects' own options, narrowed to the same era as the data — an option that selects
  *  nothing reads as "nothing happened" rather than "not in this era". */
+export interface FliesMeta {
+  arms: string[];
+  dates: string[];
+  symbols: string[];
+  eras: Array<{ era: string; label: string; trades: number }>;
+  currentEra: string;
+}
+
 export function useFliesMeta(mode: TradingMode, era: string | null = null) {
-  return useQuery<{ arms: string[]; dates: string[]; symbols: string[] }>({
+  return useQuery<FliesMeta>({
     queryKey: ["flies-meta", mode, era],
     queryFn: () =>
-      getJson<{ arms: string[]; dates: string[]; symbols: string[] }>(
-        `/api/flies/meta?mode=${mode}${era !== null ? `&era=${era}` : ""}`,
-      ),
+      getJson<FliesMeta>(`/api/flies/meta?mode=${mode}${era !== null ? `&era=${era}` : ""}`),
     staleTime: 300_000,
   });
 }

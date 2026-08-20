@@ -49,13 +49,13 @@ Console's `readers/logs.ts` is a separate implementation and does not inherit th
 | Loop status pill (LIVE/IDLE) + IV rank / underlying chips | done |
 | Symbol + profile selectors (page-wide scope) | done — threaded through every MEIC read |
 | Era scope (defaults to the module's `CURRENT_ERA`, as its analytics do) | done — earlier eras reachable, never mixed in silently |
-| Period stats grid | done |
+| Period stats grid | done — net is after fees, matching the calendar beside it and `core.ledgers` |
 | Today's trades / trade table | partial — per-leg put/call status badges, stop-adjustment columns, AI reasoning missing |
-| NLV over time | done |
+| NLV over time | done — badged account-level, since `closing_nlv` is a whole-account balance the page's scope cannot narrow |
 | Daily P&L calendar | done |
 | Signal breakdowns (delta band, wing, symbol, weekday) | done |
 | Win rate by session / Avg P&L by IV-rank band | done |
-| Exit reasons / fee drag | done |
+| Exit reasons / fee drag | done — plus today's per-profile net and fee drag, the day's "which arm made it" the cumulative Performance table cannot answer |
 | Regime coverage (with degenerate flags) | done |
 | Trade log filters (outcome, exit reason, search) | done — filters and paging both in SQL, so counts describe the scope and not the page; explicit date-range inputs still missing |
 | Performance view: profile comparison, risk metrics, equity + underwater, study arms, per-period charts | done. **Missing: arm scorecard (breakeven identity) and stop-policy counterfactuals** |
@@ -68,7 +68,7 @@ at a hidden row cap.
 
 | Card | Status |
 |---|---|
-| Today tiles | done |
+| Today tiles | done — every Today card resolves ONE day page-side, so the attempts views and the book can no longer show different sessions side by side |
 | Profit forest (fills, floors, settlement marker, x/y controls) | done |
 | Session timeline (entry-window→close axis, gaps named, replayed book) | done |
 | Decision journal (Gantt + table) | done |
@@ -76,7 +76,9 @@ at a hidden row cap.
 | Arm divergence | done (>80% agreement flagged) |
 | History: by arm/mode/window, fee drag, calendar (click→replay), trade log + filters | done |
 | Performance: tiles, P&L bars, completion + why-misses, trend, live-vs-paper | done (trend and live-vs-paper are console-only additions) |
-| Symbol filter (page-wide) | **missing** — arm/date only; live-quote spot assumes XSP |
+| Symbol filter (page-wide) | done — shown only when the era in scope holds more than one symbol |
+| Loop status pill (LIVE/IDLE) | done — reads `fly_iterations`, which advances on a quiet market where the ledger does not |
+| Era scope | done — each era readable ALONE (SPX current / XSP / pre-XSP), with counts; pooling is now an explicit "all eras" choice rather than the only way to see an earlier book |
 | Voided-rows accounting line | **missing** (console suggestion) |
 
 ## GEX dashboard (was :5055, deleted) — at parity+
@@ -96,6 +98,7 @@ console-only addition.
 | Regime coverage heat + rejection histogram | done |
 | Per-strategy detail (equity+drawdown, PF pass/fail, Sharpe, max DD, IV crush) | done |
 | Footer caveats block | done |
+| Paper/live scope | done — the analytics and strategy detail follow a mode toggle; they were pinned to paper, so the live book was unreachable. The trade and review tables still span both books on purpose, and say so per row |
 
 ## Scout (was :5057, web app deleted)
 

@@ -19,6 +19,60 @@ import { emptyPage, pagedQuery, pageArray, FIRST_PAGE, type PageRequest } from "
  */
 export const CURRENT_ERA = { symbol: "SPX", from: "2026-08-01" } as const;
 
+/**
+ * Every era the ledger holds, declared rather than derived.
+ *
+ * There is no `era` column to group by, and the boundaries are facts about what the module was
+ * trading rather than anything the rows announce — so they are written down here, matching the
+ * module's own record (XSP 2026-07-29..07-31, SPX through 07-28, SPX 5-wide from 08-01).
+ *
+ * The point of listing them is that each is readable ALONE. Before this the control offered the
+ * current era or "all", so the two earlier books could only be seen pooled with the current one —
+ * which is the exact comparison the module says distorts every per-arm breakdown, and the only way
+ * it offered to look at them at all.
+ */
+export const ERAS = [
+  { key: "spx", label: "SPX 5-wide (current)", symbol: "SPX", from: "2026-08-01", to: null },
+  { key: "xsp", label: "XSP 1-wide", symbol: "XSP", from: "2026-07-29", to: "2026-07-31" },
+  { key: "spx-early", label: "SPX (pre-XSP)", symbol: "SPX", from: null, to: "2026-07-28" },
+] as const;
+
+export type FliesEraKey = (typeof ERAS)[number]["key"];
+
+export interface FliesMeta {
+  arms: string[];
+  dates: string[];
+  symbols: string[];
+  /** Every declared era with how many positions it holds in THIS store. */
+  eras: Array<{ era: string; label: string; trades: number }>;
+  currentEra: string;
+}
+
+/** The era a null filter means: the module's own evidence window. */
+export const DEFAULT_ERA: FliesEraKey = "spx";
+
+/**
+ * SQL for one era, as clause + params. "ALL" pools every era and is only ever a stated choice.
+ *
+ * One helper because three call sites applied this by hand and would otherwise drift — the same
+ * shape of copy that let a stale expiration selector survive in four places in this suite.
+ */
+export function eraClause(era: string | null): { sql: string | null; params: string[] } {
+  if (era === "ALL") return { sql: null, params: [] };
+  const found = ERAS.find((e) => e.key === era) ?? ERAS.find((e) => e.key === DEFAULT_ERA)!;
+  const parts = ["symbol = ?"];
+  const params: string[] = [found.symbol];
+  if (found.from !== null) {
+    parts.push("trade_date >= ?");
+    params.push(found.from);
+  }
+  if (found.to !== null) {
+    parts.push("trade_date <= ?");
+    params.push(found.to);
+  }
+  return { sql: parts.join(" AND "), params };
+}
+
 export interface FliesFilter {
   arm: string | null;
   date: string | null;
@@ -54,9 +108,10 @@ function filterSql(filter: FliesFilter): { where: string; params: string[] } {
   // Era last, so an explicit date the caller asked for is never silently overridden — asking for a
   // specific XSP-era day and getting an empty page would read as "nothing happened" rather than
   // "filtered out", which is the failure the scope control exists to prevent.
-  if (filter.era !== "ALL") {
-    clauses.push("symbol = ? AND trade_date >= ?");
-    params.push(CURRENT_ERA.symbol, CURRENT_ERA.from);
+  const era = eraClause(filter.era);
+  if (era.sql !== null) {
+    clauses.push(era.sql);
+    params.push(...era.params);
   }
   return { where: clauses.length > 0 ? clauses.join(" AND ") : "1=1", params };
 }
@@ -188,15 +243,28 @@ export function readFliesMeta(
   config: ConsoleConfig,
   mode: TradingMode,
   era: string | null = null,
-): { arms: string[]; dates: string[]; symbols: string[] } {
+): FliesMeta {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
-  const scope = era === "ALL" ? "" : " AND symbol = ? AND trade_date >= ?";
-  const params: string[] = era === "ALL" ? [] : [CURRENT_ERA.symbol, CURRENT_ERA.from];
-  return withReadOnlyDb<{ arms: string[]; dates: string[]; symbols: string[] }>(
+  const ec = eraClause(era);
+  const scope = ec.sql === null ? "" : ` AND ${ec.sql}`;
+  const params: string[] = ec.params;
+  return withReadOnlyDb<FliesMeta>(
     dbPath,
-    { arms: [], dates: [], symbols: [] },
+    { arms: [], dates: [], symbols: [], eras: [], currentEra: DEFAULT_ERA },
     (db) => ({
+      // Every era with what it holds, so choosing one is a choice between known quantities rather
+      // than a guess — and an era this store never traded reads as 0 rather than vanishing.
+      eras: ERAS.map((e) => {
+        const c = eraClause(e.key);
+        const row = db
+          .prepare<string[], { n: number }>(
+            `SELECT COUNT(*) AS n FROM fly_positions WHERE ${c.sql ?? "1=1"}`,
+          )
+          .get(...c.params);
+        return { era: e.key, label: e.label, trades: Number(row?.n ?? 0) };
+      }),
+      currentEra: DEFAULT_ERA,
       arms: db
         .prepare<string[], { arm: string }>(
           `SELECT DISTINCT arm FROM fly_positions WHERE arm IS NOT NULL${scope} ORDER BY arm`,
@@ -835,9 +903,10 @@ function scopeClause(filter: FliesFilter): { and: string; params: string[] } {
     clauses.push("symbol = ?");
     params.push(filter.symbol);
   }
-  if (filter.era !== "ALL") {
-    clauses.push("symbol = ? AND trade_date >= ?");
-    params.push(CURRENT_ERA.symbol, CURRENT_ERA.from);
+  const era = eraClause(filter.era);
+  if (era.sql !== null) {
+    clauses.push(era.sql);
+    params.push(...era.params);
   }
   return { and: clauses.length > 0 ? ` AND ${clauses.join(" AND ")}` : "", params };
 }
