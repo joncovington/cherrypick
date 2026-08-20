@@ -27,6 +27,7 @@ import {
   readFliesJournal,
   readArmDivergence,
   readFliesTradeLog,
+  readFliesLoopStatus,
   type FliesFilter,
 } from "../readers/flies.js";
 import { readPmcc, readPmccAssignments, readPmccHistory, readPmccMeta } from "../readers/pmcc.js";
@@ -164,6 +165,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/flies/analytics", async (req) =>
     readFliesAnalytics(config, parseMode(req.query), parseFliesFilter(req.query)),
   );
+  app.get("/api/flies/loop", async (req) => readFliesLoopStatus(config, parseMode(req.query)));
   app.get("/api/flies/meta", async (req) => readFliesMeta(config, parseMode(req.query), parseFliesFilter(req.query).era));
   app.get("/api/flies/history", async (req) => readFliesHistory(config, parseMode(req.query), parseFliesFilter(req.query)));
   app.get("/api/flies/divergence", async (req) =>

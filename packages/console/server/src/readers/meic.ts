@@ -754,8 +754,16 @@ export function readMeicDeepAnalytics(
 
 export interface MeicAnalytics {
   mode: TradingMode;
-  /** TODAY / WEEK / MONTH / YEAR / ALL, MEIC-dashboard rules: net = SUM(pnl); win = pnl − fees > 0. */
+  /** TODAY / WEEK / MONTH / YEAR / ALL. Net is after fees, as everywhere else in the suite. */
   periods: Array<{ label: string; net: number; trades: number; wins: number; losses: number }>;
+  /**
+   * Today's result per profile — which arm actually made the money, the question the page could
+   * not answer. The Performance tab's per-profile table is cumulative and states that it ignores
+   * the page's scope, so it never covered this.
+   */
+  byProfile: Array<{ profile: string; trades: number; net: number; winPct: number | null; avg: number | null; profitFactor: number | null }>;
+  /** Today's fee drag per profile, same grouping as byProfile. */
+  profileFeeDrag: Array<{ profile: string; gross: number; fees: number; net: number; dragPct: number | null }>;
   exitReasons: Array<{ reason: string; count: number }>;
   feeDrag: { grossCredit: number; fees: number; netPnl: number; dragPct: number | null };
 }
@@ -770,6 +778,8 @@ export function readMeicAnalytics(
   const empty: MeicAnalytics = {
     mode,
     periods: [],
+    byProfile: [],
+    profileFeeDrag: [],
     exitReasons: [],
     feeDrag: { grossCredit: 0, fees: 0, netPnl: 0, dragPct: null },
   };
@@ -788,16 +798,27 @@ export function readMeicAnalytics(
       ["year", `${today.slice(0, 4)}-01-01`],
       ["all", null],
     ];
+    // Net is `pnl - fees`. `ic_trades.pnl` is gross of fees, so summing it alone reported a
+    // different "net" from the deep-analytics calendar right beside it on the same page, and from
+    // this very query's own win/loss test, which has always been fee-adjusted. Fees are a real cost
+    // of the trade and every other net in the suite subtracts them.
+    //
+    // Subtracted INSIDE the sum on purpose. RESOLVED only excludes cancelled/pending entries, so
+    // mid-session it still admits 0DTE rows that have not settled and carry a NULL pnl. Summing the
+    // two columns separately would charge those rows' fees against a P&L they have not earned yet
+    // and report every profile down by exactly its fees — a number that looks like a result. With
+    // the subtraction inside, an unsettled row is NULL and drops out of the sum entirely.
+    const NET = "COALESCE(SUM(pnl - COALESCE(fees, 0)), 0)";
+    // The rows that actually contribute to NET, so an average has the same denominator as its total.
+    const SETTLED = "SUM(CASE WHEN pnl IS NOT NULL THEN 1 ELSE 0 END)";
+    const WINS = "SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) > 0 THEN 1 ELSE 0 END)";
+    const LOSSES = "SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) <= 0 THEN 1 ELSE 0 END)";
     const periodStmt = db.prepare<string[], Record<string, unknown>>(
-      `SELECT COALESCE(SUM(pnl), 0) AS net, COUNT(*) AS trades,
-              SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) > 0 THEN 1 ELSE 0 END) AS wins,
-              SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) <= 0 THEN 1 ELSE 0 END) AS losses
+      `SELECT ${NET} AS net, COUNT(*) AS trades, ${WINS} AS wins, ${LOSSES} AS losses
          FROM ic_trades WHERE ${RESOLVED} AND trade_date >= ?${sc.and}`,
     );
     const allStmt = db.prepare<string[], Record<string, unknown>>(
-      `SELECT COALESCE(SUM(pnl), 0) AS net, COUNT(*) AS trades,
-              SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) > 0 THEN 1 ELSE 0 END) AS wins,
-              SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) <= 0 THEN 1 ELSE 0 END) AS losses
+      `SELECT ${NET} AS net, COUNT(*) AS trades, ${WINS} AS wins, ${LOSSES} AS losses
          FROM ic_trades WHERE ${RESOLVED}${sc.and}`,
     );
     const periods = starts.map(([label, start]) => {
@@ -810,6 +831,58 @@ export function readMeicAnalytics(
         losses: Number(r["losses"] ?? 0),
       };
     });
+
+    // TODAY, per profile. Scoped to the same session the tiles above it report, so the page does
+    // not put "this year" and "today" beside each other under one heading — the mistake the flies
+    // reader already carries a note about.
+    const profileRows = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT risk_profile AS profile, ${SETTLED} AS trades,
+                ${NET} AS net, ${WINS} AS wins, ${LOSSES} AS losses,
+                COALESCE(SUM(CASE WHEN pnl - COALESCE(fees, 0) > 0 THEN pnl - COALESCE(fees, 0) ELSE 0 END), 0) AS won,
+                COALESCE(SUM(CASE WHEN pnl - COALESCE(fees, 0) < 0 THEN COALESCE(fees, 0) - pnl ELSE 0 END), 0) AS lost
+           FROM ic_trades WHERE ${RESOLVED} AND trade_date = ?${sc.and}
+          GROUP BY risk_profile HAVING trades > 0 ORDER BY net DESC`,
+      )
+      .all(today, ...sc.params);
+    const byProfile = profileRows.map((r) => {
+      const trades = Number(r["trades"]);
+      const wins = Number(r["wins"]);
+      const losses = Number(r["losses"]);
+      const lost = Number(r["lost"]);
+      const net = Number(r["net"]);
+      return {
+        profile: String(r["profile"] ?? "?"),
+        trades,
+        net,
+        winPct: wins + losses > 0 ? (wins / (wins + losses)) * 100 : null,
+        avg: trades > 0 ? net / trades : null,
+        profitFactor: lost > 0 ? Number(r["won"]) / lost : null,
+      };
+    });
+
+    const profileFeeDrag = db
+      .prepare<string[], Record<string, unknown>>(
+        // Restricted to settled rows so gross, fees and net all describe the same trades — a drag
+        // percentage mixing an unsettled row's fees into a settled row's credit means nothing.
+        `SELECT risk_profile AS profile,
+                COALESCE(SUM(net_credit * COALESCE(quantity, 1) * 100), 0) AS gross,
+                COALESCE(SUM(fees), 0) AS fees, ${NET} AS net
+           FROM ic_trades WHERE ${RESOLVED} AND pnl IS NOT NULL AND trade_date = ?${sc.and}
+          GROUP BY risk_profile ORDER BY risk_profile`,
+      )
+      .all(today, ...sc.params)
+      .map((r) => {
+        const gross = Number(r["gross"]);
+        const fees = Number(r["fees"]);
+        return {
+          profile: String(r["profile"] ?? "?"),
+          gross,
+          fees,
+          net: Number(r["net"]),
+          dragPct: Math.abs(gross) > 0 ? (fees / Math.abs(gross)) * 100 : null,
+        };
+      });
 
     // Grouped on the LEG PAIR, not on ic_trades.exit_reason.
     //
@@ -849,7 +922,7 @@ export function readMeicAnalytics(
     const fd = db
       .prepare<string[], Record<string, unknown>>(
         `SELECT COALESCE(SUM(net_credit * COALESCE(quantity, 1) * 100), 0) AS gross,
-                COALESCE(SUM(fees), 0) AS fees, COALESCE(SUM(pnl), 0) AS net
+                COALESCE(SUM(fees), 0) AS fees, ${NET} AS net
            FROM ic_trades WHERE ${RESOLVED}${sc.and}`,
       )
       .get(...sc.params) ?? {};
@@ -858,6 +931,8 @@ export function readMeicAnalytics(
     return {
       mode,
       periods,
+      byProfile,
+      profileFeeDrag,
       exitReasons,
       feeDrag: {
         grossCredit: gross,

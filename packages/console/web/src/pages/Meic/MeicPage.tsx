@@ -16,6 +16,8 @@ import { MeicPerformanceTab } from "./MeicPerformanceTab";
 
 interface MeicAnalytics {
   periods: Array<{ label: string; net: number; trades: number; wins: number; losses: number }>;
+  byProfile: Array<{ profile: string; trades: number; net: number; winPct: number | null; avg: number | null; profitFactor: number | null }>;
+  profileFeeDrag: Array<{ profile: string; gross: number; fees: number; net: number; dragPct: number | null }>;
   exitReasons: Array<{ reason: string; count: number }>;
   feeDrag: { grossCredit: number; fees: number; netPnl: number; dragPct: number | null };
 }
@@ -260,7 +262,7 @@ export function MeicPage() {
 
           <MeicForestCard mode={mode} date={day} />
 
-          <Card title="Performance (net = gross P&L; win = P&L − fees > 0)" updatedAt={analytics.dataUpdatedAt}>
+          <Card title="Performance (net of fees)" updatedAt={analytics.dataUpdatedAt}>
             <div className="stats-grid">
               {(a?.periods ?? []).map((p) => (
                 <div key={p.label} className="stat-tile">
@@ -274,6 +276,51 @@ export function MeicPage() {
               ))}
             </div>
           </Card>
+
+          <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(18rem, 1fr))" }}>
+            <DataCard
+              title="By profile — today"
+              headers={["profile", "trades", "net", "win %", "avg", "PF"]}
+              numFrom={1}
+              loading={analytics.isLoading}
+              rowCount={a?.byProfile.length ?? 0}
+              updatedAt={analytics.dataUpdatedAt}
+              empty="nothing settled yet today — 0DTE positions resolve at the close"
+            >
+              {a?.byProfile.map((r) => (
+                <tr key={r.profile}>
+                  <td>{r.profile}</td>
+                  <td>{r.trades}</td>
+                  <td><PnlCell v={r.net} /></td>
+                  <td>{r.winPct != null ? `${r.winPct.toFixed(0)}%` : "—"}</td>
+                  <td>{r.avg != null ? fmtMoney(r.avg) : "—"}</td>
+                  <td>{r.profitFactor != null ? r.profitFactor.toFixed(2) : "—"}</td>
+                </tr>
+              ))}
+            </DataCard>
+
+            <DataCard
+              title="Fee drag by profile — today"
+              headers={["profile", "gross", "fees", "net", "drag %"]}
+              numFrom={1}
+              loading={analytics.isLoading}
+              rowCount={a?.profileFeeDrag.length ?? 0}
+              updatedAt={analytics.dataUpdatedAt}
+              empty="nothing settled yet today — 0DTE positions resolve at the close"
+            >
+              {a?.profileFeeDrag.map((r) => (
+                <tr key={r.profile}>
+                  <td>{r.profile}</td>
+                  <td>{fmtMoney(r.gross)}</td>
+                  <td className="pnl-neg">{fmtMoney(r.fees)}</td>
+                  <td><PnlCell v={r.net} /></td>
+                  <td className={r.dragPct != null && r.dragPct > 30 ? "pnl-neg" : "muted"}>
+                    {r.dragPct != null ? `${r.dragPct.toFixed(1)}%` : "—"}
+                  </td>
+                </tr>
+              ))}
+            </DataCard>
+          </div>
 
           <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(18rem, 1fr))" }}>
             <DataCard

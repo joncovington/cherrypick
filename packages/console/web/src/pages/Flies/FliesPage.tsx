@@ -5,7 +5,7 @@ import { useMode } from "../../lib/useMode";
 import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
-import { Pager, usePage } from "../../components/ScopeBar";
+import { Pager, usePage, LoopPill } from "../../components/ScopeBar";
 import type { TradingMode } from "@console/shared";
 import { ForestCard } from "./ForestCard";
 import { ArmRail, AttemptTimeline } from "../../components/Attempts";
@@ -16,6 +16,15 @@ import { JournalCard } from "./JournalCard";
 import { DivergenceCard } from "./DivergenceCard";
 import { PerformanceTab } from "./PerformanceTab";
 import { ExperimentGuideView } from "../../components/ExperimentGuide";
+
+interface FliesLoopStatus {
+  state: "live" | "idle" | "no-data";
+  lastIterationAt: string | null;
+  ageSeconds: number | null;
+  symbol: string | null;
+  arm: string | null;
+  underlyingPrice: number | null;
+}
 
 interface FliesAnalytics {
   today: {
@@ -77,6 +86,14 @@ export function FliesPage() {
   const { data, isLoading, isError, isPlaceholderData } = useFlies(mode, filter, booksPage.page, positionsPage.page);
   const analytics = useFliesAnalytics(mode, filter);
   const a = analytics.data;
+  // Whether the loop is alive is a property of the module, not of the arm/era being viewed, so
+  // this is deliberately unscoped by the filter above.
+  const loop = useQuery<FliesLoopStatus>({
+    queryKey: ["flies-loop", mode],
+    queryFn: async () => (await fetch(`/api/flies/loop?mode=${mode}`)).json() as Promise<FliesLoopStatus>,
+    refetchInterval: 30_000,
+  });
+  const l = loop.data;
 
   // Narrowing the era can remove the arm or date currently selected (width-2/3/4 are XSP-only).
   // Clear a selection the new scope no longer offers, so the page never filters on a value the
@@ -159,6 +176,16 @@ export function FliesPage() {
         </select>
         </>
         )}
+        <LoopPill
+          state={l?.state}
+          ageSeconds={l?.ageSeconds}
+          detail={
+            l?.lastIterationAt != null
+              ? `last iteration ${l.lastIterationAt}${l.arm !== null ? ` · ${l.arm}` : ""}`
+              : undefined
+          }
+        />
+        {l?.underlyingPrice != null && <span className="chip">{l.underlyingPrice.toFixed(2)}</span>}
         <ModeToggle mode={mode} onChange={setMode} />
       </div>
 

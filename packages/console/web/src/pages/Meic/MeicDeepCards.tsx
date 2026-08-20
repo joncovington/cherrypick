@@ -175,7 +175,17 @@ export function MeicDeepCards({
           absence as a flat line. */}
       {mode === "live" && (
         <section className="card">
-          <h2>Account value (NLV) over time</h2>
+          <h2>
+            Account value (NLV) over time{" "}
+            {/* Every other card here answers for the symbol/profile/era the page is scoped to; this
+                one cannot. `closing_nlv` is a broker balance for the whole account, and
+                `daily_summary` carries no profile column to group it by, so narrowing the scope
+                leaves this line unchanged. Say so on the card rather than letting it read as a
+                filtered result. */}
+            <span className="chip chip-warn" title="closing_nlv is a whole-account broker balance; the page's symbol, profile and era filters do not narrow it">
+              account-level · unscoped
+            </span>
+          </h2>
           {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <NlvChart points={data?.nlv ?? []} />}
         </section>
       )}
