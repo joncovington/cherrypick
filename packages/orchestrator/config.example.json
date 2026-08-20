@@ -293,7 +293,7 @@
   },
   "settings_header": "x",
   "settings": {
-    "_comment": "`cherrypick settings` \u2014 the local web editor for the suite's config files and keyring secrets. The suite's ONE mutating HTTP surface: loopback-only + per-session-token gated, run on demand in the foreground, never started by the watchdog or a scheduled task, and live-trading gate fields are read-only on it. Port 8804 is the next slot after the 88xx embeds (8801 meic, 8802 gex, 8803 flies).",
+    "_comment": "`cherrypick settings` \u2014 the local web editor for the suite's config files and keyring secrets. The suite's ONE mutating HTTP surface: loopback-only + per-session-token gated, run on demand in the foreground, never started by the watchdog or a scheduled task, and live-trading gate fields are read-only on it. Port 8804 is a fixed loopback slot, held over from the retired 88xx dashboard-embed range (those per-module dashboards were deleted at the 2026-08-12 console cutover; the console serves 5070).",
     "serve": {
       "host": "127.0.0.1",
       "port": 8804

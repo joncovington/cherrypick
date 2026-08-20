@@ -35,13 +35,16 @@ class Check:
 
 
 _ARTIFACT_SUFFIXES = (".db", ".log")
+# `dashboard.html` is a legacy name: nothing has generated one since the console became the suite's
+# only read surface (2026-08-12). It stays in the sweep so a checkout carrying a pre-cutover copy
+# still gets it flagged and removed.
 _ARTIFACT_NAMES = ("dashboard.html",)
 _SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", ".ruff_cache", "node_modules", ".tmp", ".venv"}
 
 
 def find_stray_artifacts(roots: list[Path], *, limit: int = 50) -> list[Path]:
     """Runtime files that leaked into a checkout — everything runtime now lives under the cherrypick
-    home, so a `*.db`/`*.log` anywhere, a generated `dashboard.html`, a `state/*.json`, or a
+    home, so a `*.db`/`*.log` anywhere, a leftover `dashboard.html`, a `state/*.json`, or a
     `reports/*.html` inside a checkout root is a leak. Cache/VCS dirs (`.git`, `__pycache__`, …) are
     skipped. Pure filesystem read — the `no-leak` guard and its test share it."""
     found: list[Path] = []
