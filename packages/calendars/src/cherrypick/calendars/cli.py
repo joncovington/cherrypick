@@ -14,30 +14,18 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import pathlib
 
-# Package root (holds config.example.json): src/cherrypick/calendars/cli.py -> four parents up.
+# Package root (holds config.example.json): src/cherrypick/calendars/cli.py -> parents[3] — the package root.
 _PKG_ROOT = str(pathlib.Path(__file__).resolve().parents[3])
+
+from cherrypick.core import home as _core_home  # noqa: E402
 
 
 def load_config(path: str | None = None) -> dict:
-    """Explicit path, then CALENDARS_CONFIG, then the managed home, then the repo, then the example.
-    The managed-home entry (`~/.cherrypick/config/calendars.json`) is where the suite keeps
-    per-module config and where `cherrypick doctor` looks."""
-    home = os.environ.get("CHERRYPICK_HOME") or os.path.join(os.path.expanduser("~"), ".cherrypick")
-    candidates = [
-        path,
-        os.environ.get("CALENDARS_CONFIG"),
-        os.path.join(home, "config", "calendars.json"),
-        os.path.join(_PKG_ROOT, "config.json"),
-        os.path.join(_PKG_ROOT, "config.example.json"),
-    ]
-    for c in candidates:
-        if c and os.path.isfile(c):
-            with open(c, encoding="utf-8") as f:
-                return json.load(f)
-    raise SystemExit("no config found — copy config.example.json to config.json")
+    """This module's config, by the suite's precedence — see
+    `cherrypick.core.home.load_module_config`, which three modules had written out identically."""
+    return _core_home.load_module_config("calendars", _PKG_ROOT, path)
 
 
 def cmd_status(args) -> int:
