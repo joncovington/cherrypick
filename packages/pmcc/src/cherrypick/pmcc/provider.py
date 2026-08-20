@@ -35,10 +35,17 @@ from pathlib import Path
 # empty database — which a provider reports as "nothing cached" rather than as an error.
 from cherrypick.core.db import connect_ro as _connect_ro
 
+# occ_root is re-exported: the modules' own code calls provider.occ_root.
+from cherrypick.core.streamcache import chain_for_expiration as _chain_for_expiration
+from cherrypick.core.streamcache import greeks_for as _greeks
+
 # Shared with every other provider — see cherrypick.core.streamcache.
 # read_spot is re-exported deliberately: the loops call provider.read_spot and their tests
 # monkeypatch it there, so it is unused *inside* this module and ruff will drop it otherwise.
-from cherrypick.core.streamcache import read_spot  # noqa: F401
+from cherrypick.core.streamcache import (
+    occ_root,  # noqa: F401
+    read_spot,  # noqa: F401
+)
 from cherrypick.core.streamcache import usable_quote as _usable_quote
 
 from cherrypick.pmcc.clock import now_et  # noqa: F401  (re-exported for the loop's convenience)
@@ -56,9 +63,6 @@ def _fail(symbol: str, reason: str, **extra) -> dict:
 
 
 
-def occ_root(occ_symbol: str | None) -> str:
-    """The root portion of an OCC symbol (`"TNA   260724C00067000"` -> `"TNA"`)."""
-    return (occ_symbol or "")[:6].strip().upper()
 
 
 def snapshot_kwargs(config: dict) -> dict:
@@ -70,36 +74,6 @@ def snapshot_kwargs(config: dict) -> dict:
     }
 
 
-def _chain_for_expiration(conn, symbol: str, expiration: str, root: str) -> list[dict]:
-    """Cached chain entries for exactly this (underlying, expiration), filtered to the configured
-    OCC root — the adjusted-root (post-split `TNA1`) filter."""
-    import json as _json
-
-    entries = []
-    for row in conn.execute(
-        "SELECT data_json FROM stream_chain WHERE expiration = ? AND underlying_symbol = ?",
-        (expiration, symbol),
-    ):
-        try:
-            opt = _json.loads(row["data_json"])
-        except (ValueError, TypeError):
-            continue
-        sym, strike = opt.get("streamer_symbol"), opt.get("strike_price")
-        occ = opt.get("symbol")
-        if not sym or strike is None or not occ:
-            continue
-        if occ_root(occ) != root:
-            continue
-        otype = str(opt.get("option_type", "")).strip().lower()
-        entries.append(
-            {
-                "strike_price": float(strike),
-                "streamer_symbol": sym,
-                "occ_symbol": occ,
-                "option_type": "call" if otype.startswith("c") else "put",
-            }
-        )
-    return entries
 
 
 def _quotes_for(conn, streamer_syms: list[str], now_ts: float, max_age: float) -> tuple[dict, int]:
@@ -313,28 +287,6 @@ def build_mark_snapshot(
         conn.close()
 
 
-def _greeks(conn, streamer_syms: list[str], *, now_ts: float, max_age_seconds: float) -> dict:
-    """delta/iv/vega per streamer symbol, age-bounded (looser than quotes — greeks tick slower).
-    Missing rows are simply absent; greeks degrade the long selection to extrinsic-only, they never
-    crash it."""
-    out: dict[str, dict] = {}
-    if not streamer_syms:
-        return out
-    for i in range(0, len(streamer_syms), 900):
-        chunk = streamer_syms[i : i + 900]
-        placeholders = ", ".join("?" * len(chunk))
-        for r in conn.execute(
-            f"SELECT symbol, delta, iv, vega, updated_at FROM stream_greeks WHERE symbol IN ({placeholders})",
-            chunk,
-        ):
-            if r["updated_at"] is None or now_ts - float(r["updated_at"]) > max_age_seconds:
-                continue
-            out[r["symbol"]] = {
-                "delta": float(r["delta"]) if r["delta"] is not None else None,
-                "iv": float(r["iv"]) if r["iv"] is not None else None,
-                "vega": float(r["vega"]) if r["vega"] is not None else None,
-            }
-    return out
 
 
 

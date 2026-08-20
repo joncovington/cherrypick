@@ -1,5 +1,6 @@
 """Tests for cherrypick.core.streamcache — schema/connect, status upsert, chain write, ATM window."""
 
+import json
 import sqlite3
 import threading
 import time
@@ -272,3 +273,84 @@ def test_read_spot_refuses_a_stale_print_when_gated(tmp_path):
 def test_read_spot_on_a_missing_cache_or_symbol(tmp_path):
     assert streamcache.read_spot(tmp_path / "nope.db", "SPX") is None
     assert streamcache.read_spot(_cache_with_spot(tmp_path, 1.0), "NOSUCH") is None
+
+
+# --------------------------------------------------------------------------- chain reads
+def _chain(tmp_path, rows):
+    conn = streamcache.connect(tmp_path / "sc.db")
+    for r in rows:
+        conn.execute(
+            "INSERT INTO stream_chain(streamer_symbol, expiration, underlying_symbol, data_json, updated_at) "
+            "VALUES (?,?,?,?,?)",
+            (r["streamer_symbol"], r["expiration"], r["underlying_symbol"],
+             json.dumps(r["opt"]), time.time()),
+        )
+    conn.commit()
+    return conn
+
+
+def _opt(sym, occ, strike, otype="call"):
+    return {"streamer_symbol": sym, "symbol": occ, "strike_price": strike, "option_type": otype}
+
+
+def test_occ_root_takes_the_first_six_padded_characters():
+    assert streamcache.occ_root("SPXW  260821P06400000") == "SPXW"
+    assert streamcache.occ_root("TNA   260724C00067000") == "TNA"
+    assert streamcache.occ_root("TNA1  260724C00067000") == "TNA1"
+    assert streamcache.occ_root(None) == "" and streamcache.occ_root("") == ""
+
+
+def test_chain_for_expiration_filters_by_root(tmp_path):
+    """One date can carry more than one product: an AM-settled monthly beside the weekly, or a
+    post-split adjusted root beside the standard one. Either would price against contracts the
+    module is not trading."""
+    conn = _chain(tmp_path, [
+        {"streamer_symbol": ".A", "expiration": "2026-08-21", "underlying_symbol": "TNA",
+         "opt": _opt(".A", "TNA   260821C00067000", 67.0)},
+        {"streamer_symbol": ".B", "expiration": "2026-08-21", "underlying_symbol": "TNA",
+         "opt": _opt(".B", "TNA1  260821C00067000", 67.0)},
+    ])
+    got = streamcache.chain_for_expiration(conn, "TNA", "2026-08-21", "TNA")
+    assert [e["occ_symbol"] for e in got] == ["TNA   260821C00067000"]
+
+
+def test_chain_for_expiration_filters_by_underlying(tmp_path):
+    """SPX and XSP share dates and their strikes differ by 10x."""
+    conn = _chain(tmp_path, [
+        {"streamer_symbol": ".S", "expiration": "2026-08-21", "underlying_symbol": "SPX",
+         "opt": _opt(".S", "SPXW  260821C06400000", 6400.0)},
+        {"streamer_symbol": ".X", "expiration": "2026-08-21", "underlying_symbol": "XSP",
+         "opt": _opt(".X", "SPXW  260821C00640000", 640.0)},
+    ])
+    got = streamcache.chain_for_expiration(conn, "XSP", "2026-08-21", "SPXW")
+    assert [e["strike_price"] for e in got] == [640.0]
+
+
+def test_chain_for_expiration_skips_unusable_rows(tmp_path):
+    conn = _chain(tmp_path, [
+        {"streamer_symbol": ".ok", "expiration": "2026-08-21", "underlying_symbol": "SPX",
+         "opt": _opt(".ok", "SPXW  260821P06400000", 6400.0, "put")},
+        {"streamer_symbol": ".nostrike", "expiration": "2026-08-21", "underlying_symbol": "SPX",
+         "opt": {"streamer_symbol": ".nostrike", "symbol": "SPXW  260821C1", "strike_price": None}},
+        {"streamer_symbol": ".noocc", "expiration": "2026-08-21", "underlying_symbol": "SPX",
+         "opt": {"streamer_symbol": ".noocc", "strike_price": 1.0}},
+    ])
+    got = streamcache.chain_for_expiration(conn, "SPX", "2026-08-21", "SPXW")
+    assert [e["streamer_symbol"] for e in got] == [".ok"]
+    assert got[0]["option_type"] == "put"
+
+
+def test_greeks_for_is_age_bounded_and_absent_is_absent(tmp_path):
+    conn = streamcache.connect(tmp_path / "sc.db")
+    now = time.time()
+    conn.execute("INSERT INTO stream_greeks(symbol, delta, iv, vega, updated_at) VALUES (?,?,?,?,?)",
+                 (".fresh", 0.5, 0.2, 1.0, now))
+    conn.execute("INSERT INTO stream_greeks(symbol, delta, iv, vega, updated_at) VALUES (?,?,?,?,?)",
+                 (".stale", 0.4, 0.2, 1.0, now - 5000))
+    conn.commit()
+    got = streamcache.greeks_for(
+        conn, [".fresh", ".stale", ".missing"], now_ts=now, max_age_seconds=1800
+    )
+    assert set(got) == {".fresh"}
+    assert got[".fresh"]["delta"] == 0.5
+    assert streamcache.greeks_for(conn, [], now_ts=now, max_age_seconds=1800) == {}
