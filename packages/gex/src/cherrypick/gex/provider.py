@@ -15,10 +15,15 @@ for the ATM/GEX window.
 from __future__ import annotations
 
 import json
-import sqlite3
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# Read-only opens go through cherrypick.core.db.connect_ro: it percent-escapes the path, so a
+# directory containing '?', '#' or '%' cannot silently change the URI's meaning. The local
+# copies interpolated the path raw, where a '#' truncated the URI and opened a DIFFERENT,
+# empty database — which a provider reports as "nothing cached" rather than as an error.
+from cherrypick.core.db import connect_ro as _connect_ro
 
 
 @dataclass
@@ -46,12 +51,6 @@ class GexSnapshot:
     input_age_seconds: float | None = None
 
 
-def _connect_ro(db_path: Path) -> sqlite3.Connection:
-    """Open the stream cache strictly read-only (mirrors report._connect_ro in the umbrella) so a
-    viewer can never mutate the streamer's live database."""
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 # SQLite's default host-parameter limit is 999; stay under it with room to spare.

@@ -20,10 +20,15 @@ survive; if none do, the refusal is `not_weekly_listed`, which is the skip-this-
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
+
+# Read-only opens go through cherrypick.core.db.connect_ro: it percent-escapes the path, so a
+# directory containing '?', '#' or '%' cannot silently change the URI's meaning. The local
+# copies interpolated the path raw, where a '#' truncated the URI and opened a DIFFERENT,
+# empty database — which a provider reports as "nothing cached" rather than as an error.
+from cherrypick.core.db import connect_ro as _connect_ro
 
 from cherrypick.calendars.clock import now_et  # noqa: F401  (re-exported for the loop's convenience)
 
@@ -31,10 +36,6 @@ DEFAULT_MAX_QUOTE_AGE_SECONDS = 300
 DEFAULT_STRIKE_WINDOW_PCT = 0.04
 
 
-def _connect_ro(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 def _fail(symbol: str, reason: str, **extra) -> dict:

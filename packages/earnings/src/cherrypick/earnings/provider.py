@@ -25,11 +25,16 @@ a reliability bug in someone else's module.
 from __future__ import annotations
 
 import json
-import sqlite3
 import time
 from pathlib import Path
 
 from cherrypick.core import home as _home
+
+# Read-only opens go through cherrypick.core.db.connect_ro: it percent-escapes the path, so a
+# directory containing '?', '#' or '%' cannot silently change the URI's meaning. The local
+# copies interpolated the path raw, where a '#' truncated the URI and opened a DIFFERENT,
+# empty database — which a provider reports as "nothing cached" rather than as an error.
+from cherrypick.core.db import connect_ro as _connect_ro
 
 # A minute-cadence loop reading a continuously-streamed cache: anything older than this is a feed
 # that stopped, not a market that went quiet. Deliberately longer than flies' 120s — an earnings
@@ -46,10 +51,6 @@ def cache_path() -> Path:
     return _home.data_dir() / "marketdata" / "stream_cache.db"
 
 
-def _connect_ro(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 def _fail(reason: str, **extra) -> dict:

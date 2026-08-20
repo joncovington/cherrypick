@@ -21,13 +21,18 @@ Precondition: MEIC's streamer must be running, and must be subscribed to the sym
 from __future__ import annotations
 
 import json
-import sqlite3
 import time
 from datetime import date, datetime
 from pathlib import Path
 
 # One ET for the suite — see cherrypick.core.clock.
 from cherrypick.core.clock import ET as _ET
+
+# Read-only opens go through cherrypick.core.db.connect_ro: it percent-escapes the path, so a
+# directory containing '?', '#' or '%' cannot silently change the URI's meaning. The local
+# copies interpolated the path raw, where a '#' truncated the URI and opened a DIFFERENT,
+# empty database — which a provider reports as "nothing cached" rather than as an error.
+from cherrypick.core.db import connect_ro as _connect_ro
 from cherrypick.core.gex import compute_gex
 
 DEFAULT_MAX_QUOTE_AGE_SECONDS = 120
@@ -53,12 +58,6 @@ def minute_of_day(when: datetime) -> int:
     return when.hour * 60 + when.minute
 
 
-def _connect_ro(db_path: Path) -> sqlite3.Connection:
-    """Strictly read-only. MEIC's streamer is writing this file live; a reader that could mutate it
-    would be a reliability bug in someone else's module."""
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 def _fail(symbol: str, reason: str, **extra) -> dict:
