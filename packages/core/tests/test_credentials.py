@@ -5,12 +5,12 @@ import keyring.errors
 import pytest
 
 from cherrypick.core.auth import (
-    prompt_and_store,
     ALL_SECRETS,
     CLIENT_SECRET,
     REFRESH_TOKEN,
     CredentialError,
     CredentialStore,
+    prompt_and_store,
 )
 
 

@@ -35,6 +35,12 @@ from pathlib import Path
 # empty database — which a provider reports as "nothing cached" rather than as an error.
 from cherrypick.core.db import connect_ro as _connect_ro
 
+# Shared with every other provider — see cherrypick.core.streamcache.
+# read_spot is re-exported deliberately: the loops call provider.read_spot and their tests
+# monkeypatch it there, so it is unused *inside* this module and ruff will drop it otherwise.
+from cherrypick.core.streamcache import read_spot  # noqa: F401
+from cherrypick.core.streamcache import usable_quote as _usable_quote
+
 from cherrypick.pmcc.clock import now_et  # noqa: F401  (re-exported for the loop's convenience)
 
 DEFAULT_MAX_QUOTE_AGE_SECONDS = 300
@@ -48,25 +54,6 @@ def _fail(symbol: str, reason: str, **extra) -> dict:
     return {"ok": False, "symbol": symbol, "reason": reason, **extra}
 
 
-def _usable_quote(row, now_ts: float, max_age: float) -> dict | None:
-    """A quote we are willing to price a fill against, or None — rejects stale, crossed, and
-    non-positive-ask quotes. A position with a missing leg is skipped (costs a sample); a position
-    priced off a bad leg costs the whole experiment."""
-    bid, ask, updated = row["bid"], row["ask"], row["updated_at"]
-    if bid is None or ask is None or updated is None:
-        return None
-    if now_ts - float(updated) > max_age:
-        return None
-    bid, ask = float(bid), float(ask)
-    if ask <= 0 or bid < 0 or bid > ask:
-        return None
-    mid = row["mid"]
-    return {
-        "bid": bid,
-        "ask": ask,
-        "mid": float(mid) if mid is not None else (bid + ask) / 2.0,
-        "age_seconds": round(now_ts - float(updated), 1),
-    }
 
 
 def occ_root(occ_symbol: str | None) -> str:
@@ -350,27 +337,6 @@ def _greeks(conn, streamer_syms: list[str], *, now_ts: float, max_age_seconds: f
     return out
 
 
-def read_spot(db_path, symbol: str, *, max_age_seconds: float | None = None) -> float | None:
-    """Latest spot for one symbol — the settlement read. The staleness gate is mandatory practice
-    here: settlement decides every expiring leg's P&L at once and cannot be undone, so a stalled
-    feed must refuse rather than settle the day against an old print (the flies 2026-07-20 lesson)."""
-    db_path = Path(db_path)
-    if not db_path.exists():
-        return None
-    conn = _connect_ro(db_path)
-    try:
-        r = conn.execute(
-            "SELECT last, updated_at FROM stream_trades WHERE symbol = ?", (symbol.strip().upper(),)
-        ).fetchone()
-        if not r or r["last"] is None:
-            return None
-        if max_age_seconds is not None:
-            updated = r["updated_at"]
-            if updated is None or (time.time() - float(updated)) > max_age_seconds:
-                return None
-        return float(r["last"])
-    finally:
-        conn.close()
 
 
 def read_session(db_path, symbol: str, trade_date: str) -> dict | None:
