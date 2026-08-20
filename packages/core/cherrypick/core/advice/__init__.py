@@ -175,3 +175,76 @@ def load(
     except (OSError, ValueError) as exc:
         return {"ok": False, "reason": f"unreadable: {exc}", "proposals": [], "rejected": []}
     return validate(artifact, bounds, session, now=now)
+
+
+def session_decision(
+    state_dir: Path | str,
+    module: str,
+    session: str,
+    config: dict[str, Any],
+    decision_path: Path | str,
+    *,
+    base_key: str = "base_book",
+    log: Any = None,
+) -> dict[str, Any]:
+    """Today's advice decision, derived ONCE per session and replayed for the rest of it.
+
+    This is the read-once rule, and it is a safety property rather than an optimisation. A module's
+    loop is a series of short `--once` processes, so "read the artifact at session start" only means
+    anything if the first tick RECORDS what it decided and every later tick replays that record.
+    Without it, an artifact landing at 11:00 — or a config flag flipped intraday — would change what
+    an already-open book is being managed under, halfway through the session that book is evidence
+    for. Three modules had written this out identically; it belongs beside the `load` it wraps.
+
+    `base_key` is the config key naming the book the advised twin shadows, and it varies on purpose:
+    flies calls its books arms (`base_arm`), calendars and pmcc call them books (`base_book`). It is
+    carried through to the returned dict, because that shape is already persisted on disk and read
+    by each module's own loop.
+
+    A decision from a previous day is discarded rather than replayed. A write failure is swallowed:
+    the decision still governs the process that made it, and the next `--once` simply re-derives the
+    same one.
+    """
+    acfg = config.get("advice") or {}
+    base = acfg.get(base_key, "control")
+    path = Path(decision_path)
+
+    decision = None
+    if path.exists():
+        try:
+            decision = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            decision = None
+        if decision is not None and decision.get("day") != session:
+            decision = None  # yesterday's decision; today re-derives its own
+    if decision is not None:
+        return decision
+
+    if acfg.get("enabled") and acfg.get("bounds"):
+        result = load(state_dir, module, session, acfg.get("bounds") or {})
+        params = {p["param"]: p["value"] for p in result["proposals"]} or None
+        decision = {
+            "day": session,
+            base_key: base,
+            "params": params,
+            "reason": result["reason"],
+            "proposals": result["proposals"],
+            "rejected": result.get("rejected") or [],
+        }
+        if log is not None:
+            for proposal in result["proposals"]:
+                log(
+                    f"advice applied: {proposal['param']}={proposal['value']!r} — "
+                    f"{proposal.get('rationale', '')}"
+                )
+            if not result["proposals"]:
+                log(f"advice: baseline ({result['reason'] or 'no proposals'})")
+    else:
+        decision = {"day": session, base_key: base, "params": None, "reason": "advice_disabled"}
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(decision, indent=2), encoding="utf-8")
+    except OSError:
+        pass  # the decision still applies to this process; the next --once re-derives it
+    return decision

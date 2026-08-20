@@ -30,6 +30,7 @@ import os
 import time
 from datetime import datetime
 
+from cherrypick.core import advice as _core_advice
 from cherrypick.core import calendar as _cal
 from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
@@ -216,51 +217,20 @@ def advice_decision(config: dict, today: str) -> dict:
     """Today's advice decision, derived ONCE per session and replayed thereafter (the flies
     read-once rule: advice can never start, stop, or change mid-session across `--once`
     processes). Entries only happen on the entry day, so an artifact landing any other day admits
-    params that open nothing — `advice: baseline` on a Tuesday is the design, not a failure."""
-    acfg = config.get("advice") or {}
-    base = acfg.get("base_book", "control")
-    path = _advice_decision_path()
+    params that open nothing — `advice: baseline` on a Tuesday is the design, not a failure.
 
-    decision = None
-    if os.path.exists(path):
-        try:
-            with open(path, encoding="utf-8") as handle:
-                decision = json.load(handle)
-        except (OSError, ValueError):
-            decision = None
-        if decision is not None and decision.get("day") != today:
-            decision = None
-    if decision is not None:
-        return decision
-
-    if acfg.get("enabled") and acfg.get("bounds"):
-        from cherrypick.core import advice as _core_advice
-
-        result = _core_advice.load(_home.state_dir(), "calendars", today, acfg.get("bounds") or {})
-        params = {p["param"]: p["value"] for p in result["proposals"]} or None
-        decision = {
-            "day": today,
-            "base_book": base,
-            "params": params,
-            "reason": result["reason"],
-            "proposals": result["proposals"],
-            "rejected": result.get("rejected") or [],
-        }
-        for proposal in result["proposals"]:
-            _log(
-                f"advice applied: {proposal['param']}={proposal['value']!r} — {proposal.get('rationale', '')}"
-            )
-        if not result["proposals"]:
-            _log(f"advice: baseline ({result['reason'] or 'no proposals'})")
-    else:
-        decision = {"day": today, "base_book": base, "params": None, "reason": "advice_disabled"}
-
-    try:
-        with open(path, "w", encoding="utf-8") as handle:
-            json.dump(decision, handle, indent=2)
-    except OSError:
-        pass
-    return decision
+    The mechanics live in `cherrypick.core.advice.session_decision` — three modules had written this
+    read-once-and-replay identically, and it carries a safety property rather than a convenience.
+    """
+    return _core_advice.session_decision(
+        _home.state_dir(),
+        "calendars",
+        today,
+        config,
+        _advice_decision_path(),
+        base_key="base_book",
+        log=_log,
+    )
 
 
 def session_books(config: dict, today: str) -> tuple[list[str], dict | None]:
