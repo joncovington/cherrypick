@@ -77,8 +77,18 @@ export function FliesPage() {
   // rather than offering a one-option filter.
   const [symbol, setSymbol] = useState<string | null>(null);
   const [tab, setTab] = useState<FliesTab>("today");
-  const filter: FliesFilter = { arm, date, symbol, era };
   const meta = useFliesMeta(mode, era);
+  // ONE day governs every Today card, the way it already does on the MEIC page.
+  //
+  // Left null, each card resolved its own: the attempts views default to the latest day with
+  // ATTEMPTS while the forest, occupancy and session tiles default to the latest day with
+  // POSITIONS. Before anything fills those are different days, so the tab could show yesterday's
+  // book beside today's refusals — each correctly labelled, and contradictory side by side.
+  const resolvedDate = date ?? meta.data?.dates[0] ?? null;
+  const filter: FliesFilter = { arm, date: resolvedDate, symbol, era };
+  // History and Performance span sessions by definition, so they keep the RAW date — resolving a
+  // "latest day" for them would collapse both to one session and empty every trend on them.
+  const multiDayFilter: FliesFilter = { arm, date, symbol, era };
   // Two tables on one payload, each with its own page — turning one leaves the
   // other where it was. Both reset when the filter changes underneath them.
   const booksPage = usePage([mode, arm, date, symbol, era]);
@@ -192,14 +202,14 @@ export function FliesPage() {
       {tab === "history" && (
         <HistoryTab
           mode={mode}
-          filter={filter}
+          filter={multiDayFilter}
           onReplayDay={(d) => {
             setDate(d);
             setTab("today");
           }}
         />
       )}
-      {tab === "performance" && <PerformanceTab mode={mode} filter={filter} />}
+      {tab === "performance" && <PerformanceTab mode={mode} filter={multiDayFilter} />}
       {tab === "help" && (
         <ExperimentGuideView
           url="/api/flies/arms"

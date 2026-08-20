@@ -203,9 +203,21 @@ export function readFliesMeta(
         )
         .all(...params)
         .map((r) => r.arm),
+      // Sessions the LOOP ran, not sessions that produced positions. `fly_iterations` gets a row
+      // every tick whether or not anything filled, so a morning that has been evaluating for an
+      // hour without an entry is still a session — and it is the day the attempts views are
+      // showing. Listing only days with positions meant the page's own "latest day" could resolve
+      // to yesterday while the loop was plainly working on today, which happened on 2026-08-20:
+      // flies iterated from the open and took its first position at 10:52.
       dates: db
         .prepare<string[], { d: string }>(
-          `SELECT DISTINCT trade_date AS d FROM fly_positions WHERE 1=1${scope} ORDER BY trade_date DESC`,
+          // The inner columns keep their own names: the era scope below filters on `trade_date`
+          // and `symbol`, so renaming either inside the subquery puts them out of its reach.
+          `SELECT DISTINCT trade_date AS d FROM (
+             SELECT trade_date, symbol FROM fly_positions
+             UNION
+             SELECT trade_date, symbol FROM fly_iterations
+           ) WHERE 1=1${scope} ORDER BY trade_date DESC`,
         )
         .all(...params)
         .map((r) => r.d),
