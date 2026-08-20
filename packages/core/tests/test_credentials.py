@@ -5,6 +5,7 @@ import keyring.errors
 import pytest
 
 from cherrypick.core.auth import (
+    prompt_and_store,
     ALL_SECRETS,
     CLIENT_SECRET,
     REFRESH_TOKEN,
@@ -78,3 +79,63 @@ def test_no_keyring_backend_raises_credential_error(monkeypatch):
     store = CredentialStore("meicagent")
     with pytest.raises(CredentialError):
         store.get_secret(CLIENT_SECRET)
+
+
+# --------------------------------------------------------------------------- prompt_and_store
+class _FakeStore:
+    """Stands in for a CredentialStore. Nothing here touches a real keyring."""
+
+    def __init__(self, existing=None):
+        self.values = dict(existing or {})
+        self.writes = []
+
+    def set_secret(self, key, value):
+        self.values[key] = value
+        self.writes.append((key, value))
+
+
+def test_prompt_and_store_writes_what_was_entered():
+    store = _FakeStore()
+    written = prompt_and_store(
+        store, ["client_secret", "refresh_token"], prompt_fn=lambda _p: "abc"
+    )
+    assert written == ["client_secret", "refresh_token"]
+    assert store.values == {"client_secret": "abc", "refresh_token": "abc"}
+
+
+def test_blank_input_leaves_the_existing_value():
+    """The rule this exists for. The prompt is hidden, so a stray Enter is indistinguishable from a
+    typo — treating it as "" would erase a working credential and take a module offline at its next
+    broker call."""
+    store = _FakeStore({"client_secret": "already-set"})
+    written = prompt_and_store(store, ["client_secret"], prompt_fn=lambda _p: "")
+    assert written == []
+    assert store.writes == [], "a blank entry must not reach the keyring at all"
+    assert store.values["client_secret"] == "already-set"
+
+
+def test_whitespace_only_input_is_also_blank():
+    store = _FakeStore({"refresh_token": "keep"})
+    assert prompt_and_store(store, ["refresh_token"], prompt_fn=lambda _p: "   \n") == []
+    assert store.values["refresh_token"] == "keep"
+
+
+def test_values_are_stripped():
+    """A token pasted with a trailing newline is not a different token — but it fails at the broker
+    with no clue why."""
+    store = _FakeStore()
+    prompt_and_store(store, ["client_secret"], prompt_fn=lambda _p: "  tok\n")
+    assert store.values["client_secret"] == "tok"
+
+
+def test_each_key_is_prompted_once_and_named():
+    seen = []
+
+    def prompt(text):
+        seen.append(text)
+        return ""
+
+    prompt_and_store(_FakeStore(), ["client_secret", "refresh_token"], prompt_fn=prompt)
+    assert len(seen) == 2
+    assert "client_secret" in seen[0] and "refresh_token" in seen[1]
+    assert "blank to keep current" in seen[0], "the prompt must state what a blank entry does"
