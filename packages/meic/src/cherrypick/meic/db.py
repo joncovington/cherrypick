@@ -14,16 +14,10 @@ sys.path.insert(0, os.path.dirname(__file__))
 from cherrypick.core import db as _db
 from cherrypick.core import profiles as _profiles
 
+# One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core.clock import ET as _ET  # noqa: E402
+
 from cherrypick.meic import paths as _paths
-
-try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
-    from zoneinfo import ZoneInfo
-
-    _ET = ZoneInfo("America/New_York")
-except Exception:  # pragma: no cover - only where zoneinfo has no tz database
-    import pytz
-
-    _ET = pytz.timezone("America/New_York")
 
 
 def _now_et():
