@@ -115,6 +115,12 @@ CREATE TABLE IF NOT EXISTS fly_decisions (
     detail        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_fly_decisions_date ON fly_decisions(trade_date);
+-- Covers `record_decision`'s run lookup, which is the hottest read this table has: every arm asks
+-- for its own latest row on every tick to decide whether to extend a collapsed run or open a new
+-- one. On trade_date alone that seeks to the day and then walks every arm's rows in it, so the cost
+-- grew through the session. Trailing `id` lets the ORDER BY id DESC LIMIT 1 come off the index.
+CREATE INDEX IF NOT EXISTS idx_fly_decisions_run
+    ON fly_decisions(trade_date, arm, symbol, mode, id);
 
 -- One thin row per (iteration x arm): what each arm WANTED, whether or not it acted.
 --
