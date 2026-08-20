@@ -23,6 +23,8 @@ from __future__ import annotations
 import os
 import sqlite3
 
+from cherrypick.core import db as _core_db
+
 from cherrypick.pmcc import clock
 
 _SCHEMA = """
@@ -375,10 +377,16 @@ def _declared_columns(table: str) -> list[str]:
 
 
 def connect(db_path: str | None = None) -> sqlite3.Connection:
+    """Open the ledger. WAL + NORMAL, matching the other module ledgers.
+
+    Rollback-journal mode fsyncs twice per commit and blocks readers for the duration; this loop
+    marks on a 60s tick and the console reads the same file. The module is disabled at the moment,
+    so this is landed for when it runs rather than for an effect today.
+
+    NOT a measurement break: nothing about which rows are written, or their values, changes here.
+    """
     path = db_path or os.environ.get("PMCC_DB_PATH") or default_db_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
+    conn = _core_db.connect(path, pragmas=("journal_mode=WAL", "synchronous=NORMAL"))
     conn.executescript(_SCHEMA)
     _migrate(conn)
     return conn
