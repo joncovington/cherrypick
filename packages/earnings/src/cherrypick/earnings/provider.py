@@ -36,6 +36,9 @@ from cherrypick.core import home as _home
 # empty database — which a provider reports as "nothing cached" rather than as an error.
 from cherrypick.core.db import connect_ro as _connect_ro
 
+# Shared with every other provider — see cherrypick.core.streamcache.
+from cherrypick.core.streamcache import usable_quote as _usable_quote
+
 # A minute-cadence loop reading a continuously-streamed cache: anything older than this is a feed
 # that stopped, not a market that went quiet. Deliberately longer than flies' 120s — an earnings
 # structure's wings are far out of the money and genuinely trade less often than an index ATM strike.
@@ -60,28 +63,6 @@ def _fail(reason: str, **extra) -> dict:
     return {"ok": False, "reason": reason, **extra}
 
 
-def _usable_quote(row, now_ts: float, max_age: float) -> dict | None:
-    """A quote worth pricing a close against, or None.
-
-    Rejects stale, crossed, and non-positive-ask quotes. None rather than a degraded quote is the
-    point: a position skipped this tick is marked unusable and looked at again in a minute, while a
-    position priced off a bad leg can be closed on a number that was never real.
-    """
-    bid, ask, updated = row["bid"], row["ask"], row["updated_at"]
-    if bid is None or ask is None or updated is None:
-        return None
-    if now_ts - float(updated) > max_age:
-        return None
-    bid, ask = float(bid), float(ask)
-    if ask <= 0 or bid < 0 or bid > ask:
-        return None
-    mid = row["mid"]
-    return {
-        "bid": bid,
-        "ask": ask,
-        "mid": float(mid) if mid is not None else (bid + ask) / 2.0,
-        "age_seconds": round(now_ts - float(updated), 1),
-    }
 
 
 def spread_pct(quote: dict) -> float | None:

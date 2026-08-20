@@ -208,3 +208,67 @@ def test_atm_window_syms_centres_and_bounds():
     strikes = sorted(int(s[1:]) for s in keep)
     assert strikes == [608, 609, 610, 611, 612]  # nearest (610) ± 2
     assert streamcache.atm_window_syms({}, 610, 2) == []
+
+
+# --------------------------------------------------------------------------- usable_quote
+def _row(bid, ask, updated, mid=None):
+    return {"bid": bid, "ask": ask, "updated_at": updated, "mid": mid}
+
+
+def test_usable_quote_accepts_a_good_quote():
+    q = streamcache.usable_quote(_row(1.0, 1.2, 1000.0), now_ts=1000.0, max_age=120)
+    assert q == {"bid": 1.0, "ask": 1.2, "mid": pytest.approx(1.1), "age_seconds": 0.0}
+
+
+def test_usable_quote_rejects_stale():
+    assert streamcache.usable_quote(_row(1.0, 1.2, 1000.0), now_ts=1121.0, max_age=120) is None
+    assert streamcache.usable_quote(_row(1.0, 1.2, 1000.0), now_ts=1120.0, max_age=120) is not None
+
+
+def test_usable_quote_rejects_crossed():
+    """bid > ask is a torn read or a broken feed, not an opportunity."""
+    assert streamcache.usable_quote(_row(1.5, 1.2, 1000.0), now_ts=1000.0, max_age=120) is None
+
+
+def test_usable_quote_rejects_a_non_positive_ask():
+    assert streamcache.usable_quote(_row(0.0, 0.0, 1000.0), now_ts=1000.0, max_age=120) is None
+    assert streamcache.usable_quote(_row(0.0, -1.0, 1000.0), now_ts=1000.0, max_age=120) is None
+
+
+def test_usable_quote_rejects_missing_fields():
+    for row in (_row(None, 1.2, 1000.0), _row(1.0, None, 1000.0), _row(1.0, 1.2, None)):
+        assert streamcache.usable_quote(row, now_ts=1000.0, max_age=120) is None
+
+
+def test_usable_quote_uses_the_stored_mid_when_present():
+    q = streamcache.usable_quote(_row(1.0, 2.0, 1000.0, mid=1.75), now_ts=1000.0, max_age=120)
+    assert q["mid"] == 1.75
+
+
+# --------------------------------------------------------------------------- read_spot
+def _cache_with_spot(tmp_path, last, age_seconds=0.0):
+    conn = streamcache.connect(tmp_path / "sc.db")
+    conn.execute(
+        "INSERT INTO stream_trades(symbol, last, change, volume, updated_at) VALUES (?,?,?,?,?)",
+        ("SPX", last, 0.0, 0.0, time.time() - age_seconds),
+    )
+    conn.commit()
+    conn.close()
+    return tmp_path / "sc.db"
+
+
+def test_read_spot_returns_the_last_price(tmp_path):
+    assert streamcache.read_spot(_cache_with_spot(tmp_path, 7641.16), "spx") == 7641.16
+
+
+def test_read_spot_refuses_a_stale_print_when_gated(tmp_path):
+    """The 2026-07-20 incident: settlement decides every leg's P&L at once and cannot be undone, so
+    a stalled feed must refuse rather than settle against an old print."""
+    path = _cache_with_spot(tmp_path, 7641.16, age_seconds=600)
+    assert streamcache.read_spot(path, "SPX", max_age_seconds=120) is None
+    assert streamcache.read_spot(path, "SPX") == 7641.16, "ungated callers keep the old behaviour"
+
+
+def test_read_spot_on_a_missing_cache_or_symbol(tmp_path):
+    assert streamcache.read_spot(tmp_path / "nope.db", "SPX") is None
+    assert streamcache.read_spot(_cache_with_spot(tmp_path, 1.0), "NOSUCH") is None

@@ -21,6 +21,8 @@ import sqlite3
 import time
 from pathlib import Path
 
+from cherrypick.core.db import connect_ro
+
 # The schema every consumer shares. orb_ranges/stream_rest_cache are used only by MEIC's daemon today
 # but are kept here so MEIC can adopt this DDL verbatim when it migrates onto the core engine.
 DDL = """
@@ -459,3 +461,67 @@ def quote_mids(
             "source": "stream_cache",
         }
     return out
+
+
+def usable_quote(row, now_ts: float, max_age: float) -> dict | None:
+    """A quote worth pricing against, or None — the suite's one definition of a usable quote.
+
+    Rejects three things, and returning None rather than a degraded quote is the whole point:
+
+    * **stale** — older than `max_age`. A cached bid/ask from twenty minutes ago will happily price
+      a fill that could never have happened; on 0DTE a few minutes is a different market.
+    * **crossed** (`bid > ask`) — a torn read or a broken feed, not an opportunity.
+    * **non-positive ask** — nothing to buy.
+
+    A structure with a missing leg is skipped, which costs a sample. A structure priced off a bad
+    leg produces a result that looks real and isn't, which costs the experiment. Four modules had
+    written this identically; a copy that quietly stopped rejecting crossed quotes would keep
+    trading and look fine.
+
+    `now_ts` is passed in rather than read here, so a caller marks a whole tick against one instant
+    and the ages in a snapshot are consistent with each other.
+    """
+    bid, ask, updated = row["bid"], row["ask"], row["updated_at"]
+    if bid is None or ask is None or updated is None:
+        return None
+    if now_ts - float(updated) > max_age:
+        return None
+    bid, ask = float(bid), float(ask)
+    if ask <= 0 or bid < 0 or bid > ask:
+        return None
+    mid = row["mid"]
+    return {
+        "bid": bid,
+        "ask": ask,
+        "mid": float(mid) if mid is not None else (bid + ask) / 2.0,
+        "age_seconds": round(now_ts - float(updated), 1),
+    }
+
+
+def read_spot(db_path, symbol: str, *, max_age_seconds: float | None = None) -> float | None:
+    """Latest traded price for one underlying, read-only. None when absent, unset, or too old.
+
+    `max_age_seconds` is optional but is the reason this is shared. Settlement is the single most
+    consequential price read a module makes — it decides every expiring leg's P&L at once and cannot
+    be undone — so a stalled feed must refuse rather than settle a session against an old print. On
+    2026-07-20 the producer stalled twice and went 99 minutes silent half an hour before settle
+    time, which is the incident this gate exists for. Passing None keeps the old ungated behaviour
+    for callers that genuinely want the last known price whatever its age.
+    """
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return None
+    conn = connect_ro(db_path)
+    try:
+        row = conn.execute(
+            "SELECT last, updated_at FROM stream_trades WHERE symbol = ?", (symbol.strip().upper(),)
+        ).fetchone()
+        if not row or row["last"] is None:
+            return None
+        if max_age_seconds is not None:
+            updated = row["updated_at"]
+            if updated is None or (time.time() - float(updated)) > max_age_seconds:
+                return None
+        return float(row["last"])
+    finally:
+        conn.close()
