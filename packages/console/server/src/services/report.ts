@@ -118,7 +118,41 @@ export interface SuiteReport {
   modules: Record<string, { net: number; trades: number; wins: number; losses: number }>;
 }
 
-export function buildSuiteReport(config: ConsoleConfig): SuiteReport {
+/**
+ * A fingerprint of the review's fact sets — how many there are, the newest write among them, and
+ * their combined size.
+ *
+ * Deliberately not the review directory's own mtime. A directory's timestamp moves when an entry is
+ * added or removed, not when an existing file's contents change, and the most important change here
+ * is exactly that: `review-provisional` writes `eod-<session>.json` after the close and
+ * `review-final` REWRITES the same path the next morning. Keying on the directory would serve the
+ * provisional numbers as though they were final, which is the one distinction that artifact exists
+ * to make.
+ *
+ * Size rides along because mtime has limited resolution: two writes inside the same millisecond are
+ * indistinguishable by time alone. The suite's own two writers are a scheduled evening job and a
+ * scheduled morning one, so that gap is hours wide in practice.
+ */
+function factSetStamp(config: ConsoleConfig): string {
+  let newest = 0;
+  let bytes = 0;
+  let count = 0;
+  for (const session of listSessions(config)) {
+    count += 1;
+    try {
+      const st = fs.statSync(path.join(config.paths.reviewDir, `eod-${session}.json`));
+      if (st.mtimeMs > newest) newest = st.mtimeMs;
+      bytes += st.size;
+    } catch {
+      /* a file listed then unreadable simply doesn't advance the stamp */
+    }
+  }
+  return `${count}:${newest}:${bytes}`;
+}
+
+let suiteReportCache: { stamp: string; report: SuiteReport } | null = null;
+
+export function buildSuiteReportUncached(config: ConsoleConfig): SuiteReport {
   // Reads the review's fact sets, NOT the ledgers.
   //
   // The per-schema net rules used to be implemented here, hand-copied from the orchestrator's
@@ -184,4 +218,18 @@ export function buildSuiteReport(config: ConsoleConfig): SuiteReport {
     daily,
     modules,
   };
+}
+
+/**
+ * The suite report, rebuilt only when the fact sets have actually moved.
+ *
+ * Every call used to read and parse every session's artifact, on an endpoint the page polls — work
+ * that grows with the suite's history and repeats an answer that changes twice a day.
+ */
+export function buildSuiteReport(config: ConsoleConfig): SuiteReport {
+  const stamp = factSetStamp(config);
+  if (suiteReportCache !== null && suiteReportCache.stamp === stamp) return suiteReportCache.report;
+  const report = buildSuiteReportUncached(config);
+  suiteReportCache = { stamp, report };
+  return report;
 }
