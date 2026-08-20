@@ -23,47 +23,14 @@ check.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from cherrypick.core import calendar as _cal
 
-try:
-    from zoneinfo import ZoneInfo
-
-    ET = ZoneInfo("America/New_York")
-except Exception:  # pragma: no cover - only where zoneinfo has no tz database
-    import pytz
-
-    ET = pytz.timezone("America/New_York")
-
-
-def now_et() -> datetime:
-    """Timezone-aware 'now' in Eastern."""
-    return datetime.now(ET)
-
-
-def now_iso() -> str:
-    """ET timestamp for persistence: seconds precision, offset included."""
-    return now_et().isoformat(timespec="seconds")
-
-
-def today_iso() -> str:
-    """Today's ET date — deliberately not the local date (a late-evening Pacific run is already
-    tomorrow in ET, which would file a session under the wrong day)."""
-    return now_et().date().isoformat()
-
-
-def minute_of_day(when: datetime) -> int:
-    return when.hour * 60 + when.minute
-
-
-def hhmm_to_min(value: str, default: int) -> int:
-    """A config 'HH:MM' as minutes-of-day, falling back rather than crashing on junk."""
-    try:
-        hours, minutes = str(value).split(":")
-        return int(hours) * 60 + int(minutes)
-    except (TypeError, ValueError, AttributeError):
-        return default
+# ET and the "what does now mean" primitives live in cherrypick.core.clock: four modules had written
+# the same functions and ~10 more sites re-derived the zone inline, which is how two of them come to
+# disagree about what date a session belongs to. The arithmetic BELOW is this module's own.
+from cherrypick.core.clock import ET, hhmm_to_min, minute_of_day, now_et, now_iso, today_iso  # noqa: F401
 
 
 # --------------------------------------------------------------------------- week anchors
