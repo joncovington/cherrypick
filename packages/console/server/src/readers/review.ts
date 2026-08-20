@@ -19,6 +19,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { ConsoleConfig } from "../config.js";
+import { num } from "./db.js";
 
 export interface ReviewArm {
   arm: string;
@@ -78,10 +79,6 @@ export interface ReviewPayload {
     netByModule: Record<string, number>;
     closedByModule: Record<string, number>;
   };
-}
-
-function num(v: unknown): number | null {
-  return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
 function rec(v: unknown): Record<string, unknown> {

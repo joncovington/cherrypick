@@ -8,7 +8,7 @@ import type {
   TradingMode,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { withReadOnlyDb, str } from "./db.js";
+import { readJson, str, withReadOnlyDb } from "./db.js";
 import { adviceDeclOf, type AdviceDecl } from "./adviceDecl.js";
 
 /**
@@ -87,14 +87,6 @@ function buildOverrides(
     });
   }
   return out;
-}
-
-function readJson(p: string): Record<string, unknown> | null {
-  try {
-    return JSON.parse(fs.readFileSync(p, "utf-8")) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
 }
 
 interface LedgerRow {

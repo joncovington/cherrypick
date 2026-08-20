@@ -1,14 +1,7 @@
 import fs from "node:fs";
 import type { OverviewPayload, WatchdogSnapshot, ServiceEntry } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-
-function readJson(p: string): Record<string, unknown> | null {
-  try {
-    return JSON.parse(fs.readFileSync(p, "utf-8")) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
+import { readJson } from "./db.js";
 
 function readWatchdog(path: string): WatchdogSnapshot {
   const raw = readJson(path);
