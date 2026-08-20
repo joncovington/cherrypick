@@ -23,6 +23,8 @@ from __future__ import annotations
 import os
 import sqlite3
 
+from cherrypick.core import db as _core_db
+
 from cherrypick.calendars import clock
 
 _SCHEMA = """
@@ -330,10 +332,19 @@ def _declared_columns(table: str) -> list[str]:
 
 
 def connect(db_path: str | None = None) -> sqlite3.Connection:
+    """Open the ledger. WAL + NORMAL, because this is a write path on a 30s tick.
+
+    It was running in SQLite's default rollback-journal mode, where every commit creates and deletes
+    a journal file and fsyncs twice — and the mark path commits per leg, so a tick pays that several
+    times over while the console reads the same file. WAL turns those into appends and stops readers
+    and the writer blocking each other. MEIC's ledger has been WAL since it was written and the
+    console reads it read-only without trouble, so this is the shape already proven in the suite
+    rather than a new bet.
+
+    NOT a measurement break: nothing about which rows get written, or their values, changes here.
+    """
     path = db_path or os.environ.get("CALENDARS_DB_PATH") or default_db_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
+    conn = _core_db.connect(path, pragmas=("journal_mode=WAL", "synchronous=NORMAL"))
     conn.executescript(_SCHEMA)
     _migrate(conn)
     return conn
