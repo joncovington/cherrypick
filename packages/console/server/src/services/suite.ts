@@ -9,14 +9,7 @@ import path from "node:path";
 import type { ConsoleConfig } from "../config.js";
 import { buildSuiteReport } from "./report.js";
 import { readModuleGate } from "./liveLock.js";
-
-function readJson(p: string): Record<string, unknown> | null {
-  try {
-    return JSON.parse(fs.readFileSync(p, "utf-8")) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
+import { readJson } from "../readers/db.js";
 
 export interface SystemPanel {
   timezone: string | null;

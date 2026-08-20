@@ -26,7 +26,7 @@ import type {
   AdvisorVerdict,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { withReadOnlyDb } from "./db.js";
+import { readJson, str, withReadOnlyDb } from "./db.js";
 
 /** The advisor's own slot order — chronological, not alphabetical. Mirrors
  * packages/advisor/src/cherrypick/advisor/factpack.py's LIGHT_SLOTS + DEEP_SLOT. */
@@ -41,18 +41,6 @@ function parse<T>(raw: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
-}
-
-function readJson(file: string): Record<string, unknown> | null {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf-8")) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-function str(v: unknown): string | null {
-  return typeof v === "string" ? v : null;
 }
 
 function dbPath(config: ConsoleConfig): string {

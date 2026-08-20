@@ -14,7 +14,7 @@ import type {
   PmccShortLeg,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { withReadOnlyDb, num, str, type DatabaseHandle } from "./db.js";
+import { num, obj, readJson, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
 
 /**
@@ -96,18 +96,6 @@ const DIVIDEND_WARN_DAYS = 14;
 
 function dbPath(config: ConsoleConfig): string {
   return path.join(config.paths.pmccDir, DB_FILE);
-}
-
-function readJson(p: string): Record<string, unknown> | null {
-  try {
-    return JSON.parse(fs.readFileSync(p, "utf-8")) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-function obj(v: unknown): Record<string, unknown> {
-  return typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
 }
 
 /**

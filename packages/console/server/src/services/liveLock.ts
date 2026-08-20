@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import type { ConsoleConfig } from "../config.js";
+import { readJson } from "../readers/db.js";
 
 /**
  * The live-lock read: the suite halt flag, each module's live gate, and flies' per-day arm record.
@@ -15,14 +16,6 @@ import type { ConsoleConfig } from "../config.js";
  * File-only and read-only, cheap enough for the page to poll. The one thing here that WRITES is not
  * here at all: the halt toggle goes through the orchestrator's `liveops.set_halt` via the bridge.
  */
-
-function readJson(p: string): Record<string, unknown> | null {
-  try {
-    return JSON.parse(fs.readFileSync(p, "utf-8")) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
 
 export interface ModuleGate {
   id: string;

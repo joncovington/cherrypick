@@ -11,7 +11,7 @@ import type {
   CalendarsWeekRow,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { withReadOnlyDb, num, str, type DatabaseHandle } from "./db.js";
+import { num, obj, readJson, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
 import { readCalendarsPlan } from "../services/calendarsBridge.js";
 
 /**
@@ -80,18 +80,6 @@ const KNOWN_COLUMNS: Record<string, string[]> = {
 
 function dbPath(config: ConsoleConfig): string {
   return path.join(config.paths.calendarsDir, DB_FILE);
-}
-
-function readJson(p: string): Record<string, unknown> | null {
-  try {
-    return JSON.parse(fs.readFileSync(p, "utf-8")) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-function obj(v: unknown): Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
 interface CalendarsParams {

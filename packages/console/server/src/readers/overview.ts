@@ -28,14 +28,7 @@ import type {
   MorningCalendar,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-
-function num(v: unknown): number | null {
-  return typeof v === "number" && Number.isFinite(v) ? v : null;
-}
-
-function str(v: unknown): string | null {
-  return typeof v === "string" ? v : null;
-}
+import { num, str } from "./db.js";
 
 function bool(v: unknown): boolean | null {
   return typeof v === "boolean" ? v : null;
