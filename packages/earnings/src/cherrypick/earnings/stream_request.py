@@ -55,7 +55,7 @@ LEG_QUERY = (
 
 def leg_sources(db_path: Path | None = None) -> list[dict]:
     """The producer's dynamic subscription spec for this module's open legs."""
-    return [{"db": str(db_path or _paths.paper_db_path()), "query": LEG_QUERY}]
+    return [_sr.leg_source(db_path or _paths.paper_db_path(), LEG_QUERY)]
 
 
 def write(symbols, db_path: Path | None = None) -> Path:
@@ -68,7 +68,4 @@ def register(symbols, db_path: Path | None = None) -> None:
     """Best-effort: declare the open positions' underlyings and the leg query. Never raises into the
     caller — registration is advisory, and a loop that refused to run because it could not write a
     request file would trade a data-quality problem for an outage."""
-    try:
-        write(symbols, db_path)
-    except Exception as exc:  # noqa: BLE001 — advisory, never fatal to the loop
-        _log.warning("stream request registration failed: %s", exc)
+    _sr.register_best_effort(write, symbols, db_path, log=_log)

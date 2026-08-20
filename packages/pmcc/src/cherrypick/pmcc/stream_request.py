@@ -72,14 +72,12 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
     today = today or clock.now_et().date()
     defaults = config.get("defaults") or {}
     leg_sources = [
-        {
-            "db": db_path,
-            "query": (
-                "SELECT l.streamer_symbol FROM pmcc_legs l JOIN pmcc_positions p "
-                "ON p.position_id = l.position_id "
-                "WHERE l.status = 'open' AND p.status != 'closed'"
-            ),
-        }
+        _sr.leg_source(
+            db_path,
+            "SELECT l.streamer_symbol FROM pmcc_legs l JOIN pmcc_positions p "
+            "ON p.position_id = l.position_id "
+            "WHERE l.status = 'open' AND p.status != 'closed'",
+        )
     ]
     hints = stream_window.hints_for_symbols(
         conn,
@@ -102,7 +100,4 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
 
 def register(config: dict, conn, db_path: str, *, cache_path: str) -> None:
     """Best-effort: never raises into the caller."""
-    try:
-        write(config, conn, db_path, cache_path=cache_path)
-    except Exception as exc:  # noqa: BLE001 — registration is advisory, never fatal to the loop
-        _log.warning("stream request registration failed: %s", exc)
+    _sr.register_best_effort(write, config, conn, db_path, cache_path=cache_path, log=_log)

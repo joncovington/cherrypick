@@ -52,15 +52,12 @@ def write(symbols) -> Path:
     return _sr.write_request(
         _MODULE,
         symbols,
-        leg_sources=[{"db": str(_paths.paper_db_path()), "query": _LEG_QUERY}],
+        leg_sources=[_sr.leg_source(_paths.paper_db_path(), _LEG_QUERY)],
     )
 
 
 def register(config: dict) -> None:
     """Best-effort: declare the configured ``symbols`` (and the paper ledger's open legs) to the
     streamer. Never raises into the caller."""
-    try:
-        symbols = config.get("symbols") or ([config["symbol"]] if config.get("symbol") else [])
-        write(symbols)
-    except Exception as exc:  # noqa: BLE001 — registration is advisory, never fatal to the loop
-        _log.warning("stream request registration failed: %s", exc)
+    symbols = config.get("symbols") or ([config["symbol"]] if config.get("symbol") else [])
+    _sr.register_best_effort(write, symbols, log=_log)
