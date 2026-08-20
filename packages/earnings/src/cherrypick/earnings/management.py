@@ -46,17 +46,21 @@ residual IV crush drains over three to five sessions; holding a LOSER fights pos
 which continues rather than mean-reverting. So the carry is gated on profitability, not on the
 verdict alone."""
 
-# Every strategy's evaluate_position, with the shape of its signature. The three shapes are real and
-# predate this module (only the strategies that can act on a first-of-day gap take the flag, and only
-# double_calendar has independently-closeable legs); normalising them here keeps that history in one
-# place instead of at every call site.
+# Every strategy's evaluate_position, as (module, takes_first_check_flag, takes_open_legs, takes_now).
+# The first three shapes are real and predate this module (only the strategies that can act on a
+# first-of-day gap take the flag, and only double_calendar has independently-closeable legs);
+# normalising them here keeps that history in one place instead of at every call site.
+#
+# `takes_now` marks the evaluators carrying a time-based rule — the credit strategies' backstop and
+# the calendars' front-expiration stop. They are handed the tick's own clock; broken_wing_butterfly
+# has no such rule and is not.
 _EVALUATORS = {
-    "iron_fly": (iron_fly, False, False),
-    "iron_condor": (iron_condor, False, False),
-    "directional_credit_spread": (directional_credit_spread, False, False),
-    "broken_wing_butterfly": (broken_wing_butterfly, True, False),
-    "atm_calendar": (atm_calendar, True, False),
-    "double_calendar": (double_calendar, True, True),
+    "iron_fly": (iron_fly, False, False, True),
+    "iron_condor": (iron_condor, False, False, True),
+    "directional_credit_spread": (directional_credit_spread, False, False, True),
+    "broken_wing_butterfly": (broken_wing_butterfly, True, False, False),
+    "atm_calendar": (atm_calendar, True, False, True),
+    "double_calendar": (double_calendar, True, True, True),
 }
 
 # Strategies entered the afternoon before an announcement and meant to be out once the crush is
@@ -197,18 +201,22 @@ def _pin_risk(trade: dict, legs: list[dict], spot: float | None, policy: dict, n
     return any(abs(strike - spot) <= policy["pin_guard_dollars"] for strike in short_strikes(legs))
 
 
-def _strategy_verdict(trade: dict, quotes: dict, config: dict, *, open_legs, is_first_check_of_day):
-    """Run the strategy's own evaluate_position, whatever shape its signature takes."""
-    module, takes_flag, takes_legs = _EVALUATORS[trade["strategy"]]
-    if takes_legs:
-        return module.evaluate_position(
-            dict(trade), open_legs or [], quotes, config, is_first_check_of_day=is_first_check_of_day
-        )
+def _strategy_verdict(trade: dict, quotes: dict, config: dict, *, open_legs, is_first_check_of_day, now):
+    """Run the strategy's own evaluate_position, whatever shape its signature takes.
+
+    `now` is threaded to every evaluator that has a time-based rule, so the clock those rules read is
+    the tick being evaluated rather than whenever the process happens to be running. They each still
+    default to the machine clock for callers outside this manager.
+    """
+    module, takes_flag, takes_legs, takes_now = _EVALUATORS[trade["strategy"]]
+    kwargs = {}
     if takes_flag:
-        return module.evaluate_position(
-            dict(trade), quotes, config, is_first_check_of_day=is_first_check_of_day
-        )
-    return module.evaluate_position(dict(trade), quotes, config)
+        kwargs["is_first_check_of_day"] = is_first_check_of_day
+    if takes_now:
+        kwargs["now"] = now
+    if takes_legs:
+        return module.evaluate_position(dict(trade), open_legs or [], quotes, config, **kwargs)
+    return module.evaluate_position(dict(trade), quotes, config, **kwargs)
 
 
 def evaluate(
@@ -249,6 +257,7 @@ def evaluate(
         strategy_config(strategy, config, policy),
         open_legs=open_legs,
         is_first_check_of_day=is_first_check_of_day,
+        now=now,
     )
     action = verdict.get("action", "hold")
     if action != "hold":

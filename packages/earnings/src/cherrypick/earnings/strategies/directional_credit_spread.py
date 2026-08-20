@@ -363,7 +363,7 @@ def fetch_directional_credit_spread_order(
         return {"ok": False, "error": str(exc)}
 
 
-def evaluate_position(position: dict, quotes: dict, config: dict) -> dict:
+def evaluate_position(position: dict, quotes: dict, config: dict, *, now=None) -> dict:
     """Decide whether to close an open directional credit spread position
     early (CLAUDE.md Step 3c) ahead of Step 3's unconditional close-window
     sweep. Identical pattern to iron_fly.py's/iron_condor.py's
@@ -378,7 +378,11 @@ def evaluate_position(position: dict, quotes: dict, config: dict) -> dict:
     # IV-CRUSH BACKSTOP: Close after 4 hours have elapsed since entry
     exit_after_announcement_minutes = config.get("exit_after_announcement_minutes", 240)
     if position.get("opened_at") is not None:
-        elapsed_minutes = (time.time() - position["opened_at"]) / 60.0
+        # The caller's clock when it supplies one. This is a decision rule, not a wall-clock
+        # reading: the manager already threads `now` through every other exit, and taking the
+        # time here instead made the rule untestable and wrong under any replay.
+        reference_ts = time.time() if now is None else now.timestamp()
+        elapsed_minutes = (reference_ts - position["opened_at"]) / 60.0
         if elapsed_minutes >= exit_after_announcement_minutes:
             return {"action": "close_all", "reason": "iv_crush_backstop"}
 

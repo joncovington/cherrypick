@@ -318,6 +318,8 @@ def evaluate_position(
     quotes: dict,
     config: dict,
     is_first_check_of_day: bool = False,
+    *,
+    now=None,
 ) -> dict:
     """Decide what (if anything) to do with an open atm_calendar position
     this tick. Pure calculation, no I/O -- callers fetch `quotes` (live
@@ -348,7 +350,11 @@ def evaluate_position(
     legs = json.loads(position["legs_json"])
 
     front_expiration = datetime.strptime(position["expiration"], "%Y-%m-%d").date()
-    days_to_front_expiration = (front_expiration - date.today()).days
+    # The caller's session date when it supplies one. Reading the machine's date here made
+    # the front-DTE stop depend on when the code happened to run rather than on the tick
+    # being evaluated.
+    today = date.today() if now is None else now.date()
+    days_to_front_expiration = (front_expiration - today).days
     if days_to_front_expiration <= cfg.get("exit_days_before_front_expiration", 5):
         return {"action": "close_all", "reason": "time_exit"}
 
