@@ -40,6 +40,7 @@ from cherrypick.core import advice as _core_advice  # bounded-advice validator
 from cherrypick.core import calendar as _cal  # shared NYSE trading-day calendar
 from cherrypick.core import home as _core_home  # the shared state dir
 from cherrypick.core import logs as _logs
+from cherrypick.core import looplock
 from cherrypick.core import viz as _viz  # the suite's one money formatter
 
 # One ET for the suite — see cherrypick.core.clock.
@@ -1032,19 +1033,7 @@ def _sleep_seconds(now, cfg, open_positions):
 # ---------------------------------------------------------------------------
 
 
-def _pid_alive(pid: int) -> bool:
-    try:
-        import psutil
-
-        return psutil.pid_exists(pid)
-    except ImportError:
-        try:
-            os.kill(pid, 0)
-            return True
-        except PermissionError:
-            return True
-        except (OSError, SystemError):
-            return False
+_pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch this name)
 
 
 def _running_pid():
@@ -1179,38 +1168,15 @@ def _loop():
 
 
 def _acquire_once_lock():
-    try:
-        fd = os.open(str(_LOCK_FILE), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.write(fd, str(os.getpid()).encode())
-        os.close(fd)
-        return True
-    except FileExistsError:
-        # A held-but-alive lock is NEVER stolen, regardless of age. Age-only staleness let a
-        # still-running-but-slow iteration (chiefly the 16:00 settlement pass, which can touch
-        # hundreds of open positions) get its lock stolen by the next --once at minute 3, so both
-        # processes settled the same trades concurrently -- P&L corruption, not a skipped tick.
-        # PID liveness is the primary guard; the age check below is only a fallback for a lock
-        # file whose PID can't be read (corrupt/truncated write), never a substitute for it.
-        try:
-            holder_pid = int(_LOCK_FILE.read_text().strip())
-        except (OSError, ValueError):
-            holder_pid = None
-        if holder_pid is not None and _pid_alive(holder_pid):
-            return False
-        try:
-            if holder_pid is not None or time.time() - os.path.getmtime(_LOCK_FILE) > 180:
-                os.unlink(_LOCK_FILE)
-                return _acquire_once_lock()
-        except OSError:
-            pass
-        return False
+    """The --once overlap guard. Two processes settling the same trades concurrently is P&L
+    corruption, not a skipped tick, which is why PID liveness is the primary guard and the age
+    check only a fallback for an unreadable lock file. Semantics live in
+    `cherrypick.core.looplock`; `_pid_alive` is passed so tests monkeypatching it still apply."""
+    return looplock.acquire(str(_LOCK_FILE), 180, alive=_pid_alive)
 
 
 def _release_once_lock():
-    try:
-        os.unlink(_LOCK_FILE)
-    except OSError:
-        pass
+    looplock.release(_LOCK_FILE)
 
 
 def _heartbeat_lock():

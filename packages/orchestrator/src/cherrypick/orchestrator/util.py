@@ -6,6 +6,8 @@ import json
 import os
 from typing import Any
 
+from cherrypick.core import looplock
+
 # Windows: launch a *console* child (schtasks, git, dolt, …) without popping a console window when the
 # parent is windowless (pythonw, as the scheduled tasks run). Pass as `subprocess.run(..., creationflags=
 # CREATE_NO_WINDOW)`. 0 elsewhere (the subprocess default), so the same call is cross-platform-safe.
@@ -101,72 +103,19 @@ def atomic_write_json(path, obj: Any) -> None:
     os.replace(tmp, path)
 
 
-def pid_alive(pid: int | None) -> bool:
-    """Is `pid` a live process? The probe chain the streamer/gex/flies daemons already settled on:
-    psutil, then the Win32 OpenProcess probe, then os.kill(pid, 0) as a last resort — never bare
-    os.kill first, which is unreliable on Windows (raises SystemError for some process states)."""
-    if not pid or pid <= 0:
-        return False
-    try:
-        import psutil  # type: ignore
-
-        return bool(psutil.pid_exists(pid))
-    except ImportError:
-        pass
-    try:
-        import ctypes
-
-        synchronize = 0x00100000
-        handle = ctypes.windll.kernel32.OpenProcess(synchronize, False, pid)
-        if handle:
-            ctypes.windll.kernel32.CloseHandle(handle)
-            return True
-        return False
-    except Exception:
-        try:
-            os.kill(pid, 0)
-            return True
-        except PermissionError:
-            return True
-        except (OSError, SystemError):
-            return False
+pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch this name)
 
 
 def acquire_pid_lock(path, stale_seconds: int = 180) -> bool:
     """Single-instance guard: O_EXCL-create `path` holding this process's PID.
 
-    Ports MEIC's `_acquire_once_lock` semantics (the P&L-corruption lesson): a held-but-ALIVE lock
-    is never stolen, regardless of age — PID liveness is the primary check, and the `stale_seconds`
-    mtime fallback applies only when the holder's PID can't be read (corrupt/truncated write) or the
-    holder is dead. Returns True when this process now holds the lock."""
-    import time as _time
-
-    path = str(path)
-    try:
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.write(fd, str(os.getpid()).encode())
-        os.close(fd)
-        return True
-    except FileExistsError:
-        try:
-            with open(path, encoding="utf-8") as fh:
-                holder_pid = int(fh.read().strip())
-        except (OSError, ValueError):
-            holder_pid = None
-        if holder_pid is not None and pid_alive(holder_pid):
-            return False
-        try:
-            if holder_pid is not None or _time.time() - os.path.getmtime(path) > stale_seconds:
-                os.unlink(path)
-                return acquire_pid_lock(path, stale_seconds)
-        except OSError:
-            pass
-        return False
+    Delegates to `cherrypick.core.looplock`, which carries MEIC's P&L-corruption lesson: a
+    held-but-ALIVE lock is never stolen regardless of age, and the mtime fallback applies only when
+    the holder is dead or unreadable. `pid_alive` is passed explicitly so tests monkeypatching this
+    module's name still govern the lock."""
+    return looplock.acquire(path, stale_seconds, alive=pid_alive)
 
 
 def release_pid_lock(path) -> None:
     """Release a lock taken by `acquire_pid_lock`. Best-effort; never raises."""
-    try:
-        os.unlink(str(path))
-    except OSError:
-        pass
+    looplock.release(path)

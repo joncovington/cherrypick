@@ -24,6 +24,7 @@ import sys
 import time
 from logging.handlers import RotatingFileHandler
 
+from cherrypick.core import looplock
 from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 from cherrypick.core.streamer import ChainStreamer
 
@@ -132,32 +133,7 @@ def _setup_logging(cfg: dict) -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
-def _pid_alive(pid: int) -> bool:
-    # os.kill(pid, 0) is unreliable on Windows (raises SystemError for some process states). Prefer
-    # psutil, then the Win32 OpenProcess probe, then os.kill as a last resort.
-    try:
-        import psutil  # type: ignore
-
-        return bool(psutil.pid_exists(pid))
-    except ImportError:
-        pass
-    try:
-        import ctypes
-
-        synchronize = 0x00100000
-        handle = ctypes.windll.kernel32.OpenProcess(synchronize, False, pid)
-        if handle:
-            ctypes.windll.kernel32.CloseHandle(handle)
-            return True
-        return False
-    except Exception:
-        try:
-            os.kill(pid, 0)
-            return True
-        except PermissionError:
-            return True
-        except (OSError, SystemError):
-            return False
+_pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch this name)
 
 
 def running_pid(cfg: dict) -> int | None:

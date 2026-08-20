@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 
 # One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core import looplock
 from cherrypick.core.clock import ET as _ET
 from cherrypick.core.gex import (
     compute_gex_profile,
@@ -149,23 +150,7 @@ def _recorder_pid_file(cfg: dict) -> Path:
     return Path(cfg["history_db_path"]).parent / "recorder.pid"
 
 
-def _pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    try:
-        if os.name == "nt":
-            import ctypes
-
-            SYNCHRONIZE = 0x00100000
-            h = ctypes.windll.kernel32.OpenProcess(SYNCHRONIZE, False, pid)
-            if h:
-                ctypes.windll.kernel32.CloseHandle(h)
-                return True
-            return False
-        os.kill(pid, 0)
-        return True
-    except (OSError, ProcessLookupError, ValueError):
-        return False
+_pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch this name)
 
 
 def _running_recorder_pid(cfg: dict) -> int | None:
