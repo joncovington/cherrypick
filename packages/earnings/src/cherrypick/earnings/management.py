@@ -27,7 +27,10 @@ import json
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from datetime import time as _time
-from zoneinfo import ZoneInfo
+
+# One ET for the suite — see cherrypick.core.clock. Re-exported: callers and tests read
+# `management.ET` rather than deriving their own.
+from cherrypick.core.clock import ET  # noqa: F401
 
 from cherrypick.earnings import scanner
 from cherrypick.earnings.strategies import (
@@ -38,8 +41,6 @@ from cherrypick.earnings.strategies import (
     iron_condor,
     iron_fly,
 )
-
-ET = ZoneInfo("America/New_York")
 
 _HOLD_NOTE = """Holding a winner past the first morning is worth roughly +1.4pp on average as the
 residual IV crush drains over three to five sessions; holding a LOSER fights post-earnings drift,

@@ -7,17 +7,17 @@ A fixture with day_close set would test a cache that does not exist.
 """
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from cherrypick.overview import facts, paths
 
 SESSION = "2026-08-17"
 PRIOR = "2026-08-14"
-NOW = datetime(2026, 8, 17, 12, 30, tzinfo=timezone.utc)  # 08:30 ET on the Monday
+NOW = datetime(2026, 8, 17, 12, 30, tzinfo=UTC)  # 08:30 ET on the Monday
 NOW_TS = NOW.timestamp()
 
 # 20:00 UTC on Friday 2026-08-14 -- a last trade stamped at that session's close.
-FRIDAY_CLOSE_TS = datetime(2026, 8, 14, 20, 0, tzinfo=timezone.utc).timestamp()
+FRIDAY_CLOSE_TS = datetime(2026, 8, 14, 20, 0, tzinfo=UTC).timestamp()
 
 
 def _make_cache(rows_summary=(), rows_trades=()):

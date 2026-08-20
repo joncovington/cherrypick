@@ -37,9 +37,11 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from cherrypick.core import streamcache
+
+# One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core.clock import ET as _ET
 
 _RECONNECT_BASE = 2.0
 _RECONNECT_MAX = 60.0
@@ -61,7 +63,6 @@ _HISTORY_MAX_WAIT_S = 90.0
 # quiet stretch puts the file back on the floor for the rest of the day.
 _WAL_CHECKPOINT_INTERVAL_S = 300.0
 
-_ET = ZoneInfo("America/New_York")
 
 
 def _et_date(ts: float) -> str:

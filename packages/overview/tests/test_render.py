@@ -1,11 +1,11 @@
 """The render prints what the pack says -- dashes for unmeasured, prior labels for prior."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from cherrypick.overview import facts, render
 
 SESSION = "2026-08-17"
-NOW = datetime(2026, 8, 17, 12, 30, tzinfo=timezone.utc)
+NOW = datetime(2026, 8, 17, 12, 30, tzinfo=UTC)
 
 
 def test_render_of_missing_pack_is_none():

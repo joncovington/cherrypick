@@ -26,12 +26,14 @@ VIX fallback only) MEIC's ``market_context`` table. Writes only into overview's 
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from cherrypick.core import calendar as _calendar
 from cherrypick.core import db as _db
+
+# One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core.clock import ET as _ET
 
 from . import gates as _gates
 from . import paths as _paths
@@ -48,7 +50,6 @@ PACK = "overview.morning"
 # suite actually runs against an 08:30 build without ever accepting yesterday's close as a live tick.
 FRESH_QUOTE_SECONDS = 2 * 3600
 
-_ET = ZoneInfo("America/New_York")
 
 
 def default_session(now: datetime | None = None) -> str:
@@ -65,7 +66,7 @@ def _iso(ts: float | None) -> str | None:
     if not isinstance(ts, (int, float)):
         return None
     try:
-        return datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(float(ts), tz=UTC).isoformat()
     except (OverflowError, OSError, ValueError):
         return None
 
@@ -309,7 +310,7 @@ def _calendar_block(session: str) -> dict:
 
 def build(session: str | None = None, now: datetime | None = None) -> dict:
     session = session or default_session(now)
-    now = now or datetime.now(tz=timezone.utc)
+    now = now or datetime.now(tz=UTC)
     now_ts = now.timestamp()
 
     try:
@@ -358,7 +359,7 @@ def build(session: str | None = None, now: datetime | None = None) -> dict:
         "pack": PACK,
         "fact_version": FACT_VERSION,
         "session": session,
-        "generated_at": now.astimezone(timezone.utc).isoformat(),
+        "generated_at": now.astimezone(UTC).isoformat(),
         "readings": readings,
         "levels": levels,
         "sectors": sectors,

@@ -48,11 +48,11 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from cherrypick.core import home as _home
 
-_ET = ZoneInfo("America/New_York")
+# One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core.clock import ET as _ET
 
 
 def requests_dir() -> Path:

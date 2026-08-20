@@ -14,9 +14,10 @@ so this writes through the engine's own cache connection with no schema change.
 from __future__ import annotations
 
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
-_ET = ZoneInfo("America/New_York")
+# One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core.clock import ET as _ET
+
 _WINDOW_OPEN_H, _WINDOW_OPEN_M = 9, 30
 _WINDOW_CLOSE_H, _WINDOW_CLOSE_M = 9, 35
 

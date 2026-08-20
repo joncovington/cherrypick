@@ -14,8 +14,9 @@ import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
+# One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core.clock import ET as _ET
 from cherrypick.core.gex import (
     compute_gex_profile,
     nearest_zero_gamma,
@@ -24,8 +25,6 @@ from cherrypick.core.gex import (
 )
 
 from cherrypick.gex import provider as _provider
-
-_ET = ZoneInfo("America/New_York")
 
 
 def _today() -> str:
