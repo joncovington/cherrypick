@@ -14,6 +14,8 @@ import json
 import os
 import sqlite3
 
+from cherrypick.core import db as _core_db
+
 from cherrypick.flies import clock  # noqa: E402
 
 _SCHEMA = """
@@ -499,10 +501,19 @@ def stale_writer_columns(conn: sqlite3.Connection) -> list[str]:
 
 
 def connect(db_path: str | None = None) -> sqlite3.Connection:
+    """Open the ledger. WAL + NORMAL, because this is the suite's busiest write path.
+
+    It was running in SQLite's default rollback-journal mode, where every commit creates and deletes
+    a journal file and fsyncs twice — while this loop ticks every 15 seconds and writes per-arm
+    telemetry on each one. The ledger holds 125k iteration rows and 97k entry attempts accumulated
+    that way, and the console reads the same file throughout the session, so writer and reader block
+    each other for the whole of it. MEIC's ledger has been WAL since it was written and is read
+    read-only by the console without trouble.
+
+    NOT a measurement break: nothing about which rows are written, or their values, changes here.
+    """
     path = db_path or os.environ.get("FLIES_DB_PATH") or default_db_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
+    conn = _core_db.connect(path, pragmas=("journal_mode=WAL", "synchronous=NORMAL"))
     conn.executescript(_SCHEMA)
     _migrate(conn)
     return conn
