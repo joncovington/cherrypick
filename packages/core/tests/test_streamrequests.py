@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from datetime import date
 
+import pytest
+
 from cherrypick.core import streamrequests
 
 
@@ -131,3 +133,79 @@ def test_subscription_snapshot_excludes_expirations(tmp_path, monkeypatch):
     # Expirations are served dynamically (re-read every window pass) and roll forward weekly by
     # design — like legs/leg_sources they must never look like a reason to recycle the producer.
     assert streamrequests.subscription_snapshot() == {"symbols": ["SPX"], "window_hints": {}}
+
+
+# --------------------------------------------------------------------------- leg_source / validation
+
+
+def test_leg_source_builds_the_producer_contract():
+    src = streamrequests.leg_source("/tmp/x.db", "SELECT streamer_symbol FROM legs")
+    assert src == {"db": "/tmp/x.db", "query": "SELECT streamer_symbol FROM legs"}
+
+
+def test_leg_source_coerces_a_path_to_str():
+    from pathlib import Path
+
+    src = streamrequests.leg_source(Path("/tmp/x.db"), "SELECT 1")
+    assert isinstance(src["db"], str)
+
+
+@pytest.mark.parametrize(
+    "db, query",
+    [("", "SELECT 1"), ("/tmp/x.db", ""), ("/tmp/x.db", "   "), ("/tmp/x.db", None)],
+)
+def test_leg_source_refuses_empty_parts(db, query):
+    with pytest.raises(ValueError):
+        streamrequests.leg_source(db, query)
+
+
+def test_a_mistyped_leg_source_key_raises_instead_of_subscribing_nothing(tmp_path, monkeypatch):
+    """The silent failure this validation exists to prevent.
+
+    The producer skips any spec without string db/query keys, so {"database":..., "sql":...} used to
+    write a request file that looked entirely healthy and subscribed NO legs -- every open position
+    quietly stops being quoted, with no error anywhere. Failing on the write side puts the error at
+    the mistake.
+    """
+    monkeypatch.setattr(streamrequests, "requests_dir", lambda: tmp_path)
+    with pytest.raises(ValueError) as excinfo:
+        streamrequests.write_request("mod", ["SPX"], leg_sources=[{"database": "x", "sql": "SELECT 1"}])
+    assert "db" in str(excinfo.value) and "query" in str(excinfo.value)
+    assert not (tmp_path / "mod.json").exists(), "no request file should be written"
+
+
+def test_write_request_accepts_specs_built_by_leg_source(tmp_path, monkeypatch):
+    monkeypatch.setattr(streamrequests, "requests_dir", lambda: tmp_path)
+    path = streamrequests.write_request(
+        "mod", ["SPX"], leg_sources=[streamrequests.leg_source("/tmp/x.db", "SELECT 1")]
+    )
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["leg_sources"] == [{"db": "/tmp/x.db", "query": "SELECT 1"}]
+
+
+# --------------------------------------------------------------------------- register_best_effort
+
+
+def test_register_best_effort_returns_the_write_result():
+    assert streamrequests.register_best_effort(lambda a, b=None: (a, b), 1, b=2) == (1, 2)
+
+
+def test_register_best_effort_swallows_and_logs(caplog):
+    """The contract seven modules each stated in prose: a failed registration must never be fatal.
+
+    A loop that refused to run because it could not write a request file would trade a
+    data-quality problem for an outage.
+    """
+    def boom():
+        raise OSError("disk gone")
+
+    with caplog.at_level("WARNING"):
+        assert streamrequests.register_best_effort(boom) is None
+    assert "disk gone" in caplog.text
+
+
+def test_register_best_effort_swallows_even_a_bare_exception():
+    def boom():
+        raise RuntimeError("anything at all")
+
+    assert streamrequests.register_best_effort(boom) is None

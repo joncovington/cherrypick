@@ -46,6 +46,7 @@ Payload shape (see ``packages/streamer/src/registry.py``, the reader):
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date, datetime
 from pathlib import Path
 
@@ -53,6 +54,8 @@ from cherrypick.core import home as _home
 
 # One ET for the suite — see cherrypick.core.clock.
 from cherrypick.core.clock import ET as _ET
+
+_log = logging.getLogger(__name__)
 
 
 def requests_dir() -> Path:
@@ -117,6 +120,59 @@ def clean_expirations(expirations) -> dict[str, list[str]]:
     return out
 
 
+def leg_source(db, query: str) -> dict:
+    """One `leg_sources` spec: the DB the producer opens read-only and the SELECT it re-runs.
+
+    A builder rather than a dict literal because the KEY NAMES are a contract with the producer and
+    getting one wrong fails silently in the worst possible direction. The reader skips any spec
+    without string ``db``/``query`` keys, so ``{"database": ..., "sql": ...}`` writes a request file
+    that looks entirely healthy and subscribes NO legs — every open position quietly stops being
+    quoted. Building the dict in one place makes that typo impossible to write.
+    """
+    db = str(db)
+    if not db:
+        raise ValueError("leg_source needs a db path")
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("leg_source needs a non-empty query string")
+    return {"db": db, "query": query}
+
+
+def clean_leg_sources(leg_sources) -> list[dict]:
+    """Validate `leg_sources` on the WRITE side, where the mistake is.
+
+    Raises rather than dropping: a malformed spec is a coding error, not a data condition, and
+    dropping it is exactly the silent no-subscription this is here to prevent. The producer still
+    skips bad specs defensively on its own side — a request file it did not write can be anything.
+    """
+    out: list[dict] = []
+    for source in leg_sources or ():
+        if not isinstance(source, dict):
+            raise ValueError(f"leg_sources entries must be dicts, got {type(source).__name__}")
+        missing = [k for k in ("db", "query") if not isinstance(source.get(k), str) or not source[k].strip()]
+        if missing:
+            raise ValueError(
+                f"leg_source is missing required string key(s) {missing}; "
+                f"got keys {sorted(source)} — build these with streamrequests.leg_source()"
+            )
+        out.append({"db": source["db"], "query": source["query"]})
+    return out
+
+
+def register_best_effort(write, *args, log=None, **kwargs):
+    """Run a module's `write(...)` and swallow anything it raises. Returns its result, or None.
+
+    Every module's `register()` adapter had its own copy of this try/except. The contract they each
+    stated in prose — "never raises into the caller" — is the load-bearing part: a loop that refused
+    to run because it could not write a request file would trade a data-quality problem for an
+    outage. One implementation makes that contract testable once instead of asserted seven times.
+    """
+    try:
+        return write(*args, **kwargs)
+    except Exception as exc:  # noqa: BLE001 — registration is advisory, never fatal to a caller
+        (log or _log).warning("stream request registration failed: %s", exc)
+        return None
+
+
 def write_request(
     module: str, symbols, legs=(), leg_sources=(), window_hints=None, expirations=None, history_days=None
 ) -> Path:
@@ -130,7 +186,7 @@ def write_request(
     payload = {
         "symbols": clean_symbols(symbols),
         "legs": [str(leg) for leg in legs],
-        "leg_sources": [dict(source) for source in leg_sources],
+        "leg_sources": clean_leg_sources(leg_sources),
         "window_hints": clean_window_hints(window_hints),
         "expirations": clean_expirations(expirations),
         "history_days": clean_history_days(history_days),

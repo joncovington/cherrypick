@@ -32,7 +32,4 @@ def write(symbols) -> Path:
 
 def register(config: dict) -> None:
     """Best-effort: declare the configured ``symbols`` to the streamer. Never raises into the caller."""
-    try:
-        write(config.get("symbols") or [])
-    except Exception as exc:  # noqa: BLE001 — registration is advisory, never fatal to a read
-        _log.warning("stream request registration failed: %s", exc)
+    _sr.register_best_effort(write, config.get("symbols") or [], log=_log)
