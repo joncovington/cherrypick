@@ -32,6 +32,56 @@ def test_connect_sets_a_busy_timeout(tmp_path):
     conn.close()
 
 
+def test_connect_bounds_the_wal_size(tmp_path):
+    conn = streamcache.connect(tmp_path / "sc.db")
+    limit = conn.execute("PRAGMA journal_size_limit").fetchone()[0]
+    assert limit == streamcache.JOURNAL_SIZE_LIMIT_BYTES
+    conn.close()
+
+
+def test_checkpoint_resets_a_grown_wal(tmp_path):
+    """The automatic checkpoint copies pages out but cannot truncate the file while a reader holds
+    frames, and this cache always has one — so the WAL reached 98MB against a 49MB database. An
+    explicit TRUNCATE checkpoint is what puts it back on the floor."""
+    db = tmp_path / "sc.db"
+    conn = streamcache.connect(db)
+    for i in range(4000):
+        streamcache.upsert_status(conn, last_event_at=f"2026-08-20T00:00:{i % 60:02d}")
+    wal = db.with_name(db.name + "-wal")
+    grown = wal.stat().st_size
+    assert grown > 0
+
+    reset, reclaimed = streamcache.checkpoint(conn)
+
+    assert reset is True
+    assert reclaimed > 0, "a successful TRUNCATE must report the bytes it gave back"
+    assert wal.stat().st_size < grown
+    conn.close()
+
+
+def test_checkpoint_is_best_effort_under_contention(tmp_path):
+    """A reader mid-transaction is the ordinary case during a session. The attempt must give up
+    quietly and leave the connection usable rather than raise into the stream's task group, and it
+    must restore the writer's own busy timeout on the way out."""
+    db = tmp_path / "sc.db"
+    conn = streamcache.connect(db)
+    streamcache.upsert_status(conn, last_event_at="2026-08-20T00:00:00")
+
+    reader = sqlite3.connect(str(db))
+    reader.execute("BEGIN")
+    reader.execute("SELECT * FROM stream_status").fetchall()
+    try:
+        reset, reclaimed = streamcache.checkpoint(conn)  # must not raise
+        assert reclaimed >= 0
+        assert reset in (True, False)
+    finally:
+        reader.close()
+
+    assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == streamcache.BUSY_TIMEOUT_MS
+    streamcache.upsert_status(conn, last_event_at="2026-08-20T00:00:01")  # still usable
+    conn.close()
+
+
 def test_a_contended_write_waits_instead_of_raising(tmp_path):
     """The 2026-08-17 failure in one test: with SQLite's default timeout of 0, a write attempted
     while another connection holds the lock raises `database is locked` immediately. The producer's

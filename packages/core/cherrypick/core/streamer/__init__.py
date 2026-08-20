@@ -56,6 +56,10 @@ _EXTRA_CHAIN_REFETCH_COOLDOWN_S = 900.0
 # collector stops after a quiet gap once anything has arrived, bounded by a hard deadline either way.
 _HISTORY_QUIET_GAP_S = 5.0
 _HISTORY_MAX_WAIT_S = 90.0
+# How often to try resetting the WAL. Slow on purpose: an attempt only succeeds when readers happen
+# to leave a gap, so this is a standing offer rather than a schedule to keep, and one success in a
+# quiet stretch puts the file back on the floor for the rest of the day.
+_WAL_CHECKPOINT_INTERVAL_S = 300.0
 
 _ET = ZoneInfo("America/New_York")
 
@@ -178,6 +182,7 @@ class ChainStreamer:
                 tg.create_task(self._listen_summary(streamer, state, Summary))
                 tg.create_task(self._poll_subscriptions(streamer, state, Trade, Quote, Greeks, Summary))
                 tg.create_task(self._flush_status(state))
+                tg.create_task(self._checkpoint_wal(state))
                 tg.create_task(self._watch_stop(state))
                 if self._history_days_for is not None:
                     tg.create_task(self._backfill_history(streamer, state, Candle))
@@ -778,6 +783,25 @@ class ChainStreamer:
                     streamcache.upsert_status(state.conn, last_event_at=state.last_event_at)
                 except Exception:
                     pass
+
+    async def _checkpoint_wal(self, state: _State) -> None:
+        """Keep the cache's write-ahead log from growing without bound.
+
+        Nothing else ever resets it: SQLite's automatic checkpoint cannot truncate the file while a
+        reader still holds frames, and this cache is read continuously all session. Each attempt is
+        bounded (see streamcache.CHECKPOINT_BUSY_TIMEOUT_MS) and swallows everything, because this
+        coroutine shares the stream's task group — the 2026-08-17 outage was a housekeeping write
+        raising in here and taking the DXLink connection down with it."""
+        while not state.stop_event.is_set():
+            await asyncio.sleep(_WAL_CHECKPOINT_INTERVAL_S)
+            if state.stop_event.is_set():
+                return
+            try:
+                reset, reclaimed = streamcache.checkpoint(state.conn)
+                if reset and reclaimed:
+                    self.log.info("WAL checkpoint reclaimed %.1f MB", reclaimed / 1048576)
+            except Exception:
+                pass
 
     async def _watch_stop(self, state: _State) -> None:
         await state.stop_event.wait()

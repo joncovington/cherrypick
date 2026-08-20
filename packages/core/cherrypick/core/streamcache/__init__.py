@@ -134,6 +134,61 @@ def to_float(value) -> float | None:
 # that would rather fail fast than block should not be sharing a cache with a daemon.
 BUSY_TIMEOUT_MS = 5000
 
+# How large the WAL may stay after a checkpoint resets it. In WAL mode SQLite's automatic checkpoint
+# copies pages into the database but can only RESET the file when no reader still needs the frames it
+# holds — and this cache always has a reader (the console polls it every few seconds, every module
+# provider on its own tick). So the automatic path quietly degraded to copy-but-never-truncate and the
+# WAL reached 98MB against a 49MB database, which every reader then had to walk.
+#
+# The limit alone fixes nothing: it applies when a checkpoint resets the journal, so it needs
+# `checkpoint()` below to actually get one through. 16MB leaves room for the history-backfill burst to
+# run without thrashing the file size, while bounding the steady state well under the database.
+JOURNAL_SIZE_LIMIT_BYTES = 16 * 1024 * 1024
+
+# What a checkpoint attempt is allowed to wait for readers before giving up. Deliberately far below
+# BUSY_TIMEOUT_MS: the producer runs one event loop over one connection, so a checkpoint that blocks
+# is a checkpoint that stalls the DXLink listeners with it. A contended attempt should cost a
+# quarter-second and be retried on the next cadence, not hold the loop for five seconds.
+CHECKPOINT_BUSY_TIMEOUT_MS = 250
+
+
+def _wal_size(conn: sqlite3.Connection) -> int:
+    """Bytes currently held by this connection's write-ahead log (0 if absent/unreadable)."""
+    try:
+        for _seq, name, filename in conn.execute("PRAGMA database_list"):
+            if name == "main" and filename:
+                wal = Path(filename + "-wal")
+                return wal.stat().st_size if wal.exists() else 0
+    except Exception:
+        pass
+    return 0
+
+
+def checkpoint(conn: sqlite3.Connection) -> tuple[bool, int]:
+    """Best-effort `wal_checkpoint(TRUNCATE)`. Returns (reset, reclaimed_bytes).
+
+    Never raises and never blocks for long — see CHECKPOINT_BUSY_TIMEOUT_MS. A busy result is the
+    ordinary case while readers are active and means "try again next time", not a failure: one
+    success in a quiet stretch is enough to put the WAL back on the floor, which is why the caller
+    can run this on a slow cadence and ignore the result.
+
+    Reclaimed bytes are measured off the file rather than taken from the pragma's own counters: a
+    successful TRUNCATE reports zero pages checkpointed precisely BECAUSE it reset the log, so those
+    counters cannot tell a no-op apart from the case worth logging."""
+    before = _wal_size(conn)
+    try:
+        conn.execute(f"PRAGMA busy_timeout={CHECKPOINT_BUSY_TIMEOUT_MS}")
+        try:
+            row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        finally:
+            conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+    except Exception:
+        return (False, 0)
+    if not row:
+        return (False, 0)
+    reset = row[0] == 0
+    return (reset, max(0, before - _wal_size(conn)) if reset else 0)
+
 
 def connect(db_path: Path | str) -> sqlite3.Connection:
     """Open (creating + migrating) the write-side cache. WAL + NORMAL for a daemon that commits often
@@ -147,6 +202,7 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+    conn.execute(f"PRAGMA journal_size_limit={JOURNAL_SIZE_LIMIT_BYTES}")
     for stmt in DDL.split(";"):
         s = stmt.strip()
         if s:
