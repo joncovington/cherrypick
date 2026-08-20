@@ -11,7 +11,7 @@ assert the rules that replace that sweep — and, as much, the ones that must NO
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -174,23 +174,54 @@ def test_the_four_hour_backstop_cannot_preempt_a_multi_day_hold():
     """18 hours pass between a 15:45 entry and the first morning mark. Left at its 240-minute
     default the backstop would fire on every position before any management rule was reached, and
     multi-day holds would be unreachable — so the policy injects a value past any hold it could
-    preempt."""
-    import time
+    preempt.
 
+    Both times are taken from the tick being evaluated. Reading the machine clock here measured the
+    gap between the fixture and whenever the suite happened to run, which is how the policy's
+    ten-day ceiling was silently overshot and this rule looked unreachable."""
+    now = at("10:00")
     t = trade()
-    t["opened_at"] = time.time() - 18 * 3600
-    assert evaluate(t, snapshot(4.50)).action == "hold"
+    t["opened_at"] = (now - timedelta(hours=18)).timestamp()
+    assert evaluate(t, snapshot(4.50), now=now).action == "hold"
 
 
 def test_lowering_the_backstop_re_enables_a_same_session_close():
     """It is superseded, not deleted — a shorter hold is still expressible."""
-    import time
-
+    now = at("10:00")
     t = trade()
-    t["opened_at"] = time.time() - 5 * 3600
+    t["opened_at"] = (now - timedelta(hours=5)).timestamp()
     config = {**CONFIG, "management": {"exit_after_announcement_minutes": 240}}
-    decision = evaluate(t, snapshot(4.50), config=config)
+    decision = evaluate(t, snapshot(4.50), now=now, config=config)
     assert decision.action == "close_all" and decision.reason == "iv_crush_backstop"
+
+
+def test_the_time_rules_follow_the_tick_and_not_the_machine_clock():
+    """The same position, evaluated at two different moments, must decide differently.
+
+    A rule that reads the machine clock answers identically whatever tick it is handed, so this is
+    what separates the two. It is not hypothetical: the front-DTE stop and the four-hour backstop
+    both did, which made one of them fire or not depending on what day the suite happened to run,
+    and hid a real defect behind a test that passed most days.
+    """
+    # The calendars' front-expiration stop: five days out holds, two days out closes.
+    cal_config = {
+        "strategies": {"atm_calendar": {"profit_target_pct": 0.15, "exit_days_before_front_expiration": 5}},
+        "management": {},
+    }
+    cal = trade("atm_calendar", credit=-3.0, expiration="2026-08-21")
+    assert evaluate(cal, snapshot(-3.2), now=at("10:00", "2026-08-12"), config=cal_config).action == "hold"
+    late = evaluate(cal, snapshot(-3.2), now=at("10:00", "2026-08-19"), config=cal_config)
+    assert late.action == "close_all" and late.reason == "time_exit"
+
+    # The credit strategies' post-announcement backstop, at a 240-minute setting.
+    fly_config = {**CONFIG, "management": {"exit_after_announcement_minutes": 240}}
+    entry = at("15:45", "2026-08-11")
+    fly = trade()
+    fly["opened_at"] = entry.timestamp()
+    early = evaluate(fly, snapshot(4.50), now=entry + timedelta(hours=1), config=fly_config)
+    assert early.action == "hold"
+    later = evaluate(fly, snapshot(4.50), now=entry + timedelta(hours=5), config=fly_config)
+    assert later.action == "close_all" and later.reason == "iv_crush_backstop"
 
 
 # --------------------------------------------------------------------------- the pin guard

@@ -326,7 +326,7 @@ def fetch_iron_fly_order(symbol: str, earnings_date: date, earnings_timing: str,
         return {"ok": False, "error": str(exc)}
 
 
-def evaluate_position(position: dict, quotes: dict, config: dict) -> dict:
+def evaluate_position(position: dict, quotes: dict, config: dict, *, now=None) -> dict:
     """Decide whether to close an open iron fly position early (CLAUDE.md
     Step 3c, the narrow market-open-to-close-window slot) ahead of Step 3's
     unconditional close-window sweep, which remains the final backstop
@@ -350,7 +350,11 @@ def evaluate_position(position: dict, quotes: dict, config: dict) -> dict:
     # (post-IV-crush window has passed, further holding adds directional risk)
     exit_after_announcement_minutes = config.get("exit_after_announcement_minutes", 240)
     if position.get("opened_at") is not None:
-        elapsed_minutes = (time.time() - position["opened_at"]) / 60.0
+        # The caller's clock when it supplies one. This is a decision rule, not a wall-clock
+        # reading: the manager already threads `now` through every other exit, and taking the
+        # time here instead made the rule untestable and wrong under any replay.
+        reference_ts = time.time() if now is None else now.timestamp()
+        elapsed_minutes = (reference_ts - position["opened_at"]) / 60.0
         if elapsed_minutes >= exit_after_announcement_minutes:
             return {"action": "close_all", "reason": "iv_crush_backstop"}
 
