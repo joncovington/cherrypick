@@ -1388,3 +1388,59 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
     return { mode, today, byArm, feeDrag };
   });
 }
+
+// ── Loop freshness ──────────────────────────────────────────────────────────
+
+export interface FliesLoopStatus {
+  /** LIVE while the loop has written an iteration inside its own tick window, else IDLE. */
+  state: "live" | "idle" | "no-data";
+  lastIterationAt: string | null;
+  ageSeconds: number | null;
+  symbol: string | null;
+  arm: string | null;
+  underlyingPrice: number | null;
+}
+
+/**
+ * Is the flies loop actually running?
+ *
+ * `fly_iterations` is the right source rather than the ledger: it records what every arm WANTED on
+ * each tick, so it advances on a quiet market where positions and books do not, which is exactly
+ * when "is this thing alive" is worth asking. The window is 120s against a 15s tick — several
+ * cadences wide, so one slow pass is never reported as a stall.
+ */
+export function readFliesLoopStatus(config: ConsoleConfig, mode: TradingMode): FliesLoopStatus {
+  const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.fliesDir, file);
+  const empty: FliesLoopStatus = {
+    state: "no-data",
+    lastIterationAt: null,
+    ageSeconds: null,
+    symbol: null,
+    arm: null,
+    underlyingPrice: null,
+  };
+  return withReadOnlyDb<FliesLoopStatus>(dbPath, empty, (db) => {
+    const r = db
+      .prepare<[], Record<string, unknown>>(
+        `SELECT iteration_ts, symbol, arm, underlying_price
+           FROM fly_iterations ORDER BY id DESC LIMIT 1`,
+      )
+      .get();
+    if (r === undefined) return empty;
+    const lastIterationAt = str(r["iteration_ts"]);
+    let ageSeconds: number | null = null;
+    if (lastIterationAt !== null) {
+      const t = Date.parse(lastIterationAt.includes("T") ? lastIterationAt : lastIterationAt.replace(" ", "T"));
+      if (!Number.isNaN(t)) ageSeconds = Math.max(0, (Date.now() - t) / 1000);
+    }
+    return {
+      state: ageSeconds !== null && ageSeconds < 120 ? "live" : "idle",
+      lastIterationAt,
+      ageSeconds,
+      symbol: str(r["symbol"]),
+      arm: str(r["arm"]),
+      underlyingPrice: num(r["underlying_price"]),
+    };
+  });
+}
