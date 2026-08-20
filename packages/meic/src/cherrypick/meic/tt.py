@@ -38,6 +38,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 from cherrypick.core import broker as _broker
 from cherrypick.core import dxfeed as _dx
 
+# One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core.clock import ET as _ET
+
 from cherrypick.meic import credentials as _creds
 from cherrypick.meic import gex_math
 from cherrypick.meic import paths as _paths
@@ -1246,16 +1249,8 @@ def cmd_get_orb_range(args) -> dict:
     """Read the day's ORB (Opening Range Breakout) high/low, captured by the streamer
     from live Trade events during 9:30-9:35 ET (see streamer.py's _track_orb) rather than
     by the AI loop's own iterations, which aren't guaranteed to land inside that window."""
-    try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
-        from zoneinfo import ZoneInfo
-
-        _et = ZoneInfo("America/New_York")
-    except Exception:  # pragma: no cover - only where zoneinfo has no tz database
-        import pytz
-
-        _et = pytz.timezone("America/New_York")
     symbol = args.symbol.strip().upper()
-    et_today = datetime.now(_et).strftime("%Y-%m-%d")
+    et_today = datetime.now(_ET).strftime("%Y-%m-%d")
     conn = _cache_conn()
     if conn is None:
         return {"ok": False, "error": "stream cache not found — is the streamer running?"}
@@ -1281,15 +1276,7 @@ def cmd_get_orb_range(args) -> dict:
 
 
 def _et_today() -> str:
-    try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
-        from zoneinfo import ZoneInfo
-
-        _et = ZoneInfo("America/New_York")
-    except Exception:  # pragma: no cover - only where zoneinfo has no tz database
-        import pytz
-
-        _et = pytz.timezone("America/New_York")
-    return datetime.now(_et).strftime("%Y-%m-%d")
+    return datetime.now(_ET).strftime("%Y-%m-%d")
 
 
 def _true_ranges(rows) -> list[float]:

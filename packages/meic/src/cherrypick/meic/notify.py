@@ -7,6 +7,9 @@ import sys
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(__file__))  # so `import paths` resolves when run as a script
+# One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core.clock import ET as _ET  # noqa: E402
+
 from cherrypick.meic import (
     paths as _paths,  # noqa: E402  (logs-home resolution: ~/.cherrypick/logs/meic or MEIC_LOGS_DIR)
 )
@@ -39,15 +42,9 @@ def _rotate_if_needed():
 
 
 def _now_iso():
-    try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
-        from zoneinfo import ZoneInfo
-
-        et = ZoneInfo("America/New_York")
-    except Exception:  # pragma: no cover - only where zoneinfo has no tz database
-        import pytz
-
-        et = pytz.timezone("America/New_York")
-    return datetime.now(et).isoformat()
+    # Deliberately NOT core.clock.now_iso(): that truncates to seconds, and these stamps have always
+    # carried microseconds. Sharing the zone is the point here; changing the log's format is not.
+    return datetime.now(_ET).isoformat()
 
 
 def _out(data):

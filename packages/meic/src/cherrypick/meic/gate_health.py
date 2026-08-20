@@ -27,6 +27,9 @@ import sqlite3
 from datetime import datetime
 from typing import Any
 
+# One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core.clock import ET as _ET
+
 from .paths import stream_cache_path
 
 ARMED = "armed"
@@ -65,18 +68,7 @@ def _et_today(now: datetime | None = None) -> str:
         return _tt_today()
     if now.tzinfo is None:
         return now.strftime("%Y-%m-%d")
-    return now.astimezone(_et_zone()).strftime("%Y-%m-%d")
-
-
-def _et_zone():
-    try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
-        from zoneinfo import ZoneInfo
-
-        return ZoneInfo("America/New_York")
-    except Exception:  # pragma: no cover - only where zoneinfo has no tz database
-        import pytz
-
-        return pytz.timezone("America/New_York")
+    return now.astimezone(_ET).strftime("%Y-%m-%d")
 
 
 def _completed_sessions(conn: sqlite3.Connection, symbol: str, today: str, needed: int) -> int:
