@@ -231,7 +231,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/earnings/detail", async (req) => readEarningsDetail(config, parseMode(req.query)));
   // Open positions as the managed loop sees them: latest mark, and whether the loop is alive.
   app.get("/api/earnings/live", async () => readEarningsLive(config));
-  app.get("/api/gex", async () => readGex(config));
+  app.get("/api/gex", async (req) => readGex(config, parsePage(req.query)));
   app.get("/api/gex/symbols", async () => ({ symbols: gexSymbols(config) }));
   app.get("/api/gex/profile/:symbol", async (req) => {
     const { symbol } = req.params as { symbol: string };

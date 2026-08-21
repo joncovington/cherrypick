@@ -512,11 +512,14 @@ export function useSymbolAnalysis(symbol: string) {
   });
 }
 
-export function useGex(enabled = true) {
+export function useGex(enabled = true, page: PageState = FIRST_PAGE) {
+  const params = new URLSearchParams();
+  pageParams(params, "", page);
   return useQuery<GexPayload>({
-    queryKey: ["gex"],
-    queryFn: () => getJson<GexPayload>("/api/gex"),
+    queryKey: ["gex", page],
+    queryFn: () => getJson<GexPayload>(`/api/gex?${params.toString()}`),
     refetchInterval: 10_000,
     enabled,
+    placeholderData: (prev) => prev,
   });
 }

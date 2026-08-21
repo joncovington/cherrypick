@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useGex } from "../../lib/api";
 import { DataCard, fmtNum } from "../../components/DataTable";
+import { Pager, usePage } from "../../components/ScopeBar";
 import { useFlashOnChange } from "../../lib/useFlashOnChange";
 import { GexProfileChart, IvSkewChart, StrikeBarsChart, fmtGexDollars, type GexStrikeRow, type GexView } from "./GexProfileChart";
 
@@ -128,7 +129,8 @@ export function GexPage() {
   // Each query only backs the tab(s) that read it -- the history table needs the overview
   // endpoint, everything else needs the per-symbol profile, and there's no reason to keep
   // polling either one for a tab that isn't on screen.
-  const { data, isLoading, isError } = useGex(tab === "history");
+  const { page, setOffset, setLimit } = usePage();
+  const { data, isLoading, isError } = useGex(tab === "history", page);
   const symbols = useGexSymbols();
   const profile = useGexProfile(symbol, tab !== "history");
   const p = profile.data;
@@ -306,11 +308,22 @@ export function GexPage() {
           numFrom={1}
           loading={isLoading}
           isError={isError}
-          rowCount={data?.recent.length ?? 0}
+          rowCount={data?.recent.rows.length ?? 0}
           skeletonRows={10}
           className="view-fade"
+          footer={
+            data !== undefined && (
+              <Pager
+                offset={data.recent.offset}
+                limit={data.recent.limit}
+                total={data.recent.total}
+                onOffset={setOffset}
+                onLimit={setLimit}
+              />
+            )
+          }
         >
-          {data?.recent.map((g, i) => (
+          {data?.recent.rows.map((g, i) => (
             <tr key={`${g.symbol}-${g.ts}-${i}`}>
               <td className="muted">{fmtEt(g.ts)}</td>
               <td>{g.symbol}</td>

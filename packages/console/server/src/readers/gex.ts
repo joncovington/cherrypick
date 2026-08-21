@@ -1,7 +1,8 @@
 import path from "node:path";
-import type { GexPayload, GexRegimeRow } from "@console/shared";
+import type { GexPayload, GexRegimeRow, Paged } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, num, str } from "./db.js";
+import { emptyPage, FIRST_PAGE, pagedQuery, type PageRequest } from "./paging.js";
 
 function isoTs(v: unknown): string {
   // The recorder stores ts as epoch seconds (sometimes as a string).
@@ -24,7 +25,7 @@ function toRow(r: Record<string, unknown>): GexRegimeRow {
   };
 }
 
-export function readGex(config: ConsoleConfig): GexPayload {
+export function readGex(config: ConsoleConfig, recentPage: PageRequest = FIRST_PAGE): GexPayload {
   const dbPath = path.join(config.paths.gexDir, "gex_history.db");
 
   const latest = withReadOnlyDb<GexRegimeRow[]>(dbPath, [], (db) =>
@@ -39,15 +40,22 @@ export function readGex(config: ConsoleConfig): GexPayload {
       .map(toRow),
   );
 
-  const recent = withReadOnlyDb<GexRegimeRow[]>(dbPath, [], (db) =>
-    db
-      .prepare<[], Record<string, unknown>>(
-        `SELECT * FROM gex_regime_history
-          WHERE trade_date = (SELECT MAX(trade_date) FROM gex_regime_history)
-          ORDER BY ts DESC LIMIT 60`,
-      )
-      .all()
-      .map(toRow),
+  // Paged rather than capped. The old query carried a bare `LIMIT 60` while a session records
+  // 240-288 rows, so the table showed about a fifth of the day and reported no total -- the reader
+  // had no way to tell a quiet session from a truncated one.
+  const recent = withReadOnlyDb<Paged<GexRegimeRow>>(dbPath, emptyPage<GexRegimeRow>(recentPage), (db) =>
+    pagedQuery<GexRegimeRow>(
+      db,
+      {
+        columns: "*",
+        from: "gex_regime_history",
+        where: "trade_date = (SELECT MAX(trade_date) FROM gex_regime_history)",
+        params: [],
+        orderBy: "ts DESC",
+      },
+      recentPage,
+      toRow,
+    ),
   );
 
   return { latest, recent };

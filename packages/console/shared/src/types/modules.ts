@@ -147,8 +147,14 @@ export interface GexRegimeRow {
 export interface GexPayload {
   /** Most recent regime row per symbol. */
   latest: GexRegimeRow[];
-  /** Recent history (latest day) for the table, newest first. */
-  recent: GexRegimeRow[];
+  /**
+   * The latest day's regime samples, newest first, PAGED.
+   *
+   * This was a bare array with a hidden `LIMIT 60` in the query. A session records 240-288 rows,
+   * so the table showed roughly a fifth of the day and said nothing about the rest -- a silent cap,
+   * which reads as "this is the whole day" when it is not.
+   */
+  recent: Paged<GexRegimeRow>;
 }
 
 // --------------------------------------------------------------------------- suite review
