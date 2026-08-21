@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { FliesPayload, FliesBookRow, FliesPositionRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { withReadOnlyDb, num, str } from "./db.js";
+import { memoOnStore, withReadOnlyDb, num, str } from "./db.js";
 import { emptyPage, pagedQuery, pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
 
 /**
@@ -430,6 +430,15 @@ export interface FliesTimeline {
 export function readFliesTimeline(config: ConsoleConfig, mode: TradingMode, day: string | null): FliesTimeline {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
+  // Memoised on the ledger's stamp: this replays every position at every recorded tick (~140ms for
+  // a session), and the page re-polls every 30s while the ledger only changes on a 15s write --
+  // and not at all outside a session, which is when the timeline is most often read.
+  return memoOnStore(dbPath, `flies-timeline:${mode}:${day ?? "latest"}`, () =>
+    buildFliesTimeline(dbPath, mode, day),
+  );
+}
+
+function buildFliesTimeline(dbPath: string, mode: TradingMode, day: string | null): FliesTimeline {
   const empty: FliesTimeline = {
     mode,
     date: null,
