@@ -3,6 +3,7 @@ import { usePmcc } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { Card, DataCard, fmtPct } from "../../components/DataTable";
 import { LoopPill, TabStrip } from "../../components/ScopeBar";
+import { ArmRail, AttemptTimeline } from "../../components/Attempts";
 import { IntegrityStrip } from "./IntegrityStrip";
 import { BookComparison, KeltnerCard, SymbolCards } from "./CurrentStateCards";
 import { HistoryTab } from "./HistoryTab";
@@ -95,6 +96,13 @@ export function PmccPage() {
                 readiness={data?.integrity.keltner ?? []}
                 updatedAt={dataUpdatedAt}
               />
+
+              {/* The same two surfaces meic and flies carry — the arm rail and the minute-by-minute
+                  timeline — now that the attempts reader is parameterized rather than hardcoded to
+                  those two. The grouped card below stays: it answers "what happened today" while
+                  these answer "why is this book quiet, and when did that start". */}
+              <ArmRail module="pmcc" mode="paper" date={null} />
+              <AttemptTimeline module="pmcc" mode="paper" date={null} />
 
               <div className="pmcc-activity">
                 <DataCard

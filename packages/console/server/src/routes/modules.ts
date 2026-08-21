@@ -129,6 +129,12 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const f = parseFliesFilter(req.query);
     return readEntryAttempts(config, "flies", parseMode(req.query), f.date);
   });
+  // pmcc is paper-only, so mode is fixed rather than parsed. calendars has no equivalent route:
+  // its books share one entry plan, so there is no per-arm entry decision to show.
+  app.get("/api/pmcc/attempts", async (req) => {
+    const f = parseFliesFilter(req.query);
+    return readEntryAttempts(config, "pmcc", "paper", f.date);
+  });
   app.get("/api/meic/loop", async (req) =>
     readMeicLoopStatus(config, parseMode(req.query), parseMeicScope(req.query)),
   );

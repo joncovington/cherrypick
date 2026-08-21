@@ -82,7 +82,7 @@ export interface MeasurementBreak {
 
 export interface AttemptsPayload {
   mode: TradingMode;
-  module: "meic" | "flies";
+  module: AttemptsModule;
   tradeDate: string | null;
   /** Flies records these as mode='cadence' rows in its decision journal; MEIC keeps a dedicated
    *  `measurement_breaks` table. Different homes, one shape here — the pages should not have to
@@ -152,15 +152,31 @@ function downsampleTimeline(rows: AttemptRow[]): AttemptRow[] {
   return out;
 }
 
+/** Modules with a per-arm entry decision. See SPECS for why calendars is not one. */
+export type AttemptsModule = "meic" | "flies" | "pmcc";
+
 interface TableSpec {
   file: (mode: TradingMode) => string;
   dir: (config: ConsoleConfig) => string;
   table: string;
   armColumn: string;
   centerColumn: string;
+  spotColumn: string;
+  /** Columns only some ledgers keep. Absent ones read as null rather than failing the query. */
+  blockingStrikeColumn?: string;
+  cadenceColumn?: string;
 }
 
-const SPECS: Record<"meic" | "flies", TableSpec> = {
+/**
+ * Which modules have a per-arm entry decision to show.
+ *
+ * **`calendars` is deliberately absent, and it is not an oversight.** It writes `dc_entry_attempts`
+ * like the others, but that table has no arm column — by design: "one plan, N books", where every
+ * book's positions for a week come from the SAME entry plan and the books differ in exit policy
+ * alone. There is no per-arm entry decision to rail, so its page shows the decision JOURNAL
+ * instead, which is the right record for a module whose entry is unconditional.
+ */
+const SPECS: Record<AttemptsModule, TableSpec> = {
   meic: {
     file: (mode) => (mode === "live" ? "meic_trades.db" : "paper_trades.db"),
     dir: (config) => config.paths.meicDir,
@@ -170,6 +186,9 @@ const SPECS: Record<"meic" | "flies", TableSpec> = {
     // put short stands in for one on the timeline, and the pair is available in
     // the row itself for anything that needs both.
     centerColumn: "put_strike",
+    spotColumn: "underlying_price",
+    blockingStrikeColumn: "blocking_strike",
+    cadenceColumn: "seconds_until_cadence_clear",
   },
   flies: {
     file: (mode) => (mode === "live" ? "live_trades.db" : "paper_trades.db"),
@@ -177,6 +196,21 @@ const SPECS: Record<"meic" | "flies", TableSpec> = {
     table: "fly_entry_attempts",
     armColumn: "arm",
     centerColumn: "center",
+    spotColumn: "spot",
+    blockingStrikeColumn: "blocking_strike",
+    cadenceColumn: "seconds_until_cadence_clear",
+  },
+  pmcc: {
+    // Paper-only and credential-free, so there is no live ledger to select.
+    file: () => "paper_trades.db",
+    dir: (config) => config.paths.pmccDir,
+    table: "pmcc_entry_attempts",
+    armColumn: "book",
+    // The SHORT strike is what this structure re-decides each week — the long is a stock
+    // substitute held across cycles — so it is the strike worth putting on a timeline.
+    centerColumn: "short_strike",
+    spotColumn: "spot",
+    // pmcc keeps neither: it has no same-strike blocking rule and no entry cadence gate.
   },
 };
 
@@ -190,7 +224,7 @@ const SPECS: Record<"meic" | "flies", TableSpec> = {
  */
 export function readEntryAttempts(
   config: ConsoleConfig,
-  module: "meic" | "flies",
+  module: AttemptsModule,
   mode: TradingMode,
   day: string | null,
 ): AttemptsPayload {
@@ -218,8 +252,10 @@ export function readEntryAttempts(
     const rows = db
       .prepare<[string], Record<string, unknown>>(
         `SELECT ts, trade_date, ${spec.armColumn} AS arm, symbol, outcome, block_detail,
-                ${spec.centerColumn} AS center, blocking_strike, seconds_until_cadence_clear,
-                ${module === "meic" ? "underlying_price" : "spot"} AS spot
+                ${spec.centerColumn} AS center,
+                ${spec.blockingStrikeColumn ?? "NULL"} AS blocking_strike,
+                ${spec.cadenceColumn ?? "NULL"} AS seconds_until_cadence_clear,
+                ${spec.spotColumn} AS spot
            FROM ${spec.table}
           WHERE trade_date = ?
           ORDER BY ts ASC, id ASC`,
