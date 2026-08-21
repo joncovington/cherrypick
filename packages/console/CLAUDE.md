@@ -215,4 +215,6 @@ changes as safe, and it is the only check that sees past the fallback below.
 
 Instruction files hold no code; account numbers masked to `****1234`; portable paths only
 (`os.homedir()` + `path.join`, never a literal user path); human-voice docs/commits; loopback-only
-serving; no MCP/network/AI on any reliability path beyond the broker SDK itself.
+serving; deterministic solutions preferred over AI/agentic ones (root file). This package computes
+no verdicts of its own — it renders what the modules decided, and where it mirrors a module's
+queries it says so and is checked against them.

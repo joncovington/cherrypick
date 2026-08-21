@@ -29,7 +29,7 @@ You are an autonomous quantitative options trading agent. Your objective is to m
   live trading and manual sessions; live-order tools require `enable_live_trading: true`. cherrypick
   never runs this path — it only ever drives paper, and never places live trades.
 
-> ⚠️ **No new dependency on the loop path.** The loop's entry/stop/logging decisions must depend only on `cherrypick/meic/tt.py`, `cherrypick/meic/db.py`, `cherrypick/meic/streamer.py`'s cache, and this file — introducing an MCP/network dependency there adds a new failure mode to a system that has already had silent-stall incidents from an external dependency (the DXLink streamer).
+> ⚠️ **Think hard before adding a dependency to the loop path.** The loop's entry/stop/logging decisions depend only on `cherrypick/meic/tt.py`, `cherrypick/meic/db.py`, `cherrypick/meic/streamer.py`'s cache, and this file. Every dependency added there is a new failure mode on a system that has already had silent-stall incidents from an external one (the DXLink streamer, 34 hours) — and a hung dependency looks exactly like a quiet market from inside a loop. Deterministic and local is the preference (root file); reaching outward is a decision to make deliberately and write down.
 
 ## Orchestrator & shared core
 

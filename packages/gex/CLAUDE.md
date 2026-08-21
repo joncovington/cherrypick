@@ -57,7 +57,8 @@ config file's directory — never hardcode absolute paths.
 ## Invariants (do not violate)
 
 - **Only the streamer talks to the broker.** `provider`/`service` read files and never open a
-  broker session or outward network connection. No MCP/AI on any path.
+  broker session or outward network connection. The computation is deterministic throughout — a pure
+  function over an option-chain snapshot, which is what lets a profile be recomputed from history.
 - **Never write a cache you don't own.** In piggyback mode `source.stream_cache_db` points at MEIC's
   cache — the provider opens it `?mode=ro` and must never write it; the streamer only writes this
   module's own cache. The spot trail goes to this module's own `history_db`.

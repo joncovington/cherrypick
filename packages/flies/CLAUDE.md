@@ -727,9 +727,11 @@ supervision. The log is now free to be exactly as talkative as a human reading i
   were re-settled through the corrected math. `fee_reconcile` now compares modeled vs real fee
   **per settlement symbol**, not just as an aggregate P&L delta — the aggregate is what let this
   hide as ~$12 of apparent slippage noise for a day.
-- **No AI, no MCP, and no network on any decision path.** `fly.py` and `engine.py` are pure functions
-  over a pre-fetched snapshot. Learning happens offline in the orchestrator's read side (`report`,
-  `calibrate`) and in `packages/review` over closed rows — never inside the loop.
+- **The decision path is deterministic.** `fly.py` and `engine.py` are pure functions over a
+  pre-fetched snapshot — no model, no MCP, no network in the decision itself. Learning happens
+  offline in the orchestrator's read side (`report`, `calibrate`) and in `packages/review` over
+  closed rows, never inside the loop. That split is the preference in the root file applied here,
+  and it is what lets a completion rate be re-derived from stored rows months later.
 - **The streamer comes before API calls** whenever practical, for efficiency or latency: all pricing
   reads the shared stream cache, and cached quotes GATE broker calls (a resting entry order is only
   cancelled/replaced when the cached evaluation moved; fill-status polls fire only when cached quotes
