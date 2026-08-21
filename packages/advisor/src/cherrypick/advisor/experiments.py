@@ -169,7 +169,12 @@ def record_verdict_recommendation(conn, *, session: str, experiment_id: str, rec
         return {"ok": False, "reason": f"not_an_advisor_experiment: {experiment_id!r}"}
 
     stored = experiment["verdict_json"]
-    body = json.loads(stored) if stored else _verdicts.for_experiment(experiment)
+    if stored:
+        body = json.loads(stored)
+    else:
+        # Same per-module rule the fact pack shows the model — never the library default.
+        module_rule = _settings.calibration_rule(experiment["module"]) or None
+        body = _verdicts.for_experiment(experiment, rule=module_rule)
     body["recommendation"] = {"value": recommendation, "rationale": rationale, "by": "model",
                               "session": session}
     _store.update_experiment(conn, experiment_id, verdict_json=json.dumps(body))
@@ -217,18 +222,29 @@ def activate_queued(conn, module: str, *, session: str | None = None, cfg: dict 
     return activated
 
 
-def expire_due(conn, session: str, *, rule: dict | None = None) -> list[dict[str, Any]]:
+def expire_due(
+    conn, session: str, *, rule: dict | None = None, cfg: dict | None = None
+) -> list[dict[str, Any]]:
     """Conclude every experiment that has run its course: compute the verdict, stop issuing, let the
     queue move up.
 
     The verdict is computed here even when the model never ran — an experiment's result is a fact
     about the ledger, not something that depends on an AI being reachable that evening.
+
+    The rule is resolved PER EXPERIMENT from the module's own `calibration.rule` (the same block
+    the fact pack shows the model) unless an explicit `rule` overrides it. Until 2026-08-20 this
+    used the library default while the pack showed the module rule — the model was shown one gate
+    and the stored verdict computed against another, the exact 2026-08-14 incident
+    `settings.calibration_rule` was written to end.
     """
     concluded = []
     for experiment in _store.experiments(conn, status=STATUS_ACTIVE):
         if experiment["sessions_run"] < experiment["expires_after_sessions"]:
             continue
-        body = _verdicts.for_experiment(experiment, rule=rule)
+        module_rule = rule
+        if module_rule is None:
+            module_rule = _settings.calibration_rule(experiment["module"], cfg) or None
+        body = _verdicts.for_experiment(experiment, rule=module_rule)
         _store.update_experiment(conn, experiment["id"], status=STATUS_EXPIRED,
                                  verdict_json=json.dumps(body))
         _store.journal(conn, experiment["id"], "expired", session=session,

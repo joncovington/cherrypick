@@ -183,7 +183,15 @@ def _merged_params(base_config: dict, profile: dict) -> dict:
 def _profile_widths_for_symbol(params: dict, symbol: str) -> list | None:
     """This profile's wing shortlist for `symbol` (its own `wing_widths_by_symbol[symbol]`,
     falling back to `DEFAULT`), or None when it declares none — in which case the historical
-    behavior applies (consider every scanned candidate width)."""
+    behavior applies (consider every scanned candidate width).
+
+    `wing_width_points` — a single scalar — wins over the per-symbol dict when present. It exists
+    for the advisor: `core.advice` bounds can express a number or a choice, never a dict of lists,
+    so without a scalar seam the width question would be unaskable as an advisor experiment. A
+    scalar pins ONE width, which is also what a width experiment means."""
+    wp = params.get("wing_width_points")
+    if wp is not None:
+        return [int(wp)]
     wbs = params.get("wing_widths_by_symbol") or {}
     lst = wbs.get(symbol) or wbs.get(symbol.upper()) or wbs.get("DEFAULT")
     return list(lst) if lst else None

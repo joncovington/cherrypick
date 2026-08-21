@@ -15,7 +15,7 @@ import { equityCurve, periodKey, riskSummary, stdev } from "../analytics/riskMet
  * rather than imported so the packages stay decoupled; kept in step with
  * `CURRENT_ERA` in `packages/meic/.../analytics.py`.
  */
-export const CURRENT_ERA = "sample";
+export const CURRENT_ERA = "advisor";
 
 export interface MeicScopeFilter {
   symbol: string | null;

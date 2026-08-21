@@ -11,12 +11,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 
-# The registry after the 2026-08-07 arms cutover: the four active streams (control/open/width-5/
-# width-10) plus every retired/disabled profile kept for historical record (the four-tier ladder,
-# and the GEX study pair). See config.risk.json's _arms_cutover_note for the full rationale.
-ACTIVE_STREAMS = {"control", "sign", "control-drift", "open", "width-5", "width-10"}
+# The registry after the 2026-08-21 advisor-era cutover: two active streams — control (the
+# reference book) and open (the permissive substrate every read-side derivation is answered from)
+# — plus every retired profile kept for historical record. sign/control-drift/width-5/width-10
+# retired at the cutover with written verdicts (see their _disabled_note); the advisor's advised
+# book is synthesized per-session and never lives in this registry.
+ACTIVE_STREAMS = {"control", "open"}
 LADDER = {"conservative", "moderate", "aggressive", "very-aggressive"}
-RETIRED_STUDY_ARMS = {"gex-open", "gex-blocked"}
+RETIRED_STUDY_ARMS = {"gex-open", "gex-blocked", "sign", "control-drift", "width-5", "width-10"}
 UNCAPPED_SAMPLING_STREAMS = {"open", "width-5", "width-10"}
 EXPERIMENT_PREFIXES = {"small", "medium", "large", "explore", "width", "gex"}
 STUDY_ARM_PREFIXES = ("width-", "gex-")
@@ -64,7 +66,7 @@ def test_active_profile_points_at_control(sample_risk_profiles):
 
 
 def test_config_risk_json_has_the_expected_profiles(sample_risk_profiles):
-    """The registry holds the four active streams plus whichever retired/historical profiles are
+    """The registry holds the active streams plus whichever retired/historical profiles are
     kept for the record. Any name outside that set must be a recognized experiment prefix."""
     names = set(sample_risk_profiles["profiles"].keys())
     assert ACTIVE_STREAMS <= names
@@ -73,8 +75,7 @@ def test_config_risk_json_has_the_expected_profiles(sample_risk_profiles):
 
 
 def test_registry_is_the_active_streams_plus_the_historical_record(sample_risk_profiles):
-    """What the registry holds, pinned exactly: the four active streams, the four retired ladder
-    tiers, and the two retired GEX-study arms. Adding or removing a profile should be a
+    """What the registry holds, pinned exactly: the active streams and the retired record. Adding or removing a profile should be a
     deliberate edit here, not a silent one."""
     assert set(sample_risk_profiles["profiles"]) == ACTIVE_STREAMS | LADDER | RETIRED_STUDY_ARMS
 
@@ -195,7 +196,7 @@ def test_width_arms_differ_from_open_only_in_wing_width(sample_risk_profiles):
     for name in ("width-5", "width-10"):
         arm = profiles[name]
         # Documentation keys (_note, _gate_thresholds_note, ...) don't count against the invariant.
-        keys = {k for k in set(open_arm) | set(arm) if not k.startswith("_")}
+        keys = {k for k in set(open_arm) | set(arm) if not k.startswith("_") and k not in META_KEYS}
         differing = {k for k in keys if open_arm.get(k) != arm.get(k)}
         assert differing <= allowed_diff, f"{name} diverges from open beyond the width pin: {differing}"
         assert arm["per_side_stop_management"] is True  # unlike open
@@ -212,8 +213,8 @@ def test_width_arms_differ_from_each_other_only_in_wing_width(sample_risk_profil
     profiles = sample_risk_profiles["profiles"]
     w5, w10 = profiles["width-5"], profiles["width-10"]
     keys = set(w5) | set(w10)
-    differing = {k for k in keys if w5.get(k) != w10.get(k)}
-    assert differing == {"_note", "wing_widths_by_symbol"}, differing
+    differing = {k for k in keys if w5.get(k) != w10.get(k) and not k.startswith("_")}
+    assert differing == {"wing_widths_by_symbol"}, differing
 
 
 def test_uncapped_sampling_streams_never_bind_on_concurrency(sample_risk_profiles):
@@ -569,8 +570,8 @@ def test_sign_is_control_with_only_the_overlap_scope_changed(sample_risk_profile
     variable; adding it here would confound the one this arm is for.
     """
     profiles = sample_risk_profiles["profiles"]
-    control = {k: v for k, v in profiles["control"].items() if not k.startswith("_")}
-    sign = {k: v for k, v in profiles["sign"].items() if not k.startswith("_")}
+    control = {k: v for k, v in profiles["control"].items() if not k.startswith("_") and k not in META_KEYS}
+    sign = {k: v for k, v in profiles["sign"].items() if not k.startswith("_") and k not in META_KEYS}
 
     assert sign["overlap_scope"] == "sign"
     assert control["overlap_scope"] == "shorts"
@@ -598,8 +599,8 @@ def test_control_drift_is_control_with_only_the_drift_skew_added(sample_risk_pro
     difference in their books stops being attributable to the rule.
     """
     profiles = sample_risk_profiles["profiles"]
-    control = {k: v for k, v in profiles["control"].items() if not k.startswith("_")}
-    drift = {k: v for k, v in profiles["control-drift"].items() if not k.startswith("_")}
+    control = {k: v for k, v in profiles["control"].items() if not k.startswith("_") and k not in META_KEYS}
+    drift = {k: v for k, v in profiles["control-drift"].items() if not k.startswith("_") and k not in META_KEYS}
 
     assert drift["drift_skew_otm_multiple"] == 1.5
     assert "drift_skew_otm_multiple" not in control, "the skew must be the twin's alone"

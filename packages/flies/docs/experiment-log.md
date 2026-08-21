@@ -128,3 +128,31 @@ in the decision journal, written by `_note_cadence_change` on the first resident
 
 Live arming re-keyed the same day: the armed signal is now the arm record in the shared state dir, not a
 schtasks registration.
+
+## 2026-08-21 — the advisor era: every variant arm retired, one experiment mechanism
+
+The suite-wide cutover: from this session, `packages/advisor` designs and runs every experiment.
+Eleven arms retired at once, each with its verdict in the deployed config's `_note` (originals
+preserved after a `||` separator). The roster is `control` + `advised:control`.
+
+- **gex** — centring lags spot (offsets −22..+23 on the 08-04/08-05 mirror sessions; it centres on
+  where OI is, which is where price was). Superseded: `center_rule` is now an advisable bound.
+- **time_window** — finding banked: monotone completion decline 72% → 63% → 58% across the re-cut
+  windows; the mechanism (less session left to drift in) is the result.
+- **debit-first / bwb** — void, not falsified: the roll-pricing defect voided 25 rows and the
+  corrected orientation never accumulated a sample.
+- **width-2..5 / width-10** — underpowered on the corrected strike-count basis (3–7 SPX sessions).
+  The width question moves to advisor experiments via the `wing_width_strikes` bound — and the
+  era's first experiment (`exp-2026-08-20-flies-1`) is exactly that, `wing_width_strikes: 2`
+  against control.
+- **gex-intrinsic / control-drift** — under 8 sessions; underpowered, no reading.
+
+**Finding worth its own line: `bwb-atm` and `debit-first-atm` never ran at all.** `engine.ARMS`
+carries them, this file designed them (2026-08-07) to fix their parents' two-variable confound —
+and the deployed config never gained arm entries, so `enabled_arms` (registry ∩ config) excluded
+them silently from the day they were written. Check that seam whenever an arm is added.
+
+**The era boundary is journaled** (`measurement_breaks`, 2026-08-21, `advisor_era_cutover`) and the
+console's era control carries it (`advisor` era from 08-21; the hand-designed-arms era closed at
+08-20). **Asymmetry to know:** this module's own `analytics.py` scopes by date, not era — a
+Python-side read that should honour the boundary must date-bound at 2026-08-21 itself.

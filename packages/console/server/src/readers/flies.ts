@@ -26,14 +26,16 @@ import { emptyPage, pagedQuery, pageArray, FIRST_PAGE, type PageRequest } from "
  * FILTER and never a deletion — the XSP books are the record of a documented fee finding, and the
  * module keeps negative results on purpose.
  */
-export const CURRENT_ERA = { symbol: "SPX", from: "2026-08-01" } as const;
+export const CURRENT_ERA = { symbol: "SPX", from: "2026-08-21" } as const;
 
 /**
  * Every era the ledger holds, declared rather than derived.
  *
  * There is no `era` column to group by, and the boundaries are facts about what the module was
  * trading rather than anything the rows announce — so they are written down here, matching the
- * module's own record (XSP 2026-07-29..07-31, SPX through 07-28, SPX 5-wide from 08-01).
+ * module's own record (XSP 2026-07-29..07-31, SPX through 07-28, SPX 5-wide hand-designed
+ * arms 08-01..08-20, advisor era from 08-21 — the cutover where every variant arm retired and
+ * packages/advisor became the only experiment mechanism).
  *
  * The point of listing them is that each is readable ALONE. Before this the control offered the
  * current era or "all", so the two earlier books could only be seen pooled with the current one —
@@ -41,7 +43,8 @@ export const CURRENT_ERA = { symbol: "SPX", from: "2026-08-01" } as const;
  * it offered to look at them at all.
  */
 export const ERAS = [
-  { key: "spx", label: "SPX 5-wide (current)", symbol: "SPX", from: "2026-08-01", to: null },
+  { key: "advisor", label: "SPX advisor era (current)", symbol: "SPX", from: "2026-08-21", to: null },
+  { key: "spx", label: "SPX 5-wide (hand-designed arms)", symbol: "SPX", from: "2026-08-01", to: "2026-08-20" },
   { key: "xsp", label: "XSP 1-wide", symbol: "XSP", from: "2026-07-29", to: "2026-07-31" },
   { key: "spx-early", label: "SPX (pre-XSP)", symbol: "SPX", from: null, to: "2026-07-28" },
 ] as const;
@@ -58,7 +61,7 @@ export interface FliesMeta {
 }
 
 /** The era a null filter means: the module's own evidence window. */
-export const DEFAULT_ERA: FliesEraKey = "spx";
+export const DEFAULT_ERA: FliesEraKey = "advisor";
 
 /**
  * SQL for one era, as clause + params. "ALL" pools every era and is only ever a stated choice.

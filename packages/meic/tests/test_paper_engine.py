@@ -2660,3 +2660,35 @@ def test_the_skew_actually_refuses_a_candidate_that_the_plain_floor_admits():
     skewed = {**base, "drift_skew_otm_multiple": 1.5, "drift_band_points": 2.0}
     entered, reason, _ = paper.evaluate_entry(snap, skewed, [])
     assert entered is False and reason == "put_otm_below_floor"
+
+
+# --------------------------------------------------------------------------- wing_width_points seam
+
+
+def test_wing_width_points_scalar_wins_over_the_symbol_dict():
+    """The advisor's width seam: core.advice bounds can express a number or a choice, never a dict
+    of lists, so a scalar `wing_width_points` pins the profile's width for every symbol."""
+    params = {
+        "wing_width_points": 10,
+        "wing_widths_by_symbol": {"SPX": [5], "DEFAULT": [2, 3]},
+    }
+    assert paper._profile_widths_for_symbol(params, "SPX") == [10]
+    assert paper._profile_widths_for_symbol(params, "XSP") == [10]
+
+
+def test_absent_scalar_preserves_the_dict_behavior():
+    params = {"wing_widths_by_symbol": {"SPX": [5, 10], "DEFAULT": [2]}}
+    assert paper._profile_widths_for_symbol(params, "SPX") == [5, 10]
+    assert paper._profile_widths_for_symbol(params, "IWM") == [2]
+    assert paper._profile_widths_for_symbol({}, "SPX") is None
+
+
+def test_union_widths_includes_a_scalar_profile_width():
+    """A width the candidate menu never scanned can never fill — the union must see the advised
+    profile's scalar, or an advisor width experiment silently takes zero entries."""
+    base = {"wing_widths_by_symbol": {"SPX": [5]}}
+    profiles = {
+        "control": {},
+        "advised:control": {"wing_width_points": 10},
+    }
+    assert paper.union_widths_for_symbol("SPX", base, profiles) == [5, 10]

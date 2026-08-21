@@ -881,8 +881,12 @@ def run_iteration(cfg, force=False):
         if price is None:
             summary[symbol] = {"error": "no price"}
             continue
-        widths = paper.union_widths_for_symbol(symbol, cfg, profiles)
-        extra_deltas = paper.union_short_deltas_for_symbol(symbol, cfg, profiles)
+        # The ADVISED profile's widths must join the candidate menu too: a width the menu never
+        # scanned can never fill, so without this an advisor width experiment would silently take
+        # zero entries and read as a market refusal rather than a plumbing one.
+        all_profiles = {**profiles, **advice_profiles}
+        widths = paper.union_widths_for_symbol(symbol, cfg, all_profiles)
+        extra_deltas = paper.union_short_deltas_for_symbol(symbol, cfg, all_profiles)
         delta_targets = [delta_target] + [d for d in extra_deltas if abs(d - delta_target) > 1e-9]
         candidates, leg_quotes, cand_err = _build_candidates(
             symbol, price, widths, delta_targets, delta_target, today

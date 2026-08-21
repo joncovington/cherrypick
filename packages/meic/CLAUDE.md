@@ -129,7 +129,18 @@ paper is running: `config.risk.json`'s `active_profile` is `control`, and all fo
 
 See [docs/risk-profiles.md](docs/risk-profiles.md) for the full rationale, trade-off tables per tier, and progression guidance.
 
-**The registry is a four-stream forward test, not a risk ladder, since 2026-08-07.**
+**The registry is control + open + the advisor's book, since the 2026-08-21 advisor-era cutover.**
+The four-stream forward test below CLOSED at that boundary: sign/control-drift retired (zero fills,
+100% decision-agreement with control — redundant as configured), width-5/width-10 retired
+(ten sessions with control dark on every one, so the paired width-vs-control reading the test was
+designed around never existed — insufficient to separate, not falsified; the width question moved
+to advisor experiments via the `wing_width_points` bound). Verdicts live on each profile's
+`_disabled_note`. From this era `packages/advisor` designs and runs every experiment; the era is
+stamped on every row (`ic_trades.era = 'advisor'`, written by `cmd_save_trade` from
+`analytics.CURRENT_ERA`) and journaled in `measurement_breaks`. The section below is kept as the
+record of the closed test.
+
+**The registry was a four-stream forward test, not a risk ladder, 2026-08-07..2026-08-20.**
 `config.risk.json`'s enabled profiles are `control` (today's deployed policy — the reference book
 every other stream is read against; it was also the champion/challenger surface's champion until
 that surface was retired 2026-08-20, and judging arms now belongs to `packages/advisor`'s
