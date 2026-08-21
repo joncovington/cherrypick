@@ -419,7 +419,7 @@ def breakeven_scorecard(conn, start=None, end=None, symbol=None, era=CURRENT_ERA
 
 
 def stop_counterfactual(
-    conn, policy_name: str, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="open"
+    conn, policy_name: str, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="control"
 ) -> dict:
     """What `policy_name` (see stop_policies.POLICIES) would have paid across `arm`'s (default
     `open`) recorded rows, vs. what those trades actually realized under their real exit. Every
@@ -487,7 +487,7 @@ def validate_stop_derivation(conn, start=None, end=None, era=CURRENT_ERA, tolera
 
 
 def stop_grid(
-    conn, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="open", ratios=None
+    conn, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="control", ratios=None
 ) -> dict:
     """The whole `stop_trigger_ratio` curve, scored over already-recorded paths (proposal #12).
 
@@ -575,7 +575,7 @@ def stop_grid(
 
 
 def stop_session_rollup(
-    conn, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="open"
+    conn, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="control"
 ) -> list[dict]:
     """Per session: what the book really made, what it would have made with no stop at all, and the
     difference. `stop_cost` positive means the stop COST money that session.
