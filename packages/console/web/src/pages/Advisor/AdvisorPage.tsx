@@ -9,6 +9,7 @@ import type {
 } from "@console/shared";
 import { dismissAdvisorProposal, killAdvisorExperiment, useAdvisor } from "../../lib/api";
 import { otherFields, paramRows, scalar } from "./proposalPayload";
+import { TabStrip } from "../../components/ScopeBar";
 
 /**
  * The AI advisor. Renders what it observed, proposed and ran — and judges none of it here.
@@ -469,18 +470,7 @@ export function AdvisorPage() {
     <div className="page">
       <div className="page-title-row">
         <h1>Advisor</h1>
-        <div className="mode-toggle" style={{ marginLeft: 0 }}>
-          {TABS.map((t) => (
-            <button
-              key={t}
-              type="button"
-              className={tab === t ? "mode-btn active" : "mode-btn"}
-              onClick={() => setTab(t)}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+        <TabStrip tabs={TABS} value={tab} onChange={setTab} ariaLabel="advisor tabs" />
         <select
           className="text-input"
           value={session ?? ""}

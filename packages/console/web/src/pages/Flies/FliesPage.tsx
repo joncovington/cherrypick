@@ -5,7 +5,7 @@ import { useMode } from "../../lib/useMode";
 import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
-import { Pager, usePage, LoopPill } from "../../components/ScopeBar";
+import { LoopPill, Pager, TabStrip, usePage } from "../../components/ScopeBar";
 import type { TradingMode } from "@console/shared";
 import { ForestCard } from "./ForestCard";
 import { ArmRail, AttemptTimeline } from "../../components/Attempts";
@@ -120,13 +120,12 @@ export function FliesPage() {
       <div className="page-title-row">
         <h1>Flies</h1>
         <PaperLiveBadge mode={mode} />
-        <div className="mode-toggle" style={{ marginLeft: 0 }}>
-          {(["today", "history", "performance", "help"] as FliesTab[]).map((t) => (
-            <button key={t} type="button" className={tab === t ? "mode-btn active" : "mode-btn"} onClick={() => setTab(t)}>
-              {t}
-            </button>
-          ))}
-        </div>
+        <TabStrip
+          tabs={["today", "history", "performance", "help"] as FliesTab[]}
+          value={tab}
+          onChange={setTab}
+          ariaLabel="flies tabs"
+        />
         {/* Arm, symbol and era scope EVERY tab — a per-arm ranking on History or an equity curve on
             Performance is exactly where a silently-pooled era does the most damage. Only the date
             select stays Today-only: the multi-day views drop it, since pinning one session would

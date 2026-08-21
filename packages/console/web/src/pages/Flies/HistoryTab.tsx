@@ -189,7 +189,9 @@ export function HistoryTab({
       <section className="card">
         <div className="panel-head-row">
           <h2>Trade log — {logTotal.toLocaleString()} matching</h2>
-          <div className="mode-toggle">
+          {/* A filter, not a tab strip: role=group rather than tablist, which would promise
+              tab semantics for something that narrows one table. */}
+          <div className="mode-toggle" role="group" aria-label="outcome filter">
             {OUTCOMES.map((o) => (
               <button key={o} type="button" className={outcome === o ? "mode-btn active" : "mode-btn"} onClick={() => setOutcome(o)}>
                 {o}
