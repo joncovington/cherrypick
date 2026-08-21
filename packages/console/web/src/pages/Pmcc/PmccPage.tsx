@@ -143,7 +143,7 @@ export function PmccPage() {
                       <td>
                         {!e.executed && (
                           <span
-                            className="chip chip-warn pmcc-chip"
+                            className="chip chip-warn integrity-chip"
                             title="The verdict was reached but an execution gate held it. The record that an exit was SEEN before it was allowed."
                           >
                             seen, held{e.gate === null ? "" : ` by ${e.gate}`}

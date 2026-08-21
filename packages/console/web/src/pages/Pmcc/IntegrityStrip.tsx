@@ -28,7 +28,7 @@ export function IntegrityStrip({ data, updatedAt }: { data: PmccPayload | undefi
   return (
     <Card title="measurement integrity" collapseKey="pmcc-integrity" updatedAt={updatedAt} className="view-fade">
       <div className="pmcc-integrity">
-        <div className="pmcc-integrity-banner">
+        <div className="integrity-integrity-banner">
           <strong>Paper net is an upper bound.</strong> This module sells ITM calls by design, and a short call
           with near-zero extrinsic can be assigned any day. Early assignment is <em>measured, never modelled</em>:{" "}
           {exposure === undefined || exposure.markedTicks === 0 ? (
@@ -40,7 +40,7 @@ export function IntegrityStrip({ data, updatedAt }: { data: PmccPayload | undefi
             </>
           ) : (
             <>
-              <span className="pmcc-warn">
+              <span className="integrity-warn">
                 {exposure.positionsWithExposure} position{exposure.positionsWithExposure === 1 ? "" : "s"}
               </span>{" "}
               carried exposed marks — {exposure.exposedTicks.toLocaleString()} of{" "}
@@ -50,18 +50,18 @@ export function IntegrityStrip({ data, updatedAt }: { data: PmccPayload | undefi
           )}
         </div>
 
-        <div className="pmcc-integrity-grid">
+        <div className="integrity-integrity-grid">
           <section>
             <h3>dividend calendar</h3>
             {integrity === undefined || integrity.dividends.length === 0 ? (
               <p className="muted">no symbols declared</p>
             ) : (
-              <ul className="pmcc-plain-list">
+              <ul className="integrity-plain-list">
                 {integrity.dividends.map((d) => (
                   <li key={d.symbol}>
-                    <span className="pmcc-sym">{d.symbol}</span>{" "}
+                    <span className="integrity-sym">{d.symbol}</span>{" "}
                     {d.declaredThrough === null ? (
-                      <span className="pmcc-warn" title="A span the calendar cannot answer for is refused outright (dividend_calendar_lapsed).">
+                      <span className="integrity-warn" title="A span the calendar cannot answer for is refused outright (dividend_calendar_lapsed).">
                         undeclared — entries refused
                       </span>
                     ) : (
@@ -69,7 +69,7 @@ export function IntegrityStrip({ data, updatedAt }: { data: PmccPayload | undefi
                         <span className="muted">through</span> {d.declaredThrough}
                         {d.refreshDue && (
                           <span
-                            className="chip chip-warn pmcc-chip"
+                            className="chip chip-warn integrity-chip"
                             title="Hand-refreshed quarterly from the issuer's schedule. A span past this date refuses entry rather than assuming itself dividend-free, so a lapsed table halts entries loudly."
                           >
                             refresh due
@@ -85,7 +85,7 @@ export function IntegrityStrip({ data, updatedAt }: { data: PmccPayload | undefi
               </ul>
             )}
             {dividendsDue.length > 0 && (
-              <p className="pmcc-note">
+              <p className="integrity-note">
                 Refresh from the issuer pages (Direxion for TNA, ProShares for TQQQ/UPRO) before the next entry
                 spans it.
               </p>
@@ -107,7 +107,7 @@ export function IntegrityStrip({ data, updatedAt }: { data: PmccPayload | undefi
                   return ready ? (
                     <div className="check-row" key={k.symbol}>
                       <span className="check-label">{k.symbol}</span>
-                      <span className="chip chip-ok pmcc-chip">channel ready</span>
+                      <span className="chip chip-ok integrity-chip">channel ready</span>
                       <span className="check-value muted">{k.bars} bars</span>
                     </div>
                   ) : (
@@ -124,7 +124,7 @@ export function IntegrityStrip({ data, updatedAt }: { data: PmccPayload | undefi
                 })}
               </div>
             )}
-            <p className="pmcc-note">
+            <p className="integrity-note">
               {coldStart.length > 0
                 ? "The refusal is the honest state, not a failure — the keltner book cannot enter until its channel exists."
                 : "The channel exists for every symbol, so any keltner refusal from here is the filter's own verdict rather than missing history."}
@@ -139,7 +139,7 @@ export function IntegrityStrip({ data, updatedAt }: { data: PmccPayload | undefi
               <>
                 <p>
                   {coverage.marks.toLocaleString()} marks ·{" "}
-                  <span className={coverage.refused > 0 ? "pmcc-warn" : ""}>
+                  <span className={coverage.refused > 0 ? "integrity-warn" : ""}>
                     {coverage.refused.toLocaleString()} refused ({fmtPct(
                       coverage.refusalShare === null ? null : coverage.refusalShare * 100,
                       1,
@@ -147,7 +147,7 @@ export function IntegrityStrip({ data, updatedAt }: { data: PmccPayload | undefi
                   </span>
                 </p>
                 {coverage.refusals.length > 0 && (
-                  <ul className="pmcc-plain-list">
+                  <ul className="integrity-plain-list">
                     {coverage.refusals.slice(0, 4).map((r) => (
                       <li key={r.reason}>
                         <span className="mono">{r.reason}</span> <span className="muted">× {r.n}</span>
@@ -155,7 +155,7 @@ export function IntegrityStrip({ data, updatedAt }: { data: PmccPayload | undefi
                     ))}
                   </ul>
                 )}
-                <p className="pmcc-note">
+                <p className="integrity-note">
                   A refused mark is still a row: a stalled feed and a quiet market must never look identical.
                 </p>
               </>
@@ -164,18 +164,18 @@ export function IntegrityStrip({ data, updatedAt }: { data: PmccPayload | undefi
         </div>
 
         {(drift.length > 0 || breaks.length > 0) && (
-          <div className="pmcc-integrity-alerts">
+          <div className="integrity-integrity-alerts">
             {drift.length > 0 && (
-              <p className="pmcc-err">
+              <p className="integrity-err">
                 <strong>Schema drift.</strong> The ledger holds {drift.length} column
                 {drift.length === 1 ? "" : "s"} this console build does not know ({drift.join(", ")}). The module's
                 writer has moved on — this page may be reading a narrower story than it is recording.
               </p>
             )}
             {breaks.length > 0 && (
-              <div className="pmcc-err">
+              <div className="integrity-err">
                 <strong>Measurement breaks.</strong> Results either side of these dates must not be pooled.
-                <ul className="pmcc-plain-list">
+                <ul className="integrity-plain-list">
                   {breaks.map((b) => (
                     <li key={`${b.date}-${b.key}`}>
                       {b.date} · <span className="mono">{b.key}</span>

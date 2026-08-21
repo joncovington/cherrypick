@@ -103,7 +103,7 @@ export function CalendarsPage() {
                 empty="the journal recorded nothing on this session"
                 updatedAt={dataUpdatedAt}
                 footer={
-                  <p className="cal-note">
+                  <p className="integrity-note">
                     The collapsed narrative journal: a gate that blocks all morning is one row with a count,
                     not four hundred rows.
                   </p>
@@ -114,7 +114,7 @@ export function CalendarsPage() {
                     <td className="mono">{d.book}</td>
                     <td>
                       <span className="mono">{d.reason}</span>
-                      {d.accepted && <span className="chip chip-ok cal-chip">accepted</span>}
+                      {d.accepted && <span className="chip chip-ok integrity-chip">accepted</span>}
                     </td>
                     <td>{d.occurrences.toLocaleString()}</td>
                     <td className="mono muted">{d.lastTs?.slice(11, 16) ?? "—"}</td>

@@ -38,7 +38,7 @@ export function IntegrityStrip({
   return (
     <Card title="measurement integrity" collapseKey="cal-integrity" updatedAt={updatedAt} className="view-fade">
       <div className="cal-integrity">
-        <div className="cal-integrity-banner">
+        <div className="integrity-integrity-banner">
           <strong>The policy table is only as good as its validation.</strong> The derivation re-runs the{" "}
           <span className="mono">control</span> policy over the control book&rsquo;s own marks and the{" "}
           <span className="mono">expiry-longs-mon</span> policy over the path book&rsquo;s, and both must
@@ -46,7 +46,7 @@ export function IntegrityStrip({
           {policies === undefined ? (
             <span className="muted">Not read yet.</span>
           ) : policies.error !== null ? (
-            <span className="cal-err">The derivation could not be run — {policies.error}</span>
+            <span className="integrity-err">The derivation could not be run — {policies.error}</span>
           ) : validation == null || validation.compared === 0 ? (
             <span className="muted">
               No completed week has been derived yet, so there is nothing to check and nothing to rank.
@@ -59,7 +59,7 @@ export function IntegrityStrip({
               — the replay and the books agree about the same trades.
             </>
           ) : (
-            <span className="cal-err">
+            <span className="integrity-err">
               {validation.mismatches.length} of {validation.compared} checked week
               {validation.compared === 1 ? "" : "s"} disagree with the books. Do not read the ranking until
               that is explained.
@@ -68,7 +68,7 @@ export function IntegrityStrip({
         </div>
 
         {validation != null && validation.mismatches.length > 0 && (
-          <ul className="cal-plain-list cal-err">
+          <ul className="integrity-plain-list integrity-err">
             {validation.mismatches.map((m) => (
               <li key={`${m.weekOf}-${m.book}`}>
                 <span className="mono">{m.weekOf}</span> · {m.book} —{" "}
@@ -80,7 +80,7 @@ export function IntegrityStrip({
           </ul>
         )}
 
-        <div className="cal-integrity-grid">
+        <div className="integrity-integrity-grid">
           <section>
             <h3>tick cadence</h3>
             {cadence === null || cadence === undefined ? (
@@ -91,7 +91,7 @@ export function IntegrityStrip({
                 {cadence.since !== null && <span className="muted"> since {cadence.since}</span>}
               </p>
             )}
-            <p className="cal-note">
+            <p className="integrity-note">
               A trigger is evaluated at the recorded cadence, so a threshold crossed and re-crossed between
               ticks is invisible — the derived exit is the first <em>recorded</em> tick where it held. Changing
               the cadence is a journaled measurement break, and derivations never pool across one.
@@ -106,13 +106,13 @@ export function IntegrityStrip({
               <>
                 <p>
                   {coverage.marks.toLocaleString()} marks ·{" "}
-                  <span className={coverage.refused > 0 ? "cal-warn" : ""}>
+                  <span className={coverage.refused > 0 ? "integrity-warn" : ""}>
                     {coverage.refused.toLocaleString()} refused (
                     {fmtPct(coverage.refusalShare === null ? null : coverage.refusalShare * 100, 1)})
                   </span>
                 </p>
                 {coverage.refusals.length > 0 && (
-                  <ul className="cal-plain-list">
+                  <ul className="integrity-plain-list">
                     {coverage.refusals.slice(0, 4).map((r) => (
                       <li key={r.reason}>
                         <span className="mono">{r.reason}</span> <span className="muted">× {r.n}</span>
@@ -122,7 +122,7 @@ export function IntegrityStrip({
                 )}
               </>
             )}
-            <p className="cal-note">
+            <p className="integrity-note">
               A refused mark is still a row: a stalled feed and a quiet market must never look identical, and
               a hole in the path makes a policy <span className="mono">derivable: false</span>, never zero.
             </p>
@@ -133,22 +133,22 @@ export function IntegrityStrip({
             {integrity === undefined || integrity.settlement.length === 0 ? (
               <p className="muted">no symbols declared</p>
             ) : (
-              <ul className="cal-plain-list">
+              <ul className="integrity-plain-list">
                 {integrity.settlement.map((s) => {
                   const div = integrity.dividends.find((d) => d.symbol === s.symbol);
                   return (
                     <li key={s.symbol}>
-                      <span className="cal-sym">{s.symbol}</span>{" "}
+                      <span className="integrity-sym">{s.symbol}</span>{" "}
                       {s.style === null ? (
                         <span
-                          className="cal-warn"
+                          className="integrity-warn"
                           title="A symbol declared as neither cash nor physical is refused at entry (unknown_settlement) rather than assumed into a style."
                         >
                           settlement undeclared — entries refused
                         </span>
                       ) : (
                         <>
-                          <span className="chip cal-chip-quiet cal-chip">{s.style}</span>
+                          <span className="chip integrity-chip-quiet integrity-chip">{s.style}</span>
                           {div !== undefined && div.declaredThrough !== null && (
                             <span className="muted">
                               {" "}
@@ -158,7 +158,7 @@ export function IntegrityStrip({
                           )}
                           {div !== undefined && div.refreshDue && (
                             <span
-                              className="chip chip-warn cal-chip"
+                              className="chip chip-warn integrity-chip"
                               title="Refreshed annually by hand from the issuer's own distribution schedule. A week past this date refuses entry (dividend_calendar_lapsed) rather than assuming itself dividend-free."
                             >
                               refresh due
@@ -171,12 +171,12 @@ export function IntegrityStrip({
                 })}
               </ul>
             )}
-            <p className="cal-note">
+            <p className="integrity-note">
               Ex-dividend weeks are <em>skipped, not modelled</em> — roughly four a year, and they are exactly
               the quarterly-expiration weeks. The pooled table therefore covers ordinary weeks only.
             </p>
             {(dividendsDue.length > 0 || undeclared.length > 0) && (
-              <p className="cal-note cal-warn">
+              <p className="integrity-note integrity-warn">
                 Refresh the block from the issuer&rsquo;s distribution schedule before the next entry spans it.
               </p>
             )}
@@ -187,12 +187,12 @@ export function IntegrityStrip({
             {integrity === undefined || integrity.openShareAssignments === 0 ? (
               <p className="muted">none outstanding</p>
             ) : (
-              <p className="cal-warn">
+              <p className="integrity-warn">
                 {integrity.openShareAssignments} share position
                 {integrity.openShareAssignments === 1 ? "" : "s"} held, awaiting disposal
               </p>
             )}
-            <p className="cal-note">
+            <p className="integrity-note">
               Under physical settlement an ITM short hands over shares that ride to the next session — over
               the <em>weekend</em>, for a Friday short. A week does not close while its shares are
               outstanding, and a <span className="mono">path</span> or <span className="mono">expiry-*</span>{" "}
@@ -202,9 +202,9 @@ export function IntegrityStrip({
         </div>
 
         {(drift.length > 0 || breaks.length > 0) && (
-          <div className="cal-integrity-alerts">
+          <div className="integrity-integrity-alerts">
             {drift.length > 0 && (
-              <p className="cal-err">
+              <p className="integrity-err">
                 <strong>Schema drift.</strong> The ledger holds {drift.length} column
                 {drift.length === 1 ? "" : "s"} this console build does not know ({drift.join(", ")}). The
                 module&rsquo;s writer has moved on — this page may be reading a narrower story than it is
@@ -212,9 +212,9 @@ export function IntegrityStrip({
               </p>
             )}
             {breaks.length > 0 && (
-              <div className="cal-err">
+              <div className="integrity-err">
                 <strong>Measurement breaks.</strong> Results either side of these dates must not be pooled.
-                <ul className="cal-plain-list">
+                <ul className="integrity-plain-list">
                   {breaks.map((b) => (
                     <li key={`${b.date}-${b.key}`}>
                       {b.date} · <span className="mono">{b.key}</span>

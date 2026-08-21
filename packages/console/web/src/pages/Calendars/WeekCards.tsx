@@ -51,7 +51,7 @@ export function PlanCard({ data, updatedAt }: { data: CalendarsPayload | undefin
         <p className="muted">
           {data?.planError ?? "the week plan is not available"}
           {data?.planError !== null && data?.planError !== undefined && (
-            <span className="cal-note">
+            <span className="integrity-note">
               {" "}
               The dates below the fold come from the ledger instead; the anchors are the module&rsquo;s own
               holiday arithmetic and are never re-derived here.
@@ -85,7 +85,7 @@ export function PlanCard({ data, updatedAt }: { data: CalendarsPayload | undefin
               <span className="cal-plan-value mono">{plan.structure}</span>
             </div>
           </div>
-          <p className="cal-note">
+          <p className="integrity-note">
             The tag is calendar days from entry to each expiration. A Tuesday entry after a Monday holiday
             makes <span className="mono">dc_3_6</span>, and a dark following Monday makes{" "}
             <span className="mono">dc_4_8</span> — different trades, never pooled with{" "}
@@ -141,7 +141,7 @@ export function EntryWindowCard({ data, updatedAt }: { data: CalendarsPayload | 
             <p className="cal-feed">
               <span className="cal-plan-label">feed</span>
               {w.feed.ticks} entry snapshot{w.feed.ticks === 1 ? "" : "s"} ·{" "}
-              <span className={w.feed.fresh === 0 ? "cal-warn" : ""}>
+              <span className={w.feed.fresh === 0 ? "integrity-warn" : ""}>
                 {w.feed.fresh.toLocaleString()} fresh quote{w.feed.fresh === 1 ? "" : "s"}
               </span>{" "}
               against {w.feed.stale.toLocaleString()} rejected as stale · spot printed on {w.feed.spotTicks} of
@@ -203,7 +203,7 @@ export function EntryWindowCard({ data, updatedAt }: { data: CalendarsPayload | 
               )}
             </tbody>
           </table>
-          <p className="cal-note">
+          <p className="integrity-note">
             One uncollapsed row per evaluated tick, grouped here by outcome. Entry is retried every tick until
             it fills or the window closes; an exhausted window is a journaled skipped week, and the week does
             not come back.
@@ -250,7 +250,7 @@ export function PositionsCard({
       updatedAt={updatedAt}
       footer={
         books.length > 0 && (
-          <p className="cal-note">
+          <p className="integrity-note">
             Every book&rsquo;s positions for a week come from the <strong>same</strong> entry plan — identical
             strikes, identical mids, identical modeled costs — so any divergence between{" "}
             {books.map((b) => (
@@ -305,7 +305,7 @@ export function BookComparison({ data, updatedAt }: { data: CalendarsPayload | u
       empty="no week has closed yet — the books have nothing to report"
       updatedAt={updatedAt}
       footer={
-        <p className="cal-note">
+        <p className="integrity-note">
           Net is <span className="mono">gross − fees</span>, the suite&rsquo;s one convention, and every figure
           is after the modeled fee and slippage stack. Rows are per structure tag and are never summed across
           tags.

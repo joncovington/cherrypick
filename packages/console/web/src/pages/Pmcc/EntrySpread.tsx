@@ -28,7 +28,7 @@ export function EntrySpreadCell({
   const halfSpread = abs === null ? null : (abs / 2) * 100;
   const edge = netTv === null ? null : netTv * 100;
   const ratio = halfSpread !== null && edge !== null && edge > 0 ? halfSpread / edge : null;
-  const cls = ratio === null ? "" : ratio >= 1 ? "pmcc-err" : ratio >= 0.5 ? "pmcc-warn" : "";
+  const cls = ratio === null ? "" : ratio >= 1 ? "integrity-err" : ratio >= 0.5 ? "integrity-warn" : "";
   const title =
     halfSpread === null || edge === null
       ? "widest leg bid/ask spread at entry, as a share of that leg's mid"

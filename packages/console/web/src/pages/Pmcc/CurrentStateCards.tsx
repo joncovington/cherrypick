@@ -48,7 +48,7 @@ function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: Pmcc
               {p.book}
               {p.status === "short_settled" && (
                 <span
-                  className="chip chip-warn pmcc-chip"
+                  className="chip chip-warn integrity-chip"
                   title="The short expired ITM and delivered shares. They are covered next session together with the long's sale — the position is not closed while they are outstanding."
                 >
                   awaiting disposal
@@ -74,7 +74,7 @@ function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: Pmcc
             <td>
               {p.exposedTicks > 0 ? (
                 <span
-                  className="chip chip-warn pmcc-chip"
+                  className="chip chip-warn integrity-chip"
                   title={`${String(p.exposedTicks)} of ${String(p.markedTicks)} usable short marks sat under the assignment-exposure threshold. Telemetry only — it gates nothing.`}
                 >
                   exposed {fmtPct(exposedShare, 0)}
@@ -148,7 +148,7 @@ export function SymbolCards({
             </div>
             {!keltnerHolds && (
               <div className="card-footer pmcc-gate-row">
-                <span className="pmcc-sym">keltner</span>{" "}
+                <span className="integrity-sym">keltner</span>{" "}
                 {readiness !== undefined && readiness.bars < readiness.required ? (
                   <>
                     cold start {readiness.bars}/{readiness.required} bars — refusing entries while the channel
@@ -242,7 +242,7 @@ export function KeltnerCard({
       updatedAt={updatedAt}
       className="view-fade"
     >
-      <p className="pmcc-note">
+      <p className="integrity-note">
         Close against the 20-EMA midline and its ±1.5×ATR band. The keltner book enters only within
         0.5×ATR of the midline, above yesterday's close, and ≥0.25×ATR off the day's low — one failing
         condition is named at a time.
@@ -256,15 +256,15 @@ export function KeltnerCard({
               <h3>
                 {s.symbol}
                 {cold ? (
-                  <span className="chip chip-warn pmcc-chip">
+                  <span className="chip chip-warn integrity-chip">
                     cold start {r.bars}/{r.required}
                   </span>
                 ) : s.gate !== null && s.gate.reason !== null ? (
-                  <span className="chip chip-warn pmcc-chip" title={`${String(s.gate.occurrences)}× on this session`}>
+                  <span className="chip chip-warn integrity-chip" title={`${String(s.gate.occurrences)}× on this session`}>
                     {s.gate.reason}
                   </span>
                 ) : (
-                  <span className="chip chip-ok pmcc-chip">no gate refusal</span>
+                  <span className="chip chip-ok integrity-chip">no gate refusal</span>
                 )}
               </h3>
               <ChannelChart series={s} />
@@ -337,7 +337,7 @@ export function BookComparison({ data, updatedAt }: { data: PmccPayload | undefi
         <>
           <section className="pmcc-compare">
             <h3>control vs roll — exactly paired</h3>
-            <p className="pmcc-note">
+            <p className="integrity-note">
               Both books enter from the same plan on the same tick, with identical strikes, mids and modeled
               costs. The delta is the roll rule's whole effect.
             </p>
@@ -387,7 +387,7 @@ export function BookComparison({ data, updatedAt }: { data: PmccPayload | undefi
 
           <section className="pmcc-compare">
             <h3>keltner — not row-comparable</h3>
-            <p className="pmcc-note">
+            <p className="integrity-note">
               Gated entry means keltner's fill set differs from control's by construction. Compare aggregates
               over time, never cycle by cycle — there is deliberately no delta column here.
             </p>
@@ -405,11 +405,11 @@ export function BookComparison({ data, updatedAt }: { data: PmccPayload | undefi
           {others.length > 0 && (
             <section className="pmcc-compare">
               <h3>advised books</h3>
-              <p className="pmcc-note">
+              <p className="integrity-note">
                 The advisor's synthetic twin runs its admitted params beside a base book. It is excluded from the
                 pairing above — its entries are its own.
               </p>
-              <ul className="pmcc-plain-list">
+              <ul className="integrity-plain-list">
                 {others.map((t) => (
                   <li key={t.book}>
                     <span className="mono">{t.book}</span> · {t.positions} cycle{t.positions === 1 ? "" : "s"} · net{" "}
@@ -437,7 +437,7 @@ export function BookComparison({ data, updatedAt }: { data: PmccPayload | undefi
                 ))}
               </tbody>
             </table>
-            <p className="pmcc-note">
+            <p className="integrity-note">
               Every figure here is net of the modeled fee and slippage stack — and is still an upper bound while
               early assignment sits unmodelled.
             </p>
