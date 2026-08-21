@@ -2,11 +2,33 @@ import fs from "node:fs";
 import path from "node:path";
 import type { EarningsPayload, EarningsTradeRow, EntryReviewRow, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { withReadOnlyDb, num, str } from "./db.js";
+import { suiteEra, withReadOnlyDb, num, str } from "./db.js";
 import { pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
 import { isoStamp, sessionDate } from "../services/report.js";
 
-function readTrades(dbPath: string, mode: TradingMode): EarningsTradeRow[] {
+/**
+ * The era bound for earnings' multi-session surfaces.
+ *
+ * Earnings has no era column of its own — its boundary is the suite's `data_epoch` (the
+ * 2026-08-21 advisor-era cutover, journaled in its measurement_breaks). "ALL" widens to full
+ * history, the same convention MEIC's and flies' era scopes use; anything else means the current
+ * era. Bounded on the ENTRY stamp: the rules in force at entry are what formed the trade, so a
+ * position straddling the boundary belongs to the era that opened it.
+ */
+function eraSince(config: ConsoleConfig, era: string | null): string | null {
+  if (era === "ALL") return null;
+  return suiteEra(config.paths.orchestratorConfig).from;
+}
+
+/** Whether an epoch/ISO stamp falls on/after `since` (null since = no bound; null stamp = keep,
+ *  because "not recorded" must not silently vanish from a browse). */
+function onOrAfter(stamp: unknown, since: string | null): boolean {
+  if (since === null) return true;
+  const session = sessionDate(stamp);
+  return session === null || session >= since;
+}
+
+function readTrades(dbPath: string, mode: TradingMode, since: string | null): EarningsTradeRow[] {
   return withReadOnlyDb<EarningsTradeRow[]>(dbPath, [], (db) =>
     db
       .prepare<[], Record<string, unknown>>(
@@ -15,6 +37,9 @@ function readTrades(dbPath: string, mode: TradingMode): EarningsTradeRow[] {
            FROM trades ORDER BY opened_at DESC`,
       )
       .all()
+      // In JS rather than SQL: opened_at is an epoch float and sessionDate already owns the
+      // stamp-to-session conversion — a second implementation in SQL would be free to disagree.
+      .filter((r: Record<string, unknown>) => onOrAfter(r["opened_at"], since))
       .map((r: Record<string, unknown>) => ({
         mode,
         orderId: String(r["order_id"] ?? ""),
@@ -32,7 +57,7 @@ function readTrades(dbPath: string, mode: TradingMode): EarningsTradeRow[] {
   );
 }
 
-function readReviews(dbPath: string, mode: TradingMode): EntryReviewRow[] {
+function readReviews(dbPath: string, mode: TradingMode, since: string | null): EntryReviewRow[] {
   return withReadOnlyDb<EntryReviewRow[]>(dbPath, [], (db) => {
     const has = db
       .prepare<[], Record<string, unknown>>("SELECT 1 FROM sqlite_master WHERE type='table' AND name='entry_reviews'")
@@ -45,6 +70,7 @@ function readReviews(dbPath: string, mode: TradingMode): EntryReviewRow[] {
            FROM entry_reviews ORDER BY id DESC`,
       )
       .all()
+      .filter((r: Record<string, unknown>) => since === null || (str(r["scan_date"]) ?? "") >= since)
       .map((r: Record<string, unknown>) => ({
         mode,
         scanDate: str(r["scan_date"]) ?? "",
@@ -178,7 +204,12 @@ function bucketDispersion(v: number | null): string {
   return "≥7%";
 }
 
-export function readEarningsDetail(config: ConsoleConfig, mode: TradingMode): EarningsDetail {
+export function readEarningsDetail(
+  config: ConsoleConfig,
+  mode: TradingMode,
+  era: string | null = null,
+): EarningsDetail {
+  const since = eraSince(config, era);
   const file = mode === "live" ? "earnings_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.earningsDir, file);
   const empty: EarningsDetail = {
@@ -191,11 +222,12 @@ export function readEarningsDetail(config: ConsoleConfig, mode: TradingMode): Ea
   return withReadOnlyDb<EarningsDetail>(dbPath, empty, (db) => {
     const closed = db
       .prepare<[], Record<string, unknown>>(
-        `SELECT strategy, symbol, closed_at, entry_iv, exit_iv, entry_context, capital_at_risk,
+        `SELECT strategy, symbol, opened_at, closed_at, entry_iv, exit_iv, entry_context, capital_at_risk,
                 pnl - COALESCE(entry_cost, 0) - COALESCE(exit_cost, 0) AS net
            FROM trades WHERE closed_at IS NOT NULL AND pnl IS NOT NULL ORDER BY closed_at`,
       )
-      .all();
+      .all()
+      .filter((r) => onOrAfter(r["opened_at"], since));
 
     // --- daily equity ---
     const byDate = new Map<string, number>();
@@ -351,7 +383,12 @@ export interface EarningsAnalytics {
   }>;
 }
 
-export function readEarningsAnalytics(config: ConsoleConfig, mode: TradingMode): EarningsAnalytics {
+export function readEarningsAnalytics(
+  config: ConsoleConfig,
+  mode: TradingMode,
+  era: string | null = null,
+): EarningsAnalytics {
+  const since = eraSince(config, era);
   const file = mode === "live" ? "earnings_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.earningsDir, file);
   const empty: EarningsAnalytics = {
@@ -364,11 +401,14 @@ export function readEarningsAnalytics(config: ConsoleConfig, mode: TradingMode):
   return withReadOnlyDb<EarningsAnalytics>(dbPath, empty, (db) => {
     const closed = db
       .prepare<[], Record<string, unknown>>(
-        `SELECT closed_at, strategy,
+        `SELECT opened_at, closed_at, strategy,
                 pnl - COALESCE(entry_cost, 0) - COALESCE(exit_cost, 0) AS net
            FROM trades WHERE closed_at IS NOT NULL AND pnl IS NOT NULL`,
       )
-      .all();
+      .all()
+      // Era-bounded on the ENTRY stamp; open positions below stay unbounded because "open" is
+      // current by definition.
+      .filter((r) => onOrAfter(r["opened_at"], since));
     const totalNet = closed.reduce((s, r) => s + Number(r["net"]), 0);
     const strategies = new Set(closed.map((r) => String(r["strategy"])));
 
@@ -468,13 +508,18 @@ export const EARNINGS_FIRST_PAGE: EarningsPageRequest = { trades: FIRST_PAGE, re
  * the alternative — a per-store LIMIT — silently drops rows, which is what this
  * is here to stop.
  */
-export function readEarnings(config: ConsoleConfig, page: EarningsPageRequest = EARNINGS_FIRST_PAGE): EarningsPayload {
+export function readEarnings(
+  config: ConsoleConfig,
+  page: EarningsPageRequest = EARNINGS_FIRST_PAGE,
+  era: string | null = null,
+): EarningsPayload {
+  const since = eraSince(config, era);
   const liveDb = path.join(config.paths.earningsDir, "earnings_trades.db");
   const paperDb = path.join(config.paths.earningsDir, "paper_trades.db");
-  const trades = [...readTrades(liveDb, "live"), ...readTrades(paperDb, "paper")].sort((a, b) =>
+  const trades = [...readTrades(liveDb, "live", since), ...readTrades(paperDb, "paper", since)].sort((a, b) =>
     (b.openedAt ?? "").localeCompare(a.openedAt ?? ""),
   );
-  const reviews = [...readReviews(liveDb, "live"), ...readReviews(paperDb, "paper")].sort((a, b) =>
+  const reviews = [...readReviews(liveDb, "live", since), ...readReviews(paperDb, "paper", since)].sort((a, b) =>
     b.scanDate.localeCompare(a.scanDate),
   );
   return { trades: pageArray(trades, page.trades), reviews: pageArray(reviews, page.reviews) };

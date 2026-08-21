@@ -77,11 +77,11 @@ interface EarningsAnalytics {
   }>;
 }
 
-function useEarningsAnalytics(mode: TradingMode) {
+function useEarningsAnalytics(mode: TradingMode, era: string | null) {
   return useQuery<EarningsAnalytics>({
-    queryKey: ["earnings-analytics", mode],
+    queryKey: ["earnings-analytics", mode, era],
     queryFn: async () => {
-      const res = await fetch(`/api/earnings/analytics?mode=${mode}`);
+      const res = await fetch(`/api/earnings/analytics?mode=${mode}${era !== null ? `&era=${era}` : ""}`);
       if (!res.ok) throw new Error(`earnings analytics: HTTP ${res.status}`);
       return (await res.json()) as EarningsAnalytics;
     },
@@ -89,14 +89,36 @@ function useEarningsAnalytics(mode: TradingMode) {
   });
 }
 
+
+/**
+ * The earnings era scope: current era (the suite's data_epoch, 2026-08-21 advisor-era cutover) or
+ * full history. Earnings has no era column of its own, so this is a two-state control rather than
+ * the flies/meic era list — same default-narrow, widen-on-request convention.
+ */
+function EraScope({ era, onChange }: { era: string | null; onChange: (v: string | null) => void }) {
+  return (
+    <select
+      className={`text-input ${era === null ? "" : "scope-select-off-default"}`}
+      value={era ?? ""}
+      onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
+      aria-label="era"
+      title="The advisor era began 2026-08-21, when every hand-designed variant retired and management params came under advisor experiments. Earlier trades ran under different rules — pooling them reads as one experiment when it is really two."
+    >
+      <option value="">this era (default)</option>
+      <option value="ALL">all history</option>
+    </select>
+  );
+}
+
 export function EarningsPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("open");
   const [mode, setMode] = useMode();
+  const [era, setEra] = useState<string | null>(null);
   const tradesPage = usePage();
   const reviewsPage = usePage();
-  const { data, isLoading, isError, isPlaceholderData } = useEarnings(tradesPage.page, reviewsPage.page);
+  const { data, isLoading, isError, isPlaceholderData } = useEarnings(tradesPage.page, reviewsPage.page, era);
   const upcoming = useUpcoming();
-  const analytics = useEarningsAnalytics(mode);
+  const analytics = useEarningsAnalytics(mode, era);
   const a = analytics.data;
 
   return (
@@ -110,6 +132,7 @@ export function EarningsPage() {
             else on the page. */}
         <PaperLiveBadge mode={mode} />
         <ModeToggle mode={mode} onChange={setMode} />
+        <EraScope era={era} onChange={setEra} />
       </div>
 
       <div className="cards cards-wide">
@@ -119,7 +142,7 @@ export function EarningsPage() {
             <EarningsManagementLog />
           </>
         )}
-        {tab === "strategy detail" && <EarningsDetailCards mode={mode} />}
+        {tab === "strategy detail" && <EarningsDetailCards mode={mode} era={era} />}
         {tab === "overview" && (
         <>
         <section className="card">
