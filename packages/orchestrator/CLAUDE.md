@@ -165,14 +165,15 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
 - **The reliability path is deterministic and local.** The watchdog → notify path uses only the
   stdlib + the OS shell — no MCP, no HTTP client, no AI tooling — so it has no failure mode beyond
   its own. A 34-hour silent stall is why this is worth protecting: the thing that watches for a
-  stall must not be able to stall the same way. `follow_notifier.py` (the tastylive Follow Feed
-  push) is the one notifier that makes an HTTP call, and that is exactly why it is **its own scheduled
-  task and is never called from the watchdog tick** — unlike `trade_notifier`, which is files-only and
-  may ride the tick. Any future notifier that touches a network gets the same treatment: its own task,
-  every request wrapped, an outage degrading to "no notifications" rather than a failed tick.
-  `desk_notifier.py` (`cherrypick notify-desk`, the `desk-notify` job) is the second such notifier and
-  gets the same treatment for two reasons rather than one — it pushes a Discord card *and* asks the
-  broker for order status. It cards each manual-desk order on submit and again when that order reaches
+  stall must not be able to stall the same way. Any notifier that touches a network gets the same
+  treatment: its own scheduled job, never a call from the watchdog tick, every request wrapped, an
+  outage degrading to "no notifications" rather than a failed tick. (The two third-party feed
+  notifiers that established this rule — the tastylive Follow Feed and Lossdog pushes — moved
+  wholesale to the standalone `follow-feed-notifier` repo on 2026-08-21, scheduled by the OS Task
+  Scheduler and entirely outside this suite; the rule outlives them here.)
+  `desk_notifier.py` (`cherrypick notify-desk`, the `desk-notify` job) is the network-calling
+  notifier this package still owns, and it earns the treatment for two reasons rather than one —
+  it pushes a Discord card *and* asks the broker for order status. It cards each manual-desk order on submit and again when that order reaches
   a terminal state (filled / cancelled / rejected / expired). Fill detection is **poll-first**: the
   broker's own status is authoritative and an unreachable broker means "ask again next pass", never
   "nothing happened". Critically it **reads the desk's audit journal as a file and never imports

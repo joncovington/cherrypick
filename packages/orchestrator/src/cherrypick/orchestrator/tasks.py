@@ -435,9 +435,6 @@ def registry_snapshot(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
     la = cfgmod.archive_settings(cfg)
     if la["enabled"]:
         out[la["task_name"]] = query_verbose(la["task_name"])
-    ff = cfgmod.follow_feed_settings(cfg)
-    if ff["enabled"]:
-        out[ff["task_name"]] = query_verbose(ff["task_name"])
     sw = cfgmod.symbol_watch_settings(cfg)
     if sw["enabled"]:
         out[sw["task_name"]] = query_verbose(sw["task_name"])
@@ -472,7 +469,11 @@ def legacy_task_names(cfg: dict[str, Any]) -> list[str]:
     names.append(cfgmod.archive_settings(cfg)["task_name"])
     names.append(cfgmod.reconcile_schedule_settings(cfg)["task_name"])
     names.append(cfgmod.symbol_watch_settings(cfg)["task_name"])
-    names.append(cfgmod.follow_feed_settings(cfg)["task_name"])
+    # The pre-supervisor follow-feed task names ("cherrypick-follow-notify", "cherrypick-lossdog-
+    # notify") stay on the deletion list as literals: their settings functions left with the feed
+    # notifiers (moved to the standalone follow-feed-notifier repo, 2026-08-21), but a pre-cutover
+    # box may still hold the tasks, and an undeleted one would double-fire against the standalone.
+    names.extend(["cherrypick-follow-notify", "cherrypick-lossdog-notify"])
     return names
 
 

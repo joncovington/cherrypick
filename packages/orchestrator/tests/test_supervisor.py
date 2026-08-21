@@ -83,7 +83,6 @@ def base_cfg(**overrides):
         "modules": {},
         "watchdog": {"interval_minutes": 10},
         "trade_notify": {"task_name": "cherrypick-trade-notify", "interval_seconds": 30},
-        "follow_feed": {"enabled": False},
     }
     cfg.update(overrides)
     return cfg
@@ -459,7 +458,7 @@ def test_snapshot_reflects_daemon_state(spawned):
     info = supersnap.job_run_info("watchdog", snap)
     assert info and info["last_run_time"]
     # the disabled opt-in stays visible with its reason
-    assert snap["jobs"]["follow-notify"]["enabled"] is False
+    assert snap["jobs"]["symbol-watch"]["enabled"] is False
 
 
 def test_derive_error_disables_one_job_and_is_reported(spawned):

@@ -288,7 +288,7 @@ only — it never places a trade, and it does not enable live trading.
 **Notification webhooks** are stored in the keyring the same way, never in your config file:
 
 ```bash
-python run.py secrets-set --channel discord    # prompts without echo; also: slack, discord_follow
+python run.py secrets-set --channel discord    # prompts without echo; also: slack
 python run.py secrets-status                   # which channels are configured (prints no secrets)
 ```
 

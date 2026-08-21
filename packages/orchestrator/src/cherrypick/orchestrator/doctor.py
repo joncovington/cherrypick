@@ -223,8 +223,6 @@ def _suite_task_checks(cfg: dict[str, Any]) -> list[Check]:
             _job_check("task.trade_notify", "trade-notify"),
             _job_check("task.log_archive", "log-archive", cfgmod.archive_settings(cfg)["enabled"]),
             _job_check("task.reconcile", "reconcile", cfgmod.reconcile_schedule_settings(cfg)["enabled"]),
-            _job_check("task.follow_notify", "follow-notify", cfgmod.follow_feed_settings(cfg)["enabled"]),
-            _job_check("task.lossdog_notify", "lossdog-notify", cfgmod.lossdog_settings(cfg)["enabled"]),
             # streamer-health is preopen's whole-session replacement under the supervisor
             _job_check("task.streamer_health", "streamer-health", sh.get("enabled", True)),
             # The suite's only read surface had no entry here at all until 2026-08-14 — a green
@@ -239,11 +237,6 @@ def _suite_task_checks(cfg: dict[str, Any]) -> list[Check]:
             "reconcile",
             cfgmod.reconcile_schedule_settings(cfg)["task_name"],
             cfgmod.reconcile_schedule_settings(cfg)["enabled"],
-        ),
-        (
-            "follow_notify",
-            cfgmod.follow_feed_settings(cfg)["task_name"],
-            cfgmod.follow_feed_settings(cfg)["enabled"],
         ),
         ("preopen", cfgmod.preopen_settings(cfg)["task_name"], cfgmod.preopen_settings(cfg)["enabled"]),
     ]

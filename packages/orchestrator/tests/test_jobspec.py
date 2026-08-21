@@ -259,7 +259,6 @@ def suite_cfg(**overrides):
         },
         "watchdog": {"task_name": "cherrypick-watchdog", "interval_minutes": 10},
         "trade_notify": {"task_name": "cherrypick-trade-notify", "interval_seconds": 30},
-        "follow_feed": {"enabled": False},
     }
     cfg.update(overrides)
     return cfg
@@ -283,8 +282,6 @@ def test_derive_full_suite_job_table():
         "watchdog",
         "streamer-health",
         "trade-notify",
-        "follow-notify",
-        "lossdog-notify",
         "desk-notify",
         "console",
         "meic-paper",
@@ -370,8 +367,6 @@ def test_derive_flies_live_enabled_with_todays_arm_record():
 def test_derive_disabled_optins_included_disabled():
     """Off-by-choice jobs stay visible (doctor's healthy-disabled distinction), never omitted."""
     jobs, _ = derive(suite_cfg())
-    follow = next(j for j in jobs if j.id == "follow-notify")
-    assert not follow.enabled and "disabled in config" in follow.enabled_reason
     sw = next(j for j in jobs if j.id == "symbol-watch")
     assert not sw.enabled
 
