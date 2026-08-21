@@ -158,6 +158,20 @@ def test_build_streamer_uses_registry_union(home, tmp_path):
     assert ".SPX250620P6800" in streamer._protected_symbols()
 
 
+def test_build_streamer_trade_subscribes_cash_legs_but_not_option_legs(home):
+    """Overview's breadth legs (VIX/VIX3M/VVIX are INDICES: Trade events only, never quotes) must
+    ride the Trade subscription — Quote-only left them with no price at all, and overview reads
+    every breadth spot from stream_trades. Option legs stay off Trade deliberately: sparse prints
+    would read as perpetually stale to the engine's stale-trade self-heal."""
+    _registry.write_request("overview", ["SPX"], legs=["VIX", "GLD", ".SPXW260821C7700"])
+    streamer = _daemon.build_streamer({})
+    subs = streamer._extra_subscriptions(streamer.symbols)
+    assert "VIX" in subs["Trade"] and "GLD" in subs["Trade"]
+    assert ".SPXW260821C7700" not in subs["Trade"]
+    assert ".SPXW260821C7700" in subs["Quote"]  # options keep their marks
+    assert "VIX" in subs["Quote"]  # harmless no-op for an index; ETF legs get real quotes
+
+
 def test_build_streamer_no_legs_matches_engine_default(home):
     _registry.write_request("flies", ["SPX"])
     streamer = _daemon.build_streamer({})

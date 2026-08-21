@@ -44,6 +44,33 @@ _LEGACY = ("tastytrade-mcp", SHARED_SERVICE)
 # from oldest_event_age_s and does not trust this flag — it exists only for a human running --status.
 _STALE_WARN_S = 600
 
+# Age past which a single union underlying's spot counts as DEAD during regular hours. The
+# aggregate `underlyings_stale_age_s` below deliberately uses the FRESHEST underlying so one quiet
+# name can't false-trip a whole-feed alarm — and the price of that choice was paid 2026-08-17..21,
+# when TQQQ's trade subscription died mid-flight and streamed nothing for four sessions while SPX
+# kept the aggregate fresh. This per-symbol field is the other half of the bargain: generous enough
+# (15 min) that no liquid underlying hits it in RTH, and 5 minutes beyond the producer's own
+# self-heal resubscribe (cherrypick.core.streamer, 10 min), so the watchdog only ever sees a
+# symbol the self-heal has already failed to revive.
+_DEAD_UNDERLYING_S = 900.0
+
+
+def _in_rth_clock(now_utc: float) -> bool:
+    """Weekday 09:35-15:55 ET, clock-only. Holidays are the CALLER'S problem by design: the
+    watchdog asks through a holiday-aware session gate (`timeutil.is_session_window`), and this
+    daemon deliberately holds no holiday calendar of its own."""
+    try:
+        from datetime import UTC, datetime
+        from zoneinfo import ZoneInfo
+
+        et = datetime.fromtimestamp(now_utc, tz=UTC).astimezone(ZoneInfo("America/New_York"))
+    except Exception:
+        return False
+    if et.weekday() >= 5:
+        return False
+    minutes = et.hour * 60 + et.minute
+    return 9 * 60 + 35 <= minutes <= 15 * 60 + 55
+
 
 def make_session_factory():
     """A thread-local tastytrade session factory backed by the suite's keyring credentials.
@@ -72,8 +99,21 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
         # Base underlying subscriptions (matching the engine's own default) PLUS the registered legs on
         # Quote/Greeks so their prices stay fresh beyond the ATM window. union_legs re-reads the registry
         # and re-runs each module's leg_sources query, so an opened/closed position is picked up here.
+        #
+        # Non-option legs (no leading '.') ALSO get Trade: index legs like overview's VIX/VIX3M/VVIX
+        # publish Trade events, never quotes, so Quote-only left them with no price at all — and
+        # overview reads every breadth spot from stream_trades (facts.py), so its whole panel froze
+        # at the 2026-08-17 subscription drop and nothing brought it back. ETF legs trade constantly
+        # in RTH, so the engine's stale-trade self-heal won't false-trip on them; OPTION legs stay
+        # off Trade deliberately — sparse prints would read as perpetually stale there.
         legs = _registry.union_legs()
-        return {"Trade": list(underlyings), "Quote": legs, "Greeks": legs, "Summary": list(underlyings)}
+        cash_legs = [leg for leg in legs if not leg.startswith(".")]
+        return {
+            "Trade": list(underlyings) + cash_legs,
+            "Quote": legs,
+            "Greeks": legs,
+            "Summary": list(underlyings),
+        }
 
     def _protected_symbols() -> set[str]:
         return set(_registry.union_legs())
@@ -168,6 +208,7 @@ def status(cfg: dict) -> dict:
     age: float | None = None
     u_age: float | None = None
     symbol_health: dict[str, dict] = {}
+    dead_underlyings: dict[str, float] = {}
     if cache.exists():
         conn = sqlite3.connect(f"file:{cache}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
@@ -192,11 +233,26 @@ def status(cfg: dict) -> dict:
             u_newest: float | None = None
             if underlyings:
                 placeholders = ",".join("?" * len(underlyings))
-                r = conn.execute(
-                    f"SELECT MAX(updated_at) AS last FROM stream_trades WHERE symbol IN ({placeholders})",
-                    underlyings,
-                ).fetchone()
-                u_newest = r["last"] if r and r["last"] is not None else None
+                spot_ages = {
+                    r["symbol"]: now - r["updated_at"]
+                    for r in conn.execute(
+                        f"SELECT symbol, updated_at FROM stream_trades WHERE symbol IN ({placeholders})",
+                        underlyings,
+                    )
+                    if r["updated_at"] is not None
+                }
+                if spot_ages:
+                    u_newest = now - min(spot_ages.values())
+                # Per-symbol dead-spot detection (see _DEAD_UNDERLYING_S). Only symbols WITH a row
+                # can report dead: a union symbol that has never written is the recycle-on-union-
+                # growth path's job, and flagging it here would loop the watchdog's restart against
+                # a symbol a restart cannot fix.
+                if _in_rth_clock(now):
+                    dead_underlyings = {
+                        sym: round(age, 1)
+                        for sym, age in spot_ages.items()
+                        if age > _DEAD_UNDERLYING_S
+                    }
             # Per-symbol chain-fetch health: the aggregate ages above are freshest-of-any-symbol, so
             # ONE symbol's chain fetch silently failing (window disabled) is invisible whenever other
             # symbols keep ticking fine — this is that symbol's own signal (see
@@ -226,6 +282,7 @@ def status(cfg: dict) -> dict:
     info["chain_fetch_errors"] = {
         s: h["chain_fetch_error"] for s, h in symbol_health.items() if h["chain_fetch_error"]
     }
+    info["dead_underlyings"] = dead_underlyings
     # What the registry union currently asks beyond each symbol's nearest expiration. The per-date
     # serving state is the `SYMBOL@date` rows already present in symbol_health above.
     try:

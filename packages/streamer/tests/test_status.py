@@ -97,6 +97,61 @@ def test_status_tracks_underlying_spot_freshness_separately(home):
     assert st["underlyings_stale_age_s"] >= 3500, "underlying spot age reflects the frozen SPX feed"
 
 
+def test_status_flags_individually_dead_underlyings_in_rth(home, monkeypatch):
+    """The 2026-08-17..21 fault: ONE underlying's trade subscription died mid-flight while others
+    kept every aggregate age fresh (TQQQ dead four sessions behind a live SPX). status() must name
+    the individually-dead symbols so the watchdog can restart on a fault no aggregate can see."""
+    import time as _time
+
+    from cherrypick.core import streamcache
+
+    cache = _config.cache_path({})
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    conn = streamcache.connect(cache)
+    now = _time.time()
+    rows = [
+        ("SPX", 7517.0, now - 5),        # ticking fine, keeps every aggregate fresh
+        ("TQQQ", 92.0, now - 3600),      # dead an hour -- far past the 900s limit
+    ]
+    for sym, last, ts in rows:
+        conn.execute(
+            "INSERT INTO stream_trades(symbol, last, change, volume, updated_at) VALUES (?,?,?,?,?)",
+            (sym, last, 0.0, 0.0, ts),
+        )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(_daemon, "_in_rth_clock", lambda now_utc: True)
+    # UPRO is in the union but has NO row at all: that is the recycle-on-union-growth path's case,
+    # and flagging it here would loop the watchdog's restart against a symbol a restart can't fix.
+    st = _daemon.status({"symbols": ["SPX", "TQQQ", "UPRO"]})
+    assert set(st["dead_underlyings"]) == {"TQQQ"}
+    assert st["dead_underlyings"]["TQQQ"] >= 3500
+    assert st["underlyings_stale_age_s"] < 60, "the aggregate stays fresh -- exactly why this field exists"
+
+
+def test_status_dead_underlyings_empty_outside_rth(home, monkeypatch):
+    """Outside regular hours a quiet underlying is legitimate (the SPX index is frozen overnight by
+    design), so the field must go silent rather than teach the watchdog to restart all night."""
+    import time as _time
+
+    from cherrypick.core import streamcache
+
+    cache = _config.cache_path({})
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    conn = streamcache.connect(cache)
+    conn.execute(
+        "INSERT INTO stream_trades(symbol, last, change, volume, updated_at) VALUES (?,?,?,?,?)",
+        ("SPX", 7517.0, 0.0, 0.0, _time.time() - 7200),
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(_daemon, "_in_rth_clock", lambda now_utc: False)
+    st = _daemon.status({})
+    assert st["dead_underlyings"] == {}
+
+
 def test_status_surfaces_chain_fetch_errors(home):
     """A symbol whose chain fetch is currently failing (stream_symbol_health.chain_fetch_error set)
     must show up in chain_fetch_errors even while every other symbol's aggregate ages look healthy

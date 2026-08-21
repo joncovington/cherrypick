@@ -22,6 +22,8 @@ from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core import home as core_home
+
 from cherrypick.notify import Notifier
 
 from . import config as cfgmod
@@ -339,14 +341,31 @@ def _streamer_chain_fetch_errors(status: dict[str, Any]) -> dict[str, str]:
     return errors if isinstance(errors, dict) else {}
 
 
+def _streamer_dead_underlyings(status: dict[str, Any]) -> dict[str, float]:
+    """Union underlyings whose spot has been individually stale past the producer's dead limit
+    during regular hours (`stream_trades` age per symbol), or `{}` if unreported/healthy.
+
+    Distinct from `_streamer_underlying_stale_age`, which deliberately takes the FRESHEST
+    underlying so one quiet name can't false-trip — the choice that let TQQQ's dead trade
+    subscription hide behind a live SPX for four sessions (2026-08-17..21) while pmcc read
+    `no_long_chain` and overview's breadth legs froze. The producer self-heals a stale
+    subscription at 10 minutes (cherrypick.core.streamer); this field only names a symbol the
+    self-heal has already failed to revive (15 min), so a restart is the right medicine by the
+    time the watchdog sees it. A producer that doesn't report this field degrades cleanly."""
+    dead = status.get("dead_underlyings")
+    return dead if isinstance(dead, dict) else {}
+
+
 def _streamer_stale_detail(
     global_age: float | None,
     underlying_age: float | None,
     limit: int,
     chain_errors: dict[str, str] | None = None,
+    dead_underlyings: dict[str, float] | None = None,
 ) -> str:
     """Name whichever feed(s) are stale, so the alert distinguishes a whole-stream silence from an
-    underlying-spot-only stall or a single symbol's dead chain fetch (all different causes)."""
+    underlying-spot-only stall, a single symbol's dead chain fetch, or a single symbol's dead spot
+    subscription (all different causes)."""
     parts = []
     if global_age is not None and global_age > limit:
         parts.append(f"no events for {global_age:.0f}s")
@@ -355,6 +374,9 @@ def _streamer_stale_detail(
     if chain_errors:
         named = ", ".join(f"{sym}: {err}" for sym, err in chain_errors.items())
         parts.append(f"chain fetch failing for {named}")
+    if dead_underlyings:
+        named = ", ".join(f"{sym} {age:.0f}s" for sym, age in dead_underlyings.items())
+        parts.append(f"dead spot subscription for {named}")
     return " and ".join(parts) or f"stale (limit {limit}s)"
 
 
@@ -438,14 +460,21 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
     stale_age = _streamer_stale_age(status)
     underlying_age = _streamer_underlying_stale_age(status)
     chain_errors = _streamer_chain_fetch_errors(status)
+    dead_underlyings = _streamer_dead_underlyings(status)
     limit = spec.get("stale_restart_seconds", 240)
     # A stall is the whole stream going quiet, OR the underlying-spot feed dying while option quotes
     # keep the global age fresh (2026-07-22), OR a single symbol's chain fetch exhausting its in-process
-    # retries while every other symbol stays fresh (2026-07-31) — judge on whichever signal fires.
+    # retries while every other symbol stays fresh (2026-07-31), OR one symbol's spot subscription
+    # dying mid-flight while others keep every aggregate fresh (2026-08-17, TQQQ) — judge on
+    # whichever signal fires.
     stale_candidates = [a for a in (stale_age, underlying_age) if a is not None]
     worst_stale = max(stale_candidates) if stale_candidates else None
-    is_stalled = (worst_stale is not None and worst_stale > limit) or bool(chain_errors)
-    detail = _streamer_stale_detail(stale_age, underlying_age, limit, chain_errors)
+    is_stalled = (
+        (worst_stale is not None and worst_stale > limit)
+        or bool(chain_errors)
+        or bool(dead_underlyings)
+    )
+    detail = _streamer_stale_detail(stale_age, underlying_age, limit, chain_errors, dead_underlyings)
     connection_age = _streamer_connection_age(status)
     # Don't count a connection that has not had time to populate yet — a restart takes a few seconds to
     # resubscribe, and without this the next tick would see stale data and restart again, forever.
@@ -671,11 +700,20 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
     # file, so half the freshness signal was dead with no error).
     if in_session:
         log_rel = paper.get("log")
+        # Three candidate signals, freshest wins. The DB mtime and the log are both conditional
+        # writes — in WAL mode the main DB file's mtime only moves on a checkpoint, and a log line
+        # is a side effect of having something to say — so a healthy-but-idle loop (calendars, most
+        # weeks: no positions, nothing to mark, nothing to log) looked dead through both and this
+        # check flapped WARN for most of 2026-08-21's session. The heartbeat is the one file a
+        # resident loop writes UNCONDITIONALLY every tick (cherrypick.core.home.heartbeat_path — the
+        # same lesson the supervisor learned from calendars' 107 restarts on 2026-08-17); a module
+        # that doesn't write one degrades cleanly to the two conditional signals.
         ages = [
             a
             for a in (
                 _file_age_minutes(cfgmod.paper_db_path(mcfg, name)) if paper.get("paper_db") else None,
                 _file_age_minutes(cfgmod.module_logs_dir(name) / Path(log_rel).name) if log_rel else None,
+                _file_age_minutes(core_home.heartbeat_path(name)),
             )
             if a is not None
         ]
