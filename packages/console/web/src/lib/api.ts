@@ -330,12 +330,13 @@ export function useCalendarsPolicies() {
   });
 }
 
-export function useEarnings(trades: PageState, reviews: PageState) {
+export function useEarnings(trades: PageState, reviews: PageState, era: string | null = null) {
   const params = new URLSearchParams();
   pageParams(params, "trades", trades);
   pageParams(params, "reviews", reviews);
+  if (era !== null) params.set("era", era);
   return useQuery<EarningsPayload>({
-    queryKey: ["earnings", trades, reviews],
+    queryKey: ["earnings", trades, reviews, era],
     queryFn: () => getJson<EarningsPayload>(`/api/earnings?${params.toString()}`),
     refetchInterval: 30_000,
     placeholderData: (prev) => prev,

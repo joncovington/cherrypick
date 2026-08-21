@@ -194,6 +194,12 @@ changes as safe, and it is the only check that sees past the fallback below.
   showing every row it can reach — MEIC's `CURRENT_ERA` is the case in hand. Earlier eras stay
   reachable through a visible scope control, so widening is a stated choice and never the quiet
   default. Filtering to nothing is reported as a filtered-out result, not an empty page.
+  Since 2026-08-21 this applies to EVERY history/performance/reporting surface: meic and flies
+  scope on their own era models, and the modules with no era column (earnings, plus the suite
+  report and review totals) bound to the suite's `data_epoch` via `readers/db.ts::suiteEra` —
+  one source, the same lever `calibrate` enforces, widened per-surface with the shared `"ALL"`
+  convention. calendars/pmcc need no bound: their ledgers were empty before the era began, so
+  current-era and all-history are the same set until a second era exists.
 - **Market data**: the console opens its own DXLink session via the official `@tastytrade/api` npm
   SDK (`quoteStreamer`). The Python streamer and its `stream_cache.db` are untouched; the cache is
   read read-only as the off-hours / disconnected fallback.

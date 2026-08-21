@@ -53,12 +53,12 @@ function SampleBar({ s }: { s: StrategyDetail }) {
   );
 }
 
-export function EarningsDetailCards({ mode }: { mode: TradingMode }) {
+export function EarningsDetailCards({ mode, era }: { mode: TradingMode; era: string | null }) {
   const [window, setWindow] = useState<(typeof WINDOWS)[number]>("cumulative");
   const { data, isLoading, dataUpdatedAt } = useQuery<Detail>({
-    queryKey: ["earnings-detail", mode],
+    queryKey: ["earnings-detail", mode, era],
     queryFn: async () => {
-      const res = await fetch(`/api/earnings/detail?mode=${mode}`);
+      const res = await fetch(`/api/earnings/detail?mode=${mode}${era !== null ? `&era=${era}` : ""}`);
       if (!res.ok) throw new Error(`earnings detail: HTTP ${res.status}`);
       return (await res.json()) as Detail;
     },
@@ -217,7 +217,7 @@ export function EarningsDetailCards({ mode }: { mode: TradingMode }) {
           </p>
         </Card>
 
-        <ScreenRejections mode={mode} />
+        <ScreenRejections mode={mode} era={era} />
       </div>
 
       <Card title="Reading these numbers" collapseKey="earnings-caveats">

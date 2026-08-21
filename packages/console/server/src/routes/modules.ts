@@ -44,6 +44,7 @@ import { buildGexProfile, gexSymbols } from "../services/gexProfile.js";
 import { buildSuiteReport } from "../services/report.js";
 import { readLogTail } from "../readers/logs.js";
 import { readSystemPanel, readEod, renderReport } from "../services/suite.js";
+import { suiteEra } from "../readers/db.js";
 
 function parseMode(q: unknown): TradingMode {
   const mode = (q as Record<string, unknown> | undefined)?.["mode"];
@@ -89,7 +90,10 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   // The screening metrics, classified by the module that owns them rather than re-derived here.
   app.get("/api/earnings/screen", async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
-    const since = typeof q["since"] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(q["since"]) ? q["since"] : null;
+    const explicit = typeof q["since"] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(q["since"]) ? q["since"] : null;
+    // Era-default like every other earnings surface: screen_report already takes --since, so the
+    // era bound rides the module's own classifier rather than a console-side re-derivation.
+    const since = explicit ?? (q["era"] === "ALL" ? null : suiteEra(config.paths.orchestratorConfig).from);
     return readScreenMetrics(parseMode(req.query) === "live" ? "live" : "paper", since);
   });
 
@@ -241,12 +245,26 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   // attached because that is how the module hands it over -- the ranking never travels alone.
   app.get("/api/calendars/policies", async () => readCalendarsPolicies());
 
+  // "ALL" widens an earnings surface to full history; anything else (or absence) means the current
+  // era — the suite's data_epoch, since earnings has no era column of its own.
+  const parseEarningsEra = (q: unknown): string | null => {
+    const v = ((q ?? {}) as Record<string, unknown>)["era"];
+    return v === "ALL" ? "ALL" : null;
+  };
   app.get("/api/earnings", async (req) =>
-    readEarnings(config, { trades: parsePage(req.query, "trades"), reviews: parsePage(req.query, "reviews") }),
+    readEarnings(
+      config,
+      { trades: parsePage(req.query, "trades"), reviews: parsePage(req.query, "reviews") },
+      parseEarningsEra(req.query),
+    ),
   );
   app.get("/api/earnings/upcoming", async () => readSymbolWatch(config));
-  app.get("/api/earnings/analytics", async (req) => readEarningsAnalytics(config, parseMode(req.query)));
-  app.get("/api/earnings/detail", async (req) => readEarningsDetail(config, parseMode(req.query)));
+  app.get("/api/earnings/analytics", async (req) =>
+    readEarningsAnalytics(config, parseMode(req.query), parseEarningsEra(req.query)),
+  );
+  app.get("/api/earnings/detail", async (req) =>
+    readEarningsDetail(config, parseMode(req.query), parseEarningsEra(req.query)),
+  );
   // Open positions as the managed loop sees them: latest mark, and whether the loop is alive.
   app.get("/api/earnings/live", async () => readEarningsLive(config));
   app.get("/api/gex", async (req) => readGex(config, parsePage(req.query)));
