@@ -46,3 +46,86 @@ export function stdev(values: number[]): number | null {
   const varr = values.reduce((s, v) => s + (v - m) ** 2, 0) / (values.length - 1);
   return Math.sqrt(varr);
 }
+
+/**
+ * The notional base the cumulative curve is drawn against.
+ *
+ * A DISPLAY CONSTANT, not a bankroll any of these books trade. Every module using this runs
+ * one-lot sampling streams — MEIC's `open` and `width-5` each took 265 one-lot entries in a single
+ * session — so calling the line "equity" would imply position sizing and compounding these
+ * experiments deliberately do not do. The drawdown underneath it is real; the base is scaffolding,
+ * and the cards say so in their titles.
+ */
+export const BANKROLL_BASE = 100_000;
+
+export interface EquityPoint {
+  date: string;
+  netPnl: number;
+  /** BANKROLL_BASE + cumulative net. See the constant — this is a drawing aid, not a balance. */
+  equity: number;
+  /** Peak-to-here, in dollars. Real regardless of the base above. */
+  drawdown: number;
+}
+
+export interface RiskSummary {
+  sharpe: number | null;
+  sortino: number | null;
+  calmar: number | null;
+  recoveryFactor: number | null;
+  sampleSize: number;
+  /** Sharpe above 3 on a sample this small is a warning about the sample, not a result. */
+  sharpeOverfitFlag: boolean;
+}
+
+export const EMPTY_RISK: RiskSummary = {
+  sharpe: null,
+  sortino: null,
+  calmar: null,
+  recoveryFactor: null,
+  sampleSize: 0,
+  sharpeOverfitFlag: false,
+};
+
+/** Daily net P&L, in date order, folded into a cumulative curve with its running drawdown. */
+export function equityCurve(daily: Array<{ date: string; net: number }>): EquityPoint[] {
+  let cum = 0;
+  let peak = 0;
+  return daily.map(({ date, net }) => {
+    cum += net;
+    peak = Math.max(peak, cum);
+    return { date, netPnl: net, equity: BANKROLL_BASE + cum, drawdown: peak - cum };
+  });
+}
+
+/**
+ * Sharpe, Sortino, Calmar and recovery factor over a daily curve, annualized on 252 sessions.
+ *
+ * Every one of these returns `null` rather than 0 where it is undefined — no dispersion, no
+ * downside days, no drawdown to recover from. A 0 there reads as "measured, and it was zero",
+ * which is the misleadingly-precise zero this suite's ledgers already refuse to write.
+ */
+export function riskSummary(equity: EquityPoint[]): RiskSummary {
+  const returns = equity.map((b) => b.netPnl / BANKROLL_BASE);
+  const n = returns.length;
+  if (n === 0) return EMPTY_RISK;
+
+  const meanR = returns.reduce((s, v) => s + v, 0) / n;
+  const sd = stdev(returns);
+  const downside = returns.filter((r) => r < 0);
+  const ddSd = downside.length >= 2 ? stdev(downside) : null;
+  const maxDd = Math.max(...equity.map((b) => b.drawdown), 0);
+  const annualized = returns.reduce((s, v) => s + v, 0) * (252 / n);
+  const maxDdPct = maxDd / BANKROLL_BASE;
+  const netTotal = equity.reduce((s, b) => s + b.netPnl, 0);
+  const sharpe = sd !== null && sd !== 0 ? (meanR / sd) * Math.sqrt(252) : null;
+  const round3 = (v: number): number => Math.round(v * 1000) / 1000;
+
+  return {
+    sharpe: sharpe !== null ? round3(sharpe) : null,
+    sortino: ddSd !== null && ddSd !== 0 ? round3((meanR / ddSd) * Math.sqrt(252)) : null,
+    calmar: maxDdPct > 0 ? round3(annualized / maxDdPct) : null,
+    recoveryFactor: maxDd > 0 ? round3(netTotal / maxDd) : null,
+    sampleSize: n,
+    sharpeOverfitFlag: sharpe !== null && sharpe > 3,
+  };
+}

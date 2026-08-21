@@ -14,6 +14,15 @@ interface Performance {
     completionRatePct: number | null;
   };
   series: Array<{ bucket: string; netPnl: number; cumulative: number }>;
+  equity: Array<{ date: string; netPnl: number; equity: number; drawdown: number }>;
+  risk: {
+    sharpe: number | null;
+    sortino: number | null;
+    calmar: number | null;
+    recoveryFactor: number | null;
+    sampleSize: number;
+    sharpeOverfitFlag: boolean;
+  };
   roll: {
     leggedEntries: number;
     completed: number;
@@ -88,6 +97,59 @@ function Tile({ label, value, tone }: { label: string; value: string; tone?: "po
       <span className="stat-label">{label}</span>
       <span className={`stat-value ${cls}`}>{value}</span>
     </div>
+  );
+}
+
+/** A ratio, or an em-dash where it is undefined. Never 0 — see riskMetrics.ts on why. */
+function fmtRatio(v: number | null): string {
+  return v === null ? "—" : v.toFixed(2);
+}
+
+function tone(v: number | null): "pos" | "neg" | "dim" | undefined {
+  if (v === null) return "dim";
+  return v >= 0 ? "pos" : "neg";
+}
+
+/** The cumulative curve with its underwater plot beneath, drawn as one pair. */
+function EquityCurve({ equity }: { equity: Performance["equity"] }) {
+  const width = 720;
+  const h = 150;
+  const hd = 70;
+  const m = { l: 56, r: 12, t: 10, b: 18 };
+  const eq = equity.map((e) => e.equity);
+  const lo = Math.min(...eq);
+  const hi = Math.max(...eq);
+  const span = hi - lo || 1;
+  const maxDd = Math.max(...equity.map((e) => e.drawdown), 1);
+  const X = (i: number): number => m.l + (i * (width - m.l - m.r)) / Math.max(equity.length - 1, 1);
+  const Y = (v: number): number => m.t + (1 - (v - lo) / span) * (h - m.t - m.b);
+  const Yd = (v: number): number => m.t + (v / maxDd) * (hd - m.t - m.b);
+
+  return (
+    <>
+      <svg viewBox={`0 0 ${String(width)} ${String(h)}`} role="img" aria-label="cumulative net P&L"
+           style={{ width: "100%", height: "auto", display: "block" }}>
+        <polyline
+          fill="none"
+          stroke="#43b57a"
+          strokeWidth="1.5"
+          points={equity.map((e, i) => `${X(i).toFixed(1)},${Y(e.equity).toFixed(1)}`).join(" ")}
+        />
+      </svg>
+      <svg viewBox={`0 0 ${String(width)} ${String(hd)}`} role="img" aria-label="drawdown"
+           style={{ width: "100%", height: "auto", display: "block" }}>
+        <polyline
+          fill="rgba(217, 92, 74, 0.2)"
+          stroke="#d95c4a"
+          strokeWidth="1.2"
+          points={
+            `${X(0).toFixed(1)},${Yd(0).toFixed(1)} ` +
+            equity.map((e, i) => `${X(i).toFixed(1)},${Yd(e.drawdown).toFixed(1)}`).join(" ") +
+            ` ${X(equity.length - 1).toFixed(1)},${Yd(0).toFixed(1)}`
+          }
+        />
+      </svg>
+    </>
   );
 }
 
@@ -216,6 +278,43 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
           </label>
         </div>
         {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <PnlBars series={data?.series ?? []} cumulative={cumulative} />}
+      </section>
+
+      {/* The same pair MEIC's performance tab carries, from the same shared module so the two
+          cannot disagree about what a Sharpe is. Titled "1-lot samples, not a sized book" for the
+          reason MEIC's is: the base under the curve is a drawing constant, these arms take one-lot
+          entries and do not compound, and this is the most authoritative-looking chart on the page.
+          The drawdown is real. */}
+      <section className="card">
+        <div className="panel-head-row">
+          <h2>Cumulative net P&amp;L and drawdown (1-lot samples, not a sized book)</h2>
+          <span className="muted lbl">daily, whatever granularity is selected above</span>
+        </div>
+        {isLoading ? (
+          <span className="skeleton skeleton-text" style={{ width: "40%" }} />
+        ) : (data?.equity.length ?? 0) === 0 ? (
+          <p className="muted">not enough history yet</p>
+        ) : (
+          <>
+            <EquityCurve equity={data?.equity ?? []} />
+            <div className="stats-grid" style={{ marginTop: "0.75rem" }}>
+              <Tile label="sharpe" value={fmtRatio(data?.risk.sharpe ?? null)} tone={tone(data?.risk.sharpe ?? null)} />
+              <Tile label="sortino" value={fmtRatio(data?.risk.sortino ?? null)} tone={tone(data?.risk.sortino ?? null)} />
+              <Tile label="calmar" value={fmtRatio(data?.risk.calmar ?? null)} tone={tone(data?.risk.calmar ?? null)} />
+              <Tile
+                label="max drawdown"
+                value={fmtMoney(Math.max(...(data?.equity ?? []).map((e) => e.drawdown), 0))}
+                tone="neg"
+              />
+              <Tile label="sessions" value={String(data?.risk.sampleSize ?? 0)} tone="dim" />
+            </div>
+            <p className="muted lbl" style={{ marginTop: "0.5rem" }}>
+              Annualized on 252 sessions from {data?.risk.sampleSize ?? 0} of them. A ratio over that
+              few sessions describes this stretch, not the strategy.
+              {data?.risk.sharpeOverfitFlag === true && " Sharpe above 3 on a sample this small is a warning about the sample."}
+            </p>
+          </>
+        )}
       </section>
 
       <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(22rem, 1fr))" }}>
