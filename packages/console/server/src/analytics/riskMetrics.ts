@@ -98,13 +98,27 @@ export function equityCurve(daily: Array<{ date: string; net: number }>): Equity
 }
 
 /**
- * Sharpe, Sortino, Calmar and recovery factor over a daily curve, annualized on 252 sessions.
+ * How many observations a year the curve has. The annualization factor, and it is NOT optional
+ * thinking: a Sharpe is `mean/sd × sqrt(periods)`, so handing a WEEKLY series the daily constant
+ * inflates it by sqrt(252/52) — about 2.2x — and nothing about the output would look wrong.
+ *
+ * `TRADING_SESSIONS` suits the 0DTE books (meic, flies), which observe every session.
+ * `TRADING_WEEKS` suits a weekly structure: calendars enters one plan every Monday, and pmcc sells
+ * its short per week, so both would be wrong on the daily constant if they ever grow this surface.
+ */
+export const PERIODS = { TRADING_SESSIONS: 252, TRADING_WEEKS: 52 } as const;
+
+/**
+ * Sharpe, Sortino, Calmar and recovery factor over a curve, annualized on `periodsPerYear`.
  *
  * Every one of these returns `null` rather than 0 where it is undefined — no dispersion, no
  * downside days, no drawdown to recover from. A 0 there reads as "measured, and it was zero",
  * which is the misleadingly-precise zero this suite's ledgers already refuse to write.
  */
-export function riskSummary(equity: EquityPoint[]): RiskSummary {
+export function riskSummary(
+  equity: EquityPoint[],
+  periodsPerYear: number = PERIODS.TRADING_SESSIONS,
+): RiskSummary {
   const returns = equity.map((b) => b.netPnl / BANKROLL_BASE);
   const n = returns.length;
   if (n === 0) return EMPTY_RISK;
@@ -114,15 +128,15 @@ export function riskSummary(equity: EquityPoint[]): RiskSummary {
   const downside = returns.filter((r) => r < 0);
   const ddSd = downside.length >= 2 ? stdev(downside) : null;
   const maxDd = Math.max(...equity.map((b) => b.drawdown), 0);
-  const annualized = returns.reduce((s, v) => s + v, 0) * (252 / n);
+  const annualized = returns.reduce((s, v) => s + v, 0) * (periodsPerYear / n);
   const maxDdPct = maxDd / BANKROLL_BASE;
   const netTotal = equity.reduce((s, b) => s + b.netPnl, 0);
-  const sharpe = sd !== null && sd !== 0 ? (meanR / sd) * Math.sqrt(252) : null;
+  const sharpe = sd !== null && sd !== 0 ? (meanR / sd) * Math.sqrt(periodsPerYear) : null;
   const round3 = (v: number): number => Math.round(v * 1000) / 1000;
 
   return {
     sharpe: sharpe !== null ? round3(sharpe) : null,
-    sortino: ddSd !== null && ddSd !== 0 ? round3((meanR / ddSd) * Math.sqrt(252)) : null,
+    sortino: ddSd !== null && ddSd !== 0 ? round3((meanR / ddSd) * Math.sqrt(periodsPerYear)) : null,
     calmar: maxDdPct > 0 ? round3(annualized / maxDdPct) : null,
     recoveryFactor: maxDd > 0 ? round3(netTotal / maxDd) : null,
     sampleSize: n,

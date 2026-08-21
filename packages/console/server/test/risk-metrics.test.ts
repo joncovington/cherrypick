@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { median, periodKey, stdev } from "../src/analytics/riskMetrics.js";
+import { PERIODS, equityCurve, median, periodKey, riskSummary, stdev } from "../src/analytics/riskMetrics.js";
 
 describe("periodKey", () => {
   it("returns the day itself for daily", () => {
@@ -75,5 +75,52 @@ describe("stdev", () => {
 
   it("is zero for identical values", () => {
     expect(stdev([3, 3, 3])).toBe(0);
+  });
+});
+
+describe("annualization", () => {
+  const curve = equityCurve([
+    { date: "2026-08-03", net: 400 },
+    { date: "2026-08-04", net: -200 },
+    { date: "2026-08-05", net: 600 },
+    { date: "2026-08-06", net: -100 },
+    { date: "2026-08-07", net: 300 },
+  ]);
+
+  it("defaults to trading sessions", () => {
+    expect(riskSummary(curve).sharpe).toBe(riskSummary(curve, PERIODS.TRADING_SESSIONS).sharpe);
+  });
+
+  it("scales Sharpe by sqrt(periods), so a WEEKLY series is not read as a daily one", () => {
+    // The trap this parameter exists for: handing a weekly curve the daily constant inflates the
+    // ratio by sqrt(252/52) ~ 2.2x, and nothing about the number would look wrong.
+    const daily = riskSummary(curve, PERIODS.TRADING_SESSIONS).sharpe;
+    const weekly = riskSummary(curve, PERIODS.TRADING_WEEKS).sharpe;
+    expect(daily).not.toBeNull();
+    expect(weekly).not.toBeNull();
+    // 2dp, not 6: riskSummary rounds each ratio to 3dp, so a ratio OF two rounded values
+    // carries that noise. The scaling is exact; the stored precision is not.
+    expect(daily! / weekly!).toBeCloseTo(Math.sqrt(252 / 52), 2);
+  });
+
+  it("scales Sortino the same way", () => {
+    const daily = riskSummary(curve, PERIODS.TRADING_SESSIONS).sortino;
+    const weekly = riskSummary(curve, PERIODS.TRADING_WEEKS).sortino;
+    // 2dp, not 6: riskSummary rounds each ratio to 3dp, so a ratio OF two rounded values
+    // carries that noise. The scaling is exact; the stored precision is not.
+    expect(daily! / weekly!).toBeCloseTo(Math.sqrt(252 / 52), 2);
+  });
+
+  it("scales Calmar linearly, not by the root — it annualizes a RETURN, not a deviation", () => {
+    const daily = riskSummary(curve, PERIODS.TRADING_SESSIONS).calmar;
+    const weekly = riskSummary(curve, PERIODS.TRADING_WEEKS).calmar;
+    expect(daily! / weekly!).toBeCloseTo(252 / 52, 2);
+  });
+
+  it("leaves recovery factor and sample size alone — neither is annualized", () => {
+    const daily = riskSummary(curve, PERIODS.TRADING_SESSIONS);
+    const weekly = riskSummary(curve, PERIODS.TRADING_WEEKS);
+    expect(daily.recoveryFactor).toBe(weekly.recoveryFactor);
+    expect(daily.sampleSize).toBe(weekly.sampleSize);
   });
 });
