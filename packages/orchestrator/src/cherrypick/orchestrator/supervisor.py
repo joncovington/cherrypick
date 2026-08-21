@@ -401,7 +401,18 @@ class Supervisor:
             # what makes it mean "starts since this window opened" and therefore readable as churn.
             st.pop("module_stopped", None)
             st.pop("starts_in_window", None)
+            st.pop("starts_window_day", None)
             return False
+        # A job with NO window never takes the branch above, so without this its start counter
+        # accumulated for the life of the registry: the console latched a churn WARN on 2026-08-21
+        # showing 27 starts — every one of them from the previous evening's deliberate
+        # rebuild/restart cycles, none from the day the alert fired. A windowless resident's
+        # "window" is the calendar day; windowed jobs reset at window close as before, and this
+        # extra day-boundary reset is a no-op for them (no suite window spans midnight).
+        today = now.date().isoformat()
+        if st.get("starts_window_day") != today:
+            st.pop("starts_in_window", None)
+            st["starts_window_day"] = today
         if alive:
             st["resident_state"] = "running"
             if self._resident_silent(spec, st):

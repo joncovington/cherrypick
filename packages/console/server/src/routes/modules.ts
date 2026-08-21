@@ -183,6 +183,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
           ? outcome
           : "all",
       search: typeof q["search"] === "string" ? q["search"].slice(0, 60) : "",
+      era: parseFliesFilter(req.query).era,
     });
   });
   // The experiment guides: what each arm/profile is and how it got there. Config + ledger only, so

@@ -227,6 +227,31 @@ def test_resident_child_starts_in_window_only(spawned, tmp_path):
     assert not any(p.argv[-1] == "--once" for p in spawned[n:])
 
 
+def test_windowless_resident_start_counter_resets_at_the_day_boundary(spawned):
+    """The console churn latch of 2026-08-21: `starts_in_window` only reset in the window-shut
+    branch, and a windowless resident has no window-shut, so one evening's 27 deliberate
+    rebuild/restart cycles kept the churn WARN firing on a day with ZERO restarts. A windowless
+    job's window is the calendar day."""
+    from cherrypick.orchestrator import jobspec
+
+    spec = jobspec.JobSpec(
+        id="console", argv=("node", "server.js"), kind=jobspec.KIND_RESIDENT, interval_seconds=30
+    )
+    sup = supervisor.Supervisor(base_cfg())
+    child = FakeProc(["node", "server.js"])
+    spawned.append(child)  # registers the pid as alive for _job_running
+
+    st = {"running_pid": child.pid, "starts_in_window": 27, "starts_window_day": "2026-08-09"}
+    sup._manage_resident(spec, st, MONDAY_NOON, holidays=set())
+    assert "starts_in_window" not in st  # yesterday's storm is not today's alarm
+    assert st["starts_window_day"] == "2026-08-10"
+
+    # Same day: the counter is NOT touched — churn detection within a day stays intact.
+    st["starts_in_window"] = 7
+    sup._manage_resident(spec, st, MONDAY_NOON, holidays=set())
+    assert st["starts_in_window"] == 7
+
+
 def test_offsession_tick_fires_outside_window(spawned, tmp_path):
     sup = supervisor.Supervisor(flies_cfg(tmp_path))
     evening = datetime(2026, 8, 10, 16, 20, tzinfo=ET)  # settlement time

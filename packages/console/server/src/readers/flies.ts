@@ -871,9 +871,11 @@ export type FliesOutcome = "all" | "wins" | "losses" | "pinned" | "risk-free";
 export interface FliesTradeLogQuery extends PageRequest {
   outcome: FliesOutcome;
   search: string;
+  /** null = the current era; "ALL" = every era, deliberately — same contract as FliesFilter. */
+  era: string | null;
 }
 
-export const NO_TRADE_LOG_QUERY: FliesTradeLogQuery = { ...FIRST_PAGE, outcome: "all", search: "" };
+export const NO_TRADE_LOG_QUERY: FliesTradeLogQuery = { ...FIRST_PAGE, outcome: "all", search: "", era: null };
 
 /**
  * The settled trade log, filtered and paged in SQL. It lives apart from
@@ -890,6 +892,13 @@ export function readFliesTradeLog(
   return withReadOnlyDb<Paged<FliesTradeLogRow>>(dbPath, emptyPage(query), (db) => {
     const clauses = [SETTLED];
     const params: string[] = [];
+    // Era-bounded like every other read on the page — this endpoint shipped without it and the
+    // trade log answered for retired arms while the cards above it answered for the current era.
+    const era = eraClause(query.era);
+    if (era.sql !== null) {
+      clauses.push(era.sql);
+      params.push(...era.params);
+    }
     if (query.outcome === "wins") clauses.push("pnl IS NOT NULL AND pnl > 0");
     if (query.outcome === "losses") clauses.push("pnl IS NOT NULL AND pnl < 0");
     if (query.outcome === "pinned") clauses.push("pinned = 1");

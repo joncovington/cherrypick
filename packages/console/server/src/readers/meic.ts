@@ -17,6 +17,38 @@ import { equityCurve, periodKey, riskSummary, stdev } from "../analytics/riskMet
  */
 export const CURRENT_ERA = "advisor";
 
+/**
+ * Era date spans, for tables WITHOUT an era column (`daily_summary` is a per-day aggregate the
+ * module writes with no era tag). Facts mirrored from the module's journaled measurement breaks —
+ * the four-stream sample ran 2026-08-07..2026-08-20 and the advisor era opened 2026-08-21 — under
+ * the same hand-sync contract as `CURRENT_ERA` above. An era key not listed here widens rather
+ * than inventing a span.
+ */
+const ERA_DATES: Record<string, { from: string | null; to: string | null }> = {
+  book: { from: null, to: "2026-08-06" },
+  sample: { from: "2026-08-07", to: "2026-08-20" },
+  advisor: { from: "2026-08-21", to: null },
+};
+
+/** WHERE fragment bounding a date column to the scope's era, `null` when unbounded ("ALL"). */
+function eraDateSql(era: string | null, column: string): { sql: string | null; params: string[] } {
+  const key = era ?? CURRENT_ERA;
+  if (key === "ALL") return { sql: null, params: [] };
+  const span = ERA_DATES[key];
+  if (span === undefined) return { sql: null, params: [] };
+  const parts: string[] = [];
+  const params: string[] = [];
+  if (span.from !== null) {
+    parts.push(`${column} >= ?`);
+    params.push(span.from);
+  }
+  if (span.to !== null) {
+    parts.push(`${column} <= ?`);
+    params.push(span.to);
+  }
+  return { sql: parts.length > 0 ? parts.join(" AND ") : null, params };
+}
+
 export interface MeicScopeFilter {
   symbol: string | null;
   profile: string | null;
@@ -146,14 +178,19 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
     );
   });
 
+  // Bounded to the same era as the trade log above it — daily_summary has no era column, so the
+  // bound is the era's DATE span; pre-cutover rows aggregate the retired arms and answering with
+  // them beside an era-scoped log was the mismatch the 2026-08-21 report caught.
+  const eraSql = eraDateSql(query.era, "summary_date");
   const summaries = withReadOnlyDb<MeicSummaryRow[]>(dbPath, [], (db) =>
     db
-      .prepare<[], Record<string, unknown>>(
+      .prepare<string[], Record<string, unknown>>(
         `SELECT summary_date, symbol, total_entries, entries_filled, entries_stopped,
                 net_pnl, win_rate_pct
-           FROM daily_summary ORDER BY summary_date DESC LIMIT 20`,
+           FROM daily_summary${eraSql.sql !== null ? ` WHERE ${eraSql.sql}` : ""}
+          ORDER BY summary_date DESC LIMIT 20`,
       )
-      .all()
+      .all(...eraSql.params)
       .map((r: Record<string, unknown>) => ({
         mode,
         summaryDate: str(r["summary_date"]) ?? "",
@@ -654,11 +691,14 @@ export function readMeicDeepAnalytics(
       .all(...sc.params)
       .map((r) => ({ date: String(r["trade_date"]), net: Number(r["net"]), trades: Number(r["trades"]) }));
 
+    const nlvEra = eraDateSql(scope.era, "summary_date");
     const nlv = db
-      .prepare<[], Record<string, unknown>>(
-        `SELECT summary_date, closing_nlv FROM daily_summary WHERE closing_nlv IS NOT NULL ORDER BY summary_date`,
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT summary_date, closing_nlv FROM daily_summary
+          WHERE closing_nlv IS NOT NULL${nlvEra.sql !== null ? ` AND ${nlvEra.sql}` : ""}
+          ORDER BY summary_date`,
       )
-      .all()
+      .all(...nlvEra.params)
       .map((r) => ({ date: String(r["summary_date"]), nlv: Number(r["closing_nlv"]) }));
 
     // Signal breakdowns, MEIC-dashboard rules: pnl IS NOT NULL, avg net = pnl − fees.

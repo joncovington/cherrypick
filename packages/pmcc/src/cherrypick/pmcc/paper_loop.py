@@ -893,6 +893,23 @@ def run_status(config: dict, conn, *, cache_path: str) -> dict:
     }
 
 
+def _beat() -> None:
+    """Publish liveness: this loop reached the top of a tick.
+
+    Same contract as the calendars loop, learned from the same incident (107 restarts on
+    2026-08-17): every line this loop logs is event-driven, and the ledger only moves when a mark
+    or an entry lands, so a quiet-but-healthy tick writes nothing anyone can see — on 2026-08-21
+    the watchdog's freshness check WARNed mid-session over a 17-minute gap between mark writes.
+    Touched at the TOP of the tick, before any branch; failure is swallowed (a heartbeat that
+    costs a tick would be worse than the problem it solves)."""
+    try:
+        path = _home.heartbeat_path("pmcc")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(datetime.now().astimezone().isoformat(), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="cherrypick-pmcc paper session driver")
     ap.add_argument("--config")
@@ -941,6 +958,7 @@ def main(argv=None) -> int:
                     "Check the branch."
                 )
             while args.force or in_session(clock.minute_of_day(clock.now_et())):
+                _beat()
                 try:
                     run_once(config, conn, cache_path=cache_path, force=args.force)
                 except Exception as exc:  # noqa: BLE001 — a transient failure costs one tick, not the session
