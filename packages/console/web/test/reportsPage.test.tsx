@@ -49,13 +49,13 @@ const DEPLOYMENT = {
 };
 
 let morning: MorningPayload;
-// `allTime` is not optional to the page — it reads `data.allTime.sessions` unguarded — and casting
+// `era` is not optional to the page — it reads `data.era.sessions` unguarded — and casting
 // this fixture through `unknown` is what let an incomplete one compile. Kept minimal but complete.
 const review = {
   sessions: [],
   current: null,
   note: null,
-  allTime: { sessions: 0, from: null, to: null },
+  era: { eraFrom: null, eraNote: null, sessions: 0, from: null, to: null },
 } as unknown as ReviewPayload;
 
 vi.mock("../src/lib/api", () => ({

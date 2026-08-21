@@ -329,22 +329,26 @@ export function ReviewPage({ tabs }: { tabs?: ReactNode } = {}) {
         </>
       )}
 
-      {data && data.allTime.sessions > 0 && (
+      {data && data.era.sessions > 0 && (
         <section className="card">
           <div className="card-head">
-            <h2>All time</h2>
-            <span className="card-asof">
-              {data.allTime.sessions} sessions · {data.allTime.from} → {data.allTime.to}
+            <h2>{data.era.eraFrom !== null ? "This era" : "All time"}</h2>
+            <span
+              className="card-asof"
+              title={data.era.eraNote ?? undefined}
+            >
+              {data.era.eraFrom !== null && <>era from {data.era.eraFrom} · </>}
+              {data.era.sessions} sessions{data.era.from !== null && <> · {data.era.from} → {data.era.to}</>}
             </span>
           </div>
           <div className="stats-grid">
-            {Object.keys(data.allTime.netByModule).map((name) => (
+            {Object.keys(data.era.netByModule).map((name) => (
               <div className="stat-tile" key={name}>
                 <span className="stat-label">{name}</span>
-                <span className={`stat-value ${pnlClass(data.allTime.netByModule[name])}`}>
-                  {compactMoney(data.allTime.netByModule[name])}
+                <span className={`stat-value ${pnlClass(data.era.netByModule[name])}`}>
+                  {compactMoney(data.era.netByModule[name])}
                 </span>
-                <span className="stat-label">{count(data.allTime.closedByModule[name])} closed</span>
+                <span className="stat-label">{count(data.era.closedByModule[name])} closed</span>
               </div>
             ))}
           </div>

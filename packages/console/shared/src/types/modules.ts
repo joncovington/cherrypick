@@ -212,7 +212,15 @@ export interface ReviewSession {
 export interface ReviewPayload {
   sessions: string[];
   current: ReviewSession | null;
-  allTime: {
+  /**
+   * Era totals: fact sets summed from the suite's declared era (`data_epoch`) onward. Was
+   * `allTime` until the 2026-08-21 advisor-era cutover — a total pooled across that boundary reads
+   * as one experiment when it is really two incomparable ones. Null `eraFrom` = no declared era =
+   * everything, labeled accordingly.
+   */
+  era: {
+    eraFrom: string | null;
+    eraNote: string | null;
     sessions: number;
     from: string | null;
     to: string | null;
