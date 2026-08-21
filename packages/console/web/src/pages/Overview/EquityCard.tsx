@@ -168,7 +168,7 @@ export function LogsCard() {
     <section className="card">
       <div className="card-head">
         <h2>recent logs (watchdog · notify · module paper logs)</h2>
-        <div className="mode-toggle" style={{ marginLeft: "auto" }}>
+        <div className="mode-toggle" style={{ marginLeft: "auto" }} role="group" aria-label="log level filter">
           {LOG_LEVELS.map((lv) => (
             <button key={lv} type="button" className={level === lv ? "mode-btn active" : "mode-btn"} onClick={() => setLevel(lv)}>
               {lv}

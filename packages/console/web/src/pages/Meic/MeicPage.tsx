@@ -389,7 +389,7 @@ export function MeicPage() {
             }
             controls={
               <>
-                <div className="mode-toggle" style={{ marginLeft: 0 }}>
+                <div className="mode-toggle" style={{ marginLeft: 0 }} role="group" aria-label="outcome filter">
                   {OUTCOMES.map((o) => (
                     <button key={o} type="button" className={outcome === o ? "mode-btn active" : "mode-btn"} onClick={() => setOutcome(o)}>
                       {o}

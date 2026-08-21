@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useGex } from "../../lib/api";
 import { DataCard, fmtNum } from "../../components/DataTable";
-import { Pager, usePage } from "../../components/ScopeBar";
+import { Pager, TabStrip, usePage } from "../../components/ScopeBar";
 import { useFlashOnChange } from "../../lib/useFlashOnChange";
 import { GexProfileChart, IvSkewChart, StrikeBarsChart, fmtGexDollars, type GexStrikeRow, type GexView } from "./GexProfileChart";
 
@@ -156,15 +156,15 @@ export function GexPage() {
             as of {new Date(p.spotUpdatedAt * 1000).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour12: false })} ET
           </span>
         )}
-        <div className="mode-toggle">
-          {TABS.map(([t, label]) => (
-            <button key={t} type="button" className={tab === t ? "mode-btn active" : "mode-btn"} onClick={() => setTab(t)}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <TabStrip
+          tabs={TABS.map(([t]) => t)}
+          value={tab}
+          onChange={setTab}
+          labels={Object.fromEntries(TABS) as Partial<Record<GexTab, string>>}
+          ariaLabel="gex tabs"
+        />
         {tab === "gex" && (
-          <div className="mode-toggle" style={{ marginLeft: 0 }}>
+          <div className="mode-toggle" style={{ marginLeft: 0 }} role="group" aria-label="chart view">
             {(["oivol", "net", "abs"] as GexView[]).map((v) => (
               <button key={v} type="button" className={view === v ? "mode-btn active" : "mode-btn"} onClick={() => setView(v)}>
                 {v === "oivol" ? "OI vs Vol" : v === "net" ? "Net" : "Abs"}
