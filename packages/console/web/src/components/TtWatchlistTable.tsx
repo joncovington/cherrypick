@@ -5,13 +5,7 @@ import { mutateJson, useTtWatchlist } from "../lib/api";
 import { LiveQuoteRow } from "./LiveQuote";
 import { SkeletonRows, SortTh, sortRows, useSort } from "./DataTable";
 
-function fmt(v: number | null, digits = 2): string {
-  return v === null ? "—" : v.toFixed(digits);
-}
-
-function pct(v: number | null): string {
-  return v === null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
-}
+import { fmtNum as fmt, fmtPctSigned as pct } from "../lib/format";
 
 /** tasty-style compact numbers: 13.3K, 4.2M, 225B. */
 function compact(v: number | null): string {

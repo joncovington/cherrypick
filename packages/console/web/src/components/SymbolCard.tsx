@@ -1,8 +1,7 @@
 import { useSymbolCard } from "../lib/api";
-
-function money(v: number | null): string {
-  return v === null ? "—" : `$${v.toFixed(2)}`;
-}
+// `money` was a local copy of fmtMoney that put the sign INSIDE the currency symbol
+// (`$-5.00`). Aliased to the shared one so the console has a single money rendering.
+import { fmtMoney as money, fmtPctSigned } from "../lib/format";
 
 function compact(v: number | null): string {
   if (v === null) return "—";
@@ -41,7 +40,7 @@ export function SymbolCard({ symbol }: { symbol: string }) {
   const tiles: Array<{ label: string; value: string; cls?: string; tag?: boolean }> = [
     {
       label: "last / chg",
-      value: `${money(price)} ${data.eodChangePct !== null ? `${data.eodChangePct >= 0 ? "+" : ""}${data.eodChangePct.toFixed(2)}%` : ""}`,
+      value: `${money(price)} ${data.eodChangePct !== null ? fmtPctSigned(data.eodChangePct) : ""}`,
       cls: data.eodChangePct !== null && data.eodChangePct < 0 ? "pnl-neg" : "pnl-pos",
     },
     {
