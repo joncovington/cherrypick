@@ -172,7 +172,7 @@ See `config.example.json` for authoritative list. Top-level options are project-
 
 **Strategy-specific options** (iron_fly, double_calendar, iron_condor, atm_calendar, directional_credit_spread, broken_wing_butterfly): See their respective strategy docs (`docs/05-strategies.md`) and `config.example.json` for detailed parameters (wing width multiples, profit targets, stops, exit thresholds, etc.). Each has its own screening/entry condition tuning.
 
-**Correlation risk is not currently guarded**: opening multiple earnings names in the same sector on the same date can silently correlate overnight gap risk — avoid correlated block-list entries together until guard is implemented.
+**Correlation risk is not currently guarded here**: opening multiple earnings names in the same sector on the same date can silently correlate overnight gap risk — avoid correlated block-list entries together until a guard exists. Note the suite-wide lint added 2026-08-20 (`orchestrator/tests/test_symbol_correlation_lint.py`) does NOT cover this: it refuses two vehicles on one INDEX, and single-name sector clustering is a different question this module still answers by hand through `correlation_block_list`.
 
 ## Database
 
