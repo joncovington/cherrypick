@@ -33,6 +33,13 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
+# Scheduled runs happen under pythonw — no console. A CONSOLE child (claude, gh) spawned from a
+# windowless parent gets a brand-new console window, which flashes over whatever the user is doing;
+# on 2026-08-21 that was three windows popping over a live trading platform mid-session. Same
+# constant and reason as scripts/advisor_checkpoint.py.
+CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
+
+
 # Deliberately not imported from cherrypick.overview: this script must run even if the package is
 # not installed, and the artifact path is a published contract rather than an implementation detail.
 STORE = Path(
@@ -123,7 +130,7 @@ def _run_claude(payload: str) -> tuple[str | None, str | None]:
             # Windows), which bakes mojibake into the note. Same lesson as eod_narrative.py.
             encoding="utf-8",
             errors="replace",
-            timeout=TIMEOUT_SECONDS,
+            timeout=TIMEOUT_SECONDS, creationflags=CREATE_NO_WINDOW,
         )
     except subprocess.TimeoutExpired:
         return None, f"claude timed out after {TIMEOUT_SECONDS}s"
