@@ -39,6 +39,13 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
+# Scheduled runs happen under pythonw — no console. A CONSOLE child (claude, gh) spawned from a
+# windowless parent gets a brand-new console window, which flashes over whatever the user is doing;
+# on 2026-08-21 that was three windows popping over a live trading platform mid-session. Same
+# constant and reason as scripts/advisor_checkpoint.py.
+CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
+
+
 # Deliberately not imported from cherrypick.review: this script must run even if the package is not
 # installed, and the artifact path is a published contract rather than an implementation detail.
 STORE = Path(
@@ -134,7 +141,7 @@ def _run_claude(payload: str) -> tuple[str | None, str | None]:
             # written out faithfully as UTF-8, baking the corruption into the note.
             encoding="utf-8",
             errors="replace",
-            timeout=TIMEOUT_SECONDS,
+            timeout=TIMEOUT_SECONDS, creationflags=CREATE_NO_WINDOW,
         )
     except subprocess.TimeoutExpired:
         return None, f"claude timed out after {TIMEOUT_SECONDS}s"
@@ -174,7 +181,7 @@ def _file_issues(recs: list[str], session: str, dry_run: bool) -> list[dict]:
         existing = subprocess.run(
             [gh, "issue", "list", "--label", ISSUE_LABEL, "--state", "open",
              "--json", "title", "--limit", "100"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, creationflags=CREATE_NO_WINDOW,
         )
         titles = {i["title"] for i in json.loads(existing.stdout or "[]")}
     except Exception:  # noqa: BLE001
@@ -194,7 +201,7 @@ def _file_issues(recs: list[str], session: str, dry_run: bool) -> list[dict]:
             body = f"{rec}\n\n---\nFrom the end-of-day review for {session}. Facts: `eod-{session}.json`."
             proc = subprocess.run(
                 [gh, "issue", "create", "--title", title, "--body", body, "--label", ISSUE_LABEL],
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, creationflags=CREATE_NO_WINDOW,
             )
             results.append({"ok": proc.returncode == 0, "title": title,
                             "url": (proc.stdout or "").strip() or None,
