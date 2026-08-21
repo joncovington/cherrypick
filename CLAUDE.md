@@ -114,6 +114,26 @@ bounded things they are:
 If a change would put a network call inside a loop's decision or on the supervisor's own path, the
 rule is unchanged and the answer is no.
 
+**Measurement-affecting changes are BATCHED to declared boundaries.** Several modules already
+record their own measurement breaks — flies' 60s→15s cadence change, earnings' 2026-08-12 managed
+exits, calendars' tick cadence — and each states the same thing locally: results either side must
+never be pooled. The suite-wide rule is about *when* to make such a change, not how to journal it.
+
+A measurement-affecting change is one that alters what a session's numbers MEAN rather than what
+they are: tick cadence, entry pacing, gate semantics, the definition of a book's net, which arms
+exist. Landing them one at a time, whenever each is ready, restarts the evidence clock on every
+landing — a module that changes something every few days has no comparable stretch longer than a
+few days, and its longest-running experiment is worth exactly as much as its most recent
+convenience fix. That is how a forward test quietly becomes a series of unrelated short ones.
+
+So: hold measurement-affecting changes until a declared boundary, land them together, and journal
+the boundary once. A bug fix that corrects a number the module was recording WRONG is not in this
+category and should land immediately — the flies bwb roll-pricing defect is the example, where
+waiting would only have produced more rows resting on a spread that was never the trade.
+
+Pure code changes — refactors, read surfaces, dedup — are not measurement-affecting and are not
+covered by this. If it does not change what a recorded number means, it is not a break.
+
 Any developer initiated documentation review and update must also review and update package documentation.
 
 For front-end UI/UX testing, use a browser to confirm the build performs as expected. Don't rely solely on code tests.

@@ -5,6 +5,14 @@ in the ledger under their own symbol and widths) — the "profit forest". A **pa
 narrow live pilot: it measures whether the strategy makes money net of costs, and it is built so that
 a negative answer is a usable result rather than something to tune away.
 
+**Where things live.** The dated record of what each session measured is
+[docs/experiment-log.md](docs/experiment-log.md), append-only, and that is where a new FINDING goes.
+This file keeps the rules that constrain what the code may do — but note they are deliberately
+written as *rule plus the measurement that produced it*, so a live parameter (the 20-point trend
+band, the stale-GEX limits, `min_floor_dollars`) sits next to the evidence for its value. That is
+not narrative to be tidied away: this module's history is largely of rules being "fixed" by someone
+who did not know why they were set, and separating the two would make that easier, not harder.
+
 **The 2026-08-01 SPX switch, and what it cost.** XSP fees were eating the result: on the 1-wide XSP
 book the median completed fly collected **$12.00 against $4.97 of fees — 41.4% drag** — while the
 5-wide SPX book collected **$63.12 against $6.89, or 10.9%**. Credit scales with the structure; the
