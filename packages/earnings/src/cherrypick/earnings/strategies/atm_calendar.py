@@ -42,31 +42,9 @@ def _strategy_config(config: dict) -> dict:
     return config.get("strategies", {}).get("atm_calendar", {})
 
 
-def realized_move_dispersion(symbol: str, config: dict, lookback_quarters: int = 8) -> dict:
-    """Standard deviation of historical realized earnings moves (as a % of
-    pre-earnings price). Thin wrapper around scanner.compute_historical_move_stats
-    (shared with every strategy, not just the calendar spreads) that keeps this
-    function's own field names (mean_realized_move_pct/realized_move_dispersion_pct)
-    so apply_tiering below doesn't change. Low dispersion means the stock's
-    earnings-move behavior is consistent; high dispersion means occasional
-    blowout moves that could undermine a calendar spread's assumptions.
-    Shared with double_calendar.py for consistency.
-    """
-    stats = scanner.compute_historical_move_stats(symbol, config, lookback_quarters)
-    if not stats.get("ok"):
-        return {
-            "ok": False,
-            "symbol": symbol,
-            "sample_size": stats.get("sample_size", 0),
-            "error": stats.get("error", "insufficient sample for dispersion"),
-        }
-    return {
-        "ok": True,
-        "symbol": symbol,
-        "sample_size": stats["sample_size"],
-        "mean_realized_move_pct": stats["avg_actual_move_pct"],
-        "realized_move_dispersion_pct": stats["move_dispersion_pct"],
-    }
+# A screening metric, not order-shaping code, and it was byte-identical in both calendar
+# strategies. Re-exported under the local name callers and tests already use.
+realized_move_dispersion = scanner.realized_move_dispersion  # noqa: F401
 
 
 def fetch_price_and_term_structure(
