@@ -625,9 +625,14 @@ def derive_jobs(
         # regardless of the configured hours so the store's filenames stay legible. A checkpoints
         # list longer than ADVISOR_LIGHT_SLOTS falls back to a generic name the advisor package
         # will reject -- that job's own derivation fails and is reported, nothing else is affected.
-        slot = (
-            ADVISOR_LIGHT_SLOTS[index] if index < len(ADVISOR_LIGHT_SLOTS) else f"slot{index + 1}"
-        )
+        named = av.get("checkpoint_slots")
+        if named is not None and index < len(named):
+            # The dict config form names each checkpoint explicitly (config.py advisor_settings).
+            slot = named[index]
+        else:
+            slot = (
+                ADVISOR_LIGHT_SLOTS[index] if index < len(ADVISOR_LIGHT_SLOTS) else f"slot{index + 1}"
+            )
         add(
             f"advisor-{slot}",
             lambda slot=slot, at=at: JobSpec(

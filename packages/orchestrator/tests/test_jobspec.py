@@ -628,3 +628,40 @@ def test_the_narrative_runs_after_the_final_pass_never_with_it():
     assert by_id["review-narrative"].enabled
     assert by_id["review-narrative"].at_et > by_id["review-final"].at_et
     assert by_id["review-narrative"].trading_days_only
+
+
+def test_named_checkpoints_carry_their_own_slot_names():
+    """The dict config form: {slot_name: time}. Added when the schedule was cut to one light slot —
+    a single-entry LIST would run the 12:30 checkpoint under the positional name "open", and a slot
+    name that lies about its own hour is the legibility failure the positional naming comment
+    warns about."""
+    cfg = suite_cfg()
+    cfg["advisor"] = {"enabled": True, "checkpoints": {"midday": "12:30"}, "deep_at": "17:00"}
+    by_id = {j.id: j for j in derive(cfg)[0]}
+
+    assert "advisor-midday" in by_id
+    assert by_id["advisor-midday"].at_et == "12:30"
+    assert "--slot midday" in " ".join(by_id["advisor-midday"].argv).replace('"', "")
+    # None of the positional names exist as jobs when the dict names one slot.
+    for gone in ("advisor-open", "advisor-am1", "advisor-am2", "advisor-pm1", "advisor-pm2", "advisor-close"):
+        assert gone not in by_id
+    assert by_id["advisor-deep"].at_et == "17:00"
+
+
+def test_named_checkpoints_sort_by_time_not_by_name():
+    cfg = suite_cfg()
+    cfg["advisor"] = {"enabled": True, "checkpoints": {"pm1": "13:30", "open": "09:45"}}
+    from cherrypick.orchestrator.config import advisor_settings
+
+    av = advisor_settings(cfg)
+    assert av["checkpoints"] == ["09:45", "13:30"]
+    assert av["checkpoint_slots"] == ["open", "pm1"]
+
+
+def test_list_checkpoints_keep_positional_names():
+    """The original form is untouched: a list is named positionally and checkpoint_slots is None."""
+    from cherrypick.orchestrator.config import advisor_settings
+
+    av = advisor_settings({"advisor": {"checkpoints": ["09:45", "10:30"]}})
+    assert av["checkpoints"] == ["09:45", "10:30"]
+    assert av["checkpoint_slots"] is None
