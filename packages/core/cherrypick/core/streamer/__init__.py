@@ -63,6 +63,36 @@ _HISTORY_MAX_WAIT_S = 90.0
 # quiet stretch puts the file back on the floor for the rest of the day.
 _WAL_CHECKPOINT_INTERVAL_S = 300.0
 
+# The self-heal belt for a subscription that dies WITHOUT a reconnect. `_apply_subscriptions`
+# diffs wanted against `state.subscribed` — the producer's own memory of what it asked for — so a
+# server-side drop leaves the memory intact and the symbol is never re-added; the
+# reset_for_new_connection fix only clears that memory on a NEW connection. Found live 2026-08-21:
+# TQQQ's trade subscription died 2026-08-17 mid-flight and stayed dead for four sessions while SPX
+# streamed happily beside it (its window re-centering re-touches subscriptions constantly, which is
+# the accidental self-heal the other symbols never had).
+#
+# RTH-gated because outside regular hours an underlying legitimately goes quiet — the SPX index is
+# frozen overnight by design — and per-symbol rate-limited so a holiday session (nothing ticks
+# anywhere) costs one idempotent resubscribe per symbol per interval, not a storm.
+_STALE_TRADE_RESUB_AGE_S = 600.0
+_STALE_TRADE_RESUB_MIN_GAP_S = 600.0
+
+
+def _resub_clock_gate() -> bool:
+    """Weekday 09:35-15:55 ET, clock only — outside it a quiet underlying is legitimate (the SPX
+    index is frozen overnight by design). Holidays cost one idempotent resubscribe per symbol per
+    rate-limit interval, visible in the log and harmless."""
+    try:
+        from zoneinfo import ZoneInfo
+
+        now_et = datetime.now(UTC).astimezone(ZoneInfo("America/New_York"))
+    except Exception:  # noqa: BLE001 — a tz failure must not take down the poll loop
+        return False
+    if now_et.weekday() >= 5:
+        return False
+    minutes = now_et.hour * 60 + now_et.minute
+    return 9 * 60 + 35 <= minutes <= 15 * 60 + 55
+
 
 
 def _et_date(ts: float) -> str:
@@ -146,6 +176,7 @@ class ChainStreamer:
         self.window_refresh_pts = window_refresh_pts
         self.window_poll_s = window_poll_s
         self.subscription_poll_s = subscription_poll_s
+        self._stale_resub_at: dict[str, float] = {}
         self.log = logger or logging.getLogger("cherrypick.core.streamer")
         self.state: _State | None = None
 
@@ -247,10 +278,57 @@ class ChainStreamer:
                 await self._apply_subscriptions(
                     streamer, state, self._subscriptions(), Trade, Quote, Greeks, Summary
                 )
+                await self._reheal_stale_trades(streamer, state, Trade)
                 if state.last_event_at:
                     streamcache.upsert_status(state.conn, last_event_at=state.last_event_at)
             except Exception as exc:
                 self.log.warning("Subscription poll error: %s", exc)
+
+    async def _reheal_stale_trades(self, streamer, state: _State, Trade) -> None:
+        """Resubscribe any Trade symbol whose cache row has gone stale during regular hours.
+
+        The cache is the ground truth consumers see, so staleness is read from it rather than from
+        any connection-side state — a subscription the feed silently dropped looks exactly like a
+        quiet symbol from in here, and during RTH liquid underlyings are never quiet for 10 minutes.
+        Resubscribing an already-live symbol is idempotent at DXLink, so a false positive costs a
+        log line, never data. See the constants above for why this exists.
+        """
+        if not _resub_clock_gate():
+            return
+
+        subscribed = list(state.subscribed.get("Trade", []))
+        if not subscribed:
+            return
+        now = time.time()
+        placeholders = ",".join("?" for _ in subscribed)
+        try:
+            rows = dict(
+                state.conn.execute(
+                    f"SELECT symbol, updated_at FROM stream_trades WHERE symbol IN ({placeholders})",
+                    subscribed,
+                ).fetchall()
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.log.warning("Stale-trade check skipped: %s", exc)
+            return
+
+        stale = []
+        for sym in subscribed:
+            updated = rows.get(sym)
+            if updated is not None and now - float(updated) <= _STALE_TRADE_RESUB_AGE_S:
+                continue
+            last_try = self._stale_resub_at.get(sym, 0.0)
+            if now - last_try < _STALE_TRADE_RESUB_MIN_GAP_S:
+                continue
+            self._stale_resub_at[sym] = now
+            stale.append((sym, None if updated is None else now - float(updated)))
+
+        if not stale:
+            return
+        syms = [s for s, _ in stale]
+        ages = {s: ("never" if a is None else f"{a / 60:.0f}m") for s, a in stale}
+        self.log.warning("Resubscribing stale Trade symbols (dead subscription self-heal): %s", ages)
+        await streamer.subscribe(Trade, syms)
 
     # -- listeners -------------------------------------------------------------------------------
     def _touch(self, state: _State, ts: float) -> None:

@@ -124,6 +124,60 @@ def test_chain_fetch_error_no_auto_restart_just_warns(monkeypatch, calls, tmp_pa
     assert calls["start"] == []
 
 
+def test_dead_underlying_triggers_restart_even_with_healthy_aggregate_ages(monkeypatch, calls, tmp_path):
+    # running=true, every aggregate fresh (SPX ticking fine), but TQQQ's own spot subscription died
+    # mid-flight -- the 2026-08-17..21 incident this check exists for: four sessions dead behind a
+    # live SPX, pmcc reading no_long_chain, and nothing restarted.
+    _status(
+        monkeypatch,
+        {
+            "running": True,
+            "oldest_event_age_s": 1.0,
+            "underlyings_stale_age_s": 1.0,
+            "connected_since": "2020-01-01T00:00:00+00:00",
+            "chain_fetch_errors": {},
+            "dead_underlyings": {"TQQQ": 311302.0},
+        },
+    )
+    findings = wd._check_streamer_health("streamer", tmp_path, _spec())
+    assert "stalled" in findings[0].title
+    assert "TQQQ" in findings[0].message and "dead spot subscription" in findings[0].message
+    assert calls["stop"] and calls["start"] == [["run.py"]]
+
+
+def test_dead_underlying_no_auto_restart_just_warns(monkeypatch, calls, tmp_path):
+    _status(
+        monkeypatch,
+        {
+            "running": True,
+            "oldest_event_age_s": 1.0,
+            "underlyings_stale_age_s": 1.0,
+            "connected_since": "2020-01-01T00:00:00+00:00",
+            "dead_underlyings": {"TQQQ": 900.5},
+        },
+    )
+    findings = wd._check_streamer_health("streamer", tmp_path, _spec(auto_restart=False))
+    assert findings[0].title == "Streamer stalled"
+    assert calls["start"] == []
+
+
+def test_dead_underlyings_absent_degrades_cleanly(monkeypatch, calls, tmp_path):
+    # A producer on code from before this field must not trip anything -- the running 08-17
+    # producer is exactly that during the fault it can't see.
+    _status(
+        monkeypatch,
+        {
+            "running": True,
+            "oldest_event_age_s": 1.0,
+            "underlyings_stale_age_s": 1.0,
+            "chain_fetch_errors": {},
+        },
+    )
+    findings = wd._check_streamer_health("streamer", tmp_path, _spec())
+    assert findings[0].status == wd.OK
+    assert calls["start"] == [] and calls["stop"] == []
+
+
 def test_no_chain_fetch_errors_and_healthy_ages_is_ok(monkeypatch, calls, tmp_path):
     _status(monkeypatch, {"running": True, "chain_fetch_errors": {}})
     findings = wd._check_streamer_health("streamer", tmp_path, _spec())
