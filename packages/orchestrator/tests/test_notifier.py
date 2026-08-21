@@ -78,9 +78,9 @@ def test_discord_posts_content_payload_from_keyring(temp_floor, monkeypatch):
     assert "CRITICAL" in captured["payload"]["content"]
 
 
-def test_discord_identity_override_is_strictly_opt_in(temp_floor, monkeypatch):
-    """A webhook can post under a per-message name/avatar (the feed cards use this). Without one,
-    the payload must stay byte-identical to what the watchdog and every other caller always sent."""
+def test_discord_embed_needs_no_content_beside_it(temp_floor, monkeypatch):
+    """An embed carries its own author/title/fields; the [LEVEL] prefix a plain message gets is
+    dropped, and nothing else rides the payload — the exact bytes every caller relies on."""
     captured = {}
     monkeypatch.setattr(secrets_mod, "get_webhook", lambda ch: "https://discord.example/webhook/abc")
     monkeypatch.setattr(
@@ -89,25 +89,5 @@ def test_discord_identity_override_is_strictly_opt_in(temp_floor, monkeypatch):
         staticmethod(lambda url, payload: captured.update(payload) or {"ok": True, "status": 204}),
     )
     n = Notifier({"channels": ["discord"]})
-
     n.notify("INFO", "k", "T", "B", embed={"title": "card"})
-    assert captured == {"embeds": [{"title": "card"}]}  # no identity keys when none was asked for
-
-    captured.clear()
-    n.notify(
-        "INFO",
-        "k",
-        "T",
-        "B",
-        embed={"title": "card"},
-        identity={"username": "Lossdog VIP", "avatar_url": "https://img.example/a.png"},
-    )
-    assert captured == {
-        "embeds": [{"title": "card"}],
-        "username": "Lossdog VIP",
-        "avatar_url": "https://img.example/a.png",
-    }
-
-    captured.clear()  # identity also rides a plain-content post (no embed)
-    n.notify("INFO", "k", "T", "B", identity={"username": "Lossdog VIP"})
-    assert captured["username"] == "Lossdog VIP" and "avatar_url" not in captured
+    assert captured == {"embeds": [{"title": "card"}]}

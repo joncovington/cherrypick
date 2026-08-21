@@ -426,35 +426,10 @@ def preopen_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def follow_feed_settings(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Resolved Follow Feed notifier config. OFF by default. When enabled, `install` registers its
-    own recurring task -- deliberately NOT a watchdog-tick call like trade_notify, because this is
-    the one notifier that makes a network request and the reliability path stays network-free."""
-    ff = cfg.get("follow_feed", {}) or {}
-    return {
-        "enabled": ff.get("enabled", False),
-        "task_name": ff.get("task_name", "cherrypick-follow-notify"),
-        "interval_minutes": ff.get("interval_minutes", 5),
-        "channels": ff.get("channels") or ["log", "discord_follow"],
-        "max_per_run": ff.get("max_per_run", 8),
-        "filters": ff.get("filters", {}) or {},
-    }
-
-
-def lossdog_settings(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Resolved Lossdog VIP trade-feed notifier config. OFF by default. Network -> its own
-    supervisor job, never the watchdog tick (the same treatment as follow_feed, for the same
-    reason). Auth is minted per run from the keyring __client cookie, with the LOSSDOG_TOKEN env
-    var as the manual fallback -- neither ever appears in this config."""
-    ld = cfg.get("lossdog", {}) or {}
-    return {
-        "enabled": ld.get("enabled", False),
-        "task_name": ld.get("task_name", "cherrypick-lossdog-notify"),
-        "interval_minutes": ld.get("interval_minutes", 10),
-        "channels": ld.get("channels") or ["log", "discord_follow"],
-        "max_per_run": ld.get("max_per_run", 8),
-        "filters": ld.get("filters", {}) or {},
-    }
+# The follow_feed and lossdog notifier settings lived here until 2026-08-21, when both feed
+# notifiers moved wholesale to the standalone follow-feed-notifier repo (~/Claude/follow-feed-
+# notifier), which schedules itself through the OS Task Scheduler and manages its own keyring
+# entries. Nothing in this suite reads a `follow_feed` or `lossdog` config block any more.
 
 
 def desk_notify_settings(cfg: dict[str, Any]) -> dict[str, Any]:

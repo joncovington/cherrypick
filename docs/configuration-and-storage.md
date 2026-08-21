@@ -78,8 +78,6 @@ effect on the next pass, with no `install` step and no scheduled task to registe
 | `watchdog` | on | `watchdog` |
 | `streamer` | on (in-session liveness probe) | `streamer-health` |
 | `trade_notify` | on | `trade-notify` |
-| `follow_feed` | **off** | `follow-notify` |
-| `lossdog` | **off** | `lossdog-notify` (see [the token section](#lossdog-vip-feed-token)) |
 | module `paper`, `tick_interval_seconds` ≥ 60 | on | `<module>-paper` (short-lived tick) |
 | module `paper`, `tick_interval_seconds` < 60 | on | `<module>-paper` (the module's own resident `--interval` loop, in-session only, restarted on death and on `silence_seconds` of log silence) plus `<module>-paper-offsession` (60 s ticks outside the session, so settlement and retries keep their shape) |
 | module `paper` (kind `cherrypick_scheduled`) | on, entry 15:45 / exit 09:45 ET | `<module>-entry`, `<module>-exit` |
@@ -176,52 +174,13 @@ monthly `archive` task zips finished-month reports + rotated logs into `logs/arc
 
 Every secret lives in the **OS keyring** (Windows Credential Manager/DPAPI, macOS Keychain, Linux Secret
 Service) — never in files, env vars, or logs. Broker OAuth tokens are stored under each module's
-`keyring_service`; Slack/Discord webhooks — and the Lossdog `__client` cookie below — under the
-orchestrator (`secrets-set`). See [guardrails-and-modes.md](guardrails-and-modes.md).
+`keyring_service`; Slack/Discord webhooks under the orchestrator (`secrets-set`). The standalone
+follow-feed-notifier's entries (`discord_follow_webhook`, `lossdog_client`) share the same
+`cherrypick-notify` service name for historical reasons but are managed only by that repo's own
+CLI. See [guardrails-and-modes.md](guardrails-and-modes.md).
 
-### Lossdog VIP feed token
-
-> **Notice:** the Lossdog feed API is private and undocumented, reverse-engineered from the logged-in
-> web app. Scripted polling may not be permitted under Lossdog's terms of service. The `lossdog-notify`
-> job is a personal convenience, off by default, used at your own risk.
-
-The feed API wants a **Clerk session JWT** with a ~24 h lifetime. The notifier gets one in two ways,
-tried in order every run:
-
-**Primary — minted per run from the keyring cookie (no daily manual step).** Clerk's long-lived
-`__client` cookie can mint fresh session JWTs, and the notifier does exactly what the web app's own
-SDK does, over plain HTTPS. Capture the cookie once:
-
-1. Log in at `app.lossdog.com`.
-2. DevTools → Application → Cookies → `https://clerk.lossdog.com` → copy the `__client` value
-   (readable there even though the cookie is HttpOnly).
-3. `python run.py secrets-set --channel lossdog` and paste it (input hidden).
-
-The minted JWT lives only in process memory for the cycle. If Clerk rejects the cookie (a 401 — you
-logged out, or the session was revoked), the notifier warns **once** and tells you to re-capture; if
-Clerk is merely unreachable or changed shape, it falls back silently to the manual token below. A
-Clerk upgrade may someday break the minting path — the recorded fallback design is a Playwright-based
-provider run as a standalone `scripts/` job, deliberately not built until needed.
-
-**Fallback — a manually minted token in `LOSSDOG_TOKEN`.** In DevTools' console on a logged-in
-`app.lossdog.com` tab:
-
-```js
-await window.Clerk.session.getToken({ template: 'canis-amnis' })
-```
-
-Copy the JWT and set it with `setx LOSSDOG_TOKEN "<jwt>"`. The notifier reads the process env first
-and then the registry (`HKCU\Environment`) **live on every run**, so a `setx` rotation reaches the
-running supervisor's jobs without a daemon restart — set it with `setx` only; exporting it in the
-daemon's own shell would pin a stale copy until the daemon restarts (the notifier retries a 401 once
-with the registry value to cover exactly that). The token lives ~24 h; the run summary reports
-`token_hours_left`, and a manual token under 2 h draws one warning.
-
-This env-var fallback is a **deliberate, documented exception** to the keyring-only guardrail: the
-JWT is a self-expiring 24-hour session token, not a durable secret, and the registry read is what
-makes daily rotation practical. The durable credential — the `__client` cookie — does live in the
-keyring. Do not "fix" this by moving the JWT into config or the keyring; rotation is the point.
-
-A rejected credential (either kind) warns **once per credential** and then stays silent until the
-credential changes, so the 10-minute cadence can never become an alert storm. To reset the seen-state
-(a full re-seed, nothing re-posted): delete `~/.cherrypick/state/lossdog_notify.json`.
+> **Moved out (2026-08-21):** the tastylive Follow Feed and Lossdog VIP feed notifiers — code,
+> settings, card rendering, scheduling — live in the standalone `follow-feed-notifier` repo
+> (`~/Claude/follow-feed-notifier`), scheduled by the OS Task Scheduler, reading the same keyring
+> entries it always did (service `cherrypick-notify`). See that repo's README for setup, filters,
+> and the Lossdog token capture steps. Nothing in this suite polls either feed any more.

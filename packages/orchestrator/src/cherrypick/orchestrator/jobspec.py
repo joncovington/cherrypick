@@ -377,33 +377,9 @@ def derive_jobs(
         ),
     )
 
-    # --- follow-notify (network → its own job, never on the watchdog tick)
-    ff = cfgmod.follow_feed_settings(cfg)
-    add(
-        "follow-notify",
-        lambda: JobSpec(
-            id="follow-notify",
-            argv=_run_py(pythonw, launcher, "notify-follow"),
-            kind=KIND_INTERVAL,
-            interval_seconds=int(ff["interval_minutes"]) * 60,
-            enabled=ff["enabled"],
-            enabled_reason="" if ff["enabled"] else "disabled in config (follow_feed)",
-        ),
-    )
-
-    # --- lossdog-notify (network → its own job, never on the watchdog tick)
-    ld = cfgmod.lossdog_settings(cfg)
-    add(
-        "lossdog-notify",
-        lambda: JobSpec(
-            id="lossdog-notify",
-            argv=_run_py(pythonw, launcher, "notify-lossdog"),
-            kind=KIND_INTERVAL,
-            interval_seconds=int(ld["interval_minutes"]) * 60,
-            enabled=ld["enabled"],
-            enabled_reason="" if ld["enabled"] else "disabled in config (lossdog)",
-        ),
-    )
+    # follow-notify and lossdog-notify were derived here until 2026-08-21 — both feed notifiers
+    # moved to the standalone follow-feed-notifier repo, scheduled by the OS Task Scheduler.
+    # `_prune_retired` drops their registry rows once config stops carrying the blocks.
 
     # --- desk-notify (broker call + webhook → its own job, never on the watchdog tick)
     dn = cfgmod.desk_notify_settings(cfg)

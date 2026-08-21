@@ -54,11 +54,8 @@ Subcommands:
   ensure-dolt          Start any module's declared Dolt server if down (invoked by its keep-alive task).
   notify-test          Fire a test notification through all configured channels.
   notify-trades        Push new paper entries/exits to the trade channels (also runs on each watchdog tick).
-  notify-follow        Push new tastylive Follow Feed orders to their own channel (own task, network call).
-  notify-lossdog       Push new Lossdog VIP feed trades to the follow channel (own task, private API).
-                       --replay-last N re-posts the newest N; --dry-run prints embeds instead of posting.
   notify-desk          Card manual-desk orders and watch them to fill (own task, broker + network call).
-  secrets-set          Store a webhook URL or the lossdog cookie in the keyring (--channel; --url or prompt).
+  secrets-set          Store a webhook URL in the keyring (--channel; --url or prompt).
   secrets-status       Show which push-channel secrets are configured (secret-free).
   secrets-delete       Remove a stored secret (--channel).
 """
@@ -83,10 +80,8 @@ from cherrypick.orchestrator import (
     connect,
     desk_notifier,
     doctor,
-    follow_notifier,
     init,
     logrotate,
-    lossdog_notifier,
     migrate,
     reconcile,
     report,
@@ -1092,14 +1087,6 @@ def cmd_notify_trades(cfg) -> None:
     _emit(trade_notifier.run(cfg))
 
 
-def cmd_notify_follow(cfg, args) -> None:
-    _emit(follow_notifier.run(cfg, replay_last=args.replay_last or 0, dry_run=args.dry_run))
-
-
-def cmd_notify_lossdog(cfg, args) -> None:
-    _emit(lossdog_notifier.run(cfg, replay_last=args.replay_last or 0, dry_run=args.dry_run))
-
-
 def cmd_notify_desk(cfg) -> None:
     _emit(desk_notifier.run(cfg))
 
@@ -1191,9 +1178,8 @@ def cmd_secrets_set(channel: str | None, url: str | None) -> None:
         _emit({"ok": False, "error": f"--channel must be one of {list(notify_secrets.SUPPORTED)}"})
         sys.exit(2)
     if not url:
-        # Read without echo / shell history. A webhook URL (or the Clerk cookie) is a bearer secret.
-        label = "Clerk __client cookie value" if channel == "lossdog" else "webhook URL"
-        url = getpass.getpass(f"Paste the {channel} {label} (input hidden): ").strip()
+        # Read without echo / shell history. A webhook URL is a bearer secret.
+        url = getpass.getpass(f"Paste the {channel} webhook URL (input hidden): ").strip()
     if not url:
         _emit({"ok": False, "error": "no URL provided"})
         sys.exit(2)
@@ -1253,8 +1239,6 @@ def build_parser() -> argparse.ArgumentParser:
             "ensure-dolt",
             "notify-test",
             "notify-trades",
-            "notify-follow",
-            "notify-lossdog",
             "notify-desk",
             "secrets-set",
             "secrets-status",
@@ -1360,16 +1344,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="For archive: report what would be archived without writing or deleting. "
-        "For notify-follow/notify-lossdog: print embeds as JSON instead of posting (state untouched)",
-    )
-    parser.add_argument(
-        "--replay-last",
-        type=int,
-        default=0,
-        metavar="N",
-        help="For notify-follow/notify-lossdog: re-post the N most recent trades regardless of "
-        "seen state (a rendering test; state untouched)",
+        help="For archive: report what would be archived without writing or deleting",
     )
     parser.add_argument(
         "--stop",
@@ -1417,8 +1392,6 @@ def main() -> None:
         "migrate-home": lambda: cmd_migrate_home(cfg, args.apply),
         "calibrate": lambda: cmd_calibrate(cfg),
         "notify-trades": lambda: cmd_notify_trades(cfg),
-        "notify-follow": lambda: cmd_notify_follow(cfg, args),
-        "notify-lossdog": lambda: cmd_notify_lossdog(cfg, args),
         "notify-desk": lambda: cmd_notify_desk(cfg),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),
         "run-earnings-exit": lambda: _run_earnings(cfg, "exit"),

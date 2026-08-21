@@ -144,7 +144,7 @@ def _meic_new_stops(conn) -> list:
 
 
 # --------------------------------------------------------------------------- Discord embed cards
-# Same card language as follow_notifier's Follow Feed push: a colored stripe carries the lifecycle at
+# Same card language as the (since-moved) follow-feed push: a colored stripe carries the lifecycle at
 # a glance. Colors are deliberately not a pure green/red pair — a position going on isn't a win and a
 # stop isn't the same shape of event as a normal close, so each gets its own color rather than reusing
 # "good"/"bad".

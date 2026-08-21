@@ -247,7 +247,6 @@ def test_doctor_suite_checks_read_jobs_under_supervisor(monkeypatch):
             "streamer-health": {"enabled": True},
             "console": {"enabled": True},
             "reconcile": {"enabled": False, "enabled_reason": "disabled in config (reconcile.schedule)"},
-            "follow-notify": {"enabled": False, "enabled_reason": "disabled in config (follow_feed)"},
         }
     )
     monkeypatch.setattr(
@@ -260,7 +259,6 @@ def test_doctor_suite_checks_read_jobs_under_supervisor(monkeypatch):
     assert "preopen" not in {c.name for c in doctor._suite_task_checks({})}
     # opted-out features stay healthy-disabled, not warnings
     assert checks["task.reconcile"].status == doctor.OK
-    assert checks["task.follow_notify"].status == doctor.OK
 
 
 def test_doctor_enabled_but_missing_job_warns():
