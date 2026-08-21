@@ -111,7 +111,7 @@ def test_each_module_is_qualified_against_its_own_configured_rule(seeded, tmp_ho
 
     flies_rule = deep["arm_readings"]["flies"]["rule"]
     assert flies_rule["min_net_pnl"] == 0.0
-    assert "margin" not in flies_rule, "margin belongs to the champion comparison, not the checks"
+    assert "margin" not in flies_rule, "margin belonged to the retired champion comparison, not the checks"
     assert flies_rule["min_days"] == 14, "the configured rule overlays the default, never replaces it"
     # A module with no calibration block is unaffected and still reports the default it was judged by.
     assert "min_net_pnl" not in deep["arm_readings"]["meic"]["rule"]

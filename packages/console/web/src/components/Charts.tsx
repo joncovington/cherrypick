@@ -158,10 +158,11 @@ export function BarChart({
 /**
  * A zero-centered diverging bar: a loss and a win of the same size read as the same visual weight
  * in opposite colors, off a shared zero tick, rather than scaling losses against wins (which makes
- * a bad result look smaller than it is). Shared by Champions' arm comparison and Review's per-arm
- * table -- those two used to solve the identical stated problem with two different bar mechanics
- * (a zero-centered track vs. a plain 0-100% left-anchored one with no zero reference at all).
- * `compact` fits inside a table cell (Review); the default size matches a standalone row (Champions).
+ * a bad result look smaller than it is). It was shared by the Champions arm comparison and Review's
+ * per-arm table -- those two used to solve the identical stated problem with two different bar
+ * mechanics (a zero-centered track vs. a plain 0-100% left-anchored one with no zero reference at
+ * all). Champions was removed 2026-08-20, so Review is the remaining caller; `compact` fits inside
+ * a table cell, and the default size still matches a standalone row.
  */
 export function SignedBar({
   value,

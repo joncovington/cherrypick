@@ -7,7 +7,7 @@
   "active_profile": "control",
   "profiles": {
     "control": {
-      "_note": "The reference book: EVERY key here is either absent (inherits config.json's own default — today's deployed policy, unchanged) or explicitly restated for legibility. This is what recommend_champion compares every other stream against (see calibrate.py's champion/challenger surface), and what the derived stop policies (Phase 3: stop-none / stop-0.75-net / stop-2.0-side / strike-touch, computed from `open`'s recorded paths) are validated against — the derived-0.95x-net policy computed from `open`'s paths must reproduce control's realized P&L within fill noise, or the derivation is wrong.",
+      "_note": "The reference book: EVERY key here is either absent (inherits config.json's own default — today's deployed policy, unchanged) or explicitly restated for legibility. This is the reference book every other stream is read against (it was recommend_champion's champion until the champion/challenger surface was retired 2026-08-20; arms are judged by packages/advisor's experiments now), and what the derived stop policies (Phase 3: stop-none / stop-0.75-net / stop-2.0-side / strike-touch, computed from `open`'s recorded paths) are validated against — the derived-0.95x-net policy computed from `open`'s paths must reproduce control's realized P&L within fill noise, or the derivation is wrong.",
       "enabled": true,
       "min_iv_rank": 0.3,
       "min_credit_pct_of_width": 0.15,
@@ -180,7 +180,7 @@
     },
     "conservative": {
       "_note": "Default: today's settings. Strict IV/credit floors, wide OTM buffers, latest entry time (12:00 PM). Fewest trades (~1–2/day), highest per-trade safety margin. Best for learning, uncertain markets, or recovery after losses.",
-      "_disabled_note": "DISABLED 2026-08-07 — superseded by `control` above, which carries the exact same values (this profile's own keys, unchanged) under the name the new arm registry and the champion/challenger surface (calibrate.py) actually reference. Kept, not deleted, because `advice.base_profile` and the live agent's /set-risk-profile both historically pointed at this name; both have been repointed at `control`, but the values stay here as the historical record of the ladder's base rung.",
+      "_disabled_note": "DISABLED 2026-08-07 — superseded by `control` above, which carries the exact same values (this profile's own keys, unchanged) under the name the new arm registry actually references (it was also the champion/challenger surface's champion, retired 2026-08-20). Kept, not deleted, because `advice.base_profile` and the live agent's /set-risk-profile both historically pointed at this name; both have been repointed at `control`, but the values stay here as the historical record of the ladder's base rung.",
       "enabled": false,
       "min_iv_rank": 0.3,
       "min_credit_pct_of_width": 0.15,

@@ -18,7 +18,6 @@ export interface SystemPanel {
     enabled: boolean;
     kind: string | null;
     streamer: boolean | null;
-    champion: string | null;
     liveTrading: boolean | null;
   }>;
   services: Array<{ id: string; enabled: boolean; autoRestart: boolean; launched: string | null; pid: number | null }>;
@@ -38,7 +37,6 @@ export function readSystemPanel(config: ConsoleConfig): SystemPanel {
       enabled: m["enabled"] === true,
       kind: typeof m["kind"] === "string" ? m["kind"] : null,
       streamer: typeof m["streamer"] === "boolean" ? m["streamer"] : null,
-      champion: typeof m["champion"] === "string" ? m["champion"] : null,
       // Shared with the Config page's lock hero so the two can't disagree — and so flies' nested
       // `live.enabled` is seen here too, which a top-level-only read misses entirely.
       liveTrading: readModuleGate(config, id).liveEnabled,

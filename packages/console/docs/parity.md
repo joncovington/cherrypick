@@ -36,7 +36,7 @@ Console's `readers/logs.ts` is a separate implementation and does not inherit th
 | Header status pill / watchdog age / session / findings | done (Overview); active-alerts callout (WARN/CRITICAL filter) and notify-channels line missing |
 | Suite stats strip (net, trades, win %, avg) | done |
 | Suite equity — cumulative net P&L + module lines | done; missing: 2x-slippage restatement, best/worst-day metrics, VIX right-axis overlay, data-epoch marker |
-| Champions & challengers (calibrate) | moved to its own page (`/champions`), one tab per module — every arm shown, no cap; the Overview keeps the champion column on the System card |
+| Champions & challengers (calibrate) | **REMOVED 2026-08-20** — the page, the `/api/calibration` route, the champion column on the System card and `core.profiles.recommend_champion` all went together. Judging whether an arm earned anything belongs to `packages/advisor`'s experiments now, so the suite has one mechanism rather than two answering that on different evidence and thresholds. `cherrypick calibrate` still reports the per-tag reading |
 | System: modules, services, config summary, halt flag | done (live doctor checks and OS task registry not ported — they need the orchestrator's own subprocess) |
 | Live ops: halt flag, per-module live gates, reconcile panel | **missing** — broker-touching; port deliberately |
 | End-of-day card + md report links/rendering | done (in-page markdown rendering, allowlisted files) |

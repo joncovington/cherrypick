@@ -33,10 +33,20 @@ TypeScript port read `fly_books`.
 `eod-analysis-<day>.md`, the suite `eod-digest`, the opt-in `eod-insight` AI synthesis, and `advise`.
 
 `calibrate` sits alongside `report`, reading the same paper DBs to produce per-profile qualification
-readings. It compares a **champion** (the currently-live profile) against every other observed tag as a
-challenger; where a module's tags are parallel experiment arms rather than a risk sequence, it declares
-no champion and reports each arm on its own. The older fixed-ladder "promote to the next rung" model was
-retired 2026-08-01 — it produced a meaningless recommendation for parallel arms.
+readings — sample, sessions, win rate, net of cost, and the threshold checks against a declared rule.
+Every tag is reported on its own.
+
+**The champion/challenger comparison was retired 2026-08-20**, and with it
+`core.profiles.recommend_champion` and the console's `/champions` page. It named one tag the live
+champion, judged every other tag against it, and emitted an advisory promote/retain verdict.
+Deciding whether a variant earned anything is `packages/advisor`'s job now, through its experiments,
+so there is ONE mechanism rather than two answering the same question from different evidence and
+different thresholds. `compare_profiles`, `qualify_readings` and `QUALIFICATION_RULE` all stayed —
+the advisor reads through exactly that chain.
+
+(This is the second model retired from that surface. The original fixed-ladder "promote to the next
+rung" went in 2026-08-01, because it produced a real, reproducible, meaningless recommendation the
+moment a module's tags were parallel arms rather than a risk sequence.)
 `logrotate` (`archive`) sweeps finished months into `logs/archive/`.
 
 ## `report` — unified paper P&L
