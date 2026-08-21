@@ -460,10 +460,14 @@ export function readMeicPerformance(
         })()
       : [];
 
-    // --- daily equity + drawdown (net = SUM(pnl), the stats-grid convention) ---
+    // --- daily equity + drawdown, NET OF FEES ---
+    // These two read gross `SUM(pnl)` while the calendar beside them read net, so one MEIC page
+    // showed two different curves both labelled net. Net-of-fees is the module-wide definition
+    // (core.ledgers, flies, and the calendar below all use it), and fees are a real drag on this
+    // strategy -- a gross equity curve overstates every drawdown recovery.
     const dailyRows = db
       .prepare<string[], Record<string, unknown>>(
-        `SELECT trade_date, COALESCE(SUM(pnl), 0) AS net FROM ic_trades WHERE ${where}
+        `SELECT trade_date, COALESCE(SUM(pnl - COALESCE(fees, 0)), 0) AS net FROM ic_trades WHERE ${where}
           GROUP BY trade_date ORDER BY trade_date`,
       )
       .all(...params);
@@ -542,7 +546,7 @@ export function readMeicPerformance(
       ? (() => {
           const rows = db
             .prepare<string[], Record<string, unknown>>(
-              `SELECT risk_profile, trade_date, COALESCE(SUM(pnl), 0) AS net FROM ic_trades
+              `SELECT risk_profile, trade_date, COALESCE(SUM(pnl - COALESCE(fees, 0)), 0) AS net FROM ic_trades
                 WHERE ${RESOLVED} AND risk_profile IS NOT NULL${eraOn ? " AND era = ?" : ""}
                 GROUP BY risk_profile, trade_date ORDER BY risk_profile, trade_date`,
             )
@@ -762,7 +766,11 @@ export interface MeicAnalytics {
    * the page's scope, so it never covered this.
    */
   byProfile: Array<{ profile: string; trades: number; net: number; winPct: number | null; avg: number | null; profitFactor: number | null }>;
-  /** Today's fee drag per profile, same grouping as byProfile. */
+  /** Today's fee drag per profile, same grouping as byProfile.
+   *
+   * `gross` here is premium COLLECTED, not gross P&L -- it does not reconcile with `net` the way
+   * flies' identically-named field does. Renaming the field would ripple through the page; the
+   * column it renders is labelled "credit" instead. */
   profileFeeDrag: Array<{ profile: string; gross: number; fees: number; net: number; dragPct: number | null }>;
   exitReasons: Array<{ reason: string; count: number }>;
   feeDrag: { grossCredit: number; fees: number; netPnl: number; dragPct: number | null };

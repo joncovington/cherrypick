@@ -299,9 +299,15 @@ export function MeicPage() {
               ))}
             </DataCard>
 
+            {/* "credit", not "gross": this column is the premium COLLECTED
+                (net_credit x quantity x 100), while `net` is realised P&L. Flies' identically
+                headed column is gross P&L, where net + fees reconciles — here it does not, and a
+                reader who tried to subtract got nonsense. Drag against collected premium is the
+                right measure for a credit strategy and is what this module's own docs quote
+                (SPX 5-wide under 10%, 1-wide over 20%), so the number stays and the label moves. */}
             <DataCard
-              title="Fee drag by profile — today"
-              headers={["profile", "gross", "fees", "net", "drag %"]}
+              title="Fee drag by profile — today (drag is fees against premium collected)"
+              headers={["profile", "credit", "fees", "net", "drag %"]}
               numFrom={1}
               loading={analytics.isLoading}
               rowCount={a?.profileFeeDrag.length ?? 0}
