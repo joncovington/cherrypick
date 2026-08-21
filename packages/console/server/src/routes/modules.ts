@@ -8,6 +8,7 @@ import { readOccupancy } from "../readers/occupancy.js";
 import {
   readMeic,
   readMeicAnalytics,
+  readMeicDivergence,
   readMeicDeepAnalytics,
   readMeicPerformance,
   readMeicScope,
@@ -96,6 +97,14 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/meic/analytics", async (req) =>
     readMeicAnalytics(config, parseMode(req.query), parseMeicScope(req.query)),
   );
+  // `date` is not part of MeicScopeFilter (symbol/profile/era), so it is read on its own here --
+  // null means "the latest session", which the reader resolves from entry_attempts.
+  app.get("/api/meic/divergence", async (req) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const raw = q["date"];
+    const date = typeof raw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
+    return readMeicDivergence(config, parseMode(req.query), date);
+  });
   app.get("/api/meic/deep", async (req) =>
     readMeicDeepAnalytics(config, parseMode(req.query), parseMeicScope(req.query)),
   );

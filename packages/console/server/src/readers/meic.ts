@@ -1,8 +1,8 @@
 import path from "node:path";
-import type { MeicPayload, MeicTradeRow, MeicSummaryRow, Paged, TradingMode } from "@console/shared";
+import type { MeicDivergence, MeicPayload, MeicTradeRow, MeicSummaryRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import type { DatabaseHandle } from "./db.js";
-import { withReadOnlyDb, hasColumn, num, str } from "./db.js";
+import { withReadOnlyDb, hasColumn, hasTable, num, str } from "./db.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
 import { payoffAt, type Leg } from "../analytics/payoff.js";
 
@@ -1185,6 +1185,95 @@ export function readMeicForest(
       arms,
       releasedStrikes: released,
       lastSpot,
+    };
+  });
+}
+
+/**
+ * Profile divergence: how often MEIC's arms reached DIFFERENT entry decisions on the same tick.
+ *
+ * The flies page has had this since week one and the reasoning carries over unchanged: an
+ * experiment can only separate two arms to the extent they actually disagree, and a pair agreeing
+ * above 80% cannot answer the question as framed no matter how long it runs. Far better learned in
+ * week one than in month three.
+ *
+ * MEIC's arms differ in GATES rather than in centring, so the thing to compare is the outcome each
+ * profile reached, not a strike. `entry_attempts` is the right table because it records one
+ * uncollapsed row per (profile x symbol) per tick INCLUDING refusals — the arms that matter most
+ * here are the ones that go dark on a low-IV day, and a table of fills alone cannot see them.
+ *
+ * Bucketed on (ts, symbol): the loop stamps every profile in one tick with the same HH:MM, so a
+ * tick is directly comparable across arms.
+ */
+export function readMeicDivergence(config: ConsoleConfig, mode: TradingMode, day: string | null): MeicDivergence {
+  const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.meicDir, file);
+  const empty: MeicDivergence = { date: null, ticks: 0, allAgreeRatePct: null, pairs: [], outcomes: [] };
+  return withReadOnlyDb<MeicDivergence>(dbPath, empty, (db) => {
+    if (!hasTable(db, "entry_attempts")) return empty;
+    const date =
+      day ??
+      db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM entry_attempts").get()?.d ??
+      null;
+    if (date === null) return empty;
+
+    const rows = db
+      .prepare<[string], Record<string, unknown>>(
+        "SELECT ts, symbol, risk_profile, outcome FROM entry_attempts WHERE trade_date = ? ORDER BY ts",
+      )
+      .all(date);
+
+    const ticks = new Map<string, Record<string, string>>();
+    const outcomeCounts = new Map<string, number>();
+    for (const r of rows) {
+      const profile = str(r["risk_profile"]);
+      const outcome = str(r["outcome"]);
+      if (profile === null || outcome === null) continue;
+      outcomeCounts.set(outcome, (outcomeCounts.get(outcome) ?? 0) + 1);
+      const key = `${String(r["ts"])}|${String(r["symbol"])}`;
+      let bucket = ticks.get(key);
+      if (bucket === undefined) {
+        bucket = {};
+        ticks.set(key, bucket);
+      }
+      bucket[profile] = outcome;
+    }
+
+    const pairs = new Map<string, boolean[]>();
+    let allAgree = 0;
+    let considered = 0;
+    for (const outcomes of ticks.values()) {
+      const profiles = Object.keys(outcomes).sort();
+      if (profiles.length < 2) continue; // agreement is undefined for one arm
+      considered += 1;
+      if (new Set(Object.values(outcomes)).size === 1) allAgree += 1;
+      for (let i = 0; i < profiles.length; i++) {
+        for (let j = i + 1; j < profiles.length; j++) {
+          const key = `${profiles[i]} vs ${profiles[j]}`;
+          let list = pairs.get(key);
+          if (list === undefined) {
+            list = [];
+            pairs.set(key, list);
+          }
+          list.push(outcomes[profiles[i]!] === outcomes[profiles[j]!]);
+        }
+      }
+    }
+
+    return {
+      date,
+      ticks: considered,
+      allAgreeRatePct: considered > 0 ? (allAgree / considered) * 100 : null,
+      pairs: [...pairs.entries()]
+        .map(([profiles, matches]) => ({
+          profiles,
+          ticks: matches.length,
+          agreementRatePct: matches.length > 0 ? (matches.filter(Boolean).length / matches.length) * 100 : null,
+        }))
+        .sort((a, b) => (b.agreementRatePct ?? 0) - (a.agreementRatePct ?? 0)),
+      outcomes: [...outcomeCounts.entries()]
+        .map(([outcome, count]) => ({ outcome, count }))
+        .sort((a, b) => b.count - a.count),
     };
   });
 }

@@ -724,3 +724,14 @@ export interface CalendarsWeekRow {
   netPnl: number | null;
 }
 
+/** How often MEIC's profiles reached the SAME entry decision on the same tick. */
+export interface MeicDivergence {
+  date: string | null;
+  /** Ticks where at least two profiles both evaluated, so agreement is defined. */
+  ticks: number;
+  /** Share of those ticks where every evaluating profile reached the same outcome. */
+  allAgreeRatePct: number | null;
+  pairs: Array<{ profiles: string; ticks: number; agreementRatePct: number | null }>;
+  /** The outcomes seen, most common first — what the profiles were agreeing or disagreeing ABOUT. */
+  outcomes: Array<{ outcome: string; count: number }>;
+}

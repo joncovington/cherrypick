@@ -8,6 +8,7 @@ import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { ScopeSelect, EraSelect, TabStrip, LoopPill, Pager, usePage } from "../../components/ScopeBar";
 import { MeicDeepCards } from "./MeicDeepCards";
+import { MeicDivergenceCard } from "./MeicDivergenceCard";
 import { ExperimentGuideView } from "../../components/ExperimentGuide";
 import { ArmRail, AttemptTimeline } from "../../components/Attempts";
 import { OccupancyMap } from "../../components/OccupancyMap";
@@ -346,6 +347,8 @@ export function MeicPage() {
                 </tr>
               ))}
             </DataCard>
+
+            <MeicDivergenceCard mode={mode} date={null} />
 
             <Card title="Fee drag (this era)" updatedAt={analytics.dataUpdatedAt}>
               <div className="stats-grid">
