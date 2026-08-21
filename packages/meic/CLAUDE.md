@@ -131,7 +131,9 @@ See [docs/risk-profiles.md](docs/risk-profiles.md) for the full rationale, trade
 
 **The registry is a four-stream forward test, not a risk ladder, since 2026-08-07.**
 `config.risk.json`'s enabled profiles are `control` (today's deployed policy — the reference book
-and the champion/challenger surface's champion), `open` (every study gate off, no per-side stop,
+every other stream is read against; it was also the champion/challenger surface's champion until
+that surface was retired 2026-08-20, and judging arms now belongs to `packages/advisor`'s
+experiments), `open` (every study gate off, no per-side stop,
 `overlap_scope: "none"`, full per-side path recording — the permissive superset every gate variant
 and every derived stop policy is answered from read-side, rather than by running a separate arm per
 question), and `width-5`/`width-10` (wing width pinned, the one genuinely non-derivable structural

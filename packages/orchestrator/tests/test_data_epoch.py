@@ -58,22 +58,18 @@ def test_config_accessor_requires_a_date():
     assert e == {"date": "2026-07-01", "note": "phase-0"}
 
 
-def test_calibrate_excludes_pre_epoch_sessions_from_promotion(tmp_path):
-    """20 winning pre-epoch sessions would otherwise inflate the champion's own reading; with the
-    epoch declared, only the 3 post-epoch sessions count. conservative is both the champion and the
-    only tag with data here, so there is no challenger to recommend -- the module-level verdict
-    holds regardless; what the epoch actually gates is the READING's sample/days count."""
+def test_calibrate_excludes_pre_epoch_sessions_from_the_reading(tmp_path):
+    """20 winning pre-epoch sessions would otherwise inflate the tag's reading; with the epoch
+    declared, only the 3 post-epoch sessions count. What the epoch gates is the READING's
+    sample/days count, which is what this always actually asserted — the champion/challenger
+    verdict it also checked was retired 2026-08-20."""
     cfg = _cfg(tmp_path, epoch={"date": "2026-07-01", "note": "phase-0 restatement"})
     _rows(tmp_path)
     out = calibrate.run(cfg)
-    mod = out["modules"]["meic"]
-    prof = mod["profiles"][_CHAMPION]
+    prof = out["modules"]["meic"]["profiles"][_CHAMPION]
     assert out["data_epoch"]["date"] == "2026-07-01"
-    assert prof["role"] == "champion"
     assert prof["reading"]["sample"] == 3
     assert prof["reading"]["days"] == 3
-    assert mod["recommendation"]["eligible"] is False
-    assert mod["recommendation"]["recommendation"] == f"retain:{_CHAMPION}"
 
 
 def test_calibrate_without_epoch_keeps_full_history(tmp_path):

@@ -116,136 +116,28 @@ def test_compare_profiles_empty_rows():
     assert profiles.compare_profiles([], tag_key="risk_profile", summarize=_count) == {}
 
 
-# --------------------------------------------------------------------------- recommend_champion
 _GOOD = {"sample": 40, "win_rate": 0.65, "days": 20, "net_pnl": 500.0}
 _THIN = {"sample": 3, "win_rate": 0.9, "days": 2, "net_pnl": 50.0}
 
 
-def test_recommend_champion_champion_need_not_itself_qualify():
-    # champion's own reading fails the qualification bar (3 trades) -- it's already live, so it is
-    # never held to QUALIFICATION_RULE. A qualified challenger can still be evaluated and win.
-    readings = {"conservative": _THIN, "moderate": _GOOD}
-    v = profiles.recommend_champion(readings, "conservative")
-    assert v["eligible"] is True
-    assert v["recommendation"] == "champion:moderate"
-    assert v["challengers"]["moderate"]["beats_champion"] is True
 
 
-def test_recommend_champion_qualified_challenger_beats_champion():
-    readings = {
-        "conservative": {"sample": 30, "win_rate": 0.55, "days": 20, "net_pnl": 100.0},
-        "moderate": _GOOD,
-    }
-    v = profiles.recommend_champion(readings, "conservative")
-    assert v["eligible"] is True
-    assert v["recommendation"] == "champion:moderate"
-    assert v["challengers"]["moderate"]["qualified"] is True
-    assert v["challengers"]["moderate"]["beats_champion"] is True
 
 
-def test_recommend_champion_no_challenger_qualifies_retains_champion():
-    readings = {"conservative": _GOOD, "moderate": _THIN, "aggressive": _THIN}
-    v = profiles.recommend_champion(readings, "conservative")
-    assert v["eligible"] is False
-    assert v["recommendation"] == "retain:conservative"
-    assert all(not c["beats_champion"] for c in v["challengers"].values())
 
 
-def test_recommend_champion_qualified_challenger_does_not_beat_retains_champion():
-    readings = {
-        "conservative": {"sample": 40, "win_rate": 0.65, "days": 20, "net_pnl": 900.0},
-        "moderate": _GOOD,  # qualifies, but net_pnl 500 < champion's 900
-    }
-    v = profiles.recommend_champion(readings, "conservative")
-    assert v["challengers"]["moderate"]["qualified"] is True
-    assert v["challengers"]["moderate"]["beats_champion"] is False
-    assert v["eligible"] is False
-    assert v["recommendation"] == "retain:conservative"
 
 
-def test_recommend_champion_multiple_qualified_best_one_wins():
-    readings = {
-        "conservative": {"sample": 40, "win_rate": 0.65, "days": 20, "net_pnl": 100.0},
-        "moderate": {**_GOOD, "net_pnl": 500.0},
-        "aggressive": {**_GOOD, "net_pnl": 900.0},  # best of the two challengers
-    }
-    v = profiles.recommend_champion(readings, "conservative")
-    assert v["recommendation"] == "champion:aggressive"
-    assert v["challengers"]["moderate"]["beats_champion"] is True  # also beats, just not the best
 
 
-def test_recommend_champion_deliberate_only_challenger_never_wins_even_if_best():
-    readings = {
-        "conservative": {"sample": 40, "win_rate": 0.65, "days": 20, "net_pnl": 100.0},
-        "very-aggressive": {**_GOOD, "net_pnl": 9000.0},  # best metric by far
-    }
-    v = profiles.recommend_champion(readings, "conservative", deliberate_only=("very-aggressive",))
-    assert v["challengers"]["very-aggressive"]["qualified"] is True
-    assert v["challengers"]["very-aggressive"]["beats_champion"] is True
-    assert v["challengers"]["very-aggressive"]["deliberate_only"] is True
-    assert v["eligible"] is False
-    assert v["recommendation"] == "retain:conservative"
 
 
-def test_recommend_champion_margin_requires_a_minimum_edge():
-    readings = {
-        "conservative": {"sample": 40, "win_rate": 0.65, "days": 20, "net_pnl": 100.0},
-        "moderate": {**_GOOD, "net_pnl": 100.5},  # ahead, but only by 0.5
-    }
-    v = profiles.recommend_champion(readings, "conservative", margin=1.0)
-    assert v["challengers"]["moderate"]["beats_champion"] is False
-    assert v["eligible"] is False
-    # margin=0.0 (default) would have let the same 0.5 edge win
-    v_default = profiles.recommend_champion(readings, "conservative")
-    assert v_default["challengers"]["moderate"]["beats_champion"] is True
 
 
-def test_recommend_champion_uses_return_on_capital_when_both_sides_have_it_else_net_pnl():
-    both_roc = {
-        "conservative": {
-            "sample": 40,
-            "win_rate": 0.65,
-            "days": 20,
-            "net_pnl": 900.0,
-            "return_on_capital": 0.02,
-        },
-        "moderate": {**_GOOD, "return_on_capital": 0.05},  # lower net_pnl-scale but higher RoC
-    }
-    v = profiles.recommend_champion(both_roc, "conservative")
-    assert v["challengers"]["moderate"]["metric"]["name"] == "return_on_capital"
-    assert v["challengers"]["moderate"]["beats_champion"] is True  # 0.05 > 0.02
-
-    one_missing_roc = {
-        "conservative": {
-            "sample": 40,
-            "win_rate": 0.65,
-            "days": 20,
-            "net_pnl": 900.0,
-            "return_on_capital": 0.02,
-        },
-        "moderate": _GOOD,  # no return_on_capital key at all
-    }
-    v2 = profiles.recommend_champion(one_missing_roc, "conservative")
-    assert v2["challengers"]["moderate"]["metric"]["name"] == "net_pnl"
-    assert v2["champion_metric"]["name"] == "return_on_capital"  # champion's own side unaffected
 
 
-def test_recommend_champion_champion_absent_from_readings_still_produces_verdict():
-    # brand-new champion, zero closed trades yet -- must not KeyError, and any qualified,
-    # non-deliberate-only challenger trivially beats a champion with nothing to lose to.
-    readings = {"moderate": _GOOD}
-    v = profiles.recommend_champion(readings, "conservative")
-    assert v["champion_metric"] is None
-    assert v["challengers"]["moderate"]["beats_champion"] is True
-    assert v["eligible"] is True
-    assert v["recommendation"] == "champion:moderate"
 
 
-def test_recommend_champion_deliberate_only_tag_absent_from_readings_is_a_noop():
-    readings = {"conservative": _GOOD, "moderate": _GOOD}
-    v = profiles.recommend_champion(readings, "conservative", deliberate_only=("ghost",))
-    assert "ghost" not in v["challengers"]
-    assert v["recommendation"] == "champion:moderate"  # unaffected by an absent deliberate_only tag
 
 
 # --------------------------------------------------------------------------- qualify_readings

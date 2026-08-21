@@ -39,7 +39,7 @@ worthless anyway. That gap is what the derived stop policies below are built to 
 
 | stream | what it is | why it exists |
 |---|---|---|
-| `control` | today's deployed policy incl. its 0.95×net stop, `overlap_scope: "shorts"` | the reference book **and** the champion (`calibration.champion` in the orchestrator config) — validates every derivation below |
+| `control` | today's deployed policy incl. its 0.95×net stop, `overlap_scope: "shorts"` | the reference book — validates every derivation below. (It was also the champion under `calibration.champion` until the champion/challenger surface was retired 2026-08-20; arms are judged by `packages/advisor`'s experiments now.) |
 | `open` | every study gate off, no per-side stop, `overlap_scope: "none"`, full per-side path recording (running max cost, settle values on every exit path, first strike-touch time) | the **permissive superset** — every gate variant and every stop policy is a read-side split of this one stream's own recorded rows, never a reason to run a sixth or seventh arm |
 | `width-5` | SPX wing pinned to 5, otherwise identical gates to `open`, but keeps `control`'s real 0.95×net stop | the one genuinely non-derivable structural variant — wing width isn't a float you can re-derive after the fact |
 | `width-10` | SPX wing pinned to 10, same design as `width-5` | paired against `width-5` on the same ticks; expected to near-duplicate `control`'s own book under `control`'s widest-first selection — `analytics.arm_divergence` reports how often the two streams actually realized different strikes, so that isn't assumed |

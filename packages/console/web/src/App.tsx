@@ -4,7 +4,6 @@ import { AdvisorPage } from "./pages/Advisor/AdvisorPage";
 import { Shell } from "./components/shell/Shell";
 import { OverviewPage } from "./pages/Overview/OverviewPage";
 import { MeicPage } from "./pages/Meic/MeicPage";
-import { ChampionsPage } from "./pages/Champions/ChampionsPage";
 import { FliesPage } from "./pages/Flies/FliesPage";
 import { PmccPage } from "./pages/Pmcc/PmccPage";
 import { CalendarsPage } from "./pages/Calendars/CalendarsPage";
@@ -29,6 +28,11 @@ export default function App() {
             rather than 404, and `replace` so Back does not bounce off the old URL. */}
         <Route path="morning" element={<Navigate to="/reports" replace />} />
         <Route path="review" element={<Navigate to="/reports?tab=eod" replace />} />
+        {/* Champions & challengers was REMOVED 2026-08-20 — judging whether an arm earned
+            anything belongs to the advisor's experiments now. Redirected rather than left to the
+            generic 404, which tells the reader their build is stale and to reload: true for a
+            missing route, actively misleading for a deliberately removed one. */}
+        <Route path="champions" element={<Navigate to="/advisor" replace />} />
         <Route path="advisor" element={<AdvisorPage />} />
         <Route path="meic" element={<MeicPage />} />
         <Route path="flies" element={<FliesPage />} />
@@ -36,7 +40,6 @@ export default function App() {
         <Route path="calendars" element={<CalendarsPage />} />
         <Route path="earnings" element={<EarningsPage />} />
         <Route path="gex" element={<GexPage />} />
-        <Route path="champions" element={<ChampionsPage />} />
         <Route path="scout" element={<WatchlistPage />} />
         <Route path="scout/symbol/:symbol" element={<SymbolPage />} />
         <Route path="scout/builder" element={<BuilderPage />} />

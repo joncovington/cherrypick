@@ -4,7 +4,7 @@ import { Card, fmtMoney, fmtPct } from "../../components/DataTable";
 
 interface SystemPanel {
   timezone: string | null;
-  modules: Array<{ id: string; enabled: boolean; kind: string | null; streamer: boolean | null; champion: string | null; liveTrading: boolean | null }>;
+  modules: Array<{ id: string; enabled: boolean; kind: string | null; streamer: boolean | null; liveTrading: boolean | null }>;
   services: Array<{ id: string; enabled: boolean; autoRestart: boolean; launched: string | null; pid: number | null }>;
   watchdog: { intervalMinutes: number | null; renotifyMinutes: number | null; drawdownGuard: boolean | null };
   notify: { channels: string[]; tradeChannels: string[]; webhookStatus: string | null };
@@ -45,7 +45,7 @@ export function SystemCard() {
           <div className="table-scroll">
             <table className="data-table num-from-1">
               <thead>
-                <tr><th>module</th><th>enabled</th><th>kind</th><th>streamer</th><th>champion</th><th>live trading</th></tr>
+                <tr><th>module</th><th>enabled</th><th>kind</th><th>streamer</th><th>live trading</th></tr>
               </thead>
               <tbody>
                 {data?.modules.map((m) => (
@@ -54,7 +54,6 @@ export function SystemCard() {
                     <td>{m.enabled ? "yes" : "no"}</td>
                     <td className="muted">{m.kind ?? "—"}</td>
                     <td className="muted">{m.streamer === null ? "—" : m.streamer ? "on" : "off"}</td>
-                    <td className="muted">{m.champion ?? "—"}</td>
                     <td className={m.liveTrading === true ? "pnl-neg" : "muted"}>
                       {m.liveTrading === null ? "—" : m.liveTrading ? "ENABLED" : "paper only"}
                     </td>
