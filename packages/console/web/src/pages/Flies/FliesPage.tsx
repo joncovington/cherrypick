@@ -5,7 +5,7 @@ import { useMode } from "../../lib/useMode";
 import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
-import { LoopPill, Pager, TabStrip, usePage } from "../../components/ScopeBar";
+import { EraSelect, LoopPill, Pager, TabStrip, usePage } from "../../components/ScopeBar";
 import type { TradingMode } from "@console/shared";
 import { ForestCard } from "./ForestCard";
 import { ArmRail, AttemptTimeline } from "../../components/Attempts";
@@ -160,25 +160,15 @@ export function FliesPage() {
         )}
         {/* Each era is selectable on its own. The control used to offer only the current era or
             "all", so the XSP and pre-XSP books could be read only POOLED with the current one —
-            which is the exact comparison the module says distorts every per-arm breakdown, and was
-            the only way it offered to look at them. */}
-        <select
-          className={`text-input${era !== null && era !== meta.data?.currentEra ? " scope-select-off-default" : ""}`}
-          value={era ?? ""}
-          onChange={(e) => setEra(e.target.value === "" ? null : e.target.value)}
-          aria-label="era scope"
+            which is the exact comparison the module says distorts every per-arm breakdown. */}
+        <EraSelect
+          value={era}
+          eras={meta.data?.eras}
+          currentEra={meta.data?.currentEra}
+          onChange={setEra}
+          pooledLabel="all eras — pooled"
           title="The XSP books (2026-07-29..07-31) are a different trade — 1-wide structures at 41% fee drag against the SPX book's 11%. Pooling them distorts every per-arm breakdown."
-        >
-          <option value="">{meta.data?.eras.find((e) => e.era === meta.data?.currentEra)?.label ?? "current era"} (default)</option>
-          {meta.data?.eras
-            .filter((e) => e.era !== meta.data?.currentEra)
-            .map((e) => (
-              <option key={e.era} value={e.era}>
-                {e.label} ({e.trades})
-              </option>
-            ))}
-          <option value="ALL">all eras — pooled</option>
-        </select>
+        />
         {tab === "today" && (
         <>
         <select
