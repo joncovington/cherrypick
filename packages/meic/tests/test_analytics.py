@@ -373,11 +373,11 @@ def test_arm_divergence_no_shared_sessions(conn):
 # --------------------------------------------------------------------------- stop_counterfactual (live wiring)
 
 
-def test_stop_counterfactual_runs_against_open_stream(conn):
+def test_stop_counterfactual_runs_against_the_substrate_stream(conn):
     _insert(
         conn,
         ic_order_id="1",
-        risk_profile="open",
+        risk_profile="control",
         status="expired",
         put_credit=0.9,
         call_credit=0.9,
@@ -393,7 +393,7 @@ def test_stop_counterfactual_runs_against_open_stream(conn):
     assert out["trades"] == 1
     assert out["derivable"] == 1
     assert out["policy"] == "stop-0.75-net"
-    assert out["arm"] == "open"
+    assert out["arm"] == "control"
 
 
 def test_validate_stop_derivation_wired_to_control(conn):
@@ -603,13 +603,13 @@ def test_stop_grid_scores_the_whole_curve_from_one_recorded_path(conn):
     argument for deriving it read-side rather than running a 15-session bounded experiment per
     threshold."""
     _insert(
-        conn, ic_order_id="1", risk_profile="open", status="expired",
+        conn, ic_order_id="1", risk_profile="control", status="expired",
         put_max_cost=1.71, call_max_cost=0.2,        # 1.71 / 1.8 = exactly 0.95x
         put_settle_value=2.0, call_settle_value=0.0,
         pnl=-20.0, fees=0.0,
     )
     out = analytics.stop_grid(conn)
-    assert out["arm"] == "open" and out["trades"] == 1
+    assert out["arm"] == "control" and out["trades"] == 1
     assert [p["ratio"] for p in out["curve"]] == list(analytics_grid_ratios())
 
     by_ratio = {p["ratio"]: p for p in out["curve"]}
@@ -648,12 +648,12 @@ def test_stop_grid_reports_censored_points_instead_of_folding_them_into_totals(c
 
 def test_stop_session_rollup_names_what_the_stop_cost_per_session(conn):
     _insert(
-        conn, ic_order_id="1", risk_profile="open", status="expired", trade_date="2026-08-13",
+        conn, ic_order_id="1", risk_profile="control", status="expired", trade_date="2026-08-13",
         put_max_cost=1.8, call_max_cost=0.1, put_settle_value=0.0, call_settle_value=0.0,
         pnl=180.0, fees=0.0,
     )
     _insert(
-        conn, ic_order_id="2", risk_profile="open", status="expired", trade_date="2026-08-14",
+        conn, ic_order_id="2", risk_profile="control", status="expired", trade_date="2026-08-14",
         put_max_cost=0.2, call_max_cost=0.2, put_settle_value=0.0, call_settle_value=0.0,
         pnl=180.0, fees=0.0,
     )

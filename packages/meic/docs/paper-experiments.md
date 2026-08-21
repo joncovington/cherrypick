@@ -15,12 +15,17 @@ same-session reading the design depended on never existed. sign and control-drif
 never separated from control on a single entry decision (100% agreement, 3,036 blocked attempts
 each): redundant as configured.
 
-From 2026-08-21, `packages/advisor` designs and runs every experiment. The era's first meic
-experiment (`exp-2026-08-20-meic-1`, `min_iv_rank: 0.0` on an advised book based on control) exists
-precisely to give control a filled baseline; the width question is expressible through the
-`wing_width_points` bound whenever the advisor takes it up. The retired profiles keep their exact
-key sets and verdicts in `config.risk.json`, per the kill rule below. `open` survives as the
-permissive substrate every read-side derivation is answered from.
+From 2026-08-21, `packages/advisor` designs and runs every experiment. At that day's EOD the
+baseline itself was redefined: `control` is now the permissive sampling substrate (formerly
+`open`), and the gated ex-control is retired as `control-gated` — its floor + gate combination
+never produced a fill, so every experiment against it could only end underpowered. The era's first
+meic experiment against the base that trades is `exp-2026-08-21-meic-1`
+(`regime_gex_block_negative: true` on the advised book): the retired book's own question, run
+properly. (`exp-2026-08-20-meic-1`, `min_iv_rank: 0.0` against the gated base, was killed as
+`base_redefined` — its parameter is a no-op against the permissive base.) The width question stays
+expressible through the `wing_width_points` bound. The retired profiles keep their exact key sets
+and verdicts in `config.risk.json`, per the kill rule below; `control` remains the substrate every
+read-side derivation is answered from (`analytics.py`'s arm defaults renamed with it).
 
 ## The forward test (2026-08-07..2026-08-20, closed) — four streams, one breakeven identity
 

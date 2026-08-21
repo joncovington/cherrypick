@@ -129,7 +129,7 @@ paper is running: `config.risk.json`'s `active_profile` is `control`, and all fo
 
 See [docs/risk-profiles.md](docs/risk-profiles.md) for the full rationale, trade-off tables per tier, and progression guidance.
 
-**The registry is control + open + the advisor's book, since the 2026-08-21 advisor-era cutover.**
+**The registry is control + the advisor's book, since the 2026-08-21 advisor-era cutover — and since that day's EOD amendment, `control` IS the permissive sampling substrate (formerly `open`; the gated ex-control is retired as `control-gated`, whose IV floor + default negative-GEX gate never produced a fill and whose questions moved to the advice bounds `min_iv_rank` and `regime_gex_block_negative`). Era day-1 ledger rows were re-stamped to the new names in the same amendment; see the `meic_control_redefinition` measurement break.**
 The four-stream forward test below CLOSED at that boundary: sign/control-drift retired (zero fills,
 100% decision-agreement with control — redundant as configured), width-5/width-10 retired
 (ten sessions with control dark on every one, so the paired width-vs-control reading the test was

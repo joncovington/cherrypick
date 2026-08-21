@@ -2306,7 +2306,12 @@ def test_process_symbol_reports_save_failed_not_filled_when_the_insert_fails(tmp
         now_et="13:00",
         underlying_price=7500.0,
         iv_rank=0.32,
-        candidates=[_candidate(5, 7380, 7560, sp_delta=-0.15, sc_delta=0.15)],
+        # Credit fattened above the permissive control's 15%-of-width floor (the ex-'open' book
+        # became 'control' at the 2026-08-21 EOD amendment) — this test is about the SAVE path,
+        # and the entry must clear every gate to reach it.
+        candidates=[
+            _candidate(5, 7380, 7560, sp_delta=-0.15, sc_delta=0.15, sp_bid=0.85, sp_ask=0.95, sc_bid=0.80, sc_ask=0.90)
+        ],
     )
     out = paper.process_symbol(snapshot, db_path, "paper")
     entries = [a for acts in out["results"].values() for a in acts if "entry" in a]
@@ -2396,7 +2401,7 @@ def test_uncapped_sampling_streams_share_the_same_caps():
     produces stream-dependent entry counts (exit speed feeds back into entry capacity), so the
     caps must be non-binding and equal across the whole family, not just present."""
     profiles = paper.load_profiles()
-    sampling = {"open", "width-5", "width-10"}
+    sampling = {"control", "width-5", "width-10"}  # 'control' is the ex-'open' substrate since 2026-08-21 EOD
     assert sampling <= set(profiles)
     for name in sampling:
         spec = profiles[name]
@@ -2405,12 +2410,12 @@ def test_uncapped_sampling_streams_share_the_same_caps():
         assert spec.get("daily_ic_trade_target") == 999, name
 
 
-def test_control_keeps_todays_deployed_policy():
-    """control is the reference book/champion — its overlap_scope and concurrency cap must match
-    the pre-cutover deployed policy ('shorts', 99), not the uncapped sampling family, since it is
-    what the derived stop policies (Phase 3) and recommend_champion (Phase 4) both validate
-    against."""
-    control = paper.load_profiles()["control"]
+def test_control_gated_keeps_the_pre_cutover_deployed_policy():
+    """The gated ex-control (retired as 'control-gated' at the 2026-08-21 EOD amendment) was the
+    reference book whose whole point was matching the pre-cutover deployed policy ('shorts', 99).
+    The frozen record must stay faithful — the derived stop policies (Phase 3) validated against
+    exactly these values."""
+    control = paper.load_profiles()["control-gated"]
     assert control["overlap_scope"] == "shorts"
     assert control["max_concurrent_ics"] == 99
     assert control["per_side_stop_management"] is True
