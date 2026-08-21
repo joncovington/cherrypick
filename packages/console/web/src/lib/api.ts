@@ -207,11 +207,18 @@ export interface FliesTradeLogRow {
   pinned: boolean;
 }
 
-export function useFliesTradeLog(mode: TradingMode, outcome: string, search: string, page: PageState) {
+export function useFliesTradeLog(
+  mode: TradingMode,
+  outcome: string,
+  search: string,
+  page: PageState,
+  era: string | null = null,
+) {
   const params = new URLSearchParams({ mode, outcome, search });
+  if (era !== null) params.set("era", era);
   pageParams(params, "", page);
   return useQuery<Paged<FliesTradeLogRow>>({
-    queryKey: ["flies-tradelog", mode, outcome, search, page],
+    queryKey: ["flies-tradelog", mode, outcome, search, page, era],
     queryFn: () => getJson<Paged<FliesTradeLogRow>>(`/api/flies/tradelog?${params.toString()}`),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,

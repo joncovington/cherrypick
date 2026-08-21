@@ -145,7 +145,7 @@ export function HistoryTab({
   }, [search]);
 
   const { page, setOffset, setLimit } = usePage([mode, outcome, debouncedSearch]);
-  const logQuery = useFliesTradeLog(mode, outcome, debouncedSearch, page);
+  const logQuery = useFliesTradeLog(mode, outcome, debouncedSearch, page, filter.era);
   const log = logQuery.data?.rows ?? [];
   const logTotal = logQuery.data?.total ?? 0;
 
