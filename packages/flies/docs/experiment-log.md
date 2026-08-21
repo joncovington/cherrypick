@@ -156,3 +156,26 @@ them silently from the day they were written. Check that seam whenever an arm is
 console's era control carries it (`advisor` era from 08-21; the hand-designed-arms era closed at
 08-20). **Asymmetry to know:** this module's own `analytics.py` scopes by date, not era — a
 Python-side read that should honour the boundary must date-bound at 2026-08-21 itself.
+
+## 2026-08-21 — GEX concentration tag recut (read-side calibration, no measurement break)
+
+The second degeneracy on the same tag, caught by the same `regime_coverage` guard as the first.
+The 2026-08-01 windowing fix made the share vary, but the 0.60 'pinning' cut was a guess that sat
+above the p95 of everything the tag then recorded — 605 settled SPX entries over 15 sessions:
+median 0.359, p90 0.511, max 0.838 — so 'thin' still swallowed 97% of rows and the dimension could
+never accumulate gate evidence.
+
+Cuts are now the recorded distribution's own terciles, rounded (p33=0.291, p67=0.412 → **0.30 /
+0.42**), three ways: **diffuse / clustered / pinning**. Kept on the same standard as the
+11:00/13:00 time recut — the direction matches the mechanism rather than a boundary flattering
+itself: a legged fly completes only when spot drifts off the centre, near-spot gamma concentration
+suppresses exactly that drift, and completion falls monotonically **68% → 63% → 55%** across the
+three buckets, in both halves of the calibration window (72/63/59 and 64/63/52). The alternative
+0.28/0.40 cut separated P&L harder but left 'diffuse' with 7 sessions — the overfit shape, not the
+honest one.
+
+A tag, not a gate — nothing entries on it, so no measurement break. Chosen on the rows that measure
+it: a current best estimate, to be re-derived again when the advisor era has its own depth.
+Historical rows re-bucket at read time via `analytics.by_regime(..., bucket_edges=[0.30, 0.42])`
+(159/185/141 legged trades, +76 unknown); rows tagged before this date carry 'thin'/'pinning'
+labels from the old binary scheme and the stored float is the truth either way.

@@ -413,8 +413,19 @@ def _classify_gex(snapshot: dict, params: dict) -> tuple[str, float | None]:
     'thin' 60 times out of 60, never once 'pinning', while the sibling vol and skew tags varied
     normally. A measure that cannot take its other value is not measuring anything.
 
-    The threshold remains uncalibrated -- but `classify_regime` now records this share as a float,
-    so it can be re-derived from history rather than re-guessed.
+    **Cut points calibrated 2026-08-21 from the recorded shares** -- the second degeneracy fix on
+    this same tag, caught the same way. The windowing fix made the share vary, but the 0.60
+    pinning cut was a guess that landed ABOVE the 95th percentile of everything the tag then
+    recorded (605 settled SPX entries across 15 sessions: median 0.359, p90 0.511, max 0.838), so
+    'thin' still swallowed 97% of rows. The cuts are now the distribution's own terciles, rounded
+    (p33=0.291, p67=0.412 -> 0.30/0.42), three ways: diffuse / clustered / pinning, 215/217/173
+    rows and 10/14/14 sessions per bucket on the calibration data. Kept because the direction
+    matches the mechanism, same standard as the 11:00/13:00 time re-cut: a legged fly completes
+    only when spot drifts off the centre, concentrated near-spot gamma suppresses exactly that
+    drift, and completion falls monotonically 68% -> 63% -> 55% across the three buckets, in both
+    halves of the calibration window. A current best estimate measured on the rows that chose it,
+    not a calibrated constant. Historical rows re-bucket at read time via
+    `analytics.by_regime(..., bucket_edges=[0.30, 0.42])` -- the reason the share is stored.
     """
     gex = snapshot.get("gex") or {}
     per_strike = gex.get("per_strike") or []
@@ -430,8 +441,11 @@ def _classify_gex(snapshot: dict, params: dict) -> tuple[str, float | None]:
     if total_sum <= 0:
         return "unknown", None
     share = sum(totals[:_GEX_CONCENTRATION_TOP_N]) / total_sum
-    threshold = params.get("regime_gex_pinning_concentration", 0.60)
-    return ("pinning" if share >= threshold else "thin"), share
+    pinning = params.get("regime_gex_pinning_concentration", 0.42)
+    clustered = params.get("regime_gex_clustered_concentration", 0.30)
+    if share >= pinning:
+        return "pinning", share
+    return ("clustered" if share >= clustered else "diffuse"), share
 
 
 def _classify_time(snapshot: dict, params: dict) -> tuple[str, int | None]:
