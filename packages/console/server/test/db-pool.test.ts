@@ -12,7 +12,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { closePooledDbs, withReadOnlyDb } from "../src/readers/db.js";
+import { clearMemoOnStore, closePooledDbs, memoOnStore, withReadOnlyDb } from "../src/readers/db.js";
 
 function tmpDb(name: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "console-pool-"));
@@ -32,6 +32,7 @@ const read = (p: string): string[] =>
 
 afterEach(() => {
   closePooledDbs();
+  clearMemoOnStore();
 });
 
 describe("the pooled read-only handle", () => {
@@ -116,5 +117,52 @@ describe("the pooled read-only handle", () => {
     w.close();
 
     expect(result[0]?.busy).toBe(0); // 0 = the checkpoint was not blocked
+  });
+});
+
+describe("memoOnStore", () => {
+  it("rebuilds only when the store's stamp moves", () => {
+    const p = tmpDb("memo.db");
+    let builds = 0;
+    const value = (): number => memoOnStore(p, "k", () => ++builds);
+
+    expect(value()).toBe(1);
+    expect(value()).toBe(1);
+    expect(builds).toBe(1); // a poll landing between writes must not pay full price again
+
+    const w = new Database(p);
+    w.prepare("INSERT INTO t (v) VALUES ('x')").run();
+    w.close();
+
+    expect(value()).toBe(2); // the ledger moved, so the answer may have too
+    expect(value()).toBe(2);
+  });
+
+  it("keys separate reads independently", () => {
+    const p = tmpDb("memo-keys.db");
+    expect(memoOnStore(p, "a", () => "A")).toBe("A");
+    expect(memoOnStore(p, "b", () => "B")).toBe("B");
+    expect(memoOnStore(p, "a", () => "changed")).toBe("A");
+  });
+
+  it("is bounded, so browsing many sessions cannot pin them all", () => {
+    // Values here are ~1MB and the key carries the day, so an unbounded map would retain every
+    // session a user scrolled back through for the life of the process.
+    const p = tmpDb("memo-bound.db");
+    for (let i = 0; i < 40; i++) memoOnStore(p, `day-${String(i)}`, () => i);
+
+    let rebuilt = 0;
+    memoOnStore(p, "day-0", () => {
+      rebuilt++;
+      return 0;
+    });
+    expect(rebuilt).toBe(1); // the oldest entries were evicted rather than held forever
+
+    let recent = 0;
+    memoOnStore(p, "day-39", () => {
+      recent++;
+      return 39;
+    });
+    expect(recent).toBe(0); // the most recent is still cached
   });
 });
