@@ -19,7 +19,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { ConsoleConfig } from "../config.js";
-import { num } from "./db.js";
+import { num, suiteEra } from "./db.js";
 
 export interface ReviewArm {
   arm: string;
@@ -72,7 +72,18 @@ export interface ReviewSession {
 export interface ReviewPayload {
   sessions: string[];
   current: ReviewSession | null;
-  allTime: {
+  /**
+   * Era totals — the sum of fact sets from the suite's declared era (`data_epoch`) onward.
+   *
+   * This was `allTime` until 2026-08-21: a sum over every artifact ever built. The advisor-era
+   * cutover retired every hand-designed arm at that boundary, so a total pooled across it reads as
+   * one experiment when it is really two incomparable ones. `eraFrom` names the boundary on the
+   * payload so the page can say what the number covers; a null `eraFrom` (no declared epoch) falls
+   * back to everything, labeled accordingly.
+   */
+  era: {
+    eraFrom: string | null;
+    eraNote: string | null;
     sessions: number;
     from: string | null;
     to: string | null;
@@ -209,11 +220,15 @@ export function readReview(config: ConsoleConfig, session?: string): ReviewPaylo
     }
   }
 
-  // All-time is a sum of the artifacts, never a fresh pass over the ledgers — so it cannot disagree
-  // with the per-session view, and its depth is exactly what has been built.
+  // Era totals are a sum of the artifacts, never a fresh pass over the ledgers — so they cannot
+  // disagree with the per-session view. Bounded to the declared era (data_epoch): the advisor-era
+  // cutover retired every hand-designed arm at 2026-08-21, and pooling across that boundary reads
+  // as one experiment when it is really two incomparable ones.
+  const era = suiteEra(config.paths.orchestratorConfig);
+  const eraSessions = era.from === null ? sessions : sessions.filter((s) => era.from !== null && s >= era.from);
   const netByModule: Record<string, number> = {};
   const closedByModule: Record<string, number> = {};
-  for (const s of sessions) {
+  for (const s of eraSessions) {
     const facts = readFacts(dir, s);
     if (!facts) continue;
     const modules = rec(facts["modules"]);
@@ -229,10 +244,12 @@ export function readReview(config: ConsoleConfig, session?: string): ReviewPaylo
   return {
     sessions,
     current,
-    allTime: {
-      sessions: sessions.length,
-      from: sessions[0] ?? null,
-      to: sessions[sessions.length - 1] ?? null,
+    era: {
+      eraFrom: era.from,
+      eraNote: era.note,
+      sessions: eraSessions.length,
+      from: eraSessions[0] ?? null,
+      to: eraSessions[eraSessions.length - 1] ?? null,
       netByModule,
       closedByModule,
     },

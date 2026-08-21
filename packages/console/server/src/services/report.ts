@@ -11,7 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { ConsoleConfig } from "../config.js";
-import { withReadOnlyDb } from "../readers/db.js";
+import { suiteEra, withReadOnlyDb } from "../readers/db.js";
 import { listSessions } from "../readers/review.js";
 
 interface TradeNet {
@@ -112,6 +112,8 @@ function readFactSet(config: ConsoleConfig, session: string): Record<string, Fac
 }
 
 export interface SuiteReport {
+  /** The declared era these totals cover (data_epoch). Null from = no era declared = everything. */
+  era: { from: string | null; note: string | null };
   suite: { net: number; trades: number; wins: number; losses: number; winRatePct: number | null; avg: number | null };
   /** Sessions ascending; cumulative suite equity plus per-module cumulative lines. */
   daily: Array<{ session: string; net: number; cumulative: number; byModule: Record<string, number> }>;
@@ -173,7 +175,12 @@ export function buildSuiteReportUncached(config: ConsoleConfig): SuiteReport {
   let wins = 0;
   let losses = 0;
 
+  // Bounded to the declared era (data_epoch): the Overview's suite totals and equity curve are
+  // era totals now, not all-of-history — pooling across the 2026-08-21 advisor-era boundary reads
+  // as one experiment when it is really two incomparable ones.
+  const era = suiteEra(config.paths.orchestratorConfig);
   for (const session of listSessions(config)) {
+    if (era.from !== null && session < era.from) continue;
     const facts = readFactSet(config, session);
     if (facts === null) continue;
     for (const [mod, raw] of Object.entries(facts)) {
@@ -207,6 +214,7 @@ export function buildSuiteReportUncached(config: ConsoleConfig): SuiteReport {
 
   const resolved = wins + losses;
   return {
+    era,
     suite: {
       net,
       trades,

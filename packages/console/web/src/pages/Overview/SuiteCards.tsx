@@ -137,7 +137,7 @@ export function EodCard() {
               <span className={`stat-value ${(data?.suite.net ?? 0) >= 0 ? "pnl-pos" : "pnl-neg"}`}>{fmtMoney(data?.suite.net ?? 0)}</span>
             </div>
             <div className="stat-tile">
-              <span className="stat-label">trades (all-time)</span>
+              <span className="stat-label">trades (this era)</span>
               <span className="stat-value">{data?.suite.trades ?? "—"}</span>
             </div>
             <div className="stat-tile">
