@@ -130,6 +130,11 @@ pnpm --filter @console/desktop start   # the desktop window
   `python run.py headline`, and its drawn Keltner band at the last completed bar must equal the
   measures the gate stamped on that session's entry rows. Both were verified when the page landed
   (2026-08-17), and the second caught a real off-by-one-bar error before it shipped.
+  **The headline half is now automated** — `server/test/pmcc-mirror.test.ts` invokes the module's
+  own `run.py headline` and compares open-position count, book set and each book's net to the cent,
+  skipping cleanly (and visibly) where the ledger or Python is unavailable. Note it compares empty
+  against empty until this module opens a position, so treat it as armed rather than as evidence;
+  the Keltner half is still a hand check.
 - **The calendars page is the same question answered the other way, and the split is the point.**
   `readers/calendars.ts` reads that ledger directly like every other reader here, but two things it
   will not compute go out through `services/calendarsBridge.ts` as a subprocess: the exit-policy
