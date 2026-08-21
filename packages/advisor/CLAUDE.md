@@ -85,8 +85,13 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 > - **Portable paths only** — never hardcode absolute paths, usernames, hostnames, or drive letters.
 > - **Human-voice docs & commits** — never add AI/co-author attribution to commit messages.
 > - **No AI, no network, no broker.** No `tastytrade`, `keyring`, `requests`, `socket` or
->   `cherrypick.core.auth`/`broker` import may appear in `src/` — enforced by a source scan, not by
->   prose.
+>   `cherrypick.core.auth`/`broker` import may appear in `src/` — enforced by a source scan
+>   (`tests/test_guardrails.py`), not by prose.
+>   **This stays a hard ban even though the suite-wide rule is now a PREFERENCE** for deterministic
+>   over AI/agentic solutions. The difference is what this package is: the deterministic half of the
+>   AI advisor — the fact packs a model reads, and the validation of what it replies. If a model
+>   could be reached from in here, the validating side and the validated side would be the same
+>   process, and the validation would stop meaning anything. The fence is the product.
 > - **Writes are confined** to `data/advisor/**` and `state/advice/*.json` — enforced by a
 >   file-tree snapshot test around a full factpack→admit→enact run.
 

@@ -136,5 +136,7 @@ human gate; it isn't, and someone will rely on it.
 
 Inherited from the root `CLAUDE.md` and every sibling package: instruction files hold no code;
 account numbers masked to `****1234`; portable paths only (never hardcode `C:\Users\...`); secrets in
-the OS keyring only; human-voice docs and commits with no AI attribution; no MCP/network/AI on any
-reliability path. Scratch work goes in a gitignored `.tmp/`, never the repo root.
+the OS keyring only; human-voice docs and commits with no AI attribution; deterministic solutions
+preferred over AI/agentic ones (root file) — sharply so here, since this is the discretionary LIVE
+order path and a ticket must mean exactly what it says. Scratch work goes in a gitignored `.tmp/`,
+never the repo root.

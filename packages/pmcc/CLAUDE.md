@@ -154,8 +154,8 @@ loop reads the flag.
 
 - **Paper only. There is no live path** — no live loop, no order code. `live.enabled` in config is
   a documented placeholder only (see Live-trading prerequisites above); it is not a working gate.
-- **No AI, no MCP, no network on any decision path.** `engine.py`, `management.py`, `keltner.py`
-  are pure functions over pre-fetched data.
+- **The decision path is deterministic.** `engine.py`, `management.py` and `keltner.py` are pure
+  functions over pre-fetched data — no model, no MCP, no network in the decision itself.
 - Declared settlement only (`settlement_style`); a symbol declared as neither style is refused.
 - Credentials in the OS keyring only (this module holds none). Account numbers masked to
   `****1234`. Portable paths only; scratch work in `.tmp/`. Human-voice docs and commits, no AI

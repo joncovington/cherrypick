@@ -91,7 +91,8 @@ absolute paths.
   do not add a second writer path.
 - **Only the daemon talks to the broker.** The `--status`/`--stop` paths read files and the PID only;
   `--secrets-set`/`--secrets-status` touch only the OS keyring. None of them open a broker session, and
-  each emits a single JSON object on stdout. No MCP/AI on any path.
+  each emits a single JSON object on stdout. Deterministic throughout: this is a producer, and what
+  it writes must depend only on what the feed sent.
 - **Credentials live in the OS keyring only** (Windows Credential Manager / macOS Keychain / Linux Secret
   Service) under the shared `meicagent` service — never files, env vars, or logs. The streamer stores
   only the two bearer secrets; account selection is a trading module's concern, not the streamer's.

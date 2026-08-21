@@ -162,9 +162,10 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
 
 ## Invariants (do not violate — the reasons are load-bearing)
 
-- **No network / service / AI dependency on the reliability path.** The watchdog → notify path uses only
-  the stdlib + the OS shell (no MCP, no HTTP client, no AI tooling), so it has no new failure mode. A
-  34-hour silent stall is the reason this rule exists. `follow_notifier.py` (the tastylive Follow Feed
+- **The reliability path is deterministic and local.** The watchdog → notify path uses only the
+  stdlib + the OS shell — no MCP, no HTTP client, no AI tooling — so it has no failure mode beyond
+  its own. A 34-hour silent stall is why this is worth protecting: the thing that watches for a
+  stall must not be able to stall the same way. `follow_notifier.py` (the tastylive Follow Feed
   push) is the one notifier that makes an HTTP call, and that is exactly why it is **its own scheduled
   task and is never called from the watchdog tick** — unlike `trade_notifier`, which is files-only and
   may ride the tick. Any future notifier that touches a network gets the same treatment: its own task,
@@ -413,9 +414,11 @@ repeated.
   cherrypick only ever invokes paper engines / paper DBs; anything advisory stays advisory (see
   Invariants). The Earnings module is additionally **defined-risk only** — naked strategies were removed
   because an unmonitored overnight naked short can blow out arbitrarily.
-- **No MCP / network / AI on any loop-decision or reliability path** (see Invariants). The modules'
-  loops depend only on their local tools + this guidance; a 34-hour silent stall from an external
-  streamer dependency (2026-07-01) is why the rule is load-bearing suite-wide.
+- **Deterministic solutions preferred over AI/agentic ones** (root file), and most sharply on
+  loop-decision and reliability paths. The modules' loops depend only on their local tools + this
+  guidance; the 2026-07-01 stall — an external streamer dependency silent for 34 hours, invisible
+  from the decision path because a hung dependency looks like a quiet market — is the case that
+  makes the preference worth stating rather than assuming.
 - **Correlation risk is PARTLY guarded (2026-08-20).** Two vehicles on the SAME index (MEIC's
   SPX + XSP case) are refused by `tests/test_symbol_correlation_lint.py`, which reads what each
   module declares in `state/stream_requests/` — per-symbol caps would otherwise count one

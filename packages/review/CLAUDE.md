@@ -123,10 +123,11 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 > - **Mask account numbers** to the last 4 digits (`****1234`) anywhere they surface.
 > - **Portable paths only** — never hardcode absolute paths, usernames, hostnames, or drive letters.
 > - **Human-voice docs & commits** — never add AI/co-author attribution to commit messages.
-> - **No AI or network on any loop-decision or reliability path.** The narrative is deliberately
->   generated *outside* this package by a scheduled agent reading the fact set, so no suite package
->   ever acquires an API key or a network dependency, and a failed narrative can never damage a
->   report.
+> - **The fact set is deterministic; the narrative is not, and is fenced accordingly.** Every figure
+>   here is computed from closed rows. The narrative is deliberately generated *outside* this
+>   package by a scheduled agent reading the fact set, so this package acquires no API key and no
+>   network dependency, and a failed narrative can never damage a report. That containment is the
+>   pattern the root file's preference points at.
 
 ## Tool Reference
 

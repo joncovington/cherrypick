@@ -91,28 +91,36 @@ first (or run `scripts/dev-install.ps1`/`.sh` from the repo root, which installs
 
 Suite-wide guardrails apply across every package (each package's CLAUDE.md states them): instruction
 files hold no code; account numbers masked to `****1234`; portable paths only; human-voice docs/commits
-(no AI attribution); no MCP/network/AI on any loop-decision or reliability path; paper↔live isolation
+(no AI attribution); deterministic solutions preferred over AI/agentic ones (below); paper↔live isolation
 (the orchestrator only drives paper; its one live-config action is onboarding/account selection).
 
-**The no-network rule, stated exactly.** It binds the *decision* and *reliability* paths: nothing
-that decides an entry, an exit or a gate, and nothing the supervisor depends on to stay alive, may
-reach the network, an MCP server or a model. It has never meant "no package makes a network call",
-and reading it that way makes the real carve-outs look like violations rather than the deliberate,
-bounded things they are:
+**Deterministic solutions and workflows are preferred over AI or agentic ones.** This is a
+standing design preference, not a prohibition: where a problem can be solved by a pure function over
+data you already have, solve it that way rather than by asking a model or adding an agent.
 
-- **Brokers and market data.** Placing an order, confirming a fill and streaming quotes are network
-  by definition. The rule is that the *decision* is made from the local stream cache first; the
-  broker is touched to act, or to confirm what only it can know. `packages/console` additionally
-  opens its own DXLink session through the official SDK, off every loop.
-- **The two networked notifiers.** `lossdog_notifier.py` and `follow_notifier.py` post outward.
-  They are on the *notification* path — a failed send costs a message, never a tick or a trade.
-  (`desk_notifier.py` and `trade_notifier.py` make no network calls of their own.)
-- **Everything AI-shaped runs OUTSIDE every package**, in `scripts/` — `eod_narrative.py`,
-  `morning_narrative.py`, `advisor_checkpoint.py`. That fence is the rule's real teeth: a failed
-  narrative can damage a report, never a loop.
+The reason is what this suite is FOR. It exists to measure whether strategies make money, and a
+measurement is only worth what its reproducibility is worth. A deterministic path fails the same way
+twice, can be re-run over last month's rows, and can be pinned by a test that fails when it breaks.
+An agentic one gives a different answer on Tuesday and leaves you unable to say whether the strategy
+changed or the reasoning did. That is why the modules that carry real weight here — `engine.py`,
+`management.py`, `fly.py` — are pure functions over a pre-fetched snapshot, and why the read side
+re-derives from stored rows rather than remembering.
 
-If a change would put a network call inside a loop's decision or on the supervisor's own path, the
-rule is unchanged and the answer is no.
+Where AI genuinely earns its place, keep the failure contained. The pattern already in use is worth
+copying: every AI-shaped thing runs OUTSIDE the packages, in `scripts/` — `eod_narrative.py`,
+`morning_narrative.py`, `advisor_checkpoint.py` — so a failed narrative costs a narrative and never
+a report, a ledger or a loop. `packages/advisor` is the sharper version: it contains no AI at all,
+and enforces that with `tests/test_guardrails.py`'s forbidden-import set, because what it produces
+is validated parameter advice rather than prose.
+
+The same preference applies to network and MCP dependencies, and for the same reason rather than as
+a separate rule: they are non-deterministic inputs. The 2026-07-01 incident is the one to remember —
+an external streamer dependency stalled silently for 34 hours, and nothing on the decision path
+noticed, because a dependency that hangs looks exactly like a quiet market. Prefer the local stream
+cache; reach outward to ACT (place an order) or to confirm what only the broker can know (a fill).
+
+None of this forbids anything outright. It says which way to lean, and that leaning away from it is
+a choice to make deliberately and write down — not a default.
 
 **Measurement-affecting changes are BATCHED to declared boundaries.** Several modules already
 record their own measurement breaks — flies' 60s→15s cadence change, earnings' 2026-08-12 managed

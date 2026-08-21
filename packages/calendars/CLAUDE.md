@@ -215,8 +215,9 @@ The log is free to stay quiet; that is now correct rather than fatal.
 
 - **Paper only. There is no live path** — no live loop, no order code. `live.enabled` in config is
   a documented placeholder only (see Live-trading prerequisites above); it is not a working gate.
-- **No AI, no MCP, no network on any decision path.** `engine.py` and `management.py` are pure
-  functions over pre-fetched snapshots.
+- **The decision path is deterministic.** `engine.py` and `management.py` are pure functions over
+  pre-fetched snapshots — no model, no MCP, no network in the decision itself. Keep it that way by
+  preference (see the root file): a policy table is only worth its reproducibility.
 - **Declared settlement only** (`settlement_style`): `cash` and `physical` are both modelled; a
   symbol declared as neither is refused at entry (`unknown_settlement`). Adding a style is a code
   change, not a config edit. `cash_settled_symbols` is the pre-SPY spelling and still reads.
