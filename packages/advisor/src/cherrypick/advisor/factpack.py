@@ -129,13 +129,30 @@ def _market(session: str) -> dict[str, Any]:
             " FROM gex_regime_history WHERE trade_date = ? ORDER BY ts DESC LIMIT 1",
             (session,),
         )
+        # RTH rows only. The recorder runs around the clock and freezes on the last streamed value
+        # once the market quiets, so an unbounded per-date count double-weights whatever sign the
+        # session ENDED on: on 2026-08-21 the unfiltered count read 181 positive / 26 negative while
+        # the RTH-only truth was 67 / 11 — two-thirds of the "distribution" was one frozen overnight
+        # value repeated every five minutes. The model flagged the resulting snapshot-vs-counts
+        # contradiction six sessions running; this was most of it.
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo
+
+        et = ZoneInfo("America/New_York")
+        rth_open = _dt.fromisoformat(f"{session}T09:30:00").replace(tzinfo=et).timestamp()
+        rth_close = _dt.fromisoformat(f"{session}T16:00:00").replace(tzinfo=et).timestamp()
         buckets = _store.rows(
             conn,
             "SELECT CASE WHEN net_gex >= 0 THEN 'positive' ELSE 'negative' END sign, COUNT(*) n"
-            " FROM gex_regime_history WHERE trade_date = ? GROUP BY sign",
-            (session,),
+            " FROM gex_regime_history WHERE trade_date = ? AND ts BETWEEN ? AND ? GROUP BY sign",
+            (session, rth_open, rth_close),
         )
-        return {"latest": latest[0] if latest else None, "today_counts": _counts(buckets, "sign")}
+        return {
+            "latest": latest[0] if latest else None,
+            "today_counts": _counts(buckets, "sign"),
+            "_counts_note": "RTH snapshots only (09:30-16:00 ET); the recorder also logs frozen "
+            "off-hours rows that would double-weight the closing sign.",
+        }
 
     def day_range(conn):
         return _store.rows(
@@ -212,6 +229,15 @@ def _meic(session: str) -> dict[str, Any]:
             "top_block_details": blocks,
             "book_by_profile": book,
             "latest_regime": regime[0] if regime else None,
+            "_gex_gate_series_note": "MEIC's regime_gex_block_negative gate reads NONE of the "
+            "market.gex series above. It recomputes GEX fresh on every entry tick from the stream "
+            "cache (cherrypick.meic.tt cmd_get_gex): nearest expiration only (0DTE intraday), "
+            "±20 strikes around spot, OI-weighted positioning basis, and blocks when that "
+            "instantaneous net is negative. The engine series in market.gex is a wider-window "
+            "recorder sampled ~5min; the two can legitimately disagree, especially late in a 0DTE "
+            "session. Per-entry rows record BOTH bases (gex_net_at_entry, gex_net_vol_at_entry), "
+            "so which basis better separates outcomes is a read-side derivation once session "
+            "depth allows, not a reason for parallel experiments now.",
             "closed_with_stop_instrumentation": _counts(stops, "risk_profile"),
             "control_fired": {
                 "fired": by_profile.get("control", 0) > 0,

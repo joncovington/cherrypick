@@ -248,10 +248,19 @@ def seed_suite(home: Path, session: str, *, with_live: bool = True) -> None:
     ])
 
     gex = make_db(data / "gex" / "gex_history.db", GEX_DDL)
+    # Timestamps INSIDE the session's RTH: the pack's today_counts is RTH-gated (the recorder also
+    # logs frozen off-hours rows, and unbounded counts double-weight the closing sign — 2026-08-21).
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo as _Zi
+
+    rth_1000 = _dt.fromisoformat(f"{session}T10:00:00").replace(tzinfo=_Zi("America/New_York")).timestamp()
     insert(gex, "gex_regime_history", [
-        {"symbol": "SPX", "trade_date": session, "ts": opened, "spot": 5600.0, "net_gex": 1.2e9,
+        {"symbol": "SPX", "trade_date": session, "ts": rth_1000, "spot": 5600.0, "net_gex": 1.2e9,
          "zero_gamma": 5570.0, "call_wall": 5650.0, "put_wall": 5500.0},
-        {"symbol": "SPX", "trade_date": session, "ts": opened + 300, "spot": 5605.0,
+        {"symbol": "SPX", "trade_date": session, "ts": rth_1000 + 300, "spot": 5605.0,
+         "net_gex": -0.4e9, "zero_gamma": 5580.0},
+        # A frozen overnight copy of the closing sign: MUST NOT appear in today_counts.
+        {"symbol": "SPX", "trade_date": session, "ts": rth_1000 + 13 * 3600, "spot": 5605.0,
          "net_gex": -0.4e9, "zero_gamma": 5580.0},
     ])
 
