@@ -134,6 +134,28 @@ waiting would only have produced more rows resting on a spread that was never th
 Pure code changes — refactors, read surfaces, dedup — are not measurement-affecting and are not
 covered by this. If it does not change what a recorded number means, it is not a break.
 
+## Two working rules, both learned the hard way
+
+**Measure a duplication before folding it, and normalize the identifier first.** "These are the
+same function in six places" is the single least reliable claim in this repo, in both directions.
+During the 2026-08-20 dedup effort roughly ten such premises were already-done or simply wrong:
+two of four named earnings helpers were never duplicated (six two-line per-strategy dispatchers
+that merely look alike), the console's polling was already gated by its query library's default,
+and a reader's queries were already bounded. It fails the other way too — the first LedgerStore
+measurement reported 6 identical functions when the real answer was **22**, because the comparison
+hashed table-name string constants along with the logic. So: compare the bodies with the varying
+identifier normalized out, then read the call sites back individually before folding. Where the
+copies differ, ask whether the difference is the point — `_wing_width_multiple` is byte-identical
+across three earnings strategies and stays copied, because it shapes an order and that file says so.
+
+**A guard has to be shown to fail.** This suite now carries several config-lint and enforcement
+tests whose entire value is failing — the same-index correlation lint, the single-cache-writer
+check, the guarded-live-pointer table. Each was verified by breaking the invariant on purpose and
+watching the test report the right thing. Do the same for any new one, and prefer driving it off
+what the system itself declares (a module's own config example, its own `stream_requests` file)
+rather than a hand-kept list, so a new module is covered the moment it declares the thing. A green
+check that cannot fire is worse than no check: it reads as coverage.
+
 Any developer initiated documentation review and update must also review and update package documentation.
 
 For front-end UI/UX testing, use a browser to confirm the build performs as expected. Don't rely solely on code tests.

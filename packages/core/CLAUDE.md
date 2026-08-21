@@ -23,6 +23,20 @@ reproduction of the standalone repo, the escape hatch if core ever needs to be s
 `tastytrade-mcp`, or if the suite's structure changes again). A reach-back into a consumer's `src/`
 would make that split lossy or impossible.
 
+**Do not rely on running that split as the check — it segfaults on this machine.** `git subtree` is
+a large shell script and it exits 139 under Git Bash (git 2.44.0.windows.1), verified pre-existing:
+it fails identically at commits from before any of this work, so a failure there says nothing about
+your change. Check the invariant directly instead, which is what it was standing in for:
+
+```bash
+test -f packages/core/cherrypick/__init__.py && echo VIOLATION || echo "PEP 420 intact"
+grep -rn "cherrypick\.\(meic\|flies\|calendars\|pmcc\|gex\|earnings\|orchestrator\|streamer\|console\|review\|advisor\|desk\|overview\)"   packages/core/cherrypick/ --include=*.py    # must print nothing
+```
+
+Plus the obvious one: a new core module should import from `cherrypick.core.*` and the standard
+library, nothing else. If the split ever needs to run for real, do it somewhere `git subtree` works
+rather than treating a segfault here as a finding.
+
 ## Layout stays flat, not src-layout
 
 `packages/core/cherrypick/` sits directly under the package root (no `src/` prefix), unlike the other
