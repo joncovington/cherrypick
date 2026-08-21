@@ -2,6 +2,7 @@ import path from "node:path";
 import type { FliesPayload, FliesBookRow, FliesPositionRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { memoOnStore, withReadOnlyDb, num, str, type DatabaseHandle } from "./db.js";
+import { median, periodKey } from "../analytics/riskMetrics.js";
 import { emptyPage, pagedQuery, pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
 
 /**
@@ -1074,23 +1075,6 @@ export interface FliesPerformance {
   } | null;
 }
 
-function median(values: number[]): number | null {
-  if (values.length === 0) return null;
-  const ordered = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(ordered.length / 2);
-  return ordered.length % 2 === 1 ? ordered[mid]! : (ordered[mid - 1]! + ordered[mid]!) / 2;
-}
-
-/** Weekly buckets are Monday-anchored (SQLite's %W would split a trading week). */
-function bucketKey(tradeDate: string, granularity: string): string {
-  if (granularity === "monthly") return tradeDate.slice(0, 7);
-  if (granularity === "weekly") {
-    const d = new Date(tradeDate + "T00:00:00Z");
-    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
-    return d.toISOString().slice(0, 10);
-  }
-  return tradeDate;
-}
 
 const ABORT_MIN_LIVE_ENTRIES = 30;
 const ABORT_COMPLETION_GAP = 0.15;
@@ -1124,7 +1108,7 @@ export function readFliesPerformance(
 
     const buckets = new Map<string, PnlRow[]>();
     for (const r of all) {
-      const k = bucketKey(String(r["trade_date"]), granularity);
+      const k = periodKey(granularity, String(r["trade_date"]));
       let list = buckets.get(k);
       if (list === undefined) {
         list = [];

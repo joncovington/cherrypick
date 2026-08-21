@@ -5,6 +5,7 @@ import type { DatabaseHandle } from "./db.js";
 import { withReadOnlyDb, hasColumn, hasTable, num, str } from "./db.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
 import { payoffAt, type Leg } from "../analytics/payoff.js";
+import { periodKey, stdev } from "../analytics/riskMetrics.js";
 
 
 /**
@@ -323,22 +324,6 @@ export interface MeicPerformance {
   regimeCoverage: Array<{ dimension: string; tagged: number; untagged: number; coveragePct: number; degenerate: boolean }>;
 }
 
-function stdev(values: number[]): number | null {
-  if (values.length < 2) return null;
-  const m = values.reduce((s, v) => s + v, 0) / values.length;
-  const varr = values.reduce((s, v) => s + (v - m) ** 2, 0) / (values.length - 1);
-  return Math.sqrt(varr);
-}
-
-function periodKey(granularity: string, tradeDate: string): string {
-  if (granularity === "monthly") return tradeDate.slice(0, 7);
-  if (granularity === "weekly") {
-    const d = new Date(tradeDate + "T00:00:00Z");
-    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
-    return d.toISOString().slice(0, 10);
-  }
-  return tradeDate;
-}
 
 const REGIME_DIMENSIONS: Array<[string, string]> = [
   ["vol_implied", "entry_vol_implied_bucket"],
