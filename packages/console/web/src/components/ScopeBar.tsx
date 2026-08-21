@@ -39,37 +39,55 @@ export function ScopeSelect({
  * count as evidence. Earlier eras stay reachable, and picking one says so out
  * loud rather than quietly mixing shakedown rows into the numbers.
  */
+/**
+ * The era scope control, shared by every module that has eras.
+ *
+ * Flies carried a second copy of this. The two differed in exactly the parts that SHOULD differ
+ * per module — a human label for each era, and a tooltip explaining what pooling that module's
+ * eras would distort — so both are parameters rather than something to flatten. The suite is
+ * deliberate about each module's own vocabulary; a shared control should not make the console
+ * speak a language none of them use.
+ *
+ * `label` falls back to `era <key>`, which is what MEIC always rendered.
+ */
 export function EraSelect({
   value,
   eras,
   currentEra,
   onChange,
+  title = "Everything on this page is scoped to this era. Pooling eras reads as one book when it is really two.",
+  pooledLabel,
 }: {
   value: string | null;
-  eras: Array<{ era: string; trades: number }> | undefined;
+  eras: Array<{ era: string; trades: number; label?: string }> | undefined;
   currentEra: string | undefined;
   onChange: (v: string | null) => void;
+  title?: string;
+  pooledLabel?: string;
 }) {
   if (eras === undefined || eras.length < 2) return null;
   const total = eras.reduce((s, e) => s + e.trades, 0);
-  const currentCount = eras.find((e) => e.era === currentEra)?.trades ?? 0;
+  const current = eras.find((e) => e.era === currentEra);
+  const name = (e: { era: string; label?: string }): string => e.label ?? `era ${e.era}`;
   return (
     <select
       className={`text-input ${value === null ? "" : "scope-select-off-default"}`}
       value={value ?? ""}
       onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
       aria-label="era"
-      title="Everything on this page is scoped to this era. The pre-cutover 'book' era had an order-of-magnitude different selection intensity; pooling the two reads as one book when it is really two."
+      title={title}
     >
-      <option value="">era {currentEra} · {currentCount}</option>
+      <option value="">
+        {current === undefined ? `era ${currentEra ?? ""}` : name(current)} · {current?.trades ?? 0}
+      </option>
       {eras
         .filter((e) => e.era !== currentEra)
         .map((e) => (
           <option key={e.era} value={e.era}>
-            era {e.era} · {e.trades}
+            {name(e)} · {e.trades}
           </option>
         ))}
-      <option value="ALL">every era · {total}</option>
+      <option value="ALL">{pooledLabel ?? "every era"} · {total}</option>
     </select>
   );
 }
