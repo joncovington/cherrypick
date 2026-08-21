@@ -94,6 +94,26 @@ files hold no code; account numbers masked to `****1234`; portable paths only; h
 (no AI attribution); no MCP/network/AI on any loop-decision or reliability path; paper↔live isolation
 (the orchestrator only drives paper; its one live-config action is onboarding/account selection).
 
+**The no-network rule, stated exactly.** It binds the *decision* and *reliability* paths: nothing
+that decides an entry, an exit or a gate, and nothing the supervisor depends on to stay alive, may
+reach the network, an MCP server or a model. It has never meant "no package makes a network call",
+and reading it that way makes the real carve-outs look like violations rather than the deliberate,
+bounded things they are:
+
+- **Brokers and market data.** Placing an order, confirming a fill and streaming quotes are network
+  by definition. The rule is that the *decision* is made from the local stream cache first; the
+  broker is touched to act, or to confirm what only it can know. `packages/console` additionally
+  opens its own DXLink session through the official SDK, off every loop.
+- **The two networked notifiers.** `lossdog_notifier.py` and `follow_notifier.py` post outward.
+  They are on the *notification* path — a failed send costs a message, never a tick or a trade.
+  (`desk_notifier.py` and `trade_notifier.py` make no network calls of their own.)
+- **Everything AI-shaped runs OUTSIDE every package**, in `scripts/` — `eod_narrative.py`,
+  `morning_narrative.py`, `advisor_checkpoint.py`. That fence is the rule's real teeth: a failed
+  narrative can damage a report, never a loop.
+
+If a change would put a network call inside a loop's decision or on the supervisor's own path, the
+rule is unchanged and the answer is no.
+
 Any developer initiated documentation review and update must also review and update package documentation.
 
 For front-end UI/UX testing, use a browser to confirm the build performs as expected. Don't rely solely on code tests.
