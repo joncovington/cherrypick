@@ -55,6 +55,17 @@ def test_the_light_pack_carries_each_modules_day(seeded):
     assert earnings["open_positions"][0]["last_mark"] == 42.0  # the usable mark, not the refused one
 
 
+def test_gex_counts_are_rth_only(seeded):
+    """The recorder logs frozen off-hours copies of the closing value, so an unbounded per-date
+    count double-weights whatever sign the session ended on (2026-08-21: 181/26 unfiltered vs
+    67/11 in RTH — two-thirds of the "distribution" was one frozen value on repeat). The fake home
+    seeds two RTH snapshots (one positive, one negative) plus one overnight copy of the negative:
+    the overnight row must not be counted."""
+    pack = factpack.build(SESSION, "midday")
+    counts = pack["market"]["gex"]["today_counts"]
+    assert counts == {"positive": 1, "negative": 1}
+
+
 def test_todays_range_only(seeded):
     """`stream_summary` keys on the ET trade date. A row from another day is stale by definition."""
     pack = factpack.build(SESSION, "open")
