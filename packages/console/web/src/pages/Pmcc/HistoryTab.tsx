@@ -16,7 +16,7 @@ import { EntrySpreadCell } from "./EntrySpread";
  */
 function closeKindChip(kind: string | null) {
   if (kind === null) return null;
-  const cls = kind === "assigned" ? "chip-warn" : "pmcc-chip-quiet";
+  const cls = kind === "assigned" ? "chip-warn" : "integrity-chip-quiet";
   const title =
     kind === "assigned"
       ? "Finished ITM under physical settlement: 100 short shares per contract delivered at the settlement print."
@@ -28,7 +28,7 @@ function closeKindChip(kind: string | null) {
             ? "Cash-settled at expiry."
             : "Closed by a trade.";
   return (
-    <span className={`chip ${cls} pmcc-chip`} title={title}>
+    <span className={`chip ${cls} integrity-chip`} title={title}>
       {kind}
     </span>
   );
@@ -84,7 +84,7 @@ function FeeSplit({ row }: { row: PmccCycleRow }) {
     <>
       <p>
         <span className="muted">commissions</span> {fmtMoney(commissions)} ·{" "}
-        <span className={slipShare !== null && slipShare > 50 ? "pmcc-warn" : ""}>
+        <span className={slipShare !== null && slipShare > 50 ? "integrity-warn" : ""}>
           <span className="muted">slippage</span> {fmtMoney(slippage)}
           {slipShare !== null && <> ({fmtPct(slipShare, 0)} of fees)</>}
         </span>
@@ -122,7 +122,7 @@ function CycleDetail({ row }: { row: PmccCycleRow }) {
                 </>
               )}
             </p>
-            <ul className="pmcc-plain-list">
+            <ul className="integrity-plain-list">
               {row.shorts.map((s) => (
                 <li key={s.legRole}>
                   <span className="mono">{s.legRole}</span> {fmtStrike(s.strike)}
@@ -136,7 +136,7 @@ function CycleDetail({ row }: { row: PmccCycleRow }) {
           {row.rolls.length > 0 && (
             <section>
               <h4>rolls</h4>
-              <ul className="pmcc-plain-list">
+              <ul className="integrity-plain-list">
                 {row.rolls.map((r, i) => (
                   <li key={`${r.session ?? "roll"}-${String(i)}`}>
                     {r.session} · {fmtNum(r.oldStrike, 0)} → {fmtNum(r.newStrike, 0)}
@@ -151,7 +151,7 @@ function CycleDetail({ row }: { row: PmccCycleRow }) {
           {row.assignments.length > 0 && (
             <section>
               <h4>delivered shares</h4>
-              <ul className="pmcc-plain-list">
+              <ul className="integrity-plain-list">
                 {row.assignments.map((a) => (
                   <li key={a.legRole}>
                     {a.direction} {a.shares} shares @ {fmtNum(a.basis, 2)}{" "}
@@ -159,7 +159,7 @@ function CycleDetail({ row }: { row: PmccCycleRow }) {
                       (basis is the settlement print, not the {fmtStrike(a.strike)} strike)
                     </span>
                     {a.disposedSession === null ? (
-                      <span className="chip chip-warn pmcc-chip">outstanding</span>
+                      <span className="chip chip-warn integrity-chip">outstanding</span>
                     ) : (
                       <>
                         {" "}
@@ -266,7 +266,7 @@ export function HistoryTab() {
               <td>
                 {r.status === "short_settled" ? (
                   <span
-                    className="chip chip-warn pmcc-chip"
+                    className="chip chip-warn integrity-chip"
                     title="The short settled ITM; delivered shares are covered next session together with the long's sale. The result is not final until then."
                   >
                     awaiting disposal
@@ -322,7 +322,7 @@ export function HistoryTab() {
                     <td>{fmtNum(a.basis, 2)}</td>
                     <td>
                       {a.disposedSession ?? (
-                        <span className="chip chip-warn pmcc-chip" title="Shares still outstanding — a Friday assignment carries them across the weekend.">
+                        <span className="chip chip-warn integrity-chip" title="Shares still outstanding — a Friday assignment carries them across the weekend.">
                           outstanding
                         </span>
                       )}

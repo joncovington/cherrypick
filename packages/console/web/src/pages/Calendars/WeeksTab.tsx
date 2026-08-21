@@ -55,11 +55,11 @@ function WeekDetail({ week }: { week: string }) {
               ))}
             </tbody>
           </table>
-          <p className="cal-note">
+          <p className="integrity-note">
             entry debit {fmtNum(p.entryDebit, 2)} · spot {fmtNum(p.entrySpot, 2)} · EM {fmtNum(p.entryEm, 2)}
             {p.settlementSpot !== null && ` · settled ${fmtNum(p.settlementSpot, 2)}`}
             {p.itmSettlements !== null && p.itmSettlements > 0 && (
-              <span className="cal-warn"> · {p.itmSettlements} ITM at expiry</span>
+              <span className="integrity-warn"> · {p.itmSettlements} ITM at expiry</span>
             )}
           </p>
         </div>
@@ -98,7 +98,7 @@ export function WeeksTab({ data }: { data: CalendarsPayload | undefined }) {
               <td>
                 {r.closed}/{r.positions}
                 {partial && (
-                  <span className="chip chip-warn cal-chip" title="A week does not close while any leg — or any delivered share position — is still outstanding.">
+                  <span className="chip chip-warn integrity-chip" title="A week does not close while any leg — or any delivered share position — is still outstanding.">
                     open
                   </span>
                 )}
@@ -132,7 +132,7 @@ export function WeeksTab({ data }: { data: CalendarsPayload | undefined }) {
         numFrom={2}
         empty="no week has settled yet"
         footer={
-          <p className="cal-note">
+          <p className="integrity-note">
             The strategy&rsquo;s premise, measured: the expected move taken at entry against the move actually
             realized to the Friday expiration. Floats, not verdicts — a calendar wants the underlying to sit
             near its strike, so a ratio under 1 is the structure&rsquo;s friend and this table is the record of
@@ -146,7 +146,7 @@ export function WeeksTab({ data }: { data: CalendarsPayload | undefined }) {
             <td className="mono">{r.structure}</td>
             <td>{fmtNum(r.expectedMove, 2)}</td>
             <td>{fmtNum(r.realizedMove, 2)}</td>
-            <td className={r.ratio !== null && r.ratio > 1 ? "cal-warn" : ""}>
+            <td className={r.ratio !== null && r.ratio > 1 ? "integrity-warn" : ""}>
               {r.ratio === null ? "—" : fmtPct(r.ratio * 100, 0)}
             </td>
           </tr>

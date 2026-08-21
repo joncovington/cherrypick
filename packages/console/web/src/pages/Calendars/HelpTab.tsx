@@ -114,7 +114,7 @@ export function HelpTab({ data }: { data: CalendarsPayload | undefined }) {
             <dd>{p.adviceEnabled ? "enabled" : "off"}</dd>
           </dl>
         )}
-        <p className="cal-note">
+        <p className="integrity-note">
           Read from the module&rsquo;s own config in the module&rsquo;s own resolution order. This page cannot
           change any of it — the console is read-only over every module&rsquo;s data, and these fields are not
           on the Config page&rsquo;s allow-list.

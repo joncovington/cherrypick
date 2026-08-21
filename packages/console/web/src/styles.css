@@ -1905,50 +1905,16 @@ select.text-input {
   font-size: 12px;
 }
 
-.pmcc-sym {
-  font-family: var(--num-face);
-  color: var(--text);
-  min-width: 3.4rem;
-  display: inline-block;
-}
 
-.pmcc-warn {
-  color: var(--warn);
-}
 
-.pmcc-err {
-  color: var(--err);
-}
 
-.pmcc-chip {
-  margin-left: 0.4rem;
-  font-size: 11px;
-}
 
-.pmcc-note {
-  color: var(--text-muted);
-  font-size: 12px;
-  margin: 0.35rem 0 0;
-  line-height: 1.5;
-}
 
 /* The upper-bound banner. A left rule rather than a filled panel: it has to read as the
    frame around the numbers below it, not as an error interrupting them. */
-.pmcc-integrity-banner {
-  border-left: 2px solid var(--warn);
-  padding: 0.5rem 0 0.5rem 0.75rem;
-  margin-bottom: 0.9rem;
-  line-height: 1.6;
-  font-size: 13px;
-}
 
-.pmcc-integrity-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
-  gap: 1.1rem;
-}
 
-.pmcc-integrity-grid h3,
+.integrity-grid h3,
 .pmcc-chart-grid h3,
 .pmcc-compare h3 {
   font-size: 12px;
@@ -1959,21 +1925,7 @@ select.text-input {
   margin: 0 0 0.45rem;
 }
 
-.pmcc-integrity-alerts {
-  margin-top: 0.9rem;
-  border-top: 1px solid var(--border);
-  padding-top: 0.7rem;
-  font-size: 12.5px;
-  line-height: 1.6;
-}
 
-.pmcc-plain-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  font-size: 12.5px;
-  line-height: 1.85;
-}
 
 /* The gate's own line, under a symbol card whose keltner book holds nothing. Sits in the
    card footer because it explains an ABSENCE in the table above -- a row would have implied
@@ -2092,10 +2044,6 @@ select.text-input {
 /* The ordinary close. `.chip-missing` is red and `.chip-warn` amber; a short that simply traded out
    is neither -- it is the strategy working. Quiet by default so `assigned`, which hands over shares
    and carries the weekend, is the only close kind that catches the eye. */
-.pmcc-chip-quiet {
-  color: var(--text-muted);
-  border-color: var(--border);
-}
 
 /* The expanded cycle detail. `.data-table td` is nowrap by house rule ("a cell that genuinely needs
    to wrap sets white-space itself") -- this one does: it holds prose, not figures, and without this
@@ -2110,41 +2058,15 @@ select.text-input {
    only where the derivation and the books actually disagree, and never the cherry accent — that
    is reserved for brand, live-mode and alerts, and nothing on a paper experiment's page is one. */
 
-.cal-sym {
-  font-family: var(--num-face);
-  color: var(--text);
-  min-width: 3.4rem;
-  display: inline-block;
-}
 
-.cal-warn {
-  color: var(--warn);
-}
 
-.cal-err {
-  color: var(--err);
-}
 
 .cal-ok {
   color: var(--ok);
 }
 
-.cal-chip {
-  margin-left: 0.4rem;
-  font-size: 11px;
-}
 
-.cal-chip-quiet {
-  color: var(--text-muted);
-  border-color: var(--border);
-}
 
-.cal-note {
-  color: var(--text-muted);
-  font-size: 12px;
-  margin: 0.35rem 0 0;
-  line-height: 1.5;
-}
 
 /* The same sentence, inline inside a banner rather than under it — a refusal and its explanation
    belong in one breath, not in a paragraph the eye can skip. */
@@ -2152,44 +2074,11 @@ select.text-input {
   color: var(--text-muted);
 }
 
-.cal-integrity-banner {
-  border-left: 2px solid var(--warn);
-  padding: 0.5rem 0 0.5rem 0.75rem;
-  margin-bottom: 0.9rem;
-  line-height: 1.6;
-  font-size: 13px;
-}
 
-.cal-integrity-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
-  gap: 1.1rem;
-}
 
-.cal-integrity-grid h3 {
-  font-size: 12px;
-  text-transform: lowercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  font-weight: 500;
-  margin: 0 0 0.45rem;
-}
+/* .integrity-grid h3 is styled with the pmcc chart/compare group above. */
 
-.cal-integrity-alerts {
-  margin-top: 0.9rem;
-  border-top: 1px solid var(--border);
-  padding-top: 0.7rem;
-  font-size: 12.5px;
-  line-height: 1.6;
-}
 
-.cal-plain-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  font-size: 12.5px;
-  line-height: 1.85;
-}
 
 /* The week's anchors. A row of labelled dates rather than a table: they are one fact in five
    parts (entry, both expirations, the tag they imply), not five comparable rows. */
@@ -2320,4 +2209,63 @@ select.text-input {
 
 .cal-rules li {
   margin-bottom: 0.5rem;
+}
+
+/* The measurement-integrity strip, shared by Calendars and PMCC.
+ *
+ * These were two families, .cal-* and .pmcc-*, that rendered the same strip on two pages.
+ * Nine of the ten rules were byte-identical; the tenth differed by a 250px-vs-260px minmax
+ * floor, which is drift rather than a decision, so one value is kept.
+ */
+.integrity-sym {
+  font-family: var(--num-face);
+  color: var(--text);
+  min-width: 3.4rem;
+  display: inline-block;
+}
+.integrity-warn {
+  color: var(--warn);
+}
+.integrity-err {
+  color: var(--err);
+}
+.integrity-chip {
+  margin-left: 0.4rem;
+  font-size: 11px;
+}
+.integrity-chip-quiet {
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+.integrity-note {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin: 0.35rem 0 0;
+  line-height: 1.5;
+}
+.integrity-banner {
+  border-left: 2px solid var(--warn);
+  padding: 0.5rem 0 0.5rem 0.75rem;
+  margin-bottom: 0.9rem;
+  line-height: 1.6;
+  font-size: 13px;
+}
+.integrity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 1.1rem;
+}
+.integrity-alerts {
+  margin-top: 0.9rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.7rem;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.integrity-plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12.5px;
+  line-height: 1.85;
 }

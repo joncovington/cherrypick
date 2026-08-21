@@ -54,7 +54,7 @@ export function PoliciesTab() {
             not fifteen books — one permissive arm answers the whole thing.
           </p>
           {data?.caveat != null && (
-            <p className="cal-warn">
+            <p className="integrity-warn">
               <strong>Granularity caveat:</strong> {data.caveat}.
             </p>
           )}
@@ -63,7 +63,7 @@ export function PoliciesTab() {
 
       {data?.error != null && (
         <Card title="derivation unavailable" collapseKey="cal-policies-error" isError>
-          <p className="cal-err">{data.error}</p>
+          <p className="integrity-err">{data.error}</p>
         </Card>
       )}
 
@@ -91,7 +91,7 @@ export function PoliciesTab() {
             </Fragment>
           ))}
         </dl>
-        <p className="cal-note">
+        <p className="integrity-note">
           Twelve rules, fixed before the first week was traded. Every whole-structure policy that never
           triggers falls through to the control terminal — close everything in the Friday exit window — so a
           rule that never fires reports control&rsquo;s result rather than nothing.{" "}
@@ -112,7 +112,7 @@ export function PoliciesTab() {
           empty="nothing derived for this structure"
           updatedAt={dataUpdatedAt}
           footer={
-            <p className="cal-note">
+            <p className="integrity-note">
               <strong>derivable</strong> counts the weeks whose recorded path could answer this policy. A hole
               in the path is excluded and counted as excluded — silently pricing a missing tick would let a
               feed outage flatter whichever policy it happened to favour.
@@ -134,7 +134,7 @@ export function PoliciesTab() {
                   )}
                 </td>
                 <td>{b.weeks}</td>
-                <td className={excluded > 0 ? "cal-warn" : ""}>
+                <td className={excluded > 0 ? "integrity-warn" : ""}>
                   {b.derivable}
                   {excluded > 0 && <span className="muted"> ({excluded} excluded)</span>}
                 </td>
