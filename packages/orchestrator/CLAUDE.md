@@ -416,9 +416,14 @@ repeated.
 - **No MCP / network / AI on any loop-decision or reliability path** (see Invariants). The modules'
   loops depend only on their local tools + this guidance; a 34-hour silent stall from an external
   streamer dependency (2026-07-01) is why the rule is load-bearing suite-wide.
-- **Correlation risk is not currently guarded** in either module — trading correlated underlyings (MEIC:
-  e.g. SPX + XSP) or same-sector/same-date earnings names (Earnings) simultaneously can silently
-  multiply exposure. Do not configure correlated combinations until a guard exists.
+- **Correlation risk is PARTLY guarded (2026-08-20).** Two vehicles on the SAME index (MEIC's
+  SPX + XSP case) are refused by `tests/test_symbol_correlation_lint.py`, which reads what each
+  module declares in `state/stream_requests/` — per-symbol caps would otherwise count one
+  directional bet as two independent risks. Still unguarded, and reported rather than failed by
+  that same test: broad correlation across DIFFERENT indices (~0.9 for SPY against QQQ, and pmcc
+  currently holds three leveraged equity ETFs), and Earnings' same-sector/same-date single names,
+  which stay a hand-maintained `correlation_block_list`. Do not read the lint as covering more
+  than the same-index case.
 - **Human-voice docs, no AI commit attribution** (see Gotchas below).
 
 ## Gotchas
