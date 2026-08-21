@@ -56,13 +56,53 @@ pnpm test                         # vitest
 pnpm typecheck                    # tsc --noEmit across all three workspaces
 python run.py dashboard --serve   # what the supervisor's `console` job invokes
 pnpm --filter @console/desktop start   # the desktop window
+pnpm ui-check --route /flies --click performance --expect "drawdown"   # drive the REAL browser
 ```
+
+**Confirming a change actually reached the page.** The suite's rule is that a front-end change is
+confirmed in a browser, not by tests alone. Three things make that non-obvious here:
+
+- **The running server is `server/dist/index.js`, not your source.** The supervisor launches the
+  built artifact, so a source edit changes nothing until `pnpm build` AND the process restarts.
+  Editing, re-running the tests and reloading the page will show you the OLD build behaving
+  perfectly. (A shared-type change also needs `pnpm --filter @console/shared build` before the
+  server typechecks against it.)
+- **`pnpm ui-check` drives real Chrome** — clicks, expectations, screenshots, and console errors —
+  which is what reaches anything behind a tab held in component state. `--dump <file>` writes the
+  rendered DOM when you want to read it rather than assert on it.
+- **Under Git Bash, prefix it with `MSYS_NO_PATHCONV=1`** or a route is rewritten into a filesystem
+  path: `--route /flies` arrives as `C:/Program Files/Git/flies` and the check silently targets
+  nothing useful.
+
+The reliable recipe for a reader or endpoint change: capture the affected endpoints from the
+RUNNING build first, then build, restart, and re-capture. Every data field should be identical and
+only clock-derived ones (`now`, `ageSeconds`) should move. That is what caught this session's
+changes as safe, and it is the only check that sees past the fallback below.
 
 ## Data rules
 
 - **Read-only over every other package's data.** Module SQLite stores are opened with
   better-sqlite3 `readonly: true`; JSON state is only ever read. The console's sole writable store is
-  `~/.cherrypick/data/console/`.
+  `~/.cherrypick/data/console/`. Handles are POOLED per path and recycled on the file's stamp
+  (`readers/db.ts`), so a module's write — a migration included — is picked up on the next request;
+  idle handles hold an open file, never an open read transaction, so they cannot starve WAL
+  checkpointing.
+- **⚠️ `withReadOnlyDb` swallows EVERY throw into its fallback, and the request still returns
+  HTTP 200.** That is deliberate — a module store may legitimately be absent because the module has
+  never run here — but it means **a broken reader is indistinguishable from an empty one**, on the
+  wire and on the page. It also means a green `vitest` run is NOT sufficient evidence that a reader
+  change works: the tests exercise the query, and the fallback hides the query failing.
+  This has produced two real defects. `/api/flies/meta` once returned `{arms: [], dates: [],
+  symbols: []}` with no log line, from one bad column in a UNION. And a day resolver that named a
+  journal table an older ledger lacks read as "no latest session", so a tab meant to show one day
+  answered for every day in its era. Both looked healthy.
+  So: after changing a reader, **hit the endpoint against a rebuilt, restarted server** (the recipe
+  under Commands) and check the payload is populated, not merely 200. Where a reader can be handed
+  a store whose shape varies — an older paper book, a live book, a test fixture — ask
+  `sqlite_master` which tables exist rather than naming one and relying on the catch.
+  (`withReadOnlyDb` also conflates "store absent" with "query threw" across ~65 call sites.
+  Documented rather than fixed as of 2026-08-20: separating them changes semantics every call site
+  depends on, and wants its own landing.)
 - **The Config page is the one bounded exception, and it holds no write logic of its own.** Every
   config edit and the halt toggle go out through the orchestrator's own surface as a subprocess
   (`python -m cherrypick.orchestrator.configcli`, JSON in/out — `services/configBridge.ts`, the same
