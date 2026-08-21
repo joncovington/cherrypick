@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { FliesPayload, FliesBookRow, FliesPositionRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { memoOnStore, withReadOnlyDb, num, str } from "./db.js";
+import { memoOnStore, withReadOnlyDb, num, str, type DatabaseHandle } from "./db.js";
 import { emptyPage, pagedQuery, pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
 
 /**
@@ -121,12 +121,41 @@ function filterSql(filter: FliesFilter): { where: string; params: string[] } {
  * tab has to name the SAME day, and a per-arm "latest" would let the books table show one session
  * while the arm rail beside it showed another.
  */
-function latestTradeDate(dbPath: string): string | null {
-  return withReadOnlyDb<string | null>(
-    dbPath,
-    null,
-    (db) => db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM fly_positions").get()?.d ?? null,
+/**
+ * The latest session across every table that records one — positions, iterations and decisions.
+ *
+ * It reads all three because they do not agree in general. `fly_iterations` and `fly_decisions` are
+ * written on every tick the loop runs; `fly_positions` only when something is entered. So on a
+ * session the loop worked through and took nothing — a barren day, which this module has by design
+ * and which the calendars module hit on its very first scheduled Monday — a card resolving from
+ * positions would silently show the PREVIOUS session while the timeline beside it showed today,
+ * with nothing on the page saying they disagreed.
+ *
+ * That has not happened yet in 23 sessions of this ledger. It is fixed now because a barren day is
+ * exactly the session someone reads carefully, and "the cards quietly disagree" is the worst
+ * possible failure mode on the day the answer matters.
+ */
+const DAY_SOURCE_TABLES = ["fly_positions", "fly_iterations", "fly_decisions"] as const;
+
+function latestTradeDateIn(db: DatabaseHandle): string | null {
+  // Only the tables this ledger actually has. A live book, an older paper book and a test fixture
+  // do not all carry the journal tables, and naming a missing one throws -- which withReadOnlyDb
+  // would turn into "no latest session at all", i.e. every row in the era on a tab that should
+  // show one day. Asking sqlite_master first is what keeps a partial ledger from reading as empty.
+  const present = new Set(
+    db
+      .prepare<[], { name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .all()
+      .map((r) => r.name),
   );
+  const usable = DAY_SOURCE_TABLES.filter((t) => present.has(t));
+  if (usable.length === 0) return null;
+  const sql = usable.map((t) => `SELECT MAX(trade_date) AS d FROM ${t}`).join(" UNION ALL ");
+  return db.prepare<[], { d: string | null }>(`SELECT MAX(d) AS d FROM (${sql})`).get()?.d ?? null;
+}
+
+function latestTradeDate(dbPath: string): string | null {
+  return withReadOnlyDb<string | null>(dbPath, null, latestTradeDateIn);
 }
 
 export function readFlies(
@@ -311,7 +340,7 @@ export function readFliesForest(
   const empty: FliesForest = { mode, tradeDate: null, symbol: null, arms: [], settlement: null, lastTickSpot: null };
   return withReadOnlyDb<FliesForest>(dbPath, empty, (db) => {
     const tradeDate =
-      day ?? db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM fly_positions").get()?.d ?? null;
+      day ?? latestTradeDateIn(db);
     if (tradeDate === null) return empty;
 
     const settleRow = db
@@ -452,7 +481,7 @@ function buildFliesTimeline(dbPath: string, mode: TradingMode, day: string | nul
   };
   return withReadOnlyDb<FliesTimeline>(dbPath, empty, (db) => {
     const date =
-      day ?? db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM fly_iterations").get()?.d ?? null;
+      day ?? latestTradeDateIn(db);
     if (date === null) return empty;
 
     interface TimelineRow extends FlyRow {
@@ -613,7 +642,7 @@ export function readFliesJournal(config: ConsoleConfig, mode: TradingMode, day: 
   const dbPath = path.join(config.paths.fliesDir, file);
   return withReadOnlyDb<{ date: string | null; rows: JournalRow[] }>(dbPath, { date: null, rows: [] }, (db) => {
     const date =
-      day ?? db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM fly_decisions").get()?.d ?? null;
+      day ?? latestTradeDateIn(db);
     if (date === null) return { date: null, rows: [] };
     const clause = arm !== null ? " AND arm = ?" : "";
     const params: string[] = arm !== null ? [date, arm] : [date];
@@ -746,7 +775,7 @@ export function readArmDivergence(config: ConsoleConfig, mode: TradingMode, day:
   const empty: ArmDivergence = { date: null, iterations: 0, allAgreeRatePct: null, pairs: [] };
   return withReadOnlyDb<ArmDivergence>(dbPath, empty, (db) => {
     const date =
-      day ?? db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM fly_iterations").get()?.d ?? null;
+      day ?? latestTradeDateIn(db);
     if (date === null) return empty;
     const rows = db
       .prepare<[string], Record<string, unknown>>(
@@ -1371,10 +1400,7 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
     feeDrag: [],
   };
   return withReadOnlyDb<FliesAnalytics>(dbPath, empty, (db) => {
-    const latest = db
-      .prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM fly_positions")
-      .get();
-    const tradeDate = filter.date ?? latest?.d ?? null;
+    const tradeDate = filter.date ?? latestTradeDateIn(db);
     const armClause = filter.arm !== null ? " AND arm = ?" : "";
     const armParams: string[] = filter.arm !== null ? [filter.arm] : [];
 

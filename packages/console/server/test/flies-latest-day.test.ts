@@ -125,3 +125,39 @@ describe("a book with no sessions at all", () => {
     expect(readFliesAnalytics(empty, "paper", noDate).today.tradeDate).toBeNull();
   });
 });
+
+describe("a session the loop worked through but took nothing", () => {
+  /**
+   * The reason the day resolver reads more than one table.
+   *
+   * fly_iterations is written on every tick; fly_positions only when something is entered. So a
+   * barren session -- which this module has by design -- leaves the two tables disagreeing about
+   * what "latest" means, and a card resolving from positions alone would quietly show the previous
+   * session next to a timeline showing today.
+   */
+  const BARREN = "2026-08-14";
+  let barrenConfig: ConsoleConfig;
+
+  beforeAll(() => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "flies-barren-"));
+    const fliesDir = path.join(dir, "flies");
+    seed(fliesDir);
+    const db = new Database(path.join(fliesDir, "paper_trades.db"));
+    db.exec(`CREATE TABLE fly_iterations (
+      id INTEGER PRIMARY KEY, trade_date TEXT, iteration_ts TEXT, arm TEXT,
+      center REAL, underlying_price REAL
+    );`);
+    // The loop ran on a later day than any position exists for.
+    db.prepare(
+      "INSERT INTO fly_iterations (trade_date, iteration_ts, arm, center, underlying_price) VALUES (?,?,?,?,?)",
+    ).run(BARREN, `${BARREN}T10:00:00-04:00`, "gex", 5000, 5001);
+    db.close();
+    barrenConfig = { paths: { fliesDir } } as unknown as ConsoleConfig;
+  });
+
+  it("resolves the latest session from the tick journal, not just from entries", () => {
+    const a = readFliesAnalytics(barrenConfig, "paper", { arm: null, date: null, symbol: null, era: null });
+    expect(a.today.tradeDate).toBe(BARREN);
+    expect(a.today.positions).toBe(0); // barren is a real answer, not a missing one
+  });
+});
