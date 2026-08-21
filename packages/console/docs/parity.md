@@ -49,7 +49,7 @@ Console's `readers/logs.ts` is a separate implementation and does not inherit th
 | Loop status pill (LIVE/IDLE) + IV rank / underlying chips | done |
 | Symbol + profile selectors (page-wide scope) | done — threaded through every MEIC read |
 | Era scope (defaults to the module's `CURRENT_ERA`, as its analytics do) | done — earlier eras reachable, never mixed in silently |
-| Period stats grid | done — net is after fees, matching the calendar beside it and `core.ledgers` |
+| Period stats grid | done — net is after fees, matching the calendar beside it and `core.ledgers`. The equity/drawdown and study-arm curves were still GROSS until 2026-08-20; on this ledger that overstated cumulative P&L by $55,964 (36.6% of gross) under a card already titled "Cumulative net" |
 | Today's trades / trade table | partial — per-leg put/call status badges, stop-adjustment columns, AI reasoning missing |
 | NLV over time | done — badged account-level, since `closing_nlv` is a whole-account balance the page's scope cannot narrow |
 | Daily P&L calendar | done |
@@ -57,6 +57,7 @@ Console's `readers/logs.ts` is a separate implementation and does not inherit th
 | Win rate by session / Avg P&L by IV-rank band | done |
 | Exit reasons / fee drag | done — plus today's per-profile net and fee drag, the day's "which arm made it" the cumulative Performance table cannot answer |
 | Regime coverage (with degenerate flags) | done |
+| Profile divergence | done (2026-08-20) — how often the arms reached DIFFERENT entry decisions on the same tick, read from `entry_attempts` so refusals count. Reported 100% agreement between control/control-drift/sign on its first run |
 | Trade log filters (outcome, exit reason, search) | done — filters and paging both in SQL, so counts describe the scope and not the page; explicit date-range inputs still missing |
 | Performance view: profile comparison, risk metrics, equity + underwater, study arms, per-period charts | done. **Missing: arm scorecard (breakeven identity) and stop-policy counterfactuals** |
 
@@ -76,16 +77,22 @@ at a hidden row cap.
 | Arm divergence | done (>80% agreement flagged) |
 | History: by arm/mode/window, fee drag, calendar (click→replay), trade log + filters | done |
 | Performance: tiles, P&L bars, completion + why-misses, trend, live-vs-paper | done (trend and live-vs-paper are console-only additions) |
+| Performance: cumulative curve, drawdown, risk ratios | done (2026-08-20) — from the same `analytics/riskMetrics.ts` MEIC reads, so the two pages cannot disagree about what a Sharpe is. Daily whatever granularity is shown, since these annualize on sessions |
 | Symbol filter (page-wide) | done — shown only when the era in scope holds more than one symbol |
 | Loop status pill (LIVE/IDLE) | done — reads `fly_iterations`, which advances on a quiet market where the ledger does not |
 | Era scope | done — each era readable ALONE (SPX current / XSP / pre-XSP), with counts; pooling is now an explicit "all eras" choice rather than the only way to see an earlier book |
-| Voided-rows accounting line | **missing** (console suggestion) |
+| Voided-rows accounting line | done (2026-08-20) — `/api/flies/voided` + a note on the Performance tab stating the count, the P&L held back and the REASON, so the exclusion is stated rather than inferred from a gap. Currently 25 rows / -$491.52, all the pre-2026-08-07 bwb roll defect |
 
 ## GEX dashboard (was :5055, deleted) — at parity+
 
 All cards done and number-verified (walls/zero-gamma definitions matched). Remaining: WebSocket push
 (console polls 15s — cache-cadence equivalent); regime-drift intraday chart is a proposed
 console-only addition.
+
+The regime-history table carried a hidden `LIMIT 60` until 2026-08-20 while a session records
+240–288 rows, so it showed about a fifth of the day and reported no total — a reader could not tell
+a quiet session from a truncated one. It pages properly now, through the same `readers/paging.ts`
+every other paged endpoint uses.
 
 ## Earnings strategy dashboard (static HTML, deleted)
 

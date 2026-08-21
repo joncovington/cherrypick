@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { FliesPayload, FliesBookRow, FliesPositionRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { memoOnStore, withReadOnlyDb, num, str, type DatabaseHandle } from "./db.js";
+import { hasColumn, memoOnStore, withReadOnlyDb, num, str, type DatabaseHandle } from "./db.js";
 import {
   EMPTY_RISK,
   equityCurve,
@@ -1580,6 +1580,57 @@ export function readFliesLoopStatus(config: ConsoleConfig, mode: TradingMode): F
       symbol: str(r["symbol"]),
       arm: str(r["arm"]),
       underlyingPrice: num(r["underlying_price"]),
+    };
+  });
+}
+
+export interface VoidedRows {
+  total: number;
+  pnl: number;
+  byReason: Array<{ reason: string; arm: string; entryMode: string | null; rows: number; pnl: number }>;
+}
+
+/**
+ * Rows held back as VOID, stated rather than left as a gap.
+ *
+ * Every total on this page filters `void_reason IS NULL`, and until now said nothing about what
+ * that removed. The module's own analytics.voided() exists for this exact reason — "so the
+ * exclusion is stated rather than inferred from a gap in a total" — and the console was the one
+ * surface not honouring it.
+ *
+ * A void row is one whose DECISIONS rest on a defect a later fix proved wrong: the bwb roll priced
+ * the wrong legs until 2026-08-07, so those positions were opened and rolled on a spread that was
+ * never the trade. It is NOT a losing row, and not one a caller filtered out — those stay in every
+ * table. That distinction is the point: "we excluded these because they lost" is precisely the
+ * claim this module refuses to make, so the reason travels with the count.
+ */
+export function readVoidedRows(config: ConsoleConfig, mode: TradingMode, filter: FliesFilter): VoidedRows {
+  const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.fliesDir, file);
+  const empty: VoidedRows = { total: 0, pnl: 0, byReason: [] };
+  return withReadOnlyDb<VoidedRows>(dbPath, empty, (db) => {
+    if (!hasColumn(db, "fly_positions", "void_reason")) return empty;
+    const sc = scopeClause(filter);
+    const rows = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT void_reason AS reason, arm, entry_mode, COUNT(*) AS rows, COALESCE(SUM(pnl), 0) AS pnl
+           FROM fly_positions
+          WHERE void_reason IS NOT NULL${sc.and}
+          GROUP BY void_reason, arm, entry_mode
+          ORDER BY COUNT(*) DESC`,
+      )
+      .all(...sc.params);
+    const byReason = rows.map((r) => ({
+      reason: str(r["reason"]) ?? "unstated",
+      arm: str(r["arm"]) ?? "?",
+      entryMode: str(r["entry_mode"]),
+      rows: Number(r["rows"]),
+      pnl: Number(r["pnl"]),
+    }));
+    return {
+      total: byReason.reduce((n, r) => n + r.rows, 0),
+      pnl: byReason.reduce((n, r) => n + r.pnl, 0),
+      byReason,
     };
   });
 }

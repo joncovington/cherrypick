@@ -27,6 +27,7 @@ import {
   readFliesPerformance,
   readFliesJournal,
   readArmDivergence,
+  readVoidedRows,
   readFliesTradeLog,
   readFliesLoopStatus,
   ERAS,
@@ -192,6 +193,9 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/flies/loop", async (req) => readFliesLoopStatus(config, parseMode(req.query)));
   app.get("/api/flies/meta", async (req) => readFliesMeta(config, parseMode(req.query), parseFliesFilter(req.query).era));
   app.get("/api/flies/history", async (req) => readFliesHistory(config, parseMode(req.query), parseFliesFilter(req.query)));
+  app.get("/api/flies/voided", async (req) =>
+    readVoidedRows(config, parseMode(req.query), parseFliesFilter(req.query)),
+  );
   app.get("/api/flies/divergence", async (req) =>
     readArmDivergence(config, parseMode(req.query), parseFliesFilter(req.query).date),
   );
