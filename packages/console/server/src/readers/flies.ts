@@ -2,7 +2,15 @@ import path from "node:path";
 import type { FliesPayload, FliesBookRow, FliesPositionRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { memoOnStore, withReadOnlyDb, num, str, type DatabaseHandle } from "./db.js";
-import { median, periodKey } from "../analytics/riskMetrics.js";
+import {
+  EMPTY_RISK,
+  equityCurve,
+  median,
+  periodKey,
+  riskSummary,
+  type EquityPoint,
+  type RiskSummary,
+} from "../analytics/riskMetrics.js";
 import { emptyPage, pagedQuery, pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
 
 /**
@@ -1040,6 +1048,18 @@ export interface FliesPerformance {
   tiles: FliesSummary & { completionRatePct: number | null };
   series: Array<{ bucket: string; netPnl: number; cumulative: number }>;
   /**
+   * The daily cumulative curve with its running drawdown, and the risk ratios over it — the same
+   * pair MEIC's performance tab has, from the same shared module so the two cannot disagree about
+   * what a Sharpe means.
+   *
+   * Always DAILY, whatever granularity `series` is showing: these annualize on 252 sessions, so
+   * feeding them weekly buckets would rescale them without saying so. And `equity` is
+   * BANKROLL_BASE plus cumulative net — a drawing aid, not a balance, since these are one-lot
+   * sampling streams rather than a sized book. The drawdown under it is real.
+   */
+  equity: EquityPoint[];
+  risk: RiskSummary;
+  /**
    * The bwb arm's equivalent of `completion`, and it needs its own block rather than a row in that
    * one: a bwb is entered WHOLE for a credit and converted by a ROLL, not legged in and completed,
    * so "completion rate" is not a number it has. Null when the scope holds no bwb_roll entries.
@@ -1100,6 +1120,8 @@ export function readFliesPerformance(
     completionTrend: [],
     rollTrend: [],
     liveVsPaper: null,
+    equity: [],
+    risk: EMPTY_RISK,
   };
   const result = withReadOnlyDb<FliesPerformance>(dbPath, empty, (db) => {
     const sc = scopeClause(filter);
@@ -1124,6 +1146,21 @@ export function readFliesPerformance(
         cumulative += net;
         return { bucket, netPnl: net, cumulative };
       });
+
+    // --- equity curve and risk, from the DAILY series regardless of display granularity ---
+    // Shared with MEIC (analytics/riskMetrics.ts) rather than reimplemented: two pages disagreeing
+    // about what a Sharpe is would be worse than neither page having one. Always daily, because
+    // annualizing on 252 means the input has to be sessions — bucketing weekly first would rescale
+    // it silently.
+    const daily = new Map<string, number>();
+    for (const r of all) {
+      const d = String(r["trade_date"]);
+      daily.set(d, (daily.get(d) ?? 0) + toPnl(r).pnl);
+    }
+    const equity = equityCurve(
+      [...daily.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([date, net]) => ({ date, net })),
+    );
+    const risk = riskSummary(equity);
 
     // completion_stats, legged: the counterfactual's floor split reads the
     // decisions journal (the engine's own recorded reason), never recomputed.
@@ -1292,6 +1329,8 @@ export function readFliesPerformance(
         completionRatePct: legged.completionRatePct,
       },
       series,
+      equity,
+      risk,
       completion: legged,
       // Null rather than a block of zeros when the scope holds no bwb entries: an empty panel that
       // says "0% roll rate" is a claim, and there is nothing to claim.

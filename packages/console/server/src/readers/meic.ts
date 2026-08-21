@@ -5,7 +5,7 @@ import type { DatabaseHandle } from "./db.js";
 import { withReadOnlyDb, hasColumn, hasTable, num, str } from "./db.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
 import { payoffAt, type Leg } from "../analytics/payoff.js";
-import { periodKey, stdev } from "../analytics/riskMetrics.js";
+import { equityCurve, periodKey, riskSummary, stdev } from "../analytics/riskMetrics.js";
 
 
 /**
@@ -171,7 +171,6 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
 
 const RESOLVED = "status NOT IN ('cancelled','pending','partial_entry')";
 
-const BANKROLL_BASE = 100_000;
 
 export interface MeicScope {
   symbols: string[];
@@ -456,36 +455,12 @@ export function readMeicPerformance(
           GROUP BY trade_date ORDER BY trade_date`,
       )
       .all(...params);
-    let cum = 0;
-    let peak = 0;
-    const equity = dailyRows.map((r) => {
-      const net = Number(r["net"]);
-      cum += net;
-      peak = Math.max(peak, cum);
-      return { date: String(r["trade_date"]), netPnl: net, equity: BANKROLL_BASE + cum, drawdown: peak - cum };
-    });
+    const equity = equityCurve(
+      dailyRows.map((r) => ({ date: String(r["trade_date"]), net: Number(r["net"]) })),
+    );
 
     // --- risk-adjusted metrics from the DAILY series regardless of display granularity ---
-    const returns = equity.map((b) => b.netPnl / BANKROLL_BASE);
-    const n = returns.length;
-    const meanR = n > 0 ? returns.reduce((s, v) => s + v, 0) / n : 0;
-    const sd = stdev(returns);
-    const downside = returns.filter((r) => r < 0);
-    const ddSd = downside.length >= 2 ? stdev(downside) : null;
-    const maxDd = Math.max(...equity.map((b) => b.drawdown), 0);
-    const totalReturn = returns.reduce((s, v) => s + v, 0);
-    const annualized = n > 0 ? totalReturn * (252 / n) : 0;
-    const maxDdPct = maxDd / BANKROLL_BASE;
-    const netTotal = equity.reduce((s, b) => s + b.netPnl, 0);
-    const sharpe = sd !== null && sd !== 0 ? (meanR / sd) * Math.sqrt(252) : null;
-    const risk = {
-      sharpe: sharpe !== null ? Math.round(sharpe * 1000) / 1000 : null,
-      sortino: ddSd !== null && ddSd !== 0 ? Math.round((meanR / ddSd) * Math.sqrt(252) * 1000) / 1000 : null,
-      calmar: maxDdPct > 0 ? Math.round((annualized / maxDdPct) * 1000) / 1000 : null,
-      recoveryFactor: maxDd > 0 ? Math.round((netTotal / maxDd) * 1000) / 1000 : null,
-      sampleSize: n,
-      sharpeOverfitFlag: sharpe !== null && sharpe > 3,
-    };
+    const risk = riskSummary(equity);
 
     // --- per-period series ---
     const tradeRows = db
