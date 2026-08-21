@@ -17,8 +17,8 @@ import { readFliesMeta, eraClause, CURRENT_ERA } from "../src/readers/flies.js";
  */
 
 let config: ConsoleConfig;
-const TODAY = "2026-08-20";
-const YESTERDAY = "2026-08-19";
+const TODAY = "2026-08-25";
+const YESTERDAY = "2026-08-24";
 
 function seed(dir: string): void {
   fs.mkdirSync(dir, { recursive: true });
@@ -90,14 +90,16 @@ describe("the flies scope payload", () => {
 describe("the era scope", () => {
   it("offers every declared era, each readable alone", () => {
     const meta = readFliesMeta(config, "paper");
-    expect(meta.eras.map((e) => e.era)).toEqual(["spx", "xsp", "spx-early"]);
-    expect(meta.currentEra).toBe("spx");
+    expect(meta.eras.map((e) => e.era)).toEqual(["advisor", "spx", "xsp", "spx-early"]);
+    expect(meta.currentEra).toBe("advisor");
   });
 
   it("counts each era against this store rather than dropping the empty ones", () => {
     const meta = readFliesMeta(config, "paper");
     const byKey = Object.fromEntries(meta.eras.map((e) => [e.era, e.trades]));
-    expect(byKey["spx"]).toBeGreaterThan(0);
+    expect(byKey["advisor"]).toBeGreaterThan(0);
+    // The closed hand-designed-arms era holds nothing in this fixture — 0, not absent.
+    expect(byKey["spx"]).toBe(0);
     // The fixture holds no XSP book. Reporting 0 is the point: an era this store never traded is a
     // known quantity, where a missing option is indistinguishable from a broken filter.
     expect(byKey["xsp"]).toBe(0);
@@ -116,7 +118,7 @@ describe("the era scope", () => {
 
   it("pools only on an explicit ALL, and falls back to the default on anything unknown", () => {
     expect(eraClause("ALL").sql).toBeNull();
-    expect(eraClause("nonsense")).toEqual(eraClause("spx"));
-    expect(eraClause(null)).toEqual(eraClause("spx"));
+    expect(eraClause("nonsense")).toEqual(eraClause("advisor"));
+    expect(eraClause(null)).toEqual(eraClause("advisor"));
   });
 });

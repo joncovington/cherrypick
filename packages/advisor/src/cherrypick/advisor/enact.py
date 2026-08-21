@@ -44,7 +44,7 @@ def run(conn, session: str, *, modules: tuple[str, ...] | list[str] | None = Non
     resolved = _settings.load(cfg)
     selected = tuple(modules or _bounds.MODULES)
 
-    concluded = _experiments.expire_due(conn, session)
+    concluded = _experiments.expire_due(conn, session, cfg=cfg)
 
     issued: list[dict[str, Any]] = []
     for module in selected:

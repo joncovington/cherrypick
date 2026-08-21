@@ -5,7 +5,24 @@ the general paper-trading system and [risk-profiles.md](risk-profiles.md) for th
 ladder (now disabled, kept for history and for live `/set-risk-profile`). Part of the
 [MEIC module](../README.md) in the cherrypick suite.
 
-## The forward test (2026-08-07) — four streams, one breakeven identity
+## CLOSED 2026-08-21 — the advisor-era cutover
+
+The four-stream test below ran 2026-08-07..2026-08-20 and closed at the suite-wide advisor-era
+boundary with this verdict: **insufficient to separate the widths — not falsified.** A width
+comparison must be bucketed on `control_fired` (per this document's own rule), and control never
+fired on any of the ten sessions — its 0.30 IV-rank floor kept it dark throughout — so the paired
+same-session reading the design depended on never existed. sign and control-drift additionally
+never separated from control on a single entry decision (100% agreement, 3,036 blocked attempts
+each): redundant as configured.
+
+From 2026-08-21, `packages/advisor` designs and runs every experiment. The era's first meic
+experiment (`exp-2026-08-20-meic-1`, `min_iv_rank: 0.0` on an advised book based on control) exists
+precisely to give control a filled baseline; the width question is expressible through the
+`wing_width_points` bound whenever the advisor takes it up. The retired profiles keep their exact
+key sets and verdicts in `config.risk.json`, per the kill rule below. `open` survives as the
+permissive substrate every read-side derivation is answered from.
+
+## The forward test (2026-08-07..2026-08-20, closed) — four streams, one breakeven identity
 
 **Why this exists.** MEIC is not broken by gates or throughput — it sits just below its own
 breakeven identity. Under the per-side buy-back design an IC has three outcomes: both sides expire

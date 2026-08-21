@@ -29,6 +29,7 @@ from cherrypick.advisor import experiments as _experiments
 from cherrypick.advisor import factpack as _factpack
 from cherrypick.advisor import paths as _paths
 from cherrypick.advisor import proposals as _proposals
+from cherrypick.advisor import settings as _settings
 from cherrypick.advisor import store as _store
 from cherrypick.advisor import verdicts as _verdicts
 
@@ -103,7 +104,9 @@ def cmd_verdicts(args) -> dict[str, Any]:
     conn = _store.connect()
     try:
         bodies = [
-            _verdicts.for_experiment(e)
+            # Each experiment judged by its own module's configured rule, matching what the fact
+            # pack shows the model and what expiry stores.
+            _verdicts.for_experiment(e, rule=_settings.calibration_rule(e["module"]) or None)
             for e in _store.experiments(conn)
             if e["status"] in (_experiments.STATUS_ACTIVE, _experiments.STATUS_EXPIRED)
         ]
@@ -115,7 +118,8 @@ def cmd_verdicts(args) -> dict[str, Any]:
 def cmd_kill(args) -> dict[str, Any]:
     conn = _store.connect()
     try:
-        return _experiments.kill(conn, args.experiment_id, session=_clock.session_today())
+        return _experiments.kill(conn, args.experiment_id, session=_clock.session_today(),
+                                 reason=args.reason)
     finally:
         conn.close()
 
@@ -192,6 +196,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_kill = sub.add_parser("kill", help="stop an experiment tonight")
     p_kill.add_argument("experiment_id")
+    p_kill.add_argument("--reason", default="killed by user",
+                        help="journaled with the kill — a retired stream keeps its written verdict")
     p_kill.set_defaults(func=cmd_kill)
 
     p_dismiss = sub.add_parser("dismiss", help="mark a proposal dismissed by the user")

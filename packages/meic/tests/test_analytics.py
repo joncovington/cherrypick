@@ -31,7 +31,7 @@ def _insert(conn, **overrides):
         "symbol": "SPX",
         "status": "expired",
         "risk_profile": "control",
-        "era": "sample",
+        "era": analytics.CURRENT_ERA,
         "put_credit": 0.9,
         "call_credit": 0.9,
         "net_credit": 1.8,
@@ -65,7 +65,7 @@ def test_period_clause_defaults_to_current_era_and_resolved_status(conn):
 
 def test_period_clause_era_all_includes_every_era(conn):
     _insert(conn, ic_order_id="1", era="book", pnl=50.0, fees=5.0)
-    _insert(conn, ic_order_id="2", era="sample", pnl=30.0, fees=3.0)
+    _insert(conn, ic_order_id="2", era=analytics.CURRENT_ERA, pnl=30.0, fees=3.0)
     out = analytics.stats_for_period(conn, era="ALL")
     assert out["trades"] == 2
 
@@ -587,11 +587,11 @@ def test_daily_rollup_is_era_scoped_like_every_other_reader(conn):
     """A roll-up written during one sampling era must never be a blend of two — the pre-cutover
     ledger had an order-of-magnitude different selection intensity."""
     _insert(
-        conn, ic_order_id="A", trade_date="2026-08-11", status="expired", pnl=10.0, fees=1.0, era="sample"
+        conn, ic_order_id="A", trade_date="2026-08-11", status="expired", pnl=10.0, fees=1.0, era=analytics.CURRENT_ERA
     )
     _insert(conn, ic_order_id="B", trade_date="2026-08-11", status="expired", pnl=999.0, fees=1.0, era="book")
 
-    assert analytics.daily_rollup(conn, "2026-08-11", era="sample")["gross_pnl"] == pytest.approx(10.0)
+    assert analytics.daily_rollup(conn, "2026-08-11", era=analytics.CURRENT_ERA)["gross_pnl"] == pytest.approx(10.0)
     assert analytics.daily_rollup(conn, "2026-08-11", era="ALL")["gross_pnl"] == pytest.approx(1009.0)
 
 

@@ -28,13 +28,15 @@ from __future__ import annotations
 # it as one would flatter whichever stream happens to be holding something at read time.
 _RESOLVED = "status IN ('stopped', 'expired', 'force_closed')"
 
-# Sampling era (see db.py's `era` column / _migrate). Defaults to the current arms/uncapped-
-# sampling era: pre-cutover ('book') rows had an order-of-magnitude different selection intensity
-# (max_concurrent_ics/entry spacing bounded each portfolio), so pooling them with post-cutover rows
-# in one aggregate reads as one book when it is really two incomparable ones. Pass era="ALL" for an
-# explicit cross-era read (e.g. a historical retrospective); era="book" for the pre-cutover ledger
-# alone.
-CURRENT_ERA = "sample"
+# Sampling era (see db.py's `era` column / _migrate). THE ONE PYTHON LITERAL — db.py's save path
+# stamps every new row with this constant, and the console's readers/meic.ts hand-syncs it.
+# Three eras: 'advisor' (2026-08-21 →) — the advisor designs and runs every experiment, hand-built
+# variant arms retired at the cutover; 'sample' (2026-08-07..2026-08-20) — the hand-designed
+# arms/uncapped-sampling window; 'book' (pre-2026-08-07) — the profile-ladder era, an order of
+# magnitude different selection intensity (max_concurrent_ics/entry spacing bounded each
+# portfolio). Pooling across any pair reads as one book when it is really two incomparable ones.
+# Pass era="ALL" for an explicit cross-era read; a specific era name for that window alone.
+CURRENT_ERA = "advisor"
 
 
 def _round(value, digits=2):

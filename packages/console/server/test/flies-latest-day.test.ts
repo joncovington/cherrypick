@@ -16,8 +16,8 @@ import { readFlies, readFliesAnalytics, CURRENT_ERA } from "../src/readers/flies
  */
 
 let config: ConsoleConfig;
-const TODAY = "2026-08-13";
-const YESTERDAY = "2026-08-12";
+const TODAY = "2026-08-25";
+const YESTERDAY = "2026-08-24";
 
 function seed(dir: string): void {
   fs.mkdirSync(dir, { recursive: true });
@@ -135,7 +135,7 @@ describe("a session the loop worked through but took nothing", () => {
    * what "latest" means, and a card resolving from positions alone would quietly show the previous
    * session next to a timeline showing today.
    */
-  const BARREN = "2026-08-14";
+  const BARREN = "2026-08-26";
   let barrenConfig: ConsoleConfig;
 
   beforeAll(() => {

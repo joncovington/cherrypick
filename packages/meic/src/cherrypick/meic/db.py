@@ -911,6 +911,14 @@ def cmd_save_trade(args):
     data.setdefault("trade_date", _today_et())
     data.setdefault("created_at", now)
     data["updated_at"] = now
+    # Stamp the sampling era explicitly. The column's SQL DEFAULT covers only databases created
+    # after the era changed — an existing ledger's ALTERed column keeps its old default forever, so
+    # without this line every era change would need a schema migration. One constant, one
+    # chokepoint: all three writers (paper, live, practice) insert through this verb. Lazy import,
+    # same pattern as cmd_rollup_daily_summary.
+    from cherrypick.meic.analytics import CURRENT_ERA
+
+    data.setdefault("era", CURRENT_ERA)
     if "stop_adjustment_history" in data and not isinstance(data["stop_adjustment_history"], str):
         data["stop_adjustment_history"] = json.dumps(data["stop_adjustment_history"])
 

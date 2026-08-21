@@ -597,3 +597,60 @@ def test_iteration_regime_fields_track_the_market_dimensions():
 
     expected = {f"{d}_{s}" for d in regime.MARKET_DIMENSIONS for s in ("bucket", "value")}
     assert set(db._ITERATION_REGIME_FIELDS) == expected
+
+
+def test_cmd_save_trade_stamps_the_current_era(db_path):
+    """The save path stamps `era` from analytics.CURRENT_ERA explicitly.
+
+    The column's SQL DEFAULT only covers databases created after an era changes -- an existing
+    ledger's ALTERed column keeps its old default forever, so without the explicit stamp every era
+    change would silently keep writing the previous era's tag. One constant, one chokepoint: all
+    three writers (paper, live, practice) insert through this verb.
+    """
+    import argparse
+    import json as _json
+
+    from cherrypick.meic.analytics import CURRENT_ERA
+
+    payload = dict(
+        trade_date="2026-08-21",
+        symbol="SPX",
+        put_strike=7400,
+        call_strike=7500,
+        wing_width=5,
+        net_credit=1.5,
+        quantity=1,
+        status="open",
+        ic_order_id="ERA-1",
+    )
+    db.cmd_save_trade(argparse.Namespace(data=_json.dumps(payload)))
+
+    conn = sqlite3.connect(db_path)
+    row = conn.execute("SELECT era FROM ic_trades WHERE ic_order_id = 'ERA-1'").fetchone()
+    conn.close()
+    assert row == (CURRENT_ERA,)
+
+
+def test_cmd_save_trade_respects_an_explicit_era(db_path):
+    """setdefault, not overwrite: a deliberate per-row era (a backfill, a test) survives."""
+    import argparse
+    import json as _json
+
+    payload = dict(
+        trade_date="2026-08-01",
+        symbol="SPX",
+        put_strike=7400,
+        call_strike=7500,
+        wing_width=5,
+        net_credit=1.5,
+        quantity=1,
+        status="expired",
+        ic_order_id="ERA-2",
+        era="book",
+    )
+    db.cmd_save_trade(argparse.Namespace(data=_json.dumps(payload)))
+
+    conn = sqlite3.connect(db_path)
+    row = conn.execute("SELECT era FROM ic_trades WHERE ic_order_id = 'ERA-2'").fetchone()
+    conn.close()
+    assert row == ("book",)
