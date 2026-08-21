@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { fliesQuery, type FliesFilter } from "../../lib/api";
 import { fmtMoney } from "../../components/DataTable";
+import { VoidedNote } from "./VoidedNote";
 
 interface Performance {
   tiles: {
@@ -279,6 +280,8 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
         </div>
         {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <PnlBars series={data?.series ?? []} cumulative={cumulative} />}
       </section>
+
+      <VoidedNote mode={mode} filter={filter} />
 
       {/* The same pair MEIC's performance tab carries, from the same shared module so the two
           cannot disagree about what a Sharpe is. Titled "1-lot samples, not a sized book" for the
