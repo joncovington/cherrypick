@@ -323,12 +323,28 @@ def advisor_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     the config surfaces show one complete block rather than half of one.
     """
     av = cfg.get("advisor", {}) or {}
+    raw_checkpoints = av.get("checkpoints", [
+        "09:45", "10:30", "11:30", "12:30", "13:30", "14:30", "15:30",
+    ])
+    # Two accepted shapes. A LIST of times keeps the original behavior: slots are named
+    # positionally from ADVISOR_LIGHT_SLOTS in jobspec. A DICT of {slot_name: time} names each
+    # checkpoint explicitly — added 2026-08-21 when the schedule was cut to one light slot, because
+    # a single-entry LIST would run the 12:30 checkpoint under the positional name "open", and a
+    # slot name that lies about its own hour is exactly the legibility failure the positional
+    # naming comment warns about. `checkpoint_slots` is None for the list form (jobspec falls back
+    # to positional) and the aligned name list for the dict form, sorted by time.
+    if isinstance(raw_checkpoints, dict):
+        ordered = sorted(raw_checkpoints.items(), key=lambda kv: kv[1])
+        checkpoints = [at for _slot, at in ordered]
+        checkpoint_slots = [slot for slot, _at in ordered]
+    else:
+        checkpoints = list(raw_checkpoints)
+        checkpoint_slots = None
     return {
         "enabled": av.get("enabled", False),
         # ET, box-local like every other schedule in this file.
-        "checkpoints": list(av.get("checkpoints", [
-            "09:45", "10:30", "11:30", "12:30", "13:30", "14:30", "15:30",
-        ])),
+        "checkpoints": checkpoints,
+        "checkpoint_slots": checkpoint_slots,
         "deep_at": av.get("deep_at", "17:00"),
         "light_model": av.get("light_model", "sonnet"),
         "deep_model": av.get("deep_model", "opus"),
