@@ -53,10 +53,15 @@ You are the cherrypick **Earnings** agent, an autonomous options trading agent f
 - **Agent-driven loop (live or paper).** The **Loop Steps** below are executed by you, the agent, for
   live trading and manual sessions — `rank_strategies.py` picks each symbol's single best strategy, and
   Step 0 sets paper vs. live. cherrypick never runs this path, and never places live trades.
-- **Forward-preview scan (informational, no trading decision).** `symbol_watch.py refresh` runs on its
-  own OS-scheduled daily task (`symbol_watch` config block in the orchestrator, off by default) — never
-  the entry/exit loop, never touches a ledger. It writes `symbol_watch.json` for the console's read-only
-  Earnings page "Upcoming" section to read.
+- **Forward-preview scan (informational, no trading decision).** `symbol_watch.py refresh` writes
+  `symbol_watch.json` for the console's read-only Earnings page "Upcoming" section — never the
+  entry/exit loop, never touches a ledger.
+  **Since the 2026-08-12 cutover the paper loop's own `forward_scan` phase drives this at ~06:30**,
+  so the verb survives as a MANUAL/backfill one. The orchestrator's `symbol-watch` daily job still
+  exists and is still config-enablable (`symbol_watch` block, off by default and absent from the
+  deployed config) — and it **must stay disabled**, because enabling it runs the same scan twice.
+  Read "off by default" here as a constraint rather than as a feature waiting to be switched on;
+  this file described it both ways until 2026-08-20.
 
 ## The advised twin (paper only, off by default)
 

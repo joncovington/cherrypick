@@ -188,8 +188,15 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   surface — each module's `enable_live_trading` kill switch (home config first, then in-repo), its
   designated live account (masked, via the module keyring), and the suite **halt flag**,
   `state/halt-live.flag` in the cherrypick home, whose *presence* is the signal
-  (`liveops.halt_flag_path()` defines the path; live loops poll the same file). It is files + keyring
-  only and never writes. `settings_serve.py` imports it, and the watchdog reads it.
+  (`liveops.halt_flag_path()` defines the path; live loops poll the same file). It is files +
+  keyring only, and it writes **exactly one thing: the halt flag**, via `set_halt` — create to
+  halt, delete to clear. That is the one write by design, because a stop must be reachable from a
+  surface a human is already looking at; the console's Config page routes its halt toggle through
+  this function rather than touching the file itself. Everything else here is read-only: it never
+  writes `enable_live_trading`, a module's config or code, or an order. (This paragraph read "never
+  writes" until 2026-08-20, which was wrong from the moment the console's toggle landed — worth
+  knowing that the sentence a reader most wants to trust here was the inaccurate one.)
+  `settings_serve.py` imports it, and the watchdog reads it.
   **The live-ops view is the one thing the deletion left with no replacement** — it was
   broker-touching, so it was deliberately never ported to the console, and folding it in means
   revisiting that package's read-only guardrail. `cherrypick reconcile` still answers the
@@ -232,9 +239,15 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   reach it at all). Config writes (`configedit.py`) go through byte-offset splicing so a field edit
   never disturbs the file's `_note`/`_header` documentation or key order, are backed up
   (`state/config-backups/`) before every write, and refuse any change — in either direction — to a
-  guarded live-trading pointer (`configedit.GUARDED`: `enable_live_trading`, flies' `live.enabled` and
-  `gate0_confirmed`, and the live loss/deploy limits); those fields render read-only with a pointer to
-  their real CLI path, so this surface can never arm or de-risk live trading. This is also the one
+  guarded live-trading pointer. **`configedit.GUARDED` is the list** — it covers all five modules
+  that have a live gate (meic and earnings' `enable_live_trading`, flies/calendars/pmcc's
+  `live.enabled`, plus flies' `gate0_confirmed` and the meic/flies loss and deploy limits), and
+  `tests/test_guarded_live_pointers.py` fails if a module ever declares a live gate the table does
+  not refuse. Do not re-enumerate it here or in a module's own file: this paragraph listed three of
+  the five until 2026-08-20, which is how a prose promise decays into a partial one. Those fields
+  render read-only with a pointer to their real CLI path, so this surface can never arm or de-risk
+  live trading. (`packages/desk` is deliberately outside all of this — it is the discretionary live
+  path, authorized on its own config and PIN, and never through this surface.) This is also the one
   place a bearer secret transits an orchestrator process: a POST body reaches `secretsops.py`, is
   passed straight to `CredentialStore.set_secret` / `notify.secrets.set_webhook`, and is dropped —
   never logged, never written to any file, never echoed in any response. Every GET response contains
