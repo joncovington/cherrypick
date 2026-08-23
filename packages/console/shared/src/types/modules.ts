@@ -406,8 +406,17 @@ export interface PmccPayload {
   books: PmccBookCell[];
   integrity: PmccIntegrity;
   today: {
-    attempts: Array<{ book: string; outcome: string; n: number; blockDetail: string | null; bestYield: number | null }>;
-    events: Array<{ action: string; reason: string; executed: boolean; gate: string | null; n: number }>;
+    attempts: Array<{
+      symbol: string;
+      book: string;
+      outcome: string;
+      n: number;
+      blockDetail: string | null;
+      bestYield: number | null;
+    }>;
+    /** `symbol` is null for an event whose position row could not be joined (e.g. the position was
+     *  since purged) -- rendered as "every symbol" rather than dropped. */
+    events: Array<{ symbol: string | null; action: string; reason: string; executed: boolean; gate: string | null; n: number }>;
     lastIteration: { ranAt: number; phase: string; status: string; ageSeconds: number } | null;
   };
   /** The declared knobs the cards render against — thresholds, not preferences. */
