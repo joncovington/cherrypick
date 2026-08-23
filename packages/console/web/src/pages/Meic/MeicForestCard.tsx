@@ -215,6 +215,26 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
           />
         ))}
 
+        {/* Where the underlying actually sits, against the price axis this curve is drawn over —
+            the payoff is at expiry, but "how far are we from that strike right now" still needs
+            a mark on the same axis. */}
+        {data?.lastSpot != null && data.lastSpot >= xMin && data.lastSpot <= xMax && (
+          <g>
+            <line
+              x1={X(data.lastSpot)}
+              x2={X(data.lastSpot)}
+              y1={pad.t}
+              y2={height - pad.b}
+              stroke={AXIS_MUTED}
+              strokeWidth={1}
+              strokeDasharray="4 3"
+            />
+            <text x={X(data.lastSpot)} y={pad.t - 6} fontSize={10} fill={AXIS_MUTED} textAnchor="middle">
+              spot {data.lastSpot.toFixed(2)}
+            </text>
+          </g>
+        )}
+
         {hoverIdx !== null && hover !== null && (
           <line x1={X(hover.price)} x2={X(hover.price)} y1={pad.t} y2={height - pad.b} stroke="#3a424e" strokeDasharray="3 3" />
         )}
