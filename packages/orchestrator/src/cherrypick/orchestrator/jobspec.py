@@ -101,6 +101,12 @@ class JobSpec:
     # crash backoff was ever sized for. Never widens the general "no broken command hot-loops"
     # guarantee -- it only ever lowers the cap, and a job with no override behaves exactly as before.
     backoff_cap_seconds: int | None = None
+    # A resident job that binds a known TCP port. None for every job but the console today. Lets the
+    # supervisor tell "my own child, restarting" apart from "something else already holds this port" —
+    # see `supervisor._reclaim_stuck_port`. Never guessed from argv; only set where the job's own
+    # config exposes the port it will bind.
+    port: int | None = None
+    reclaim_stuck_port: bool = True
 
     def __post_init__(self) -> None:
         """Validate at construction so a malformed config block fails inside `derive_jobs`'s
@@ -421,6 +427,8 @@ def derive_jobs(
             enabled=not con_reason,
             enabled_reason=con_reason,
             backoff_cap_seconds=con["dev_backoff_seconds"],
+            port=con["port"],
+            reclaim_stuck_port=con["reclaim_stuck_port"],
         ),
     )
 

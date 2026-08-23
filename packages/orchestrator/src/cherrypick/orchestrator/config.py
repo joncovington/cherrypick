@@ -14,6 +14,8 @@ from typing import Any
 
 from cherrypick.core import home as _home
 
+from .util import read_json
+
 # cherrypick runtime root — where config.json, logs/, and state/ live. In a source checkout that is the
 # repo root; this module sits at <root>/src/cherrypick/orchestrator/config.py, so the root is 3 parents
 # up. An installed copy (no repo root) sets CHERRYPICK_HOME to its runtime dir instead.
@@ -505,7 +507,31 @@ def console_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "server_entry": root / "server" / "dist" / "index.js",
         "silence_seconds": int(con.get("silence_seconds", 60)),
         "dev_backoff_seconds": int(dev_backoff) if dev_backoff else None,
+        "port": console_serve_port(),
+        "reclaim_stuck_port": bool(con.get("reclaim_stuck_port", True)),
     }
+
+
+# Mirrors packages/console/shared/src/paths.ts DEFAULT_CONSOLE_PORT. Duplicated rather than shared
+# because the two sides are different languages; kept in sync by the same reasoning that names the
+# port there — 5060/5061 sit on Chrome's unsafe-port list.
+DEFAULT_CONSOLE_PORT = 5070
+
+
+def console_serve_port() -> int:
+    """The console's listen port, resolved the same way the Node server resolves its own
+    (`serve.port` in `home()/config/console.json`, else the default). The supervisor needs this to
+    tell its OWN console child apart from an unrelated process that happens to hold the port —
+    see `supervisor._reclaim_stuck_port`. Never raises: a missing/malformed console.json reads as
+    the default, same as the TypeScript side."""
+    raw = read_json(_home.config_path("console"), default={})
+    try:
+        port = int(((raw or {}).get("serve") or {}).get("port"))
+        if 0 < port < 65536:
+            return port
+    except (TypeError, ValueError):
+        pass
+    return DEFAULT_CONSOLE_PORT
 
 
 def resident_heartbeat_path(name: str) -> Path:

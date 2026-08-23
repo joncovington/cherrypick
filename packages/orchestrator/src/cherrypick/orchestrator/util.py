@@ -106,6 +106,53 @@ def atomic_write_json(path, obj: Any) -> None:
 pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch this name)
 
 
+def port_owner_pid(port: int) -> int | None:
+    """Which PID, if any, holds a LISTENing socket on 127.0.0.1:<port>.
+
+    Best-effort and conservative: any failure to determine an owner (psutil absent, permission
+    denied, parse failure) returns None rather than a guess. A caller deciding whether to kill
+    something must never act on a guess — see `supervisor._reclaim_stuck_port`, the one place this
+    is used to tell a resident job's own child apart from an unrelated process squatting on its port.
+    """
+    try:
+        import psutil  # type: ignore
+
+        for conn in psutil.net_connections(kind="inet"):
+            if (
+                conn.status == psutil.CONN_LISTEN
+                and conn.laddr
+                and conn.laddr.port == port
+                and conn.pid
+            ):
+                return conn.pid
+        return None
+    except ImportError:
+        pass
+    except Exception:
+        return None
+
+    if os.name != "nt":
+        return None
+    try:
+        import re
+        import subprocess
+
+        out = subprocess.run(
+            ["netstat", "-ano", "-p", "TCP"],
+            capture_output=True,
+            text=True,
+            creationflags=CREATE_NO_WINDOW,
+            timeout=15,
+        ).stdout
+        for line in out.splitlines():
+            m = re.match(r"\s*TCP\s+\S*:(\d+)\s+\S+\s+LISTENING\s+(\d+)\s*$", line)
+            if m and int(m.group(1)) == port:
+                return int(m.group(2))
+    except Exception:
+        return None
+    return None
+
+
 def acquire_pid_lock(path, stale_seconds: int = 180) -> bool:
     """Single-instance guard: O_EXCL-create `path` holding this process's PID.
 
