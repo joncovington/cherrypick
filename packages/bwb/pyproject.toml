@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cherrypick-bwb"
+version = "0.1.0"
+description = "SPX daily-laddered put broken-wing butterfly paper module with a 1-3-2 add-on trigger experiment"
+requires-python = ">=3.11"
+# cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.
+# Not on PyPI (Private :: Do Not Upload) -- packages/core must be installed first, or resolution fails.
+# Deliberately NO broker dependency: paper-only, credential-free, pure stream-cache consumer (the
+# calendars/pmcc/curve posture) -- no keyring, no tastytrade, no REST.
+dependencies = ["cherrypick-core"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+testpaths  = ["tests"]
+pythonpath = ["tests", "src"]
+
+[tool.ruff]
+# line-length + lint.select come from the suite-wide ../../ruff.toml.
+extend = "../../ruff.toml"
+target-version = "py311"
+
+[tool.ruff.lint]
+ignore = ["E501"]
+
+[tool.hatch.build.targets.wheel]
+# src-layout PEP 420 namespace: src/cherrypick/ has NO __init__.py, so cherrypick.bwb composes
+# with cherrypick.core (and every other module) under one cherrypick.* root.
+only-include = ["src/cherrypick"]
+sources = ["src"]

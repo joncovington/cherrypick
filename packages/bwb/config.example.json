@@ -1,0 +1,83 @@
+{
+  "_header": "===== cherrypick-bwb — SPX daily-laddered put broken-wing butterfly, with a 1-3-2 add-on trigger experiment (paper-only) =====",
+  "_what_this_is": "Every session at entry_time, one put BWB on SPX is entered at the expected move for a net credit, ~7 DTE, held to expiry -- a NEW one every session, so ~5-7 positions ride concurrently per book at steady state. Four books trade the IDENTICAL base structure; the only variable is whether/when a reversal-triggered put credit spread add-on fires (control never; delta on a raw touch; bounce on a confirmed pullback; flip on a gamma-flip reclaim). Copy to config.json (git-ignored) or ~/.cherrypick/config/bwb.json.",
+
+  "_symbol_note": "SPX only: cash-settled, European-style -- no assignment machinery, no dividend calendar, no physical-delivery decomposition. The cleanest settlement model in the suite.",
+  "symbol": "SPX",
+  "occ_root": "SPXW",
+
+  "_source_note": "stream_cache_db overrides the shared stream cache path; null means the suite default. This module is a pure READ-ONLY consumer of that cache -- its target expiration is served by the streamer's `expirations` request field.",
+  "source": { "stream_cache_db": null },
+
+  "defaults_header": "===== timing, structure, and data-quality knobs =====",
+  "_dte_note": "The target expiration is the PM-settled weekly nearest dte_target (default 7) calendar days out. When the nearest date is the AM-settled third-Friday monthly, the plan shifts to the nearest PM weekly instead, ties broken toward the LONGER date. Computed from the calendar and asserted against the cache -- never nearest-matched from the chain.",
+  "_structure_note": "body_offset is always 'expected_move' in v1 (the config key is declared for the advisor's benefit, not because an alternative is implemented). near_wing_increments (default 1, $5 strikes) sits ABOVE the body toward spot; far_wing_increments (default 2, config-lint-guarded >= 2) sits BELOW the body -- narrowing it to 1 collapses the broken-wing shape into a standard fly and is refused at config-lint, not at runtime.",
+  "_credit_note": "credit_floor and addon_credit_floor are DECLARED ZEROS -- a deliberate departure from the suite's min_credit_pct_of_width convention (curve/ratios carry floors; this module's floor is zero by design, per the 2026-08-22 decision). Any positive credit qualifies; a non-positive credit is a recorded refusal (no_credit / addon_not_credit), never a silent skip.",
+  "_trigger_note": "delta_trigger (default 0.50) is the near wing's |delta| bar. bounce_pullback (default 0.05) is subtracted from delta_trigger to derive the bounce book's confirmation bar (0.45 at defaults) -- there is deliberately NO separate bounce_peak key, so the delta/bounce arms differ by exactly one condition by construction; bounce_pullback == 0 makes bounce degenerate to delta exactly, which is why config-lint guards it > 0. flip_buffer (default 1.001, the curve contango_max precedent) is the reclaim-above-gamma_flip multiple; a value <= 1.0 would let a knife-edge tick-through count as a reclaim and is refused at config-lint.",
+  "defaults": {
+    "dte_target": 7,
+    "pm_settled_only": true,
+    "entry_time": "10:00",
+    "quantity": 1,
+    "body_offset": "expected_move",
+    "strike_increment": 5.0,
+    "near_wing_increments": 1,
+    "far_wing_increments": 2,
+    "credit_floor": 0.00,
+    "addon_credit_floor": 0.00,
+    "delta_trigger": 0.50,
+    "bounce_pullback": 0.05,
+    "flip_buffer": 1.001,
+    "settle_time": "16:20",
+    "settlement_max_age_seconds": 300,
+    "max_quote_age_seconds": 300,
+    "max_leg_spread_pct": 0.25
+  },
+
+  "books_header": "===== the books — one variable each =====",
+  "_books_note": "All four books enter the IDENTICAL BWB from the same plan on the same tick -- four-way exact pairing on the base position. `control` never arms the add-on. `delta`/`bounce`/`flip` arm on their own trigger.py condition; once armed, every tick re-prices the add-on (a non-credit tick is a recorded refusal, addon_not_credit, and the arm stays live) until the first credit tick fires it -- ONE add-on maximum per position, armed until expiry with no cutoff. Until an arm's add-on actually fires, its positions are byte-identical to control's -- an expected find_identical_readings collision, not a defect. Each arm's effective sample is its FIRE COUNT, not its trade count; every read surface carries per-arm fire counts beside any P&L from day one.",
+  "books": {
+    "control": { "enabled": true },
+    "delta": { "enabled": true },
+    "bounce": { "enabled": true },
+    "flip": { "enabled": true }
+  },
+
+  "_stream_note": "SPX is the only `symbols` entry. `expirations` carries the current target expiration plus every expiration still held open (the daily ladder holds up to ~7 distinct dates at steady state). `window_hints` is load-bearing: the body sits a full expected move below spot, at or beyond a default ATM window's edge, and must also cover the add-on bracket two increments below the far wing.",
+
+  "_tastytrade_costs_note": "Overrides for the shared cost model (cherrypick.core.fees.DEFAULT_COSTS). Empty means the suite defaults. SPX carries the per-leg broad-based index exchange fee; every distinct ITM settlement pays the $5 cash-settlement event fee (no share-side pass-throughs -- SPX is cash settled).",
+  "tastytrade_costs": {},
+
+  "advice_header": "===== the advised book (paper only, off by default) =====",
+  "_advice_note": "This module is deliberately UNBOUNDED: every `defaults` key is advisable, the trigger thresholds included. Bounds below are VALIDITY-ONLY ranges (delta-like params in [0,1], increments >= 1, DTE >= 1, times inside RTH) -- not experiment opinion -- so 'unbounded' is implemented as 'every key is declared, with the widest range that still type-checks'. The four base books' own thresholds stay fixed and config-lint-guarded regardless of what this block allows; an advised overlay runs as its own `advised:<base>` book beside them and never touches the base books' config.",
+  "advice": {
+    "enabled": false,
+    "base_book": "control",
+    "bounds": {
+      "dte_target": { "min": 1, "max": 21 },
+      "quantity": { "min": 1, "max": 5 },
+      "strike_increment": { "min": 1, "max": 25 },
+      "near_wing_increments": { "min": 1, "max": 4 },
+      "far_wing_increments": { "min": 2, "max": 6 },
+      "credit_floor": { "min": 0.0, "max": 5.0 },
+      "addon_credit_floor": { "min": 0.0, "max": 5.0 },
+      "delta_trigger": { "min": 0.05, "max": 0.95 },
+      "bounce_pullback": { "min": 0.01, "max": 0.40 },
+      "flip_buffer": { "min": 1.0001, "max": 1.05 },
+      "max_quote_age_seconds": { "min": 30, "max": 900 },
+      "max_leg_spread_pct": { "min": 0.05, "max": 0.75 }
+    }
+  },
+
+  "calibration_header": "===== the promotion/qualification rule (declared, not inherited) =====",
+  "_calibration_note": "A credit structure at the expected move is the canonical wins-often-loses-big shape base sample/win_rate/days gates cannot see. min_net_pnl requires the lifetime net across the qualifying sample to clear this floor before a book/arm is called qualified. The daily ladder closes ~5 positions/week/book, so the min-14-days/min-sample-20 promotion gate is satisfiable in ~4 weeks -- NOT a structurally slow advisor target, unlike curve. The correlation caveat (concurrent ladder rows share regime context; the honest unit is fire EPISODES, not fired positions) is a reading discipline, not a sample-size problem, and every read surface must say so.",
+  "calibration": {
+    "rule": { "min_sample": 20, "min_days": 14, "min_win_rate": 0.0, "min_net_pnl": 0.0 }
+  },
+
+  "live_header": "===== live gate (placeholder — see the module CLAUDE.md's Live-trading prerequisites) =====",
+  "_live_note": "This module has NO live loop, no order-placement code, and no live account designation. `enabled` exists only so the suite's config/console surfaces can read a real gate for this module instead of reporting an absent one as 'unknown' — flipping it to true does nothing until a live loop is built. Guarded the same as every other live gate: hand-edit only, never through the settings surface.",
+  "live": {
+    "enabled": false
+  }
+}
