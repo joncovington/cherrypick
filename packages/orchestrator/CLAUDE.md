@@ -323,6 +323,24 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   itself** mid-window, and a resident **publishing no heartbeat**. None of these have a
   paper-freshness backstop — a restart loop's own writes keep the DB looking fresh, which is exactly
   how 107 restarts in a session went unreported under an unbroken `OK / 0 min old`.
+- **A resident job that declares a `port` can reclaim it from a process the supervisor never spawned.**
+  `adopt_prior_state` only ever adopts a PID already in ITS OWN persisted registry — a process left
+  running by a manual launch (`pnpm dev:server`, the console skill, a supervisor that itself died
+  uncleanly mid-restart) is invisible to it, was never spawned or adopted, and so was never reachable
+  by anything. On 2026-08-23 an orphaned console child held `:5070` for 9 hours and ~1600 failed
+  restarts — every attempt died on `EADDRINUSE`, climbed the backoff ladder, and tried again, forever,
+  because nothing on the reliability path could tell "my own child, mid-restart" apart from "something
+  else is squatting on my port". `_reclaim_stuck_port` (`supervisor.py`) closes that gap for jobs that
+  declare a `port` in their `JobSpec` (today: only `console`, from `cfgmod.console_serve_port()`,
+  itself read the same way the Node server resolves its own): past
+  `_PORT_RECLAIM_AFTER_FAILURES` (8) consecutive failed spawns it asks the OS who actually holds the
+  port, and if that PID is not one the supervisor recognizes as its own (`_known_pids` — every
+  live handle plus every job's `running_pid`, adopted orphans included) and is genuinely still alive,
+  it kills that PID's whole tree and resets the failure ladder for a clean next attempt. Gated on the
+  failure count specifically so this can never fire on a normal restart race or a developer's own
+  brief `pnpm dev:server` session — only on the sustained, minutes-long stuck case the ladder alone
+  never recovers from. Opt out per job via config (`console.reclaim_stuck_port: false`) for a checkout
+  where a manually-run console should be left alone indefinitely instead.
 - **Streamer supervision is its own job, never a faster watchdog.** `streamer-health`
   (`watchdog.run_streamer_health`, the supervisor's 60s job, 09:00–16:00 ET on trading days) exists
   because the streamer's failure window is unrecoverable — a producer dead through 09:30–09:35

@@ -359,6 +359,79 @@ def test_a_dead_adopted_orphan_is_throttled_rather_than_hot_looped(spawned, tmp_
     assert st["consecutive_failures"] >= 1 and st["backoff_until"] > time.time()
 
 
+def _port_job(port=5070, reclaim=True):
+    from cherrypick.orchestrator import jobspec
+
+    return jobspec.JobSpec(
+        id="console",
+        argv=("node", "server.js"),
+        kind=jobspec.KIND_RESIDENT,
+        interval_seconds=30,
+        port=port,
+        reclaim_stuck_port=reclaim,
+    )
+
+
+def test_stuck_port_is_not_reclaimed_before_the_failure_threshold(spawned, monkeypatch):
+    """A first, or third, failed spawn must never trigger a kill — that would turn a normal restart
+    race (or a developer's own manual console) into collateral damage. Only sustained failure counts
+    as 'stuck'."""
+    killed: list[int] = []
+    monkeypatch.setattr(supervisor, "_terminate_tree", lambda pid: killed.append(pid) or True)
+    monkeypatch.setattr(supervisor, "port_owner_pid", lambda port: 424242)
+    monkeypatch.setattr(supervisor, "pid_alive", lambda pid: pid == 424242)
+    sup = supervisor.Supervisor(base_cfg())
+    spec = _port_job()
+    st = {"consecutive_failures": supervisor._PORT_RECLAIM_AFTER_FAILURES - 1}
+    sup._manage_resident(spec, st, MONDAY_NOON, holidays=set())
+    assert killed == []
+
+
+def test_stuck_port_is_reclaimed_from_an_untracked_pid_after_sustained_failure(spawned, monkeypatch):
+    """The 2026-08-23 incident: an orphaned console child held :5070 for 9 hours and ~1600 failed
+    spawns because nothing ever recognized the port-holder as neither ours nor reachable. Past the
+    failure threshold, an untracked but alive port-holder gets its whole tree killed and the ladder
+    resets so the very next attempt gets a clean shot at the port."""
+    killed: list[int] = []
+    monkeypatch.setattr(supervisor, "_terminate_tree", lambda pid: killed.append(pid) or True)
+    monkeypatch.setattr(supervisor, "port_owner_pid", lambda port: 424242)
+    monkeypatch.setattr(supervisor, "pid_alive", lambda pid: pid == 424242)
+    sup = supervisor.Supervisor(base_cfg())
+    spec = _port_job()
+    st = {"consecutive_failures": supervisor._PORT_RECLAIM_AFTER_FAILURES}
+    sup._manage_resident(spec, st, MONDAY_NOON, holidays=set())
+    assert killed == [424242]
+    assert st["consecutive_failures"] == 0
+    assert st["backoff_until"] is None
+
+
+def test_stuck_port_reclaim_never_kills_a_pid_the_supervisor_already_recognizes(spawned, monkeypatch):
+    """A job's own child mid-restart, or a sibling job's tracked pid, must never look 'untracked' just
+    because ITS OWN state row has no running_pid at this instant."""
+    killed: list[int] = []
+    monkeypatch.setattr(supervisor, "_terminate_tree", lambda pid: killed.append(pid) or True)
+    monkeypatch.setattr(supervisor, "port_owner_pid", lambda port: 555)
+    monkeypatch.setattr(supervisor, "pid_alive", lambda pid: pid == 555)
+    sup = supervisor.Supervisor(base_cfg())
+    sup._state["other-job"] = {"running_pid": 555}  # some other tracked job happens to hold the port
+    spec = _port_job()
+    st = {"consecutive_failures": supervisor._PORT_RECLAIM_AFTER_FAILURES}
+    sup._manage_resident(spec, st, MONDAY_NOON, holidays=set())
+    assert killed == []
+
+
+def test_stuck_port_reclaim_is_opt_outable(spawned, monkeypatch):
+    killed: list[int] = []
+    monkeypatch.setattr(supervisor, "_terminate_tree", lambda pid: killed.append(pid) or True)
+    monkeypatch.setattr(supervisor, "port_owner_pid", lambda port: 424242)
+    monkeypatch.setattr(supervisor, "pid_alive", lambda pid: pid == 424242)
+    sup = supervisor.Supervisor(base_cfg())
+    spec = _port_job(reclaim=False)
+    st = {"consecutive_failures": supervisor._PORT_RECLAIM_AFTER_FAILURES}
+    sup._manage_resident(spec, st, MONDAY_NOON, holidays=set())
+    assert killed == []
+
+
 def test_silent_resident_child_is_restarted_with_backoff(spawned, tmp_path, monkeypatch):
     cfg = flies_cfg(tmp_path)
     # The real tree kill shells out to taskkill, which would run against a fake pid here. What the

@@ -39,7 +39,7 @@ from typing import Any
 
 from . import config as cfgmod
 from . import jobspec, timeutil
-from .util import CREATE_NO_WINDOW, atomic_write_json, pid_alive, read_json, rotate_if_large
+from .util import CREATE_NO_WINDOW, atomic_write_json, pid_alive, port_owner_pid, read_json, rotate_if_large
 
 HEARTBEAT_FILE = "supervisor.last.json"
 JOBS_FILE = "supervisor-jobs.json"
@@ -69,6 +69,15 @@ _BACKOFF_CAP_SECONDS = 600
 # A resident child younger than this is never judged for silence — the settling grace the streamer
 # taught (a just-started process hasn't had time to produce output yet).
 _RESIDENT_SETTLE_SECONDS = 90
+
+# A resident job declaring a `port` gets this many failed spawn attempts before the supervisor will
+# even consider reclaiming that port from an untracked process — roughly 3-4 minutes at the default
+# 30s backoff base. Short enough that a genuinely stuck job (the 2026-08-23 incident: an orphaned
+# console child held :5070 for 9 hours and ~1600 failures) recovers on its own within minutes; long
+# enough that a developer's own `pnpm dev:server` iteration, or the normal adopt-on-restart path,
+# is never mistaken for the stuck case. Adoption (`adopt_prior_state`) already handles the ordinary
+# "supervisor restarted, child is still mine" case without ever reaching this ladder.
+_PORT_RECLAIM_AFTER_FAILURES = 8
 
 
 def heartbeat_path() -> Path:
@@ -309,6 +318,51 @@ class Supervisor:
             st["backoff_until"] = time.time() + delay
             _log(f"{spec.id}: exit {code} (failure #{n}), backoff {delay}s")
 
+    def _known_pids(self) -> set[int]:
+        """PIDs this supervisor spawned or adopted this run — its own, plus every job's tracked
+        `running_pid` (live handles and adopted orphans alike). Deliberately broad: a false "known"
+        only means a stuck-port kill is skipped for a pass, which is safe; a false "unknown" is what
+        would kill a legitimate process, which is not."""
+        pids = {os.getpid()}
+        for handle in self._handles.values():
+            pids.add(handle.pid)
+        for st in self._state.values():
+            pid = st.get("running_pid")
+            if pid:
+                pids.add(int(pid))
+        return pids
+
+    def _reclaim_stuck_port(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> None:
+        """Before spawning a resident job that declares a `port`, check whether something we did not
+        spawn or adopt is already squatting on it.
+
+        This exists because the ordinary failure path had no way to recover from it: a console child
+        left running by a manual/dev launch (or a supervisor that itself died uncleanly) can hold
+        :5070 indefinitely while every subsequent spawn attempt fails with EADDRINUSE and the
+        supervisor climbs its own backoff ladder forever — 9 hours and ~1600 failures on 2026-08-23,
+        entirely invisible to `adopt_prior_state` because that PID was never in OUR registry to adopt.
+
+        Gated on `_PORT_RECLAIM_AFTER_FAILURES` consecutive failures so this never fires on the
+        normal first-attempt case, and on the PID not being one we already recognize as ours so it
+        can never kill a job's own legitimate child mid-restart.
+        """
+        n = int(st.get("consecutive_failures") or 0)
+        if n < _PORT_RECLAIM_AFTER_FAILURES:
+            return
+        owner = port_owner_pid(spec.port)
+        if not owner or owner in self._known_pids() or not pid_alive(owner):
+            return
+        _log(
+            f"{spec.id}: port {spec.port} held by untracked pid {owner} after {n} failed spawns "
+            "— reclaiming"
+        )
+        _terminate_tree(owner)
+        # Reset the ladder: the failures so far were the port fight, not this job's own health, and
+        # charging the post-reclaim spawn attempt against that history would jump straight to a long
+        # backoff on what should read as a clean recovery.
+        st["consecutive_failures"] = 0
+        st["backoff_until"] = None
+
     def _spawn(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> bool:
         try:
             handle = subprocess.Popen(
@@ -457,6 +511,8 @@ class Supervisor:
         if st.get("backoff_until") and time.time() < float(st["backoff_until"]):
             st["resident_state"] = "backoff"
             return False
+        if spec.port and spec.reclaim_stuck_port:
+            self._reclaim_stuck_port(spec, st)
         ok = self._spawn(spec, st)
         st["resident_state"] = "running" if ok else "start failed"
         if ok:

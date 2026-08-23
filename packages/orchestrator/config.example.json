@@ -321,7 +321,9 @@
     "_silence_comment": "Liveness is a heartbeat FILE (state/console.heartbeat), rewritten by the server every ~15s, not an HTTP probe: a Node event loop can wedge while the process stays alive and answering nothing, and the supervisor's reliability path stays free of network calls. Restart if the file goes untouched this long. Several heartbeats wide, so one slow pass is never read as a wedge.",
     "silence_seconds": 60,
     "_dev_backoff_comment": "Unset by default -- crashes back off up to the supervisor's normal 10-minute cap, same as every other job. Set dev_backoff_seconds (e.g. 20) only while actively iterating on packages/console, so a crash or a manual 'cherrypick restart-console' comes back in seconds instead of minutes. Remove it again once the checkout is stable.",
-    "dev_backoff_seconds": null
+    "dev_backoff_seconds": null,
+    "_reclaim_comment": "ON by default. After 8 consecutive failed spawns (EADDRINUSE from something else holding the console's port), the supervisor checks who actually holds it; if that PID is not one it spawned or adopted, it kills that process tree and retries immediately instead of backing off forever. Recovers the 2026-08-23 incident automatically (an orphaned console child held :5070 for 9 hours / ~1600 failed restarts). Set false only if you deliberately want a manually-started console (e.g. 'pnpm dev:server') left alone indefinitely instead of reclaimed after ~3-4 minutes.",
+    "reclaim_stuck_port": true
   },
   "settings_header": "x",
   "settings": {
