@@ -225,11 +225,11 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
               x2={X(data.lastSpot)}
               y1={pad.t}
               y2={height - pad.b}
-              stroke={AXIS_MUTED}
+              stroke="#e8c547"
               strokeWidth={1}
               strokeDasharray="4 3"
             />
-            <text x={X(data.lastSpot)} y={pad.t - 6} fontSize={10} fill={AXIS_MUTED} textAnchor="middle">
+            <text x={X(data.lastSpot)} y={pad.t - 6} fontSize={10} fill="#e8c547" textAnchor="middle">
               spot {data.lastSpot.toFixed(2)}
             </text>
           </g>
