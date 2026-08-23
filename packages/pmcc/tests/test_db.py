@@ -32,8 +32,8 @@ def test_stale_writer_detects_unknown_column(tmp_path):
 def test_upsert_idempotent(tmp_path):
     conn = db.connect(str(tmp_path / "paper.db"))
     row = {
-        "position_id": "TNA:control:2026-08-17",
-        "symbol": "TNA",
+        "position_id": "TQQQ:control:2026-08-17",
+        "symbol": "TQQQ",
         "book": "control",
         "entry_session": "2026-08-17",
         "long_expiration": "2026-09-04",
@@ -73,7 +73,7 @@ def test_record_decision_collapses(tmp_path):
             conn,
             trade_date="2026-08-17",
             book="control",
-            symbol="TNA",
+            symbol="TQQQ",
             mode="entry",
             reason="no_fresh_quotes",
             accepted=False,

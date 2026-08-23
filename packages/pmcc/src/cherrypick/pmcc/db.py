@@ -367,11 +367,6 @@ open_assignment_count = _store.open_assignment_count
 # ---------------------------------------------------------------------------
 
 
-
-
-
-
-
 def connect(db_path: str | None = None) -> sqlite3.Connection:
     """Open the ledger. WAL + NORMAL, matching the other module ledgers.
 
@@ -388,37 +383,9 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
     return conn
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # --------------------------------------------------------------------------- telemetry writers
 # Wrapped: telemetry may never cost a trade or a tick. A decision writer failing is logged by the
 # caller's own log line, never raised into the loop.
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # --------------------------------------------------------------------------- readers
@@ -443,10 +410,6 @@ def open_position_count(conn, book: str) -> int:
     )
 
 
-
-
-
-
 def next_short_role(conn, position_id: str) -> str:
     """The next `short_call_<n>` role for a roll — one past the highest already on file."""
     n = 0
@@ -459,8 +422,6 @@ def next_short_role(conn, position_id: str) -> str:
         except (ValueError, IndexError):
             continue
     return f"short_call_{n + 1}"
-
-
 
 
 def expiring_open_legs(conn, day: str) -> list[dict]:
@@ -476,14 +437,3 @@ def expiring_open_legs(conn, day: str) -> list[dict]:
             (day,),
         )
     ]
-
-
-def rolled_today(conn, position_id: str, session_date: str) -> bool:
-    """Whether this position already executed a roll this session — the once-per-day roll cadence."""
-    return bool(
-        conn.execute(
-            "SELECT 1 FROM pmcc_management_events WHERE position_id = ? AND session_date = ? "
-            "AND action = 'roll_short' AND executed = 1 LIMIT 1",
-            (position_id, session_date),
-        ).fetchone()
-    )

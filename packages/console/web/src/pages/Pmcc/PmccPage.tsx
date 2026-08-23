@@ -5,7 +5,7 @@ import { Card, DataCard, fmtPct } from "../../components/DataTable";
 import { LoopPill, TabStrip } from "../../components/ScopeBar";
 import { ArmRail, AttemptTimeline } from "../../components/Attempts";
 import { IntegrityStrip } from "./IntegrityStrip";
-import { BookComparison, KeltnerCard, SymbolCards } from "./CurrentStateCards";
+import { BookComparison, SymbolCards } from "./CurrentStateCards";
 import { HistoryTab } from "./HistoryTab";
 import { HelpTab } from "./HelpTab";
 
@@ -51,19 +51,18 @@ export function PmccPage() {
         {data?.session != null && <span className="muted">session {data.session}</span>}
       </div>
 
-      {data !== undefined && !data.dbPresent ? (
-        <div className="cards cards-wide">
-          <Card title="PMCC-99" collapseKey="pmcc-absent">
-            <p className="muted">
-              This module has not run on this machine — there is no paper store at{" "}
-              <span className="mono">~/.cherrypick/data/pmcc/paper_trades.db</span> yet. Nothing is wrong; the page
-              fills in after its first session.
-            </p>
-          </Card>
-        </div>
-      ) : (
-        <>
-          {tab === "today" && (
+      {tab === "today" &&
+        (data !== undefined && !data.dbPresent ? (
+          <div className="cards cards-wide">
+            <Card title="PMCC-99" collapseKey="pmcc-absent">
+              <p className="muted">
+                This module has not run on this machine — there is no paper store at{" "}
+                <span className="mono">~/.cherrypick/data/pmcc/paper_trades.db</span> yet. Nothing is wrong; the
+                page fills in after its first session.
+              </p>
+            </Card>
+          </div>
+        ) : (
             <div className="cards cards-wide">
               <IntegrityStrip data={data} updatedAt={dataUpdatedAt} />
 
@@ -88,14 +87,8 @@ export function PmccPage() {
                   {null}
                 </DataCard>
               ) : (
-                <SymbolCards data={data} keltner={data?.keltner ?? []} updatedAt={dataUpdatedAt} />
+                <SymbolCards data={data} updatedAt={dataUpdatedAt} />
               )}
-
-              <KeltnerCard
-                series={data?.keltner ?? []}
-                readiness={data?.integrity.keltner ?? []}
-                updatedAt={dataUpdatedAt}
-              />
 
               {/* The same two surfaces meic and flies carry — the arm rail and the minute-by-minute
                   timeline — now that the attempts reader is parameterized rather than hardcoded to
@@ -165,12 +158,10 @@ export function PmccPage() {
 
               <BookComparison data={data} updatedAt={dataUpdatedAt} />
             </div>
-          )}
+        ))}
 
-          {tab === "history" && <HistoryTab />}
-          {tab === "help" && <HelpTab data={data} />}
-        </>
-      )}
+      {tab === "history" && <HistoryTab />}
+      {tab === "help" && <HelpTab data={data} />}
     </div>
   );
 }

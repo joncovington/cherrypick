@@ -50,7 +50,7 @@ const available = fs.existsSync(LEDGER) && moduleHeadline() !== null;
 
 describe.skipIf(!available)("the console's PMCC mirror agrees with the module itself", () => {
   it("reports the same open-position count", () => {
-    const mine = readPmcc(loadConfig(), "paper");
+    const mine = readPmcc(loadConfig());
     const theirs = moduleHeadline();
     expect(theirs).not.toBeNull();
     expect(mine.openPositions.length).toBe(theirs!.headline.open_positions);
@@ -58,7 +58,7 @@ describe.skipIf(!available)("the console's PMCC mirror agrees with the module it
   });
 
   it("reports the same set of books", () => {
-    const mine = readPmcc(loadConfig(), "paper");
+    const mine = readPmcc(loadConfig());
     const theirs = moduleHeadline();
     expect(new Set(mine.books.map((b) => b.book))).toEqual(new Set(Object.keys(theirs!.headline.books)));
   });
@@ -66,7 +66,7 @@ describe.skipIf(!available)("the console's PMCC mirror agrees with the module it
   it("agrees on each book's net, to the cent", () => {
     // The number a reader acts on. A mirror that drifts here is worse than no mirror: it is a
     // second opinion wearing the module's authority.
-    const mine = readPmcc(loadConfig(), "paper");
+    const mine = readPmcc(loadConfig());
     const theirs = moduleHeadline()!.headline.books as Record<string, { net?: number }>;
     for (const book of mine.books) {
       const other = theirs[book.book];

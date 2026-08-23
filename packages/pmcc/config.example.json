@@ -1,44 +1,43 @@
 {
-  "_header": "===== cherrypick-pmcc — PMCC-99 deep-ITM covered calls on leveraged ETFs (paper-only) =====",
-  "_what_this_is": "Buy the deepest ~99-delta call at ~21 DTE (a stock substitute with near-zero extrinsic — NOT a LEAP), sell an ITM call at ~9 DTE whose intrinsic is the downside buffer and whose time value is the entire profit; when the short's time value is exhausted (~$0.10), close BOTH legs and re-enter. Three books, one variable each: `control` (mechanical entry, hold-on-breach, never roll), `keltner` (control's management, entry gated on a pullback-and-reversal read of the Keltner channel), `roll` (control's entry, rolls the short down/out on a breach). Early assignment is REFUSED-around and MEASURED, never modelled — see the dividends block and the assignment_exposure_tv knob. Copy to config.json (git-ignored) or ~/.cherrypick/config/pmcc.json.",
+  "_header": "===== cherrypick-pmcc — PMCC-99 deep-ITM covered calls on TQQQ (paper-only) =====",
+  "_what_this_is": "Buy an 85-90-delta call at ~21 DTE (a stock substitute, NOT a LEAP), sell the ATM call nearest spot at ~7 DTE regardless of which side of spot it lands on. Since the 2026-08-23 redesign this is a single book (`control`) run across two symbols: TQQQ (American, physical-settlement ETF) and, added the same day, XSP (Mini-SPX, European, cash-settled broad-based index option). Same rules, two structurally different underlyings measured as separate populations — see the module CLAUDE.md's 2026-08-23 note. Mechanical entry, hold to the short's own expiration, then close both legs together. `tv_close_threshold`/`tv_managed_exit` remain as an advisor-tunable early-exit experiment, run only through the synthetic `advised:control` book. TQQQ's early assignment is REFUSED-around and MEASURED, never modelled — see the dividends block and the assignment_exposure_tv knob; XSP carries neither risk (see _settlement_style_note). Copy to config.json (git-ignored) or ~/.cherrypick/config/pmcc.json.",
 
-  "_symbols_note": "Leveraged index ETFs with $1 strikes and weekly expirations: TNA (Russell 2000 3x), TQQQ (Nasdaq-100 3x), UPRO (S&P 500 3x). One position per (symbol, book) at a time — max_positions bounds each book to the symbol count. All American physical delivery; a symbol not declared in settlement_style is refused at entry (unknown_settlement).",
-  "symbols": ["TNA", "TQQQ", "UPRO"],
+  "_symbols_note": "TQQQ (Nasdaq-100 3x, American physical delivery) and XSP (Mini-SPX, European cash settlement), one book (`control`) since the 2026-08-23 redesign — both $1-or-finer strikes, weekly expirations. One position per (symbol, book) at a time — max_positions bounds the book to how many concurrent cycles it may hold, summed across symbols. A symbol not declared in settlement_style is refused at entry (unknown_settlement); TQQQ and XSP results are NOT interchangeable — different settlement mechanics and risk profile, directly comparable only as separate populations under the same rule set.",
+  "symbols": ["TQQQ", "XSP"],
 
-  "_occ_roots_note": "The OCC root the provider admits per underlying. Leveraged ETFs split often, and a split leaves ADJUSTED roots (TNA1) sharing expiration dates with the standard root; only the configured root is priced, and an expiration listing only adjusted roots refuses `not_root_listed`. After a split, verify the standard root re-lists before resuming — and treat a split mid-position as a manual `--settle` plus a measurement break (unmodelled).",
-  "occ_roots": { "TNA": "TNA", "TQQQ": "TQQQ", "UPRO": "UPRO" },
+  "_occ_roots_note": "The OCC root the provider admits per underlying. Leveraged ETFs split often, and a split leaves ADJUSTED roots (TQQQ1) sharing expiration dates with the standard root; only the configured root is priced, and an expiration listing only adjusted roots refuses `not_root_listed`. After a split, verify the standard root re-lists before resuming — and treat a split mid-position as a manual `--settle` plus a measurement break (unmodelled). XSP does not split, so its root is simply itself.",
+  "occ_roots": { "TQQQ": "TQQQ", "XSP": "XSP" },
 
-  "_settlement_style_note": "How each underlying's expiring legs settle. All three are `physical` — American delivery: an ITM short call hands over 100 short shares per contract at the settlement print, covered the NEXT session together with the long's sale (the combined disposal), so a Friday assignment carries short shares over the weekend. Delivered shares are booked at the SETTLEMENT SPOT, not the strike — the calendars decomposition, which keeps physical settlement exactly cash-plus-a-share-leg. A symbol declared as neither style is refused at entry.",
-  "settlement_style": { "TNA": "physical", "TQQQ": "physical", "UPRO": "physical" },
+  "_settlement_style_note": "How each symbol's expiring legs settle. TQQQ is `physical` — American delivery: an ITM short call hands over 100 short shares per contract at the settlement print, covered the NEXT session together with the long's sale (the combined disposal), so a Friday assignment carries short shares over the weekend. Delivered shares are booked at the SETTLEMENT SPOT, not the strike — the calendars decomposition, which keeps physical settlement exactly cash-plus-a-share-leg. XSP is `cash` — European exercise style, so it can ONLY be exercised at its own expiration: there is no early-assignment risk to refuse around (the dividends block below has no XSP entry and none is needed — `_entry_guards` in paper_loop.py only runs the ex-dividend check for `physical` symbols) and no delivered-share path ever fires for it (`assignment_from` is only called from the `physical` branch of `book.settle_expiring_legs`). `management.assignment_exposed` is likewise exempt for `cash` positions — see its docstring. A symbol declared as neither style is refused at entry.",
+  "settlement_style": { "TQQQ": "physical", "XSP": "cash" },
 
-  "_dividends_note": "Entries whose short leg spans a declared ex-dividend date are REFUSED (ex_dividend_span): a short ITM call is really assigned at the close BEFORE the ex-date, and this module deliberately does not model early assignment. Dates are DECLARED from each issuer's own distribution schedule (Direxion for TNA, ProShares for TQQQ/UPRO — all three distribute quarterly, ex-dates in late Mar/Jun/Sep/Dec) and never computed or fetched. REFRESH THIS BLOCK QUARTERLY: a span past `declared_through` refuses entry (dividend_calendar_lapsed) rather than assuming itself dividend-free, so a lapsed table stops entries loudly, by design. The example ships declared through August only — August sits between the June and September distributions — so the first refresh is due before mid-September entries; fill in the September ex-dates from the issuer pages when you do.",
+  "_dividends_note": "PHYSICAL-settlement symbols only. Entries whose short leg spans a declared ex-dividend date are REFUSED (ex_dividend_span): a short ITM call is really assigned at the close BEFORE the ex-date, and this module deliberately does not model early assignment. This check is skipped outright for `cash`-settled symbols (XSP) — a European option cannot be exercised early, so there is no ex-date question to answer, and XSP therefore needs NO entry in this block at all (dividend_coverage_ok/ex_date_in_span are simply never called for it; see _entry_guards in paper_loop.py). For physical symbols, dates are DECLARED from the issuer's own distribution schedule (quarterly, ex-dates in late Mar/Jun/Sep/Dec for TQQQ) and never computed or fetched. REFRESH EACH PHYSICAL SYMBOL'S BLOCK QUARTERLY: a span past `declared_through` refuses entry (dividend_calendar_lapsed) rather than assuming itself dividend-free, so a lapsed table stops entries loudly, by design. The example ships TQQQ declared through August only — August sits between the June and September distributions — so the first refresh is due before mid-September entries; fill in the September ex-date from the issuer page when you do.",
   "dividends": {
-    "TNA":  { "declared_through": "2026-08-31", "ex_dates": [] },
-    "TQQQ": { "declared_through": "2026-08-31", "ex_dates": [] },
-    "UPRO": { "declared_through": "2026-08-31", "ex_dates": [] }
+    "TQQQ": { "declared_through": "2026-08-31", "ex_dates": [] }
   },
 
   "_source_note": "stream_cache_db overrides the shared stream cache path; null means the suite default (~/.cherrypick/data/marketdata/stream_cache.db). This module is a pure READ-ONLY consumer of that cache — its two expirations are served by the streamer's `expirations` request field, and its deep strikes by the `window_hints` field, both declared automatically every tick.",
   "source": { "stream_cache_db": null },
 
   "defaults_header": "===== timing, data quality, and structure =====",
-  "_dte_note": "The short lands on the soonest Friday with DTE in [short_dte_min, short_dte_max] (~9 days); the long on the Friday in [long_dte_min, long_dte_max] nearest long_dte_target (~21 days). Computed from the calendar, asserted against the cache — never nearest-matched from the chain.",
-  "_selection_note": "long_delta_min + max_long_extrinsic define 'deep': the long is the HIGHEST strike below spot with extrinsic ≤ max_long_extrinsic $/share and (where greeks exist) delta ≥ long_delta_min; with no greeks on file the extrinsic bound alone selects and the row records long_selected_by='extrinsic' so degraded entries stay excludable. target_weekly_yield_min is the short-strike search's floor: the DEEPEST ITM strike whose net time value yields at least this per week on the net debit (max protection subject to yield) — a richer market is simply taken, and the achieved yield is recorded on every entry so any ceiling question is answerable read-side. yield_unreachable refusals record the best yield the chain actually offered.",
-  "_management_note": "tv_close_threshold: when the short's time value decays to this ($/share) with spot still above the strike, BOTH legs close together (the strategy's one exit; never roll — except the roll book). assignment_exposure_tv: marks with short extrinsic under this are flagged assignment-exposed — pure telemetry bounding what unmodelled early assignment could have touched. disposition_time is when delivered shares are covered and orphan longs sold the session after a settlement. exec_window_start gates ALL management action until the open stabilizes; max_leg_spread_pct is the is-this-mark-actionable bar (deep-ITM spreads on leveraged ETFs are the module's known risk #2 — the attempts table measures how often this refuses).",
-  "_window_note": "deep_window_pct bounds the entry snapshot's quote fetch: strikes in [spot*(1-deep_window_pct), spot*1.02]. The 99-delta long lives 30-45% below spot, so this, via stream_window's window_hints, is what makes the module's quotes exist at all.",
+  "_dte_note": "The short lands on the soonest Friday with DTE in [short_dte_min, short_dte_max] (~7 days); the long on the Friday in [long_dte_min, long_dte_max] nearest long_dte_target (~21 days). The short window is deliberately at least as wide as the 7-day weekly spacing (5-11) so every weekday finds a qualifying Friday — narrower windows leave gaps on some weekdays. Computed from the calendar, asserted against the cache — never nearest-matched from the chain.",
+  "_selection_note": "2026-08-23 redesign. LONG: long_delta_min/long_delta_max define a DELTA BAND (default 0.85-0.90, not a floor) — the candidate whose delta falls in the band, nearest the band's midpoint, wins; a tie prefers the higher strike. With no greeks on file the candidate falls back to the pre-redesign heuristic (highest strike whose extrinsic is at most max_long_extrinsic per share) and the row records long_selected_by='extrinsic' so degraded entries stay excludable; a KNOWN delta outside the band is simply excluded, never laundered through the fallback. allow_extrinsic_fallback (default true) gates that degrade — set false to require a real delta on every candidate. SHORT: no yield floor and no ITM-only restriction any more — the short is the strike NEAREST spot, whichever side it lands on (ties prefer the ITM side). This can leave the short OTM; the worksheet math floors short_intrinsic at 0 in that case.",
+  "_management_note": "The default control exit HOLDS the position to the short's own expiration and then closes both legs together (`short_expiration`) — no more early tv-exhaustion trigger, no more roll book, no more breach special case (the short can legitimately sit OTM by construction). tv_close_threshold and the new tv_managed_exit boolean remain as a live, advisor-tunable escape hatch back to the pre-redesign early-exit behavior: set only through an advised:control row's frozen advice_params overlay, never through this file, so the suite can run hold-to-expiry vs. early-tv-exit as a paper A/B. assignment_exposure_tv: marks with short extrinsic under this are flagged assignment-exposed — pure telemetry bounding what unmodelled early assignment could have touched. disposition_time is when delivered shares are covered and orphan longs sold the session after a settlement. exec_window_start gates ALL management action until the open stabilizes; max_leg_spread_pct is the is-this-mark-actionable bar (deep-ITM spreads are the module's known risk #2 — the attempts table measures how often this refuses).",
+  "_window_note": "deep_window_pct bounds the entry snapshot's quote fetch: strikes in [spot*(1-deep_window_pct), spot*1.02]. The 85-90-delta long (2026-08-23 redesign) sits much closer to spot than the old ~99-delta design, so this dropped from 0.45 to 0.20 — via stream_window's window_hints, this is what makes the module's long-leg quotes exist at all.",
   "defaults": {
     "quantity": 1,
     "max_positions": 3,
-    "short_dte_min": 6,
-    "short_dte_max": 12,
-    "short_dte_target": 9,
+    "short_dte_min": 5,
+    "short_dte_max": 11,
+    "short_dte_target": 7,
     "long_dte_min": 17,
     "long_dte_max": 25,
     "long_dte_target": 21,
-    "long_delta_min": 0.97,
+    "long_delta_min": 0.85,
+    "long_delta_max": 0.90,
     "max_long_extrinsic": 0.15,
-    "target_weekly_yield_min": 0.012,
     "tv_close_threshold": 0.10,
+    "tv_managed_exit": false,
     "assignment_exposure_tv": 0.05,
     "entry_window_start": "10:00",
     "entry_window_end": "15:30",
@@ -48,23 +47,14 @@
     "settlement_max_age_seconds": 300,
     "max_quote_age_seconds": 300,
     "max_leg_spread_pct": 0.25,
-    "deep_window_pct": 0.45
+    "deep_window_pct": 0.20,
+    "allow_extrinsic_fallback": true
   },
 
-  "books_header": "===== the books — one variable each =====",
-  "_books_note": "`control` is the strategy as taught: mechanical entry whenever its (symbol, book) slot is free, hold the short while ITM, close both legs at tv_close_threshold, hold like a covered call on a breach, never roll. `keltner` differs ONLY in entry timing: spot within keltner_mid_band_atr x ATR of the channel midline (20-EMA of daily closes) AND above yesterday's close AND bounced ≥ keltner_bounce_atr x ATR off today's low. It refuses everything for its first ~keltner_min_history trading days while daily bars accumulate — the cold start is design, not failure. `roll` differs ONLY in breach handling: it rolls the short down/out (once per position per session, same yield search at the current spot) instead of holding, and closes (roll_exhausted) once the long is under min_long_dte_for_roll days. control/roll share fills by construction (exact pairing); keltner deliberately does not — its variable IS the entry tick.",
+  "books_header": "===== the book =====",
+  "_books_note": "Single book since the 2026-08-23 redesign (the old keltner/roll books and the TNA/UPRO symbols are retired): `control` is mechanical entry whenever the (symbol, book) slot is free, hold to the short's own expiration, close both legs together, never roll. The `advised:control` synthetic twin (see the advice block below) is the only other row that can appear, and only when the advisor has admitted params for the session.",
   "books": {
-    "control": { "enabled": true },
-    "keltner": {
-      "enabled": true,
-      "keltner_ema_period": 20,
-      "keltner_atr_period": 20,
-      "keltner_atr_mult": 1.5,
-      "keltner_min_history": 21,
-      "keltner_mid_band_atr": 0.5,
-      "keltner_bounce_atr": 0.25
-    },
-    "roll": { "enabled": true, "min_long_dte_for_roll": 6 }
+    "control": { "enabled": true }
   },
 
   "_stream_window_note": "How wide an ATM window this module asks the producer for (window_hints). base_width mirrors the streamer's own default; the structural need is computed from the cached chain (strikes down to spot*(1-deep_window_pct) plus margin) and flies-style escalation on no_deep_itm_long / missing_leg_quotes refusals rides on top, decaying when quiet. The union across modules takes the max per symbol, so this can never narrow anyone else.",
@@ -77,17 +67,17 @@
     "decay_after_minutes": 60
   },
 
-  "_tastytrade_costs_note": "Overrides for the shared cost model (cherrypick.core.fees.DEFAULT_COSTS): slippage_frac_of_spread, slippage_cap_frac_of_mid, commissions. Empty means the suite defaults. The per-symbol pieces are automatic: ETFs carry no broad-based index exchange fee, each ITM expiry costs the $5 settlement/assignment event, and a physical assignment adds the SEC/FINRA pass-throughs on the share side.",
+  "_tastytrade_costs_note": "Overrides for the shared cost model (cherrypick.core.fees.DEFAULT_COSTS): slippage_frac_of_spread, slippage_cap_frac_of_mid, commissions. Empty means the suite defaults. The per-symbol pieces are automatic and this is the one place TQQQ and XSP genuinely differ in the fee stack: TQQQ is an ETF and is off the broad-based index exchange-fee schedule entirely, while XSP IS a broad-based index option and is looked up on cherrypick.core.fees.INDEX_EXCHANGE_FEE_PER_CONTRACT by symbol (currently $0.00/contract under 10 contracts/leg — the same number as the ETF default today, but wired through the index schedule rather than an ETF exemption, so a future rate change there reaches XSP automatically). Every ITM expiry costs the $5 settlement/assignment event regardless of symbol; only TQQQ's physical assignments add the SEC/FINRA pass-throughs on the share side (XSP never reaches that path).",
   "tastytrade_costs": {},
 
   "advice_header": "===== the advised book (paper only, off by default) =====",
-  "_advice_note": "When enabled AND the suite's advisor covers this module (advisor.modules.pmcc in the orchestrator config — both switches must agree), the session's admitted advice opens an `advised:<base_book>` book beside the base, with the admitted params FROZEN on each row at entry and restated through management.effective_params at every later tick. Bounds cover the exit threshold and the entry yield floor; the roll-vs-hold choice is NOT advisable — it is the book contrast, not a parameter.",
+  "_advice_note": "When enabled AND the suite's advisor covers this module (advisor.modules.pmcc in the orchestrator config — both switches must agree), the session's admitted advice opens an `advised:control` book beside control, with the admitted params FROZEN on each row at entry and restated through management.effective_params at every later tick. base_book must be 'control' — it is the only book left. The one thing worth advising right now is the hold-to-expiry vs. early-tv-exit experiment: tv_managed_exit flips the exit rule, tv_close_threshold tunes the early-exit trigger when it does.",
   "advice": {
     "enabled": false,
     "base_book": "control",
     "bounds": {
-      "tv_close_threshold": { "min": 0.05, "max": 0.25 },
-      "target_weekly_yield_min": { "min": 0.008, "max": 0.02 }
+      "tv_managed_exit": { "min": 0, "max": 1 },
+      "tv_close_threshold": { "min": 0.05, "max": 0.25 }
     }
   },
 

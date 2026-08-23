@@ -201,7 +201,72 @@ def _pmcc_activity(conn, day: str, window_min: int) -> dict[str, Any]:
     }
 
 
-_READERS = {"meic_ic": _meic_activity, "fly_book": _flies_activity, "pmcc_99": _pmcc_activity}
+# --------------------------------------------------------------------------- curve_vx (curve_snapshots)
+def _curve_activity(conn, day: str, window_min: int) -> dict[str, Any]:
+    """curve ladders a daily regime read and evaluates entry every session (like pmcc, not
+    calendars' once-a-week window), so it gets a real reader: its feed ledger `curve_snapshots`
+    is the fly_snapshots/pmcc_snapshots shape, and entries come from
+    `curve_positions.entry_session` on the day's rows."""
+    rows = conn.execute(
+        "SELECT ts, status FROM curve_snapshots WHERE trade_date = ? ORDER BY id", (day,)
+    ).fetchall()
+    if not rows:
+        return _empty()
+    last_age = _age_min(rows[-1]["ts"])
+    recent = [r for r in rows if _in_window(r["ts"], window_min)]
+    evaluated = sum(1 for r in recent if r["status"] == "ok")
+    refused = [r["status"] for r in recent if r["status"] != "ok"]
+    top = max(set(refused), key=refused.count) if refused else None
+    ent = conn.execute(
+        "SELECT entry_time FROM curve_positions WHERE entry_session = ?", (day,)
+    ).fetchall()
+    entries = sum(1 for e in ent if _in_window(e["entry_time"], window_min))
+    return {
+        "iterations": len(recent),
+        "evaluated": evaluated,
+        "errors": len(refused),
+        "entries": entries,
+        "last_age_min": last_age,
+        "top_reason": top,
+    }
+
+
+# --------------------------------------------------------------------------- bwb_132 (bwb_snapshots)
+def _bwb_activity(conn, day: str, window_min: int) -> dict[str, Any]:
+    """bwb ladders daily like pmcc/curve, so it gets a real reader: its feed ledger
+    `bwb_snapshots` is the same shape, and entries come from `bwb_positions.entry_session`
+    on the day's rows."""
+    rows = conn.execute(
+        "SELECT ts, status FROM bwb_snapshots WHERE trade_date = ? ORDER BY id", (day,)
+    ).fetchall()
+    if not rows:
+        return _empty()
+    last_age = _age_min(rows[-1]["ts"])
+    recent = [r for r in rows if _in_window(r["ts"], window_min)]
+    evaluated = sum(1 for r in recent if r["status"] == "ok")
+    refused = [r["status"] for r in recent if r["status"] != "ok"]
+    top = max(set(refused), key=refused.count) if refused else None
+    ent = conn.execute(
+        "SELECT entry_time FROM bwb_positions WHERE entry_session = ?", (day,)
+    ).fetchall()
+    entries = sum(1 for e in ent if _in_window(e["entry_time"], window_min))
+    return {
+        "iterations": len(recent),
+        "evaluated": evaluated,
+        "errors": len(refused),
+        "entries": entries,
+        "last_age_min": last_age,
+        "top_reason": top,
+    }
+
+
+_READERS = {
+    "meic_ic": _meic_activity,
+    "fly_book": _flies_activity,
+    "pmcc_99": _pmcc_activity,
+    "curve_vx": _curve_activity,
+    "bwb_132": _bwb_activity,
+}
 
 # Schemas with NO eval-activity reader BY DESIGN, stated executably rather than only in
 # the module docstring: earnings is an event-driven daily scan whose "did it run" is the

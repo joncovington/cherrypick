@@ -1,7 +1,7 @@
 """Command-line surface for cherrypick-pmcc.
 
 Subcommands (all read-only over the module's own ledger):
-    status     open positions, the current expiration plan, and keltner readiness
+    status     open positions and the current expiration plan
     headline   per-book, per-symbol results through the analytics layer
     worksheet  the live per-position worksheet (the user's spreadsheet, from the ledger)
     exposure   the early-assignment-exposure telemetry
@@ -30,18 +30,15 @@ def load_config(path: str | None = None) -> dict:
 
 
 def cmd_status(args) -> int:
-    from cherrypick.pmcc import analytics, clock, db
+    from cherrypick.pmcc import clock, db
 
     config = load_config(args.config)
     conn = db.connect(args.db)
-    symbols = [s.strip().upper() for s in (config.get("symbols") or [])]
-    today = clock.today_iso()
     print(
         json.dumps(
             {
                 "ok": True,
                 "expiration_plan": clock.expiration_plan(clock.now_et().date(), config.get("defaults") or {}),
-                "keltner_readiness": analytics.keltner_readiness(conn, symbols, today),
                 "open_positions": db.open_positions(conn),
             },
             indent=2,
@@ -96,23 +93,15 @@ def _nearest_delta_row(rows: list[dict], target: float) -> dict | None:
     return min(greeked, key=lambda r: (abs(r["delta"] - target), r["strike"]))
 
 
-def _yield_pick(
-    rows: list[dict], spot: float, long_mid: float, long_extrinsic: float, dte: int, floor: float
-):
-    """What the CURRENT yield-floor rule would pick off this ladder: deepest strike upward, first
-    to clear the floor. Shown beside the delta marks so the confound the fixed-delta control removes
-    — the rule's strike walking with the vol regime — is visible on one screen."""
-    for r in rows:
-        mid, tv = r.get("mid"), r.get("extrinsic")
-        if mid is None or tv is None or tv <= 0:
-            continue
-        capital = long_mid - mid
-        if capital <= 0:
-            continue
-        weekly = ((tv - long_extrinsic) / capital) * (7.0 / max(dte, 1))
-        if weekly >= floor:
-            return {**r, "weekly_yield": round(weekly, 6)}
-    return None
+def _atm_pick(rows: list[dict], spot: float):
+    """What the CURRENT ATM short rule (2026-08-23 redesign) would pick off this ladder: the strike
+    nearest spot, whichever side it lands on. Shown beside the delta marks so the confound the
+    fixed-delta control removes — the rule's strike walking with the vol regime — is visible on one
+    screen."""
+    usable = [r for r in rows if r.get("mid") is not None]
+    if not usable:
+        return None
+    return min(usable, key=lambda r: abs(r["strike"] - spot))
 
 
 def _summarize(snap: dict, defaults: dict) -> dict:
@@ -146,20 +135,21 @@ def _summarize(snap: dict, defaults: dict) -> dict:
             }
         )
 
-    # The long the entry would have bought, so the yield comparison uses the real net debit.
-    max_ext = defaults.get("max_long_extrinsic", 0.15)
-    longs = [r for r in rows if r["extrinsic"] is not None and 0 <= r["extrinsic"] <= max_ext and r["usable"]]
-    long_row = max(longs, key=lambda r: r["strike"]) if longs else None
-    yield_pick = None
-    if long_row is not None:
-        yield_pick = _yield_pick(
-            [r for r in rows if r["strike"] > long_row["strike"]],
-            spot,
-            long_row["mid"],
-            long_row["extrinsic"],
-            snap.get("dte") or defaults.get("short_dte_target", 9),
-            defaults.get("target_weekly_yield_min", 0.012),
-        )
+    # The long the entry would have bought, judged by the delta band now (85-90), falling back to
+    # the extrinsic bound only when no candidate has a delta on file.
+    delta_min = defaults.get("long_delta_min", 0.85)
+    delta_max = defaults.get("long_delta_max", 0.90)
+    banded = [r for r in rows if r.get("delta") is not None and delta_min <= r["delta"] <= delta_max]
+    if banded:
+        mid_target = (delta_min + delta_max) / 2.0
+        long_row = min(banded, key=lambda r: abs(r["delta"] - mid_target))
+    else:
+        max_ext = defaults.get("max_long_extrinsic", 0.15)
+        longs = [
+            r for r in rows if r["extrinsic"] is not None and 0 <= r["extrinsic"] <= max_ext and r["usable"]
+        ]
+        long_row = max(longs, key=lambda r: r["strike"]) if longs else None
+    atm_pick = _atm_pick(rows, spot)
     return {
         "delta_map": delta_map,
         "liquidity_by_delta_bucket": {
@@ -171,14 +161,13 @@ def _summarize(snap: dict, defaults: dict) -> dict:
             for k, v in sorted(buckets.items(), reverse=True)
         },
         "long_leg_would_be": long_row and {k: long_row[k] for k in ("strike", "delta", "mid", "extrinsic")},
-        "yield_rule_would_pick": yield_pick
+        "atm_short_would_pick": atm_pick
         and {
-            k: yield_pick[k]
+            k: atm_pick[k]
             for k in (
                 "strike",
                 "delta",
                 "moneyness_pct",
-                "weekly_yield",
                 "spread_pct_of_mid",
                 "open_interest",
             )
@@ -224,7 +213,7 @@ def cmd_ladder(args) -> int:
                 symbol,
                 w["expiration"],
                 root=root,
-                deep_window_pct=defaults.get("deep_window_pct", 0.45),
+                deep_window_pct=defaults.get("deep_window_pct", provider.DEFAULT_DEEP_WINDOW_PCT),
                 **provider.snapshot_kwargs(config),
             )
             if snap.get("ok"):
@@ -245,9 +234,7 @@ def main(argv=None) -> int:
     ap.add_argument("--db")
     sub = ap.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("status", help="open positions, expiration plan, keltner readiness").set_defaults(
-        func=cmd_status
-    )
+    sub.add_parser("status", help="open positions and the expiration plan").set_defaults(func=cmd_status)
     sub.add_parser("headline", help="per-book results through the analytics layer").set_defaults(
         func=cmd_headline
     )

@@ -19,6 +19,12 @@ import type {
   PmccCycleRow,
   PmccMeta,
   PmccAssignment,
+  CurvePayload,
+  CurveCycleRow,
+  CurveMeta,
+  BwbPayload,
+  BwbCycleRow,
+  BwbMeta,
   CalendarsPayload,
   CalendarsPoliciesPayload,
   CalendarsPosition,
@@ -280,6 +286,84 @@ export function usePmccMeta() {
   return useQuery<PmccMeta>({
     queryKey: ["pmcc-meta"],
     queryFn: () => getJson<PmccMeta>("/api/pmcc/meta"),
+    staleTime: 300_000,
+  });
+}
+
+/**
+ * curve (VXX term-structure roll-yield harvest). No mode argument: paper-only by construction, the
+ * same reasoning as pmcc's hook above.
+ */
+export function useCurve() {
+  return useQuery<CurvePayload>({
+    queryKey: ["curve"],
+    queryFn: () => getJson<CurvePayload>("/api/curve"),
+    refetchInterval: 15_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export interface CurveHistoryFilter {
+  book: string | null;
+  symbol: string | null;
+}
+
+export function useCurveHistory(filter: CurveHistoryFilter, page: PageState) {
+  const params = new URLSearchParams();
+  if (filter.book !== null) params.set("book", filter.book);
+  if (filter.symbol !== null) params.set("symbol", filter.symbol);
+  pageParams(params, "", page);
+  return useQuery<Paged<CurveCycleRow>>({
+    queryKey: ["curve-history", filter, page],
+    queryFn: () => getJson<Paged<CurveCycleRow>>(`/api/curve/history?${params.toString()}`),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useCurveMeta() {
+  return useQuery<CurveMeta>({
+    queryKey: ["curve-meta"],
+    queryFn: () => getJson<CurveMeta>("/api/curve/meta"),
+    staleTime: 300_000,
+  });
+}
+
+/**
+ * bwb (SPX daily-laddered put broken-wing butterfly / 1-3-2 add-on trigger experiment). No mode
+ * argument: paper-only by construction, the same reasoning as pmcc/curve above.
+ */
+export function useBwb() {
+  return useQuery<BwbPayload>({
+    queryKey: ["bwb"],
+    queryFn: () => getJson<BwbPayload>("/api/bwb"),
+    refetchInterval: 15_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export interface BwbHistoryFilter {
+  book: string | null;
+  symbol: string | null;
+}
+
+export function useBwbHistory(filter: BwbHistoryFilter, page: PageState) {
+  const params = new URLSearchParams();
+  if (filter.book !== null) params.set("book", filter.book);
+  if (filter.symbol !== null) params.set("symbol", filter.symbol);
+  pageParams(params, "", page);
+  return useQuery<Paged<BwbCycleRow>>({
+    queryKey: ["bwb-history", filter, page],
+    queryFn: () => getJson<Paged<BwbCycleRow>>(`/api/bwb/history?${params.toString()}`),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useBwbMeta() {
+  return useQuery<BwbMeta>({
+    queryKey: ["bwb-meta"],
+    queryFn: () => getJson<BwbMeta>("/api/bwb/meta"),
     staleTime: 300_000,
   });
 }

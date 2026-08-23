@@ -20,17 +20,22 @@ export function IntegrityStrip({ data, updatedAt }: { data: PmccPayload | undefi
   const exposedShare =
     exposure !== undefined && exposure.markedTicks > 0 ? (exposure.exposedTicks / exposure.markedTicks) * 100 : null;
   const dividendsDue = integrity?.dividends.filter((d) => d.refreshDue) ?? [];
-  const coldStart = integrity?.keltner.filter((k) => k.bars < k.required) ?? [];
   const coverage = integrity?.markCoverage;
   const drift = integrity?.schemaDrift ?? [];
   const breaks = integrity?.measurementBreaks ?? [];
+  const settlementStyle = data?.params.settlementStyle ?? {};
+  const symbols = data?.params.symbols ?? [];
+  const physicalSymbols = symbols.filter((s) => settlementStyle[s] === "physical");
+  const cashSymbols = symbols.filter((s) => settlementStyle[s] === "cash");
 
   return (
     <Card title="measurement integrity" collapseKey="pmcc-integrity" updatedAt={updatedAt} className="view-fade">
       <div className="pmcc-integrity">
         <div className="integrity-integrity-banner">
-          <strong>Paper net is an upper bound.</strong> This module sells ITM calls by design, and a short call
-          with near-zero extrinsic can be assigned any day. Early assignment is <em>measured, never modelled</em>:{" "}
+          <strong>Paper net is an upper bound{physicalSymbols.length > 0 ? "" : " where a symbol is physical-settlement"}.</strong>{" "}
+          This module sells ITM calls by design, and on a physical-settlement symbol
+          {physicalSymbols.length > 0 && <> ({physicalSymbols.join(", ")})</>} a short call with near-zero extrinsic
+          can be assigned any day. Early assignment is <em>measured, never modelled</em>, for those symbols:{" "}
           {exposure === undefined || exposure.markedTicks === 0 ? (
             <span className="muted">no usable short marks recorded yet, so there is nothing to bound.</span>
           ) : exposure.positionsWithExposure === 0 ? (
@@ -46,6 +51,14 @@ export function IntegrityStrip({ data, updatedAt }: { data: PmccPayload | undefi
               carried exposed marks — {exposure.exposedTicks.toLocaleString()} of{" "}
               {exposure.markedTicks.toLocaleString()} usable short marks ({fmtPct(exposedShare, 1)}) sat under the
               flag. That share bounds what the unmodelled mechanism could have touched.
+            </>
+          )}
+          {cashSymbols.length > 0 && (
+            <>
+              {" "}
+              <span className="mono">{cashSymbols.join(", ")}</span> {cashSymbols.length === 1 ? "is" : "are"}{" "}
+              European, cash-settled: no early-exercise risk exists, so the exposure telemetry above is exempt for
+              {cashSymbols.length === 1 ? " it" : " them"} and its net carries no such upper-bound caveat.
             </>
           )}
         </div>
@@ -86,49 +99,11 @@ export function IntegrityStrip({ data, updatedAt }: { data: PmccPayload | undefi
             )}
             {dividendsDue.length > 0 && (
               <p className="integrity-note">
-                Refresh from the issuer pages (Direxion for TNA, ProShares for TQQQ/UPRO) before the next entry
-                spans it.
+                Refresh from the issuer's distribution schedule ({dividendsDue.map((d) => d.symbol).join(", ")})
+                before the next entry spans it. Cash-settled symbols carry no ex-dividend check and never appear
+                here — the check only runs for physical-settlement symbols.
               </p>
             )}
-          </section>
-
-          <section>
-            <h3>keltner readiness{coldStart.length > 0 && " — cold start"}</h3>
-            {integrity === undefined || integrity.keltner.length === 0 ? (
-              <p className="muted">no symbols declared</p>
-            ) : (
-              <div>
-                {integrity.keltner.map((k) => {
-                  const pct = k.required > 0 ? Math.min(100, (k.bars / k.required) * 100) : 0;
-                  const ready = k.bars >= k.required;
-                  // A finished cold start is not a progress bar. Once the channel exists the number
-                  // that matters is that it does; a meter pinned at 100% reading "65/21" invites the
-                  // reader to work out whether 65 of 21 is a problem.
-                  return ready ? (
-                    <div className="check-row" key={k.symbol}>
-                      <span className="check-label">{k.symbol}</span>
-                      <span className="chip chip-ok integrity-chip">channel ready</span>
-                      <span className="check-value muted">{k.bars} bars</span>
-                    </div>
-                  ) : (
-                    <div className="check-row" key={k.symbol} title={`gating entries until ${String(k.required - k.bars)} more completed bars`}>
-                      <span className="check-label">{k.symbol}</span>
-                      <div className="check-track">
-                        <div className="check-fill" style={{ width: `${String(pct)}%`, background: "var(--warn)" }} />
-                      </div>
-                      <span className="check-value">
-                        {k.bars}/{k.required}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            <p className="integrity-note">
-              {coldStart.length > 0
-                ? "The refusal is the honest state, not a failure — the keltner book cannot enter until its channel exists."
-                : "The channel exists for every symbol, so any keltner refusal from here is the filter's own verdict rather than missing history."}
-            </p>
           </section>
 
           <section>

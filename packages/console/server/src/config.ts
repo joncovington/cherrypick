@@ -27,6 +27,8 @@ export interface ConsoleConfig {
     earningsDir: string;
     calendarsDir: string;
     pmccDir: string;
+    curveDir: string;
+    bwbDir: string;
     gexDir: string;
     scoutDir: string;
     reviewDir: string;
@@ -50,6 +52,11 @@ export interface ConsoleConfig {
         showing an entry window or a dividend table the module isn't running would be worse than
         none. */
     calendarsConfigCandidates: string[];
+    /** curve's config, in the module's OWN resolution order (`cli.load_config`): the managed home,
+        then the repo's config.json, then the shipped example. Same reason as pmcc's/calendars' --
+        a page showing a contango_max or hook_threshold the module isn't running would be worse
+        than none. */
+    curveConfigCandidates: string[];
   };
 }
 
@@ -68,6 +75,8 @@ export function loadConfig(): ConsoleConfig {
       earningsDir: path.join(data, "earnings"),
       calendarsDir: path.join(data, "calendars"),
       pmccDir: path.join(data, "pmcc"),
+      curveDir: path.join(data, "curve"),
+      bwbDir: path.join(data, "bwb"),
       gexDir: path.join(data, "gex"),
       scoutDir: path.join(data, "scout"),
       reviewDir: path.join(data, "review"),
@@ -85,6 +94,11 @@ export function loadConfig(): ConsoleConfig {
         path.join(CHERRYPICK, "config", "calendars.json"),
         path.join(REPO_ROOT, "packages", "calendars", "config.json"),
         path.join(REPO_ROOT, "packages", "calendars", "config.example.json"),
+      ],
+      curveConfigCandidates: [
+        path.join(CHERRYPICK, "config", "curve.json"),
+        path.join(REPO_ROOT, "packages", "curve", "config.json"),
+        path.join(REPO_ROOT, "packages", "curve", "config.example.json"),
       ],
     },
   };

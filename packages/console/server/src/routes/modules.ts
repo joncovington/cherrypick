@@ -34,6 +34,8 @@ import {
   type FliesFilter,
 } from "../readers/flies.js";
 import { readPmcc, readPmccAssignments, readPmccHistory, readPmccMeta } from "../readers/pmcc.js";
+import { readCurve, readCurveHistory, readCurveMeta } from "../readers/curve.js";
+import { readBwb, readBwbHistory, readBwbMeta } from "../readers/bwb.js";
 import { readCalendars, readCalendarsWeek, readCalendarsWeeks } from "../readers/calendars.js";
 import { readCalendarsPolicies } from "../services/calendarsBridge.js";
 import { readEarnings, readSymbolWatch, readEarningsAnalytics, readEarningsDetail } from "../readers/earnings.js";
@@ -232,6 +234,31 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       return typeof v === "string" && v !== "" && v.length <= max ? v : null;
     };
     return readPmccHistory(config, { book: pick("book", 40), symbol: pick("symbol", 12) }, parsePage(req.query));
+  });
+
+  // curve (VXX term-structure roll-yield harvest). No `mode` here either -- paper-only, no live loop.
+  app.get("/api/curve", async () => readCurve(config));
+  app.get("/api/curve/meta", async () => readCurveMeta(config));
+  app.get("/api/curve/history", async (req) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const pick = (k: string, max: number): string | null => {
+      const v = q[k];
+      return typeof v === "string" && v !== "" && v.length <= max ? v : null;
+    };
+    return readCurveHistory(config, { book: pick("book", 40), symbol: pick("symbol", 12) }, parsePage(req.query));
+  });
+
+  // bwb (SPX daily-laddered put broken-wing butterfly / 1-3-2 add-on trigger experiment). No `mode`
+  // here either -- paper-only, no live loop.
+  app.get("/api/bwb", async () => readBwb(config));
+  app.get("/api/bwb/meta", async () => readBwbMeta(config));
+  app.get("/api/bwb/history", async (req) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const pick = (k: string, max: number): string | null => {
+      const v = q[k];
+      return typeof v === "string" && v !== "" && v.length <= max ? v : null;
+    };
+    return readBwbHistory(config, { book: pick("book", 40), symbol: pick("symbol", 12) }, parsePage(req.query));
   });
 
   // Weekly double calendars. No `mode` here either, and for the same structural reason as PMCC's.

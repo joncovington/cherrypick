@@ -29,7 +29,7 @@ Every closed reader yields the same record shape, keyed by `paper.trade_schema`:
                  quantity, a long calendar's defined max loss.
   - "pmcc_99"  : pmcc's `pmcc_positions`; closed = status 'closed'; net = gross_pnl - fees (fees
                  is the TOTAL modeled cost, entry+exit+rolls+settlement, that module's own
-                 convention); tag = book (control / keltner / roll / advised:control); capital =
+                 convention); tag = book (control / advised:control); capital =
                  net_debit x 100 x quantity, the structure's defined max loss.
 
 `None` never means zero anywhere in here. A row written before an instrumentation column existed
@@ -268,7 +268,7 @@ PMCC_UNTAGGED = "unassigned"
 
 def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list[dict]:
     """pmcc's `pmcc_positions`; closed = status 'closed'. The attribution tag is the BOOK
-    (control / keltner / roll / advised:control) — the module's contrast, same reasoning as flies'
+    (control / advised:control) — the module's contrast, same reasoning as flies'
     arm tag; `strategy` is the schema constant, since every position is the same two-leg structure.
     `fees` is that module's TOTAL modeled cost (entry+exit+rolls+settlement, slippage included), so
     net is one subtraction. Capital = the net debit paid ×100×qty — the defined max loss of the
@@ -308,12 +308,148 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
     ]
 
 
+CURVE_UNTAGGED = "unassigned"
+
+
+def _curve_closed(conn, start: str | None = None, end: str | None = None) -> list[dict]:
+    """curve's `curve_positions`; closed = status 'closed'. The attribution tag is the BOOK
+    (control / noflip / hook / advised:control) — the module's contrast, same reasoning as pmcc's
+    book tag; `strategy` is the schema constant, since every position is the same call-credit-
+    spread structure. `fees` is that module's TOTAL modeled cost (entry+exit+settlement, slippage
+    included), so net is one subtraction. Capital = the spread's max loss (width - credit) x100xqty
+    — the defined max loss of the structure. A leg assigned/exercised at expiry and held as shares
+    over a weekend is the one exposure not bounded by it, same caveat as pmcc's delivered shares."""
+    where, params = _session_where("closed_session", start, end)
+    rows = conn.execute(
+        f"SELECT symbol, book, gross_pnl, fees, entry_slippage, exit_slippage, "
+        f"entry_max_loss, quantity, closed_session FROM curve_positions WHERE status = 'closed'{where}",
+        params,
+    ).fetchall()
+
+    def _slip(r):
+        if r["entry_slippage"] is None and r["exit_slippage"] is None:
+            return None  # pre-instrumentation row — unknown, not zero
+        return round((r["entry_slippage"] or 0.0) + (r["exit_slippage"] or 0.0), 2)
+
+    def _capital(r):
+        if r["entry_max_loss"] is None:
+            return None
+        return round(float(r["entry_max_loss"]) * 100 * (r["quantity"] or 1), 2)
+
+    return [
+        {
+            "profile": r["book"] or CURVE_UNTAGGED,
+            "symbol": r["symbol"],
+            "strategy": "curve_vx",
+            "gross_pnl": (r["gross_pnl"] or 0.0),
+            "cost": (r["fees"] or 0.0),
+            "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
+            "slippage": _slip(r),
+            "capital": _capital(r),
+            "session": r["closed_session"] or "",
+        }
+        for r in rows
+    ]
+
+
+def _curve_open(conn) -> list[dict]:
+    """curve's `curve_positions` still on the book — a position lives ~30-45 DTE and carries
+    overnight throughout. Capital at risk is the spread's max loss (defined risk); a
+    `short_settled` position's delivered/received shares are the one leg that bound does not
+    cover, per the module's own caveat."""
+    rows = conn.execute(
+        "SELECT symbol, book, entry_max_loss, quantity, entry_session FROM curve_positions "
+        "WHERE status != 'closed'"
+    ).fetchall()
+    return [
+        {
+            "profile": r["book"] or CURVE_UNTAGGED,
+            "symbol": r["symbol"],
+            "strategy": "curve_vx",
+            "capital_at_risk": (
+                round(float(r["entry_max_loss"]) * 100 * (r["quantity"] or 1), 2)
+                if r["entry_max_loss"] is not None
+                else 0.0
+            ),
+            "session": r["entry_session"] or "",
+        }
+        for r in rows
+    ]
+
+
+BWB_UNTAGGED = "unassigned"
+
+
+def _bwb_closed(conn, start: str | None = None, end: str | None = None) -> list[dict]:
+    """bwb's `bwb_positions`; closed = status 'closed'. The attribution tag is the BOOK
+    (control / delta / bounce / flip / advised:control) — the module's contrast, same reasoning as
+    curve's book tag; `strategy` is the schema constant, since every position starts as the same
+    put-BWB structure (a fired add-on turns it into a 1-3-2, but the schema doesn't fork). `fees`
+    is that module's TOTAL modeled cost (entry + addon entry + settlement), so net is one
+    subtraction. Capital = the structure's worst-case max loss (entry_max_loss, already the
+    larger of the up/down loss) x100xqty."""
+    where, params = _session_where("closed_session", start, end)
+    rows = conn.execute(
+        f"SELECT symbol, book, gross_pnl, fees, entry_max_loss, quantity, closed_session "
+        f"FROM bwb_positions WHERE status = 'closed'{where}",
+        params,
+    ).fetchall()
+
+    def _capital(r):
+        if r["entry_max_loss"] is None:
+            return None
+        return round(float(r["entry_max_loss"]) * 100 * (r["quantity"] or 1), 2)
+
+    return [
+        {
+            "profile": r["book"] or BWB_UNTAGGED,
+            "symbol": r["symbol"],
+            "strategy": "bwb_132",
+            "gross_pnl": (r["gross_pnl"] or 0.0),
+            "cost": (r["fees"] or 0.0),
+            "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
+            # bwb does not yet split entry/exit slippage on the row (a single modeled cost total),
+            # so this stays unknown rather than a misleading zero -- same posture as flies' capital.
+            "slippage": None,
+            "capital": _capital(r),
+            "session": r["closed_session"] or "",
+        }
+        for r in rows
+    ]
+
+
+def _bwb_open(conn) -> list[dict]:
+    """bwb's `bwb_positions` still on the book — the daily ladder holds ~5-7 concurrent positions
+    per book at steady state, all carrying overnight through their ~7 DTE life. Capital at risk is
+    the structure's defined max loss."""
+    rows = conn.execute(
+        "SELECT symbol, book, entry_max_loss, quantity, entry_session FROM bwb_positions "
+        "WHERE status != 'closed'"
+    ).fetchall()
+    return [
+        {
+            "profile": r["book"] or BWB_UNTAGGED,
+            "symbol": r["symbol"],
+            "strategy": "bwb_132",
+            "capital_at_risk": (
+                round(float(r["entry_max_loss"]) * 100 * (r["quantity"] or 1), 2)
+                if r["entry_max_loss"] is not None
+                else 0.0
+            ),
+            "session": r["entry_session"] or "",
+        }
+        for r in rows
+    ]
+
+
 READERS = {
     "meic_ic": _meic_closed,
     "earnings": _earnings_closed,
     "fly_book": _flies_closed,
     "dc_week": _calendars_closed,
     "pmcc_99": _pmcc_closed,
+    "curve_vx": _curve_closed,
+    "bwb_132": _bwb_closed,
 }
 
 
@@ -412,4 +548,6 @@ OPEN_READERS = {
     "fly_book": _no_overnight,
     "dc_week": _calendars_open,
     "pmcc_99": _pmcc_open,
+    "curve_vx": _curve_open,
+    "bwb_132": _bwb_open,
 }

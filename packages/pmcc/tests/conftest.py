@@ -118,24 +118,24 @@ def cache(tmp_path):
 @pytest.fixture
 def config():
     return {
-        "symbols": ["TNA"],
-        "occ_roots": {"TNA": "TNA"},
-        "settlement_style": {"TNA": "physical"},
-        "dividends": {"TNA": {"declared_through": "2099-12-31", "ex_dates": []}},
+        "symbols": ["TQQQ"],
+        "occ_roots": {"TQQQ": "TQQQ"},
+        "settlement_style": {"TQQQ": "physical"},
+        "dividends": {"TQQQ": {"declared_through": "2099-12-31", "ex_dates": []}},
         "defaults": {
             "quantity": 1,
             "max_positions": 3,
-            "target_weekly_yield_min": 0.012,
+            "long_delta_min": 0.85,
+            "long_delta_max": 0.90,
             "tv_close_threshold": 0.10,
+            "tv_managed_exit": False,
             "assignment_exposure_tv": 0.05,
             "max_quote_age_seconds": 300,
             "max_leg_spread_pct": 0.25,
-            "deep_window_pct": 0.45,
+            "deep_window_pct": 0.20,
         },
         "books": {
             "control": {"enabled": True},
-            "keltner": {"enabled": True, "keltner_min_history": 21},
-            "roll": {"enabled": True, "min_long_dte_for_roll": 6},
         },
         "tastytrade_costs": {},
         "advice": {"enabled": False, "base_book": "control", "bounds": {}},
