@@ -2,7 +2,7 @@ import { useState } from "react";
 import { usePmcc } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { Card, DataCard, fmtPct } from "../../components/DataTable";
-import { LoopPill, TabStrip } from "../../components/ScopeBar";
+import { LoopPill, ScopeSelect, TabStrip } from "../../components/ScopeBar";
 import { ArmRail, AttemptTimeline } from "../../components/Attempts";
 import { IntegrityStrip } from "./IntegrityStrip";
 import { BookComparison, SymbolCards } from "./CurrentStateCards";
@@ -28,6 +28,9 @@ const TABS = ["today", "history", "help"] as const;
  */
 export function PmccPage() {
   const [tab, setTab] = useState<PmccTab>("today");
+  // Shared across the "today" tab's own surfaces; "history" keeps its own independent symbol
+  // filter (it scopes a paged server query, not client-side rows) and "help" has no data to scope.
+  const [symbol, setSymbol] = useState<string | null>(null);
   const { data, isLoading, isError, dataUpdatedAt } = usePmcc();
 
   const loopState =
@@ -39,6 +42,9 @@ export function PmccPage() {
         <h1>PMCC-99</h1>
         <PaperLiveBadge mode="paper" />
         <TabStrip tabs={TABS} value={tab} onChange={setTab} ariaLabel="pmcc tabs" />
+        {tab === "today" && (
+          <ScopeSelect label="symbol filter" value={symbol} options={data?.params.symbols} onChange={setSymbol} allLabel="all symbols" />
+        )}
         <LoopPill
           state={data === undefined ? undefined : loopState}
           ageSeconds={data?.today.lastIteration?.ageSeconds ?? null}
@@ -87,57 +93,73 @@ export function PmccPage() {
                   {null}
                 </DataCard>
               ) : (
-                <SymbolCards data={data} updatedAt={dataUpdatedAt} />
+                <SymbolCards data={data} updatedAt={dataUpdatedAt} symbol={symbol} />
               )}
 
               {/* The same two surfaces meic and flies carry — the arm rail and the minute-by-minute
                   timeline — now that the attempts reader is parameterized rather than hardcoded to
                   those two. The grouped card below stays: it answers "what happened today" while
                   these answer "why is this book quiet, and when did that start". */}
+              {/* The arm rail and timeline read a book-scoped attempts feed, not a per-symbol one
+                  (pmcc's one book trades every symbol) -- the page's symbol filter does not reach
+                  these two, same as it cannot split an arm by symbol on meic/flies either. */}
               <ArmRail module="pmcc" mode="paper" date={null} />
               <AttemptTimeline module="pmcc" mode="paper" date={null} />
 
               <div className="pmcc-activity">
-                <DataCard
-                  title="entry attempts today"
-                  headers={["book", "outcome", "n", "detail"]}
-                  loading={isLoading}
-                  isError={isError}
-                  rowCount={data?.today.attempts.length ?? 0}
-                  numFrom={2}
-                  empty="no entry opportunities evaluated on this session"
-                  updatedAt={dataUpdatedAt}
-                >
-                  {data?.today.attempts.map((a) => (
-                    <tr key={`${a.book}-${a.outcome}`}>
-                      <td>{a.book}</td>
-                      <td>{a.outcome}</td>
-                      <td>{a.n}</td>
-                      <td className="muted">
-                        {a.blockDetail ?? "—"}
-                        {a.bestYield !== null && (
-                          <span title="the best weekly yield the chain actually offered">
-                            {" "}
-                            · best {fmtPct(a.bestYield * 100, 2)}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </DataCard>
+                {(() => {
+                  const attempts = data?.today.attempts.filter((a) => symbol === null || a.symbol === symbol) ?? [];
+                  return (
+                    <DataCard
+                      title="entry attempts today"
+                      headers={["symbol", "book", "outcome", "n", "detail"]}
+                      loading={isLoading}
+                      isError={isError}
+                      rowCount={attempts.length}
+                      numFrom={3}
+                      empty="no entry opportunities evaluated on this session"
+                      updatedAt={dataUpdatedAt}
+                    >
+                      {attempts.map((a) => (
+                        <tr key={`${a.symbol}-${a.book}-${a.outcome}`}>
+                          <td>{a.symbol}</td>
+                          <td>{a.book}</td>
+                          <td>{a.outcome}</td>
+                          <td>{a.n}</td>
+                          <td className="muted">
+                            {a.blockDetail ?? "—"}
+                            {a.bestYield !== null && (
+                              <span title="the best weekly yield the chain actually offered">
+                                {" "}
+                                · best {fmtPct(a.bestYield * 100, 2)}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </DataCard>
+                  );
+                })()}
 
-                <DataCard
-                  title="management events today"
-                  headers={["action", "reason", "n", ""]}
-                  loading={isLoading}
-                  isError={isError}
-                  rowCount={data?.today.events.length ?? 0}
-                  numFrom={2}
-                  empty="no management verdicts recorded on this session"
-                  updatedAt={dataUpdatedAt}
-                >
-                  {data?.today.events.map((e) => (
-                    <tr key={`${e.action}-${e.reason}-${String(e.executed)}-${e.gate ?? ""}`}>
+                {(() => {
+                  // A null symbol here means the event's position row couldn't be joined (e.g. a
+                  // purged position) -- shown under every filter rather than dropped, since it is
+                  // not known NOT to belong to the selected symbol.
+                  const events = data?.today.events.filter((e) => symbol === null || e.symbol === null || e.symbol === symbol) ?? [];
+                  return (
+                    <DataCard
+                      title="management events today"
+                      headers={["symbol", "action", "reason", "n", ""]}
+                      loading={isLoading}
+                      isError={isError}
+                      rowCount={events.length}
+                      numFrom={3}
+                      empty="no management verdicts recorded on this session"
+                      updatedAt={dataUpdatedAt}
+                    >
+                      {events.map((e) => (
+                    <tr key={`${e.symbol ?? "—"}-${e.action}-${e.reason}-${String(e.executed)}-${e.gate ?? ""}`}>
+                      <td>{e.symbol ?? <span className="muted">—</span>}</td>
                       <td>{e.action}</td>
                       <td className="mono">{e.reason}</td>
                       <td>{e.n}</td>
@@ -152,11 +174,13 @@ export function PmccPage() {
                         )}
                       </td>
                     </tr>
-                  ))}
-                </DataCard>
+                      ))}
+                    </DataCard>
+                  );
+                })()}
               </div>
 
-              <BookComparison data={data} updatedAt={dataUpdatedAt} />
+              <BookComparison data={data} updatedAt={dataUpdatedAt} symbol={symbol} />
             </div>
         ))}
 

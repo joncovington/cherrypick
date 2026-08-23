@@ -397,13 +397,14 @@ export function readPmcc(config: ConsoleConfig): PmccPayload {
       ? []
       : db
           .prepare<[string], Record<string, unknown>>(
-            `SELECT book, outcome, COUNT(*) AS n,
+            `SELECT symbol, book, outcome, COUNT(*) AS n,
                     MAX(block_detail) AS block_detail, MAX(best_yield) AS best_yield
                FROM pmcc_entry_attempts WHERE trade_date = ?
-              GROUP BY book, outcome ORDER BY book, n DESC`,
+              GROUP BY symbol, book, outcome ORDER BY symbol, book, n DESC`,
           )
           .all(session)
           .map((r) => ({
+            symbol: str(r["symbol"]) ?? "",
             book: str(r["book"]) ?? "",
             outcome: str(r["outcome"]) ?? "",
             n: Number(r["n"] ?? 0),
@@ -411,15 +412,24 @@ export function readPmcc(config: ConsoleConfig): PmccPayload {
             bestYield: num(r["best_yield"]),
           }));
 
+    // pmcc_management_events carries no symbol of its own -- it is keyed on position_id, so the
+    // symbol comes from a join to pmcc_positions. A position removed from config still has rows
+    // here, which is exactly the "closed a symbol that's no longer configured" case the join must
+    // not silently drop -- hence the LEFT JOIN rather than an inner one.
     const events = session === null
       ? []
       : db
           .prepare<[string], Record<string, unknown>>(
-            `SELECT action, reason, executed, gate, COUNT(*) AS n FROM pmcc_management_events
-              WHERE session_date = ? GROUP BY action, reason, executed, gate ORDER BY n DESC`,
+            `SELECT p.symbol AS symbol, e.action AS action, e.reason AS reason, e.executed AS executed,
+                    e.gate AS gate, COUNT(*) AS n
+               FROM pmcc_management_events e
+               LEFT JOIN pmcc_positions p ON p.position_id = e.position_id
+              WHERE e.session_date = ?
+              GROUP BY p.symbol, e.action, e.reason, e.executed, e.gate ORDER BY n DESC`,
           )
           .all(session)
           .map((r) => ({
+            symbol: str(r["symbol"]),
             action: str(r["action"]) ?? "",
             reason: str(r["reason"]) ?? "",
             executed: r["executed"] === 1,

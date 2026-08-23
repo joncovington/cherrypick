@@ -107,8 +107,18 @@ function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: Pmcc
  * no open row simply says so, with no gate sub-row to explain (there is no more entry gate to name;
  * mechanical entry either finds the slot free or it doesn't).
  */
-export function SymbolCards({ data, updatedAt }: { data: PmccPayload | undefined; updatedAt?: number }) {
-  const symbols = data?.params.symbols ?? [];
+export function SymbolCards({
+  data,
+  updatedAt,
+  symbol: filterSymbol = null,
+}: {
+  data: PmccPayload | undefined;
+  updatedAt?: number;
+  /** Show only this symbol's card; null shows every symbol. */
+  symbol?: string | null;
+}) {
+  const allSymbols = data?.params.symbols ?? [];
+  const symbols = filterSymbol === null ? allSymbols : allSymbols.filter((s) => s === filterSymbol);
   if (data === undefined) return null;
   return (
     <>
@@ -187,8 +197,19 @@ function totalsByBook(books: PmccBookCell[]): BookTotals[] {
  * retired). Every `control` cycle is directly comparable to every other `control` cycle; the advised
  * twin is called out separately because its admitted params can differ position to position.
  */
-export function BookComparison({ data, updatedAt }: { data: PmccPayload | undefined; updatedAt?: number }) {
-  const books = data?.books ?? [];
+export function BookComparison({
+  data,
+  updatedAt,
+  symbol = null,
+}: {
+  data: PmccPayload | undefined;
+  updatedAt?: number;
+  /** Scope the totals to one symbol's closed cycles; null pools every symbol (TQQQ and XSP are
+   *  measured as separate populations, so a symbol filter here is a real scoping choice, not
+   *  cosmetic). */
+  symbol?: string | null;
+}) {
+  const books = (data?.books ?? []).filter((b) => symbol === null || b.symbol === symbol);
   const totals = totalsByBook(books);
   const others = totals.filter((t) => !CORE_BOOKS.includes(t.book));
   const maxAbs = Math.max(1, ...totals.map((t) => Math.abs(t.net ?? 0)));
