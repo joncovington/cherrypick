@@ -1,6 +1,6 @@
 """Position management: what should happen to an open position, and whether we may act on it.
 
-Three layers, kept apart on purpose (the earnings pattern, via calendars):
+Two layers, kept apart on purpose (the earnings pattern, via calendars):
 
 - `effective_params` is the ONE choke point that restates a position's frozen advised params over
   the config. An advised book's rules are stamped on the row at entry and read back here every
@@ -11,40 +11,45 @@ Three layers, kept apart on purpose (the earnings pattern, via calendars):
   gate is still recorded (`executed=0` with the gate), which is the only record that an exit was
   SEEN before it was allowed.
 
-Book semantics (the strategy as taught, then one contrast each):
-- `control` — hold the short while it is ITM; when its time value is exhausted
-  (`short_tv ≤ tv_close_threshold`), close BOTH legs together, never roll. If spot falls below the
-  short strike, hold like a covered call to the short's expiry (`covered_call_hold`, recorded every
-  tick so the hold is legible).
-- `keltner` — control's management exactly; only the ENTRY differs (the pullback-and-reversal gate
-  in keltner.py). Any difference between the two books is entry timing and nothing else.
-- `roll` — control's entry exactly; on a breach it ROLLS the short down/out instead of holding
-  (once per position per session, and never once the long is under `min_long_dte_for_roll` days —
-  then it closes, `roll_exhausted`). Measures roll-vs-hold.
+Book semantics, since the 2026-08-23 redesign to a single `control` book (now run across two
+symbols, TQQQ and XSP):
+- `control` — mechanical entry whenever the slot is free; the default exit HOLDS the position to
+  the short's own expiration and then closes both legs (`short_expiration`), rather than the old
+  tv-exhaustion trigger. There is no more roll book and no more breach special case — the short can
+  now be OTM or ITM by construction (the ATM leg-selection redesign), so "hold like a covered call
+  on a breach" no longer means anything distinct from "hold".
+- `tv_managed_exit` (default False) is a live, advisor-tunable escape hatch back to the PRE-redesign
+  behavior: when True, `evaluate` closes early once the short's time value decays to
+  `tv_close_threshold` — settable only through an `advised:control` row's frozen `advice_params`
+  overlay, so the suite can run hold-to-expiry vs. early-tv-exit as a paper A/B without a new book.
 - `advised:<base>` — the base book's rules with the admitted param overrides frozen at entry.
 
 Assignment-exposure telemetry lives BESIDE the verdict, not in it: `assignment_exposed` flags a
 mark whose short extrinsic sits under `assignment_exposure_tv` — the region where a real short is
 liable to be assigned early, which this module measures and deliberately does not model. It gates
-nothing.
+nothing. This is a PHYSICAL-settlement risk only: a European, cash-settled short (XSP) cannot be
+exercised before its own expiration, so `assignment_exposed` is exempt (always False) for a
+cash-settled position — pass `settlement_style` through so the flag never fires a phantom warning
+on a symbol that structurally cannot be assigned early.
 """
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import datetime
 
 from cherrypick.pmcc import clock, engine
 
 PARAM_DEFAULTS = {
     "tv_close_threshold": 0.10,
+    "tv_managed_exit": False,
     "assignment_exposure_tv": 0.05,
     "entry_window_start": "10:00",
     "entry_window_end": "15:30",
     "exec_window_start": "09:40",
     "max_leg_spread_pct": 0.25,
-    "min_long_dte_for_roll": 6,
+    "allow_extrinsic_fallback": True,
 }
 
 
@@ -52,7 +57,7 @@ PARAM_DEFAULTS = {
 class Decision:
     """A verdict about one position. `executed` is decided by the caller after `execution_gate`."""
 
-    action: str  # "hold" | "close_all" | "roll_short"
+    action: str  # "hold" | "close_all"
     reason: str
     detail: dict = field(default_factory=dict)
 
@@ -79,16 +84,18 @@ def effective_params(position: dict, config: dict) -> dict:
     return params
 
 
-def assignment_exposed(short_tv: float | None, params: dict) -> bool:
-    """Whether this mark sits in the early-assignment-exposed region. Telemetry only."""
+def assignment_exposed(short_tv: float | None, params: dict, *, settlement_style: str | None = None) -> bool:
+    """Whether this mark sits in the early-assignment-exposed region. Telemetry only.
+
+    Early assignment is a PHYSICAL-settlement risk — a European, cash-settled leg (XSP) can only
+    ever be exercised at expiration, so it never carries this exposure regardless of how thin its
+    extrinsic gets. `settlement_style` is optional (callers that cannot resolve it, e.g. legacy
+    call sites, keep the pre-XSP behavior) but every current call site passes it."""
+    if settlement_style == "cash":
+        return False
     if short_tv is None:
         return False
     return short_tv < params.get("assignment_exposure_tv", 0.05)
-
-
-def _base_book(params: dict) -> str:
-    book = params.get("book") or "control"
-    return book.split(":", 1)[1] if book.startswith("advised:") else book
 
 
 def evaluate(
@@ -98,33 +105,27 @@ def evaluate(
     now: datetime,
     short_tv: float | None,
     spot: float | None,
-    rolled_today: bool = False,
 ) -> Decision:
     """The verdict for one OPEN position this tick.
 
     `short_tv` is the short leg's per-share extrinsic at the current mark (None when the mark was
-    refused — nothing acts on a hole). `rolled_today` is the caller's read of the events table; the
-    once-per-session roll cadence lives there rather than in a param because it is a rule about the
-    ledger, not a threshold.
+    refused — nothing acts on a hole). Since the 2026-08-23 redesign the default rule is simply
+    HOLD until the short's own expiration day, then close both legs together — there is no more
+    breach special case (the short can legitimately sit OTM or ITM) and no more roll book.
+    `tv_managed_exit` is the advisor-tunable override back to the old early-tv-exhaustion exit,
+    readable only through an advised row's frozen params via `effective_params`.
     """
     if spot is None or short_tv is None:
         return Decision("hold", "unpriced_mark")
-    strike = position["short_strike"]
 
-    if spot > strike:
+    if params.get("tv_managed_exit", False):
         if short_tv <= params.get("tv_close_threshold", 0.10):
             return Decision("close_all", "tv_exhausted", {"short_tv": short_tv, "spot": spot})
         return Decision("hold", "working")
 
-    # Breach: spot at or below the short strike.
-    if _base_book(params) != "roll":
-        return Decision("hold", "covered_call_hold", {"spot": spot, "strike": strike})
-    long_dte = (date.fromisoformat(position["long_expiration"]) - now.date()).days
-    if long_dte < int(params.get("min_long_dte_for_roll", 6)):
-        return Decision("close_all", "roll_exhausted", {"long_dte": long_dte})
-    if rolled_today:
-        return Decision("hold", "roll_cadence", {"spot": spot, "strike": strike})
-    return Decision("roll_short", "short_strike_breach", {"spot": spot, "strike": strike})
+    if now.date().isoformat() >= position["short_expiration"]:
+        return Decision("close_all", "short_expiration", {"short_tv": short_tv, "spot": spot})
+    return Decision("hold", "holding_to_expiry")
 
 
 def execution_gate(mark_snapshot: dict, params: dict, *, now: datetime) -> str | None:

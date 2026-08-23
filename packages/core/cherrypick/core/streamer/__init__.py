@@ -16,7 +16,7 @@ Everything MEIC-specific is injected, so the engine itself has no MEIC dependenc
     legs). Re-read every window pass — like the legs above, growth is served with no restart. None
     (the default) is exactly the historical nearest-expiration-only behavior.
   * `history_days_for(symbol)` -> how many completed daily OHLC rows `stream_summary` should hold for
-    an underlying (a consumer indicator's lookback, e.g. pmcc's Keltner channel). A deficit is
+    an underlying (a consumer indicator's lookback). A deficit is
     backfilled once per connection from DXLink daily Candle events — filling only dates the live
     Summary listener has not written, never overwriting a row, and never today's (partial) candle.
     None/0 (the default) backfills nothing.

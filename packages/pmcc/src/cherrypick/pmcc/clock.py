@@ -7,7 +7,8 @@ The expiration plan is the strategy's skeleton, so it lives here as pure date fu
 `cherrypick.core.calendar` and nothing else:
 
 - The SHORT expiration is the soonest weekly Friday (holiday-shifted back to Thursday) whose DTE
-  falls in `[short_dte_min, short_dte_max]` (defaults 6–12, targeting ~9 days).
+  falls in `[short_dte_min, short_dte_max]` (defaults 5–9, targeting ~7 days — since the 2026-08-23
+  redesign to a pure-ATM weekly short).
 - The LONG expiration is the weekly Friday whose DTE falls in `[long_dte_min, long_dte_max]`
   (defaults 17–25), nearest `long_dte_target` (~21), and strictly after the short.
 
@@ -31,9 +32,13 @@ from cherrypick.core import calendar as _cal
 from cherrypick.core.clock import ET, hhmm_to_min, minute_of_day, now_et, now_iso, today_iso  # noqa: F401
 
 DTE_DEFAULTS = {
-    "short_dte_min": 6,
-    "short_dte_max": 12,
-    "short_dte_target": 9,
+    # Width matters: weekly Fridays are 7 days apart, and the window has to be at least that wide
+    # (measured against the two Fridays bracketing any weekday) or some weekdays land in the gap
+    # between them and refuse `no_expiration_plan` outright. [5, 11] is width 6, centered near the
+    # ~7-day target, and was verified against every weekday (Mon-Fri) before landing.
+    "short_dte_min": 5,
+    "short_dte_max": 11,
+    "short_dte_target": 7,
     "long_dte_min": 17,
     "long_dte_max": 25,
     "long_dte_target": 21,
@@ -100,18 +105,3 @@ def expiration_plan(today: date, params: dict | None = None) -> dict | None:
         "short_dte": (short - today).days,
         "long_dte": (long_exp - today).days,
     }
-
-
-def roll_expiration(today: date, long_expiration: str, params: dict | None = None) -> dict | None:
-    """Where a rolled short may land: the candidate Friday nearest `short_dte_target` from `today`
-    that is on or before the held long's expiration (the short must never outlive its cover), or
-    None when nothing qualifies. The current short's own expiration is a valid answer — a pure
-    roll-down. DTE bounds are deliberately NOT applied here: near the long's own expiry the only
-    legal landing spot may be a shorter date, and refusing it would strand the breach unmanaged."""
-    p = _dte_params(params)
-    limit = date.fromisoformat(long_expiration)
-    eligible = [exp for exp in candidate_expirations(today) if exp <= limit]
-    if not eligible:
-        return None
-    chosen = min(eligible, key=lambda e: abs((e - today).days - p["short_dte_target"]))
-    return {"expiration": chosen.isoformat(), "dte": (chosen - today).days}

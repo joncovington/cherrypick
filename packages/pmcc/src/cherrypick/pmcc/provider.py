@@ -13,8 +13,8 @@ frequent (a streamer still warming up, a deep strike outside the producer's quot
 recorded by the caller and are not errors.
 
 The quote window here is ONE-SIDED AND DEEP, unlike every sibling module's symmetric ATM band: the
-long leg lives 30–45% below spot, so the entry fetch spans
-`[spot × (1 − deep_window_pct), spot × 1.02]`. Whether those strikes actually carry quotes depends
+long leg (85-90 delta since the 2026-08-23 redesign) lives noticeably below spot, so the entry fetch
+spans `[spot × (1 − deep_window_pct), spot × 1.02]`. Whether those strikes actually carry quotes depends
 on the producer honoring this module's `window_hints` — a gap there surfaces as `no_deep_itm_long`
 refusals, which is exactly the signal `stream_window.py` escalates on.
 
@@ -51,18 +51,15 @@ from cherrypick.core.streamcache import usable_quote as _usable_quote
 from cherrypick.pmcc.clock import now_et  # noqa: F401  (re-exported for the loop's convenience)
 
 DEFAULT_MAX_QUOTE_AGE_SECONDS = 300
-DEFAULT_DEEP_WINDOW_PCT = 0.45
-
-
+# The 85-90-delta long (2026-08-23 redesign) sits far shallower than the old ~99-delta long, so the
+# deep window needed to see it is much narrower — 0.20 comfortably covers an 85-delta TQQQ strike
+# with margin, versus the old design's 0.45.
+DEFAULT_DEEP_WINDOW_PCT = 0.20
 
 
 def _fail(symbol: str, reason: str, **extra) -> dict:
     """A refusal, not an error — `extra` carries the telemetry that explains it afterwards."""
     return {"ok": False, "symbol": symbol, "reason": reason, **extra}
-
-
-
-
 
 
 def snapshot_kwargs(config: dict) -> dict:
@@ -72,8 +69,6 @@ def snapshot_kwargs(config: dict) -> dict:
     return {
         "max_quote_age_seconds": defaults.get("max_quote_age_seconds", DEFAULT_MAX_QUOTE_AGE_SECONDS),
     }
-
-
 
 
 def _quotes_for(conn, streamer_syms: list[str], now_ts: float, max_age: float) -> tuple[dict, int]:
@@ -169,54 +164,6 @@ def build_entry_snapshot(
         conn.close()
 
 
-def build_roll_snapshot(
-    db_path,
-    symbol: str,
-    target: dict,
-    *,
-    root: str,
-    when: datetime | None = None,
-    max_quote_age_seconds: float = DEFAULT_MAX_QUOTE_AGE_SECONDS,
-    deep_window_pct: float = DEFAULT_DEEP_WINDOW_PCT,
-) -> dict:
-    """The chain + quotes `engine.plan_roll` needs: the roll target expiration's calls in the deep
-    window at the CURRENT spot. `target` is `clock.roll_expiration`'s output."""
-    symbol = symbol.strip().upper()
-    db_path = Path(db_path)
-    when = when or now_et()
-    if not db_path.exists():
-        return _fail(symbol, "stream_cache_missing")
-    conn = _connect_ro(db_path)
-    try:
-        tr = conn.execute("SELECT last FROM stream_trades WHERE symbol = ?", (symbol,)).fetchone()
-        spot = float(tr["last"]) if tr and tr["last"] is not None else None
-        if not spot:
-            return _fail(symbol, "no_spot_price")
-        chain = _chain_for_expiration(conn, symbol, target["expiration"], root)
-        if not chain:
-            return _fail(symbol, "no_roll_chain")
-        lo, hi = spot * (1.0 - deep_window_pct), spot * 1.02
-        near = [e for e in chain if lo <= e["strike_price"] <= hi]
-        now_ts = time.time()
-        quotes, stale = _quotes_for(conn, [e["streamer_symbol"] for e in near], now_ts, max_quote_age_seconds)
-        if not quotes:
-            return _fail(symbol, "no_fresh_quotes", rejected=stale)
-        greeks = _greeks(conn, list(quotes), now_ts=now_ts, max_age_seconds=max_quote_age_seconds * 6)
-        return {
-            "ok": True,
-            "symbol": symbol,
-            "spot": spot,
-            "expiration": target["expiration"],
-            "dte": target["dte"],
-            "chain": chain,
-            "quotes": quotes,
-            "greeks": greeks,
-            "quote_stats": {"fresh": len(quotes), "rejected": stale},
-        }
-    finally:
-        conn.close()
-
-
 def build_mark_snapshot(
     db_path,
     legs: list[dict],
@@ -285,10 +232,6 @@ def build_mark_snapshot(
         return {**out, "ok": True}
     finally:
         conn.close()
-
-
-
-
 
 
 def read_session(db_path, symbol: str, trade_date: str) -> dict | None:

@@ -308,6 +308,17 @@ export interface ExperimentGuide {
 // Nulls are load-bearing throughout. `analytics.py` states the rule the whole module keeps: `None`
 // never means zero, because "not recorded" and "was zero" are different facts. Every nullable field
 // below is one the reader must leave null rather than defaulting.
+//
+// 2026-08-23 redesign (measurement break, see packages/pmcc/CLAUDE.md): TQQQ (American, physical
+// settlement), single-book (`control` + its synthetic `advised:control` twin), with XSP (Mini-SPX,
+// European, cash-settled) added the same day as a second symbol run as a separate population under
+// the identical rule set. The old `keltner`/`roll` books,
+// the Keltner-channel gate and the roll chain are RETIRED going forward — there is no more keltner
+// readiness/series to mirror, and `pmcc_management_events` will never again record `roll_short`.
+// `rollCount`/`PmccRoll` stay in this file only because the columns/rows are additive history: a
+// pre-redesign row can carry a nonzero `roll_count` or a recorded roll, and the history tab still
+// needs to render that era honestly. Every NEW row will report `rollCount: 0` and an empty
+// `rolls` array — read a nonzero value here as pre-2026-08-23 history, not a live behavior.
 
 /** One open position, mirroring `analytics.worksheet()` plus its latest usable short mark. */
 export interface PmccOpenPosition {
@@ -326,6 +337,8 @@ export interface PmccOpenPosition {
   entryWeeklyYieldPct: number | null;
   downsideProtectionPct: number | null;
   breakeven: number | null;
+  /** Always 0 on a row opened after the 2026-08-23 redesign — there is no more roll book. A
+   *  pre-redesign row may carry a nonzero historical value. */
   rollCount: number | null;
   /** Latest usable short-leg mark. Null means no usable mark yet — never render it as 0. */
   currentShortTv: number | null;
@@ -367,27 +380,10 @@ export interface PmccDividendRow {
   refreshDue: boolean;
 }
 
-/** Keltner cold-start progress per symbol — `analytics.keltner_readiness()`. */
-export interface PmccKeltnerReadiness {
-  symbol: string;
-  bars: number;
-  required: number;
-}
-
-/** One symbol's Keltner channel, recomputed exactly as `keltner.py` draws it. */
-export interface PmccKeltnerSeries {
-  symbol: string;
-  /** Oldest first. `mid`/`upper`/`lower` are null until enough history exists to seed the channel. */
-  points: Array<{ date: string; close: number | null; mid: number | null; upper: number | null; lower: number | null }>;
-  /** The gate's current verdict, from the day's own attempts — one failing condition, or null when it passed. */
-  gate: { reason: string | null; occurrences: number } | null;
-}
-
 /** The honesty surface: everything that bounds how far the paper net can be trusted. */
 export interface PmccIntegrity {
   exposure: { positionsWithExposure: number; exposedTicks: number; markedTicks: number };
   dividends: PmccDividendRow[];
-  keltner: PmccKeltnerReadiness[];
   markCoverage: {
     session: string | null;
     marks: number;
@@ -409,7 +405,6 @@ export interface PmccPayload {
   openCount: number;
   books: PmccBookCell[];
   integrity: PmccIntegrity;
-  keltner: PmccKeltnerSeries[];
   today: {
     attempts: Array<{ book: string; outcome: string; n: number; blockDetail: string | null; bestYield: number | null }>;
     events: Array<{ action: string; reason: string; executed: boolean; gate: string | null; n: number }>;
@@ -418,10 +413,23 @@ export interface PmccPayload {
   /** The declared knobs the cards render against — thresholds, not preferences. */
   params: {
     tvCloseThreshold: number | null;
+    /**
+     * Whether the pre-redesign early-tv-exhaustion exit is live. Config-level `defaults` reads
+     * false/off by default; the only place it can be true in practice is a frozen
+     * `advised:control` row's `advice_params` overlay, since control itself always holds to
+     * `short_expiration`. Rendered so the page can say WHICH exit rule a book is running under.
+     */
+    tvManagedExit: boolean | null;
     assignmentExposureTv: number | null;
-    targetWeeklyYieldMin: number | null;
-    keltnerMinHistory: number | null;
+    longDeltaMin: number | null;
+    longDeltaMax: number | null;
     symbols: string[];
+    /** Per-symbol settlement style ("physical" | "cash"), read straight through from the module's
+     *  own `settlement_style` config map. A symbol absent here means config doesn't declare one for
+     *  it either. Cash-settled symbols (XSP) are European-exercise: no early-assignment exposure to
+     *  measure and no ex-dividend refusal check — see `assignment_exposed`/`_entry_guards` in the
+     *  module. Physical symbols (TQQQ) carry both. */
+    settlementStyle: Record<string, string>;
   };
 }
 
@@ -435,6 +443,8 @@ export interface PmccShortLeg {
   closeValue: number | null;
 }
 
+/** Historical only since the 2026-08-23 redesign retired the roll book — a cycle opened after that
+ *  date will never have one of these. Kept so pre-redesign history renders honestly. */
 export interface PmccRoll {
   session: string | null;
   oldStrike: number | null;
@@ -730,6 +740,270 @@ export interface CalendarsWeekRow {
   grossPnl: number | null;
   fees: number | null;
   netPnl: number | null;
+}
+
+// ---- curve (VXX term-structure roll-yield harvest) ----
+//
+// Paper-only, credential-free, three books (`control`/`noflip`/`hook`) plus the advisor's synthetic
+// twin. `curve_regime` is the module's second product -- one row per session, written whether or
+// not any book trades -- so the payload carries it as its own series, not merely as context for a
+// position. `None` never means zero, the same rule every other module's analytics layer states.
+
+/** One open position, mirroring `analytics.worksheet()` plus its latest usable close-cost mark. */
+export interface CurveOpenPosition {
+  positionId: string;
+  symbol: string;
+  book: string;
+  status: string;
+  shortStrike: number | null;
+  longStrike: number | null;
+  expiration: string | null;
+  entrySpot: number | null;
+  entryCredit: number | null;
+  entryWidth: number | null;
+  entryMaxLoss: number | null;
+  entryCreditPctOfWidth: number | null;
+  entryRatio: number | null;
+  entryRegime: string | null;
+  entryHook: boolean;
+  exposureTicks: number | null;
+  /** Latest usable close-cost mark. Null means no usable mark yet -- never render it as 0. */
+  currentCloseCost: number | null;
+  currentSpot: number | null;
+}
+
+/** Per-book, per-symbol results over CLOSED positions -- `analytics.headline()`. */
+export interface CurveBookCell {
+  book: string;
+  symbol: string;
+  positions: number;
+  grossPnl: number | null;
+  fees: number | null;
+  /** `gross_pnl - fees`. Null if either side is unrecorded. */
+  netPnl: number | null;
+  winRate: number | null;
+}
+
+/** One session's regime row -- `curve_regime`, written every session, traded or not. */
+export interface CurveRegimeRow {
+  tradeDate: string;
+  ratio: number | null;
+  regime: string | null;
+  hook: boolean | null;
+  vix: number | null;
+  vix3m: number | null;
+  usable: boolean;
+  refusal: string | null;
+}
+
+/** `analytics.flip_divergence()` -- the noflip comparison's real, effective sample. */
+export interface CurveFlipDivergence {
+  flipDivergenceCount: number;
+  controlFlipExits: number;
+  note: string;
+}
+
+export interface CurveIntegrity {
+  exposure: { positionsWithExposure: number; exposedTicks: number; markedTicks: number };
+  markCoverage: {
+    session: string | null;
+    marks: number;
+    refused: number;
+    refusalShare: number | null;
+    refusals: Array<{ reason: string; n: number }>;
+  };
+  /** Whether today's `curve_regime` row exists and is usable -- the series' own continuity check. */
+  regimeToday: { present: boolean; usable: boolean; refusal: string | null };
+  schemaDrift: string[];
+  measurementBreaks: Array<{ date: string; key: string; note: string | null }>;
+}
+
+export interface CurvePayload {
+  /** The resolved session every card on the page names. Null when the module has never run. */
+  session: string | null;
+  /** False when the store is absent -- "has not run here", which is not an error. */
+  dbPresent: boolean;
+  openPositions: CurveOpenPosition[];
+  openCount: number;
+  books: CurveBookCell[];
+  flipDivergence: CurveFlipDivergence;
+  /** The regime series, oldest first -- `analytics.regime_series()`. */
+  regimeSeries: CurveRegimeRow[];
+  integrity: CurveIntegrity;
+  today: {
+    lastIteration: { ranAt: number; phase: string; status: string; ageSeconds: number } | null;
+  };
+  params: {
+    contangoMax: number | null;
+    hookThreshold: number | null;
+    profitTakePct: number | null;
+    closeDte: number | null;
+    assignmentExposureTv: number | null;
+  };
+}
+
+/** One completed cycle: entry through exit. */
+export interface CurveCycleRow {
+  positionId: string;
+  symbol: string;
+  book: string;
+  entrySession: string;
+  closedSession: string | null;
+  status: string;
+  exitReason: string | null;
+  shortStrike: number | null;
+  longStrike: number | null;
+  expiration: string | null;
+  entrySpot: number | null;
+  settlementSpot: number | null;
+  entryCredit: number | null;
+  entryWidth: number | null;
+  entryRatio: number | null;
+  entryRegime: string | null;
+  entryHook: boolean;
+  grossPnl: number | null;
+  fees: number | null;
+  netPnl: number | null;
+}
+
+export interface CurveMeta {
+  books: string[];
+  symbols: string[];
+  sessions: string[];
+}
+
+// --------------------------------------------------------------------------------------------
+// bwb (SPX daily-laddered put broken-wing butterfly, the 1-3-2 add-on trigger experiment).
+// `None` never means zero, the same rule every other module's analytics layer states -- the
+// module's own worksheet()/headline()/fire_counts()/trigger_coverage() are what each type mirrors.
+
+/** One open position, mirroring `analytics.worksheet()`. */
+export interface BwbOpenPosition {
+  positionId: string;
+  symbol: string;
+  book: string;
+  status: string;
+  bodyStrike: number | null;
+  nearStrike: number | null;
+  farStrike: number | null;
+  expiration: string | null;
+  entrySpot: number | null;
+  entryCredit: number | null;
+  entryMaxLoss: number | null;
+  /** Persisted trigger latches -- never held only in loop memory (a supervisor restart mid-session
+   * must not amnesia a morning touch). */
+  peakAbsDelta: number | null;
+  belowFlipSeen: boolean;
+  armedAt: string | null;
+  addonFiredAt: string | null;
+  addonCredit: number | null;
+  /** Latest usable close-cost mark. Null means no usable mark yet -- never render it as 0. */
+  currentCloseCost: number | null;
+  currentSpot: number | null;
+}
+
+/** Per-book, per-symbol results over CLOSED positions -- `analytics.headline()`. */
+export interface BwbBookCell {
+  book: string;
+  symbol: string;
+  positions: number;
+  grossPnl: number | null;
+  fees: number | null;
+  netPnl: number | null;
+  winRate: number | null;
+}
+
+/** Per-book add-on fire counts -- `analytics.fire_counts()`. The plan's own honesty rule: the
+ * real effective sample for an arm-vs-control comparison is the fire count, not the trade count --
+ * until an arm's add-on fires its rows are byte-identical to control's by construction. */
+export interface BwbFireCount {
+  book: string;
+  positions: number;
+  fired: number;
+  fireRate: number | null;
+}
+
+export interface BwbIntegrity {
+  triggerCoverage: {
+    session: string | null;
+    ticks: number;
+    refused: number;
+    refusalShare: number | null;
+  };
+  markCoverage: {
+    session: string | null;
+    marks: number;
+    refused: number;
+    refusalShare: number | null;
+  };
+  schemaDrift: string[];
+  measurementBreaks: Array<{ date: string; key: string; note: string | null }>;
+}
+
+export interface BwbEntryAttempt {
+  ts: string;
+  symbol: string;
+  book: string;
+  outcome: string;
+  credit: number | null;
+}
+
+export interface BwbManagementEvent {
+  positionId: string;
+  occurredAt: number;
+  action: string;
+  reason: string;
+  executed: boolean;
+  gate: string | null;
+}
+
+export interface BwbPayload {
+  /** The resolved session every card on the page names. Null when the module has never run. */
+  session: string | null;
+  /** False when the store is absent -- "has not run here", which is not an error. */
+  dbPresent: boolean;
+  openPositions: BwbOpenPosition[];
+  openCount: number;
+  books: BwbBookCell[];
+  fireCounts: BwbFireCount[];
+  /** The daily-ladder correlation caveat, surfaced beside the counts per the module's own honesty
+   * rule -- concurrent positions share regime context, so rows are not independent samples. */
+  correlationCaveat: string;
+  entryAttemptsToday: BwbEntryAttempt[];
+  managementEventsToday: BwbManagementEvent[];
+  integrity: BwbIntegrity;
+  today: {
+    lastIteration: { ranAt: number; phase: string; status: string; ageSeconds: number } | null;
+  };
+}
+
+/** One completed position: entry through settlement. */
+export interface BwbCycleRow {
+  positionId: string;
+  symbol: string;
+  book: string;
+  entrySession: string;
+  closedSession: string | null;
+  status: string;
+  exitReason: string | null;
+  bodyStrike: number | null;
+  nearStrike: number | null;
+  farStrike: number | null;
+  expiration: string | null;
+  entrySpot: number | null;
+  entryCredit: number | null;
+  armedAt: string | null;
+  addonFiredAt: string | null;
+  addonCredit: number | null;
+  grossPnl: number | null;
+  fees: number | null;
+  netPnl: number | null;
+}
+
+export interface BwbMeta {
+  books: string[];
+  symbols: string[];
+  sessions: string[];
 }
 
 /** How often MEIC's profiles reached the SAME entry decision on the same tick. */

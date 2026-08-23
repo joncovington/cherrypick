@@ -1,11 +1,14 @@
-import type { PmccBookCell, PmccKeltnerSeries, PmccOpenPosition, PmccPayload } from "@console/shared";
+import type { PmccBookCell, PmccOpenPosition, PmccPayload } from "@console/shared";
 import { Card, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
-import { SignedBar, AXIS_FONT, niceTicks } from "../../components/Charts";
+import { SignedBar } from "../../components/Charts";
 import { fmtStrike } from "../../lib/optionFormat";
 import { EntrySpreadCell } from "./EntrySpread";
 
-/** The three books whose identity the page knows. Anything else (an `advised:*` twin) rides along generically. */
-const CORE_BOOKS = ["control", "keltner", "roll"];
+/**
+ * The one book whose identity the page knows since the 2026-08-23 redesign. Anything else (the
+ * `advised:control` synthetic twin) rides along generically.
+ */
+const CORE_BOOKS = ["control"];
 
 function strikeAt(strike: number | null, expiration: string | null): string {
   if (strike === null) return "—";
@@ -38,6 +41,7 @@ function TvCell({ tv, threshold }: { tv: number | null; threshold: number | null
 }
 
 function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: PmccPayload["params"] }) {
+  const settlementStyle = params.settlementStyle;
   return (
     <>
       {rows.map((p) => {
@@ -79,6 +83,10 @@ function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: Pmcc
                 >
                   exposed {fmtPct(exposedShare, 0)}
                 </span>
+              ) : settlementStyle[p.symbol] === "cash" ? (
+                <span className="muted" title="Cash-settled, European-exercise: no early-assignment risk exists, so this telemetry is exempt for it by design.">
+                  n/a — cash-settled
+                </span>
               ) : (
                 <span className="muted">—</span>
               )}
@@ -93,29 +101,19 @@ function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: Pmcc
 /**
  * One card per symbol, listing only the books actually holding a position.
  *
- * Deliberately not a fixed three-row grid. A book holding nothing is signal — the keltner book
- * refusing all week is the experiment working — and a grid with a permanently blank row invites the
- * reader to see a missing number instead of a taken decision. Where keltner is absent, the gate
- * sub-row below says why in its own words.
+ * Since the 2026-08-23 redesign the module trades two symbols (TQQQ, physical-settlement; XSP,
+ * cash-settled, added the same day) in one book (`control`) each, as separate populations, plus
+ * its synthetic `advised:control` twin when the advisor is running an experiment — so a symbol with
+ * no open row simply says so, with no gate sub-row to explain (there is no more entry gate to name;
+ * mechanical entry either finds the slot free or it doesn't).
  */
-export function SymbolCards({
-  data,
-  keltner,
-  updatedAt,
-}: {
-  data: PmccPayload | undefined;
-  keltner: PmccKeltnerSeries[];
-  updatedAt?: number;
-}) {
+export function SymbolCards({ data, updatedAt }: { data: PmccPayload | undefined; updatedAt?: number }) {
   const symbols = data?.params.symbols ?? [];
   if (data === undefined) return null;
   return (
     <>
       {symbols.map((symbol) => {
         const rows = data.openPositions.filter((p) => p.symbol === symbol);
-        const readiness = data.integrity.keltner.find((k) => k.symbol === symbol);
-        const gate = keltner.find((k) => k.symbol === symbol)?.gate ?? null;
-        const keltnerHolds = rows.some((r) => r.book === "keltner");
         return (
           <Card key={symbol} title={symbol} collapseKey={`pmcc-symbol-${symbol}`} updatedAt={updatedAt}>
             <div className="table-scroll">
@@ -146,133 +144,10 @@ export function SymbolCards({
                 </tbody>
               </table>
             </div>
-            {!keltnerHolds && (
-              <div className="card-footer pmcc-gate-row">
-                <span className="integrity-sym">keltner</span>{" "}
-                {readiness !== undefined && readiness.bars < readiness.required ? (
-                  <>
-                    cold start {readiness.bars}/{readiness.required} bars — refusing entries while the channel
-                    accumulates
-                  </>
-                ) : gate !== null && gate.reason !== null ? (
-                  <>
-                    gate held: <span className="mono">{gate.reason}</span>{" "}
-                    <span className="muted">({gate.occurrences}× today)</span>
-                  </>
-                ) : (
-                  <span className="muted">no position and no gate refusal recorded on this session</span>
-                )}
-              </div>
-            )}
           </Card>
         );
       })}
     </>
-  );
-}
-
-/** Per-symbol Keltner channel: closes against the band the gate reads, plus today's verdict. */
-function ChannelChart({ series }: { series: PmccKeltnerSeries }) {
-  const pts = series.points.filter((p) => p.close !== null);
-  if (pts.length < 2) return <p className="muted">not enough bars yet</p>;
-  const width = 560;
-  const height = 150;
-  const m = { l: 44, r: 8, t: 8, b: 16 };
-  const values = pts.flatMap((p) => [p.close, p.upper, p.lower].filter((v): v is number => v !== null));
-  const lo = Math.min(...values);
-  const hi = Math.max(...values);
-  const pad = (hi - lo || 1) * 0.08;
-  const X = (i: number) => m.l + (i / (pts.length - 1)) * (width - m.l - m.r);
-  const Y = (v: number) => m.t + ((hi + pad - v) / (hi - lo + pad * 2 || 1)) * (height - m.t - m.b);
-  const line = (get: (p: (typeof pts)[number]) => number | null): string =>
-    pts
-      .map((p, i) => ({ v: get(p), i }))
-      .filter((d): d is { v: number; i: number } => d.v !== null)
-      .map((d) => `${X(d.i).toFixed(1)},${Y(d.v).toFixed(1)}`)
-      .join(" ");
-  const bandPts = pts.map((p, i) => ({ p, i })).filter((d) => d.p.upper !== null && d.p.lower !== null);
-  const band =
-    bandPts.length > 1
-      ? `${bandPts.map((d) => `${X(d.i).toFixed(1)},${Y(d.p.upper!).toFixed(1)}`).join(" ")} ${[...bandPts]
-          .reverse()
-          .map((d) => `${X(d.i).toFixed(1)},${Y(d.p.lower!).toFixed(1)}`)
-          .join(" ")}`
-      : null;
-  return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      role="img"
-      aria-label={`${series.symbol} keltner channel`}
-      style={{ width: "100%", height: "auto", display: "block" }}
-    >
-      {niceTicks(lo, hi, 3).map((v) => (
-        <g key={v}>
-          <line x1={m.l} y1={Y(v)} x2={width - m.r} y2={Y(v)} stroke="#15181e" />
-          <text x={4} y={Y(v) + 3} {...AXIS_FONT}>
-            {v.toFixed(0)}
-          </text>
-        </g>
-      ))}
-      {band !== null && <polygon points={band} fill="rgba(122,162,255,0.10)" />}
-      <polyline points={line((p) => p.mid)} fill="none" stroke="#7aa2ff" strokeWidth={1} strokeDasharray="3 2" />
-      <polyline points={line((p) => p.close)} fill="none" stroke="#eceff3" strokeWidth={1.4} />
-      <text x={m.l} y={height - 4} {...AXIS_FONT}>
-        {pts[0]!.date}
-      </text>
-      <text x={width - m.r} y={height - 4} textAnchor="end" {...AXIS_FONT}>
-        {pts[pts.length - 1]!.date}
-      </text>
-    </svg>
-  );
-}
-
-export function KeltnerCard({
-  series,
-  readiness,
-  updatedAt,
-}: {
-  series: PmccKeltnerSeries[];
-  readiness: PmccPayload["integrity"]["keltner"];
-  updatedAt?: number;
-}) {
-  return (
-    <Card
-      title="keltner channel — the entry filter under test"
-      collapseKey="pmcc-keltner"
-      updatedAt={updatedAt}
-      className="view-fade"
-    >
-      <p className="integrity-note">
-        Close against the 20-EMA midline and its ±1.5×ATR band. The keltner book enters only within
-        0.5×ATR of the midline, above yesterday's close, and ≥0.25×ATR off the day's low — one failing
-        condition is named at a time.
-      </p>
-      <div className="pmcc-chart-grid">
-        {series.map((s) => {
-          const r = readiness.find((k) => k.symbol === s.symbol);
-          const cold = r !== undefined && r.bars < r.required;
-          return (
-            <section key={s.symbol}>
-              <h3>
-                {s.symbol}
-                {cold ? (
-                  <span className="chip chip-warn integrity-chip">
-                    cold start {r.bars}/{r.required}
-                  </span>
-                ) : s.gate !== null && s.gate.reason !== null ? (
-                  <span className="chip chip-warn integrity-chip" title={`${String(s.gate.occurrences)}× on this session`}>
-                    {s.gate.reason}
-                  </span>
-                ) : (
-                  <span className="chip chip-ok integrity-chip">no gate refusal</span>
-                )}
-              </h3>
-              <ChannelChart series={s} />
-            </section>
-          );
-        })}
-      </div>
-    </Card>
   );
 }
 
@@ -304,22 +179,17 @@ function totalsByBook(books: PmccBookCell[]): BookTotals[] {
 }
 
 /**
- * The book comparison, split into two sections that must never merge.
+ * The book comparison.
  *
- * control and roll enter from the same plan on the same tick — identical strikes, mids and modeled
- * costs — so a row-by-row delta between them is exactly the roll rule's effect and nothing else.
- * keltner enters on its own ticks, because its variable IS the entry tick; differencing it against
- * control would attribute a different set of fills to a management rule neither book changed. The
- * module's CLAUDE.md states it plainly: read surfaces must not treat the three as a fully paired
- * grid. Hence two sections, one delta column, and no way to read across the seam.
+ * Since the 2026-08-23 redesign there is one book (`control`) plus the advisor's optional synthetic
+ * `advised:control` twin — no more multi-book fill pairing to reason about (the old control/keltner/
+ * roll grid, and the caveat that keltner and roll could not be read across the same seam, is
+ * retired). Every `control` cycle is directly comparable to every other `control` cycle; the advised
+ * twin is called out separately because its admitted params can differ position to position.
  */
 export function BookComparison({ data, updatedAt }: { data: PmccPayload | undefined; updatedAt?: number }) {
   const books = data?.books ?? [];
   const totals = totalsByBook(books);
-  const symbols = [...new Set(books.map((b) => b.symbol))].sort();
-  const cell = (book: string, symbol: string): PmccBookCell | undefined =>
-    books.find((b) => b.book === book && b.symbol === symbol);
-  const keltner = totals.find((t) => t.book === "keltner");
   const others = totals.filter((t) => !CORE_BOOKS.includes(t.book));
   const maxAbs = Math.max(1, ...totals.map((t) => Math.abs(t.net ?? 0)));
   const hasClosed = books.length > 0;
@@ -335,73 +205,6 @@ export function BookComparison({ data, updatedAt }: { data: PmccPayload | undefi
         </p>
       ) : (
         <>
-          <section className="pmcc-compare">
-            <h3>control vs roll — exactly paired</h3>
-            <p className="integrity-note">
-              Both books enter from the same plan on the same tick, with identical strikes, mids and modeled
-              costs. The delta is the roll rule's whole effect.
-            </p>
-            <div className="table-scroll">
-              <table className="data-table num-from-1">
-                <thead>
-                  <tr>
-                    <th>symbol</th>
-                    <th>control net</th>
-                    <th>roll net</th>
-                    <th>delta</th>
-                    <th>control cycles</th>
-                    <th>roll cycles</th>
-                    <th>rolls taken</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {symbols.map((symbol) => {
-                    const c = cell("control", symbol);
-                    const r = cell("roll", symbol);
-                    const delta =
-                      c?.netPnl === undefined || c.netPnl === null || r?.netPnl === undefined || r.netPnl === null
-                        ? null
-                        : r.netPnl - c.netPnl;
-                    return (
-                      <tr key={symbol}>
-                        <td>{symbol}</td>
-                        <td>
-                          <PnlCell v={c?.netPnl ?? null} />
-                        </td>
-                        <td>
-                          <PnlCell v={r?.netPnl ?? null} />
-                        </td>
-                        <td>
-                          <PnlCell v={delta} />
-                        </td>
-                        <td>{c?.positions ?? 0}</td>
-                        <td>{r?.positions ?? 0}</td>
-                        <td>{r?.rolls ?? 0}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section className="pmcc-compare">
-            <h3>keltner — not row-comparable</h3>
-            <p className="integrity-note">
-              Gated entry means keltner's fill set differs from control's by construction. Compare aggregates
-              over time, never cycle by cycle — there is deliberately no delta column here.
-            </p>
-            {keltner === undefined || keltner.positions === 0 ? (
-              <p className="muted">no completed keltner cycles — the gate has not admitted an entry that closed yet</p>
-            ) : (
-              <p>
-                {keltner.positions} cycle{keltner.positions === 1 ? "" : "s"} · net{" "}
-                <PnlCell v={keltner.net} /> · win rate{" "}
-                {fmtPct(keltner.positions > 0 ? (keltner.wins / keltner.positions) * 100 : null, 0)}
-              </p>
-            )}
-          </section>
-
           {others.length > 0 && (
             <section className="pmcc-compare">
               <h3>advised books</h3>

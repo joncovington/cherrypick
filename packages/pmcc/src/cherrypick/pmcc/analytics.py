@@ -97,37 +97,6 @@ def exposure(conn) -> dict:
     return {"positions": positions, "positions_with_exposure": exposed_positions}
 
 
-def rolls(conn) -> list[dict]:
-    """Every executed roll, from the events trail — the roll book's own ledger."""
-    import json as _json
-
-    out = []
-    for row in conn.execute(
-        "SELECT position_id, session_date, detail_json FROM pmcc_management_events "
-        "WHERE action = 'roll_short' AND executed = 1 ORDER BY occurred_at"
-    ):
-        detail = {}
-        try:
-            detail = _json.loads(row["detail_json"]) if row["detail_json"] else {}
-        except (TypeError, ValueError):
-            pass
-        out.append({"position_id": row["position_id"], "session": row["session_date"], **detail})
-    return out
-
-
-def keltner_readiness(conn, symbols: list[str], today: str) -> dict:
-    """Completed-bar counts per symbol — how far through the keltner book's cold start we are."""
-    out = {}
-    for symbol in symbols:
-        row = conn.execute(
-            "SELECT COUNT(*) AS n FROM pmcc_daily_bars WHERE symbol = ? AND trade_date < ? "
-            "AND day_close IS NOT NULL",
-            (symbol.strip().upper(), today),
-        ).fetchone()
-        out[symbol.strip().upper()] = row["n"]
-    return out
-
-
 def mark_coverage(conn, session_date: str) -> dict:
     """How good the day's substrate is: marks written, refusal share, and per-refusal counts —
     a barren session should be explicable as "the data was thin", never mistaken for a market."""

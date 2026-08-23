@@ -27,19 +27,45 @@ One workspace for the trading-tool suite. Work in the package for your area — 
   across the weekend — and refuses at entry any symbol declared as neither. Ex-dividend weeks are
   skipped outright, from a declared issuer calendar refreshed annually, rather than modelling early
   assignment. There is no live path.
-- **packages/pmcc** — PMCC-99 deep-ITM covered-call module on leveraged ETFs (TNA/TQQQ/UPRO),
-  **paper-only** and credential-free in the calendars posture: a pure stream-cache consumer whose
-  ~9DTE/~21DTE chains come from the streamer's `expirations` request field and whose 30–45%-ITM
-  strikes come from its `window_hints` field. Buys the deepest ~99-delta call as a stock substitute,
-  sells the deepest ITM call whose weekly time-value yield clears a declared floor, and closes both
-  legs when that time value is exhausted. Three books isolate one variable each — `control` (as
-  taught), `keltner` (entry gated on a pullback-and-reversal read of the Keltner channel; cold-starts
-  ~21 trading days while daily bars accumulate), `roll` (rolls the short on a breach instead of
-  holding; shares control's fills for exact pairing). American physical settlement is modelled with
-  the calendars decomposition (assigned short shares ride to the next session's combined disposal);
-  **early assignment is measured, never modelled** — ex-dividend spans are refused from a declared
-  issuer calendar refreshed quarterly, and every mark with near-zero short extrinsic is flagged
-  assignment-exposed, so the paper result is an explicit upper bound. There is no live path.
+- **packages/pmcc** — PMCC-99 deep-ITM covered-call module on TQQQ, **paper-only** and
+  credential-free in the calendars posture: a pure stream-cache consumer whose ~7DTE/~21DTE chains
+  come from the streamer's `expirations` request field and whose deep strikes come from its
+  `window_hints` field. Buys an 85-90-delta call as a stock substitute and sells the ATM call
+  nearest spot (no yield floor, either side of spot), holding to the short's own expiration before
+  closing both legs together (2026-08-23 redesign, down from a 3-symbol/3-book design). Single book
+  `control` plus the advisor's synthetic `advised:control` twin, which is where the old
+  tv-exhaustion early exit survives as a tunable A/B (`tv_managed_exit`) against the new
+  hold-to-expiry default. American physical settlement is modelled with the calendars decomposition
+  (assigned short shares ride to the next session's combined disposal); **early assignment is
+  measured, never modelled** — ex-dividend spans are refused from a declared issuer calendar
+  refreshed quarterly, and every mark with near-zero short extrinsic is flagged assignment-exposed,
+  so the paper result is an explicit upper bound. There is no live path.
+- **packages/curve** — VXX call-credit-spread module harvesting the VIX term-structure roll yield,
+  gated by a daily VIX/VIX3M regime read; **paper-only and credential-free** in the calendars/pmcc
+  posture (a pure stream-cache consumer, VXX's target expiration and VIX/VIX3M quote-only legs
+  declared via `state/stream_requests/`). Three books trade the identical short-call/long-wing
+  structure and differ only in entry gate and exit rule: `control` (contango-gated entry,
+  profit-take or a regime-flip hard exit or `close_dte`), `noflip` (control's entry exactly — its
+  exit is control's minus the flip rule, so control/noflip are byte-identical until a flip fires by
+  construction), `hook` (only the rare two-day-confirmed deep-backwardation entry). The daily
+  ratio/regime/hook classification is recorded every session, traded or not, as the module's second
+  product — RTH-gated and basis-stamped so an overnight-frozen quote can never masquerade as a
+  measured reading. Early assignment and VXX's periodic reverse splits are measured, never
+  modelled, so the paper result is an explicit upper bound. `regime-history` replays the VIX/VIX3M
+  classification over stored history as a signal-separation benchmark (never suite P&L); the
+  credit-spread P&L itself has no synthetic backtest, per the advisor's own no-replay-engine
+  contract — only a forward-recorded per-tick mark path, replayable later. There is no live path.
+- **packages/bwb** — a daily-laddered SPX put broken-wing butterfly module, **paper-only and
+  credential-free** in the calendars/pmcc/curve posture: a pure stream-cache consumer entering one
+  BWB every session at the expected move for a net credit (zero-floor by design), ~7 DTE, held to
+  expiry. Four books trade the IDENTICAL base structure and differ only in whether/when a
+  reversal-triggered put credit spread add-on fires, turning the fly into a 1-3-2: `control`
+  (never), `delta` (raw delta touch), `bounce` (a confirmed pullback off a peak), `flip` (a
+  gamma-flip reclaim, read fresh each tick from the same basis MEIC's own gate uses). Trigger
+  latches persist on the position row so a supervisor restart can't amnesia a morning touch, and a
+  cohort-keyed trigger-tick path — the module's second product — is recorded every session for a
+  future read-side threshold replay. SPX is cash-settled and European-style, the cleanest
+  settlement model in the suite. There is no live path.
 - **packages/overview** — the pre-open **morning market overview**: one deterministic fact pack per
   session (index/vol/sector readings from the stream cache, gamma flip and walls from the suite's
   own GEX history) with a mechanical GREEN/YELLOW/RED phase from five declared gates — missing data

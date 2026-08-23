@@ -6,7 +6,6 @@ import type {
   PmccBookCell,
   PmccCycleRow,
   PmccIntegrity,
-  PmccKeltnerSeries,
   PmccMeta,
   PmccOpenPosition,
   PmccPayload,
@@ -41,12 +40,16 @@ const DB_FILE = "paper_trades.db";
 /** Config keys the page renders against. Thresholds the module runs on, not display preferences. */
 interface PmccParams {
   tvCloseThreshold: number | null;
+  tvManagedExit: boolean | null;
   assignmentExposureTv: number | null;
-  targetWeeklyYieldMin: number | null;
-  keltnerMinHistory: number | null;
+  longDeltaMin: number | null;
+  longDeltaMax: number | null;
   symbols: string[];
   dividends: Record<string, { declaredThrough: string | null; exDates: string[] }>;
-  keltner: { emaPeriod: number; atrPeriod: number; atrMult: number; minHistory: number };
+  /** Per-symbol settlement style ("physical" | "cash"), read straight through from config's own
+   *  `settlement_style` map — the same field `paper_loop.py`/`management.py` gate on. Missing for a
+   *  symbol means the module's own config doesn't declare one for it either. */
+  settlementStyle: Record<string, string>;
 }
 
 /**
@@ -110,8 +113,6 @@ function loadParams(config: ConsoleConfig): PmccParams {
     if (doc !== null) break;
   }
   const defaults = obj(doc?.["defaults"]);
-  const books = obj(doc?.["books"]);
-  const keltnerBook = obj(books["keltner"]);
   const dividendsBlock = obj(doc?.["dividends"]);
   const dividends: PmccParams["dividends"] = {};
   for (const [symbol, block] of Object.entries(dividendsBlock)) {
@@ -125,22 +126,33 @@ function loadParams(config: ConsoleConfig): PmccParams {
   const symbols = Array.isArray(doc?.["symbols"])
     ? doc["symbols"].filter((s): s is string => typeof s === "string")
     : [];
-  const numOr = (v: unknown, fallback: number): number => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
+  const settlementStyleBlock = obj(doc?.["settlement_style"]);
+  const settlementStyle: Record<string, string> = {};
+  for (const [symbol, style] of Object.entries(settlementStyleBlock)) {
+    if (symbol.startsWith("_")) continue;
+    const s = str(style);
+    if (s !== null) settlementStyle[symbol] = s;
+  }
+  // `tv_managed_exit` is a bool/0-1 in config the way the module writes it; config-level defaults
+  // stay off — the only place it runs true is a frozen `advised:control` row's `advice_params`
+  // overlay, read per-position rather than here.
+  const tvManagedExitRaw = defaults["tv_managed_exit"];
+  const tvManagedExit =
+    typeof tvManagedExitRaw === "boolean"
+      ? tvManagedExitRaw
+      : typeof tvManagedExitRaw === "number"
+        ? tvManagedExitRaw !== 0
+        : null;
   return {
     tvCloseThreshold: num(defaults["tv_close_threshold"]),
+    tvManagedExit,
     assignmentExposureTv: num(defaults["assignment_exposure_tv"]),
-    targetWeeklyYieldMin: num(defaults["target_weekly_yield_min"]),
-    keltnerMinHistory: num(keltnerBook["keltner_min_history"]),
+    // 2026-08-23 redesign: the long is chosen inside a delta BAND, not past a floor.
+    longDeltaMin: num(defaults["long_delta_min"]),
+    longDeltaMax: num(defaults["long_delta_max"]),
     symbols,
     dividends,
-    // Defaults mirror keltner.py's PARAM_DEFAULTS, so an absent config still draws the same channel
-    // the gate reads rather than no channel at all.
-    keltner: {
-      emaPeriod: numOr(keltnerBook["keltner_ema_period"], 20),
-      atrPeriod: numOr(keltnerBook["keltner_atr_period"], 20),
-      atrMult: numOr(keltnerBook["keltner_atr_mult"], 1.5),
-      minHistory: numOr(keltnerBook["keltner_min_history"], 21),
-    },
+    settlementStyle,
   };
 }
 
@@ -339,116 +351,6 @@ function readMarkCoverage(db: DatabaseHandle, session: string | null): PmccInteg
   return { session, marks, refused, refusalShare: marks > 0 ? refused / marks : null, refusals };
 }
 
-/** Standard EMA seeded with the SMA of the first `period` values — keltner.py's `_ema`. */
-function ema(values: number[], period: number): number {
-  let out = values.slice(0, period).reduce((s, v) => s + v, 0) / period;
-  const k = 2 / (period + 1);
-  for (const v of values.slice(period)) out = v * k + out * (1 - k);
-  return out;
-}
-
-/**
- * Wilder-smoothed ATR — keltner.py's `_wilder_atr`, including its fallbacks: each bar's own prev
- * close is preferred, the prior bar's close stands in when that field is missing, and a bar with no
- * high or low contributes no true range rather than a guessed one.
- */
-function wilderAtr(bars: Array<Record<string, unknown>>, period: number): number | null {
-  const trs: number[] = [];
-  let prevClose: number | null = null;
-  for (const bar of bars) {
-    const high = num(bar["day_high"]);
-    const low = num(bar["day_low"]);
-    const ownPrev = num(bar["prev_day_close"]);
-    const ref = ownPrev ?? prevClose;
-    if (high === null || low === null) {
-      prevClose = num(bar["day_close"]);
-      continue;
-    }
-    trs.push(ref === null ? high - low : Math.max(high - low, Math.abs(high - ref), Math.abs(low - ref)));
-    prevClose = num(bar["day_close"]);
-  }
-  if (trs.length < period) return null;
-  let atr = trs.slice(0, period).reduce((s, v) => s + v, 0) / period;
-  for (const tr of trs.slice(period)) atr = (atr * (period - 1) + tr) / period;
-  return atr;
-}
-
-/**
- * The Keltner channel drawn the way the gate computes it.
- *
- * Recomputed here rather than read off the stamped `keltner_*` columns because those exist only on
- * entry rows: a symbol the gate has refused every day has no entry to stamp, which is precisely the
- * symbol whose channel the reader wants to see. The two must agree at the latest bar — that is the
- * check worth running when this changes.
- *
- * Each bar's band is computed over the history UP TO AND INCLUDING that bar — the conventional
- * Keltner rendering, and the one that makes the chart checkable: the gate reads a channel over
- * completed bars strictly before the session it is gating, so the band drawn at the LAST completed
- * bar is precisely the band the gate is reading today. That equality against the `keltner_mid` /
- * `keltner_atr` stamped on this session's entry rows is the test worth running when this changes.
- */
-function readKeltner(db: DatabaseHandle, params: PmccParams, session: string | null, symbols: string[]): PmccKeltnerSeries[] {
-  const window = 60;
-  // The gate's own vocabulary (keltner.py's `entry_ok`), listed rather than pattern-matched: a
-  // keltner-book attempt can also be blocked by something that is not the gate at all (a yield the
-  // chain would not offer, a missing quote), and calling that a gate verdict would misattribute the
-  // refusal to the filter under test.
-  //
-  // The reason lives in `outcome`, not `block_detail` — the attempts writer puts the refusal itself
-  // there and reserves block_detail for supplementary numbers, so matching on block_detail finds
-  // nothing at all (verified against the live ledger: every row's block_detail is NULL).
-  const GATE_REASONS = [
-    "insufficient_bar_history",
-    "keltner_above_band",
-    "keltner_below_band",
-    "keltner_no_prev_close",
-    "keltner_below_prev_close",
-    "keltner_no_day_low",
-    "keltner_no_bounce",
-  ];
-  const gateMarks = GATE_REASONS.map(() => "?").join(", ");
-  const gateReasons = db.prepare<string[], Record<string, unknown>>(
-    `SELECT outcome, COUNT(*) AS n FROM pmcc_entry_attempts
-      WHERE trade_date = ? AND symbol = ? AND book = 'keltner' AND outcome IN (${gateMarks})
-      GROUP BY outcome ORDER BY n DESC LIMIT 1`,
-  );
-  return symbols.map((symbol) => {
-    const bars = db
-      .prepare<[string], Record<string, unknown>>(
-        "SELECT * FROM pmcc_daily_bars WHERE symbol = ? AND day_close IS NOT NULL ORDER BY trade_date",
-      )
-      .all(symbol);
-    const points = bars.slice(-window).map((bar, i) => {
-      const idx = bars.length - Math.min(bars.length, window) + i;
-      const through = bars.slice(0, idx + 1);
-      const closes = through.map((b) => num(b["day_close"])).filter((c): c is number => c !== null);
-      const date = str(bar["trade_date"]) ?? "";
-      const close = num(bar["day_close"]);
-      if (closes.length < Math.max(params.keltner.minHistory, params.keltner.emaPeriod)) {
-        return { date, close, mid: null, upper: null, lower: null };
-      }
-      const atr = wilderAtr(through, params.keltner.atrPeriod);
-      if (atr === null) return { date, close, mid: null, upper: null, lower: null };
-      const mid = ema(closes, params.keltner.emaPeriod);
-      return {
-        date,
-        close,
-        mid,
-        upper: mid + params.keltner.atrMult * atr,
-        lower: mid - params.keltner.atrMult * atr,
-      };
-    });
-    let gate: PmccKeltnerSeries["gate"] = null;
-    if (session !== null) {
-      const row = gateReasons.get(session, symbol, ...GATE_REASONS);
-      if (row !== undefined) {
-        gate = { reason: str(row["outcome"]), occurrences: Number(row["n"] ?? 0) };
-      }
-    }
-    return { symbol, points, gate };
-  });
-}
-
 export function readPmcc(config: ConsoleConfig): PmccPayload {
   const params = loadParams(config);
   const empty: PmccPayload = {
@@ -460,19 +362,19 @@ export function readPmcc(config: ConsoleConfig): PmccPayload {
     integrity: {
       exposure: { positionsWithExposure: 0, exposedTicks: 0, markedTicks: 0 },
       dividends: [],
-      keltner: [],
       markCoverage: { session: null, marks: 0, refused: 0, refusalShare: null, refusals: [] },
       schemaDrift: [],
       measurementBreaks: [],
     },
-    keltner: [],
     today: { attempts: [], events: [], lastIteration: null },
     params: {
       tvCloseThreshold: params.tvCloseThreshold,
+      tvManagedExit: params.tvManagedExit,
       assignmentExposureTv: params.assignmentExposureTv,
-      targetWeeklyYieldMin: params.targetWeeklyYieldMin,
-      keltnerMinHistory: params.keltnerMinHistory,
+      longDeltaMin: params.longDeltaMin,
+      longDeltaMax: params.longDeltaMax,
       symbols: params.symbols,
+      settlementStyle: params.settlementStyle,
     },
   };
 
@@ -490,15 +392,6 @@ export function readPmcc(config: ConsoleConfig): PmccPayload {
     const symbols = [...new Set([...params.symbols, ...ledgerSymbols])];
 
     const exposureRows = [...exposureByPosition(db).values()];
-    const keltnerReadiness = symbols.map((symbol) => {
-      const row = db
-        .prepare<[string, string], { n: number }>(
-          `SELECT COUNT(*) AS n FROM pmcc_daily_bars
-            WHERE symbol = ? AND trade_date < ? AND day_close IS NOT NULL`,
-        )
-        .get(symbol, session ?? "9999-12-31");
-      return { symbol, bars: Number(row?.n ?? 0), required: params.keltner.minHistory };
-    });
 
     const attempts = session === null
       ? []
@@ -569,12 +462,10 @@ export function readPmcc(config: ConsoleConfig): PmccPayload {
             refreshDue: dividendRefreshDue(declared?.declaredThrough ?? null, session),
           };
         }),
-        keltner: keltnerReadiness,
         markCoverage: readMarkCoverage(db, session),
         schemaDrift: schemaDrift(db),
         measurementBreaks: breaks,
       },
-      keltner: readKeltner(db, params, session, symbols),
       today: {
         attempts,
         events,
@@ -590,10 +481,12 @@ export function readPmcc(config: ConsoleConfig): PmccPayload {
       },
       params: {
         tvCloseThreshold: params.tvCloseThreshold,
+        tvManagedExit: params.tvManagedExit,
         assignmentExposureTv: params.assignmentExposureTv,
-        targetWeeklyYieldMin: params.targetWeeklyYieldMin,
-        keltnerMinHistory: params.keltnerMinHistory,
+        longDeltaMin: params.longDeltaMin,
+        longDeltaMax: params.longDeltaMax,
         symbols,
+        settlementStyle: params.settlementStyle,
       },
     };
   });

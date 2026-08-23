@@ -1,9 +1,9 @@
-"""Wires engine decisions to the paper ledger: entries, traded closes, rolls, and settlement.
+"""Wires engine decisions to the paper ledger: entries, traded closes, and settlement.
 
-One plan can open several books' positions on the same tick (`control` and `roll` enter identically
-by construction — that shared fill is the roll-vs-hold experiment's exact pairing), while `keltner`
-enters on its own tick when its gate passes; its variable is entry timing, so it deliberately does
-NOT share fills. Read surfaces must not treat the three as a fully paired grid.
+Single book (`control`) plus its `advised:control` synthetic twin since the 2026-08-23 redesign to
+one `control` book — no more roll, no more keltner entry gate, no more multi-book fill pairing.
+Since 2026-08-23 the book runs two symbols (TQQQ, physical; XSP, cash) rather than one; the
+settlement-style branch below is what keeps their bookkeeping correctly diverging.
 
 Fee/P&L conventions (the ledger reader depends on these):
 - `gross_pnl` is mid-priced and cost-free: the sum of per-leg P&L (`engine.leg_pnl`) x100 x qty,
@@ -164,84 +164,6 @@ def close_open_legs(
     _accumulate_exit_costs(conn, position["position_id"], fee=cost["fee"], slippage=cost["slippage"])
     finalize_if_done(conn, position["position_id"], reason=reason, session_date=session_date)
     return {"ok": True, "position_id": position["position_id"], "legs_closed": len(legs), "cost": cost}
-
-
-def roll_short_leg(conn, position: dict, roll: dict, config: dict, *, session_date: str) -> dict:
-    """Execute one roll: buy the current short back at its mark, open the next `short_call_<n>` at
-    the roll plan's mid — one 2-leg transaction, one fee stack. The position row's
-    `short_strike`/`short_expiration` move with the live short, and `roll_count` increments; the
-    retired leg keeps its own entry/close record (`close_kind='rolled'`), so the whole chain of
-    shorts stays auditable leg by leg."""
-    short_legs = [
-        leg for leg in db.open_legs_for(conn, position["position_id"]) if leg["leg_role"] != "long_call"
-    ]
-    if not short_legs:
-        return {"ok": False, "reason": "no_open_short"}
-    old = short_legs[0]
-    now = clock.now_iso()
-    quantity = int(position.get("quantity") or 1)
-    buyback = roll["buyback"]
-    new_leg = roll["new_leg"]
-    db.save_leg(
-        conn,
-        {
-            "position_id": position["position_id"],
-            "leg_role": old["leg_role"],
-            "status": "closed",
-            "close_kind": "rolled",
-            "closed_at": now,
-            "close_bid": buyback["bid"],
-            "close_ask": buyback["ask"],
-            "close_value": buyback["mid"],
-        },
-    )
-    role = db.next_short_role(conn, position["position_id"])
-    db.save_leg(
-        conn,
-        {
-            "position_id": position["position_id"],
-            "leg_role": role,
-            "occ_symbol": new_leg["occ_symbol"],
-            "streamer_symbol": new_leg["streamer_symbol"],
-            "expiration": new_leg["expiration"],
-            "strike": new_leg["strike"],
-            "option_type": "call",
-            "action": "Sell to Open",
-            "quantity": quantity,
-            "entry_bid": new_leg["bid"],
-            "entry_ask": new_leg["ask"],
-            "entry_mid": new_leg["mid"],
-            "entry_iv": new_leg.get("iv"),
-            "entry_delta": new_leg.get("delta"),
-            "status": "open",
-        },
-    )
-    leg_quotes = [
-        {"bid": buyback["bid"], "ask": buyback["ask"]},
-        {"bid": new_leg["bid"], "ask": new_leg["ask"]},
-    ]
-    cost = engine.close_cost(position["symbol"], leg_quotes, quantity, config, sell_legs=1)
-    _accumulate_exit_costs(conn, position["position_id"], fee=cost["fee"], slippage=cost["slippage"])
-    db.save_position(
-        conn,
-        {
-            "position_id": position["position_id"],
-            "short_strike": new_leg["strike"],
-            "short_expiration": new_leg["expiration"],
-            "roll_count": int(position.get("roll_count") or 0) + 1,
-        },
-    )
-    return {
-        "ok": True,
-        "position_id": position["position_id"],
-        "old_strike": old["strike"],
-        "new_strike": new_leg["strike"],
-        "old_expiration": old["expiration"],
-        "new_expiration": new_leg["expiration"],
-        "net_roll_credit": roll["net_roll_credit"],
-        "new_role": role,
-        "cost": cost,
-    }
 
 
 def settle_expiring_legs(

@@ -36,8 +36,8 @@ Payload shape (see ``packages/streamer/src/registry.py``, the reader):
     restart. Dates already past (ET) are dropped at union time, so a file nobody rewrote over a weekend
     cannot pin dead subscriptions.
   - ``history_days``: optional ``{symbol: days}`` — how many COMPLETED daily OHLC rows the module needs
-    ``stream_summary`` to hold for a symbol (e.g. pmcc's Keltner channel needing ~40 sessions of bars).
-    The producer backfills a deficit once from DXLink daily candles — filling only dates the live
+    ``stream_summary`` to hold for a symbol (e.g. a daily-bar-driven indicator needing several weeks
+    of history). The producer backfills a deficit once from DXLink daily candles — filling only dates the live
     Summary feed has not written, never overwriting a row — so a newly requested symbol's indicator
     history exists on day one instead of accruing over a month of sessions. Max per symbol across every
     module's file, same reasoning as ``window_hints``.

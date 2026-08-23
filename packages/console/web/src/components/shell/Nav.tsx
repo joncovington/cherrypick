@@ -16,6 +16,8 @@ const groups: Array<{ label: string | null; links: Array<{ to: string; label: st
       { to: "/meic", label: "MEIC" },
       { to: "/flies", label: "Flies" },
       { to: "/pmcc", label: "PMCC" },
+      { to: "/curve", label: "Curve" },
+      { to: "/bwb", label: "BWB" },
       { to: "/calendars", label: "Calendars" },
       { to: "/earnings", label: "Earnings" },
       { to: "/gex", label: "GEX" },
