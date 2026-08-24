@@ -27,7 +27,9 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   data/flies/live_trades.db       # Flies live ledger (the live pilot writes here; armed per day)
   data/calendars/paper_trades.db  # Calendars paper ledger (dc_positions / dc_legs / dc_marks)
   data/pmcc/paper_trades.db       # PMCC-99 paper ledger (pmcc_positions / pmcc_legs / pmcc_marks)
-  data/gex/gex_history.db         # GEX spot trail + regime history
+  data/gex/gex_history.db         # GEX spot trail + regime history + the suite-level market-regime
+                                  #   series (market_regime_history / daily_closes; read via
+                                  #   cherrypick.core.regime — see docs/regime-recorder-plan.md)
   logs/                           # suite logs
   data/review/                    # eod-<day>.json fact sets + renders + notes
   logs/meic/  logs/earnings/  logs/flies/  logs/gex/  logs/streamer/   # per-module logs + EOD reports

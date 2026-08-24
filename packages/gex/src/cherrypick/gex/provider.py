@@ -52,8 +52,6 @@ class GexSnapshot:
     input_age_seconds: float | None = None
 
 
-
-
 # SQLite's default host-parameter limit is 999; stay under it with room to spare.
 _SPOT_CHUNK = 900
 
@@ -64,9 +62,7 @@ def _normalise_iv(raw_iv: float) -> float:
     return raw_iv if raw_iv > 1 else raw_iv * 100
 
 
-def read_spot(
-    db_path: Path | str, symbol: str, *, max_age_seconds: float | None = None
-) -> float | None:
+def read_spot(db_path: Path | str, symbol: str, *, max_age_seconds: float | None = None) -> float | None:
     """The underlying's latest spot (``stream_trades.last``) for one symbol, read-only. ``None``
     when the cache is missing, the symbol isn't cached, or the print is older than
     ``max_age_seconds``. Passing ``None`` keeps the last known price whatever its age."""

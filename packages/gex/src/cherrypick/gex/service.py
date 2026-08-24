@@ -26,6 +26,7 @@ from cherrypick.core.gex import (
 )
 
 from cherrypick.gex import provider as _provider
+from cherrypick.gex import regime as _regime
 
 
 def _today() -> str:
@@ -89,7 +90,6 @@ def _fetch_spot_history(db_path: Path, symbol: str) -> list[dict]:
         conn.close()
 
 
-
 # Default matches the quote-freshness limit the trading modules use. The recorder samples every
 # ~15s, so anything approaching two minutes without a print means the underlying is not trading —
 # outside RTH, or the producer has stalled. Set `source.max_spot_age_seconds` to null to record
@@ -125,9 +125,7 @@ def record_spots(cfg: dict, symbols: list[str] | None = None) -> int:
     # whatever the cache held — on 2026-08-19 that produced 5,737 samples of which 4,193
     # consecutive pairs were the identical value, because it kept sampling through the night and
     # through any stall. A flat line and a dead feed read the same; a gap does not.
-    spots = _provider.read_spots(
-        cfg["stream_cache_db"], syms, max_age_seconds=spot_max_age_seconds(cfg)
-    )
+    spots = _provider.read_spots(cfg["stream_cache_db"], syms, max_age_seconds=spot_max_age_seconds(cfg))
     if not spots:
         return 0
     conn = sqlite3.connect(db_path)
@@ -136,9 +134,7 @@ def record_spots(cfg: dict, symbols: list[str] | None = None) -> int:
         today = _today()
         now = time.time()
         rows = [(sym, today, now, spots[sym]) for sym in syms if sym in spots]
-        conn.executemany(
-            "INSERT INTO gex_spot_history (symbol, trade_date, ts, spot) VALUES (?,?,?,?)", rows
-        )
+        conn.executemany("INSERT INTO gex_spot_history (symbol, trade_date, ts, spot) VALUES (?,?,?,?)", rows)
         conn.commit()
         return len(rows)
     finally:
@@ -261,7 +257,11 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
     if once:
         n = record_spots(cfg)
         r = record_regimes(cfg)
-        print(f"recorded spot for {n}/{len(syms)} symbols, {r} regime row(s)")
+        m = _regime.sample(cfg)
+        print(
+            f"recorded spot for {n}/{len(syms)} symbols, {r} gex regime row(s), "
+            f"market regime: {m['status']} ({m['usable']}/{m['written']} usable)"
+        )
         return 0
 
     if not acquire_recorder_lock(cfg):
@@ -286,6 +286,31 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
     log.info("spot recorder starting: %s every %ss -> %s", syms, interval, cfg["history_db_path"])
     print(f"cherrypick-gex spot recorder: {syms} every {interval}s  (Ctrl-C to stop)")
 
+    # The recorder is the long-lived process, so it (re)declares the regime sampler's quote-only
+    # legs itself at startup — the series must not depend on some other module's declaration.
+    from cherrypick.gex import stream_request as _stream_request
+
+    _stream_request.register(cfg)
+
+    # The dropped-readings guard (flies' stale-writer lesson, long-row form): a reading the ledger
+    # recorded last session that this checkout no longer declares means the running code is behind
+    # the database. Logged, never enforced — a stale checkout cannot fix itself, and refusing to
+    # record would turn a telemetry gap into an outage.
+    try:
+        _gconn = sqlite3.connect(Path(cfg["history_db_path"]))
+        try:
+            _regime.ensure_tables(_gconn, cfg["history_db_path"])
+            dropped = _regime.dropped_readings(_gconn, today=_today())
+            if dropped:
+                log.warning(
+                    "stale checkout? readings recorded last session but not declared now: %s",
+                    sorted(dropped),
+                )
+        finally:
+            _gconn.close()
+    except Exception as exc:  # noqa: BLE001 — the guard is telemetry about telemetry
+        log.warning("dropped-readings check failed: %s", exc)
+
     heartbeat_every = max(1, 300 // interval)  # a ~5-minute INFO heartbeat; otherwise stay quiet
     ticks = 0
     try:
@@ -293,6 +318,7 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
             try:
                 n = record_spots(cfg)
                 record_regimes(cfg)  # internally throttled to ~5-minute rows
+                _regime.sample(cfg)  # internally throttled to ~1-minute rows, RTH-gated
                 ticks += 1
                 if ticks % heartbeat_every == 0:
                     log.info("recorded %d/%d symbols (tick %d)", n, len(syms), ticks)

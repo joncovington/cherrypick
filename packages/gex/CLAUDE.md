@@ -4,11 +4,24 @@ Guidance for Claude Code when working in this repository.
 
 ## What this is
 
-cherrypick-gex is the **GEX (gamma-exposure) engine and recorder** for the trading-tool suite — the
-compute half of a self-hosted gexbot.com / SpotGamma / MenthorQ. It computes GEX via the shared
+cherrypick-gex is the **GEX (gamma-exposure) engine and market recorder** for the trading-tool suite —
+the compute half of a self-hosted gexbot.com / SpotGamma / MenthorQ. It computes GEX via the shared
 `cherrypick.core.gex` engine and records the spot trail; the **console** (`packages/console`) is what
 renders it, on <http://127.0.0.1:5070/gex>. It serves nothing itself, places no orders, and never
-touches live trading. Two modes: **piggyback** (the default — `source.stream_cache_db` resolves to the suite's
+touches live trading.
+
+Since 2026-08-23 the recorder also carries the **suite-level market-regime series**
+(`cherrypick/gex/regime.py`; design record `docs/regime-recorder-plan.md` at the repo root): one row
+per reading per ~minute during RTH — the vol complex (VIX/VIX3M/VIX1D/VVIX), breadth and cross-asset
+quotes (SPY/RSP, HYG/LQD, TLT, the eleven SPDR sectors) — into `market_regime_history`, plus a
+permanent `daily_closes` table harvested from `stream_summary`. Raw measures only (ratios and
+dispersion are read-side derivations in `cherrypick.core.regime`, the one join helper every consumer
+goes through); RTH-gated and basis-stamped, with a stale or missing quote written as a `usable = 0`
+refusal row, never a frozen value. The recorder declares the reading symbols itself as quote-only
+`legs` in its stream request — coverage must not depend on another module's declaration — and a
+coverage test drives off `regime.READINGS`, so a new reading without its subscription fails the
+build. The charter widened deliberately (recorder of GEX → recorder of market state): one daemon,
+one store, one supervision entry, and the console already reads this database. Two modes: **piggyback** (the default — `source.stream_cache_db` resolves to the suite's
 canonical shared cache, `~/.cherrypick/data/marketdata/stream_cache.db`, read read-only) or
 **standalone** (`run.py stream` runs `cherrypick.core.streamer` to populate its own cache path instead,
 e.g. `data/stream_cache.db`, if `source.stream_cache_db` is repointed there).
