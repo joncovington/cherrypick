@@ -40,16 +40,39 @@ closer to spot than TQQQ's — the 2026-08-24 XSP entry bought 734 against a 764
 correspondingly wasteful for the shallowest. If the XSP window's cost ever matters again, the fix
 is a per-symbol bound, not a smaller shared one.
 
-## Standing item: the dividend calendar is lapsed for TQQQ
+## The dividend calendar lapsed for TQQQ, and was refreshed the same evening
 
-Separately, and still open at the time of writing: every TQQQ entry attempt on 2026-08-24 refused
-`dividend_calendar_lapsed` — 327 of them. The config's `dividends` block is declared through August,
-and an entry now spans a ~21 DTE back expiration into mid-September, past the declared coverage.
+Every TQQQ entry attempt on 2026-08-24 refused `dividend_calendar_lapsed` — 327 of them. The
+`dividends` block was declared only through August, while an entry that day spanned a ~21 DTE back
+expiration into mid-September, past the declared coverage. That is the guard working exactly as
+designed ("a lapsed table stops entries loudly, by design"), and it is not fixable in code: the
+dates cannot be computed (the third-Friday rule fails on SSGA's own June 2026 date) and are never
+fetched, because nothing on a loop path may touch the network.
 
-That is the guard working exactly as designed ("a lapsed table stops entries loudly, by design"),
-and it is **not fixable in code**: the dates are declared from ProShares' own distribution schedule
-because they cannot be computed (the third-Friday rule fails on SSGA's own June 2026 date) and are
-never fetched (no network on a loop path). **TQQQ cannot enter until the September ex-date is filled
-in and `declared_through` is advanced.** Until then this module trades XSP only, which is a sample
-composition fact, not a preference — any read of this era's TQQQ population should know it stops
-here.
+**Refreshed 2026-08-24 from ProShares' own distribution schedule** (`proshares.com/resources/
+distributions/distribution-schedule`), which is the authority the config names:
+
+| quarter | ex date | record | payable |
+|---|---|---|---|
+| Q3 2026 | **2026-09-23** | 2026-09-23 | 2026-09-29 |
+| Q4 2026 | **2026-12-23** | 2026-12-23 | 2026-12-30 |
+| excise (potential) | **2026-12-31** | 2026-12-31 | 2027-01-07 |
+
+Three notes on how that was taken, since this module's docs warn that aggregators disagree by a day:
+
+- **The issuer page is the source; a second source is the check on it.** An independent aggregator
+  was consulted separately and agreed on 9/23, which is what makes the date worth declaring rather
+  than a single unverified read.
+- **The potential excise-tax distribution is included deliberately.** It may not happen; refusing a
+  week that *might* carry an ex-date is the safe direction for a module that does not model early
+  assignment at all.
+- **`declared_through` is 2026-12-31, so the calendar lapses again for any entry reaching into
+  2027** — from roughly early December, when a ~21 DTE back expiration first crosses the year end.
+  That is the design working, not a bug to route around: refresh it from the issuer page before
+  then.
+
+Effect, verified against the live config: an entry on 2026-08-25 with a back expiration of 09-11 or
+09-18 enters; one reaching 09-25 refuses `ex_dividend_span` on 2026-09-23; one reaching 2027 refuses
+`dividend_calendar_lapsed`. **TQQQ trades again from 2026-08-25**, with a natural blackout across
+the September ex-date. The 2026-08-24 session itself remains TQQQ-less — a sample-composition fact
+worth knowing when reading this era.
