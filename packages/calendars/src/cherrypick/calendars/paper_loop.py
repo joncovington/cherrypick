@@ -261,7 +261,7 @@ def run_once(
         if window_start <= now_min <= window_end:
             phase = "entry"
             actions += _try_entry(config, conn, cache_path=cache_path, when=when, week=plan_dates)
-        elif now_min > window_end and not db.positions_for_week(conn, plan_dates["week_of"]):
+        elif now_min > window_end and not _monday_regime_positions(conn, plan_dates["week_of"]):
             db.record_decision(
                 conn,
                 trade_date=day,
@@ -271,6 +271,11 @@ def run_once(
                 reason="week_skipped_entry_window_exhausted",
                 accepted=False,
             )
+
+    # Phase: the Friday entry regime, off unless configured (docs/friday-entry-arm.md). Placed
+    # after the Monday phase so the two can never both fire on one tick, and gated on this
+    # session's exits rather than on the clock — see _try_friday_entry.
+    actions += _maybe_friday_entry(config, conn, cache_path=cache_path, when=when, now_min=now_min)
 
     # Phase: mark everything open, every tick — the exit study's substrate — then manage.
     marked, values = _mark_positions(config, conn, cache_path=cache_path, when=when, day=day)
@@ -306,7 +311,86 @@ def _unsettled_today(conn, day: str) -> bool:
     return bool(db.expiring_open_legs(conn, day))
 
 
-def _try_entry(config: dict, conn, *, cache_path: str, when: datetime, week: dict) -> int:
+def friday_settings(config: dict) -> dict:
+    """The Friday-entry regime's config block. OFF unless the config says otherwise — a second
+    entry regime doubles this module's open positions and its buying power, so it is opt-in."""
+    return dict(config.get("friday_entry") or {})
+
+
+def friday_books(config: dict) -> list[str]:
+    """The Friday regime's books: the base roster under the `friday:` prefix. No advised twin in
+    v1 — it would double the advisor surface for a regime with no history."""
+    enabled = config.get("books") or {}
+    return [
+        f"{engine.FRIDAY_PREFIX}{b}" for b in engine.BOOKS if enabled.get(b, {}).get("enabled", True)
+    ]
+
+
+def _monday_regime_positions(conn, week_of: str) -> list[dict]:
+    """The default regime's rows for a week. The skipped-week journal keys on THIS rather than on
+    every row for the week: once the Friday regime can enter the same `week_of`, a bare
+    positions-for-week check would read the Friday arm's entry as the Monday arm having traded and
+    silently stop journaling genuinely skipped Mondays."""
+    return [
+        p
+        for p in db.positions_for_week(conn, week_of)
+        if not str(p.get("book") or "").startswith(engine.FRIDAY_PREFIX)
+    ]
+
+
+def _maybe_friday_entry(
+    config: dict, conn, *, cache_path: str, when: datetime, now_min: int
+) -> int:
+    """The Friday regime's entry phase: the same structure entered a session early, to measure
+    whether the weekend's differential decay is worth owning (docs/friday-entry-arm.md).
+
+    Two gates, and the second is the load-bearing one:
+
+    * the clock window (default 15:50-16:00), which deliberately OPENS inside the exit window's
+      tail rather than after it, so the entry gets twice the attempts and can start the moment the
+      exits are actually done; and
+    * `db.pending_closing_exits`, which blocks the entry while any book that intends to close today
+      still holds an expiring position. Ordering here is enforced by STATE, not by the clock,
+      because `run_once` runs entry BEFORE management within a tick — a clock-only gate over an
+      overlapping window would let one tick open the new week before closing the old one.
+    """
+    settings = friday_settings(config)
+    if not settings.get("enabled"):
+        return 0
+    plan = clock.friday_entry_plan(when.date())
+    if plan is None:
+        return 0
+    start = clock.hhmm_to_min(settings.get("window_start"), 15 * 60 + 50)
+    end = clock.hhmm_to_min(settings.get("window_end"), 16 * 60)
+    if not (start <= now_min <= end):
+        return 0
+    books = friday_books(config)
+    if not books:
+        return 0
+    # Positions expiring TODAY are the ones this session closes; today is the Friday entry session.
+    pending = db.pending_closing_exits(conn, when.date().isoformat())
+    if pending:
+        # Ordinary and expected early in the window; recorded so a week the Friday arm never
+        # entered can be read as "the exits ran long" rather than as a feed problem.
+        db.record_entry_attempt(
+            conn,
+            trade_date=plan["entry_session"],
+            week_of=plan["week_of"],
+            symbol=(config.get("symbols") or ["SPX"])[0],
+            outcome="awaiting_session_exits",
+            block_detail=f"{len(pending)} position(s) still to close",
+        )
+        return 0
+    return _try_entry(config, conn, cache_path=cache_path, when=when, week=plan, books=books)
+
+
+def _try_entry(
+    config: dict, conn, *, cache_path: str, when: datetime, week: dict, books: list[str] | None = None
+) -> int:
+    """Open the week's calendars. `books` overrides the session roster for a non-default entry
+    regime (the Friday arm passes its own); `week` carries the identity every row is stamped with,
+    so a Friday plan's `entry_session` and `dc_7_10` tag flow through unchanged and this stays the
+    ONE entry path rather than growing a second copy per regime."""
     day = week["entry_session"]
     symbol = (config.get("symbols") or ["SPX"])[0].strip().upper()
     # Two settlement models are implemented: European cash (shorts settle at intrinsic) and American
@@ -340,7 +424,10 @@ def _try_entry(config: dict, conn, *, cache_path: str, when: datetime, week: dic
                 outcome="ex_dividend_week", block_detail=f"ex-date {hit}",
             )
             return 0
-    books, advice_params = session_books(config, day)
+    if books is None:
+        books, advice_params = session_books(config, day)
+    else:
+        advice_params = None  # no advised twin for a non-default regime (see the arm's doc)
     already = {(p["book"], p["side"]) for p in db.positions_for_week(conn, week["week_of"])}
     if all((b, s) in already for b in books for s in ("put", "call")):
         return 0

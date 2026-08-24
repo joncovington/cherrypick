@@ -93,6 +93,45 @@ def next_entry_session(today: date) -> date | None:
     return entry_session(week_monday(today) + timedelta(days=7))
 
 
+def previous_trading_day(day: date) -> date | None:
+    """The trading day immediately before `day`, or None if none is found within a fortnight (which
+    the NYSE calendar does not produce — bounded rather than unbounded so a bad date cannot loop)."""
+    candidate = day - timedelta(days=1)
+    for _ in range(14):
+        if _cal.is_trading_day(candidate):
+            return candidate
+        candidate -= timedelta(days=1)
+    return None
+
+
+def friday_entry_plan(today: date) -> dict | None:
+    """The week `today` would enter under the FRIDAY regime, or None when today is not that session.
+
+    Same expirations as the Monday plan for the coming week — the point of the regime is to trade
+    the identical contracts, entered a session earlier — but the structure tag is computed from THIS
+    entry date, so an ordinary week reads `dc_7_10` against the Monday regime's `dc_4_7` and the two
+    populations can never pool (honesty rule 4). `week_of` stays the target week's Monday, so both
+    regimes' rows for one week group together while remaining distinct books.
+
+    Returns None on any session that is not the trading day immediately before an entry session,
+    which is what keeps this to one entry per week without a separate calendar.
+    """
+    plan = week_plan(today)
+    if plan is None:
+        return None
+    entry = date.fromisoformat(plan["entry_session"])
+    if entry <= today or previous_trading_day(entry) != today:
+        return None
+    front = date.fromisoformat(plan["front_expiration"])
+    back = date.fromisoformat(plan["back_expiration"])
+    return {
+        **plan,
+        "entry_session": today.isoformat(),
+        "monday_entry_session": plan["entry_session"],
+        "structure": structure_tag(today, front, back),
+    }
+
+
 def week_plan(today: date) -> dict | None:
     """The full set of computed dates for the week `today`'s next entry belongs to, or None when the
     calendar cannot produce one. One helper so the loop, the stream request, and the tests all

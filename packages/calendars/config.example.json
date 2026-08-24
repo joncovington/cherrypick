@@ -53,6 +53,15 @@
     "path": { "enabled": true }
   },
 
+  "friday_entry_header": "===== the Friday entry regime (paper, OFF by default) =====",
+  "_friday_entry_note": "A SECOND ENTRY REGIME, not a third book — see docs/friday-entry-arm.md. It enters the IDENTICAL contracts (same strikes horizon, same two expirations) on the trading day BEFORE the entry session, to measure whether the weekend's differential decay is worth owning versus the Monday entrance. Because the tag is computed from the actual entry date it reads dc_7_10 on an ordinary week against the Monday regime's dc_4_7, so the two populations can never pool (honesty rule 4) — and the read-side exit grid already groups by tag, so its policy derivation and validation extend for free. Its books are the base roster under a `friday:` prefix (friday:control, friday:path); there is no advised twin in v1. OFF by default because a second regime roughly doubles this module's open positions and buying power, and because the two regimes skip DIFFERENT weeks (the ex-dividend refusal span widens by three days when entry moves earlier), so they are not a matched set week-for-week and no surface may assume alignment.",
+  "_friday_entry_window_note": "The window deliberately OPENS INSIDE the exit window's tail (exit runs 15:45-15:55) rather than after it: that buys twenty attempts at a 30s cadence instead of ten, and lets the entry start the moment the exits are actually done instead of waiting out a clock boundary they may have cleared minutes earlier. Ordering is enforced by STATE, never by these times alone — the entry is blocked while any book that intends to close today still holds an expiring position, because run_once runs entry BEFORE management within a tick and a clock-only gate over an overlapping window would open the new week before closing the old one. That gate reads 'every book that intends to exit has done so', never 'the book is flat': `path` never closes by design, so a wait-until-flat condition would be satisfied on no Friday ever and the entry would silently never fire. Entering at the close is the maximum capture the idea can produce and equally the sharpest test of it, since Friday's closing premiums are exactly where weekend decay is already marked down.",
+  "friday_entry": {
+    "enabled": false,
+    "window_start": "15:50",
+    "window_end": "16:00"
+  },
+
   "_tastytrade_costs_note": "Overrides for the shared cost model (cherrypick.core.fees.DEFAULT_COSTS): slippage_frac_of_spread, slippage_cap_frac_of_mid, commissions. Empty means the suite defaults. The per-symbol pieces are automatic: SPX would carry its $0.60/contract index exchange fee, SPY carries none (it is not on the broad-based index schedule), and each ITM expiry costs the $5 settlement/assignment event — plus, under physical settlement, the SEC and FINRA pass-throughs on the share disposal.",
   "tastytrade_costs": {},
 

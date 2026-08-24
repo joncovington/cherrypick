@@ -1,6 +1,12 @@
 # The Friday-entry arm — a design proposal
 
-*Drafted 2026-08-24 (user idea the same day). A design, not shipped work. The module had taken
+*Drafted 2026-08-24 (user idea the same day). **The regime is BUILT and OFF as of the same day** —
+`friday_entry.enabled: false`, absent from the live config, so nothing changed until it is switched
+on. What is not built is the paired-debit recording under "The declared question" below, which is
+the primary measurement and only becomes recordable once a Friday entry exists (first possible:
+2026-08-28).*
+
+*Original framing follows. A design, not shipped work. The module had taken
 exactly one position when this was written — 2026-08-24's `dc_4_7`, entered at 11:24 after two
 consecutive skipped weeks — which is what makes this the cheapest moment this convention will ever
 be changeable.*
@@ -56,10 +62,11 @@ means two different things in one ledger.
   its own state gate on the session's exits, under its own config block so the regime is off by
   default.
 - `session_books` extended so the Friday regime resolves its own book set.
-- `stream_request.py` must declare the expirations **a session earlier** — the Friday entry needs
-  the coming week's chains on Friday, not Monday. This is the one change that touches the producer:
-  it widens the declared expiration set, and per the 2026-08-24 subscription incident that is a
-  load question to land deliberately, outside market hours.
+- ~~`stream_request.py` must declare the expirations a session earlier~~ — **not needed, verified
+  2026-08-24.** `next_entry_session` already rolls to the coming week's entry on the Tuesday, so
+  `wanted_expirations` has been declaring the Friday regime's front/back dates for days by the time
+  it wants them. This removes the only piece that touched producer load, which is why the regime
+  could land during market hours: enabling it subscribes nothing new.
 
 ## Entry time: the close (user directive, 2026-08-24)
 

@@ -67,7 +67,7 @@ def effective_params(position: dict, config: dict) -> dict:
     `advice_params` overlaid for an advised book. An unreadable stamp is the control's config,
     never a guess."""
     book = position.get("book") or "control"
-    base = book.split(":", 1)[1] if book.startswith("advised:") else book
+    base = engine.base_book(book)
     params = {**PARAM_DEFAULTS, **engine.merged_params(config, base)}
     params["book"] = book
     raw = position.get("advice_params")
@@ -117,7 +117,9 @@ def evaluate(
     the double, not one side. The caller owns that pairing; this function just compares.
     """
     book = params["book"]
-    if book == "path":
+    # Through base_book, so `friday:path` holds exactly as `path` does — a raw name comparison
+    # would make the never-closing book close (see engine.base_book).
+    if engine.base_book(book) == "path":
         return Decision("hold", "path_holds")
 
     today = now.date()
