@@ -117,8 +117,27 @@ Conventions first: every number arrives computed from Python (reader or bridge p
 above); the pages draw with the house SVG kit (`components/Charts.tsx` — `LineChart` with its
 fill-to-zero equity/underwater mode, `BarChart`, `SignedBar`, `SeriesLegend`, plus the stat-tile
 grid and `DataTable`); axis text uses the shared tokens; and the dataviz design pass applies when
-the components are actually built. One genuinely new chart primitive is needed — a **scatter**
-(house kit has none today); everything else composes from what exists.
+the components are actually built.
+
+A survey of reference surfaces (2026-08-23: quantstats/pyfolio tearsheets, the journal dashboards —
+TradesViz, Edgewonk — and systematic-monitoring practice) plus an inventory of the console's own
+pages sharpened this phase in three ways. First, the console is already STRONG on mechanism
+visuals — the payoff forests, the flies session timeline, the GEX ladders — and thin on the
+evaluation layer the reference tools treat as table stakes: rolling metrics, distributions,
+consistency views. Second, coverage is uneven: MEIC and flies carry rich performance visuals while
+calendars, pmcc, curve, bwb, the advisor, and both report tabs are tables-only. Third, the two
+most valuable tearsheet panels ALREADY EXIST in the console, each welded into one module's page:
+MEIC's daily-P&L calendar heatmap (`MeicDeepCards`) and flies' cumulative+underwater twin
+(`Flies/PerformanceTab`). The highest-leverage work is extraction, not invention.
+
+**Step 0 — extract, then spread.** Promote the calendar heatmap and the equity+underwater twin
+into the shared kit beside `Charts.tsx`, then give every module's history/performance tab both.
+This one move brings the four chartless module pages to the industry-baseline pair for the cost
+of a refactor. New primitives, all in the spare hand-rolled house style, no dependency added:
+`CalendarHeatmap` and `EquityUnderwater` (extractions), `Sparkline` (a tiny `LineChart` variant),
+`Histogram` (a `BarChart` adaptation), `Scatter` (genuinely new), and `LevelStrip` (a number line).
+The journal tools' design rule applies throughout: each page keeps an OPINIONATED 5–8 headline
+tiles, with depth behind the performance tab — which is already the console's shape.
 
 **Per-module page — a "Performance" card family** (module pages already have performance tabs):
 
@@ -137,20 +156,46 @@ the components are actually built. One genuinely new chart primitive is needed �
    twin, MFE against realized, reads exit efficiency (how much peak profit exits captured). Only on
    modules with mark paths; absence is stated ("no mark path recorded for this module"), never an
    empty chart.
-5. **Regime-cut small multiples** — the phase-1 metrics per regime bucket (VIX/VIX3M state, GEX
+5. **Rolling-window metric line** — rolling expectancy and Sharpe over the trailing N sessions on
+   each performance tab. The monitoring literature's core point: a full-history number hides
+   deterioration, and this suite already believes that — the flies completion-TREND chart exists
+   because a blended rate drifted while looking stable. This is the same move applied to the
+   money metrics. Lines break at measurement boundaries like everything else.
+6. **Regime-cut small multiples** — the phase-1 metrics per regime bucket (VIX/VIX3M state, GEX
    sign, trend), joined through `cherrypick.core.regime.regime_at` against the regime recorder's
    series. Bars per bucket with sessions-per-bucket printed on each; an underpowered bucket renders
    greyed with its count, never as a finding. This is where the two plans meet: the regime series
-   makes the cut possible, and this surface is what it was recorded for.
+   makes the cut possible, and this surface is what it was recorded for. Once it exists, a **regime
+   ribbon** (background bands by VIX/GEX state under the equity curve) turns "when did it make
+   money" into "in what market did it make money" on the same chart.
 
-**Suite level:**
+**One telling visual for each tables-only module page** (beyond the shared pair from step 0):
 
-6. **Review page (EOD tab) metric strip** — the tile row repeated per module for the session, so
-   "what did the suite do today" carries risk-adjusted context, not just net.
-7. **Calibrate/promotion surface** — wherever a promotion reading renders, the trials count
-   ("selected from N arms") and PSR sit beside the headline metric, and the tooltip carries the
-   full coverage detail. The number that inflates under selection is never shown without the
-   number of selections.
+7. **curve — a daily regime ribbon.** The contango/backwardation series is that module's declared
+   second product and currently renders as a table; a colored day-strip (with unusable days marked,
+   never skipped) is the read it was recorded for.
+8. **bwb — a trigger-fire timeline.** Which book fired, when, at what gamma-flip reading — the
+   latches and readings are already on the rows; the flies timeline idiom applies directly.
+9. **advisor — advised-vs-control cumulative lines per experiment.** Exact pairing makes the
+   comparison rigorous, and it is the page's entire question rendered as one picture. The
+   experiment's `underpowered` state renders on the chart, not only in the table.
+
+**Suite and report level:**
+
+10. **Review page (EOD tab)** — the metric tile row per module (risk-adjusted context beside net),
+    an inline compact `SignedBar` in the "What each module did" table, and a `Sparkline` per module
+    in the Trend section — small multiples for cross-module consistency at a glance. The trend
+    already stops at measurement breaks; the sparklines break the same way.
+11. **Overview page — a suite calendar strip.** A GitHub-style year strip colored by suite net per
+    session — the consistency-at-a-glance view every journal tool leads with, and the one thing the
+    one-session-deep EOD card cannot show.
+12. **Morning page — a gamma-levels `LevelStrip`.** Spot positioned on a number line between put
+    wall, zero-gamma flip, and call wall: the pack's most spatial data, currently read out of a
+    table. Prior-basis readings render with the same prior labeling the cards carry.
+13. **Calibrate/promotion surface** — wherever a promotion reading renders, the trials count
+    ("selected from N arms") and PSR sit beside the headline metric, and the tooltip carries the
+    full coverage detail. The number that inflates under selection is never shown without the
+    number of selections.
 
 Verification per house rules: every new endpoint checked against a rebuilt, restarted server
 (`withReadOnlyDb` hides broken readers behind healthy-looking empties), and every new card driven
@@ -161,12 +206,18 @@ pattern).
 ## Sequencing
 
 1. Phase 1 (`core.metrics` + tests) — small; one sitting.
-2. Phase 4 items 1–3 for one module (proposed: meic, richest ledger) — proves the reader→tile→chart
+2. Phase 4 step 0 (extract `CalendarHeatmap` + `EquityUnderwater`, spread to the chartless module
+   pages) — a refactor with outsized reach; no new numbers needed, so it can land before or beside
+   phase 1.
+3. Phase 4 items 1–3 for one module (proposed: meic, richest ledger) — proves the reader→tile→chart
    path end to end before it multiplies.
-3. Phase 2 (MAE/MFE) for calendars/curve/pmcc, then their scatters (item 4).
-4. Items 5–7 (regime cuts, review strip, promotion trials count) — item 5 gated only on the regime
-   series having accumulated a few weeks of rows.
-5. Phase 3's PSR alongside, DSR deferred.
+4. Report-level quick wins (items 10–12: review sparklines + SignedBars, the suite calendar strip,
+   the morning LevelStrip) — display-only over numbers that already exist.
+5. Phase 2 (MAE/MFE) for calendars/curve/pmcc, then their scatters (item 4); the per-module visuals
+   (items 7–9) alongside.
+6. Items 5–6 and 13 (rolling metrics, regime cuts + ribbon, promotion trials count) — the regime
+   items gated only on the recorder's series having accumulated a few weeks of rows.
+7. Phase 3's PSR alongside, DSR deferred.
 
 ## Open questions
 
