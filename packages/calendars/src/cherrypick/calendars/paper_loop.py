@@ -311,6 +311,64 @@ def _unsettled_today(conn, day: str) -> bool:
     return bool(db.expiring_open_legs(conn, day))
 
 
+def _record_paired_debits(conn, snapshot: dict, *, week: dict, day: str) -> None:
+    """Price the Friday regime's own strikes at the Monday entry moment and record the pair.
+
+    This is the Friday arm's PRIMARY measurement. Both entrances hold the same contracts — same
+    strikes, same two expirations — so their value paths are identical from here on and the entire
+    P&L difference between entering Friday and entering Monday is what each paid:
+    `monday_debit - friday_debit`, weekend decay netted against weekend gap risk in one figure
+    whose variance is a fraction of a week's P&L.
+
+    Runs once per week and does nothing when the Friday regime holds nothing for it — which is
+    every week until that regime is enabled, and any week it refused. Best-effort throughout: a
+    failure here costs the measurement, never the entry beside it.
+    """
+    try:
+        friday_rows = [
+            p
+            for p in db.positions_for_week(conn, week["week_of"])
+            if str(p.get("book") or "").startswith(engine.FRIDAY_PREFIX)
+        ]
+        if not friday_rows:
+            return
+        # One row per SIDE: the books within the regime share the same fills, so any of them
+        # carries the same strike and debit for a side.
+        by_side: dict[str, dict] = {}
+        for p in friday_rows:
+            by_side.setdefault(p["side"], p)
+
+        strikes = {side: float(p["strike"]) for side, p in by_side.items()}
+        priced = engine.price_at_strikes(snapshot, strikes)
+        now = clock.now_iso()
+        for side, p in by_side.items():
+            row = {
+                "recorded_at": now,
+                "week_of": week["week_of"],
+                "symbol": p["symbol"],
+                "side": side,
+                "strike": p["strike"],
+                "friday_session": p.get("entry_session"),
+                "friday_debit": p.get("entry_debit"),
+                "friday_spot": p.get("entry_spot"),
+                "monday_session": day,
+                "monday_spot": snapshot.get("spot"),
+            }
+            if priced.get("ok"):
+                row.update(
+                    monday_debit=priced["sides"][side]["debit"],
+                    usable=1,
+                    refusal=None,
+                )
+            else:
+                # "We could not have priced it then" is a real answer; a nearest-strike substitute
+                # would silently change what was compared.
+                row.update(monday_debit=None, usable=0, refusal=priced.get("reason"))
+            db.record_paired_debit(conn, **row)
+    except Exception as exc:  # noqa: BLE001 — a measurement must never cost the entry beside it
+        _log(f"paired-debit record failed (continuing): {type(exc).__name__}: {exc}")
+
+
 def friday_settings(config: dict) -> dict:
     """The Friday-entry regime's config block. OFF unless the config says otherwise — a second
     entry regime doubles this module's open positions and its buying power, so it is opt-in."""
@@ -469,6 +527,13 @@ def _try_entry(
         quotes_stale=snapshot["quote_stats"]["rejected"],
         spot=snapshot["spot"],
     )
+
+    # The Friday regime's matched-strike comparison, recorded at the MONDAY entry moment and only
+    # from the default regime's own pass (docs/friday-entry-arm.md). Pure telemetry beside the
+    # entry, never a position: it prices the strikes the Friday arm already bought, so the two
+    # entrances hold identical contracts and the difference in what they paid is the whole effect.
+    if books is None:
+        _record_paired_debits(conn, snapshot, week=week, day=day)
 
     params = engine.merged_params(config, "control")
     planned = engine.plan_entry(snapshot, params)

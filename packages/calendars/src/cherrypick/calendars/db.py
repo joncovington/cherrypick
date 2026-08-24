@@ -221,6 +221,37 @@ CREATE TABLE IF NOT EXISTS dc_entry_attempts (
 );
 CREATE INDEX IF NOT EXISTS idx_dc_attempts_date ON dc_entry_attempts(trade_date);
 
+-- The Friday-vs-Monday entry comparison, at MATCHED strikes (docs/friday-entry-arm.md).
+--
+-- One row per (week, side): what the Friday regime paid for a structure, and what the SAME strikes
+-- and expirations cost at the Monday entry moment. Because the contracts are identical, both
+-- entrances' value paths are identical from Monday onward, so `monday_debit - friday_debit` IS the
+-- entire P&L difference between entering early and entering on the day -- weekend decay netted
+-- against weekend gap risk, in one number whose variance is a fraction of a week's P&L. Letting
+-- each regime price its own EM-chosen strikes instead would bury that small systematic effect
+-- under a large noisy one, and answer the question in years rather than weeks.
+--
+-- Recorded, never traded: no position is opened from this table. A Monday whose snapshot cannot
+-- price the Friday strikes writes usable = 0 with the refusal -- "we could not have priced it",
+-- which is a real answer -- rather than a nearest-strike substitute.
+CREATE TABLE IF NOT EXISTS dc_paired_debits (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    recorded_at     TEXT NOT NULL,
+    week_of         TEXT NOT NULL,
+    symbol          TEXT NOT NULL,
+    side            TEXT NOT NULL,
+    strike          REAL,
+    friday_session  TEXT,
+    friday_debit    REAL,
+    friday_spot     REAL,
+    monday_session  TEXT NOT NULL,
+    monday_debit    REAL,
+    monday_spot     REAL,
+    usable          INTEGER NOT NULL DEFAULT 0,
+    refusal         TEXT,
+    UNIQUE(week_of, side)
+);
+
 -- The feed ledger: one row per (tick x symbol) recording what the cache gave us, refusals
 -- included — a stretch of refused rows is a feed problem, a stretch with NO rows is the loop not
 -- running, and without this table those two silences are identical (flies' fly_snapshots lesson).
@@ -424,3 +455,39 @@ def expiring_open_legs(conn, day: str) -> list[dict]:
             (day,),
         )
     ]
+
+
+def record_paired_debit(conn, **row) -> None:
+    """Upsert one (week, side) row of the Friday-vs-Monday matched-strike comparison.
+
+    Telemetry-class and best-effort: this records a measurement, never a position, so a failure
+    here must cost the number and never the tick. Idempotent per (week_of, side) so a retried
+    Monday tick restates rather than duplicating."""
+    try:
+        cols = (
+            "recorded_at", "week_of", "symbol", "side", "strike",
+            "friday_session", "friday_debit", "friday_spot",
+            "monday_session", "monday_debit", "monday_spot", "usable", "refusal",
+        )
+        values = [row.get(c) for c in cols]
+        placeholders = ", ".join("?" * len(cols))
+        updates = ", ".join(f"{c}=excluded.{c}" for c in cols if c not in ("week_of", "side"))
+        conn.execute(
+            f"INSERT INTO dc_paired_debits ({', '.join(cols)}) VALUES ({placeholders}) "
+            f"ON CONFLICT(week_of, side) DO UPDATE SET {updates}",
+            values,
+        )
+        conn.commit()
+    except sqlite3.Error:
+        pass
+
+
+def paired_debits(conn, week_of: str | None = None) -> list[dict]:
+    """The matched-strike comparison rows, newest week first (or one week's)."""
+    if week_of is None:
+        rows = conn.execute("SELECT * FROM dc_paired_debits ORDER BY week_of DESC, side")
+    else:
+        rows = conn.execute(
+            "SELECT * FROM dc_paired_debits WHERE week_of = ? ORDER BY side", (week_of,)
+        )
+    return [dict(r) for r in rows]

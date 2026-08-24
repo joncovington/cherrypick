@@ -186,3 +186,112 @@ def test_monday_skip_journal_ignores_the_friday_regimes_rows(conn):
     conn.execute("UPDATE dc_positions SET week_of = '2026-08-31'")
     assert db.positions_for_week(conn, "2026-08-31") != []
     assert paper_loop._monday_regime_positions(conn, "2026-08-31") == []
+
+
+# --- the paired debit: the arm's primary measurement --------------------------------------
+
+
+def _snapshot(strikes_priced: dict[float, tuple[float, float]]):
+    """A minimal entry snapshot: {strike: (front_mid, back_mid)} quoted on both legs, puts only."""
+    front, back, quotes = [], [], {}
+    for k, (fm, bm) in strikes_priced.items():
+        fsym, bsym = f".F{k}", f".B{k}"
+        front.append({"streamer_symbol": fsym, "strike_price": k, "option_type": "put"})
+        back.append({"streamer_symbol": bsym, "strike_price": k, "option_type": "put"})
+        quotes[fsym] = {"bid": fm, "ask": fm, "mid": fm}
+        quotes[bsym] = {"bid": bm, "ask": bm, "mid": bm}
+    return {
+        "symbol": "SPY", "spot": 760.0, "quotes": quotes, "front": front, "back": back,
+        "front_expiration": "2026-09-04", "back_expiration": "2026-09-08", "greeks": {},
+    }
+
+
+def test_price_at_strikes_prices_the_given_strike_not_a_chosen_one():
+    """The matched-strike property: it must price what it is HANDED, so both entrances hold the
+    same contracts and the difference is what each paid."""
+    snap = _snapshot({750.0: (1.0, 2.5), 755.0: (1.2, 2.0)})
+    out = engine.price_at_strikes(snap, {"put": 750.0})
+    assert out["ok"] and out["sides"]["put"]["debit"] == 1.5
+    assert out["sides"]["put"]["strike"] == 750.0
+
+
+def test_price_at_strikes_refuses_an_unquoted_strike_rather_than_substituting():
+    """'We could not have priced it then' is a real answer; a nearest-strike substitute would
+    silently change what was compared."""
+    snap = _snapshot({750.0: (1.0, 2.5)})
+    out = engine.price_at_strikes(snap, {"put": 999.0})
+    assert out["ok"] is False and out["reason"] == "strike_not_quoted"
+
+
+def test_paired_debit_records_both_entrances_at_one_strike(conn):
+    """The Friday row supplies what was paid; the Monday snapshot supplies what the same contracts
+    cost at the later moment."""
+    db.save_position(
+        conn,
+        {
+            "position_id": "2026-08-31:friday:control:put",
+            "week_of": "2026-08-31", "entry_session": "2026-08-28",
+            "book": "friday:control", "side": "put", "symbol": "SPY", "structure": "dc_7_11",
+            "front_expiration": "2026-09-04", "back_expiration": "2026-09-08",
+            "strike": 750.0, "quantity": 1, "entry_debit": 1.20, "entry_spot": 758.0,
+            "entry_time": "2026-08-28T15:55:00-04:00", "status": "open",
+        },
+    )
+    snap = _snapshot({750.0: (1.0, 2.5)})
+    paper_loop._record_paired_debits(
+        conn, snap, week={"week_of": "2026-08-31"}, day="2026-08-31"
+    )
+    rows = db.paired_debits(conn, "2026-08-31")
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["usable"] == 1
+    assert r["friday_debit"] == 1.20 and r["monday_debit"] == 1.5
+    assert r["friday_session"] == "2026-08-28" and r["monday_session"] == "2026-08-31"
+    # The measurement itself: what waiting cost.
+    assert round(r["monday_debit"] - r["friday_debit"], 4) == 0.30
+
+
+def test_paired_debit_is_a_marked_refusal_when_the_strike_cannot_be_priced(conn):
+    db.save_position(
+        conn,
+        {
+            "position_id": "2026-08-31:friday:control:put",
+            "week_of": "2026-08-31", "entry_session": "2026-08-28",
+            "book": "friday:control", "side": "put", "symbol": "SPY", "structure": "dc_7_11",
+            "front_expiration": "2026-09-04", "back_expiration": "2026-09-08",
+            "strike": 750.0, "quantity": 1, "entry_debit": 1.20, "status": "open",
+        },
+    )
+    paper_loop._record_paired_debits(
+        conn, _snapshot({700.0: (1.0, 2.5)}), week={"week_of": "2026-08-31"}, day="2026-08-31"
+    )
+    r = db.paired_debits(conn, "2026-08-31")[0]
+    assert r["usable"] == 0 and r["refusal"] == "strike_not_quoted"
+    assert r["monday_debit"] is None  # never a substituted price
+    assert r["friday_debit"] == 1.20  # what the Friday arm paid is still on the record
+
+
+def test_paired_debit_does_nothing_without_a_friday_position(conn):
+    """Every week until the regime is enabled, and any week it refused."""
+    paper_loop._record_paired_debits(
+        conn, _snapshot({750.0: (1.0, 2.5)}), week={"week_of": "2026-08-31"}, day="2026-08-31"
+    )
+    assert db.paired_debits(conn) == []
+
+
+def test_paired_debit_restates_rather_than_duplicating_on_a_retried_tick(conn):
+    db.save_position(
+        conn,
+        {
+            "position_id": "2026-08-31:friday:control:put",
+            "week_of": "2026-08-31", "entry_session": "2026-08-28",
+            "book": "friday:control", "side": "put", "symbol": "SPY", "structure": "dc_7_11",
+            "front_expiration": "2026-09-04", "back_expiration": "2026-09-08",
+            "strike": 750.0, "quantity": 1, "entry_debit": 1.20, "status": "open",
+        },
+    )
+    for _ in range(3):
+        paper_loop._record_paired_debits(
+            conn, _snapshot({750.0: (1.0, 2.5)}), week={"week_of": "2026-08-31"}, day="2026-08-31"
+        )
+    assert len(db.paired_debits(conn, "2026-08-31")) == 1

@@ -6,9 +6,11 @@ so **the first Friday entry is due 2026-08-28, 15:50–16:00 ET**, structure `dc
 against the Monday regime's `dc_4_8` (Labor Day shifts the back expiration — the ordinary week is
 `dc_7_10` against `dc_4_7`).*
 
-***Not built: the paired-debit recording*** *under "The declared question" below, which is the
-primary measurement. It only becomes recordable once a Friday entry exists, i.e. from 2026-08-31.
-Build it before that Monday or the first week's cleanest number is lost.*
+***The paired-debit recording is BUILT too*** *(same day, ahead of its 2026-08-31 deadline):
+`engine.price_at_strikes` prices the Friday arm's own strikes off the Monday entry snapshot, and
+`dc_paired_debits` holds one row per (week, side) with both debits. It records itself from the
+Monday entry pass and does nothing on a week the Friday arm holds nothing — which is every week
+until the first Friday entry on 2026-08-28.*
 
 *Original framing follows. A design, not shipped work. The module had taken
 exactly one position when this was written — 2026-08-24's `dc_4_7`, entered at 11:24 after two
