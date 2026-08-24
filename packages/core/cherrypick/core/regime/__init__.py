@@ -44,6 +44,9 @@ _SECTORS = ("xlb", "xlc", "xle", "xlf", "xli", "xlk", "xlp", "xlre", "xlu", "xlv
 # usable at the same sample tick, so a ratio can never mix two moments.
 _RATIOS = (
     ("vix_vix3m_ratio", "vix", "vix3m"),
+    # Front-of-curve: above ~1 means the next nine days are priced richer than the next thirty —
+    # an event (FOMC/CPI) inside the window. A sharper read of that than VIX/VIX3M gives.
+    ("vix9d_vix_ratio", "vix9d", "vix"),
     ("vvix_vix_ratio", "vvix", "vix"),
     ("rsp_spy_ratio", "rsp", "spy"),
     ("hyg_lqd_ratio", "hyg", "lqd"),

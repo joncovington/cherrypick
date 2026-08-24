@@ -42,11 +42,16 @@ from cherrypick.gex import provider as _provider
 # symbol change); the symbol is provenance, recorded on every row. Raw quote readings only — see
 # the module docstring for why derived values are excluded on purpose.
 READINGS: dict[str, str] = {
-    # vol complex
+    # vol complex. SKEW and VIX9D admitted 2026-08-24 after the entitlement probe printed both
+    # through the ordinary legs path (143.9 and 14.53) — see docs/regime-recorder-plan.md. SKEW
+    # prices the tail independently of the ATM level; VIX9D/VIX reads event-week pricing
+    # (FOMC/CPI) more sharply than VIX/VIX3M does.
     "vix": "VIX",
     "vix3m": "VIX3M",
     "vix1d": "VIX1D",
+    "vix9d": "VIX9D",
     "vvix": "VVIX",
+    "skew": "SKEW",
     # breadth / cross-asset
     "spy": "SPY",
     "rsp": "RSP",

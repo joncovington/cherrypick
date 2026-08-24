@@ -173,11 +173,15 @@ def test_dropped_readings_flags_a_stale_checkout(cfg):
         conn.execute(
             "INSERT INTO market_regime_history "
             "(trade_date, ts, reading, symbol, value, basis_ts, usable, reason) "
-            "VALUES ('2026-08-17', ?, 'skew', 'SKEW', 141.0, ?, 1, NULL)",
+            # A deliberately fictional reading: this fixture stands for "a newer checkout recorded
+            # something this code does not declare", so it must never collide with a real reading.
+            # It used to be 'skew', which stopped working the day SKEW was admitted (2026-08-24) —
+            # the guard correctly caught its own fixture.
+            "VALUES ('2026-08-17', ?, 'not_a_real_reading', 'ZZZZ', 141.0, ?, 1, NULL)",
             (RTH_NOW.timestamp() - 86400, RTH_NOW.timestamp() - 86400),
         )
         conn.commit()
-        assert regime.dropped_readings(conn, today="2026-08-18") == {"skew"}
+        assert regime.dropped_readings(conn, today="2026-08-18") == {"not_a_real_reading"}
         # Nothing recorded before today -> nothing to flag.
         conn.execute("DELETE FROM market_regime_history WHERE trade_date < '2026-08-18'")
         conn.commit()
