@@ -19,6 +19,24 @@ from cherrypick.core import structures as _structures
 
 BOOKS = ("control", "path")
 
+# Entry-regime prefix for the Friday-entry books (docs/friday-entry-arm.md). `friday:path` must
+# behave exactly like `path` under management and exactly unlike it under structure tagging — the
+# first because exit POLICY is the base book's, the second because a Friday entry is dc_7_10 and
+# never pools with dc_4_7.
+FRIDAY_PREFIX = "friday:"
+
+
+def base_book(book: str) -> str:
+    """The exit-policy identity behind a book name. `advised:control` is a control with overlaid
+    params and `friday:path` is a path entered a session earlier; both answer to their base book's
+    policy. Taking the LAST segment composes for any prefix stack without enumerating them —
+    `advised:friday:control` reads as `control`.
+
+    Every policy check must go through this rather than comparing the raw name. `management.decide`
+    compared `book == "path"` directly, which silently made `friday:path` a CLOSING book — the one
+    book whose entire job is never to close."""
+    return book.rsplit(":", 1)[-1]
+
 # How an expiring leg settles, per underlying. The module models both styles and refuses a symbol it
 # has been told nothing about — the guard's original point, kept: an unmodelled settlement produces
 # bookkeeping that is wrong at its first Friday, and wrong quietly.

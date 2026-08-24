@@ -380,6 +380,24 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
 # --------------------------------------------------------------------------- readers
 
 
+def pending_closing_exits(conn, expiration: str) -> list[dict]:
+    """Open positions expiring on `expiration` whose book still INTENDS to close — the Friday
+    regime's ordering gate (docs/friday-entry-arm.md).
+
+    The filter is deliberately "intends to close", not "is open": `path` never closes by design, so
+    a gate waiting for the book to go flat would be satisfied on no Friday ever and the Friday entry
+    would silently never fire — a deadlock presenting as a skipped week, which this module has
+    already produced twice for unrelated reasons and would be misdiagnosed as a third. The base-book
+    split is what separates the two (see engine.base_book), so `friday:path` is excluded here for
+    the same reason `path` is.
+    """
+    rows = conn.execute(
+        "SELECT * FROM dc_positions WHERE front_expiration = ? AND status = 'open' ORDER BY book, side",
+        (expiration,),
+    )
+    return [dict(r) for r in rows if r["book"].rsplit(":", 1)[-1] != "path"]
+
+
 def positions_for_week(conn, week_of: str) -> list[dict]:
     return [
         dict(r)
