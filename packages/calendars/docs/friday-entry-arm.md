@@ -60,6 +60,39 @@ means two different things in one ledger.
   it widens the declared expiration set, and per the 2026-08-24 subscription incident that is a
   load question to land deliberately, outside market hours.
 
+## Entry time: the close (user directive, 2026-08-24)
+
+**The Friday entry goes on at the end of the session**, which is the right choice for the stated
+question and also the sharpest possible test of it. Entering at the close means owning the structure
+across the entire weekend having paid the least time premium beforehand — the maximum capture the
+idea can produce. It equally maximizes exposure to the counter-argument, since Friday's closing
+premiums are exactly where market makers have already marked weekend decay down. If the effect
+survives *this* entry time it is real; if it does not survive here it does not exist at a gentler
+one.
+
+It also lands the entry directly on top of the session's existing traffic, so the window has to be
+chosen against the clock the module already runs:
+
+| | |
+|---|---|
+| exit window (`control` sells every leg) | 15:45 – 15:55 |
+| **proposed Friday entry window** | **15:55 – 16:00** |
+| settlement (`settle_time`) | 16:20 |
+
+Starting the entry when the exit window ends gives the required ordering — exit, then enter — with
+**no reordering of `run_once`'s phases**, because by 15:55 the exits have already fired on earlier
+ticks. That is worth knowing precisely, because the phase order inside a single tick is *dispose →
+enter → mark → manage*, i.e. entry runs BEFORE management: had the entry window overlapped the exit
+window, a single tick would have opened the new week before closing the old one. The window choice
+is what avoids that, so it is load-bearing rather than cosmetic and belongs in the config's own note.
+
+**The fragility is real and was demonstrated today.** A five-minute window at a 30s cadence is ten
+attempts, and 2026-08-24 is a live example of a narrow window plus a starved feed producing a
+skipped week — twice, on consecutive Mondays. Before this ships, decide the retry budget with the
+window: either widen it (15:50–16:00, with entry gated on the exit half having completed rather than
+on the clock alone) or accept that a feed problem in those five minutes costs the week and journal
+it as such. SPY liquidity into the close is not the concern; the feed is.
+
 ## The ordering problem, and it is the real one
 
 **Friday is already the busiest session in this design.** `control` sells every leg in the Friday
@@ -89,16 +122,48 @@ set week-for-week, and any comparison has to say so rather than assume alignment
 week, each held to its own resolution. That is the honest price of running both, and it is the
 reason to decide deliberately rather than to leave both on forever.
 
-## The confound, stated plainly
+## The declared question, and what it implies for the measurement
+
+**Stated intent (user, 2026-08-24):** *does the additional weekend theta decay add to the
+profitability of the overall double calendar trade, versus a Monday entrance?*
+
+That is a question about a **small, systematic** effect, asked of a **weekly** cadence — and those
+two facts together decide how this must be measured.
 
 `dc_7_10` differs from `dc_4_7` in entry timing **and** in the strikes each regime picks from its
-own expected move. A difference in outcome cannot be attributed to weekend theta alone.
+own expected move. Read as two independent strategies that is not a confound at all — each picks
+its strikes the way it would if it were the only regime, and "which entrance is more profitable"
+is answered directly. The problem is **variance, not validity**. Week-to-week P&L on this structure
+swings with strike placement and the spot path by far more than a weekend's differential decay is
+worth; at one entry per week, a small systematic edge sits underneath a much larger noise term for
+a very long time. Two independent regimes would answer this eventually, in years rather than
+months.
 
-This is tolerable — the arm answers a real question ("is the Friday-entered version of this trade
-better?") and that question is worth answering as posed. But if the isolation is wanted later, it
-costs one recorded row and no position: on Monday, **re-price the strikes the Friday regime already
-chose** and record that alongside the real entry. Identical contracts, identical strikes, two entry
-moments — the difference is then entry timing exactly, with the strike choice held constant.
+**Holding the strikes constant collapses almost all of that noise, because of a property specific
+to this structure:** if both entrances hold the *same strikes and the same expirations*, they hold
+the *same contracts*, so from Monday onward their value paths are identical. The entire P&L
+difference between entering Friday and entering Monday is therefore **what each paid** —
+
+> `weekend capture = D_monday − D_friday`, net of the cost stack,
+
+where `D` is the structure's debit at each entry moment. Nothing else differs. That single figure
+is the answer to the stated question, it is recordable without opening a second position, and its
+variance is a fraction of the per-week P&L's.
+
+Note it is also the *complete* answer for the three-day difference, not just the theta half: if
+spot gaps over the weekend and moves away from the strikes, `D_monday` reflects that too. So the
+figure nets weekend decay against weekend gap risk, which is exactly the trade-off in question.
+
+**So the arm is built as posed, and the primary measurement is the paired debit.** On Monday, at the
+Monday entry moment, re-price the strikes the Friday regime already chose and record that row
+alongside the real entry. The arm supplies the realistic answer and exercises the machinery — the
+Friday ordering, the execution gate, the ex-div refusals, real exits on real books. The paired debit
+supplies the low-variance answer to the mechanism question, weeks rather than years sooner.
+
+Two caveats on the "identical from Monday onward" claim, both small and worth stating: an exit rule
+expressed as a percentage of debit is keyed to a different base in each regime, and the Friday
+entrant is exposed to stops or targets over the weekend that the Monday entrant is structurally not
+in the trade for. Both are second-order against the debit differential, but neither is exactly zero.
 
 ## Measurement rules this arm inherits
 
@@ -114,12 +179,18 @@ moments — the difference is then entry timing exactly, with the strike choice 
 
 ## Open questions
 
-- **Entry window on Friday.** Late in the session captures the most weekend decay and gives the
-  least room to retry; the 2026-08-24 incident is a live demonstration that a narrow window plus a
-  bad feed equals a skipped week. Pick the window and its retry budget together.
+- **The entry window's retry budget.** The entry time is settled (the close); the width is not. See
+  the fragility note above — decide the width and the retry budget together, and prefer gating the
+  entry on the exit half having completed over gating it on the clock alone.
 - **Does the advised twin extend to it?** `advice.base_book` is `control`. An
   `advised:friday:control` is buildable but doubles the advisor surface for a regime with no
   history — probably not in v1.
-- **What would retire the Monday regime?** Running both forever is a decision by default. Declare
-  up front roughly what evidence would justify collapsing to one, so the answer is not "whichever
-  looked better the week someone asked."
+- **Retirement: the advisor reports, a human decides** (settled 2026-08-24). The advisor's contract
+  is bounded, expiring *parameter* advice applied to a synthetic `advised:` book — there is no verb
+  in that vocabulary for retiring a population, and curve already draws this line explicitly, where
+  `hook_threshold` and `close_dte` are "journaled-break territory, not overlay territory." So: put
+  the per-structure comparison (`dc_4_7` against `dc_7_10` — net, return on risk, sessions,
+  effective n, and the exit grid per regime) into the advisor's fact pack so every checkpoint reads
+  both populations side by side and can say what the evidence supports; retiring either regime stays
+  a journaled measurement break made deliberately. **The bar is still undeclared** — pick it while
+  neither regime has a result to be attached to, so the decision cannot be retroactive.
