@@ -13,7 +13,8 @@ touches live trading.
 Since 2026-08-23 the recorder also carries the **suite-level market-regime series**
 (`cherrypick/gex/regime.py`; design record `docs/regime-recorder-plan.md` at the repo root): one row
 per reading per ~minute during RTH — the vol complex (VIX/VIX3M/VIX1D/VVIX), breadth and cross-asset
-quotes (SPY/RSP, HYG/LQD, TLT, the eleven SPDR sectors) — into `market_regime_history`, plus a
+quotes (SPY/RSP, HYG/LQD, TLT, GLD/USO as labeled commodity proxies, the eleven SPDR
+sectors) — into `market_regime_history`, plus a
 permanent `daily_closes` table harvested from `stream_summary`. Raw measures only (ratios and
 dispersion are read-side derivations in `cherrypick.core.regime`, the one join helper every consumer
 goes through); RTH-gated and basis-stamped, with a stale or missing quote written as a `usable = 0`

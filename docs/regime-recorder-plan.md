@@ -104,6 +104,7 @@ as quote-only legs:
 | RSP/SPY | breadth via equal-weight vs cap-weight — narrow leadership vs broad participation |
 | HYG/LQD | credit risk appetite, which often leads equity vol turns |
 | TLT | duration/rates; the bond-equity correlation state |
+| GLD, USO | the overview commodity pair (labeled proxies, added 2026-08-23): gold+TLT read together split risk-off into fear vs inflation/dollar regimes; oil is its own vol driver. ETFs deliberately, not /GC//CL futures — during RTH they track at beta ~1, and the futures would buy contract-roll machinery plus an unproven entitlement for hours the RTH-gated sampler never records. Revisit the carrier only if sampling ever extends overnight |
 | sector ETF dispersion | rotation days vs monolithic days (cross-sectional spread of the moves) |
 
 **Tier 2 — chain math over greeks/OI already streamed**, per offered symbol:

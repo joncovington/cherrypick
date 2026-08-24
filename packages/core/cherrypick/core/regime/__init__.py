@@ -47,6 +47,7 @@ _RATIOS = (
     ("vvix_vix_ratio", "vvix", "vix"),
     ("rsp_spy_ratio", "rsp", "spy"),
     ("hyg_lqd_ratio", "hyg", "lqd"),
+    ("gld_spy_ratio", "gld", "spy"),
 )
 
 
