@@ -101,6 +101,47 @@ In rough order of value:
    `starts_in_window` counter already encodes for module loops: *a process that keeps coming back
    looks healthy at every instant and is not.*
 
+## Queued with this, same sitting
+
+**Register the `curve` module.** It has never run: built 2026-08-22 and wired into nothing — no
+`modules.curve` block in the orchestrator config, therefore no supervisor job, no stream request,
+no data directory. (bwb was built the same day and *was* registered; curve was missed beside it.)
+Everything else is already in place — `curve_vx` is in the schema registry and report, reconcile,
+trade_notifier and eval_activity all account for it — so the missing piece is one config block.
+
+It belongs in this sitting rather than during a session because **VXX is a real underlying, not a
+quote-only leg**: it adds a chain window plus its target expiration (~1,000 subscriptions, taking
+the producer to roughly 9,500), and a new underlying forces a producer restart and trips the
+watchdog's subscription-growth recycle. Land it *after* the throttle above, so VXX arrives on a
+producer that paces its burst rather than one hoping to stay under an undocumented ceiling, and
+watch `reconnect_count` while it settles.
+
+Note what this cost: curve's daily VIX/VIX3M regime series is its declared second product and its
+value is continuity. The signal half is recoverable — `regime-history` replays the classification
+from stored `stream_summary` closes — but a session's live trade record is not. This is also
+exactly the case for item 4 above: a module declaring an expensive new underlying should be a
+message at declaration time, and a module declaring *nothing at all* should be visible too.
+
+## A monitoring gap the recovery exposed
+
+Within twenty minutes of the fix, both recovered modules raised `paper data is stale` while
+demonstrably healthy — each had entered its position for the session and was writing marks on
+every tick.
+
+The freshness check takes the freshest of three signals: the paper DB's mtime, the module log's
+mtime, and the module's heartbeat. The first two are **conditional** writes — a WAL database's main
+file only moves on a checkpoint, and a log line is a side effect of having something to say — so
+they both go quiet for a hold-to-expiry module that has finished entering. The heartbeat is the one
+unconditional per-tick signal, and **pmcc, bwb, curve and meic do not write one** (calendars,
+console and flies do).
+
+This is the calendars 2026-08-17 lesson resurfacing in the newer modules, and it is milder for a
+good reason: a missing heartbeat degrades *safely* — `_resident_silent` returns False for a missing
+file, so an unheartbeating module is simply not silence-supervised and nothing restarts it — and
+the freshness check only warns. The cost is a false WARN whenever such a module is healthy and
+idle, which for a hold-to-expiry book is most of the session. Fix is small: beat at the top of each
+tick through `cherrypick.core.home.heartbeat_path`, the way flies' `paper_loop._beat` already does.
+
 ## What to re-derive afterwards
 
 - **Raise `window_strike_count` back deliberately**, outside market hours, watching
