@@ -13,7 +13,7 @@ import type {
   PmccShortLeg,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { num, obj, readJson, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
+import { hasColumn, num, obj, readJson, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
 
 /**
@@ -36,6 +36,21 @@ import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js
  */
 
 const DB_FILE = "paper_trades.db";
+
+/**
+ * The era the module counts as evidence. Its own `headline()` narrows to this by default, so
+ * anything tagged to an earlier era is pre-redesign data — mixing it in silently pools two
+ * incomparable strategies into one number. Duplicated as a literal here rather than imported,
+ * because this package cannot import Python: it must be hand-kept equal to `CURRENT_ERA` in
+ * `packages/pmcc/src/cherrypick/pmcc/analytics.py`.
+ *
+ * One era so far: `"redesign"` (2026-08-23 ->), opened by the single-symbol/single-book redesign
+ * and the XSP addition. `era` is an ADDED column — every pre-redesign row reads back `NULL`, which
+ * never equals the literal era string, so old rows are excluded by construction. `hasColumn` guards
+ * a ledger this build's migration hasn't reached yet (stale checkout), in which case every row is
+ * read unscoped rather than the query failing on a missing column.
+ */
+const CURRENT_ERA = "redesign";
 
 /** Config keys the page renders against. Thresholds the module runs on, not display preferences. */
 interface PmccParams {
@@ -76,7 +91,7 @@ const KNOWN_COLUMNS: Record<string, string[]> = {
     "keltner_mid", "keltner_atr", "keltner_days", "keltner_distance_atr", "keltner_bounce_atr",
     "keltner_prev_close_gap", "advice_params", "roll_count", "exposure_ticks", "status", "exit_reason",
     "closed_at", "closed_session", "exit_value", "exit_cost", "exit_slippage", "settlement_spot",
-    "itm_settlements", "gross_pnl", "fees", "created_at", "updated_at",
+    "itm_settlements", "gross_pnl", "fees", "created_at", "updated_at", "era",
   ],
   pmcc_legs: [
     "id", "position_id", "leg_role", "occ_symbol", "streamer_symbol", "expiration", "strike", "option_type",
@@ -269,35 +284,36 @@ function readOpenPositions(db: DatabaseHandle): PmccOpenPosition[] {
 }
 
 /**
- * Mirrors `analytics.headline()`: per-book, per-symbol results over CLOSED positions.
+ * Mirrors `analytics.headline()`: per-book, per-symbol results over CLOSED positions, scoped to
+ * `CURRENT_ERA` by default — `era="ALL"` pools every era for an explicit cross-era read.
  *
  * Net is `SUM(gross) - SUM(fees)` — the same single subtraction `cherrypick.core.ledgers` performs
  * for the `pmcc_99` schema. One convention, stated in one place, computed identically here.
  */
-function readBooks(db: DatabaseHandle): PmccBookCell[] {
-  return db
-    .prepare<[], Record<string, unknown>>(
-      `SELECT book, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees,
+function readBooks(db: DatabaseHandle, era: string = CURRENT_ERA): PmccBookCell[] {
+  const scoped = era !== "ALL" && hasColumn(db, "pmcc_positions", "era");
+  const sql = `SELECT book, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees,
               SUM(gross_pnl) - SUM(fees) AS net, SUM((gross_pnl - fees) > 0) AS wins,
               SUM(roll_count) AS rolls
-         FROM pmcc_positions WHERE status = 'closed'
-        GROUP BY book, symbol ORDER BY book, symbol`,
-    )
-    .all()
-    .map((r) => {
-      const n = Number(r["n"] ?? 0);
-      const wins = num(r["wins"]);
-      return {
-        book: str(r["book"]) ?? "",
-        symbol: str(r["symbol"]) ?? "",
-        positions: n,
-        grossPnl: num(r["gross"]),
-        fees: num(r["fees"]),
-        netPnl: num(r["net"]),
-        winRate: n > 0 && wins !== null ? wins / n : null,
-        rolls: num(r["rolls"]),
-      };
-    });
+         FROM pmcc_positions WHERE status = 'closed'${scoped ? " AND era = ?" : ""}
+        GROUP BY book, symbol ORDER BY book, symbol`;
+  const rows = scoped
+    ? db.prepare<[string], Record<string, unknown>>(sql).all(era)
+    : db.prepare<[], Record<string, unknown>>(sql).all();
+  return rows.map((r) => {
+    const n = Number(r["n"] ?? 0);
+    const wins = num(r["wins"]);
+    return {
+      book: str(r["book"]) ?? "",
+      symbol: str(r["symbol"]) ?? "",
+      positions: n,
+      grossPnl: num(r["gross"]),
+      fees: num(r["fees"]),
+      netPnl: num(r["net"]),
+      winRate: n > 0 && wins !== null ? wins / n : null,
+      rolls: num(r["rolls"]),
+    };
+  });
 }
 
 /** Columns the ledger has that this build does not know — see KNOWN_COLUMNS. */

@@ -89,10 +89,15 @@ CREATE TABLE IF NOT EXISTS pmcc_positions (
     gross_pnl                      REAL,
     fees                           REAL,
     created_at                     TEXT,
-    updated_at                     TEXT
+    updated_at                     TEXT,
+    era                            TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_pmcc_positions_session ON pmcc_positions(entry_session, book);
 CREATE INDEX IF NOT EXISTS idx_pmcc_positions_status ON pmcc_positions(status);
+-- No index on `era`: it is an ADDED column (see _ADDED_COLUMNS below), and `_SCHEMA` runs via
+-- `executescript` BEFORE the migration that adds it to an existing database — an index statement
+-- here would reference a column that doesn't exist yet on that file and fail the whole script.
+-- The table is small enough that a full scan on era is fine.
 
 -- Legs per position: `long_call` plus `short_call_1..n` (rolls append). `streamer_symbol` is a
 -- flat column because the market-data producer's `leg_sources` runs a plain SELECT against it
@@ -320,7 +325,7 @@ CREATE TABLE IF NOT EXISTS measurement_breaks (
 # schema so the first addition is an entry here, never a bare edit to _SCHEMA (which CREATE TABLE
 # IF NOT EXISTS would silently ignore on an existing file).
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
-    "pmcc_positions": {},
+    "pmcc_positions": {"era": "TEXT"},
     "pmcc_legs": {},
     "pmcc_marks": {},
     "pmcc_assignments": {},
