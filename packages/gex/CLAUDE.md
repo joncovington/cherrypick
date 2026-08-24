@@ -21,7 +21,15 @@ refusal row, never a frozen value. The recorder declares the reading symbols its
 `legs` in its stream request — coverage must not depend on another module's declaration — and a
 coverage test drives off `regime.READINGS`, so a new reading without its subscription fails the
 build. The charter widened deliberately (recorder of GEX → recorder of market state): one daemon,
-one store, one supervision entry, and the console already reads this database. Two modes: **piggyback** (the default — `source.stream_cache_db` resolves to the suite's
+one store, one supervision entry, and the console already reads this database.
+
+**The recorder publishes its liveness** (2026-08-23, the flies heartbeat convention): the daemon
+touches `data/gex/recorder.heartbeat` at the top of every tick, and `record --status` reports
+`stalled: true` when the beat goes silent past `RECORDER_STALL_SECONDS`. That is the signal the
+orchestrator's watchdog recycles on (stop then start — a plain start would lose to the wedged
+pid's single-instance lock). A pid check alone reads a wedged loop as healthy — the 2026-07-23
+stale-config incident's shape with a different cause — and a missing heartbeat degrades to "not
+silence-supervised", never to a restart. Two modes: **piggyback** (the default — `source.stream_cache_db` resolves to the suite's
 canonical shared cache, `~/.cherrypick/data/marketdata/stream_cache.db`, read read-only) or
 **standalone** (`run.py stream` runs `cherrypick.core.streamer` to populate its own cache path instead,
 e.g. `data/stream_cache.db`, if `source.stream_cache_db` is repointed there).
