@@ -80,6 +80,7 @@ module is the real reference; this is the index that tells you which one to open
 | `profiles` | The named risk-profile registry and merge engine — how a partial override becomes an effective config. |
 | `metrics` | The shared calibration metric bundle: one vocabulary for promotion evidence. |
 | `advice` | Bounded, expiring, deterministically-validated parameter advice. Both the orchestrator and the module loop validate through this same code. |
+| `regime` | The one at-or-before, staleness-bounded join against the recorded market-regime series (gex's history DB). Derived ratios/dispersion are computed here at read time, never stored. |
 | `viz` | A declarative dashboard-section contract plus one generic renderer. |
 
 The reason to put something here is that **two packages would otherwise disagree** — on what a fee is,
