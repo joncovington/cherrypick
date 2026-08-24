@@ -1,7 +1,7 @@
 import { useOverview } from "../../lib/api";
 import { LiveQuoteRow } from "../../components/LiveQuote";
 import { EquityCard, LogsCard } from "./EquityCard";
-import { SystemCard, EodCard, useSystem } from "./SuiteCards";
+import { SystemCard, EodCard, SuiteCalendarCard, useSystem } from "./SuiteCards";
 import type { WatchdogFinding } from "@console/shared";
 
 const WATCH_SYMBOLS = ["SPX", "XSP", "QQQ", "IWM"];
@@ -132,6 +132,7 @@ export function OverviewPage() {
       </div>
 
       <div className="cards cards-wide" style={{ marginTop: "0.75rem" }}>
+        <SuiteCalendarCard />
         <EodCard />
         <SystemCard />
         <LogsCard />

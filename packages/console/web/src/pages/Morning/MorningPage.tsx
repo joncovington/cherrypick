@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { useMorningReport } from "../../lib/api";
 import type { MorningGate, MorningPack, MorningReading, MorningSectorRow } from "@console/shared";
 import { NoteMarkdown } from "../Review/NoteMarkdown";
+import { LevelStrip } from "../../components/Charts";
 
 /**
  * The morning report. Renders the fact pack and computes nothing.
@@ -312,7 +313,23 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
               {levels === null ? (
                 <p className="muted">No levels in this pack.</p>
               ) : (
-                <div className="stats-grid">
+                <>
+                  {/* The levels' spatial relationship is the reading — "just above the flip, short
+                      of the call wall" — and a row of tiles makes the reader do that arithmetic.
+                      The tiles stay beneath for the exact figures and their basis labels. */}
+                  <LevelStrip
+                    levels={[
+                      { label: "put wall", value: levels.putWall, color: "#d95c4a" },
+                      { label: "flip", value: levels.zeroGamma, color: "#7aa2ff" },
+                      { label: "call wall", value: levels.callWall, color: "#43b57a" },
+                    ]}
+                    marker={{
+                      label: "spot",
+                      value: levels.referencePrice,
+                      muted: levels.referenceBasis !== "live",
+                    }}
+                  />
+                  <div className="stats-grid">
                   <div className="stat-tile">
                     <span className="stat-label">zero gamma (flip)</span>
                     <span className="stat-value">{fmt(levels.zeroGamma, 0)}</span>
@@ -334,7 +351,8 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
                       <span className="stat-label muted">{levels.referenceBasis}</span>
                     )}
                   </div>
-                </div>
+                  </div>
+                </>
               )}
             </section>
 

@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { useReview } from "../../lib/api";
 import type { ReviewArm, ReviewModule } from "@console/shared";
 import { NoteMarkdown } from "./NoteMarkdown";
-import { SignedBar } from "../../components/Charts";
+import { SignedBar, Sparkline } from "../../components/Charts";
 
 /**
  * The suite review. Renders the fact set and computes nothing.
@@ -342,19 +342,33 @@ export function ReviewPage({ tabs }: { tabs?: ReactNode } = {}) {
             </span>
           </div>
           <div className="stats-grid">
-            {Object.keys(data.era.netByModule).map((name) => (
-              <div className="stat-tile" key={name}>
-                <span className="stat-label">{name}</span>
-                <span className={`stat-value ${pnlClass(data.era.netByModule[name])}`}>
-                  {compactMoney(data.era.netByModule[name])}
-                </span>
-                <span className="stat-label">{count(data.era.closedByModule[name])} closed</span>
-              </div>
-            ))}
+            {Object.keys(data.era.netByModule).map((name) => {
+              // Small multiples: the same shape per module, read side by side. The line is the
+              // running total of the sessions summed into the tile above it — one pass, one story.
+              const trend = data.era.trendByModule[name] ?? [];
+              return (
+                <div className="stat-tile" key={name}>
+                  <span className="stat-label">{name}</span>
+                  <span className={`stat-value ${pnlClass(data.era.netByModule[name])}`}>
+                    {compactMoney(data.era.netByModule[name])}
+                  </span>
+                  <Sparkline
+                    values={trend.map((t) => t.net)}
+                    title={`${name}: cumulative net across ${trend.length} session${trend.length === 1 ? "" : "s"}`}
+                  />
+                  <span className="stat-label">
+                    {count(data.era.closedByModule[name])} closed
+                    {trend.length === 1 && <span className="muted"> · 1 session</span>}
+                  </span>
+                </div>
+              );
+            })}
           </div>
           <p className="muted review-note-line">
             Summed from the built fact sets, not a fresh pass over the ledgers — so it cannot disagree with the
-            sessions above, and its depth is exactly what has been built.
+            sessions above, and its depth is exactly what has been built. Each line is that module's cumulative
+            net across the era's sessions; a module with one session gets no line, because one point is not a
+            trend.
           </p>
         </section>
       )}
