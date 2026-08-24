@@ -296,3 +296,61 @@ def test_service_without_stall_key_is_unchanged_behavior(monkeypatch, calls, tmp
     findings = wd._check_services(_service_cfg(tmp_path))
     assert findings[0].status == wd.OK
     assert calls["stop"] == [] and calls["start"] == []
+
+
+# --- reconnect churn: the state no other check can see --------------------------------
+
+
+def _churn(monkeypatch, tmp_path, label="streamer"):
+    from cherrypick.orchestrator import config as cfgmod
+
+    monkeypatch.setattr(cfgmod, "state_file", lambda name: tmp_path / name)
+    return label
+
+
+def test_churn_needs_a_baseline_before_it_can_judge(monkeypatch, tmp_path):
+    """The first observation only records — a cumulative counter says nothing on its own."""
+    label = _churn(monkeypatch, tmp_path)
+    assert wd._streamer_churn_finding(label, {"reconnect_count": 40}) is None
+
+
+def test_churn_warns_on_a_fast_reconnect_rate(monkeypatch, tmp_path):
+    """2026-08-24's shape: the producer reported running and streamed between kills, so every
+    other branch passed while it reconnected ~60x/hour."""
+    label = _churn(monkeypatch, tmp_path)
+    wd._streamer_churn_finding(label, {"reconnect_count": 40})
+    # Rewind the baseline 10 minutes and jump the counter.
+    p = tmp_path / "streamer-reconnects.json"
+    state = json.loads(p.read_text())
+    state[label]["at"] -= 600
+    p.write_text(json.dumps(state))
+
+    f = wd._streamer_churn_finding(label, {"reconnect_count": 50})
+    assert f is not None and f.status == wd.WARN
+    assert "churn" in f.title.lower()
+    assert "10 reconnect" in f.message
+
+
+def test_churn_is_quiet_for_an_ordinary_reconnect(monkeypatch, tmp_path):
+    """A healthy day takes the odd reconnect; only a sustained RATE is the signal."""
+    label = _churn(monkeypatch, tmp_path)
+    wd._streamer_churn_finding(label, {"reconnect_count": 40})
+    p = tmp_path / "streamer-reconnects.json"
+    state = json.loads(p.read_text())
+    state[label]["at"] -= 3600
+    p.write_text(json.dumps(state))
+    assert wd._streamer_churn_finding(label, {"reconnect_count": 42}) is None
+
+
+def test_churn_rebaselines_when_the_counter_resets(monkeypatch, tmp_path):
+    """A daemon restart zeroes the counter; a negative delta is a new baseline, never churn."""
+    label = _churn(monkeypatch, tmp_path)
+    wd._streamer_churn_finding(label, {"reconnect_count": 80})
+    assert wd._streamer_churn_finding(label, {"reconnect_count": 0}) is None
+    state = json.loads((tmp_path / "streamer-reconnects.json").read_text())
+    assert state[label]["count"] == 0
+
+
+def test_churn_ignores_a_status_without_the_counter(monkeypatch, tmp_path):
+    label = _churn(monkeypatch, tmp_path)
+    assert wd._streamer_churn_finding(label, {"running": True}) is None

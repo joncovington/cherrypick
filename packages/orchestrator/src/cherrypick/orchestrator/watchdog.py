@@ -532,7 +532,70 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
         )
     else:
         findings.append(_recycle_streamer_if_stale(label, root, spec, settling))
+    churn = _streamer_churn_finding(label, status)
+    if churn is not None:
+        findings.append(churn)
     return findings
+
+
+# A producer reconnecting more than this often is churning rather than recovering. A healthy day is
+# 0-2 reconnects; 2026-08-24's rate-limit spiral ran ~60/hour for a whole morning while every branch
+# above reported the streamer as running and, between kills, streaming.
+_RECONNECT_CHURN_PER_HOUR = 6.0
+_RECONNECT_CHURN_MIN_DELTA = 3
+
+
+def _streamer_churn_state_path() -> Path:
+    return cfgmod.state_file("streamer-reconnects.json")
+
+
+def _streamer_churn_finding(label: str, status: dict[str, Any]) -> Finding | None:
+    """WARN when a producer is RECONNECTING repeatedly — the state no other check can see.
+
+    Every branch above judges one instant: is it running, is its data fresh. A producer in a
+    reconnect loop passes all of them between kills, which is exactly how 2026-08-24 went
+    unreported — 79 reconnects in a morning, and the only symptoms that surfaced were two trading
+    modules complaining about stale quotes, a diagnosis one level removed from the cause. This is
+    the same lesson `starts_in_window` already encodes for resident jobs: **a process that keeps
+    coming back looks healthy at every instant and is not.**
+
+    Report-only, deliberately. Churn means the producer is ALREADY restarting itself, so a restart
+    is not a remedy — it is another instance of the problem (the suite's own rule that ambiguity is
+    reported, never remediated, and that restart is the most expensive remedy there is).
+    """
+    count = status.get("reconnect_count")
+    if not isinstance(count, (int, float)):
+        return None
+    now = datetime.now(timezone.utc).timestamp()
+    try:
+        state = json.loads(_streamer_churn_state_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        state = {}
+    prev = state.get(label) or {}
+    finding = None
+    prev_count, prev_at = prev.get("count"), prev.get("at")
+    if isinstance(prev_count, (int, float)) and isinstance(prev_at, (int, float)):
+        delta = count - prev_count
+        hours = max((now - prev_at) / 3600.0, 1e-6)
+        rate = delta / hours
+        # A counter that went DOWN means the daemon restarted and reset it — not churn, and not a
+        # comparable baseline, so it only re-baselines.
+        if delta >= _RECONNECT_CHURN_MIN_DELTA and rate >= _RECONNECT_CHURN_PER_HOUR:
+            finding = Finding(
+                f"{label}.churn",
+                WARN,
+                "Streamer reconnect churn",
+                f"{int(delta)} reconnect(s) in {(now - prev_at) / 60:.0f} min "
+                f"(~{rate:.0f}/hour, total {int(count)}). It is restarting itself, so quotes are "
+                "arriving in bursts even while it reports running; check the streamer log for the "
+                "reason before restarting anything.",
+            )
+    try:
+        state[label] = {"count": count, "at": now}
+        _streamer_churn_state_path().write_text(json.dumps(state), encoding="utf-8")
+    except OSError:
+        pass  # telemetry about telemetry: never fail the tick over it
+    return finding
 
 
 def _recycle_streamer_if_stale(label: str, root: Path, spec: dict[str, Any], settling: bool) -> Finding:
