@@ -1,10 +1,14 @@
 # The Friday-entry arm — a design proposal
 
-*Drafted 2026-08-24 (user idea the same day). **The regime is BUILT and OFF as of the same day** —
-`friday_entry.enabled: false`, absent from the live config, so nothing changed until it is switched
-on. What is not built is the paired-debit recording under "The declared question" below, which is
-the primary measurement and only becomes recordable once a Friday entry exists (first possible:
-2026-08-28).*
+*Drafted 2026-08-24 (user idea the same day), **built and ENABLED the same day**. It ships off by
+default (`config.example.json` has `enabled: false`); the live config was switched on 2026-08-24,
+so **the first Friday entry is due 2026-08-28, 15:50–16:00 ET**, structure `dc_7_11` that week
+against the Monday regime's `dc_4_8` (Labor Day shifts the back expiration — the ordinary week is
+`dc_7_10` against `dc_4_7`).*
+
+***Not built: the paired-debit recording*** *under "The declared question" below, which is the
+primary measurement. It only becomes recordable once a Friday entry exists, i.e. from 2026-08-31.
+Build it before that Monday or the first week's cleanest number is lost.*
 
 *Original framing follows. A design, not shipped work. The module had taken
 exactly one position when this was written — 2026-08-24's `dc_4_7`, entered at 11:24 after two
