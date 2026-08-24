@@ -158,3 +158,84 @@ def test_union_read_sees_the_request(cache, config, tmp_path):
     stream_request.write(config, conn, db_path, cache_path=cache.path, today=date(2026, 8, 24))
     union = _sr.union_expirations(today=date(2026, 8, 24))
     assert union["TQQQ"] == ["2026-09-04", "2026-09-11"]
+
+
+# --- the widened window is entry-only ------------------------------------------------------
+# `needed_width` is stubbed so these exercise the SLOT gate rather than the fixture chain's depth:
+# whether a hint is produced at all is what is under test, not how wide the chain says it must be.
+
+
+def _open_pos(conn, symbol="TQQQ", book="control", pid="HELD"):
+    db.save_position(
+        conn,
+        {
+            "position_id": pid,
+            "symbol": symbol,
+            "book": book,
+            "entry_session": "2026-08-17",
+            "long_expiration": "2026-09-11",
+            "long_strike": 50.0,
+            "short_expiration": "2026-09-04",
+            "short_strike": 67.0,
+            "status": "open",
+        },
+    )
+
+
+def _hints(conn, cache, config, monkeypatch, **kw):
+    monkeypatch.setattr(stream_window, "needed_width", lambda *a, **k: 163)
+    return stream_window.hints_for_symbols(
+        conn, cache.path, ["TQQQ"], "2026-08-24", config, deep_window_pct=0.20, **kw
+    )
+
+
+def test_hint_is_dropped_while_every_slot_is_held(cache, config, tmp_path, monkeypatch):
+    """The widened window exists to find the deep long AT ENTRY. Once the slot is held nothing can
+    be entered until it closes — one to two WEEKS for a hold-to-expiration cycle — and the open
+    position's marks come from `leg_sources`, never from this window. Measured 2026-08-24: the held
+    symbol's window was 84% of the suite's updating option quotes."""
+    conn = db.connect(str(tmp_path / "paper.db"))
+    free = _hints(conn, cache, config, monkeypatch, books=["control"], max_positions=1)
+    assert free.get("TQQQ") == 163, "a free slot must still ask for its deep window"
+
+    _open_pos(conn)
+    held = _hints(conn, cache, config, monkeypatch, books=["control"], max_positions=1)
+    assert "TQQQ" not in held, "a held slot must not keep paying for an unusable window"
+
+
+def test_hint_returns_as_soon_as_the_slot_frees(cache, config, tmp_path, monkeypatch):
+    """It returns on slot-free rather than on entry-attempt, so the quotes have a subscription poll
+    or two to arrive before the module wants them."""
+    conn = db.connect(str(tmp_path / "paper.db"))
+    _open_pos(conn)
+    assert "TQQQ" not in _hints(conn, cache, config, monkeypatch, books=["control"], max_positions=1)
+    conn.execute("UPDATE pmcc_positions SET status = 'closed'")
+    conn.commit()
+    assert _hints(conn, cache, config, monkeypatch, books=["control"], max_positions=1).get("TQQQ")
+
+
+def test_a_second_free_book_keeps_the_window_alive(cache, config, tmp_path, monkeypatch):
+    """The gate is ANY book able to enter, matching the entry phase's own test — one book holding
+    must not drop a window another book could still use."""
+    conn = db.connect(str(tmp_path / "paper.db"))
+    _open_pos(conn, book="control")
+    hints = _hints(
+        conn, cache, config, monkeypatch, books=["control", "advised:control"], max_positions=2
+    )
+    assert hints.get("TQQQ") == 163
+
+
+def test_max_positions_cap_closes_the_window_too(cache, config, tmp_path, monkeypatch):
+    """A free (symbol, book) slot is not enough on its own — the book's own cap is the other half
+    of the entry phase's condition, so the window must respect it as well."""
+    conn = db.connect(str(tmp_path / "paper.db"))
+    _open_pos(conn, symbol="XSP", pid="OTHER")  # control holds its one allowed position, elsewhere
+    hints = _hints(conn, cache, config, monkeypatch, books=["control"], max_positions=1)
+    assert "TQQQ" not in hints
+
+
+def test_no_roster_keeps_the_old_unconditional_behaviour(cache, config, tmp_path, monkeypatch):
+    """Callers that pass no roster (older call sites, direct use) must be unaffected."""
+    conn = db.connect(str(tmp_path / "paper.db"))
+    _open_pos(conn)
+    assert _hints(conn, cache, config, monkeypatch).get("TQQQ") == 163
