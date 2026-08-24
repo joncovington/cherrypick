@@ -89,6 +89,12 @@ export interface ReviewPayload {
     to: string | null;
     netByModule: Record<string, number>;
     closedByModule: Record<string, number>;
+    /** Per-module per-session nets in session order — the sparkline series. Same pass as the
+     *  totals above, so the line and the tile it sits under cannot disagree. */
+    trendByModule: Record<string, Array<{ session: string; net: number }>>;
+    /** Suite net per session (every readable module summed) — the Overview calendar strip's
+     *  series. A session with no readable module is ABSENT, never a zero day. */
+    suiteDaily: Array<{ session: string; net: number; closed: number }>;
   };
 }
 
@@ -228,16 +234,35 @@ export function readReview(config: ConsoleConfig, session?: string): ReviewPaylo
   const eraSessions = era.from === null ? sessions : sessions.filter((s) => era.from !== null && s >= era.from);
   const netByModule: Record<string, number> = {};
   const closedByModule: Record<string, number> = {};
+  // The per-session series come out of the SAME pass as the totals, so a sparkline and the tile it
+  // sits under can never disagree, and reading them costs no extra artifact reads.
+  const trendByModule: Record<string, Array<{ session: string; net: number }>> = {};
+  const suiteDaily: Array<{ session: string; net: number; closed: number }> = [];
   for (const s of eraSessions) {
     const facts = readFacts(dir, s);
     if (!facts) continue;
     const modules = rec(facts["modules"]);
+    let dayNet = 0;
+    let dayClosed = 0;
+    let dayReadable = false;
     for (const [name, raw] of Object.entries(modules)) {
       const m = rec(raw);
       if (m["ok"] !== true) continue;
       const results = rec(m["results"]);
-      netByModule[name] = (netByModule[name] ?? 0) + (num(results["net"]) ?? 0);
-      closedByModule[name] = (closedByModule[name] ?? 0) + (num(results["closed"]) ?? 0);
+      const net = num(results["net"]) ?? 0;
+      const closed = num(results["closed"]) ?? 0;
+      netByModule[name] = (netByModule[name] ?? 0) + net;
+      closedByModule[name] = (closedByModule[name] ?? 0) + closed;
+      (trendByModule[name] ??= []).push({ session: s, net: Math.round(net * 100) / 100 });
+      dayNet += net;
+      dayClosed += closed;
+      dayReadable = true;
+    }
+    // A session where nothing was readable is left OUT of the suite series rather than pushed as a
+    // zero day — the page's own null-is-not-zero rule applied to the series, so a broken artifact
+    // reads as a gap in the strip and never as a flat day.
+    if (dayReadable) {
+      suiteDaily.push({ session: s, net: Math.round(dayNet * 100) / 100, closed: dayClosed });
     }
   }
 
@@ -252,6 +277,8 @@ export function readReview(config: ConsoleConfig, session?: string): ReviewPaylo
       to: eraSessions[eraSessions.length - 1] ?? null,
       netByModule,
       closedByModule,
+      trendByModule,
+      suiteDaily,
     },
   };
 }

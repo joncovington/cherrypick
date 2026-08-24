@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, fmtMoney, fmtPct } from "../../components/DataTable";
+import { CalendarHeatmap } from "../../components/CalendarHeatmap";
+import { useReview } from "../../lib/api";
 
 interface SystemPanel {
   timezone: string | null;
@@ -97,6 +99,52 @@ export function SystemCard() {
           <p className="muted" style={{ fontSize: 11, marginBottom: 0 }}>
             watchdog every {data?.watchdog.intervalMinutes ?? "—"}m · renotify {data?.watchdog.renotifyMinutes ?? "—"}m
             {data?.watchdog.drawdownGuard !== null && ` · drawdown guard ${data?.watchdog.drawdownGuard === true ? "on" : "off"}`}
+          </p>
+        </>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Suite consistency at a glance: one cell per session, the whole era on one strip. The EOD card
+ * below answers for ONE session and cannot show this — a run of red days beside a green total is
+ * exactly what a single-session view hides, and it is the view every trading journal leads with.
+ *
+ * Fed from the review fact sets (`era.suiteDaily`), not a fresh pass over any ledger, so it cannot
+ * disagree with the Review page. A session whose modules were all unreadable is absent from the
+ * series and renders as a gap, never as a flat zero day.
+ */
+export function SuiteCalendarCard() {
+  const { data, isLoading, dataUpdatedAt } = useReview();
+  const days = data?.era.suiteDaily ?? [];
+  const from = data?.era.from ?? null;
+  const to = data?.era.to ?? null;
+  return (
+    <Card
+      title="Suite net by session"
+      collapseKey="suite-calendar"
+      updatedAt={dataUpdatedAt}
+      controls={
+        from !== null ? (
+          <span className="chip">
+            {from} → {to} · {days.length} sessions
+          </span>
+        ) : undefined
+      }
+    >
+      {isLoading ? (
+        <span className="skeleton skeleton-text" style={{ width: "40%" }} />
+      ) : (
+        <>
+          <CalendarHeatmap
+            days={days.map((d) => ({ date: d.session, net: d.net, count: d.closed }))}
+            countLabel="closed"
+          />
+          <p className="muted" style={{ fontSize: 11, marginBottom: 0, marginTop: "0.4rem" }}>
+            Every readable module summed per session, from the review fact sets. Deliberately a
+            shape, not a total: these books differ in scale by more than an order of magnitude, so
+            read the pattern of days rather than the size of any one cell.
           </p>
         </>
       )}

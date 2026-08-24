@@ -226,6 +226,12 @@ export interface ReviewPayload {
     to: string | null;
     netByModule: Record<string, number>;
     closedByModule: Record<string, number>;
+    /** Per-module per-session nets in session order — the sparkline series, collected in the same
+     *  pass as the totals so a line and the tile above it cannot disagree. */
+    trendByModule: Record<string, Array<{ session: string; net: number }>>;
+    /** Suite net per session (every readable module summed) — the Overview calendar strip's
+     *  series. A session with no readable module is ABSENT, never a zero day. */
+    suiteDaily: Array<{ session: string; net: number; closed: number }>;
   };
 }
 
