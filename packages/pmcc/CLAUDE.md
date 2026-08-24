@@ -57,6 +57,27 @@ One book, plus the advisor's synthetic twin — a deliberate simplification from
 There is no more multi-book fill pairing to reason about: with one book plus its advised twin, every
 `control` row is directly comparable to every other `control` row.
 
+## Evidence era
+
+`pmcc_positions.era` (added 2026-08-23) is MEIC's `CURRENT_ERA` convention, adopted here for the
+first time: `analytics.headline(conn)` scopes to `analytics.CURRENT_ERA` by default, and
+`headline(conn, era="ALL")` pools every era for an explicit cross-era read (the CLI's
+`pmcc headline --era ALL` reaches the same override). The console mirrors both the literal and the
+default the same way `readers/meic.ts` does.
+
+One era so far: **`"redesign"`** (2026-08-23 ->), opened alongside the single-symbol/single-book
+redesign and the XSP addition above — stamped by `book.enter_position` on every new row. Rows from
+before the column existed read back `era = NULL`, which never equals a literal era string, so the
+four pre-redesign closed cycles (TQQQ, one apiece across `control`/`keltner`/`roll`/
+`advised:control`) are excluded from `headline()` by construction, not by a backfilled guess. They
+remain in the ledger and in the console's History tab as history — the era boundary changes what
+counts as *comparable measurement*, not what the ledger records. The journaled row lives in
+`measurement_breaks` (`key='era'`, `new_value='redesign'`).
+
+`worksheet()` (open positions) is not era-scoped: a pre-era position, if one were still open, would
+already be visible there by virtue of `status != 'closed'`, and no new position can be tagged
+anything but the current era going forward.
+
 ## The honesty rules
 
 1. **Every result is net of the modeled fee and slippage stack** — commissions/clearing/ORF/TAF,

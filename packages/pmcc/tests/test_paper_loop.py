@@ -4,8 +4,8 @@ from datetime import datetime
 
 import pytest
 
+from cherrypick.pmcc import analytics, db, paper_loop
 from cherrypick.pmcc import book as bookmod
-from cherrypick.pmcc import db, paper_loop
 
 
 def _fill_entry_chains(cache):
@@ -33,6 +33,7 @@ def test_entry_day_control_only(cache, config, tmp_path):
     assert p["short_strike"] == 71.0
     assert p["net_debit"] == pytest.approx(14.50 - 0.95)
     assert p["short_expiration"] == "2026-09-04"
+    assert p["era"] == analytics.CURRENT_ERA
 
     # Idempotence: a tick retry cannot double-enter.
     paper_loop.run_once(config, conn, cache_path=cache.path, when=when)

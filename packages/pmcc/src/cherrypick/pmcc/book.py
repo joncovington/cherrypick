@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 
-from cherrypick.pmcc import clock, db, engine
+from cherrypick.pmcc import analytics, clock, db, engine
 
 
 def position_id(symbol: str, book: str, entry_session: str) -> str:
@@ -94,6 +94,7 @@ def enter_position(
             ),
             "status": "open",
             "fees": cost["total"],
+            "era": analytics.CURRENT_ERA,
         },
     )
     for leg in plan["legs"]:

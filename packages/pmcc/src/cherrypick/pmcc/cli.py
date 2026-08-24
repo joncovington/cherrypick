@@ -52,7 +52,12 @@ def cmd_headline(args) -> int:
     from cherrypick.pmcc import analytics, db
 
     conn = db.connect(args.db)
-    print(json.dumps({"ok": True, "headline": analytics.headline(conn)}, indent=2, default=str))
+    era = getattr(args, "era", None) or analytics.CURRENT_ERA
+    print(
+        json.dumps(
+            {"ok": True, "era": era, "headline": analytics.headline(conn, era=era)}, indent=2, default=str
+        )
+    )
     return 0
 
 
@@ -235,9 +240,13 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="command", required=True)
 
     sub.add_parser("status", help="open positions and the expiration plan").set_defaults(func=cmd_status)
-    sub.add_parser("headline", help="per-book results through the analytics layer").set_defaults(
-        func=cmd_headline
+    p_headline = sub.add_parser("headline", help="per-book results through the analytics layer")
+    p_headline.add_argument(
+        "--era",
+        default=None,
+        help="scope to one era; 'ALL' pools every era. Defaults to the module's current era.",
     )
+    p_headline.set_defaults(func=cmd_headline)
     sub.add_parser("worksheet", help="the live per-position worksheet").set_defaults(func=cmd_worksheet)
     sub.add_parser("exposure", help="early-assignment-exposure telemetry").set_defaults(func=cmd_exposure)
     p_ladder = sub.add_parser("ladder", help="the ITM call ladder as a selector sees it")
