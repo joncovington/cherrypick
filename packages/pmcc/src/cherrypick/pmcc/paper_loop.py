@@ -182,6 +182,13 @@ def run_once(
 ) -> dict:
     """One iteration. Owns the whole lifecycle's phase logic — there is exactly one thing to
     schedule and one thing that can fail."""
+    # At the TOP of the tick, before any gate: liveness means "the loop is turning over",
+    # never "it did work". Moved here from the resident branch on 2026-08-24 — the supervisor
+    # drives this module as repeated `--once` ticks, so a beat that lived only in the
+    # `--interval` path never fired at all and this module published no heartbeat. The
+    # watchdog then fell back to the DB mtime and the log, both CONDITIONAL writes, and
+    # warned "paper data is stale" every time the module was healthy but idle.
+    _beat()
     when = when or clock.now_et()
     now_min = clock.minute_of_day(when)
     today = when.date()
@@ -851,7 +858,6 @@ def main(argv=None) -> int:
                     "Check the branch."
                 )
             while args.force or in_session(clock.minute_of_day(clock.now_et())):
-                _beat()
                 try:
                     run_once(config, conn, cache_path=cache_path, force=args.force)
                 except Exception as exc:  # noqa: BLE001 — a transient failure costs one tick, not the session

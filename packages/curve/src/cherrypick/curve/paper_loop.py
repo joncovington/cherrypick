@@ -148,6 +148,13 @@ def session_books(config: dict, today: str) -> tuple[list[str], dict | None]:
 def run_once(
     config: dict, conn, *, cache_path: str, when: datetime | None = None, force: bool = False
 ) -> dict:
+    # At the TOP of the tick, before any gate: liveness means "the loop is turning over",
+    # never "it did work". Moved here from the resident branch on 2026-08-24 — the supervisor
+    # drives this module as repeated `--once` ticks, so a beat that lived only in the
+    # `--interval` path never fired at all and this module published no heartbeat. The
+    # watchdog then fell back to the DB mtime and the log, both CONDITIONAL writes, and
+    # warned "paper data is stale" every time the module was healthy but idle.
+    _beat()
     when = when or clock.now_et()
     now_min = clock.minute_of_day(when)
     today = when.date()
@@ -709,7 +716,6 @@ def main(argv=None) -> int:
                     f"WARNING: {len(drift)} ledger column(s) this checkout will never write — {', '.join(drift)}."
                 )
             while args.force or in_session(clock.minute_of_day(clock.now_et())):
-                _beat()
                 try:
                     run_once(config, conn, cache_path=cache_path, force=args.force)
                 except Exception as exc:  # noqa: BLE001
