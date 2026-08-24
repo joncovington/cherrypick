@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from cherrypick.core import home as core_home
+from cherrypick.core import streamrequests as _streamrequests
 
 from cherrypick.notify import Notifier
 
@@ -536,6 +537,68 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
     if churn is not None:
         findings.append(churn)
     return findings
+
+
+def _streamer_window_strike_count(cfg: dict[str, Any]) -> int:
+    """The producer's base ATM window width, from ITS OWN config — the file the daemon reads, not a
+    copy. Falls back to the engine's default when the machine has no streamer config."""
+    try:
+        raw = json.loads(core_home.config_path("streamer").read_text(encoding="utf-8"))
+        value = ((raw.get("streamer") or {}).get("window_strike_count"))
+        if isinstance(value, (int, float)):
+            return int(value)
+    except (OSError, ValueError, AttributeError):
+        pass
+    return int(((cfg.get("streamer") or {}).get("window_strike_count")) or 60)
+
+
+def _check_subscription_budget(cfg: dict[str, Any]) -> list[Finding]:
+    """Warn when the DECLARED registry would cost a producer more than the suite's ceiling.
+
+    The 2026-08-24 outage was discovered at an open, in production: a module had declared something
+    expensive and nothing said so until the producer was already crash-looping and every trading
+    module was starving. `cherrypick.core.streamer`'s pacing removed that failure mode; this exists
+    so the next expensive declaration announces itself when it is DECLARED.
+
+    Estimated from the same registry union the producer subscribes from, so the two cannot disagree
+    about what was asked for — and reported with the single most expensive symbol named, because a
+    total alone does not say which declaration to look at (that morning's book was dominated by one
+    symbol's widened window). Report-only: what to shed is a measurement decision, not the
+    watchdog's to make.
+    """
+    budget = int(
+        (cfg.get("streamer") or {}).get("subscription_budget")
+        or _streamrequests.DEFAULT_SUBSCRIPTION_BUDGET
+    )
+    try:
+        status = _streamrequests.budget_status(
+            default_strike_count=_streamer_window_strike_count(cfg), budget=budget
+        )
+    except Exception:  # noqa: BLE001 — a registry read must never fail the tick
+        return []
+    if not status["over"]:
+        return [
+            Finding(
+                "streamer.budget",
+                OK,
+                "Subscription budget",
+                f"~{status['total']:,} of {status['budget']:,} across {status['windows']} window(s).",
+            )
+        ]
+    worst = status["worst"] or {}
+    return [
+        Finding(
+            "streamer.budget",
+            WARN,
+            "Declared subscriptions over budget",
+            f"The registry would cost ~{status['total']:,} subscriptions against a budget of "
+            f"{status['budget']:,} ({status['windows']} windows). Largest: {worst.get('symbol')} at "
+            f"~{worst.get('subscriptions', 0):,} over {worst.get('windows')} window(s) at "
+            f"{worst.get('strike_count')} strikes/side"
+            + (" (widened by a module hint)" if worst.get("hinted") else "")
+            + ". A producer restart would subscribe this; shed before it does.",
+        )
+    ]
 
 
 # A producer reconnecting more than this often is churning rather than recovering. A healthy day is
@@ -1683,6 +1746,9 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
 
     # Keep generic background services (e.g. the gex spot-trail recorder) alive.
     findings += _check_services(cfg)
+    # Declared-cost check: the next expensive declaration should announce itself here rather than
+    # at an open (see _check_subscription_budget).
+    findings += _check_subscription_budget(cfg)
 
     # Watchdog the standalone market-data producer (dormant until the cutover enables the top-level
     # `streamer` block; today MEIC still owns the streamer under modules.meic.streamer).

@@ -209,3 +209,63 @@ def test_register_best_effort_swallows_even_a_bare_exception():
         raise RuntimeError("anything at all")
 
     assert streamrequests.register_best_effort(boom) is None
+
+
+# --- the subscription budget ---------------------------------------------------------------
+# Estimated from the same registry union the producer subscribes from, so the two cannot disagree
+# about what was ASKED FOR. It will never equal the producer's own subscribed_symbols -- it cannot
+# know how many strikes a chain actually lists -- and its job is a change in order of magnitude.
+
+
+@pytest.fixture()
+def home(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    return tmp_path
+
+
+def _write(module, symbols, **payload):
+    streamrequests.write_request(module, symbols, **payload)
+
+
+def test_budget_estimate_scales_with_windows_and_width(home):
+    _write("a", ["SPX"])
+    one = streamrequests.estimate_subscriptions(default_strike_count=30)
+    assert one["windows"] == 1
+    assert one["by_symbol"]["SPX"]["subscriptions"] == (2 * 30 + 1) * 2 * 4
+
+    # A second expiration doubles that symbol's cost; a hint widens the window itself.
+    _write("a", ["SPX"], expirations={"SPX": ["2099-01-15"]}, window_hints={"SPX": 100})
+    two = streamrequests.estimate_subscriptions(default_strike_count=30)
+    assert two["by_symbol"]["SPX"]["windows"] == 2
+    assert two["by_symbol"]["SPX"]["strike_count"] == 100  # max(default, hint)
+    assert two["total"] == (2 * 100 + 1) * 2 * 4 * 2
+
+
+def test_budget_takes_the_max_of_default_and_hint_never_the_hint_alone(home):
+    _write("a", ["SPX"], window_hints={"SPX": 5})
+    est = streamrequests.estimate_subscriptions(default_strike_count=30)
+    assert est["by_symbol"]["SPX"]["strike_count"] == 30  # a narrower hint never shrinks the base
+
+
+def test_budget_status_flags_the_worst_symbol_not_just_the_total(home):
+    """A total alone does not say which declaration to look at — the 2026-08-24 book was dominated
+    by one symbol's widened window."""
+    _write("a", ["SPX", "TQQQ"], window_hints={"TQQQ": 163})
+    status = streamrequests.budget_status(default_strike_count=30, budget=1_000)
+    assert status["over"] is True
+    assert status["worst"]["symbol"] == "TQQQ"
+    assert status["worst"]["hinted"] is True
+    assert status["worst"]["subscriptions"] > status["by_symbol"]["SPX"]["subscriptions"]
+
+
+def test_budget_status_is_quiet_under_the_ceiling(home):
+    _write("a", ["SPX"])
+    assert streamrequests.budget_status(default_strike_count=30, budget=100_000)["over"] is False
+
+
+def test_budget_ignores_past_expirations(home):
+    """A request nobody rewrote over a weekend must not be costed for dead dates — the same rule
+    union_expirations already applies."""
+    _write("a", ["SPX"], expirations={"SPX": ["2000-01-01", "2099-01-15"]})
+    est = streamrequests.estimate_subscriptions(default_strike_count=30)
+    assert est["by_symbol"]["SPX"]["windows"] == 2  # nearest + the live extra, not the dead one

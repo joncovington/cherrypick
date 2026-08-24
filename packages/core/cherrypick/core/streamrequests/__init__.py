@@ -278,3 +278,98 @@ def subscription_snapshot(seed_symbols=None) -> dict:
     so tracking it here would recycle a healthy producer once a week for nothing.
     """
     return {"symbols": union_symbols(seed_symbols), "window_hints": union_window_hints()}
+
+
+# --------------------------------------------------------------------------- the subscription budget
+#
+# The suite discovered its own ceiling in production, at an open. On 2026-08-24 the producer held
+# ~12,000 subscriptions, tripped DXLink's subscription RATE limit on every reconnect, and spent a
+# morning delivering roughly five seconds of data per sixty-five second cycle while every trading
+# module starved (docs/streamer-subscription-budget.md). `cherrypick.core.streamer`'s pacing removes
+# that failure mode; this exists so the NEXT expensive declaration announces itself when it is
+# declared rather than when it bites.
+#
+# Estimated from the same registry union the producer subscribes from, so the two cannot disagree
+# about what was asked for. It is deliberately an ESTIMATE and will not equal the producer's own
+# `subscribed_symbols`: it cannot know how many strikes a chain actually lists, only how many the
+# window asks for. Its job is a change in ORDER OF MAGNITUDE, not a reconciliation.
+DEFAULT_SUBSCRIPTION_BUDGET = 12_000
+
+# A window is `2 * strike_count + 1` strikes, both rights, subscribed across Quote/Greeks/Summary
+# and (for the nearest window) Trade.
+_EVENTS_PER_OPTION = 4
+_RIGHTS = 2
+
+
+def estimate_subscriptions(
+    *,
+    default_strike_count: int,
+    seed_symbols=None,
+    today: date | None = None,
+) -> dict:
+    """What the declared registry would cost a producer, per symbol and in total.
+
+    The model: each underlying gets one nearest-expiration window plus one per declared extra
+    expiration; each window spans `2 * max(default, hint) + 1` strikes across both rights; each
+    option symbol is subscribed to four event types. Underlyings and legs are rounding error beside
+    the windows and are not modelled.
+
+    Returns `{"total", "by_symbol", "windows", "budget_basis"}`. Every input is read from the
+    registry union rather than passed in, so this can never describe a different world than the one
+    the producer subscribes.
+    """
+    symbols = union_symbols(seed_symbols)
+    hints = union_window_hints()
+    expirations = union_expirations(today=today)
+    by_symbol: dict[str, dict] = {}
+    total = 0
+    windows = 0
+    for symbol in symbols:
+        strike_count = max(int(default_strike_count), int(hints.get(symbol, 0) or 0))
+        per_window = (2 * strike_count + 1) * _RIGHTS * _EVENTS_PER_OPTION
+        n_windows = 1 + len(expirations.get(symbol, []))
+        cost = per_window * n_windows
+        by_symbol[symbol] = {
+            "strike_count": strike_count,
+            "windows": n_windows,
+            "per_window": per_window,
+            "subscriptions": cost,
+            "hinted": symbol in hints,
+        }
+        total += cost
+        windows += n_windows
+    return {
+        "total": total,
+        "windows": windows,
+        "by_symbol": dict(sorted(by_symbol.items(), key=lambda kv: -kv[1]["subscriptions"])),
+        "budget_basis": {
+            "default_strike_count": int(default_strike_count),
+            "events_per_option": _EVENTS_PER_OPTION,
+        },
+    }
+
+
+def budget_status(
+    *,
+    default_strike_count: int,
+    budget: int = DEFAULT_SUBSCRIPTION_BUDGET,
+    seed_symbols=None,
+    today: date | None = None,
+) -> dict:
+    """`estimate_subscriptions` against a ceiling: `{"over", "total", "budget", "worst", ...}`.
+
+    `worst` names the single most expensive symbol, because that is the actionable half — the
+    2026-08-24 book was dominated by ONE symbol's widened window, and a total on its own would not
+    have said which declaration to look at."""
+    est = estimate_subscriptions(
+        default_strike_count=default_strike_count, seed_symbols=seed_symbols, today=today
+    )
+    worst = next(iter(est["by_symbol"].items()), None)
+    return {
+        "over": est["total"] > budget,
+        "total": est["total"],
+        "budget": int(budget),
+        "windows": est["windows"],
+        "worst": ({"symbol": worst[0], **worst[1]} if worst else None),
+        "by_symbol": est["by_symbol"],
+    }
