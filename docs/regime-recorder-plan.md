@@ -3,11 +3,58 @@
 *Drafted 2026-08-23. **Phase 1 landed the same day**: `market_regime_history` + `daily_closes` in
 the gex recorder (`packages/gex/src/cherrypick/gex/regime.py`, 60s cadence), the recorder's own
 quote-only legs declaration with `history_days: 270`, and the `cherrypick.core.regime.regime_at`
-join helper — all four guards below verified by breaking them on purpose. Still open: the RTH
-entitlement probe (SKEW / internals-as-TimeAndSale / futures — the reading list freezes after it),
-Tier 2 chain math, and the fact-pack migration once the series has accumulated. When the rest
-ships, the landing note belongs in `docs/history/` per that folder's convention, and this file
-becomes the frozen record.*
+join helper — all four guards below verified by breaking them on purpose.*
+
+***First live session 2026-08-24: the series works.** 352 rows over the first 16 minutes, 22/22
+readings printing, **zero refusals**, one sample per minute from the opening bell; `daily_closes`
+backfilled 15,963 closes across 17 symbols back to 2021-02-14; and `regime_at` joins live, deriving
+every ratio (VIX/VIX3M 0.857, VVIX/VIX 5.58, RSP/SPY 0.291, HYG/LQD 0.750, GLD/SPY 0.561, sector
+dispersion 2.91%) alongside SPX's GEX row.*
+
+***The entitlement probe ran the same morning and the reading list is now FROZEN — results below
+("What the 2026-08-24 probe settled"). Still open**: adding the three admitted readings, the /VX
+roll helper, Tier 2 chain math, and the fact-pack migration once the series has accumulated. When
+the rest ships, the landing note belongs in `docs/history/` per that folder's convention, and this
+file becomes the frozen record.*
+
+## What the 2026-08-24 probe settled
+
+One RTH session, three sub-probes, all throwaway (a temporary `regimeprobe` request file, deleted
+after; a scratch script using the shared credential read-only — no orders, nothing recorded).
+
+| Candidate | Verdict | Evidence |
+|---|---|---|
+| **SKEW** | **ADMIT** — one `READINGS` line | Printed 143.9 to `stream_trades` via the ordinary legs path, 31s fresh — identical mechanics to VIX |
+| **VIX9D** | **ADMIT** — one `READINGS` line | Printed 14.53 the same way; front-of-curve vol, and VIX9D/VIX is a read-side ratio |
+| **/VX term structure** | **ADMIT** — needs the roll helper | The whole curve prints: `/VXU26:XCBF` 17.55, `/VXV26` 19.20, `/VXX26` 19.87, `/VXZ26` 20.10 against spot VIX 15.97 |
+| **/ZN (10Y note)** | **ADMIT** — needs the roll helper | Printed to `stream_trades` AND `stream_quotes` through the legs path, 27s fresh, both Sep and Dec contracts |
+| **Market internals** (`$TICK`, `$TRIN`, `$CPC`, `$TICKI`, `$ADD`, `.NY` variants) | **REFUSE — not entitled** | Seven symbol variants subscribed as TimeAndSale for 25s: **not one print**. Not a symbology guess — see below |
+| **MOVE** | Already refused (2026-08-23 research) | Institutional ICE feed only; TLT and HYG/LQD stay the reachable proxies |
+
+Four findings worth keeping, because each corrects something this plan previously assumed:
+
+- **The internals verdict is trustworthy, and cost nothing to establish.** This plan said they were
+  "untestable without a producer change" — wrong. `cherrypick.core.dxfeed.collect_events` is
+  generic over the event class and the SDK exports `TimeAndSale`, so entitlement was testable on
+  demand in one script. The producer change would only ever have been needed to RECORD them
+  continuously, never to ask whether we may. Ask the cheap question first.
+- **The futures MIC is `XCBF`, not `XCFE`.** The first probe declared `/VXU26:XCFE` and saw
+  nothing, which would have read as "CFE not entitled" — the wrong conclusion from a wrong guess.
+  The authoritative answer came from the instruments endpoint (`Future.get(..., product_codes=…)`
+  returns `streamer_symbol` per contract). **Any futures reading must take its symbol from that
+  endpoint rather than assembling one**, which is also how the roll helper should work.
+- **Futures need no producer change at all.** The legs path passed exchange-suffixed symbols
+  through unmangled and both `/ZN` contracts landed in the cache within a poll. A futures reading
+  is an ordinary `READINGS` entry plus a monthly-rolling declaration.
+- **Indices publish Trade events, not Quote.** SKEW/VIX9D/VIX/VIX1D all printed as Trade and none
+  as Quote — confirming the recorder's existing choice to read `stream_trades` for cash legs, and
+  a caution against "fixing" that to `stream_quotes` later.
+
+**The roll helper, when it is built** (`/VX` front+second, `/ZN` front): resolve contracts through
+the instruments endpoint, record the CONTRACT IDENTITY on every row, and never store a blended
+constant-maturity value — the roll is a read-side derivation over identified contracts. Note the
+active `/ZN` month was already December on 2026-08-24 while September still traded, so "front
+month" must mean the contract the endpoint marks active, not the nearest expiry.
 
 ## The finding this comes from
 
@@ -253,10 +300,8 @@ Per the house rule that a guard has to be shown to fail before it counts:
   update the gex CLAUDE.md either way.
 - **Cadence.** 1 minute costs ~390 rows/session/table and matches the finest module tick; 5
   minutes matches `gex_regime_history`. Either is cheap; pick one and stamp it in the schema note.
-- **The entitlement probe** — one RTH session, one throwaway subscription script over the
-  existing streamer session, answering three things at once: SKEW (a CBOE index like VIX,
-  expected to stream but not verified), the internals family as TimeAndSale events, and
-  CFE/CBOT futures quotes through the legs path. The reading list freezes after the probe, not
-  before.
+- ~~The entitlement probe~~ — **ran 2026-08-24; see "What the 2026-08-24 probe settled" above.
+  The reading list is frozen: SKEW, VIX9D, /VX and /ZN admitted; internals refused as not
+  entitled.**
 - **Retention** — the tables are permanent (the point of the exercise); confirm the monthly
   archiving job leaves the gex history database alone.
