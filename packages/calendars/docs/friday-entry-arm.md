@@ -210,5 +210,32 @@ in the trade for. Both are second-order against the debit differential, but neit
   the per-structure comparison (`dc_4_7` against `dc_7_10` — net, return on risk, sessions,
   effective n, and the exit grid per regime) into the advisor's fact pack so every checkpoint reads
   both populations side by side and can say what the evidence supports; retiring either regime stays
-  a journaled measurement break made deliberately. **The bar is still undeclared** — pick it while
-  neither regime has a result to be attached to, so the decision cannot be retroactive.
+  a journaled measurement break made deliberately.
+
+## The retirement bar (declared 2026-08-24, before either regime had a result)
+
+Declared now, deliberately, while neither regime has a number anyone could be attached to. It is a
+**floor for opening the question**, not an automatic trigger — nothing retires itself.
+
+**The question may be opened once all three hold:**
+
+1. **20 completed weeks in both regimes.** Weeks, not positions: a week is one market event however
+   many books it wrote, and this module trades one structure per week per regime. Twenty is the
+   sample gate's own order of magnitude, and at one per week it is roughly two quarters — long
+   enough to span more than one vol regime.
+2. **At least 15 of those weeks PAIRED** — both regimes entered the same week. They skip different
+   weeks by construction (the ex-dividend span widens by three days when entry moves earlier), so
+   the unpaired weeks are real and the paired count, not the total, is the comparison's effective n.
+3. **A paired-debit difference whose sign is consistent** across at least 70% of paired weeks. The
+   headline number is `monday_debit − friday_debit`; a mean that is positive only because two weeks
+   dominate it is not an edge, and this is the cheapest available check on that.
+
+**And then the decision is still a human one**, journaled as a measurement break, with the losing
+regime's rows kept as history rather than deleted. If the bar is met and the difference is *not*
+material, the honest outcome is to retire the Friday regime and keep the simpler design — a negative
+result that cost two quarters of a second book is still a result (rule 2's discipline, applied to a
+regime rather than an exit rule).
+
+**What would move the bar earlier:** nothing about the P&L. Only a *mechanical* discovery — the
+Friday ordering proving unsafe, or the weekend gap producing an assignment path this module does not
+model — which is a correctness question, not an evidence one, and does not wait for a sample.
