@@ -52,8 +52,9 @@ means two different things in one ledger.
 
 **Needs building:**
 
-- A Friday entry phase in `paper_loop.run_once`, with its own window (Friday is not Monday and
-  should not borrow Monday's hours), gated on its own config block so the regime is off by default.
+- A Friday entry phase in `paper_loop.run_once`, with its own window (15:50–16:00, see below) and
+  its own state gate on the session's exits, under its own config block so the regime is off by
+  default.
 - `session_books` extended so the Friday regime resolves its own book set.
 - `stream_request.py` must declare the expirations **a session earlier** — the Friday entry needs
   the coming week's chains on Friday, not Monday. This is the one change that touches the producer:
@@ -76,22 +77,29 @@ chosen against the clock the module already runs:
 | | |
 |---|---|
 | exit window (`control` sells every leg) | 15:45 – 15:55 |
-| **proposed Friday entry window** | **15:55 – 16:00** |
+| **Friday entry window** (settled 2026-08-24) | **15:50 – 16:00, gated on the exit half being done** |
 | settlement (`settle_time`) | 16:20 |
 
-Starting the entry when the exit window ends gives the required ordering — exit, then enter — with
-**no reordering of `run_once`'s phases**, because by 15:55 the exits have already fired on earlier
-ticks. That is worth knowing precisely, because the phase order inside a single tick is *dispose →
-enter → mark → manage*, i.e. entry runs BEFORE management: had the entry window overlapped the exit
-window, a single tick would have opened the new week before closing the old one. The window choice
-is what avoids that, so it is load-bearing rather than cosmetic and belongs in the config's own note.
+**Ordering is enforced by state, not by the clock.** The window deliberately opens at 15:50, inside
+the exit window's tail, and the entry is blocked until this session's exits have completed. That
+buys twenty attempts at a 30s cadence instead of ten, and it lets the entry start as soon as the
+exits are actually done rather than waiting out a clock boundary they may have cleared minutes
+earlier — while still making it impossible to open the new week before closing the old one.
 
-**The fragility is real and was demonstrated today.** A five-minute window at a 30s cadence is ten
-attempts, and 2026-08-24 is a live example of a narrow window plus a starved feed producing a
-skipped week — twice, on consecutive Mondays. Before this ships, decide the retry budget with the
-window: either widen it (15:50–16:00, with entry gated on the exit half having completed rather than
-on the clock alone) or accept that a feed problem in those five minutes costs the week and journal
-it as such. SPY liquidity into the close is not the concern; the feed is.
+The state gate is what makes this safe, and it is necessary rather than belt-and-braces: the phase
+order inside a single tick is *dispose → enter → mark → manage*, so **entry runs BEFORE
+management**. A window that merely overlapped the exit window with no state gate would let one tick
+open week N+1 before week N's exits fired.
+
+> **⚠️ The gate must be "every book that intends to exit today has done so" — never "the book is
+> flat."** `path` deliberately never closes; it holds shorts to Friday settlement and rides the
+> longs over the weekend. A naive wait-until-flat condition is therefore never satisfied on any
+> Friday, and the entry would silently never fire — a deadlock that would look exactly like a
+> skipped week. Read the pending-exit verdicts, not the position count.
+
+**The fragility this addresses was demonstrated the day it was designed.** 2026-08-24 is a live
+example of a narrow window plus a starved feed producing a skipped week — twice, on consecutive
+Mondays. SPY liquidity into the close is not the concern; the feed is.
 
 ## The ordering problem, and it is the real one
 
@@ -179,9 +187,6 @@ in the trade for. Both are second-order against the debit differential, but neit
 
 ## Open questions
 
-- **The entry window's retry budget.** The entry time is settled (the close); the width is not. See
-  the fragility note above — decide the width and the retry budget together, and prefer gating the
-  entry on the exit half having completed over gating it on the clock alone.
 - **Does the advised twin extend to it?** `advice.base_book` is `control`. An
   `advised:friday:control` is buildable but doubles the advisor surface for a regime with no
   history — probably not in v1.
