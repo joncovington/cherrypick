@@ -53,6 +53,13 @@ READINGS: dict[str, str] = {
     "hyg": "HYG",
     "lqd": "LQD",
     "tlt": "TLT",
+    # commodity proxies, the overview pair (labeled proxies, never a WTI/gold spot price): gold+TLT
+    # read together split risk-off into fear vs inflation/dollar regimes, and oil is its own vol
+    # driver. ETFs, not /GC//CL futures, deliberately — during RTH they track at beta ~1, and the
+    # futures would buy contract-roll machinery and an unproven entitlement for hours this
+    # RTH-gated sampler never records. Revisit the carrier only if sampling ever extends overnight.
+    "gld": "GLD",
+    "uso": "USO",
     # the eleven SPDR sectors (dispersion across these is a read-side derivation)
     "xlb": "XLB",
     "xlc": "XLC",
