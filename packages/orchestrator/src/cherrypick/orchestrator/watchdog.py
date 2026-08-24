@@ -1329,9 +1329,11 @@ def _check_services(cfg: dict[str, Any]) -> list[Finding]:
             findings.append(Finding(f"service.{sid}", WARN, f"{sid} checkout missing", msg))
             continue
         running = None
+        status: dict[str, Any] = {}
         try:
             r = _run_module(root, svc["status_argv"], timeout=15)
-            running = bool(first_json(r.stdout).get("running")) if r.returncode == 0 else None
+            status = first_json(r.stdout) if r.returncode == 0 else {}
+            running = bool(status.get("running")) if r.returncode == 0 else None
         except Exception:
             running = None
         if running is False and svc.get("auto_restart"):
@@ -1352,6 +1354,39 @@ def _check_services(cfg: dict[str, Any]) -> list[Finding]:
             findings.append(
                 Finding(f"service.{sid}", WARN, f"{sid} status unknown", "Could not read status_argv.")
             )
+        elif status.get("stalled") is True:
+            # Alive but wedged: the service's own published heartbeat went silent (see the gex
+            # recorder's status contract). A pid check cannot see this — the 2026-07-23 shape with a
+            # different cause — and a plain start would lose to the wedged pid's single-instance
+            # lock, so the remedy is the stale-config recycle: stop, then start. Same auto_restart
+            # gate as every other touch.
+            age = status.get("heartbeat_age_seconds")
+            silent = f"heartbeat silent {int(age)}s" if isinstance(age, (int, float)) else "heartbeat silent"
+            if svc.get("auto_restart"):
+                stopped = _stop_streamer(root, svc)
+                started = _start_streamer(root, svc["start_argv"]) if stopped else False
+                findings.append(
+                    Finding(
+                        f"service.{sid}",
+                        WARN,
+                        f"{sid} stalled — recycled" if started else f"{sid} stalled — recycle failed",
+                        f"Process alive but {silent}; "
+                        + (
+                            "stopped and relaunched."
+                            if started
+                            else f"the {'restart' if stopped else 'stop'} failed and it is still wedged."
+                        ),
+                    )
+                )
+            else:
+                findings.append(
+                    Finding(
+                        f"service.{sid}",
+                        WARN,
+                        f"{sid} stalled",
+                        f"Process alive but {silent}; auto_restart is off, so recycle it by hand.",
+                    )
+                )
         else:
             findings.append(_recycle_if_stale(svc, root, sid))
     return findings

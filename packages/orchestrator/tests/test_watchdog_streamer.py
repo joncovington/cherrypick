@@ -252,3 +252,47 @@ def test_service_missing_checkout_warns_without_leaking_path(tmp_path):
     findings = wd._check_services(cfg)
     assert findings[0].status == wd.WARN and "checkout missing" in findings[0].title
     assert str(tmp_path) not in findings[0].message
+
+
+def _service_cfg(tmp_path, **overrides):
+    svc = {"id": "gex-recorder", "enabled": True, "path": str(tmp_path), **_spec(**overrides)}
+    return {"services": [svc]}
+
+
+def test_service_stalled_is_recycled_stop_then_start(monkeypatch, calls, tmp_path):
+    """Alive-but-wedged (the service's own heartbeat went silent): a plain start would lose to the
+    wedged pid's single-instance lock, so the watchdog must stop THEN start."""
+    _status(monkeypatch, {"running": True, "stalled": True, "heartbeat_age_seconds": 400})
+    findings = wd._check_services(_service_cfg(tmp_path))
+    assert findings[0].status == wd.WARN and "stalled — recycled" in findings[0].title
+    assert "400" in findings[0].message
+    assert len(calls["stop"]) == 1 and calls["start"] == [["run.py"]]
+
+
+def test_service_stalled_without_auto_restart_only_warns(monkeypatch, calls, tmp_path):
+    _status(monkeypatch, {"running": True, "stalled": True})
+    findings = wd._check_services(_service_cfg(tmp_path, auto_restart=False))
+    assert findings[0].status == wd.WARN and findings[0].title == "gex-recorder stalled"
+    assert calls["stop"] == [] and calls["start"] == []
+
+
+def test_service_running_not_stalled_takes_the_stale_config_path(monkeypatch, calls, tmp_path):
+    _status(monkeypatch, {"running": True, "stalled": False})
+    monkeypatch.setattr(
+        wd, "_recycle_if_stale", lambda svc, root, sid: wd.Finding(f"service.{sid}", wd.OK, sid, "running")
+    )
+    findings = wd._check_services(_service_cfg(tmp_path))
+    assert findings[0].status == wd.OK
+    assert calls["stop"] == [] and calls["start"] == []
+
+
+def test_service_without_stall_key_is_unchanged_behavior(monkeypatch, calls, tmp_path):
+    """A service that never learned to publish `stalled` (or a pre-heartbeat daemon) keeps the
+    original contract: running means healthy, nothing is touched."""
+    _status(monkeypatch, {"running": True})
+    monkeypatch.setattr(
+        wd, "_recycle_if_stale", lambda svc, root, sid: wd.Finding(f"service.{sid}", wd.OK, sid, "running")
+    )
+    findings = wd._check_services(_service_cfg(tmp_path))
+    assert findings[0].status == wd.OK
+    assert calls["stop"] == [] and calls["start"] == []

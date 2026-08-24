@@ -359,7 +359,13 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   quiet socket — or a dead managed **service**: top-level `services`, background daemons like the gex
   spot-trail recorder that `install` starts, the watchdog keeps alive via `status_argv`/`start_argv`,
   and `uninstall` stops; single-instance guarded, located by `path`/`repo` like modules but with no
-  paper DB or schedule of their own). It never places, cancels, or closes an order. The same
+  paper DB or schedule of their own). It never places, cancels, or closes an order. A service that is
+  **alive but wedged** is covered too (2026-08-23), but only when the service itself says so: a
+  `status_argv` payload reporting `stalled: true` (the gex recorder publishes a per-tick heartbeat
+  and derives that flag from its silence) gets the stop-then-start recycle — stop first because a
+  plain start loses to the wedged pid's single-instance lock — under the same `auto_restart` gate.
+  A service that publishes no stall signal keeps the original contract: running means healthy,
+  nothing is touched, because restarting on "I can't tell" is the calendars failure. The same
   remediation also covers a service that is **up but running stale config** (`servicecfg.py`): a
   daemon reads config once at launch, so a later edit reaches the file and never the process, and
   liveness cannot see it. `install` stamps a hash of each service's effective config (its own config

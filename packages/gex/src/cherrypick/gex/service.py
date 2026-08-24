@@ -146,6 +146,31 @@ def _recorder_pid_file(cfg: dict) -> Path:
     return Path(cfg["history_db_path"]).parent / "recorder.pid"
 
 
+# A live pid is not a live loop: the 2026-07-23 recorder was up, answering --status truthfully, and
+# wrong — and a WEDGED loop is the same shape with a different cause, invisible to a pid check. So
+# the daemon PUBLISHES its liveness (the flies heartbeat convention: top of every tick, before any
+# work), and --status reports `stalled` when the beat goes silent, which is what lets the watchdog
+# recycle a wedged recorder the way it already recycles a stale-config one. 180s is 12 missed beats
+# at the 15s cadence — generous on purpose, so tripping it means the loop is genuinely stuck rather
+# than one slow tick.
+RECORDER_STALL_SECONDS = 180
+
+
+def _recorder_heartbeat_path(cfg: dict) -> Path:
+    return Path(cfg["history_db_path"]).parent / "recorder.heartbeat"
+
+
+def _beat(cfg: dict) -> None:
+    """Touch the heartbeat. Best-effort: a beat that cannot be written must never stop the loop —
+    the degrade is 'not silence-supervised', the calendars lesson applied here."""
+    try:
+        hb = _recorder_heartbeat_path(cfg)
+        hb.parent.mkdir(parents=True, exist_ok=True)
+        hb.write_text(str(time.time()), encoding="utf-8")
+    except OSError:
+        pass
+
+
 _pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch this name)
 
 
@@ -166,9 +191,23 @@ def _running_recorder_pid(cfg: dict) -> int | None:
 
 
 def recorder_status(cfg: dict) -> dict:
-    """{"ok", "running", "pid"} — the daemon-liveness contract the orchestrator's status_argv reads."""
+    """{"ok", "running", "pid", "stalled", ...} — the daemon-liveness contract the orchestrator's
+    status_argv reads. `stalled` is true only when the process is ALIVE and its published heartbeat
+    has gone silent past RECORDER_STALL_SECONDS — the signal the watchdog recycles on. A missing
+    heartbeat (pre-heartbeat daemon, or a beat that could not be written) reports `stalled: false`:
+    restarting on "I can't tell" is the failure the heartbeat convention exists to fix."""
     pid = _running_recorder_pid(cfg)
-    return {"ok": True, "running": pid is not None, "pid": pid}
+    status: dict = {"ok": True, "running": pid is not None, "pid": pid}
+    if pid is None:
+        return status
+    status["stalled"] = False
+    try:
+        age = time.time() - _recorder_heartbeat_path(cfg).stat().st_mtime
+    except OSError:
+        return status
+    status["heartbeat_age_seconds"] = round(age, 1)
+    status["stalled"] = age > RECORDER_STALL_SECONDS
+    return status
 
 
 def acquire_recorder_lock(cfg: dict) -> bool:
@@ -315,6 +354,7 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
     ticks = 0
     try:
         while True:
+            _beat(cfg)  # top of every tick, before any work — liveness is published, never inferred
             try:
                 n = record_spots(cfg)
                 record_regimes(cfg)  # internally throttled to ~5-minute rows
