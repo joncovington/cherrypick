@@ -18,7 +18,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 
-from cherrypick.pmcc import clock
+from cherrypick.pmcc import clock, db
 
 DEFAULT_BASE_WIDTH = 60
 DEFAULT_MARGIN = 10
@@ -164,15 +164,57 @@ def evaluate(
     return width
 
 
+def entry_possible(conn, symbol: str, books: list[str], max_positions: int) -> bool:
+    """Whether ANY book could still open `symbol` — the same condition `paper_loop`'s entry phase
+    uses to decide it has something to do (a free (symbol, book) slot, under the book's cap).
+
+    Deliberately the same test rather than an approximation of it: this decides whether the widened
+    window is subscribed at all, so a window that disagreed with the entry gate would either starve
+    a reachable entry or keep paying for an unreachable one.
+    """
+    return any(
+        db.open_position_for(conn, symbol, b) is None and db.open_position_count(conn, b) < max_positions
+        for b in books
+    )
+
+
 def hints_for_symbols(
-    conn, cache_path, symbols: list[str], trade_date: str, config: dict, *, deep_window_pct: float
+    conn,
+    cache_path,
+    symbols: list[str],
+    trade_date: str,
+    config: dict,
+    *,
+    deep_window_pct: float,
+    books: list[str] | None = None,
+    max_positions: int = 1,
 ) -> dict[str, int]:
     """`{symbol: width}` — max(structural need, escalated width) per symbol, entries only where the
-    result exceeds `base_width` (absent/empty is the request payload's own default convention)."""
+    result exceeds `base_width` (absent/empty is the request payload's own default convention).
+
+    **A symbol with no free slot gets no hint at all.** The widened window exists for exactly one
+    purpose — finding the 85-90-delta long AT ENTRY — and once every book holds `symbol`, nothing
+    can be entered until one closes, which for a hold-to-expiration cycle is one to two WEEKS. The
+    open position's own marks come from the request's `leg_sources`, never from this window, so the
+    window is pure cost for the whole holding period. It was measured at 84% of the suite's
+    updating option quotes on 2026-08-24 while pmcc held its only slot.
+
+    Dropping a hint is safe and cheap by construction: the producer recomputes each window every
+    pass and unsubscribes the difference, and the watchdog's subscription-staleness check is
+    growth-only, so a shrink never recycles the producer. The state changes twice per multi-week
+    cycle, which is the cadence this is safe at — a per-tick toggle would re-create the subscribe
+    burst that `cherrypick.core.streamer`'s pacing exists to prevent.
+
+    The hint returns the moment a slot frees rather than when an entry is attempted, so the quotes
+    have a subscription poll or two to arrive before the module wants them.
+    """
     p = window_params(config)
     hints: dict[str, int] = {}
+    roster = list(books) if books else []
     for symbol in symbols:
         symbol = symbol.strip().upper()
+        if roster and not entry_possible(conn, symbol, roster, max_positions):
+            continue
         computed = needed_width(cache_path, symbol, deep_window_pct=deep_window_pct, margin=p["margin"])
         escalated = evaluate(
             conn,

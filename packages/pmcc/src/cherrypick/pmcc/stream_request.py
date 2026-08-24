@@ -26,7 +26,7 @@ from pathlib import Path
 
 from cherrypick.core import streamrequests as _sr
 
-from cherrypick.pmcc import clock, db, provider, stream_window
+from cherrypick.pmcc import clock, db, engine, provider, stream_window
 
 _MODULE = "pmcc"
 _log = logging.getLogger("pmcc_paper_loop")
@@ -57,6 +57,11 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
             "WHERE l.status = 'open' AND p.status != 'closed'",
         )
     ]
+    # The roster and the cap decide whether a widened window is worth subscribing at all: a symbol
+    # every book already holds cannot be entered until one closes — one to two WEEKS for a
+    # hold-to-expiration cycle — and the open position's marks come from `leg_sources`, never from
+    # the window. See `stream_window.hints_for_symbols`.
+    books = [b for b in engine.BOOKS if (config.get("books") or {}).get(b, {}).get("enabled", True)]
     hints = stream_window.hints_for_symbols(
         conn,
         cache_path,
@@ -64,6 +69,8 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
         today.isoformat(),
         config,
         deep_window_pct=defaults.get("deep_window_pct", provider.DEFAULT_DEEP_WINDOW_PCT),
+        books=books,
+        max_positions=int(defaults.get("max_positions", 3)),
     )
     return _sr.write_request(
         _MODULE,
