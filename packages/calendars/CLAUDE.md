@@ -43,6 +43,14 @@ recorded net (they must agree to the cent — same ticks, same mids, same cost m
 `expiry-longs-mon` against the path book's real net. A derivation that cannot reproduce the books it
 sits beside has no business ranking the policies between them.
 
+**A proposed second ENTRY REGIME (Friday entry) is designed but not built** —
+[docs/friday-entry-arm.md](docs/friday-entry-arm.md). It enters the same expirations on the previous
+Friday to capture weekend theta, which makes it `dc_7_10` against this design's `dc_4_7`. Read that
+doc before treating it as an arm: it is deliberately NOT a fourth book, because a book here shares
+the one entry plan and a Friday entry prices its own snapshot and picks its own strikes. It is a
+parallel regime with its own books, its own population, and an ordering problem on the Friday
+session that already carries the exit, the settlement and the share delivery.
+
 **One deliberate exemption from the one-variable arm rule:** `control` and `path` differ in short
 AND long handling at once. That is the permissive-superset design, not an oversight — the
 single-variable questions are answered by the read-side grid, not by pairing these two books. Do not
