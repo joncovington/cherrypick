@@ -142,12 +142,23 @@ the freshness check only warns. The cost is a false WARN whenever such a module 
 idle, which for a hold-to-expiry book is most of the session. Fix is small: beat at the top of each
 tick through `cherrypick.core.home.heartbeat_path`, the way flies' `paper_loop._beat` already does.
 
-## What to re-derive afterwards
+## What was re-derived afterwards (settled 2026-08-24, after the close)
 
-- **Raise `window_strike_count` back deliberately**, outside market hours, watching
-  `reconnect_count` while it lands. 30 was chosen to end an outage, not by measurement.
-- **Re-derive pmcc's `deep_window_pct`** from where an 85–90 delta strike actually sits on each of
-  its symbols, and record the answer in that module's docs rather than leaving it at an
-  incident-time value.
-- **Restore the regime recorder's full leg set** if any were left off (they were reverted during
-  diagnosis and restored the same session; they are ~0.2% of the load and not implicated).
+- **`window_strike_count` stays at 30 — now by measurement, not by incident.** It serves only the
+  symbols no module widens by hint (SPX, SPY). At 30 per side that is ±150 points on SPX's 5-point
+  strikes and ±4.3% on SPY's, while meic's 10–16 delta condors, flies' wings, bwb's expected-move
+  entries and calendars' EM strikes all sit far inside. Restoring 60 would have doubled those
+  windows' subscriptions to serve strikes nothing reads. Pacing means 60 is now *safe*; it is still
+  not *needed*.
+- **pmcc's `deep_window_pct` restored 0.12 → 0.20, and the cut turned out to be wrong.** Measured
+  against the live chain, TQQQ's 85–90 delta call at ~21 DTE sits **15.2–18.8% ITM** (strikes
+  56.0–58.5 against a 68.995 spot), so a 12% bound stopped short of the entire target range and
+  would have made the module's long unreachable on that symbol. It never bit only because TQQQ was
+  independently refusing on a lapsed dividend calendar. Full record:
+  `packages/pmcc/docs/window-parameters.md`.
+- **The regime recorder's legs** were reverted during diagnosis and restored the same session; they
+  are ~0.2% of the load and were never implicated.
+
+The general lesson worth keeping from those two: **an emergency parameter cut is a guess with a
+deadline.** One of these two proved harmless and one proved wrong, and the only thing separating
+them was measuring afterwards rather than leaving the incident value in place.
