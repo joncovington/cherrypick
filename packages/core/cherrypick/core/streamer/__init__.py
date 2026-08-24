@@ -45,6 +45,21 @@ from cherrypick.core.clock import ET as _ET
 
 _RECONNECT_BASE = 2.0
 _RECONNECT_MAX = 60.0
+
+# DXLink enforces a subscription RATE limit and kills the socket outright with "Your subscription
+# rate is too high". On 2026-08-24 the producer held ~12,000 subscriptions and re-sent every one of
+# them on each reconnect as fast as the socket would accept: killed ~5s after connecting, 60s
+# backoff, repeat — 79 reconnects in a morning, delivering roughly five seconds of data per
+# sixty-five second cycle while every trading module starved on stale quotes.
+#
+# The loop was unrecoverable BY CONSTRUCTION: a burst that trips the limit cannot recover by
+# retrying the identical burst a minute later. Reducing the subscription count lowers the odds of
+# tripping it; only pacing removes the failure mode. So every subscribe and unsubscribe goes
+# through one choke point — chunked, and spaced by a global minimum interval so that four event
+# types fired back to back cannot stack into one burst. A full 12k resubscribe costs a few seconds
+# against a 240s settling window, which is free.
+SUBSCRIBE_CHUNK = 200
+SUBSCRIBE_PACE_S = 0.15
 _COMMIT_BATCH_INTERVAL_S = 0.5
 _COMMIT_BATCH_MAX_PENDING = 25
 # 2+4+8+16+32+60s ~= 2 minutes of retries for a single symbol's chain fetch before giving up and
@@ -161,6 +176,8 @@ class ChainStreamer:
         window_refresh_pts: float = 1.0,
         window_poll_s: float = 5.0,
         subscription_poll_s: float = 30.0,
+        subscribe_chunk: int = SUBSCRIBE_CHUNK,
+        subscribe_pace_s: float = SUBSCRIBE_PACE_S,
         logger: logging.Logger | None = None,
     ) -> None:
         self.session_factory = session_factory
@@ -176,6 +193,9 @@ class ChainStreamer:
         self.window_refresh_pts = window_refresh_pts
         self.window_poll_s = window_poll_s
         self.subscription_poll_s = subscription_poll_s
+        self.subscribe_chunk = max(1, int(subscribe_chunk))
+        self.subscribe_pace_s = max(0.0, float(subscribe_pace_s))
+        self._last_subscribe_at = 0.0
         self._stale_resub_at: dict[str, float] = {}
         self.log = logger or logging.getLogger("cherrypick.core.streamer")
         self.state: _State | None = None
@@ -245,6 +265,23 @@ class ChainStreamer:
                         self._symbol_refresher(streamer, state, sym, Quote, Greeks, Summary, Trade)
                     )
 
+    async def _send_subs(self, streamer, cls, symbols, *, remove: bool = False) -> None:
+        """The ONE place a subscription message reaches the socket. Chunked, and paced against a
+        GLOBAL last-send clock rather than a per-call one: the window paths subscribe the same
+        add-list to four event types back to back, and per-call pacing would let those four stack
+        into exactly the burst this exists to prevent. See SUBSCRIBE_CHUNK for the incident."""
+        syms = list(symbols)
+        if not syms:
+            return
+        op = streamer.unsubscribe if remove else streamer.subscribe
+        for i in range(0, len(syms), self.subscribe_chunk):
+            if self.subscribe_pace_s:
+                wait = self._last_subscribe_at + self.subscribe_pace_s - time.monotonic()
+                if wait > 0:
+                    await asyncio.sleep(wait)
+            await op(cls, syms[i : i + self.subscribe_chunk])
+            self._last_subscribe_at = time.monotonic()
+
     async def _apply_subscriptions(
         self, streamer, state: _State, subs: dict, Trade, Quote, Greeks, Summary
     ) -> None:
@@ -261,10 +298,10 @@ class ChainStreamer:
                 remove -= window_union  # a window still wants these even if the extra-policy dropped them
             cls = cls_map[key]
             if add:
-                await streamer.subscribe(cls, list(add))
+                await self._send_subs(streamer, cls, list(add))
                 self.log.info("Subscribed %s %s", key, list(add))
             if remove:
-                await streamer.unsubscribe(cls, list(remove))
+                await self._send_subs(streamer, cls, list(remove), remove=True)
                 self.log.info("Unsubscribed %s %s", key, list(remove))
             state.subscribed[key] = list(wanted)
         streamcache.upsert_status(state.conn, subscribed_symbols=self._total_subscribed(state))
@@ -328,7 +365,7 @@ class ChainStreamer:
         syms = [s for s, _ in stale]
         ages = {s: ("never" if a is None else f"{a / 60:.0f}m") for s, a in stale}
         self.log.warning("Resubscribing stale Trade symbols (dead subscription self-heal): %s", ages)
-        await streamer.subscribe(Trade, syms)
+        await self._send_subs(streamer, Trade, syms)
 
     # -- listeners -------------------------------------------------------------------------------
     def _touch(self, state: _State, ts: float) -> None:
@@ -655,10 +692,10 @@ class ChainStreamer:
                     try:
                         if add:
                             add_list = list(add)
-                            await streamer.subscribe(Quote, add_list)
-                            await streamer.subscribe(Greeks, add_list)
-                            await streamer.subscribe(Summary, add_list)
-                            await streamer.subscribe(Trade, add_list)
+                            await self._send_subs(streamer, Quote, add_list)
+                            await self._send_subs(streamer, Greeks, add_list)
+                            await self._send_subs(streamer, Summary, add_list)
+                            await self._send_subs(streamer, Trade, add_list)
                         if remove:
                             # Protect the injected set AND any other live window's symbols — on a
                             # 0DTE Friday an extra-expiration window can hold the same date this
@@ -668,10 +705,10 @@ class ChainStreamer:
                             )
                             if safe_remove:
                                 srl = list(safe_remove)
-                                await streamer.unsubscribe(Quote, srl)
-                                await streamer.unsubscribe(Greeks, srl)
-                                await streamer.unsubscribe(Summary, srl)
-                                await streamer.unsubscribe(Trade, srl)
+                                await self._send_subs(streamer, Quote, srl, remove=True)
+                                await self._send_subs(streamer, Greeks, srl, remove=True)
+                                await self._send_subs(streamer, Summary, srl, remove=True)
+                                await self._send_subs(streamer, Trade, srl, remove=True)
                         state.window_syms[symbol] = new_syms
                         streamcache.upsert_status(
                             state.conn, subscribed_symbols=self._total_subscribed(state)
@@ -820,20 +857,20 @@ class ChainStreamer:
                 try:
                     if add:
                         add_list = list(add)
-                        await streamer.subscribe(Quote, add_list)
-                        await streamer.subscribe(Greeks, add_list)
-                        await streamer.subscribe(Summary, add_list)
-                        await streamer.subscribe(Trade, add_list)
+                        await self._send_subs(streamer, Quote, add_list)
+                        await self._send_subs(streamer, Greeks, add_list)
+                        await self._send_subs(streamer, Summary, add_list)
+                        await self._send_subs(streamer, Trade, add_list)
                     if remove:
                         safe_remove = (
                             remove - self._protected_symbols() - self._window_syms_except(state, key)
                         )
                         if safe_remove:
                             srl = list(safe_remove)
-                            await streamer.unsubscribe(Quote, srl)
-                            await streamer.unsubscribe(Greeks, srl)
-                            await streamer.unsubscribe(Summary, srl)
-                            await streamer.unsubscribe(Trade, srl)
+                            await self._send_subs(streamer, Quote, srl, remove=True)
+                            await self._send_subs(streamer, Greeks, srl, remove=True)
+                            await self._send_subs(streamer, Summary, srl, remove=True)
+                            await self._send_subs(streamer, Trade, srl, remove=True)
                     state.window_syms[key] = new_syms
                     streamcache.upsert_status(state.conn, subscribed_symbols=self._total_subscribed(state))
                     self.log.info(
@@ -867,10 +904,10 @@ class ChainStreamer:
         if safe_remove:
             try:
                 srl = list(safe_remove)
-                await streamer.unsubscribe(Quote, srl)
-                await streamer.unsubscribe(Greeks, srl)
-                await streamer.unsubscribe(Summary, srl)
-                await streamer.unsubscribe(Trade, srl)
+                await self._send_subs(streamer, Quote, srl, remove=True)
+                await self._send_subs(streamer, Greeks, srl, remove=True)
+                await self._send_subs(streamer, Summary, srl, remove=True)
+                await self._send_subs(streamer, Trade, srl, remove=True)
             except Exception as exc:
                 self.log.warning("extra window %s retire error: %s", key, exc)
         streamcache.upsert_status(state.conn, subscribed_symbols=self._total_subscribed(state))
