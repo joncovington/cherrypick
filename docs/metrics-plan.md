@@ -172,9 +172,13 @@ pattern).
 
 - **CVaR quantile and minimum sessions** — proposed worst-10% over ≥20 sessions; settle at
   implementation and stamp it in the function's contract.
-- **Do tail metrics enter promotion GATES or stay report-only?** Gating on CVaR changes what
-  promotion means — measurement-adjacent even if not measurement-affecting. Proposed: report-only
-  first; a gate is its own journaled decision later.
+- **Do tail metrics enter promotion GATES or stay report-only?** — **Decided 2026-08-23:
+  report-only at first.** Gating on CVaR changes what promotion means — measurement-adjacent even
+  if not measurement-affecting — so the gate question is deliberately DEFERRED, not dismissed:
+  **revisit once the tail metrics have accumulated enough sessions to know what a reasonable bar
+  would even be** (the numbers must exist before a threshold on them means anything). When
+  revisited, a gate is its own journaled decision with its own boundary, never a quiet edit to
+  `calibrate`'s comparison.
 - **Scatter primitive** — the one new chart component; keep it as spare as the house kit
   (categorical-free axes, shared tokens, no dependency added).
 - **Full Deflated Sharpe** — deferred until the arm count or the advisor's experiment volume makes
