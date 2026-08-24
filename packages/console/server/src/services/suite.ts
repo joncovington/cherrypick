@@ -20,7 +20,20 @@ export interface SystemPanel {
     streamer: boolean | null;
     liveTrading: boolean | null;
   }>;
-  services: Array<{ id: string; enabled: boolean; autoRestart: boolean; launched: string | null; pid: number | null }>;
+  services: Array<{
+    id: string;
+    enabled: boolean;
+    autoRestart: boolean;
+    launched: string | null;
+    pid: number | null;
+    /** The watchdog's own verdict for this service (its `service.<id>` finding from the last tick):
+     * level (OK/WARN/CRITICAL), a short note ("running", "stalled — recycled", "was down —
+     * restarted"), and the finding's full message. The console renders what the watchdog decided —
+     * it never re-derives service health itself. Null when the watchdog has not reported. */
+    health: string | null;
+    note: string | null;
+    detail: string | null;
+  }>;
   watchdog: { intervalMinutes: number | null; renotifyMinutes: number | null; drawdownGuard: boolean | null };
   notify: { channels: string[]; tradeChannels: string[]; webhookStatus: string | null };
   /** Halt flag presence — the suite's global stop. */
@@ -48,18 +61,50 @@ export function readSystemPanel(config: ConsoleConfig): SystemPanel {
     for (const [k, v] of Object.entries(modulesRaw as Record<string, Record<string, unknown>>)) pushModule(k, v ?? {});
   }
 
+  // The watchdog's per-service findings (`service.<id>`, written every tick) are the authority on
+  // service health — they carry the stall/recycle verdicts a config or launch stamp cannot see.
+  const watchdogLast = readJson(config.paths.watchdogLast);
+  const serviceFindings = new Map<string, { status: string; title: string; message: string }>();
+  if (Array.isArray(watchdogLast?.["findings"])) {
+    for (const f of watchdogLast["findings"] as Array<Record<string, unknown>>) {
+      const key = String(f["key"] ?? "");
+      if (key.startsWith("service.")) {
+        serviceFindings.set(key.slice("service.".length), {
+          status: String(f["status"] ?? ""),
+          title: String(f["title"] ?? ""),
+          message: String(f["message"] ?? ""),
+        });
+      }
+    }
+  }
+
   const services: SystemPanel["services"] = [];
   const svcRaw = cfg["services"];
   if (Array.isArray(svcRaw)) {
     for (const s of svcRaw as Array<Record<string, unknown>>) {
       const id = String(s["id"] ?? "?");
       const launch = readJson(path.join(config.paths.cherrypick, "state", `service-${id}.launch.json`));
+      const finding = serviceFindings.get(id) ?? null;
+      // An OK finding's title is just the id and its message is the note ("running"); a WARN
+      // finding's title carries the verdict ("gex-recorder stalled — recycled") with the long
+      // explanation in the message. Strip the id so the table cell reads as the verdict alone.
+      const note =
+        finding === null
+          ? null
+          : finding.status === "OK"
+            ? finding.message
+            : finding.title.startsWith(id)
+              ? finding.title.slice(id.length).trim()
+              : finding.title;
       services.push({
         id,
         enabled: s["enabled"] === true,
         autoRestart: s["auto_restart"] === true,
         launched: typeof launch?.["launched_at"] === "string" ? launch["launched_at"] : null,
         pid: typeof launch?.["pid"] === "number" ? launch["pid"] : null,
+        health: finding?.status ?? null,
+        note,
+        detail: finding?.message ?? null,
       });
     }
   }

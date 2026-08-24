@@ -5,7 +5,16 @@ import { Card, fmtMoney, fmtPct } from "../../components/DataTable";
 interface SystemPanel {
   timezone: string | null;
   modules: Array<{ id: string; enabled: boolean; kind: string | null; streamer: boolean | null; liveTrading: boolean | null }>;
-  services: Array<{ id: string; enabled: boolean; autoRestart: boolean; launched: string | null; pid: number | null }>;
+  services: Array<{
+    id: string;
+    enabled: boolean;
+    autoRestart: boolean;
+    launched: string | null;
+    pid: number | null;
+    health: string | null;
+    note: string | null;
+    detail: string | null;
+  }>;
   watchdog: { intervalMinutes: number | null; renotifyMinutes: number | null; drawdownGuard: boolean | null };
   notify: { channels: string[]; tradeChannels: string[]; webhookStatus: string | null };
   halted: { active: boolean; path: string };
@@ -65,12 +74,17 @@ export function SystemCard() {
           <div className="table-scroll" style={{ marginTop: "0.6rem" }}>
             <table className="data-table num-from-1">
               <thead>
-                <tr><th>service</th><th>enabled</th><th>auto-restart</th><th>launched</th><th>pid</th></tr>
+                <tr><th>service</th><th>status</th><th>enabled</th><th>auto-restart</th><th>launched</th><th>pid</th></tr>
               </thead>
               <tbody>
                 {data?.services.map((s) => (
                   <tr key={s.id}>
                     <td>{s.id}</td>
+                    {/* The watchdog's own verdict from its last tick — the console renders it,
+                        never re-derives it. Hover shows the finding's full message. */}
+                    <td className={s.health === "OK" ? "pnl-pos" : s.health === null ? "muted" : "pnl-neg"} title={s.detail ?? undefined}>
+                      {s.note ?? "no watchdog report"}
+                    </td>
                     <td>{s.enabled ? "yes" : "no"}</td>
                     <td className="muted">{s.autoRestart ? "yes" : "no"}</td>
                     <td className="muted">{s.launched?.slice(0, 16).replace("T", " ") ?? "—"}</td>
