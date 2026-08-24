@@ -58,6 +58,119 @@ def max_drawdown(values: Sequence[float]) -> float:
     return round(dd, 2)
 
 
+def expectancy(values: Sequence[float]) -> float | None:
+    """Mean per-trade net — the edge in dollars, the number a sample gate multiplies.
+    None on an empty series, never a fabricated 0."""
+    if not values:
+        return None
+    return round(sum(values) / len(values), 2)
+
+
+def profit_factor(values: Sequence[float]) -> float | None:
+    """Gross profits over gross losses. None when either side is empty: a book with no losses
+    yet has an UNDEFINED profit factor, not an infinite one, and a book with no wins is not a
+    zero-quality reading but an unmeasurable ratio."""
+    gains = sum(v for v in values if v > 0)
+    losses = -sum(v for v in values if v < 0)
+    if gains <= 0 or losses <= 0:
+        return None
+    return round(gains / losses, 3)
+
+
+def sortino(values: Sequence[float]) -> float | None:
+    """Per-trade Sortino: mean over the downside deviation (target 0, deviation over the whole
+    sample, standard form), un-annualized for the same comparability reason as `sharpe`.
+    None below 2 losing samples — one loss says nothing about the SHAPE of the downside, and a
+    lossless series has an undefined ratio, not an infinite one."""
+    n = len(values)
+    losses = [v for v in values if v < 0]
+    if n < 2 or len(losses) < 2:
+        return None
+    downside_var = sum(min(v, 0.0) ** 2 for v in values) / n
+    if downside_var <= 0:
+        return None
+    return round((sum(values) / n) / downside_var**0.5, 3)
+
+
+def sqn(values: Sequence[float]) -> float | None:
+    """System Quality Number (Van Tharp): sqrt(n) x mean / stdev of the per-trade nets — edge,
+    consistency and sample size in one score. Reported BESIDE `sample_progress`, never replacing
+    it: SQN folds the sample into the number, the progress gate keeps it visible. None below 2
+    samples or on a zero-variance series."""
+    n = len(values)
+    if n < 2:
+        return None
+    mean = sum(values) / n
+    var = sum((v - mean) ** 2 for v in values) / (n - 1)
+    if var <= 0:
+        return None
+    return round((n**0.5) * mean / var**0.5, 2)
+
+
+# The tail metrics key on SESSIONS, not trades — rows are not draws (the flies regime_coverage
+# lesson: twenty trades on one day observe one market between them). Stamped at implementation
+# per the plan: CVaR is the mean of the worst 10% of per-session nets, refused below 20 sessions —
+# a CVaR over six sessions reads as a risk number and is not one.
+CVAR_QUANTILE = 0.10
+CVAR_MIN_SESSIONS = 20
+
+
+def session_nets(records: Sequence[Mapping]) -> list[float]:
+    """Per-session net P&L in session order — the series every tail metric keys on. Records
+    without a session are excluded (they cannot be pooled into a day that is not known)."""
+    by_session: dict[str, float] = {}
+    for r in records:
+        s = r.get("session")
+        if s:
+            by_session[s] = by_session.get(s, 0.0) + r["net_pnl"]
+    return [round(by_session[s], 2) for s in sorted(by_session)]
+
+
+def worst_session(records: Sequence[Mapping]) -> dict | None:
+    """The single worst session: {"session", "net"}. None when no record carries a session."""
+    by_session: dict[str, float] = {}
+    for r in records:
+        s = r.get("session")
+        if s:
+            by_session[s] = by_session.get(s, 0.0) + r["net_pnl"]
+    if not by_session:
+        return None
+    s = min(by_session, key=lambda k: by_session[k])
+    return {"session": s, "net": round(by_session[s], 2)}
+
+
+def cvar(
+    values: Sequence[float], quantile: float = CVAR_QUANTILE, min_n: int = CVAR_MIN_SESSIONS
+) -> float | None:
+    """Expected shortfall over per-session nets: the mean of the worst `quantile` of sessions
+    (at least one). Refuses (None) below `min_n` sessions — see the constants above."""
+    n = len(values)
+    if n < min_n:
+        return None
+    k = max(1, int(n * quantile))
+    worst = sorted(values)[:k]
+    return round(sum(worst) / k, 2)
+
+
+def drawdown_span(values: Sequence[float]) -> dict:
+    """Duration to `max_drawdown`'s depth: the longest peak-to-recovery stretch of the running-sum
+    path, in observations (sessions when fed `session_nets`). {"longest": int, "open": int} —
+    `open` is the stretch still below its peak at the end of the series, NOT clamped into
+    `longest`: an ongoing drawdown is a different fact from a survived one, and folding them
+    together would report a live bleed as history."""
+    running = peak = 0.0
+    longest = current = 0
+    for v in values:
+        running += v
+        if running >= peak:
+            peak = running
+            current = 0
+        else:
+            current += 1
+            longest = max(longest, current)
+    return {"longest": longest, "open": current}
+
+
 def sample_progress(n: int, targets: Sequence[int] = (30, 100)) -> dict:
     """Progress toward the significance targets (earnings' 30/100 convention, suite-wide):
     {"n", "targets", "next_target", "progress"} — progress is n over the next unmet target,
@@ -118,4 +231,16 @@ def calibration_reading(records: Sequence[Mapping]) -> dict:
         "sharpe": sharpe(nets),
         "max_drawdown": max_drawdown(nets),
         "sample_progress": sample_progress(n),
+        # 2026-08-23 expansion (docs/metrics-plan.md phase 1): edge and risk-adjusted per-trade,
+        # tail and duration per-session. Report-only — no qualification rule reads these yet; the
+        # promotion-gate question is deliberately deferred (see the plan's open questions).
+        "expectancy": expectancy(nets),
+        "profit_factor": profit_factor(nets),
+        "sortino": sortino(nets),
+        "sqn": sqn(nets),
+        "worst_session": worst_session(ordered),
+        "cvar": cvar(session_nets(ordered)),
+        "cvar_quantile": CVAR_QUANTILE,
+        "cvar_min_sessions": CVAR_MIN_SESSIONS,
+        "drawdown_span": drawdown_span(session_nets(ordered)),
     }
