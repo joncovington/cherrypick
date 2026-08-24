@@ -210,6 +210,27 @@
         "settlement_grace_minutes": 45
       }
     },
+    "curve": {
+      "_comment": "curve: VXX call credit spreads harvesting the VIX term-structure roll yield, gated by a daily VIX/VIX3M regime read (packages/curve). Paper-only and credential-free in the calendars/pmcc posture -- no keyring_service, no broker_tool, no live block; market data comes entirely from the shared stream cache. Note VXX is a real UNDERLYING here (a chain window plus its target expiration, ~700 subscriptions), unlike a quote-only leg: a new underlying needs a producer restart to pick up and trips the watchdog's subscription-growth recycle, so add it outside market hours and watch reconnect_count while it lands.",
+      "enabled": true,
+      "path": "../curve",
+      "paper": {
+        "kind": "self_healing",
+        "tick_interval_seconds": 60,
+        "silence_seconds": 240,
+        "resident_start": "09:30",
+        "resident_end": "16:00",
+        "status_argv": ["-m", "cherrypick.curve.paper_loop", "--status"],
+        "once_argv": ["-m", "cherrypick.curve.paper_loop", "--once"],
+        "paper_db": "~/.cherrypick/data/curve/paper_trades.db",
+        "notify_trades": true,
+        "trade_schema": "curve_vx",
+        "log": "curve_paper.log",
+        "freshness_minutes": 10,
+        "settlement_check": true,
+        "settlement_grace_minutes": 45
+      }
+    },
     "bwb": {
       "_comment": "SPX daily-laddered put broken-wing-butterfly paper module (packages/bwb): enters one BWB per enabled book every session at the expected move, ~7DTE, PM-settled; the books differ only in whether/when a reversal-triggered put credit spread add-on turns the fly into a 1-3-2. Paper-only and credential-free -- no keyring_service, no broker_tool, no live block; market data comes entirely from the shared stream cache via the streamer's `expirations`/`window_hints` request fields.",
       "enabled": true,
