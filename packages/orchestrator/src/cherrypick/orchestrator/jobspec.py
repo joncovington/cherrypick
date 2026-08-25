@@ -44,6 +44,10 @@ CATCHUP_MINUTES = {
     "symbol-watch": 150,  # 06:30 scheduled; still useful until ~09:00
     "reconcile": 240,
     "log-archive": 7 * 24 * 60,
+    # Generous: the map only changes when a contract rolls (monthly), and a missed refresh
+    # degrades safely -- the recorder drops its futures readings rather than sampling a
+    # rolled-off contract -- so catching one up late is strictly better than skipping it.
+    "futures-contracts": 8 * 60,
     # A missed review is worth catching up on: the fact set is the input to every read surface,
     # and a session with no artifact is a hole in the trend rather than a late report.
     "review-provisional": 180,
@@ -280,6 +284,10 @@ def _advisor_script(launcher: str) -> str:
 
 def _morning_narrative_script(launcher: str) -> str:
     return _suite_script(launcher, "morning_narrative.py")
+
+
+def _futures_contracts_script(launcher: str) -> str:
+    return _suite_script(launcher, "refresh_futures_contracts.py")
 
 
 def _module_tick_argv(paper: dict[str, Any]) -> list[str] | None:
@@ -597,6 +605,22 @@ def derive_jobs(
                 "" if (mv["enabled"] and mv["narrative"]) else "disabled in config (morning.narrative)"
             ),
             tags=("ai",),
+        ),
+    )
+    add(
+        "futures-contracts",
+        lambda: JobSpec(
+            id="futures-contracts",
+            # A script, not a package: resolving a futures contract needs the broker's instruments
+            # endpoint, and the regime recorder that consumes this map is deliberately
+            # credential-free and network-free. Same fence as the narratives -- a spawned process
+            # whose failure costs a refresh and nothing else.
+            argv=(pythonw, _futures_contracts_script(launcher)),
+            kind=KIND_DAILY,
+            at_et="08:45",
+            catchup_minutes=CATCHUP_MINUTES["futures-contracts"],
+            trading_days_only=True,
+            enabled=True,
         ),
     )
     av = cfgmod.advisor_settings(cfg)

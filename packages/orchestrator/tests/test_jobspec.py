@@ -294,6 +294,7 @@ def test_derive_full_suite_job_table():
         "symbol-watch",
         "reconcile",
         "log-archive",
+        "futures-contracts",
         "review-provisional",
         "review-final",
         "review-narrative",

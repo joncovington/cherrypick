@@ -26,8 +26,8 @@ after; a scratch script using the shared credential read-only — no orders, not
 |---|---|---|
 | **SKEW** | **ADMIT** — one `READINGS` line | Printed 143.9 to `stream_trades` via the ordinary legs path, 31s fresh — identical mechanics to VIX |
 | **VIX9D** | **ADMIT** — one `READINGS` line | Printed 14.53 the same way; front-of-curve vol, and VIX9D/VIX is a read-side ratio |
-| **/VX term structure** | **ADMIT** — needs the roll helper | The whole curve prints: `/VXU26:XCBF` 17.55, `/VXV26` 19.20, `/VXX26` 19.87, `/VXZ26` 20.10 against spot VIX 15.97 |
-| **/ZN (10Y note)** | **ADMIT** — needs the roll helper | Printed to `stream_trades` AND `stream_quotes` through the legs path, 27s fresh, both Sep and Dec contracts |
+| **/VX term structure** | **ADMITTED — built 2026-08-24** as readings `vx1`/`vx2` | The whole curve prints: `/VXU26:XCBF` 17.55, `/VXV26` 19.20, `/VXX26` 19.87, `/VXZ26` 20.10 against spot VIX 15.97 |
+| **/ZN (10Y note)** | **ADMITTED — built 2026-08-24** as reading `zn1` | Printed to `stream_trades` AND `stream_quotes` through the legs path, 27s fresh, both Sep and Dec contracts |
 | **Market internals** (`$TICK`, `$TRIN`, `$CPC`, `$TICKI`, `$ADD`, `.NY` variants) | **REFUSE — not entitled** | Seven symbol variants subscribed as TimeAndSale for 25s: **not one print**. Not a symbology guess — see below |
 | **MOVE** | Already refused (2026-08-23 research) | Institutional ICE feed only; TLT and HYG/LQD stay the reachable proxies |
 
@@ -50,11 +50,24 @@ Four findings worth keeping, because each corrects something this plan previousl
   as Quote — confirming the recorder's existing choice to read `stream_trades` for cash legs, and
   a caution against "fixing" that to `stream_quotes` later.
 
-**The roll helper, when it is built** (`/VX` front+second, `/ZN` front): resolve contracts through
-the instruments endpoint, record the CONTRACT IDENTITY on every row, and never store a blended
-constant-maturity value — the roll is a read-side derivation over identified contracts. Note the
-active `/ZN` month was already December on 2026-08-24 while September still traded, so "front
-month" must mean the contract the endpoint marks active, not the nearest expiry.
+**The roll helper — built 2026-08-24.** `scripts/refresh_futures_contracts.py` resolves the product
+codes through the instruments endpoint and writes `state/futures_contracts.json`; the recorder reads
+that map and samples `vx1`/`vx2`/`zn1`. Four properties, each with a reason:
+
+- **It lives in `scripts/`, outside every package.** Contract resolution needs the broker; the
+  recorder is credential-free and network-free and stays that way. Same fence as the narratives — a
+  spawned process whose failure costs a refresh and nothing else. A `futures-contracts` supervisor
+  job runs it at 08:45 ET on trading days.
+- **The reading name is stable and the row carries the contract.** `vx1` persists across a roll
+  while the row's `symbol` records `/VXU26:XCBF` — so the roll is visible in the data, and no row is
+  ever a blended constant-maturity value. This is what the long-row shape was for.
+- **A stale map (>5 days) drops the futures readings entirely.** Sampling a rolled-off contract
+  would leave a plausible-looking series that is quietly wrong; a gap is legible. Verified by
+  breaking the guard.
+- **`/ZN` takes the ACTIVE month, `/VX` takes consecutive expirations.** They differ on purpose: the
+  VX roll yield is a relationship between adjacent contracts, while a Treasury future's liquidity
+  leaves ahead of first notice — on 2026-08-24 September still traded while December was active, and
+  "nearest" would have recorded the illiquid tail of an expiring contract as the rates market.
 
 ## The finding this comes from
 

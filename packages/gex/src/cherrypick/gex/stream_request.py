@@ -41,7 +41,11 @@ def regime_legs(symbols) -> list[str]:
     underlying. Derived from ``regime.READINGS`` so a new reading is covered the moment it is
     declared — the coverage guard in the tests drives off the same list."""
     declared = {str(s).strip().upper() for s in (symbols or [])}
-    return sorted(set(_regime.READINGS.values()) - declared)
+    # Futures ride as legs too, from the resolved contract map — quote-only, like every other
+    # reading. Their symbols carry an exchange suffix and are NOT upper-cased or otherwise cleaned
+    # here: `/VXU26:XCBF` is what the instruments endpoint returned and what DXLink expects.
+    wanted = set(_regime.READINGS.values()) | set(_regime.futures_symbols().values())
+    return sorted(wanted - declared)
 
 
 def write(symbols) -> Path:
