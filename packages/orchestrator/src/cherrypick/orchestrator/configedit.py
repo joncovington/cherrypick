@@ -46,10 +46,16 @@ GUARDED: dict[str, dict[str, str]] = {
         "/live/account_deploy_limit_pct": "live risk cap — hand-edit deliberately, not from this surface",
     },
     "calendars": {
-        "/live/enabled": "placeholder — no live loop exists yet; see the module CLAUDE.md's live-trading prerequisites",
+        "/live/enabled": (
+            "placeholder — no live loop exists yet; "
+            "see the module CLAUDE.md's live-trading prerequisites"
+        ),
     },
     "pmcc": {
-        "/live/enabled": "placeholder — no live loop exists yet; see the module CLAUDE.md's live-trading prerequisites",
+        "/live/enabled": (
+            "placeholder — no live loop exists yet; "
+            "see the module CLAUDE.md's live-trading prerequisites"
+        ),
     },
 }
 

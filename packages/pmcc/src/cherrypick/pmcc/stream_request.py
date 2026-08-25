@@ -26,7 +26,7 @@ from pathlib import Path
 
 from cherrypick.core import streamrequests as _sr
 
-from cherrypick.pmcc import clock, db, engine, provider, stream_window
+from cherrypick.pmcc import clock, db, engine, stream_window
 
 _MODULE = "pmcc"
 _log = logging.getLogger("pmcc_paper_loop")
@@ -68,7 +68,6 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
         symbols,
         today.isoformat(),
         config,
-        deep_window_pct=defaults.get("deep_window_pct", provider.DEFAULT_DEEP_WINDOW_PCT),
         books=books,
         max_positions=int(defaults.get("max_positions", 3)),
     )

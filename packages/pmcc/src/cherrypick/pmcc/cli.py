@@ -218,7 +218,7 @@ def cmd_ladder(args) -> int:
                 symbol,
                 w["expiration"],
                 root=root,
-                deep_window_pct=defaults.get("deep_window_pct", provider.DEFAULT_DEEP_WINDOW_PCT),
+                deep_window_pct=provider.deep_window_pct_for(config, symbol),
                 **provider.snapshot_kwargs(config),
             )
             if snap.get("ok"):

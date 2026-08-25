@@ -838,7 +838,30 @@ def _ensure_paper_schema() -> None:
         logging.warning("paper schema ensure errored: %s: %s", type(exc).__name__, exc)
 
 
+def _beat() -> None:
+    """Publish liveness at the top of every tick: `state/meic.heartbeat`, the suite's one
+    unconditional signal (`cherrypick.core.home.heartbeat_path`).
+
+    Distinct from `_heartbeat_lock` below, which touches the --once LOCK file so a long iteration
+    is not mistaken for a dead one. This is the watchdog's freshness signal, and meic was the last
+    module without it: the check takes the freshest of the paper DB's mtime, the log's mtime and
+    this file, and the first two are CONDITIONAL writes — a WAL database's main file only moves on
+    a checkpoint and a log line is a side effect of having something to say. meic writes trades
+    often enough that it never surfaced, which is luck rather than a contract (the calendars
+    2026-08-17 lesson: a quiet healthy loop must not be indistinguishable from a wedged one).
+
+    Best-effort: a beat that cannot be written degrades to not-silence-supervised, never to a
+    failed tick."""
+    try:
+        path = _core_home.heartbeat_path("meic")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(str(time.time()), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def run_iteration(cfg, force=False):
+    _beat()  # before every gate below: "the loop is turning over", never "it did work"
     # Wall-clock for this whole iteration, logged below alongside open-position count. Was
     # nowhere -- loop_log.duration_ms existed as a column and get_step_timing could read it, but
     # nothing here ever wrote one, so the load ceiling that governs how many streams/positions

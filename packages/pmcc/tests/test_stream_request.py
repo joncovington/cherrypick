@@ -239,3 +239,54 @@ def test_no_roster_keeps_the_old_unconditional_behaviour(cache, config, tmp_path
     conn = db.connect(str(tmp_path / "paper.db"))
     _open_pos(conn)
     assert _hints(conn, cache, config, monkeypatch).get("TQQQ") == 163
+
+
+# --- the deep window is per SYMBOL -----------------------------------------------------------
+
+
+def test_deep_window_pct_resolves_per_symbol_then_falls_back(config):
+    from cherrypick.pmcc import provider
+
+    cfg = {
+        "defaults": {
+            "deep_window_pct": 0.20,
+            "deep_window_pct_by_symbol": {"XSP": 0.06},
+        }
+    }
+    # Measured 2026-08-24: TQQQ's 85-90 delta call sat ~15-19% ITM, XSP's ~4%. One shared bound
+    # therefore buys XSP roughly five times the strikes it can use.
+    assert provider.deep_window_pct_for(cfg, "XSP") == 0.06
+    assert provider.deep_window_pct_for(cfg, "TQQQ") == 0.20  # falls back to the shared default
+    assert provider.deep_window_pct_for(cfg, "tqqq") == 0.20  # case-insensitive
+
+
+def test_deep_window_pct_unchanged_when_no_map_is_declared(config):
+    """Additive: a config declaring no per-symbol map behaves exactly as before."""
+    from cherrypick.pmcc import provider
+
+    assert provider.deep_window_pct_for({"defaults": {"deep_window_pct": 0.20}}, "XSP") == 0.20
+    assert provider.deep_window_pct_for({}, "XSP") == provider.DEFAULT_DEEP_WINDOW_PCT
+
+
+def test_window_hints_use_each_symbols_own_bound(cache, tmp_path, monkeypatch):
+    """The hint is the SUBSCRIPTION cost, so it must narrow with the per-symbol bound — otherwise
+    the snapshot reads a tighter window while the producer still pays for the wide one."""
+    from cherrypick.pmcc import provider, stream_window
+
+    conn = db.connect(str(tmp_path / "paper.db"))
+    seen: dict[str, float] = {}
+
+    def fake_needed(cache_path, symbol, *, deep_window_pct, margin):
+        seen[symbol] = deep_window_pct
+        return 163
+
+    monkeypatch.setattr(stream_window, "needed_width", fake_needed)
+    cfg = {
+        "defaults": {"deep_window_pct": 0.20, "deep_window_pct_by_symbol": {"XSP": 0.06}},
+        "books": {"control": {"enabled": True}},
+    }
+    stream_window.hints_for_symbols(
+        conn, cache.path, ["TQQQ", "XSP"], "2026-08-24", cfg, books=["control"], max_positions=1
+    )
+    assert seen == {"TQQQ": 0.20, "XSP": 0.06}
+    assert provider.deep_window_pct_for(cfg, "XSP") == 0.06

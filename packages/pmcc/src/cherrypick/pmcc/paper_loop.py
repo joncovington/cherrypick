@@ -348,7 +348,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             root=root,
             when=when,
             **provider.snapshot_kwargs(config),
-            deep_window_pct=defaults.get("deep_window_pct", provider.DEFAULT_DEEP_WINDOW_PCT),
+            deep_window_pct=provider.deep_window_pct_for(config, symbol),
         )
         if not snapshot.get("ok"):
             _log(f"{symbol}: entry snapshot refused ({snapshot['reason']})")

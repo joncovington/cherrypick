@@ -71,6 +71,28 @@ def snapshot_kwargs(config: dict) -> dict:
     }
 
 
+def deep_window_pct_for(config: dict, symbol: str) -> float:
+    """How far below spot this SYMBOL's deep window must reach.
+
+    One shared bound is necessarily sized for the deepest symbol and wasteful for every other, and
+    the gap is not small: measured 2026-08-24, an 85-90-delta call at ~21 DTE sat **15.2-18.8% ITM
+    on TQQQ** against **4.0% on XSP**, because a 3x leveraged ETF carries several times a broad
+    index's implied volatility. A single 0.20 therefore buys TQQQ a correct window and buys XSP
+    roughly five times the strikes it can use — which is what made XSP's hint the largest window in
+    the suite.
+
+    Resolution order: `defaults.deep_window_pct_by_symbol[SYMBOL]`, then `defaults.deep_window_pct`,
+    then the module default. A config that declares neither behaves exactly as before, so this is
+    additive: the per-symbol map is an override, never a requirement.
+    """
+    defaults = config.get("defaults", {}) or {}
+    by_symbol = defaults.get("deep_window_pct_by_symbol") or {}
+    value = by_symbol.get(symbol.strip().upper())
+    if isinstance(value, (int, float)) and value > 0:
+        return float(value)
+    return float(defaults.get("deep_window_pct", DEFAULT_DEEP_WINDOW_PCT))
+
+
 def _quotes_for(conn, streamer_syms: list[str], now_ts: float, max_age: float) -> tuple[dict, int]:
     quotes: dict[str, dict] = {}
     stale = 0

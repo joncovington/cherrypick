@@ -18,7 +18,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 
-from cherrypick.pmcc import clock, db
+from cherrypick.pmcc import clock, db, provider
 
 DEFAULT_BASE_WIDTH = 60
 DEFAULT_MARGIN = 10
@@ -185,7 +185,7 @@ def hints_for_symbols(
     trade_date: str,
     config: dict,
     *,
-    deep_window_pct: float,
+    deep_window_pct: float | None = None,
     books: list[str] | None = None,
     max_positions: int = 1,
 ) -> dict[str, int]:
@@ -215,7 +215,11 @@ def hints_for_symbols(
         symbol = symbol.strip().upper()
         if roster and not entry_possible(conn, symbol, roster, max_positions):
             continue
-        computed = needed_width(cache_path, symbol, deep_window_pct=deep_window_pct, margin=p["margin"])
+        # Per SYMBOL: one shared bound is sized for the deepest symbol and buys every other
+        # one strikes it cannot use (see provider.deep_window_pct_for). An explicit argument
+        # still wins, so a caller pricing a hypothetical keeps full control.
+        pct = deep_window_pct if deep_window_pct is not None else provider.deep_window_pct_for(config, symbol)
+        computed = needed_width(cache_path, symbol, deep_window_pct=pct, margin=p["margin"])
         escalated = evaluate(
             conn,
             symbol,
