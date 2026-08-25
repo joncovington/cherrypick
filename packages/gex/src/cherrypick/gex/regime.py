@@ -36,6 +36,7 @@ from pathlib import Path
 
 from cherrypick.core import calendar as _calendar
 from cherrypick.core import home as _home
+from cherrypick.core import structures as _structures
 from cherrypick.core.clock import ET as _ET
 
 from cherrypick.gex import provider as _provider
@@ -274,12 +275,37 @@ def sample(cfg: dict, *, now: datetime | None = None) -> dict:
             "VALUES (?,?,?,?,?,?,?,?)",
             rows,
         )
+        # Tier 2: per-symbol chain math for the underlyings this module offers. Best-effort per
+        # symbol — a chain the cache cannot answer for contributes no rows rather than failing the
+        # sample, and the quote readings above are unaffected either way.
+        chain_rows = 0
+        for sym in [str(s).strip().upper() for s in (cfg.get("symbols") or [])]:
+            try:
+                snap = _provider.snapshot_from_stream_cache(cfg["stream_cache_db"], sym)
+                if snap.source == "missing" or snap.expiration is None:
+                    continue
+                for reading, value in chain_readings(snap).items():
+                    conn.execute(
+                        "INSERT INTO market_regime_history "
+                        "(trade_date, ts, reading, symbol, value, basis_ts, usable, reason) "
+                        "VALUES (?,?,?,?,?,?,1,NULL)",
+                        (today, now_ts, reading, sym, value, now_ts),
+                    )
+                    chain_rows += 1
+            except Exception:  # noqa: BLE001 — chain math must never cost the quote sample
+                continue
+
         close_symbols = sorted(
             set(READINGS.values()) | {str(s).strip().upper() for s in (cfg.get("symbols") or [])}
         )
         harvest_daily_closes(conn, cfg["stream_cache_db"], close_symbols)
         conn.commit()
-        return {"status": "sampled", "written": len(rows), "usable": usable_count}
+        return {
+            "status": "sampled",
+            "written": len(rows) + chain_rows,
+            "usable": usable_count + chain_rows,
+            "chain_rows": chain_rows,
+        }
     finally:
         conn.close()
 
@@ -303,3 +329,130 @@ def dropped_readings(conn: sqlite3.Connection, *, today: str) -> set[str]:
         )
     }
     return recorded - set(READINGS)
+
+
+# --------------------------------------------------------------------------- Tier 2: chain math
+#
+# Per-symbol readings computed from the option chain the producer already caches (greeks and OI
+# included), rather than from a quote. They share the same row shape as everything else — one row
+# per (reading, symbol) — so `atm_iv` for SPX and for TQQQ are two rows under one reading name, and
+# `cherrypick.core.regime` groups them per symbol on the read side.
+#
+# Same store-the-measure rule: each is a raw quantity. IV RANK is deliberately absent — it is a
+# percentile of `atm_iv` against its own history, which is a read-side derivation over exactly this
+# series and would be frozen the moment it were stored.
+CHAIN_READINGS = ("atm_iv", "expected_move", "risk_reversal_25d", "put_call_oi_ratio", "gamma_concentration")
+
+# Concentration is measured over the top strikes NEAR SPOT, never the whole chain: flies measured
+# its whole-chain version degenerate 60/60 because one strike's share of a 109-strike surface is
+# always small. Pinning is a property of a cluster near the money.
+_CONCENTRATION_WINDOW = 10
+_CONCENTRATION_TOP = 3
+
+
+def _nearest_strike_ivs(entries: list[dict], greeks: dict, spot: float) -> tuple[float | None, float | None]:
+    """(call IV, put IV) at the listed strike nearest spot, or Nones."""
+    strikes = {float(e["strike_price"]) for e in entries if e.get("strike_price") is not None}
+    if not strikes:
+        return (None, None)
+    k = min(strikes, key=lambda s: abs(s - spot))
+    out: dict[str, float] = {}
+    for e in entries:
+        if float(e.get("strike_price") or -1) != k:
+            continue
+        g = greeks.get(e.get("streamer_symbol")) or {}
+        iv = g.get("iv")
+        if iv is None:
+            continue
+        side = str(e.get("option_type") or "").upper()[:1]
+        if side in ("C", "P"):
+            out[side] = float(iv)
+    return (out.get("C"), out.get("P"))
+
+
+def chain_readings(snapshot) -> dict[str, float]:
+    """The Tier 2 measures for one symbol's cached chain. Missing inputs simply omit a reading —
+    a partial chain yields fewer measures, never a guessed one.
+
+    **The horizon is the NEAREST cached expiration, whatever its DTE**, because that is the chain
+    the producer keeps a live window on. For a 0DTE-heavy underlying like SPX that means these
+    describe today's surface, not a thirty-day one: measured 2026-08-24 the nearest expiration was
+    the same session, `atm_iv` read 23.9 and both `risk_reversal_25d` and `expected_move` were
+    correctly absent, because an expiring chain has no strike near 25 delta. Read the series with
+    that in mind, and re-cut by DTE later if the horizon ever needs to be held constant — the raw
+    measures are recorded, so that stays possible."""
+    spot = snapshot.spot
+    entries = snapshot.chain_entries or []
+    greeks = snapshot.greeks or {}
+    oi = snapshot.oi or {}
+    if not spot or not entries:
+        return {}
+    out: dict[str, float] = {}
+
+    call_iv, put_iv = _nearest_strike_ivs(entries, greeks, spot)
+    ivs = [v for v in (call_iv, put_iv) if v is not None]
+    if ivs:
+        out["atm_iv"] = round(sum(ivs) / len(ivs), 6)
+
+    # Expected move through the suite's one straddle formula, so this cannot disagree with the
+    # modules that trade on it.
+    prices: dict[str, float] = {}
+    strikes = {float(e["strike_price"]) for e in entries if e.get("strike_price") is not None}
+    if strikes:
+        k = min(strikes, key=lambda s: abs(s - spot))
+        for e in entries:
+            if float(e.get("strike_price") or -1) != k:
+                continue
+            g = greeks.get(e.get("streamer_symbol")) or {}
+            price = g.get("price")
+            side = str(e.get("option_type") or "").upper()[:1]
+            if price is not None and side in ("C", "P"):
+                prices[side] = float(price)
+        if "C" in prices and "P" in prices:
+            out["expected_move"] = round(_structures.expected_move(prices["C"], prices["P"]), 4)
+
+    # 25-delta risk reversal: put IV minus call IV at the wings. Positive means the market pays more
+    # for downside protection than for upside — the direction the chain itself is pricing.
+    def _at_delta(target: float, side: str) -> float | None:
+        best, best_gap = None, None
+        for e in entries:
+            if str(e.get("option_type") or "").upper()[:1] != side:
+                continue
+            g = greeks.get(e.get("streamer_symbol")) or {}
+            d, iv = g.get("delta"), g.get("iv")
+            if d is None or iv is None:
+                continue
+            gap = abs(abs(float(d)) - target)
+            if best_gap is None or gap < best_gap:
+                best, best_gap = float(iv), gap
+        return best if (best_gap is not None and best_gap <= 0.10) else None
+
+    rr_put, rr_call = _at_delta(0.25, "P"), _at_delta(0.25, "C")
+    if rr_put is not None and rr_call is not None:
+        out["risk_reversal_25d"] = round(rr_put - rr_call, 6)
+
+    puts = sum(v for s, v in oi.items() if _is_side(entries, s, "P"))
+    calls = sum(v for s, v in oi.items() if _is_side(entries, s, "C"))
+    if calls > 0:
+        out["put_call_oi_ratio"] = round(puts / calls, 4)
+
+    by_strike: dict[float, int] = {}
+    for e in entries:
+        k = e.get("strike_price")
+        n = oi.get(e.get("streamer_symbol"))
+        if k is None or not n:
+            continue
+        by_strike[float(k)] = by_strike.get(float(k), 0) + int(n)
+    near = sorted(by_strike.items(), key=lambda kv: abs(kv[0] - spot))[:_CONCENTRATION_WINDOW]
+    total = sum(n for _, n in near)
+    if total > 0:
+        top = sorted((n for _, n in near), reverse=True)[:_CONCENTRATION_TOP]
+        out["gamma_concentration"] = round(sum(top) / total, 4)
+    return out
+
+
+def _is_side(entries: list[dict], streamer_symbol: str, side: str) -> bool:
+    for e in entries:
+        if e.get("streamer_symbol") == streamer_symbol:
+            return str(e.get("option_type") or "").upper().startswith(side)
+    return False

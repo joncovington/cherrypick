@@ -38,6 +38,14 @@ from cherrypick.core import home as _home
 
 DEFAULT_MAX_STALENESS_SECONDS = 900.0
 
+# Readings recorded once per UNDERLYING rather than once per suite (the recorder's Tier 2 chain
+# math). Kept as a literal here rather than imported: core cannot import a consumer package, and
+# an unknown reading simply lands in `readings` as before, so the two drifting is a display
+# nuisance rather than a correctness fault.
+_CHAIN_READINGS = frozenset(
+    {"atm_iv", "expected_move", "risk_reversal_25d", "put_call_oi_ratio", "gamma_concentration"}
+)
+
 _SECTORS = ("xlb", "xlc", "xle", "xlf", "xli", "xlk", "xlp", "xlre", "xlu", "xlv", "xly")
 
 # (derived name, numerator reading, denominator reading) — computed only when both parts were
@@ -74,6 +82,10 @@ def _market_block(conn, ts: float, max_staleness: float) -> dict:
     if (ts - sample_ts) > max_staleness:
         return _unmeasured("stale_sample")
     readings: dict[str, dict] = {}
+    # Tier 2 chain readings are per SYMBOL, so `atm_iv` exists once per underlying and cannot live
+    # in `readings`, which is keyed by reading alone. They are grouped under `chain[symbol]`
+    # instead — a consumer asking "what was SPX's ATM IV then" reads chain["SPX"]["atm_iv"].
+    chain: dict[str, dict[str, float]] = {}
     trade_date: str | None = None
     for r in conn.execute(
         "SELECT trade_date, reading, symbol, value, basis_ts, usable, reason "
@@ -81,6 +93,10 @@ def _market_block(conn, ts: float, max_staleness: float) -> dict:
         (sample_ts,),
     ):
         trade_date = r["trade_date"]
+        if r["reading"] in _CHAIN_READINGS:
+            if r["value"] is not None and r["symbol"]:
+                chain.setdefault(str(r["symbol"]), {})[r["reading"]] = float(r["value"])
+            continue
         readings[r["reading"]] = {
             "value": None if r["value"] is None else float(r["value"]),
             "symbol": r["symbol"],
@@ -95,6 +111,7 @@ def _market_block(conn, ts: float, max_staleness: float) -> dict:
     derived["sector_dispersion"] = _sector_dispersion(conn, readings, trade_date)
     return {
         "status": "measured",
+        "chain": chain,
         "sample_ts": sample_ts,
         "age_seconds": round(ts - sample_ts, 1),
         "readings": readings,

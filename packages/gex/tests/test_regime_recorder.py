@@ -267,3 +267,72 @@ def test_futures_legs_are_declared_with_their_exchange_suffix_intact(cfg, manage
     _write_map(managed_home, datetime.now(ET).isoformat())
     legs = stream_request.regime_legs(cfg["symbols"])
     assert "/VXU26:XCBF" in legs and "/ZNZ26:XCBT" in legs
+
+
+# --- Tier 2: chain math ---------------------------------------------------------------------
+
+
+class _Snap:
+    """The subset of GexSnapshot chain_readings reads."""
+
+    def __init__(self, spot, entries, greeks, oi):
+        self.spot, self.chain_entries, self.greeks, self.oi = spot, entries, greeks, oi
+        self.source, self.expiration = "stream_cache", "2026-09-18"
+
+
+def _chain(strikes, *, iv=0.20, delta_by_strike=None, oi_by_strike=None, price=1.0):
+    entries, greeks, oi = [], {}, {}
+    for k in strikes:
+        for side in ("C", "P"):
+            sym = f".X{k}{side}"
+            entries.append({"streamer_symbol": sym, "strike_price": float(k), "option_type": side})
+            greeks[sym] = {
+                "iv": iv,
+                "price": price,
+                "delta": (delta_by_strike or {}).get((k, side)),
+            }
+            oi[sym] = (oi_by_strike or {}).get((k, side), 10)
+    return entries, greeks, oi
+
+
+def test_chain_readings_compute_the_measures_they_can():
+    entries, greeks, oi = _chain([95, 100, 105], iv=0.25, price=2.0)
+    out = regime.chain_readings(_Snap(100.0, entries, greeks, oi))
+    assert out["atm_iv"] == pytest.approx(0.25)
+    # Expected move goes through the suite's ONE straddle formula, so it cannot disagree with the
+    # modules that trade on it.
+    assert out["expected_move"] == pytest.approx(0.85 * (2.0 + 2.0))
+    assert out["put_call_oi_ratio"] == pytest.approx(1.0)
+
+
+def test_risk_reversal_needs_a_strike_actually_near_25_delta():
+    """An expiring chain has no 25-delta strike, and inventing one from the closest available
+    would report a number for a thing that does not exist. Measured 2026-08-24: SPX's nearest
+    expiration was 0DTE and this was correctly absent."""
+    entries, greeks, oi = _chain(
+        [95, 105], delta_by_strike={(95, "P"): -0.99, (105, "C"): 0.01}
+    )
+    assert "risk_reversal_25d" not in regime.chain_readings(_Snap(100.0, entries, greeks, oi))
+
+    entries, greeks, oi = _chain(
+        [95, 105], delta_by_strike={(95, "P"): -0.26, (105, "C"): 0.24}, iv=0.30
+    )
+    got = regime.chain_readings(_Snap(100.0, entries, greeks, oi))
+    assert got["risk_reversal_25d"] == pytest.approx(0.0)  # equal IVs -> no skew
+
+
+def test_gamma_concentration_is_windowed_near_spot_not_whole_chain():
+    """flies measured its whole-chain version degenerate 60/60: one strike's share of a
+    109-strike surface is always small. Pinning is a property of a cluster near the money."""
+    # UNIFORM open interest across a wide surface is the discriminating case, and the one flies
+    # actually hit: windowed, the top 3 of 10 near-spot strikes is ~0.3; measured over all 199 it
+    # is ~0.015 and every session reads "thin" forever.
+    wide = list(range(1, 200))
+    entries, greeks, oi = _chain(wide, oi_by_strike={(k, s): 10 for k in wide for s in ("C", "P")})
+    out = regime.chain_readings(_Snap(100.0, entries, greeks, oi))
+    assert out["gamma_concentration"] == pytest.approx(3 / 10)
+
+
+def test_chain_readings_refuse_without_spot_or_chain():
+    assert regime.chain_readings(_Snap(None, *_chain([100]))) == {}
+    assert regime.chain_readings(_Snap(100.0, [], {}, {})) == {}
