@@ -159,3 +159,29 @@ def test_a_stale_snapshot_covers_nothing(snapshot):
 def test_a_never_written_snapshot_covers_nothing(snapshot):
     snapshot({}, None)
     assert symbol_watch.covered_symbols() == set()
+
+
+def test_the_forward_scan_leaves_a_run_trail(tmp_path, monkeypatch):
+    """The top of the funnel has to be readable from the run log like every other phase.
+
+    It was the one phase that logged nothing, and that is exactly how eleven starved sessions hid:
+    the Dolt clone's earnings calendar had aged out, so this found zero symbols every morning, and
+    the only trace anywhere was the entry phase's `opened: []` -- which reads identically to
+    "candidates were screened and none cleared". Recording the COUNT is what separates a scan that
+    had nothing to look at from one whose universe filter is broken.
+    """
+    import json as _json
+
+    from cherrypick.core import home as _home
+
+    monkeypatch.setattr(_home, "logs_dir", lambda: tmp_path / "logs")
+    monkeypatch.setattr(
+        symbol_watch, "refresh_symbol_watch", lambda **kw: {"ok": True, "symbols": {}}
+    )
+
+    paper_loop.run_iteration(CONFIG, at("06:30"))
+
+    lines = (tmp_path / "logs" / "earnings_paper.log").read_text(encoding="utf-8").strip().splitlines()
+    scans = [r for r in (_json.loads(x) for x in lines) if r["phase"] == "forward_scan"]
+    assert scans, "a forward scan that logs nothing is a starved session nobody can see"
+    assert scans[-1]["symbols"] == 0, "the count is the whole point -- 0 must be recorded, not omitted"

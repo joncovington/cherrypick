@@ -553,12 +553,27 @@ def run_iteration(config: dict | None = None, now: datetime | None = None) -> di
         # narrow its candidate list, and the console's Upcoming surface reads the same snapshot.
         _, _, days = _forward_scan_settings(config)
         result = symbol_watch.refresh_symbol_watch(days=days, config=config)
-        record["forward_scan"] = {
-            "days": days,
-            "symbols": len(result.get("entries") or result.get("symbols") or []),
-            "ok": result.get("ok", True),
-        }
+        found = len(result.get("entries") or result.get("symbols") or [])
+        record["forward_scan"] = {"days": days, "symbols": found, "ok": result.get("ok", True)}
         record["ok"] = bool(result.get("ok", True))
+        # The run trail gets this phase too, which it did not until 2026-08-25.
+        #
+        # This is the TOP of the funnel — it bounds the entry universe, so a scan that finds nothing
+        # guarantees an empty entry scan hours later. It was the only phase that logged nothing, and
+        # that is exactly how eleven starved sessions stayed invisible: the calendar had aged out, so
+        # this returned `symbols: 0` every morning, and the only trace anywhere was the entry phase's
+        # `opened: []` — which reads identically to "candidates were screened and none cleared".
+        #
+        # `symbols: 0` beside a healthy calendar means something else entirely (the liquid-universe
+        # filter, or the watchlist fetch), so recording the count is what separates the two.
+        hb = {
+            "date": session,
+            "phase": PHASE_FORWARD_SCAN,
+            "ok": record["ok"],
+            "symbols": found,
+            "days": days,
+        }
+        append_run_log({"ts": datetime.now(timezone.utc).isoformat(), **hb})
 
     elif phase == PHASE_PRE_OPEN:
         refresh_stream_request(open_positions())
