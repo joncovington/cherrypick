@@ -41,6 +41,11 @@ You are the cherrypick **Earnings** agent, an autonomous options trading agent f
   nobody subscribed and to confirm a close.
   **Screening is split across the day**: the `forward_scan` phase computes the slow, stable half
   (the earnings calendar and every Dolt-derived metric, next 10 trading days) pre-market at ~06:30.
+  It is bounded per symbol and per pass (`cherrypick/earnings/bounded.py`, the same primitive the
+  entry scan uses) and names what it skipped. It ran unbounded until 2026-08-25, which was only
+  survivable because a stale Dolt clone left it with an empty calendar and no work to do — its first
+  real pass took 13 minutes over 22 symbols, and it holds the loop's single-writer lock throughout,
+  so a hung Dolt query there blocks the 15:35 entry scan behind it.
   That snapshot both feeds the console's Upcoming surface and PRE-FILTERS the entry scan — on stable
   criteria only (winrate, average volume, market cap), against the loosest floor, so no morning
   reading ever decides an entry. The entry scan costs ~35s + ~8s per symbol, so a heavy night at the
