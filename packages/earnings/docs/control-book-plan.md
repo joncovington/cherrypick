@@ -1,6 +1,24 @@
 # The control book: making entry screening measurable
 
-**Status:** plan, nothing built. Written 2026-08-25.
+**Status:** phase 1 landed 2026-08-25. Phases 2-4 planned, nothing built.
+
+## Decisions taken 2026-08-25
+
+- **Phase 1 landed same day**, ahead of that session's 15:35 entry scan, rather than waiting for
+  two or three clean sessions first. The confound is accepted and journalled explicitly: this is
+  also the first session after an 11-session outage in which a stale Dolt clone left the earnings
+  calendar ending 2026-08-14, so a change in entry volume alone does not distinguish "the screen
+  widened" from "the data came back". The `measurement_breaks` note says so in as many words.
+- **`atm_delta_abs` and `front_expiration_days` stay hard gates. `insufficient_skew_signal` moves
+  to the edge category** and comes out with phase 2 — skew is a market opinion, and whether it
+  should gate entry is exactly the kind of claim this exercise exists to test.
+- **Correlation moves to the read side**: record sector on the row, score any correlation rule
+  retroactively. The control book knowingly holds correlated overnight risk. This is acceptable at
+  one contract in paper and **must not be inherited by any live path without being reconsidered
+  from scratch.**
+- **No parallel narrow book.** The wide book is a strict superset, so the old screen's results are
+  reconstructible exactly by filtering recorded outcomes. Running both would spend real positions on
+  data already derivable.
 
 ## The problem
 
@@ -78,7 +96,7 @@ resting on an untested premise.
 
 `iv_rv_ratio`, `winrate`, `market_cap` (all three already switchable via `symbol_screen`), plus
 `term_structure_insufficient`, `expected_move_pct_below_minimum`, `realized_move_too_inconsistent`,
-and `move_tail_veto`.
+`insufficient_skew_signal` (reclassified here 2026-08-25), and `move_tail_veto`.
 
 Every one is a hypothesis about which trades are *good*. None has been tested. Each is recorded on
 `entry_reviews` already, whether or not the symbol traded, so the replay input largely exists.
@@ -96,9 +114,9 @@ These are the trap. They look like edge opinions and are not: they answer "is th
 with no directional signal is not a worse trade — it is an arbitrary one, and recording its outcome
 teaches nothing about directional spreads.
 
-Each needs deciding individually rather than by category. My reading is that all three stay, but
-`insufficient_skew_signal` is genuinely arguable and should be decided on its own evidence, not
-folded in silently with the rest.
+**Decided 2026-08-25:** `atm_delta_abs` and `front_expiration_days` stay hard. `insufficient_skew_signal`
+was judged edge rather than applicability and moves to phase 2 — skew is a market opinion, and whether
+it should gate entry is precisely the sort of claim this exercise exists to test.
 
 ### Unverified stays a rejection
 
@@ -131,7 +149,31 @@ So the redesign is mostly *configuration plus a read-side replay*, not a rebuild
 
 ## The changes
 
-### Phase 1 — widen the control (config only)
+### Phase 0 — the entry-window write deadline (landed 2026-08-25)
+
+Not in the original plan; found while landing phase 1, and a prerequisite for it rather than a
+nicety.
+
+The harness's write phase is **unbounded by construction** — one live chain fetch per accepted
+(symbol, strategy) pair, with no deadline and no cap. That was harmless while the screen admitted
+about one name a night and six order builds followed. Widening the screen turns it into potentially
+hundreds, and the loop can then run past the 15:55 window into a closed market. A position priced
+against a market that is not there is a bad number, and a bad number cannot be un-recorded — it is
+strictly worse than a slow scan or a missed entry.
+
+`_past_entry_window` is checked at the call site, immediately before the order build. Two properties
+are load-bearing and each has a test that was verified to fail without it:
+
+- **The screen row is still written for every candidate.** The replay wants every verdict whether or
+  not the clock allowed the trade; only the *opening* respects the window.
+- **The refusal is recorded** as an ordinary execution-stage drop (`entry_window_closed`), so "the
+  window closed" can never be misread later as "nothing qualified" — the same reason the
+  `execution` stage exists at all.
+
+An absent `entry_window_end` means no enforcement: a guard that refuses every entry when a config
+key is missing would be worse than the unbounded loop it replaces.
+
+### Phase 1 — widen the control (config only, landed 2026-08-25)
 
 Set `symbol_screen` to `{avg_volume: "pass", combined_option_volume: "pass", winrate: "off",
 iv_rv_ratio: "off", market_cap: "off"}`.
@@ -143,10 +185,11 @@ historically cleared the liquid prefilter.
 **Land this alone and let it run before anything else.** It is a single, self-contained
 measurement-affecting change, and it is the one that produces the sample everything downstream needs.
 
-### Phase 2 — the four hardcoded edge gates
+### Phase 2 — the five hardcoded edge gates
 
 `term_structure_insufficient` (5 strategies), `realized_move_too_inconsistent` (6),
-`expected_move_pct_below_minimum` (4), `move_tail_veto` (1, already off).
+`expected_move_pct_below_minimum` (4), `insufficient_skew_signal` (2), `move_tail_veto` (1, already
+off).
 
 These are appended directly to `hard_fail` inside each strategy, so unlike phase 1 they need code.
 Extend the `_SOFT_CRITERIA` mechanism to cover them rather than inventing a second switch — one
@@ -202,8 +245,6 @@ If they do land together, they are one boundary and one journal entry — not tw
   correlation at read time, consistent with everything else moving to the read side. This does mean
   the control book knowingly holds correlated overnight risk — acceptable in paper at one contract,
   and it must not be inherited by any live path without being reconsidered from scratch.
-- **`insufficient_skew_signal`** — genuinely arguable as edge rather than applicability. Decide on
-  its own evidence.
 - **Does the live/agent path diverge?** `rank_strategies` still applies the cap and the block list
   and picks one best strategy per name. The control book is a measurement instrument, not a
   proposed live posture, and nothing here argues the live path should widen. Worth stating

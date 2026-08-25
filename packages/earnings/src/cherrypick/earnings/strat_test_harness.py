@@ -57,6 +57,7 @@ import sys
 import threading
 import time
 from datetime import date as _date
+from datetime import datetime as _dt
 from pathlib import Path
 
 from cherrypick.core import viz
@@ -629,6 +630,29 @@ def _log_prefilter_skip(scan_date: str, symbol: str, reason: str) -> None:
         pass
 
 
+def _now_et():
+    """Seam for the entry-window deadline, so its tests do not depend on the wall clock."""
+    return _dt.now(management.ET)
+
+
+def _past_entry_window(config: dict) -> bool:
+    """Whether the declared entry window has closed.
+
+    Absent `entry_window_end` means no enforcement: this harness is also driven by tests and by
+    fixtures that have no window to respect, and a guard that refuses every entry when a key is
+    missing would be worse than the unbounded loop it replaces.
+    """
+    end = config.get("entry_window_end")
+    if not end:
+        return False
+    try:
+        hour, minute = (int(x) for x in str(end).split(":"))
+    except (TypeError, ValueError):
+        return False
+    now = _now_et()
+    return (now.hour, now.minute) >= (hour, minute)
+
+
 def cmd_run_entries(args) -> dict:
     if not rank_strategies._ensure_dolt_running():
         return {"ok": False, "error": "dolt sql-server not available"}
@@ -729,6 +753,20 @@ def cmd_run_entries(args) -> dict:
                 _log_scan_row(
                     scan_date, _sym, _s, _b, stage="execution", outcome="dropped", reason=reason
                 )
+
+            # The write phase is unbounded by construction -- one live chain fetch per accepted
+            # (symbol, strategy) pair -- which was harmless while the screen admitted about one name
+            # a night and is not once the control book widened it (2026-08-25). A position opened
+            # after the close is priced against a market that is not there, and a bad number cannot
+            # be un-recorded, so the declared window is enforced rather than trusted to be met.
+            #
+            # The SCREEN row above is still written for every candidate, deliberately: the entry
+            # replay wants every verdict whether or not the clock allowed the trade, and only the
+            # position OPENING has to respect the window. The refusal is recorded like any other
+            # execution-stage drop, so "the window closed" never reads as "nothing qualified".
+            if _past_entry_window(config):
+                drop("entry_window_closed")
+                continue
 
             try:
                 order = _ORDER_FNS[strategy_name](symbol, earnings_date, timing, config)
