@@ -157,3 +157,24 @@ def jobs_missing_from_registry(cfg: dict[str, Any]) -> list[str] | None:
         arm_records=None,
     )
     return sorted(j.id for j in jobs if j.id not in registry)
+
+
+def jobs_failing_derivation() -> dict[str, str]:
+    """Jobs config declares that the supervisor could not BUILD, mapped to the reason it recorded.
+
+    A third state, and the only one invisible from both directions. `jobs_missing_from_registry`
+    compares the derived table against the registry — but a job whose derivation raised is omitted
+    from the derived table entirely, so it is never "missing" there; and `supervisor._prune_retired`
+    deliberately KEEPS its registry row, precisely because that job is absent through breakage rather
+    than retirement. Absent from one side, present on the other, and both checks read healthy.
+
+    The supervisor has always written these (`derive_errors` in the registry) and logged them once
+    per change. Nothing else read them: on 2026-08-20 `advisor-open` failed to derive with a
+    ValueError and the sole trace anywhere was one line in supervisor.log.
+
+    Read from the registry rather than by re-deriving, so this reports what the RUNNING supervisor
+    actually hit — a fresh derivation here would use current code and could quietly succeed while
+    the daemon carries on failing.
+    """
+    reg = read_json(supervisor.jobs_path())
+    return {str(k): str(v) for k, v in (reg.get("derive_errors") or {}).items()}

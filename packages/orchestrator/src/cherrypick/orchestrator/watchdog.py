@@ -134,12 +134,25 @@ def _check_job_registry_drift(cfg: dict[str, Any]) -> list[Finding]:
     rather than something to page about at 3am."""
     from . import supersnap
 
+    findings: list[Finding] = []
+    for job_id, reason in sorted(supersnap.jobs_failing_derivation().items()):
+        findings.append(
+            Finding(
+                "supervisor.job_derive_failed",
+                WARN,
+                f"Job {job_id} could not be built from config",
+                f"{reason}. It is not scheduled and will not fire; the supervisor keeps its row so "
+                "the history is not erased. Fix the config or the derivation, then restart it.",
+            )
+        )
+
     missing = supersnap.jobs_missing_from_registry(cfg)
     if missing is None:
-        return []  # not answerable; `_check_supervisor` owns the dead-daemon alarm
+        return findings  # not answerable; `_check_supervisor` owns the dead-daemon alarm
     if not missing:
-        return [Finding("supervisor.jobs_current", OK, "Supervisor job table", "matches config")]
+        return [*findings, Finding("supervisor.jobs_current", OK, "Supervisor job table", "matches config")]
     return [
+        *findings,
         Finding(
             "supervisor.jobs_stale",
             WARN,

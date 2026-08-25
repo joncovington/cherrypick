@@ -188,6 +188,18 @@ def _supervisor_checks(cfg: dict[str, Any], fast: bool) -> list[Check]:
                 "supervisor (run: cherrypick install)",
             )
         )
+        # A job config declares that the supervisor could not BUILD is invisible from both
+        # directions — omitted from the derived table, its registry row deliberately kept — so it
+        # gets its own line rather than folding into the drift check below.
+        for job_id, reason in sorted(supersnap.jobs_failing_derivation().items()):
+            checks.append(
+                Check(
+                    "supervisor.job_derive_failed",
+                    WARN,
+                    f"job {job_id} could not be built from config: {reason} — it will not fire",
+                )
+            )
+
         # The same derivation the watchdog renders — one answer, two surfaces, so doctor and the
         # watchdog cannot disagree about whether the daemon is running the job table config describes.
         undelivered = supersnap.jobs_missing_from_registry(cfg)

@@ -402,3 +402,34 @@ def test_a_just_restarted_supervisor_is_given_a_moment(monkeypatch, no_schtasks)
     _stub_derive(monkeypatch, ["meic-paper"])
 
     assert watchdog._check_job_registry_drift({}) == []
+
+
+def test_a_job_that_failed_to_derive_is_reported(monkeypatch, no_schtasks):
+    """The third state, and the only one invisible from both directions.
+
+    A job whose derivation raised is omitted from the derived table, so the drift check never sees
+    it missing; and `_prune_retired` deliberately KEEPS its registry row, because it is absent
+    through breakage rather than retirement. Both checks read healthy. The supervisor has always
+    recorded these and nothing read them: on 2026-08-20 `advisor-open` failed with a ValueError and
+    the sole trace anywhere was one line in supervisor.log.
+    """
+    write_heartbeat()
+    supervisor.jobs_path().write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "jobs": {"meic-paper": {"enabled": True}},
+                "derive_errors": {"advisor-open": "ValueError: not enough values to unpack"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    _stub_derive(monkeypatch, ["meic-paper"])
+
+    findings = watchdog._check_job_registry_drift({})
+
+    f = next(f for f in findings if f.key == "supervisor.job_derive_failed")
+    assert f.status == watchdog.WARN
+    assert "advisor-open" in f.title and "not enough values" in f.message
+    # The drift half still answers independently -- a derivation failure is not table drift.
+    assert any(f.key == "supervisor.jobs_current" for f in findings)
