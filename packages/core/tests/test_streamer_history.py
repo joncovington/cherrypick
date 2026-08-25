@@ -185,3 +185,27 @@ def test_backfill_failure_never_raises(tmp_path):
     conn = streamcache.connect(tmp_path / "cache.db")
     state = _State(conn, ["TNA"])
     asyncio.run(engine._backfill_history(_Broken([]), state, object))  # must not raise
+
+
+def test_a_bar_with_no_real_close_is_dropped_not_stored_as_zero():
+    """Zero is not a price, and it is the most dangerous wrong one available here: it survives every
+    null check downstream, sits below any real value in a percentile, and drags an SMA silently.
+
+    Every symbol backfilled before 2026-08-25 carries exactly one such row, always the first date of
+    its window -- 34 across the cache, the feed's leading partial bar written through as a price.
+    """
+    rows = streamcache.summary_backfill_rows(
+        [
+            {"date": "2026-01-02", "open": 0.0, "high": 0.0, "low": 0.0, "close": 0.0},
+            {"date": "2026-01-05", "open": 10.0, "high": 11.0, "low": 9.0, "close": 10.5},
+            {"date": "2026-01-06", "open": 10.5, "high": 12.0, "low": 10.0, "close": None},
+            {"date": "2026-01-07", "open": 11.0, "high": 12.0, "low": 10.0, "close": -3.0},
+            {"date": "2026-01-08", "open": 11.0, "high": 12.0, "low": 10.0, "close": 11.5},
+        ],
+        today="2026-01-09",
+    )
+
+    assert [r["trade_date"] for r in rows] == ["2026-01-05", "2026-01-08"]
+    assert all(r["day_close"] > 0 for r in rows)
+    # The chain skips the dropped dates rather than carrying a zero forward as a prior close.
+    assert rows[1]["prev_day_close"] == 10.5
