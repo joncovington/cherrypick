@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type {
   AdvisorApplyStatus,
@@ -54,15 +54,155 @@ type Tab = "today" | "proposals" | "experiments" | "history";
 
 const TABS: Tab[] = ["today", "proposals", "experiments", "history"];
 
+/**
+ * A card that starts CLOSED and remembers nothing.
+ *
+ * Deliberately local state rather than the shared `Card`'s `useCollapsed`, which is
+ * localStorage-backed and defaults to open. This page's sections are dense and numerous — several
+ * checkpoints, a card per proposal, a card per experiment — and the reader needs the tab's summary
+ * first and the detail on request. The page body is keyed by tab, so switching tabs remounts these
+ * and every section closes again: "collapsed on entering the tab", while an expansion sticks for as
+ * long as you stay on it.
+ */
+function CollapsibleCard({
+  head,
+  children,
+  className = "",
+}: {
+  head: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  const [collapsed, setCollapsed] = useState(true);
+  return (
+    <section className={`card ${className}`}>
+      <div className="card-head">
+        <button
+          type="button"
+          className="btn btn-quiet collapse-toggle"
+          onClick={() => setCollapsed(!collapsed)}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "expand" : "collapse"}
+        >
+          {collapsed ? "▸" : "▾"}
+        </button>
+        {head}
+      </div>
+      {!collapsed && children}
+    </section>
+  );
+}
+
+/**
+ * What this tab is, in plain English, above the detail.
+ *
+ * It explains the sections below and states the safety facts that are easy to lose in a wall of
+ * cards — nothing here has touched a live loop, and both buttons on the page only ever make the
+ * advisor do LESS. The counts are reads of data already fetched; no verdict is computed here, which
+ * is the same rule the rest of the page follows (`packages/advisor` decides, this renders).
+ */
+function TabSummary({
+  tab,
+  session,
+  checkpoints,
+  proposals,
+  activeExperiments,
+  concludedExperiments,
+  totalCheckpoints,
+  okCheckpoints,
+}: {
+  tab: Tab;
+  session: string | null;
+  checkpoints: number;
+  proposals: number;
+  activeExperiments: number;
+  concludedExperiments: number;
+  totalCheckpoints: number;
+  okCheckpoints: number;
+}) {
+  const when = session ?? "this session";
+  const body: Record<Tab, ReactNode> = {
+    today: (
+      <>
+        <p>
+          Each card below is one <strong>checkpoint</strong> — a moment in the trading day when the
+          advisor read a fact pack of the suite's own numbers and replied. The card shows what it
+          observed, anything it flagged, and what it proposed.
+        </p>
+        <p className="muted">
+          {checkpoints === 0
+            ? `No checkpoints recorded for ${when}. The advisor is off by default twice over: the suite must schedule it, and each module must declare its own advice bounds.`
+            : `${checkpoints} checkpoint${checkpoints === 1 ? "" : "s"} recorded for ${when}. A checkpoint that failed costs a checkpoint and nothing else — modules run their baseline whenever no advice is admitted.`}
+        </p>
+      </>
+    ),
+    proposals: (
+      <>
+        <p>
+          A <strong>proposal</strong> is a parameter change the model suggested, after the
+          deterministic validator in <code>packages/advisor</code> accepted or refused it against the
+          bounds the module itself declared. One out-of-bounds value refuses the whole artifact.
+        </p>
+        <p className="muted">
+          {proposals === 0
+            ? `Nothing proposed for ${when} — a quiet day is a real answer, not a failure.`
+            : `${proposals} proposal${proposals === 1 ? "" : "s"} for ${when}. Nothing here has been applied to a live loop: an admitted proposal runs as paper, on a synthetic advised book beside the module's unchanged control. Dismissing one stops it being offered again.`}
+        </p>
+      </>
+    ),
+    experiments: (
+      <>
+        <p>
+          Each card is a paper <strong>A/B</strong>: the admitted parameters running as an{" "}
+          <code>advised:</code> book beside the module's own control, entered from the same plan, so
+          the comparison is exactly paired and any difference is the parameters and nothing else.
+        </p>
+        <p className="muted">
+          {activeExperiments} running, {concludedExperiments} concluded. Verdicts come from the
+          suite's own promotion chain, not from the model — an{" "}
+          <em>underpowered</em> chip means the sample has not reached the gate, which is neither a
+          pass nor a fail. Killing an experiment journals a reason and frees its slot; it never
+          touches the control book.
+        </p>
+      </>
+    ),
+    history: (
+      <>
+        <p>
+          Every checkpoint the advisor has run, newest session first — <strong>including the ones
+          that failed</strong>, which is the point of keeping them.
+        </p>
+        <p className="muted">
+          {okCheckpoints} ok of {totalCheckpoints}. The model is invoked outside every package by a
+          scheduled script, so a failed checkpoint can never damage a ledger or a loop — the modules
+          simply run their baseline.
+        </p>
+      </>
+    ),
+  };
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h2>What you are looking at</h2>
+        <span className="card-asof">{tab}</span>
+      </div>
+      {body[tab]}
+    </section>
+  );
+}
+
 // --------------------------------------------------------------------------- apply-status banner
 
 function ApplyBanner({ status }: { status: AdvisorApplyStatus[] }) {
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>Advice for the next session</h2>
-        <span className="card-asof">{status[0]?.nextSession ?? "nothing issued yet"}</span>
-      </div>
+    <CollapsibleCard
+      head={
+        <>
+          <h2>Advice for the next session</h2>
+          <span className="card-asof">{status[0]?.nextSession ?? "nothing issued yet"}</span>
+        </>
+      }
+    >
       <div className="table-scroll">
         <table className="data-table data-table-labelled">
           <thead>
@@ -128,7 +268,7 @@ function ApplyBanner({ status }: { status: AdvisorApplyStatus[] }) {
         side, so a written artifact with zero admitted params runs the baseline — exactly as an
         absent one would — and the rejections above are the only record that the advisor tried.
       </p>
-    </section>
+    </CollapsibleCard>
   );
 }
 
@@ -136,12 +276,15 @@ function ApplyBanner({ status }: { status: AdvisorApplyStatus[] }) {
 
 function CheckpointCard({ c }: { c: AdvisorCheckpoint }) {
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>{c.slot}</h2>
-        {c.ok ? <span className="chip">ok</span> : <span className="chip chip-warn">failed</span>}
-        <span className="card-asof">{c.model ?? "model not recorded"}</span>
-      </div>
+    <CollapsibleCard
+      head={
+        <>
+          <h2>{c.slot}</h2>
+          {c.ok ? <span className="chip">ok</span> : <span className="chip chip-warn">failed</span>}
+          <span className="card-asof">{c.model ?? "model not recorded"}</span>
+        </>
+      }
+    >
       {!c.ok && <p className="pnl-neg">{c.error}</p>}
       {c.flags.map((f, i) => (
         <p className="review-caveat" key={i}>
@@ -158,7 +301,7 @@ function CheckpointCard({ c }: { c: AdvisorCheckpoint }) {
           <li key={i}>{o}</li>
         ))}
       </ul>
-    </section>
+    </CollapsibleCard>
   );
 }
 
@@ -213,8 +356,9 @@ function ProposalCard({
   const sessions = p.payload["sessions"];
 
   return (
-    <section className="card">
-      <div className="card-head">
+    <CollapsibleCard
+      head={
+        <>
         <h2>
           {p.kind}
           {p.module !== null && <span className="muted"> · {p.module}</span>}
@@ -236,7 +380,9 @@ function ProposalCard({
           {p.slot ?? "—"}
           {typeof sessions === "number" ? ` · ${sessions} sessions` : ""} · #{p.id}
         </span>
-      </div>
+        </>
+      }
+    >
 
       {typeof p.payload["title"] === "string" && <p>{String(p.payload["title"])}</p>}
       {typeof p.payload["hypothesis"] === "string" && (
@@ -294,7 +440,7 @@ function ProposalCard({
           Dismiss
         </button>
       )}
-    </section>
+    </CollapsibleCard>
   );
 }
 
@@ -361,8 +507,9 @@ function ExperimentCard({
   const lastEnact = enacted[enacted.length - 1];
 
   return (
-    <section className="card">
-      <div className="card-head">
+    <CollapsibleCard
+      head={
+        <>
         <h2>
           {e.module} <span className="muted">· {e.name ?? e.id}</span>
         </h2>
@@ -378,7 +525,9 @@ function ExperimentCard({
         <span className="card-asof">
           {e.sessionsRun} / {e.expiresAfter} sessions
         </span>
-      </div>
+        </>
+      }
+    >
 
       {e.hypothesis !== null && e.hypothesis !== "" && <p>{e.hypothesis}</p>}
       {e.successMetric !== null && e.successMetric !== "" && (
@@ -433,7 +582,7 @@ function ExperimentCard({
           Kill experiment
         </button>
       )}
-    </section>
+    </CollapsibleCard>
   );
 }
 
@@ -504,6 +653,21 @@ export function AdvisorPage() {
         </section>
       )}
 
+      {/* Summary first, then the detail. The body is keyed by tab so every CollapsibleCard below
+          remounts closed when you switch tabs — "collapsed on entering the tab" — while an
+          expansion sticks for as long as you stay on that tab. */}
+      <TabSummary
+        tab={tab}
+        session={data.session}
+        checkpoints={data.latest.length}
+        proposals={data.proposals.length}
+        activeExperiments={active.length}
+        concludedExperiments={concluded.length}
+        totalCheckpoints={data.checkpoints.length}
+        okCheckpoints={data.checkpoints.filter((c) => c.ok).length}
+      />
+
+      <div key={tab}>
       <ApplyBanner status={data.applyStatus} />
 
       {tab === "today" &&
@@ -549,13 +713,16 @@ export function AdvisorPage() {
       )}
 
       {tab === "history" && (
-        <section className="card">
-          <div className="card-head">
-            <h2>Checkpoints</h2>
-            <span className="card-asof">
-              {data.checkpoints.filter((c) => c.ok).length} ok of {data.checkpoints.length}
-            </span>
-          </div>
+        <CollapsibleCard
+          head={
+            <>
+              <h2>Checkpoints</h2>
+              <span className="card-asof">
+                {data.checkpoints.filter((c) => c.ok).length} ok of {data.checkpoints.length}
+              </span>
+            </>
+          }
+        >
           <div className="table-scroll">
             <table className="data-table data-table-labelled">
               <thead>
@@ -580,8 +747,9 @@ export function AdvisorPage() {
               </tbody>
             </table>
           </div>
-        </section>
+        </CollapsibleCard>
       )}
+      </div>
     </div>
   );
 }
