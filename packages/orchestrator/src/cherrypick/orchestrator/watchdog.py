@@ -539,6 +539,82 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
     return findings
 
 
+# How much forward earnings calendar the scanner needs to keep finding candidates. Below this it
+# is running out, not out — the distinction that makes the warning actionable rather than a
+# post-mortem.
+_EARNINGS_CALENDAR_MIN_DAYS = 7
+
+
+def _check_earnings_calendar(cfg: dict[str, Any]) -> list[Finding]:
+    """Warn while the earnings announcement calendar is RUNNING OUT, not after it has.
+
+    The failure this exists for (2026-08-25): the module had not paper traded for eleven sessions
+    and nothing anywhere said so. Dolt was up, its tables were full, the loop ticked and the config
+    was enabled — but the local clone was 55 commits behind, so the calendar ended on 2026-08-14 and
+    the scanner had nothing to scan. It is invisible by nature: "no candidates today" and "a quiet
+    earnings week" are the same observation, and this module produces no ledger row either way.
+
+    Reads the state file `scripts/refresh_dolt_data.py` writes, never Dolt itself — the reliability
+    path is stdlib and files only, and adding a MySQL driver to it would put a network client on the
+    one path that must never have one.
+    """
+    if not (cfg.get("modules", {}).get("earnings") or {}).get("enabled"):
+        return []
+    raw = _read_json_file(cfgmod.state_file("dolt_data.json"))
+    if raw is None:
+        return [
+            Finding(
+                "earnings.calendar",
+                WARN,
+                "Earnings calendar coverage unknown",
+                "No state/dolt_data.json — the earnings-dolt-pull job has never completed, so "
+                "nothing is refreshing the announcement calendar the scanner reads.",
+            )
+        ]
+    max_date = raw.get("earnings_calendar_max_date")
+    if not isinstance(max_date, str):
+        return [
+            Finding(
+                "earnings.calendar",
+                WARN,
+                "Earnings calendar unreadable",
+                "The last pull could not read earnings_calendar; a calendar nothing can query is "
+                "as useless to the scanner as an empty one.",
+            )
+        ]
+    try:
+        remaining = (datetime.fromisoformat(max_date).date() - timeutil.now_et().date()).days
+    except ValueError:
+        return []
+    if remaining < _EARNINGS_CALENDAR_MIN_DAYS:
+        return [
+            Finding(
+                "earnings.calendar",
+                WARN,
+                "Earnings calendar running out",
+                f"The announcement calendar reaches only {max_date} ({remaining} day(s) ahead). "
+                "Past it the scanner finds nothing and the module stops trading SILENTLY — no "
+                "error, no ledger row. Run scripts/refresh_dolt_data.py or check the "
+                "earnings-dolt-pull job.",
+            )
+        ]
+    return [
+        Finding(
+            "earnings.calendar",
+            OK,
+            "Earnings calendar",
+            f"covers to {max_date} ({remaining} days ahead).",
+        )
+    ]
+
+
+def _read_json_file(path: Path) -> dict[str, Any] | None:
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
 def _streamer_window_strike_count(cfg: dict[str, Any]) -> int:
     """The producer's base ATM window width, from ITS OWN config — the file the daemon reads, not a
     copy. Falls back to the engine's default when the machine has no streamer config."""
@@ -1749,6 +1825,8 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     # Declared-cost check: the next expensive declaration should announce itself here rather than
     # at an open (see _check_subscription_budget).
     findings += _check_subscription_budget(cfg)
+    # The data dependency that stops earnings silently (see _check_earnings_calendar).
+    findings += _check_earnings_calendar(cfg)
 
     # Watchdog the standalone market-data producer (dormant until the cutover enables the top-level
     # `streamer` block; today MEIC still owns the streamer under modules.meic.streamer).
