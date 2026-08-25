@@ -153,8 +153,55 @@ def _leg_quotes_for_symbols(underlying: str, leg_symbols: list[str], price: floa
             return None
         # delta rides along for double_calendar's per-leg stop (evaluate_position treats
         # a missing delta as "skip that check", same optionality as iv).
-        result[s] = {"bid": q["bid"], "ask": q["ask"], "iv": q.get("iv"), "delta": q.get("delta")}
+        #
+        # `streamer_symbol` rides along for the same reason and was discarded here until 2026-08-25:
+        # the response already carries it (scanner.fetch_streamer_symbols is the same call), and it
+        # is the ONLY way a leg can later be found in the shared stream cache, which is keyed by
+        # streamer symbol rather than OCC. Without it every open position fell back to the broker
+        # for every mark forever -- and it must be captured from the chain rather than derived from
+        # the OCC string, because a symbol this module invented would never match a cached quote and
+        # would fail silently instead of loudly.
+        result[s] = {
+            "bid": q["bid"],
+            "ask": q["ask"],
+            "iv": q.get("iv"),
+            "delta": q.get("delta"),
+            "streamer_symbol": q.get("streamer_symbol"),
+        }
     return result
+
+
+def _with_streamer_symbols(legs: list[dict], quotes: dict) -> list[dict]:
+    """Stamp each leg with the streamer symbol captured from the chain at entry.
+
+    `provider.snapshot` translates a position's legs to cache keys through this field and refuses the
+    whole position (`legs_missing_streamer_symbol`) without it, so a leg that lacks one can only ever
+    be priced by the broker.
+    """
+    return [
+        {**leg, "streamer_symbol": (quotes.get(leg.get("symbol")) or {}).get("streamer_symbol")}
+        for leg in legs
+    ]
+
+
+def _register_open_legs(order_id: str, legs: list[dict]) -> None:
+    """Declare this position's legs to the producer, via the table `stream_request`'s query reads.
+
+    Best-effort on purpose: the position is already saved by the time this runs, and failing the
+    trade over a telemetry write would trade a data-quality problem for a missing trade. A position
+    whose legs never register is priced by the broker instead -- slower, and exactly what every
+    position did before 2026-08-25, when nothing in the entry path ever called this and the table sat
+    empty against 64 trades while both ends of the plumbing looked correct.
+    """
+    symbols = sorted({leg["streamer_symbol"] for leg in legs if leg.get("streamer_symbol")})
+    if not symbols:
+        return
+    try:
+        db_paper.cmd_set_open_legs(
+            argparse.Namespace(data=json.dumps({"order_id": order_id, "streamer_symbols": symbols}))
+        )
+    except Exception:  # noqa: BLE001 -- never fail an opened position over its subscription record
+        pass
 
 
 def _avg_sold_iv(legs: list[dict], quotes: dict) -> float | None:
@@ -797,7 +844,7 @@ def cmd_run_entries(args) -> dict:
                 )
                 entry_iv = _avg_sold_iv(template_legs, leg_quotes)
 
-                scaled_legs = _scaled_legs(template_legs, quantity)
+                scaled_legs = _with_streamer_symbols(_scaled_legs(template_legs, quantity), leg_quotes)
                 per_contract = _per_contract_credit(order)
                 entry_credit = per_contract * quantity
 
@@ -829,6 +876,7 @@ def cmd_run_entries(args) -> dict:
                 if not save_result.get("ok"):
                     drop(f"save_trade_failed: {save_result.get('error')}")
                     continue
+                _register_open_legs(order_id, scaled_legs)
 
                 # The advised twin, when today's admitted advice names this strategy. Identical
                 # fills by construction (the same save_spec), so the pair differs in exactly the
@@ -843,6 +891,12 @@ def cmd_run_entries(args) -> dict:
                     if not twin_result.get("ok"):
                         print(f"advised twin not saved for {symbol} {strategy_name}: "
                               f"{twin_result.get('error')}")
+                    else:
+                        # The twin holds the same legs under its own order_id, and the producer's
+                        # query joins on order_id -- so without this the twin alone would be priced
+                        # by the broker and drift from the control it exists to be compared against.
+                        # It adds no subscriptions: identical streamer symbols, unioned.
+                        _register_open_legs(twin["order_id"], scaled_legs)
 
                 _log_scan_row(
                     scan_date,

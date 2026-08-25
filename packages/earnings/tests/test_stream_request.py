@@ -60,6 +60,24 @@ def _open_trade(order_id, symbol, streamer_symbols):
     )
 
 
+def _open_trade_row(order_id, symbol):
+    """Just the trades row -- for tests where the entry path itself registers the legs."""
+    db_paper.cmd_save_trade(
+        _ns(
+            data=json.dumps(
+                {
+                    "order_id": order_id,
+                    "symbol": symbol,
+                    "strategy": "iron_fly",
+                    "expiration": "2026-08-21",
+                    "entry_credit": 2.0,
+                    "legs_json": "[]",
+                }
+            )
+        )
+    )
+
+
 def _legs_the_producer_would_subscribe():
     """Run the request's own leg source exactly the way the producer does: read-only, one SELECT."""
     src = stream_request.leg_sources(db_paper.DB_PATH)[0]
@@ -67,10 +85,25 @@ def _legs_the_producer_would_subscribe():
     return registry._legs_from_source(src)
 
 
-def test_the_request_declares_the_open_underlyings():
+def test_the_underlyings_are_declared_quote_only_never_as_chain_symbols():
+    """The underlyings go in `legs`, and `symbols` stays empty. Both get subscribed; only one is
+    affordable.
+
+    A `symbols` entry is an UNDERLYING, and the producer auto-subscribes an ATM window of its nearest
+    expiration for each -- ~488 subscriptions apiece by the budget estimator's own model, bound once
+    at startup so a grown set forces a recycle. This module cannot use that window (its wings and
+    back months sit outside it by construction) and only ever wanted the spot quote, which is one
+    subscription. At ~488 each against ~4,000 of suite headroom, eight names would have exhausted the
+    budget -- and the control-book widening takes a night from about one name to dozens.
+    """
     stream_request.write(["AAPL", "msft "], db_path=db_paper.DB_PATH)
     payload = json.loads((sr.requests_dir() / "earnings.json").read_text(encoding="utf-8"))
-    assert payload["symbols"] == ["AAPL", "MSFT"]  # cleaned and sorted by core
+
+    assert payload["legs"] == ["AAPL", "MSFT"], "cleaned, uppercased and sorted"
+    assert payload["symbols"] == [], (
+        "a symbol here costs a ~488-subscription chain window this module cannot reach into, "
+        "and binds at producer startup so growth forces a recycle"
+    )
 
 
 def test_the_producer_picks_up_an_open_positions_legs():
@@ -118,3 +151,77 @@ def test_registration_never_raises_into_the_caller(monkeypatch):
     to run the loop over it would trade that for an outage."""
     monkeypatch.setattr(stream_request, "write", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
     stream_request.register(["AAPL"])  # must not raise
+
+
+def test_the_entry_path_registers_the_legs_it_just_opened(tmp_path, monkeypatch):
+    """Both ends of this plumbing were correct and nothing connected them.
+
+    `open_leg_symbols` is created, migrated, queried by the producer and tested in isolation -- and
+    until 2026-08-25 nothing in the entry path ever wrote it. The table sat empty against 64 trades,
+    so this module's legs were never streamed and every mark fell back to the broker. `legs_json`
+    carried no `streamer_symbol` either, which is the same missing step: `provider.snapshot` refuses
+    a whole position without it.
+    """
+    from cherrypick.earnings import strat_test_harness as runner
+
+    legs = [
+        {"symbol": "OCC-A", "action": "Buy to Open", "quantity": 1},
+        {"symbol": "OCC-B", "action": "Sell to Open", "quantity": 1},
+    ]
+    quotes = {
+        "OCC-A": {"bid": 1.0, "ask": 1.0, "iv": 0.5, "delta": 0.3, "streamer_symbol": ".XYZ_A"},
+        "OCC-B": {"bid": 2.0, "ask": 2.0, "iv": 0.5, "delta": -0.3, "streamer_symbol": ".XYZ_B"},
+    }
+
+    stamped = runner._with_streamer_symbols(legs, quotes)
+    assert [x["streamer_symbol"] for x in stamped] == [".XYZ_A", ".XYZ_B"], (
+        "the chain's own symbol must ride onto the leg -- never derived from the OCC string"
+    )
+
+    runner._register_open_legs("T-NEW", stamped)
+    _open_trade_row("T-NEW", "XYZ")
+    assert sorted(_legs_the_producer_would_subscribe()) == [".XYZ_A", ".XYZ_B"]
+
+
+def test_a_leg_with_no_streamer_symbol_never_blocks_the_trade(monkeypatch):
+    """A position is already saved by the time its legs register. Failing the trade over a telemetry
+    write would trade a data-quality problem for a missing trade -- so an unmappable leg degrades to
+    broker pricing, which is exactly what every position did before this was wired up."""
+    from cherrypick.earnings import strat_test_harness as runner
+
+    stamped = runner._with_streamer_symbols([{"symbol": "OCC-A"}], {})
+    assert stamped[0]["streamer_symbol"] is None
+    runner._register_open_legs("T-NONE", stamped)  # must not raise
+
+    def boom(*a, **k):
+        raise RuntimeError("db is gone")
+
+    monkeypatch.setattr(runner.db_paper, "cmd_set_open_legs", boom)
+    runner._register_open_legs("T-BOOM", [{"symbol": "X", "streamer_symbol": ".X"}])  # must not raise
+
+
+def test_the_entry_quote_fetch_surfaces_the_streamer_symbol(monkeypatch):
+    """Covers the DISCARD SITE, not just the stamping.
+
+    `_leg_quotes_for_symbols` already receives `streamer_symbol` from the chain and kept only
+    bid/ask/iv/delta, which is how every leg reached the ledger unmappable. A test that hands the
+    stamping helper a ready-made quote dict cannot see that -- verified by putting the discard back
+    and watching this file stay green.
+    """
+    from cherrypick.earnings import scanner
+    from cherrypick.earnings import strat_test_harness as runner
+
+    occ = "GE    260717C00360000"
+    monkeypatch.setattr(
+        scanner,
+        "fetch_quotes_by_symbol",
+        lambda u, exp, syms, price: {
+            occ: {"bid": 1.0, "ask": 1.2, "iv": 0.4, "delta": 0.5, "streamer_symbol": ".GE260717C360"}
+        },
+    )
+
+    out = runner._leg_quotes_for_symbols("GE", [occ], 100.0)
+
+    assert out[occ]["streamer_symbol"] == ".GE260717C360", (
+        "discarding this here is what left 64 trades unmappable to the stream cache"
+    )
