@@ -601,10 +601,22 @@ def run_iteration(config: dict | None = None, now: datetime | None = None) -> di
         # The heartbeat stays terse -- it is a liveness file. The log carries the whole result,
         # which is where the per-symbol accept/reject detail lives.
         append_run_log({"ts": datetime.now(timezone.utc).isoformat(), **hb, "result": entry})
-        # Deliberately NOT refreshing the stream request here. Tonight's new underlyings would grow
-        # the union and recycle the producer mid-session, blinding the 0DTE modules into their own
-        # close -- to make symbols available fourteen hours before this module marks anything.
-        # `pre_open` picks them up tomorrow, ahead of the first mark that needs them.
+        # Declaring tonight's underlyings HERE became safe on 2026-08-25, and the reason it was
+        # forbidden is worth keeping because it was correct at the time.
+        #
+        # It used to grow the `symbols` union, which a producer binds once at startup -- so the
+        # watchdog recycled it, and a recycle costs a settling window during which NOTHING streams.
+        # Doing that at 15:45 would have blinded the 0DTE modules trading into their own close, to
+        # make symbols available fourteen hours before this module marked anything. Plainly a bad
+        # trade, so `pre_open` picked them up the next morning instead.
+        #
+        # They are declared as quote-only `legs` now (see stream_request.write), and legs are re-read
+        # every subscription poll rather than bound at startup. This module can no longer force a
+        # recycle at all, so the hazard that shaped the old rule does not exist and the cost of
+        # waiting is real: a position opened tonight has no underlying spot until tomorrow's
+        # pre-open, which silently disables the pin guard (`management._pin_risk` returns False on a
+        # null spot) for every mark in between.
+        refresh_stream_request(open_positions())
 
     elif phase == PHASE_EOD:
         # The per-module EOD reports were retired 2026-08-13: the suite review (packages/review)

@@ -388,21 +388,29 @@ def test_the_entry_scan_still_runs_inside_the_window(monkeypatch):
     assert paper_loop.run_iteration(CONFIG, at("15:54"))["phase"] == "entry"
 
 
-def test_the_entry_scan_does_not_grow_the_stream_request(monkeypatch):
-    """A producer binds its underlyings at startup, so growing the union recycles it — and a recycle
-    costs a settling window in which nothing streams at all. Doing that at 15:45 would blind the
-    0DTE modules trading into their own close, to make symbols available fourteen hours before this
-    module marks anything. pre_open picks them up instead."""
+def test_the_entry_scan_declares_what_it_just_opened(monkeypatch):
+    """Changed 2026-08-25, and the rule it replaces was right for its time.
+
+    Declaring here used to grow the `symbols` union, which a producer binds once at startup -- so
+    the watchdog recycled it, and a recycle costs a settling window in which nothing streams at all.
+    At 15:45 that blinded the 0DTE modules trading into their own close, to make symbols available
+    fourteen hours before this module marked anything, so `pre_open` picked them up instead.
+
+    They are quote-only `legs` now, re-read every subscription poll rather than bound at startup, so
+    this module cannot force a recycle at all. The cost of waiting is what remains: a position
+    opened tonight has no underlying spot until the next pre-open, which silently disables the pin
+    guard for every mark in between.
+    """
     registered = []
     monkeypatch.setattr(paper_loop.stream_request, "register", lambda syms: registered.append(syms))
     monkeypatch.setattr(harness, "cmd_run_entries", lambda args: {"ok": True, "opened": 3})
     open_trade()
 
     paper_loop.run_iteration(CONFIG, at("15:45"))
-    assert registered == []
+    assert registered == [["AAPL"]], "the entry declares its own underlyings now"
 
     paper_loop.run_iteration(CONFIG, at("09:05"))
-    assert registered == [["AAPL"]], "pre_open is where the union is allowed to grow"
+    assert registered[-1] == ["AAPL"], "pre_open still declares, so a restart cannot lose them"
 
 
 def test_closing_a_position_still_refreshes_the_request(priced, monkeypatch):
