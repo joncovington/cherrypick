@@ -43,7 +43,7 @@ from . import symbols as _symbols
 # v2 adds the record-only `deployment` block (and the HYG/TLT credit-proxy readings it reads).
 # Every prior key keeps its meaning, so a v1 pack still renders -- readers must tolerate the block
 # being absent on packs built before this version.
-FACT_VERSION = 2
+FACT_VERSION = 3  # 3: + vol_regime block and its readings (2026-08-25)
 PACK = "overview.morning"
 
 # A pre-open quote older than this is not "live". Two hours spans the 07:00 producer start the
@@ -288,6 +288,164 @@ def _close_history(conn, symbols, session: str, days: int) -> dict[str, list[dic
     return out
 
 
+# --------------------------------------------------------------------------- the vol term structure
+# The curve, front to back. `dte` is nominal and is what the slope is quoted against; the symbol is
+# provenance. VIX6M/VIX1Y were admitted 2026-08-25 after an entitlement probe (docs/regime-recorder-plan.md).
+_TERM_POINTS = (
+    ("vix9d", "VIX9D", 9),
+    ("vix", "VIX", 30),
+    ("vix3m", "VIX3M", 91),
+    ("vix6m", "VIX6M", 182),
+    ("vix1y", "VIX1Y", 365),
+)
+
+# Readings whose position in their own trailing range is worth recording beside the level. A level
+# alone does not say whether it is unusual, and "VIX 15.7" means something different in a year that
+# never left 12-18 than in one that touched 60.
+_VOL_HISTORY_SYMBOLS = frozenset({"VIX9D", "VIX6M", "VIX1Y", "VVIX", "SKEW"})
+
+_PERCENTILE_READINGS = (("vix9d", "VIX9D"), ("vix", "VIX"), ("vix3m", "VIX3M"),
+                        ("vix6m", "VIX6M"), ("vix1y", "VIX1Y"),
+                        ("vvix", "VVIX"), ("skew", "SKEW"))
+
+# Under this many completed closes a percentile is refused rather than reported. 60 sessions is a
+# quarter -- thin, but enough that the answer is about the market instead of about the sample. The
+# whole vol complex sat at ZERO until the producer's Summary subscription was repaired on
+# 2026-08-25, so this bound is load-bearing rather than theoretical: without it the panel's first
+# week would have shown confident percentiles drawn from three days.
+_PERCENTILE_MIN_SAMPLES = 60
+
+# A monthly norm needs YEARS, not a year -- one August tells you about one August. This reads the
+# multi-year `daily_closes` series rather than the 270-day cache window the percentiles use, and
+# refuses below three observations of the month in question.
+_SEASONAL_MIN_YEARS = 3
+
+# The suite already has ONE definition of contango and it is not a slope sign: `curve.regime` calls
+# it VIX/VIX3M below `contango_max`, with the buffer below 1.0 so a knife-edge 0.999 day is not read
+# as the harvest regime. This block restates that value rather than inventing a second answer to the
+# same question -- two definitions of contango across two packages is exactly the drift the shared
+# GEX engine exists to prevent, and `tests/test_vol_regime.py` pins these equal so the copy cannot
+# rot quietly. Overview cannot import curve (no package here imports another), so the guard lives in
+# the test, where it can.
+_CONTANGO_MAX = 0.97
+
+
+def _percentile_of(series: list[float], value: float) -> float | None:
+    """Where `value` sits within `series`, 0-100, by the fraction at or below it."""
+    if not series:
+        return None
+    at_or_below = sum(1 for x in series if x <= value)
+    return round(100.0 * at_or_below / len(series), 1)
+
+
+def _seasonal_norm(month: int) -> dict:
+    """The mean VIX close for this calendar month across every year on file.
+
+    Reads gex's `daily_closes` (years) rather than the cache's 270-day window (one year), because a
+    month-of-year norm built from a single observation of that month is not a norm.
+    """
+    out = {"month": month, "norm": None, "years": 0, "reason": None}
+    try:
+        conn = _db.connect_ro(_paths.gex_history_db())
+    except Exception:  # noqa: BLE001 -- no history is unmeasured, never a crash
+        out["reason"] = "no_history_db"
+        return out
+    try:
+        rows = _rows(conn, "SELECT trade_date, close FROM daily_closes "
+                           "WHERE symbol = 'VIX' AND close > 0")
+    except Exception:  # noqa: BLE001
+        out["reason"] = "no_daily_closes_table"
+        return out
+    finally:
+        conn.close()
+    vals = [float(r["close"]) for r in rows if str(r["trade_date"])[5:7] == f"{month:02d}"]
+    years = {str(r["trade_date"])[:4] for r in rows if str(r["trade_date"])[5:7] == f"{month:02d}"}
+    out["years"] = len(years)
+    if len(years) < _SEASONAL_MIN_YEARS:
+        out["reason"] = "too_few_years"
+        return out
+    out["norm"] = round(sum(vals) / len(vals), 2)
+    return out
+
+
+def _vol_regime(readings: dict, history: dict[str, list[dict]], session: str) -> dict:
+    """The vol term structure, its slope, and where each point sits in its own trailing range.
+
+    **Record-only, and deliberately wired to no gate.** The phase gates decide whether the suite
+    deploys, and their semantics are a measurement boundary -- adding an input would change what a
+    GREEN means and make every prior session incomparable. This block is here to be READ (by the
+    console panel, the morning narrative and the advisor's fact pack); promoting any of it to a gate
+    is a separate, journalled decision.
+
+    Every value is refused rather than guessed: an unmeasured reading, a curve point the feed did
+    not serve, a percentile with too thin a sample. That matters more here than in most blocks,
+    because a vol panel is read at a glance and a confidently-wrong percentile is worse than a gap.
+    """
+    curve = []
+    for key, symbol, dte in _TERM_POINTS:
+        reading = readings.get(key) or {}
+        curve.append({
+            "point": key, "symbol": symbol, "dte": dte,
+            "value": reading.get("value"), "basis": reading.get("basis"),
+        })
+    by_key = {c["point"]: c["value"] for c in curve}
+
+    def _slope(a: str, b: str) -> float | None:
+        lo, hi = by_key.get(a), by_key.get(b)
+        if lo in (None, 0) or hi is None:
+            return None
+        return round(100.0 * (hi - lo) / lo, 1)
+
+    # Three readings of one curve, because they answer different questions. The FRONT (9D vs 30D) is
+    # event pricing -- an FOMC or CPI inside the next nine days lifts it and nothing further out.
+    # The MID (30D vs 3M) is the classic term-structure read and the one the regime label uses. The
+    # BACK (9D vs 1Y) is the structural carry a short-premium book is actually paid for.
+    front = _slope("vix9d", "vix")
+    mid = _slope("vix", "vix3m")
+    back = _slope("vix9d", "vix1y")
+
+    vix, vix3m = by_key.get("vix"), by_key.get("vix3m")
+    ratio = round(vix / vix3m, 4) if (vix is not None and vix3m) else None
+    if ratio is None:
+        shape, shape_reason = None, "vix_or_vix3m_unmeasured"
+    else:
+        shape, shape_reason = ("contango" if ratio < _CONTANGO_MAX else "backwardation"), None
+
+    percentiles = {}
+    for key, symbol in _PERCENTILE_READINGS:
+        value = (readings.get(key) or {}).get("value")
+        series = [row["close"] for row in history.get(symbol, [])]
+        entry = {"value": value, "samples": len(series), "percentile": None, "reason": None}
+        if value is None:
+            entry["reason"] = "reading_unmeasured"
+        elif len(series) < _PERCENTILE_MIN_SAMPLES:
+            entry["reason"] = "too_few_closes"
+        else:
+            entry["percentile"] = _percentile_of(series, float(value))
+        percentiles[key] = entry
+
+    seasonal = _seasonal_norm(int(session[5:7]))
+    vix_value = (readings.get("vix") or {}).get("value")
+    if seasonal.get("norm") and vix_value is not None:
+        seasonal["vix_vs_norm_pct"] = round(100.0 * (float(vix_value) - seasonal["norm"])
+                                            / seasonal["norm"], 1)
+    else:
+        seasonal["vix_vs_norm_pct"] = None
+
+    return {
+        "curve": curve,
+        "slope": {"front_9d_30d_pct": front, "mid_30d_3m_pct": mid, "back_9d_1y_pct": back},
+        "vix_vix3m_ratio": ratio,
+        "shape": shape,
+        "shape_reason": shape_reason,
+        "percentiles": percentiles,
+        "seasonality": seasonal,
+        "measured_points": sum(1 for c in curve if c["value"] is not None),
+        "total_points": len(curve),
+        "record_only": True,
+    }
+
+
 def _calendar_block(session: str) -> dict:
     day = date.fromisoformat(session)
     year_known = _calendar.fomc_year_known(day.year)
@@ -323,6 +481,12 @@ def build(session: str | None = None, now: datetime | None = None) -> dict:
             "spx": _symbol_reading(cache, "SPX", session, now_ts, label="S&P 500 (SPX)"),
             "vix": _symbol_reading(cache, "VIX", session, now_ts, label="VIX"),
             "vix3m": _symbol_reading(cache, "VIX3M", session, now_ts, label="VIX3M"),
+            # The rest of the term structure, plus the tail reading. Added 2026-08-25 for the
+            # vol-regime block; additive to the pack and read by no gate.
+            "vix9d": _symbol_reading(cache, "VIX9D", session, now_ts, label="VIX9D"),
+            "vix6m": _symbol_reading(cache, "VIX6M", session, now_ts, label="VIX6M"),
+            "vix1y": _symbol_reading(cache, "VIX1Y", session, now_ts, label="VIX1Y"),
+            "skew": _symbol_reading(cache, "SKEW", session, now_ts, label="SKEW (tail pricing)"),
             "vvix": _symbol_reading(cache, "VVIX", session, now_ts, label="VVIX (vol of vol)"),
             "wti_proxy": _symbol_reading(cache, "USO", session, now_ts,
                                          label=_symbols.COMMODITY_PROXIES["USO"]),
@@ -346,9 +510,11 @@ def build(session: str | None = None, now: datetime | None = None) -> dict:
         )
 
         sectors = _sectors(cache, session)
-        # The live score reads the tail of a longer stored series -- only a year of it.
-        history = _close_history(cache, _symbols.HISTORY_DAYS, session,
-                                 _symbols.HISTORY_LOOKBACK)
+        # The live score reads the tail of a longer stored series -- only a year of it. The vol
+        # complex rides along for the percentile block; the union is deliberate rather than two
+        # reads, so one series can never disagree with itself between two consumers.
+        history = _close_history(cache, sorted(set(_symbols.HISTORY_DAYS) | _VOL_HISTORY_SYMBOLS),
+                                 session, _symbols.HISTORY_LOOKBACK)
     finally:
         if cache is not None:
             cache.close()
@@ -366,6 +532,7 @@ def build(session: str | None = None, now: datetime | None = None) -> dict:
         "gates": gate_list,
         "phase": _gates.phase(gate_list),
         "deployment": _score.evaluate(readings, history, _symbols.SECTOR_ETFS),
+        "vol_regime": _vol_regime(readings, history, session),
         "calendar": _calendar_block(session),
     }
 
