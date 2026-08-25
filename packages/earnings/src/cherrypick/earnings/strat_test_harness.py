@@ -54,7 +54,6 @@ import argparse
 import concurrent.futures as _cf
 import json
 import sys
-import threading
 import time
 from datetime import date as _date
 from datetime import datetime as _dt
@@ -74,6 +73,8 @@ from cherrypick.earnings import (
     symbol_watch,
 )
 from cherrypick.earnings import strategy_metrics as metrics
+from cherrypick.earnings.bounded import OpTimeout as _OpTimeout
+from cherrypick.earnings.bounded import run_bounded as _run_bounded
 from cherrypick.earnings.strategies import (
     atm_calendar,
     broken_wing_butterfly,
@@ -527,39 +528,6 @@ def _capture_market_context(day: str) -> None:
         )
     except Exception:
         pass
-
-
-class _OpTimeout(Exception):
-    """A bounded scan step (a Dolt-heavy operation) exceeded its wall-clock budget."""
-
-
-def _run_bounded(fn, timeout_s, *args, **kwargs):
-    """Run ``fn(*args, **kwargs)`` with a wall-clock ceiling; return its result or raise _OpTimeout.
-
-    The entry scan's Dolt queries have no client-side read timeout (mysql-connector offers none) and
-    Dolt does not honor the server-side ``max_execution_time`` SELECT cap (verified against the live
-    server), so a Dolt that is cold-starting or compacting makes ``cur.execute()`` block forever --
-    which got the scheduled entry run killed at its 30-minute external timeout (2026-07-14 and
-    2026-07-22). Running the step in a daemon thread lets the scan abandon a hung symbol and move on;
-    the orphaned thread cannot be killed but dies with this short-lived process. Same bounded-and-
-    returns-failure intent as ``scanner.call_tt``, without a subprocess (the Dolt calls are in-process).
-    """
-    box: dict = {}
-
-    def _target():
-        try:
-            box["value"] = fn(*args, **kwargs)
-        except BaseException as exc:  # noqa: BLE001 -- surfaced to the caller's except below
-            box["error"] = exc
-
-    worker = threading.Thread(target=_target, daemon=True)
-    worker.start()
-    worker.join(timeout_s)
-    if worker.is_alive():
-        raise _OpTimeout(f"exceeded {timeout_s}s")
-    if "error" in box:
-        raise box["error"]
-    return box.get("value")
 
 
 def _parallel_scan(calendar, config, workers, symbol_timeout, budget_seconds):
