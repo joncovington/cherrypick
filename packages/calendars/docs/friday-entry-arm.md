@@ -212,6 +212,24 @@ in the trade for. Both are second-order against the debit differential, but neit
   both populations side by side and can say what the evidence supports; retiring either regime stays
   a journaled measurement break made deliberately.
 
+## Checking a Friday afterwards
+
+The regime reports on itself rather than needing a watcher. After the window closes with nothing
+entered, it journals `friday_week_skipped` into `dc_decisions` with the **dominant attempt outcome**
+as the detail — which is the whole diagnosis, because the two silences are otherwise identical:
+
+| detail | what it means | what to do |
+|---|---|---|
+| `awaiting_session_exits` | **The exit gate never cleared — this is the deadlock, and it is a BUG.** `path` never closes by design, so a gate reading "the book is flat" waits forever. | Read `db.pending_closing_exits`; it must exclude any book whose base is `path`. |
+| `no_fresh_quotes` | The feed could not price the structure in the window. A market/ops outcome, the same thing that cost 2026-08-17 and 2026-08-24. | Check the producer: `reconnect_count`, and the watchdog's churn finding. |
+| a plan refusal (`no_intersection_strike`, `non_positive_debit`, …) | The structure could not be built from that snapshot. | Ordinary; read it as the module refusing rather than failing. |
+| `ex_dividend_week` / `dividend_calendar_lapsed` | The declared calendar refused the week. | Expected — and the Friday regime hits these MORE often than Monday's, because moving entry earlier widens the span. |
+
+A successful Friday leaves four `dc_positions` rows (two books × two sides) with `entry_session` on
+the Friday, `week_of` on the following Monday, and a `dc_7_*` structure tag. Confirm the ordering
+held by checking that the expiring Monday-regime positions' `closed_at` precedes those rows'
+`entry_time` — exit before entry within the session is the state gate's entire purpose.
+
 ## The retirement bar (declared 2026-08-24, before either regime had a result)
 
 Declared now, deliberately, while neither regime has a number anyone could be attached to. It is a
