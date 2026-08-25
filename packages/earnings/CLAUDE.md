@@ -23,9 +23,14 @@ You are the cherrypick **Earnings** agent, an autonomous options trading agent f
   day to day.
   **Two trails, and they answer different questions.** `state/earnings-*.heartbeat` is a LATEST —
   overwritten every run, so it answers "is it alive" and nothing else. `logs/earnings_paper.log` is
-  the run trail, one JSON object per line, appended by `append_run_log` on each completed entry/exit
-  phase and carrying the whole entry result (the per-symbol accept/reject detail the heartbeat is too
-  terse to hold). It was the retired scheduled verbs' job; when entry and exit moved into this loop
+  the run trail, one JSON object per line, appended by `append_run_log` on each completed
+  forward-scan/entry/exit phase and carrying the whole entry result (the per-symbol accept/reject
+  detail the heartbeat is too terse to hold). The forward scan joined it on 2026-08-25, having been
+  the one phase that logged nothing: it is the TOP of the funnel, so a scan finding zero symbols
+  guarantees an empty entry scan hours later, and that is how eleven starved sessions stayed
+  invisible — the aged-out Dolt calendar left it finding nothing every morning while the only trace
+  anywhere was the entry phase's `opened: []`, which reads exactly like "screened, none cleared".
+  Its `symbols` count is what separates that from a broken universe filter. It was the retired scheduled verbs' job; when entry and exit moved into this loop
   at the 2026-08-12 cutover nothing took it over, the log simply stopped, and "did earnings run
   today, and what did it decide" stopped being answerable from the logs while the loop ran fine. It
   is best-effort by construction: a session that cannot write its log still trades.
