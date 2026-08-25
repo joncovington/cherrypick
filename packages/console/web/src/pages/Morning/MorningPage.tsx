@@ -269,12 +269,18 @@ function VolCurve({ points }: { points: MorningVolCurvePoint[] }) {
 }
 
 function PercentileRow({ id, p }: { id: string; p: MorningVolPercentile }) {
+  // Three refusals, three sentences. "no daily series" is PERMANENT and must not read like the
+  // temporary one beside it -- the pack declares it for a reading whose live quote works but whose
+  // history the feed does not serve, and a row promising a gap that never closes is a row a reader
+  // learns to skip.
   const refusal =
     p.reason === "reading_unmeasured"
       ? "not served by the feed"
-      : p.reason === "too_few_closes"
-        ? `only ${p.samples ?? 0} closes on file`
-        : (p.reason ?? "unavailable");
+      : p.reason === "no_daily_series"
+        ? "no daily series available"
+        : p.reason === "too_few_closes"
+          ? `only ${p.samples ?? 0} closes on file`
+          : (p.reason ?? "unavailable");
   return (
     <div className="pct-row">
       <span className="stat-label">{id.toUpperCase()}</span>

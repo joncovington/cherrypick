@@ -132,3 +132,26 @@ def test_the_block_feeds_no_gate():
             f"{evaluate.__module__}.evaluate takes {params} -- a vol input changes what a phase means"
         )
     assert facts._vol_regime(_readings(), {}, "2026-08-25")["record_only"] is True
+
+
+def test_a_reading_with_no_obtainable_daily_series_says_so(monkeypatch):
+    """"No history yet" and "no history ever" are different messages, and nothing in the data tells
+    them apart -- so the second is declared.
+
+    SKEW's 270-day backfill returned five scattered rows across seven months on the same connection
+    that delivered a clean ~378 for every other vol reading. Reporting that as "only 5 closes on
+    file" promises a gap that fills, and it never will; a permanent refusal dressed as a temporary
+    one is exactly what teaches a reader to stop looking at the row.
+    """
+    block = facts._vol_regime(_readings(), _history("SKEW", [140.0] * 5), "2026-08-25")
+
+    entry = block["percentiles"]["skew"]
+    assert entry["percentile"] is None
+    assert entry["reason"] == "no_daily_series"
+    assert entry["value"] == 145.6, "the LIVE quote is fine and still reported"
+
+
+def test_the_declaration_does_not_leak_onto_readings_that_have_a_series():
+    block = facts._vol_regime(_readings(), _history("VVIX", [80.0 + i for i in range(300)]), "2026-08-25")
+    assert block["percentiles"]["vvix"]["reason"] is None
+    assert block["percentiles"]["vvix"]["percentile"] is not None

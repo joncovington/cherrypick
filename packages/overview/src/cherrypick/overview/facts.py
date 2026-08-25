@@ -304,6 +304,15 @@ _TERM_POINTS = (
 # never left 12-18 than in one that touched 60.
 _VOL_HISTORY_SYMBOLS = frozenset({"VIX9D", "VIX6M", "VIX1Y", "VVIX", "SKEW"})
 
+# Readings whose LIVE quote the feed serves but whose DAILY series it does not. Declared, not
+# inferred: nothing in the data can distinguish "no history yet" from "no history ever", and the
+# difference is the whole message. SKEW's 270-day backfill returned five scattered rows across seven
+# months (one of them a zero), on the same connection that delivered a clean ~378 for every other
+# vol reading -- so its percentile is not waiting to fill, it is unavailable, and saying "only 5
+# closes on file" would promise a gap that closes and never does. A permanent refusal that looks
+# temporary is the thing that teaches a reader to skim the row.
+_NO_DAILY_SERIES = frozenset({"skew"})
+
 _PERCENTILE_READINGS = (("vix9d", "VIX9D"), ("vix", "VIX"), ("vix3m", "VIX3M"),
                         ("vix6m", "VIX6M"), ("vix1y", "VIX1Y"),
                         ("vvix", "VVIX"), ("skew", "SKEW"))
@@ -411,6 +420,8 @@ def _vol_regime(readings: dict, history: dict[str, list[dict]], session: str) ->
         entry = {"value": value, "samples": len(series), "percentile": None, "reason": None}
         if value is None:
             entry["reason"] = "reading_unmeasured"
+        elif key in _NO_DAILY_SERIES:
+            entry["reason"] = "no_daily_series"
         elif len(series) < _PERCENTILE_MIN_SAMPLES:
             entry["reason"] = "too_few_closes"
         else:
