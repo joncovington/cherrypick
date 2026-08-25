@@ -71,6 +71,8 @@ remaining files keep the numbers they were written with, so existing links stay 
 - [Paper Trading](./paper-trading.md) — How paper mode works, data separation from live
 - [Strat-Test Portfolios](./strat-test-portfolios.md) — Per-strategy paper books for the forced-sampling test
 - [Strategy Testing Plan](./strategy-testing-plan.md) — Forced-sampling validation program
+- [Control Book Plan](./control-book-plan.md) — Plan (nothing built): widening the control so entry
+  screening becomes measurable by read-side replay, since the advisor's twin cannot express it
 
 ### Reference
 - [Glossary](./14-glossary.md) — Terms and definitions
