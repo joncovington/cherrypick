@@ -386,16 +386,31 @@ def latest_summary_date(conn: sqlite3.Connection, symbol: str, *, today: str) ->
     percentile or an SMA is computed over the tail. VIX carried 1,380 rows and nothing after
     2026-08-14 -- the backfill's deficit check read "1380 >= 270, satisfied" every single connection
     while the series it was protecting had stopped a week earlier. Depth is not currency.
+
+    **Both routes to a close count, exactly as `overview.facts._close_history` reads them.**
+    `day_close` dates its own row; `prev_day_close` dates the PRECEDING row, and it is the only route
+    for a session the live producer wrote, because that producer stops at the bell and never fills
+    `day_close`. Reading the first route alone makes every live-written underlying look permanently
+    stale -- SPX answered 2026-07-28 while holding a current row for every session since -- which
+    would have had the backfill refetching its candles on every connection, forever, and filling
+    nothing (those dates are present; the insert skips them).
     """
     try:
-        row = conn.execute(
-            "SELECT MAX(trade_date) FROM stream_summary WHERE symbol = ? AND trade_date < ? "
-            "AND day_close IS NOT NULL",
-            (symbol, today),
+        rows = conn.execute(
+            "SELECT MAX(covered) FROM ("
+            "  SELECT trade_date AS covered FROM stream_summary"
+            "   WHERE symbol = ? AND trade_date < ? AND day_close IS NOT NULL"
+            "  UNION ALL"
+            "  SELECT prior FROM ("
+            "    SELECT LAG(trade_date) OVER (ORDER BY trade_date) AS prior, prev_day_close"
+            "      FROM stream_summary WHERE symbol = ? AND trade_date <= ?"
+            "  ) WHERE prev_day_close IS NOT NULL AND prior IS NOT NULL"
+            ")",
+            (symbol, today, symbol, today),
         ).fetchone()
     except sqlite3.Error:
         return None
-    return str(row[0]) if row and row[0] else None
+    return str(rows[0]) if rows and rows[0] else None
 
 
 def completed_summary_days(conn: sqlite3.Connection, symbol: str, *, today: str) -> int:

@@ -266,3 +266,34 @@ def test_the_producer_drains_stored_closes_that_are_not_prices(tmp_path):
     left = {(r[0], r[1]) for r in conn.execute("SELECT symbol, trade_date FROM stream_summary")}
     assert left == {("TNA", "2026-05-15"), ("VIX", "2021-02-16")}
     assert streamcache.purge_nonpositive_closes(conn) == 0, "idempotent -- a fixed backlog, then nothing"
+
+
+def test_recency_counts_a_close_carried_on_the_next_rows_prev_close(tmp_path):
+    """Both routes to a close, exactly as overview's `_close_history` reads them.
+
+    `day_close` dates its own row; `prev_day_close` dates the PRECEDING row, and it is the only route
+    for a session the live producer wrote, because that producer stops at the bell and never fills
+    `day_close`. Counting only the first made every live-written underlying look permanently stale --
+    SPX answered 2026-07-28 while holding a current row for every session since -- which would have
+    refetched its candles on every connection forever and filled nothing, since those dates are
+    present and the insert skips them.
+    """
+    conn = streamcache.connect(tmp_path / "cache.db")
+    for day, close, prev in [
+        ("2026-08-20", 100.0, None),  # backfilled: dates itself
+        ("2026-08-21", None, 101.0),  # live-written: carries 08-20's settle... on THIS row
+        ("2026-08-24", None, 102.0),  # ...and 08-21's settle here
+    ]:
+        conn.execute(
+            "INSERT INTO stream_summary (symbol, trade_date, day_close, prev_day_close, updated_at) "
+            "VALUES (?,?,?,?,?)",
+            ("SPX", day, close, prev, time.time()),
+        )
+    conn.commit()
+
+    latest = streamcache.latest_summary_date(conn, "SPX", today="2026-08-25")
+
+    assert latest == "2026-08-21", (
+        "08-24's prev_day_close carries 08-21's close, so the series reaches 08-21 -- not 08-20, "
+        "which is all day_close alone can see"
+    )
