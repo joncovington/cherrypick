@@ -48,6 +48,9 @@ CATCHUP_MINUTES = {
     # degrades safely -- the recorder drops its futures readings rather than sampling a
     # rolled-off contract -- so catching one up late is strictly better than skipping it.
     "futures-contracts": 8 * 60,
+    # Very generous: the calendar reaches weeks ahead, so a late pull is harmless while a skipped
+    # one eventually starves the scanner. Catching up beats waiting for tomorrow.
+    "earnings-dolt-pull": 12 * 60,
     # A missed review is worth catching up on: the fact set is the input to every read surface,
     # and a session with no artifact is a hole in the trend rather than a late report.
     "review-provisional": 180,
@@ -288,6 +291,10 @@ def _morning_narrative_script(launcher: str) -> str:
 
 def _futures_contracts_script(launcher: str) -> str:
     return _suite_script(launcher, "refresh_futures_contracts.py")
+
+
+def _dolt_data_script(launcher: str) -> str:
+    return _suite_script(launcher, "refresh_dolt_data.py")
 
 
 def _module_tick_argv(paper: dict[str, Any]) -> list[str] | None:
@@ -605,6 +612,27 @@ def derive_jobs(
                 "" if (mv["enabled"] and mv["narrative"]) else "disabled in config (morning.narrative)"
             ),
             tags=("ai",),
+        ),
+    )
+    add(
+        "earnings-dolt-pull",
+        lambda: JobSpec(
+            id="earnings-dolt-pull",
+            # A script, not package code: it reaches DoltHub, and nothing on a decision path may.
+            # This is the job whose ABSENCE stopped earnings paper trading for eleven sessions in
+            # August 2026 -- the sql-server job kept the server alive while the DATA silently aged
+            # out of its forward calendar. Not trading-days-only: pulling on a weekend is free and
+            # means Monday opens with a current calendar.
+            argv=(pythonw, _dolt_data_script(launcher)),
+            kind=KIND_DAILY,
+            at_et="06:30",
+            catchup_minutes=CATCHUP_MINUTES["earnings-dolt-pull"],
+            trading_days_only=False,
+            enabled=bool((cfg.get("modules", {}).get("earnings") or {}).get("enabled")),
+            enabled_reason=(
+                "" if (cfg.get("modules", {}).get("earnings") or {}).get("enabled")
+                else "earnings module disabled"
+            ),
         ),
     )
     add(

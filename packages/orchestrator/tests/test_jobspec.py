@@ -295,6 +295,7 @@ def test_derive_full_suite_job_table():
         "reconcile",
         "log-archive",
         "futures-contracts",
+        "earnings-dolt-pull",
         "review-provisional",
         "review-final",
         "review-narrative",
