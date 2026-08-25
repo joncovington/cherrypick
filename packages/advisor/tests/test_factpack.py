@@ -203,3 +203,66 @@ def test_write_puts_the_pack_where_the_script_looks_for_it(seeded):
 def test_an_unknown_slot_is_a_programming_error_not_a_pack():
     with pytest.raises(ValueError):
         factpack.build(SESSION, "afternoon-ish")
+
+
+# --- the regime block: canonical series, with an honest fallback ----------------------------
+
+
+def _measured(**over):
+    market = {
+        "status": "measured",
+        "age_seconds": 12.0,
+        "readings": {
+            "vix": {"value": 15.9, "usable": True, "symbol": "VIX"},
+            "skew": {"value": 143.9, "usable": True, "symbol": "SKEW"},
+            "uso": {"value": None, "usable": False, "symbol": "USO", "reason": "stale_quote"},
+        },
+        "derived": {"vix_vix3m_ratio": 0.857},
+        "chain": {"SPX": {"atm_iv": 0.24}},
+    }
+    market.update(over)
+    return {"market": market, "gex": {}}
+
+
+def test_regime_block_prefers_the_canonical_series(monkeypatch):
+    from cherrypick.advisor import factpack
+
+    monkeypatch.setattr(factpack._regime, "regime_at", lambda *_a, **_k: _measured())
+    block = factpack._regime_now("2026-08-25", fallback=lambda: {"vix": 99.0})
+
+    assert block["source"].startswith("market_regime_history")
+    assert block["readings"] == {"vix": 15.9, "skew": 143.9}  # unusable readings are not values
+    assert block["refused"] == ["uso"]  # ...but they ARE named, so a hole is legible
+    assert block["derived"]["vix_vix3m_ratio"] == 0.857
+    assert block["chain"]["SPX"]["atm_iv"] == 0.24
+    assert "99.0" not in json.dumps(block)  # the fallback was not consulted
+
+
+def test_regime_block_falls_back_and_says_so_when_unmeasured(monkeypatch):
+    """A recorder outage, or any checkpoint outside RTH: the pack must not present a hole as a calm
+    market, and must not silently look like the canonical read."""
+    from cherrypick.advisor import factpack
+
+    monkeypatch.setattr(
+        factpack._regime,
+        "regime_at",
+        lambda *_a, **_k: {"market": {"status": "unmeasured", "reason": "stale_sample"}},
+    )
+    block = factpack._regime_now("2026-08-25", fallback=lambda: {"vix": 15.85})
+
+    assert block["source"] == "meic.market_context (fallback)"
+    assert block["reason"] == "stale_sample"
+    assert block["readings"] == {"vix": 15.85}
+
+
+def test_regime_block_survives_a_failing_read(monkeypatch):
+    """A fact pack must never fail on a telemetry read."""
+    from cherrypick.advisor import factpack
+
+    def boom(*_a, **_k):
+        raise RuntimeError("history db locked")
+
+    monkeypatch.setattr(factpack._regime, "regime_at", boom)
+    block = factpack._regime_now("2026-08-25", fallback=lambda: {"vix": 1.0})
+    assert block["source"].endswith("(fallback)")
+    assert block["reason"] == "regime_read_failed"
