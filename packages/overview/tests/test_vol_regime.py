@@ -78,14 +78,20 @@ def test_a_percentile_under_the_sample_floor_is_refused_not_reported():
 
 
 def test_a_percentile_with_enough_history_is_computed():
-    series = [float(x) for x in range(1, 101)]  # 100 closes, 1..100
+    """The window, floor and formula are all `score`'s -- 252 sessions, 200 minimum, fraction
+    STRICTLY below. Restating any of them here would put a second VIX percentile on the same page as
+    the deployment score's, disagreeing with it."""
+    from cherrypick.overview import score
+
+    series = [float(x) for x in range(1, 401)]  # 400 closes; only the last 252 may be used
     block = facts._vol_regime(
-        _readings(vix={"value": 25.0, "basis": "live"}), _history("VIX", series), "2026-08-25"
+        _readings(vix={"value": 300.0, "basis": "live"}), _history("VIX", series), "2026-08-25"
     )
 
     entry = block["percentiles"]["vix"]
-    assert entry["samples"] == 100
-    assert entry["percentile"] == pytest.approx(25.0), "25 of 100 closes are at or below 25.0"
+    assert entry["samples"] == score.PERCENTILE_LOOKBACK, "the window is score's, not a local one"
+    # The last 252 closes are 149..400; strictly below 300 is 149..299 -> 151 of 252.
+    assert entry["percentile"] == pytest.approx(round(151 / 252 * 100, 1), abs=0.2)
 
 
 def test_an_unmeasured_reading_is_distinguished_from_a_thin_sample():
@@ -116,8 +122,13 @@ def test_the_block_feeds_no_gate():
 
     from cherrypick.overview import gates, score
 
-    for module in (gates, score):
-        assert "vol_regime" not in inspect.getsource(module), (
-            f"{module.__name__} consumes vol_regime -- that changes what a phase means"
+    # Structural, not a source-text scan: the first version of this grepped both modules for
+    # "vol_regime" and went red the moment score gained a docstring REFERENCE to it, which proves a
+    # substring says nothing about what a function consumes. What matters is that neither evaluator
+    # can even be handed the block -- so assert their declared parameters.
+    for evaluate in (gates.evaluate, score.evaluate):
+        params = list(inspect.signature(evaluate).parameters)
+        assert not any("vol" in name for name in params), (
+            f"{evaluate.__module__}.evaluate takes {params} -- a vol input changes what a phase means"
         )
     assert facts._vol_regime(_readings(), {}, "2026-08-25")["record_only"] is True

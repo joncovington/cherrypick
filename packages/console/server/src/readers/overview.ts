@@ -26,6 +26,10 @@ import type {
   MorningDeployment,
   MorningSignal,
   MorningCalendar,
+  MorningVolRegime,
+  MorningVolCurvePoint,
+  MorningVolPercentile,
+  MorningVolSeasonality,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { num, str } from "./db.js";
@@ -184,6 +188,68 @@ function shapeDeployment(raw: unknown): MorningDeployment {
   };
 }
 
+function shapeVolPoint(raw: unknown): MorningVolCurvePoint {
+  const c = rec(raw);
+  return {
+    point: str(c["point"]) ?? "unknown",
+    symbol: str(c["symbol"]) ?? "?",
+    dte: num(c["dte"]),
+    value: num(c["value"]),
+    basis: str(c["basis"]),
+  };
+}
+
+function shapeVolPercentile(raw: unknown): MorningVolPercentile {
+  const p = rec(raw);
+  return {
+    value: num(p["value"]),
+    samples: num(p["samples"]),
+    // Passed through, never recomputed here: the pack refuses a percentile under its own sample
+    // floor, and a console that filled one in would be quietly overriding that refusal.
+    percentile: num(p["percentile"]),
+    reason: str(p["reason"]),
+  };
+}
+
+function shapeVolSeasonality(raw: unknown): MorningVolSeasonality {
+  const s = rec(raw);
+  return {
+    month: num(s["month"]),
+    norm: num(s["norm"]),
+    years: num(s["years"]),
+    reason: str(s["reason"]),
+    vixVsNormPct: num(s["vix_vs_norm_pct"]),
+  };
+}
+
+function shapeVolRegime(raw: unknown): MorningVolRegime {
+  const v = rec(raw);
+  const slope = rec(v["slope"]);
+  const shape = str(v["shape"]);
+  const percentiles: Record<string, MorningVolPercentile> = {};
+  for (const [key, entry] of Object.entries(rec(v["percentiles"]))) {
+    percentiles[key] = shapeVolPercentile(entry);
+  }
+  return {
+    curve: Array.isArray(v["curve"]) ? (v["curve"] as unknown[]).map(shapeVolPoint) : [],
+    slope: {
+      front9d30dPct: num(slope["front_9d_30d_pct"]),
+      mid30d3mPct: num(slope["mid_30d_3m_pct"]),
+      back9d1yPct: num(slope["back_9d_1y_pct"]),
+    },
+    vixVix3mRatio: num(v["vix_vix3m_ratio"]),
+    // Only the two states the pack declares. Anything else is no shape at all rather than a guess —
+    // the same discipline the deployment zone uses one function above.
+    shape: shape === "contango" || shape === "backwardation" ? shape : null,
+    shapeReason: str(v["shape_reason"]),
+    percentiles,
+    seasonality: v["seasonality"] !== undefined ? shapeVolSeasonality(v["seasonality"]) : null,
+    measuredPoints: num(v["measured_points"]),
+    totalPoints: num(v["total_points"]),
+    recordOnly: bool(v["record_only"]),
+  };
+}
+
 function shapeCalendar(raw: unknown): MorningCalendar {
   const c = rec(raw);
   return {
@@ -212,6 +278,9 @@ function shapePack(session: string, facts: Record<string, unknown>): MorningPack
     phase: shapePhase(facts["phase"]),
     // Absent on pre-v2 packs; null so the page omits the card rather than rendering an empty one.
     deployment: facts["deployment"] !== undefined ? shapeDeployment(facts["deployment"]) : null,
+    // Absent before fact version 3; null so the page omits the panel rather than drawing an
+    // empty curve, which would read as a measured flat one.
+    volRegime: facts["vol_regime"] !== undefined ? shapeVolRegime(facts["vol_regime"]) : null,
     calendar: facts["calendar"] !== undefined ? shapeCalendar(facts["calendar"]) : null,
   };
 }

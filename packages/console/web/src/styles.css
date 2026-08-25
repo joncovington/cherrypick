@@ -2269,3 +2269,43 @@ select.text-input {
   font-size: 12.5px;
   line-height: 1.85;
 }
+
+/* --------------------------------------------------------------- vol term structure (Morning) */
+/* A refused percentile has to look refused. It renders as words plus its sample count rather than
+   an empty bar, because an empty bar and a bar pinned at the bottom of the range are the same
+   picture and completely different facts. */
+.pct-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.pct-row {
+  display: grid;
+  grid-template-columns: 62px 72px 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.pct-bar {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2, #1d2129);
+  overflow: hidden;
+}
+
+.pct-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  /* Amber, not the brand red: red on a trading surface reads as loss, and this bar states a
+     neutral position-in-range that gates nothing. Matches the curve stroke above it. */
+  background: #d9a13b;
+}
+
+.pct-refusal {
+  font-size: 12px;
+  font-style: italic;
+}

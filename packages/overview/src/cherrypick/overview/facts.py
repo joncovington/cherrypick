@@ -308,12 +308,13 @@ _PERCENTILE_READINGS = (("vix9d", "VIX9D"), ("vix", "VIX"), ("vix3m", "VIX3M"),
                         ("vix6m", "VIX6M"), ("vix1y", "VIX1Y"),
                         ("vvix", "VVIX"), ("skew", "SKEW"))
 
-# Under this many completed closes a percentile is refused rather than reported. 60 sessions is a
-# quarter -- thin, but enough that the answer is about the market instead of about the sample. The
-# whole vol complex sat at ZERO until the producer's Summary subscription was repaired on
-# 2026-08-25, so this bound is load-bearing rather than theoretical: without it the panel's first
-# week would have shown confident percentiles drawn from three days.
-_PERCENTILE_MIN_SAMPLES = 60
+# The window, the floor and the formula all come from `score`, which already ranks VIX against its
+# own history and renders the answer on this same page. Restating any of the three here would put two
+# different percentiles for one reading in front of one reader -- not a rounding difference but a
+# contradiction. Landed at 270 closes and an inclusive count before that was noticed on 2026-08-25:
+# the card read "18th pctile of 270" directly above the score's "17th percentile of 252 sessions".
+_PERCENTILE_LOOKBACK = _score.PERCENTILE_LOOKBACK
+_PERCENTILE_MIN_SAMPLES = _score.MIN_HISTORY_FOR_RANK
 
 # A monthly norm needs YEARS, not a year -- one August tells you about one August. This reads the
 # multi-year `daily_closes` series rather than the 270-day cache window the percentiles use, and
@@ -328,14 +329,6 @@ _SEASONAL_MIN_YEARS = 3
 # rot quietly. Overview cannot import curve (no package here imports another), so the guard lives in
 # the test, where it can.
 _CONTANGO_MAX = 0.97
-
-
-def _percentile_of(series: list[float], value: float) -> float | None:
-    """Where `value` sits within `series`, 0-100, by the fraction at or below it."""
-    if not series:
-        return None
-    at_or_below = sum(1 for x in series if x <= value)
-    return round(100.0 * at_or_below / len(series), 1)
 
 
 def _seasonal_norm(month: int) -> dict:
@@ -414,14 +407,14 @@ def _vol_regime(readings: dict, history: dict[str, list[dict]], session: str) ->
     percentiles = {}
     for key, symbol in _PERCENTILE_READINGS:
         value = (readings.get(key) or {}).get("value")
-        series = [row["close"] for row in history.get(symbol, [])]
+        series = [row["close"] for row in history.get(symbol, [])][-_PERCENTILE_LOOKBACK:]
         entry = {"value": value, "samples": len(series), "percentile": None, "reason": None}
         if value is None:
             entry["reason"] = "reading_unmeasured"
         elif len(series) < _PERCENTILE_MIN_SAMPLES:
             entry["reason"] = "too_few_closes"
         else:
-            entry["percentile"] = _percentile_of(series, float(value))
+            entry["percentile"] = round(_score.percentile_rank(series, float(value)), 1)
         percentiles[key] = entry
 
     seasonal = _seasonal_norm(int(session[5:7]))
