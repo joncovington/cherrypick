@@ -960,8 +960,30 @@ def _save_book(conn, book_id, trade_date, arm, symbol, positions, params, settle
     return {"cash": cash, "floor": floor, "stats": stats}
 
 
-def settle_book(conn, trade_date: str, arm: str, symbol: str, settlement_price: float, config: dict) -> dict:
-    """Cash-settle every open position in a book at the settlement print and close the book out."""
+def settle_book(
+    conn,
+    trade_date: str,
+    arm: str,
+    symbol: str,
+    settlement_price: float,
+    config: dict,
+    settlement_source: str | None = None,
+) -> dict:
+    """Cash-settle every open position in a book at the settlement print and close the book out.
+
+    `settlement_source` says WHERE the price came from -- `"last_trade"` for the feed's final print,
+    `"explicit"` when an operator passed the official one. The column has existed since the schema
+    was written and `run_settle` has always computed the value, but nothing carried it this far, so
+    789 sessions' rows record a settlement price with no statement of its provenance while 43 rows
+    from a single 2026-07-30 run say `official`.
+
+    That gap is not cosmetic. This price decides every position's P&L at once, a last trade is not
+    the official print, and two modules settling the same index off their own final ticks land on
+    two different numbers -- flies read SPX at 7677.28 on 2026-08-25 while MEIC recorded 7677.20.
+    Immaterial that day, but a fly centred within a point of spot settles on the wrong side of its
+    own centre for exactly this reason, and without the source recorded there is no way to tell a
+    session priced off the official print from one priced off a last tick.
+    """
     params = engine.merged_params(config, arm)
     book_id = book_id_for(trade_date, arm, symbol)
     rows = dbmod.book_positions(conn, book_id)
@@ -975,6 +997,7 @@ def settle_book(conn, trade_date: str, arm: str, symbol: str, settlement_price: 
             {
                 "position_id": p["position_id"],
                 "settlement_price": settlement_price,
+                "settlement_source": settlement_source,
                 "expiry_payoff": p["expiry_payoff"],
                 "gross_pnl": round(gross, 2),
                 "fees": p["fees"],
