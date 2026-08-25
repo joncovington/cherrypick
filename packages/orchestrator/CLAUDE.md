@@ -87,6 +87,14 @@ resolved **relative to the config file's directory** — never hardcode absolute
   rather than an empty list, so a caller cannot read that as "nothing missing"); the watchdog and
   doctor each render it. WARN, not CRITICAL — nothing is broken at that moment, and the remedy is a
   human restarting the daemon.
+  **A job whose DERIVATION failed is a third state, invisible from both directions.** It is omitted
+  from the derived table, so the drift check never sees it missing, and `_prune_retired`
+  deliberately keeps its registry row because it is absent through breakage rather than retirement —
+  so both checks read healthy. The supervisor has always written these (`derive_errors`) and nothing
+  read them: on 2026-08-20 `advisor-open` failed with a ValueError and the only trace anywhere was
+  one line in `supervisor.log`. `supersnap.jobs_failing_derivation` reads them FROM THE REGISTRY
+  rather than re-deriving, so it reports what the running daemon actually hit — a fresh derivation
+  would use current code and could succeed while the daemon carries on failing.
   `orchestrator/watchdog.py` runs as its 10-minute job, checks each module's paper pipeline (job
   present, data fresh in-session, the standalone streamer producer alive, earnings SLA met), the
   supervisor/anchor themselves, and the console's resident-job state (added 2026-08-14: unlike a
