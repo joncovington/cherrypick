@@ -1,8 +1,15 @@
 import { useState, type ReactNode } from "react";
 import { useMorningReport } from "../../lib/api";
-import type { MorningGate, MorningPack, MorningReading, MorningSectorRow } from "@console/shared";
+import type {
+  MorningGate,
+  MorningPack,
+  MorningReading,
+  MorningSectorRow,
+  MorningVolCurvePoint,
+  MorningVolPercentile,
+} from "@console/shared";
 import { NoteMarkdown } from "../Review/NoteMarkdown";
-import { LevelStrip } from "../../components/Charts";
+import { AXIS_FONT, SERIES_COLORS, LevelStrip } from "../../components/Charts";
 
 /**
  * The morning report. Renders the fact pack and computes nothing.
@@ -201,6 +208,151 @@ function DeploymentCard({ pack }: { pack: MorningPack }) {
         {d.weightsRenormalized === true && " Weights were renormalized over the measured signals."}
         {d.deferred.length > 0 && ` Deferred: ${d.deferred.join(", ")}.`}
       </p>
+    </section>
+  );
+}
+
+/**
+ * The vol term structure.
+ *
+ * Two rules shape this card, and both are about what it must NOT say.
+ *
+ * It is record-only and feeds no gate, so — like the deployment score below it — the shape renders
+ * as a neutral chip rather than borrowing the phase banner's ok/warn colours. "Backwardation" is a
+ * fact about the curve, not an instruction about the session.
+ *
+ * And a refused percentile renders as a refusal WITH its sample count, never as a blank or a zero.
+ * That is the common case rather than the edge: every reading but VIX and VIX3M had no stored
+ * history at all until the producer's Summary subscription was repaired, and a percentile bar that
+ * silently drew nothing would be indistinguishable from one sitting at the bottom of its range.
+ */
+// Not `var(--accent)`: that is the brand red, and red on a trading surface reads as loss or
+// alert. This card states a neutral fact and gates nothing, so it borrows the chart palette's
+// amber -- the same colour the reference panel this was modelled on used.
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July",
+  "August", "September", "October", "November", "December"];
+
+const VOL_INK = SERIES_COLORS[2];
+
+function VolCurve({ points }: { points: MorningVolCurvePoint[] }) {
+  const measured = points.filter((p) => p.value !== null && p.dte !== null);
+  if (measured.length < 2) return <p className="muted">not enough of the curve is measured to draw it</p>;
+  const width = 620;
+  const height = 150;
+  const m = { l: 34, r: 14, t: 14, b: 22 };
+  const ys = measured.map((p) => p.value as number);
+  const lo = Math.min(...ys);
+  const hi = Math.max(...ys);
+  const pad = (hi - lo || 1) * 0.18;
+  // Evenly spaced by POSITION, not by days: a linear time axis crushes 9D/30D/3M into the left edge
+  // and makes the front of the curve — where event pricing actually shows up — unreadable.
+  const X = (i: number) => m.l + (i / (measured.length - 1)) * (width - m.l - m.r);
+  const Y = (v: number) =>
+    m.t + ((hi + pad - v) / (hi - lo + 2 * pad || 1)) * (height - m.t - m.b);
+  const path = measured.map((p, i) => `${i ? "L" : "M"}${X(i)},${Y(p.value as number)}`).join(" ");
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="chart" role="img" aria-label="VIX term structure">
+      <path d={path} fill="none" stroke={VOL_INK} strokeWidth={2} />
+      {measured.map((p, i) => (
+        <g key={p.symbol}>
+          <circle cx={X(i)} cy={Y(p.value as number)} r={3.5} fill={VOL_INK} />
+          <text x={X(i)} y={Y(p.value as number) - 8} textAnchor="middle" {...AXIS_FONT}>
+            {fmt(p.value, 2)}
+          </text>
+          <text x={X(i)} y={height - 6} textAnchor="middle" {...AXIS_FONT}>
+            {p.symbol}
+          </text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function PercentileRow({ id, p }: { id: string; p: MorningVolPercentile }) {
+  const refusal =
+    p.reason === "reading_unmeasured"
+      ? "not served by the feed"
+      : p.reason === "too_few_closes"
+        ? `only ${p.samples ?? 0} closes on file`
+        : (p.reason ?? "unavailable");
+  return (
+    <div className="pct-row">
+      <span className="stat-label">{id.toUpperCase()}</span>
+      <span className="stat-value">{fmt(p.value, 2)}</span>
+      {p.percentile === null ? (
+        <span className="muted pct-refusal">{refusal}</span>
+      ) : (
+        <>
+          <span className="pct-bar" aria-hidden>
+            <span className="pct-fill" style={{ width: `${Math.max(1, Math.min(100, p.percentile))}%` }} />
+          </span>
+          <span className="stat-label muted">
+            {fmt(p.percentile, 0)}th pctile of {p.samples ?? 0}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function VolRegimeCard({ pack }: { pack: MorningPack }) {
+  // Absent, not just null — same reason as DeploymentCard: a server process older than this bundle
+  // omits the field entirely, and `=== null` sails straight past undefined.
+  const v = pack.volRegime;
+  if (!v) return null;
+  const season = v.seasonality;
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h2>Vol term structure</h2>
+        <span className="chip">record-only</span>
+        {v.shape !== null && <span className="chip">{v.shape}</span>}
+        {v.measuredPoints !== null && v.totalPoints !== null && (
+          <span className="card-asof">
+            {v.measuredPoints} of {v.totalPoints} points measured
+          </span>
+        )}
+      </div>
+
+      <VolCurve points={v.curve} />
+
+      <div className="stats-grid">
+        <div className="stat-tile">
+          <span className="stat-label">front 9D→30D</span>
+          <span className="stat-value">{signedPct(v.slope.front9d30dPct)}</span>
+          <span className="stat-label muted">event pricing</span>
+        </div>
+        <div className="stat-tile">
+          <span className="stat-label">mid 30D→3M</span>
+          <span className="stat-value">{signedPct(v.slope.mid30d3mPct)}</span>
+          <span className="stat-label muted">
+            {v.vixVix3mRatio === null ? "ratio —" : `VIX/VIX3M ${fmt(v.vixVix3mRatio, 3)}`}
+          </span>
+        </div>
+        <div className="stat-tile">
+          <span className="stat-label">back 9D→1Y</span>
+          <span className="stat-value">{signedPct(v.slope.back9d1yPct)}</span>
+          <span className="stat-label muted">structural carry</span>
+        </div>
+      </div>
+
+      {v.shape === null && (
+        <p className="muted">No regime label — {v.shapeReason ?? "the ratio could not be measured."}</p>
+      )}
+
+      <div className="pct-list">
+        {Object.entries(v.percentiles).map(([id, p]) => (
+          <PercentileRow key={id} id={id} p={p} />
+        ))}
+      </div>
+
+      {season && (
+        <p className="muted">
+          {season.norm === null
+            ? `No seasonal norm — ${season.reason === "too_few_years" ? `only ${season.years ?? 0} years on file` : (season.reason ?? "unavailable")}.`
+            : `VIX is ${signedPct(season.vixVsNormPct)} against its ${MONTHS[(season.month ?? 1) - 1] ?? "monthly"} norm of ${fmt(season.norm, 2)}, across ${season.years ?? 0} years.`}
+        </p>
+      )}
     </section>
   );
 }
@@ -423,6 +575,7 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
             )}
           </section>
 
+          <VolRegimeCard pack={current} />
           <DeploymentCard pack={current} />
 
           <CalendarCard pack={current} />

@@ -131,6 +131,20 @@ def _current(readings: dict[str, Any], name: str) -> float | None:
     return float(value) if isinstance(value, (int, float)) else None
 
 
+def percentile_rank(closes: list[float], value: float) -> float:
+    """Where `value` sits in `closes`, 0-100, by the fraction STRICTLY below it.
+
+    Public and shared: `facts._vol_regime` renders percentiles beside this score's, on the same page,
+    for the same readings. Two implementations of "where does today sit" put two different numbers in
+    front of one reader -- which is not a rounding difference but a contradiction, and the kind that
+    erodes trust in every other number on the page. The strict-below convention is this function's,
+    and callers inherit it rather than choosing their own.
+    """
+    if not closes:
+        return 0.0
+    return sum(1 for c in closes if c < value) / len(closes) * 100.0
+
+
 def _vix_level(readings: dict[str, Any], history: dict[str, list[dict]]) -> dict:
     label = f"VIX percentile ({PERCENTILE_LOOKBACK}-session)"
     vix = _current(readings, "vix")
@@ -140,7 +154,7 @@ def _vix_level(readings: dict[str, Any], history: dict[str, list[dict]]) -> dict
     if len(closes) < MIN_HISTORY_FOR_RANK:
         return _signal("vix_level", label, UNKNOWN,
                        f"only {len(closes)} of {MIN_HISTORY_FOR_RANK} history sessions held")
-    rank = sum(1 for c in closes if c < vix) / len(closes) * 100.0
+    rank = percentile_rank(closes, vix)
     score = 100.0 - rank
     adjustment = ""
     if vix < VIX_CALM_LEVEL:

@@ -106,6 +106,67 @@ export interface MorningDeployment {
   note: string | null;
 }
 
+/** One point on the vol term structure. `dte` is nominal and is what the slopes are quoted against. */
+export interface MorningVolCurvePoint {
+  point: string;
+  symbol: string;
+  dte: number | null;
+  value: number | null;
+  basis: string | null;
+}
+
+/**
+ * Where one reading sits in its own trailing range. `percentile` is null whenever the pack refused
+ * it, and `reason` says which refusal it was: `reading_unmeasured` (the feed served no value) or
+ * `too_few_closes` (it did, and there is not enough history to place it). Different facts, and the
+ * page must not collapse them — `samples` is rendered so a thin history is visible rather than
+ * merely absent.
+ */
+export interface MorningVolPercentile {
+  value: number | null;
+  samples: number | null;
+  percentile: number | null;
+  reason: string | null;
+}
+
+export interface MorningVolSeasonality {
+  month: number | null;
+  /** Mean VIX close for this calendar month across every year on file. */
+  norm: number | null;
+  /** How many distinct years fed the norm. Refused below three — one August is not a norm. */
+  years: number | null;
+  reason: string | null;
+  vixVsNormPct: number | null;
+}
+
+/**
+ * The vol term structure. **Record-only** — it feeds no gate and governs nothing, and the page must
+ * never present it as an instruction.
+ *
+ * `shape` is NOT the slope sign. It is VIX/VIX3M against the same `contango_max` the curve module
+ * gates on, so the console and that module cannot tell a reader two different stories about whether
+ * today is contango.
+ */
+export interface MorningVolRegime {
+  curve: MorningVolCurvePoint[];
+  /** Front = event pricing (9D vs 30D); mid = the classic read; back = the structural carry. */
+  slope: {
+    front9d30dPct: number | null;
+    mid30d3mPct: number | null;
+    back9d1yPct: number | null;
+  };
+  vixVix3mRatio: number | null;
+  /** contango | backwardation, as the pack computed it; null when the ratio was unmeasurable. */
+  shape: string | null;
+  shapeReason: string | null;
+  /** Keyed by reading id (vix9d, vix, vix3m, vix6m, vix1y, vvix, skew). */
+  percentiles: Record<string, MorningVolPercentile>;
+  seasonality: MorningVolSeasonality | null;
+  measuredPoints: number | null;
+  totalPoints: number | null;
+  recordOnly: boolean | null;
+}
+
 export interface MorningCalendar {
   isFomcDay: boolean | null;
   nextFomc: string | null;
@@ -127,6 +188,8 @@ export interface MorningPack {
   phase: MorningPhase | null;
   /** Absent on packs written before fact version 2 — the page renders nothing rather than zeros. */
   deployment: MorningDeployment | null;
+  /** Absent before fact version 3; null so the page omits the panel rather than drawing an empty curve. */
+  volRegime: MorningVolRegime | null;
   calendar: MorningCalendar | null;
 }
 

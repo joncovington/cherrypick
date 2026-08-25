@@ -90,11 +90,15 @@ inside it). Raise it only deliberately, outside market hours, watching the produ
 The read-side backtest is deliberately decoupled: it reads whatever rows the cache actually holds,
 so a generous history helps it without the request having to ask for one.
 
-One consequence worth knowing: legs are served Quote and Summary events but **not** Trade events, and
-`facts._live_quote` reads `stream_trades`. So the breadth readings render on their prior-session
-basis rather than a live pre-open tick. That is honest (the pack labels every basis) and costs
-nothing the pre-open report actually needs, but it is why those readings say `prior` on a session
-when the producer is plainly up.
+One consequence worth knowing, and it has been wrong in both directions: **which events a leg is
+served has twice been the thing that silently starved this package.** Cash legs were Quote-only, so
+the index readings — which publish Trade and never Quote — had no price at all and the whole panel
+froze on 2026-08-17; Trade was added for them then, which is why those readings say `live` today.
+Summary was still underlyings-only until 2026-08-25, so `day_close` never landed for any leg and
+`daily_closes` stopped accumulating on 2026-08-14 — the series every percentile, SMA and z-score on
+this page is built from. Both are fixed. The lesson worth keeping is that a leg is not simply "a
+symbol with fewer events": each event type it is denied removes a specific, non-obvious capability,
+and the loss shows up somewhere far from the subscription that caused it.
 
 The history behind the percentiles, SMAs and z-scores comes from `stream_summary` via the request
 file's `history_days` field — the streamer backfills a deficit once from DXLink daily candles, so
