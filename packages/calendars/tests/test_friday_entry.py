@@ -295,3 +295,52 @@ def test_paired_debit_restates_rather_than_duplicating_on_a_retried_tick(conn):
             conn, _snapshot({750.0: (1.0, 2.5)}), week={"week_of": "2026-08-31"}, day="2026-08-31"
         )
     assert len(db.paired_debits(conn, "2026-08-31")) == 1
+
+
+# --- the skipped-week journal: self-reporting instead of a scheduled watcher ----------------
+
+
+def test_friday_skip_is_journaled_with_the_dominant_reason(conn, tmp_path):
+    """After the window, a week with no friday: entry records WHY. The reason is the diagnosis:
+    all-`awaiting_session_exits` is the exit-gate deadlock (a bug), `no_fresh_quotes` is the feed
+    (a market/ops outcome). Without this, the two silences look identical."""
+    for _ in range(3):
+        db.record_entry_attempt(
+            conn, trade_date="2026-08-28", week_of="2026-08-31", symbol="SPY",
+            outcome="awaiting_session_exits",
+        )
+    db.record_entry_attempt(
+        conn, trade_date="2026-08-28", week_of="2026-08-31", symbol="SPY", outcome="no_fresh_quotes"
+    )
+    paper_loop._maybe_friday_entry(
+        _friday_cfg(), conn, cache_path=str(tmp_path / "none.db"),
+        when=datetime(2026, 8, 28, 16, 30, tzinfo=ET), now_min=16 * 60 + 30,
+    )
+    row = conn.execute(
+        "SELECT reason, detail FROM dc_decisions WHERE reason = 'friday_week_skipped'"
+    ).fetchone()
+    assert row is not None
+    assert row["detail"] == "awaiting_session_exits"  # the deadlock signature, named
+
+
+def test_friday_skip_is_not_journaled_when_the_regime_entered(conn, tmp_path):
+    _pos(conn, "2026-08-31:friday:control:put", "friday:control", "2026-09-04")
+    conn.execute("UPDATE dc_positions SET week_of = '2026-08-31'")
+    conn.commit()
+    paper_loop._maybe_friday_entry(
+        _friday_cfg(), conn, cache_path=str(tmp_path / "none.db"),
+        when=datetime(2026, 8, 28, 16, 30, tzinfo=ET), now_min=16 * 60 + 30,
+    )
+    assert conn.execute(
+        "SELECT COUNT(*) FROM dc_decisions WHERE reason = 'friday_week_skipped'"
+    ).fetchone()[0] == 0
+
+
+def test_friday_skip_is_silent_before_the_window_closes(conn, tmp_path):
+    paper_loop._maybe_friday_entry(
+        _friday_cfg(), conn, cache_path=str(tmp_path / "none.db"),
+        when=datetime(2026, 8, 28, 15, 40, tzinfo=ET), now_min=15 * 60 + 40,
+    )
+    assert conn.execute(
+        "SELECT COUNT(*) FROM dc_decisions WHERE reason = 'friday_week_skipped'"
+    ).fetchone()[0] == 0

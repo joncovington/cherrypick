@@ -396,6 +396,36 @@ def _monday_regime_positions(conn, week_of: str) -> list[dict]:
     ]
 
 
+def _journal_friday_skip(conn, config: dict, plan: dict) -> None:
+    """Record, once, that the Friday window closed with nothing entered — and the reason that
+    dominated the attempts. Idempotent per week: `record_decision` collapses a repeated identical
+    reason, so every tick after the window may call this."""
+    try:
+        if any(
+            str(p.get("book") or "").startswith(engine.FRIDAY_PREFIX)
+            for p in db.positions_for_week(conn, plan["week_of"])
+        ):
+            return
+        rows = conn.execute(
+            "SELECT outcome, COUNT(*) n FROM dc_entry_attempts "
+            "WHERE trade_date = ? GROUP BY outcome ORDER BY n DESC LIMIT 1",
+            (plan["entry_session"],),
+        ).fetchone()
+        dominant = rows["outcome"] if rows else "no_attempts_recorded"
+        db.record_decision(
+            conn,
+            trade_date=plan["entry_session"],
+            book="*",
+            symbol=(config.get("symbols") or ["SPX"])[0],
+            mode="entry",
+            reason="friday_week_skipped",
+            detail=dominant,
+            accepted=False,
+        )
+    except Exception as exc:  # noqa: BLE001 — journalling must never cost a tick
+        _log(f"friday-skip journalling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
 def _maybe_friday_entry(
     config: dict, conn, *, cache_path: str, when: datetime, now_min: int
 ) -> int:
@@ -421,6 +451,14 @@ def _maybe_friday_entry(
     start = clock.hhmm_to_min(settings.get("window_start"), 15 * 60 + 50)
     end = clock.hhmm_to_min(settings.get("window_end"), 16 * 60)
     if not (start <= now_min <= end):
+        # Past the window with nothing entered: journal the skipped week, the way the Monday regime
+        # already does. Self-reporting rather than scheduled — it needs no watcher, works every
+        # Friday rather than only the first, and names WHY, which is the whole diagnosis. In
+        # particular a week whose attempts are all `awaiting_session_exits` is the exit-gate
+        # DEADLOCK (the `path` book never closes, so a gate reading "flat" would wait forever) and
+        # not a market outcome; a week of `no_fresh_quotes` is the feed.
+        if now_min > end:
+            _journal_friday_skip(conn, config, plan)
         return 0
     books = friday_books(config)
     if not books:
