@@ -188,3 +188,82 @@ def test_dropped_readings_flags_a_stale_checkout(cfg):
         assert regime.dropped_readings(conn, today="2026-08-18") == set()
     finally:
         conn.close()
+
+
+# --- futures readings: resolved, never assembled -------------------------------------------
+
+
+def _write_map(home, refreshed, vx=("/VXU26:XCBF", "/VXV26:XCBF"), zn=("/ZNZ26:XCBT",)):
+    p = home / "state" / "futures_contracts.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(
+        json.dumps(
+            {
+                "refreshed_at": refreshed,
+                "contracts": {
+                    "VX": [{"streamer_symbol": s, "expiration": "2026-09-16"} for s in vx],
+                    "ZN": [{"streamer_symbol": s, "expiration": "2026-12-21"} for s in zn],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return p
+
+
+def test_futures_symbols_resolve_from_the_map(managed_home):
+    _write_map(managed_home, RTH_NOW.isoformat())
+    assert regime.futures_symbols(RTH_NOW) == {
+        "vx1": "/VXU26:XCBF",
+        "vx2": "/VXV26:XCBF",
+        "zn1": "/ZNZ26:XCBT",
+    }
+
+
+def test_a_stale_map_yields_no_futures_readings(managed_home):
+    """Futures roll. A stale map names a contract that has expired or gone illiquid, so it is
+    refused outright: dropping the readings leaves a legible gap, while sampling a rolled-off
+    contract leaves a plausible-looking series that is quietly wrong."""
+    old = RTH_NOW.replace(day=1, month=7)
+    _write_map(managed_home, old.isoformat())
+    assert regime.futures_symbols(RTH_NOW) == {}
+
+
+def test_a_missing_or_unreadable_map_is_empty_never_an_error(managed_home):
+    assert regime.futures_symbols(RTH_NOW) == {}  # absent
+    p = managed_home / "state" / "futures_contracts.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("{not json", encoding="utf-8")
+    assert regime.futures_symbols(RTH_NOW) == {}
+
+
+def test_futures_are_sampled_with_the_contract_on_the_row(cfg, managed_home):
+    """The reading name is stable across a roll; the row's SYMBOL carries the contract actually
+    sampled, so a roll is visible in the data and no row is ever a blended constant-maturity."""
+    _write_map(managed_home, RTH_NOW.isoformat())
+    now_ts = RTH_NOW.timestamp()
+    quotes = all_fresh_quotes(now_ts)
+    quotes["/VXU26:XCBF"] = (17.55, now_ts - 5)
+    quotes["/VXV26:XCBF"] = (19.20, now_ts - 5)
+    quotes["/ZNZ26:XCBT"] = (108.20, now_ts - 5)
+    seed_cache(cfg, quotes)
+
+    regime.sample(cfg, now=RTH_NOW)
+    rows = history_rows(
+        cfg, "SELECT reading, symbol, value, usable FROM market_regime_history WHERE reading LIKE 'vx%' OR reading = 'zn1'"
+    )
+    got = {r["reading"]: (r["symbol"], r["value"], r["usable"]) for r in rows}
+    assert got["vx1"] == ("/VXU26:XCBF", 17.55, 1)
+    assert got["vx2"] == ("/VXV26:XCBF", 19.20, 1)
+    assert got["zn1"] == ("/ZNZ26:XCBT", 108.20, 1)
+
+
+def test_futures_legs_are_declared_with_their_exchange_suffix_intact(cfg, managed_home):
+    """`/VXU26:XCBF` is what the instruments endpoint returned and what DXLink expects — the probe
+    that guessed `:XCFE` saw nothing and would have read as 'not entitled'. The declaration must
+    not upper-case or otherwise clean these."""
+    # `regime_legs` has no injectable clock — it declares against real now — so the map must be
+    # freshly stamped here rather than at the fixture's frozen RTH_NOW.
+    _write_map(managed_home, datetime.now(ET).isoformat())
+    legs = stream_request.regime_legs(cfg["symbols"])
+    assert "/VXU26:XCBF" in legs and "/ZNZ26:XCBT" in legs

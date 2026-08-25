@@ -28,12 +28,14 @@ percentile family needs a durable series. Append-only: a (symbol, date) pair is 
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
 
 from cherrypick.core import calendar as _calendar
+from cherrypick.core import home as _home
 from cherrypick.core.clock import ET as _ET
 
 from cherrypick.gex import provider as _provider
@@ -91,7 +93,48 @@ MAX_QUOTE_AGE_SECONDS = 120
 RTH_OPEN_MINUTE = 9 * 60 + 30
 RTH_CLOSE_MINUTE = 16 * 60
 
+# Futures readings, resolved rather than assembled (docs/regime-recorder-plan.md).
+#
+# The reading NAME is stable across a roll and the row's `symbol` carries the contract that was
+# actually sampled — so a roll shows up as the symbol changing under `vx1`, and no row is ever a
+# blended constant-maturity value. That is the whole reason the long-row shape exists.
+#
+# The map comes from `scripts/refresh_futures_contracts.py`, outside every package: contract
+# resolution needs the broker's instruments endpoint, and this recorder is credential-free and
+# network-free. Never assemble a futures symbol here — the 2026-08-24 probe guessed `:XCFE`, saw
+# nothing, and would have concluded the exchange was not entitled; the MIC is `XCBF` and only the
+# endpoint knows that.
+FUTURES_READINGS = {"vx1": ("VX", 0), "vx2": ("VX", 1), "zn1": ("ZN", 0)}
+
+# A map older than this is refused outright rather than sampled: futures roll, and a stale map names
+# a contract that has expired or gone illiquid. Dropping the readings leaves a legible gap; sampling
+# a rolled-off contract would leave a plausible-looking series that is quietly wrong.
+FUTURES_MAP_MAX_AGE_DAYS = 5
+
 _ensured_dbs: set[str] = set()
+
+
+def futures_symbols(now: datetime | None = None) -> dict[str, str]:
+    """`{reading: streamer_symbol}` for the futures readings, or `{}` when the map is missing,
+    unreadable or stale. Empty is the safe answer everywhere: the recorder simply records no
+    futures rows, and the declaration guard stops asking the producer for them."""
+    try:
+        raw = json.loads((_home.state_dir() / "futures_contracts.json").read_text(encoding="utf-8"))
+        refreshed = datetime.fromisoformat(str(raw["refreshed_at"]))
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+    now = now or datetime.now(_ET)
+    if (now - refreshed).days > FUTURES_MAP_MAX_AGE_DAYS:
+        return {}
+    contracts = raw.get("contracts") or {}
+    out: dict[str, str] = {}
+    for reading, (product, index) in FUTURES_READINGS.items():
+        rows = contracts.get(product) or []
+        if index < len(rows):
+            symbol = rows[index].get("streamer_symbol")
+            if symbol:
+                out[reading] = str(symbol)
+    return out
 
 
 def ensure_tables(conn: sqlite3.Connection, db_path: Path | str | None = None) -> None:
@@ -209,10 +252,14 @@ def sample(cfg: dict, *, now: datetime | None = None) -> dict:
         if last and last[0] is not None and (now_ts - last[0]) < SAMPLE_INTERVAL_SECONDS:
             return {"status": "throttled", "written": 0, "usable": 0}
 
-        quotes = _read_trades(cfg["stream_cache_db"], sorted(set(READINGS.values())))
+        # Static readings plus whatever the resolved contract map currently names. A missing or
+        # stale map simply contributes nothing — see futures_symbols.
+        sampled = dict(READINGS)
+        sampled.update(futures_symbols(now))
+        quotes = _read_trades(cfg["stream_cache_db"], sorted(set(sampled.values())))
         rows = []
         usable_count = 0
-        for reading, symbol in READINGS.items():
+        for reading, symbol in sampled.items():
             value, basis_ts = quotes.get(symbol, (None, None))
             if value is None or basis_ts is None:
                 rows.append((today, now_ts, reading, symbol, None, None, 0, "no_quote"))
