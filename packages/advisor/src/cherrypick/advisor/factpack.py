@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from cherrypick.core import home as _home
+from cherrypick.core import regime as _regime
 
 from cherrypick.advisor import bounds as _bounds
 from cherrypick.advisor import clock as _clock
@@ -165,10 +166,59 @@ def _market(session: str) -> dict[str, Any]:
         )
 
     return {
-        "vix": _read(_paper_db("meic"), vix),
+        "regime": _regime_now(session, fallback=lambda: _read(_paper_db("meic"), vix)),
         "gex": _read(_gex_history(), gex),
         "day_range": _read(_stream_cache(), day_range) or [],
         "_note": "day_range is today's rows only; a stale row is omitted rather than relabeled",
+    }
+
+
+def _regime_now(session: str, *, fallback) -> dict[str, Any]:
+    """The market regime at fact-pack time, from the suite's canonical series.
+
+    Replaces this pack's old habit of reading MEIC's private `market_context` table — a cross-module
+    scrape that worked only because MEIC happened to record what the advisor happened to need, and
+    that carried VIX alone. `cherrypick.core.regime.regime_at` is the one join every consumer uses,
+    so the pack, the console and any read-side analysis now describe the same moment the same way,
+    and it carries the whole complex: the vol curve, breadth, credit, the commodity pair, the VIX
+    futures term structure, and the per-symbol chain measures.
+
+    ONE regime block, never two sources side by side. A fact pack that showed a canonical VIX beside
+    a scraped one would invite exactly the contradiction the GEX counts note below records the model
+    chasing for six sessions. When the series is unmeasured — a recorder outage, or a checkpoint
+    outside RTH when nothing is sampled — this falls back to the old reading and SAYS SO in
+    `source`, rather than presenting a hole as a calm market.
+    """
+    try:
+        out = _regime.regime_at(_clock.now_et().timestamp())
+        market = out.get("market") or {}
+    except Exception:  # noqa: BLE001 — a fact pack must never fail on a telemetry read
+        market = {"status": "unmeasured", "reason": "regime_read_failed"}
+    if market.get("status") == "measured":
+        readings = {
+            name: r.get("value")
+            for name, r in (market.get("readings") or {}).items()
+            if r.get("usable")
+        }
+        refused = sorted(
+            name for name, r in (market.get("readings") or {}).items() if not r.get("usable")
+        )
+        return {
+            "source": "market_regime_history (canonical)",
+            "age_seconds": market.get("age_seconds"),
+            "readings": readings,
+            "derived": market.get("derived") or {},
+            "chain": market.get("chain") or {},
+            "refused": refused,
+            "_refused_note": "readings the recorder marked unusable at that sample — a stale or "
+            "missing quote, never a value it guessed.",
+        }
+    return {
+        "source": "meic.market_context (fallback)",
+        "reason": market.get("reason"),
+        "readings": fallback() or {},
+        "_fallback_note": "the canonical series had no usable sample at this moment, so this is "
+        "the older single-source read; it carries VIX only.",
     }
 
 
