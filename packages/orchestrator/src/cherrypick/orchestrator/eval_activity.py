@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from . import config as cfgmod
@@ -83,10 +83,18 @@ _BENIGN_REASON = frozenset(
 from cherrypick.core.db import connect_ro as _connect_ro  # noqa: E402 — shared read-only opener
 
 
-def _age_min(ts_iso: str | None) -> float | None:
-    """Minutes since an ISO timestamp (tz-aware or naive), or None if unparseable/absent."""
-    if not ts_iso:
+def _age_min(ts_iso: str | float | None) -> float | None:
+    """Minutes since a timestamp, or None if unparseable/absent.
+
+    Accepts an ISO string (tz-aware or naive) or a unix epoch. The epoch form matters because the
+    per-tick ledgers store one, and the ISO-only version returned None for those -- which reads as
+    "no data" rather than "could not parse", the difference between a module looking idle and a
+    module looking absent.
+    """
+    if ts_iso in (None, ""):
         return None
+    if isinstance(ts_iso, (int, float)):
+        return max(0.0, (datetime.now(timezone.utc).timestamp() - float(ts_iso)) / 60.0)
     try:
         t = datetime.fromisoformat(str(ts_iso))
     except ValueError:
@@ -233,15 +241,42 @@ def _curve_activity(conn, day: str, window_min: int) -> dict[str, Any]:
 
 # --------------------------------------------------------------------------- bwb_132 (bwb_snapshots)
 def _bwb_activity(conn, day: str, window_min: int) -> dict[str, Any]:
-    """bwb ladders daily like pmcc/curve, so it gets a real reader: its feed ledger
-    `bwb_snapshots` is the same shape, and entries come from `bwb_positions.entry_session`
-    on the day's rows."""
+    """bwb's feed ledger `bwb_snapshots` is pmcc/curve-shaped, and entries come from
+    `bwb_positions.entry_session` on the day's rows.
+
+    **It does NOT ladder, which this reader assumed until 2026-08-25.** bwb takes ONE entry per
+    session (all four books at once), so its snapshot ledger holds a single row and then goes quiet
+    for the rest of the day, while the module carries on marking every leg and evaluating its
+    reversal triggers each tick. Reading snapshots alone therefore reported "stopped evaluating"
+    from the moment the entry filled, every session -- and it reported exactly that whether the
+    module was healthy or had died five minutes later, so the one failure this check exists to catch
+    became indistinguishable from normal operation.
+
+    Post-entry liveness comes from `bwb_trigger_ticks`, which the module records every tick by
+    design and calls its second product. Counted by DISTINCT tick timestamp, since one tick writes a
+    row per open cohort."""
     rows = conn.execute(
         "SELECT ts, status FROM bwb_snapshots WHERE trade_date = ? ORDER BY id", (day,)
     ).fetchall()
-    if not rows:
+    ticks = [
+        r["ticked_at"]
+        for r in conn.execute(
+            "SELECT DISTINCT ticked_at FROM bwb_trigger_ticks WHERE session_date = ? "
+            "ORDER BY ticked_at",
+            (day,),
+        ).fetchall()
+    ]
+    if not rows and not ticks:
         return _empty()
-    last_age = _age_min(rows[-1]["ts"])
+    _ages = [
+        a
+        for a in (
+            _age_min(rows[-1]["ts"]) if rows else None,
+            _age_min(ticks[-1]) if ticks else None,
+        )
+        if a is not None
+    ]
+    last_age = min(_ages) if _ages else None
     recent = [r for r in rows if _in_window(r["ts"], window_min)]
     evaluated = sum(1 for r in recent if r["status"] == "ok")
     refused = [r["status"] for r in recent if r["status"] != "ok"]
@@ -250,9 +285,10 @@ def _bwb_activity(conn, day: str, window_min: int) -> dict[str, Any]:
         "SELECT entry_time FROM bwb_positions WHERE entry_session = ?", (day,)
     ).fetchall()
     entries = sum(1 for e in ent if _in_window(e["entry_time"], window_min))
+    recent_ticks = [t for t in ticks if _in_window(t, window_min)]
     return {
-        "iterations": len(recent),
-        "evaluated": evaluated,
+        "iterations": len(recent) + len(recent_ticks),
+        "evaluated": evaluated + len(recent_ticks),
         "errors": len(refused),
         "entries": entries,
         "last_age_min": last_age,
