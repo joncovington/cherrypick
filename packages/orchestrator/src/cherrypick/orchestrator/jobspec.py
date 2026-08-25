@@ -623,9 +623,16 @@ def derive_jobs(
             # August 2026 -- the sql-server job kept the server alive while the DATA silently aged
             # out of its forward calendar. Not trading-days-only: pulling on a weekend is free and
             # means Monday opens with a current calendar.
+            #
+            # 05:30, an hour AHEAD of earnings' own 06:30 pre-market forward scan, and the ordering
+            # is the whole point rather than a preference. The scan reads this data to decide which
+            # names are even eligible that night, so a pull that lands after it means the scan walked
+            # yesterday's calendar -- the exact staleness this job exists to prevent, just one day
+            # smaller. Landed at 06:30 on 2026-08-24 and moved 2026-08-25: same minute as the scan,
+            # so it also had the two contending for Dolt while the clones were being rewritten.
             argv=(pythonw, _dolt_data_script(launcher)),
             kind=KIND_DAILY,
-            at_et="06:30",
+            at_et="05:30",
             catchup_minutes=CATCHUP_MINUTES["earnings-dolt-pull"],
             trading_days_only=False,
             enabled=bool((cfg.get("modules", {}).get("earnings") or {}).get("enabled")),

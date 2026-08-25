@@ -662,3 +662,28 @@ def test_list_checkpoints_keep_positional_names():
     av = advisor_settings({"advisor": {"checkpoints": ["09:45", "10:30"]}})
     assert av["checkpoints"] == ["09:45", "10:30"]
     assert av["checkpoint_slots"] is None
+
+
+def test_the_dolt_pull_lands_before_the_forward_scan_reads_it():
+    """An ordering invariant, not a scheduling preference.
+
+    The earnings module's 06:30 ET pre-market forward scan reads the Dolt earnings calendar to decide
+    which names are even eligible that night, and bounds the entry universe from what it measures. A
+    pull that lands at or after 06:30 means the scan walked YESTERDAY's calendar -- the same silent
+    staleness this job exists to prevent, one day smaller instead of five weeks. Both sat at 06:30
+    for a day, which also had them contending for Dolt while the clones were being rewritten.
+
+    Pinned because nothing else can see it: both jobs succeed, the scan reports a clean pass, and the
+    only symptom is a forward scan quietly measuring a stale universe.
+    """
+    jobs, errors = derive(suite_cfg())
+    assert errors == {}
+    pull = {j.id: j for j in jobs}["earnings-dolt-pull"]
+
+    # The scan's own time, as the earnings module defaults it (symbol_watch.at, "06:30").
+    scan_minutes = 6 * 60 + 30
+    hour, minute = (int(x) for x in pull.at_et.split(":"))
+    assert hour * 60 + minute < scan_minutes, (
+        f"the pull runs at {pull.at_et} ET, at or after the 06:30 forward scan that reads it -- "
+        "the scan would walk the previous day's calendar"
+    )
