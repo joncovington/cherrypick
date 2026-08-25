@@ -225,3 +225,44 @@ def test_union_expirations_reads_across_module_files(home):
     _registry.write_request("calendars", ["SPX"], expirations={"SPX": ["2099-01-15", "2099-01-18"]})
     _registry.write_request("other", ["SPX"], expirations={"SPX": ["2099-01-18", "2099-01-22"]})
     assert _registry.union_expirations() == {"SPX": ["2099-01-15", "2099-01-18", "2099-01-22"]}
+
+
+def test_build_streamer_summary_subscribes_cash_legs_too(home):
+    """`day_close` arrives ONLY on Summary, and it is the input to every percentile and seasonal
+    reading in the suite.
+
+    Same bug as the Trade case above, one event type later and eleven days quieter. Summary was
+    underlyings-only, so the entire vol complex and the commodity proxies -- all declared as legs --
+    stopped accumulating daily closes on 2026-08-14 and nothing noticed, because SPY kept its own
+    only by virtue of another module declaring it an underlying.
+
+    Option legs stay off Summary as they stay off Trade: a per-contract daily bar is not a series
+    anything reads, and it would be thousands of subscriptions for nothing.
+    """
+    _registry.write_request("gex", ["SPX"], legs=["VIX", "VIX3M", "GLD", ".SPXW260821C7700"])
+    streamer = _daemon.build_streamer({})
+
+    subs = streamer._extra_subscriptions(streamer.symbols)
+
+    for sym in ("VIX", "VIX3M", "GLD"):
+        assert sym in subs["Summary"], f"{sym} needs Summary or it accumulates no daily closes"
+    assert "SPX" in subs["Summary"], "underlyings keep theirs"
+    assert ".SPXW260821C7700" not in subs["Summary"], "a per-contract daily bar is nobody's series"
+
+
+def test_history_backfill_covers_every_symbol_we_maintain_summary_for(home):
+    """`history_days` declared for a LEG was silently ignored: the backfill iterated the underlyings
+    alone, so the 270 days the whole vol complex asked for delivered not one row.
+
+    The deficit scan is keyed off the Summary subscription because those are exactly the symbols
+    whose rows stay current -- backfilling anything else writes history that is stale from day one.
+    """
+    _registry.write_request(
+        "gex", ["SPX"], legs=["VIX", "VVIX"], history_days={"VIX": 270, "VVIX": 270, "SPX": 30}
+    )
+    streamer = _daemon.build_streamer({})
+
+    maintained = set(streamer._extra_subscriptions(streamer.symbols)["Summary"])
+
+    assert {"VIX", "VVIX"} <= maintained, "declared history for a leg the backfill would never visit"
+    assert streamer._history_days_for("VVIX") == 270

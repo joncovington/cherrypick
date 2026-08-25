@@ -526,7 +526,15 @@ class ChainStreamer:
         try:
             today = datetime.now(tz=_ET).date().isoformat()
             deficits: dict[str, int] = {}
-            for symbol in self.symbols:
+            # Whatever we actually maintain Summary rows for -- not `self.symbols`. The two differ
+            # whenever a consumer declares an instrument as a LEG, which is the normal way to ask for
+            # a quote-only cash symbol, and backfilling a `stream_summary` deficit for something whose
+            # Summary we never subscribe would write history that then goes stale from its first day.
+            # Keyed off the subscription map so the two cannot disagree: a symbol is backfillable
+            # exactly when it is maintained. Underlyings-only here meant every `history_days` a module
+            # declared for a leg was silently ignored -- 270 days asked for by the whole vol complex,
+            # and not one row delivered.
+            for symbol in dict.fromkeys(self._subscriptions().get("Summary") or self.symbols):
                 try:
                     wanted = int(self._history_days_for(symbol) or 0)
                 except Exception as exc:
