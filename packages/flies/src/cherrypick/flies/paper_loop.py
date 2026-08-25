@@ -527,7 +527,9 @@ def run_settle(config: dict, conn, *, cache_path: str, when=None, price: float |
         # The same roster the tick entered on, including any advised arm — settling a narrower list
         # than the one that traded would strand an advised book open with no way to close it.
         for arm in session_arms(config, conn, trade_date):
-            result = bookmod.settle_book(conn, trade_date, arm, symbol, settlement, config)
+            result = bookmod.settle_book(
+                conn, trade_date, arm, symbol, settlement, config, settlement_source=source
+            )
             _log(
                 f"{symbol} [{arm}] settled at {settlement:.2f} ({source}): "
                 f"P&L {result['pnl']:+.2f}, stats {result['stats']}"
