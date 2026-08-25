@@ -173,6 +173,34 @@ are load-bearing and each has a test that was verified to fail without it:
 An absent `entry_window_end` means no enforcement: a guard that refuses every entry when a config
 key is missing would be worse than the unbounded loop it replaces.
 
+### Phase 0b — the subscription budget (landed 2026-08-25)
+
+Also not in the original plan, and the more dangerous of the two prerequisites, because its failure
+would have landed on the whole suite rather than on this module.
+
+Underlyings were declared as `symbols`, which makes the producer auto-subscribe an ATM window of each
+one's nearest expiration — ~488 subscriptions apiece by the budget estimator's own model. Against
+~4,000 of suite headroom that is about **eight names**, and the widened screen expects dozens. The
+failure on the other side of the budget is the 2026-08-24 producer outage: 79 reconnects on
+"subscription rate is too high", which takes down every module's data, not just this one.
+
+The bitter part is that this module could never use that window — its wings and back months sit
+outside it by construction. It was paying chain prices for a spot quote. Declared as `legs` instead,
+twenty names cost nothing measurable, and legs are re-read every poll rather than bound at startup,
+so this module can no longer force a producer recycle at all.
+
+Underneath it sat the reason the window was being bought: `open_leg_symbols` was **empty against 64
+trades**, because nothing in the entry path ever wrote it, and `legs_json` carried no
+`streamer_symbol`, so `provider.snapshot` refused every position and every mark fell back to the
+broker. Both ends of that plumbing were correct — table created, migrated, queried by the producer,
+tested in isolation — and nothing connected them. The entry path already had the streamer symbol in
+hand and was discarding it.
+
+Timing note worth keeping: this was only ever going to fire at **pre-open**, never at entry, because
+`refresh_stream_request` is deliberately not called by the entry phase. Tonight's entries were safe;
+the next morning's registration was not. A hazard that skips a session before it bites is one that
+gets attributed to the wrong change.
+
 ### Phase 1 — widen the control (config only, landed 2026-08-25)
 
 Set `symbol_screen` to `{avg_volume: "pass", combined_option_volume: "pass", winrate: "off",
