@@ -355,6 +355,49 @@ def backfill_summary(conn: sqlite3.Connection, symbol: str, bars: list[dict], *,
     return added
 
 
+def purge_nonpositive_closes(conn: sqlite3.Connection) -> int:
+    """Delete `stream_summary` rows whose `day_close` is not a price. Returns rows removed.
+
+    A repair, run by the producer because the cache has exactly one writer by invariant and a
+    maintenance script would be a second. Idempotent and near-free after the first pass: the write
+    path stopped creating these on 2026-08-25, so this drains a fixed backlog and then matches
+    nothing forever.
+
+    The backlog is the feed's leading partial bar, written through as 0.0 — one row per symbol,
+    always the first date of its backfill window, 34 across the cache when this was found. Their
+    reach was checked rather than assumed and the assumption was wrong: most sit outside any read
+    window, but seven symbols hold fewer rows than a 252-session window is wide, so their zero was
+    inside the range a percentile or an SMA actually reads. Zero survives every null check
+    downstream and sits below any real value, which makes it the most dangerous wrong price
+    available here.
+    """
+    try:
+        cur = conn.execute("DELETE FROM stream_summary WHERE day_close IS NOT NULL AND day_close <= 0")
+        conn.commit()
+        return int(cur.rowcount or 0)
+    except sqlite3.Error:
+        return 0
+
+
+def latest_summary_date(conn: sqlite3.Connection, symbol: str, *, today: str) -> str | None:
+    """The most recent COMPLETED session this symbol holds a close for, or None.
+
+    The count alone cannot see a hole at the RECENT end, and that is the hole that matters: a
+    percentile or an SMA is computed over the tail. VIX carried 1,380 rows and nothing after
+    2026-08-14 -- the backfill's deficit check read "1380 >= 270, satisfied" every single connection
+    while the series it was protecting had stopped a week earlier. Depth is not currency.
+    """
+    try:
+        row = conn.execute(
+            "SELECT MAX(trade_date) FROM stream_summary WHERE symbol = ? AND trade_date < ? "
+            "AND day_close IS NOT NULL",
+            (symbol, today),
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+    return str(row[0]) if row and row[0] else None
+
+
 def completed_summary_days(conn: sqlite3.Connection, symbol: str, *, today: str) -> int:
     """How many COMPLETED daily rows (close present, date before `today`) the cache holds for one
     symbol — the backfill's deficit check."""
