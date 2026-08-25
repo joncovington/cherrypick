@@ -294,7 +294,13 @@ def test_digest_holds_on_a_non_trading_day():
         state = _due_state(conn, start)
         n = _Recorder()
         tn._meic_process(
-            conn, state, n, "meic", summary_prefixes=_PREFIXES, summary_interval_minutes=15, now=start + 15 * 60
+            conn,
+            state,
+            n,
+            "meic",
+            summary_prefixes=_PREFIXES,
+            summary_interval_minutes=15,
+            now=start + 15 * 60,
         )
         assert n.sent == [], label
         assert state["pending_summary"]["XSP"]["entries"] == ["gex-open"], label

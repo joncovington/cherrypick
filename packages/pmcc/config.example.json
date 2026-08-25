@@ -52,6 +52,8 @@
     "max_quote_age_seconds": 300,
     "max_leg_spread_pct": 0.25,
     "deep_window_pct": 0.20,
+    "_deep_window_by_symbol_note": "Per-symbol override for deep_window_pct, because one shared bound is necessarily sized for the DEEPEST symbol and buys every other one strikes it cannot use. Measured 2026-08-24 against the live chain: an 85-90-delta call at ~21 DTE sat 15.2-18.8% ITM on TQQQ (strikes 56.0-58.5 against a 68.995 spot) but only 4.0% ITM on XSP (734 against 764.5) -- a 3x leveraged ETF carries several times a broad index's implied volatility. A single 0.20 therefore gives TQQQ a correct window and XSP roughly five times the strikes it can use, which is what made XSP the largest window in the suite. Unset symbols fall back to deep_window_pct, so this is additive. Re-derive per symbol rather than inheriting these numbers -- see docs/window-parameters.md.",
+    "deep_window_pct_by_symbol": { "XSP": 0.08 },
     "allow_extrinsic_fallback": true
   },
 
