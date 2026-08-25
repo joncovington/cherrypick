@@ -291,11 +291,23 @@ def write_chain(conn: sqlite3.Connection, option_map: dict) -> int:
 def summary_backfill_rows(bars: list[dict], *, today: str) -> list[dict]:
     """Normalise raw daily bars ({date, open, high, low, close}) into insertable rows: sorted,
     deduped (last wins), dates before `today` only, `prev_day_close` chained from the prior bar's
-    close. Pure — the transform the backfill test pins."""
+    close. Pure — the transform the backfill test pins.
+
+    A bar whose close is missing or non-positive is DROPPED, not stored as 0.0. Every symbol
+    backfilled before 2026-08-25 carries exactly one such row, always the first date of its window —
+    34 of them across the cache, the feed's leading partial bar written through as a price. Zero is
+    not a price, and it is the most dangerous wrong one available here: it survives every null check
+    downstream, sits below any real value in a percentile, and drags an SMA silently. The suite's
+    "null is not zero" rule is usually about not coercing a gap into a number; this is the same rule
+    at the door the numbers come in through.
+    """
     by_date: dict[str, dict] = {}
     for bar in bars:
         day = str(bar.get("date") or "")
         if not day or day >= str(today):
+            continue
+        close = to_float(bar.get("close"))
+        if close is None or close <= 0:
             continue
         by_date[day] = bar
     out: list[dict] = []
