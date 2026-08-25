@@ -129,3 +129,83 @@ def test_every_meic_reject_reason_is_a_known_gate():
         "recognize as a known gate — add them to _BENIGN_REASON or eval_activity will false-WARN "
         "on a day one of them is the dominant reason"
     )
+
+
+# --------------------------------------------------------------- bwb: one entry, then trigger ticks
+def _bwb_db(tmp_path, *, snapshot_ts, tick_epochs):
+    """A bwb paper DB shaped like a real post-entry session: one snapshot, then trigger ticks."""
+    db = tmp_path / "paper_trades.db"
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        "CREATE TABLE bwb_snapshots (id INTEGER PRIMARY KEY, ts TEXT, trade_date TEXT, status TEXT);"
+        "CREATE TABLE bwb_trigger_ticks (id INTEGER PRIMARY KEY, session_date TEXT, ticked_at REAL);"
+        "CREATE TABLE bwb_positions (entry_session TEXT, entry_time TEXT);"
+    )
+    conn.execute(
+        "INSERT INTO bwb_snapshots (ts, trade_date, status) VALUES (?,?,?)",
+        (snapshot_ts, "2026-08-25", "ok"),
+    )
+    for e in tick_epochs:
+        # one tick writes a row per open cohort -- duplicated on purpose, they must collapse
+        conn.executemany(
+            "INSERT INTO bwb_trigger_ticks (session_date, ticked_at) VALUES (?,?)",
+            [("2026-08-25", e)] * 4,
+        )
+    conn.commit()
+    return conn
+
+
+def test_bwb_stays_alive_on_its_trigger_ticks_after_the_one_entry(tmp_path):
+    """bwb does NOT ladder, which this reader assumed until 2026-08-25.
+
+    It takes one entry per session (all four books at once), so its snapshot ledger holds a single
+    row and goes quiet while the module keeps marking every leg and evaluating its reversal triggers
+    each tick. Reading snapshots alone reported "stopped evaluating" from the moment the entry
+    filled -- and reported exactly that whether the module was healthy or had died five minutes
+    later, making the one failure the check exists to catch indistinguishable from normal operation.
+    """
+    import time
+
+    now = time.time()
+    conn = _bwb_db(
+        tmp_path,
+        snapshot_ts="2026-08-25T10:00:45-04:00",  # hours stale, as it is every real session
+        tick_epochs=[now - 120, now - 60, now - 5],
+    )
+
+    act = ea._bwb_activity(conn, "2026-08-25", 30)
+
+    assert act["last_age_min"] < 1.0, "liveness comes from the trigger ticks once the entry is done"
+    assert act["iterations"] == 3, (
+        "3 distinct ticks collapsed from 12 rows; the morning snapshot is hours stale and correctly "
+        "outside the window"
+    )
+    assert ea.assess(act, window_min=30, eval_stale_min=10, error_frac_warn=0.5)[0] == ea.OK
+
+
+def test_a_bwb_that_actually_died_after_entering_is_still_caught(tmp_path):
+    """The point of the fix is not to silence the check -- it is to make it discriminate."""
+    import time
+
+    now = time.time()
+    conn = _bwb_db(
+        tmp_path,
+        snapshot_ts="2026-08-25T10:00:45-04:00",
+        tick_epochs=[now - 3600],  # ticked once, an hour ago, then stopped
+    )
+
+    act = ea._bwb_activity(conn, "2026-08-25", 30)
+
+    assert act["last_age_min"] > 30
+    assert ea.assess(act, window_min=30, eval_stale_min=10, error_frac_warn=0.5)[0] != ea.OK
+
+
+def test_age_min_accepts_an_epoch(tmp_path):
+    """The per-tick ledgers store an epoch; the ISO-only parse returned None, which reads as
+    "no data" rather than "could not parse"."""
+    import time
+
+    assert ea._age_min(time.time() - 600) == pytest.approx(10.0, abs=0.5)
+    assert ea._age_min("not-a-time") is None
+    assert ea._age_min(None) is None

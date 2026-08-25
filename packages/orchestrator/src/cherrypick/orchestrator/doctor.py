@@ -419,7 +419,20 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
                 checks.append(Check(f"{name}.eval_activity", mark, detail))
 
         # scheduled task(s) — or, on a supervisor-driven box, the matching supervisor job(s)
-        task_keys = (("task_name", "paper"), ("entry_task_name", "entry"), ("exit_task_name", "exit"))
+        #
+        # The entry/exit pair only exists for the two-daily-jobs shape. A `self_healing` module runs
+        # ONE continuous job whose loop does entry and exit from its own clock, so looking up
+        # `<name>-entry` there warns about a job that is CORRECTLY absent — every single run.
+        # `entry_task_name`/`exit_task_name` stay in config for deleting the pre-cutover scheduled
+        # tasks by name, so their presence is not the discriminator; the kind is.
+        #
+        # `watchdog._check_scheduled_entry_exit_jobs` has drawn that distinction since the 2026-08-12
+        # earnings cutover and carries the comment explaining it. This surface did not, and warned on
+        # every doctor run for the thirteen days since — the cost being that two permanent WARNs
+        # teach a reader to skim past the section where a real one would appear.
+        task_keys = (("task_name", "paper"),)
+        if paper.get("kind") == "cherrypick_scheduled":
+            task_keys += (("entry_task_name", "entry"), ("exit_task_name", "exit"))
         for tkey, suffix in task_keys:
             tn = paper.get(tkey)
             if not tn:
