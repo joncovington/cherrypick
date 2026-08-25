@@ -76,6 +76,17 @@ resolved **relative to the config file's directory** — never hardcode absolute
   one whose child is still alive (or the overlap guard loses a process it would otherwise reap), and
   one whose derivation *failed* this pass — that job is missing because something is broken, not
   because it was retired, and dropping its history would erase the evidence.
+  **The inverse fault is invisible from that registry, and needs its own check.** The supervisor
+  imports `jobspec` once, at startup, so a job ADDED to that module does not exist until the daemon
+  restarts — and because the registry describes what it is currently driving, the new job is not a
+  row that looks wrong, it is no row at all. `status`, `doctor` and the watchdog all read healthy,
+  since they enumerate that registry. On 2026-08-25 `earnings-dolt-pull` and `futures-contracts` had
+  both sat undelivered for a day; the first exists to stop the earnings calendar ageing out, which
+  had already cost eleven sessions of paper trading, and it had never once run.
+  `supersnap.jobs_missing_from_registry` is the one derivation (returning None for "cannot tell"
+  rather than an empty list, so a caller cannot read that as "nothing missing"); the watchdog and
+  doctor each render it. WARN, not CRITICAL — nothing is broken at that moment, and the remedy is a
+  human restarting the daemon.
   `orchestrator/watchdog.py` runs as its 10-minute job, checks each module's paper pipeline (job
   present, data fresh in-session, the standalone streamer producer alive, earnings SLA met), the
   supervisor/anchor themselves, and the console's resident-job state (added 2026-08-14: unlike a

@@ -188,6 +188,21 @@ def _supervisor_checks(cfg: dict[str, Any], fast: bool) -> list[Check]:
                 "supervisor (run: cherrypick install)",
             )
         )
+        # The same derivation the watchdog renders — one answer, two surfaces, so doctor and the
+        # watchdog cannot disagree about whether the daemon is running the job table config describes.
+        undelivered = supersnap.jobs_missing_from_registry(cfg)
+        if undelivered is not None:
+            checks.append(
+                Check(
+                    "supervisor.jobs",
+                    WARN if undelivered else OK,
+                    f"supervisor never derived {len(undelivered)} job(s) config declares: "
+                    f"{', '.join(undelivered)} — it loads jobspec once at startup, so these will "
+                    "not fire (run: cherrypick supervise --stop, then cherrypick ensure-supervisor)"
+                    if undelivered
+                    else "job table matches config",
+                )
+            )
         leftovers = [n for n in tasks.legacy_task_names(cfg) if tasks.exists(n)]
         checks.append(
             Check(

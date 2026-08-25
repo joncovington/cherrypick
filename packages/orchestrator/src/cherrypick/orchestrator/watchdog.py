@@ -125,6 +125,33 @@ def _check_supervisor(cfg: dict[str, Any]) -> list[Finding]:
     return findings
 
 
+def _check_job_registry_drift(cfg: dict[str, Any]) -> list[Finding]:
+    """Jobs config DERIVES that the running supervisor has never heard of — see
+    `supersnap.jobs_missing_from_registry` for why this is invisible everywhere else.
+
+    Deliberately WARN rather than CRITICAL: nothing is broken *right now*, the missed work is
+    whatever the undelivered jobs would have done, and the remedy is a human restarting the daemon
+    rather than something to page about at 3am."""
+    from . import supersnap
+
+    missing = supersnap.jobs_missing_from_registry(cfg)
+    if missing is None:
+        return []  # not answerable; `_check_supervisor` owns the dead-daemon alarm
+    if not missing:
+        return [Finding("supervisor.jobs_current", OK, "Supervisor job table", "matches config")]
+    return [
+        Finding(
+            "supervisor.jobs_stale",
+            WARN,
+            "Supervisor is running a stale job table",
+            f"{len(missing)} job(s) derived from config that the running supervisor has never seen: "
+            f"{', '.join(missing)}. It loads jobspec once at startup, so these are not scheduled and "
+            "will not fire. Restart it to pick them up: cherrypick supervise --stop, then "
+            "cherrypick ensure-supervisor.",
+        )
+    ]
+
+
 def _check_console(cfg: dict[str, Any]) -> list[Finding]:
     """The console (the suite's only read surface since 2026-08-12) is a supervisor-managed
     resident job like a module's paper loop, but with no paper-freshness backstop: a module's own
@@ -1796,6 +1823,20 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     except Exception as exc:
         findings.append(
             Finding("supervisor.error", WARN, "Supervisor check failed", f"{type(exc).__name__}: {exc}")
+        )
+
+    # Jobs config derives that the running daemon has never heard of — invisible to every other
+    # surface, because they enumerate the registry a stale supervisor wrote.
+    try:
+        findings += _check_job_registry_drift(cfg)
+    except Exception as exc:
+        findings.append(
+            Finding(
+                "supervisor.jobs_error",
+                WARN,
+                "Supervisor job-table check failed",
+                f"{type(exc).__name__}: {exc}",
+            )
         )
 
     # The console: the suite's only read surface, and the one resident job with no other artifact

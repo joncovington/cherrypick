@@ -96,3 +96,64 @@ def job_run_info(job_id: str, snap: dict[str, Any] | None = None) -> dict[str, A
         "last_exit_at": st.get("last_exit_at"),
         "still_running": bool(st.get("running_pid") and pid_alive(st.get("running_pid"))),
     }
+
+
+# A supervisor that has just come up may legitimately not have written every row yet, and a restart
+# is the remedy for the very fault this measures — so a brief silence beats a finding that always
+# fires for two minutes after every `cherrypick install`.
+REGISTRY_DRIFT_GRACE_SECONDS = 120
+
+
+def supervisor_uptime_seconds(hb: dict[str, Any] | None = None) -> float | None:
+    """How long the daemon has been up, or None when it does not say."""
+    if hb is None:
+        hb = read_json(supervisor.heartbeat_path())
+    started = (hb or {}).get("started_at")
+    if not started:
+        return None
+    try:
+        return (datetime.now(timezone.utc) - datetime.fromisoformat(str(started))).total_seconds()
+    except (TypeError, ValueError):
+        return None
+
+
+def jobs_missing_from_registry(cfg: dict[str, Any]) -> list[str] | None:
+    """Job ids config DERIVES that the running supervisor has never heard of.
+
+    `None` means the question is not answerable right now (pre-cutover box, dead daemon, a daemon
+    still inside its start-up grace, or an unwritten registry) — never an empty list, so a caller
+    cannot mistake "cannot tell" for "nothing missing", the same discipline the scanners use.
+
+    Why this needs measuring at all: the supervisor imports `jobspec` once, at startup, so a job
+    added to that module does not exist until the daemon restarts. The registry is a picture of what
+    it is CURRENTLY driving, which means the new job is not a row that looks wrong — it is no row at
+    all, and every surface built on this module reads perfectly healthy. On 2026-08-25
+    `earnings-dolt-pull` and `futures-contracts` had both sat undelivered for a day; the first exists
+    to stop the earnings calendar ageing out, which had already cost eleven sessions of paper
+    trading, and it had never once run.
+
+    Only the derived-but-absent direction is reported. A row for a job config no longer derives is
+    `supervisor._prune_retired`'s business and is expected mid-cutover.
+    """
+    from . import config as cfgmod
+    from . import jobspec, timeutil
+
+    if not supervisor.heartbeat_path().exists():
+        return None
+    hb = read_json(supervisor.heartbeat_path())
+    if not supervisor_alive(hb):
+        return None
+    uptime = supervisor_uptime_seconds(hb)
+    if uptime is not None and uptime < REGISTRY_DRIFT_GRACE_SECONDS:
+        return None
+    registry = all_job_states()
+    if not registry:
+        return None
+    jobs, _errors = jobspec.derive_jobs(
+        cfg,
+        pythonw=cfgmod.pythonw_exe(),
+        launcher=str(cfgmod.ROOT / "run.py"),
+        now=timeutil.now_et(cfg.get("timezone", "America/New_York")),
+        arm_records=None,
+    )
+    return sorted(j.id for j in jobs if j.id not in registry)

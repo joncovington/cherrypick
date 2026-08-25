@@ -325,3 +325,80 @@ def test_the_entry_sla_survives_the_cutover(no_schtasks, monkeypatch):
     findings = watchdog._check_earnings("earnings", mcfg, datetime(2026, 8, 10, 16, 30), is_trading=True)
     sla = next(f for f in findings if f.key == "earnings.entry_sla")
     assert sla.status == watchdog.CRITICAL
+
+
+# ------------------------------------------------- the stale job table (added 2026-08-25)
+def _stub_derive(monkeypatch, ids):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        watchdog.jobspec,
+        "derive_jobs",
+        lambda cfg, **kw: ([SimpleNamespace(id=i) for i in ids], {}),
+    )
+
+
+def test_a_job_the_running_supervisor_never_derived_is_reported(monkeypatch, no_schtasks):
+    """The fault nothing else in the suite can see.
+
+    The supervisor imports jobspec once, at startup, so a job added to that module does not exist
+    until the daemon restarts. The registry is a picture of what it is CURRENTLY driving -- so the
+    new job is not a row that looks wrong, it is no row at all, and status/doctor/watchdog all read
+    healthy because they enumerate that registry. `earnings-dolt-pull` sat in the source for a day
+    like this while the earnings calendar it exists to refresh went on ageing out; it had never run.
+    """
+    write_heartbeat()
+    write_jobs({"meic-paper": {"enabled": True}})
+    _stub_derive(monkeypatch, ["meic-paper", "earnings-dolt-pull", "futures-contracts"])
+
+    f = next(f for f in watchdog._check_job_registry_drift({}) if f.key == "supervisor.jobs_stale")
+
+    assert f.status == watchdog.WARN
+    assert "earnings-dolt-pull" in f.message and "futures-contracts" in f.message
+    assert "supervise --stop" in f.message, "the finding has to say how to fix it"
+
+
+def test_a_matching_job_table_is_ok(monkeypatch, no_schtasks):
+    write_heartbeat()
+    write_jobs({"meic-paper": {"enabled": True}, "watchdog": {"enabled": True}})
+    _stub_derive(monkeypatch, ["meic-paper", "watchdog"])
+
+    f = next(iter(watchdog._check_job_registry_drift({})))
+    assert f.status == watchdog.OK and f.key == "supervisor.jobs_current"
+
+
+def test_a_retired_job_still_in_the_registry_is_not_drift(monkeypatch, no_schtasks):
+    """Only the derived-but-absent direction. A row for a job config no longer derives is
+    `_prune_retired`'s business and is expected mid-cutover -- flagging it would make every
+    retirement look like a fault."""
+    write_heartbeat()
+    write_jobs({"meic-paper": {"enabled": True}, "symbol-watch": {"enabled": False}})
+    _stub_derive(monkeypatch, ["meic-paper"])
+
+    assert all(f.status == watchdog.OK for f in watchdog._check_job_registry_drift({}))
+
+
+def test_a_dead_supervisor_is_not_double_reported(monkeypatch, no_schtasks):
+    """`_check_supervisor` already CRITICALs a dead daemon, and its registry describes a world that
+    is no longer running -- judging it would add a second alarm for one fault."""
+    write_heartbeat(age_seconds=99999)
+    write_jobs({})
+    _stub_derive(monkeypatch, ["meic-paper"])
+
+    assert watchdog._check_job_registry_drift({}) == []
+
+
+def test_a_just_restarted_supervisor_is_given_a_moment(monkeypatch, no_schtasks):
+    """The restart IS the remedy here, so a finding that always fires for two minutes afterwards
+    would train the reader to ignore it."""
+    import json as _json
+
+    ts = datetime.now(timezone.utc)
+    supervisor.heartbeat_path().write_text(
+        _json.dumps({"ts": ts.isoformat(), "pid": os.getpid(), "started_at": ts.isoformat()}),
+        encoding="utf-8",
+    )
+    write_jobs({})
+    _stub_derive(monkeypatch, ["meic-paper"])
+
+    assert watchdog._check_job_registry_drift({}) == []
