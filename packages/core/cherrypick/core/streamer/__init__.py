@@ -512,6 +512,22 @@ class ChainStreamer:
             except Exception as exc:
                 self.log.warning("Summary write error: %s", exc)
 
+    @staticmethod
+    def _previous_session(today: str) -> str:
+        """The most recent completed trading day before `today` -- what a current series must reach.
+
+        Calendar-aware rather than a fixed day count: a fixed slack wide enough for a long holiday
+        weekend is also wide enough to hide four missing sessions.
+        """
+        try:
+            from datetime import date as _date
+
+            from cherrypick.core import calendar as _cal
+
+            return _cal.previous_trading_day(_date.fromisoformat(today)).isoformat()
+        except Exception:  # noqa: BLE001 -- an unparseable date must not stop the backfill
+            return ""
+
     # -- daily-history backfill ------------------------------------------------------------------
     async def _backfill_history(self, streamer, state: _State, Candle) -> None:
         """Fill each symbol's `stream_summary` history deficit from DXLink daily Candle events,
@@ -525,6 +541,11 @@ class ChainStreamer:
         to repair a history lost to a deleted cache file."""
         try:
             today = datetime.now(tz=_ET).date().isoformat()
+            # Drain any non-price closes before measuring the deficit, so a repaired hole is one the
+            # refetch below actually refills rather than one that silently stays empty.
+            purged = streamcache.purge_nonpositive_closes(state.conn)
+            if purged:
+                self.log.info("Purged %d stored close(s) that were not prices", purged)
             deficits: dict[str, int] = {}
             # Whatever we actually maintain Summary rows for -- not `self.symbols`. The two differ
             # whenever a consumer declares an instrument as a LEG, which is the normal way to ask for
@@ -542,7 +563,16 @@ class ChainStreamer:
                     continue
                 if wanted <= 0:
                     continue
-                if streamcache.completed_summary_days(state.conn, symbol, today=today) >= wanted:
+                held = streamcache.completed_summary_days(state.conn, symbol, today=today)
+                latest = streamcache.latest_summary_date(state.conn, symbol, today=today)
+                # Two deficits, not one. DEPTH (do we hold enough history) was the only test until
+                # 2026-08-25, and it cannot see a hole at the recent end -- which is the end every
+                # percentile, SMA and z-score is computed over. VIX held 1,380 rows and nothing after
+                # 2026-08-14, so this read "satisfied" on every connection while the series it exists
+                # to protect had stopped a week earlier. Re-fetching is cheap and idempotent (the
+                # write path inserts absent dates only), so erring toward a refetch costs a few
+                # candles; erring the other way costs a silently stale series nobody can see.
+                if held >= wanted and latest and latest >= self._previous_session(today):
                     continue
                 deficits[symbol] = wanted
             if not deficits:

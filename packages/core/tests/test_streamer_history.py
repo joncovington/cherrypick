@@ -137,10 +137,37 @@ def test_backfill_fills_absent_dates_from_candles(tmp_path):
     assert rows[1]["prev_day_close"] == 69.5
 
 
-def test_backfill_skips_a_symbol_with_enough_history(tmp_path):
-    pre = [("TNA", f"2026-08-{d:02d}", 70.0) for d in (3, 4, 5, 6, 7)]
+def _recent_sessions(count):
+    """`count` completed trading days ending at the last one before today."""
+    from cherrypick.core import calendar as _cal
+
+    day = _cal.previous_trading_day(datetime.now(tz=_ET).date())
+    out = []
+    for _ in range(count):
+        out.append(day.isoformat())
+        day = _cal.previous_trading_day(day)
+    return list(reversed(out))
+
+
+def test_backfill_skips_a_symbol_that_is_both_deep_and_current(tmp_path):
+    """Short-circuiting needs BOTH halves. Depth alone was the whole test until 2026-08-25."""
+    pre = [("TNA", day, 70.0) for day in _recent_sessions(5)]
     conn, fake = _run_backfill(tmp_path, [], wanted=5, pre_rows=pre)
-    assert fake.subscribed is None  # deficit check short-circuited: no candle subscription at all
+    assert fake.subscribed is None  # no candle subscription at all
+
+
+def test_backfill_refetches_a_deep_series_that_stopped_updating(tmp_path):
+    """The hole the count could never see, and the one that matters.
+
+    VIX held 1,380 completed rows and nothing after 2026-08-14. The deficit check read
+    "1380 >= 270, satisfied" on every single connection while the series it protects had stopped a
+    week earlier -- and a percentile, an SMA and a z-score are all computed over the TAIL, so a stale
+    end is exactly the part that decides the answer. Depth is not currency.
+    """
+    pre = [("TNA", f"2026-08-{d:02d}", 70.0) for d in (3, 4, 5, 6, 7)]  # plenty, and all stale
+    conn, fake = _run_backfill(tmp_path, [], wanted=5, pre_rows=pre)
+    assert fake.subscribed is not None, "a series that stopped updating must be refetched"
+    assert fake.subscribed[0] == ["TNA"]
 
 
 def test_backfill_never_touches_todays_row_or_live_rows(tmp_path):
@@ -209,3 +236,33 @@ def test_a_bar_with_no_real_close_is_dropped_not_stored_as_zero():
     assert all(r["day_close"] > 0 for r in rows)
     # The chain skips the dropped dates rather than carrying a zero forward as a prior close.
     assert rows[1]["prev_day_close"] == 10.5
+
+
+def test_the_producer_drains_stored_closes_that_are_not_prices(tmp_path):
+    """A repair the producer runs because the cache has exactly one writer by invariant -- a
+    maintenance script would be a second.
+
+    The backlog is the feed's leading partial bar written through as 0.0, one row per symbol. Seven
+    symbols held fewer rows than a 252-session window is wide, so their zero sat inside the range a
+    percentile actually reads.
+    """
+    conn = streamcache.connect(tmp_path / "cache.db")
+    for symbol, day, close in [
+        ("TNA", "2026-05-14", 0.0),
+        ("TNA", "2026-05-15", 70.0),
+        ("SKEW", "2025-02-21", 0.0),
+        ("VIX", "2021-02-14", -1.0),
+        ("VIX", "2021-02-16", 22.0),
+    ]:
+        conn.execute(
+            "INSERT INTO stream_summary (symbol, trade_date, day_close, updated_at) VALUES (?,?,?,?)",
+            (symbol, day, close, time.time()),
+        )
+    conn.commit()
+
+    removed = streamcache.purge_nonpositive_closes(conn)
+
+    assert removed == 3
+    left = {(r[0], r[1]) for r in conn.execute("SELECT symbol, trade_date FROM stream_summary")}
+    assert left == {("TNA", "2026-05-15"), ("VIX", "2021-02-16")}
+    assert streamcache.purge_nonpositive_closes(conn) == 0, "idempotent -- a fixed backlog, then nothing"
