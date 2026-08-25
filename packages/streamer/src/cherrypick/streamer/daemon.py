@@ -108,11 +108,20 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
         # off Trade deliberately — sparse prints would read as perpetually stale there.
         legs = _registry.union_legs()
         cash_legs = [leg for leg in legs if not leg.startswith(".")]
+        # Cash legs get Summary for the same reason they got Trade, one event type later: the daily
+        # OHLC (`day_close`) arrives ONLY on Summary, and it is what `gex.regime.harvest_daily_closes`
+        # copies into `daily_closes` — the suite's only multi-year series, and the input to every
+        # percentile and seasonal reading. Summary was underlyings-only, so the whole vol complex
+        # (VIX/VIX3M/VIX9D/VVIX/SKEW) and the commodity proxies, all declared as legs, silently
+        # stopped accumulating closes on 2026-08-14. SPY kept its own only because another module
+        # happens to declare it as an underlying, which is exactly how the gap stayed invisible.
+        # OPTION legs stay off Summary as they stay off Trade: a per-contract daily bar is not a
+        # series anything here reads, and it would be thousands of subscriptions for nothing.
         return {
             "Trade": list(underlyings) + cash_legs,
             "Quote": legs,
             "Greeks": legs,
-            "Summary": list(underlyings),
+            "Summary": list(underlyings) + cash_legs,
         }
 
     def _protected_symbols() -> set[str]:
