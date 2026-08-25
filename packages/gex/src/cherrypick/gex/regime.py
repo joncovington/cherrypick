@@ -53,6 +53,17 @@ READINGS: dict[str, str] = {
     "vix3m": "VIX3M",
     "vix1d": "VIX1D",
     "vix9d": "VIX9D",
+    # VIX6M and VIX1Y admitted 2026-08-25, by the same probe method and against the same control
+    # group (20.87 and 22.62 printed through the ordinary legs path). They complete the term
+    # structure: with VIX9D/VIX/VIX3M already here, the curve now spans nine days to a year, so its
+    # slope can be read at the front (event pricing) and the back (the structural carry a
+    # short-premium book is actually paid for) instead of only across the middle.
+    #
+    # The probe refused OVX, GVZ and RVX the same morning — not one print in 25s while every control
+    # printed — so cross-asset VOL stays unreachable and GLD/USO/TLT remain price proxies rather than
+    # vol readings. That is the same answer MOVE got on 2026-08-23, for the same reason.
+    "vix6m": "VIX6M",
+    "vix1y": "VIX1Y",
     "vvix": "VVIX",
     "skew": "SKEW",
     # breadth / cross-asset

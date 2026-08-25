@@ -11,6 +11,15 @@ backfilled 15,963 closes across 17 symbols back to 2021-02-14; and `regime_at` j
 every ratio (VIX/VIX3M 0.857, VVIX/VIX 5.58, RSP/SPY 0.291, HYG/LQD 0.750, GLD/SPY 0.561, sector
 dispersion 2.91%) alongside SPX's GEX row.*
 
+***AMENDED 2026-08-25: the list was reopened once, deliberately, to admit VIX6M and VIX1Y.***
+*The same probe method and the same control group: both printed through the ordinary legs path
+(20.87 / 22.62) while every control printed, so the result is a reading and not a broken probe. They
+complete the term structure — with VIX9D/VIX/VIX3M already recorded, the curve now spans nine days to
+a year, and its slope can be read at the front (event pricing) and the back (the structural carry a
+short-premium book is paid for) rather than only across the middle. The same run REFUSED **OVX, GVZ
+and RVX** — not one print in 25s — so cross-asset VOL stays unreachable and GLD/USO/TLT remain price
+proxies, the same answer MOVE got on 2026-08-23. Frozen again after this amendment.*
+
 ***The entitlement probe ran the same morning and the reading list is now FROZEN — results below
 ("What the 2026-08-24 probe settled"). Still open**: adding the three admitted readings, the /VX
 roll helper, Tier 2 chain math, and the fact-pack migration once the series has accumulated. When
