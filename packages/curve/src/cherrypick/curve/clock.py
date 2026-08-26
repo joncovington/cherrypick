@@ -57,8 +57,17 @@ def monthly_expirations(today: date, months_ahead: int = 4) -> list[date]:
 
 
 def target_expiration(today: date, params: dict | None = None) -> dict | None:
-    """The target monthly expiration for an entry on `today`, or None when no candidate in
-    `months_ahead` falls inside `[dte_min, dte_max]` (a rare, holiday-compressed edge)."""
+    """The target monthly expiration for an entry on `today`, or None when no candidate falls
+    inside `[dte_min, dte_max]`.
+
+    That None is **not** the rare holiday-compressed edge this docstring claimed until 2026-08-26.
+    Consecutive monthlies sit 28-35 days apart, so just after one rolls off the next is under
+    `dte_min` while the one behind it is over `dte_max`, and nothing qualifies. On the original
+    25-50 band that was 42 of 251 trading days in 2026 -- 17%, every month, worst run seven
+    consecutive sessions -- and it is why this module had never opened a position: it was registered
+    into one of those runs. The band is config, and `tests/test_expiration_window.py` fails if the
+    deployed one reopens a gap.
+    """
     p = _dte_params(params)
     candidates = [
         exp for exp in monthly_expirations(today) if p["dte_min"] <= (exp - today).days <= p["dte_max"]

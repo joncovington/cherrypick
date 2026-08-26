@@ -18,7 +18,7 @@
     "quantity": 1,
     "max_positions": 1,
     "dte_min": 25,
-    "dte_max": 50,
+    "dte_max": 60,
     "dte_target": 35,
     "short_delta_target": 0.30,
     "spread_width": 5.0,
