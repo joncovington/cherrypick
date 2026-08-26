@@ -745,7 +745,7 @@ def _open_advised_tags():
         return []
 
 
-def _advice_profiles(cfg, today):
+def _advice_profiles(cfg, today, *, persist=True):
     """The advised shadow book's synthetic profile(s) for `today`: (profiles dict, reason).
 
     Tier 1 of the agentic layer, loop side. The orchestrator's `advise` command wrote (or didn't
@@ -753,10 +753,15 @@ def _advice_profiles(cfg, today):
     (cherrypick.core.advice) against this module's own config `advice.bounds` manifest --
     absent, stale, or invalid means baseline, i.e. no synthetic profile at all.
 
-    Read-once-per-session across --once processes: the first iteration of the day records its
-    decision in advice_active.json in the data home, and every later iteration replays that
-    decision -- so advice can never start, stop, or change mid-session, however late an
-    artifact lands or however the config is flipped intraday.
+    The read-once-per-session mechanics live in `cherrypick.core.advice.session_decision`, which
+    meic, earnings and five other modules had each written out separately. Folding meic's copy in
+    was not tidying: the 2026-08-25 fix -- a baseline decision is never made sticky -- landed in
+    core, and meic was one of the two modules that had lost a session to the bug it fixes.
+
+    `persist=False` is passed by an iteration forced outside the trading window. Such an iteration
+    still needs a decision to run under, but it must not be the one the session is recorded as
+    having made: meic's 08-25 artifact was lost to a 01:05 ET forced run that fixed the day's
+    decision four hours before the market-open iteration that would have applied it.
 
     The advised book is a synthetic profile `advised:<base>`: the base profile's registry def
     with the admitted params overlaid, evaluated by process_symbol beside the un-advised base
@@ -764,41 +769,17 @@ def _advice_profiles(cfg, today):
     Open advised positions always keep a profile to run their exits: if advice is off today, a
     management-only twin (entries capped to zero) stands in.
     """
-    acfg = cfg.get("advice") or {}
-    base = acfg.get("base_profile", "control")
-    state_file = _paths.data_path("advice_active.json")
-    decision = None
-    if state_file.exists():
-        try:
-            decision = json.loads(state_file.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            decision = None
-        if decision is not None and decision.get("day") != today:
-            decision = None  # yesterday's decision; today re-derives its own
-    if decision is None:
-        if acfg.get("enabled") and acfg.get("bounds"):
-            res = _core_advice.load(_core_home.state_dir(), "meic", today, acfg.get("bounds") or {})
-            params = {p["param"]: p["value"] for p in res["proposals"]} if res["proposals"] else None
-            decision = {
-                "day": today,
-                "base_profile": base,
-                "params": params,
-                "reason": res["reason"],
-                "proposals": res["proposals"],
-                "rejected": res.get("rejected") or [],
-            }
-            for prop in res["proposals"]:
-                logger.info(
-                    "advice applied: %s=%r -- %s", prop["param"], prop["value"], prop.get("rationale", "")
-                )
-            if not res["proposals"]:
-                logger.info("advice: baseline (%s)", res["reason"] or "no proposals")
-        else:
-            decision = {"day": today, "base_profile": base, "params": None, "reason": "advice_disabled"}
-        try:
-            state_file.write_text(json.dumps(decision, indent=2), encoding="utf-8")
-        except OSError:
-            pass  # the decision still applies this process; the next --once re-derives it
+    base = (cfg.get("advice") or {}).get("base_profile", "control")
+    decision = _core_advice.session_decision(
+        _core_home.state_dir(),
+        "meic",
+        today,
+        cfg,
+        _paths.data_path("advice_active.json"),
+        base_key="base_profile",
+        log=lambda message: logger.info("%s", message),
+        persist=persist,
+    )
 
     registry = paper.load_profiles()
     out = {}
@@ -885,7 +866,7 @@ def run_iteration(cfg, force=False):
     # Load the profile registry once per iteration so each symbol's candidate menu is the UNION
     # of every profile's wing widths (each profile then picks its own allowed subset in paper.py).
     profiles = paper.load_profiles()
-    advice_profiles, _advice_reason = _advice_profiles(cfg, today)
+    advice_profiles, _advice_reason = _advice_profiles(cfg, today, persist=not force)
     session = _session_quality(now)
 
     summary = {}

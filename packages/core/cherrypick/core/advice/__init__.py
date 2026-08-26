@@ -177,6 +177,29 @@ def load(
     return validate(artifact, bounds, session, now=now)
 
 
+def disabled_reason(config: dict[str, Any]) -> str | None:
+    """Why this config accepts no advice, or None if it does.
+
+    One string per distinct cause, because collapsing them cost four sessions of two experiments.
+    On 2026-08-25 meic and earnings both recorded a bare ``advice_disabled`` against live, valid
+    artifacts while three sibling modules from the same batch applied theirs — and "the flag is
+    off", "the bounds are empty" and "there is no advice block at all" were indistinguishable in
+    the one field the advisor can read. It could not diagnose which, and said so.
+
+    The wording matches ``advisor.bounds._off`` on purpose: the advisor decides whether to WRITE an
+    artifact from its side of the same question, and two sides answering it in different words is
+    how a mismatch stays invisible.
+    """
+    acfg = config.get("advice")
+    if not acfg:
+        return "advice_disabled: no advice block in config"
+    if not acfg.get("enabled"):
+        return "advice_disabled: advice.enabled is false"
+    if not acfg.get("bounds"):
+        return "advice_disabled: advice.bounds is empty"
+    return None
+
+
 def session_decision(
     state_dir: Path | str,
     module: str,
@@ -184,8 +207,9 @@ def session_decision(
     config: dict[str, Any],
     decision_path: Path | str,
     *,
-    base_key: str = "base_book",
+    base_key: str | None = "base_book",
     log: Any = None,
+    persist: bool = True,
 ) -> dict[str, Any]:
     """Today's advice decision, derived ONCE per session and replayed for the rest of it.
 
@@ -199,14 +223,29 @@ def session_decision(
     `base_key` is the config key naming the book the advised twin shadows, and it varies on purpose:
     flies calls its books arms (`base_arm`), calendars and pmcc call them books (`base_book`). It is
     carried through to the returned dict, because that shape is already persisted on disk and read
-    by each module's own loop.
+    by each module's own loop. `None` omits it — earnings names no base book, because its advice is
+    keyed by strategy (`iron_condor.profit_target_pct`) and each strategy carries its own.
 
     A decision from a previous day is discarded rather than replayed. A write failure is swallowed:
     the decision still governs the process that made it, and the next `--once` simply re-derives the
     same one.
+
+    **A baseline decision is never made sticky.** The read-once rule exists to stop advice starting
+    or changing under an already-open book; a decision that admitted no params has nothing to
+    protect, and persisting one lets any process that reached this function with an unreadable or
+    advice-less config decide the whole session for every process after it. That is not
+    hypothetical — on 2026-08-25 a 01:05 ET forced meic iteration and an 03:03 earnings entry pass
+    each wrote `advice_disabled` hours before the market-open iteration that would have applied a
+    valid artifact, and the open iteration dutifully replayed it. Both experiments lost their most
+    informative session to a file written before the session began.
+
+    `persist=False` is the same guard from the caller's side, for a process that is deriving a
+    decision it has no business fixing for the day — a replay of a past date, or an iteration forced
+    outside the trading window. It still gets a correct decision to run under; it just does not get
+    to be the one that recorded it.
     """
     acfg = config.get("advice") or {}
-    base = acfg.get(base_key, "control")
+    base = {} if base_key is None else {base_key: acfg.get(base_key, "control")}
     path = Path(decision_path)
 
     decision = None
@@ -220,14 +259,16 @@ def session_decision(
     if decision is not None:
         return decision
 
-    if acfg.get("enabled") and acfg.get("bounds"):
+    off = disabled_reason(config)
+    if off is None:
         result = load(state_dir, module, session, acfg.get("bounds") or {})
         params = {p["param"]: p["value"] for p in result["proposals"]} or None
         decision = {
             "day": session,
-            base_key: base,
+            **base,
             "params": params,
             "reason": result["reason"],
+            "derived_at": datetime.now(timezone.utc).isoformat(),
             "proposals": result["proposals"],
             "rejected": result.get("rejected") or [],
         }
@@ -240,11 +281,21 @@ def session_decision(
             if not result["proposals"]:
                 log(f"advice: baseline ({result['reason'] or 'no proposals'})")
     else:
-        decision = {"day": session, base_key: base, "params": None, "reason": "advice_disabled"}
+        decision = {
+            "day": session,
+            **base,
+            "params": None,
+            "reason": off,
+            "derived_at": datetime.now(timezone.utc).isoformat(),
+        }
 
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(decision, indent=2), encoding="utf-8")
-    except OSError:
-        pass  # the decision still applies to this process; the next --once re-derives it
+    # `off` decisions are deliberately not recorded: see the docstring. `derived_at` rides on the
+    # ones that are, because "when was the day's decision fixed" is the question that diagnosed the
+    # 08-25 loss, and it should be answerable from the data rather than from a file mtime.
+    if persist and off is None:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(decision, indent=2), encoding="utf-8")
+        except OSError:
+            pass  # the decision still applies to this process; the next --once re-derives it
     return decision

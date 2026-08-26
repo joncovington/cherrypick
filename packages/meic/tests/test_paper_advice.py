@@ -94,10 +94,27 @@ def test_decision_is_read_once_per_session(homes):
     assert "advised:control" in profiles3
 
 
-def test_disabled_config_is_baseline_and_recorded(homes):
+def test_disabled_config_is_baseline_and_never_recorded(homes):
+    """Baseline, and — since 2026-08-25 — NOT written down. meic lost that session's artifact to a
+    forced 01:05 ET iteration whose recorded `advice_disabled` the market-open iteration replayed."""
     _write_artifact(homes, [{"param": "stop_trigger_ratio", "value": 0.9, "rationale": "r"}])
     profiles, reason = paper_loop._advice_profiles({"advice": {"enabled": False}}, DAY)
-    assert profiles == {} and reason == "advice_disabled"
+    assert profiles == {}
+    assert reason == "advice_disabled: advice.enabled is false"
+    assert not paper_loop._paths.data_path("advice_active.json").exists()
+
+    # ...so the next process, reading a config that does accept advice, still gets the artifact.
+    profiles2, _ = paper_loop._advice_profiles(CFG, DAY)
+    assert "advised:control" in profiles2
+
+
+def test_a_forced_iteration_does_not_fix_the_days_decision(homes):
+    """`--once --force` runs outside the trading window on purpose. It gets a decision to run
+    under; it does not get to be the one the session recorded."""
+    _write_artifact(homes, [{"param": "stop_trigger_ratio", "value": 0.9, "rationale": "r"}])
+    profiles, _ = paper_loop._advice_profiles(CFG, DAY, persist=False)
+    assert "advised:control" in profiles
+    assert not paper_loop._paths.data_path("advice_active.json").exists()
 
 
 def test_open_advised_positions_get_a_management_only_twin(homes):
