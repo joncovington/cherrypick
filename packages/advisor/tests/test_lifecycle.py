@@ -257,13 +257,79 @@ def test_a_bounds_tightening_tonight_applies_tomorrow_morning(home, conn):
     assert loaded["proposals"] == []
 
 
-def test_enact_counts_a_session_even_when_everything_was_rejected(home, conn):
+def _record_decision(home, module, session, params):
+    """Stand in for the module's loop: write the decision file it would have recorded."""
+    path = home / "data" / module / "advice_active.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"day": session, "params": params or None}), encoding="utf-8")
+
+
+def test_issuing_an_artifact_does_not_by_itself_cost_a_session(home, conn):
+    """The 2026-08-25 correction. Writing an artifact is not evidence a loop applied it, and two
+    experiments spent four sessions on artifacts that never reached one."""
+    experiment_id = experiments.admit_spec(
+        conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}
+    )["experiment_id"]
+    enact.run(conn, SESSION)
+    assert store.experiment(conn, experiment_id)["sessions_run"] == 0
+
+
+def test_a_session_counts_once_the_loop_is_shown_to_have_applied_it(home, conn):
+    experiment_id = experiments.admit_spec(
+        conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}
+    )["experiment_id"]
+    enact.run(conn, SESSION)  # issues FRIDAY's artifact
+    _record_decision(home, "meic", FRIDAY, {"stop_trigger_ratio": 0.9})
+
+    result = enact.run(conn, FRIDAY)  # the following evening scores it
+
+    assert store.experiment(conn, experiment_id)["sessions_run"] == 1
+    assert [c for c in result["counted"] if c["module"] == "meic"][0]["enacted"] is True
+
+
+def test_a_session_the_loop_never_applied_costs_nothing(home, conn):
+    """meic and earnings, 2026-08-25: a live, valid artifact and a loop that recorded
+    `advice_disabled` against it. The session bought no evidence, so it buys no count."""
+    experiment_id = experiments.admit_spec(
+        conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}
+    )["experiment_id"]
+    enact.run(conn, SESSION)
+    _record_decision(home, "meic", FRIDAY, None)
+
+    result = enact.run(conn, FRIDAY)
+
+    assert store.experiment(conn, experiment_id)["sessions_run"] == 0
+    scored = [c for c in result["counted"] if c["module"] == "meic"][0]
+    assert scored["enacted"] is False
+
+
+def test_counting_a_session_twice_is_refused(home, conn):
+    """The evening pass is re-run after a failed AI call. A counter that advanced each time would
+    reintroduce the overcount from the other direction."""
+    experiment_id = experiments.admit_spec(
+        conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}
+    )["experiment_id"]
+    enact.run(conn, SESSION)
+    _record_decision(home, "meic", FRIDAY, {"stop_trigger_ratio": 0.9})
+    enact.run(conn, FRIDAY)
+    enact.run(conn, FRIDAY)
+    assert store.experiment(conn, experiment_id)["sessions_run"] == 1
+
+
+def test_a_rejected_artifact_that_reached_the_loop_still_costs_a_session(home, conn):
+    """A bounds refusal is a real outcome the experiment paid for; only a delivery failure is free.
+    Counting only admissions would let a bounds change silently extend an experiment."""
     experiment_id = experiments.admit_spec(
         conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}
     )["experiment_id"]
     fakes.write_config(home, "meic", fakes.advice_block(
         {"stop_trigger_ratio": {"min": 0.85, "max": 0.87}}))
     enact.run(conn, SESSION)
+    assert json.loads(paths.advice_path("meic", FRIDAY).read_text(encoding="utf-8"))["proposals"] == []
+    _record_decision(home, "meic", FRIDAY, None)  # the loop correctly ran baseline
+
+    enact.run(conn, FRIDAY)
+
     assert store.experiment(conn, experiment_id)["sessions_run"] == 1
 
 
@@ -366,3 +432,44 @@ def test_each_modules_bounds_shape_resolves_to_the_same_contract(home):
     assert bounds.split_param("meic", "stop_trigger_ratio") == (None, "stop_trigger_ratio")
     assert bounds.advised_tag("earnings", "strat_test", "iron_fly") == "advised:strat_test:iron_fly"
     assert bounds.advised_tag("meic", "control") == "advised:control"
+
+
+def test_a_killed_experiment_still_records_what_it_measured(home, conn):
+    """Stopping an experiment spends no MORE sessions; it does not unspend the ones already run.
+
+    `expire_due` computes a verdict even when the model never ran, on the stated grounds that a
+    result is a fact about the ledger. The same is true of a kill — and until 2026-08-26 this path
+    stored only a status and a reason, leaving seven concluded experiments with no verdict at all,
+    three of them after five or six live sessions. The evidence was bought and never read.
+    """
+    import json
+
+    eid = experiments.admit_reply(conn, session=SESSION, slot="deep", reply=_reply(
+        _adjustment({"stop_trigger_ratio": 0.9})))["admitted"][0]["experiment_id"]
+
+    experiments.kill(conn, eid, session=SESSION, reason="not separating from control")
+
+    row = store.experiment(conn, eid)
+    assert row["status"] == "killed"
+    assert row["verdict_json"], "a killed experiment must still say what it measured"
+    body = json.loads(row["verdict_json"])
+    assert "underpowered" in body, "the computed numbers, not just a note"
+    assert body["killed_reason"] == "not separating from control", (
+        "the reason sits BESIDE the numbers, never instead of them"
+    )
+
+
+def test_killing_an_already_concluded_experiment_does_not_rewrite_its_verdict(home, conn):
+    """A second kill must not overwrite the verdict the first one computed -- re-judging a
+    concluded experiment against a later ledger is the drift `verdict_for` exists to prevent."""
+    import json
+
+    eid = experiments.admit_reply(conn, session=SESSION, slot="deep", reply=_reply(
+        _adjustment({"stop_trigger_ratio": 0.9})))["admitted"][0]["experiment_id"]
+    experiments.kill(conn, eid, session=SESSION, reason="first")
+    first = json.loads(store.experiment(conn, eid)["verdict_json"])
+
+    again = experiments.kill(conn, eid, session=SESSION, reason="second")
+
+    assert again["reason"] == "already concluded"
+    assert json.loads(store.experiment(conn, eid)["verdict_json"]) == first
