@@ -157,9 +157,21 @@ def _gex_block(conn, ts: float, max_staleness: float, symbol: str | None) -> dic
         ]
     out: dict[str, dict] = {}
     for sym in symbols:
+        # `expiration >= trade_date` refuses a reading computed from a chain that had already
+        # expired. The producer admitted those until 2026-08-26 — it ordered candidate expirations
+        # by ABSOLUTE distance from now, and `stream_greeks` is never pruned, so an expired chain's
+        # stale gammas won the horizon and froze net_gex at one value for hours. 3,991 of 10,516
+        # recorded readings (38%) are of that kind and they are still on disk.
+        #
+        # Filtered on READ rather than deleted: the rows carry the expiration they used, so the bad
+        # ones are identifiable, and a regime series is evidence — the honest move is to stop
+        # believing them, not to remove the record that they happened. A symbol whose only samples
+        # are expired-chain ones now reads `no_sample_at_or_before`, which is true.
         row = conn.execute(
             "SELECT ts, spot, net_gex, net_gex_vol, zero_gamma, call_wall, put_wall, expiration "
-            "FROM gex_regime_history WHERE symbol = ? AND ts <= ? ORDER BY ts DESC LIMIT 1",
+            "FROM gex_regime_history WHERE symbol = ? AND ts <= ? "
+            "AND (expiration IS NULL OR expiration >= trade_date) "
+            "ORDER BY ts DESC LIMIT 1",
             (sym, ts),
         ).fetchone()
         if row is None:

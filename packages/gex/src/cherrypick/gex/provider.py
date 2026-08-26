@@ -23,6 +23,7 @@ from pathlib import Path
 # directory containing '?', '#' or '%' cannot silently change the URI's meaning. The local
 # copies interpolated the path raw, where a '#' truncated the URI and opened a DIFFERENT,
 # empty database — which a provider reports as "nothing cached" rather than as an error.
+from cherrypick.core import clock as _clock
 from cherrypick.core.db import connect_ro as _connect_ro
 from cherrypick.core.streamcache import read_spot as _core_read_spot
 
@@ -109,11 +110,15 @@ def read_spots(
     return out
 
 
-def snapshot_from_stream_cache(db_path: Path | str, symbol: str) -> GexSnapshot:
+def snapshot_from_stream_cache(
+    db_path: Path | str, symbol: str, today: str | None = None
+) -> GexSnapshot:
     """Build a ``GexSnapshot`` for ``symbol`` from a MEIC-style stream cache, read-only.
 
     Returns a snapshot with ``spot``/``expiration`` possibly ``None`` when the symbol (or its chain)
     isn't cached yet — the caller reports that as "not ready" rather than an error.
+
+    ``today`` (ET, ISO) bounds which expirations may be used; it is a parameter so a test can pin it.
     """
     symbol = symbol.strip().upper()
     db_path = Path(db_path)
@@ -127,12 +132,32 @@ def snapshot_from_stream_cache(db_path: Path | str, symbol: str) -> GexSnapshot:
 
         # Candidate expirations for this underlying, nearest first. The underlying_symbol filter
         # matters: XSP and SPX share 0DTE dates, so an expiration-only match would blend two chains.
+        #
+        # **Never an expiration that has already passed**, and this is the load-bearing clause. It
+        # used to order by ABS(JULIANDAY(expiration) - JULIANDAY('now')), which ranks yesterday's
+        # chain as near as tomorrow's and nearer than the day after. Nothing prunes `stream_greeks`,
+        # so an expired chain keeps stale non-zero gammas, satisfies the has-greeks test in the loop
+        # below, and wins — producing a GEX reading frozen at one value for the whole session.
+        #
+        # It was not rare. Measured 2026-08-26 over `gex_regime_history`: 3,991 of 10,516 recorded
+        # readings (38%) came from a chain that had already expired, nearly all of them a single
+        # constant net_gex repeated for hours — 96 readings on 2026-08-19 all reading -16.99bn off
+        # the expired 08-18 chain, and so on across 23 sessions. Those readings reach the advisor's
+        # fact pack as `market.gex.today_counts` and the overview's gamma flip and walls, and they
+        # are what made the advisor report a regime signal that "three sources in this pack describe
+        # three different ways".
+        #
+        # A forward-only ordering, so "nearest" means nearest AHEAD. When nothing valid has greeks
+        # the loop below falls back to the nearest future expiration and the caller reports "not
+        # ready", which is the correct answer and the one a stale chain was silently replacing.
+        today = today or _clock.today_iso()
         exps = [
             r["expiration"]
             for r in conn.execute(
                 "SELECT expiration FROM stream_chain WHERE underlying_symbol = ? "
-                "GROUP BY expiration ORDER BY ABS(JULIANDAY(expiration) - JULIANDAY('now'))",
-                (symbol,),
+                "AND expiration >= ? "
+                "GROUP BY expiration ORDER BY JULIANDAY(expiration) - JULIANDAY(?)",
+                (symbol, today, today),
             )
         ]
         if not exps:

@@ -90,3 +90,37 @@ config file's directory — never hardcode absolute paths.
 - **Instruction files hold no code and no logs.** This file is build commands + guidelines only.
 - **Portable paths.** Never hardcode absolute paths, usernames, or drive letters; derive from
   `Path(__file__)` or config. Scratch work lives in a git-ignored `.tmp/`.
+
+
+## The GEX horizon is forward-only (2026-08-26)
+
+`provider.snapshot_from_stream_cache` picks the nearest expiration **at or after today**, and never
+one that has passed. It used to order candidates by `ABS(JULIANDAY(expiration) - JULIANDAY('now'))`,
+which ranks yesterday's chain as near as tomorrow's and nearer than the day after — and because
+nothing prunes `stream_greeks`, an expired chain keeps its last gammas, satisfies the has-greeks
+test, and wins the horizon. The result is a GEX reading computed from contracts that no longer
+exist, frozen at one value for hours.
+
+It was not rare. Measured over `gex_regime_history` on 2026-08-26: **3,991 of 10,516 readings (38%)
+came from an already-expired chain**, nearly all a single constant `net_gex` repeated across a whole
+session — 96 readings on 2026-08-19 all at −16.99bn off the expired 08-18 chain, and the same shape
+across 23 sessions.
+
+**Where it surfaced.** The advisor reported on 2026-08-21 that "a regime signal that three sources
+in this pack describe three different ways" made the GEX gate unassessable: `market.gex.today_counts`
+said 181 positive against 23 negative while meic's gate refused 349 entries. Those are two different
+series. meic's gate reads its own per-iteration `get_gex` over the same-day 0DTE chain; the pack's
+counts come from this recorder, which on that session was on a stale or non-0DTE chain. The advisor
+was right that nobody had characterised the signal, and right to refuse to tune a threshold on it.
+
+**What it does and does not affect.** `meic.analytics.gex_gate_counterfactual` is unaffected: it
+scores `gex_positive_at_entry`, which `paper._gex_at_entry` stamps from the same snapshot dict the
+gate itself tests, on the same tick — the gate's own input, never this series. What IS affected is
+anything reading `gex_regime_history`: the advisor's fact pack, the console's GEX page, and
+`cherrypick.core.regime.regime_at`, the suite's shared regime attribution.
+
+**The historical rows are filtered on read, not deleted.** `core.regime` now requires
+`expiration >= trade_date`. The rows carry the expiration they used, so the bad ones are
+identifiable, and a regime series is evidence — the honest move is to stop believing them, not to
+erase the record that they happened. A lookup whose only samples are expired-chain ones now reports
+`no_sample_at_or_before` or falls through to the staleness check, both of which are true.
