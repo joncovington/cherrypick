@@ -175,8 +175,26 @@ function latestTradeDateIn(db: DatabaseHandle): string | null {
   return db.prepare<[], { d: string | null }>(`SELECT MAX(d) AS d FROM (${sql})`).get()?.d ?? null;
 }
 
+/**
+ * A date that cannot match any row, used when the day RESOLVER itself failed.
+ *
+ * `null` means "latest day" and `filterSql` turns it into no date clause at all — every session in
+ * the era. That is the right reading of "this ledger has no rows"; it is the wrong reading of "the
+ * query threw", and the difference is not symmetric. A failed resolve that falls back to null WIDENS
+ * the answer: the Today tab shows 289 rows beside a 34-position day, both correctly labelled and
+ * irreconcilable, which is the failure this file already documents. Showing nothing is visibly
+ * wrong; showing the whole era looks plausible.
+ */
+const UNRESOLVABLE_DAY = " unresolved";
+
 function latestTradeDate(dbPath: string): string | null {
-  return withReadOnlyDb<string | null>(dbPath, null, latestTradeDateIn);
+  const outcome = readOnlyDb<string | null>(dbPath, latestTradeDateIn);
+  if (outcome.status === "ok") return outcome.value;
+  // An absent store has no day and no rows either way — null is correct and costs nothing.
+  if (outcome.status === "absent") return null;
+  // A THROWN resolve is different: it is recorded and logged by `readOnlyDb`, and the tab is scoped
+  // to a day that matches nothing rather than silently unscoped to the era.
+  return UNRESOLVABLE_DAY;
 }
 
 export function readFlies(
