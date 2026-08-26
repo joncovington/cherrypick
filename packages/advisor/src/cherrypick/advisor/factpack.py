@@ -796,6 +796,57 @@ def _review_trend(session: str) -> list[dict[str, Any]]:
     return out
 
 
+def _settlement_integrity(session: str) -> dict[str, Any]:
+    """Two settlement facts about meic's ledger that a reader needs before trusting an arm reading.
+
+    The advisor asked for a full settlement audit on 2026-08-17, 08-18, 08-19, 08-20 and 08-21,
+    escalating each time, and finally noted it was "upstream of the era's baseline rather than
+    upstream of one arm". That audit was run on 2026-08-26 and lives in
+    `meic.analytics.settlement_audit`: 7,908 of 7,908 resolved fills reproduce exactly from the
+    stated convention, one settlement price per session throughout, and the sensitivity of each
+    session's net to the price is bounded there.
+
+    What is carried HERE is only the part that can recur, because a settled question does not need
+    re-reporting every evening and this pack is paid for by the token:
+
+    * `settlement_prices_today` must be 1. Every fill on one session and symbol shares an
+      expiration and a settlement; two prices means the loop settled across iterations at drifting
+      spot, and no same-session arm comparison survives that.
+    * `settled_with_no_price_today` must be 0. A side that reached expiry with no settlement price
+      was scored at zero intrinsic — full credit, the most favorable outcome available, on exactly
+      the fills whose outcome nobody could see. `paper.evaluate_open_trade` refuses to settle
+      without a price as of 2026-08-26; a non-zero count here means that guard has regressed.
+
+    Deliberately a query rather than a call into `meic.analytics`: this package depends on
+    `cherrypick.core` alone, the same reason the module sections below re-state their queries.
+    """
+
+    def read(conn):
+        prices = _store.rows(
+            conn,
+            "SELECT symbol, COUNT(DISTINCT settle_underlying) n FROM ic_trades"
+            " WHERE trade_date = ? AND settle_underlying IS NOT NULL GROUP BY symbol",
+            (session,),
+        )
+        unpriced = _store.rows(
+            conn,
+            "SELECT COUNT(*) n FROM ic_trades WHERE trade_date = ?"
+            " AND settle_underlying IS NULL AND exit_reason LIKE '%expired_settlement%'"
+            " AND (put_stop_cost IS NULL OR call_stop_cost IS NULL)",
+            (session,),
+        )
+        return {
+            "settlement_prices_today": {r["symbol"]: r["n"] for r in prices},
+            "settled_with_no_price_today": (unpriced[0]["n"] if unpriced else 0),
+            "_note": (
+                "prices per symbol must be 1 and no-price settlements must be 0; the full audit "
+                "was run 2026-08-26 and lives in meic.analytics.settlement_audit"
+            ),
+        }
+
+    return _read(_paper_db("meic"), read) or {"_absent": "no meic paper ledger"}
+
+
 def _arm_readings() -> dict[str, Any]:
     """Every arm's reading and qualification, per module — the numbers a verdict reasons FROM.
 
@@ -904,6 +955,7 @@ def build(session: str, slot: str, modules: tuple[str, ...] | list[str] | None =
             pack["review_today"] = _review_today(session)
             pack["review_trend"] = _review_trend(session)
             pack["arm_readings"] = _arm_readings()
+            pack["settlement_integrity"] = _settlement_integrity(session)
             pack["bounds"] = _bounds.all_modules(selected)
             pack["experiments_full"] = {
                 "active": _store.experiments(conn, status="active"),

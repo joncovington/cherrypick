@@ -355,3 +355,43 @@ def test_pmcc_lifetime_rows_are_separated_by_era():
     joined = " ".join(lifetime) + source
     assert "era" in joined, "a lifetime pmcc query pools across the redesign boundary"
     assert "GROUP BY era" in source or "GROUP BY era," in source
+
+
+def test_the_deep_pack_carries_the_two_settlement_facts_that_can_recur(seeded):
+    """The full audit ran once (2026-08-26) and is a settled question. What the pack carries is the
+    part that can regress: two settlement prices on one session, or a side that reached expiry with
+    no price and was therefore scored at full credit."""
+    pack = factpack.build(SESSION, "deep")
+    integrity = pack["settlement_integrity"]
+    assert "settlement_prices_today" in integrity
+    assert integrity["settled_with_no_price_today"] == 0
+
+
+def test_settlement_integrity_is_deep_slot_only(seeded):
+    """It answers a question about the whole session, and the light slots are paid for by the token."""
+    assert "settlement_integrity" not in factpack.build(SESSION, "midday")
+
+
+def test_the_advisor_still_depends_on_core_alone():
+    """The audit it asked for lives in `meic.analytics`, and importing it here would have been the
+    obvious way to surface it. This package declares `cherrypick-core` as its only dependency, so
+    that import would work in a dev checkout and fail on a clean install of the advisor alone."""
+    import ast
+    from pathlib import Path
+
+    src = Path(factpack.__file__).resolve().parent
+    offenders = []
+    for py in sorted(src.rglob("*.py")):
+        tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
+        for node in ast.walk(tree):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+                names = [node.module]
+            for name in names:
+                if name.startswith("cherrypick.") and not name.startswith(
+                    ("cherrypick.core", "cherrypick.advisor")
+                ):
+                    offenders.append(f"{py.name}: {name}")
+    assert offenders == [], f"the advisor imported a module package: {offenders}"

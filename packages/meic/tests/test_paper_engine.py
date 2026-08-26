@@ -976,6 +976,45 @@ def test_expire_both_otm_keeps_full_credit():
     assert d["put_exit_price"] == 0.0 and d["call_exit_price"] == 0.0  # full credit retained
 
 
+def test_settlement_refuses_to_settle_without_a_price():
+    """The 2026-08-26 settlement audit. `_settlement_value` returns 0.0 for a None underlying, which
+    reads as "expired worthless" — so a missing settlement price booked FULL CREDIT on every open
+    side, the most favorable outcome available, on exactly the trades whose outcome nobody saw. The
+    audit found 90 of them (all in the retired profile-ladder era, so already excluded from every
+    reading, but wrong on the row). Holding matches what an unquotable leg already does."""
+    d = paper.evaluate_open_trade(
+        _expiring_trade(),
+        {},
+        _params(MODERATE),
+        force_close=False,
+        underlying_price=None,
+        is_cash_settled=True,
+        settle=True,
+    )
+    assert d["action"] == "hold"
+    assert d["reason"] == "settlement_price_unavailable"
+    # Emphatically NOT an expiry: nothing may be booked, favorably or otherwise.
+    assert "put_exit_price" not in d and "call_exit_price" not in d
+    assert "settle_underlying" not in d
+
+
+def test_a_missing_price_does_not_rescue_a_side_that_would_have_settled_ITM():
+    """The direction of the bug is what makes it worth a test of its own: the trade below is 6 points
+    ITM on the call. Under the old behaviour a dropped price turned that into full credit."""
+    trade = _expiring_trade()
+    priced = paper.evaluate_open_trade(
+        trade, {}, _params(MODERATE), force_close=False,
+        underlying_price=7526.0, is_cash_settled=True, settle=True,
+    )
+    assert priced["call_exit_price"] == pytest.approx(6.0)
+
+    unpriced = paper.evaluate_open_trade(
+        trade, {}, _params(MODERATE), force_close=False,
+        underlying_price=None, is_cash_settled=True, settle=True,
+    )
+    assert unpriced["action"] == "hold"
+
+
 def test_expire_itm_call_settles_for_intrinsic():
     # underlying 7526 → call ITM by 6, put OTM
     d = paper.evaluate_open_trade(
