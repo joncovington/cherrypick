@@ -133,7 +133,7 @@ def test_a_module_that_declares_no_bounds_refuses_advice(managed_home, conn):
     cfg = config()
     cfg["advice"]["bounds"] = {}
     assert paper_loop.session_arms(cfg, conn, DAY) == ["control"]
-    assert paper_loop.advice_decision(cfg, DAY)["reason"] == "advice_disabled"
+    assert paper_loop.advice_decision(cfg, DAY)["reason"] == "advice_disabled: advice.bounds is empty"
 
 
 def test_the_switch_in_the_modules_own_config_is_obeyed(managed_home, conn):
