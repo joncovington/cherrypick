@@ -980,3 +980,136 @@ def gex_gate_counterfactual(
         "refused_excluding_worst_session": without_worst,
         "eras_present": sorted({r["era"] for r in rows if r["era"]}),
     }
+
+
+def _side_settle_value(strike, underlying, wing_width, side) -> float:
+    """`paper._settlement_value`, restated here so the audit is INDEPENDENT of the writer.
+
+    Deliberately duplicated, against this repo's usual rule. An audit that imports the function it
+    is auditing can only ever confirm that the function equals itself; the whole value of this one
+    is that the stored numbers are reproduced from the convention as WRITTEN DOWN, by a second
+    implementation. If the two ever disagree, that disagreement is the finding.
+    """
+    if strike is None or underlying is None:
+        return 0.0
+    intrinsic = (strike - underlying) if side == "put" else (underlying - strike)
+    return min(max(intrinsic, 0.0), wing_width or 0.0)
+
+
+def settlement_audit(conn, start=None, end=None, symbol=None, era="ALL") -> dict:
+    """Does the ledger's recorded P&L match the settlement convention it claims to use?
+
+    The advisor asked for this on 2026-08-17, 08-18, 08-19, 08-20 and 08-21 and it was never run.
+    Its concern was specific and correct in principle: this module's expiring fills show a striking
+    rate of exact full-credit capture, and if the marking convention is wrong then every arm
+    comparison resting on it is wrong in the same direction. It matters most for the negative-GEX
+    gate reading (`gex_gate_counterfactual`), whose entire result rests on one session.
+
+    Four questions, in the order that decides whether the rest is worth reading:
+
+    * **one_price_per_session** — every fill on one (session, symbol) must settle at ONE price.
+      They share an expiration and a settlement; more than one price means the loop settled across
+      iterations at drifting spot, and no comparison between two arms on that session is sound.
+    * **reproduced / mismatched** — each resolved fill recomputed from the convention as stated:
+      per side, the credit received less what that side cost, which is its stop cost if it stopped
+      and its settlement intrinsic (floored at 0, capped at the wing) if it expired.
+    * **unpriced** — fills settled with NO underlying price. This is not a rounding concern: a
+      None underlying scores every open side at zero intrinsic, i.e. full credit, the most
+      favorable outcome available. `paper.evaluate_open_trade` refuses to settle without a price
+      as of 2026-08-26; these are the rows written before it did.
+    * **sensitivity** — per session, how far net P&L moves if the settlement price were off by a
+      point, and by a tenth. This is what makes the audit actionable without an official
+      settlement print to compare against: it bounds how much the answer could depend on the
+      number, which is the question a reader actually has.
+    """
+    where, params = _period_clause(start, end, None, symbol, era)
+    rows = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT id, trade_date, symbol, risk_profile, exit_reason, put_strike, call_strike,"
+            " wing_width, quantity, net_credit, put_credit, call_credit, settle_underlying, pnl,"
+            f" put_stop_cost, call_stop_cost FROM ic_trades WHERE {where}",
+            params,
+        )
+    ]
+
+    def modelled(row, underlying):
+        total = 0.0
+        for side, strike, cost, credit in (
+            ("put", row["put_strike"], row["put_stop_cost"], row["put_credit"]),
+            ("call", row["call_strike"], row["call_stop_cost"], row["call_credit"]),
+        ):
+            paid = cost if cost is not None else _side_settle_value(
+                strike, underlying, row["wing_width"], side
+            )
+            total += ((credit or 0.0) - paid) * 100 * (row["quantity"] or 1)
+        return total
+
+    priced = [r for r in rows if r["settle_underlying"] is not None]
+
+    def survived_to_settlement(row):
+        """A side that reached expiry still open, so its value had to come from a settlement price.
+
+        Both filters matter. A force-closed position (`force_close_*`, the non-cash-settled path)
+        was bought back at quotes and never settles, so it needs no price and counting it here
+        would cry wolf on every XSP fill. A position with BOTH sides stopped needs none either —
+        nothing was left to settle.
+        """
+        if "expired_settlement" not in (row["exit_reason"] or ""):
+            return False
+        return row["put_stop_cost"] is None or row["call_stop_cost"] is None
+
+    # A side that reached expiry, never stopped, and had no settlement price was scored at zero
+    # intrinsic — i.e. full credit. That is the defect, and it is favorable by construction.
+    unpriced = [r for r in rows if r["settle_underlying"] is None and survived_to_settlement(r)]
+
+    mismatched = [
+        {
+            "id": r["id"], "session": r["trade_date"], "arm": r["risk_profile"],
+            "recorded_pnl": _round(r["pnl"]), "modelled_pnl": _round(modelled(r, r["settle_underlying"])),
+        }
+        for r in priced
+        if abs(modelled(r, r["settle_underlying"]) - (r["pnl"] or 0.0)) > 0.011
+    ]
+
+    prices, one_price = {}, True
+    for r in priced:
+        key = (r["trade_date"], r["symbol"])
+        prices.setdefault(key, set()).add(r["settle_underlying"])
+    multi = {f"{d}/{s}": sorted(v) for (d, s), v in prices.items() if len(v) > 1}
+    one_price = not multi
+
+    sensitivity = []
+    for (day, sym), price_set in sorted(prices.items()):
+        same = [r for r in priced if r["trade_date"] == day and r["symbol"] == sym]
+        base_price = next(iter(price_set))
+        base = sum(modelled(r, base_price) for r in same)
+        def swing(delta):
+            return abs(sum(modelled(r, base_price + delta) for r in same) - base)
+        sensitivity.append({
+            "session": day,
+            "symbol": sym,
+            "settle_price": base_price,
+            "trades": len(same),
+            # Fills whose short strike sits within a point of settlement: the pin-risk population,
+            # and the only rows a small price error can actually move.
+            "within_1pt": sum(
+                1 for r in same
+                if min(abs((r["put_strike"] or 0) - base_price),
+                       abs((r["call_strike"] or 0) - base_price)) <= 1.0
+            ),
+            "pnl_swing_1pt": _round(max(swing(1.0), swing(-1.0))),
+            "pnl_swing_0_1pt": _round(max(swing(0.1), swing(-0.1))),
+        })
+
+    return {
+        "era": era,
+        "resolved_trades": len(rows),
+        "one_price_per_session": one_price,
+        "sessions_with_multiple_prices": multi,
+        "reproduced": len(priced) - len(mismatched),
+        "mismatched": mismatched,
+        "unpriced_settlements": len(unpriced),
+        "unpriced_detail": sorted({(r["trade_date"], r["risk_profile"]) for r in unpriced}),
+        "by_session": sensitivity,
+    }

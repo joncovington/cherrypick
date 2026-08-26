@@ -311,6 +311,34 @@ tick they would read `unknown` 100% of the time, a column degenerate by construc
 **base config's** thresholds, never an arm's overlay, or each stream would get its own denominator and
 the streams would stop being comparable. Nothing in the loop reads this table.
 
+**The settlement convention was audited 2026-08-26, and the answer is a settled question.** The
+advisor asked for this five times (08-17 through 08-21), escalating to "upstream of the era's
+baseline rather than upstream of one arm", on the concern that this module's striking rate of exact
+full-credit capture might mean the marking convention was wrong — in which case every arm comparison
+resting on it is wrong in the same direction. `analytics.settlement_audit` is the answer and is
+re-runnable. It reproduces each resolved fill from the convention as *written down*, by a second
+implementation (`_side_settle_value` is deliberately duplicated rather than imported: an audit that
+imports what it audits can only confirm the function equals itself).
+
+What it found: **7,908 of 7,908 resolved fills reproduce exactly**, and **one settlement price per
+(session, symbol) on every session** — the invariant that matters most, since fills sharing an
+expiration must share a settlement or no same-session arm comparison survives. There is no official
+SPXW settlement print stored to compare against, so the audit bounds the exposure instead: 2026-08-20
+— the session the whole negative-GEX reading rests on — moves **$14,300 per point** of settlement
+error and **$1,430 per tenth**, against a result of −129,344. The two independent write paths that
+record the close (`settle_underlying` and `market_context`) agree to within about a tenth. So the
+convention is not load-bearing for that finding.
+
+What it also found, and this one was a real defect: **`_settlement_value` scores a `None` underlying
+at zero intrinsic, i.e. full credit** — the most favorable outcome available, on exactly the fills
+whose outcome nobody could see. 90 rows, all between 2026-07-13 and 2026-07-27, so all in the retired
+profile-ladder era and already excluded by `CURRENT_ERA` from every reading — historical, but wrong
+on the row. `paper.evaluate_open_trade` now **refuses to settle without a price**, holding with
+`settlement_price_unavailable` exactly as an unquotable leg already does: a paper ledger may be
+incomplete and must never be confidently wrong. Note there is no `meic.settle_overdue` watchdog check
+(flies, calendars, pmcc, curve and bwb each have one), so a position held open by that guard is
+currently silent — worth adding.
+
 **Max adverse excursion (`put_mae_spot`/`call_mae_spot` + times) generalizes first-touch.** First-touch
 is write-once at the crossing and therefore answers exactly one stop policy; it records the identical
 NULL for a position that came within a point of the short strike and one that never came close, and
