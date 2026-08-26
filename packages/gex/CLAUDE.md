@@ -124,3 +124,30 @@ anything reading `gex_regime_history`: the advisor's fact pack, the console's GE
 identifiable, and a regime series is evidence — the honest move is to stop believing them, not to
 erase the record that they happened. A lookup whose only samples are expired-chain ones now reports
 `no_sample_at_or_before` or falls through to the staleness check, both of which are true.
+
+## A reading can be entitled and still not sustain a series (SKEW, 2026-08-26)
+
+`regime.INTERMITTENT_INTRADAY` declares readings whose live quote the feed serves only in bursts.
+Same rule and same reason as `overview._NO_DAILY_SERIES`: nothing in the data distinguishes "the
+feed was down today" from "this symbol never sustains a series", and a permanent refusal that looks
+temporary teaches a reader to skim the row.
+
+SKEW is the case, and how it got here is the useful part. The 2026-08-24 entitlement probe printed
+it (143.9) through the ordinary legs path and it was admitted on that evidence, which was correct
+at the time. Three sessions of recording say otherwise: **30 usable samples of 1,105**, arriving in
+bursts with silence between — 22 prints between 09:49 and 11:46 ET on 08-24 then nothing, one print
+on 08-25, three on 08-26 with a 7.9-hour gap. VIX over the same window printed 363 times at a
+60-second median. Its daily series had already failed the same way (five scattered rows over seven
+months, one of them a zero), so both horizons agree.
+
+**It stays in `READINGS` deliberately.** The refusal rows are the evidence that it is unavailable,
+`dropped_readings` would flag a silent removal, and if the feed ever sustains the series fills with
+no code change. The value is still never recorded — a burst-feed quote is as stale as any other.
+What the declaration buys is that the refusal is EXPECTED: rows say `intermittent_feed` rather than
+`stale_quote`, and `sample()` returns `expected_unusable` beside `usable`, so a health read is not
+permanently depressed by something the recorder cannot fix. Without that, "skew usable=30 of 1,105"
+reads as a recorder fault and gets re-investigated from scratch — which is exactly what happened.
+
+**The generalisable point: a probe answers "is this entitled". It does not answer "can this sustain
+a series".** For SKEW the two came apart. Watch a new reading for a session before admitting it on
+one print.

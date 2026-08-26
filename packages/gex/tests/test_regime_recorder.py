@@ -336,3 +336,61 @@ def test_gamma_concentration_is_windowed_near_spot_not_whole_chain():
 def test_chain_readings_refuse_without_spot_or_chain():
     assert regime.chain_readings(_Snap(None, *_chain([100]))) == {}
     assert regime.chain_readings(_Snap(100.0, [], {}, {})) == {}
+
+
+def test_a_declared_intermittent_reading_is_refused_with_its_own_reason(cfg):
+    """SKEW's feed prints in bursts and is silent between: 30 usable samples of 1,105 over
+    2026-08-24..26, against VIX's 363 prints at a 60-second median over the same window.
+
+    It is still REFUSED — a burst-feed quote is as stale as any other and the value must not be
+    recorded — but the reason distinguishes an expected silence from a feed that broke today. That
+    distinction is the whole point: a 97% refusal rate with no declaration reads as a recorder fault
+    and gets re-investigated from scratch, which is exactly what happened."""
+    now_ts = RTH_NOW.timestamp()
+    quotes = all_fresh_quotes(now_ts)
+    quotes["SKEW"] = (143.27, now_ts - regime.MAX_QUOTE_AGE_SECONDS - 60)
+    seed_cache(cfg, quotes)
+
+    out = regime.sample(cfg, now=RTH_NOW)
+
+    row = history_rows(cfg, "SELECT * FROM market_regime_history WHERE reading = 'skew'")[0]
+    assert row["usable"] == 0, "a burst-feed quote is still refused"
+    assert row["value"] is None, "the stale number must never be recorded"
+    assert row["basis_ts"] is not None, "the evidence of HOW stale is kept"
+    assert row["reason"] == "intermittent_feed"
+    assert out["expected_unusable"] == 1
+
+
+def test_an_undeclared_reading_stale_by_the_same_amount_is_not_excused(cfg):
+    """The declaration has to be per-reading, not a general softening of the age gate. VIX going
+    quiet for the same interval is a real fault and must keep saying so."""
+    now_ts = RTH_NOW.timestamp()
+    quotes = all_fresh_quotes(now_ts)
+    quotes["VIX"] = (15.29, now_ts - regime.MAX_QUOTE_AGE_SECONDS - 60)
+    seed_cache(cfg, quotes)
+
+    out = regime.sample(cfg, now=RTH_NOW)
+
+    row = history_rows(cfg, "SELECT * FROM market_regime_history WHERE reading = 'vix'")[0]
+    assert row["reason"] == "stale_quote"
+    assert out["expected_unusable"] == 0
+
+
+def test_an_intermittent_reading_that_does_print_is_recorded_normally(cfg):
+    """Declared intermittent is not declared dead. When SKEW prints inside the age gate the value
+    lands like any other — which is also why it stays in READINGS rather than being retired: if the
+    feed ever sustains, the series fills with no code change."""
+    now_ts = RTH_NOW.timestamp()
+    seed_cache(cfg, all_fresh_quotes(now_ts))
+
+    out = regime.sample(cfg, now=RTH_NOW)
+
+    row = history_rows(cfg, "SELECT * FROM market_regime_history WHERE reading = 'skew'")[0]
+    assert row["usable"] == 1 and row["value"] is not None
+    assert out["expected_unusable"] == 0
+
+
+def test_the_intermittent_set_only_names_readings_that_exist():
+    """A declaration naming a reading that was renamed or removed is a comment pretending to be a
+    guard — it would silently stop applying."""
+    assert regime.INTERMITTENT_INTRADAY <= set(regime.READINGS)
