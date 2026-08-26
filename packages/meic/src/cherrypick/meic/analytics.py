@@ -121,6 +121,29 @@ def by_arm(conn, start=None, end=None, symbol=None, era=CURRENT_ERA) -> list[dic
     return sorted(out, key=lambda x: x["net_pnl"] or 0, reverse=True)
 
 
+def headline(conn, start=None, end=None, symbol=None, era=CURRENT_ERA) -> dict:
+    """Per-arm results plus what is still open — the module's one-glance answer.
+
+    Thin over `by_arm` on purpose: that function's docstring already calls itself the headline
+    output, and a second aggregation here would be a second net convention free to disagree with it.
+    What this adds is the open count, so a reader can tell an empty book from a quiet one, and the
+    resolved era, so a number is never reported without the window it was taken over.
+
+    Shape mirrors `pmcc.analytics.headline` because the console's mirror tests compare a page
+    against exactly this, and three modules answering the same question in three shapes is how the
+    checks stop being writable.
+    """
+    open_row = conn.execute(
+        "SELECT COUNT(*) AS n FROM ic_trades WHERE status IN ('open', 'partial')"
+    ).fetchone()
+    arms = by_arm(conn, start=start, end=end, symbol=symbol, era=era)
+    return {
+        "era": era,
+        "arms": {row["arm"]: {k: v for k, v in row.items() if k != "arm"} for row in arms},
+        "open_positions": open_row["n"],
+    }
+
+
 # --------------------------------------------------------------------------- regime conditioning
 # The dimensions regime.classify_regime tags, and the continuous measure recorded beside each. See
 # regime.py's module docstring for why the float is stored: it lets a threshold be re-derived from

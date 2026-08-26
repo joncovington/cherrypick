@@ -56,6 +56,39 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 > - **Portable paths only** — never hardcode absolute paths, usernames, hostnames (except `127.0.0.1`/`localhost`), or drive letters; derive from `Path(__file__)`, an env var, or config. Keep working files in `/src`, `/tests`, `/docs`, `/config`, not the repo root.
 > - **Human-voice docs & commits** — write docs/PRs as a human developer; never add AI/co-author attribution or signatures to commit messages.
 
+## Read-side CLI
+
+`python run.py <verb>` (or `python -m cherrypick.meic.cli`) — added 2026-08-26, the last module in
+the suite to get one. Every verb is a READ and emits one JSON object.
+
+```bash
+python run.py headline                       # per-arm results + what is still open
+python run.py arms --era ALL                 # the per-stream comparison, cross-era
+python run.py regime gex                     # outcomes by the regime an entry was tagged with
+python run.py coverage                       # how much of the book is regime-tagged at all
+python run.py exits                          # resolved outcomes, expiries split OTM/ITM
+python run.py stops [--sessions]             # the stop_trigger_ratio curve, or per-session
+python run.py gate-blocks --date 2026-08-25  # per-stream block reasons for one session
+python run.py settlement-audit               # does the ledger reproduce its own convention?
+python run.py gex-gate                       # what the negative-GEX gate refused
+```
+
+**Why it exists, beyond consistency.** `analytics.py` has carried ~20 read functions that nothing
+could invoke without writing Python — which is why two questions the advisor asked repeatedly
+(`settlement-audit` five times, `gex-gate` four) went years-of-sessions unanswered while the code to
+answer them was already present. The other reason is `packages/console/server/test/meic-mirror.test.ts`:
+the console's MEIC reader is the largest TypeScript re-implementation in that package, over the
+module with the most data and the only live sibling, and until there was a `run.py headline` to
+compare against there was nothing to check it with. bwb, curve and pmcc had that test; meic could
+not. **It caught a real divergence on its first run** — the console counted still-open positions in
+per-arm P&L, reporting each arm down by exactly the fees it had paid so far.
+
+**Deliberately NOT here: anything that runs or writes**, and `tests/test_cli.py` pins that. The paper
+loop, the streamer, the ledger writer and the broker client keep their own argv: `paper_loop` shells
+out to `python -m cherrypick.meic.db` and `...meic.tt` on EVERY TICK, and the orchestrator's
+jobspec, onboarding and the suite's skills all name those module paths. Folding them behind this CLI
+would repoint the live loop to buy a reader nothing.
+
 ## Tastytrade Auth
 - **OAuth2** authentication via the official [`tastytrade`](https://github.com/tastyware/tastytrade) Python SDK (session tokens auto-refresh; refresh tokens are long-lived).
 - **Credentials stored in the OS keyring** (Windows Credential Manager / DPAPI, macOS Keychain, Linux Secret Service) — never in files, never in env vars, never logged.
