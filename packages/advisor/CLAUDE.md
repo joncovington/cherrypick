@@ -56,6 +56,39 @@ see one validated, expiring artifact through their existing read-once consumers.
 never truncate an active A/B sample — that would corrupt the measurement, which is worse than
 getting no advice.
 
+## A session counts when a loop applied it, not when an artifact was written
+
+`sessions_run` used to increment at issue time. Issuing an artifact is not evidence that a loop read
+it, and the counter could not tell the two apart — so an experiment could spend its whole length on
+sessions that bought it nothing and still be scored as though they had.
+
+That is the 2026-08-25 incident. Five artifacts went out in one batch with zero rejections; three
+were applied and two were not, and the two were meic and earnings — the modules whose experiments
+had their most informative session available. meic's control filled 215 entries; earnings broke a
+thirteen-session drought with four iron_condors. Both loops recorded `advice_disabled` against live,
+valid artifacts, and both experiments recorded the session as spent. Earnings carries a
+kill-at-session-6 rule, so on the old counter "the parameter produced nothing" and "the parameter
+was never applied to a session that had trades" would have concluded identically.
+
+So `enactment.py` reconciles the two sides, and the evening pass scores the session that just ended
+before it issues the next one:
+
+* **enacted** — the loop's recorded decision matches the artifact's admitted params. A reject-all
+  artifact counts: the bounds refused it, which is a real outcome the experiment paid for.
+* **not_enacted** — an artifact was issued and the loop's record disagrees with it or is absent.
+  It costs the experiment nothing, because it bought it nothing.
+* **no_artifact** — nothing was issued; nothing to reconcile.
+
+Counting is idempotent (the evening pass is re-runnable by design) and attributed by the experiment
+id stamped on the artifact, so a session issued under one experiment and scored after it was
+replaced lands on the one that paid for it. `advice_enacted` rides on every slot's pack, not just
+the evening one, so a dropped artifact is visible at 10am rather than in the verdict that scores it.
+
+History is re-derivable because the fact packs are write-once and already snapshot each module's
+`advice_active`. `recount` reads them. Where a session has neither a pack nor a surviving decision
+file, nothing is provable and it is reported `unknown` and **kept** in the count — dropping it would
+shorten an experiment on the strength of missing evidence, the same error in the other direction.
+
 ## Verdicts are computed, not written
 
 `verdicts.py` computes the comparison deterministically (ledger readers → `compare_profiles` →
@@ -103,6 +136,8 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.advisor factpack --slot {open,am1,am2,midday,pm1,pm2,close,deep} [--session D]` | Build one deterministic fact pack and print its path. |
 | `python -m cherrypick.advisor admit --slot S [--session D] --raw <path>` | Parse a raw model reply, validate every proposal against module bounds, record admissions and rejections. |
 | `python -m cherrypick.advisor enact [--session D]` | Issue the next session's advice artifact for every active experiment. Runs nightly, unconditionally. |
+| `python -m cherrypick.advisor enactment [--session D]` | Did each module apply the artifact issued for a session? The reconciliation, per module, with the reason when it did not. |
+| `python -m cherrypick.advisor recount [--apply]` | Re-derive `sessions_run` for every active experiment from what the loops actually recorded. Read-only without `--apply`: it rewrites the denominator every verdict is judged against. |
 | `python -m cherrypick.advisor verdicts [--session D]` | Compute deterministic verdicts for expiring experiments. |
 | `python -m cherrypick.advisor status [--session D]` | What the advisor thinks is true right now: checkpoints, experiments, apply status per module. |
 | `python -m cherrypick.advisor kill <experiment_id>` | Stop an experiment tonight. Journaled; a queued experiment activates in its place. |

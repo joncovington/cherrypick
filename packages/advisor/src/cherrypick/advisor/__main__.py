@@ -25,6 +25,7 @@ from typing import Any
 
 from cherrypick.advisor import clock as _clock
 from cherrypick.advisor import enact as _enact
+from cherrypick.advisor import enactment as _enactment
 from cherrypick.advisor import experiments as _experiments
 from cherrypick.advisor import factpack as _factpack
 from cherrypick.advisor import paths as _paths
@@ -97,6 +98,24 @@ def cmd_enact(args) -> dict[str, Any]:
         return _enact.run(conn, session, modules=modules)
     finally:
         conn.close()
+
+
+def cmd_recount(args) -> dict[str, Any]:
+    """Re-derive sessions_run for every active experiment from what the loops actually recorded.
+
+    Read-only without --apply, on purpose: this rewrites the denominator every verdict is judged
+    against, and it should be read before it is run.
+    """
+    conn = _store.connect()
+    try:
+        return _enactment.recount(conn, apply=bool(args.apply))
+    finally:
+        conn.close()
+
+
+def cmd_enactment(args) -> dict[str, Any]:
+    """Which modules applied the artifact issued for a session, and which did not."""
+    return {"ok": True, "session": _session(args), "modules": _enactment.audit(_session(args))}
 
 
 def cmd_verdicts(args) -> dict[str, Any]:
@@ -189,6 +208,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_enact.add_argument("--session", help="ISO date; defaults to today (ET)")
     p_enact.add_argument("--modules", help="csv subset of meic,flies,earnings")
     p_enact.set_defaults(func=cmd_enact)
+
+    p_recount = sub.add_parser(
+        "recount", help="re-derive sessions_run from what the loops recorded (read-only by default)")
+    p_recount.add_argument("--apply", action="store_true", help="write the corrected counts")
+    p_recount.set_defaults(func=cmd_recount)
+
+    p_enacted = sub.add_parser(
+        "enactment", help="did each module apply the artifact issued for a session?")
+    p_enacted.add_argument("--session", help="ISO date; defaults to today (ET)")
+    p_enacted.set_defaults(func=cmd_enactment)
 
     p_verdicts = sub.add_parser("verdicts", help="computed advised-vs-base comparisons")
     p_verdicts.add_argument("--session", help="ISO date; defaults to today (ET)")
