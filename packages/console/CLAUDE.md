@@ -109,7 +109,17 @@ changes as safe, and it is the only check that sees past the fallback below.
   call site and needs no sweep. `readFliesMeta` is migrated — the documented incident — and now
   returns the same empty lists plus an optional `degraded: {reason}`, absent on both healthy reads
   and legitimately absent stores, so a consumer that ignores it is right in every case that is not a
-  defect. **What changed 2026-08-26 is that the second case is no longer
+  defect.
+
+  **The day resolver is migrated too, and its failure is not symmetric with the others.** `null`
+  from `latestTradeDate` means "latest day", and `filterSql` turns that into NO date clause — right
+  for "this ledger has no rows", wrong for "the query threw", because the second WIDENS the answer
+  to every session in the era. That is the recorded incident: 289 rows beside a 34-position day,
+  both correctly labelled and irreconcilable. A thrown resolve now scopes to a day that matches
+  nothing instead, because showing nothing is visibly wrong while showing the whole era looks
+  plausible. Note the existing `sqlite_master` guard already covers a MISSING day-source table; what
+  remained was schema drift inside a present one — `fly_positions` without `trade_date` — which
+  passes that guard and then throws. **What changed 2026-08-26 is that the second case is no longer
   invisible.** A throw is recorded per store (path, message, count, last seen), logged once per
   distinct message — repeats are counted, not re-logged, since the SPA polls every few seconds and a
   wedged reader logging each poll buries itself as effectively as logging nothing — and surfaced by

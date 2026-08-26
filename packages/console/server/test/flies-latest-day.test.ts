@@ -161,3 +161,64 @@ describe("a session the loop worked through but took nothing", () => {
     expect(a.today.positions).toBe(0); // barren is a real answer, not a missing one
   });
 });
+
+describe("when the day resolver itself fails", () => {
+  /**
+   * The asymmetry that makes this different from a failed data read. `null` means "latest day" and
+   * `filterSql` turns it into NO date clause — correct for "this ledger has no rows", wrong for
+   * "the query threw", because the second WIDENS the answer to every session in the era. Showing
+   * nothing is visibly wrong; showing the whole era looks plausible, and that is the failure this
+   * tab already has a documented incident for.
+   */
+  function configFor(dir: string): ConsoleConfig {
+    return { paths: { fliesDir: dir } } as unknown as ConsoleConfig;
+  }
+
+  function brokenStore(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "flies-resolver-"));
+    const db = new Database(path.join(dir, "paper_trades.db"));
+    // `fly_positions` EXISTS, so the resolver's sqlite_master guard admits it — and then it has no
+    // `trade_date` column, so MAX(trade_date) throws. That is the case the guard cannot cover:
+    // schema drift within a present table, rather than a missing one. Books read fine throughout,
+    // which is what makes the widened answer look plausible.
+    db.exec(`
+      CREATE TABLE fly_positions (id INTEGER PRIMARY KEY, symbol TEXT);
+      CREATE TABLE fly_books (
+        id INTEGER PRIMARY KEY, book_id TEXT, trade_date TEXT, arm TEXT, symbol TEXT,
+        credit_collected REAL, debits_paid REAL, fees REAL, net_cash REAL, floor_holds INTEGER,
+        band_low REAL, band_high REAL, pnl REAL, status TEXT
+      );
+      INSERT INTO fly_books (book_id, trade_date, arm, symbol, status)
+        VALUES ('b1','2026-08-24','control','SPX','settled'),
+               ('b2','2026-08-25','control','SPX','settled');
+    `);
+    db.close();
+    return dir;
+  }
+
+  it("scopes to nothing rather than widening to the whole era", () => {
+    const payload = readFlies(configFor(brokenStore()), "paper", {
+      arm: null, date: null, symbol: null, era: "ALL",
+    });
+
+    // The books table is readable and holds two sessions. A failed resolve must NOT hand them all
+    // back as though they were one day.
+    expect(payload.books.rows).toHaveLength(0);
+  });
+
+  it("still honours an EXPLICIT date, which needs no resolving", () => {
+    const payload = readFlies(configFor(brokenStore()), "paper", {
+      arm: null, date: "2026-08-25", symbol: null, era: "ALL",
+    });
+
+    expect(payload.books.rows).toHaveLength(1);
+  });
+
+  it("a store that is simply absent still resolves to null, not to the sentinel", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "flies-none-"));
+    const payload = readFlies(configFor(dir), "paper", {
+      arm: null, date: null, symbol: null, era: "ALL",
+    });
+    expect(payload.books.rows).toHaveLength(0);
+  });
+});
