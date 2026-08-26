@@ -144,3 +144,33 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 rules across `meic_ic`, `fly_book` and `earnings`. The orchestrator's report imports from there;
 so does this package. **Do not add a fourth implementation** — that module's docstring records what
 happened the first three times.
+
+
+## Concentration (fact set v6, 2026-08-26)
+
+Each module's facts carry `concentration` beside `by_profile`: every arm's contribution, the largest
+one, the net recomputed without it, and `sign_flips_without_largest`.
+
+Requested by the advisor on 2026-08-19 and it is a presentation rule rather than a trading one — its
+own closing line was "no bounded parameter can fix a presentation defect". flies published +6,748.01
+for that session. One seven-fill book returned +7,828.42 and the other twelve came to −1,080.41, so
+the sign of the day was that arm's sign, on a book whose modelled worst was 3.5× the credit it
+collected and which settled positive because price stayed put. Two sessions earlier make the point in
+the other direction: −8,071.69 and −4,023.05, both dominated by width-ladder books on 4–7 fills.
+
+**Read `sign_flips_without_largest` first.** A total that changes sign when its biggest contributor is
+removed is a measurement of that arm, not of the module. Being *dominated* is not the same as being
+*inverted* — 08-17 and 08-18 were dominated and kept their sign, and a flag that fired on all three
+would be ignored inside a week.
+
+Two share denominators, because one lies in exactly the case worth flagging. `share_of_net` is the
+signed arm/total and goes past 100% when the other arms net against the leader — width-10's 116% is
+the honest number and it is *why* the total cannot be read alone; it is `None` at a ~0 total, where
+the ratio is meaningless rather than large. `share_of_movement` is |arm| / Σ|arm|, bounded and stable.
+
+The arithmetic lives in `cherrypick.core.ledgers`, over the records every schema reader already
+normalises, so the answer is the same for every module — the request was "for every module net", and
+a per-module implementation would be seven chances to disagree about what a share is. This package
+publishes it and labels nothing: whether the leading arm clears its own module's sample and day bars
+is that module's rule, so the leader's trade and session counts travel with it and the gate stays
+where it belongs.

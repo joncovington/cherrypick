@@ -551,3 +551,106 @@ OPEN_READERS = {
     "curve_vx": _curve_open,
     "bwb_132": _bwb_open,
 }
+
+
+# --------------------------------------------------------------------------- concentration
+# A module net is an average over arms, and averaging is exactly what hides the finding when the
+# arms are the experiment. Requested by the advisor on 2026-08-19 after flies published +6,748.01
+# for a session in which ONE seven-fill book returned +7,828.42 and the other twelve together came
+# to -1,080.41: the sign of the day rested on an arm with an eleven-trade lifetime, whose book that
+# session carried a modelled worst 3.5x the credit it collected and settled positive because price
+# happened to stay put. Two sessions earlier in the same journal make the point in the other
+# direction, -8,071.69 and -4,023.05, both dominated by width-ladder books on 4-7 fills.
+#
+# "No bounded parameter can fix a presentation defect" was the proposal's closing line, and it is
+# right: this is not a rule about which trades to take, it is a rule about which totals may be read
+# on their own.
+
+
+def concentration(records: list[dict], *, key: str = "profile", net_key: str = "net_pnl") -> dict:
+    """How much of a net rests on its single largest contributor.
+
+    Takes the normalised records every reader in this module yields, so it answers the same way for
+    every schema — the point of the request was "for every module net", and a per-module
+    implementation would be seven chances to disagree about what a share is.
+
+    Two share denominators, because one of them lies in exactly the case worth flagging:
+
+    * ``share_of_net`` is the signed arm/total. It is what a reader expects, and it goes past 100%
+      whenever the other arms net against the leader — width-10's 116% of that flies session is the
+      honest number and it is *why* the total cannot be read alone. ``None`` when the total is ~0,
+      where the ratio is meaningless rather than large.
+    * ``share_of_movement`` is |arm| / sum|arm|, which is bounded, stable near a zero total, and
+      answers "how much of what happened was this one arm".
+
+    ``sign_flips_without_largest`` is the field the request was really about. A total that changes
+    sign when its biggest contributor is removed is not a measurement of the module; it is a
+    measurement of that arm, and every reader of it should be told so.
+
+    This function labels nothing PROVISIONAL. Whether the largest contributor clears its module's
+    sample and day bars is that module's own rule, and importing qualification into the ledger layer
+    would put two gates in play. The facts it needs — the leader's trade and session counts — are
+    returned so the caller can apply its own.
+    """
+    total = 0.0
+    per: dict[str, dict] = {}
+    for record in records:
+        name = record.get(key) or "unassigned"
+        net = record.get(net_key) or 0.0
+        slot = per.setdefault(name, {key: name, "net": 0.0, "trades": 0, "sessions": set()})
+        slot["net"] += net
+        slot["trades"] += 1
+        if record.get("session"):
+            slot["sessions"].add(record["session"])
+        total += net
+
+    movement = sum(abs(slot["net"]) for slot in per.values())
+    rows = []
+    for slot in per.values():
+        rows.append({
+            key: slot[key],
+            "net": round(slot["net"], 2),
+            "trades": slot["trades"],
+            "sessions": len(slot["sessions"]),
+            "share_of_net": round(slot["net"] / total, 4) if abs(total) > 1e-9 else None,
+            "share_of_movement": round(abs(slot["net"]) / movement, 4) if movement > 0 else None,
+        })
+    # Ranked by absolute contribution: the largest mover, not the largest winner. An arm that lost
+    # more than everything else made is the same presentation problem wearing the other sign.
+    rows.sort(key=lambda r: abs(r["net"]), reverse=True)
+
+    if not rows:
+        return {
+            "net": 0.0, "by_" + key: [], "largest": None,
+            "net_excluding_largest": 0.0, "sign_flips_without_largest": False,
+            "contributors": 0,
+        }
+
+    largest = rows[0]
+    without = round(total - largest["net"], 2)
+    flips = abs(total) > 1e-9 and abs(without) > 1e-9 and (total > 0) != (without > 0)
+    return {
+        "net": round(total, 2),
+        "by_" + key: rows,
+        "largest": largest,
+        "net_excluding_largest": without,
+        # The headline caveat: the module's sign is this arm's sign.
+        "sign_flips_without_largest": flips,
+        "contributors": len(rows),
+    }
+
+
+def tail_to_credit(worst: float | None, credit: float | None) -> float | None:
+    """How many times the collected credit the modelled worst case is.
+
+    A book's floor and the band it holds over already travel together by the flies module's own
+    rule; this is the same argument for the other tail. The session that prompted it collected
+    7,852.50 against a modelled worst of -27,171.58 — a ratio of 3.46 — and nothing in the output
+    said so, while the book's positive settlement was being read as a result.
+
+    ``None`` when there is no credit to compare against, rather than a large number or a zero: an
+    undefined ratio and a small one are different facts.
+    """
+    if not credit or credit <= 0 or worst is None:
+        return None
+    return round(abs(min(worst, 0.0)) / credit, 2)

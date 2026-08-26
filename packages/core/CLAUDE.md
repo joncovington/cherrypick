@@ -80,6 +80,7 @@ module is the real reference; this is the index that tells you which one to open
 | `profiles` | The named risk-profile registry and merge engine — how a partial override becomes an effective config. |
 | `metrics` | The shared calibration metric bundle: one vocabulary for promotion evidence. |
 | `advice` | Bounded, expiring, deterministically-validated parameter advice. Both the orchestrator and the module loop validate through this same code. `session_decision` is the read-once rule all seven consuming modules share; a **baseline** decision is deliberately never persisted, so a process reaching it with an advice-less config cannot fix the day for the loop that comes after it (2026-08-25: meic and earnings each lost their most informative session to exactly that). |
+| `ledgers` | Per-schema readers for every module's ledger — the one home for the net, cost, capital and session rules. `concentration` answers, over those normalised records, how much of a module net rests on a single arm and whether removing it flips the sign; a total that changes sign without its largest contributor is a measurement of that arm, not of the module. |
 | `regime` | The one at-or-before, staleness-bounded join against the recorded market-regime series (gex's history DB). Derived ratios/dispersion are computed here at read time, never stored. |
 | `viz` | A declarative dashboard-section contract plus one generic renderer. |
 

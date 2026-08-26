@@ -40,7 +40,9 @@ from cherrypick.core.profiles import compare_profiles as _compare_profiles
 
 from cherrypick.review import paths as _paths
 
-FACT_VERSION = 5
+# 6 (2026-08-26): each module's facts gained `concentration` — how much of the net rests on one arm.
+# Additive; nothing gates on this number, it is displayed so a reader can tell which shape they have.
+FACT_VERSION = 6
 
 STATUS_PROVISIONAL = "provisional"
 STATUS_FINAL = "final"
@@ -558,6 +560,13 @@ def build_module_facts(module: str, session: str, db_path=None) -> dict:
         "results": {k: totals[k] for k in ("closed", "gross", "cost", "net", "wins", "losses")},
         # The arms, kept because for MEIC and flies the comparison between them IS the experiment.
         "by_profile": _by_profile(closed),
+        # ...and how much of the net above is ONE of them. A module total averages its arms, which
+        # is exactly what hides the finding when the arms are the experiment. flies published
+        # +6,748.01 for 2026-08-19 on a session where one seven-fill book returned +7,828.42 and the
+        # other twelve came to -1,080.41: the sign of the day was that arm's sign, and nothing said
+        # so. `sign_flips_without_largest` is the field to read first — a total that changes sign
+        # without its biggest contributor is a measurement of that arm, not of the module.
+        "concentration": _ledgers.concentration(closed),
         "carried_overnight": {
             "positions": len(carried),
             "capital_at_risk": round(sum(r.get("capital_at_risk") or 0.0 for r in carried), 2)

@@ -5,6 +5,7 @@ import sqlite3
 
 import pytest
 
+from cherrypick.core import ledgers as _ledgers
 from cherrypick.review import facts, reconcile
 
 
@@ -225,3 +226,31 @@ def test_the_final_default_is_a_trading_day_even_when_run_on_a_weekend():
     """A manual `build --final` on a Saturday must still name a real session."""
     assert facts.session_to_finalise("2026-08-15") == "2026-08-14"  # Saturday -> Friday
     assert facts.session_to_finalise("2026-08-16") == "2026-08-14"  # Sunday   -> Friday
+
+
+def test_module_facts_report_how_much_of_the_net_rests_on_one_arm():
+    """A module total averages its arms, which is what hides the finding when the arms ARE the
+    experiment. flies published +6,748.01 for 2026-08-19 on a session where one seven-fill book
+    returned +7,828.42 and the other twelve came to -1,080.41 — the sign of the day was that arm's
+    sign, and nothing in the published facts said so."""
+    records = [
+        {"profile": "width-10", "net_pnl": 7828.42, "session": "2026-08-19"},
+        *({"profile": f"other-{i}", "net_pnl": -1080.41 / 12, "session": "2026-08-19"} for i in range(12)),
+    ]
+    out = _ledgers.concentration(records)
+
+    assert out["sign_flips_without_largest"] is True
+    assert out["largest"]["profile"] == "width-10"
+    assert out["net_excluding_largest"] == pytest.approx(-1080.41, abs=0.01)
+
+
+def test_the_fact_set_carries_the_concentration_block():
+    """Guards the wiring, not the arithmetic: the helper is tested in core, and a fact set that
+    computes it and forgets to publish it is the failure mode this catches."""
+    import inspect
+
+    from cherrypick.review import facts as facts_mod
+
+    source = inspect.getsource(facts_mod.build_module_facts)
+    assert '"concentration"' in source
+    assert "_ledgers.concentration(" in source
