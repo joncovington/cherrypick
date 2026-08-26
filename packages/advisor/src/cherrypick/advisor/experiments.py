@@ -183,15 +183,44 @@ def record_verdict_recommendation(conn, *, session: str, experiment_id: str, rec
     return {"ok": True, "experiment_id": experiment_id, "recommendation": recommendation}
 
 
+def verdict_for(experiment: dict, *, rule: dict | None = None, cfg: dict | None = None) -> dict:
+    """The computed verdict for one experiment, with its module's own calibration rule resolved.
+
+    Shared so a killed experiment and an expired one are judged by the identical gate. Resolving the
+    rule in two places is how the 2026-08-14 incident happened: the model was shown one gate and the
+    stored verdict computed against another.
+    """
+    module_rule = rule
+    if module_rule is None:
+        module_rule = _settings.calibration_rule(experiment["module"], cfg) or None
+    return _verdicts.for_experiment(experiment, rule=module_rule)
+
+
 def kill(conn, experiment_id: str, *, session: str | None = None,
-         reason: str = "killed by user") -> dict[str, Any]:
-    """Stop an experiment now. No artifact is issued for it tonight; a queued one takes its slot."""
+         reason: str = "killed by user", cfg: dict | None = None) -> dict[str, Any]:
+    """Stop an experiment now. No artifact is issued for it tonight; a queued one takes its slot.
+
+    **The verdict is computed here too, for the same reason `expire_due` computes one.** An
+    experiment's result is a fact about the ledger, and stopping it is a decision to spend no MORE
+    sessions — not a statement that the sessions already spent produced nothing. Until 2026-08-26
+    this path stored only a status and a reason, so seven concluded experiments carried no verdict
+    at all, three of them after five or six live sessions: the evidence was bought and then never
+    read.
+
+    Most kills land underpowered, and the verdict says so on its face (`underpowered`), which is a
+    far more useful record than silence. The kill reason is stored BESIDE the numbers rather than
+    instead of them — the same rule `record_verdict_recommendation` follows for a model's keep/kill.
+    """
     experiment = _store.experiment(conn, experiment_id)
     if experiment is None:
         return {"ok": False, "reason": f"no such experiment {experiment_id!r}"}
     if experiment["status"] in (STATUS_EXPIRED, STATUS_KILLED):
         return {"ok": True, "experiment_id": experiment_id, "status": experiment["status"],
                 "reason": "already concluded"}
+
+    body = verdict_for(experiment, cfg=cfg)
+    body["killed_reason"] = reason
+    _store.update_experiment(conn, experiment_id, verdict_json=json.dumps(body))
 
     _store.update_experiment(conn, experiment_id, status=STATUS_KILLED)
     _store.journal(conn, experiment_id, "killed", session=session, detail={"reason": reason})
@@ -241,10 +270,7 @@ def expire_due(
     for experiment in _store.experiments(conn, status=STATUS_ACTIVE):
         if experiment["sessions_run"] < experiment["expires_after_sessions"]:
             continue
-        module_rule = rule
-        if module_rule is None:
-            module_rule = _settings.calibration_rule(experiment["module"], cfg) or None
-        body = _verdicts.for_experiment(experiment, rule=module_rule)
+        body = verdict_for(experiment, rule=rule, cfg=cfg)
         _store.update_experiment(conn, experiment["id"], status=STATUS_EXPIRED,
                                  verdict_json=json.dumps(body))
         _store.journal(conn, experiment["id"], "expired", session=session,
