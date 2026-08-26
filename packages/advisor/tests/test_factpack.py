@@ -266,3 +266,92 @@ def test_regime_block_survives_a_failing_read(monkeypatch):
     block = factpack._regime_now("2026-08-25", fallback=lambda: {"vix": 1.0})
     assert block["source"].endswith("(fallback)")
     assert block["reason"] == "regime_read_failed"
+
+
+# --------------------------------------------------------------------------- mark coverage
+
+
+def _marks_db(tmp_path, rows):
+    import sqlite3
+    conn = sqlite3.connect(tmp_path / "m.db")
+    conn.row_factory = sqlite3.Row
+    conn.execute("CREATE TABLE pmcc_marks (session_date TEXT, usable INTEGER, refusal TEXT)")
+    conn.executemany("INSERT INTO pmcc_marks VALUES (?,?,?)", rows)
+    conn.commit()
+    return conn
+
+
+def test_mark_coverage_states_the_denominator_in_words(tmp_path):
+    """The regression this exists for. `SELECT usable, COUNT(*) n GROUP BY usable` serialises as
+    `[{"usable": 1, "n": 664}]`, which the advisor read on 2026-08-24 as "1 usable of 664" and
+    turned into a proposal asserting that 663 of 664 marks were unusable and that pmcc's
+    assignment-exposure metric had a meaningless denominator. 664 of 664 were usable. A flag beside
+    a count is two numbers that look like one ratio, and misreading it inverts the finding."""
+    conn = _marks_db(tmp_path, [(SESSION, 1, None)] * 664)
+
+    out = factpack._mark_coverage(conn, "pmcc_marks", SESSION)
+
+    assert out["marks_total"] == 664
+    assert out["marks_usable"] == 664
+    assert out["marks_refused"] == 0
+    assert out["usable_fraction"] == 1.0
+    # No key whose value is a bare flag: every number in this dict is a count or a fraction.
+    assert "usable" not in out
+
+
+def test_mark_coverage_names_the_refusals(tmp_path):
+    conn = _marks_db(tmp_path, [(SESSION, 1, None)] * 10
+                     + [(SESSION, 0, "missing_leg_quotes")] * 3
+                     + [(SESSION, 0, "stale_quote")])
+
+    out = factpack._mark_coverage(conn, "pmcc_marks", SESSION)
+
+    assert (out["marks_total"], out["marks_usable"], out["marks_refused"]) == (14, 10, 4)
+    assert out["usable_fraction"] == 0.7143
+    assert out["refusals_by_reason"][0] == {"refusal": "missing_leg_quotes", "n": 3}
+
+
+def test_mark_coverage_on_a_session_with_no_marks(tmp_path):
+    conn = _marks_db(tmp_path, [])
+    out = factpack._mark_coverage(conn, "pmcc_marks", SESSION)
+    assert out["marks_total"] == 0 and out["usable_fraction"] is None
+
+
+def test_no_section_reports_a_bare_usable_flag_beside_a_count():
+    """The unit tests above exercise `_mark_coverage`; they cannot see a section that stops calling
+    it. This one reads the source, because the defect was never in the helper -- it was in what the
+    sections emitted, and a helper nobody calls is not a fix.
+
+    Driven off the pattern rather than a list of tables, so a module added later is covered the
+    moment it writes the same query.
+    """
+    import inspect
+    import re
+
+    source = inspect.getsource(factpack)
+    helper = inspect.getsource(factpack._mark_coverage)
+    offenders = [
+        match.group(0)
+        for match in re.finditer(r"SELECT\s+usable,\s*COUNT\(\*\).*", source)
+        if match.group(0) not in helper
+    ]
+    assert offenders == [], f"a section is emitting a raw usable flag beside a count: {offenders}"
+
+
+def test_pmcc_lifetime_rows_are_separated_by_era():
+    """pmcc's 2026-08-23 redesign cut three books to one, so its four pre-redesign rows are ONE
+    trade recorded four times. Pooled with a redesign-era row they read as four observations --
+    which is what the advisor read on 2026-08-24 before proposing that the book structure be
+    rebuilt. Any lifetime query over pmcc_positions must carry era or it will pool the boundary."""
+    import inspect
+    import re
+
+    source = inspect.getsource(factpack._pmcc)
+    lifetime = [
+        statement for statement in re.findall(r'"[^"]*pmcc_positions[^"]*"', source)
+        if "session" not in statement
+    ]
+    assert lifetime, "the pmcc section stopped reading pmcc_positions"
+    joined = " ".join(lifetime) + source
+    assert "era" in joined, "a lifetime pmcc query pools across the redesign boundary"
+    assert "GROUP BY era" in source or "GROUP BY era," in source
