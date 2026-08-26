@@ -817,3 +817,44 @@ resolve (a 1-lot measurement pilot with an abort rule for the first; legged-only
 second), the live-loop architecture, kill switches, the fee-math symbol decision, and the rung-by-rung
 rollout — is [docs/live-trading-plan.md](docs/live-trading-plan.md). Until Gate 0 passes, the only
 work it calls for is running the paper experiment honestly.
+
+
+## Band placement (`python run.py bands`)
+
+Where each book's band sat relative to the range the session actually printed. Requested by the
+advisor on 2026-08-18, repeated 08-19 and 08-20, and sharpened on 08-21 — four proposals for one
+instrument, which is why it is here rather than in a notebook.
+
+The argument: a butterfly's floor holding is the joint event of a band placement and a realized
+range, so scoring arms on `floor_holds` alone credits a wide band on a quiet day and blames a tight
+band on a fast one. Every established arm wins 64-77% of the time and loses money lifetime, which is
+what you get when the thing being optimised is not the thing that decides the tail.
+
+**Both edges, not just the lower one**, and that correction came from the wing experiment
+contradicting the original metric. `band_low - session_low` classified held-versus-failed perfectly
+for four sessions; then `advised:control` (wing_width_strikes=2) put its lower edge 45.06 points
+below the session low — more than twice control's margin — and failed anyway, because the narrow
+wing had pulled the UPPER edge to 7697 against a 7697.11 high. Price traded 0.11 points through it.
+
+So the metric is `min(low_margin, high_margin)` with the binding edge named, normalised two ways:
+by the session's realized range (ex-post, how close this band came on this tape) and by the VIX1D
+one-day implied move (knowable at entry — the only one that can separate "places wider bands" from
+"got quieter days").
+
+Two details that are easy to get wrong, both of which were:
+
+- **The range comes from the shared stream cache's `day_high`/`day_low`, not `fly_iterations`.**
+  The 08-21 breach was 0.11 points and the loop samples the underlying per tick, observing 7697.01
+  where the feed's session high was 7697.11. Scoring off sampled ticks reads that book as HELD.
+- **Ranges key on (session, symbol).** This module has traded SPX and XSP — the same index at a
+  tenth the notional — so keying on date alone scores XSP bands near 731 against SPX ranges near
+  7690 and produces six confident "classifier failures" that are an indexing bug.
+
+`band_placement_classifier` reports agreement for both rules over identical rows. On 152 settled
+books the two-edge rule agrees with `floor_holds` 97.4% against the one-edge rule's 72.4%, and 72 of
+those books were bound by the UPPER edge — invisible to the rule it replaces, which is why that one
+caps out where it does. **Read it as agreement, not prediction:** `floor_holds` is `worst >= 0` over
+the payoff grid, a property of the structure that is settled before the session opens, so part of
+the agreement is mechanical. The clean result is the rule-vs-rule comparison, not the rate. All four
+residual disagreements are books that touched an edge and settled back inside, and are labelled as
+such.

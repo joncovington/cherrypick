@@ -1241,3 +1241,135 @@ def test_by_regime_reports_sessions_per_bucket(conn):
     rows = {r["bucket"]: r for r in analytics.by_regime(conn, "vol")}
     assert rows["high"]["trades"] == 3 and rows["high"]["sessions"] == 2
     assert rows["low"]["trades"] == 1 and rows["low"]["sessions"] == 1
+
+
+# --------------------------------------------------------------------------- band placement
+
+
+def _band_book(conn, day, arm, band_low, band_high, floor_holds, *, symbol="SPX", settle=None,
+          status="settled", book_id=None):
+    conn.execute(
+        "INSERT INTO fly_books (book_id, trade_date, arm, symbol, band_low, band_high,"
+        " floor_holds, unbounded_below, worst, settlement_price, status, created_at, updated_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,'x','x')",
+        (book_id or f"{symbol}:{arm}:{day}", day, arm, symbol, band_low, band_high,
+         1 if floor_holds else 0, 0 if floor_holds else 1, 0.0, settle, status),
+    )
+    conn.commit()
+
+
+# The 2026-08-21 session that produced the sharpened metric, to the cent.
+_AUG21 = {("2026-08-21", "SPX"): {"session_low": 7660.06, "session_high": 7697.11, "vix1d": 10.07}}
+
+
+def test_the_binding_edge_is_the_smaller_of_the_two_margins(conn):
+    """The worked example from the advisor's 2026-08-21 proposal. `control` held with a 20.06-point
+    margin below and 32.89 above; `advised:control`, on wing_width_strikes=2, sat 45.06 below the
+    low — more than twice control's margin — and failed anyway, because its upper edge was 0.11
+    points under the session high. A rule reading only the lower edge predicts it to hold."""
+    _band_book(conn, "2026-08-21", "control", 7640.0, 7730.0, True, settle=7674.3)
+    _band_book(conn, "2026-08-21", "advised:control", 7615.0, 7697.0, False, settle=7674.3)
+
+    rows = {r["arm"]: r for r in analytics.band_placement(conn, _AUG21)}
+
+    assert rows["control"]["low_margin"] == 20.06
+    assert rows["control"]["high_margin"] == 32.89
+    assert rows["control"]["binding_margin"] == 20.06
+    assert rows["control"]["binding_edge"] == "low"
+
+    assert rows["advised:control"]["low_margin"] == 45.06
+    assert rows["advised:control"]["high_margin"] == -0.11
+    assert rows["advised:control"]["binding_margin"] == -0.11
+    assert rows["advised:control"]["binding_edge"] == "high"
+
+
+def test_the_two_edge_rule_classifies_a_book_the_low_edge_rule_gets_wrong(conn):
+    _band_book(conn, "2026-08-21", "control", 7640.0, 7730.0, True, settle=7674.3)
+    _band_book(conn, "2026-08-21", "advised:control", 7615.0, 7697.0, False, settle=7674.3)
+
+    scored = analytics.band_placement_classifier(analytics.band_placement(conn, _AUG21))
+
+    assert scored["two_edge"] == {"agree": 2, "of": 2, "rate": 1.0}
+    assert scored["low_edge_only"]["agree"] == 1, "the one-edge rule must miss the narrow-wing book"
+
+
+def test_margins_are_normalized_by_the_range_and_by_the_expected_move(conn):
+    """Two normalisations answering different questions: the realized range is ex-post and says how
+    close this band came on this tape; the VIX1D-implied move was knowable at entry and is the only
+    one that can separate "places wider bands" from "got quieter days"."""
+    _band_book(conn, "2026-08-21", "control", 7640.0, 7730.0, True, settle=7674.3)
+
+    row = analytics.band_placement(conn, _AUG21)[0]
+
+    assert row["session_range"] == pytest.approx(37.05, abs=0.01)
+    assert row["binding_margin_range_frac"] == pytest.approx(20.06 / 37.05, abs=0.001)
+    # centre 7685 x 10.07% / sqrt(252)
+    assert row["expected_move"] == pytest.approx(7685 * 0.1007 / (252**0.5), abs=0.01)
+    assert row["binding_margin_expected_moves"] == pytest.approx(
+        20.06 / row["expected_move"], abs=0.001
+    )
+
+
+def test_a_book_is_scored_against_its_own_symbols_range(conn):
+    """SPX and XSP are the same index at a tenth the notional, and this module has traded both.
+    Keying the range on the date alone scored the 2026-07-29 XSP books (bands near 731) against
+    SPX's range (near 7690) and produced binding margins of ~6,700 points — six confident classifier
+    failures that were an indexing bug."""
+    ranges = {
+        ("2026-07-29", "SPX"): {"session_low": 7600.0, "session_high": 7700.0, "vix1d": 10.0},
+        ("2026-07-29", "XSP"): {"session_low": 726.0, "session_high": 736.0, "vix1d": 10.0},
+    }
+    _band_book(conn, "2026-07-29", "control", 723.0, 753.0, True, symbol="XSP", settle=731.62)
+
+    row = analytics.band_placement(conn, ranges)[0]
+
+    assert row["low_margin"] == 3.0 and row["high_margin"] == 17.0
+    assert row["binding_margin"] == 3.0
+
+
+def test_a_session_with_no_recorded_range_yields_nulls_not_a_dropped_row(conn):
+    """"The range was not recorded" and "the band was badly placed" are different facts."""
+    _band_book(conn, "2026-07-29", "control", 7600.0, 7700.0, True, settle=7650.0)
+
+    rows = analytics.band_placement(conn, {})
+
+    assert len(rows) == 1
+    assert rows[0]["binding_margin"] is None and rows[0]["binding_edge"] is None
+
+
+def test_touching_an_edge_and_settling_back_inside_is_labelled_not_counted_as_a_miss(conn):
+    """The binding margin is an INTRADAY-TOUCH measure; floor_holds is a SETTLEMENT one. They
+    legitimately disagree when price crossed an edge and came back, and on the live ledger every
+    residual disagreement is one of these (4 of 152)."""
+    ranges = {("2026-08-12", "SPX"): {"session_low": 7730.0, "session_high": 7766.01, "vix1d": 9.0}}
+    _band_book(conn, "2026-08-12", "bwb", 7735.0, 7765.0, True, settle=7748.5)
+
+    row = analytics.band_placement(conn, ranges)[0]
+    assert row["binding_margin"] < 0, "the upper edge was crossed intraday"
+    assert row["touched_but_recovered"] is True
+
+    scored = analytics.band_placement_classifier([row])
+    assert scored["touched_but_recovered"] == 1
+    assert scored["disagreements"][0]["touched_but_recovered"] is True
+
+
+def test_an_unsettled_book_is_not_scored(conn):
+    """An open book's `floor_holds` is a default, not a result. Scoring against it counts a session
+    that has not finished as a classifier miss."""
+    ranges = {("2026-08-26", "SPX"): {"session_low": 7657.41, "session_high": 7688.36, "vix1d": 9.0}}
+    _band_book(conn, "2026-08-26", "advised:control", 7605.0, 7689.0, False, settle=None, status="open")
+
+    rows = analytics.band_placement(conn, ranges)
+    assert rows[0]["settled"] is False
+    assert analytics.band_placement_classifier(rows)["scored"] == 0
+
+
+def test_the_classifier_reports_which_edge_bound(conn):
+    """Half the live book is bound by the UPPER edge (72 of 152), which the one-edge rule cannot see
+    at all — that is the whole reason it caps out around 72% agreement."""
+    _band_book(conn, "2026-08-21", "control", 7640.0, 7730.0, True, settle=7674.3)
+    _band_book(conn, "2026-08-21", "advised:control", 7615.0, 7697.0, False, settle=7674.3)
+
+    counts = analytics.band_placement_classifier(analytics.band_placement(conn, _AUG21))["binding_edge_counts"]
+
+    assert counts == {"low": 1, "high": 1}
