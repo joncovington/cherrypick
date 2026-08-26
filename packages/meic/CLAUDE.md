@@ -368,9 +368,17 @@ whose outcome nobody could see. 90 rows, all between 2026-07-13 and 2026-07-27, 
 profile-ladder era and already excluded by `CURRENT_ERA` from every reading — historical, but wrong
 on the row. `paper.evaluate_open_trade` now **refuses to settle without a price**, holding with
 `settlement_price_unavailable` exactly as an unquotable leg already does: a paper ledger may be
-incomplete and must never be confidently wrong. Note there is no `meic.settle_overdue` watchdog check
-(flies, calendars, pmcc, curve and bwb each have one), so a position held open by that guard is
-currently silent — worth adding.
+incomplete and must never be confidently wrong.
+
+**That guard is audible, as of the same day.** Refusing to settle is the right failure and a silent
+one — the position simply stays open — so `paper_loop --status` now reports `session_settled`,
+`positions_today` and (when the ledger says so) `data_reason`, and `settlement_check` is enabled for
+this module in the orchestrator config. meic was the last paper module without that check: flies,
+calendars, pmcc, curve and bwb all had one, and this one was off because `watchdog._check_settlement`
+reads those fields from a module's own `--status` and meic's reported none of them. Enabling the flag
+alone would have produced a check that could never fire — which is worse than none, because it reads
+as coverage. The orchestrator's own tests now lint that combination, and `tests/test_paper_loop_status.py`
+pins the field names this module has to keep emitting.
 
 **Max adverse excursion (`put_mae_spot`/`call_mae_spot` + times) generalizes first-touch.** First-touch
 is write-once at the crossing and therefore answers exactly one stop policy; it records the identical

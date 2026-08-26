@@ -27,6 +27,9 @@
           "cherrypick.meic.paper_loop",
           "--status"
         ],
+        "_settlement_check_note": "Enabled 2026-08-26, last of the paper modules. It was off because the check reads session_settled/positions_today from a module's own --status and meic's reported neither, so turning it on alone would have been a check that could not fire. It matters more now that paper.evaluate_open_trade REFUSES to settle a position with no underlying price rather than booking it at zero intrinsic: the right failure, but a silent one, since the position simply stays open.",
+        "settlement_check": true,
+        "settlement_grace_minutes": 45,
         "once_argv": [
           "-m",
           "cherrypick.meic.paper_loop",

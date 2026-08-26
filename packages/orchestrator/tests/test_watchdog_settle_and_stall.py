@@ -75,8 +75,42 @@ def test_no_check_off_a_trading_day(monkeypatch):
 
 
 def test_silent_when_status_lacks_the_settlement_signal(monkeypatch):
-    # A module whose --status doesn't report settlement (e.g. MEIC) must produce no finding either way.
+    """A module whose --status does not report settlement produces no finding either way.
+
+    Correct — the check cannot invent a signal — but note what it costs: a module opted IN whose
+    status lacks the fields is indistinguishable here from one that is settled, and it alerts on
+    nothing, forever. That is exactly how MEIC ended up the only paper module with no working
+    settlement check (fixed 2026-08-26, when its --status grew the fields). The lint below is what
+    makes the combination fail loudly instead of silently."""
     assert _run_settle(monkeypatch, {"running": True, "pid": 123}) == []
+
+
+def test_every_module_that_opts_into_the_settlement_check_can_actually_produce_a_finding():
+    """The config lint. `settlement_check: true` plus a --status that reports no settlement signal is
+    a check that can never fire, and it reads as coverage on the watchdog's own output.
+
+    Driven off `config.example.json` rather than a hand-kept list, so a module is covered the moment
+    it declares the flag. Structural only — it asserts the wiring exists; whether each module's
+    status really emits the fields is asserted in that module's own suite (see meic's
+    `test_paper_loop_status.py`), because running six subprocesses belongs nowhere near the unit lane.
+    """
+    import json
+
+    config = json.loads((Path(__file__).resolve().parents[1] / "config.example.json").read_text(encoding="utf-8"))
+    offenders = [
+        name
+        for name, mcfg in (config.get("modules") or {}).items()
+        if (mcfg.get("paper") or {}).get("settlement_check") and not (mcfg.get("paper") or {}).get("status_argv")
+    ]
+    assert offenders == [], f"opted into the settlement check with no status_argv to read: {offenders}"
+
+    # ...and the flag is not merely decorative: at least one module must be using it, or a refactor
+    # that quietly dropped it everywhere would leave this lint passing over an empty set.
+    opted_in = [
+        name for name, mcfg in (config.get("modules") or {}).items()
+        if (mcfg.get("paper") or {}).get("settlement_check")
+    ]
+    assert len(opted_in) >= 5, f"only {opted_in} still opt into the settlement check"
 
 
 def test_silent_when_status_unreadable(monkeypatch):
