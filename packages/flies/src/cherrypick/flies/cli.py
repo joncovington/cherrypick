@@ -109,11 +109,62 @@ def cmd_regime(args) -> int:
     return 0
 
 
+def cmd_bands(args) -> int:
+    """Where each book's band sat relative to the range the session actually printed.
+
+    Asked for by the advisor on 2026-08-18, repeated 08-19 and 08-20, and sharpened on 08-21 after
+    its own single-edge classifier was contradicted by the wing experiment. See
+    `analytics.band_placement` for the metric and why it reads BOTH edges.
+
+    The session range comes from the shared stream cache (`day_high`/`day_low`), not this module's
+    own tick record: the 08-21 breach was 0.11 points and `fly_iterations` samples the underlying,
+    so a sampled extreme cannot measure a margin that fine.
+    """
+    import sqlite3
+
+    from cherrypick.flies import analytics, paper_loop
+
+    config = load_config(args.config)
+    conn = dbmod.connect(args.db)
+    sessions = [r[0] for r in conn.execute("SELECT DISTINCT trade_date FROM fly_books ORDER BY 1")]
+    symbols = [r[0] for r in conn.execute("SELECT DISTINCT symbol FROM fly_books")]
+
+    cache_path = args.stream_cache or paper_loop.stream_cache_path(config)
+    cache = sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True)
+    try:
+        ranges = analytics.session_ranges_from_cache(cache, sessions, symbols)
+    finally:
+        cache.close()
+
+    placements = analytics.band_placement(
+        conn, ranges, start=args.start, end=args.end, arm=args.arm, symbol=args.symbol
+    )
+    out = {
+        "ok": True,
+        # The classifier first: a placement table is only readable next to whether the margin it
+        # reports actually predicts the outcome it is meant to explain.
+        "classifier": analytics.band_placement_classifier(placements),
+        "placements": placements,
+    }
+    print(json.dumps(out, indent=2, default=str))
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="flies", description="0DTE net-credit butterfly paper module")
     ap.add_argument("--config")
     ap.add_argument("--db")
     sub = ap.add_subparsers(dest="command", required=True)
+
+    p_bands = sub.add_parser(
+        "bands", help="band placement against the session's realized range, and whether it predicts the floor"
+    )
+    p_bands.add_argument("--start")
+    p_bands.add_argument("--end")
+    p_bands.add_argument("--arm")
+    p_bands.add_argument("--symbol")
+    p_bands.add_argument("--stream-cache", dest="stream_cache", help="override the shared cache path")
+    p_bands.set_defaults(func=cmd_bands)
 
     p_once = sub.add_parser("once", help="one iteration of every enabled arm")
     p_once.add_argument("--snapshot", help="snapshot JSON file (default: stdin)")
