@@ -184,7 +184,18 @@ changes as safe, and it is the only check that sees past the fallback below.
   against the gate's own stamped measures, which caught a real off-by-one-bar error before it
   shipped — that half retired with the 2026-08-23 redesign (see `packages/pmcc/CLAUDE.md`'s
   measurement-break note), which dropped the module to one symbol, one book, and no Keltner gate at
-  all. **The headline half is automated** — `server/test/pmcc-mirror.test.ts` invokes the module's
+  all. **MEIC has the same arrangement and, since 2026-08-26, the same check.** `readers/meic.ts` is the
+  largest mirror in this package, over the module with the most data and the only live sibling, and
+  it had nothing to compare against because meic was the one package without a `run.py`. It has one
+  now, and `server/test/meic-mirror.test.ts` compares the page's per-arm trades, sessions, gross,
+  fees and net against `python run.py headline --era ALL`. It failed on its first run and the page
+  was wrong: `RESOLVED` here is a deny-list (`NOT IN ('cancelled','pending','partial_entry')`) and
+  this ledger contains none of those, so it admitted still-open rows, which contribute fees with no
+  gross — every arm reported down by exactly what it had paid so far. The module uses an allow-list.
+  `readMeicAnalytics` already guarded the identical case in SQL and its comment names it ("a number
+  that looks like a result"); `readMeicPerformance` did not. Both now filter `pnl IS NOT NULL`.
+
+  **The headline half is automated** — `server/test/pmcc-mirror.test.ts` invokes the module's
   own `run.py headline` and compares open-position count, book set and each book's net to the cent,
   skipping cleanly (and visibly) where the ledger or Python is unavailable. Note it compares empty
   against empty until this module opens a position under the new design, so treat it as armed rather

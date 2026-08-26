@@ -418,7 +418,21 @@ export function readMeicPerformance(
     const where = clauses.join(" AND ");
 
     // --- profile comparison: symbol-scoped, profile-unscoped (compare them all) ---
-    const profileClauses = [RESOLVED, "risk_profile IS NOT NULL"];
+    //
+    // `pnl IS NOT NULL` is load-bearing and is NOT implied by RESOLVED. RESOLVED is a deny-list
+    // (`NOT IN ('cancelled','pending','partial_entry')`) and this ledger holds none of those, so it
+    // admits every row including the still-open ones; the module's own analytics uses an allow-list
+    // (`status IN ('stopped','expired','force_closed')`) and admits only settled trades. On this
+    // ledger the two tests coincide exactly — every open row has a NULL pnl and every settled row
+    // has one — so this is the same filter the module applies, written in the terms this file uses.
+    //
+    // Without it an open position contributes its FEES with no gross, reporting each arm down by
+    // exactly what it has paid so far: `advised:control` read gross 0, fees 860.83, net -860.83 on
+    // 125 rows that have not settled. `readMeicAnalytics` below already guards this by subtracting
+    // inside the SUM, and its comment describes this exact failure — "a number that looks like a
+    // result". The guard was applied there and not here. Caught by server/test/meic-mirror.test.ts
+    // on its first run, which is what that test exists for.
+    const profileClauses = [RESOLVED, "pnl IS NOT NULL", "risk_profile IS NOT NULL"];
     const profileParams: string[] = [];
     if (eraOn) {
       profileClauses.push("era = ?");
