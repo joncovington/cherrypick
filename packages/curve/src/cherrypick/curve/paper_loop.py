@@ -93,9 +93,21 @@ def _release_loop_lock() -> None:
 
 # --------------------------------------------------------------------------- the regime tick
 def _record_regime(config: dict, conn, *, cache_path: str, day: str) -> dict:
-    """Read today's VIX/VIX3M reading and write `curve_regime` — traded or not (rule 7)."""
+    """Read today's VIX/VIX3M reading and write `curve_regime` — traded or not (rule 7).
+
+    **A refusal does not settle the day; only a measurement does.** This tick runs every 60s from
+    midnight, so the first one of the session always lands hours before the open, always refuses
+    (there is no fresh quote outside RTH, and refusing is correct — an overnight-frozen VIX must
+    never masquerade as a measured reading), and until 2026-08-26 that refusal was then treated as
+    "already recorded" and blocked every RTH tick behind it. The module's declared second product
+    was therefore never measured once: three sessions on file, all stamped 00:00 with a null ratio.
+
+    So a stored REFUSAL is retried and overwritten by the first usable reading — `save_regime`
+    upserts on `trade_date` — while a stored MEASUREMENT is final, which keeps the day's basis
+    stable at the first moment the feed could actually serve one instead of drifting with each tick.
+    """
     existing = db.regime_for(conn, day)
-    if existing is not None:
+    if existing is not None and existing.get("usable"):
         return existing
     defaults = config.get("defaults") or {}
     quotes = provider.read_regime_quotes(
