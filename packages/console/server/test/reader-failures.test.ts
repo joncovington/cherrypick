@@ -23,6 +23,7 @@ import {
   clearReaderFailures,
   closePooledDbs,
   listReaderFailures,
+  readOnlyDb,
   setReaderFailureLogger,
   withReadOnlyDb,
 } from "../src/readers/db.js";
@@ -136,5 +137,32 @@ describe("a working read", () => {
     withReadOnlyDb(store, null, (db) => db.prepare("SELECT nope FROM things").get());
     withReadOnlyDb(store, null, (db) => db.prepare("SELECT name FROM things").get());
     expect(listReaderFailures()).toHaveLength(1);
+  });
+});
+
+describe("readOnlyDb — the opt-in discriminated form", () => {
+  it("distinguishes the three cases withReadOnlyDb collapses", () => {
+    expect(readOnlyDb(path.join(tmp, "never-ran.db"), () => 1)).toEqual({ status: "absent" });
+    expect(readOnlyDb(store, (db) => db.prepare("SELECT name FROM things").get())).toMatchObject({
+      status: "ok",
+    });
+    const failed = readOnlyDb(store, (db) => db.prepare("SELECT nope FROM things").get());
+    expect(failed.status).toBe("failed");
+  });
+
+  it("is the SINGLE implementation — withReadOnlyDb wraps it rather than copying it", () => {
+    // Two copies of the pooling/stamp/eviction logic would be two chances to disagree about when a
+    // handle is recycled, which is the bug the stamp exists to prevent. Asserted behaviourally:
+    // both paths must evict a wedged handle and both must serve a healthy one afterwards.
+    expect(withReadOnlyDb(store, "fb", (db) => db.prepare("SELECT nope FROM things").get())).toBe("fb");
+    expect(readOnlyDb(store, (db) => db.prepare("SELECT name FROM things").get())).toMatchObject({
+      status: "ok",
+    });
+  });
+
+  it("an absent store is still not recorded as a failure through either door", () => {
+    readOnlyDb(path.join(tmp, "never-ran.db"), () => 1);
+    withReadOnlyDb(path.join(tmp, "never-ran.db"), null, () => 1);
+    expect(listReaderFailures()).toEqual([]);
   });
 });

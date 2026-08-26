@@ -100,9 +100,16 @@ changes as safe, and it is the only check that sees past the fallback below.
   under Commands) and check the payload is populated, not merely 200. Where a reader can be handed
   a store whose shape varies — an older paper book, a live book, a test fixture — ask
   `sqlite_master` which tables exist rather than naming one and relying on the catch.
-  (`withReadOnlyDb` still conflates "store absent" with "query threw" in what it RETURNS across ~65
-  call sites — separating the two return paths changes semantics every one of them depends on, and
-  still wants its own landing. **What changed 2026-08-26 is that the second case is no longer
+  (`withReadOnlyDb` still collapses "store absent" and "query threw" into one return value, and that
+  is fine — ~65 call sites are written against it and it is unchanged. **`readOnlyDb` is the opt-in
+  form beside it** (2026-08-26), returning `{status: "ok" | "absent" | "failed"}`, for a reader whose
+  EMPTINESS IS MEANINGFUL. It is the single implementation and `withReadOnlyDb` is a thin wrapper
+  over it: two copies of the pooling, stamping and eviction logic would be two chances to disagree
+  about when a handle is recycled, which is the bug the stamp exists to prevent. Migration is per
+  call site and needs no sweep. `readFliesMeta` is migrated — the documented incident — and now
+  returns the same empty lists plus an optional `degraded: {reason}`, absent on both healthy reads
+  and legitimately absent stores, so a consumer that ignores it is right in every case that is not a
+  defect. **What changed 2026-08-26 is that the second case is no longer
   invisible.** A throw is recorded per store (path, message, count, last seen), logged once per
   distinct message — repeats are counted, not re-logged, since the SPA polls every few seconds and a
   wedged reader logging each poll buries itself as effectively as logging nothing — and surfaced by

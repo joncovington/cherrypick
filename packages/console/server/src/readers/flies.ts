@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { FliesPayload, FliesBookRow, FliesPositionRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { hasColumn, memoOnStore, withReadOnlyDb, num, str, type DatabaseHandle } from "./db.js";
+import { hasColumn, memoOnStore, readOnlyDb, withReadOnlyDb, num, str, type DatabaseHandle } from "./db.js";
 import {
   EMPTY_RISK,
   equityCurve,
@@ -58,6 +58,15 @@ export interface FliesMeta {
   /** Every declared era with how many positions it holds in THIS store. */
   eras: Array<{ era: string; label: string; trades: number }>;
   currentEra: string;
+  /**
+   * Set when the empty lists above mean "the read failed", not "there is nothing".
+   *
+   * This endpoint IS the documented incident: it once served `{arms: [], dates: [], symbols: []}`
+   * off one bad column in a UNION, indistinguishable from a store that had simply never traded.
+   * Absent on a healthy read and on a legitimately absent store, so a consumer that ignores it is
+   * correct in every case that is not a defect.
+   */
+  degraded?: { reason: string };
 }
 
 /** The era a null filter means: the module's own evidence window. */
@@ -290,10 +299,12 @@ export function readFliesMeta(
   const ec = eraClause(era);
   const scope = ec.sql === null ? "" : ` AND ${ec.sql}`;
   const params: string[] = ec.params;
-  return withReadOnlyDb<FliesMeta>(
-    dbPath,
-    { arms: [], dates: [], symbols: [], eras: [], currentEra: DEFAULT_ERA },
-    (db) => ({
+  const empty: FliesMeta = { arms: [], dates: [], symbols: [], eras: [], currentEra: DEFAULT_ERA };
+  // `readOnlyDb` rather than `withReadOnlyDb`: this reader's emptiness is meaningful, and
+  // collapsing "no rows" into "the query threw" is what let the UNION defect look healthy. The
+  // shape returned is the same either way — the caller gets a FliesMeta — so nothing downstream
+  // has to change to keep working; `degraded` is there for whoever wants to say so.
+  const outcome = readOnlyDb<FliesMeta>(dbPath, (db) => ({
       // Every era with what it holds, so choosing one is a choice between known quantities rather
       // than a guess — and an era this store never traded reads as 0 rather than vanishing.
       eras: ERAS.map((e) => {
@@ -336,8 +347,11 @@ export function readFliesMeta(
         )
         .all(...params)
         .map((r) => r.s),
-    }),
-  );
+  }));
+
+  if (outcome.status === "ok") return outcome.value;
+  if (outcome.status === "absent") return empty;  // the module has never run here; nothing is wrong
+  return { ...empty, degraded: { reason: outcome.error } };
 }
 
 /** The profit forest: per-arm book payoff curves for the latest (or given) day. */

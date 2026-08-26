@@ -122,3 +122,42 @@ describe("the era scope", () => {
     expect(eraClause(null)).toEqual(eraClause("advisor"));
   });
 });
+
+describe("a meta read that fails says so", () => {
+  /**
+   * THE documented incident, now distinguishable. This endpoint once served
+   * `{arms: [], dates: [], symbols: []}` off one bad column in a UNION — the same payload a store
+   * that had never traded produces, so nothing on the wire or the page could tell them apart.
+   *
+   * The empty lists are still returned, so every existing consumer keeps working; `degraded` is the
+   * addition, and it is ABSENT on both healthy reads and legitimately absent stores, which means a
+   * consumer that ignores it is correct in every case that is not a defect.
+   */
+  function configFor(dir: string): ConsoleConfig {
+    return { paths: { fliesDir: dir } } as unknown as ConsoleConfig;
+  }
+
+  it("flags a broken store rather than reporting it as empty", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "flies-broken-"));
+    // A store whose tables are missing entirely: every query throws, exactly as a bad column does.
+    new Database(path.join(dir, "paper_trades.db")).close();
+
+    const meta = readFliesMeta(configFor(dir), "paper");
+
+    expect(meta.arms).toEqual([]);
+    expect(meta.degraded).toBeDefined();
+    expect(meta.degraded?.reason).toMatch(/fly_positions|no such table/i);
+  });
+
+  it("does NOT flag a store that simply is not there", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "flies-absent-"));
+    const meta = readFliesMeta(configFor(dir), "paper");
+
+    expect(meta.arms).toEqual([]);
+    expect(meta.degraded).toBeUndefined();
+  });
+
+  it("does not flag a healthy read", () => {
+    expect(readFliesMeta(config, "paper").degraded).toBeUndefined();
+  });
+});
