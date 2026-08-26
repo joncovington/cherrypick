@@ -89,6 +89,34 @@ out to `python -m cherrypick.meic.db` and `...meic.tt` on EVERY TICK, and the or
 jobspec, onboarding and the suite's skills all name those module paths. Folding them behind this CLI
 would repoint the live loop to buy a reader nothing.
 
+## What the advisor may move (`advice.bounds`)
+
+Bounds are the guardrail: nothing the advisor proposes can leave these closed ranges, and the loop
+re-validates with the same `cherrypick.core.advice` code the producer used, so the two sides cannot
+disagree. `tests/test_advice_bounds.py` lints the block itself, driven off the shipped
+`config.example.json` so a bound added later is covered the moment it is declared.
+
+**A bound over a parameter the engine does not read is not harmless.** It validates, it is admitted,
+and the loop then produces an `advised:control` book byte-identical to its control — a spent
+experiment slot that could not have measured anything either way. That is the `sign` arm's verdict
+(3,036 blocked attempts, zero fills, 100% decision-agreement with control) reachable by
+configuration. `entry_price_strategy` was exactly that and was removed 2026-08-26: it is consumed
+only by the agent-driven live path in `.claude/commands/`, and the advisor only ever influences
+paper.
+
+**`min_call_otm_pct` (added 2026-08-26, range 0.0001–0.006)** is the second of the two gates that
+kept control dark. With `min_iv_rank` at 0.0 the IV floor was provably inert and
+`call_otm_below_floor` still refused 29 of `advised:control`'s entries — the difference between "the
+regime gate is the sole remaining constraint" and "there are two", which is what the running
+experiment's kill rule turns on.
+
+The range is **one-directional by construction, and that is why it is safe to grant**: `control`
+runs 0.0001, so the floor of the range IS the baseline, and every admissible value pushes the short
+call further out of the money. This bound can only make the advised book refuse MORE than its
+control — never take a trade the control would not. A test pins that property, so lowering the floor
+below the base is a deliberate act rather than a silent one. The ceiling (0.006) sits above the
+deployed default (0.0035) and below the quarterly-expiry override (0.0067).
+
 ## Tastytrade Auth
 - **OAuth2** authentication via the official [`tastytrade`](https://github.com/tastyware/tastytrade) Python SDK (session tokens auto-refresh; refresh tokens are long-lived).
 - **Credentials stored in the OS keyring** (Windows Credential Manager / DPAPI, macOS Keychain, Linux Secret Service) — never in files, never in env vars, never logged.
