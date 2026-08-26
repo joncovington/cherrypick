@@ -325,5 +325,19 @@ Per the house rule that a guard has to be shown to fail before it counts:
 - ~~The entitlement probe~~ — **ran 2026-08-24; see "What the 2026-08-24 probe settled" above.
   The reading list is frozen: SKEW, VIX9D, /VX and /ZN admitted; internals refused as not
   entitled.**
+- ~~SKEW~~ — **admitted by the probe, withdrawn by sustained observation (2026-08-26).** The probe
+  printed 143.9 through the ordinary legs path and admitting it was right on that evidence. Three
+  sessions of recording say the feed serves it in bursts and is silent between: 30 usable samples
+  of 1,105, with 22 prints between 09:49 and 11:46 ET on 08-24 and then nothing, one print on
+  08-25, three on 08-26 with a 7.9-hour gap — against VIX's 363 prints at a 60-second median over
+  the same window. Its daily series already failed the same way (five scattered rows across seven
+  months, one a zero), so both horizons agree.
+  It stays in `READINGS`: the refusal rows are the evidence, `dropped_readings` would flag a silent
+  removal, and if the feed ever sustains the series fills with no code change. What changed is that
+  the refusal is now **declared** (`regime.INTERMITTENT_INTRADAY`) rather than left to be
+  re-derived — the rows say `intermittent_feed`, and `sample()` counts them as
+  `expected_unusable` so a health read is not permanently depressed by something it cannot fix.
+  **A probe answers "is this entitled". It does not answer "can this sustain a series", and for
+  SKEW the two came apart.** Worth remembering before the next reading is admitted on one print.
 - **Retention** — the tables are permanent (the point of the exercise); confirm the monthly
   archiving job leaves the gex history database alone.

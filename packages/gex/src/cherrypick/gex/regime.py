@@ -93,6 +93,27 @@ READINGS: dict[str, str] = {
     "xly": "XLY",
 }
 
+# Readings whose LIVE QUOTE the feed serves only in bursts. Declared, not inferred — the same rule
+# and the same reason as `overview._NO_DAILY_SERIES`: nothing in the data distinguishes "the feed
+# was down today" from "this symbol never sustains a series", and a permanent refusal that looks
+# temporary is the thing that teaches a reader to skim the row.
+#
+# SKEW is the case. The 2026-08-24 entitlement probe printed it (143.9) through the ordinary legs
+# path and it was admitted on that basis, which was right on the evidence available. Sustained
+# observation says otherwise: over 2026-08-24..26 it produced 30 usable samples out of 1,105, and
+# the prints come in bursts with silence between — 22 prints between 09:49 and 11:46 ET and then
+# nothing, a single print at 09:00 the next session, three the session after with a 7.9-hour gap.
+# VIX over the same window printed 363 times at a 60-second median. This matches what its daily
+# series already showed (five scattered rows across seven months, one of them a zero), so the
+# intraday feed and the historical one fail the same way.
+#
+# It stays in READINGS deliberately rather than being retired. The refusal rows are the evidence
+# that it is unavailable, `dropped_readings` would flag a silent removal, and if the feed ever
+# sustains, the series starts filling with no code change. What this set buys is that its refusal
+# is EXPECTED rather than a finding to re-derive: the rows say `intermittent_feed`, and the sample
+# summary counts them apart from real staleness so a health read is not permanently depressed.
+INTERMITTENT_INTRADAY: frozenset[str] = frozenset({"skew"})
+
 # One sample per minute: matches the finest module tick in the suite; ~390 rows/reading/session.
 # The recorder loop runs faster (15s) — sample() throttles itself against the DB, so a restart
 # cannot double-sample and the cadence survives whatever interval the caller runs.
@@ -271,12 +292,21 @@ def sample(cfg: dict, *, now: datetime | None = None) -> dict:
         quotes = _read_trades(cfg["stream_cache_db"], sorted(set(sampled.values())))
         rows = []
         usable_count = 0
+        expected_unusable = 0
         for reading, symbol in sampled.items():
             value, basis_ts = quotes.get(symbol, (None, None))
             if value is None or basis_ts is None:
                 rows.append((today, now_ts, reading, symbol, None, None, 0, "no_quote"))
             elif (now_ts - basis_ts) > MAX_QUOTE_AGE_SECONDS:
-                rows.append((today, now_ts, reading, symbol, None, basis_ts, 0, "stale_quote"))
+                # Still refused, and the value is still not recorded — a burst-feed quote is as
+                # stale as any other. Only the REASON differs, so a reader can tell an expected
+                # silence from a feed that broke today.
+                reason = (
+                    "intermittent_feed" if reading in INTERMITTENT_INTRADAY else "stale_quote"
+                )
+                rows.append((today, now_ts, reading, symbol, None, basis_ts, 0, reason))
+                if reason == "intermittent_feed":
+                    expected_unusable += 1
             else:
                 rows.append((today, now_ts, reading, symbol, value, basis_ts, 1, None))
                 usable_count += 1
@@ -315,6 +345,9 @@ def sample(cfg: dict, *, now: datetime | None = None) -> dict:
             "status": "sampled",
             "written": len(rows) + chain_rows,
             "usable": usable_count + chain_rows,
+            # Refusals from a reading DECLARED intermittent, counted apart so "usable" reads as the
+            # recorder's health rather than as a permanent shortfall it can do nothing about.
+            "expected_unusable": expected_unusable,
             "chain_rows": chain_rows,
         }
     finally:
