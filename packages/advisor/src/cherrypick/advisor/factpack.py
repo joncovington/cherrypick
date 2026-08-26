@@ -33,6 +33,7 @@ from cherrypick.core import regime as _regime
 
 from cherrypick.advisor import bounds as _bounds
 from cherrypick.advisor import clock as _clock
+from cherrypick.advisor import enactment as _enactment
 from cherrypick.advisor import paths as _paths
 from cherrypick.advisor import settings as _settings
 from cherrypick.advisor import store as _store
@@ -400,6 +401,42 @@ def _earnings(session: str) -> dict[str, Any]:
     return out
 
 
+def _mark_coverage(conn, table: str, session: str) -> dict[str, Any]:
+    """Usable-vs-refused mark counts for one session, in words rather than in a flag column.
+
+    This was `SELECT usable, COUNT(*) n ... GROUP BY usable`, which serialises as
+    `[{"usable": 0, "n": 1}, {"usable": 1, "n": 2201}]` -- and on 2026-08-24 the advisor read that
+    as "usable 1 of 664" and concluded, in a proposal, that 663 of 664 marks were unusable and that
+    "the assignment-exposure metric every pmcc experiment is scored on" had a meaningless
+    denominator. The true figure was 664 of 664 usable. A boolean flag sitting next to a count is
+    two numbers that look like one ratio, and a reader that misreads it does not misread it
+    slightly -- it inverts the finding and proposes rebuilding something that works.
+
+    So the pack states the denominator, the numerator, and the refusal reasons by name.
+    """
+    total = 0
+    usable = 0
+    for row in _store.rows(
+        conn, f"SELECT usable, COUNT(*) n FROM {table} WHERE session_date = ? GROUP BY usable",
+        (session,),
+    ):
+        total += row["n"]
+        if row["usable"]:
+            usable += row["n"]
+    return {
+        "marks_total": total,
+        "marks_usable": usable,
+        "marks_refused": total - usable,
+        "usable_fraction": round(usable / total, 4) if total else None,
+        "refusals_by_reason": _store.rows(
+            conn,
+            f"SELECT refusal, COUNT(*) n FROM {table} WHERE session_date = ? AND usable = 0"
+            " GROUP BY refusal ORDER BY n DESC",
+            (session,),
+        ),
+    }
+
+
 def _calendars(session: str) -> dict[str, Any]:
     """Weekly double calendars: the advisable surface is exit parameters only (the entry is
     unconditional every week), so the pack carries what an exit judgement needs — each open
@@ -438,11 +475,7 @@ def _calendars(session: str) -> dict[str, Any]:
             " WHERE session_date = ? GROUP BY action, reason, executed, gate ORDER BY n DESC LIMIT ?",
             (session, TOP_N),
         )
-        marks = _store.rows(
-            conn,
-            "SELECT usable, COUNT(*) n FROM dc_marks WHERE session_date = ? GROUP BY usable",
-            (session,),
-        )
+        marks = _mark_coverage(conn, "dc_marks", session)
         return {
             "open_positions": open_rows,
             "closed_by_exit_reason": closed,
@@ -480,13 +513,22 @@ def _pmcc(session: str) -> dict[str, Any]:
             "   last_short_tv,"
             " (SELECT m.spot FROM pmcc_marks m WHERE m.position_id = p.position_id AND m.usable = 1"
             "   ORDER BY m.marked_at DESC LIMIT 1) last_spot"
-            " FROM pmcc_positions p WHERE p.status != 'closed' ORDER BY p.book, p.symbol",
+            " , p.era FROM pmcc_positions p WHERE p.status != 'closed' ORDER BY p.book, p.symbol",
         )
+        # GROUPED BY ERA, and that is the point rather than an extra column. pmcc's 2026-08-23
+        # redesign cut the module from three books to one; the four pre-redesign rows in this
+        # ledger are ONE TQQQ trade recorded four times, once per retired book, with identical
+        # economics. Pooled with a redesign-era row they read as four independent observations, and
+        # on 2026-08-24 the advisor read exactly that and proposed rebuilding a book structure that
+        # was already correct -- "one trade, four identical rows... a module net of four rows
+        # overstates the evidence fourfold". The rows were real; the pooling was the defect. The
+        # module's own analytics.py has defaulted to CURRENT_ERA since the redesign; this pack was
+        # the one reader that did not.
         closed = _store.rows(
             conn,
-            "SELECT book, symbol, exit_reason, COUNT(*) n, SUM(gross_pnl) gross, SUM(fees) fees,"
-            " SUM(roll_count) rolls FROM pmcc_positions WHERE status = 'closed'"
-            " GROUP BY book, symbol, exit_reason ORDER BY book",
+            "SELECT COALESCE(era, '(pre-redesign)') era, book, symbol, exit_reason, COUNT(*) n,"
+            " SUM(gross_pnl) gross, SUM(fees) fees, SUM(roll_count) rolls FROM pmcc_positions"
+            " WHERE status = 'closed' GROUP BY era, book, symbol, exit_reason ORDER BY era, book",
         )
         attempts = _store.rows(
             conn,
@@ -506,11 +548,7 @@ def _pmcc(session: str) -> dict[str, Any]:
             " WHERE session_date = ? AND assignment_exposed = 1 GROUP BY position_id",
             (session,),
         )
-        marks = _store.rows(
-            conn,
-            "SELECT usable, COUNT(*) n FROM pmcc_marks WHERE session_date = ? GROUP BY usable",
-            (session,),
-        )
+        marks = _mark_coverage(conn, "pmcc_marks", session)
         return {
             "open_positions": open_rows,
             "closed_by_exit_reason": closed,
@@ -796,16 +834,27 @@ def _arm_readings() -> dict[str, Any]:
 
 
 def _advice_audit(session: str) -> dict[str, Any]:
-    """The last artifact written per module, including its rejections. Reject-all is silent from
-    the loop's side (it just runs baseline), so this is where a proposal that was refused at the
-    gate becomes visible."""
+    """The last artifact written per module, including its rejections and whether it was APPLIED.
+
+    Reject-all is silent from the loop's side (it just runs baseline), so this is where a proposal
+    refused at the gate becomes visible. `enacted` is the other half, and until 2026-08-25 it was
+    missing: an artifact that was written and never reached its loop looked, from here, exactly like
+    one that was written and applied. It is not a cosmetic distinction -- five artifacts were issued
+    in one batch on 2026-08-24 and two were dropped, on the two sessions their experiments most
+    needed, and nothing in this pack said so.
+    """
     out = {}
+    enacted = _enactment.audit(session, MODULES)
     for module in MODULES:
         artifact = _store.read_json(_paths.advice_path(module, session), default=None)
         upcoming = _store.read_json(
             _paths.advice_path(module, _clock.next_session(session)), default=None
         )
-        out[module] = {"for_today": artifact, "for_next_session": upcoming}
+        out[module] = {
+            "for_today": artifact,
+            "for_next_session": upcoming,
+            "enacted": enacted[module],
+        }
     return out
 
 
@@ -827,6 +876,14 @@ def build(session: str, slot: str, modules: tuple[str, ...] | list[str] | None =
             "generated_at": _store.now_iso(),
             "modules": list(selected),
             "market": _market(session),
+            # Every slot, not just the evening one: an artifact that was dropped is worth knowing
+            # about at 10am, while the session can still be understood, rather than in the verdict
+            # that scores it. Compact here; the full reconciliation rides on advice_audit below.
+            "advice_enacted": {
+                m: {k: v for k, v in _enactment.reconcile(m, session).items()
+                    if k in ("status", "detail", "experiment_id")}
+                for m in selected if m in _enactment.MODULES
+            },
             "paper": {m: _MODULE_SECTIONS[m](session) for m in selected if m in _MODULE_SECTIONS},
             "live": _live(session),
             "experiments": _experiments_running(conn),
@@ -870,6 +927,17 @@ def write(session: str, slot: str, modules: tuple[str, ...] | list[str] | None =
     """Build and persist the pack. Write-once by convention: the pack is the record of what the
     model was shown, so a re-run (`--force`) deliberately overwrites the whole (session, slot)
     triple — pack, raw reply and checkpoint — rather than leaving a pack that describes a different
-    reply than the one on file."""
+    reply than the one on file.
+
+    `build` stays pure; this is the write path, so the enactment reconciliation is persisted here.
+    It runs every slot, which is the point: a dropped artifact should be visible on the console at
+    10am while the session can still be understood, not in the verdict that scores it that evening.
+    """
     pack = build(session, slot, modules)
-    return _store.write_json(_paths.pack_path(session, slot), pack)
+    path = _store.write_json(_paths.pack_path(session, slot), pack)
+    conn = _store.connect()
+    try:
+        _enactment.record(conn, session, modules)
+    finally:
+        conn.close()
+    return path
