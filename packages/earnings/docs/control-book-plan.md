@@ -242,6 +242,32 @@ counts-and-symbols-only, forever. **The replay must state which side of that lin
 from.** A single report that mixes measured returns with counterfactual counts and does not say
 which is which is worse than two reports.
 
+**Landed 2026-08-26** as `cherrypick/earnings/entry_replay.py`
+(`python -m cherrypick.earnings.entry_replay --screen "winrate=off,iv_rv_ratio=near_miss"`).
+
+The honesty rule is structural rather than a flag: `measured` carries returns, `counterfactual`
+carries no P&L key at all and cannot grow one by accident. A test asserts the absence.
+
+Three things the build settled that the plan did not anticipate:
+
+- **Fidelity, not independence.** It calls the scanner's own `apply_soft_criteria` rather than
+  re-deriving the gates — the opposite of the choice `meic.analytics.settlement_audit` makes, and
+  for the opposite reason. An audit wants a second implementation so the two *can* disagree; a
+  replay is only useful if it answers exactly what the real scanner would have done.
+- **The screen is not a constant over the window.** `symbol_screen_edge_gates_off` (08-25) turned
+  three gates from `pass` to `off`, so a row scanned on 08-20 and refused by market cap was refused
+  BY THE SCREEN — while today's levels say market cap is off, which classifies the same row as
+  refused *outside* the screen and drops it from the universe. Levels in force are recovered per
+  date from `measurement_breaks`, which exists for exactly this. Fixing it grew the replayable
+  universe from 489 rows to 555.
+- **Levels are recoverable; thresholds are not.** The `min_*` values behind each level are journalled
+  nowhere, so today's are applied to every date. `validate()` makes that visible instead of silent:
+  it reproduces **550 of 555** recorded decisions, and all five disagreements are 2026-07-20..23 rows
+  whose `iv_rv_ratio` sat between 1.00 and 1.20 — below today's min of 1.25, above the near-miss bar
+  of 1.00. Every `replay()` result therefore carries its own `validation` block with a
+  `verified_from` date, so an answer cannot be read without knowing which side of that line it came
+  from.
+
 ### Phase 4 — the advisor's entry-side role
 
 With phases 1-3 landed, the advisor's entry proposals become checkable: it proposes screen
