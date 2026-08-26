@@ -697,3 +697,65 @@ def test_control_fired_buckets_rather_than_excludes(conn):
     out = analytics.control_fired(conn)
     assert out["n_sessions"] == 1, "the dark session is still reported, not filtered away"
     assert out["sessions"][0]["by_arm"] == {"width-5": 1}
+
+
+# --------------------------------------------------------------------------- the GEX gate counterfactual
+
+
+def test_gex_gate_counterfactual_splits_the_book_on_the_recorded_flag(conn):
+    """`regime_gex_block_negative` refuses an entry when net GEX is confirmed negative, so the
+    permissive book's own rows carrying gex_positive_at_entry=0 ARE the entries it would have
+    refused. Same book, same tape, same stop policy: no cross-arm confound to argue about."""
+    _insert(conn, ic_order_id="1", gex_positive_at_entry=0, pnl=100.0, fees=10.0)
+    _insert(conn, ic_order_id="2", gex_positive_at_entry=0, pnl=-500.0, fees=10.0)
+    _insert(conn, ic_order_id="3", gex_positive_at_entry=1, pnl=200.0, fees=10.0)
+
+    out = analytics.gex_gate_counterfactual(conn)
+
+    assert out["refused_by_the_gate"]["trades"] == 2
+    assert out["refused_by_the_gate"]["net_pnl"] == -420.0
+    assert out["allowed_by_the_gate"]["net_pnl"] == 190.0
+
+
+def test_gex_gate_counterfactual_reports_an_untagged_denominator(conn):
+    """A row with no recorded flag belongs to neither side. Folding it into 'allowed' would make the
+    gate look better every time the tag was missing."""
+    _insert(conn, ic_order_id="1", gex_positive_at_entry=None, pnl=100.0, fees=10.0)
+    out = analytics.gex_gate_counterfactual(conn)
+    assert out["untagged_trades"] == 1
+    assert out["refused_by_the_gate"]["trades"] == 0
+    assert out["allowed_by_the_gate"]["trades"] == 0
+
+
+def test_gex_gate_counterfactual_isolates_the_session_the_result_rests_on(conn):
+    """The gate is insurance, and insurance is judged on its tail rather than its mean. On the live
+    ledger one session (2026-08-20, -129,344.54 across 306 refused entries) is the entire pooled
+    result: without it the refused entries netted +123,618.21. A caller printing only the total
+    would read 'the gate roughly breaks even' and miss that its whole case is one day."""
+    _insert(conn, ic_order_id="1", trade_date="2026-08-18", gex_positive_at_entry=0,
+            pnl=1000.0, fees=10.0)
+    _insert(conn, ic_order_id="2", trade_date="2026-08-20", gex_positive_at_entry=0,
+            pnl=-5000.0, fees=10.0)
+
+    out = analytics.gex_gate_counterfactual(conn)
+
+    assert out["refused_by_the_gate"]["net_pnl"] == -4020.0
+    assert out["worst_session"]["session"] == "2026-08-20"
+    assert out["refused_excluding_worst_session"]["net_pnl"] == 990.0, "the sign must flip"
+    assert [s["session"] for s in out["by_session"]] == ["2026-08-18", "2026-08-20"]
+
+
+def test_gex_gate_counterfactual_reads_across_the_open_to_control_rename(conn):
+    """`open` was renamed `control` at the 2026-08-21 cutover and the registry records them as one
+    continuous stream. Reading only the current era would drop two thirds of the evidence."""
+    _insert(conn, ic_order_id="1", risk_profile="open", era="sample",
+            gex_positive_at_entry=0, pnl=100.0, fees=10.0)
+    _insert(conn, ic_order_id="2", risk_profile="control", era=analytics.CURRENT_ERA,
+            gex_positive_at_entry=0, pnl=100.0, fees=10.0)
+
+    out = analytics.gex_gate_counterfactual(conn)
+
+    assert out["refused_by_the_gate"]["trades"] == 2
+    assert out["eras_present"] == ["advisor", "sample"]
+    assert analytics.gex_gate_counterfactual(conn, era=analytics.CURRENT_ERA
+                                             )["refused_by_the_gate"]["trades"] == 1

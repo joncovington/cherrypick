@@ -897,3 +897,86 @@ def daily_rollup(conn, day: str, era: str | None = None) -> dict:
         "avg_iv_rank": _round(sum(iv_ranks) / len(iv_ranks), 4) if iv_ranks else None,
         "sessions_entered": sessions,
     }
+
+
+def gex_gate_counterfactual(
+    conn, start=None, end=None, symbol=None, era="ALL", arm=("control", "open")
+) -> dict:
+    """What the negative-GEX entry gate has cost or saved, measured on the permissive book's own rows.
+
+    The advisor asked for this on 2026-08-18, 08-20, 08-21 and 08-25 and it was never computed. Its
+    proposed form was to sum the permissive book's net on the sessions the gated book was dark. That
+    number is available and it does not answer the question: `control-gated` and `control` differ in
+    a dozen keys, not one -- min_iv_rank 0.3 vs 0.0, min_call_otm_pct 0.0035 vs 0.0001,
+    per_side_stop_management on vs off, overlap_scope 'shorts' vs 'none' -- so a difference between
+    them is the whole design, not the gate.
+
+    The gate IS answerable, exactly, and from one book. `regime_gex_block_negative` refuses an entry
+    when net GEX is confirmed negative, and the permissive book records `gex_positive_at_entry` on
+    every fill it took. Its rows where that flag is 0 are precisely the entries the gate would have
+    refused -- same book, same sessions, same tape, same stop policy, perfect pairing, no
+    cross-arm confound. This is the read the risk-profile registry itself describes as the PRIMARY
+    one ("split its own trades by the recorded gex_positive_at_entry"), which had never been run.
+
+    `era` defaults to "ALL" here, unlike every other reader in this file, and the reason is specific
+    rather than a relaxation: `open` was RENAMED to `control` at the 2026-08-21 cutover and the
+    registry records them as one continuous stream with identical gates and stop policy. The eras
+    differ in what ran BESIDE this book, which is not something this measurement reads. Both era
+    slices are returned anyway, because a reader should be able to check that for themselves.
+
+    The per-session table is not decoration. Whatever the pooled number says, this gate's entire
+    result may rest on a single session, and a caller that prints only the total will not see it.
+    """
+    where, params = _period_clause(start, end, None, symbol, era)
+    arms = [arm] if isinstance(arm, str) else list(arm)
+    where += f" AND risk_profile IN ({','.join('?' * len(arms))})"
+    params = list(params) + arms
+
+    rows = conn.execute(
+        "SELECT pnl, fees, trade_date, era, gex_positive_at_entry"
+        f" FROM ic_trades WHERE {where}",
+        params,
+    ).fetchall()
+
+    def slice_of(predicate, source=rows):
+        return _summarize([r for r in source if predicate(r)])
+
+    refused = slice_of(lambda r: r["gex_positive_at_entry"] == 0)
+    allowed = slice_of(lambda r: r["gex_positive_at_entry"] == 1)
+    untagged = [r for r in rows if r["gex_positive_at_entry"] is None]
+
+    sessions = []
+    for day in sorted({r["trade_date"] for r in rows if r["trade_date"]}):
+        same_day = [r for r in rows if r["trade_date"] == day]
+        day_refused = slice_of(lambda r: r["gex_positive_at_entry"] == 0, same_day)
+        if not day_refused["trades"]:
+            continue
+        sessions.append({
+            "session": day,
+            "refused_trades": day_refused["trades"],
+            "refused_net": day_refused["net_pnl"],
+            "refused_win_rate": day_refused["win_rate"],
+        })
+
+    worst = min(sessions, key=lambda s: s["refused_net"]) if sessions else None
+    without_worst = (
+        slice_of(lambda r: r["gex_positive_at_entry"] == 0 and r["trade_date"] != worst["session"])
+        if worst else None
+    )
+
+    return {
+        "arms": arms,
+        "era": era,
+        # The headline: what the gate refused. A NEGATIVE net here means the gate saved that much;
+        # a positive one means it cost that much, in entries the book would have taken and won on.
+        "refused_by_the_gate": refused,
+        "allowed_by_the_gate": allowed,
+        "untagged_trades": len(untagged),
+        "by_session": sessions,
+        # The gate is insurance, so the question is never the mean -- it is whether the tail it
+        # covers is real. Read `refused_by_the_gate` against this: if dropping one session flips the
+        # sign, the gate's whole case is that session and should be argued as such.
+        "worst_session": worst,
+        "refused_excluding_worst_session": without_worst,
+        "eras_present": sorted({r["era"] for r in rows if r["era"]}),
+    }
