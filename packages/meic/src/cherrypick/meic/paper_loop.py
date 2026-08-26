@@ -397,9 +397,14 @@ def _build_candidates(symbol, last, widths, delta_targets, default_delta, today)
     return candidates, leg_quotes, None
 
 
-def _open_count():
+def _open_trades_today():
+    """Today's still-open positions. `get_open_trades` already scopes to `trade_date = today`."""
     d = _run_json(_DB + ["get_open_trades"])
-    return len(d.get("open_trades", [])) if d.get("ok") else 0
+    return d.get("open_trades", []) if d.get("ok") else []
+
+
+def _open_count():
+    return len(_open_trades_today())
 
 
 # ---------------------------------------------------------------------------
@@ -1068,13 +1073,40 @@ def _task_installed():
 
 
 def _cmd_status():
+    """Daemon/task status, plus the settlement signal the orchestrator's watchdog reads.
+
+    `session_settled` / `positions_today` / `data_reason` are the three fields
+    `watchdog._check_settlement` looks for, and their absence is why meic was the one paper module
+    with no `settle_overdue` check while flies, calendars, pmcc, curve and bwb all had one — the
+    check reads a module's own `--status` and says nothing when it cannot find the signal, so
+    enabling it for meic without these would have been a check that could not fire.
+
+    It matters more since 2026-08-26: `paper.evaluate_open_trade` now REFUSES to settle a position
+    without an underlying price rather than booking it at zero intrinsic (i.e. full credit). That is
+    the right failure, but it is a silent one — the position simply stays open — and this is what
+    makes it audible. The flies 2026-07-22 incident is the same shape: 5 positions unsettled for 9
+    hours because settlement refuses a stale price, logged every 2 minutes, alerting nobody.
+
+    `positions_today` deliberately repeats `open_positions` rather than being a second count: both
+    come from the one `get_open_trades` call, which already scopes to today. The watchdog's field
+    name is kept so this module reads like every other one it checks.
+    """
     pid = _running_pid()
+    open_today = _open_trades_today()
+    # A row the loop could not mark is the most likely reason it is still open past the close. Left
+    # absent when it is not the cause: the watchdog supplies its own wording rather than being
+    # handed a guess.
+    unmarked = [t for t in open_today if (t.get("unmarked_iterations") or 0) > 0]
     info = {
         "daemon_running": pid is not None,  # a long-running --start daemon (if used)
         "pid": pid,
         "scheduled_task": _task_installed(),  # the recommended --install-task automation
-        "open_positions": _open_count(),
+        "open_positions": len(open_today),
+        "positions_today": len(open_today),
+        "session_settled": not open_today,
     }
+    if unmarked:
+        info["data_reason"] = f"{len(unmarked)} position(s) could not be marked this session"
     _emit(info)
 
 
