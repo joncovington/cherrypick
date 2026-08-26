@@ -91,15 +91,12 @@
         "min": 0,
         "max": 3
       },
-      "entry_price_strategy": {
-        "choices": [
-          "mid",
-          "natural_bid",
-          "ioc_step",
-          "day_improve",
-          "auto"
-        ]
-      }
+      "min_call_otm_pct": {
+        "min": 0.0001,
+        "max": 0.006,
+        "_note": "One-directional by construction, which is what makes it safe to grant: `control` runs 0.0001, so the floor of this range IS the baseline, and every admissible value pushes the short call further out of the money. It can only make the advised book refuse more than its control, never take a trade the control would not. The ceiling sits above the deployed default (0.0035) and below the quarterly-expiry override (0.0067)."
+      },
+      "_removed_entry_price_strategy_note": "REMOVED 2026-08-26. It was a bound over a parameter the paper engine never reads -- `entry_price_strategy` is consumed only by the agent-driven live path (.claude/commands/execute-entry.md), and the advisor only ever influences paper. A proposal on it would validate, be admitted, and produce an advised book byte-identical to its control: a spent experiment slot that could not have measured anything. That is the `sign` arm's failure (100% decision-agreement with control, retired as redundant), reachable here by configuration. tests/test_advice_bounds.py now refuses a bound the engine does not read."
     }
   },
   "account_deploy_limit_pct": 0,
