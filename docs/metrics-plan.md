@@ -230,6 +230,30 @@ pattern).
   would even be** (the numbers must exist before a threshold on them means anything). When
   revisited, a gate is its own journaled decision with its own boundary, never a quiet edit to
   `calibrate`'s comparison.
+
+  **Checked 2026-08-26 against the live ledgers. Still defer — and the trigger is now specific.**
+
+  Raw session counts look close: meic 24, flies 26, everything else ≤11. But those pool across
+  declared measurement breaks, which the suite's own rule forbids. meic's 24 are three incomparable
+  eras (book 11, sample 10, advisor 4) and flies carries four breaks in the window. **In a single
+  comparable era both modules stand at 4 sessions**, against `CVAR_MIN_SESSIONS = 20`. Five of the
+  seven modules cannot compute a CVaR at all.
+
+  So the re-check trigger is: **a module reaches ~20 sessions inside ONE era.** Both leaders'
+  current eras began 2026-08-21, so at roughly five sessions a week that is ~3–4 months out, and it
+  resets on the next declared break.
+
+  Two things that surfaced while checking, worth having on record before that day:
+  - The comparability objection dissolves on inspection. Promotion is ALREADY qualified per module
+    against its own `settings.calibration_rule` (the 2026-08-15 fix), so a tail gate never needed a
+    bar shared across modules. Session count inside an era is the only real constraint.
+  - A cross-module tail READING, if one is ever wanted, would still need normalising. Raw CVaR
+    tracks sampling intensity, not risk: meic runs 238 trades/session against flies' 31, and their
+    CVaRs differ 5.7× while their per-trade tails differ ~35% (−405 vs −548). The suite's own
+    normaliser is capital-at-risk, and `ledgers._flies_closed` records `capital: None` **on
+    purpose** — a legged book's risk depends on completion state, and unknown ≠ zero — so that
+    normalisation is unavailable for flies specifically. Not a defect to fix; a constraint to plan
+    around.
 - **Scatter primitive** — the one new chart component; keep it as spare as the house kit
   (categorical-free axes, shared tokens, no dependency added).
 - **Full Deflated Sharpe** — deferred until the arm count or the advisor's experiment volume makes
