@@ -136,6 +136,19 @@ changes as safe, and it is the only check that sees past the fallback below.
   verdicts**: those come from `packages/advisor`, through the suite's own
   ledger-readers → `compare_profiles` → `qualify_readings` chain. A TypeScript re-derivation would
   be a second opinion free to drift, which is the mistake `services/report.ts` already made once.
+  **"Did the loop apply this artifact" is one of those verdicts**, and it is read from the
+  `enactment` table rather than recomputed by comparing an artifact's params to a decision file
+  here — same rule, and the comparison is genuinely subtle (a reject-all artifact beside a baseline
+  decision IS enacted). Rows are absent on a store that predates the table, which the page renders
+  as "not scored yet"; an unscored session and a dropped artifact are different facts and only the
+  second gets a warning chip.
+
+  The apply banner is worth knowing the history of. It used to show tomorrow's artifact beside
+  **today's** decision — two different sessions, which can never agree — so on 2026-08-25 meic and
+  earnings sat in it reading "written" next to "advice_disabled" with no warning anywhere, and the
+  card is collapsed by default so the closed head was all anyone saw. Two columns now: what is
+  queued for the next session, and whether THIS session's artifact landed, with the count of
+  failures on the head. If you touch that table, keep the signal on the head.
 - **Where a module already classifies its own data, ask it — don't re-derive it.** `services/
   screenBridge.ts` reads the earnings screening metrics by invoking
   `python -m cherrypick.earnings.screen_report --json` (same bridging pattern and the same reason as

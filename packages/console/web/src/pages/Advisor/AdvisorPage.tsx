@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type {
   AdvisorApplyStatus,
   AdvisorCheckpoint,
+  AdvisorEvent,
   AdvisorExperiment,
   AdvisorPair,
   AdvisorProposal,
@@ -193,25 +194,54 @@ function TabSummary({
 
 // --------------------------------------------------------------------------- apply-status banner
 
-function ApplyBanner({ status }: { status: AdvisorApplyStatus[] }) {
+/** One module's answer to "did the artifact issued for this session actually reach the loop?" */
+export function EnactmentCell({ status }: { status: AdvisorApplyStatus }) {
+  const e = status.enactment;
+  if (e === null) {
+    // No stored reconciliation: the advisor has not run a slot for this session. Not a failure —
+    // an unscored session and a dropped artifact are different facts and must not share a chip.
+    return <span className="muted">not scored yet</span>;
+  }
+  if (e.status === "no_artifact") return <span className="muted">nothing issued</span>;
+  if (e.status === "enacted") return <span className="chip">applied</span>;
+  return (
+    <>
+      <span className="chip chip-warn">not applied</span>
+      {e.detail !== null && <div className="muted">{e.detail}</div>}
+    </>
+  );
+}
+
+export function ApplyBanner({ status }: { status: AdvisorApplyStatus[] }) {
+  // The card is collapsed by default, so the head is the only thing most readers ever see. A
+  // dropped artifact has to be legible THERE: on 2026-08-25 meic and earnings both sat inside this
+  // card reading "written" beside "advice_disabled", and nothing on the closed head said so.
+  const dropped = status.filter((s) => s.enactment?.status === "not_enacted");
   return (
     <CollapsibleCard
       head={
         <>
-          <h2>Advice for the next session</h2>
+          <h2>Advice: written, and whether it landed</h2>
+          {dropped.length > 0 ? (
+            <span className="chip chip-warn" title={dropped.map((s) => s.module).join(", ")}>
+              {dropped.length} not applied
+            </span>
+          ) : (
+            <span className="chip">all applied</span>
+          )}
           <span className="card-asof">{status[0]?.nextSession ?? "nothing issued yet"}</span>
         </>
       }
     >
       <div className="table-scroll">
-        <table className="data-table data-table-labelled">
+        <table className="data-table advisor-apply">
           <thead>
             <tr>
               <th>Module</th>
-              <th>Artifact</th>
+              <th>Queued for next session</th>
               <th>Admitted</th>
               <th>Rejected</th>
-              <th>The loop&apos;s own decision</th>
+              <th>Did this session&apos;s artifact land?</th>
             </tr>
           </thead>
           <tbody>
@@ -249,14 +279,12 @@ function ApplyBanner({ status }: { status: AdvisorApplyStatus[] }) {
                         </div>
                       ))}
                 </td>
-                <td className="muted">
-                  {/* The module froze this at session start and replays it all day. It is the only
-                      evidence that advice actually reached a loop rather than merely being written. */}
-                  {s.consumerDecision === null
-                    ? "not read yet"
-                    : `${String(s.consumerDecision["day"] ?? "?")} · ${String(
-                        s.consumerDecision["reason"] ?? "applied",
-                      )}`}
+                <td>
+                  {/* The advisor's own reconciliation of the CHOSEN session, not this reader's.
+                      Previously this column showed the loop's decision for today beside an artifact
+                      for tomorrow — two different sessions, which can never agree, which is exactly
+                      why "written" next to "advice_disabled" read as normal for two whole days. */}
+                  <EnactmentCell status={s} />
                 </td>
               </tr>
             ))}
@@ -267,6 +295,11 @@ function ApplyBanner({ status }: { status: AdvisorApplyStatus[] }) {
         An artifact that carries nothing is not a failure: reject-all is silent from the loop&apos;s
         side, so a written artifact with zero admitted params runs the baseline — exactly as an
         absent one would — and the rejections above are the only record that the advisor tried.
+      </p>
+      <p className="muted">
+        <strong>Not applied</strong> is different, and it is not free: the advisor wrote an artifact
+        and the loop never ran under it, so the session bought that experiment no evidence. Those
+        sessions are excluded from its <code>sessions run</code> count for the same reason.
       </p>
     </CollapsibleCard>
   );
@@ -493,7 +526,43 @@ function PairTable({ pairs }: { pairs: AdvisorPair[] }) {
   );
 }
 
-function ExperimentCard({
+/**
+ * Why this experiment's session count is what it is.
+ *
+ * Split out of the card so it can be rendered on its own: `CollapsibleCard` draws no children while
+ * collapsed, which is every card's default, so anything asserted only through the card is asserted
+ * against an empty body.
+ *
+ * Without this the number on the head is bare — an experiment reading 2/10 after four evenings
+ * looks stalled when it was actually starved, which is the reading that nearly fired earnings'
+ * kill-at-session-6 rule on sessions its parameter was never applied to.
+ */
+export function CountingCaveat({ journal }: { journal: AdvisorEvent[] }) {
+  const dropped = journal.filter((j) => j.event === "counted" && j.detail?.["enacted"] === false);
+  const recount = journal.filter((j) => j.event === "recounted").slice(-1)[0];
+  if (dropped.length === 0 && recount === undefined) return null;
+  return (
+    <p className="review-caveat">
+      {dropped.length > 0 && (
+        <>
+          {`${dropped.length} session${dropped.length === 1 ? "" : "s"} did not count`}: an artifact
+          was issued and the loop never ran under it
+          {` (${dropped.map((j) => j.session ?? "?").join(", ")}). `}
+        </>
+      )}
+      {recount !== undefined && (
+        <>
+          {"Counts were re-derived from what the loops recorded: "}
+          {`${String(recount.detail?.["sessions_run_recorded"] ?? "?")} → ${String(
+            recount.detail?.["sessions_run_derived"] ?? "?",
+          )}.`}
+        </>
+      )}
+    </p>
+  );
+}
+
+export function ExperimentCard({
   e,
   onKill,
   busy,
@@ -576,6 +645,8 @@ function ExperimentCard({
           ? "no advice issued for it yet"
           : `last enacted ${lastEnact.session ?? "?"} → ${String(lastEnact.detail?.["target"] ?? "?")}`}
       </p>
+
+      <CountingCaveat journal={e.journal} />
 
       {running && (
         <button type="button" className="btn" disabled={busy} onClick={() => onKill(e.id)}>

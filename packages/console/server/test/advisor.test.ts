@@ -213,6 +213,42 @@ describe("the advisor reader", () => {
     });
   });
 
+  it("degrades when the store predates the enactment table", () => {
+    // seedStore (run by an earlier test in this file) builds the PRE-enactment schema on purpose:
+    // a machine that has not run the current advisor build is the ordinary case, and the page must
+    // render without the column rather than 500.
+    const meic = readAdvisor(config).applyStatus.find((s) => s.module === "meic");
+    expect(meic?.enactment).toBeNull();
+  });
+
+  it("surfaces the advisor's verdict that an artifact never reached its loop", () => {
+    // The 2026-08-25 incident, as a payload. Two modules held a live, valid artifact and their
+    // loops recorded `advice_disabled` against it; the page showed "written" and said nothing.
+    const db = new Database(path.join(tmp, "advisor", "advisor.db"));
+    db.exec(
+      "CREATE TABLE enactment (session TEXT, module TEXT, status TEXT, detail TEXT," +
+        " experiment_id TEXT, artifact_params TEXT, decision_params TEXT, decision_reason TEXT," +
+        " scored_at TEXT, PRIMARY KEY (session, module))",
+    );
+    db.prepare(
+      "INSERT INTO enactment (session, module, status, detail, experiment_id, decision_reason," +
+        " scored_at) VALUES (?,?,?,?,?,?,?)",
+    ).run(SESSION, "meic", "not_enacted", "the loop recorded {} against an artifact admitting" +
+      " {'stop_trigger_ratio': 0.9}", "exp-1", "advice_disabled", `${SESSION}T21:05:00+00:00`);
+    db.prepare(
+      "INSERT INTO enactment (session, module, status, experiment_id, scored_at) VALUES (?,?,?,?,?)",
+    ).run(SESSION, "flies", "enacted", "exp-2", `${SESSION}T21:05:00+00:00`);
+    db.close();
+
+    const status = readAdvisor(config).applyStatus;
+    const meic = status.find((s) => s.module === "meic");
+    expect(meic?.enactment).toMatchObject({ status: "not_enacted", decisionReason: "advice_disabled" });
+    expect(meic?.enactment?.detail).toContain("stop_trigger_ratio");
+    expect(status.find((s) => s.module === "flies")?.enactment?.status).toBe("enacted");
+    // A module the advisor never scored is not a failure and must not borrow one.
+    expect(status.find((s) => s.module === "pmcc")?.enactment).toBeNull();
+  });
+
   it("survives a corrupt artifact rather than taking the page down", () => {
     fs.writeFileSync(path.join(config.paths.adviceDir, `flies-${NEXT}.json`), "{ half written");
     const flies = readAdvisor(config).applyStatus.find((s) => s.module === "flies");

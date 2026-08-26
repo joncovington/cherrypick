@@ -1178,24 +1178,32 @@ select.text-input {
   line-height: 1.5;
 }
 
-/* A proposal's param table inverts what `data-table-labelled` assumes. There the prose is the FIRST
-   column and the figures follow; here the first column is a config key that must read on one line,
-   and the prose is the LAST column — a rationale the model writes in full sentences, several
-   hundred characters of it. Under the labelled shape that rationale kept the table's default
-   `nowrap` and ran the card four thousand pixels off the page, which in turn squeezed the key
-   column to a sliver where `overflow-wrap: anywhere` broke it one character per line. So the
-   treatment goes where the prose actually is: key and value size to their content, the rationale
-   takes what is left and wraps there. */
-.advisor-params th:first-child,
-.advisor-params td:first-child,
-.advisor-params th:nth-child(2),
-.advisor-params td:nth-child(2) {
+/* Tables whose PROSE IS THE LAST COLUMN — the inverse of what `data-table-labelled` assumes.
+   There the prose is the first column and the figures follow; in these the leading columns are
+   short identifiers that must read on one line and the prose trails: a proposal's rationale (the
+   model writes full sentences, several hundred characters), or the advisor's account of why an
+   artifact never reached a loop.
+
+   Under the labelled shape that prose kept the table's default `nowrap` and ran the card four
+   thousand pixels off the page, which in turn squeezed the leading column to a sliver where
+   `overflow-wrap: anywhere` broke it one character per line — "m e i c" down the left edge. So the
+   treatment goes where the prose actually is: every column but the last sizes to its content, and
+   the last takes what is left and wraps there.
+
+   Written as one rule over both tables rather than copied: they are the same shape with the same
+   failure, and the second one was authored by re-hitting the first one's bug in a browser. */
+.advisor-params th:not(:last-child),
+.advisor-params td:not(:last-child),
+.advisor-apply th:not(:last-child),
+.advisor-apply td:not(:last-child) {
   width: 1%;
   white-space: nowrap;
 }
 
 .advisor-params th:last-child,
-.advisor-params td:last-child {
+.advisor-params td:last-child,
+.advisor-apply th:last-child,
+.advisor-apply td:last-child {
   width: auto;
   white-space: normal;
   overflow-wrap: anywhere;
