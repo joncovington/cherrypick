@@ -100,9 +100,19 @@ changes as safe, and it is the only check that sees past the fallback below.
   under Commands) and check the payload is populated, not merely 200. Where a reader can be handed
   a store whose shape varies — an older paper book, a live book, a test fixture — ask
   `sqlite_master` which tables exist rather than naming one and relying on the catch.
-  (`withReadOnlyDb` also conflates "store absent" with "query threw" across ~65 call sites.
-  Documented rather than fixed as of 2026-08-20: separating them changes semantics every call site
-  depends on, and wants its own landing.)
+  (`withReadOnlyDb` still conflates "store absent" with "query threw" in what it RETURNS across ~65
+  call sites — separating the two return paths changes semantics every one of them depends on, and
+  still wants its own landing. **What changed 2026-08-26 is that the second case is no longer
+  invisible.** A throw is recorded per store (path, message, count, last seen), logged once per
+  distinct message — repeats are counted, not re-logged, since the SPA polls every few seconds and a
+  wedged reader logging each poll buries itself as effectively as logging nothing — and surfaced by
+  `/api/health` as a `readers` array. An absent store is deliberately NOT recorded: a fresh machine
+  would otherwise warn about every module it has not installed.
+
+  `/api/health`'s `ok` still means "the server is up" and is unchanged, so a watchdog reading it does
+  not start failing because one ledger has a bad column. Read `readers` for that; an empty array is
+  the healthy case. This does not remove the need for the recipe above — a reader can still return a
+  structurally empty result without throwing at all, which is what the day-resolver defect did.)
 - **The Config page is the one bounded exception, and it holds no write logic of its own.** Every
   config edit and the halt toggle go out through the orchestrator's own surface as a subprocess
   (`python -m cherrypick.orchestrator.configcli`, JSON in/out — `services/configBridge.ts`, the same

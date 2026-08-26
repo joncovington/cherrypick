@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
+import { listReaderFailures, setReaderFailureLogger } from "./readers/db.js";
 import { loadConfig, BIND_HOST } from "./config.js";
 import { registerStatusRoutes } from "./routes/status.js";
 import { registerOverviewRoutes } from "./routes/overview.js";
@@ -52,7 +53,15 @@ registerAdvisorRoutes(app, config);
 registerAdvisorOpsRoutes(app, config);
 registerModuleRoutes(app, config);
 registerConfigRoutes(app, config);
-app.get("/api/health", async () => ({ ok: true }));
+// `ok` still means "the server is up", unchanged — a watchdog reading it must not start failing
+// because one module's ledger has a bad column. `readers` is the addition: a store whose reads are
+// throwing is served as an empty result by `withReadOnlyDb`, and until this it left no trace on the
+// wire, on the page, or in the log. An empty list is the healthy case.
+app.get("/api/health", async () => ({ ok: true, readers: listReaderFailures() }));
+
+// Swallowed reader failures get a log line. `db.ts` has no request context and 65 call sites do not
+// pass a logger, so it is injected once here rather than threaded through.
+setReaderFailureLogger((message) => app.log.warn(message));
 
 // Daily EOD chain snapshot (~15:30 ET weekdays) on the console's own session.
 startChainEodScheduler(config, market, (msg) => app.log.info(msg));
