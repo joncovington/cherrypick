@@ -101,6 +101,52 @@ is labeled `underpowered` — never silently passed or failed.
 Structurally: the only thing it can emit is an `advised:*` overlay. A `tune` proposal naming a
 control arm, a human-configured profile, or an unknown id is rejected `not_an_advisor_experiment`.
 
+## The pack has a budget, and it is now enforced against the real pack (2026-08-26)
+
+**Measurement break for the advisor: proposals either side of 2026-08-26 were made on different
+evidence.** The journal the model reads is tapered from this date, so a thread it could previously
+re-read in full now reaches it as a title beyond two sessions. Nothing about the ledgers changed —
+this is a change to the advisor's INPUT, and its output should be read with that in mind.
+
+The deep pack had grown from 250KB (2026-08-17) to **731KB** (2026-08-26), about +65KB a session,
+against a stated ceiling of 150KB. Nothing caught it because `tests/test_factpack.py` measures a
+seeded fixture — a pack nobody reads — so the check was green the whole way.
+
+Where it was: `advisor_journal` at 466KB of the 690KB, being 46 checkpoints and 76 proposals carried
+verbatim. The ten-session window was never the problem; the prose per session was. A creative
+proposal runs ~7.7KB.
+
+What changed:
+
+- **The journal tapers by age.** The most recent `JOURNAL_FULL_SESSIONS` (2) keep full payloads and
+  observations; older entries keep identity — title, module, kind, fate, reason. That is what "do
+  not re-propose what was dismissed" actually needs. **Flags are kept at every age**, because a flag
+  is a standing caveat about a module and is exactly the thing that must not age out of view.
+- **Concluded experiments are carried once**, by `experiments_full.concluded`, not also by the
+  journal. The same seven were appearing twice in two shapes.
+- **`pending_proposals` is deep-slot-only elided**, since the journal already carries this session
+  in full there. The light slots keep it: they have no journal, and compounding earlier slots is
+  the whole reason it exists.
+- **The ceilings are derived from the plan's token targets** (~8k light, ~30k deep at ~4 bytes a
+  token) rather than from wherever the pack sits, and `cmd_factpack` returns a `budget` block that
+  `scripts/advisor_checkpoint.py` already reads. Reported, never fatal: a size check must not cost
+  a session its advice.
+- Measured the way `store.write_json` serialises — indent=2 — because that is the file handed to
+  the model. A compact measure understates it by about a quarter.
+
+Result: **731KB → 472KB deep.** Still 3.9x the derived ceiling, and that is recorded rather than
+papered over. Two things are worth knowing before the next attempt.
+
+`arm_readings` looks like an easy 14KB — meic carries 17 arms of which 15 are retired. It was
+deliberately NOT cut: the advisor cited retired arms this week, and the twelve-session gate
+retrospective rests entirely on them. A retired arm's reading is evidence, not dead weight.
+
+The LIGHT pack is 108KB against 32KB and the taper does not touch it, because light slots have no
+journal. Its bulk is `paper` (40KB) — the module facts themselves, across seven modules — and
+`pending_proposals` (31KB), which is the model's own output compounding through the day by design.
+Seven modules at ~5KB of facts each is 35KB before anything else, so the ~8k-token light target may
+simply predate the suite having seven modules. That is a target to revisit, not a leak to plug.
+
 ## The module list is derived, not restated (2026-08-26)
 
 `bounds._BASE_KEY` is the source of truth for which modules the advisor may act on. `MODULES` is

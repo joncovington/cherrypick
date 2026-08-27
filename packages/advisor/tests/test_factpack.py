@@ -11,11 +11,12 @@ from cherrypick.advisor import factpack, paths, store
 
 SESSION = "2026-08-13"
 
-# The pack is paid for by the token. These are generous ceilings on the JSON, not targets: light
-# packs aim at ~8K tokens and deep at ~30K, and a pack that blows through them is a section that
-# started dumping rows.
-LIGHT_MAX_BYTES = 40_000
-DEEP_MAX_BYTES = 150_000
+# The ceilings live in `factpack` now, derived from the plan's token targets, and are enforced
+# against the REAL pack by `write` — not only here. These tests run against a seeded fixture, which
+# is why they went on passing while the live deep pack grew from 250KB to 731KB across nine
+# sessions: they were measuring a pack nobody reads.
+LIGHT_MAX_BYTES = factpack.LIGHT_MAX_BYTES
+DEEP_MAX_BYTES = factpack.DEEP_MAX_BYTES
 
 
 @pytest.fixture
@@ -420,3 +421,31 @@ def test_no_pack_section_exists_for_a_module_the_advisor_cannot_act_on():
 
     extra = sorted(set(factpack._MODULE_SECTIONS) - set(_bounds.MODULES))
     assert extra == [], f"pack sections with no bounds entry: {extra}"
+
+
+def test_pack_size_reports_over_budget_without_raising(seeded):
+    """A size check must never cost a session its advice, so it reports and returns."""
+    pack = factpack.build(SESSION, "deep")
+    lines = []
+    out = factpack.pack_size(pack, "deep", warn=lines.append)
+
+    assert out["ceiling"] == factpack.DEEP_MAX_BYTES
+    assert out["over_budget"] is (out["bytes"] > out["ceiling"])
+    assert lines == ([] if not out["over_budget"] else lines)
+
+
+def test_pack_size_warns_with_the_slot_and_the_ratio():
+    lines = []
+    huge = {"filler": "x" * (factpack.DEEP_MAX_BYTES + 10)}
+    out = factpack.pack_size(huge, "deep", warn=lines.append)
+
+    assert out["over_budget"] is True
+    assert len(lines) == 1
+    assert "deep" in lines[0] and "ceiling" in lines[0]
+
+
+def test_the_ceilings_come_from_the_token_targets_not_from_the_artifact():
+    """Moving the bar to meet the pack is how a ceiling stops meaning anything. ~8k light / ~30k
+    deep at roughly four bytes a token."""
+    assert factpack.LIGHT_MAX_BYTES == 32_000
+    assert factpack.DEEP_MAX_BYTES == 120_000
