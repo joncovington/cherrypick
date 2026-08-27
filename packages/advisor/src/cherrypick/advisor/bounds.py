@@ -46,6 +46,18 @@ _BASE_KEY = {
     "earnings": ("base_prefix", "strat_test"),
     "calendars": ("base_book", "control"),
     "pmcc": ("base_book", "control"),
+    # bwb and curve added 2026-08-26. Both consume advice through the same
+    # `core.advice.session_decision` every other module uses, both declare an `advice` block with
+    # bounds, and the suite config already listed bwb under `advisor.modules` — but neither was in
+    # this map, so `MODULES` excluded them, `enact` never selected them, and NO ARTIFACT HAS EVER
+    # BEEN WRITTEN for either. bwb had twelve declared bounds and a loop reading for advice that
+    # could not arrive; the config granted the advisor a module no code path could act on.
+    #
+    # curve is included even though its own `advice.enabled` is false. That is the point: each
+    # module's own config decides whether anything happens, and a module absent from this map cannot
+    # decide at all. Being here and disabled is a state that reports itself; being missing is not.
+    "bwb": ("base_book", "control"),
+    "curve": ("base_book", "control"),
 }
 
 MODULES = tuple(_BASE_KEY)

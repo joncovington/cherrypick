@@ -395,3 +395,28 @@ def test_the_advisor_still_depends_on_core_alone():
                 ):
                     offenders.append(f"{py.name}: {name}")
     assert offenders == [], f"the advisor imported a module package: {offenders}"
+
+
+def test_the_pack_covers_every_module_the_advisor_may_act_on():
+    """Three hand-kept module lists lived in this package and one of them went stale.
+
+    `bounds._BASE_KEY` is the source of truth — a module the advisor may resolve bounds for. Until
+    2026-08-26 `factpack.MODULES` was a separate literal that omitted bwb and curve, so the pack
+    could reconcile a module's enactment while carrying no facts about it: the advisor would be
+    asked to design an experiment for a module it could not see. A section per module is what makes
+    a proposal about it evidence-based rather than blind.
+    """
+    from cherrypick.advisor import bounds as _bounds
+
+    assert factpack.MODULES == _bounds.MODULES
+    missing = sorted(set(_bounds.MODULES) - set(factpack._MODULE_SECTIONS))
+    assert missing == [], f"the advisor may act on these but the pack carries no facts: {missing}"
+
+
+def test_no_pack_section_exists_for_a_module_the_advisor_cannot_act_on():
+    """The other direction: a section for a module absent from bounds is tokens spent on a module
+    that can never receive an artifact."""
+    from cherrypick.advisor import bounds as _bounds
+
+    extra = sorted(set(factpack._MODULE_SECTIONS) - set(_bounds.MODULES))
+    assert extra == [], f"pack sections with no bounds entry: {extra}"

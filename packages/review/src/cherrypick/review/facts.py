@@ -59,6 +59,14 @@ MODULES = {
     # pmcc holds ~1-2 weeks, and a Friday short assignment leaves delivered shares riding to the
     # next session's disposal — same two-pass shape as calendars.
     "pmcc": {"schema": "pmcc_99", "settles_intraday": False},
+    # bwb and curve added 2026-08-26. Both had ledgers, `cherrypick.core.ledgers` readers and
+    # console pages from the day they landed, and were simply never added to this dict — so the
+    # suite's cross-module EOD did not know they existed while bwb was carrying twelve open
+    # positions. Neither settles intraday: bwb ladders ~7 DTE and holds to expiry, curve holds its
+    # credit spread to `close_dte`. `tests/test_module_coverage.py` now fails when a ledger schema
+    # has a reader and no entry here, so the next module cannot land the same way.
+    "bwb": {"schema": "bwb_132", "settles_intraday": False},
+    "curve": {"schema": "curve_vx", "settles_intraday": False},
 }
 
 
@@ -183,12 +191,79 @@ def _pmcc_health(conn, session: str) -> dict:
     }
 
 
+def _bwb_health(conn, session: str) -> dict:
+    """bwb enters one BWB every session by design, so an absent entry attempt is itself the finding.
+
+    `no_fresh_quotes` is the outcome to watch: 92 of its first 104 recorded attempts carried it, and
+    a module whose entries are gated on quote freshness looks identical to a quiet one when the
+    stream is stale. Trigger ticks ride along because the add-on books (delta/bounce/flip) are
+    scored on them — a session with positions and no trigger ticks means the cohort path recorded
+    nothing to replay later.
+    """
+    attempts = _rows(
+        conn,
+        "SELECT outcome, COUNT(*) n FROM bwb_entry_attempts WHERE trade_date = ? GROUP BY outcome",
+        (session,),
+    )
+    iterations = _scalar(
+        conn, "SELECT COUNT(*) FROM bwb_loop_iterations WHERE session_date = ?", (session,)
+    )
+    marks = _scalar(conn, "SELECT COUNT(*) FROM bwb_marks WHERE session_date = ?", (session,))
+    refused = _scalar(
+        conn, "SELECT COUNT(*) FROM bwb_marks WHERE session_date = ? AND usable = 0", (session,)
+    )
+    triggers = _scalar(
+        conn, "SELECT COUNT(*) FROM bwb_trigger_ticks WHERE session_date = ?", (session,)
+    )
+    return {
+        "loop_ticked": bool(iterations),
+        "iterations": iterations,
+        "entry_attempts": {r["outcome"] or "unknown": r["n"] for r in attempts} or None,
+        "marks": marks or None,
+        "marks_refused": refused or None,
+        "trigger_ticks": triggers or None,
+    }
+
+
+def _curve_health(conn, session: str) -> dict:
+    """curve's second product is the daily regime classification, recorded whether or not it trades.
+
+    So `regime_readings` is the health signal that matters most here: a session with no reading
+    means the VIX/VIX3M classification did not run, which is a gap in the module's own record rather
+    than a quiet market. Entries are gated on that classification, so zero attempts beside zero
+    readings is one fault, not two.
+    """
+    attempts = _rows(
+        conn,
+        "SELECT outcome, COUNT(*) n FROM curve_entry_attempts WHERE trade_date = ? GROUP BY outcome",
+        (session,),
+    )
+    iterations = _scalar(
+        conn, "SELECT COUNT(*) FROM curve_loop_iterations WHERE session_date = ?", (session,)
+    )
+    marks = _scalar(conn, "SELECT COUNT(*) FROM curve_marks WHERE session_date = ?", (session,))
+    refused = _scalar(
+        conn, "SELECT COUNT(*) FROM curve_marks WHERE session_date = ? AND usable = 0", (session,)
+    )
+    regime = _scalar(conn, "SELECT COUNT(*) FROM curve_regime WHERE trade_date = ?", (session,))
+    return {
+        "loop_ticked": bool(iterations),
+        "iterations": iterations,
+        "entry_attempts": {r["outcome"] or "unknown": r["n"] for r in attempts} or None,
+        "marks": marks or None,
+        "marks_refused": refused or None,
+        "regime_readings": regime or None,
+    }
+
+
 HEALTH_READERS = {
     "meic": _meic_health,
     "flies": _flies_health,
     "earnings": _earnings_health,
     "calendars": _calendars_health,
     "pmcc": _pmcc_health,
+    "bwb": _bwb_health,
+    "curve": _curve_health,
 }
 
 
@@ -325,12 +400,73 @@ def _pmcc_expected(conn, session: str) -> dict:
     }
 
 
+def _bwb_expected(conn, session: str) -> dict:
+    """bwb's expectation is the credit it took at entry against what the structure returned.
+
+    The fly is entered for a NET CREDIT with a zero floor by design and held to expiry, so the
+    credit is the whole thesis: if the structure works, the realised net should land at or near it.
+
+    Read off the `control` book only, for the reason `_pmcc_expected` gives: all four books trade the
+    IDENTICAL base structure and differ only in whether an add-on fires, so counting them would
+    weight one entry four times. The add-on books' divergence is the experiment, and it is measured
+    by comparing books, not by pooling them into one expectation.
+    """
+    rows = _rows(
+        conn,
+        "SELECT entry_credit, quantity, gross_pnl, fees FROM bwb_positions"
+        " WHERE book = 'control' AND status = 'closed' AND closed_session = ?",
+        (session,),
+    )
+    expected, observed = [], []
+    for r in rows:
+        if r["entry_credit"] is None:
+            continue
+        credit = float(r["entry_credit"]) * 100 * (r["quantity"] or 1)
+        expected.append(credit)
+        observed.append((r["gross_pnl"] or 0.0) - (r["fees"] or 0.0))
+    return {
+        "basis": "entry_credit_vs_realized_net",
+        "expected": (sum(expected) / len(expected)) if expected else None,
+        "observed": (sum(observed) / len(observed)) if observed else None,
+        "positions_closed": len(expected) or None,
+    }
+
+
+def _curve_expected(conn, session: str) -> dict:
+    """curve's expectation is the credit taken on the short call against the realised net.
+
+    `control` only, matching the rule above: control and noflip are byte-identical by construction
+    until a regime flip fires, so pooling them would double-weight every session on which none did —
+    which is most of them.
+    """
+    rows = _rows(
+        conn,
+        "SELECT entry_credit, quantity, gross_pnl, fees FROM curve_positions"
+        " WHERE book = 'control' AND status = 'closed' AND closed_session = ?",
+        (session,),
+    )
+    expected, observed = [], []
+    for r in rows:
+        if r["entry_credit"] is None:
+            continue
+        expected.append(float(r["entry_credit"]) * 100 * (r["quantity"] or 1))
+        observed.append((r["gross_pnl"] or 0.0) - (r["fees"] or 0.0))
+    return {
+        "basis": "entry_credit_vs_realized_net",
+        "expected": (sum(expected) / len(expected)) if expected else None,
+        "observed": (sum(observed) / len(observed)) if observed else None,
+        "positions_closed": len(expected) or None,
+    }
+
+
 EXPECTED_READERS = {
     "meic": _meic_expected,
     "flies": _flies_expected,
     "earnings": _earnings_expected,
     "calendars": _calendars_expected,
     "pmcc": _pmcc_expected,
+    "bwb": _bwb_expected,
+    "curve": _curve_expected,
 }
 
 

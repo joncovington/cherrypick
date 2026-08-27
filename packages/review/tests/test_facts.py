@@ -154,7 +154,9 @@ def test_the_fact_set_is_versioned_and_status_tagged(store, monkeypatch):
     built = facts.build("2026-08-12", status=facts.STATUS_FINAL)
     assert built["fact_version"] == facts.FACT_VERSION
     assert built["status"] == "final"
-    assert built["suite"]["modules_unreadable"] == ["meic", "flies", "earnings", "calendars", "pmcc"]
+    # Driven off MODULES, not a literal: the literal version of this list went stale the day bwb
+    # and curve landed, which is the same failure the fact set itself had.
+    assert built["suite"]["modules_unreadable"] == list(facts.MODULES)
 
 
 def test_writing_is_atomic_and_round_trips(store, monkeypatch):
