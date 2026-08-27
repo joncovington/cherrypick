@@ -436,14 +436,54 @@ def current_underlying_price(conn: sqlite3.Connection, underlying: str) -> float
         return None
 
 
-def atm_window_syms(option_map: dict, center: float, strike_count: int) -> list[str]:
-    """Streamer symbols within `strike_count` strikes of `center` on each side."""
+def window_span(strike_count) -> tuple[int, int]:
+    """Normalize a window request to ``(below, above)`` strike counts around the centre.
+
+    A symmetric window is the wrong default for half this suite's declarations and it was expensive:
+    pmcc's deep-ITM long sits far BELOW spot and its short sits AT spot, so asking for depth downward
+    bought an identical count upward that no module could ever read — roughly half of the largest
+    window in the suite on 2026-08-24. A symmetric count is still the common case and still valid, so
+    an ``int`` is accepted unchanged; a module with a directional need declares
+    ``{"down": N, "up": M}`` instead of buying depth it does not want by inflating one number.
+
+    Accepts an int, a ``(below, above)`` pair, or a ``{"down", "up"}`` mapping (either key may be
+    omitted and falls back to the other, so a half-declared hint is a narrower window rather than a
+    zero one). Junk degrades to ``(0, 0)`` — the caller's own default then applies — for the same
+    reason the request readers drop junk entries rather than raising: one bad declaration must never
+    take down the producer every module is priced from.
+    """
+
+    def _n(value) -> int | None:
+        # bool is an int subclass and `{"down": True}` is a typo, never a request for one strike.
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            return None
+        return value
+
+    if isinstance(strike_count, dict):
+        down, up = _n(strike_count.get("down")), _n(strike_count.get("up"))
+        if down is None and up is None:
+            return (0, 0)
+        return (down if down is not None else up, up if up is not None else down)
+    if isinstance(strike_count, (tuple, list)) and len(strike_count) == 2:
+        down, up = _n(strike_count[0]), _n(strike_count[1])
+        return (down or 0, up or 0)
+    n = _n(strike_count)
+    return (n, n) if n is not None else (0, 0)
+
+
+def atm_window_syms(option_map: dict, center: float, strike_count) -> list[str]:
+    """Streamer symbols within `strike_count` strikes of `center`.
+
+    `strike_count` is anything `window_span` accepts: an int for the symmetric window (the common
+    case), or a directional request for a module whose structure sits to one side of spot.
+    """
+    below, above = window_span(strike_count)
     strikes = sorted({float(o.strike_price) for o in option_map.values()})
     if not strikes:
         return []
     nearest = min(range(len(strikes)), key=lambda i: abs(strikes[i] - center))
-    lo = max(0, nearest - strike_count)
-    hi = min(len(strikes), nearest + strike_count + 1)
+    lo = max(0, nearest - below)
+    hi = min(len(strikes), nearest + above + 1)
     keep = set(strikes[lo:hi])
     return [sym for sym, o in option_map.items() if float(o.strike_price) in keep]
 
@@ -482,6 +522,44 @@ def occ_to_streamer_symbol(occ: str) -> str:
         # trailing-zero trim that falls out of float repr is part of the key the streamer wrote.
         out += str(int(thousandths) / 1000.0)[1:]
     return out
+
+
+# --------------------------------------------------------------- cash-leg event entitlements
+#
+# What a NON-option symbol can actually publish, so the producer stops paying for events that can
+# never arrive. Established by the 2026-08-24 entitlement probe during the subscription-rate
+# incident: SKEW, VIX9D, VIX and VIX1D all printed as Trade and NONE of them as Quote. An index is
+# a computed level, not an order book — there is no bid or ask to publish. Nothing cash-settled has
+# greeks at all, index or ETF or equity alike.
+#
+# Deliberately a DECLARED list rather than a pattern match on the symbol. "VIX-prefixed means index"
+# would be a guess that quietly costs a real symbol its quotes the first time a ticker breaks the
+# pattern, and the failure mode — a leg with no price at all — is the expensive one this suite has
+# already paid for twice (2026-08-14 Summary, 2026-08-17 Trade). An unlisted symbol therefore keeps
+# Quote: the default is to pay for a subscription that might be wasted, never to starve a reader.
+#
+# ETFs and single-name equities are NOT here and must not be added — they have a real order book and
+# modules price legs off it. This is indices only.
+QUOTELESS_INDEX_SYMBOLS = frozenset(
+    {"SKEW", "SPX", "VIX", "VIX1D", "VIX1Y", "VIX3M", "VIX6M", "VIX9D", "VVIX", "XSP"}
+)
+
+
+def is_option_symbol(symbol: str) -> bool:
+    """Whether a streamer symbol names an option contract (DXLink prefixes those with a dot)."""
+    return isinstance(symbol, str) and symbol.startswith(".")
+
+
+def publishes_quotes(symbol: str) -> bool:
+    """Whether subscribing `symbol` to Quote can ever deliver an event (see the note above)."""
+    if is_option_symbol(symbol):
+        return True
+    return str(symbol).strip().upper() not in QUOTELESS_INDEX_SYMBOLS
+
+
+def publishes_greeks(symbol: str) -> bool:
+    """Whether subscribing `symbol` to Greeks can ever deliver an event — options only."""
+    return is_option_symbol(symbol)
 
 
 # How old a cached quote may be before a caller pricing a position should refetch rather than trust it.
@@ -648,12 +726,21 @@ def chain_for_expiration(conn, symbol: str, expiration: str, root: str) -> list[
 
 
 def greeks_for(conn, streamer_syms: list[str], *, now_ts: float, max_age_seconds: float) -> dict:
-    """delta/iv/vega per streamer symbol, age-bounded. Missing rows are simply absent.
+    """delta/gamma/iv/vega per streamer symbol, age-bounded. Missing rows are simply absent.
 
     The age limit is deliberately looser than a quote's: open interest is a once-a-day snapshot and
     gamma updates far less often than a bid, so the quote limit would reject a perfectly good
     surface. Absent greeks are never a gate — callers degrade (context omitted from a record, a
     selection falling back to extrinsic-only) rather than refuse.
+
+    **`gamma` was missing from the SELECT until 2026-08-27**, while this docstring reasoned about
+    gamma's update rate — the column was discussed and not returned. Three of the four callers read
+    only delta/iv/vega and were unaffected; bwb feeds this straight into `core.gex.compute_gex`,
+    which skips every strike whose gamma is None, so its gamma-flip read failed on EVERY tick for
+    four sessions and reported `insufficient_gex_data` while the cache held gamma and open interest
+    for every symbol involved. Adding a key is additive — every caller reads with `.get()` — but the
+    lesson is that a reader silently narrower than its own contract fails somewhere far away and
+    blames the wrong input.
 
     Chunked under SQLite's 999-variable cap.
     """
@@ -664,13 +751,15 @@ def greeks_for(conn, streamer_syms: list[str], *, now_ts: float, max_age_seconds
         chunk = streamer_syms[i : i + 900]
         placeholders = ", ".join("?" * len(chunk))
         for r in conn.execute(
-            f"SELECT symbol, delta, iv, vega, updated_at FROM stream_greeks WHERE symbol IN ({placeholders})",
+            f"SELECT symbol, delta, gamma, iv, vega, updated_at FROM stream_greeks "
+            f"WHERE symbol IN ({placeholders})",
             chunk,
         ):
             if r["updated_at"] is None or now_ts - float(r["updated_at"]) > max_age_seconds:
                 continue
             out[r["symbol"]] = {
                 "delta": float(r["delta"]) if r["delta"] is not None else None,
+                "gamma": float(r["gamma"]) if r["gamma"] is not None else None,
                 "iv": float(r["iv"]) if r["iv"] is not None else None,
                 "vega": float(r["vega"]) if r["vega"] is not None else None,
             }

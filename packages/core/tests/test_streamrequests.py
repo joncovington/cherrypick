@@ -28,13 +28,31 @@ def test_write_request_carries_window_hints(tmp_path, monkeypatch):
     monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
     path = streamrequests.write_request("demo", ["XSP"], window_hints={"xsp": 90, " qqq ": 30})
     payload = json.loads(path.read_text(encoding="utf-8"))
-    assert payload["window_hints"] == {"XSP": 90, "QQQ": 30}
+    # Normalized to (below, above) on the way to disk, so every consumer reads one shape.
+    assert payload["window_hints"] == {"XSP": [90, 90], "QQQ": [30, 30]}
+
+
+def test_write_request_carries_a_directional_window_hint(tmp_path, monkeypatch):
+    """pmcc's deep-ITM long sits below spot and its short sits at it; a symmetric count bought an
+    identical depth upward that no module could read."""
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    path = streamrequests.write_request(
+        "demo", ["TQQQ"], window_hints={"tqqq": {"down": 163, "up": 12}}
+    )
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["window_hints"] == {"TQQQ": [163, 12]}
 
 
 def test_clean_window_hints_drops_junk_entries():
     assert streamrequests.clean_window_hints(
         {"xsp": 90, "bad": 0, "neg": -5, "float": 1.5, 7: 10, "ok": "40", None: 10}
-    ) == {"XSP": 90}
+    ) == {"XSP": (90, 90)}
+
+
+def test_clean_window_hints_reads_both_declared_forms():
+    assert streamrequests.clean_window_hints(
+        {"a": 30, "b": {"down": 163, "up": 12}, "c": [40, 5], "d": {"down": 40}, "e": {}}
+    ) == {"A": (30, 30), "B": (163, 12), "C": (40, 5), "D": (40, 40)}
 
 
 def test_clean_window_hints_handles_none():
@@ -245,6 +263,28 @@ def test_budget_takes_the_max_of_default_and_hint_never_the_hint_alone(home):
     _write("a", ["SPX"], window_hints={"SPX": 5})
     est = streamrequests.estimate_subscriptions(default_strike_count=30)
     assert est["by_symbol"]["SPX"]["strike_count"] == 30  # a narrower hint never shrinks the base
+
+
+def test_a_directional_hint_costs_one_side_not_both(home):
+    """The waste the 2026-08-24 incident exposed: asking for depth downward bought the mirror
+    upward. A directional hint must cost strictly less than the symmetric one it replaces."""
+    _write("a", ["TQQQ"], window_hints={"TQQQ": {"down": 163, "up": 12}})
+    directional = streamrequests.estimate_subscriptions(default_strike_count=30)
+    _write("a", ["TQQQ"], window_hints={"TQQQ": 163})
+    symmetric = streamrequests.estimate_subscriptions(default_strike_count=30)
+
+    # 30 is the floor on the shallow side, so the window is 163 below and 30 above.
+    assert directional["by_symbol"]["TQQQ"]["span"] == [163, 30]
+    assert directional["by_symbol"]["TQQQ"]["subscriptions"] == (163 + 30 + 1) * 2 * 4
+    assert directional["total"] < symmetric["total"]
+
+
+def test_a_directional_hint_is_unioned_per_side(home):
+    """Two modules with opposite needs on one symbol must both be served — the wider single number
+    winning would buy one of them depth it cannot use and leave the other short."""
+    _write("deep", ["TQQQ"], window_hints={"TQQQ": {"down": 163, "up": 5}})
+    _write("high", ["TQQQ"], window_hints={"TQQQ": {"down": 5, "up": 80}})
+    assert streamrequests.union_window_hints() == {"TQQQ": (163, 80)}
 
 
 def test_budget_status_flags_the_worst_symbol_not_just_the_total(home):
