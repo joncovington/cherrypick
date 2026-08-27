@@ -175,6 +175,10 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       positions: parsePage(req.query, "positions"),
     }),
   );
+  /** An ISO date, or null for "no bound this way". See the tradelog route below. */
+  const isoDate = (v: unknown): string | null =>
+    typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.trim()) ? v.trim() : null;
+
   app.get("/api/flies/tradelog", async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     const outcome = typeof q["outcome"] === "string" ? q["outcome"] : "all";
@@ -186,6 +190,11 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
           : "all",
       search: typeof q["search"] === "string" ? q["search"].slice(0, 60) : "",
       era: parseFliesFilter(req.query).era,
+      // Validated to an ISO date rather than passed through: these go into a `trade_date >= ?`
+      // comparison against TEXT dates, where a malformed bound would silently match nothing and
+      // read as "no trades in that range".
+      from: isoDate(q["from"]),
+      to: isoDate(q["to"]),
     });
   });
   // The experiment guides: what each arm/profile is and how it got there. Config + ledger only, so

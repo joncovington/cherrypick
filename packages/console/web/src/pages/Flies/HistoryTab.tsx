@@ -144,8 +144,16 @@ export function HistoryTab({
     return () => clearTimeout(t);
   }, [search]);
 
-  const { page, setOffset, setLimit } = usePage([mode, outcome, debouncedSearch]);
-  const logQuery = useFliesTradeLog(mode, outcome, debouncedSearch, page, filter.era);
+  // Explicit date bounds, either side independently empty. The search box could already match a
+  // date as text, which answers "2026-08" but not "the week either side of the cadence change" —
+  // and every measurement break in this module is a date, so a log filterable only by prefix cannot
+  // be pointed at one side of a break.
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const range = { from: from === "" ? null : from, to: to === "" ? null : to };
+
+  const { page, setOffset, setLimit } = usePage([mode, outcome, debouncedSearch, from, to]);
+  const logQuery = useFliesTradeLog(mode, outcome, debouncedSearch, page, filter.era, range);
   const log = logQuery.data?.rows ?? [];
   const logTotal = logQuery.data?.total ?? 0;
 
@@ -199,6 +207,19 @@ export function HistoryTab({
             ))}
           </div>
           <input className="text-input" placeholder="search…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ textTransform: "none" }} />
+          <label className="muted" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+            from
+            <input className="text-input" type="date" value={from} max={to === "" ? undefined : to} onChange={(e) => setFrom(e.target.value)} aria-label="from date" />
+          </label>
+          <label className="muted" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+            to
+            <input className="text-input" type="date" value={to} min={from === "" ? undefined : from} onChange={(e) => setTo(e.target.value)} aria-label="to date" />
+          </label>
+          {(from !== "" || to !== "") && (
+            <button type="button" className="mode-btn" onClick={() => { setFrom(""); setTo(""); }}>
+              clear dates
+            </button>
+          )}
         </div>
         <div className={`table-scroll ${logQuery.isPlaceholderData ? "table-busy" : ""}`}>
           <table className="data-table">
