@@ -58,7 +58,16 @@ anything. The five-gate phase remains the operative morning verdict. The point o
 first is that weeks of scores can be held against outcomes before anyone is allowed to act on one,
 and the phase and the score are free to disagree in the meantime — that disagreement is data.
 
-Three properties worth not breaking:
+Four properties worth not breaking:
+
+- **A declared gate that can never be measured is worse than four gates.** `calm_tape` (prior
+  session within 1.5%) reported "not measured" on EVERY stored pack from the module's first
+  session until 2026-08-27 — the phase was a five-gate verdict that only four gates could ever
+  join, sitting permanently at `MIN_MEASURED_FOR_GREEN` with no margin. The cause was that this
+  package runs pre-open, where today's `stream_summary` row does not exist yet, while the prior
+  close's base was looked up on the CALENDAR date of the last trade — which for an overnight print
+  is today. Both halves are fixed: the base falls back to the newest completed session's row, and
+  the print is dated to the session it belongs to rather than the date it was stamped.
 
 - **A signal nobody could measure is UNKNOWN, never a default.** The blend renormalizes its
   declared weights over what it actually measured and records that it did; under four measured

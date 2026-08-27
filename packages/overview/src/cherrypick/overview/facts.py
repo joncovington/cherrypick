@@ -51,7 +51,6 @@ PACK = "overview.morning"
 FRESH_QUOTE_SECONDS = 2 * 3600
 
 
-
 def default_session(now: datetime | None = None) -> str:
     """Today in ET when it is a trading day, else the previous trading day. The scheduled job only
     fires on trading days; the fallback is for by-hand runs on a weekend."""
@@ -78,10 +77,18 @@ def _et_date(ts: float) -> str | None:
         return None
 
 
-def _reading(value, *, basis: str | None, session: str | None, as_of: str | None,
-             source: str, label: str, **extra) -> dict:
-    return {"value": value, "basis": basis, "session": session, "as_of": as_of,
-            "source": source, "label": label, **extra}
+def _reading(
+    value, *, basis: str | None, session: str | None, as_of: str | None, source: str, label: str, **extra
+) -> dict:
+    return {
+        "value": value,
+        "basis": basis,
+        "session": session,
+        "as_of": as_of,
+        "source": source,
+        "label": label,
+        **extra,
+    }
 
 
 def _unmeasured(source: str, label: str) -> dict:
@@ -107,15 +114,22 @@ def _live_quote(conn, symbol: str, now_ts: float) -> dict | None:
 
 
 def _summary_row(conn, symbol: str, trade_date: str):
-    rows = _rows(conn, "SELECT trade_date, prev_day_close, updated_at FROM stream_summary "
-                       "WHERE symbol = ? AND trade_date = ?", (symbol, trade_date))
+    rows = _rows(
+        conn,
+        "SELECT trade_date, prev_day_close, updated_at FROM stream_summary "
+        "WHERE symbol = ? AND trade_date = ?",
+        (symbol, trade_date),
+    )
     return rows[0] if rows else None
 
 
 def _latest_summary_before(conn, symbol: str, before: str):
-    rows = _rows(conn, "SELECT trade_date, prev_day_close, updated_at FROM stream_summary "
-                       "WHERE symbol = ? AND trade_date < ? ORDER BY trade_date DESC LIMIT 1",
-                 (symbol, before))
+    rows = _rows(
+        conn,
+        "SELECT trade_date, prev_day_close, updated_at FROM stream_summary "
+        "WHERE symbol = ? AND trade_date < ? ORDER BY trade_date DESC LIMIT 1",
+        (symbol, before),
+    )
     return rows[0] if rows else None
 
 
@@ -139,12 +153,23 @@ def _prior_close_info(conn, symbol: str, session: str) -> dict | None:
         close = float(rows[0]["last"])
         ts = float(rows[0]["updated_at"])
         trade_day = _et_date(ts)
+        # The base is the close of the session BEFORE the one this print belongs to, and it is read
+        # off that session's own summary row (`prev_day_close`). Pre-open — which is the only window
+        # this package runs in — there is no row for today yet, so keying the base to the print's
+        # CALENDAR date found nothing and the change came back None every single morning: the gate
+        # had never once been measured. An overnight print also carries yesterday's close while
+        # `_et_date` calls it today, so the same lookup mislabelled the prior session as the current
+        # one. Falling back to the newest completed session's row fixes both — and the session that
+        # row names IS the session the print belongs to, in either branch.
         base_row = _summary_row(conn, symbol, trade_day) if trade_day else None
-        base = (float(base_row["prev_day_close"])
-                if base_row and base_row["prev_day_close"] is not None else None)
+        if base_row is None:
+            base_row = _latest_summary_before(conn, symbol, session)
+        base = (
+            float(base_row["prev_day_close"]) if base_row and base_row["prev_day_close"] is not None else None
+        )
         return {
             "close": close,
-            "session": trade_day,
+            "session": base_row["trade_date"] if base_row else trade_day,
             "as_of": _iso(ts),
             "change_pct": ((close - base) / base * 100.0) if base else None,
             "via": "last_trade",
@@ -163,17 +188,30 @@ def _symbol_reading(conn, symbol: str, session: str, now_ts: float, *, label: st
     prior = _prior_close_info(conn, symbol, session)
     live = _live_quote(conn, symbol, now_ts)
     if live:
-        return _reading(live["value"], basis="live", session=session, as_of=live["as_of"],
-                        source=source, label=label,
-                        prior_close=(prior or {}).get("close"),
-                        prior_change_pct=(prior or {}).get("change_pct"),
-                        prior_session=(prior or {}).get("session"))
+        return _reading(
+            live["value"],
+            basis="live",
+            session=session,
+            as_of=live["as_of"],
+            source=source,
+            label=label,
+            prior_close=(prior or {}).get("close"),
+            prior_change_pct=(prior or {}).get("change_pct"),
+            prior_session=(prior or {}).get("session"),
+        )
     if prior:
         detail = " (last trade)" if prior["via"] == "last_trade" else ""
-        return _reading(prior["close"], basis="prior", session=prior["session"],
-                        as_of=prior["as_of"], source=source + detail, label=label,
-                        prior_close=prior["close"], prior_change_pct=prior["change_pct"],
-                        prior_session=prior["session"])
+        return _reading(
+            prior["close"],
+            basis="prior",
+            session=prior["session"],
+            as_of=prior["as_of"],
+            source=source + detail,
+            label=label,
+            prior_close=prior["close"],
+            prior_change_pct=prior["change_pct"],
+            prior_session=prior["session"],
+        )
     return _unmeasured(source, label)
 
 
@@ -185,16 +223,24 @@ def _vix_fallback(session: str) -> dict | None:
     except Exception:  # noqa: BLE001
         return None
     try:
-        rows = _rows(conn, "SELECT context_date, vix, updated_at FROM market_context "
-                           "WHERE vix IS NOT NULL ORDER BY context_date DESC LIMIT 1")
+        rows = _rows(
+            conn,
+            "SELECT context_date, vix, updated_at FROM market_context "
+            "WHERE vix IS NOT NULL ORDER BY context_date DESC LIMIT 1",
+        )
     finally:
         conn.close()
     if not rows:
         return None
     row = rows[0]
-    return _reading(float(row["vix"]), basis="prior", session=row["context_date"],
-                    as_of=_iso(row["updated_at"]), source="meic.market_context",
-                    label="VIX (MEIC context fallback)")
+    return _reading(
+        float(row["vix"]),
+        basis="prior",
+        session=row["context_date"],
+        as_of=_iso(row["updated_at"]),
+        source="meic.market_context",
+        label="VIX (MEIC context fallback)",
+    )
 
 
 def _gex_levels(readings: dict[str, Any]) -> dict:
@@ -206,17 +252,25 @@ def _gex_levels(readings: dict[str, Any]) -> dict:
         "symbol": "SPX",
         "reference_price": ref if isinstance(ref, (int, float)) else None,
         "reference_basis": spx.get("basis"),
-        "zero_gamma": None, "call_wall": None, "put_wall": None, "net_gex": None,
-        "session": None, "as_of": None, "source": "gex.gex_regime_history",
+        "zero_gamma": None,
+        "call_wall": None,
+        "put_wall": None,
+        "net_gex": None,
+        "session": None,
+        "as_of": None,
+        "source": "gex.gex_regime_history",
     }
     try:
         conn = _db.connect_ro(_paths.gex_history_db())
     except Exception:  # noqa: BLE001
         return levels
     try:
-        rows = _rows(conn, "SELECT trade_date, ts, zero_gamma, call_wall, put_wall, net_gex "
-                           "FROM gex_regime_history WHERE symbol = 'SPX' "
-                           "ORDER BY ts DESC LIMIT 1")
+        rows = _rows(
+            conn,
+            "SELECT trade_date, ts, zero_gamma, call_wall, put_wall, net_gex "
+            "FROM gex_regime_history WHERE symbol = 'SPX' "
+            "ORDER BY ts DESC LIMIT 1",
+        )
     finally:
         conn.close()
     if rows:
@@ -235,18 +289,19 @@ def _sectors(conn, session: str) -> dict:
     board = []
     for symbol, name in sorted(_symbols.SECTOR_ETFS.items()):
         prior = _prior_close_info(conn, symbol, session) if conn else None
-        board.append({
-            "symbol": symbol,
-            "sector": name,
-            "change_pct": (prior or {}).get("change_pct"),
-            "close": (prior or {}).get("close"),
-            "session": (prior or {}).get("session"),
-        })
+        board.append(
+            {
+                "symbol": symbol,
+                "sector": name,
+                "change_pct": (prior or {}).get("change_pct"),
+                "close": (prior or {}).get("close"),
+                "session": (prior or {}).get("session"),
+            }
+        )
     measured = [s for s in board if isinstance(s["change_pct"], (int, float))]
     strongest = max(measured, key=lambda s: s["change_pct"]) if measured else None
     weakest = min(measured, key=lambda s: s["change_pct"]) if measured else None
-    return {"board": board, "strongest": strongest, "weakest": weakest,
-            "measured": len(measured)}
+    return {"board": board, "strongest": strongest, "weakest": weakest, "measured": len(measured)}
 
 
 def _close_history(conn, symbols, session: str, days: int) -> dict[str, list[dict]]:
@@ -270,9 +325,13 @@ def _close_history(conn, symbols, session: str, days: int) -> dict[str, list[dic
     if conn is None:
         return out
     for symbol in symbols:
-        rows = _rows(conn, "SELECT trade_date, day_close, prev_day_close FROM stream_summary "
-                           "WHERE symbol = ? AND trade_date <= ? "
-                           "ORDER BY trade_date DESC LIMIT ?", (symbol, session, days + 1))
+        rows = _rows(
+            conn,
+            "SELECT trade_date, day_close, prev_day_close FROM stream_summary "
+            "WHERE symbol = ? AND trade_date <= ? "
+            "ORDER BY trade_date DESC LIMIT ?",
+            (symbol, session, days + 1),
+        )
         rows = list(reversed(rows))
         closes: dict[str, float] = {}
         for index, row in enumerate(rows):
@@ -313,9 +372,15 @@ _VOL_HISTORY_SYMBOLS = frozenset({"VIX9D", "VIX6M", "VIX1Y", "VVIX", "SKEW"})
 # temporary is the thing that teaches a reader to skim the row.
 _NO_DAILY_SERIES = frozenset({"skew"})
 
-_PERCENTILE_READINGS = (("vix9d", "VIX9D"), ("vix", "VIX"), ("vix3m", "VIX3M"),
-                        ("vix6m", "VIX6M"), ("vix1y", "VIX1Y"),
-                        ("vvix", "VVIX"), ("skew", "SKEW"))
+_PERCENTILE_READINGS = (
+    ("vix9d", "VIX9D"),
+    ("vix", "VIX"),
+    ("vix3m", "VIX3M"),
+    ("vix6m", "VIX6M"),
+    ("vix1y", "VIX1Y"),
+    ("vvix", "VVIX"),
+    ("skew", "SKEW"),
+)
 
 # The window, the floor and the formula all come from `score`, which already ranks VIX against its
 # own history and renders the answer on this same page. Restating any of the three here would put two
@@ -353,8 +418,7 @@ def _seasonal_norm(month: int) -> dict:
         out["reason"] = "no_history_db"
         return out
     try:
-        rows = _rows(conn, "SELECT trade_date, close FROM daily_closes "
-                           "WHERE symbol = 'VIX' AND close > 0")
+        rows = _rows(conn, "SELECT trade_date, close FROM daily_closes WHERE symbol = 'VIX' AND close > 0")
     except Exception:  # noqa: BLE001
         out["reason"] = "no_daily_closes_table"
         return out
@@ -386,10 +450,15 @@ def _vol_regime(readings: dict, history: dict[str, list[dict]], session: str) ->
     curve = []
     for key, symbol, dte in _TERM_POINTS:
         reading = readings.get(key) or {}
-        curve.append({
-            "point": key, "symbol": symbol, "dte": dte,
-            "value": reading.get("value"), "basis": reading.get("basis"),
-        })
+        curve.append(
+            {
+                "point": key,
+                "symbol": symbol,
+                "dte": dte,
+                "value": reading.get("value"),
+                "basis": reading.get("basis"),
+            }
+        )
     by_key = {c["point"]: c["value"] for c in curve}
 
     def _slope(a: str, b: str) -> float | None:
@@ -431,8 +500,9 @@ def _vol_regime(readings: dict, history: dict[str, list[dict]], session: str) ->
     seasonal = _seasonal_norm(int(session[5:7]))
     vix_value = (readings.get("vix") or {}).get("value")
     if seasonal.get("norm") and vix_value is not None:
-        seasonal["vix_vs_norm_pct"] = round(100.0 * (float(vix_value) - seasonal["norm"])
-                                            / seasonal["norm"], 1)
+        seasonal["vix_vs_norm_pct"] = round(
+            100.0 * (float(vix_value) - seasonal["norm"]) / seasonal["norm"], 1
+        )
     else:
         seasonal["vix_vs_norm_pct"] = None
 
@@ -455,10 +525,14 @@ def _calendar_block(session: str) -> dict:
     year_known = _calendar.fomc_year_known(day.year)
     upcoming_fomc = None
     if year_known:
-        candidates = [d for d in (_calendar.fomc_dates(day.year)
-                                  + (_calendar.fomc_dates(day.year + 1)
-                                     if _calendar.fomc_year_known(day.year + 1) else []))
-                      if d >= day]
+        candidates = [
+            d
+            for d in (
+                _calendar.fomc_dates(day.year)
+                + (_calendar.fomc_dates(day.year + 1) if _calendar.fomc_year_known(day.year + 1) else [])
+            )
+            if d >= day
+        ]
         upcoming_fomc = candidates[0].isoformat() if candidates else None
     return {
         "is_fomc_day": _calendar.is_fomc_day(day) if year_known else None,
@@ -492,14 +566,18 @@ def build(session: str | None = None, now: datetime | None = None) -> dict:
             "vix1y": _symbol_reading(cache, "VIX1Y", session, now_ts, label="VIX1Y"),
             "skew": _symbol_reading(cache, "SKEW", session, now_ts, label="SKEW (tail pricing)"),
             "vvix": _symbol_reading(cache, "VVIX", session, now_ts, label="VVIX (vol of vol)"),
-            "wti_proxy": _symbol_reading(cache, "USO", session, now_ts,
-                                         label=_symbols.COMMODITY_PROXIES["USO"]),
-            "gold_proxy": _symbol_reading(cache, "GLD", session, now_ts,
-                                          label=_symbols.COMMODITY_PROXIES["GLD"]),
-            "hy_credit_proxy": _symbol_reading(cache, "HYG", session, now_ts,
-                                               label=_symbols.CREDIT_PROXIES["HYG"]),
-            "treasury_proxy": _symbol_reading(cache, "TLT", session, now_ts,
-                                              label=_symbols.CREDIT_PROXIES["TLT"]),
+            "wti_proxy": _symbol_reading(
+                cache, "USO", session, now_ts, label=_symbols.COMMODITY_PROXIES["USO"]
+            ),
+            "gold_proxy": _symbol_reading(
+                cache, "GLD", session, now_ts, label=_symbols.COMMODITY_PROXIES["GLD"]
+            ),
+            "hy_credit_proxy": _symbol_reading(
+                cache, "HYG", session, now_ts, label=_symbols.CREDIT_PROXIES["HYG"]
+            ),
+            "treasury_proxy": _symbol_reading(
+                cache, "TLT", session, now_ts, label=_symbols.CREDIT_PROXIES["TLT"]
+            ),
         }
         if readings["vix"]["value"] is None:
             fallback = _vix_fallback(session)
@@ -508,17 +586,24 @@ def build(session: str | None = None, now: datetime | None = None) -> dict:
 
         spx = readings["spx"]
         readings["spx_prior_change_pct"] = _reading(
-            spx.get("prior_change_pct"), basis="prior",
-            session=spx.get("prior_session"), as_of=spx.get("as_of"),
-            source="stream_cache:SPX", label="SPX prior-session change %",
+            spx.get("prior_change_pct"),
+            basis="prior",
+            session=spx.get("prior_session"),
+            as_of=spx.get("as_of"),
+            source="stream_cache:SPX",
+            label="SPX prior-session change %",
         )
 
         sectors = _sectors(cache, session)
         # The live score reads the tail of a longer stored series -- only a year of it. The vol
         # complex rides along for the percentile block; the union is deliberate rather than two
         # reads, so one series can never disagree with itself between two consumers.
-        history = _close_history(cache, sorted(set(_symbols.HISTORY_DAYS) | _VOL_HISTORY_SYMBOLS),
-                                 session, _symbols.HISTORY_LOOKBACK)
+        history = _close_history(
+            cache,
+            sorted(set(_symbols.HISTORY_DAYS) | _VOL_HISTORY_SYMBOLS),
+            session,
+            _symbols.HISTORY_LOOKBACK,
+        )
     finally:
         if cache is not None:
             cache.close()
