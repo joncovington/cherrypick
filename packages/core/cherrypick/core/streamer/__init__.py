@@ -109,7 +109,6 @@ def _resub_clock_gate() -> bool:
     return 9 * 60 + 35 <= minutes <= 15 * 60 + 55
 
 
-
 def _et_date(ts: float) -> str:
     """The ET trading date a wall-clock timestamp belongs to (stream_summary's day key)."""
     return datetime.fromtimestamp(ts, tz=_ET).date().isoformat()
@@ -490,10 +489,23 @@ class ChainStreamer:
                             "INSERT INTO stream_summary (symbol, trade_date, day_open, day_high, "
                             "day_low, day_close, prev_day_close, updated_at) "
                             "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                            # COALESCE, never a bare overwrite: a later event that omits a field
+                            # must not ERASE one an earlier event confirmed. SPX and XSP kept
+                            # receiving Summary events until ~20:07 ET with `day_close_price`
+                            # cleared, and this upsert copied that null over the real close every
+                            # session from 2026-07-29 — 22 sessions of SPX closes lost, freezing
+                            # `daily_closes` (the suite's only multi-year series) at 2026-07-28
+                            # while every other symbol stayed current. Symbols whose last event of
+                            # the day landed earlier (VIX 10:08, SPY 16:15) were untouched, which
+                            # is exactly why it stayed invisible. A close does not un-happen.
                             "ON CONFLICT(symbol, trade_date) DO UPDATE SET "
-                            "day_open=excluded.day_open, day_high=excluded.day_high, "
-                            "day_low=excluded.day_low, day_close=excluded.day_close, "
-                            "prev_day_close=excluded.prev_day_close, updated_at=excluded.updated_at",
+                            "day_open=COALESCE(excluded.day_open, stream_summary.day_open), "
+                            "day_high=COALESCE(excluded.day_high, stream_summary.day_high), "
+                            "day_low=COALESCE(excluded.day_low, stream_summary.day_low), "
+                            "day_close=COALESCE(excluded.day_close, stream_summary.day_close), "
+                            "prev_day_close=COALESCE(excluded.prev_day_close, "
+                            "                        stream_summary.prev_day_close), "
+                            "updated_at=excluded.updated_at",
                             (
                                 event.event_symbol,
                                 _et_date(ts),
