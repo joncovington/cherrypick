@@ -108,6 +108,58 @@ def _in_window(ts_iso: str | None, window_min: int) -> bool:
     return age is not None and age <= window_min
 
 
+def _loop_ticks(conn, module: str, day: str, window_min: int) -> tuple[list[float], list[float]]:
+    """``(all today's loop timestamps, the ones inside the window)`` from ``<module>_loop_iterations``.
+
+    **The post-entry liveness signal, and why it has to exist.** The entry-feed ledgers
+    (``*_snapshots``) only get a row while a module is still evaluating ENTRY. A hold-to-expiry
+    module stops entering — because its slots filled, or its window closed, or it took its one
+    trade of the day — and from that moment the feed ledger is silent while the loop carries on
+    marking and managing every tick. Reading the feed ledger alone therefore reported "stopped
+    evaluating" every single session from the moment entering finished, and reported *exactly the
+    same thing* if the loop had died a minute later. The one failure this check exists to catch
+    became indistinguishable from ordinary operation.
+
+    bwb hit this on 2026-08-25 and was fixed with its own per-tick table; pmcc and curve hit it on
+    2026-08-27 (pmcc 314 min, curve 264 min, both loops demonstrably alive and iterating 0.3 min
+    earlier). Rather than a third module-specific signal, all three now read the loop's OWN
+    iteration record, which every module writes every tick in every phase and is therefore the
+    thing that actually stops when a loop stops.
+    """
+    try:
+        rows = conn.execute(
+            f"SELECT ran_at, status FROM {module}_loop_iterations WHERE session_date = ? ORDER BY id",
+            (day,),
+        ).fetchall()
+    except sqlite3.Error:
+        # A ledger written before this table existed. Degrade to the feed ledger alone rather than
+        # taking the whole reader down with it — `for_module` turns any sqlite error into "no
+        # reader", which would disable the check entirely instead of narrowing it.
+        return [], []
+    every = [r["ran_at"] for r in rows if r["ran_at"] is not None]
+    recent = [r["ran_at"] for r in rows if r["status"] == "ok" and _in_window(r["ran_at"], window_min)]
+    return every, recent
+
+
+def _with_loop_liveness(act: dict[str, Any], every: list, recent: list) -> dict[str, Any]:
+    """Fold the loop's own ticks into an entry-feed activity snapshot.
+
+    `last_age_min` becomes the FRESHEST of the two, because the question it answers is "is this
+    module still running", and a loop that is marking is running. The tick counts join `iterations`
+    and `evaluated` so a module that has finished entering does not then trip the
+    `no iterations in the last N min` branch — the same false alarm wearing a different label.
+    `errors` is deliberately left alone: it counts entry evaluations that failed, and a healthy
+    manage tick is not evidence about those.
+    """
+    ages = [a for a in (act["last_age_min"], _age_min(every[-1]) if every else None) if a is not None]
+    return {
+        **act,
+        "iterations": act["iterations"] + len(recent),
+        "evaluated": act["evaluated"] + len(recent),
+        "last_age_min": min(ages) if ages else None,
+    }
+
+
 def _empty() -> dict[str, Any]:
     return {
         "iterations": 0,
@@ -188,25 +240,28 @@ def _pmcc_activity(conn, day: str, window_min: int) -> dict[str, Any]:
     rows = conn.execute(
         "SELECT ts, status FROM pmcc_snapshots WHERE trade_date = ? ORDER BY id", (day,)
     ).fetchall()
-    if not rows:
+    every, recent_ticks = _loop_ticks(conn, "pmcc", day, window_min)
+    if not rows and not every:
         return _empty()
-    last_age = _age_min(rows[-1]["ts"])
+    last_age = _age_min(rows[-1]["ts"]) if rows else None
     recent = [r for r in rows if _in_window(r["ts"], window_min)]
     evaluated = sum(1 for r in recent if r["status"] == "ok")
     refused = [r["status"] for r in recent if r["status"] != "ok"]
     top = max(set(refused), key=refused.count) if refused else None
-    ent = conn.execute(
-        "SELECT entry_time FROM pmcc_positions WHERE entry_session = ?", (day,)
-    ).fetchall()
+    ent = conn.execute("SELECT entry_time FROM pmcc_positions WHERE entry_session = ?", (day,)).fetchall()
     entries = sum(1 for e in ent if _in_window(e["entry_time"], window_min))
-    return {
-        "iterations": len(recent),
-        "evaluated": evaluated,
-        "errors": len(refused),
-        "entries": entries,
-        "last_age_min": last_age,
-        "top_reason": top,
-    }
+    return _with_loop_liveness(
+        {
+            "iterations": len(recent),
+            "evaluated": evaluated,
+            "errors": len(refused),
+            "entries": entries,
+            "last_age_min": last_age,
+            "top_reason": top,
+        },
+        every,
+        recent_ticks,
+    )
 
 
 # --------------------------------------------------------------------------- curve_vx (curve_snapshots)
@@ -218,25 +273,28 @@ def _curve_activity(conn, day: str, window_min: int) -> dict[str, Any]:
     rows = conn.execute(
         "SELECT ts, status FROM curve_snapshots WHERE trade_date = ? ORDER BY id", (day,)
     ).fetchall()
-    if not rows:
+    every, recent_ticks = _loop_ticks(conn, "curve", day, window_min)
+    if not rows and not every:
         return _empty()
-    last_age = _age_min(rows[-1]["ts"])
+    last_age = _age_min(rows[-1]["ts"]) if rows else None
     recent = [r for r in rows if _in_window(r["ts"], window_min)]
     evaluated = sum(1 for r in recent if r["status"] == "ok")
     refused = [r["status"] for r in recent if r["status"] != "ok"]
     top = max(set(refused), key=refused.count) if refused else None
-    ent = conn.execute(
-        "SELECT entry_time FROM curve_positions WHERE entry_session = ?", (day,)
-    ).fetchall()
+    ent = conn.execute("SELECT entry_time FROM curve_positions WHERE entry_session = ?", (day,)).fetchall()
     entries = sum(1 for e in ent if _in_window(e["entry_time"], window_min))
-    return {
-        "iterations": len(recent),
-        "evaluated": evaluated,
-        "errors": len(refused),
-        "entries": entries,
-        "last_age_min": last_age,
-        "top_reason": top,
-    }
+    return _with_loop_liveness(
+        {
+            "iterations": len(recent),
+            "evaluated": evaluated,
+            "errors": len(refused),
+            "entries": entries,
+            "last_age_min": last_age,
+            "top_reason": top,
+        },
+        every,
+        recent_ticks,
+    )
 
 
 # --------------------------------------------------------------------------- bwb_132 (bwb_snapshots)
@@ -254,19 +312,25 @@ def _bwb_activity(conn, day: str, window_min: int) -> dict[str, Any]:
 
     Post-entry liveness comes from `bwb_trigger_ticks`, which the module records every tick by
     design and calls its second product. Counted by DISTINCT tick timestamp, since one tick writes a
-    row per open cohort."""
+    row per open cohort.
+
+    **The loop's own iteration record rides alongside it (2026-08-27).** Trigger ticks are written
+    per OPEN COHORT, so on a session that entered nothing they are silent too and the same false
+    alarm returns through the back door. `bwb_loop_iterations` advances every tick whatever the book
+    holds, which is what actually stops when a loop stops — the same signal pmcc and curve now
+    read."""
     rows = conn.execute(
         "SELECT ts, status FROM bwb_snapshots WHERE trade_date = ? ORDER BY id", (day,)
     ).fetchall()
     ticks = [
         r["ticked_at"]
         for r in conn.execute(
-            "SELECT DISTINCT ticked_at FROM bwb_trigger_ticks WHERE session_date = ? "
-            "ORDER BY ticked_at",
+            "SELECT DISTINCT ticked_at FROM bwb_trigger_ticks WHERE session_date = ? ORDER BY ticked_at",
             (day,),
         ).fetchall()
     ]
-    if not rows and not ticks:
+    every, recent_loop = _loop_ticks(conn, "bwb", day, window_min)
+    if not rows and not ticks and not every:
         return _empty()
     _ages = [
         a
@@ -281,19 +345,21 @@ def _bwb_activity(conn, day: str, window_min: int) -> dict[str, Any]:
     evaluated = sum(1 for r in recent if r["status"] == "ok")
     refused = [r["status"] for r in recent if r["status"] != "ok"]
     top = max(set(refused), key=refused.count) if refused else None
-    ent = conn.execute(
-        "SELECT entry_time FROM bwb_positions WHERE entry_session = ?", (day,)
-    ).fetchall()
+    ent = conn.execute("SELECT entry_time FROM bwb_positions WHERE entry_session = ?", (day,)).fetchall()
     entries = sum(1 for e in ent if _in_window(e["entry_time"], window_min))
     recent_ticks = [t for t in ticks if _in_window(t, window_min)]
-    return {
-        "iterations": len(recent) + len(recent_ticks),
-        "evaluated": evaluated + len(recent_ticks),
-        "errors": len(refused),
-        "entries": entries,
-        "last_age_min": last_age,
-        "top_reason": top,
-    }
+    return _with_loop_liveness(
+        {
+            "iterations": len(recent) + len(recent_ticks),
+            "evaluated": evaluated + len(recent_ticks),
+            "errors": len(refused),
+            "entries": entries,
+            "last_age_min": last_age,
+            "top_reason": top,
+        },
+        every,
+        recent_loop,
+    )
 
 
 _READERS = {
