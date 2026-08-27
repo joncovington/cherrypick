@@ -149,6 +149,8 @@ CREATE TABLE IF NOT EXISTS bwb_trigger_ticks (
     addon_long_bid      REAL,
     addon_long_ask      REAL,
     measured            INTEGER NOT NULL DEFAULT 0,
+    spot_measured       INTEGER NOT NULL DEFAULT 0,
+    flip_measured       INTEGER NOT NULL DEFAULT 0,
     refusal             TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_bwb_trigger_ticks_cohort
@@ -249,6 +251,14 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     "bwb_positions": {},
     "bwb_legs": {},
     "bwb_marks": {},
+    # `measured` ANDs two independent inputs, so a tick that had spot but no gamma flip was
+    # indistinguishable from one that had neither, and the module's second product could report
+    # total failure without saying which half failed. Both halves happened to be broken at once
+    # (2026-08-27), and one flag could only ever have shown that as a single fact.
+    "bwb_trigger_ticks": {
+        "spot_measured": "INTEGER NOT NULL DEFAULT 0",
+        "flip_measured": "INTEGER NOT NULL DEFAULT 0",
+    },
 }
 
 

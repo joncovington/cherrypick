@@ -187,8 +187,52 @@ flies/pmcc pattern.
 
 ## Status
 
-Built 2026-08-23, no paper data yet. First paper session begins with the first scheduled run.
+Built 2026-08-23; trading paper since 2026-08-24, four open cohorts across the four base books.
 `replay.py` is a stubbed fast-follow (the trigger-tick substrate is recorded from day one; the
-reader over it is not). Not yet wired into `packages/console` (no dedicated read surface — deferred
-until first real positions exist, the pmcc/curve sequencing) or the orchestrator's supervisor job
-registry (both are tracked fast-follows, not oversights).
+reader over it is not).
+
+**The trigger-tick substrate recorded nothing usable for its first four sessions
+(2026-08-24..27) — 2,337 rows, every one `measured = 0`.** Journaled as a measurement break
+(`trigger_ticks_unmeasured`); those rows must never be pooled with corrected ones. Two independent
+defects, both fixed 2026-08-27:
+
+- **`core.streamcache.greeks_for` never selected `gamma`.** `core.gex.compute_gex` skips any strike
+  whose gamma is None, so the gamma-flip read failed on every tick and reported
+  `insufficient_gex_data` — while the cache held gamma AND open interest for every symbol involved.
+  **The `flip` book could not fire by construction for four sessions.** Three other modules call
+  the same reader and were unaffected because they read only delta/iv/vega, which is why this
+  surfaced here and nowhere else.
+- **`_record_trigger_ticks` did not set `position_symbol` on its legs.** `bwb_legs` has no symbol
+  column, so `build_mark_snapshot` resolved no underlying and wrote a NULL `spot` on every row. The
+  marks path set it and the tick path did not; both now go through `paper_loop._legs_with_symbol`.
+
+Worth keeping from how this hid. `trigger_coverage()` reported `refusal_share = 1.00` for four
+consecutive sessions and it read as a number rather than an alarm — the same shape as the GEX
+regime-history `LIMIT 60`, where a reader could not tell a quiet session from a truncated one. The
+reading now separates the two halves of `measured` (`spot_measured` / `flip_measured`, with the
+refusal naming both), and carries a `total_failure` flag, because *ticks recorded and none measured*
+is a defect and not thin data. `near_abs_delta` was recorded correctly throughout and stayed in
+0.05–0.39 against a 0.50 trigger, so `delta` and `bounce` were legitimately quiet — a book that
+CANNOT fire and a book with no reason to fire looked identical in the ledger, which is the more
+dangerous half of this.
+
+**The add-on could never price, and that was a third defect found the same day.**
+`_addon_snapshot` resolved `root = symbol`, so every lookup asked the cache for `SPX`-rooted
+contracts while SPX's weeklies are listed as `SPXW` — `not_root_listed`, on every tick, for every
+armed position. Every other snapshot in this module already resolved
+`config.get("occ_root") or symbol`; this was the one that did not. The moment the gamma flip became
+measurable the `flip` book armed all four of its positions (`arm` / `flip_trigger_met`, 10:39 ET)
+and then sat unable to price a single one. With the root fixed, three of the four price a real
+credit (0.25 / 0.45 / 1.05) and the fourth refuses `addon_not_credit` at −0.075 — the designed
+refusal path, previously unreachable.
+
+It hid for the same reason the trigger substrate did: **an armed position that cannot price
+produces a `hold`, and holds are not recorded.** "Waiting for a credit" and "cannot read the chain
+at all" were the same silence. An armed-but-unpriceable add-on is now written as a collapsed
+`addon_blocked:<reason>` decision — one counted row per session, not one per tick — so the module
+says what stopped it. `addon_not_credit` was always meant to be recorded; the path that reached it
+was simply never taken.
+
+Not yet wired into the orchestrator's supervisor job registry (a tracked fast-follow, not an
+oversight); `packages/console` mirrors the integrity reading but has no dedicated page yet
+(deferred until first real positions exist, the pmcc/curve sequencing).

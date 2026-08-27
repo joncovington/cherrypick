@@ -66,6 +66,7 @@ class CacheBuilder:
         bid: float | None = None,
         ask: float | None = None,
         delta: float | None = None,
+        gamma: float | None = None,
         iv: float | None = None,
         oi: int | None = None,
         age: float = 0.0,
@@ -91,10 +92,14 @@ class CacheBuilder:
                 "VALUES (?, ?, ?, ?, ?)",
                 (sym, bid, ask, (bid + ask) / 2.0, time.time() - age),
             )
-        if delta is not None or iv is not None:
+        # gamma belongs here because `core.gex.compute_gex` skips any strike without it — the
+        # builder omitting it would let a test pass against a cache the real code cannot use, which
+        # is exactly the shape of the 2026-08-27 defect this fixture is supposed to catch.
+        if delta is not None or gamma is not None or iv is not None:
             self.conn.execute(
-                "INSERT OR REPLACE INTO stream_greeks (symbol, delta, iv, updated_at) VALUES (?, ?, ?, ?)",
-                (sym, delta, iv, time.time() - age),
+                "INSERT OR REPLACE INTO stream_greeks (symbol, delta, gamma, iv, updated_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (sym, delta, gamma, iv, time.time() - age),
             )
         if oi is not None:
             self.conn.execute(
