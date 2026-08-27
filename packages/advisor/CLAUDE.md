@@ -75,9 +75,38 @@ before it issues the next one:
 
 * **enacted** — the loop's recorded decision matches the artifact's admitted params. A reject-all
   artifact counts: the bounds refused it, which is a real outcome the experiment paid for.
+* **carried** — an artifact was issued, the loop recorded no NEW decision, and the params it
+  admitted are nonetheless in force: frozen onto positions an earlier session opened and this module
+  still holds. Costs the experiment nothing either — a session it never re-decided bought no new
+  evidence — but it is not a defect and is reported silently.
 * **not_enacted** — an artifact was issued and the loop's record disagrees with it or is absent.
   It costs the experiment nothing, because it bought it nothing.
 * **no_artifact** — nothing was issued; nothing to reconcile.
+
+**`carried` exists because the first three states assumed every module decides every session, and
+half of them do not** (added 2026-08-27). calendars enters once a WEEK and earnings only when a name
+reports; both spend most sessions with nothing to decide while the advice they already applied stays
+stamped on their open rows and governs them every tick — `calendars.management.effective_params`
+reads that stamp back deliberately, so advice lapsing mid-week can never hand an open position to
+rules nobody chose. Scored as `not_enacted`, calendars alone raised the watchdog's WARN four days in
+five, forever, and a check that cries wolf 80% of the time cannot catch the case it was built for.
+
+Two properties worth not breaking:
+
+- **The discriminator is the module's own schema, not a list.** A module that freezes
+  `advice_params` onto its position rows CAN carry; one that does not CANNOT. meic and flies are
+  flat overnight and stamp nothing, so `not_enacted` keeps its full force there — if either quietly
+  stopped recording decisions it is still reported. A blanket "a missing decision is sometimes fine"
+  rule would have thrown that away.
+- **Carry is only ever claimed for the CURRENT session.** The evidence is the ledger's OPEN rows,
+  which describe now and prove nothing about last week; an artifact whose params happen to match
+  what is open today would otherwise be scored `carried` for every past session it was issued for,
+  on evidence that post-dates them. A past session that cannot be proved keeps the conservative
+  verdict and stays out of the count, erring the same direction `recount`'s `unknown` bucket does.
+
+The live read this rests on is `factpack.carried_advice_params` — in `factpack.py` because every
+live read of another package's ledger is fenced there by contract. `enactment` forms the verdict;
+factpack only reports what the rows say.
 
 Counting is idempotent (the evening pass is re-runnable by design) and attributed by the experiment
 id stamped on the artifact, so a session issued under one experiment and scored after it was

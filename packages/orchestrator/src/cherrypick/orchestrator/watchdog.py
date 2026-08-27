@@ -1239,9 +1239,16 @@ def _check_advice_enactment(cfg: dict[str, Any], now_et: datetime, is_trading: b
     a reject-all artifact beside a baseline decision IS enacted — and a second opinion here would be
     free to drift from the one the console and the evening pass both read.
 
-    Silent unless something is wrong. `no_artifact` is the ordinary state of a module with no active
-    experiment and is not reported; only `not_enacted` is, because that is an artifact that existed,
-    validated, and was ignored.
+    Silent unless something is wrong. `no_artifact` (no active experiment) and `carried` (the
+    admitted params are frozen on positions an earlier session opened and the module still holds)
+    are both ordinary states and are not reported; only `not_enacted` is, because that is an
+    artifact that existed, validated, and was ignored on a session the module did act.
+
+    `carried` was added 2026-08-27 for exactly this check's sake. calendars enters once a week and
+    earnings only when a name reports, so both spend most sessions with nothing to decide — and
+    scored as `not_enacted`, calendars alone raised this WARN four days in five, forever. A warning
+    that fires 80% of the time on a module behaving as designed cannot catch the 2026-08-25 case it
+    exists for.
     """
     if not is_trading or not cfgmod.advisor_settings(cfg).get("enabled"):
         return []

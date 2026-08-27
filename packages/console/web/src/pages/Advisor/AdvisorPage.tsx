@@ -204,6 +204,18 @@ export function EnactmentCell({ status }: { status: AdvisorApplyStatus }) {
   }
   if (e.status === "no_artifact") return <span className="muted">nothing issued</span>;
   if (e.status === "enacted") return <span className="chip">applied</span>;
+  if (e.status === "carried") {
+    // Not a dropped artifact and not a fresh decision: the module had nothing to decide this
+    // session, and the params it already applied are frozen on positions it still holds. Its own
+    // chip rather than "applied", so a reader can tell a session that DECIDED from one that
+    // inherited -- the experiment is charged for the first and not the second.
+    return (
+      <>
+        <span className="chip">carried</span>
+        {e.detail !== null && <div className="muted">{e.detail}</div>}
+      </>
+    );
+  }
   return (
     <>
       <span className="chip chip-warn">not applied</span>

@@ -110,7 +110,7 @@ CREATE INDEX IF NOT EXISTS idx_events_experiment ON experiment_events(experiment
 CREATE TABLE IF NOT EXISTS enactment (
     session         TEXT NOT NULL,
     module          TEXT NOT NULL,
-    status          TEXT NOT NULL,  -- enacted|not_enacted|no_artifact
+    status          TEXT NOT NULL,  -- enacted|carried|not_enacted|no_artifact
     detail          TEXT,
     experiment_id   TEXT,
     artifact_params TEXT,

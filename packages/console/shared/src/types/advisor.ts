@@ -92,7 +92,7 @@ export interface AdvisorExperiment {
  */
 export interface AdvisorEnactment {
   session: string;
-  /** enacted | not_enacted | no_artifact */
+  /** enacted | carried | not_enacted | no_artifact */
   status: string;
   /** Why, in the advisor's own words — the text to show when it did not reach the loop. */
   detail: string | null;

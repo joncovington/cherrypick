@@ -110,11 +110,14 @@ def _paper_db(module: str) -> Path:
 def _live_db(module: str) -> Path:
     """Each module named its live ledger differently before there was a convention; the names are
     load-bearing in deployed homes, so they are recorded here rather than normalised."""
-    return _paths.module_data_dir(module) / {
-        "meic": "meic_trades.db",
-        "earnings": "earnings_trades.db",
-        "flies": "live_trades.db",
-    }[module]
+    return (
+        _paths.module_data_dir(module)
+        / {
+            "meic": "meic_trades.db",
+            "earnings": "earnings_trades.db",
+            "flies": "live_trades.db",
+        }[module]
+    )
 
 
 def _stream_cache() -> Path:
@@ -141,6 +144,53 @@ def _read(path: Path, fn):
         conn.close()
 
 
+def carried_advice_params(module: str) -> list[dict[str, Any]] | None:
+    """The frozen advice params on the module's currently-OPEN advised positions.
+
+    Lives here rather than in `enactment.py` because this is a live read of another package's
+    ledger, and every one of those is fenced into this file by the package contract. `enactment`
+    forms the verdict; this only reports what the rows say.
+
+    Three distinguishable answers, and the distinction is the point:
+
+    * ``None`` — the module's ledger declares no ``advice_params`` column anywhere, so it CANNOT
+      carry advice across sessions. A missing decision there is a real miss (meic and flies are
+      flat overnight and decide every session).
+    * ``[]`` — it can carry and currently carries nothing.
+    * a list of param dicts — advice frozen at entry is still governing open positions.
+
+    The table is DISCOVERED from the schema rather than named in a table here: a module that starts
+    freezing advice on its rows is covered the moment it declares the column, and one that stops is
+    uncovered the moment it drops it. A hand-kept list would be a second declaration free to drift
+    from the ledger it describes.
+    """
+
+    def read(conn):
+        table = None
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'"):
+            name = row[0]
+            columns = {c[1] for c in conn.execute(f"PRAGMA table_info({name})")}
+            if {"advice_params", "status"} <= columns:
+                table = name
+                break
+        if table is None:
+            return None
+        out: list[dict[str, Any]] = []
+        for row in conn.execute(
+            f"SELECT DISTINCT advice_params FROM {table}"  # noqa: S608 - name from sqlite_master
+            " WHERE advice_params IS NOT NULL AND status != 'closed'"
+        ):
+            try:
+                params = json.loads(row[0]) if isinstance(row[0], str) else dict(row[0])
+            except (TypeError, ValueError):
+                continue  # an unreadable stamp proves nothing either way; it is not evidence
+            if isinstance(params, dict) and params not in out:
+                out.append(params)
+        return out
+
+    return _read(_paper_db(module), read)
+
+
 def _counts(rows: list[dict], key: str, value: str = "n") -> dict[str, Any]:
     return {str(r[key] or "unknown"): r[value] for r in rows}
 
@@ -157,7 +207,8 @@ def _market(session: str) -> dict[str, Any]:
 
     def vix(conn):
         rows = _store.rows(
-            conn, "SELECT vix, vix1d, vix1d_ratio FROM market_context WHERE context_date = ?",
+            conn,
+            "SELECT vix, vix1d, vix1d_ratio FROM market_context WHERE context_date = ?",
             (session,),
         )
         return rows[0] if rows else None
@@ -235,13 +286,9 @@ def _regime_now(session: str, *, fallback) -> dict[str, Any]:
         market = {"status": "unmeasured", "reason": "regime_read_failed"}
     if market.get("status") == "measured":
         readings = {
-            name: r.get("value")
-            for name, r in (market.get("readings") or {}).items()
-            if r.get("usable")
+            name: r.get("value") for name, r in (market.get("readings") or {}).items() if r.get("usable")
         }
-        refused = sorted(
-            name for name, r in (market.get("readings") or {}).items() if not r.get("usable")
-        )
+        refused = sorted(name for name, r in (market.get("readings") or {}).items() if not r.get("usable"))
         return {
             "source": "market_regime_history (canonical)",
             "age_seconds": market.get("age_seconds"),
@@ -455,7 +502,8 @@ def _mark_coverage(conn, table: str, session: str) -> dict[str, Any]:
     total = 0
     usable = 0
     for row in _store.rows(
-        conn, f"SELECT usable, COUNT(*) n FROM {table} WHERE session_date = ? GROUP BY usable",
+        conn,
+        f"SELECT usable, COUNT(*) n FROM {table} WHERE session_date = ? GROUP BY usable",
         (session,),
     ):
         total += row["n"]
@@ -779,12 +827,14 @@ def _live(session: str) -> dict[str, Any]:
         )
         settled = _store.rows(
             conn,
-            "SELECT COUNT(*) n, SUM(pnl) pnl FROM fly_positions WHERE trade_date = ?"
-            " AND status = 'settled'",
+            "SELECT COUNT(*) n, SUM(pnl) pnl FROM fly_positions WHERE trade_date = ? AND status = 'settled'",
             (session,),
         )
-        return {"by_status": today, "entry_fills": _counts(fills, "entry_fill_status"),
-                "settled_today": settled[0] if settled else None}
+        return {
+            "by_status": today,
+            "entry_fills": _counts(fills, "entry_fill_status"),
+            "settled_today": settled[0] if settled else None,
+        }
 
     def paper_flies(conn):
         rows = _store.rows(
@@ -829,20 +879,22 @@ def _experiments_running(conn) -> list[dict[str, Any]]:
     for exp in _store.experiments(conn, status="active"):
         params = json.loads(exp["params_json"] or "{}")
         pairs = _verdicts.for_experiment(exp)["pairs"]
-        out.append({
-            "id": exp["id"],
-            "module": exp["module"],
-            "base_profile": exp["base_profile"],
-            "name": exp["name"],
-            "hypothesis": exp["hypothesis"],
-            "params": params,
-            "sessions_run": exp["sessions_run"],
-            "expires_after_sessions": exp["expires_after_sessions"],
-            "reading": [
-                {"advised_tag": p["advised_tag"], "delta": p["delta"], "underpowered": p["underpowered"]}
-                for p in pairs
-            ],
-        })
+        out.append(
+            {
+                "id": exp["id"],
+                "module": exp["module"],
+                "base_profile": exp["base_profile"],
+                "name": exp["name"],
+                "hypothesis": exp["hypothesis"],
+                "params": params,
+                "sessions_run": exp["sessions_run"],
+                "expires_after_sessions": exp["expires_after_sessions"],
+                "reading": [
+                    {"advised_tag": p["advised_tag"], "delta": p["delta"], "underpowered": p["underpowered"]}
+                    for p in pairs
+                ],
+            }
+        )
     return out
 
 
@@ -916,11 +968,13 @@ def _journal_flags(flags_json: str | None, *, full: bool) -> dict[str, Any]:
         # No per-flag `_elided` marker: `advisor_journal._taper` states the rule once for the whole
         # section, and repeating the sentence on each of ~210 aged flags costs ~13KB to say a thing
         # already said. The truncated text is its own evidence that it was truncated.
-        kept.append({
-            "module": f.get("module"),
-            "severity": f.get("severity"),
-            "text": (f.get("text") or "")[:120],
-        })
+        kept.append(
+            {
+                "module": f.get("module"),
+                "severity": f.get("severity"),
+                "text": (f.get("text") or "")[:120],
+            }
+        )
     return {"flags": kept} if not elided else {"flags": kept, "flags_elided": elided}
 
 
@@ -1015,14 +1069,16 @@ def _review_trend(session: str) -> list[dict[str, Any]]:
         facts = _store.read_json(_paths.module_data_dir("review") / f"eod-{prior}.json", default=None)
         if not isinstance(facts, dict):
             continue
-        out.append({
-            "session": prior,
-            "status": facts.get("status"),
-            "modules": {
-                name: {k: v for k, v in (block or {}).items() if k in ("net_pnl", "trades", "by_profile")}
-                for name, block in (facts.get("modules") or {}).items()
-            },
-        })
+        out.append(
+            {
+                "session": prior,
+                "status": facts.get("status"),
+                "modules": {
+                    name: {k: v for k, v in (block or {}).items() if k in ("net_pnl", "trades", "by_profile")}
+                    for name, block in (facts.get("modules") or {}).items()
+                },
+            }
+        )
     return out
 
 
@@ -1128,9 +1184,7 @@ def _advice_audit(session: str) -> dict[str, Any]:
     enacted = _enactment.audit(session, MODULES)
     for module in MODULES:
         artifact = _store.read_json(_paths.advice_path(module, session), default=None)
-        upcoming = _store.read_json(
-            _paths.advice_path(module, _clock.next_session(session)), default=None
-        )
+        upcoming = _store.read_json(_paths.advice_path(module, _clock.next_session(session)), default=None)
         out[module] = {
             "for_today": artifact,
             "for_next_session": upcoming,
@@ -1161,9 +1215,13 @@ def build(session: str, slot: str, modules: tuple[str, ...] | list[str] | None =
             # about at 10am, while the session can still be understood, rather than in the verdict
             # that scores it. Compact here; the full reconciliation rides on advice_audit below.
             "advice_enacted": {
-                m: {k: v for k, v in _enactment.reconcile(m, session).items()
-                    if k in ("status", "detail", "experiment_id")}
-                for m in selected if m in _enactment.MODULES
+                m: {
+                    k: v
+                    for k, v in _enactment.reconcile(m, session).items()
+                    if k in ("status", "detail", "experiment_id")
+                }
+                for m in selected
+                if m in _enactment.MODULES
             },
             "paper": {m: _MODULE_SECTIONS[m](session) for m in selected if m in _MODULE_SECTIONS},
             "live": _live(session),
@@ -1233,8 +1291,13 @@ def pack_size(pack: dict, slot: str, *, warn=None) -> dict[str, Any]:
             f"$1.40/day — it is that a finding buried in a pack this size is one nobody acts on. "
             f"Cut the largest section; do not raise the ceiling."
         )
-    return {"slot": slot, "bytes": size, "ceiling": ceiling, "over_budget": over,
-            "ratio": round(size / ceiling, 2)}
+    return {
+        "slot": slot,
+        "bytes": size,
+        "ceiling": ceiling,
+        "over_budget": over,
+        "ratio": round(size / ceiling, 2),
+    }
 
 
 def write(session: str, slot: str, modules: tuple[str, ...] | list[str] | None = None) -> Path:
