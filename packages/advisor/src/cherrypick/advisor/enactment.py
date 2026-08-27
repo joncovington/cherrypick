@@ -20,7 +20,25 @@ So enactment is a first-class recorded outcome here, with three states rather th
   which is a real result and one the experiment paid a session for.
 * ``not_enacted`` -- an artifact was issued and the loop's record disagrees with it or is absent.
   The session bought no evidence and must not be counted against the experiment's length.
+* ``carried`` -- an artifact was issued, the loop recorded no NEW decision, and the advice it
+  admitted is nonetheless in force: frozen onto positions this module opened on an earlier session
+  and still holding. Reported silently, like ``no_artifact``.
 * ``no_artifact`` -- nothing was issued for that module and session; there is nothing to reconcile.
+
+``carried`` exists because the original three states assumed every module decides every session,
+and half of them do not. calendars enters once a WEEK and earnings only when a name reports, so
+each spends most sessions with nothing to decide -- while the artifact it already applied stays
+stamped on the open rows and governs them every tick (`calendars.management.effective_params` reads
+that stamp back deliberately, so advice lapsing mid-week can never hand an open position to rules
+nobody chose). Scored as ``not_enacted``, calendars alone raised a WARN four days in five, forever;
+a check that cries wolf 80% of the time cannot do the job this one was built for, which is catching
+the 2026-08-25 case where an artifact really was dropped.
+
+The discriminator is the module's own schema, not a list kept here: a module that freezes
+``advice_params`` onto its position rows CAN carry, and one that does not CANNOT. meic and flies
+are flat overnight and stamp nothing, so ``not_enacted`` keeps its full force for them -- if either
+silently stopped recording decisions it is still reported, which is the property that would have
+been lost to a blanket "no decision is fine sometimes" rule.
 
 For a session that has passed, the loop's decision file is long overwritten -- it holds one day. The
 durable record is the advisor's own **fact packs**, which are write-once per (session, slot) and
@@ -40,12 +58,17 @@ from typing import Any
 
 from cherrypick.advisor import bounds as _bounds
 from cherrypick.advisor import clock as _clock
+from cherrypick.advisor import factpack as _factpack
 from cherrypick.advisor import paths as _paths
 from cherrypick.advisor import store as _store
 
 ENACTED = "enacted"
 NOT_ENACTED = "not_enacted"
+CARRIED = "carried"
 NO_ARTIFACT = "no_artifact"
+
+# Statuses that are the ordinary state of a healthy suite and are reported silently.
+BENIGN = (ENACTED, CARRIED, NO_ARTIFACT)
 
 MODULES = _bounds.MODULES
 
@@ -93,6 +116,43 @@ def recorded_decision(module: str, session: str) -> dict[str, Any] | None:
     return None
 
 
+def _leaf(param: str) -> str:
+    """The bare parameter name, dropping any namespace the artifact carries.
+
+    earnings admits `iron_condor.profit_target_pct` -- namespaced by strategy, because its
+    thresholds live under `strategies.<name>` -- and stamps the leaf `profit_target_pct` onto the
+    trade row of the strategy it applies to. The two records are the same fact written at two
+    scopes, so the comparison has to be on the leaf or an enacted artifact reads as unrecognised.
+    """
+    return str(param).rsplit(".", 1)[-1]
+
+
+def carried_by(module: str, artifact_params: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """The frozen params on this module's open positions, if they carry `artifact_params`.
+
+    None means "not carried" for either of two reasons kept deliberately together, since neither
+    licenses the benign verdict: the module cannot freeze advice at all (meic, flies), or it can
+    and what it holds does not cover what the artifact admitted -- an advisor that CHANGED its
+    proposal mid-week is a genuine miss until the module's next entry, not a carry.
+
+    Requires EVERY admitted param to be stamped, by leaf name and value, on something still open.
+    A partial match is not evidence that the advice is governing.
+    """
+    if not artifact_params:
+        return None  # a reject-all artifact implies a baseline decision the loop must still record
+    carried = _factpack.carried_advice_params(module)
+    if not carried:
+        return None
+    wanted = {_leaf(k): v for k, v in artifact_params.items()}
+    stamped: dict[str, Any] = {}
+    for frozen in carried:
+        for key, value in frozen.items():
+            stamped.setdefault(_leaf(key), value)
+    if all(stamped.get(k) == v for k, v in wanted.items()):
+        return carried
+    return None
+
+
 def reconcile(module: str, session: str) -> dict[str, Any]:
     """One module's enactment outcome for one session.
 
@@ -122,8 +182,31 @@ def reconcile(module: str, session: str) -> dict[str, Any]:
         out["detail"] = "no artifact was issued for this module and session"
         return out
     if recorded is None:
+        # Only for the CURRENT session. `carried_by` reads the ledger's OPEN rows, which describe
+        # right now and prove nothing about a week ago — an artifact whose params happen to match
+        # what is open today would otherwise be scored `carried` for every past session it was
+        # issued for, on evidence that post-dates them. A past session that cannot be proved keeps
+        # the conservative verdict below and stays out of the count, which is the same direction
+        # `recount`'s `unknown` bucket already errs in: never shorten or lengthen an experiment on
+        # evidence that is not actually about the session being scored.
+        carried = (
+            carried_by(module, out["artifact_params"] or {}) if session == _clock.session_today() else None
+        )
+        if carried is not None:
+            out["status"] = CARRIED
+            out["carried_params"] = carried
+            out["detail"] = (
+                "no new decision this session, and the admitted params are frozen on positions "
+                "this module opened earlier and still holds"
+            )
+            return out
         out["status"] = NOT_ENACTED
-        out["detail"] = "the loop recorded no decision for this session"
+        out["detail"] = (
+            "the loop recorded no decision for this session"
+            if session == _clock.session_today()
+            else "the loop recorded no decision for this session (whether its earlier advice was "
+            "still frozen on open positions cannot be proved after the fact)"
+        )
         return out
     if out["decision_params"] == out["artifact_params"]:
         out["status"] = ENACTED
@@ -171,10 +254,15 @@ def record(conn, session: str, modules: tuple[str, ...] | list[str] | None = Non
             " artifact_params=excluded.artifact_params, decision_params=excluded.decision_params,"
             " decision_reason=excluded.decision_reason, scored_at=excluded.scored_at",
             (
-                session, module, outcome["status"], outcome["detail"], outcome["experiment_id"],
+                session,
+                module,
+                outcome["status"],
+                outcome["detail"],
+                outcome["experiment_id"],
                 json.dumps(outcome["artifact_params"]) if outcome["artifact_params"] is not None else None,
                 json.dumps(outcome["decision_params"]) if outcome["decision_params"] is not None else None,
-                outcome["decision_reason"], _store.now_iso(),
+                outcome["decision_reason"],
+                _store.now_iso(),
             ),
         )
     conn.commit()
@@ -196,7 +284,7 @@ def sessions_of(experiment: dict[str, Any], *, through: str | None = None) -> li
     through = through or _clock.session_today()
     found = []
     for path in sorted((_paths.state_dir() / "advice").glob(f"{module}-*.json")):
-        session = path.stem[len(module) + 1:]
+        session = path.stem[len(module) + 1 :]
         if session > through:
             continue
         artifact = _store.read_json(path, default=None)
@@ -219,6 +307,13 @@ def recount(conn, *, apply: bool = False) -> dict[str, Any]:
     **kept in the count**. Removing an unprovable session would silently shorten an experiment on
     the strength of missing evidence, which is the same error in the opposite direction.
 
+    A `carried` session does NOT advance the counter, and is labelled as itself rather than folded
+    into `not_enacted`. The two are different facts — one is advice governing open positions, the
+    other is advice dropped — and only the second is a defect. Neither is a session the experiment
+    should be charged for: `sessions_run` is meant to count sessions that bought EVIDENCE, and a
+    session the module never re-decided produced no new decision to learn from. Charging for it
+    would put calendars' weekly experiment at five sessions a week while it entered once.
+
     Read-only unless `apply=True`. The correction is journaled per experiment, once, with the
     per-session evidence it rests on.
     """
@@ -229,8 +324,8 @@ def recount(conn, *, apply: bool = False) -> dict[str, Any]:
         rows = []
         for session in sessions_of(experiment):
             outcome = reconcile(experiment["module"], session)
-            if outcome["status"] == ENACTED:
-                status = ENACTED
+            if outcome["status"] in (ENACTED, CARRIED):
+                status = outcome["status"]
             elif recorded_decision(experiment["module"], session) is None and not _has_pack(session):
                 status = "unknown"
             else:

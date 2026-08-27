@@ -164,3 +164,57 @@ describe("why an experiment's session count is what it is", () => {
     ).toBe("");
   });
 });
+
+describe("the carried state", () => {
+  // Same reason this file exists at all: the live store has not reached this state on a
+  // CHECKPOINTED session yet (carry is only ever claimed for the current session, and today is
+  // scored after its checkpoint runs), so the branch would otherwise ship unrendered.
+  const carried = (detail: string) =>
+    applyStatus({
+      module: "calendars",
+      enactment: {
+        session: "2026-08-27",
+        status: "carried",
+        detail,
+        experimentId: "exp-2026-08-20-calendars-1",
+        decisionReason: null,
+        scoredAt: null,
+      },
+    });
+
+  it("renders as its own chip, not as applied and not as a warning", () => {
+    const html = text(<EnactmentCell status={carried("frozen on open positions")} />);
+    expect(html).toContain("carried");
+    expect(html).toContain("frozen on open positions");
+    // The distinction the chip exists to draw: a session that DECIDED vs one that inherited.
+    expect(html).not.toContain("applied");
+    expect(html).not.toContain("chip-warn");
+  });
+
+  it("never counts toward the banner's dropped-artifact alarm", () => {
+    // calendars enters weekly, so it carries four days in five. If carry reached this counter the
+    // head would cry wolf permanently and the 2026-08-25 case would be invisible inside the noise.
+    const html = text(
+      <ApplyBanner
+        status={[
+          carried("frozen on open positions"),
+          applyStatus({ module: "flies", enactment: { session: "2026-08-27", status: "enacted", detail: null, experimentId: "exp-2", decisionReason: null, scoredAt: null } }),
+        ]}
+      />,
+    );
+    expect(html).not.toContain("not applied");
+    expect(html).toContain("all applied");
+  });
+
+  it("still shows a genuinely dropped artifact beside a carried one", () => {
+    const html = text(
+      <ApplyBanner
+        status={[
+          carried("frozen on open positions"),
+          applyStatus({ enactment: { session: "2026-08-27", status: "not_enacted", detail: "the loop recorded no decision", experimentId: "exp-1", decisionReason: null, scoredAt: null } }),
+        ]}
+      />,
+    );
+    expect(html).toContain("1 not applied");
+  });
+});
