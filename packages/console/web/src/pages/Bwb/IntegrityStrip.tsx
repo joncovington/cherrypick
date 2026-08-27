@@ -34,9 +34,32 @@ export function IntegrityStrip({ data, updatedAt }: { data: BwbPayload | undefin
                 </span>
               </p>
             )}
+            {triggerCoverage !== undefined && triggerCoverage.totalFailure && (
+              <p className="integrity-warn">
+                <strong>Every tick this session was unmeasured.</strong> The loop ran and each read
+                failed -- that is a defect, not thin data, and this session is unusable as replay
+                substrate.
+              </p>
+            )}
+            {triggerCoverage !== undefined && triggerCoverage.refused > 0 && (
+              <p className="muted">
+                {triggerCoverage.noSpot.toLocaleString()} without spot ·{" "}
+                {triggerCoverage.noFlip.toLocaleString()} without gamma flip
+                {Object.keys(triggerCoverage.reasons).length > 0 && (
+                  <>
+                    {" — "}
+                    {Object.entries(triggerCoverage.reasons)
+                      .map(([reason, n]) => `${reason} (${n})`)
+                      .join("; ")}
+                  </>
+                )}
+              </p>
+            )}
             <p className="integrity-note">
               A trigger can only fire on a measured tick -- missing/stale greeks or GEX inputs mean the
-              trigger cannot evaluate that tick, never a guess.
+              trigger cannot evaluate that tick, never a guess. The two halves are reported
+              separately: a tick with spot and no flip is a different outage from one with neither,
+              and a single share cannot say which.
             </p>
           </section>
 
