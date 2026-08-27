@@ -56,12 +56,22 @@ def cmd_factpack(args) -> dict[str, Any]:
     session = _session(args)
     modules = [m.strip() for m in args.modules.split(",")] if args.modules else None
     path = _factpack.write(session, args.slot, modules)
+    size = path.stat().st_size
+    # The budget travels with the pack rather than living only in a test. The test measures a seeded
+    # fixture, which is how the real deep pack grew from 250KB to 731KB across nine sessions with
+    # nothing reporting it; `scripts/advisor_checkpoint.py` already reads this response.
+    ceiling = _factpack.DEEP_MAX_BYTES if args.slot == _factpack.DEEP_SLOT else _factpack.LIGHT_MAX_BYTES
     return {
         "ok": True,
         "session": session,
         "slot": args.slot,
         "pack": str(path),
-        "bytes": path.stat().st_size,
+        "bytes": size,
+        "budget": {
+            "ceiling": ceiling,
+            "over_budget": size > ceiling,
+            "ratio": round(size / ceiling, 2),
+        },
     }
 
 

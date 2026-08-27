@@ -51,11 +51,26 @@ SLOTS = (*LIGHT_SLOTS, DEEP_SLOT)
 # module's enactment and carry no facts about it at all.
 MODULES = _bounds.MODULES
 
+# What a pack may cost, in bytes, derived from the plan's stated token targets (~8k light, ~30k
+# deep) at roughly four bytes per token — NOT from wherever the pack happens to sit. Moving the bar
+# to meet the artifact is how a ceiling stops meaning anything.
+#
+# These are enforced against the REAL pack by `write`, which is the gap that let it run from 250KB
+# to 731KB across nine sessions unnoticed: the budget test asserts against a seeded fixture, so it
+# was measuring a pack nobody reads. Exceeding the ceiling is reported, never fatal — a session's
+# advice must not be lost to a size check.
+LIGHT_MAX_BYTES = 32_000
+DEEP_MAX_BYTES = 120_000
+
 # How many rows a "top N" section may carry. Refusal reasons have a long tail of one-offs; the head
 # is the story, and the tail costs tokens that the deep sections need.
 TOP_N = 8
 TREND_SESSIONS = 5
 JOURNAL_SESSIONS = 10
+
+# How many of those sessions keep their proposals and observations IN FULL. Beyond this an entry
+# keeps its identity — enough to not re-propose it — and drops the argument. See `_advisor_journal`.
+JOURNAL_FULL_SESSIONS = 2
 CONCLUDED_SHOWN = 10
 
 _NOTE_LIVE = (
@@ -825,15 +840,56 @@ def _pending_proposals(conn, session: str) -> list[dict[str, Any]]:
     )
 
 
+def _journal_proposal(row, *, full: bool) -> dict[str, Any]:
+    """One journal proposal, in full or as its identity.
+
+    The identity form keeps what "do not re-propose what was dismissed" needs — which module, what
+    kind, what became of it, and the title that names the idea — and drops the body. A creative
+    proposal's body runs several thousand characters of argument, and ten sessions of them is what
+    took this section past the whole pack's budget.
+    """
+    payload = json.loads(row["payload_json"] or "{}")
+    base = {
+        "session": row["session"],
+        "module": row["module"],
+        "kind": row["kind"],
+        "fate": row["status"],
+        "reason": row["reject_reason"],
+    }
+    if full:
+        return {**base, "payload": payload}
+    # `title` for a creative proposal, `name` for an experiment spec, and the experiment id for a
+    # verdict — each kind's own one-line identity, so none of them degrades to an anonymous row.
+    return {
+        **base,
+        "title": payload.get("title") or payload.get("name") or payload.get("experiment_id"),
+        "_elided": "older than the full-detail window; ask if the argument matters",
+    }
+
+
 def _advisor_journal(conn, session: str) -> dict[str, Any]:
     """The advisor's own memory: what it has recently observed, proposed, and been told.
 
     Without this the model re-proposes the idea a human dismissed last Tuesday, every Tuesday. With
     it, a dismissal is a fact in evidence and a thread can build across sessions. Compact and
     capped, oldest first.
+
+    **Tapered by age since 2026-08-26, and that is a change to what the model reads.** The window is
+    and was ten sessions; what grew was the prose per session — a creative proposal runs ~7.7KB and
+    ten sessions of them, carried verbatim, made this section 466KB of a 690KB pack against a stated
+    ceiling of 150KB. The pack had grown from 250KB to 731KB in nine sessions and nothing caught it,
+    because the budget test runs against a fixture rather than the real thing.
+
+    So the recent sessions keep their full payloads and the older ones keep their IDENTITY —
+    title, module, kind, fate, reason. That is what the section is actually for: "do not re-propose
+    what was dismissed" needs the title and the fate, not the argument. The argument was written by
+    the model that is reading it, and in practice it restates its own history in new proposals
+    anyway ("I proposed this on 08-18, 08-20 and 08-21"), so the verbatim text is partly redundant
+    with what the next proposal will say regardless.
     """
     sessions = [session, *_clock.previous_sessions(session, JOURNAL_SESSIONS)]
     oldest = min(sessions)
+    full_sessions = set(sorted(sessions)[-JOURNAL_FULL_SESSIONS:])
     checkpoints = _store.rows(
         conn,
         "SELECT session, slot, ok, observations_json, flags_json FROM checkpoints"
@@ -860,34 +916,28 @@ def _advisor_journal(conn, session: str) -> dict[str, Any]:
                 "session": r["session"],
                 "slot": r["slot"],
                 "ok": bool(r["ok"]),
-                "observations": json.loads(r["observations_json"] or "[]"),
+                # Observations are the model's own running commentary and the bulkiest half; flags
+                # are kept at every age because a flag is a STANDING caveat about a module, which is
+                # exactly the kind of thing that must not age out of view.
+                **(
+                    {"observations": json.loads(r["observations_json"] or "[]")}
+                    if r["session"] in full_sessions
+                    else {"observations_count": len(json.loads(r["observations_json"] or "[]"))}
+                ),
                 "flags": json.loads(r["flags_json"] or "[]"),
             }
             for r in checkpoints
         ],
-        "proposals": [
-            {
-                "session": r["session"],
-                "module": r["module"],
-                "kind": r["kind"],
-                "fate": r["status"],
-                "reason": r["reject_reason"],
-                "payload": json.loads(r["payload_json"] or "{}"),
-            }
-            for r in proposals
-        ],
-        "concluded_experiments": [
-            {
-                "id": r["id"],
-                "module": r["module"],
-                "params": json.loads(r["params_json"] or "{}"),
-                "status": r["status"],
-                "created_session": r["created_session"],
-                "sessions_run": r["sessions_run"],
-                "verdict": json.loads(r["verdict_json"]) if r["verdict_json"] else None,
-            }
-            for r in concluded
-        ],
+        "_taper": (
+            f"proposals and observations are carried in full for the most recent "
+            f"{JOURNAL_FULL_SESSIONS} sessions; older entries keep title/module/kind/fate/reason "
+            f"only. Ask if you need an older argument in full rather than assuming it was thin."
+        ),
+        "proposals": [_journal_proposal(r, full=r["session"] in full_sessions) for r in proposals],
+        # Concluded experiments are NOT repeated here. They are carried once, in full, by
+        # `experiments_full.concluded` in the deep pack — the same seven experiments were appearing
+        # twice, 34KB and 17KB, saying the same thing in two shapes.
+        "_concluded_experiments": "see experiments_full.concluded (deep slot); not duplicated here",
     }
 
 
@@ -1076,6 +1126,12 @@ def build(session: str, slot: str, modules: tuple[str, ...] | list[str] | None =
         }
 
         if slot == DEEP_SLOT:
+            # Today's drafts are already in `advisor_journal.proposals` in full — the current
+            # session is inside the full-detail window — so carrying them here too was the same
+            # rows twice, 31KB of a pack already past its ceiling. The light slots keep the real
+            # section: they have no journal, and compounding earlier slots' output is the whole
+            # reason it exists.
+            pack["pending_proposals"] = "see advisor_journal.proposals (this session, in full)"
             pack["review_today"] = _review_today(session)
             pack["review_trend"] = _review_trend(session)
             pack["arm_readings"] = _arm_readings()
@@ -1097,6 +1153,29 @@ def build(session: str, slot: str, modules: tuple[str, ...] | list[str] | None =
         return pack
     finally:
         conn.close()
+
+
+def pack_size(pack: dict, slot: str, *, warn=None) -> dict[str, Any]:
+    """Measured size against the ceiling for this slot. Reports; never raises.
+
+    Separated from `write` so a caller can ask the question without producing a pack, and so the
+    check is testable against a real pack rather than only a fixture.
+
+    Serialised the way `store.write_json` serialises it — indent=2 — because that is the file the
+    checkpoint script reads and hands to the model. A compact measure understates the real cost by
+    about a quarter (366KB against 472KB on the 2026-08-26 deep pack), and the number that matters
+    is the one the model is actually charged for.
+    """
+    size = len(json.dumps(pack, indent=2, default=str))
+    ceiling = DEEP_MAX_BYTES if slot == DEEP_SLOT else LIGHT_MAX_BYTES
+    over = size > ceiling
+    if over and warn is not None:
+        warn(
+            f"fact pack over budget: {slot} slot is {size:,} bytes against a {ceiling:,} ceiling "
+            f"({size / ceiling:.1f}x). The largest sections are what to look at first."
+        )
+    return {"slot": slot, "bytes": size, "ceiling": ceiling, "over_budget": over,
+            "ratio": round(size / ceiling, 2)}
 
 
 def write(session: str, slot: str, modules: tuple[str, ...] | list[str] | None = None) -> Path:
