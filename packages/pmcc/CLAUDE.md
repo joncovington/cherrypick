@@ -158,7 +158,27 @@ in the shared cache because `stream_request.py` declares them via the registry's
 field every tick, and — the module's one unusual demand — its **deep strikes** exist because the
 same file sends `window_hints`: an 85-90-delta long lives noticeably below spot, outside any
 default ATM window, so `stream_window.py` computes the width the chain actually needs and escalates
-flies-style on `no_deep_itm_long`/`missing_leg_quotes` refusals. Once a leg is OPEN, `leg_sources`
+flies-style on `no_deep_itm_long`/`missing_leg_quotes` refusals.
+
+**The widened window is gated on whether an entry is still POSSIBLE, and that question must
+include the advised twin.** `engine.BOOKS` holds the base books only, so the gate asked "can
+`control` still enter?" — and once control filled a symbol it dropped the window entirely, while
+`advised:control` (a real book, its own slot, its own entry) was still trying. Control took XSP on
+2026-08-24; the twin then recorded **658 `no_deep_itm_long` refusals across the whole of 08-25 and
+08-26** before a re-centre happened to let it in on the 27th. An A/B whose two arms cannot enter on
+the same days is not an A/B. The request now asks `paper_loop.session_books` — the identical roster
+the entry phase itself uses — so the two can never disagree about who is still looking.
+
+The saving the gate exists for survives: once EVERY book holds the symbol, nothing can be entered
+until one closes and the window is pure cost, so it is still dropped.
+
+**That hint is declared DOWNWARD only, and this module is why the request schema grew a direction.**
+Everything the widened window exists to find sits below spot — the long is 15-19% ITM on TQQQ — and
+the short is ATM by definition, needing no depth at all. A symmetric count therefore bought an
+identical block of strikes above spot that no book here can read; on 2026-08-24 that block was the
+largest single waste in the suite's subscription budget. `hints_for_symbols` returns
+`{"down": width, "up": margin}`, and the producer floors both sides at its own
+`window_strike_count`, so the ATM short is covered by the default window whatever this asks for. Once a leg is OPEN, `leg_sources`
 keeps it subscribed regardless of the window, so the risk is confined to entry-time pricing and
 surfaces as recorded refusals, never bad fills.
 
