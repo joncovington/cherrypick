@@ -31,7 +31,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from cherrypick.core import calendar as _calendar
@@ -232,9 +232,22 @@ def _read_trades(cache_path: Path | str, symbols: list[str]) -> dict[str, tuple[
 
 def harvest_daily_closes(conn: sqlite3.Connection, cache_path: Path | str, symbols: list[str]) -> int:
     """Copy confirmed session closes for ``symbols`` from ``stream_summary`` into ``daily_closes``.
-    ``day_close`` belongs to its own row's session (never ``prev_day_close``, whose date is not
-    carried), and the streamer's ``history_days`` backfill means this lands a year of closes on day
-    one, not one per session. Returns rows newly written."""
+    ``day_close`` belongs to its own row's session, and the streamer's ``history_days`` backfill
+    means this lands a year of closes on day one, not one per session. Returns rows newly written.
+
+    **A session whose ``day_close`` is missing is recovered from the NEXT session's
+    ``prev_day_close``** — the same number, written by the same feed, one row later. That route
+    exists because a producer defect erased SPX's and XSP's closes for 22 sessions (2026-07-29 to
+    2026-08-27: a late-evening Summary event carried a cleared ``day_close`` and the upsert copied
+    the null over the settled value). The close was never actually lost — it was sitting in the
+    next row's ``prev_day_close`` the whole time, which is why this repairs the series rather than
+    merely stopping the bleeding, and why it repairs it retroactively on the next run.
+
+    ``prev_day_close`` carries no date of its own, so it is only trusted when the calendar says the
+    two rows really are consecutive TRADING days. A gap in the cache would otherwise attribute one
+    session's close to a different session — the exact error the original "never ``prev_day_close``"
+    rule was written to prevent, and the reason this recovers rather than assumes.
+    """
     cache_path = Path(cache_path)
     if not cache_path.exists() or not symbols:
         return 0
@@ -246,9 +259,10 @@ def harvest_daily_closes(conn: sqlite3.Connection, cache_path: Path | str, symbo
             f"WHERE symbol IN ({placeholders}) AND day_close IS NOT NULL",
             symbols,
         ).fetchall()
+        recovered = _closes_from_next_prev_day(src, symbols)
     finally:
         src.close()
-    if not rows:
+    if not rows and not recovered:
         return 0
     now = time.time()
     before = conn.total_changes
@@ -260,7 +274,41 @@ def harvest_daily_closes(conn: sqlite3.Connection, cache_path: Path | str, symbo
             for r in rows
         ],
     )
+    # Sourced distinctly so a reader can tell a close the feed confirmed on the day from one
+    # reconstructed a row later. Same number, different provenance, and the row says which.
+    conn.executemany(
+        "INSERT OR IGNORE INTO daily_closes (symbol, trade_date, close, recorded_at, source) "
+        "VALUES (?,?,?,?,?)",
+        [(sym, day, close, now, "stream_summary:prev_day_close") for sym, day, close in recovered],
+    )
     return conn.total_changes - before
+
+
+def _closes_from_next_prev_day(src, symbols: list[str]) -> list[tuple[str, str, float]]:
+    """``(symbol, trade_date, close)`` for sessions whose own ``day_close`` is missing but whose
+    NEXT trading day's row carries it as ``prev_day_close``. See `harvest_daily_closes`."""
+    out: list[tuple[str, str, float]] = []
+    placeholders = ",".join("?" for _ in symbols)
+    rows = src.execute(
+        f"SELECT symbol, trade_date, day_close, prev_day_close FROM stream_summary "
+        f"WHERE symbol IN ({placeholders}) ORDER BY symbol, trade_date",
+        symbols,
+    ).fetchall()
+    by_symbol: dict[str, list] = {}
+    for row in rows:
+        by_symbol.setdefault(str(row["symbol"]).upper(), []).append(row)
+    for symbol, sessions in by_symbol.items():
+        for current, following in zip(sessions, sessions[1:], strict=False):
+            if current["day_close"] is not None or following["prev_day_close"] is None:
+                continue
+            try:
+                expected = _calendar.previous_trading_day(date.fromisoformat(following["trade_date"]))
+            except Exception:  # noqa: BLE001 -- an unparseable date proves nothing; skip it
+                continue
+            if expected.isoformat() != current["trade_date"]:
+                continue  # a gap in the cache: that prev_day_close belongs to a different session
+            out.append((symbol, current["trade_date"], float(following["prev_day_close"])))
+    return out
 
 
 def sample(cfg: dict, *, now: datetime | None = None) -> dict:
@@ -301,9 +349,7 @@ def sample(cfg: dict, *, now: datetime | None = None) -> dict:
                 # Still refused, and the value is still not recorded — a burst-feed quote is as
                 # stale as any other. Only the REASON differs, so a reader can tell an expected
                 # silence from a feed that broke today.
-                reason = (
-                    "intermittent_feed" if reading in INTERMITTENT_INTRADAY else "stale_quote"
-                )
+                reason = "intermittent_feed" if reading in INTERMITTENT_INTRADAY else "stale_quote"
                 rows.append((today, now_ts, reading, symbol, None, basis_ts, 0, reason))
                 if reason == "intermittent_feed":
                     expected_unusable += 1

@@ -250,7 +250,8 @@ def test_futures_are_sampled_with_the_contract_on_the_row(cfg, managed_home):
 
     regime.sample(cfg, now=RTH_NOW)
     rows = history_rows(
-        cfg, "SELECT reading, symbol, value, usable FROM market_regime_history WHERE reading LIKE 'vx%' OR reading = 'zn1'"
+        cfg,
+        "SELECT reading, symbol, value, usable FROM market_regime_history WHERE reading LIKE 'vx%' OR reading = 'zn1'",
     )
     got = {r["reading"]: (r["symbol"], r["value"], r["usable"]) for r in rows}
     assert got["vx1"] == ("/VXU26:XCBF", 17.55, 1)
@@ -309,14 +310,10 @@ def test_risk_reversal_needs_a_strike_actually_near_25_delta():
     """An expiring chain has no 25-delta strike, and inventing one from the closest available
     would report a number for a thing that does not exist. Measured 2026-08-24: SPX's nearest
     expiration was 0DTE and this was correctly absent."""
-    entries, greeks, oi = _chain(
-        [95, 105], delta_by_strike={(95, "P"): -0.99, (105, "C"): 0.01}
-    )
+    entries, greeks, oi = _chain([95, 105], delta_by_strike={(95, "P"): -0.99, (105, "C"): 0.01})
     assert "risk_reversal_25d" not in regime.chain_readings(_Snap(100.0, entries, greeks, oi))
 
-    entries, greeks, oi = _chain(
-        [95, 105], delta_by_strike={(95, "P"): -0.26, (105, "C"): 0.24}, iv=0.30
-    )
+    entries, greeks, oi = _chain([95, 105], delta_by_strike={(95, "P"): -0.26, (105, "C"): 0.24}, iv=0.30)
     got = regime.chain_readings(_Snap(100.0, entries, greeks, oi))
     assert got["risk_reversal_25d"] == pytest.approx(0.0)  # equal IVs -> no skew
 
@@ -394,3 +391,80 @@ def test_the_intermittent_set_only_names_readings_that_exist():
     """A declaration naming a reading that was renamed or removed is a comment pretending to be a
     guard — it would silently stop applying."""
     assert regime.INTERMITTENT_INTRADAY <= set(regime.READINGS)
+
+
+# ------------------------------------------- recovering a close the producer erased (2026-08-27)
+#
+# A late-evening Summary event carried a cleared `day_close` and the streamer's upsert copied the
+# null over the settled value, for 22 consecutive sessions on SPX and XSP. `daily_closes` — the
+# suite's only multi-year series — froze at 2026-07-28 for SPX while every other symbol stayed
+# current. The close was never actually lost: it sits in the NEXT session's `prev_day_close`.
+
+
+def _summary(cfg, rows):
+    """rows = (symbol, trade_date, day_close, prev_day_close)."""
+    conn = streamcache.connect(cfg["stream_cache_db"])
+    try:
+        for sym, day, close, prev in rows:
+            conn.execute(
+                "INSERT OR REPLACE INTO stream_summary (symbol, trade_date, day_close, "
+                "prev_day_close, updated_at) VALUES (?,?,?,?,?)",
+                (sym, day, close, prev, RTH_NOW.timestamp()),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_a_missing_close_is_recovered_from_the_next_sessions_prev_day_close(cfg):
+    seed_cache(cfg, all_fresh_quotes(RTH_NOW.timestamp()))
+    _summary(
+        cfg,
+        [
+            ("SPX", "2026-08-25", None, 7652.86),  # close erased
+            ("SPX", "2026-08-26", None, 7677.28),  # carries 08-25's close, and its own was erased
+            ("SPX", "2026-08-27", None, 7675.70),  # carries 08-26's close
+        ],
+    )
+    regime.sample(cfg, now=RTH_NOW)
+    rows = {
+        r["trade_date"]: r
+        for r in history_rows(cfg, "SELECT * FROM daily_closes WHERE symbol='SPX' ORDER BY trade_date")
+    }
+    assert rows["2026-08-25"]["close"] == 7677.28
+    assert rows["2026-08-26"]["close"] == 7675.70
+    # Provenance is distinct: a close the feed confirmed on the day is not the same record as one
+    # reconstructed a row later, even though the number is identical.
+    assert rows["2026-08-26"]["source"] == "stream_summary:prev_day_close"
+    # 08-27 has no following row, so nothing is invented for it.
+    assert "2026-08-27" not in rows
+
+
+def test_recovery_refuses_across_a_gap_in_the_cache(cfg):
+    """`prev_day_close` carries no date. Trusting it across missing sessions would attribute one
+    session's close to another — the error the original never-use-prev_day_close rule prevented."""
+    seed_cache(cfg, all_fresh_quotes(RTH_NOW.timestamp()))
+    _summary(
+        cfg,
+        [
+            ("SPX", "2026-07-30", None, 7400.00),
+            ("SPX", "2026-08-21", None, 7641.16),  # weeks later: not the next trading day
+        ],
+    )
+    regime.sample(cfg, now=RTH_NOW)
+    assert history_rows(cfg, "SELECT * FROM daily_closes WHERE symbol='SPX'") == []
+
+
+def test_a_real_day_close_is_preferred_and_labelled_as_itself(cfg):
+    seed_cache(cfg, all_fresh_quotes(RTH_NOW.timestamp()))
+    _summary(
+        cfg,
+        [
+            ("SPX", "2026-08-26", 7675.70, 7677.28),
+            ("SPX", "2026-08-27", None, 7675.70),
+        ],
+    )
+    regime.sample(cfg, now=RTH_NOW)
+    row = history_rows(cfg, "SELECT * FROM daily_closes WHERE trade_date='2026-08-26'")[0]
+    assert row["close"] == 7675.70
+    assert row["source"] == "stream_summary"
