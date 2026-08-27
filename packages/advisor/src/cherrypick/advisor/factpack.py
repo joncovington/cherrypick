@@ -51,16 +51,28 @@ SLOTS = (*LIGHT_SLOTS, DEEP_SLOT)
 # module's enactment and carry no facts about it at all.
 MODULES = _bounds.MODULES
 
-# What a pack may cost, in bytes, derived from the plan's stated token targets (~8k light, ~30k
-# deep) at roughly four bytes per token — NOT from wherever the pack happens to sit. Moving the bar
-# to meet the artifact is how a ceiling stops meaning anything.
+# How much a model should be asked to READ AT ONCE, in bytes. This is an attention budget, and
+# saying so is a 2026-08-26 correction: the earlier numbers were derived from token targets and the
+# warning was worded like a resource overrun, which is what nobody acted on it for nine sessions.
 #
-# These are enforced against the REAL pack by `write`, which is the gap that let it run from 250KB
-# to 731KB across nine sessions unnoticed: the budget test asserts against a seeded fixture, so it
-# was measuring a pack nobody reads. Exceeding the ceiling is reported, never fatal — a session's
-# advice must not be lost to a size check.
-LIGHT_MAX_BYTES = 32_000
-DEEP_MAX_BYTES = 120_000
+# It is not a capacity limit and not a cost limit, and both were checked rather than assumed. The
+# deep pack at 472KB is ~130-160k tokens against a 1M-token window — about 15%, so it could
+# quadruple and still fit. At list rates the whole schedule (seven light slots on the cheap model,
+# one deep on the strong one) runs about $1.40 a day. Neither is a reason to trim anything. The
+# reason to trim is that a finding buried in 470KB of context is a finding nobody acts on, which is
+# the same failure as not recording it.
+#
+# The bar moved once, here, deliberately: light 32,000 -> 48,000 and deep 120,000 -> 200,000. The
+# light target predated the suite having SEVEN modules — `paper` alone is 23KB of the 42KB light
+# pack, and that is the section the pack exists to carry. A ceiling that every honest pack breaches
+# is not a ceiling. Moving it to meet the artifact is still how a ceiling stops meaning anything,
+# so: this is the last move that gets made without cutting something first.
+#
+# Enforced against the REAL pack by `write` — the gap that let it run from 250KB to 731KB unnoticed
+# was a budget test asserting against a seeded fixture, i.e. measuring a pack nobody reads.
+# Exceeding the ceiling is reported, never fatal: a session's advice must not be lost to a size check.
+LIGHT_MAX_BYTES = 48_000
+DEEP_MAX_BYTES = 200_000
 
 # How many rows a "top N" section may carry. Refusal reasons have a long tail of one-offs; the head
 # is the story, and the tail costs tokens that the deep sections need.
@@ -68,9 +80,16 @@ TOP_N = 8
 TREND_SESSIONS = 5
 JOURNAL_SESSIONS = 10
 
-# How many of those sessions keep their proposals and observations IN FULL. Beyond this an entry
-# keeps its identity — enough to not re-propose it — and drops the argument. See `_advisor_journal`.
+# How many of those sessions keep their proposals, observations and non-critical flags IN FULL.
+# Beyond this an entry keeps its identity — enough to not re-propose it — and drops the argument.
+# See `_advisor_journal`.
 JOURNAL_FULL_SESSIONS = 2
+
+# Flag severities that survive the taper at ANY age, carried verbatim. A critical flag is a standing
+# caveat about a module — the kind of thing that must never age out of view — and there are twelve
+# of them across the whole ten-session window, costing 8.3KB. `warn` and `info` are 210 flags and
+# 86.5KB, and past the full-detail window they are history rather than a standing caveat.
+JOURNAL_STANDING_SEVERITIES = frozenset({"critical"})
 CONCLUDED_SHOWN = 10
 
 _NOTE_LIVE = (
@@ -867,6 +886,44 @@ def _journal_proposal(row, *, full: bool) -> dict[str, Any]:
     }
 
 
+def _journal_flags(flags_json: str | None, *, full: bool) -> dict[str, Any]:
+    """One checkpoint's flags, tapered by SEVERITY once outside the full-detail window.
+
+    Flags were carried verbatim at every age until 2026-08-26, on the reasoning that a flag is a
+    standing caveat about a module. That reasoning is right about `critical` and wrong about the
+    rest, and the cost of not separating them was the single largest item in the pack: 97.6KB of
+    120KB of `checkpoints`, and 21% of the whole 472KB deep pack. The taper added the same day cut
+    observations instead — the *small* half, 12.3KB — because nobody had measured which was which.
+
+    Two things were checked before writing this rather than assumed. The flags are not repetition:
+    222 instances across the window are 222 DISTINCT texts, so deduplicating them would have saved
+    nothing (the first fix attempted here, and the measurement is why it was not the one shipped).
+    And the severity split is lopsided in the useful direction — 12 `critical` flags cost 8.3KB,
+    while 113 `warn` and 97 `info` cost 86.5KB.
+
+    So `critical` survives at any age, verbatim. An aged `warn`/`info` keeps its module, severity
+    and a truncated text — enough to know the caveat existed and ask for it — and drops the prose.
+    """
+    flags = json.loads(flags_json or "[]")
+    if full:
+        return {"flags": flags}
+    kept, elided = [], 0
+    for f in flags:
+        if not isinstance(f, dict) or f.get("severity") in JOURNAL_STANDING_SEVERITIES:
+            kept.append(f)
+            continue
+        elided += 1
+        # No per-flag `_elided` marker: `advisor_journal._taper` states the rule once for the whole
+        # section, and repeating the sentence on each of ~210 aged flags costs ~13KB to say a thing
+        # already said. The truncated text is its own evidence that it was truncated.
+        kept.append({
+            "module": f.get("module"),
+            "severity": f.get("severity"),
+            "text": (f.get("text") or "")[:120],
+        })
+    return {"flags": kept} if not elided else {"flags": kept, "flags_elided": elided}
+
+
 def _advisor_journal(conn, session: str) -> dict[str, Any]:
     """The advisor's own memory: what it has recently observed, proposed, and been told.
 
@@ -886,6 +943,12 @@ def _advisor_journal(conn, session: str) -> dict[str, Any]:
     the model that is reading it, and in practice it restates its own history in new proposals
     anyway ("I proposed this on 08-18, 08-20 and 08-21"), so the verbatim text is partly redundant
     with what the next proposal will say regardless.
+
+    **That first taper cut the wrong half, and the correction is `_journal_flags`.** It exempted
+    flags at every age and trimmed observations, which sounded right and was never measured: flags
+    were 97.6KB of this section's 120KB and observations were 12.3KB. Flags now taper by severity —
+    `critical` verbatim at any age, `warn`/`info` to identity outside the window. See that function
+    for what was measured before it was written, including the dedup fix that was NOT shipped.
     """
     sessions = [session, *_clock.previous_sessions(session, JOURNAL_SESSIONS)]
     oldest = min(sessions)
@@ -903,12 +966,6 @@ def _advisor_journal(conn, session: str) -> dict[str, Any]:
         " WHERE c.session >= ? ORDER BY c.session, p.id",
         (oldest,),
     )
-    concluded = _store.rows(
-        conn,
-        "SELECT id, module, params_json, status, created_session, sessions_run, verdict_json"
-        " FROM experiments WHERE status IN ('expired', 'killed') ORDER BY updated_at DESC LIMIT ?",
-        (CONCLUDED_SHOWN,),
-    )
     return {
         "_note": "your own recent history. Do not re-propose what was dismissed; build on threads.",
         "checkpoints": [
@@ -916,22 +973,21 @@ def _advisor_journal(conn, session: str) -> dict[str, Any]:
                 "session": r["session"],
                 "slot": r["slot"],
                 "ok": bool(r["ok"]),
-                # Observations are the model's own running commentary and the bulkiest half; flags
-                # are kept at every age because a flag is a STANDING caveat about a module, which is
-                # exactly the kind of thing that must not age out of view.
                 **(
                     {"observations": json.loads(r["observations_json"] or "[]")}
                     if r["session"] in full_sessions
                     else {"observations_count": len(json.loads(r["observations_json"] or "[]"))}
                 ),
-                "flags": json.loads(r["flags_json"] or "[]"),
+                **_journal_flags(r["flags_json"], full=r["session"] in full_sessions),
             }
             for r in checkpoints
         ],
         "_taper": (
-            f"proposals and observations are carried in full for the most recent "
+            f"proposals, observations and flags are carried in full for the most recent "
             f"{JOURNAL_FULL_SESSIONS} sessions; older entries keep title/module/kind/fate/reason "
-            f"only. Ask if you need an older argument in full rather than assuming it was thin."
+            f"only. CRITICAL flags are the exception and are carried verbatim at every age, because "
+            f"a critical flag is a standing caveat rather than history. Ask if you need an older "
+            f"argument in full rather than assuming it was thin."
         ),
         "proposals": [_journal_proposal(r, full=r["session"] in full_sessions) for r in proposals],
         # Concluded experiments are NOT repeated here. They are carried once, in full, by
@@ -1171,8 +1227,11 @@ def pack_size(pack: dict, slot: str, *, warn=None) -> dict[str, Any]:
     over = size > ceiling
     if over and warn is not None:
         warn(
-            f"fact pack over budget: {slot} slot is {size:,} bytes against a {ceiling:,} ceiling "
-            f"({size / ceiling:.1f}x). The largest sections are what to look at first."
+            f"fact pack over its ATTENTION budget: {slot} slot is {size:,} bytes against a "
+            f"{ceiling:,} ceiling ({size / ceiling:.1f}x). This is not a context-window or cost "
+            f"problem — the pack is well inside the window and the whole schedule costs about "
+            f"$1.40/day — it is that a finding buried in a pack this size is one nobody acts on. "
+            f"Cut the largest section; do not raise the ceiling."
         )
     return {"slot": slot, "bytes": size, "ceiling": ceiling, "over_budget": over,
             "ratio": round(size / ceiling, 2)}

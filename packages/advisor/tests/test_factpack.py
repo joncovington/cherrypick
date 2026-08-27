@@ -444,8 +444,33 @@ def test_pack_size_warns_with_the_slot_and_the_ratio():
     assert "deep" in lines[0] and "ceiling" in lines[0]
 
 
-def test_the_ceilings_come_from_the_token_targets_not_from_the_artifact():
-    """Moving the bar to meet the pack is how a ceiling stops meaning anything. ~8k light / ~30k
-    deep at roughly four bytes a token."""
-    assert factpack.LIGHT_MAX_BYTES == 32_000
-    assert factpack.DEEP_MAX_BYTES == 120_000
+def test_the_ceilings_are_pinned_so_a_raise_is_a_deliberate_act():
+    """Moving the bar to meet the pack is how a ceiling stops meaning anything.
+
+    Raised once, on 2026-08-26, and this test is what made that a deliberate act rather than a
+    quiet one — it failed, which is the whole reason it exists. The numbers are no longer derived
+    from token targets: they are ATTENTION budgets, because neither of the things a size limit
+    usually protects was actually at risk. The deep pack is ~15% of a 1M-token window, and the
+    whole eight-slot schedule costs about $1.40 a day. What a 470KB pack costs is that findings
+    inside it go unread.
+
+    Light moved 32,000 -> 48,000 against measured evidence: 35 stored light packs run a median of
+    28.6KB and a maximum of 42,707, so the old bar was breached by honest packs. The ~8k-token
+    target predated the suite having seven modules.
+    """
+    assert factpack.LIGHT_MAX_BYTES == 48_000
+    assert factpack.DEEP_MAX_BYTES == 200_000
+
+
+def test_the_deep_ceiling_stays_below_the_pack_it_is_meant_to_constrain():
+    """The anti-drift half, and the reason the pin above is not just a number to bump.
+
+    A ceiling raised until it clears the artifact reports success forever. The deep pack is ~425KB
+    after the flag taper and the ceiling is 200KB, so it still reports over-budget every session —
+    which is the honest state and is recorded as debt rather than hidden. If someone raises
+    DEEP_MAX_BYTES past the real pack to silence the warning, this fails.
+
+    Bounded by the smallest deep pack observed rather than the current one, so the test does not
+    itself drift upward with the artifact.
+    """
+    assert factpack.DEEP_MAX_BYTES < 400_000

@@ -301,13 +301,6 @@ def test_derive_full_suite_job_table():
         "review-narrative",
         "morning-factpack",
         "morning-narrative",
-        "advisor-open",
-        "advisor-am1",
-        "advisor-am2",
-        "advisor-midday",
-        "advisor-pm1",
-        "advisor-pm2",
-        "advisor-close",
         "advisor-deep",
     }
     assert by_id["watchdog"].interval_seconds == 600
@@ -549,26 +542,40 @@ def test_every_derived_run_py_job_actually_parses():
     assert not offenders, f"derived argv the CLI would reject at the parser: {offenders}"
 
 
-def test_the_advisor_derives_eight_slots_off_by_default():
-    """Seven light checkpoints and one deep run, all AI-tagged and trading-days-only, all disabled
-    until someone turns the advisor on."""
-    by_id = {j.id: j for j in derive(suite_cfg())[0]}
-    slots = [
-        "advisor-open", "advisor-am1", "advisor-am2", "advisor-midday",
-        "advisor-pm1", "advisor-pm2", "advisor-close", "advisor-deep",
-    ]
-    for job_id in slots:
-        job = by_id[job_id]
-        assert not job.enabled
-        assert "disabled in config (advisor)" in job.enabled_reason
-        assert "ai" in job.tags
-        assert job.trading_days_only
-        assert job.kind == "daily"
-        assert "advisor_checkpoint.py" in " ".join(job.argv)
+def test_the_advisor_derives_only_the_deep_slot_by_default():
+    """One deep run at 17:00, AI-tagged and trading-days-only, disabled until someone turns the
+    advisor on.
 
-    assert [by_id[s].at_et for s in slots] == [
-        "09:45", "10:30", "11:30", "12:30", "13:30", "14:30", "15:30", "17:00",
-    ]
+    The default was seven light checkpoints plus deep until 2026-08-26. It is deep-only now because
+    the light slots' own record did not justify them — 36 of them produced four `creative` proposals
+    and one critical flag the deep slot re-derived anyway, while adding ~10% to the pack the deep
+    slot has to read (packages/advisor/CLAUDE.md). Light slots are still fully supported and still
+    derive when configured; the two tests below now say so explicitly rather than leaning on a
+    default, which is the more honest shape for them anyway."""
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+
+    job = by_id["advisor-deep"]
+    assert not job.enabled
+    assert "disabled in config (advisor)" in job.enabled_reason
+    assert "ai" in job.tags
+    assert job.trading_days_only
+    assert job.kind == "daily"
+    assert job.at_et == "17:00"
+    assert "advisor_checkpoint.py" in " ".join(job.argv)
+
+    light = [j for j in by_id if j.startswith("advisor-") and j != "advisor-deep"]
+    assert light == [], f"no light checkpoint should derive by default, got {light}"
+
+
+def test_configured_light_checkpoints_still_derive():
+    """Dropping the DEFAULT must not drop the capability. An empty `checkpoints` derives no light
+    jobs; a populated one derives them exactly as before, named by the dict form."""
+    cfg = suite_cfg()
+    cfg["advisor"] = {"enabled": True, "checkpoints": {"midday": "12:30", "close": "15:30"}}
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    assert by_id["advisor-midday"].at_et == "12:30"
+    assert by_id["advisor-close"].at_et == "15:30"
+    assert by_id["advisor-deep"].at_et == "17:00"
 
 
 def test_the_scheduled_scripts_resolve_to_files_that_exist():
@@ -599,6 +606,7 @@ def test_the_light_slots_carry_the_light_model_and_the_deep_slot_the_deep_one():
     """Model names live in config and travel on argv — no model id appears in this suite's code."""
     cfg = suite_cfg()
     cfg["advisor"] = {"enabled": True, "light_model": "haiku", "deep_model": "opus",
+                      "checkpoints": {"open": "09:45"},
                       "modules": {"flies": {"enabled": True}}}
     by_id = {j.id: j for j in derive(cfg)[0]}
     assert "haiku" in by_id["advisor-open"].argv
@@ -611,7 +619,9 @@ def test_the_light_slots_carry_the_light_model_and_the_deep_slot_the_deep_one():
 def test_a_missed_light_checkpoint_goes_stale_but_a_missed_deep_run_does_not():
     """A light slot describes the session as it stands; the deep slot issues tomorrow's advice, so
     it stays worth firing until late evening."""
-    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    cfg = suite_cfg()
+    cfg["advisor"] = {"checkpoints": {"open": "09:45"}}
+    by_id = {j.id: j for j in derive(cfg)[0]}
     assert by_id["advisor-open"].catchup_minutes == 45
     assert by_id["advisor-deep"].catchup_minutes == 300
 

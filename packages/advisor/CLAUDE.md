@@ -105,8 +105,15 @@ control arm, a human-configured profile, or an unknown id is rejected `not_an_ad
 
 **Measurement break for the advisor: proposals either side of 2026-08-26 were made on different
 evidence.** The journal the model reads is tapered from this date, so a thread it could previously
-re-read in full now reaches it as a title beyond two sessions. Nothing about the ledgers changed —
-this is a change to the advisor's INPUT, and its output should be read with that in mind.
+re-read in full now reaches it as a title beyond two sessions, and an aged non-critical flag reaches
+it as a 120-character stub. Nothing about the ledgers changed — this is a change to the advisor's
+INPUT, and its output should be read with that in mind.
+
+Both taper passes — the age taper and the severity taper that corrects it — land on **this same
+date**, deliberately, per the suite's rule that measurement-affecting changes batch to a declared
+boundary. The second was written the same session the first was measured; landing it a week later
+would have split one input change into two breaks and left a stretch of evidence comparable to
+neither side.
 
 The deep pack had grown from 250KB (2026-08-17) to **731KB** (2026-08-26), about +65KB a session,
 against a stated ceiling of 150KB. Nothing caught it because `tests/test_factpack.py` measures a
@@ -120,32 +127,96 @@ What changed:
 
 - **The journal tapers by age.** The most recent `JOURNAL_FULL_SESSIONS` (2) keep full payloads and
   observations; older entries keep identity — title, module, kind, fate, reason. That is what "do
-  not re-propose what was dismissed" actually needs. **Flags are kept at every age**, because a flag
-  is a standing caveat about a module and is exactly the thing that must not age out of view.
+  not re-propose what was dismissed" actually needs.
+- **Flags taper by SEVERITY, and the first attempt at this cut the wrong half.** Flags were
+  originally exempt at every age, on the reasoning that a flag is a standing caveat about a module
+  and must not age out of view. That is right about `critical` and wrong about the rest, and it went
+  unmeasured: flags were **97.6KB of the checkpoints section's 120KB**, while observations — the
+  half the taper did cut — were 12.3KB. Twelve `critical` flags cost 8.3KB; 113 `warn` and 97 `info`
+  cost 86.5KB. So `critical` is now carried verbatim at any age and the rest keep module, severity
+  and a 120-character stub past the window. Two things were measured before the fix was written:
+  the flags are **not** repetition (222 instances are 222 distinct texts, so the dedup fix drafted
+  first would have saved nothing), and the per-flag elision marker was itself ~13KB of the same
+  sentence repeated, so the rule is stated once on `_taper` instead.
 - **Concluded experiments are carried once**, by `experiments_full.concluded`, not also by the
   journal. The same seven were appearing twice in two shapes.
 - **`pending_proposals` is deep-slot-only elided**, since the journal already carries this session
   in full there. The light slots keep it: they have no journal, and compounding earlier slots is
   the whole reason it exists.
-- **The ceilings are derived from the plan's token targets** (~8k light, ~30k deep at ~4 bytes a
-  token) rather than from wherever the pack sits, and `cmd_factpack` returns a `budget` block that
-  `scripts/advisor_checkpoint.py` already reads. Reported, never fatal: a size check must not cost
-  a session its advice.
+- **`cmd_factpack` returns a `budget` block** that `scripts/advisor_checkpoint.py` already reads.
+  Reported, never fatal: a size check must not cost a session its advice.
 - Measured the way `store.write_json` serialises — indent=2 — because that is the file handed to
   the model. A compact measure understates it by about a quarter.
 
-Result: **731KB → 472KB deep.** Still 3.9x the derived ceiling, and that is recorded rather than
-papered over. Two things are worth knowing before the next attempt.
+Result: **731KB → 472KB → 425KB deep.** Still 2.1x the ceiling, and that is recorded rather than
+papered over.
 
-`arm_readings` looks like an easy 14KB — meic carries 17 arms of which 15 are retired. It was
+### The budget is an ATTENTION budget (correction, 2026-08-26)
+
+The ceilings were originally derived from token targets and the warning was worded like a resource
+overrun. That framing was wrong, and it is probably why nobody acted on the warning for nine
+sessions: **neither thing a size limit usually protects was ever at risk.** Both were checked rather
+than assumed. The deep pack is ~130–160k tokens against a **1M-token context window** — about 15%,
+so it could quadruple and still fit. And at list rates the schedule costs on the order of **$1 a
+day** — the deep slot dominates it, and the light slots that were dropped the same day were about
+$0.20 of that.
+
+What a 425KB pack actually costs is that a finding inside it goes unread, which is the same failure
+as not recording it. `pack_size`'s warning says so now, and says "cut the largest section; do not
+raise the ceiling."
+
+**Prompt caching does not apply as invoked, and was checked before being ruled out.** `cache_control`
+is a Messages API request parameter; the checkpoint shells out to `claude -p` with the pack on
+stdin. Each run is a fresh process with no prior turn, and caching is strict prefix-match while the
+pack changes every slot. There was a structural opportunity while several light slots shared a day's
+stable prefix, but harvesting it meant reordering the pack stable-first and moving onto the SDK,
+which hands `advisor_checkpoint.py` an API key — not worth a network credential on the one path the
+fence keeps thin. **It is moot as of the deep-only schedule below**: one run a day has no prefix to
+share with anything.
+
+## The schedule is deep-only (2026-08-26)
+
+`advisor-deep` at 17:00 is the whole schedule. Seven light intraday checkpoints were cut to one on
+08-21 and to none on 08-26, on this package's own record rather than on preference.
+
+Light slots **cannot issue anything** — the only loop-facing output is the artifact `enact` writes
+in the deep slot, for the next session — and empirically they did not draft much either. Across 36
+light checkpoints: **4 proposals, all `creative`** (the kind a human pastes or ignores, which no
+code path acts on), **zero** `experiment_spec`/`tune`/`verdict`, and **one** critical flag, which
+that evening's deep slot re-derived more precisely off the settled numbers rather than a mid-session
+mark. `midday`, the last one standing, produced **zero proposals across its entire history**. Deep,
+over the same four sessions, produced 30 proposals and 4 criticals.
+
+They also cost the deep slot directly: light checkpoints were ~43KB, about **10% of the deep pack**,
+which is more than the flag taper above saved.
+
+The one thing they were nominally for — `advice_enacted` visible at 10am rather than in the evening
+verdict — is deterministic, and no light checkpoint ever caught one. It is now the orchestrator's
+`_check_advice_enactment`, which invokes `python -m cherrypick.advisor enactment` by subprocess
+between 10:30 and 16:30. That is strictly better than a model checking it: it is free, it reports
+the same way twice, and it fires on the exact incident (2026-08-25) that motivated the verb.
+
+**This is a measurement break on the same declared 2026-08-26 boundary as the taper above.** The
+deep slot no longer reads a day's intraday observations as compounding context, so its input changed
+again — batched deliberately rather than landed as a second break a week later.
+
+**The ceilings moved once, deliberately: light 32,000 → 48,000, deep 120,000 → 200,000.**
+`test_the_ceilings_are_pinned_so_a_raise_is_a_deliberate_act` failed when they moved, which is what
+made it deliberate rather than quiet. Its companion,
+`test_the_deep_ceiling_stays_below_the_pack_it_is_meant_to_constrain`, is the anti-drift half: a
+ceiling raised until it clears the artifact reports success forever, so the deep bar must stay under
+the real pack and keep reporting over-budget.
+
+The light move was made against measured evidence, not to clear the artifact. Across 35 stored light
+packs the median is 28.6KB and the **maximum is 42,707** — the old bar was breached by honest packs,
+because the ~8k-token light target predated the suite having seven modules. (An earlier note here
+claimed a 108KB light pack. That number was a midday pack rebuilt at end of day, with a full day of
+`pending_proposals` compounded into it — not a pack any slot ever sent.) Light bulk is `paper`
+(~23KB), the module facts themselves, which is what the pack exists to carry.
+
+`arm_readings` looks like an easy 14KB — meic carries 17 arms of which 15 are retired. It is
 deliberately NOT cut: the advisor cited retired arms this week, and the twelve-session gate
 retrospective rests entirely on them. A retired arm's reading is evidence, not dead weight.
-
-The LIGHT pack is 108KB against 32KB and the taper does not touch it, because light slots have no
-journal. Its bulk is `paper` (40KB) — the module facts themselves, across seven modules — and
-`pending_proposals` (31KB), which is the model's own output compounding through the day by design.
-Seven modules at ~5KB of facts each is 35KB before anything else, so the ~8k-token light target may
-simply predate the suite having seven modules. That is a target to revisit, not a leak to plug.
 
 ## The module list is derived, not restated (2026-08-26)
 

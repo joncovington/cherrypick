@@ -308,9 +308,14 @@ def morning_settings(cfg: dict[str, Any]) -> dict[str, Any]:
 def advisor_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved AI-advisor scheduling (packages/advisor + scripts/advisor_checkpoint.py). OFF by default.
 
-    Eight daily slots: seven light intraday checkpoints on a cheap model, and one deep post-close run
-    on the strong one. The deep slot follows the review's provisional pass (16:30) so it can read
-    that fact set, and it is the slot that issues the next session's advice.
+    One deep post-close run on the strong model, following the review's provisional pass (16:30) so
+    it can read that fact set. It is the slot that issues the next session's advice, and since
+    2026-08-26 it is the only slot: the seven light intraday checkpoints were cut to one on 08-21
+    and to none on 08-26, because across 36 of them they produced four `creative` proposals and one
+    critical flag the deep slot re-derived anyway (see packages/advisor/CLAUDE.md). Light slots
+    remain fully supported — `checkpoints` still schedules them — they are simply not the default.
+
+    An EMPTY `checkpoints` (list or dict) derives no light jobs and leaves `advisor-deep` alone.
 
     Off by default twice over, because two independent things have to be true before anything
     happens: the suite has to schedule the advisor (this block), and each module has to declare an
@@ -325,9 +330,10 @@ def advisor_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     the config surfaces show one complete block rather than half of one.
     """
     av = cfg.get("advisor", {}) or {}
-    raw_checkpoints = av.get("checkpoints", [
-        "09:45", "10:30", "11:30", "12:30", "13:30", "14:30", "15:30",
-    ])
+    # Defaults to NO light checkpoints (2026-08-26). The old seven-time default is what a fresh
+    # install used to inherit, and the evidence says it buys drafts nobody acts on while adding
+    # ~10% to the deep pack the model must read.
+    raw_checkpoints = av.get("checkpoints", [])
     # Two accepted shapes. A LIST of times keeps the original behavior: slots are named
     # positionally from ADVISOR_LIGHT_SLOTS in jobspec. A DICT of {slot_name: time} names each
     # checkpoint explicitly — added 2026-08-21 when the schedule was cut to one light slot, because

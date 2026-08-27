@@ -1216,6 +1216,81 @@ def _check_eval_activity(
     return [Finding(f"{name}.eval_activity", finding, f"{label} eval activity", detail)]
 
 
+
+def _check_advice_enactment(cfg: dict[str, Any], now_et: datetime, is_trading: bool) -> list[Finding]:
+    """Did today's modules actually APPLY the advice artifact issued for them last night?
+
+    This is the check that replaced a scheduled AI checkpoint (2026-08-26). `advice_enacted` rides
+    on every fact pack partly so a dropped artifact is visible at 10am rather than in the evening
+    verdict that scores it — but a model was never needed to answer it, and across its whole history
+    the midday slot never once caught one. All three enactment failures found so far (08-25 meic,
+    08-25 earnings, 08-26 calendars) were found by the deep slot, after the close. The question is
+    deterministic, so it belongs here, where it costs nothing and fails the same way twice.
+
+    It matters because of the 2026-08-25 incident: five artifacts went out with zero rejections,
+    three were applied and two were not, and the two were the modules whose experiments had their
+    most informative session available. A `not_enacted` session buys an experiment nothing, and
+    earnings carries a kill-at-session-6 rule — so "the parameter did nothing" and "the parameter
+    never reached a session with trades" would have concluded identically.
+
+    Driven by SUBPROCESS, never by import: this package drives the advisor by subprocess by rule
+    (see jobspec's ADVISOR_LIGHT_SLOTS note and packages/advisor/CLAUDE.md's fence), and the verdict
+    stays in `enactment.py` rather than being re-derived here. The comparison is genuinely subtle —
+    a reject-all artifact beside a baseline decision IS enacted — and a second opinion here would be
+    free to drift from the one the console and the evening pass both read.
+
+    Silent unless something is wrong. `no_artifact` is the ordinary state of a module with no active
+    experiment and is not reported; only `not_enacted` is, because that is an artifact that existed,
+    validated, and was ignored.
+    """
+    if not is_trading or not cfgmod.advisor_settings(cfg).get("enabled"):
+        return []
+    # After the loops have had a session start in which to record a decision, and before the deep
+    # slot scores it anyway — a warning that arrives with the verdict is not an early warning.
+    if not (time(10, 30) <= now_et.time() <= time(16, 30)):
+        return []
+
+    session = now_et.date().isoformat()
+    try:
+        # cwd is irrelevant to `-m` resolution (the advisor is an installed package); the home
+        # directory is used because it always exists, unlike a module root the advisor has none of.
+        r = _run_module(
+            core_home.home(),
+            ["-m", "cherrypick.advisor", "enactment", "--session", session],
+            timeout=25,
+        )
+        payload = first_json(r.stdout or "")
+    except Exception as exc:  # noqa: BLE001 -- a check that cannot run must not break the sweep
+        return [
+            Finding(
+                "advisor.enactment",
+                WARN,
+                "Advice enactment unknown",
+                f"Could not read enactment for {session}: {type(exc).__name__}: {exc}",
+            )
+        ]
+    if not isinstance(payload, dict) or not payload.get("ok"):
+        return []
+
+    dropped = [
+        (name, (row or {}).get("detail") or "")
+        for name, row in (payload.get("modules") or {}).items()
+        if isinstance(row, dict) and row.get("status") == "not_enacted"
+    ]
+    if not dropped:
+        return []
+    listed = "; ".join(f"{name}: {detail}" for name, detail in sorted(dropped))
+    return [
+        Finding(
+            "advisor.enactment",
+            WARN,
+            f"Advice not applied by {len(dropped)} module(s)",
+            f"An artifact was issued for {session} and the loop's own record disagrees with it. "
+            f"The session buys those experiments nothing and their counters do not advance. "
+            f"{listed}",
+        )
+    ]
+
 def _check_settlement(name: str, mcfg: dict[str, Any], now_et: datetime, is_trading: bool) -> list[Finding]:
     """Warn when a module is past the close on a trading day with open positions it has not settled.
 
@@ -1881,6 +1956,9 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     findings += _check_subscription_budget(cfg)
     # The data dependency that stops earnings silently (see _check_earnings_calendar).
     findings += _check_earnings_calendar(cfg)
+    # Was last night's advice actually applied? Deterministic, and it replaced an AI checkpoint
+    # that never once caught this (see _check_advice_enactment).
+    findings += _check_advice_enactment(cfg, now, is_trading)
 
     # Watchdog the standalone market-data producer (dormant until the cutover enables the top-level
     # `streamer` block; today MEIC still owns the streamer under modules.meic.streamer).

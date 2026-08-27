@@ -509,15 +509,8 @@
   "advisor": {
     "_comment": "The AI advisor (packages/advisor + scripts/advisor_checkpoint.py) - agent advises, loop decides. Eight scheduled slots per trading day: seven light intraday checkpoints ('checkpoints', ET) on 'light_model' that observe and draft, and one deep post-close run ('deep_at', after review-provisional at 16:30) on 'deep_model' that designs experiments, passes verdicts, and issues the NEXT session's advice. Each run builds a deterministic fact pack in-package, pipes it to Claude headless on stdin with ALL acting tools denied, and hands the reply back to the package to validate - the AI never gets a file handle, a database, or a tool. Admitted proposals run as paper A/B experiments: a synthetic 'advised:<base>' book beside its un-advised control, scored by the same qualification gate everything else uses. The artifact is state/advice/<module>-<session>.json, validated by cherrypick.core.advice and re-validated by the loop at session start; absent/stale/invalid means baseline, and one out-of-bounds value rejects the whole set (rejections are still written, for audit). OFF by default TWICE: 'enabled' here AND the module's OWN 'advice' block (in ~/.cherrypick/config/<module>.json), which is where the bounds manifest now lives - the module declares what it will accept advice about, not this file. Kill switch: flip either flag, delete the advice file, or `python -m cherrypick.advisor kill <experiment_id>`. Paper only: nothing here can reach a live account, and the deep slot's enact step runs even when the AI call fails so an outage cannot truncate an active A/B sample. 'max_experiments_per_module' is 1 by construction (each consumer builds exactly one advised book); over-cap specs queue and activate FIFO. 'experiment_sessions' defaults to 15 so an expiring experiment can satisfy the promotion gate (14 days, 20 trades) instead of expiring underpowered.",
     "enabled": false,
-    "checkpoints": [
-      "09:45",
-      "10:30",
-      "11:30",
-      "12:30",
-      "13:30",
-      "14:30",
-      "15:30"
-    ],
+    "_checkpoints_note": "Light intraday checkpoints. EMPTY since 2026-08-26: the schedule is the deep post-close run and nothing else. Seven light slots ran from 08-14, were cut to one on 08-21 and to none on 08-26, on the advisor's own record rather than on preference - across 36 light checkpoints they produced four 'creative' proposals (the kind no code path acts on), zero experiment_spec/tune/verdict, and one critical flag that the same evening's deep slot re-derived more precisely from settled numbers. 'midday', the last one standing, produced zero proposals in its entire history. They also cannot ISSUE anything: the only loop-facing output is the artifact the deep slot's enact step writes for the next session. And they cost the deep slot ~43KB, about 10% of the pack it has to read. What they were nominally for - a dropped advice artifact visible at 10am rather than in the evening verdict - is deterministic and is now the watchdog's advisor.enactment check, which invokes 'python -m cherrypick.advisor enactment' by subprocess between 10:30 and 16:30. Light slots remain fully supported: populate this to bring them back, as a LIST of times (named positionally from ADVISOR_LIGHT_SLOTS) or a DICT of {slot_name: time} when you want fewer than seven and legible names.",
+    "checkpoints": {},
     "deep_at": "17:00",
     "light_model": "sonnet",
     "deep_model": "opus",
