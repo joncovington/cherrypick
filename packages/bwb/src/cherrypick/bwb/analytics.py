@@ -84,17 +84,45 @@ def worksheet(conn) -> list[dict]:
 
 def trigger_coverage(conn, session_date: str) -> dict:
     """How good the day's trigger-tick substrate is — a barren session should read as thin data,
-    never as a market."""
+    never as a market.
+
+    Reports the two halves of `measured` separately and names the reasons. A single refusal share
+    was technically correct and operationally useless: it sat at 1.00 for four sessions
+    (2026-08-24..27) while two unrelated defects starved spot and gamma-flip at once, and nothing
+    in the number said which input to look at — or that anything was wrong at all, since a share is
+    just a number until something calls it a finding. `total_failure` is that call.
+    """
     row = conn.execute(
-        "SELECT COUNT(*) AS total, SUM(measured = 0) AS refused FROM bwb_trigger_ticks WHERE session_date = ?",
+        """SELECT COUNT(*) AS total,
+                  SUM(measured = 0) AS refused,
+                  SUM(spot_measured = 0) AS no_spot,
+                  SUM(flip_measured = 0) AS no_flip
+           FROM bwb_trigger_ticks WHERE session_date = ?""",
         (session_date,),
     ).fetchone()
     total = row["total"] or 0
+    refused = row["refused"] or 0
+    reasons = {
+        r["refusal"]: r["n"]
+        for r in conn.execute(
+            """SELECT refusal, COUNT(*) AS n FROM bwb_trigger_ticks
+               WHERE session_date = ? AND measured = 0 AND refusal IS NOT NULL
+               GROUP BY refusal ORDER BY n DESC""",
+            (session_date,),
+        )
+    }
     return {
         "session": session_date,
         "ticks": total,
-        "refused": row["refused"] or 0,
-        "refusal_share": round((row["refused"] or 0) / total, 4) if total else None,
+        "refused": refused,
+        "refusal_share": round(refused / total, 4) if total else None,
+        "no_spot": row["no_spot"] or 0,
+        "no_flip": row["no_flip"] or 0,
+        "reasons": reasons,
+        # A session that recorded ticks and measured NONE of them is a defect, not thin data: the
+        # loop ran, the cohorts existed, and every read failed. Stated as a flag so a reader does
+        # not have to notice that a share happens to equal 1.
+        "total_failure": bool(total and refused == total),
     }
 
 

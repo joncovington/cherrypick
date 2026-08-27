@@ -133,7 +133,11 @@ def run_once(
     past_settle = now_min >= settle_time_min(config)
     if past_settle and _unsettled_today(conn, day):
         _log(f"past settle time — settling legs expiring {day}")
-        return {"ok": True, "settled_session": True, **run_settle(config, conn, cache_path=cache_path, when=when)}
+        return {
+            "ok": True,
+            "settled_session": True,
+            **run_settle(config, conn, cache_path=cache_path, when=when),
+        }
 
     if not force and not in_session(now_min):
         return {"ok": True, "skipped": "outside_rth", "now_min": now_min}
@@ -198,7 +202,13 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
     if plan_dates is None:
         for b in wanting:
             db.record_decision(
-                conn, trade_date=day, book=b, symbol=symbol, mode="entry", reason="no_expiration_plan", accepted=False
+                conn,
+                trade_date=day,
+                book=b,
+                symbol=symbol,
+                mode="entry",
+                reason="no_expiration_plan",
+                accepted=False,
             )
         return 0
 
@@ -209,18 +219,33 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
     if not snapshot.get("ok"):
         _log(f"{symbol}: entry snapshot refused ({snapshot['reason']})")
         db.record_snapshot(
-            conn, trade_date=day, symbol=symbol, kind="entry", status=snapshot["reason"],
+            conn,
+            trade_date=day,
+            symbol=symbol,
+            kind="entry",
+            status=snapshot["reason"],
             quotes_stale=snapshot.get("rejected"),
         )
         for b in wanting:
             db.record_entry_attempt(conn, trade_date=day, symbol=symbol, book=b, outcome=snapshot["reason"])
             db.record_decision(
-                conn, trade_date=day, book=b, symbol=symbol, mode="entry", reason=snapshot["reason"], accepted=False
+                conn,
+                trade_date=day,
+                book=b,
+                symbol=symbol,
+                mode="entry",
+                reason=snapshot["reason"],
+                accepted=False,
             )
         return 0
     db.record_snapshot(
-        conn, trade_date=day, symbol=symbol, kind="entry", status="ok",
-        quotes_fresh=snapshot["quote_stats"]["fresh"], quotes_stale=snapshot["quote_stats"]["rejected"],
+        conn,
+        trade_date=day,
+        symbol=symbol,
+        kind="entry",
+        status="ok",
+        quotes_fresh=snapshot["quote_stats"]["fresh"],
+        quotes_stale=snapshot["quote_stats"]["rejected"],
         spot=snapshot["spot"],
     )
 
@@ -237,12 +262,22 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
         result = plans[b]
         if not result.get("ok"):
             db.record_entry_attempt(
-                conn, trade_date=day, symbol=symbol, book=b, outcome=result["reason"],
+                conn,
+                trade_date=day,
+                symbol=symbol,
+                book=b,
+                outcome=result["reason"],
                 block_detail=json.dumps(result.get("detail")) if result.get("detail") else None,
                 spot=snapshot["spot"],
             )
             db.record_decision(
-                conn, trade_date=day, book=b, symbol=symbol, mode="entry", reason=result["reason"], accepted=False
+                conn,
+                trade_date=day,
+                book=b,
+                symbol=symbol,
+                mode="entry",
+                reason=result["reason"],
+                accepted=False,
             )
             continue
         plan = result["plan"]
@@ -251,12 +286,23 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             continue
         opened_count += 1
         db.record_entry_attempt(
-            conn, trade_date=day, symbol=symbol, book=b, outcome="filled", spot=plan["spot"],
-            body_strike=plan["body_strike"], near_strike=plan["near_strike"], far_strike=plan["far_strike"],
+            conn,
+            trade_date=day,
+            symbol=symbol,
+            book=b,
+            outcome="filled",
+            spot=plan["spot"],
+            body_strike=plan["body_strike"],
+            near_strike=plan["near_strike"],
+            far_strike=plan["far_strike"],
             credit=plan["credit"],
         )
         db.record_decision(
-            conn, trade_date=day, book=b, symbol=symbol, mode="entry",
+            conn,
+            trade_date=day,
+            book=b,
+            symbol=symbol,
+            mode="entry",
             reason=f"entered {plan['near_strike']:g}/{plan['body_strike']:g}x2/{plan['far_strike']:g} credit {plan['credit']:.2f}",
             accepted=True,
         )
@@ -265,6 +311,21 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             f"({plan['expiration']}) credit {plan['credit']:.2f}"
         )
     return opened_count
+
+
+def _legs_with_symbol(conn, position: dict) -> list[dict]:
+    """A position's open legs, each carrying `position_symbol`.
+
+    `bwb_legs` has no symbol column — the underlying lives on the position — and
+    `provider.build_mark_snapshot` resolves spot from `legs[0]["position_symbol"]`. The marks path
+    set that and the trigger-tick path did not, so every tick row recorded a NULL spot and therefore
+    `measured = 0`, for four sessions, while `bwb_marks` beside it was perfectly healthy. One helper
+    both callers use, so the two cannot drift apart again.
+    """
+    legs = db.open_legs_for(conn, position["position_id"])
+    for leg in legs:
+        leg["position_symbol"] = position["symbol"]
+    return legs
 
 
 # --------------------------------------------------------------------------- trigger ticks (the second product)
@@ -284,7 +345,7 @@ def _record_trigger_ticks(config: dict, conn, *, cache_path: str, when: datetime
         cohorts.setdefault(key, position)  # any position in the cohort carries the shared strikes
 
     for (entry_session, sig), position in cohorts.items():
-        legs = db.open_legs_for(conn, position["position_id"])
+        legs = _legs_with_symbol(conn, position)
         near_leg = next((leg for leg in legs if leg["leg_role"] == "near_long"), None)
         mark = provider.build_mark_snapshot(cache_path, legs, when=when, max_quote_age_seconds=max_age)
         near_abs_delta = None
@@ -295,7 +356,13 @@ def _record_trigger_ticks(config: dict, conn, *, cache_path: str, when: datetime
         flip = provider.gamma_flip_reading(
             cache_path, symbol, position["expiration"], root, max_age_seconds=max_age
         )
-        measured = mark.get("spot") is not None and flip.get("ok")
+        # Recorded as two facts as well as their AND: `measured` is what the replay gates on, but a
+        # tick with spot and no flip is a different outage from a tick with neither, and one flag
+        # cannot say which. Both were broken at once in the 2026-08-24..27 rows, and the single
+        # flag showed that as one undifferentiated wall of refusals.
+        spot_measured = mark.get("spot") is not None
+        flip_measured = bool(flip.get("ok"))
+        measured = spot_measured and flip_measured
         row = {
             "entry_session": entry_session,
             "structure_signature": sig,
@@ -313,7 +380,21 @@ def _record_trigger_ticks(config: dict, conn, *, cache_path: str, when: datetime
             "addon_long_bid": None,
             "addon_long_ask": None,
             "measured": 1 if measured else 0,
-            "refusal": None if measured else (flip.get("reason") or mark.get("reason")),
+            "spot_measured": 1 if spot_measured else 0,
+            "flip_measured": 1 if flip_measured else 0,
+            # Name the half that actually failed. Previously the flip reason won whenever both were
+            # absent, so a NULL spot hid behind a GEX message for four sessions.
+            "refusal": None
+            if measured
+            else "; ".join(
+                filter(
+                    None,
+                    [
+                        None if spot_measured else f"spot: {mark.get('reason') or 'no_spot_price'}",
+                        None if flip_measured else f"flip: {flip.get('reason') or 'no_flip'}",
+                    ],
+                )
+            ),
         }
         db.record_trigger_tick(conn, row)
         written += 1
@@ -331,9 +412,7 @@ def _mark_positions(config: dict, conn, *, cache_path: str, when: datetime, day:
     symbol = _symbol(config)
 
     for position in db.open_positions(conn):
-        legs = db.open_legs_for(conn, position["position_id"])
-        for leg in legs:
-            leg["position_symbol"] = position["symbol"]
+        legs = _legs_with_symbol(conn, position)
         snapshot = provider.build_mark_snapshot(cache_path, legs, when=when, max_quote_age_seconds=max_age)
         params = management.effective_params(position, config)
         quotes = snapshot.get("quotes") or {}
@@ -347,7 +426,9 @@ def _mark_positions(config: dict, conn, *, cache_path: str, when: datetime, day:
             if g is not None and g.get("delta") is not None:
                 near_abs_delta = abs(g["delta"])
 
-        flip = provider.gamma_flip_reading(cache_path, symbol, position["expiration"], root, max_age_seconds=max_age)
+        flip = provider.gamma_flip_reading(
+            cache_path, symbol, position["expiration"], root, max_age_seconds=max_age
+        )
 
         tick = {
             "abs_delta": near_abs_delta,
@@ -360,30 +441,58 @@ def _mark_positions(config: dict, conn, *, cache_path: str, when: datetime, day:
         }
 
         close_cost = engine.close_cost(
-            [{"action": leg["action"], "mid": (quotes.get(leg["streamer_symbol"]) or {}).get("mid")} for leg in legs]
+            [
+                {"action": leg["action"], "mid": (quotes.get(leg["streamer_symbol"]) or {}).get("mid")}
+                for leg in legs
+            ]
         )
 
         addon_credit = None
+        addon_block = None
         if position.get("armed_at") and not position.get("addon_fired_at"):
-            addon_snap = _addon_snapshot(cache_path, symbol, position, when, max_age)
+            addon_snap = _addon_snapshot(cache_path, symbol, position, when, max_age, root=root)
             if addon_snap.get("ok"):
                 addon_plan = engine.plan_addon(addon_snap, position["far_strike"], params)
-                addon_credit = addon_plan.get("plan", {}).get("credit") if addon_plan.get("ok") else None
+                if addon_plan.get("ok"):
+                    addon_credit = addon_plan.get("plan", {}).get("credit")
+                else:
+                    addon_block = addon_plan.get("reason")
+            else:
+                # WHY the add-on could not be priced, kept rather than discarded. An armed position
+                # that cannot price produces a `hold`, and holds are not recorded — so "waiting for
+                # a credit" and "cannot read the chain at all" looked identical. The second was
+                # true for every armed tick until 2026-08-27 (`not_root_listed`, the OCC-root bug
+                # above) and left no trace anywhere in the ledger.
+                addon_block = addon_snap.get("reason")
 
         for leg in legs:
             quote = quotes.get(leg["streamer_symbol"])
             db.record_mark(
-                conn, position_id=position["position_id"], leg_role=leg["leg_role"], marked_at=ts,
-                session_date=day, bid=quote["bid"] if quote else None, ask=quote["ask"] if quote else None,
-                mid=quote["mid"] if quote else None, spot=snapshot.get("spot"), close_cost=close_cost,
-                quote_age_s=quote["age_seconds"] if quote else None, usable=1 if quote else 0,
+                conn,
+                position_id=position["position_id"],
+                leg_role=leg["leg_role"],
+                marked_at=ts,
+                session_date=day,
+                bid=quote["bid"] if quote else None,
+                ask=quote["ask"] if quote else None,
+                mid=quote["mid"] if quote else None,
+                spot=snapshot.get("spot"),
+                close_cost=close_cost,
+                quote_age_s=quote["age_seconds"] if quote else None,
+                usable=1 if quote else 0,
                 refusal=None if quote else (snapshot.get("reason") or "missing_leg_quotes"),
             )
             written += 1
 
         values[position["position_id"]] = {
-            "position": position, "snapshot": snapshot, "params": params, "close_cost": close_cost,
-            "trigger_state": trigger_state, "tick": tick, "addon_credit": addon_credit,
+            "position": position,
+            "snapshot": snapshot,
+            "params": params,
+            "close_cost": close_cost,
+            "trigger_state": trigger_state,
+            "tick": tick,
+            "addon_credit": addon_credit,
+            "addon_block": addon_block,
         }
     return written, values
 
@@ -404,12 +513,23 @@ def _read_greek(cache_path: str, streamer_symbol: str, *, max_age_seconds: float
         conn.close()
 
 
-def _addon_snapshot(cache_path: str, symbol: str, position: dict, when: datetime, max_age: float) -> dict:
+def _addon_snapshot(
+    cache_path: str, symbol: str, position: dict, when: datetime, max_age: float, *, root: str | None = None
+) -> dict:
     """A lightweight entry-shaped snapshot (chain+quotes+greeks) for re-pricing the add-on against
-    the position's own expiration/root, reusing `build_entry_snapshot`'s chain read."""
+    the position's own expiration/root, reusing `build_entry_snapshot`'s chain read.
+
+    **`root` is the OCC root and is NOT the symbol.** This resolved `root = symbol` until
+    2026-08-27, so every add-on lookup asked the cache for `SPX`-rooted contracts while SPX's
+    weeklies are listed as `SPXW` — `not_root_listed`, on every tick, for every armed position. The
+    flip book armed all four of its positions the moment the gamma flip became measurable and then
+    sat unable to price a single one. Every other snapshot in this module already resolves
+    `config.get("occ_root") or symbol`; this was the one that did not.
+    """
     plan = {"expiration": position["expiration"], "dte": 0}
-    root = symbol
-    snap = provider.build_entry_snapshot(cache_path, symbol, plan, root=root, when=when, max_quote_age_seconds=max_age)
+    snap = provider.build_entry_snapshot(
+        cache_path, symbol, plan, root=root or symbol, when=when, max_quote_age_seconds=max_age
+    )
     return snap
 
 
@@ -421,13 +541,32 @@ def _manage_positions(config: dict, conn, values: dict, *, cache_path: str, when
             continue
         params = state["params"]
         decision, latches = management.evaluate(
-            position, params, trigger_state=state["trigger_state"], tick=state["tick"],
+            position,
+            params,
+            trigger_state=state["trigger_state"],
+            tick=state["tick"],
             addon_credit=state["addon_credit"],
         )
         bookmod.update_latches(
-            conn, position, peak_abs_delta=latches["peak_abs_delta"], below_flip_seen=latches["below_flip_seen"]
+            conn,
+            position,
+            peak_abs_delta=latches["peak_abs_delta"],
+            below_flip_seen=latches["below_flip_seen"],
         )
         if not decision.acts:
+            # An armed position that cannot price its add-on is a REFUSAL, not silence. Collapsed
+            # per (date, book, reason), so a whole session of it costs one counted row.
+            block = state.get("addon_block")
+            if block and position.get("armed_at") and not position.get("addon_fired_at"):
+                db.record_decision(
+                    conn,
+                    trade_date=day,
+                    book=position["book"],
+                    symbol=position["symbol"],
+                    mode="addon",
+                    reason=f"addon_blocked:{block}",
+                    accepted=0,
+                )
             continue
         gate = management.execution_gate(state["snapshot"], params, now=clock.now_et())
         executed = 0
@@ -437,21 +576,36 @@ def _manage_positions(config: dict, conn, values: dict, *, cache_path: str, when
             actions += 1
             _log(f"[{position['book']}] {pid} armed — {decision.reason}")
         elif decision.action == "fire_addon" and gate is None:
-            snap = _addon_snapshot(cache_path, _symbol(config), position, when, params.get("max_quote_age_seconds", 300))
+            snap = _addon_snapshot(
+                cache_path,
+                _symbol(config),
+                position,
+                when,
+                params.get("max_quote_age_seconds", 300),
+                root=config.get("occ_root") or _symbol(config),
+            )
             if snap.get("ok"):
                 addon_plan = engine.plan_addon(snap, position["far_strike"], params)
                 if addon_plan.get("ok"):
                     bookmod.fire_addon(conn, position, addon_plan["plan"], config)
                     executed = 1
                     actions += 1
-                    _log(f"[{position['book']}] {pid} add-on fired — credit {addon_plan['plan']['credit']:.2f}")
+                    _log(
+                        f"[{position['book']}] {pid} add-on fired — credit {addon_plan['plan']['credit']:.2f}"
+                    )
                 else:
                     gate = addon_plan.get("reason")
             else:
                 gate = snap.get("reason")
         db.record_management_event(
-            conn, position_id=pid, occurred_at=time.time(), session_date=day, action=decision.action,
-            reason=decision.reason, executed=executed, gate=gate,
+            conn,
+            position_id=pid,
+            occurred_at=time.time(),
+            session_date=day,
+            action=decision.action,
+            reason=decision.reason,
+            executed=executed,
+            gate=gate,
             detail_json=json.dumps(decision.detail) if decision.detail else None,
         )
     return actions
@@ -459,7 +613,12 @@ def _manage_positions(config: dict, conn, values: dict, *, cache_path: str, when
 
 # --------------------------------------------------------------------------- settle / status
 def run_settle(
-    config: dict, conn, *, cache_path: str, when: datetime | None = None, price: float | None = None,
+    config: dict,
+    conn,
+    *,
+    cache_path: str,
+    when: datetime | None = None,
+    price: float | None = None,
     day: str | None = None,
 ) -> dict:
     when = when or clock.now_et()
@@ -470,15 +629,25 @@ def run_settle(
     max_age = (config.get("defaults") or {}).get("settlement_max_age_seconds", 300)
     spot = price if price is not None else provider.read_spot(cache_path, symbol, max_age_seconds=max_age)
     if spot is None:
-        _log(f"{symbol}: cannot settle {day} — no price within {max_age}s. Re-run with --price once it recovers.")
-        return {"ok": False, "results": [{"symbol": symbol, "ok": False, "reason": "no_settlement_price"}], "date": day}
+        _log(
+            f"{symbol}: cannot settle {day} — no price within {max_age}s. Re-run with --price once it recovers."
+        )
+        return {
+            "ok": False,
+            "results": [{"symbol": symbol, "ok": False, "reason": "no_settlement_price"}],
+            "date": day,
+        }
     results = bookmod.settle_expiring_legs(conn, day, spot, config, symbol=symbol)
     for result in results:
         _log(
             f"{symbol} {result['position_id']}: settled {result['settled_legs']} leg(s) at {spot:.2f} "
             f"({result['itm']} ITM, fee {result['fee']:.2f})"
         )
-    return {"ok": True, "results": [{"symbol": symbol, "ok": True, "settled": len(results), "spot": spot}], "date": day}
+    return {
+        "ok": True,
+        "results": [{"symbol": symbol, "ok": True, "settled": len(results), "spot": spot}],
+        "date": day,
+    }
 
 
 def run_status(config: dict, conn, *, cache_path: str) -> dict:
@@ -535,7 +704,13 @@ def main(argv=None) -> int:
         print(json.dumps(run_status(config, conn, cache_path=cache_path), indent=2, default=str))
         return 0
     if args.settle:
-        print(json.dumps(run_settle(config, conn, cache_path=cache_path, price=args.price, day=args.date), indent=2, default=str))
+        print(
+            json.dumps(
+                run_settle(config, conn, cache_path=cache_path, price=args.price, day=args.date),
+                indent=2,
+                default=str,
+            )
+        )
         return 0
     if args.interval:
         if not _acquire_loop_lock():
@@ -545,7 +720,9 @@ def main(argv=None) -> int:
             _log(f"loop starting, interval {args.interval}s, cache {cache_path}")
             drift = db.stale_writer_columns(conn)
             if drift:
-                _log(f"WARNING: {len(drift)} ledger column(s) this checkout will never write — {', '.join(drift)}.")
+                _log(
+                    f"WARNING: {len(drift)} ledger column(s) this checkout will never write — {', '.join(drift)}."
+                )
             while args.force or in_session(clock.minute_of_day(clock.now_et())):
                 try:
                     run_once(config, conn, cache_path=cache_path, force=args.force)
@@ -561,7 +738,11 @@ def main(argv=None) -> int:
             print(json.dumps({"ok": True, "skipped": "another paper loop is already running"}))
             return 0
         try:
-            print(json.dumps(run_once(config, conn, cache_path=cache_path, force=args.force), indent=2, default=str))
+            print(
+                json.dumps(
+                    run_once(config, conn, cache_path=cache_path, force=args.force), indent=2, default=str
+                )
+            )
             return 0
         finally:
             _release_loop_lock()
