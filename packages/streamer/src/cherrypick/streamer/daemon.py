@@ -24,7 +24,7 @@ import sys
 import time
 from logging.handlers import RotatingFileHandler
 
-from cherrypick.core import looplock
+from cherrypick.core import looplock, streamcache
 from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 from cherrypick.core.streamer import ChainStreamer
 
@@ -108,6 +108,15 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
         # off Trade deliberately — sparse prints would read as perpetually stale there.
         legs = _registry.union_legs()
         cash_legs = [leg for leg in legs if not leg.startswith(".")]
+        # Quote and Greeks are filtered by what the symbol can actually PUBLISH, not by what it is.
+        # Every cash leg carried a Greeks subscription that could never deliver an event, and the
+        # index legs carried a Quote subscription with the same problem — an index is a computed
+        # level with no order book (the 2026-08-24 entitlement probe: SKEW/VIX9D/VIX/VIX1D all
+        # printed Trade, none printed Quote). ETF and single-name legs KEEP Quote: they have a real
+        # book and modules price off it. The predicate lives in core.streamcache beside the rest of
+        # the symbology so the producer and any reader cannot disagree about it.
+        quote_legs = [leg for leg in legs if streamcache.publishes_quotes(leg)]
+        greeks_legs = [leg for leg in legs if streamcache.publishes_greeks(leg)]
         # Cash legs get Summary for the same reason they got Trade, one event type later: the daily
         # OHLC (`day_close`) arrives ONLY on Summary, and it is what `gex.regime.harvest_daily_closes`
         # copies into `daily_closes` — the suite's only multi-year series, and the input to every
@@ -119,8 +128,8 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
         # series anything here reads, and it would be thousands of subscriptions for nothing.
         return {
             "Trade": list(underlyings) + cash_legs,
-            "Quote": legs,
-            "Greeks": legs,
+            "Quote": quote_legs,
+            "Greeks": greeks_legs,
             "Summary": list(underlyings) + cash_legs,
         }
 
@@ -129,10 +138,15 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
 
     default_strike_count = int(scfg.get("window_strike_count", 60))
 
-    def _window_strike_count_for(symbol: str) -> int:
+    def _window_strike_count_for(symbol: str) -> tuple[int, int]:
         # A module's widened per-symbol request (e.g. flies escalating after repeated
-        # missing_leg_quotes) never narrows the configured default -- only ever widens it.
-        return max(default_strike_count, _registry.union_window_hints().get(symbol, 0))
+        # missing_leg_quotes) never narrows the configured default -- only ever widens it, and now
+        # per DIRECTION: a hint may be a plain count (symmetric, the common case) or a
+        # {"down": N, "up": M} declaration, so a module whose structure sits below spot stops
+        # buying the mirror image above it. The max is taken per side, so a directional hint can
+        # never narrow the default on the side it is silent about.
+        down, up = _registry.union_window_hints().get(symbol, (0, 0))
+        return (max(default_strike_count, down), max(default_strike_count, up))
 
     def _expirations_for(symbol: str) -> list[str]:
         # Extra expirations (e.g. the calendars module's 4DTE/7DTE legs) are dynamic like the legs:
@@ -258,9 +272,7 @@ def status(cfg: dict) -> dict:
                 # a symbol a restart cannot fix.
                 if _in_rth_clock(now):
                     dead_underlyings = {
-                        sym: round(age, 1)
-                        for sym, age in spot_ages.items()
-                        if age > _DEAD_UNDERLYING_S
+                        sym: round(age, 1) for sym, age in spot_ages.items() if age > _DEAD_UNDERLYING_S
                     }
             # Per-symbol chain-fetch health: the aggregate ages above are freshest-of-any-symbol, so
             # ONE symbol's chain fetch silently failing (window disabled) is invisible whenever other

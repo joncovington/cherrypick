@@ -1,8 +1,10 @@
 # The producer's subscription burst — incident record and the fix
 
-*Written 2026-08-24, during and immediately after the incident. The mitigation described under
-"What was done during the session" is already live; **the fix under "The actual fix" is NOT built**
-and is deliberately deferred to outside market hours.*
+*Written 2026-08-24, during and immediately after the incident; the fix section re-checked against
+the code and rewritten 2026-08-26. The mitigation described under "What was done during the session"
+is live. **Four of the five fixes are built and one item — the heartbeat gap — is still open**; each
+is marked individually below rather than by a status line at the top, because the top-level line is
+the part that went stale.*
 
 ## What happened
 
@@ -74,53 +76,68 @@ Result: **12,047 → 8,551 subscriptions**, reconnects **0** across the followin
 > comparison spanning 2026-08-24 should know it moved. It was changed under an outage and should be
 > re-derived deliberately — 0.12 is a defensible bound for an 85–90 delta long, not a measured one.
 
-## The actual fix (not built — do this outside market hours)
+## The fix — what shipped, and what is left
 
-In rough order of value:
+*Status re-checked against the code 2026-08-26. This section used to say "not built" about all five
+items; three of them had shipped in the days after the incident and the file was never updated,
+which is exactly the failure mode a status line in a document has. It is written as built/open now,
+and anything still open says so in its own words.*
 
-1. **Throttle the (re)subscribe burst.** The producer should chunk its subscription messages and
-   pace them under the broker's rate limit rather than emitting everything as fast as the socket
-   accepts it. This is the actual bug: a burst that trips the limit cannot recover by retrying the
-   same burst 60 seconds later, which is precisely the loop observed. Everything else here reduces
-   the odds of tripping; only this removes the failure mode.
-2. **Asymmetric windows.** Let a `window_hint` express depth per direction — `{"down": 163, "up":
-   12}` — or let the resolver take a (below, above) pair. This halves the largest windows in the
-   suite with no loss of anything a module reads. It also removes the incentive to solve depth by
-   inflating a symmetric count.
-3. **Stop subscribing Greeks (and Quote) for cash legs.** `daemon._extra_subscriptions` currently
-   sends all three for every non-option leg. Trade is the only one that delivers, and the recorder
-   already reads `stream_trades` accordingly.
-4. **A declared subscription budget, checked when a request file changes.** The suite discovered
-   its ceiling at the open, in production. A budget — even a logged warning at, say, 8,000 — turns
-   "a module declared something expensive" into a message at declaration time rather than a
-   starved session. Drive it off the same `streamrequests` union the producer subscribes from, so
-   it cannot disagree with reality.
-5. **Surface reconnect churn as a finding.** `--status` already reports `reconnect_count`; nothing
-   reads it. 79 reconnects in a morning should be a WARN in its own right, not something inferred
-   from two modules complaining about stale quotes. This is the same lesson the resident-job
-   `starts_in_window` counter already encodes for module loops: *a process that keeps coming back
-   looks healthy at every instant and is not.*
+1. **Throttle the (re)subscribe burst — BUILT** (`core: pace the streamer's subscription messages`).
+   Every subscribe and unsubscribe goes through one choke point in `cherrypick.core.streamer`'s
+   `_send_subs`: chunked at `SUBSCRIBE_CHUNK = 200` and spaced by a GLOBAL minimum interval
+   (`SUBSCRIBE_PACE_S = 0.15`), so four event types fired back to back cannot stack into one burst.
+   A full 12k resubscribe now costs a few seconds against a 240s settling window. This was the
+   actual bug — everything else here reduces the odds of tripping the limit; only this removes the
+   failure mode.
+2. **Asymmetric windows — BUILT 2026-08-26.** A `window_hint` may now be a plain count (symmetric,
+   still the common case) or a `{"down": N, "up": M}` declaration; `streamcache.window_span`
+   normalizes every form to a `(below, above)` pair, and the union takes the max PER SIDE so two
+   modules with opposite needs on one symbol are both served. pmcc declares its deep window
+   downward-only, which is the whole point: the strikes an equal distance above spot were the
+   largest block of subscriptions in the suite that no module could read. The producer floors both
+   sides at its own `window_strike_count`, so a directional hint asks for more on one side and can
+   never narrow the base on the other.
+3. **Stop subscribing Greeks (and Quote) for cash legs — BUILT 2026-08-26.** The daemon now filters
+   both by what a symbol can actually PUBLISH rather than by what it is:
+   `streamcache.publishes_quotes` / `publishes_greeks`. Nothing cash-settled has greeks at all, and
+   an index has no order book to quote from — the 2026-08-24 entitlement probe found SKEW, VIX9D,
+   VIX and VIX1D all printing Trade and none printing Quote. **ETF and single-name legs keep
+   Quote**: they have a real book and modules price legs off it. The quoteless set is a DECLARED
+   list, not a pattern match on the ticker, because "VIX-prefixed means index" would quietly cost a
+   real symbol its quotes the first time a ticker broke the pattern, and a leg with no price at all
+   is the expensive failure this suite has already paid for twice (2026-08-14 Summary, 2026-08-17
+   Trade). An unlisted symbol keeps Quote: the default is a possibly-wasted subscription, never a
+   starved reader.
+4. **A declared subscription budget — BUILT.** `streamrequests.estimate_subscriptions` /
+   `budget_status` model the cost from the same registry union the producer subscribes from, and
+   `watchdog._check_subscription_budget` raises a finding past `DEFAULT_SUBSCRIPTION_BUDGET`
+   (12,000). It names the WORST symbol as well as the total, because the 2026-08-24 book was
+   dominated by one declaration and a total alone does not say which one to look at. It is an
+   ESTIMATE and will not equal the producer's own `subscribed_symbols` — its job is a change in
+   order of magnitude, not a reconciliation.
+5. **Surface reconnect churn as a finding — BUILT.** `watchdog._streamer_churn_finding` reads the
+   `reconnect_count` that `--status` was already reporting and nobody read. 79 reconnects in a
+   morning is now a WARN in its own right rather than something inferred from two modules
+   complaining about stale quotes — the same lesson the resident-job `starts_in_window` counter
+   already encodes: *a process that keeps coming back looks healthy at every instant and is not.*
 
-## Queued with this, same sitting
+**Still open from this incident:** the heartbeat gap in the section below. Nothing else.
 
-**Register the `curve` module.** It has never run: built 2026-08-22 and wired into nothing — no
-`modules.curve` block in the orchestrator config, therefore no supervisor job, no stream request,
-no data directory. (bwb was built the same day and *was* registered; curve was missed beside it.)
-Everything else is already in place — `curve_vx` is in the schema registry and report, reconcile,
-trade_notifier and eval_activity all account for it — so the missing piece is one config block.
+## Queued with this, same sitting — DONE
 
-It belongs in this sitting rather than during a session because **VXX is a real underlying, not a
-quote-only leg**: it adds a chain window plus its target expiration (~1,000 subscriptions, taking
-the producer to roughly 9,500), and a new underlying forces a producer restart and trips the
-watchdog's subscription-growth recycle. Land it *after* the throttle above, so VXX arrives on a
-producer that paces its burst rather than one hoping to stay under an undocumented ceiling, and
-watch `reconnect_count` while it settles.
+**Register the `curve` module.** Done: `modules.curve` is in the orchestrator config and
+`state/stream_requests/curve.json` exists, so the module has a supervisor job and the producer
+serves VXX's window and target expiration. It was landed after the throttle above, as this section
+asked, so VXX arrived on a producer that paces its burst rather than one hoping to stay under an
+undocumented ceiling.
 
-Note what this cost: curve's daily VIX/VIX3M regime series is its declared second product and its
-value is continuity. The signal half is recoverable — `regime-history` replays the classification
-from stored `stream_summary` closes — but a session's live trade record is not. This is also
-exactly the case for item 4 above: a module declaring an expensive new underlying should be a
-message at declaration time, and a module declaring *nothing at all* should be visible too.
+The cost is on the record: curve's daily VIX/VIX3M regime series is its declared second product and
+its value is continuity, so the sessions between 2026-08-22 and registration are simply missing from
+it. The signal half is recoverable — `regime-history` replays the classification from stored
+`stream_summary` closes — but a session's live trade record is not. That is also the case item 4
+above now covers from the other side: a module declaring an expensive new underlying announces
+itself at declaration time, and a module declaring *nothing at all* is visible in the same union.
 
 ## A monitoring gap the recovery exposed
 

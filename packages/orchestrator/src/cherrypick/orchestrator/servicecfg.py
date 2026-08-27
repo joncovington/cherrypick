@@ -50,6 +50,7 @@ from pathlib import Path
 from typing import Any
 
 from cherrypick.core import home as _home
+from cherrypick.core import streamcache
 from cherrypick.core import streamrequests as _streamrequests
 
 from . import config as cfgmod
@@ -182,11 +183,17 @@ def subscription_shortfall(stamped: dict[str, Any] | None, current: dict[str, An
         return {}
     new_symbols = sorted(set(current.get("symbols") or []) - set(stamped.get("symbols") or []))
     was_hints = stamped.get("window_hints") or {}
-    widened = {
-        symbol: count
-        for symbol, count in (current.get("window_hints") or {}).items()
-        if count > int(was_hints.get(symbol, 0) or 0)
-    }
+    # Hints are (below, above) spans, and a stamp written before they were directional holds a bare
+    # int -- `window_span` normalizes both, so an old stamp compares correctly instead of reading as
+    # a widening on the first tick after this landed. Growth on EITHER side is a shortfall: a window
+    # that deepened downward and narrowed upward still asks for strikes the running producer does
+    # not hold.
+    widened = {}
+    for symbol, span in (current.get("window_hints") or {}).items():
+        want = streamcache.window_span(span)
+        had = streamcache.window_span(was_hints.get(symbol, 0))
+        if want[0] > had[0] or want[1] > had[1]:
+            widened[symbol] = list(want)
     out: dict[str, Any] = {}
     if new_symbols:
         out["symbols"] = new_symbols
@@ -218,6 +225,12 @@ def hint_recycle_deferred(
     return remaining if remaining > 0 else None
 
 
+def _describe_span(span: Any) -> str:
+    """A window span for a human: `30` when symmetric, `163v/12^` when it is not."""
+    below, above = streamcache.window_span(span)
+    return str(below) if below == above else f"{below}v/{above}^"
+
+
 def describe_shortfall(short: dict[str, Any]) -> str:
     """One human-readable clause naming what the running producer is short of."""
     parts = []
@@ -225,7 +238,9 @@ def describe_shortfall(short: dict[str, Any]) -> str:
         parts.append("new symbols " + ", ".join(short["symbols"]))
     if short.get("window_hints"):
         widened = short["window_hints"]
-        parts.append("wider windows " + ", ".join(f"{s}={widened[s]}" for s in sorted(widened)))
+        parts.append(
+            "wider windows " + ", ".join(f"{s}={_describe_span(widened[s])}" for s in sorted(widened))
+        )
     return " and ".join(parts) or "nothing"
 
 

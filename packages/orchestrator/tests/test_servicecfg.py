@@ -343,7 +343,7 @@ def test_a_widened_window_hint_is_deferred_right_after_launch(wired, spy, reques
     state = sc.staleness(STREAMER, wired, "streamer", check_subscriptions=True)
     assert state["stale"] is False
     assert "holding off" in state["reason"] and "XSP=90" in state["reason"]
-    assert state["deferred"] == {"window_hints": {"XSP": 90}}
+    assert state["deferred"] == {"window_hints": {"XSP": [90, 90]}}
 
 
 def test_a_widened_window_hint_recycles_once_the_cooldown_passes(wired, spy, requests):
@@ -440,3 +440,44 @@ def test_a_plain_service_never_consults_the_registry(wired, spy, requests):
 
     finding = wd._recycle_if_stale(SVC, wired, SVC["id"])
     assert spy == {"stop": 0, "start": 0} and finding.status == wd.OK
+
+
+# --------------------------------------------------- directional window hints (2026-08-26)
+#
+# `window_hints` became a (below, above) span so pmcc's deep-ITM long stops buying an identical
+# depth above spot that no module can read. The shortfall comparison is the migration hazard: a
+# stamp written before the change holds a bare int, and reading it as anything other than a
+# symmetric span would recycle every producer in the suite on the first tick after this landed.
+
+
+def test_shortfall_reads_a_pre_directional_stamp_as_symmetric():
+    stamped = {"symbols": ["TQQQ"], "window_hints": {"TQQQ": 163}}  # written before spans existed
+    current = {"symbols": ["TQQQ"], "window_hints": {"TQQQ": [163, 163]}}
+    assert sc.subscription_shortfall(stamped, current) == {}
+
+
+def test_shortfall_sees_growth_on_either_side_of_the_window():
+    stamped = {"symbols": ["TQQQ"], "window_hints": {"TQQQ": [163, 30]}}
+    deeper = {"symbols": ["TQQQ"], "window_hints": {"TQQQ": [200, 30]}}
+    higher = {"symbols": ["TQQQ"], "window_hints": {"TQQQ": [163, 45]}}
+    assert sc.subscription_shortfall(stamped, deeper) == {"window_hints": {"TQQQ": [200, 30]}}
+    assert sc.subscription_shortfall(stamped, higher) == {"window_hints": {"TQQQ": [163, 45]}}
+
+
+def test_a_window_that_deepens_one_side_while_narrowing_the_other_is_still_a_shortfall():
+    """The running producer does not hold the new depth, whatever happened on the far side —
+    a net-narrower window is not the same as a window nobody is short of."""
+    stamped = {"symbols": ["TQQQ"], "window_hints": {"TQQQ": [163, 163]}}
+    current = {"symbols": ["TQQQ"], "window_hints": {"TQQQ": [200, 12]}}
+    assert sc.subscription_shortfall(stamped, current) == {"window_hints": {"TQQQ": [200, 12]}}
+
+
+def test_shortfall_is_silent_on_a_window_that_only_narrows():
+    stamped = {"symbols": ["TQQQ"], "window_hints": {"TQQQ": [163, 163]}}
+    current = {"symbols": ["TQQQ"], "window_hints": {"TQQQ": [163, 12]}}
+    assert sc.subscription_shortfall(stamped, current) == {}
+
+
+def test_describe_shortfall_names_the_side_when_a_window_is_directional():
+    assert "TQQQ=163v/12^" in sc.describe_shortfall({"window_hints": {"TQQQ": [163, 12]}})
+    assert "XSP=90" in sc.describe_shortfall({"window_hints": {"XSP": [90, 90]}})
