@@ -1,32 +1,31 @@
 {
-  "_header": "===== cherrypick-curve — VIX term-structure roll-yield harvest via VXX call credit spreads (paper-only) =====",
-  "_what_this_is": "Sell a VXX call credit spread (short call ~30-delta, long wing `spread_width` dollars higher, same ~30-45 DTE monthly expiration) gated by a daily VIX/VIX3M regime read. Three books, one variable each: `control` (contango-gated entry, profit-take OR a regime-flip hard exit OR close_dte), `noflip` (control's entry exactly, same tick — its exit is control's minus the flip rule), `hook` (only the rare two-day-confirmed deep-backwardation entry, control's exit rules). The daily ratio/regime/hook series is recorded every session, traded or not — the module's second product. Copy to config.json (git-ignored) or ~/.cherrypick/config/curve.json.",
-
-  "_symbol_note": "VXX only: standard American-style physical-delivery equity options (unlike VIX options' cash/futures settlement) and its persistent contango decay IS the harvested effect. `occ_root` admits only the standard root — VXX reverse-splits on a roughly biennial cadence, and a split mid-position is unmodelled (manual --settle plus a journaled measurement break), the pmcc split posture verbatim.",
+  "_header": "===== cherrypick-curve \u2014 VIX term-structure roll-yield harvest via VXX call credit spreads (paper-only) =====",
+  "_what_this_is": "Sell a VXX call credit spread (short call ~30-delta, long wing `spread_width` dollars higher, same ~30-45 DTE monthly expiration) gated by a daily VIX/VIX3M regime read. Three books, one variable each: `control` (contango-gated entry, profit-take OR a regime-flip hard exit OR close_dte), `noflip` (control's entry exactly, same tick \u2014 its exit is control's minus the flip rule), `hook` (only the rare two-day-confirmed deep-backwardation entry, control's exit rules). The daily ratio/regime/hook series is recorded every session, traded or not \u2014 the module's second product. Copy to config.json (git-ignored) or ~/.cherrypick/config/curve.json.",
+  "_symbol_note": "VXX only: standard American-style physical-delivery equity options (unlike VIX options' cash/futures settlement) and its persistent contango decay IS the harvested effect. `occ_root` admits only the standard root \u2014 VXX reverse-splits on a roughly biennial cadence, and a split mid-position is unmodelled (manual --settle plus a journaled measurement break), the pmcc split posture verbatim.",
   "symbol": "VXX",
   "occ_root": "VXX",
-
-  "_source_note": "stream_cache_db overrides the shared stream cache path; null means the suite default. This module is a pure READ-ONLY consumer of that cache — its target expiration is served by the streamer's `expirations` request field, and VIX/VIX3M ride as quote-only `legs`.",
-  "source": { "stream_cache_db": null },
-
+  "_source_note": "stream_cache_db overrides the shared stream cache path; null means the suite default. This module is a pure READ-ONLY consumer of that cache \u2014 its target expiration is served by the streamer's `expirations` request field, and VIX/VIX3M ride as quote-only `legs`.",
+  "source": {
+    "stream_cache_db": null
+  },
   "defaults_header": "===== timing, structure, and data-quality knobs =====",
-  "_dte_note": "The target expiration is the monthly-cycle Friday (holiday-shifted) nearest dte_target, inside [dte_min, dte_max]. Computed from the calendar and asserted against the cache — never nearest-matched from the chain.",
-  "_selection_note": "short_delta_target is the short call's delta (chain-nearest; the module never selects on moneyness alone — a strike with no delta on file is skipped). spread_width is the long wing's minimum distance above the short strike, in dollars (start $5 — wide enough that a 30-delta short's wing still carries real credit on a $10-$30 name, narrow enough that max_loss stays small; widen only as a journaled measurement break once the ladder is observed via VXX's own strike spacing). min_credit_pct_of_width refuses entries whose credit is under this floor of the width — a spread paying almost nothing is fee bait, and the refusal is a recorded row, not a silent skip.",
-  "_fallback_note": "allow_delta_computed_fallback (default true): when the feed's own delta is missing for a candidate short strike, the module computes one via Black-Scholes from spot/strike/DTE/IV rather than skipping the strike outright (recorded short_selected_by='delta_computed', and every occurrence logs a warning naming the symbol/book/strike). Set false to disable the fallback entirely — a missing feed delta then refuses the strike (no_delta_for_selection) instead of computing one, useful for isolating whether the fallback itself is shaping results, or while its accuracy against the feed's real deltas is still being validated.",
-  "_management_note": "profit_take_pct: close both legs once the cost to close the spread has fallen to this fraction of the entry credit (0.50 = close at 50% of max profit). close_dte: nothing rides into VIX-complex-adjacent expiration week — this bounds the settlement path so physical delivery is the exception, not the plan. contango_max/hook_threshold live in regime_header below; entry_window bounds the ONE evaluation per session (position cap is one open position per book, no laddering in v1) — a plan taken later in the window still prices off that tick's own snapshot. exec_window_start gates management action until the open stabilizes; max_leg_spread_pct is the is-this-mark-actionable bar. assignment_exposure_tv: marks with the short's extrinsic under this are flagged assignment-exposed — pure telemetry, gates nothing.",
+  "_dte_note": "The target expiration is the monthly-cycle Friday (holiday-shifted) nearest dte_target, inside [dte_min, dte_max]. Computed from the calendar and asserted against the cache \u2014 never nearest-matched from the chain.",
+  "_selection_note": "short_delta_target is the short call's delta (chain-nearest; the module never selects on moneyness alone \u2014 a strike with no delta on file is skipped). spread_width is the long wing's minimum distance above the short strike, in dollars (start $5 \u2014 wide enough that a 30-delta short's wing still carries real credit on a $10-$30 name, narrow enough that max_loss stays small; widen only as a journaled measurement break once the ladder is observed via VXX's own strike spacing). min_credit_pct_of_width refuses entries whose credit is under this floor of the width \u2014 a spread paying almost nothing is fee bait, and the refusal is a recorded row, not a silent skip.",
+  "_fallback_note": "allow_delta_computed_fallback (default true): when the feed's own delta is missing for a candidate short strike, the module computes one via Black-Scholes from spot/strike/DTE/IV rather than skipping the strike outright (recorded short_selected_by='delta_computed', and every occurrence logs a warning naming the symbol/book/strike). Set false to disable the fallback entirely \u2014 a missing feed delta then refuses the strike (no_delta_for_selection) instead of computing one, useful for isolating whether the fallback itself is shaping results, or while its accuracy against the feed's real deltas is still being validated.",
+  "_management_note": "profit_take_pct: close both legs once the cost to close the spread has fallen to this fraction of the entry credit (0.50 = close at 50% of max profit). close_dte: nothing rides into VIX-complex-adjacent expiration week \u2014 this bounds the settlement path so physical delivery is the exception, not the plan. contango_max/hook_threshold live in regime_header below; entry_window bounds the ONE evaluation per session (position cap is one open position per book, no laddering in v1) \u2014 a plan taken later in the window still prices off that tick's own snapshot. exec_window_start gates management action until the open stabilizes; max_leg_spread_pct is the is-this-mark-actionable bar. assignment_exposure_tv: marks with the short's extrinsic under this are flagged assignment-exposed \u2014 pure telemetry, gates nothing.",
   "defaults": {
     "quantity": 1,
     "max_positions": 1,
     "dte_min": 25,
     "dte_max": 60,
     "dte_target": 35,
-    "short_delta_target": 0.30,
-    "spread_width": 5.0,
+    "short_delta_target": 0.3,
+    "spread_width": 1.0,
     "min_credit_pct_of_width": 0.15,
-    "profit_take_pct": 0.50,
+    "profit_take_pct": 0.5,
     "close_dte": 7,
     "contango_max": 0.97,
-    "hook_threshold": 1.10,
+    "hook_threshold": 1.1,
     "assignment_exposure_tv": 0.05,
     "entry_window_start": "10:00",
     "entry_window_end": "10:30",
@@ -35,43 +34,60 @@
     "settle_time": "16:20",
     "settlement_max_age_seconds": 300,
     "max_quote_age_seconds": 300,
-    "max_leg_spread_pct": 0.25,
-    "allow_delta_computed_fallback": true
+    "max_leg_spread_pct": 0.3,
+    "allow_delta_computed_fallback": true,
+    "max_wing_spread_abs": 0.05,
+    "_width_and_spread_note": "spread_width cut 5.0 -> 1.0 and max_leg_spread_pct 0.25 -> 0.30 on 2026-08-27, with ZERO recorded trades on the books -- the same reasoning as the dte_max change the day before, and the cheapest moment this could ever be done. The module had refused entry on every attempt since it began evaluating: 62 spread_too_wide and 31 no_hook_signal, no position ever opened. Two independent causes, both measured against the live 2026-10-16 chain (VXX 18.12, the 50-DTE target). (1) WIDTH: at the declared ~30-delta short the credit cannot exceed the short's own premium, so a 5-wide spread has a ceiling of 17.6% of width with a FREE wing, and the real wing (K=26 at 0.435) took it to 8.9% against a 15% floor -- the wing would have had to cost under $0.13. Sweeping every short strike, 5-wide clears 15% only at delta 0.46+, an essentially at-the-money short, which is a different strategy from the one this module documents. $5 on an $18 underlying is 27.6% of spot; MEIC's 5-point SPX wings are 0.06% of spot, and the 5.0 read as an index-scale number never rescaled to VXX. At 1-wide the same short pays 17.0% of width and clears the floor with headroom. VXX's monthly chain carries $1 strike increments, so 1-wide is a real structure rather than an artifact. Max loss per spread moves $500 -> $100. (2) SPREAD GATE: the 30-delta short itself quotes 0.27-0.28 wide on VXX, so 0.25 sat just inside the instrument's normal book and refused the leg the module exists to sell. Swept together, spread_width 1.0 + max_leg_spread_pct 0.30 is the ONLY combination that trades on that chain. Both numbers are calibrated against one session's chain: the ceiling argument (credit <= short premium) is structural and holds at any prices, the exact figures are 2026-08-27's.",
+    "_max_wing_spread_abs_note": "max_wing_spread_abs (2026-08-27): the LONG wing is refused only when its spread is wide in percent AND in money. A percentage test is meaningless on a near-worthless option -- a zero bid makes spread_pct exactly 2.0 whatever the wing costs, and 56 of that session's 62 refusals were exactly that, on far-OTM VXX calls quoting bid 0.00. Two cents of spread is two cents of risk however it reads as a ratio. The SHORT leg keeps the plain percentage test: it is the leg being sold, its premium is the entire credit, and paying up there is precisely what the gate exists to prevent."
   },
-
-  "books_header": "===== the books — one variable each =====",
-  "_books_note": "`control` is the strategy as pitched: enter on a contango day (buffered below 1.0 by contango_max, so a knife-edge 0.999 read doesn't count), close at profit_take_pct OR the regime-flip hard exit (a MEASURED ratio crossing >= 1.0 mid-trade closes next tick regardless of P&L — never on an unmeasured/stale read) OR close_dte. `noflip` shares control's entry EXACTLY, same tick, same fills (the exact-pairing property) — its exit is control's minus the flip rule, so it holds through backwardation to target or close_dte. Until a flip actually fires, control and noflip are byte-identical by construction (an expected `find_identical_readings` collision, not a defect); read surfaces present `flip_divergence_count` beside the pair as the noflip comparison's real sample size. `hook` enters ONLY on the two-day-confirmed hook signal (its own tick, its own variable) and exits by control's rules. hook_threshold and close_dte are declared here, NOT in the advice bounds below — the hook book's value is a fixed rare-event definition, and close_dte bounds the settlement path; both are journaled-break territory, not overlay territory.",
+  "books_header": "===== the books \u2014 one variable each =====",
+  "_books_note": "`control` is the strategy as pitched: enter on a contango day (buffered below 1.0 by contango_max, so a knife-edge 0.999 read doesn't count), close at profit_take_pct OR the regime-flip hard exit (a MEASURED ratio crossing >= 1.0 mid-trade closes next tick regardless of P&L \u2014 never on an unmeasured/stale read) OR close_dte. `noflip` shares control's entry EXACTLY, same tick, same fills (the exact-pairing property) \u2014 its exit is control's minus the flip rule, so it holds through backwardation to target or close_dte. Until a flip actually fires, control and noflip are byte-identical by construction (an expected `find_identical_readings` collision, not a defect); read surfaces present `flip_divergence_count` beside the pair as the noflip comparison's real sample size. `hook` enters ONLY on the two-day-confirmed hook signal (its own tick, its own variable) and exits by control's rules. hook_threshold and close_dte are declared here, NOT in the advice bounds below \u2014 the hook book's value is a fixed rare-event definition, and close_dte bounds the settlement path; both are journaled-break territory, not overlay territory.",
   "books": {
-    "control": { "enabled": true },
-    "noflip": { "enabled": true },
-    "hook": { "enabled": true }
+    "control": {
+      "enabled": true
+    },
+    "noflip": {
+      "enabled": true
+    },
+    "hook": {
+      "enabled": true
+    }
   },
-
-  "_stream_note": "VXX is the only `symbols` entry (an underlying: spot + chain). VIX/VIX3M are quote-only `legs` — declaring them as `symbols` would have the producer maintain 0DTE chains for two symbols nothing here reads (the overview 2026-08-17 incident this plan explicitly avoids repeating).",
-
+  "_stream_note": "VXX is the only `symbols` entry (an underlying: spot + chain). VIX/VIX3M are quote-only `legs` \u2014 declaring them as `symbols` would have the producer maintain 0DTE chains for two symbols nothing here reads (the overview 2026-08-17 incident this plan explicitly avoids repeating).",
   "_tastytrade_costs_note": "Overrides for the shared cost model (cherrypick.core.fees.DEFAULT_COSTS). Empty means the suite defaults. VXX carries no broad-based index exchange fee (it is an ETN, off that schedule); each ITM expiry costs the $5 settlement/assignment event, and a physical assignment adds the SEC/FINRA pass-throughs on the share side.",
   "tastytrade_costs": {},
-
   "advice_header": "===== the advised book (paper only, off by default) =====",
   "_advice_note": "Declared on day one per the module's own honesty rule, even though curve is a STRUCTURALLY SLOW advisor target: one position per book at ~30-45 DTE with 50% takes closes maybe 2-4 trades a month, so a 15-session advised experiment here is `underpowered` by construction against the promotion gate's min-14-days/min-sample-20 floor. The bounds ship anyway because the contract is cheap; treat an early underpowered verdict as 'not enough data yet', never as a failure. Bounds cover only real merged config keys the base book actually reads (the advisor's proposal-#3 lesson) and deliberately EXCLUDE hook_threshold and close_dte (see books_header).",
   "advice": {
     "enabled": false,
     "base_book": "control",
     "bounds": {
-      "profit_take_pct": { "min": 0.30, "max": 0.70 },
-      "short_delta_target": { "min": 0.20, "max": 0.40 },
-      "contango_max": { "min": 0.90, "max": 0.99 }
+      "profit_take_pct": {
+        "min": 0.3,
+        "max": 0.7
+      },
+      "short_delta_target": {
+        "min": 0.2,
+        "max": 0.4
+      },
+      "contango_max": {
+        "min": 0.9,
+        "max": 0.99
+      }
     }
   },
-
   "calibration_header": "===== the promotion/qualification rule (declared, not inherited) =====",
-  "_calibration_note": "A short-vol credit spread is the CANONICAL wins-often-loses-big shape: win rate alone reads qualified while lifetime-negative through one vol spike, which base sample/win_rate/days gates structurally cannot see. min_net_pnl requires the lifetime net (across the qualifying sample) to clear this floor before a book/arm is called qualified — declared here rather than inheriting the library default, so the fact pack and `calibrate` qualify against the same gate instead of disagreeing (the flies advisor-proposal-#4 lesson).",
+  "_calibration_note": "A short-vol credit spread is the CANONICAL wins-often-loses-big shape: win rate alone reads qualified while lifetime-negative through one vol spike, which base sample/win_rate/days gates structurally cannot see. min_net_pnl requires the lifetime net (across the qualifying sample) to clear this floor before a book/arm is called qualified \u2014 declared here rather than inheriting the library default, so the fact pack and `calibrate` qualify against the same gate instead of disagreeing (the flies advisor-proposal-#4 lesson).",
   "calibration": {
-    "rule": { "min_sample": 20, "min_days": 14, "min_win_rate": 0.0, "min_net_pnl": 0.0 }
+    "rule": {
+      "min_sample": 20,
+      "min_days": 14,
+      "min_win_rate": 0.0,
+      "min_net_pnl": 0.0
+    }
   },
-
-  "live_header": "===== live gate (placeholder — see the module CLAUDE.md's Live-trading prerequisites) =====",
-  "_live_note": "This module has NO live loop, no order-placement code, and no live account designation. `enabled` exists only so the suite's config/console surfaces can read a real gate for this module instead of reporting an absent one as 'unknown' — flipping it to true does nothing until a live loop is built. Guarded the same as every other live gate: hand-edit only, never through the settings surface.",
+  "live_header": "===== live gate (placeholder \u2014 see the module CLAUDE.md's Live-trading prerequisites) =====",
+  "_live_note": "This module has NO live loop, no order-placement code, and no live account designation. `enabled` exists only so the suite's config/console surfaces can read a real gate for this module instead of reporting an absent one as 'unknown' \u2014 flipping it to true does nothing until a live loop is built. Guarded the same as every other live gate: hand-edit only, never through the settings surface.",
   "live": {
     "enabled": false
   }

@@ -137,6 +137,34 @@ def _spread_pct(quote: dict) -> float | None:
     return (quote["ask"] - quote["bid"]) / quote["mid"]
 
 
+def _spread_abs(quote: dict) -> float | None:
+    if quote.get("ask") is None or quote.get("bid") is None:
+        return None
+    return quote["ask"] - quote["bid"]
+
+
+def _wing_spread_blocks(quote: dict, max_pct: float, max_abs: float) -> float | None:
+    """The refusing spread_pct for the LONG wing, or None if the wing is acceptable.
+
+    **A percentage spread test is the wrong instrument for a cheap wing.** Far-OTM VXX calls are
+    routinely bid-less — on 2026-08-27 every front-expiration strike from 22 up quoted `bid 0.00` —
+    and a zero bid makes `(ask - 0) / (ask/2)` exactly 2.0 whatever the option costs. Read as a
+    percentage that is a "200% spread"; read in money it is two cents. 56 of that session's 62
+    entry refusals were this, all at exactly 2.000.
+
+    So the wing is refused only when the spread is wide BOTH in percent AND in absolute money. The
+    short leg keeps the plain percentage test: it is the leg being sold, its premium is the whole
+    credit, and paying up there is exactly what the gate exists to prevent.
+    """
+    pct = _spread_pct(quote)
+    if pct is None or pct <= max_pct:
+        return None
+    dollars = _spread_abs(quote)
+    if dollars is not None and dollars <= max_abs:
+        return None
+    return pct
+
+
 def plan_entry(snapshot: dict, params: dict) -> dict:
     """The spread off one snapshot: `{"ok": True, "plan": ...}` or a refusal naming the one thing
     that blocked, so the attempts table can tell a feed problem from a market problem."""
@@ -155,8 +183,18 @@ def plan_entry(snapshot: dict, params: dict) -> dict:
     long_pick = select_long(chain, quotes, short_pick["strike"], params)
     if not long_pick["ok"]:
         return long_pick
-    if (pct := _spread_pct(long_pick["entry"]["quote"])) is not None and pct > max_leg_spread_pct:
-        return {"ok": False, "reason": "spread_too_wide", "detail": {"leg": "long", "spread_pct": pct}}
+    max_wing_spread_abs = params.get("max_wing_spread_abs", 0.05)
+    pct = _wing_spread_blocks(long_pick["entry"]["quote"], max_leg_spread_pct, max_wing_spread_abs)
+    if pct is not None:
+        return {
+            "ok": False,
+            "reason": "spread_too_wide",
+            "detail": {
+                "leg": "long",
+                "spread_pct": pct,
+                "spread_abs": _spread_abs(long_pick["entry"]["quote"]),
+            },
+        }
 
     metrics = worksheet_metrics(
         short_mid=short_pick["mid"],

@@ -187,3 +187,60 @@ def test_physical_settlement_cash_flow_equivalence():
     # credit + strike - cover_price, the closed-form identity from the module's own derivation.
     expected = credit + strike - cover_price
     assert round(total, 4) == round(expected, 4)
+
+
+# ------------------------------------------- the wing's spread is money, not a ratio (2026-08-27)
+#
+# curve refused entry on EVERY attempt from the day it began evaluating: 62 spread_too_wide, no
+# position ever opened. 56 of those were the long wing at a spread_pct of exactly 2.000 — the
+# signature of a zero bid, which makes (ask - 0) / (ask/2) exactly 2.0 whatever the option costs.
+# Far-OTM VXX calls are routinely bid-less; on that session every front-expiration strike from 22
+# up quoted bid 0.00. Read as a percentage that is a "200% spread"; read in money it is two cents.
+
+_WING_PARAMS = {**PARAMS, "max_leg_spread_pct": 0.25, "max_wing_spread_abs": 0.05}
+
+
+def test_a_bidless_but_cheap_wing_is_not_refused():
+    """Two cents of spread is two cents of risk however it reads as a ratio."""
+    quote = {"bid": 0.0, "ask": 0.02, "mid": 0.01}
+    assert engine._spread_pct(quote) == 2.0, "the ratio itself is genuinely 2.0"
+    assert engine._wing_spread_blocks(quote, 0.25, 0.05) is None
+
+
+def test_a_wing_wide_in_BOTH_percent_and_money_is_still_refused():
+    """The gate is narrowed, not removed: a 23-cent spread on a bid-less wing is real money."""
+    quote = {"bid": 0.0, "ask": 0.23, "mid": 0.115}
+    assert engine._wing_spread_blocks(quote, 0.25, 0.05) == 2.0
+
+
+def test_a_wing_inside_the_percentage_gate_never_consults_the_money_test():
+    quote = {"bid": 0.63, "ask": 0.79, "mid": 0.71}  # 0.225 pct, but $0.16 wide
+    assert engine._wing_spread_blocks(quote, 0.25, 0.05) is None
+
+
+def test_the_short_leg_keeps_the_plain_percentage_test():
+    """The short is the leg being SOLD — its premium is the entire credit, and paying up there is
+    exactly what the gate exists to prevent. A cheap-and-wide short must still be refused."""
+    chain, quotes, greeks = _chain_and_quotes()
+    quotes["s30"] = {"bid": 0.0, "ask": 0.02, "mid": 0.01}  # the wing's forgiven shape
+    greeks["s30"] = {"delta": 0.29}
+    out = engine.plan_entry(
+        {"spot": 20.0, "quotes": quotes, "greeks": greeks, "chain": chain, "dte": 40},
+        _WING_PARAMS,
+    )
+    assert out["ok"] is False
+    assert out["reason"] == "spread_too_wide"
+    assert out["detail"]["leg"] == "short"
+
+
+def test_a_refused_wing_reports_the_money_as_well_as_the_ratio():
+    """A refusal has to say what it actually measured — the ratio alone is what misled here."""
+    chain, quotes, greeks = _chain_and_quotes()
+    quotes["s35"] = {"bid": 0.0, "ask": 0.40, "mid": 0.20}
+    out = engine.plan_entry(
+        {"spot": 20.0, "quotes": quotes, "greeks": greeks, "chain": chain, "dte": 40},
+        _WING_PARAMS,
+    )
+    assert out["reason"] == "spread_too_wide"
+    assert out["detail"]["leg"] == "long"
+    assert out["detail"]["spread_abs"] == 0.40

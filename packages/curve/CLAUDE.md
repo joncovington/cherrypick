@@ -8,6 +8,35 @@ entry gate and exit rule, never in what is traded. Ledger schema: **`curve_vx`**
 
 Suite-wide context is the root [documentation index](../../docs/README.md).
 
+**The structure was re-scaled to VXX on 2026-08-27, with zero recorded trades on the books.** The
+module had refused entry on every attempt since it began evaluating — 62 `spread_too_wide`, 31
+`no_hook_signal`, no position ever opened — for two independent reasons, both measured against the
+live 50-DTE chain:
+
+- **`spread_width` 5.0 → 1.0.** A credit spread's credit can never exceed the short's own premium,
+  so `credit / width` has a hard ceiling of `short_mid / width` that no wing price can lift. At the
+  declared ~30-delta short (worth ~$0.88 on VXX near $18) a 5-wide spread ceilings at **17.6%**
+  against a **15%** floor, leaving under $0.13 for a wing that actually cost $0.435 — it landed at
+  8.9%. Across every strike, 5-wide cleared 15% only at delta 0.46+, an essentially at-the-money
+  short and a different strategy from the one above. $5 on an $18 underlying is 27.6% of spot;
+  MEIC's 5-point SPX wings are 0.06% of spot, and the 5.0 read as an index-scale number never
+  rescaled here. At 1-wide the same short pays **17.0%** of width. Max loss per spread moves
+  $500 → $100, and VXX's monthly chain carries $1 strike increments so this is a real structure.
+- **`max_leg_spread_pct` 0.25 → 0.30.** The ~30-delta short itself quotes 0.27–0.28 wide on VXX, so
+  0.25 sat just inside the instrument's normal book and refused the very leg the module sells.
+
+`tests/test_structure_coherence.py` pins the first one off the shipped config, so a width and a
+floor that cannot coexist fail at declaration time rather than after a month of silent refusals.
+Both numbers are calibrated against one session's chain — the ceiling argument is structural and
+holds at any prices; the exact figures are that day's.
+
+**A wing's spread is money, not a ratio.** The long leg is refused only when its spread is wide in
+percent AND in absolute dollars (`max_wing_spread_abs`). Far-OTM VXX calls are routinely bid-less,
+and a zero bid makes `spread_pct` exactly 2.0 whatever the option costs — 56 of those 62 refusals
+were precisely that. Two cents of spread is two cents of risk however it reads as a ratio. The
+SHORT leg keeps the plain percentage test: its premium is the entire credit, and paying up there is
+what the gate exists to prevent.
+
 ## The experiment design
 
 Three books, one variable each, plus the advisor's synthetic twin:
