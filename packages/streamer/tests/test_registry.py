@@ -34,13 +34,13 @@ def test_union_symbols_across_modules_plus_seed(home):
 def test_union_window_hints_takes_the_max_per_symbol(home):
     _registry.write_request("flies", ["XSP"], window_hints={"XSP": 40})
     _registry.write_request("gex", ["XSP", "QQQ"], window_hints={"XSP": 90, "QQQ": 30})
-    assert _registry.union_window_hints() == {"XSP": 90, "QQQ": 30}
+    assert _registry.union_window_hints() == {"XSP": (90, 90), "QQQ": (30, 30)}
 
 
 def test_union_window_hints_one_modules_silence_never_narrows_another(home):
     _registry.write_request("flies", ["XSP"], window_hints={"XSP": 90})
     _registry.write_request("gex", ["XSP"])  # no hint at all for XSP
-    assert _registry.union_window_hints() == {"XSP": 90}
+    assert _registry.union_window_hints() == {"XSP": (90, 90)}
 
 
 def test_union_window_hints_empty_when_none_set(home):
@@ -169,7 +169,11 @@ def test_build_streamer_trade_subscribes_cash_legs_but_not_option_legs(home):
     assert "VIX" in subs["Trade"] and "GLD" in subs["Trade"]
     assert ".SPXW260821C7700" not in subs["Trade"]
     assert ".SPXW260821C7700" in subs["Quote"]  # options keep their marks
-    assert "VIX" in subs["Quote"]  # harmless no-op for an index; ETF legs get real quotes
+    # An index has no order book, so its Quote subscription could never deliver an event; an ETF
+    # leg has a real one and modules price off it. Nothing cash-settled has greeks at all.
+    assert "VIX" not in subs["Quote"]
+    assert "GLD" in subs["Quote"]
+    assert subs["Greeks"] == [".SPXW260821C7700"]
 
 
 def test_build_streamer_no_legs_matches_engine_default(home):
@@ -184,8 +188,21 @@ def test_build_streamer_window_strike_count_for_widens_on_a_hint(home):
     _registry.write_request("flies", ["XSP"], window_hints={"XSP": 90})
     streamer = _daemon.build_streamer({"symbols": ["XSP"], "streamer": {"window_strike_count": 60}})
     assert streamer.window_strike_count == 60
-    assert streamer._window_strike_count_for("XSP") == 90  # hint wins over the configured default
-    assert streamer._window_strike_count_for("QQQ") == 60  # no hint -> falls back to the default
+    # (below, above): a hint wins over the configured default, and the default is the floor.
+    assert streamer._window_strike_count_for("XSP") == (90, 90)
+    assert streamer._window_strike_count_for("QQQ") == (60, 60)  # no hint -> the default
+
+
+def test_build_streamer_serves_a_directional_hint_without_widening_the_other_side(home):
+    """pmcc's deep-ITM long sits below spot; the strikes an equal distance above it are the largest
+    block of subscriptions in the suite that no module can read (2026-08-24)."""
+    _registry.write_request("pmcc", ["TQQQ"], window_hints={"TQQQ": {"down": 163, "up": 5}})
+    streamer = _daemon.build_streamer(
+        {"symbols": ["TQQQ"], "streamer": {"window_strike_count": 30}}
+    )
+    # The shallow side falls back to the configured default rather than to the hint's own 5: a
+    # directional hint asks for MORE on one side, it never narrows the base on the other.
+    assert streamer._window_strike_count_for("TQQQ") == (163, 30)
 
 
 def test_write_request_schema_is_flat_json(home):

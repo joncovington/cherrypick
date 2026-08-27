@@ -29,7 +29,7 @@ def test_register_writes_deduped_upper_symbols(managed_home):
 def test_register_carries_window_hints(managed_home):
     stream_request.register({"symbols": ["XSP"]}, window_hints={"XSP": 90})
     path = managed_home / "state" / "stream_requests" / "flies.json"
-    assert json.loads(path.read_text())["window_hints"] == {"XSP": 90}
+    assert json.loads(path.read_text())["window_hints"] == {"XSP": [90, 90]}
 
 
 def test_live_register_writes_a_separate_file(managed_home):
@@ -38,8 +38,8 @@ def test_live_register_writes_a_separate_file(managed_home):
 
     paper = json.loads((managed_home / "state" / "stream_requests" / "flies.json").read_text())
     live = json.loads((managed_home / "state" / "stream_requests" / "flies-live.json").read_text())
-    assert paper["window_hints"] == {"XSP": 40}
-    assert live["window_hints"] == {"XSP": 90}
+    assert paper["window_hints"] == {"XSP": [40, 40]}
+    assert live["window_hints"] == {"XSP": [90, 90]}
 
 
 def test_register_empty_symbols(managed_home):
