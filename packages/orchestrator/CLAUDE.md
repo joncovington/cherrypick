@@ -177,7 +177,20 @@ enforced by `tests/test_schema_registry.py`, not prose: every surface registry (
 `_OPEN_READERS`, `reconcile.py`, `trade_notifier.py`, `eval_activity.py`) must account for every schema —
 with a reader, or an explicit not-applicable declaration (`eval_activity.NOT_APPLICABLE`, e.g. earnings,
 whose "did it run" is the entry-SLA check). `calibrate.py` reads through `report.py`'s registry and must
-never grow its own. Add a schema by adding it to `schemas.SCHEMAS` and extending each surface; a schema
+never grow its own.
+
+**An eval-activity reader's liveness signal must be something that stops when the LOOP stops, not
+when ENTERING stops.** Every module's `*_snapshots` feed ledger goes quiet the moment it finishes
+entering — slots full, window closed, or its one trade of the day taken — while the loop carries on
+marking and managing each tick. A reader keyed to the feed ledger alone therefore reports "stopped
+evaluating" every session from that moment, *and reports exactly the same thing if the loop dies an
+hour later*, which turns the one failure this check exists to catch into ordinary background noise.
+bwb hit this on 2026-08-25; pmcc and curve hit it on 2026-08-27 (314 and 264 minutes "stopped",
+both loops iterating 0.3 minutes earlier — curve's entry window is 10:00–10:30 and pmcc had filled
+every slot by 10:01). All three now fold in `<module>_loop_iterations`, which advances every tick in
+every phase; it is read through `_loop_ticks`/`_with_loop_liveness` so a fourth module cannot solve
+it a fourth way, and it degrades to the feed ledger alone on a checkout whose ledger predates the
+table rather than taking the whole reader down. Add a schema by adding it to `schemas.SCHEMAS` and extending each surface; a schema
 wired into some surfaces but not others now fails CI instead of vanishing silently. `report.py`'s
 `_OPEN_READERS` covers positions carried past the close (overnight capital-at-risk, no realized
 P&L) that feeds only the report/digest — it needs no matching
