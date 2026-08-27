@@ -27,16 +27,20 @@ function seed(dir: string): void {
     CREATE TABLE fly_positions (
       id INTEGER PRIMARY KEY, trade_date TEXT, entry_time TEXT, symbol TEXT, arm TEXT,
       entry_mode TEXT, kind TEXT, side TEXT, center REAL, entry_window TEXT,
-      net REAL, fees REAL, pnl REAL, completion_latency_min REAL, pinned INTEGER,
+      net REAL, fees REAL, pnl REAL, gross_pnl REAL, completion_latency_min REAL, pinned INTEGER,
       status TEXT, void_reason TEXT
     );
   `);
   const ins = db.prepare(
     `INSERT INTO fly_positions (trade_date, entry_time, symbol, arm, entry_mode, kind, side,
-       center, entry_window, net, fees, pnl, completion_latency_min, pinned, status, void_reason)
-     VALUES (?, '10:00', ?, 'control', 'legged', 'fly', 'put', 6000, 'am', 1.0, 0.5, ?, 5, 0, 'settled', NULL)`,
+       center, entry_window, net, fees, pnl, gross_pnl, completion_latency_min, pinned, status,
+       void_reason)
+     VALUES (?, '10:00', ?, ?, 'legged', 'fly', 'put', 6000, 'am', 1.0, 0.5, ?, ?, 5, 0, 'settled',
+             NULL)`,
   );
-  DAYS.forEach((d, i) => ins.run(d, SYM, i + 1));
+  // Two arms, and 2026-08-24 carries two trades so trades != sessions.
+  DAYS.forEach((d, i) => ins.run(d, SYM, "control", i + 1, i + 1.5));
+  ins.run("2026-08-24", SYM, "width-5", 10, 10.5);
   db.close();
 }
 
@@ -69,25 +73,29 @@ beforeAll(() => {
 const log = (over: Partial<typeof NO_TRADE_LOG_QUERY> = {}) =>
   readFliesTradeLog(config, "paper", { ...NO_TRADE_LOG_QUERY, era: "ALL", ...over });
 
+// Scoped to one arm so these read one row per session — the fixture carries a second arm on
+// 2026-08-24 so that `trades` and `sessions` can differ for the totals tests below.
+const days = (over: Partial<typeof NO_TRADE_LOG_QUERY> = {}) => log({ arm: "control", ...over });
+
 describe("the trade log's date bounds", () => {
   it("serves every session when both bounds are absent", () => {
-    expect(log().total).toBe(DAYS.length);
+    expect(days().total).toBe(DAYS.length);
   });
 
   it("bounds each side inclusively", () => {
-    expect(log({ from: "2026-08-21" }).rows.map((r) => r.tradeDate)).toEqual([
+    expect(days({ from: "2026-08-21" }).rows.map((r) => r.tradeDate)).toEqual([
       "2026-08-25",
       "2026-08-24",
       "2026-08-21",
     ]);
-    expect(log({ to: "2026-08-21" }).rows.map((r) => r.tradeDate)).toEqual([
+    expect(days({ to: "2026-08-21" }).rows.map((r) => r.tradeDate)).toEqual([
       "2026-08-21",
       "2026-08-20",
     ]);
   });
 
   it("narrows to one side of a measurement break when both are given", () => {
-    const r = log({ from: "2026-08-21", to: "2026-08-24" });
+    const r = days({ from: "2026-08-21", to: "2026-08-24" });
     expect(r.rows.map((x) => x.tradeDate)).toEqual(["2026-08-24", "2026-08-21"]);
     // The count describes the SCOPE, not the page — same contract as every other filter here.
     expect(r.total).toBe(2);
@@ -95,5 +103,57 @@ describe("the trade log's date bounds", () => {
 
   it("returns nothing for an inverted range rather than ignoring a bound", () => {
     expect(log({ from: "2026-08-25", to: "2026-08-20" }).total).toBe(0);
+  });
+});
+
+describe("the arm filter", () => {
+  it("narrows to one arm", () => {
+    expect(log().total).toBe(DAYS.length + 1);
+    const only = log({ arm: "width-5" });
+    expect(only.total).toBe(1);
+    expect(only.rows.every((r) => r.arm === "width-5")).toBe(true);
+  });
+
+  it("composes with the date bounds rather than replacing them", () => {
+    // 2026-08-24 holds one row per arm, so the two filters have to intersect.
+    const r = log({ arm: "control", from: "2026-08-24", to: "2026-08-24" });
+    expect(r.total).toBe(1);
+    expect(r.rows[0]?.arm).toBe("control");
+  });
+});
+
+describe("the log's totals", () => {
+  it("describes every matching row, not the rendered page", () => {
+    // A total over 2 of 5 matching trades is not a total; the page size is a viewport accident.
+    const r = log({ limit: 2 });
+    expect(r.rows).toHaveLength(2);
+    expect(r.totals.trades).toBe(5);
+    expect(r.totals.netPnl).toBe(1 + 2 + 3 + 4 + 10);
+  });
+
+  it("reports sessions beside trades", () => {
+    // Same-day trades share a regime and are not independent observations. 2026-08-24 carries two.
+    const r = log();
+    expect(r.totals.trades).toBe(5);
+    expect(r.totals.sessions).toBe(4);
+  });
+
+  it("follows the filters it is shown beside", () => {
+    const r = log({ arm: "width-5" });
+    expect(r.totals.trades).toBe(1);
+    expect(r.totals.netPnl).toBe(10);
+  });
+
+  it("separates net from gross, and carries the fees between them", () => {
+    const r = log();
+    expect(r.totals.grossPnl).toBeCloseTo(1.5 + 2.5 + 3.5 + 4.5 + 10.5, 5);
+    expect(r.totals.fees).toBeCloseTo(0.5 * 5, 5);
+    expect(r.totals.netPnl).toBeLessThan(r.totals.grossPnl);
+  });
+
+  it("is zeroed, not absent, when nothing matches", () => {
+    const r = log({ from: "2026-08-25", to: "2026-08-20" });
+    expect(r.total).toBe(0);
+    expect(r.totals).toEqual({ trades: 0, sessions: 0, netPnl: 0, grossPnl: 0, fees: 0 });
   });
 });

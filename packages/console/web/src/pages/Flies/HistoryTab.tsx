@@ -152,10 +152,18 @@ export function HistoryTab({
   const [to, setTo] = useState("");
   const range = { from: from === "" ? null : from, to: to === "" ? null : to };
 
-  const { page, setOffset, setLimit } = usePage([mode, outcome, debouncedSearch, from, to]);
-  const logQuery = useFliesTradeLog(mode, outcome, debouncedSearch, page, filter.era, range);
+  const { page, setOffset, setLimit } = usePage([
+    mode, outcome, debouncedSearch, from, to, filter.arm, filter.era,
+  ]);
+  // `filter.arm` and `filter.era` are the PAGE-level scope, the same one every other card on this
+  // tab already honours. The log took era and ignored arm, so narrowing to one arm left it
+  // answering for all of them beside tables that did not.
+  const logQuery = useFliesTradeLog(
+    mode, outcome, debouncedSearch, page, filter.era, range, filter.arm,
+  );
   const log = logQuery.data?.rows ?? [];
   const logTotal = logQuery.data?.total ?? 0;
+  const totals = logQuery.data?.totals;
 
   // Sessions beside trades, everywhere. Same-day trades share a regime and are not independent
   // observations — this module's own experiment docs put the effective N at the day count, so a
@@ -197,6 +205,17 @@ export function HistoryTab({
       <section className="card">
         <div className="panel-head-row">
           <h2>Trade log — {logTotal.toLocaleString()} matching</h2>
+          {totals !== undefined && totals.trades > 0 && (
+            // Over every matching row, not the page. Sessions ride beside the net because same-day
+            // trades share a regime and are not independent observations — this module's own
+            // experiment docs put the effective N at the session count, so a net over 40 trades
+            // from 3 sessions is a 3-sample reading wearing a 40-sample coat.
+            <span className="chip" title="Net is after fees, over every row matching these filters — not just this page.">
+              net <PnlCell v={totals.netPnl} /> · {totals.trades.toLocaleString()} trades ·{" "}
+              {totals.sessions.toLocaleString()} session{totals.sessions === 1 ? "" : "s"} ·{" "}
+              fees {fmtMoney(totals.fees)}
+            </span>
+          )}
           {/* A filter, not a tab strip: role=group rather than tablist, which would promise
               tab semantics for something that narrows one table. */}
           <div className="mode-toggle" role="group" aria-label="outcome filter">
