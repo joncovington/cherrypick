@@ -26,7 +26,7 @@ from pathlib import Path
 
 from cherrypick.core import streamrequests as _sr
 
-from cherrypick.pmcc import clock, db, engine, stream_window
+from cherrypick.pmcc import clock, db, stream_window
 
 _MODULE = "pmcc"
 _log = logging.getLogger("pmcc_paper_loop")
@@ -61,7 +61,13 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
     # every book already holds cannot be entered until one closes — one to two WEEKS for a
     # hold-to-expiration cycle — and the open position's marks come from `leg_sources`, never from
     # the window. See `stream_window.hints_for_symbols`.
-    books = [b for b in engine.BOOKS if (config.get("books") or {}).get(b, {}).get("enabled", True)]
+    # The SAME roster the entry phase uses, advised twin included — `session_books` IS that roster.
+    # Passing `engine.BOOKS` alone asked "can control still enter?" and dropped the widened window
+    # the moment control filled, starving the advised twin that was still trying: control took XSP
+    # on 2026-08-24 and the twin then recorded 658 `no_deep_itm_long` refusals across 08-25/08-26.
+    from cherrypick.pmcc import paper_loop as _paper_loop  # circular at module scope
+
+    books, _ = _paper_loop.session_books(config, today.isoformat())
     hints = stream_window.hints_for_symbols(
         conn,
         cache_path,
