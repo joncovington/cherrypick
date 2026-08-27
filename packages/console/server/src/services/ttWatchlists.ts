@@ -50,6 +50,18 @@ function num(v: unknown): number | null {
   return null;
 }
 
+/**
+ * An ISO date (YYYY-MM-DD) or null. Deliberately stricter than "is a string": these dates reach
+ * `narrative.eventWarnings`, where a date it cannot parse contributes NO warning — so a malformed
+ * value stored as-is would read as "no ex-dividend before this expiration", which is a claim rather
+ * than a gap. Anything that is not plainly a date is dropped here instead.
+ */
+function isoOrNull(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null;
+}
+
 /** Parse one watchlist object's entries into (kept, skipped) symbol lists. */
 export function parseEntries(raw: unknown): { symbols: string[]; skipped: string[] } {
   const symbols: string[] = [];
@@ -239,6 +251,11 @@ export async function metricsFor(
           pe: num(m["price-earnings-ratio"]),
           divYield: num(m["dividend-yield"]),
           earningsDate: typeof reportDate === "string" ? reportDate : null,
+          // Dates for `narrative.eventWarnings`. The response already carried them; nothing stored
+          // them, so the ex-dividend warning had no way to fire.
+          dividendExDate: isoOrNull(m["dividend-ex-date"]),
+          dividendNextDate: isoOrNull(m["dividend-next-date"]),
+          dividendRate: num(m["dividend-rate-per-share"]),
         };
       }),
       now,

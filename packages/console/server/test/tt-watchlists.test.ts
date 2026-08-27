@@ -16,7 +16,9 @@ import {
   refreshTtWatchlists,
   resolveSource,
   ttWatchlistPayload,
+  metricsFor,
 } from "../src/services/ttWatchlists.js";
+import { eventWarnings } from "../src/analytics/narrative.js";
 import {
   addToWatchlist,
   getTtWatchlist,
@@ -25,6 +27,7 @@ import {
   addToBlacklist,
   getBlacklistReason,
   removeFromBlacklist,
+  readTtMetrics,
 } from "../src/store/consoleDb.js";
 
 let config: ConsoleConfig;
@@ -144,5 +147,64 @@ describe("symbol blacklist", () => {
     expect(getBlacklistReason(config, "XYZ")).toBe("no weekly options");
     expect(removeFromBlacklist(config, "XYZ")).toBe(true);
     expect(getBlacklistReason(config, "XYZ")).toBeNull();
+  });
+});
+
+describe("dividend dates reach the event warnings", () => {
+  // The gap this closes: `eventWarnings` was always handed null for its metrics info, so the
+  // ex-dividend clause could never fire. In that function absence of a warning is a REAL claim, so
+  // a short ITM call held over an ex-date read as "nothing to flag" rather than as "not checked".
+  const item = (over: Record<string, unknown> = {}) => ({
+    symbol: "SCHD",
+    "implied-volatility-index-rank": 0.4,
+    "dividend-ex-date": "2027-03-11",
+    "dividend-next-date": "2027-06-10",
+    "dividend-rate-per-share": "0.77",
+    ...over,
+  });
+
+  it("stores the dates the metrics response already carried", async () => {
+    await metricsFor(config, ["SCHD"], {
+      now: 1_000,
+      deps: { getMarketMetrics: async () => [item()] },
+    });
+    const row = readTtMetrics(config, ["SCHD"]).get("SCHD");
+    expect(row?.dividendExDate).toBe("2027-03-11");
+    expect(row?.dividendNextDate).toBe("2027-06-10");
+    expect(row?.dividendRate).toBe(0.77);
+  });
+
+  it("drops a date it cannot parse rather than storing a value the warning cannot read", async () => {
+    await metricsFor(config, ["JUNK"], {
+      now: 1_000,
+      deps: {
+        getMarketMetrics: async () => [
+          item({ symbol: "JUNK", "dividend-ex-date": "soon", "dividend-next-date": "" }),
+        ],
+      },
+    });
+    const row = readTtMetrics(config, ["JUNK"]).get("JUNK");
+    expect(row?.dividendExDate).toBeNull();
+    expect(row?.dividendNextDate).toBeNull();
+  });
+
+  it("fires the ex-dividend warning end to end for an expiration spanning the ex-date", async () => {
+    await metricsFor(config, ["SCHD"], {
+      now: 2_000,
+      deps: { getMarketMetrics: async () => [item()] },
+    });
+    const row = readTtMetrics(config, ["SCHD"]).get("SCHD");
+    const warnings = eventWarnings(
+      "2027-03-19",
+      null,
+      {
+        dividend_ex_date: row?.dividendExDate,
+        dividend_next_date: row?.dividendNextDate,
+        dividend_rate_per_share: row?.dividendRate,
+      },
+      "2027-03-01",
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("ex-dividend 2027-03-11 ($0.77/share)");
   });
 });

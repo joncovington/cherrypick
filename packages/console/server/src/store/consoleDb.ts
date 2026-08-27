@@ -70,6 +70,9 @@ function open(config: ConsoleConfig): Database.Database {
       pe         REAL,
       div_yield  REAL,
       earnings_date TEXT,
+      dividend_ex_date TEXT,
+      dividend_next_date TEXT,
+      dividend_rate REAL,
       updated_at REAL NOT NULL
     );
     CREATE TABLE IF NOT EXISTS symbol_blacklist (
@@ -99,7 +102,19 @@ function open(config: ConsoleConfig): Database.Database {
       updated_at TEXT NOT NULL
     );
   `);
-  addColumns("tt_metrics", ["liquidity REAL", "pe REAL", "div_yield REAL", "earnings_date TEXT"]);
+  addColumns("tt_metrics", [
+    "liquidity REAL",
+    "pe REAL",
+    "div_yield REAL",
+    "earnings_date TEXT",
+    // The dividend dates exist so `narrative.eventWarnings` can fire its ex-dividend warning. It
+    // was reachable only through a null and therefore never fired, which in that function is not a
+    // quiet no-op: absence of a warning is a real claim there, so a short ITM call over an ex-date
+    // read as "nothing to flag". The metrics response already carried these fields.
+    "dividend_ex_date TEXT",
+    "dividend_next_date TEXT",
+    "dividend_rate REAL",
+  ]);
   return db;
 }
 
@@ -265,6 +280,9 @@ export interface TtMetricsRow {
   pe: number | null;
   divYield: number | null; // fraction
   earningsDate: string | null; // next expected report date, ISO
+  dividendExDate: string | null; // most recent/next ex-dividend date, ISO
+  dividendNextDate: string | null; // next scheduled ex-dividend date, ISO
+  dividendRate: number | null; // dollars per share
   updatedAt: number;
 }
 
@@ -286,6 +304,9 @@ export function readTtMetrics(config: ConsoleConfig, symbols: string[]): Map<str
       pe: typeof r["pe"] === "number" ? r["pe"] : null,
       divYield: typeof r["div_yield"] === "number" ? r["div_yield"] : null,
       earningsDate: typeof r["earnings_date"] === "string" ? r["earnings_date"] : null,
+      dividendExDate: typeof r["dividend_ex_date"] === "string" ? r["dividend_ex_date"] : null,
+      dividendNextDate: typeof r["dividend_next_date"] === "string" ? r["dividend_next_date"] : null,
+      dividendRate: typeof r["dividend_rate"] === "number" ? r["dividend_rate"] : null,
       updatedAt: Number(r["updated_at"]),
     });
   }
@@ -299,12 +320,26 @@ export function writeTtMetrics(
 ): void {
   const db = open(config);
   const insert = db.prepare(
-    `INSERT OR REPLACE INTO tt_metrics (symbol, iv_rank, iv_index, market_cap, liquidity, pe, div_yield, earnings_date, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO tt_metrics (symbol, iv_rank, iv_index, market_cap, liquidity, pe, div_yield, earnings_date,
+       dividend_ex_date, dividend_next_date, dividend_rate, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const tx = db.transaction((all: typeof rows) => {
     for (const r of all) {
-      insert.run(r.symbol, r.ivRank, r.ivIndex, r.marketCap, r.liquidity, r.pe, r.divYield, r.earningsDate, now);
+      insert.run(
+        r.symbol,
+        r.ivRank,
+        r.ivIndex,
+        r.marketCap,
+        r.liquidity,
+        r.pe,
+        r.divYield,
+        r.earningsDate,
+        r.dividendExDate,
+        r.dividendNextDate,
+        r.dividendRate,
+        now,
+      );
     }
   });
   tx(rows);
