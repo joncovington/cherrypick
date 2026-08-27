@@ -10,10 +10,13 @@
  *   — the sharpest of them, and the one an options tool should lead with — it is computed from the
  *   daily closes the console already holds. Same definition either way: annualized stdev of log
  *   returns.
- * - **Ex-dividend warnings degrade to absent.** The cache carries no ex-date, so
- *   `eventWarnings` gets null for it and says nothing rather than guessing. Absence of a warning is
- *   a real claim in that function, so this is a gap to close by caching the field, not by inventing
- *   a value.
+ * - **Ex-dividend warnings were absent, and are not any more (2026-08-26).** The metrics cache
+ *   stored no ex-date, so `eventWarnings` was handed null and never fired its ex-dividend clause.
+ *   That is not a quiet no-op: absence of a warning is a real claim in that function, so a short
+ *   ITM call held over an ex-date read as "nothing to flag". Closed the way the gap asked to be
+ *   closed — by caching the field the metrics response already carried (`ttWatchlists.metricsFor`),
+ *   never by inventing a value. A symbol the cache has no dividend dates for still contributes no
+ *   warning, which is the honest answer for a non-payer.
  */
 import type { ConsoleConfig } from "../config.js";
 import type { MarketDataService } from "../market/marketData.js";
@@ -166,7 +169,18 @@ export async function buildEventWarnings(
   const earnings: EarningsInfo | null = m?.earningsDate
     ? { expected_report_date: m.earningsDate }
     : null;
-  return eventWarnings(expiration, earnings, null);
+  // Only build the info object when a date actually exists. Handing `eventWarnings` a record of
+  // nulls is the same as handing it null, and keeping the distinction visible here is what stops
+  // this quietly regressing to the old always-silent behaviour.
+  const info: MetricsInfo | null =
+    m?.dividendExDate || m?.dividendNextDate
+      ? {
+          dividend_ex_date: m.dividendExDate,
+          dividend_next_date: m.dividendNextDate,
+          dividend_rate_per_share: m.dividendRate,
+        }
+      : null;
+  return eventWarnings(expiration, earnings, info);
 }
 
 /** Re-exported so the symbol route can serve overlays without importing levels itself. */
