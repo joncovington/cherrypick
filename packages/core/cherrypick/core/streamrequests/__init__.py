@@ -51,6 +51,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from cherrypick.core import home as _home
+from cherrypick.core import streamcache
 
 # One ET for the suite — see cherrypick.core.clock.
 from cherrypick.core.clock import ET as _ET
@@ -78,13 +79,23 @@ def clean_symbols(symbols) -> list[str]:
     return sorted(out)
 
 
-def clean_window_hints(window_hints) -> dict[str, int]:
-    """Deduped/uppercased/validated ``{symbol: strike_count}`` — non-string symbols, non-positive or
-    non-integer counts are dropped rather than crashed on, same posture as `clean_symbols`."""
-    out: dict[str, int] = {}
+def clean_window_hints(window_hints) -> dict[str, tuple[int, int]]:
+    """Deduped/uppercased/validated ``{symbol: (below, above)}`` — non-string symbols and requests
+    that normalize to no window at all are dropped rather than crashed on, same posture as
+    `clean_symbols`.
+
+    A hint's declared form may be a plain count (symmetric — the common case, and what every module
+    but pmcc declares) or a ``{"down": N, "up": M}`` mapping; both normalize to a ``(below, above)``
+    pair here, so every consumer downstream handles exactly one shape. See
+    `streamcache.window_span` for why the directional form exists.
+    """
+    out: dict[str, tuple[int, int]] = {}
     for symbol, count in (window_hints or {}).items():
-        if isinstance(symbol, str) and symbol.strip() and isinstance(count, int) and count > 0:
-            out[symbol.strip().upper()] = count
+        if not (isinstance(symbol, str) and symbol.strip()):
+            continue
+        span = streamcache.window_span(count)
+        if span != (0, 0):
+            out[symbol.strip().upper()] = span
     return out
 
 
@@ -229,13 +240,19 @@ def union_symbols(seed_symbols=None) -> list[str]:
     return sorted(symbols)
 
 
-def union_window_hints() -> dict[str, int]:
-    """Per-symbol widened ATM windows: the MAX hint per symbol across every module's file, so one
-    module's need is never narrowed by another module's silence on that symbol."""
-    hints: dict[str, int] = {}
+def union_window_hints() -> dict[str, tuple[int, int]]:
+    """Per-symbol widened ATM windows as ``(below, above)``: the MAX hint per symbol across every
+    module's file, so one module's need is never narrowed by another module's silence on that symbol.
+
+    The max is taken PER SIDE. A module declaring depth downward and a module declaring depth upward
+    on the same symbol therefore both get served, rather than the wider single number winning and
+    buying the other side's depth for nobody.
+    """
+    hints: dict[str, tuple[int, int]] = {}
     for data in read_all():
-        for symbol, count in clean_window_hints(data.get("window_hints")).items():
-            hints[symbol] = max(hints.get(symbol, 0), count)
+        for symbol, (down, up) in clean_window_hints(data.get("window_hints")).items():
+            prev_down, prev_up = hints.get(symbol, (0, 0))
+            hints[symbol] = (max(prev_down, down), max(prev_up, up))
     return hints
 
 
@@ -295,8 +312,8 @@ def subscription_snapshot(seed_symbols=None) -> dict:
 # window asks for. Its job is a change in ORDER OF MAGNITUDE, not a reconciliation.
 DEFAULT_SUBSCRIPTION_BUDGET = 12_000
 
-# A window is `2 * strike_count + 1` strikes, both rights, subscribed across Quote/Greeks/Summary
-# and (for the nearest window) Trade.
+# A window is `below + above + 1` strikes, both rights, subscribed across Quote/Greeks/Summary and
+# (for the nearest window) Trade.
 _EVENTS_PER_OPTION = 4
 _RIGHTS = 2
 
@@ -310,9 +327,9 @@ def estimate_subscriptions(
     """What the declared registry would cost a producer, per symbol and in total.
 
     The model: each underlying gets one nearest-expiration window plus one per declared extra
-    expiration; each window spans `2 * max(default, hint) + 1` strikes across both rights; each
-    option symbol is subscribed to four event types. Underlyings and legs are rounding error beside
-    the windows and are not modelled.
+    expiration; each window spans `max(default, hint_below) + max(default, hint_above) + 1` strikes
+    across both rights; each option symbol is subscribed to four event types. Underlyings and legs
+    are rounding error beside the windows and are not modelled.
 
     Returns `{"total", "by_symbol", "windows", "budget_basis"}`. Every input is read from the
     registry union rather than passed in, so this can never describe a different world than the one
@@ -325,12 +342,17 @@ def estimate_subscriptions(
     total = 0
     windows = 0
     for symbol in symbols:
-        strike_count = max(int(default_strike_count), int(hints.get(symbol, 0) or 0))
-        per_window = (2 * strike_count + 1) * _RIGHTS * _EVENTS_PER_OPTION
+        hint_down, hint_up = hints.get(symbol, (0, 0))
+        below = max(int(default_strike_count), hint_down)
+        above = max(int(default_strike_count), hint_up)
+        per_window = (below + above + 1) * _RIGHTS * _EVENTS_PER_OPTION
         n_windows = 1 + len(expirations.get(symbol, []))
         cost = per_window * n_windows
         by_symbol[symbol] = {
-            "strike_count": strike_count,
+            # `strike_count` stays the widest side, so a reader that only wants "how deep is this
+            # window" keeps working; `span` is the honest answer once a hint is directional.
+            "strike_count": max(below, above),
+            "span": [below, above],
             "windows": n_windows,
             "per_window": per_window,
             "subscriptions": cost,

@@ -95,9 +95,7 @@ def test_a_contended_write_waits_instead_of_raising(tmp_path):
 
     def hold_the_lock():
         holder.execute("BEGIN IMMEDIATE")
-        holder.execute(
-            "INSERT INTO stream_trades (symbol, last, updated_at) VALUES ('HELD', 1.0, 0)"
-        )
+        holder.execute("INSERT INTO stream_trades (symbol, last, updated_at) VALUES ('HELD', 1.0, 0)")
         time.sleep(0.4)
         holder.commit()
         released.set()
@@ -211,6 +209,39 @@ def test_atm_window_syms_centres_and_bounds():
     assert streamcache.atm_window_syms({}, 610, 2) == []
 
 
+def test_atm_window_syms_takes_a_directional_span():
+    """A module whose structure sits below spot stops buying the mirror image above it."""
+    opts = {f"S{k}": _Opt(f"S{k}", k) for k in range(600, 621)}  # strikes 600..620
+    keep = streamcache.atm_window_syms(opts, center=610.4, strike_count={"down": 4, "up": 1})
+    assert sorted(int(s[1:]) for s in keep) == [606, 607, 608, 609, 610, 611]
+
+
+def test_window_span_normalizes_every_declared_form():
+    assert streamcache.window_span(30) == (30, 30)
+    assert streamcache.window_span({"down": 163, "up": 12}) == (163, 12)
+    assert streamcache.window_span([40, 5]) == (40, 5)
+    # A half-declared hint is a NARROWER window, never a zero one on the silent side.
+    assert streamcache.window_span({"down": 40}) == (40, 40)
+    assert streamcache.window_span({"up": 40}) == (40, 40)
+    # Junk degrades to "no request", so the caller's own default applies.
+    for junk in ("40", 1.5, -5, None, {}, {"down": True}, [1, 2, 3]):
+        assert streamcache.window_span(junk) == (0, 0)
+
+
+def test_only_options_can_publish_greeks_and_only_indices_cannot_quote():
+    """The 2026-08-24 entitlement probe: indices print Trade and never Quote, and nothing
+    cash-settled has greeks. ETFs and single names keep Quote — modules price legs off their book."""
+    assert streamcache.publishes_quotes(".SPX260101C6000") is True
+    assert streamcache.publishes_quotes("XLK") is True
+    assert streamcache.publishes_quotes("TQQQ") is True
+    assert streamcache.publishes_quotes("VIX") is False
+    assert streamcache.publishes_quotes(" vix3m ") is False
+
+    assert streamcache.publishes_greeks(".SPX260101C6000") is True
+    assert streamcache.publishes_greeks("VIX") is False
+    assert streamcache.publishes_greeks("XLK") is False
+
+
 # --------------------------------------------------------------------------- usable_quote
 def _row(bid, ask, updated, mid=None):
     return {"bid": bid, "ask": ask, "updated_at": updated, "mid": mid}
@@ -282,8 +313,13 @@ def _chain(tmp_path, rows):
         conn.execute(
             "INSERT INTO stream_chain(streamer_symbol, expiration, underlying_symbol, data_json, updated_at) "
             "VALUES (?,?,?,?,?)",
-            (r["streamer_symbol"], r["expiration"], r["underlying_symbol"],
-             json.dumps(r["opt"]), time.time()),
+            (
+                r["streamer_symbol"],
+                r["expiration"],
+                r["underlying_symbol"],
+                json.dumps(r["opt"]),
+                time.time(),
+            ),
         )
     conn.commit()
     return conn
@@ -304,37 +340,74 @@ def test_chain_for_expiration_filters_by_root(tmp_path):
     """One date can carry more than one product: an AM-settled monthly beside the weekly, or a
     post-split adjusted root beside the standard one. Either would price against contracts the
     module is not trading."""
-    conn = _chain(tmp_path, [
-        {"streamer_symbol": ".A", "expiration": "2026-08-21", "underlying_symbol": "TNA",
-         "opt": _opt(".A", "TNA   260821C00067000", 67.0)},
-        {"streamer_symbol": ".B", "expiration": "2026-08-21", "underlying_symbol": "TNA",
-         "opt": _opt(".B", "TNA1  260821C00067000", 67.0)},
-    ])
+    conn = _chain(
+        tmp_path,
+        [
+            {
+                "streamer_symbol": ".A",
+                "expiration": "2026-08-21",
+                "underlying_symbol": "TNA",
+                "opt": _opt(".A", "TNA   260821C00067000", 67.0),
+            },
+            {
+                "streamer_symbol": ".B",
+                "expiration": "2026-08-21",
+                "underlying_symbol": "TNA",
+                "opt": _opt(".B", "TNA1  260821C00067000", 67.0),
+            },
+        ],
+    )
     got = streamcache.chain_for_expiration(conn, "TNA", "2026-08-21", "TNA")
     assert [e["occ_symbol"] for e in got] == ["TNA   260821C00067000"]
 
 
 def test_chain_for_expiration_filters_by_underlying(tmp_path):
     """SPX and XSP share dates and their strikes differ by 10x."""
-    conn = _chain(tmp_path, [
-        {"streamer_symbol": ".S", "expiration": "2026-08-21", "underlying_symbol": "SPX",
-         "opt": _opt(".S", "SPXW  260821C06400000", 6400.0)},
-        {"streamer_symbol": ".X", "expiration": "2026-08-21", "underlying_symbol": "XSP",
-         "opt": _opt(".X", "SPXW  260821C00640000", 640.0)},
-    ])
+    conn = _chain(
+        tmp_path,
+        [
+            {
+                "streamer_symbol": ".S",
+                "expiration": "2026-08-21",
+                "underlying_symbol": "SPX",
+                "opt": _opt(".S", "SPXW  260821C06400000", 6400.0),
+            },
+            {
+                "streamer_symbol": ".X",
+                "expiration": "2026-08-21",
+                "underlying_symbol": "XSP",
+                "opt": _opt(".X", "SPXW  260821C00640000", 640.0),
+            },
+        ],
+    )
     got = streamcache.chain_for_expiration(conn, "XSP", "2026-08-21", "SPXW")
     assert [e["strike_price"] for e in got] == [640.0]
 
 
 def test_chain_for_expiration_skips_unusable_rows(tmp_path):
-    conn = _chain(tmp_path, [
-        {"streamer_symbol": ".ok", "expiration": "2026-08-21", "underlying_symbol": "SPX",
-         "opt": _opt(".ok", "SPXW  260821P06400000", 6400.0, "put")},
-        {"streamer_symbol": ".nostrike", "expiration": "2026-08-21", "underlying_symbol": "SPX",
-         "opt": {"streamer_symbol": ".nostrike", "symbol": "SPXW  260821C1", "strike_price": None}},
-        {"streamer_symbol": ".noocc", "expiration": "2026-08-21", "underlying_symbol": "SPX",
-         "opt": {"streamer_symbol": ".noocc", "strike_price": 1.0}},
-    ])
+    conn = _chain(
+        tmp_path,
+        [
+            {
+                "streamer_symbol": ".ok",
+                "expiration": "2026-08-21",
+                "underlying_symbol": "SPX",
+                "opt": _opt(".ok", "SPXW  260821P06400000", 6400.0, "put"),
+            },
+            {
+                "streamer_symbol": ".nostrike",
+                "expiration": "2026-08-21",
+                "underlying_symbol": "SPX",
+                "opt": {"streamer_symbol": ".nostrike", "symbol": "SPXW  260821C1", "strike_price": None},
+            },
+            {
+                "streamer_symbol": ".noocc",
+                "expiration": "2026-08-21",
+                "underlying_symbol": "SPX",
+                "opt": {"streamer_symbol": ".noocc", "strike_price": 1.0},
+            },
+        ],
+    )
     got = streamcache.chain_for_expiration(conn, "SPX", "2026-08-21", "SPXW")
     assert [e["streamer_symbol"] for e in got] == [".ok"]
     assert got[0]["option_type"] == "put"
@@ -343,14 +416,64 @@ def test_chain_for_expiration_skips_unusable_rows(tmp_path):
 def test_greeks_for_is_age_bounded_and_absent_is_absent(tmp_path):
     conn = streamcache.connect(tmp_path / "sc.db")
     now = time.time()
-    conn.execute("INSERT INTO stream_greeks(symbol, delta, iv, vega, updated_at) VALUES (?,?,?,?,?)",
-                 (".fresh", 0.5, 0.2, 1.0, now))
-    conn.execute("INSERT INTO stream_greeks(symbol, delta, iv, vega, updated_at) VALUES (?,?,?,?,?)",
-                 (".stale", 0.4, 0.2, 1.0, now - 5000))
-    conn.commit()
-    got = streamcache.greeks_for(
-        conn, [".fresh", ".stale", ".missing"], now_ts=now, max_age_seconds=1800
+    conn.execute(
+        "INSERT INTO stream_greeks(symbol, delta, iv, vega, updated_at) VALUES (?,?,?,?,?)",
+        (".fresh", 0.5, 0.2, 1.0, now),
     )
+    conn.execute(
+        "INSERT INTO stream_greeks(symbol, delta, iv, vega, updated_at) VALUES (?,?,?,?,?)",
+        (".stale", 0.4, 0.2, 1.0, now - 5000),
+    )
+    conn.commit()
+    got = streamcache.greeks_for(conn, [".fresh", ".stale", ".missing"], now_ts=now, max_age_seconds=1800)
     assert set(got) == {".fresh"}
     assert got[".fresh"]["delta"] == 0.5
     assert streamcache.greeks_for(conn, [], now_ts=now, max_age_seconds=1800) == {}
+
+
+def test_greeks_for_returns_gamma(tmp_path):
+    """gamma was missing from the SELECT until 2026-08-27 while the docstring reasoned about it.
+
+    `core.gex.compute_gex` skips any strike whose gamma is None, so bwb's gamma-flip read failed on
+    EVERY tick for four sessions and blamed open interest, which was present the whole time. This
+    is the reader-narrower-than-its-contract case: the failure surfaced far from the cause.
+    """
+    conn = streamcache.connect(tmp_path / "sc.db")
+    now = time.time()
+    conn.execute(
+        "INSERT INTO stream_greeks(symbol, delta, gamma, iv, vega, updated_at) VALUES (?,?,?,?,?,?)",
+        (".g", 0.5, 0.0031, 0.2, 1.0, now),
+    )
+    conn.commit()
+    got = streamcache.greeks_for(conn, [".g"], now_ts=now, max_age_seconds=1800)
+    assert got[".g"]["gamma"] == 0.0031
+    assert set(got[".g"]) == {"delta", "gamma", "iv", "vega"}
+
+
+def test_greeks_for_feeds_compute_gex_end_to_end(tmp_path):
+    """The join that was broken: what this reader returns must be enough for compute_gex to run."""
+    from cherrypick.core import gex as _gex
+
+    conn = streamcache.connect(tmp_path / "sc.db")
+    now = time.time()
+    chain = []
+    for i, strike in enumerate((95.0, 100.0, 105.0)):
+        for right in ("C", "P"):
+            sym = f".X{right}{int(strike)}"
+            conn.execute(
+                "INSERT INTO stream_greeks(symbol, delta, gamma, iv, vega, updated_at) VALUES (?,?,?,?,?,?)",
+                (sym, 0.5, 0.002 + i * 0.001, 0.2, 1.0, now),
+            )
+            conn.execute(
+                "INSERT INTO stream_oi(symbol, open_interest, updated_at) VALUES (?,?,?)",
+                (sym, 100 + i, now),
+            )
+            chain.append({"strike_price": strike, "streamer_symbol": sym, "option_type": right})
+    conn.commit()
+    greeks = streamcache.greeks_for(
+        conn, [e["streamer_symbol"] for e in chain], now_ts=now, max_age_seconds=1800
+    )
+    oi = {r["symbol"]: r["open_interest"] for r in conn.execute("SELECT * FROM stream_oi")}
+    result = _gex.compute_gex(chain, greeks, oi, 100.0)
+    assert result["ok"] is True, result.get("error")
+    assert result["strikes_with_data"] == 3
