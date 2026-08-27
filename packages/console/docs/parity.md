@@ -9,7 +9,17 @@ surface. Recover any of them from the `pre-console-only` tag.
 
 So this file changed jobs. It is no longer a transition checklist against a running original; every
 row still marked **missing** below is now simply **console's backlog**, and there is nothing left to
-diff against except that tag. The gaps were accepted knowingly at deletion time rather than gated on:
+diff against except that tag.
+
+**Re-audited 2026-08-26, and this file had drifted in both directions.** Several rows marked missing
+had shipped and the row was never updated (the shared day selector, the ex-dividend warning), which
+makes a backlog read as longer than it is. Others were carried as "missing" when the honest answer
+was that they are not wanted — a ported column from a deleted dashboard is not a debt just because
+the dashboard had it. Those were **struck rather than deferred**, each with the reason, because a
+list nobody intends to act on stops being a backlog and starts being noise. What survives below is
+what someone would actually build.
+
+The gaps accepted knowingly at deletion time were:
 
 - **Live ops** (halt flag, per-module live gates, reconcile panel) — the only surface with *no*
   console equivalent at all. Deliberately never ported because it is broker-touching, and it belongs
@@ -21,6 +31,30 @@ diff against except that tag. The gaps were accepted knowingly at deletion time 
   scorecard, and stop-policy counterfactuals.
 - Flies symbol filter and the voided-rows accounting line.
 - GEX WebSocket push (console polls at 15s, the cache cadence).
+
+**Struck 2026-08-26 — decided against, not deferred.** Each was a row ported forward from a deleted
+dashboard rather than something anyone wanted here:
+
+- **Equity 2x-slippage restatement, best/worst-day metrics, and the VIX right-axis overlay** — three
+  ways to make one chart busier. Best/worst-day is already legible in the daily calendar beside it,
+  and a VIX overlay on a cumulative-P&L axis invites eyeballed causation, which is exactly what the
+  regime cuts in `docs/metrics-plan.md` are the disciplined version of. *The data-epoch marker in
+  that same row is NOT struck* and stays wanted: it marks declared measurement breaks on a curve
+  that must never be read across them, which is a suite-wide rule made visible.
+- **MEIC per-leg put/call status badges and stop-adjustment columns** — detail for a live-managed
+  book, on a page whose trade table answers what the trade did. Nothing has needed them.
+- **MEIC "AI reasoning" column** — struck on principle as well as on demand. It would put model
+  prose in a trade table, and this suite keeps every AI-shaped thing outside the packages precisely
+  so a narrative can never be mistaken for a recorded fact.
+- **Active-alerts callout, notify-channels line, and the live-logs sub-block** — the header already
+  carries the status pill, watchdog age, session and findings, and the merged log tail already has
+  level filters. A WARN/CRITICAL filter over a filterable log is a filter, not a surface.
+- **Refusal history, day replay, rule attribution and the session grid** (the per-arm table below) —
+  four unstarted views on top of an attempts payload whose three EXISTING views have barely been
+  read against real data. Build one when a question arrives that the arm rail, the timeline and the
+  occupancy map cannot answer; the payload is recorded either way, so nothing is lost by waiting.
+- **GEX WebSocket push** — the console polls at 15s, which IS the cache cadence. Push would add a
+  transport and deliver no extra information.
 - ~~Scout's narrative/describe prose~~ — **closed 2026-08-12**; see the scout section below.
 - The recorded-earnings screen (scout's `/api/earnings-screens`) has no console equivalent and its
   backing services went with the package. `/api/earnings/upcoming` covers only the upcoming half.
@@ -33,14 +67,14 @@ Console's `readers/logs.ts` is a separate implementation and does not inherit th
 
 | Card | Status |
 |---|---|
-| Header status pill / watchdog age / session / findings | done (Overview); active-alerts callout (WARN/CRITICAL filter) and notify-channels line missing |
+| Header status pill / watchdog age / session / findings | done (Overview); active-alerts callout and notify-channels line **struck 2026-08-26** — the merged log tail already filters by level |
 | Suite stats strip (net, trades, win %, avg) | done |
-| Suite equity — cumulative net P&L + module lines | done; missing: 2x-slippage restatement, best/worst-day metrics, VIX right-axis overlay, data-epoch marker |
+| Suite equity — cumulative net P&L + module lines | done. 2x-slippage restatement, best/worst-day metrics and the VIX overlay **struck 2026-08-26** (see above). Still wanted: the data-epoch marker, so a curve says where its measurement breaks are |
 | Champions & challengers (calibrate) | **REMOVED 2026-08-20** — the page, the `/api/calibration` route, the champion column on the System card and `core.profiles.recommend_champion` all went together. Judging whether an arm earned anything belongs to `packages/advisor`'s experiments now, so the suite has one mechanism rather than two answering that on different evidence and thresholds. `cherrypick calibrate` still reports the per-tag reading |
 | System: modules, services, config summary, halt flag | done (live doctor checks and OS task registry not ported — they need the orchestrator's own subprocess) |
 | Live ops: halt flag, per-module live gates, reconcile panel | **missing** — broker-touching; port deliberately |
 | End-of-day card + md report links/rendering | done (in-page markdown rendering, allowlisted files) |
-| Recent logs (merged tail, level filters) | done; live-logs sub-block still missing |
+| Recent logs (merged tail, level filters) | done; live-logs sub-block **struck 2026-08-26** — a filter over a filterable log |
 
 ## MEIC dashboard (was :5050/:5051, deleted)
 
@@ -50,7 +84,7 @@ Console's `readers/logs.ts` is a separate implementation and does not inherit th
 | Symbol + profile selectors (page-wide scope) | done — threaded through every MEIC read |
 | Era scope (defaults to the module's `CURRENT_ERA`, as its analytics do) | done — earlier eras reachable, never mixed in silently |
 | Period stats grid | done — net is after fees, matching the calendar beside it and `core.ledgers`. The equity/drawdown and study-arm curves were still GROSS until 2026-08-20; on this ledger that overstated cumulative P&L by $55,964 (36.6% of gross) under a card already titled "Cumulative net" |
-| Today's trades / trade table | partial — per-leg put/call status badges, stop-adjustment columns, AI reasoning missing |
+| Today's trades / trade table | done. Per-leg badges, stop-adjustment columns and an AI-reasoning column all **struck 2026-08-26** — the last on principle: model prose does not belong in a trade table |
 | NLV over time | done — badged account-level, since `closing_nlv` is a whole-account balance the page's scope cannot narrow |
 | Daily P&L calendar | done |
 | Signal breakdowns (delta band, wing, symbol, weekday) | done |
@@ -58,7 +92,7 @@ Console's `readers/logs.ts` is a separate implementation and does not inherit th
 | Exit reasons / fee drag | done — plus today's per-profile net and fee drag, the day's "which arm made it" the cumulative Performance table cannot answer |
 | Regime coverage (with degenerate flags) | done |
 | Profile divergence | done (2026-08-20) — how often the arms reached DIFFERENT entry decisions on the same tick, read from `entry_attempts` so refusals count. Reported 100% agreement between control/control-drift/sign on its first run |
-| Trade log filters (outcome, exit reason, search) | done — filters and paging both in SQL, so counts describe the scope and not the page; explicit date-range inputs still missing |
+| Trade log filters (outcome, exit reason, search) | done — filters and paging both in SQL, so counts describe the scope and not the page. Date-range inputs are **not applicable here**: this log lives under the Today tab and is scoped to the one session the tab's own day selector names, so a range would contradict it. The range landed on flies' multi-day history log instead (2026-08-26) |
 | Performance view: profile comparison, risk metrics, equity + underwater, study arms, per-period charts | done. **Missing: arm scorecard (breakeven identity) and stop-policy counterfactuals** |
 
 Every row-listing table in the console is server-paged against a true match count
@@ -85,9 +119,9 @@ at a hidden row cap.
 
 ## GEX dashboard (was :5055, deleted) — at parity+
 
-All cards done and number-verified (walls/zero-gamma definitions matched). Remaining: WebSocket push
-(console polls 15s — cache-cadence equivalent); regime-drift intraday chart is a proposed
-console-only addition.
+All cards done and number-verified (walls/zero-gamma definitions matched). WebSocket push **struck
+2026-08-26**: the console polls at 15s, which IS the cache cadence, so push would add a transport
+and deliver nothing extra. The regime-drift intraday chart remains a proposed console-only addition.
 
 The regime-history table carried a hidden `LIMIT 60` until 2026-08-20 while a session records
 240–288 rows, so it showed about a fifth of the day and reported no total — a reader could not tell
@@ -151,20 +185,26 @@ Two deliberate differences, both because the console holds different data than s
   console's cache never stored it. Rather than lose the IV-vs-realized bullet — the sharpest of
   them — it is computed from the daily closes the console already has (annualized stdev of log
   returns), which is the same definition.
-- **Ex-dividend warnings degrade to absent.** The metrics cache carries no ex-date, so
-  `eventWarnings` is given null and says nothing. Since absence of a warning is a real claim in that
-  function, this is a gap to close by caching the field — not by inventing a value.
+- **~~Ex-dividend warnings degrade to absent~~ — closed 2026-08-26.** The metrics cache stored no
+  ex-date, so `eventWarnings` was handed null and its ex-dividend clause could never fire. That was
+  not a quiet no-op: absence of a warning is a real claim in that function, so a short ITM call held
+  over an ex-date read as "nothing to flag" rather than as "not checked". Closed the way the gap
+  asked to be closed — by caching the dates the metrics response already carried
+  (`tt_metrics.dividend_ex_date` / `_next_date` / `_rate`), never by inventing a value. A malformed
+  date is dropped at the boundary rather than stored, for the same reason. A symbol with no dividend
+  dates still contributes no warning, which is the honest answer for a non-payer.
 
 **Also unresolved**: `calendar_service.py`, `earnings_metrics_service.py` and
 `earnings_watchlist_service.py` back scout's `/api/earnings-screens`, which has no console
 equivalent. `/api/earnings/upcoming` covers the *upcoming* half; whether the recorded-earnings screen
 is wanted at all is a product question, not a porting one.
 
-## Per-arm portfolios: what the API serves and what is still missing (2026-08-11)
+## Per-arm portfolios (2026-08-11; re-audited 2026-08-26)
 
 Both modules now record an **entry-attempts ledger** — one row per evaluated entry opportunity per
-arm — and MEIC has a **profit forest** to match flies'. The server side is complete; the React views
-are not built yet.
+arm — and MEIC has a **profit forest** to match flies'. The server side is complete, and **the three
+views that read it are built on both pages**; the intro here said otherwise long after they shipped.
+The four remaining rows are struck rather than pending — see the table.
 
 | Surface | Endpoint | Status |
 |---|---|---|
@@ -172,16 +212,18 @@ are not built yet.
 | Attempt timeline — one lane per arm, every evaluated opportunity by outcome | `/api/{meic,flies}/attempts` | done, both pages |
 | Strike occupancy — longs vs shorts per arm, refusing strikes ringed | `/api/{meic,flies}/occupancy` | done, both pages |
 | MEIC profit forest — per-profile curves, each condor faint behind the aggregate, stop-released strikes | `GET /api/meic/forest` | done |
-| Refusal history (per session, stacked by reason) | — | not started |
-| Day replay (scrub the timeline, occupancy rebuilding) | — | not started |
-| Rule attribution / entry-slot yield | — | not started |
-| Session grid (sessions × arms) | — | not started |
+| Refusal history (per session, stacked by reason) | — | **struck 2026-08-26** — build when the arm rail cannot answer it |
+| Day replay (scrub the timeline, occupancy rebuilding) | — | **struck 2026-08-26** — same; the substrate is recorded either way |
+| Rule attribution / entry-slot yield | — | **struck 2026-08-26** — same |
+| Session grid (sessions × arms) | — | **struck 2026-08-26** — same |
 
-**One known rough edge.** The attempts views default to the latest day in the *attempts* ledger
-while the forest and occupancy views default to the latest day with *positions*. On a morning where
-nothing has filled yet those differ, so the cards can show yesterday's book beside today's attempts.
-Both carry their own date in the heading, so it is labelled rather than misleading — but they should
-share one day selector.
+**~~One known rough edge~~ — closed.** The attempts views defaulted to the latest day in the
+*attempts* ledger while the forest and occupancy views defaulted to the latest day with *positions*,
+so on a morning before anything filled the cards could show yesterday's book beside today's
+attempts — each correctly labelled and contradictory side by side. Both pages now carry ONE day
+selector governing the arm rail, attempt timeline, occupancy map and forest together
+(`MeicPage.tsx`, `FliesPage.tsx`), so they cannot describe different days. The multi-day tabs
+deliberately drop it: pinning one session would empty every trend on them.
 
 **What the attempts payload is for.** With each arm an independent portfolio on unbounded capital,
 every arm sees the same market with the same money — so the only thing differentiating them is which

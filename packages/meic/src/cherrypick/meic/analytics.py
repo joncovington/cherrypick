@@ -7,10 +7,11 @@ Nothing here writes, trades, or reaches the network. Every function takes an ope
 **`ic_trades.pnl` is GROSS, not net** — the one schema difference from flies worth stating up
 front. flies stores `gross_pnl` and `pnl` (net) as separate columns; MEIC stores only `pnl`
 (gross — see `_apply_exit_decision`'s `delta_pnl`, which never subtracts a fee) and `fees`
-separately. Every function here computes net as `pnl - fees` at read time, matching the win/loss
-definition `dashboard._stats_for_period` already uses (its own `net_pnl` accumulator does NOT
-subtract fees, which is a pre-existing inconsistency in that module, not a convention to copy —
-see that file's TODO when it's next touched).
+separately. Every function here computes net as `pnl - fees` at read time, which is the definition
+`db._range_stats_for_rows` and `get_eod_summary` also use, so the module has one answer for what
+net means. (This note used to point at a `dashboard._stats_for_period` whose own accumulator did
+NOT subtract fees; that module went with the dashboards on 2026-08-12 and the inconsistency went
+with it.)
 
 **Win rate is per IC, net of fees** — one resolved trade, one verdict. Matches
 `db._range_stats_for_rows` and the orchestrator's calibrate reading.
@@ -52,7 +53,7 @@ def _period_clause(start=None, end=None, arm=None, symbol=None, era=CURRENT_ERA)
 
     `arm` filters `risk_profile` — MEIC has no separate `arm` column (see the Phase 2 design
     note: the stream/arm tag IS `risk_profile`, the same column every existing reader —
-    orchestrator report/calibrate, dashboard.py, section.py — already groups on). `era="ALL"`
+    orchestrator report/calibrate, section.py, and the console — already groups on). `era="ALL"`
     disables the era filter for an explicit cross-era read; any other value (including the
     CURRENT_ERA default) filters to exactly that era.
     """
