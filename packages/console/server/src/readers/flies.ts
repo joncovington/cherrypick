@@ -905,9 +905,24 @@ export interface FliesTradeLogQuery extends PageRequest {
   search: string;
   /** null = the current era; "ALL" = every era, deliberately — same contract as FliesFilter. */
   era: string | null;
+  /**
+   * Inclusive ISO date bounds, either side independently null for "unbounded that way". The search
+   * box could already match a date as TEXT, which answers "2026-08" but cannot answer "the week
+   * either side of the cadence change" — and every measurement break in this suite is a date, so a
+   * log that can only be filtered by prefix cannot be pointed at one side of a break.
+   */
+  from: string | null;
+  to: string | null;
 }
 
-export const NO_TRADE_LOG_QUERY: FliesTradeLogQuery = { ...FIRST_PAGE, outcome: "all", search: "", era: null };
+export const NO_TRADE_LOG_QUERY: FliesTradeLogQuery = {
+  ...FIRST_PAGE,
+  outcome: "all",
+  search: "",
+  era: null,
+  from: null,
+  to: null,
+};
 
 /**
  * The settled trade log, filtered and paged in SQL. It lives apart from
@@ -937,6 +952,17 @@ export function readFliesTradeLog(
     // Risk-free is the fly that came back whole: a butterfly closed at or above
     // flat, the shape the module is built to manufacture.
     if (query.outcome === "risk-free") clauses.push("pnl IS NOT NULL AND pnl >= 0 AND kind = 'fly'");
+    // Date bounds are ANDed with the era clause rather than replacing it: narrowing to a range
+    // inside a wider era is the common case, and a range that reaches outside the selected era must
+    // still not pull in another era's arms.
+    if (query.from !== null) {
+      clauses.push("trade_date >= ?");
+      params.push(query.from);
+    }
+    if (query.to !== null) {
+      clauses.push("trade_date <= ?");
+      params.push(query.to);
+    }
     if (query.search !== "") {
       clauses.push(
         `(trade_date LIKE ? OR symbol LIKE ? OR COALESCE(arm, '') LIKE ? OR COALESCE(entry_mode, '') LIKE ?
