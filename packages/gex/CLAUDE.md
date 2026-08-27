@@ -15,7 +15,14 @@ Since 2026-08-23 the recorder also carries the **suite-level market-regime serie
 per reading per ~minute during RTH — the vol complex (VIX/VIX3M/VIX1D/VVIX), breadth and cross-asset
 quotes (SPY/RSP, HYG/LQD, TLT, GLD/USO as labeled commodity proxies, the eleven SPDR
 sectors) — into `market_regime_history`, plus a
-permanent `daily_closes` table harvested from `stream_summary`. Raw measures only (ratios and
+permanent `daily_closes` table harvested from `stream_summary`. **A session whose own `day_close`
+is missing is recovered from the NEXT session's `prev_day_close`** — the same number written by the
+same feed one row later, and only where the calendar confirms the two rows are consecutive trading
+days (a `prev_day_close` carries no date, so trusting it across a gap would attribute one session's
+close to another). That route exists because a producer defect erased SPX's and XSP's closes for 22
+sessions from 2026-07-29, freezing this series while every other symbol stayed current; it repairs
+retroactively on the next run, and the recovered rows are sourced `stream_summary:prev_day_close`
+so a reader can tell a close the feed confirmed on the day from one reconstructed a row later. Raw measures only (ratios and
 dispersion are read-side derivations in `cherrypick.core.regime`, the one join helper every consumer
 goes through); RTH-gated and basis-stamped, with a stale or missing quote written as a `usable = 0`
 refusal row, never a frozen value. The recorder declares the reading symbols itself as quote-only
