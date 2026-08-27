@@ -143,11 +143,29 @@ resolved **relative to the config file's directory** — never hardcode absolute
   writes those artifacts, through the same `cherrypick.core.advice` contract — which is why the
   claim above about re-pointing a producer needing no consumer change was testable and turned out
   true: MEIC's consumer took zero edits. This package's role is *scheduling*, exactly as with the
-  review: eight supervisor jobs (`advisor-open`/`-am1`/`-am2`/`-midday`/`-pm1`/`-pm2`/`-close` at
-  09:45/10:30/11:30/12:30/13:30/14:30/15:30 and `advisor-deep` at 17:00, trading days only, tagged
-  `ai`) invoke `scripts/advisor_checkpoint.py`. See
-  `cfgmod.advisor_settings`; OFF by default, and the module names travel on argv so no model id
-  appears in code. **This package holds no advisor logic** — not the fact packs, not the validation,
+  review: supervisor jobs (trading days only, tagged `ai`) invoke `scripts/advisor_checkpoint.py`.
+  See `cfgmod.advisor_settings`; OFF by default, and the module names travel on argv so no model id
+  appears in code.
+
+  **The schedule is now `advisor-deep` at 17:00 and nothing else (2026-08-26).** It began as eight
+  jobs — seven light intraday checkpoints plus the deep post-close run — was cut to one light slot
+  on 08-21, and is now deep-only. The evidence is the advisor's own record: across 36 light
+  checkpoints the light slots produced **4 proposals, all `creative`** (the kind no code path acts
+  on) and **one** critical flag, which that same evening's deep slot re-derived more precisely from
+  the settled numbers. The `midday` slot specifically produced **zero proposals in its entire
+  history**. Light slots also cannot issue anything — the only loop-facing output is the artifact
+  `enact` writes in the deep slot — and they were contributing ~43KB (about 10%) of the deep pack
+  the model then had to read. `checkpoints` accepts an empty list or dict, which derives no light
+  jobs and leaves `advisor-deep` untouched.
+
+  **What the light slots were nominally for is now a watchdog check.** `advice_enacted` rides every
+  pack partly so a dropped artifact shows at 10am rather than in the evening verdict — but that
+  question is deterministic and no light checkpoint ever caught one. `_check_advice_enactment` runs
+  it between 10:30 and 16:30 on trading days by invoking `python -m cherrypick.advisor enactment`
+  **as a subprocess**, per this package's standing rule that it drives the advisor by subprocess and
+  never by import. It reports only `not_enacted` (an artifact that existed, validated, and was
+  ignored); `no_artifact` is the ordinary state of a module with no active experiment and stays
+  silent. Verified against the real 2026-08-25 incident, where it names all three modules at 11:00. **This package holds no advisor logic** — not the fact packs, not the validation,
   not the experiment lifecycle. It starts a script and reads the exit code, the same relationship it
   has with the narrative.
 
