@@ -174,3 +174,25 @@ a per-module implementation would be seven chances to disagree about what a shar
 publishes it and labels nothing: whether the leading arm clears its own module's sample and day bars
 is that module's rule, so the leader's trade and session counts travel with it and the gate stays
 where it belongs.
+
+
+## Every module with a ledger reader is reviewed (2026-08-26)
+
+`MODULES` gained **bwb** and **curve**. Both had SQLite ledgers, `cherrypick.core.ledgers` readers,
+console pages and watchdog entries from the day they landed, and were simply never added to this
+dict — so the suite's cross-module end-of-day review did not know they existed. bwb was carrying
+**twelve open positions** at the time.
+
+That is precisely the failure this package was created to prevent: answering "what did the suite do
+today" per-package produced six incomparable report families, and a module missing from the one
+place that unifies them is back to having no report at all.
+
+`tests/test_module_coverage.py` now fails when a schema has a `core.ledgers` reader and no entry
+here, driven off `READERS` rather than a list kept in the test — a module is covered the moment it
+gains a normalised reader, which is the earliest point at which the review could have read it. It
+also checks the reverse (a reviewed module naming a schema that does not exist would KeyError every
+session) and that both `HEALTH_READERS` and `EXPECTED_READERS` carry an entry for each module, since
+`build_module_facts` indexes them directly.
+
+curve is included despite having no positions yet. A module with no results reports as a module with
+no results; being absent is a different statement, and it is the one that was wrong.

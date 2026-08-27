@@ -101,6 +101,27 @@ is labeled `underpowered` — never silently passed or failed.
 Structurally: the only thing it can emit is an `advised:*` overlay. A `tune` proposal naming a
 control arm, a human-configured profile, or an unknown id is rejected `not_an_advisor_experiment`.
 
+## The module list is derived, not restated (2026-08-26)
+
+`bounds._BASE_KEY` is the source of truth for which modules the advisor may act on. `MODULES` is
+`tuple(_BASE_KEY)`, `enactment.MODULES` derives from it, and `factpack.MODULES` now does too — it
+was a separate literal until 2026-08-26, which is how the package came to hold three hand-kept
+module lists that disagreed.
+
+**bwb and curve were missing from all of them.** Both consume advice through the same
+`core.advice.session_decision` every other module uses, both declare an `advice` block, bwb declares
+**twelve bounds** and the suite config already had `advisor.modules.bwb.enabled: true` — and no
+artifact has ever been written for either, because the advisor's own map did not list them. The
+module sat reading for advice that could not arrive, and the config granted the advisor a module no
+code path could act on.
+
+Two consequences worth keeping straight. A module in `_BASE_KEY` still needs its own `advice.enabled`
+to be true before anything happens — curve is listed and disabled, which is a state that reports
+itself, where being absent is not. And a module in `_BASE_KEY` **must** have a `factpack`
+section: without one the pack can reconcile its enactment while carrying no facts about it, and the
+model would be asked to design an experiment for a module it cannot see. `tests/test_factpack.py`
+pins both directions.
+
 ## The cap is one per module, by construction
 
 Each module's consumer builds exactly **one** `advised:<base>` book from the day's artifact, so one

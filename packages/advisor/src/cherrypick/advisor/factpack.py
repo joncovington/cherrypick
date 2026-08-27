@@ -45,7 +45,11 @@ LIGHT_SLOTS = ("open", "am1", "am2", "midday", "pm1", "pm2", "close")
 DEEP_SLOT = "deep"
 SLOTS = (*LIGHT_SLOTS, DEEP_SLOT)
 
-MODULES = ("meic", "flies", "earnings", "calendars", "pmcc")
+# Derived from `bounds`, not restated. This was a literal tuple until 2026-08-26 and it was the
+# third hand-kept module list in this package — bwb and curve were absent from it while
+# `enactment.MODULES` (which does derive) already had them, so the same pack could reconcile a
+# module's enactment and carry no facts about it at all.
+MODULES = _bounds.MODULES
 
 # How many rows a "top N" section may carry. Refusal reasons have a long tail of one-offs; the head
 # is the story, and the tail costs tokens that the deep sections need.
@@ -568,12 +572,132 @@ def _pmcc(session: str) -> dict[str, Any]:
     return out
 
 
+def _bwb(session: str) -> dict[str, Any]:
+    """SPX daily-laddered put BWB. Four books trade the IDENTICAL base structure and differ only in
+    whether, and on what trigger, a reversal add-on fires — so the advisable surface is the trigger
+    thresholds and the entry geometry, never the base fly, and the book contrast is the experiment
+    rather than something to average.
+
+    `trigger_ticks` is the module's declared second product: a cohort-keyed path recorded every
+    session for a future read-side threshold replay. It is carried here because a session with
+    positions and no trigger ticks means that replay will have nothing to score, which is a fact
+    about the evidence rather than about the trades.
+    """
+
+    def read(conn):
+        open_rows = _store.rows(
+            conn,
+            "SELECT position_id, book, symbol, entry_session, body_strike, near_strike, far_strike,"
+            " entry_credit, entry_max_loss, entry_dte, expiration, peak_abs_delta, below_flip_seen,"
+            " armed_at, arm_reason, addon_fired_at, addon_credit, status"
+            " FROM bwb_positions WHERE status != 'closed' ORDER BY book, entry_session",
+        )
+        closed = _store.rows(
+            conn,
+            "SELECT book, exit_reason, COUNT(*) n, SUM(gross_pnl) gross, SUM(fees) fees"
+            " FROM bwb_positions WHERE status = 'closed' GROUP BY book, exit_reason ORDER BY book",
+        )
+        attempts = _store.rows(
+            conn,
+            "SELECT book, outcome, block_detail, COUNT(*) n FROM bwb_entry_attempts"
+            " WHERE trade_date = ? GROUP BY book, outcome, block_detail ORDER BY n DESC LIMIT ?",
+            (session, TOP_N),
+        )
+        events = _store.rows(
+            conn,
+            "SELECT action, reason, executed, gate, COUNT(*) n FROM bwb_management_events"
+            " WHERE session_date = ? GROUP BY action, reason, executed, gate ORDER BY n DESC LIMIT ?",
+            (session, TOP_N),
+        )
+        triggers = _store.rows(
+            conn,
+            "SELECT structure_signature, COUNT(*) ticks, MAX(peak_abs_delta) peak_abs_delta"
+            " FROM bwb_trigger_ticks WHERE session_date = ? GROUP BY structure_signature",
+            (session,),
+        )
+        marks = _mark_coverage(conn, "bwb_marks", session)
+        return {
+            "open_positions": open_rows,
+            "closed_by_exit_reason": closed,
+            "entry_attempts": attempts,
+            "management_events": events,
+            "trigger_ticks": triggers,
+            "mark_coverage": marks,
+            "_note": (
+                "the four books trade the IDENTICAL base fly and differ only in the add-on trigger, "
+                "so their contrast is the experiment — never pool them into a module net; the "
+                "advisable surface is the trigger thresholds and entry geometry, not the base "
+                "structure. SPX is cash-settled and European, so settlement carries no assignment "
+                "model to caveat"
+            ),
+        }
+
+    out = _read(_paper_db("bwb"), read) or {"_absent": "no bwb paper ledger"}
+    out["advice_active"] = _store.read_json(_advice_active("bwb"), default=None)
+    return out
+
+
+def _curve(session: str) -> dict[str, Any]:
+    """VXX call-credit-spread module gated on a daily VIX/VIX3M regime read.
+
+    Its declared SECOND PRODUCT is that regime classification, recorded every session whether or not
+    anything traded — so `regime_readings` is carried even when the book is empty, which it has been
+    so far. A session with no reading is a gap in the module's own record rather than a quiet market,
+    and entries are gated on the classification, so zero attempts beside zero readings is one fault
+    rather than two.
+    """
+
+    def read(conn):
+        open_rows = _store.rows(
+            conn,
+            "SELECT position_id, book, symbol, entry_session, short_strike, long_strike,"
+            " expiration, status FROM curve_positions WHERE status != 'closed' ORDER BY book",
+        )
+        closed = _store.rows(
+            conn,
+            "SELECT book, exit_reason, COUNT(*) n, SUM(gross_pnl) gross, SUM(fees) fees"
+            " FROM curve_positions WHERE status = 'closed' GROUP BY book, exit_reason ORDER BY book",
+        )
+        attempts = _store.rows(
+            conn,
+            "SELECT book, outcome, block_detail, COUNT(*) n FROM curve_entry_attempts"
+            " WHERE trade_date = ? GROUP BY book, outcome, block_detail ORDER BY n DESC LIMIT ?",
+            (session, TOP_N),
+        )
+        regime = _store.rows(
+            conn,
+            "SELECT tick, ratio, regime, hook, vix, vix3m FROM curve_regime"
+            " WHERE trade_date = ? ORDER BY tick DESC LIMIT ?",
+            (session, TOP_N),
+        )
+        marks = _mark_coverage(conn, "curve_marks", session)
+        return {
+            "open_positions": open_rows,
+            "closed_by_exit_reason": closed,
+            "entry_attempts": attempts,
+            "regime_readings": regime,
+            "mark_coverage": marks,
+            "_note": (
+                "control and noflip are byte-identical by construction until a regime flip fires, "
+                "so a difference between them IS a flip and nothing else; the daily regime read is "
+                "recorded traded or not, and is the module's second product. Early assignment and "
+                "VXX reverse splits are measured, never modelled — treat paper net as an upper bound"
+            ),
+        }
+
+    out = _read(_paper_db("curve"), read) or {"_absent": "no curve paper ledger"}
+    out["advice_active"] = _store.read_json(_advice_active("curve"), default=None)
+    return out
+
+
 _MODULE_SECTIONS = {
     "meic": _meic,
     "flies": _flies,
     "earnings": _earnings,
     "calendars": _calendars,
     "pmcc": _pmcc,
+    "bwb": _bwb,
+    "curve": _curve,
 }
 
 
