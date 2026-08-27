@@ -69,6 +69,7 @@ const KNOWN_COLUMNS: Record<string, string[]> = {
     "id", "entry_session", "structure_signature", "symbol", "ticked_at", "session_date",
     "near_abs_delta", "peak_abs_delta", "spot", "gamma_flip", "gamma_flip_basis", "below_flip_seen",
     "addon_short_bid", "addon_short_ask", "addon_long_bid", "addon_long_ask", "measured", "refusal",
+    "spot_measured", "flip_measured",
   ],
 };
 
@@ -161,17 +162,49 @@ function readFireCounts(db: DatabaseHandle): BwbFireCount[] {
     });
 }
 
+const EMPTY_TRIGGER_COVERAGE: BwbPayload["integrity"]["triggerCoverage"] = {
+  session: null,
+  ticks: 0,
+  refused: 0,
+  refusalShare: null,
+  noSpot: 0,
+  noFlip: 0,
+  reasons: {},
+  totalFailure: false,
+};
+
 /** Mirrors `analytics.trigger_coverage()` for one session. */
 function readTriggerCoverage(db: DatabaseHandle, session: string | null): BwbPayload["integrity"]["triggerCoverage"] {
-  if (session === null) return { session: null, ticks: 0, refused: 0, refusalShare: null };
+  if (session === null) return EMPTY_TRIGGER_COVERAGE;
   const row = db
     .prepare<[string], Record<string, unknown>>(
-      "SELECT COUNT(*) AS total, SUM(measured = 0) AS refused FROM bwb_trigger_ticks WHERE session_date = ?",
+      `SELECT COUNT(*) AS total, SUM(measured = 0) AS refused,
+              SUM(spot_measured = 0) AS no_spot, SUM(flip_measured = 0) AS no_flip
+       FROM bwb_trigger_ticks WHERE session_date = ?`,
     )
     .get(session);
   const ticks = Number(row?.["total"] ?? 0);
   const refused = Number(row?.["refused"] ?? 0);
-  return { session, ticks, refused, refusalShare: ticks > 0 ? refused / ticks : null };
+  const reasons: Record<string, number> = {};
+  for (const r of db
+    .prepare<[string], Record<string, unknown>>(
+      `SELECT refusal, COUNT(*) AS n FROM bwb_trigger_ticks
+       WHERE session_date = ? AND measured = 0 AND refusal IS NOT NULL
+       GROUP BY refusal ORDER BY n DESC`,
+    )
+    .all(session)) {
+    reasons[String(r["refusal"])] = Number(r["n"] ?? 0);
+  }
+  return {
+    session,
+    ticks,
+    refused,
+    refusalShare: ticks > 0 ? refused / ticks : null,
+    noSpot: Number(row?.["no_spot"] ?? 0),
+    noFlip: Number(row?.["no_flip"] ?? 0),
+    reasons,
+    totalFailure: ticks > 0 && refused === ticks,
+  };
 }
 
 /** Mirrors `analytics.mark_coverage()` for one session. */
@@ -254,7 +287,7 @@ export function readBwb(config: ConsoleConfig): BwbPayload {
     entryAttemptsToday: [],
     managementEventsToday: [],
     integrity: {
-      triggerCoverage: { session: null, ticks: 0, refused: 0, refusalShare: null },
+      triggerCoverage: EMPTY_TRIGGER_COVERAGE,
       markCoverage: { session: null, marks: 0, refused: 0, refusalShare: null },
       schemaDrift: [],
       measurementBreaks: [],

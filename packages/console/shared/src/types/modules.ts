@@ -944,6 +944,13 @@ export interface BwbIntegrity {
     ticks: number;
     refused: number;
     refusalShare: number | null;
+    /** The two halves of `measured`, separately — see the module's `trigger_coverage()`. */
+    noSpot: number;
+    noFlip: number;
+    /** Refusal text -> count, so the page names the input that failed. */
+    reasons: Record<string, number>;
+    /** Ticks recorded and NONE measured: a defect, not thin data. */
+    totalFailure: boolean;
   };
   markCoverage: {
     session: string | null;
