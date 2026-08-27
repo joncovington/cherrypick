@@ -900,7 +900,19 @@ export interface FliesTradeLogRow {
 
 export type FliesOutcome = "all" | "wins" | "losses" | "pinned" | "risk-free";
 
+/** Scope-wide totals for the trade log — every matching row, never just the rendered page. */
+export interface FliesTradeLogTotals {
+  trades: number;
+  /** Same-day trades share a regime and are not independent; this module's own experiment docs put
+   *  the effective N at the SESSION count, so a net is never shown without one beside it. */
+  sessions: number;
+  netPnl: number;
+  grossPnl: number;
+  fees: number;
+}
+
 export interface FliesTradeLogQuery extends PageRequest {
+  arm: string | null;
   outcome: FliesOutcome;
   search: string;
   /** null = the current era; "ALL" = every era, deliberately — same contract as FliesFilter. */
@@ -917,6 +929,7 @@ export interface FliesTradeLogQuery extends PageRequest {
 
 export const NO_TRADE_LOG_QUERY: FliesTradeLogQuery = {
   ...FIRST_PAGE,
+  arm: null,
   outcome: "all",
   search: "",
   era: null,
@@ -929,14 +942,24 @@ export const NO_TRADE_LOG_QUERY: FliesTradeLogQuery = {
  * `readFliesHistory` so turning a page costs one indexed query instead of
  * recomputing every summary on the tab.
  */
+export type FliesTradeLog = Paged<FliesTradeLogRow> & { totals: FliesTradeLogTotals };
+
+const EMPTY_TOTALS: FliesTradeLogTotals = {
+  trades: 0,
+  sessions: 0,
+  netPnl: 0,
+  grossPnl: 0,
+  fees: 0,
+};
+
 export function readFliesTradeLog(
   config: ConsoleConfig,
   mode: TradingMode,
   query: FliesTradeLogQuery = NO_TRADE_LOG_QUERY,
-): Paged<FliesTradeLogRow> {
+): FliesTradeLog {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
-  return withReadOnlyDb<Paged<FliesTradeLogRow>>(dbPath, emptyPage(query), (db) => {
+  return withReadOnlyDb<FliesTradeLog>(dbPath, { ...emptyPage(query), totals: EMPTY_TOTALS }, (db) => {
     const clauses = [SETTLED];
     const params: string[] = [];
     // Era-bounded like every other read on the page — this endpoint shipped without it and the
@@ -945,6 +968,12 @@ export function readFliesTradeLog(
     if (era.sql !== null) {
       clauses.push(era.sql);
       params.push(...era.params);
+    }
+    // The page-level arm selector already scopes every other card on this tab; the log ignored it,
+    // so narrowing to one arm left the log answering for all of them beside tables that did not.
+    if (query.arm !== null) {
+      clauses.push("arm = ?");
+      params.push(query.arm);
     }
     if (query.outcome === "wins") clauses.push("pnl IS NOT NULL AND pnl > 0");
     if (query.outcome === "losses") clauses.push("pnl IS NOT NULL AND pnl < 0");
@@ -971,13 +1000,33 @@ export function readFliesTradeLog(
       const like = `%${query.search.replace(/[%_]/g, "")}%`;
       params.push(like, like, like, like, like, like);
     }
-    return pagedQuery<FliesTradeLogRow>(
+    const where = clauses.join(" AND ");
+    // Computed over the SAME where-clause as the page, never by summing the rendered rows: a total
+    // that describes 50 of 853 matching trades is not a total, and the page size is an accident of
+    // the viewport. Same contract the match count already follows.
+    const agg = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT COUNT(*) AS trades, COUNT(DISTINCT trade_date) AS sessions,
+                COALESCE(SUM(pnl), 0) AS net_pnl,
+                COALESCE(SUM(gross_pnl), 0) AS gross_pnl,
+                COALESCE(SUM(fees), 0) AS fees
+         FROM fly_positions WHERE ${where}`,
+      )
+      .get(...params);
+    const totals: FliesTradeLogTotals = {
+      trades: Number(agg?.["trades"] ?? 0),
+      sessions: Number(agg?.["sessions"] ?? 0),
+      netPnl: Number(agg?.["net_pnl"] ?? 0),
+      grossPnl: Number(agg?.["gross_pnl"] ?? 0),
+      fees: Number(agg?.["fees"] ?? 0),
+    };
+    const paged = pagedQuery<FliesTradeLogRow>(
       db,
       {
         columns: `trade_date, symbol, arm, entry_mode, kind, side, center, entry_window, net, fees, pnl,
                   completion_latency_min, pinned`,
         from: "fly_positions",
-        where: clauses.join(" AND "),
+        where,
         params,
         orderBy: "trade_date DESC, entry_time DESC",
       },
@@ -998,6 +1047,7 @@ export function readFliesTradeLog(
         pinned: r["pinned"] === 1,
       }),
     );
+    return { ...paged, totals };
   });
 }
 

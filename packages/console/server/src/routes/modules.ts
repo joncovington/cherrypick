@@ -189,6 +189,8 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
           ? outcome
           : "all",
       search: typeof q["search"] === "string" ? q["search"].slice(0, 60) : "",
+      // The page-level arm selector, threaded through like `era` — the log used to ignore it.
+      arm: parseFliesFilter(req.query).arm,
       era: parseFliesFilter(req.query).era,
       // Validated to an ISO date rather than passed through: these go into a `trade_date >= ?`
       // comparison against TEXT dates, where a malformed bound would silently match nothing and

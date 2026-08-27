@@ -213,6 +213,17 @@ export interface FliesTradeLogRow {
   pinned: boolean;
 }
 
+/** Scope-wide totals for the log — every matching row, never the rendered page. */
+export interface FliesTradeLogTotals {
+  trades: number;
+  sessions: number;
+  netPnl: number;
+  grossPnl: number;
+  fees: number;
+}
+
+export type FliesTradeLog = Paged<FliesTradeLogRow> & { totals: FliesTradeLogTotals };
+
 export function useFliesTradeLog(
   mode: TradingMode,
   outcome: string,
@@ -220,15 +231,17 @@ export function useFliesTradeLog(
   page: PageState,
   era: string | null = null,
   range: { from: string | null; to: string | null } = { from: null, to: null },
+  arm: string | null = null,
 ) {
   const params = new URLSearchParams({ mode, outcome, search });
   if (era !== null) params.set("era", era);
+  if (arm !== null) params.set("arm", arm);
   if (range.from !== null) params.set("from", range.from);
   if (range.to !== null) params.set("to", range.to);
   pageParams(params, "", page);
-  return useQuery<Paged<FliesTradeLogRow>>({
-    queryKey: ["flies-tradelog", mode, outcome, search, page, era, range.from, range.to],
-    queryFn: () => getJson<Paged<FliesTradeLogRow>>(`/api/flies/tradelog?${params.toString()}`),
+  return useQuery<FliesTradeLog>({
+    queryKey: ["flies-tradelog", mode, outcome, search, page, era, range.from, range.to, arm],
+    queryFn: () => getJson<FliesTradeLog>(`/api/flies/tradelog?${params.toString()}`),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   });
