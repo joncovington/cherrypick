@@ -206,6 +206,18 @@ def select_short(entries: list[dict], quotes: dict, spot: float, params: dict) -
     }
 
 
+def _spread_pct(quote: dict) -> float | None:
+    """A leg's bid/ask spread as a fraction of its mid, or None when it cannot be computed.
+
+    None is "unknown", never "fine": a leg the cache cannot price is refused earlier by the
+    selectors, so reaching here without a mid means the quote is malformed rather than absent.
+    """
+    mid = quote.get("mid")
+    if mid in (None, 0) or quote.get("bid") is None or quote.get("ask") is None:
+        return None
+    return (quote["ask"] - quote["bid"]) / mid
+
+
 def plan_entry(snapshot: dict, params: dict) -> dict:
     """The position off one snapshot: `{"ok": True, "plan": ...}` or a refusal.
 
@@ -223,6 +235,28 @@ def plan_entry(snapshot: dict, params: dict) -> dict:
     short_pick = select_short(snapshot["short_chain"], quotes, spot, params)
     if not short_pick["ok"]:
         return short_pick
+
+    # The entry-side spread check, added 2026-08-28. `max_leg_spread_pct` existed from the start and
+    # was enforced ONLY in `management.execution_gate` -- on whether a mark may be ACTED on when
+    # closing -- so nothing ever measured the spread being paid at entry. curve and bwb both hold
+    # the same parameter at the same default and check it in their own `plan_entry`; this module
+    # was the outlier, and its CLAUDE.md already described a gate the code did not have ("deep-ITM
+    # spreads may trip max_leg_spread_pct ... the attempts table measures").
+    #
+    # Measured over all 8 entries before landing: seven sat at 0.018-0.072 -- including the deep-ITM
+    # long legs the docs worried about -- and one sat at 0.293. So this refuses the anomaly and not
+    # the strategy. The refused entry is the XSP advised:control fill of 2026-08-27, whose long_call
+    # went in $9.95 wide against its control twin's $0.13, which is a 76x difference in execution
+    # cost on the two arms of one A/B.
+    max_leg_spread_pct = params.get("max_leg_spread_pct", 0.25)
+    for role, pick in (("long_call", long_pick), ("short_call_1", short_pick)):
+        pct = _spread_pct(pick["entry"]["quote"])
+        if pct is not None and pct > max_leg_spread_pct:
+            return {
+                "ok": False,
+                "reason": "spread_too_wide",
+                "detail": {"leg": role, "spread_pct": round(pct, 4)},
+            }
 
     metrics = worksheet_metrics(
         spot=spot,
