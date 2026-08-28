@@ -3,6 +3,7 @@ import type { MeicDivergence, MeicPayload, MeicTradeRow, MeicSummaryRow, Paged, 
 import type { ConsoleConfig } from "../config.js";
 import type { DatabaseHandle } from "./db.js";
 import { withReadOnlyDb, hasColumn, hasTable, num, str } from "./db.js";
+import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
 import { payoffAt, type Leg } from "../analytics/payoff.js";
 import { equityCurve, periodKey, riskSummary, stdev } from "../analytics/riskMetrics.js";
@@ -203,8 +204,26 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
       })),
   );
 
-  return { mode, trades, summaries };
+  // What bounds how far the numbers above can be trusted. MEIC records five measurement breaks and
+  // none of them reached this page until 2026-08-27 -- including the 2026-08-21 control
+  // redefinition, which changes what "control" MEANS either side of that date.
+  const integrity = withReadOnlyDb<MeicPayload["integrity"]>(
+    dbPath,
+    { measurementBreaks: [], schemaDrift: [] },
+    (db) => ({
+      measurementBreaks: readMeasurementBreaks(db),
+      schemaDrift: readSchemaDrift(db, KNOWN_COLUMNS),
+    }),
+  );
+
+  return { mode, trades, summaries, integrity };
 }
+
+/** Columns this build knows about, so a ledger written by a NEWER checkout is visible as drift
+ *  rather than silently NULLed -- the flies 2026-08-05 failure shape. */
+const KNOWN_COLUMNS: Record<string, string[]> = {
+  measurement_breaks: ["id", "break_date", "scope", "kind", "reason", "detail", "created_at"],
+};
 
 const RESOLVED = "status NOT IN ('cancelled','pending','partial_entry')";
 

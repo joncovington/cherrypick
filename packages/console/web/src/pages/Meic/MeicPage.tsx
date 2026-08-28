@@ -7,6 +7,7 @@ import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { ScopeSelect, EraSelect, TabStrip, LoopPill, Pager, usePage } from "../../components/ScopeBar";
+import { ModuleIntegrityStrip } from "../../components/ModuleIntegrityStrip";
 import { MeicDeepCards } from "./MeicDeepCards";
 import { MeicDivergenceCard } from "./MeicDivergenceCard";
 import { ExperimentGuideView } from "../../components/ExperimentGuide";
@@ -209,6 +210,15 @@ export function MeicPage() {
           </button>
         </p>
       )}
+
+      {/* Above the numbers it qualifies, on every tab — a break that changes what "control" MEANS
+          bounds the Performance curves as much as the Today cards, and the tab a reader happens to
+          be on is not a reason to withhold it. */}
+      <ModuleIntegrityStrip
+        integrity={data?.integrity}
+        collapseKey="meic-integrity"
+        updatedAt={dataUpdatedAt}
+      />
 
       {tab === "performance" && (
         <div className="view-fade">
