@@ -4,6 +4,7 @@ import type { TradingMode } from "@console/shared";
 import { useEarnings } from "../../lib/api";
 import { useMode } from "../../lib/useMode";
 import { ModeToggle } from "../../components/ModeToggle";
+import { IntegrityStrip } from "./IntegrityStrip";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 import { TabStrip, Pager, usePage } from "../../components/ScopeBar";
@@ -116,7 +117,7 @@ export function EarningsPage() {
   const [era, setEra] = useState<string | null>(null);
   const tradesPage = usePage();
   const reviewsPage = usePage();
-  const { data, isLoading, isError, isPlaceholderData } = useEarnings(tradesPage.page, reviewsPage.page, era);
+  const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useEarnings(tradesPage.page, reviewsPage.page, era);
   const upcoming = useUpcoming();
   const analytics = useEarningsAnalytics(mode, era);
   const a = analytics.data;
@@ -134,6 +135,10 @@ export function EarningsPage() {
         <ModeToggle mode={mode} onChange={setMode} />
         <EraScope era={era} onChange={setEra} />
       </div>
+
+      {/* Above the numbers it qualifies, on every tab. The live/paper split is this page's sharpest
+          way to mislead: these tables span BOTH books while the analytics follow the toggle. */}
+      <IntegrityStrip data={data} updatedAt={dataUpdatedAt} />
 
       <div className="cards cards-wide">
         {tab === "open" && (

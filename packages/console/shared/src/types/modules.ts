@@ -148,9 +148,23 @@ export interface EntryReviewRow {
 }
 
 /** Earnings browses both books at once, like scout does. */
+export interface EarningsIntegrity extends ModuleIntegrity {
+  /**
+   * How many rows in scope come from each book.
+   *
+   * earnings is the one module with a live book beside a paper one, and these tables span BOTH on
+   * purpose while the analytics and strategy detail follow a mode toggle. That split is the page's
+   * sharpest way to mislead, so the mix is stated rather than left to the per-row badges.
+   */
+  books: { live: number; paper: number };
+  /** `old -> new` per break: this schema records what actually changed, not just that it did. */
+  breakDetail: Array<{ key: string; from: string | null; to: string | null }>;
+}
+
 export interface EarningsPayload {
   trades: Paged<EarningsTradeRow>;
   reviews: Paged<EntryReviewRow>;
+  integrity: EarningsIntegrity;
 }
 
 // ---- GEX ----
@@ -167,6 +181,25 @@ export interface GexRegimeRow {
   putWall: number | null;
 }
 
+/**
+ * What bounds a GEX reading. There is no measurement-breaks table here; the things that make these
+ * numbers untrustworthy are staleness and truncation instead.
+ */
+export interface GexIntegrity {
+  /** Age of the newest regime row per symbol — a flip read is a claim about NOW. */
+  latest: Array<{ symbol: string; ageSeconds: number | null }>;
+  /** Regime rows recorded on the latest session, stated without a threshold. */
+  sessionDate: string | null;
+  sessionRows: number;
+  /**
+   * `daily_closes` currency per symbol. This is the suite's only multi-year series, and SPX's froze
+   * silently for 22 sessions in 2026-07/08 while every other symbol stayed current — nothing on any
+   * page would have shown it. `daysBehind` is measured against the FRESHEST series rather than a
+   * calendar, so it needs no holiday table to be right.
+   */
+  closeSeries: Array<{ symbol: string; latest: string | null; daysBehind: number; rows: number }>;
+}
+
 export interface GexPayload {
   /** Most recent regime row per symbol. */
   latest: GexRegimeRow[];
@@ -178,6 +211,7 @@ export interface GexPayload {
    * which reads as "this is the whole day" when it is not.
    */
   recent: Paged<GexRegimeRow>;
+  integrity: GexIntegrity;
 }
 
 // --------------------------------------------------------------------------- suite review

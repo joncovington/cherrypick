@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useGex } from "../../lib/api";
+import { useGex, useGexIntegrity } from "../../lib/api";
 import { DataCard, fmtNum } from "../../components/DataTable";
+import { IntegrityStrip } from "./IntegrityStrip";
 import { Pager, TabStrip, usePage } from "../../components/ScopeBar";
 import { useFlashOnChange } from "../../lib/useFlashOnChange";
 import { GexProfileChart, IvSkewChart, StrikeBarsChart, fmtGexDollars, type GexStrikeRow, type GexView } from "./GexProfileChart";
@@ -131,6 +132,9 @@ export function GexPage() {
   // polling either one for a tab that isn't on screen.
   const { page, setOffset, setLimit } = usePage();
   const { data, isLoading, isError } = useGex(tab === "history", page);
+  // Its own tiny query: `useGex` is gated to the history tab, and a stale flip is precisely what a
+  // reader of the chart tab needs to know.
+  const integrity = useGexIntegrity();
   const symbols = useGexSymbols();
   const profile = useGexProfile(symbol, tab !== "history");
   const p = profile.data;
@@ -173,6 +177,10 @@ export function GexPage() {
           </div>
         )}
       </div>
+
+      {/* Above the numbers it qualifies, on every tab. This module journals no measurement breaks;
+          what makes a flip or a wall untrustworthy is staleness and truncation, and both have bitten. */}
+      <IntegrityStrip data={integrity.data} updatedAt={integrity.dataUpdatedAt} />
 
       <div className="cards cards-wide">
         {tab === "gex" && (
