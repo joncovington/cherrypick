@@ -6,7 +6,7 @@ from datetime import date
 
 from cherrypick.core import streamrequests as _sr
 
-from cherrypick.pmcc import db, stream_request, stream_window
+from cherrypick.pmcc import clock, db, stream_request, stream_window
 
 
 def test_request_payload_shape(cache, config, tmp_path):
@@ -394,3 +394,33 @@ def test_the_written_request_keeps_the_window_for_a_free_advised_slot(cache, con
     assert hints.get("TQQQ"), (
         "control holding TQQQ must not drop the window while the advised twin can still enter"
     )
+
+
+def test_a_session_with_every_slot_held_still_records_why(cache, config, tmp_path, monkeypatch):
+    """2026-08-28: pmcc showed no entry attempts at all. The loop was healthy — 241 entry
+    iterations, marks 0.5 min old — and every book already held every symbol, so the entry phase
+    short-circuited before recording anything. "All slots full" and "the loop never evaluated
+    entry" produced the identical empty table, which is the pair this module most needs to tell
+    apart."""
+    from cherrypick.pmcc import paper_loop
+
+    conn = db.connect(str(tmp_path / "paper.db"))
+    for sym in config["symbols"]:
+        _seed_position(conn, sym, "control")
+
+    paper_loop._try_entries(
+        config, conn, cache_path=cache.path, when=clock.now_et(), day="2026-08-28"
+    )
+
+    held = conn.execute(
+        "SELECT symbol, reason, occurrences FROM pmcc_decisions WHERE reason = 'slot_held'"
+    ).fetchall()
+    assert {r["symbol"] for r in held} == set(config["symbols"])
+    # Collapsed, so a whole session of it is one counted row per book/symbol rather than one a tick.
+    paper_loop._try_entries(
+        config, conn, cache_path=cache.path, when=clock.now_et(), day="2026-08-28"
+    )
+    again = conn.execute(
+        "SELECT occurrences FROM pmcc_decisions WHERE reason = 'slot_held' LIMIT 1"
+    ).fetchone()
+    assert again["occurrences"] == 2

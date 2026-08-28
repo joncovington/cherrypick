@@ -160,6 +160,14 @@ same file sends `window_hints`: an 85-90-delta long lives noticeably below spot,
 default ATM window, so `stream_window.py` computes the width the chain actually needs and escalates
 flies-style on `no_deep_itm_long`/`missing_leg_quotes` refusals.
 
+**A session where every slot is held records `slot_held`, rather than nothing at all.** On
+2026-08-28 the module showed no entry attempts for the whole session. It was entirely healthy — 241
+entry iterations, marks half a minute old — and every book already held every symbol, so the entry
+phase short-circuited before writing a row. "All slots full" and "the loop never evaluated entry"
+produced the identical empty table, and the first is this module's ordinary state for one to two
+WEEKS at a time on a hold-to-expiration cycle. The decision is collapsed per (day, book, symbol), so
+a whole session of it costs one counted row.
+
 **The widened window is gated on whether an entry is still POSSIBLE, and that question must
 include the advised twin.** `engine.BOOKS` holds the base books only, so the gate asked "can
 `control` still enter?" — and once control filled a symbol it dropped the window entirely, while
