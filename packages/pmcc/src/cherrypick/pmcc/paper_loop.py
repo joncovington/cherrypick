@@ -303,6 +303,20 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             and db.open_position_count(conn, b) < max_positions
         ]
         if not wanting:
+            # Every book already holds this symbol, so there is nothing to attempt. Recorded rather
+            # than skipped: a session with no attempt rows at all reads identically to a loop that
+            # never evaluated entry, and "all slots full" is the benign half of that pair. Collapsed
+            # per (day, book, symbol, reason), so a whole session costs one counted row.
+            for b in books:
+                db.record_decision(
+                    conn,
+                    trade_date=day,
+                    book=b,
+                    symbol=symbol,
+                    mode="entry",
+                    reason="slot_held",
+                    accepted=False,
+                )
             continue
         if plan_dates is None:
             for b in wanting:
