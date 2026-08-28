@@ -4,6 +4,7 @@ import type { EarningsPayload, EarningsTradeRow, EntryReviewRow, TradingMode } f
 import type { ConsoleConfig } from "../config.js";
 import { suiteEra, withReadOnlyDb, num, str } from "./db.js";
 import { pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
+import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { isoStamp, sessionDate } from "../services/report.js";
 
 /**
@@ -522,5 +523,35 @@ export function readEarnings(
   const reviews = [...readReviews(liveDb, "live", since), ...readReviews(paperDb, "paper", since)].sort((a, b) =>
     b.scanDate.localeCompare(a.scanDate),
   );
-  return { trades: pageArray(trades, page.trades), reviews: pageArray(reviews, page.reviews) };
+  // The methodology journal lives in the PAPER ledger -- the live one has no such table -- and the
+  // breaks describe the module's rules, which govern both books. Five are on file, including the
+  // 2026-08-12 lifecycle cutover that changed when a position is entered and closed.
+  const integrity = withReadOnlyDb<EarningsPayload["integrity"]>(
+    paperDb,
+    { measurementBreaks: [], schemaDrift: [], books: { live: 0, paper: 0 }, breakDetail: [] },
+    (db) => ({
+      measurementBreaks: readMeasurementBreaks(db),
+      schemaDrift: readSchemaDrift(db, EARNINGS_KNOWN_COLUMNS),
+      books: {
+        live: trades.filter((t) => t.mode === "live").length,
+        paper: trades.filter((t) => t.mode === "paper").length,
+      },
+      breakDetail: db
+        .prepare<[], Record<string, unknown>>(
+          "SELECT key, old_value, new_value FROM measurement_breaks ORDER BY break_date DESC, id DESC",
+        )
+        .all()
+        .map((r) => ({
+          key: String(r["key"] ?? ""),
+          from: typeof r["old_value"] === "string" ? r["old_value"] : null,
+          to: typeof r["new_value"] === "string" ? r["new_value"] : null,
+        })),
+    }),
+  );
+
+  return { trades: pageArray(trades, page.trades), reviews: pageArray(reviews, page.reviews), integrity };
 }
+
+const EARNINGS_KNOWN_COLUMNS: Record<string, string[]> = {
+  measurement_breaks: ["id", "break_date", "key", "old_value", "new_value", "note", "recorded_at"],
+};

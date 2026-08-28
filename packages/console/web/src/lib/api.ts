@@ -620,6 +620,23 @@ export function useSymbolAnalysis(symbol: string) {
   });
 }
 
+/**
+ * The integrity block alone, for the strip that rides every tab.
+ *
+ * Separate from `useGex` because that one is gated to the history tab -- it pages the regime table,
+ * and fetching 100 rows every ten seconds on tabs that do not show them would be waste. This asks
+ * for `limit=1` (2.9KB against 21KB) and is always enabled, because a stale flip is exactly what a
+ * reader of the CHART tab needs to know and that is the tab where the table is not wanted.
+ */
+export function useGexIntegrity() {
+  return useQuery<GexPayload>({
+    queryKey: ["gex-integrity"],
+    queryFn: () => getJson<GexPayload>("/api/gex?limit=1"),
+    refetchInterval: 30_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
 export function useGex(enabled = true, page: PageState = FIRST_PAGE) {
   const params = new URLSearchParams();
   pageParams(params, "", page);
