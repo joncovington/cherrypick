@@ -65,7 +65,8 @@
     "deep_window_pct_by_symbol": {
       "XSP": 0.08
     },
-    "allow_extrinsic_fallback": true
+    "allow_extrinsic_fallback": true,
+    "_max_leg_spread_pct_note": "max_leg_spread_pct is enforced on BOTH paths since 2026-08-28: engine.plan_entry refuses an entry whose long or short leg quotes wider than this (spread_too_wide), and management.execution_gate still blocks acting on a mark that does. Until that date it was the exit path only, so nothing measured the spread being PAID at entry -- curve and bwb both hold this parameter at the same default and check it at entry, and pmcc was the outlier. Measured over all 8 entries before the change: seven at 0.018-0.072 (deep-ITM long legs included) and one at 0.293. Recalibrating this is a config change plus a journaled break, per the module's own honesty rules."
   },
   "books_header": "===== the book =====",
   "_books_note": "Single book since the 2026-08-23 redesign (the old keltner/roll books and the TNA/UPRO symbols are retired): `control` is mechanical entry whenever the (symbol, book) slot is free, hold to the short's own expiration, close both legs together, never roll. The `advised:control` synthetic twin (see the advice block below) is the only other row that can appear, and only when the advisor has admitted params for the session.",

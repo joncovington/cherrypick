@@ -303,3 +303,75 @@ def test_xsp_index_exchange_fee_is_looked_up_by_symbol():
     cost_xsp = engine.entry_cost("XSP", leg_quotes, 1, {})
     cost_tqqq = engine.entry_cost("TQQQ", leg_quotes, 1, {})
     assert cost_xsp["fee"] == pytest.approx(cost_tqqq["fee"])  # both 0.0 exchange fee today
+
+
+# ------------------------------------------ the entry-side spread gate (added 2026-08-28)
+#
+# `max_leg_spread_pct` existed from the start and was enforced ONLY in
+# `management.execution_gate` -- on whether a mark may be ACTED on when closing -- so nothing ever
+# measured the spread being PAID at entry. curve and bwb both hold the same parameter at the same
+# default and check it in their own `plan_entry`; this module was the outlier, and its CLAUDE.md
+# already described a gate the code did not have.
+#
+# Measured over all 8 recorded entries before landing: seven sat at 0.018-0.072, including the
+# deep-ITM long legs the docs worried about, and one sat at 0.293. The gate refuses the anomaly and
+# not the strategy.
+
+
+def _planned(long_quote, short_quote, params=None):
+    long_entry = _entry(50.0, expiration="2026-09-04")
+    quotes = _quotes({71.0: short_quote})
+    quotes[long_entry["streamer_symbol"]] = {**long_quote, "age_seconds": 1.0}
+    snapshot = _snapshot([50.0], [71.0])
+    snapshot["long_chain"] = [
+        {
+            "strike_price": 50.0,
+            "streamer_symbol": long_entry["streamer_symbol"],
+            "occ_symbol": "TQQQ  260904C00050000",
+            "option_type": "call",
+        }
+    ]
+    snapshot["quotes"] = quotes
+    snapshot["greeks"] = {long_entry["streamer_symbol"]: {"delta": 0.88}}
+    return engine.plan_entry(snapshot, params or {})
+
+
+def test_a_wide_long_leg_refuses_the_entry():
+    """The 2026-08-27 XSP fill: the long_call went in $9.95 wide (0.293) against its control twin's
+    $0.13, a 76x difference in execution cost on the two arms of one A/B."""
+    out = _planned({"bid": 18.0, "ask": 24.0, "mid": 21.0}, (0.90, 1.00))
+    assert out["ok"] is False
+    assert out["reason"] == "spread_too_wide"
+    assert out["detail"]["leg"] == "long_call"
+    assert out["detail"]["spread_pct"] > 0.25
+
+
+def test_a_wide_short_leg_refuses_it_too():
+    """The short is the leg being SOLD; paying up there is the same cost wearing the other sign."""
+    out = _planned({"bid": 20.60, "ask": 20.80, "mid": 20.70}, (0.60, 1.30))
+    assert out["ok"] is False
+    assert out["detail"]["leg"] == "short_call_1"
+
+
+def test_the_spreads_this_module_actually_trades_are_admitted():
+    """The seven real entries sat at 0.018-0.072. A gate that refused those would starve the module
+    rather than protect it -- the curve lesson from the day before."""
+    for pct in (0.018, 0.052, 0.072, 0.24):
+        half = 20.70 * pct / 2
+        out = _planned(
+            {"bid": 20.70 - half, "ask": 20.70 + half, "mid": 20.70}, (0.90, 1.00)
+        )
+        assert out["ok"] is True, f"{pct} should be admitted: {out}"
+
+
+def test_the_bound_is_configurable_and_the_default_is_the_suite_one():
+    wide = {"bid": 18.0, "ask": 24.0, "mid": 21.0}
+    assert _planned(wide, (0.90, 1.00))["ok"] is False          # default 0.25
+    assert _planned(wide, (0.90, 1.00), {"max_leg_spread_pct": 0.50})["ok"] is True
+
+
+def test_an_unpriceable_quote_is_not_silently_treated_as_tight():
+    """None is 'unknown', never 'fine'. A malformed quote must not slip through as a pass."""
+    assert engine._spread_pct({"bid": None, "ask": 1.0, "mid": 0.5}) is None
+    assert engine._spread_pct({"bid": 0.4, "ask": 0.6, "mid": 0}) is None
+    assert engine._spread_pct({"bid": 0.4, "ask": 0.6, "mid": 0.5}) == pytest.approx(0.4)

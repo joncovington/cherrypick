@@ -259,6 +259,14 @@ loop reads the flag.
    measure it via `pmcc_snapshots` and `no_deep_itm_long` counts.
 2. **Deep-ITM spreads** may trip `max_leg_spread_pct`, especially when the short lands ITM; the
    attempts table measures, and a recalibration is a config change plus a journaled break.
+   **The gate runs on BOTH paths since 2026-08-28.** It had been enforced only in
+   `management.execution_gate` — on whether a mark may be ACTED on when closing — so nothing
+   measured the spread being PAID at entry, and this bullet described a gate the code did not have.
+   curve and bwb both hold the parameter at the same default and check it in their own
+   `plan_entry`. Measured over all 8 entries before landing: seven at 0.018–0.072, deep-ITM long
+   legs included, and one at 0.293 — so the fear this bullet records did not materialise, and the
+   gate refuses the anomaly rather than the strategy. Entries before that date were not
+   spread-gated and must not be pooled with ones after it.
 3. **Early assignment** — rule 2. The paper result is an upper bound.
 4. **Dividend calendar upkeep** — TQQQ only, quarterly, hand-refreshed; lapse halts entries. XSP
    needs no dividend calendar (rule 3).
