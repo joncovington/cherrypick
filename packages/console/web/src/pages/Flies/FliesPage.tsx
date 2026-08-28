@@ -6,6 +6,7 @@ import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 import { EraSelect, LoopPill, Pager, TabStrip, usePage } from "../../components/ScopeBar";
+import { ModuleIntegrityStrip } from "../../components/ModuleIntegrityStrip";
 import type { TradingMode } from "@console/shared";
 import { ForestCard } from "./ForestCard";
 import { ArmRail, AttemptTimeline } from "../../components/Attempts";
@@ -93,7 +94,7 @@ export function FliesPage() {
   // other where it was. Both reset when the filter changes underneath them.
   const booksPage = usePage([mode, arm, date, symbol, era]);
   const positionsPage = usePage([mode, arm, date, symbol, era]);
-  const { data, isLoading, isError, isPlaceholderData } = useFlies(mode, filter, booksPage.page, positionsPage.page);
+  const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useFlies(mode, filter, booksPage.page, positionsPage.page);
   const analytics = useFliesAnalytics(mode, filter);
   const a = analytics.data;
   // Whether the loop is alive is a property of the module, not of the arm/era being viewed, so
@@ -209,6 +210,15 @@ export function FliesPage() {
           }}
         />
       )}
+      {/* Above the numbers it qualifies, on every tab. The 2026-08-20 partial session cost
+          09:30-10:52 ET and 95 positions, and a reader of History or Performance had no way to
+          know that day is not a whole day. */}
+      <ModuleIntegrityStrip
+        integrity={data?.integrity}
+        collapseKey="flies-integrity"
+        updatedAt={dataUpdatedAt}
+      />
+
       {tab === "performance" && <PerformanceTab mode={mode} filter={multiDayFilter} />}
       {tab === "help" && (
         <ExperimentGuideView

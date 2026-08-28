@@ -1,5 +1,6 @@
 import type { CalendarsPayload, CalendarsPoliciesPayload } from "@console/shared";
 import { Card, fmtPct } from "../../components/DataTable";
+import { MeasurementBreaks } from "../../components/MeasurementBreaks";
 
 /**
  * Everything that bounds how far this page's numbers can be trusted, above them rather than beneath.
@@ -211,19 +212,7 @@ export function IntegrityStrip({
                 recording.
               </p>
             )}
-            {breaks.length > 0 && (
-              <div className="integrity-err">
-                <strong>Measurement breaks.</strong> Results either side of these dates must not be pooled.
-                <ul className="integrity-plain-list">
-                  {breaks.map((b) => (
-                    <li key={`${b.date}-${b.key}`}>
-                      {b.date} · <span className="mono">{b.key}</span>
-                      {b.note !== null && <span className="muted"> — {b.note}</span>}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            <MeasurementBreaks breaks={breaks} />
           </div>
         )}
       </div>

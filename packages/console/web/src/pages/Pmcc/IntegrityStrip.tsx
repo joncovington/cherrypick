@@ -1,5 +1,6 @@
 import type { PmccPayload } from "@console/shared";
 import { Card, fmtPct } from "../../components/DataTable";
+import { MeasurementBreaks } from "../../components/MeasurementBreaks";
 
 /**
  * Everything that bounds how far this page's net can be trusted, above the net rather than beneath
@@ -147,19 +148,7 @@ export function IntegrityStrip({ data, updatedAt }: { data: PmccPayload | undefi
                 writer has moved on — this page may be reading a narrower story than it is recording.
               </p>
             )}
-            {breaks.length > 0 && (
-              <div className="integrity-err">
-                <strong>Measurement breaks.</strong> Results either side of these dates must not be pooled.
-                <ul className="integrity-plain-list">
-                  {breaks.map((b) => (
-                    <li key={`${b.date}-${b.key}`}>
-                      {b.date} · <span className="mono">{b.key}</span>
-                      {b.note !== null && <span className="muted"> — {b.note}</span>}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            <MeasurementBreaks breaks={breaks} />
           </div>
         )}
       </div>

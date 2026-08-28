@@ -12,6 +12,7 @@ import {
   type RiskSummary,
 } from "../analytics/riskMetrics.js";
 import { emptyPage, pagedQuery, pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
+import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 
 /**
  * The era this module counts as evidence — the SPX 5-wide books from 2026-08-01.
@@ -276,8 +277,24 @@ export function readFlies(
       })),
   );
 
-  return { mode, books, positions };
+  // flies journals four breaks and none of them reached this page until 2026-08-27 -- including
+  // the 2026-08-20 partial session, where a provider bug cost 09:30-10:52 ET and 95 positions.
+  // A reader of the History tab had no way to know that day is not a whole day.
+  const integrity = withReadOnlyDb<FliesPayload["integrity"]>(
+    dbPath,
+    { measurementBreaks: [], schemaDrift: [] },
+    (db) => ({
+      measurementBreaks: readMeasurementBreaks(db),
+      schemaDrift: readSchemaDrift(db, FLIES_KNOWN_COLUMNS),
+    }),
+  );
+
+  return { mode, books, positions, integrity };
 }
+
+const FLIES_KNOWN_COLUMNS: Record<string, string[]> = {
+  measurement_breaks: ["id", "break_date", "scope", "kind", "reason", "detail", "created_at"],
+};
 
 import { payoffCurve, stateAt, bookPnl, positionFloor, type FlyPosition, type FlyRow, type PayoffCurve } from "../analytics/fliesPayoff.js";
 

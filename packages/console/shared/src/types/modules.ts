@@ -43,11 +43,33 @@ export interface MeicSummaryRow {
   winRatePct: number | null;
 }
 
+/**
+ * One journaled measurement break. Results either side of the date must not be pooled.
+ *
+ * `scope` is present on the modules whose ledger records one (meic and flies scope a break to an
+ * arm, or `*` for the whole book); the LedgerStore shape the newer modules use has no scope, and
+ * those simply omit it.
+ */
+export interface MeasurementBreak {
+  date: string;
+  key: string;
+  note: string | null;
+  scope?: string | null;
+}
+
+/** What bounds how far a module page's numbers can be trusted. */
+export interface ModuleIntegrity {
+  measurementBreaks: MeasurementBreak[];
+  /** Columns the ledger has that this build does not know — a stale-checkout signal. */
+  schemaDrift: string[];
+}
+
 export interface MeicPayload {
   mode: TradingMode;
   /** The trade log, newest first — one page of it. */
   trades: Paged<MeicTradeRow>;
   summaries: MeicSummaryRow[];
+  integrity: ModuleIntegrity;
 }
 
 // ---- Flies ----
@@ -94,6 +116,7 @@ export interface FliesPayload {
   /** Two tables, paged independently — a page turn in one leaves the other alone. */
   books: Paged<FliesBookRow>;
   positions: Paged<FliesPositionRow>;
+  integrity: ModuleIntegrity;
 }
 
 // ---- Earnings ----
