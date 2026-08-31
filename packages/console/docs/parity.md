@@ -141,63 +141,39 @@ every other paged endpoint uses.
 | Footer caveats block | done |
 | Paper/live scope | done — the analytics and strategy detail follow a mode toggle; they were pinned to paper, so the live book was unreachable. The trade and review tables still span both books on purpose, and say so per row |
 
-## Scout (was :5057, web app deleted)
+## Scout / research — RETIRED 2026-08-31
 
-Console additions beyond scout: chain delta+OI picker, STO/BTO highlights, ±EM band, scope-gated
-real dry-run validation.
+**The whole section is gone: watchlist, screener, builder, payoff, staged orders, and the symbol
+page.** Scout's own web app was deleted on 2026-08-12 and its surfaces were ported here; that port
+is now retired in turn, so the migration audit this section used to carry has nothing left to
+describe. Recover any of it from the `pre-console-only` tag or from the commits of 2026-08-31.
 
-### Migration audit, 2026-08-12
+What that means for the rest of this file: the console is now a **read surface for the trading
+modules only**. There is no research surface to be at parity with, and no product question left
+about the recorded-earnings screen — the answer became "no" by retiring everything around it.
 
-Route-by-route against scout's deleted API. Most of `services/` and `analytics/` is already
-re-implemented in TypeScript; what is left is narrower than the line count suggests.
+Three things deliberately survived the teardown, and each is worth not re-deleting by accident:
 
-| scout route | console | status |
-|---|---|---|
-| `/api/symbol/{s}/candles` `/levels` | `GET /api/symbol/:symbol` (bars, overlays, levels, trend) | done |
-| `/api/symbol/{s}/chain` `/expirations` | `GET /api/chain/:symbol` | done |
-| `/api/symbol/{s}/quote` | `market/marketData.ts` | done |
-| `/api/symbol/{s}/template` | `services/builderTemplates.ts` | done |
-| `/api/symbol/{s}/income-grid` `/suggestions` | `GET /api/builder/{income-grid,suggestions}/:symbol` | done |
-| `/api/payoff` | `POST /api/payoff` | done — the payoff engine's own numbers plus every `describe.py` field |
-| `/api/screener` | `POST /api/screener/run` | done |
-| `/api/order/dry-run`, `/api/staged*` | `/api/orders/stage`, `/api/orders/staged` | done |
-| `/api/watchlist` | `/api/watchlist` | done |
-| `/api/earnings-upcoming` | `GET /api/earnings/upcoming` | done |
-| `/api/symbol/{s}/stats` | folded into the analysis payload (IV, realized vol, IV rank, earnings date) | done |
-| `/api/symbol/{s}/analysis` | `GET /api/symbol/:symbol/analysis` | done |
-| `/api/symbol/{s}/warnings` | `GET /api/symbol/:symbol/warnings?expiration=` | done |
+- **`analytics/payoff.ts`** — `readers/meic.ts` uses `payoffAt` for the profit-forest curves. Three
+  of its four consumers went with the section; deleting it by reading the directory rather than the
+  imports would have left MEIC's forest silently empty rather than failing a build.
+  `test/payoff-survives.test.ts` pins that.
+- **`analytics/describe.ts` and `analytics/narrative.ts`** with their 43 tests — kept as preserved
+  evidence. Each case replays an observed reference-platform card, and together they are what
+  justified those formulae. Nothing calls them now; re-deriving them would mean re-observing a
+  platform this suite no longer runs against.
+- **`market/marketData.ts` and `ws/hub.ts`** — the Overview's live quotes ride `/ws`, which has
+  nothing to do with research.
 
-**Superseded, delete rather than port**: `services/` `cache`, `candle_service`, `chain_service`,
-`metrics_service`, `quote_service`, `screener_service`, `staging`, `streamcache`, `session`,
-`watchlist`; `analytics/` `levels`, `payoff`, `pop`, `strategies`, `templates`, `trend`.
+And one guard got STRONGER rather than going away: `dry-run-only.test.ts` now pins `postOrderDryRun`
+to exactly one file (the scope probe) instead of two, because order staging was the console's only
+path that touched an order at all. It asserts nothing has grown back.
 
-**Ported, 2026-08-12.** `analytics/describe.py` → `analytics/describe.ts` and
-`analytics/narrative.py` → `analytics/narrative.ts`, composed by `services/symbolAnalysis.ts` and
-served on the three routes above; the views are `pages/Scout/AnalysisCard.tsx` (symbol page) and
-`pages/Scout/StrategyReadout.tsx` (builder). Scout's own `test_describe.py` and `test_narrative.py`
-came across as vitest suites — 43 cases — because they are not ordinary unit tests: each replays an
-observed reference-platform card and together they are the evidence that justified the formulae.
-They passed against the TypeScript on the first run.
-
-Two deliberate differences, both because the console holds different data than scout did:
-
-- **Realized volatility is computed, not read.** Scout's metrics service supplied `hv_30d`; the
-  console's cache never stored it. Rather than lose the IV-vs-realized bullet — the sharpest of
-  them — it is computed from the daily closes the console already has (annualized stdev of log
-  returns), which is the same definition.
-- **~~Ex-dividend warnings degrade to absent~~ — closed 2026-08-26.** The metrics cache stored no
-  ex-date, so `eventWarnings` was handed null and its ex-dividend clause could never fire. That was
-  not a quiet no-op: absence of a warning is a real claim in that function, so a short ITM call held
-  over an ex-date read as "nothing to flag" rather than as "not checked". Closed the way the gap
-  asked to be closed — by caching the dates the metrics response already carried
-  (`tt_metrics.dividend_ex_date` / `_next_date` / `_rate`), never by inventing a value. A malformed
-  date is dropped at the boundary rather than stored, for the same reason. A symbol with no dividend
-  dates still contributes no warning, which is the honest answer for a non-payer.
-
-**Also unresolved**: `calendar_service.py`, `earnings_metrics_service.py` and
-`earnings_watchlist_service.py` back scout's `/api/earnings-screens`, which has no console
-equivalent. `/api/earnings/upcoming` covers the *upcoming* half; whether the recorded-earnings screen
-is wanted at all is a product question, not a porting one.
+The console.db tables the section owned (`tt_watchlists`, `tt_metrics`, `tt_public_pins`,
+`symbol_blacklist`, `chain_eod`, `chain_eod_meta`) are **kept for one cycle** — nothing reads or
+writes them, but the DDL and rows stay so the retirement is reversible without a restore. Drop them
+in a follow-up. `~/.cherrypick/data/scout/` was renamed `scout.retired-2026-08-31`, matching how
+`scout.json.retired-2026-08-17` was handled.
 
 ## Per-arm portfolios (2026-08-11; re-audited 2026-08-26)
 

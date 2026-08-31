@@ -76,8 +76,10 @@ One workspace for the trading-tool suite. Work in the package for your area — 
   render-time macro-calendar lookups — is written *outside* the package by
   `scripts/morning_narrative.py`, the same fence that holds `scripts/eod_narrative.py`.
 - **packages/console** — the reactive web UI (Node + TypeScript, React SPA on 127.0.0.1:5070) and the
-  suite's **only** read surface since 2026-08-12: every module's read models plus the research and
-  screening surfaces in one app. The supervisor keeps it running as an always-on resident job, restarted on
+  suite's **only** read surface since 2026-08-12: every module's read models in one app. The research
+  and screening surfaces it inherited from scout (watchlist, screener, builder, payoff, staged
+  tickets) were **retired 2026-08-31** — it is now a read surface for the trading modules alone, and
+  holds no path that touches an order at all. The supervisor keeps it running as an always-on resident job, restarted on
   death and on a stale `state/console.heartbeat` (a wedged Node event loop stays alive). Read-only
   over every other package's data (its own store is `~/.cherrypick/data/console/`); reads the shared
   suite credential and never writes one, gating its write-oriented functions on the token's probed

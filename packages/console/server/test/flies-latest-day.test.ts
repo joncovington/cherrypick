@@ -73,7 +73,6 @@ beforeAll(() => {
       fliesDir: path.join(tmp, "flies"),
       earningsDir: path.join(tmp, "earnings"),
       gexDir: path.join(tmp, "gex"),
-      scoutDir: path.join(tmp, "scout"),
       reviewDir: path.join(tmp, "review"),
       overviewDir: path.join(tmp, "overview"),
       advisorDir: path.join(tmp, "advisor"),

@@ -30,7 +30,6 @@ export interface ConsoleConfig {
     curveDir: string;
     bwbDir: string;
     gexDir: string;
-    scoutDir: string;
     reviewDir: string;
     /** `data/overview/` — the morning fact packs (`morning-<session>.json`) and their narratives. */
     overviewDir: string;
@@ -78,7 +77,6 @@ export function loadConfig(): ConsoleConfig {
       curveDir: path.join(data, "curve"),
       bwbDir: path.join(data, "bwb"),
       gexDir: path.join(data, "gex"),
-      scoutDir: path.join(data, "scout"),
       reviewDir: path.join(data, "review"),
       overviewDir: path.join(data, "overview"),
       advisorDir: path.join(data, "advisor"),
