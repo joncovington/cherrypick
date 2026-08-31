@@ -119,8 +119,49 @@ function readOpenPositions(db: DatabaseHandle): BwbOpenPosition[] {
         addonCredit: num(p["addon_credit"]),
         currentCloseCost: mark === undefined ? null : num(mark["close_cost"]),
         currentSpot: mark === undefined ? null : num(mark["spot"]),
+        entrySession: str(p["entry_session"]) ?? "",
+        ...unrealised(p, mark === undefined ? null : num(mark["close_cost"])),
       };
     });
+}
+
+/**
+ * Mark-to-market P&L for an OPEN position, in the module's own convention.
+ *
+ * `book.py` states it: "`gross_pnl` is mid-priced and cost-free (per-leg P&L x100 xqty); `fees` is
+ * the TOTAL modeled cost (entry + addon entry + settlement); net is always `gross_pnl - fees`."
+ * This mirrors that, substituting the mark-to-market gross for the settled one, so an open row and
+ * a closed row mean the same thing by the same arithmetic rather than by two definitions that
+ * happen to agree.
+ *
+ * Gross is `(entry credit + add-on credit + cost to close) x 100 x quantity`. `close_cost` is the
+ * SIGNED net to unwind EVERY leg at mid, the add-on's included, while `entry_credit` covers only
+ * the original fly -- so the add-on credit has to be added back explicitly or a fired position is
+ * charged for unwinding legs whose credit was never counted. Caught on the 2026-08-28 cohort, where
+ * that omission put the fired `delta` book at -527.83 beside four identical siblings at -146.89.
+ *
+ * `fees` on an open row is what has been INCURRED so far (entry + any add-on entry); the settlement
+ * fee is not in it because settlement has not happened. So net here is net of costs to date, not of
+ * the round trip -- stated on the column rather than left for a reader to assume either way.
+ */
+function unrealised(
+  p: Record<string, unknown>,
+  closeCost: number | null,
+): { unrealisedGross: number | null; unrealisedNet: number | null; feesToDate: number | null } {
+  const credit = num(p["entry_credit"]);
+  const addon = num(p["addon_credit"]) ?? 0;
+  const qty = num(p["quantity"]) ?? 1;
+  const fees = num(p["fees"]);
+  if (credit === null || closeCost === null) {
+    // No usable mark is not a zero P&L, and never a zero one dressed as a number.
+    return { unrealisedGross: null, unrealisedNet: null, feesToDate: fees };
+  }
+  const gross = (credit + addon + closeCost) * 100 * qty;
+  return {
+    unrealisedGross: Math.round(gross * 100) / 100,
+    unrealisedNet: fees === null ? null : Math.round((gross - fees) * 100) / 100,
+    feesToDate: fees,
+  };
 }
 
 /** Mirrors `analytics.headline()`'s book breakdown. */
