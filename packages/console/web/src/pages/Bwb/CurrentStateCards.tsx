@@ -54,7 +54,11 @@ function PositionRows({ rows }: { rows: BwbOpenPosition[] }) {
     <>
       {rows.map((p) => (
         <tr key={p.positionId}>
+          <td>{p.symbol}</td>
           <td>{p.book}</td>
+          {/* MM-DD, the pmcc precedent — every row here is near-dated, so the year is noise.
+              The full date rides the title so it is still recoverable. */}
+          <td title={p.expiration ?? undefined}>{p.expiration === null ? "—" : p.expiration.slice(5)}</td>
           <td>{strikeSet(p.nearStrike, p.bodyStrike, p.farStrike)}</td>
           <td>
             <CloseCostCell cost={p.currentCloseCost} credit={p.entryCredit} />
@@ -72,50 +76,54 @@ function PositionRows({ rows }: { rows: BwbOpenPosition[] }) {
   );
 }
 
-/** One card per symbol, listing only the books actually holding a position. */
-export function SymbolCards({ data, updatedAt }: { data: BwbPayload | undefined; updatedAt?: number }) {
+/** Every open BWB, one row each — symbol and expiry identify the trade, book identifies the arm. */
+export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefined; updatedAt?: number }) {
   if (data === undefined) return null;
-  const symbols = [...new Set(data.openPositions.map((p) => p.symbol))];
-  const headers = ["book", "near/body x2/far", "close cost", "spot", "credit", "peak |delta|", "below flip", "add-on"];
-  if (symbols.length === 0) {
+  const empty = data.openPositions.length === 0;
+  const headers = ["symbol", "book", "expiry", "near/body x2/far", "close cost", "spot", "credit", "peak |delta|", "below flip", "add-on"];
+  if (empty) {
     return (
       <DataCard
-        title="open positions"
+        title="open trades"
         headers={headers}
         loading={false}
         rowCount={0}
-        numFrom={2}
-        empty="no open positions -- the daily ladder accumulates one BWB per book per session"
+        numFrom={4}
+        empty="no open trades -- the daily ladder accumulates one BWB per book per session"
         updatedAt={updatedAt}
       >
         {null}
       </DataCard>
     );
   }
+  // One table, not one card per symbol. A card titled with a bare ticker said what the rows were
+  // ABOUT but not what they WERE, and it split a book that is meant to be read as a whole -- the
+  // ladder runs one BWB per book per session, so the interesting comparison is across books, which
+  // a per-symbol split puts in separate cards the moment a second symbol exists. Symbol and expiry
+  // moved onto the row instead, where they identify the trade rather than the container.
+  const rows = [...data.openPositions].sort(
+    (a, b) =>
+      a.symbol.localeCompare(b.symbol) ||
+      (a.expiration ?? "").localeCompare(b.expiration ?? "") ||
+      a.book.localeCompare(b.book),
+  );
   return (
-    <>
-      {symbols.map((symbol) => {
-        const rows = data.openPositions.filter((p) => p.symbol === symbol);
-        return (
-          <Card key={symbol} title={symbol} collapseKey={`bwb-symbol-${symbol}`} updatedAt={updatedAt}>
-            <div className="table-scroll">
-              <table className="data-table num-from-2">
-                <thead>
-                  <tr>
-                    {headers.map((h) => (
-                      <th key={h}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <PositionRows rows={rows} />
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        );
-      })}
-    </>
+    <Card title="open trades" collapseKey="bwb-open-trades" updatedAt={updatedAt}>
+      <div className="table-scroll">
+        <table className="data-table num-from-4">
+          <thead>
+            <tr>
+              {headers.map((h) => (
+                <th key={h}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <PositionRows rows={rows} />
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }
 

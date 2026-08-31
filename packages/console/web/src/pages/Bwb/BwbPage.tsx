@@ -4,7 +4,7 @@ import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { Card } from "../../components/DataTable";
 import { LoopPill, TabStrip } from "../../components/ScopeBar";
 import { IntegrityStrip } from "./IntegrityStrip";
-import { BookComparison, FireCountsCard, SymbolCards } from "./CurrentStateCards";
+import { BookComparison, FireCountsCard, OpenTradesCard } from "./CurrentStateCards";
 import { HistoryTab } from "./HistoryTab";
 import { HelpTab } from "./HelpTab";
 
@@ -62,7 +62,7 @@ export function BwbPage() {
           <div className="cards cards-wide">
             <IntegrityStrip data={data} updatedAt={dataUpdatedAt} />
 
-            {isLoading ? null : <SymbolCards data={data} updatedAt={dataUpdatedAt} />}
+            {isLoading ? null : <OpenTradesCard data={data} updatedAt={dataUpdatedAt} />}
 
             <FireCountsCard
               counts={data?.fireCounts ?? []}
