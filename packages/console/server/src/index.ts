@@ -16,14 +16,7 @@ import { registerModuleRoutes } from "./routes/modules.js";
 import { MarketDataService } from "./market/marketData.js";
 import { registerWsHub } from "./ws/hub.js";
 import { registerSecurity } from "./security.js";
-import { registerScoutRoutes } from "./routes/scout.js";
-import { registerPayoffRoutes } from "./routes/payoff.js";
-import { registerOrderRoutes } from "./routes/orders.js";
-import { registerScreenerRoutes } from "./routes/screener.js";
-import { registerTtWatchlistRoutes } from "./routes/ttWatchlists.js";
 import { registerConfigRoutes } from "./routes/configOps.js";
-import { startChainEodScheduler } from "./services/chainEod.js";
-import { startCandleWarmScheduler } from "./services/candleWarm.js";
 import { startHeartbeat } from "./services/heartbeat.js";
 import { createLogStream } from "./logging.js";
 
@@ -38,11 +31,6 @@ const app = Fastify({
 const market = new MarketDataService(config);
 
 registerSecurity(app);
-registerScoutRoutes(app, config, market);
-registerPayoffRoutes(app);
-registerOrderRoutes(app, config);
-registerScreenerRoutes(app, config, market);
-registerTtWatchlistRoutes(app, config, market);
 await app.register(fastifyWebsocket);
 registerWsHub(app, market);
 registerStatusRoutes(app, config, market);
@@ -63,10 +51,6 @@ app.get("/api/health", async () => ({ ok: true, readers: listReaderFailures() })
 // pass a logger, so it is injected once here rather than threaded through.
 setReaderFailureLogger((message) => app.log.warn(message));
 
-// Daily EOD chain snapshot (~15:30 ET weekdays) on the console's own session.
-startChainEodScheduler(config, market, (msg) => app.log.info(msg));
-// Morning candle warm (~09:35 ET weekdays) over the same watchlist universe.
-startCandleWarmScheduler(config, market, (msg) => app.log.info(msg));
 // RTH watchdog for the silently-dying DXLink websocket.
 market.startHeartbeat((msg) => app.log.info(msg));
 

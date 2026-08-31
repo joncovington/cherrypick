@@ -5,8 +5,6 @@ import type { StatusPayload, SourceFreshness } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { streamerFreshness } from "../readers/streamcache.js";
 import { getScope } from "../auth/credentials.js";
-import { candleWarmStatus } from "../services/candleWarm.js";
-import { chainSnapshotStatus, etNow } from "../services/chainEod.js";
 
 function fileFreshness(key: string, label: string, p: string): SourceFreshness {
   try {
@@ -54,13 +52,7 @@ export function registerStatusRoutes(
     };
   });
 
-  // Background-collector state for the UI's "data is updating…" banners:
-  // everything here runs on its own (warm cadence, 15:30 ET chain capture,
-  // per-tab sweeps), so pages report progress instead of offering buttons.
-  app.get("/api/collectors", async () => ({
-    dx: market?.dxState ?? "disconnected",
-    etDate: etNow().date,
-    candles: candleWarmStatus(),
-    chain: chainSnapshotStatus(config),
-  }));
+  // The candle-warm and EOD-chain collectors went with the research section on 2026-08-31, and
+  // they were everything this reported beyond the DXLink state. The socket already carries its own
+  // status heartbeat, so nothing was left for a banner to say.
 }

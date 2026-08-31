@@ -551,14 +551,6 @@ export interface CollectorsPayload {
   };
 }
 
-export function useCollectors() {
-  return useQuery<CollectorsPayload>({
-    queryKey: ["collectors"],
-    queryFn: () => getJson<CollectorsPayload>("/api/collectors"),
-    refetchInterval: 10_000,
-  });
-}
-
 /**
  * The integrity block alone, for the strip that rides every tab.
  *
