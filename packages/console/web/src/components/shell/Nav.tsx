@@ -23,15 +23,6 @@ const groups: Array<{ label: string | null; links: Array<{ to: string; label: st
       { to: "/gex", label: "GEX" },
     ],
   },
-  {
-    label: "Research",
-    links: [
-      { to: "/scout", label: "Watchlist", end: true },
-      { to: "/scout/screener", label: "Screener" },
-      { to: "/scout/builder", label: "Builder" },
-      { to: "/scout/orders", label: "Orders" },
-    ],
-  },
   { label: "Suite", links: [{ to: "/config", label: "Config" }] },
 ];
 

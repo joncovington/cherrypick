@@ -524,44 +524,10 @@ export interface SymbolAnalysis {
   trend: { "1m": string | null; "6m": string | null };
 }
 
-export function useWatchlist() {
-  return useQuery<{ symbols: string[]; rows: TtWatchlistRow[] }>({
-    queryKey: ["watchlist"],
-    queryFn: () => getJson<{ symbols: string[]; rows: TtWatchlistRow[] }>("/api/watchlist"),
-    refetchInterval: 60_000,
-    placeholderData: (prev) => prev,
-  });
-}
-
-export function useTtWatchlists() {
-  return useQuery<TtWatchlistIndex & { lastError: string | null }>({
-    queryKey: ["tt-watchlists"],
-    queryFn: () => getJson<TtWatchlistIndex & { lastError: string | null }>("/api/tt-watchlists"),
-    refetchInterval: 60_000,
-  });
-}
-
-export function useTtWatchlist(key: string | null) {
-  return useQuery<TtWatchlistPayload>({
-    queryKey: ["tt-watchlist", key],
-    queryFn: () => getJson<TtWatchlistPayload>(`/api/tt-watchlists/${encodeURIComponent(key!)}`),
-    enabled: key !== null,
-    refetchInterval: 30_000,
-    placeholderData: (prev) => prev,
-  });
-}
-
 export interface BlacklistRow {
   symbol: string;
   reason: string;
   addedAt: string;
-}
-
-export function useBlacklist() {
-  return useQuery<{ rows: BlacklistRow[] }>({
-    queryKey: ["blacklist"],
-    queryFn: () => getJson<{ rows: BlacklistRow[] }>("/api/blacklist"),
-  });
 }
 
 export interface ChainEodStatus {
@@ -593,33 +559,6 @@ export function useCollectors() {
   });
 }
 
-export function useChainEodStatus() {
-  return useQuery<ChainEodStatus>({
-    queryKey: ["chain-eod-status"],
-    queryFn: () => getJson<ChainEodStatus>("/api/chain-eod/status"),
-    refetchInterval: 60_000,
-  });
-}
-
-export function useSymbolCard(symbol: string) {
-  const valid = /^[A-Z][A-Z0-9./]{0,9}$/.test(symbol);
-  return useQuery<SymbolCardPayload>({
-    queryKey: ["symbol-card", symbol],
-    queryFn: () => getJson<SymbolCardPayload>(`/api/symbol-card/${encodeURIComponent(symbol)}`),
-    enabled: valid,
-    refetchInterval: 60_000,
-    placeholderData: (prev) => prev,
-  });
-}
-
-export function useSymbolAnalysis(symbol: string) {
-  return useQuery<SymbolAnalysis>({
-    queryKey: ["symbol", symbol],
-    queryFn: () => getJson<SymbolAnalysis>(`/api/symbol/${symbol}`),
-    retry: false,
-  });
-}
-
 /**
  * The integrity block alone, for the strip that rides every tab.
  *
@@ -645,6 +584,17 @@ export function useGex(enabled = true, page: PageState = FIRST_PAGE) {
     queryFn: () => getJson<GexPayload>(`/api/gex?${params.toString()}`),
     refetchInterval: 10_000,
     enabled,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useSymbolCard(symbol: string) {
+  const valid = /^[A-Z][A-Z0-9./]{0,9}$/.test(symbol);
+  return useQuery<SymbolCardPayload>({
+    queryKey: ["symbol-card", symbol],
+    queryFn: () => getJson<SymbolCardPayload>(`/api/symbol-card/${encodeURIComponent(symbol)}`),
+    enabled: valid,
+    refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   });
 }
