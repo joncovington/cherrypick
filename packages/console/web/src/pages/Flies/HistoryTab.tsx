@@ -5,6 +5,37 @@ import { useFliesTradeLog, fliesQuery, type FliesFilter } from "../../lib/api";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
 
+/**
+ * The clock time of an entry, read off the stored ISO string rather than through a `Date`.
+ *
+ * `entry_time` carries the market's own UTC offset, so parsing it and formatting it would re-render
+ * a 13:54 SPX entry as 10:54 for a viewer on the west coast — a session-relative fact silently
+ * restated in a timezone the session never happened in. Slicing keeps the market clock, which is
+ * the only one the entry windows and the module's own buckets are expressed in.
+ */
+function clockTime(iso: string | null | undefined): string {
+  // Truthiness rather than `=== null`: a server that predates this column omits the field entirely,
+  // and `undefined.length` throws where a missing value should simply render as a dash. The console
+  // is deployed independently of nothing, but it IS built and restarted independently, so the two
+  // halves disagree for as long as one has restarted and the other has not.
+  if (!iso || iso.length < 16) return "—";
+  return iso.slice(11, 16);
+}
+
+/**
+ * Wing width in points, `near/far` when the wing is broken.
+ *
+ * A symmetric fly records only `wingWidth` and both sides are that wide; a bwb records a wider
+ * `farWidth` beside it, and the gap between them IS the trade. Collapsing the pair to one number
+ * would describe a 5/10 broken wing as a 5-point fly, which is a different structure with a
+ * different risk profile.
+ */
+function wingWidth(near: number | null | undefined, far: number | null | undefined): string {
+  if (near === null || near === undefined) return "—";
+  const n = fmtNum(near, 0);
+  return far === null || far === undefined || far === near ? n : `${n}/${fmtNum(far, 0)}`;
+}
+
 interface Summary {
   trades: number;
   sessions: number;
@@ -244,19 +275,22 @@ export function HistoryTab({
           <table className="data-table">
             <thead>
               <tr>
-                <th>date</th><th>sym</th><th>arm</th><th>mode</th><th>kind</th><th>centre</th><th>window</th>
-                <th>net</th><th>fees</th><th>P&L</th><th>latency</th><th></th>
+                <th>date</th><th>entry</th><th>sym</th><th>arm</th><th>mode</th><th>kind</th>
+                <th>centre</th><th title="wing width in points; near/far when the wing is broken">wing</th>
+                <th>window</th><th>net</th><th>fees</th><th>P&L</th><th>latency</th><th></th>
               </tr>
             </thead>
             <tbody>
               {log.map((r, i) => (
                 <tr key={i}>
                   <td>{r.tradeDate}</td>
+                  <td className="muted">{clockTime(r.entryTime)}</td>
                   <td>{r.symbol}</td>
                   <td className="muted">{r.arm ?? "—"}</td>
                   <td className="muted">{r.entryMode ?? "—"}</td>
                   <td>{r.kind === "fly" ? "fly" : r.kind === "iron_fly" ? "iron fly" : `short ${r.side}`}</td>
                   <td>{fmtNum(r.center, 0)}</td>
+                  <td>{wingWidth(r.wingWidth, r.farWidth)}</td>
                   <td className="muted">{r.window ?? "—"}</td>
                   <td>{fmtNum(r.net, 2)}</td>
                   <td className="muted">{r.fees !== null ? fmtMoney(r.fees) : "—"}</td>

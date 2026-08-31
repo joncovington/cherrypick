@@ -901,12 +901,21 @@ export interface FliesHistory {
 
 export interface FliesTradeLogRow {
   tradeDate: string;
+  /** Full ISO entry timestamp WITH its market offset — the caller renders the clock time from the
+   *  string rather than through a Date, so a viewer in another timezone still reads the session. */
+  entryTime: string | null;
   symbol: string;
   arm: string | null;
   entryMode: string | null;
   kind: string | null;
   side: string | null;
   center: number | null;
+  /** Near wing, in points. Always present. */
+  wingWidth: number | null;
+  /** Far wing, only when the structure is BROKEN — null on a symmetric fly, where both sides are
+   *  `wingWidth`. Kept separate rather than folded into one number because the asymmetry is the
+   *  whole trade in a bwb, and a single width would quietly describe it as something it is not. */
+  farWidth: number | null;
   window: string | null;
   net: number | null;
   fees: number | null;
@@ -1040,8 +1049,8 @@ export function readFliesTradeLog(
     const paged = pagedQuery<FliesTradeLogRow>(
       db,
       {
-        columns: `trade_date, symbol, arm, entry_mode, kind, side, center, entry_window, net, fees, pnl,
-                  completion_latency_min, pinned`,
+        columns: `trade_date, entry_time, symbol, arm, entry_mode, kind, side, center, wing_width,
+                  far_width, entry_window, net, fees, pnl, completion_latency_min, pinned`,
         from: "fly_positions",
         where,
         params,
@@ -1050,12 +1059,15 @@ export function readFliesTradeLog(
       query,
       (r) => ({
         tradeDate: String(r["trade_date"]),
+        entryTime: str(r["entry_time"]),
         symbol: String(r["symbol"] ?? ""),
         arm: str(r["arm"]),
         entryMode: str(r["entry_mode"]),
         kind: str(r["kind"]),
         side: str(r["side"]),
         center: num(r["center"]),
+        wingWidth: num(r["wing_width"]),
+        farWidth: num(r["far_width"]),
         window: str(r["entry_window"]),
         net: num(r["net"]),
         fees: num(r["fees"]),

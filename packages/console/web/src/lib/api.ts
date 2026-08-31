@@ -198,12 +198,18 @@ export function useFlies(mode: TradingMode, filter: FliesFilter, books: PageStat
 
 export interface FliesTradeLogRow {
   tradeDate: string;
+  /** Full ISO entry timestamp with its market offset — rendered from the string, never via a Date. */
+  entryTime: string | null;
   symbol: string;
   arm: string | null;
   entryMode: string | null;
   kind: string | null;
   side: string | null;
   center: number | null;
+  /** Near wing, in points. */
+  wingWidth: number | null;
+  /** Far wing, only when the wing is BROKEN; null on a symmetric fly. */
+  farWidth: number | null;
   window: string | null;
   net: number | null;
   fees: number | null;
