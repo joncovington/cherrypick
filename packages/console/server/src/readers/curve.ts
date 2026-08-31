@@ -134,6 +134,35 @@ function exposureByPosition(db: DatabaseHandle): Map<string, { exposed: number; 
 }
 
 /** Mirrors `analytics.worksheet()` -- open positions plus their latest usable close-cost mark. */
+/**
+ * Mark-to-market P&L for a credit spread whose marks carry a whole-structure `close_cost`.
+ *
+ * The same convention `readers/unrealised.ts` implements per-leg for pmcc and calendars, reached by
+ * a shorter route: `close_cost` is the SIGNED net to unwind every leg at mid (negative for a credit
+ * structure you must buy back), so the credit received plus that is the position's mark. Kept here
+ * rather than in the shared helper because the input differs -- curve's mark table precomputes what
+ * the others leave per-leg -- and folding two different inputs behind one name would hide that.
+ *
+ * `fees` is costs INCURRED so far; no settlement fee is in it because settlement has not happened.
+ */
+function creditUnrealised(
+  p: Record<string, unknown>,
+  closeCost: number | null,
+): { unrealisedGross: number | null; unrealisedNet: number | null; feesToDate: number | null } {
+  const credit = num(p["entry_credit"]);
+  const qty = num(p["quantity"]) ?? 1;
+  const fees = num(p["fees"]);
+  if (credit === null || closeCost === null) {
+    return { unrealisedGross: null, unrealisedNet: null, feesToDate: fees };
+  }
+  const gross = Math.round((credit + closeCost) * 100 * qty * 100) / 100;
+  return {
+    unrealisedGross: gross,
+    unrealisedNet: fees === null ? null : Math.round((gross - fees) * 100) / 100,
+    feesToDate: fees,
+  };
+}
+
 function readOpenPositions(db: DatabaseHandle): CurveOpenPosition[] {
   const exposure = exposureByPosition(db);
   const latestMark = db.prepare<[string], Record<string, unknown>>(
@@ -167,6 +196,8 @@ function readOpenPositions(db: DatabaseHandle): CurveOpenPosition[] {
         exposureTicks: num(p["exposure_ticks"]),
         currentCloseCost: mark === undefined ? null : num(mark["close_cost"]),
         currentSpot: mark === undefined ? null : num(mark["spot"]),
+        entrySession: str(p["entry_session"]) ?? "",
+        ...creditUnrealised(p, mark === undefined ? null : num(mark["close_cost"])),
       };
     });
 }

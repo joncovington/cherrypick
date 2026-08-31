@@ -1,5 +1,6 @@
 import type { CurveBookCell, CurveFlipDivergence, CurveOpenPosition, CurvePayload, CurveRegimeRow } from "@console/shared";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
+import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 import { SignedBar } from "../../components/Charts";
 import { fmtStrike } from "../../lib/optionFormat";
 
@@ -38,14 +39,22 @@ function PositionRows({ rows }: { rows: CurveOpenPosition[] }) {
     <>
       {rows.map((p) => (
         <tr key={p.positionId}>
+          <td>{p.symbol}</td>
           <td>{p.book}</td>
+          <td title={p.entrySession}>{p.entrySession === "" ? "—" : p.entrySession.slice(5)}</td>
+          <td title={p.expiration ?? undefined}>{p.expiration === null ? "—" : p.expiration.slice(5)}</td>
+          <td>
+            <UnrealisedPnlCell
+              gross={p.unrealisedGross}
+              net={p.unrealisedNet}
+              fees={p.feesToDate}
+              detail={p.currentCloseCost === null ? undefined : `costs ${fmtMoney(p.currentCloseCost)}/share to close`}
+            />
+          </td>
           <td>
             {strikeAt(p.shortStrike, p.expiration)}
             <span className="muted"> / </span>
             {strikeAt(p.longStrike, p.expiration)}
-          </td>
-          <td>
-            <CloseCostCell cost={p.currentCloseCost} credit={p.entryCredit} />
           </td>
           <td>{fmtNum(p.currentSpot ?? p.entrySpot, 2)}</td>
           <td>{fmtMoney(p.entryCredit)}</td>
@@ -84,53 +93,50 @@ function PositionRows({ rows }: { rows: CurveOpenPosition[] }) {
  * nothing is signal, not absence: the hook book idling all week is the experiment working exactly
  * as designed (the pmcc keltner precedent, restated for curve's rarer entry).
  */
-export function SymbolCards({ data, updatedAt }: { data: CurvePayload | undefined; updatedAt?: number }) {
+export function OpenTradesCard({ data, updatedAt }: { data: CurvePayload | undefined; updatedAt?: number }) {
   if (data === undefined) return null;
   const symbols = [...new Set(data.openPositions.map((p) => p.symbol))];
   if (symbols.length === 0) {
     return (
       <DataCard
-        title="open positions"
-        headers={["book", "short/long", "close cost", "spot", "credit", "credit % of width", "ratio/regime", "assignment"]}
+        title="open trades"
+        headers={["symbol", "book", "entry", "expiry", "P&L (net of costs to date)", "short/long", "spot", "credit", "credit % of width", "ratio/regime", "assignment"]}
         loading={false}
         rowCount={0}
-        numFrom={2}
-        empty="no open positions -- one position per book at ~30-45 DTE, so idle stretches are the ordinary state"
+        numFrom={5}
+        empty="no open trades -- one position per book at ~30-45 DTE, so idle stretches are the ordinary state"
         updatedAt={updatedAt}
       >
         {null}
       </DataCard>
     );
   }
+  // One table, not one card per symbol. curve trades a single underlying today, so a per-symbol
+  // split was a card whose title repeated the only value the column could hold; symbol and expiry
+  // moved onto the row, where they identify the trade rather than the container.
+  const rows = [...data.openPositions].sort(
+    (a, b) =>
+      b.entrySession.localeCompare(a.entrySession) ||
+      a.symbol.localeCompare(b.symbol) ||
+      a.book.localeCompare(b.book),
+  );
   return (
-    <>
-      {symbols.map((symbol) => {
-        const rows = data.openPositions.filter((p) => p.symbol === symbol);
-        return (
-          <Card key={symbol} title={symbol} collapseKey={`curve-symbol-${symbol}`} updatedAt={updatedAt}>
-            <div className="table-scroll">
-              <table className="data-table num-from-2">
-                <thead>
-                  <tr>
-                    <th>book</th>
-                    <th>short/long</th>
-                    <th>close cost</th>
-                    <th>spot</th>
-                    <th>credit</th>
-                    <th>credit % of width</th>
-                    <th>ratio/regime</th>
-                    <th>assignment</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <PositionRows rows={rows} />
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        );
-      })}
-    </>
+    <Card title="open trades" collapseKey="curve-open-trades" updatedAt={updatedAt}>
+      <div className="table-scroll">
+        <table className="data-table num-from-5">
+          <thead>
+            <tr>
+              {["symbol", "book", "entry", "expiry", "P&L (net of costs to date)", "short/long", "spot", "credit", "credit % of width", "ratio/regime", "assignment"].map((h) => (
+                <th key={h}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <PositionRows rows={rows} />
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }
 

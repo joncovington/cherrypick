@@ -5,7 +5,7 @@ import { Card, DataCard, fmtPct } from "../../components/DataTable";
 import { LoopPill, ScopeSelect, TabStrip } from "../../components/ScopeBar";
 import { ArmRail, AttemptTimeline } from "../../components/Attempts";
 import { IntegrityStrip } from "./IntegrityStrip";
-import { BookComparison, SymbolCards } from "./CurrentStateCards";
+import { BookComparison, OpenTradesCard } from "./CurrentStateCards";
 import { HistoryTab } from "./HistoryTab";
 import { HelpTab } from "./HelpTab";
 
@@ -93,7 +93,7 @@ export function PmccPage() {
                   {null}
                 </DataCard>
               ) : (
-                <SymbolCards data={data} updatedAt={dataUpdatedAt} symbol={symbol} />
+                <OpenTradesCard data={data} updatedAt={dataUpdatedAt} symbol={symbol} />
               )}
 
               {/* The same two surfaces meic and flies carry — the arm rail and the minute-by-minute

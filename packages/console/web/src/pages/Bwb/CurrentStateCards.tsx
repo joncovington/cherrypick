@@ -1,5 +1,6 @@
 import type { BwbBookCell, BwbFireCount, BwbOpenPosition, BwbPayload } from "@console/shared";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
+import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 import { SignedBar } from "../../components/Charts";
 import { fmtStrike } from "../../lib/optionFormat";
 
@@ -14,37 +15,6 @@ function strikeSet(near: number | null, body: number | null, far: number | null)
  * Close cost against the entry credit -- never $0.00 for an unmarked position, "no usable mark" and
  * "already at zero cost" are different facts.
  */
-/**
- * Mark-to-market P&L, net of costs incurred so far.
- *
- * This replaced a "close cost (% of credit)" cell on 2026-08-31. That percentage was measured
- * against the ENTRY credit alone, so a position whose add-on had fired showed a wildly worse
- * number than its identical siblings purely because the add-on's credit was missing from the
- * denominator -- -1000% against -333% on the same strikes, same spot, same everything. P&L
- * collapses that to the truth: they are the same trade and they are worth the same.
- *
- * The close cost is kept on the title, since "what would it take to get out right now" is a
- * different and still useful question from "what is it worth".
- */
-function UnrealisedPnlCell({ p }: { p: BwbOpenPosition }) {
-  if (p.unrealisedNet === null) {
-    return (
-      <span className="muted" title="no usable mark recorded yet -- not the same as a zero P&L">
-        —
-      </span>
-    );
-  }
-  const cost = p.currentCloseCost === null ? "" : ` · costs ${fmtMoney(p.currentCloseCost)}/share to close`;
-  const fees = p.feesToDate === null ? "" : ` · ${fmtMoney(p.feesToDate)} fees to date`;
-  return (
-    <span
-      className={p.unrealisedNet >= 0 ? "pnl-pos" : "pnl-neg"}
-      title={`gross ${p.unrealisedGross === null ? "—" : fmtMoney(p.unrealisedGross)}${fees}${cost}`}
-    >
-      {fmtMoney(p.unrealisedNet)}
-    </span>
-  );
-}
 
 function TriggerCell({ p }: { p: BwbOpenPosition }) {
   if (p.addonFiredAt !== null) {
@@ -77,7 +47,12 @@ function PositionRows({ rows }: { rows: BwbOpenPosition[] }) {
           <td title={p.expiration ?? undefined}>{p.expiration === null ? "—" : p.expiration.slice(5)}</td>
           <td>{strikeSet(p.nearStrike, p.bodyStrike, p.farStrike)}</td>
           <td>
-            <UnrealisedPnlCell p={p} />
+            <UnrealisedPnlCell
+              gross={p.unrealisedGross}
+              net={p.unrealisedNet}
+              fees={p.feesToDate}
+              detail={p.currentCloseCost === null ? undefined : `costs ${fmtMoney(p.currentCloseCost)}/share to close`}
+            />
           </td>
           <td>{fmtNum(p.currentSpot ?? p.entrySpot, 2)}</td>
           <td>{fmtMoney(p.entryCredit)}</td>

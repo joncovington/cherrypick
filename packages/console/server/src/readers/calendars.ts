@@ -13,6 +13,7 @@ import type {
 import type { ConsoleConfig } from "../config.js";
 import { num, obj, readJson, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
 import { readCalendarsPlan } from "../services/calendarsBridge.js";
+import { unrealisedByPosition, NO_UNREALISED, type Unrealised } from "./unrealised.js";
 
 /**
  * The weekly double-calendar module's read layer.
@@ -204,7 +205,11 @@ function legsFor(db: DatabaseHandle, ids: string[]): Map<string, CalendarsLeg[]>
   return out;
 }
 
-function toPosition(r: Record<string, unknown>, legs: CalendarsLeg[]): CalendarsPosition {
+function toPosition(
+  r: Record<string, unknown>,
+  legs: CalendarsLeg[],
+  pnl: Map<string, Unrealised>,
+): CalendarsPosition {
   const gross = num(r["gross_pnl"]);
   const fees = num(r["fees"]);
   return {
@@ -235,6 +240,9 @@ function toPosition(r: Record<string, unknown>, legs: CalendarsLeg[]): Calendars
     fees,
     // Null propagates: an unrecorded gross or fee is not a zero-cost week.
     netPnl: gross === null || fees === null ? null : Math.round((gross - fees) * 100) / 100,
+    // Mark-to-market while the week is still open; `grossPnl`/`netPnl` above stay null until it
+    // settles, so the two never disagree about the same moment.
+    ...(pnl.get(str(r["position_id"]) ?? "") ?? NO_UNREALISED),
     legs,
   };
 }
@@ -246,7 +254,12 @@ function readPositions(db: DatabaseHandle, where: string, params: string[]): Cal
     )
     .all(...params);
   const legs = legsFor(db, rows.map((r) => str(r["position_id"]) ?? ""));
-  return rows.map((r) => toPosition(r, legs.get(str(r["position_id"]) ?? "") ?? []));
+  const pnl = unrealisedByPosition(db, {
+    positionsTable: "dc_positions",
+    legsTable: "dc_legs",
+    marksTable: "dc_marks",
+  });
+  return rows.map((r) => toPosition(r, legs.get(str(r["position_id"]) ?? "") ?? [], pnl));
 }
 
 /**

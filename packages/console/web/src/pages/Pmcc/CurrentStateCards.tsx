@@ -1,5 +1,6 @@
 import type { PmccBookCell, PmccOpenPosition, PmccPayload } from "@console/shared";
 import { Card, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
+import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 import { SignedBar } from "../../components/Charts";
 import { fmtStrike } from "../../lib/optionFormat";
 import { EntrySpreadCell } from "./EntrySpread";
@@ -48,6 +49,7 @@ function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: Pmcc
         const exposedShare = p.markedTicks > 0 ? (p.exposedTicks / p.markedTicks) * 100 : null;
         return (
           <tr key={p.positionId}>
+            <td>{p.symbol}</td>
             <td>
               {p.book}
               {p.status === "short_settled" && (
@@ -58,6 +60,15 @@ function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: Pmcc
                   awaiting disposal
                 </span>
               )}
+            </td>
+            <td title={p.entrySession}>{p.entrySession === "" ? "—" : p.entrySession.slice(5)}</td>
+            <td>
+              <UnrealisedPnlCell
+                gross={p.unrealisedGross}
+                net={p.unrealisedNet}
+                fees={p.feesToDate}
+                detail={p.rollCount !== null && p.rollCount > 0 ? `${p.rollCount} roll(s) in fees` : undefined}
+              />
             </td>
             <td>{strikeAt(p.longStrike, p.longExpiration)}</td>
             <td>
@@ -99,65 +110,72 @@ function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: Pmcc
 }
 
 /**
- * One card per symbol, listing only the books actually holding a position.
+ * Every open PMCC, one row each.
  *
- * Since the 2026-08-23 redesign the module trades two symbols (TQQQ, physical-settlement; XSP,
- * cash-settled, added the same day) in one book (`control`) each, as separate populations, plus
- * its synthetic `advised:control` twin when the advisor is running an experiment — so a symbol with
- * no open row simply says so, with no gate sub-row to explain (there is no more entry gate to name;
- * mechanical entry either finds the slot free or it doesn't).
+ * Was one card per symbol, titled with a bare ticker. Since the 2026-08-23 redesign the module
+ * trades two symbols (TQQQ physical-settlement, XSP cash-settled) as separate populations in one
+ * `control` book each plus the advised twin -- so the split put four rows across two cards to say
+ * something the symbol column now says per row, and the page already carries a symbol filter for
+ * anyone who wants one population alone.
+ *
+ * The long and short expiries stay on their own strikes (`50 @ 09-18`) rather than becoming one
+ * "expiry" column: a PMCC's two legs expire on DIFFERENT dates by construction, and collapsing
+ * them would name one and hide the other.
  */
-export function SymbolCards({
+export function OpenTradesCard({
   data,
   updatedAt,
   symbol: filterSymbol = null,
 }: {
   data: PmccPayload | undefined;
   updatedAt?: number;
-  /** Show only this symbol's card; null shows every symbol. */
+  /** Show only this symbol; null shows every open trade. */
   symbol?: string | null;
 }) {
-  const allSymbols = data?.params.symbols ?? [];
-  const symbols = filterSymbol === null ? allSymbols : allSymbols.filter((s) => s === filterSymbol);
   if (data === undefined) return null;
+  const rows = data.openPositions
+    .filter((p) => filterSymbol === null || p.symbol === filterSymbol)
+    // Newest entry first; symbol and book break ties within a session.
+    .sort(
+      (a, b) =>
+        b.entrySession.localeCompare(a.entrySession) ||
+        a.symbol.localeCompare(b.symbol) ||
+        a.book.localeCompare(b.book),
+    );
   return (
-    <>
-      {symbols.map((symbol) => {
-        const rows = data.openPositions.filter((p) => p.symbol === symbol);
-        return (
-          <Card key={symbol} title={symbol} collapseKey={`pmcc-symbol-${symbol}`} updatedAt={updatedAt}>
-            <div className="table-scroll">
-              <table className="data-table num-from-3">
-                <thead>
-                  <tr>
-                    <th>book</th>
-                    <th>long</th>
-                    <th>short</th>
-                    <th>time value</th>
-                    <th>spot</th>
-                    <th>weekly yield</th>
-                    <th>entry spread</th>
-                    <th>protection</th>
-                    <th>assignment</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.length === 0 ? (
-                    <tr>
-                      <td colSpan={9} className="muted">
-                        no open position on {symbol}
-                      </td>
-                    </tr>
-                  ) : (
-                    <PositionRows rows={rows} params={data.params} />
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        );
-      })}
-    </>
+    <Card title="open trades" collapseKey="pmcc-open-trades" updatedAt={updatedAt}>
+      <div className="table-scroll">
+        <table className="data-table num-from-4">
+          <thead>
+            <tr>
+              <th>symbol</th>
+              <th>book</th>
+              <th>entry</th>
+              <th>P&L (net of costs to date)</th>
+              <th>long</th>
+              <th>short</th>
+              <th>time value</th>
+              <th>spot</th>
+              <th>weekly yield</th>
+              <th>entry spread</th>
+              <th>protection</th>
+              <th>assignment</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={12} className="muted">
+                  no open trades{filterSymbol === null ? "" : ` on ${filterSymbol}`}
+                </td>
+              </tr>
+            ) : (
+              <PositionRows rows={rows} params={data.params} />
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }
 
