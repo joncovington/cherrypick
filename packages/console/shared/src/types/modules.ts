@@ -985,6 +985,11 @@ export interface BwbOpenPosition {
   belowFlipSeen: boolean;
   armedAt: string | null;
   addonFiredAt: string | null;
+  /** The add-on put credit spread's strikes: short the higher, long the lower. Both null until it
+   *  fires. They are what turns the fly into a 1-3-2, so once it has fired they are the shape of
+   *  the position now -- not a detail of how it got here. */
+  addonShortStrike: number | null;
+  addonLongStrike: number | null;
   addonCredit: number | null;
   /** Latest usable close-cost mark. Null means no usable mark yet -- never render it as 0. */
   currentCloseCost: number | null;

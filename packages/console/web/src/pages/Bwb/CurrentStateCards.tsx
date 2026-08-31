@@ -16,11 +16,30 @@ function strikeSet(near: number | null, body: number | null, far: number | null)
  * "already at zero cost" are different facts.
  */
 
+/**
+ * The add-on's own strikes: a put credit spread, short the higher and long the lower.
+ *
+ * Shown beside the fly's `near/body x2/far` rather than folded into it, because a fired position is
+ * a 1-3-2 and the two halves were priced at different moments -- the fly at entry, the add-on when
+ * the trigger fired. Reading them as one five-strike structure would suggest they were chosen
+ * together, which is the one thing the four books exist to disagree about.
+ */
+function addonStrikes(short: number | null, long: number | null): string | null {
+  if (short === null && long === null) return null;
+  return `${fmtStrike(short)}/${fmtStrike(long)}`;
+}
+
 function TriggerCell({ p }: { p: BwbOpenPosition }) {
   if (p.addonFiredAt !== null) {
+    const strikes = addonStrikes(p.addonShortStrike, p.addonLongStrike);
     return (
-      <span className="chip chip-warn integrity-chip" title={`add-on fired ${p.addonFiredAt}`}>
-        fired {p.addonCredit !== null && <>({fmtMoney(p.addonCredit)})</>}
+      <span title={`add-on fired ${p.addonFiredAt}`}>
+        <span className="chip chip-warn integrity-chip">fired</span>{" "}
+        {/* The strikes are the point of the cell once it has fired -- "fired" alone says the shape
+            changed without saying what it changed to. A fired row with no strikes recorded shows the
+            dash rather than an invented pair. */}
+        {strikes ?? <span className="muted">—</span>}
+        {p.addonCredit !== null && <span className="muted"> ({fmtMoney(p.addonCredit)})</span>}
       </span>
     );
   }
@@ -71,7 +90,7 @@ function PositionRows({ rows }: { rows: BwbOpenPosition[] }) {
 export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefined; updatedAt?: number }) {
   if (data === undefined) return null;
   const empty = data.openPositions.length === 0;
-  const headers = ["symbol", "book", "entry", "expiry", "near/body x2/far", "P&L (net of costs to date)", "spot", "credit", "peak |delta|", "below flip", "add-on"];
+  const headers = ["symbol", "book", "entry", "expiry", "near/body x2/far", "P&L (net of costs to date)", "spot", "credit", "peak |delta|", "below flip", "add-on (short/long)"];
   if (empty) {
     return (
       <DataCard

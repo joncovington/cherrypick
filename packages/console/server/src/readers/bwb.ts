@@ -116,6 +116,8 @@ function readOpenPositions(db: DatabaseHandle): BwbOpenPosition[] {
         belowFlipSeen: p["below_flip_seen"] === 1,
         armedAt: str(p["armed_at"]),
         addonFiredAt: str(p["addon_fired_at"]),
+        addonShortStrike: num(p["addon_short_strike"]),
+        addonLongStrike: num(p["addon_long_strike"]),
         addonCredit: num(p["addon_credit"]),
         currentCloseCost: mark === undefined ? null : num(mark["close_cost"]),
         currentSpot: mark === undefined ? null : num(mark["spot"]),
