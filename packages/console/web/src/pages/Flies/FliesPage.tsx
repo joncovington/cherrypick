@@ -17,6 +17,7 @@ import { JournalCard } from "./JournalCard";
 import { DivergenceCard } from "./DivergenceCard";
 import { PerformanceTab } from "./PerformanceTab";
 import { ExperimentGuideView } from "../../components/ExperimentGuide";
+import { structureLabel } from "./structure";
 
 interface FliesLoopStatus {
   state: "live" | "idle" | "no-data";
@@ -401,7 +402,7 @@ export function FliesPage() {
               <td>{p.symbol}</td>
               <td className="muted">{p.arm ?? "—"}</td>
               <td className="muted">{p.entryMode ?? "—"}</td>
-              <td>{p.kind === "fly" ? "fly" : p.kind === "iron_fly" ? "iron fly" : p.kind === "bwb" ? `bwb ${p.side}` : `short ${p.side}`}</td>
+              <td>{structureLabel(p.kind, p.side)}</td>
               <td>{fmtNum(p.center, 0)}</td>
               <td>{fmtNum(p.net, 2)}</td>
               <td>{p.floorDollars !== null ? <PnlCell v={p.floorDollars} /> : "—"}</td>

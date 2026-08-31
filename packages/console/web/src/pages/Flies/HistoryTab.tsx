@@ -4,6 +4,7 @@ import type { TradingMode } from "@console/shared";
 import { useFliesTradeLog, fliesQuery, type FliesFilter } from "../../lib/api";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
+import { structureLabel } from "./structure";
 
 /**
  * The clock time of an entry, read off the stored ISO string rather than through a `Date`.
@@ -288,7 +289,7 @@ export function HistoryTab({
                   <td>{r.symbol}</td>
                   <td className="muted">{r.arm ?? "—"}</td>
                   <td className="muted">{r.entryMode ?? "—"}</td>
-                  <td>{r.kind === "fly" ? "fly" : r.kind === "iron_fly" ? "iron fly" : `short ${r.side}`}</td>
+                  <td>{structureLabel(r.kind, r.side)}</td>
                   <td>{fmtNum(r.center, 0)}</td>
                   <td>{wingWidth(r.wingWidth, r.farWidth)}</td>
                   <td className="muted">{r.window ?? "—"}</td>
