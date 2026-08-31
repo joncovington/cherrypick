@@ -40,6 +40,10 @@ export function CalendarsPage() {
   const loopState =
     data?.today.lastIteration == null ? "no-data" : data.today.lastIteration.ageSeconds < 900 ? "live" : "idle";
 
+  // Open positions whose week is not the one on screen -- see the card below.
+  const thisWeekIds = new Set((data?.currentWeek.positions ?? []).map((p) => p.positionId));
+  const carriedOver = (data?.openPositions ?? []).filter((p) => !thisWeekIds.has(p.positionId));
+
   return (
     <div className="page">
       <div className="page-title-row">
@@ -84,11 +88,18 @@ export function CalendarsPage() {
                 updatedAt={dataUpdatedAt}
               />
 
-              {(data?.openPositions.length ?? 0) > 0 && (
+              {/* Only what "structures this week" does not already show.
+                  The two cards ask different questions -- `week_of = this week` keeps a position
+                  after it closes, `status != closed` keeps it after its week ends -- but for most
+                  of a week those answers are the same rows, and two identical tables read as a bug
+                  rather than as two views. The `path` book is why the second one has to exist at
+                  all: it holds every leg to expiry and its back leg lands the FOLLOWING week, so it
+                  routinely outlives the week that opened it. */}
+              {carriedOver.length > 0 && (
                 <PositionsCard
-                  title="open trades"
-                  positions={data?.openPositions ?? []}
-                  emptyText="nothing open"
+                  title="open trades carried from earlier weeks"
+                  positions={carriedOver}
+                  emptyText="nothing carried"
                   updatedAt={dataUpdatedAt}
                 />
               )}
