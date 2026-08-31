@@ -11,7 +11,6 @@ import type {
   TtWatchlistIndex,
   TtWatchlistPayload,
   TtWatchlistRow,
-  SymbolCardPayload,
   ReviewPayload,
   AdvisorPayload,
   MorningPayload,
@@ -580,13 +579,3 @@ export function useGex(enabled = true, page: PageState = FIRST_PAGE) {
   });
 }
 
-export function useSymbolCard(symbol: string) {
-  const valid = /^[A-Z][A-Z0-9./]{0,9}$/.test(symbol);
-  return useQuery<SymbolCardPayload>({
-    queryKey: ["symbol-card", symbol],
-    queryFn: () => getJson<SymbolCardPayload>(`/api/symbol-card/${encodeURIComponent(symbol)}`),
-    enabled: valid,
-    refetchInterval: 60_000,
-    placeholderData: (prev) => prev,
-  });
-}
