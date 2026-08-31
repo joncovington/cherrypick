@@ -1,4 +1,13 @@
 /**
+ * Option payoff arithmetic — pure, no imports, no I/O.
+ *
+ * **NOT research-only, despite the neighbourhood.** `readers/meic.ts` uses `payoffAt` for the
+ * profit-forest curves, so this file survived the 2026-08-31 retirement of the research/screener
+ * section while its other consumers (the builder, the screener, `/api/payoff`) did not. Deleting it
+ * as part of that cull would have silently emptied MEIC's forest — the page would still render.
+ * `test/payoff-survives.test.ts` pins the dependency.
+ */
+/**
  * Port of scout's analytics/payoff.py: generic leg-list → payoff engine.
  * A Leg is priced per contract (1 contract = 100 shares); quantity is signed
  * (positive long, negative short); price is per share paid to open. An option
