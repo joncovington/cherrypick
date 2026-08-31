@@ -26,21 +26,28 @@ function seed(dir: string): void {
   db.exec(`
     CREATE TABLE fly_positions (
       id INTEGER PRIMARY KEY, trade_date TEXT, entry_time TEXT, symbol TEXT, arm TEXT,
-      entry_mode TEXT, kind TEXT, side TEXT, center REAL, entry_window TEXT,
+      entry_mode TEXT, kind TEXT, side TEXT, center REAL, wing_width REAL, far_width REAL,
+      entry_window TEXT,
       net REAL, fees REAL, pnl REAL, gross_pnl REAL, completion_latency_min REAL, pinned INTEGER,
       status TEXT, void_reason TEXT
     );
   `);
   const ins = db.prepare(
+    // entry_time is a full ISO stamp carrying the market's own offset, exactly as the module
+    // records it -- the reader hands it on verbatim so the clock time is read off the string
+    // rather than through a Date that would restate it in the viewer's timezone.
     `INSERT INTO fly_positions (trade_date, entry_time, symbol, arm, entry_mode, kind, side,
-       center, entry_window, net, fees, pnl, gross_pnl, completion_latency_min, pinned, status,
-       void_reason)
-     VALUES (?, '10:00', ?, ?, 'legged', 'fly', 'put', 6000, 'am', 1.0, 0.5, ?, ?, 5, 0, 'settled',
-             NULL)`,
+       center, wing_width, far_width, entry_window, net, fees, pnl, gross_pnl,
+       completion_latency_min, pinned, status, void_reason)
+     VALUES (?, ? || 'T10:00:00-04:00', ?, ?, 'legged', 'fly', 'put', 6000, 5, NULL, 'am',
+             1.0, 0.5, ?, ?, 5, 0, 'settled', NULL)`,
   );
   // Two arms, and 2026-08-24 carries two trades so trades != sessions.
-  DAYS.forEach((d, i) => ins.run(d, SYM, "control", i + 1, i + 1.5));
-  ins.run("2026-08-24", SYM, "width-5", 10, 10.5);
+  DAYS.forEach((d, i) => ins.run(d, d, SYM, "control", i + 1, i + 1.5));
+  ins.run("2026-08-24", "2026-08-24", SYM, "width-5", 10, 10.5);
+  // The width-5 row carries a BROKEN wing, so the near/far pair is exercised without adding a row
+  // the surrounding count assertions would have to be retuned for.
+  db.prepare("UPDATE fly_positions SET far_width = 10 WHERE arm = 'width-5'").run();
   db.close();
 }
 
@@ -154,5 +161,28 @@ describe("the log's totals", () => {
     const r = log({ from: "2026-08-25", to: "2026-08-20" });
     expect(r.total).toBe(0);
     expect(r.totals).toEqual({ trades: 0, sessions: 0, netPnl: 0, grossPnl: 0, fees: 0 });
+  });
+});
+
+describe("the geometry and clock a row carries", () => {
+  it("hands the entry stamp on verbatim, offset and all", () => {
+    // Deliberately the stored string rather than a parsed time: it carries the market's own offset,
+    // and re-rendering it through a Date would restate a 10:00 SPX entry in the viewer's timezone --
+    // a session-relative fact reported in a session that never happened.
+    expect(days().rows[0]?.entryTime).toBe("2026-08-25T10:00:00-04:00");
+  });
+
+  it("reports the wing width, and leaves the far side null when the wing is symmetric", () => {
+    const r = days().rows[0];
+    expect(r?.wingWidth).toBe(5);
+    expect(r?.farWidth).toBeNull();
+  });
+
+  it("keeps a broken wing's two widths apart", () => {
+    // The asymmetry IS the trade in a broken wing; collapsing the pair to one number would describe
+    // a 5/10 as a 5-point fly, which is a different structure with a different risk profile.
+    const r = log({ arm: "width-5" }).rows[0];
+    expect(r?.wingWidth).toBe(5);
+    expect(r?.farWidth).toBe(10);
   });
 });
