@@ -972,6 +972,12 @@ export interface BwbOpenPosition {
   /** Latest usable close-cost mark. Null means no usable mark yet -- never render it as 0. */
   currentCloseCost: number | null;
   currentSpot: number | null;
+  entrySession: string;
+  /** Mark-to-market, module convention: gross is mid-priced and cost-free, net is gross - fees. */
+  unrealisedGross: number | null;
+  unrealisedNet: number | null;
+  /** Costs INCURRED so far (entry + any add-on entry). The settlement fee is not in it yet. */
+  feesToDate: number | null;
 }
 
 /** Per-book, per-symbol results over CLOSED positions -- `analytics.headline()`. */

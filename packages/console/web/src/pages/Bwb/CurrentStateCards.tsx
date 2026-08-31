@@ -14,19 +14,34 @@ function strikeSet(near: number | null, body: number | null, far: number | null)
  * Close cost against the entry credit -- never $0.00 for an unmarked position, "no usable mark" and
  * "already at zero cost" are different facts.
  */
-function CloseCostCell({ cost, credit }: { cost: number | null; credit: number | null }) {
-  if (cost === null) {
+/**
+ * Mark-to-market P&L, net of costs incurred so far.
+ *
+ * This replaced a "close cost (% of credit)" cell on 2026-08-31. That percentage was measured
+ * against the ENTRY credit alone, so a position whose add-on had fired showed a wildly worse
+ * number than its identical siblings purely because the add-on's credit was missing from the
+ * denominator -- -1000% against -333% on the same strikes, same spot, same everything. P&L
+ * collapses that to the truth: they are the same trade and they are worth the same.
+ *
+ * The close cost is kept on the title, since "what would it take to get out right now" is a
+ * different and still useful question from "what is it worth".
+ */
+function UnrealisedPnlCell({ p }: { p: BwbOpenPosition }) {
+  if (p.unrealisedNet === null) {
     return (
-      <span className="muted" title="no usable mark recorded yet -- not the same as a zero cost to close">
+      <span className="muted" title="no usable mark recorded yet -- not the same as a zero P&L">
         —
       </span>
     );
   }
-  const pctOfCredit = credit !== null && credit > 0 ? (cost / credit) * 100 : null;
+  const cost = p.currentCloseCost === null ? "" : ` · costs ${fmtMoney(p.currentCloseCost)}/share to close`;
+  const fees = p.feesToDate === null ? "" : ` · ${fmtMoney(p.feesToDate)} fees to date`;
   return (
-    <span>
-      {fmtMoney(cost)}
-      {pctOfCredit !== null && <span className="muted"> ({fmtPct(pctOfCredit, 0)} of credit)</span>}
+    <span
+      className={p.unrealisedNet >= 0 ? "pnl-pos" : "pnl-neg"}
+      title={`gross ${p.unrealisedGross === null ? "—" : fmtMoney(p.unrealisedGross)}${fees}${cost}`}
+    >
+      {fmtMoney(p.unrealisedNet)}
     </span>
   );
 }
@@ -58,10 +73,11 @@ function PositionRows({ rows }: { rows: BwbOpenPosition[] }) {
           <td>{p.book}</td>
           {/* MM-DD, the pmcc precedent — every row here is near-dated, so the year is noise.
               The full date rides the title so it is still recoverable. */}
+          <td title={p.entrySession}>{p.entrySession === "" ? "—" : p.entrySession.slice(5)}</td>
           <td title={p.expiration ?? undefined}>{p.expiration === null ? "—" : p.expiration.slice(5)}</td>
           <td>{strikeSet(p.nearStrike, p.bodyStrike, p.farStrike)}</td>
           <td>
-            <CloseCostCell cost={p.currentCloseCost} credit={p.entryCredit} />
+            <UnrealisedPnlCell p={p} />
           </td>
           <td>{fmtNum(p.currentSpot ?? p.entrySpot, 2)}</td>
           <td>{fmtMoney(p.entryCredit)}</td>
@@ -80,7 +96,7 @@ function PositionRows({ rows }: { rows: BwbOpenPosition[] }) {
 export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefined; updatedAt?: number }) {
   if (data === undefined) return null;
   const empty = data.openPositions.length === 0;
-  const headers = ["symbol", "book", "expiry", "near/body x2/far", "close cost", "spot", "credit", "peak |delta|", "below flip", "add-on"];
+  const headers = ["symbol", "book", "entry", "expiry", "near/body x2/far", "P&L (net of costs to date)", "spot", "credit", "peak |delta|", "below flip", "add-on"];
   if (empty) {
     return (
       <DataCard
@@ -88,7 +104,7 @@ export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefin
         headers={headers}
         loading={false}
         rowCount={0}
-        numFrom={4}
+        numFrom={5}
         empty="no open trades -- the daily ladder accumulates one BWB per book per session"
         updatedAt={updatedAt}
       >
@@ -101,16 +117,18 @@ export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefin
   // ladder runs one BWB per book per session, so the interesting comparison is across books, which
   // a per-symbol split puts in separate cards the moment a second symbol exists. Symbol and expiry
   // moved onto the row instead, where they identify the trade rather than the container.
+  // Newest entry first: the ladder adds one BWB per book per session, so the top of this table is
+  // what today put on. Symbol and book only break ties within a session.
   const rows = [...data.openPositions].sort(
     (a, b) =>
+      b.entrySession.localeCompare(a.entrySession) ||
       a.symbol.localeCompare(b.symbol) ||
-      (a.expiration ?? "").localeCompare(b.expiration ?? "") ||
       a.book.localeCompare(b.book),
   );
   return (
     <Card title="open trades" collapseKey="bwb-open-trades" updatedAt={updatedAt}>
       <div className="table-scroll">
-        <table className="data-table num-from-4">
+        <table className="data-table num-from-5">
           <thead>
             <tr>
               {headers.map((h) => (
