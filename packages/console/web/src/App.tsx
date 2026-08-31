@@ -11,13 +11,7 @@ import { BwbPage } from "./pages/Bwb/BwbPage";
 import { CalendarsPage } from "./pages/Calendars/CalendarsPage";
 import { EarningsPage } from "./pages/Earnings/EarningsPage";
 import { GexPage } from "./pages/Gex/GexPage";
-import { WatchlistPage } from "./pages/Scout/WatchlistPage";
-import { SymbolPage } from "./pages/Scout/SymbolPage";
-import { BuilderPage } from "./pages/Scout/BuilderPage";
-import { OrdersPage } from "./pages/Scout/OrdersPage";
-import { ScreenerPage } from "./pages/Scout/ScreenerPage";
 import { ConfigPage } from "./pages/Config/ConfigPage";
-import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 
 export default function App() {
@@ -44,12 +38,6 @@ export default function App() {
         <Route path="calendars" element={<CalendarsPage />} />
         <Route path="earnings" element={<EarningsPage />} />
         <Route path="gex" element={<GexPage />} />
-        <Route path="scout" element={<WatchlistPage />} />
-        <Route path="scout/symbol/:symbol" element={<SymbolPage />} />
-        <Route path="scout/builder" element={<BuilderPage />} />
-        <Route path="scout/orders" element={<OrdersPage />} />
-        <Route path="scout/screener" element={<ScreenerPage />} />
-        <Route path="scout/*" element={<PlaceholderPage title="Scout" />} />
         <Route path="config" element={<ConfigPage />} />
         {/* Catch-all. Without it an unmatched path renders NOTHING — a blank screen that reads as
             a crashed app, which is what a tab open across a rebuild sees when it asks the old
