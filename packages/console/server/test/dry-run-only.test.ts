@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildOrderSpec } from "../src/services/staging.js";
 
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src");
 
@@ -17,9 +16,16 @@ function allSourceFiles(dir: string): string[] {
 }
 
 /**
- * The console is a research/staging surface, never an order-placement one.
- * Ported from scout's test_dry_run_only.py: source-scan the package for any
- * path to a real order, and pin the single dry-run call site.
+ * The console reads; it never places an order.
+ *
+ * Ported from scout's test_dry_run_only.py, and NARROWED on 2026-08-31 rather than retired with the
+ * research section. Order staging was the console's only path that touched an order at all, and it
+ * went with the builder -- so `postOrderDryRun` now appears in exactly ONE file, the scope probe,
+ * which uses it to ask the broker what the token may do and never to describe a trade.
+ *
+ * The invariant got STRONGER as the surface shrank, which is the reason to narrow this rather than
+ * delete it alongside what it was watching: it now asserts that nothing has grown back. The
+ * order-spec case went with `buildOrderSpec`; there is no longer an order spec to shape.
  */
 describe("dry-run-only invariant", () => {
   const files = allSourceFiles(SRC);
@@ -42,25 +48,10 @@ describe("dry-run-only invariant", () => {
     }
   });
 
-  it("postOrderDryRun appears in exactly two files — staging and the scope probe", () => {
+  it("postOrderDryRun appears in exactly one file — the scope probe", () => {
     const hits = files.filter((f) => contents.get(f)!.includes("postOrderDryRun"));
     expect(hits.map((h) => path.relative(SRC, h).replace(/\\/g, "/")).sort()).toEqual([
       "auth/probe.ts",
-      "services/staging.ts",
     ]);
-  });
-
-  it("order specs are opening-only with signed-quantity actions and per-share net price", () => {
-    const spec = buildOrderSpec([
-      { symbol: "SPXW  260810P07700000", quantity: -1, price: 12.0 },
-      { symbol: "SPXW  260810P07650000", quantity: 1, price: 9.5 },
-    ]);
-    const legs = spec["legs"] as Array<Record<string, unknown>>;
-    expect(legs[0]!["action"]).toBe("Sell to Open");
-    expect(legs[1]!["action"]).toBe("Buy to Open");
-    expect(legs.every((l) => String(l["action"]).endsWith("to Open"))).toBe(true);
-    expect(spec["price"]).toBe(2.5);
-    expect(spec["price-effect"]).toBe("Credit");
-    expect(spec["order-type"]).toBe("Limit");
   });
 });
