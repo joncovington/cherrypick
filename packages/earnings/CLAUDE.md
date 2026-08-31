@@ -108,6 +108,14 @@ Three properties, each of which a simpler design gets wrong:
   unchanged. **Exit continuity is therefore free**: advice stops, no new twins open, and the twins
   already on the book keep being marked, managed and closed under the params they were opened with.
   No twin profile, no orphan handling.
+  **That continuity is only free once the loop actually SEES the twin.** `paper_loop.managed_book`
+  is what decides, and it must strip `advice.ADVISED_PREFIX` before asking whether the book is a
+  strat_test one — `advised:strat_test:iron_condor` is a different book, so the bare
+  `_is_strat_test_book` (the right question for `run_closes`) answered no. From 2026-08-26 to
+  2026-08-31 that filter left every twin unmarked, unevaluated and unclosed — 13 of them, against
+  4,953 marks on the controls beside them — while the choke point above worked exactly as designed
+  and never got called. A change here is invisible from the advice path; the guard is
+  `test_an_advised_twin_is_managed_beside_its_control`.
 
 **v1 bounds are management/exit params only.** Entry-side screens, tiering and sizing change *which*
 trades open, and a twin cannot express that — both books would have to face the same fills to be

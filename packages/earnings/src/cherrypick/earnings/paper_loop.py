@@ -43,6 +43,7 @@ from cherrypick.core import calendar as _calendar
 from cherrypick.core import home as _home
 
 from cherrypick.earnings import (
+    advice,
     costs,
     db_paper,
     management,
@@ -242,9 +243,29 @@ def _ns(**kwargs):
     return argparse.Namespace(**kwargs)
 
 
+def managed_book(profile: str | None) -> bool:
+    """Whether this loop manages the book -- a strat_test book, or an advised twin of one.
+
+    The twin has to be in, and reading `_is_strat_test_book` alone left it out. That predicate
+    answers "is this a strat_test book", which is the right question for `run_closes` and the wrong
+    one here: `advised:strat_test:iron_condor` is a different book, so it answered no, and the loop
+    never saw a single twin. They were opened, and then never marked, never evaluated, never closed
+    -- 13 of them over six days against 4,953 marks on the control beside them.
+
+    The failure was invisible from the design, which is why it lasted: `management.effective_config`
+    really is the one choke point restating a twin's frozen params, and it really is called from
+    `management.evaluate`. But `evaluate` only ever sees what this function returns, so a filter two
+    steps upstream silently decided the advised experiment recorded nothing at all.
+    """
+    base = profile or ""
+    if base.startswith(advice.ADVISED_PREFIX):
+        base = base[len(advice.ADVISED_PREFIX) :]
+    return harness._is_strat_test_book(base)
+
+
 def open_positions() -> list[dict]:
     rows = db_paper.cmd_get_open_positions(_ns())["positions"]
-    return [r for r in rows if harness._is_strat_test_book(r.get("profile"))]
+    return [r for r in rows if managed_book(r.get("profile"))]
 
 
 def refresh_stream_request(positions: list[dict]) -> None:
