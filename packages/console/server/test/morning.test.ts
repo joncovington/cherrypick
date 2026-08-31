@@ -73,7 +73,6 @@ beforeEach(() => {
       calendarsDir: path.join(tmp, "calendars"),
       pmccDir: path.join(tmp, "pmcc"),
       gexDir: path.join(tmp, "gex"),
-      scoutDir: path.join(tmp, "scout"),
       reviewDir: path.join(tmp, "review"),
       overviewDir: path.join(tmp, "overview"),
       advisorDir: path.join(tmp, "advisor"),

@@ -1,11 +1,17 @@
 # console (unified web UI)
 
-The suite's unified reactive web UI: one app covering every module's read models (overview/watchdog,
-MEIC, flies, earnings, PMCC-99, calendars, GEX) plus the research surfaces inherited from the retired scout
-package (watchlist, screener, builder, payoff/POP, staged dry-run tickets). It **replaced** them on 2026-08-12: the suite dashboard, the
-MEIC/flies/GEX dashboards, the earnings strategy dashboard and scout's web app were deleted, and this
-is the suite's only read surface. It still touches none of their code — every module remains a
-producer this package reads. `pre-console-only` is the tag that still has them.
+The suite's unified reactive web UI: one app covering every module's read models — overview/watchdog,
+MEIC, flies, earnings, PMCC-99, calendars, curve, BWB, GEX — plus the advisor and the reports. It
+**replaced** the old surfaces on 2026-08-12: the suite dashboard, the MEIC/flies/GEX dashboards, the
+earnings strategy dashboard and scout's web app were deleted, and this is the suite's only read
+surface. It touches none of their code — every module remains a producer this package reads.
+`pre-console-only` is the tag that still has them.
+
+**The research surfaces are gone too, as of 2026-08-31**: watchlist, screener, builder, payoff/POP
+and the staged dry-run tickets, inherited from scout in the 2026-08-12 port and retired in turn. So
+this is now a read surface for the TRADING MODULES only, and it no longer holds a path that touches
+an order at all — `dry-run-only.test.ts` pins `postOrderDryRun` to the scope probe alone. See
+`docs/parity.md` for what deliberately survived the teardown and why.
 
 **The supervisor keeps this running** as an always-on resident job (`console` in
 `state/supervisor-jobs.json`): no clock window and no trading-day gate, since a read surface you can

@@ -47,7 +47,6 @@ beforeAll(() => {
       orchestratorConfig: path.join(tmp, "c.json"), consoleData: path.join(tmp, "console"),
       meicDir: path.join(tmp, "meic"), fliesDir: path.join(tmp, "flies"),
       earningsDir: path.join(tmp, "earnings"), gexDir: path.join(tmp, "gex"),
-      scoutDir: path.join(tmp, "scout"), reviewDir: path.join(tmp, "review"),
       overviewDir: path.join(tmp, "overview"), advisorDir: path.join(tmp, "advisor"),
       adviceDir: path.join(tmp, "advice"), meicRiskConfig: path.join(tmp, "r.json"),
       fliesConfig: path.join(tmp, "f.json"),
