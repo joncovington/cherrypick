@@ -74,7 +74,7 @@ def wired(tmp_path, monkeypatch):
     return tmp_path
 
 
-def open_trade(order_id="T1", credit=5.00, opened_at=None, expiration="2026-08-21"):
+def open_trade(order_id="T1", credit=5.00, opened_at=None, expiration="2026-08-21", profile="strat_test:iron_fly"):
     db_paper.cmd_save_trade(
         _ns(
             data=json.dumps(
@@ -85,7 +85,7 @@ def open_trade(order_id="T1", credit=5.00, opened_at=None, expiration="2026-08-2
                     "expiration": expiration,
                     "entry_credit": credit,
                     "legs_json": json.dumps(LEGS),
-                    "profile": "strat_test:iron_fly",
+                    "profile": profile,
                     "quantity": 1,
                     "capital_at_risk": 500.0,
                     "opened_at": opened_at
@@ -154,6 +154,38 @@ def test_a_management_tick_records_its_vital_signs(priced):
     assert row["phase"] == "management" and row["status"] == "ok"
     assert row["open_positions"] == 1 and row["marks_written"] == 1
     assert row["open_capital"] == 500.0
+
+
+def test_an_advised_twin_is_managed_beside_its_control(priced):
+    """The twin is a different book (`advised:strat_test:<strategy>`), and the loop must still see it.
+
+    It did not, for six days: `open_positions` filtered on `_is_strat_test_book`, which answers "is
+    this a strat_test book" -- the right question for `run_closes` and the wrong one here -- so every
+    advised twin ever opened was never marked, never evaluated and never closed. 13 of them, against
+    4,953 marks on the controls beside them, and the advised experiment recorded nothing at all.
+
+    The failure was invisible from the design: `management.effective_config` really is the one choke
+    point restating a twin's frozen params, and it really is reached from `management.evaluate`. But
+    `evaluate` only ever sees what `open_positions` returns.
+
+    Verified by restoring the bare `_is_strat_test_book` call and watching the twin go unmarked while
+    its control closed normally.
+    """
+    control = open_trade("T1")
+    twin = open_trade("T2", profile="advised:strat_test:iron_fly")
+    priced(quotes_pricing(3.00))  # past the 25% target for both
+    paper_loop.run_iteration(CONFIG, at("10:00"))
+
+    row = db_paper.cmd_get_iterations(_ns(session_date=None, limit=None))["iterations"][0]
+    assert row["open_positions"] == 2 and row["marks_written"] == 2
+
+    for order_id in (control, twin):
+        events = db_paper.cmd_get_management_events(
+            _ns(order_id=order_id, session_date=None, limit=None)
+        )["events"]
+        assert events, f"{order_id} was never evaluated"
+        assert events[0]["reason"] == "profit_target"
+    assert not db_paper.cmd_get_open_positions(_ns())["positions"], "both should have closed"
 
 
 # --------------------------------------------------------------------------- marking and gating
