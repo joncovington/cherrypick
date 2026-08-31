@@ -4,7 +4,7 @@ import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { Card } from "../../components/DataTable";
 import { LoopPill, TabStrip } from "../../components/ScopeBar";
 import { IntegrityStrip } from "./IntegrityStrip";
-import { BookComparison, RegimeCard, SymbolCards } from "./CurrentStateCards";
+import { BookComparison, RegimeCard, OpenTradesCard } from "./CurrentStateCards";
 import { HistoryTab } from "./HistoryTab";
 import { HelpTab } from "./HelpTab";
 
@@ -68,7 +68,7 @@ export function CurvePage() {
 
             <RegimeCard series={data?.regimeSeries ?? []} today={todayRegime} updatedAt={dataUpdatedAt} />
 
-            {isLoading ? null : <SymbolCards data={data} updatedAt={dataUpdatedAt} />}
+            {isLoading ? null : <OpenTradesCard data={data} updatedAt={dataUpdatedAt} />}
 
             <BookComparison data={data} flipDivergence={data?.flipDivergence} updatedAt={dataUpdatedAt} />
           </div>

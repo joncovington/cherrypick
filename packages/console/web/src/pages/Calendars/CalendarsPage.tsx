@@ -86,7 +86,7 @@ export function CalendarsPage() {
 
               {(data?.openPositions.length ?? 0) > 0 && (
                 <PositionsCard
-                  title="open positions"
+                  title="open trades"
                   positions={data?.openPositions ?? []}
                   emptyText="nothing open"
                   updatedAt={dataUpdatedAt}

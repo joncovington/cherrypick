@@ -1,5 +1,6 @@
 import type { CalendarsPayload, CalendarsPosition } from "@console/shared";
 import { Card, DataCard, fmtMoney, fmtNum, fmtPct, PnlCell } from "../../components/DataTable";
+import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 
 /**
  * The module's own refusal vocabulary, each in one plain sentence.
@@ -242,10 +243,10 @@ export function PositionsCard({
   return (
     <DataCard
       title={title}
-      headers={["book", "side", "debit", "spot at entry", "EM", "front IV", "back IV", "term", "status", "net"]}
+      headers={["symbol", "book", "entry", "expiry (front/back)", "side", "debit", "spot at entry", "EM", "front IV", "back IV", "term", "status", "net"]}
       loading={loading}
       rowCount={positions.length}
-      numFrom={2}
+      numFrom={5}
       empty={emptyText}
       updatedAt={updatedAt}
       footer={
@@ -265,8 +266,17 @@ export function PositionsCard({
     >
       {positions.map((p) => (
         <tr key={p.positionId}>
+          <td>{p.symbol}</td>
           <td>
             <span className="mono">{p.book}</span>
+          </td>
+          <td title={p.entrySession}>{p.entrySession === "" ? "—" : p.entrySession.slice(5)}</td>
+          {/* Both legs: a double calendar's front and back expire on DIFFERENT dates by
+              construction, and naming one would hide the other. */}
+          <td title={`front ${p.frontExpiration} / back ${p.backExpiration}`}>
+            {p.frontExpiration.slice(5)}
+            <span className="muted"> / </span>
+            {p.backExpiration.slice(5)}
           </td>
           <td>
             {sideLabel(p)}
@@ -285,7 +295,20 @@ export function PositionsCard({
             <span className="mono">{p.status}</span>
             {p.exitReason !== null && <span className="muted"> · {p.exitReason}</span>}
           </td>
-          <td>{p.netPnl === null ? <span className="muted">—</span> : <PnlCell v={p.netPnl} />}</td>
+          {/* Realised once the week settles; mark-to-market while it is still open. The two never
+              describe the same moment, so whichever exists is the honest one to show. */}
+          <td>
+            {p.netPnl !== null ? (
+              <PnlCell v={p.netPnl} />
+            ) : (
+              <UnrealisedPnlCell
+                gross={p.unrealisedGross}
+                net={p.unrealisedNet}
+                fees={p.feesToDate}
+                detail="open — mark to market"
+              />
+            )}
+          </td>
         </tr>
       ))}
     </DataCard>

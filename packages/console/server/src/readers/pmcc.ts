@@ -14,6 +14,7 @@ import type {
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { hasColumn, num, obj, readJson, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
+import { unrealisedByPosition, NO_UNREALISED } from "./unrealised.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
 
 /**
@@ -241,6 +242,11 @@ function entrySpreadByPosition(db: DatabaseHandle, ids: string[] | null): Map<st
 function readOpenPositions(db: DatabaseHandle): PmccOpenPosition[] {
   const exposure = exposureByPosition(db);
   const spreads = entrySpreadByPosition(db, null);
+  const pnl = unrealisedByPosition(db, {
+    positionsTable: "pmcc_positions",
+    legsTable: "pmcc_legs",
+    marksTable: "pmcc_marks",
+  });
   const latestMark = db.prepare<[string], Record<string, unknown>>(
     `SELECT short_tv, spot, marked_at FROM pmcc_marks
       WHERE position_id = ? AND short_tv IS NOT NULL AND usable = 1
@@ -278,6 +284,8 @@ function readOpenPositions(db: DatabaseHandle): PmccOpenPosition[] {
         exposedTicks: exp?.exposed ?? 0,
         markedTicks: exp?.marked ?? 0,
         entryMaxSpreadPct: spreads.get(positionId)?.pct ?? null,
+        entrySession: str(p["entry_session"]) ?? "",
+        ...(pnl.get(positionId) ?? NO_UNREALISED),
         entryMaxSpreadAbs: spreads.get(positionId)?.abs ?? null,
       };
     });

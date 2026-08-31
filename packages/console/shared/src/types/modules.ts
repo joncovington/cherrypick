@@ -419,6 +419,12 @@ export interface PmccOpenPosition {
    */
   entryMaxSpreadPct: number | null;
   entryMaxSpreadAbs: number | null;
+  entrySession: string;
+  /** Mark-to-market, module convention: gross is mid-priced and cost-free, net is gross - fees. */
+  unrealisedGross: number | null;
+  unrealisedNet: number | null;
+  /** Costs INCURRED so far. No settlement fee is in it -- settlement has not happened. */
+  feesToDate: number | null;
 }
 
 /** Per-book, per-symbol results over CLOSED positions — `analytics.headline()`. */
@@ -645,6 +651,11 @@ export interface CalendarsPosition {
   /** `gross - fees`. Null if either side is unrecorded — an open week has no net, not a zero one. */
   netPnl: number | null;
   legs: CalendarsLeg[];
+  /** Mark-to-market while open; `grossPnl`/`netPnl` stay null until the week settles. */
+  unrealisedGross: number | null;
+  unrealisedNet: number | null;
+  /** Costs INCURRED so far. No settlement fee is in it -- settlement has not happened. */
+  feesToDate: number | null;
 }
 
 /** Per-book, per-structure results over CLOSED positions — `analytics.headline()`. */
@@ -842,6 +853,12 @@ export interface CurveOpenPosition {
   /** Latest usable close-cost mark. Null means no usable mark yet -- never render it as 0. */
   currentCloseCost: number | null;
   currentSpot: number | null;
+  entrySession: string;
+  /** Mark-to-market, module convention: gross is mid-priced and cost-free, net is gross - fees. */
+  unrealisedGross: number | null;
+  unrealisedNet: number | null;
+  /** Costs INCURRED so far. No settlement fee is in it -- settlement has not happened. */
+  feesToDate: number | null;
 }
 
 /** Per-book, per-symbol results over CLOSED positions -- `analytics.headline()`. */
