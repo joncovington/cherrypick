@@ -48,6 +48,7 @@ from cherrypick.earnings import (
     management,
     provider,
     scanner,
+    settlement,
     stream_request,
     symbol_watch,
 )
@@ -310,9 +311,12 @@ def mark_position(trade: dict, config: dict, now: datetime) -> tuple[dict, int |
         max_quote_age_seconds=policy.get("quote_max_age_seconds"),
         max_spot_age_seconds=policy.get("spot_max_age_seconds"),
     )
-    if not snap.get("ok"):
+    if not snap.get("ok") and snap.get("reason") != "legs_expired":
         # One REST attempt before giving up on the tick: the cache not having a leg is common early
-        # in a name's life, and the broker can always price it.
+        # in a name's life, and the broker can always price it. An expired leg is the exception --
+        # the broker cannot price it either, so retrying costs a subprocess and a DXLink session per
+        # position per tick to be told the same thing, and replaces the honest refusal with a
+        # misleading one. It reads as a quote problem; it is a settlement problem.
         snap = _rest_snapshot(trade)
 
     session = now.date().isoformat()
@@ -392,6 +396,51 @@ def manage(config: dict, now: datetime, *, phase: str, execute: bool) -> dict:
         open_legs = []
         if trade.get("strategy") == "double_calendar":
             open_legs = db_paper.cmd_get_open_legs(_ns(order_id=trade["order_id"])).get("legs", [])
+
+        # A position whose legs have expired cannot be traded out, only settled -- so this runs
+        # AHEAD of the unusable-mark refusal below rather than behind it. Settlement needs no quote,
+        # and the mark it would have waited for is exactly the one that no longer exists. Left
+        # behind that refusal, these positions hold forever: the ledger fills with close decisions
+        # blocked on a spread that cannot narrow, and the trade never records a result at all.
+        settle_reason = settlement.due(trade, now)
+        if settle_reason is not None:
+            settled = settlement.resolve(
+                trade,
+                config,
+                now,
+                max_quote_age_seconds=management.policy_for(
+                    trade.get("strategy") or "", config
+                ).get("quote_max_age_seconds"),
+                rest_snapshot=_rest_snapshot,
+            )
+            gate = None if settled.get("ok") else (settled.get("reason") or "unsettleable")
+            if not gate and not execute:
+                gate = "open_window"
+            if gate:
+                _record_event(
+                    trade, "settle", settle_reason, now, phase,
+                    executed=False, gate=gate, mark_id=mark_id,
+                )
+                continue
+            # No execution cap and no exec window: settling is bookkeeping about something that has
+            # already happened, not an order competing for the broker's attention.
+            result = close_position(trade, settled, settle_reason, config, now)
+            if not result.get("ok"):
+                _record_event(
+                    trade, "settle", settle_reason, now, phase,
+                    executed=False, gate=result.get("error") or "close_failed", mark_id=mark_id,
+                )
+                continue
+            actions += 1
+            closed.append(
+                {"order_id": trade["order_id"], "symbol": trade["symbol"], "reason": settle_reason}
+            )
+            _record_event(
+                trade, "settle", settle_reason, now, phase, executed=True,
+                detail={"source": "settlement", "settled_legs": settled.get("settled_legs")},
+                mark_id=mark_id,
+            )
+            continue
 
         if not snap.get("ok"):
             _record_event(
@@ -696,6 +745,75 @@ def cmd_record_break(args) -> dict:
     )
 
 
+def cmd_settle_expired(args) -> dict:
+    """Settle every open position whose legs have already expired. Dry by default.
+
+    A backfill verb, in the same family as `run_closes`: the loop settles at expiry by itself now,
+    so this exists for the backlog that accumulated BEFORE it could -- positions stranded because
+    the only exit the module had was to trade out of a contract that no longer existed. It is
+    deliberately a separate, human-run verb rather than something a tick does silently, because it
+    resolves trades that have been open for days and every one of them lands in the measurement.
+    """
+    config = scanner._load_config()
+    now = datetime.now(ET)
+    settled, refused = [], []
+    for trade in open_positions():
+        reason = settlement.due(trade, now)
+        if reason is None:
+            continue
+        snap = settlement.resolve(
+            trade,
+            config,
+            now,
+            max_quote_age_seconds=management.policy_for(
+                trade.get("strategy") or "", config
+            ).get("quote_max_age_seconds"),
+            rest_snapshot=_rest_snapshot,
+        )
+        legs = provider.legs_from_trade(trade)
+        debit = scanner.compute_generic_exit_debit(legs, snap["quotes"]) if snap.get("ok") else None
+        if debit is None:
+            refused.append(
+                {
+                    "order_id": trade["order_id"],
+                    "symbol": trade["symbol"],
+                    "strategy": trade["strategy"],
+                    "reason": snap.get("reason") or "exit_debit_unavailable",
+                }
+            )
+            continue
+        row = {
+            "order_id": trade["order_id"],
+            "symbol": trade["symbol"],
+            "strategy": trade["strategy"],
+            "settled_as": reason,
+            "exit_debit": round(debit, 2),
+            "gross_pnl": round(management.unrealized_pnl(trade, debit) * (trade.get("quantity") or 1), 2),
+        }
+        if not args.apply:
+            settled.append(row)
+            continue
+        result = close_position(trade, snap, reason, config, now)
+        if not result.get("ok"):
+            refused.append({**row, "reason": result.get("error") or "close_failed"})
+            continue
+        _record_event(
+            trade, "settle", reason, now, "backfill", executed=True,
+            detail={"source": "settlement", "settled_legs": snap.get("settled_legs")},
+        )
+        settled.append(row)
+    if args.apply and settled:
+        refresh_stream_request(open_positions())
+    return {
+        "applied": bool(args.apply),
+        "settled": len(settled),
+        "refused": len(refused),
+        "gross_pnl": round(sum(r["gross_pnl"] for r in settled), 2),
+        "positions": settled,
+        "not_settled": refused,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Managed earnings paper loop")
     sub = parser.add_subparsers(dest="command")
@@ -709,10 +827,20 @@ def main() -> None:
     p_break.add_argument("--new", default=None)
     p_break.add_argument("--note", default=None)
 
+    p_settle = sub.add_parser("settle-expired")
+    p_settle.add_argument(
+        "--apply", action="store_true", help="write the closes (default is a dry run)"
+    )
+
     parser.add_argument("--once", action="store_true", help="run one tick (the default)")
     args = parser.parse_args()
 
-    dispatch = {"once": cmd_once, "status": cmd_status, "record-break": cmd_record_break}
+    dispatch = {
+        "once": cmd_once,
+        "status": cmd_status,
+        "record-break": cmd_record_break,
+        "settle-expired": cmd_settle_expired,
+    }
     result = dispatch.get(args.command or "once", cmd_once)(args)
     if sys.stdout is not None:
         json.dump(result, sys.stdout, indent=2, default=str)
