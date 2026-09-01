@@ -74,6 +74,16 @@ ARMS = (
     # offset curve is re-cut with `by_regime(bucket_edges=...)` rather than pinned by a new arm.
     "bwb-atm",
     "debit-first-atm",
+    # Centres the shorts at the GEX call wall (2026-08-31, from the gex module's pin study over 23
+    # recorded sessions). NOT a pin bet -- the study killed that reading (the tent captured 2/23) --
+    # but a bound bet: the close finished at or below the morning wall 19-21/23, so the entry is the
+    # OTM call spread whose shorts sit at the wall, and completion (when the market offers it)
+    # manufactures the usual floor. One variable vs control: centring, same discipline as `gex` was
+    # -- and the gex arm's retirement finding ("centres on where price HAS BEEN") is answered rather
+    # than ignored: this arm WANTS a level price has not reached, refuses the session when the wall
+    # is not above spot, and its unknown -- whether an OTM spread at the wall pays enough credit to
+    # clear the gates -- is exactly what the refusal rows will measure.
+    "callwall",
 )
 
 
@@ -156,7 +166,23 @@ def select_center(snapshot: dict, params: dict) -> tuple[float | None, str]:
     if spot is None:
         return None, "no_underlying_price"
 
-    if params.get("center_rule", params.get("arm")) != "gex":
+    rule = params.get("center_rule", params.get("arm"))
+
+    if rule == "call_wall":
+        # The wall IS the thesis, so this rule never degrades to ATM the way `gex` does: an ATM
+        # fallback would trade control's trade under this arm's name, and the comparison the arm
+        # exists for is centring, isolated. No wall, no trade -- recorded as the skip reason.
+        gex = snapshot.get("gex") or {}
+        wall = gex.get("call_wall") if gex.get("ok") else None
+        if wall is None:
+            return None, "gex_unavailable_for_call_wall"
+        # Shorts at or below spot are not a "wall holds" bet -- they are short calls in or at the
+        # money, a directional position the pin study's evidence says nothing about.
+        if float(wall) <= spot:
+            return None, "call_wall_not_above_spot"
+        return float(wall), "call_wall"
+
+    if rule != "gex":
         return atm_strike(spot, increment), "atm"
 
     gex = snapshot.get("gex") or {}
@@ -809,7 +835,12 @@ def evaluate_credit_spread_entry(
         return False, center_reason, None
 
     width = params.get("wing_width", 5)
-    side = choose_side(snapshot, center)
+    # `choose_side` sells the side spot is on the far end of, which for a centre ABOVE spot means
+    # the put spread -- shorts at the wall, in the money, credit mostly intrinsic. That is the
+    # opposite of a call_wall entry: its whole trade is the OTM call spread whose shorts sit at the
+    # wall, winning when the close stays below it. Forced here rather than left to the heuristic,
+    # because the heuristic answers a legging question and this arm's side is part of its thesis.
+    side = CALL if params.get("center_rule") == "call_wall" else choose_side(snapshot, center)
     long_strike = center - width if side == PUT else center + width
     if not _have(snapshot, side, [center, long_strike]):
         return False, "missing_leg_quotes", None
