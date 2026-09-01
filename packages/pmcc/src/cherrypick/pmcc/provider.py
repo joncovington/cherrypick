@@ -209,6 +209,7 @@ def build_mark_snapshot(
         "fresh": 0,
         "stale": 0,
         "max_spread_pct": None,
+        "leg_spreads": [],
     }
     if not legs:
         return {**out, "reason": "no_legs"}
@@ -244,6 +245,12 @@ def build_mark_snapshot(
             if quote["mid"] > 0:
                 spread_pct = (quote["ask"] - quote["bid"]) / quote["mid"]
                 widest = spread_pct if widest is None else max(widest, spread_pct)
+                # Both readings of the same width, PER LEG: a percentage alone cannot tell a
+                # genuinely illiquid leg from a nearly-worthless one (0.00/0.01 is a 200% ratio and
+                # a one-cent width), and the two maxima can sit on different legs.
+                out["leg_spreads"].append(
+                    {"symbol": sym, "pct": round(spread_pct, 4), "abs": round(quote["ask"] - quote["bid"], 4)}
+                )
         out["max_spread_pct"] = round(widest, 4) if widest is not None else None
         out["greeks"] = _greeks(conn, streamer_syms, now_ts=now_ts, max_age_seconds=max_quote_age_seconds * 6)
 

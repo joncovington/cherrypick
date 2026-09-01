@@ -49,6 +49,8 @@ PARAM_DEFAULTS = {
     "entry_window_end": "15:30",
     "exec_window_start": "09:40",
     "max_leg_spread_pct": 0.25,
+    # The floor under the percentage: refuse a leg only when wide in percent AND in money.
+    "max_leg_spread_abs": 0.05,
     "allow_extrinsic_fallback": True,
 }
 
@@ -136,7 +138,27 @@ def execution_gate(mark_snapshot: dict, params: dict, *, now: datetime) -> str |
     exec_start = clock.hhmm_to_min(params.get("exec_window_start"), 9 * 60 + 40)
     if clock.minute_of_day(now) < exec_start:
         return "before_exec_window"
-    widest = mark_snapshot.get("max_spread_pct")
-    if widest is not None and widest > params.get("max_leg_spread_pct", 0.25):
+    if _spread_blocks(mark_snapshot, params):
         return "spread_too_wide"
     return None
+
+
+def _spread_blocks(mark_snapshot: dict, params: dict) -> bool:
+    """Whether any leg is too wide to act on -- wide in PERCENT and in MONEY, both, per leg.
+
+    The zero-bid arithmetic, pre-empted rather than measured here: this module HOLDS its short to
+    the short's own expiration by design (the 2026-08-23 redesign), which is exactly when its quote
+    goes penny-wide -- 0.00/0.01 is a one-cent buyback and, as a ratio, a 200% spread -- so a
+    percentage-only gate would refuse the combined disposal on precisely the day the design says to
+    take it. earnings measured 32 profit-target exits refused this way before its 2026-08-31 fix,
+    and calendars lost a Friday close to it; this gate had not fired yet only because no position
+    under the new design has aged into the state. A leg is refused only when both readings say
+    wide; an older snapshot with no per-leg detail falls back to the percentage alone.
+    """
+    max_pct = params.get("max_leg_spread_pct", 0.25)
+    legs = mark_snapshot.get("leg_spreads")
+    if not legs:
+        widest = mark_snapshot.get("max_spread_pct")
+        return widest is not None and widest > max_pct
+    max_abs = params.get("max_leg_spread_abs", 0.05)
+    return any(leg["pct"] > max_pct and leg["abs"] > max_abs for leg in legs)
