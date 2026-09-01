@@ -102,7 +102,7 @@ verdict with `executed = 0` and the gate that held it, and the next tick reconsi
 |---|---|
 | `before_exec_window` | earlier than `exec_window_start` (09:40) |
 | `open_window` | the tick's phase never acts |
-| `spread_too_wide` | widest leg spread over `max_leg_spread_pct` (0.35 of mid) |
+| `spread_too_wide` | a leg wide in percent (`max_leg_spread_pct`, 0.35 of mid) **and** in money (`max_leg_spread_abs`, $0.05), judged per leg. Percent alone refused the win case — a near-worthless short quotes 0.00/0.01, a one-cent buyback that reads as a 200% spread; before 2026-08-31 that blocked 32 positions' profit-target exits and every one rode to expiry instead |
 | `unusable_mark` | the position could not be priced at all this tick |
 | `tick_execution_cap` | more than `max_executions_per_tick` (3) closes already taken; deferred a minute |
 | `close_failed` | the close itself failed; `close_attempts` is bumped and it becomes `stranded` at 2 |
