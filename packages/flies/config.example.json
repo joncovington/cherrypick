@@ -323,11 +323,10 @@
       "entry_windows": [
         [
           "10:00",
-          "11:00"
+          "14:30"
         ]
       ],
-      "max_positions": 1,
-      "_note": "Shorts at the GEX call wall (added 2026-08-31; origin: the gex module's pin-study over 23 recorded sessions). A BOUND bet, not a pin bet -- the close finished at or below the morning wall 19-21/23 while the tent captured 2/23 -- so the entry is the OTM call credit spread at the wall and the completion manufactures the usual floor. Refuses the session outright when GEX is unavailable or the wall is not above spot (no ATM degrade: the wall IS the thesis). One entry per session in the 10:00-11:00 window -- the study's open reading is 09:30+30min, but the module's own opening blackout exists for quote quality, so entry waits for it; the wall is read fresh at entry. The open question this arm exists to answer is CREDIT: the study proved the geometry survives (floor+profit 19/23 at 5-pt wings) but could not price an entry, so min_credit_pct_of_width refusals here are the measurement, not noise."
+      "_note": "Shorts at the GEX call wall (added 2026-08-31; origin: the gex module's pin-study over 23 recorded sessions). A BOUND bet, not a pin bet -- the close finished at or below the morning wall 19-21/23 while the tent captured 2/23 -- so the entry is the OTM call credit spread at the wall and the completion manufactures the usual floor. Refuses the session outright when GEX is unavailable or the wall is not above spot (no ATM degrade: the wall IS the thesis). Window and caps are CONTROL'S OWN, because this arm differs from control in exactly one thing -- centring -- and the wall is read fresh at each entry, so a mid-afternoon entry measures the afternoon wall rather than a stale morning one. The open question this arm exists to answer is CREDIT: the study proved the geometry survives (floor+profit 19/23 at 5-pt wings) but could not price an entry, so min_credit_pct_of_width refusals here are the measurement, not noise."
     }
   },
   "advice_header": "===== AI advisor (paper only) =====",
