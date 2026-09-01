@@ -56,6 +56,7 @@ Suite-wide context lives in the root [documentation index](../../docs/README.md)
 python run.py stream --symbol SPX    # run the streamer -> own data/stream_cache.db (standalone mode)
 python run.py record                 # always-on spot-trail recorder (run alongside the streamer; --once/--interval)
 python run.py gex --symbol SPX --json # one-shot payload to the terminal
+python run.py pin-study [--json]     # which recorded level the close settled nearest, over stored history
 # To look at it: the console's GEX page, http://127.0.0.1:5070/gex
 python -m pytest                     # tests seed a temp cache; no streamer required
 ruff check . && ruff format .        # line-length 110
@@ -76,7 +77,16 @@ config file's directory — never hardcode absolute paths.
   → chart payload (reads the spot trail **read-only**). The pure, HTTP-free seam. `record_spots(cfg)`
   samples **every** offered symbol's spot into this module's **own** SQLite (`history_db`) so a trail has
   no gap when the viewer switches symbols; `run_recorder(cfg)` is the always-on loop (`run.py record`).
-- **`cherrypick/gex/cli.py` + `run.py`** — the CLI: `gex` (one-shot payload), `stream`, `record`.
+- **`cherrypick/gex/cli.py` + `run.py`** — the CLI: `gex` (one-shot payload), `stream`, `record`,
+  `pin-study` (below).
+- **`cherrypick/gex/pin_study.py`** — a read-side study over this module's own history: which
+  recorded level (call wall / zero gamma / put wall) each session's close settled nearest, per
+  regime, for both the session's own first RTH reading and the prior session's final one. Exists to
+  answer level-pinning strategy claims from recorded data before any module grows an entry rule;
+  read-only, RTH-gated the hard way (calendar-date equality, not hours alone — this history has
+  crossed midnight mid-session once), and expired-chain rows are excluded by `core.regime`'s own
+  forward-only rule. It reports skipped sessions with reasons and carries n everywhere; it draws no
+  conclusion by itself.
   Nothing here is an integration point any more — the console reads this module's **data**, not its
   commands, which is why deleting the serving layer changed no consumer.
 - **`cherrypick.core`** — an installed dependency (`packages/core` in this monorepo, `pip install -e
