@@ -63,6 +63,11 @@ def _cmd_pin_study(cfg: dict, args: argparse.Namespace) -> int:
         print(f"  by regime        : {summary['winners_by_regime']}")
         print(f"  median |close-level| : {summary['median_close_distance']}")
         print(f"  median |open-level|  : {summary['median_open_distance']}")
+        ic = summary["ic"]
+        print(f"  IC shorts at the walls : {ic['outcomes']}  median breach {ic['median_breach_points']}")
+        print("  bwb (5/10) zones:")
+        for key, zones in summary["bwb_zones"].items():
+            print(f"    {key:22s} {zones}")
     return 0
 
 

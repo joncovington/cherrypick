@@ -149,3 +149,36 @@ def test_a_session_without_a_close_is_skipped_with_the_reason_never_silently(db)
     assert result["scored"] == 3  # Mon (no prior), Tue, Wed
     mon = by_date(result, MON)
     assert "prior_final" not in mon  # nothing on file before it
+
+
+def test_bwb_zones_walk_the_payoff_from_the_safe_side_in():
+    """A put bwb at 6400 (5/10): floor at/above 6405, tent inside, risk below 6395, flat below 6390.
+    Boundary closes land where the payoff arithmetic puts them -- the near wing is worth exactly
+    zero, so a close ON it is the floor, and the far wing is the last point of the risk zone."""
+    K = 6400.0
+    assert pin_study.bwb_zone(K + 5, K, "put") == "floor"
+    assert pin_study.bwb_zone(K + 4.9, K, "put") == "profit"
+    assert pin_study.bwb_zone(K, K, "put") == "profit"
+    assert pin_study.bwb_zone(K - 4.9, K, "put") == "profit"
+    assert pin_study.bwb_zone(K - 5, K, "put") == "risk"
+    assert pin_study.bwb_zone(K - 10, K, "put") == "risk"
+    assert pin_study.bwb_zone(K - 10.1, K, "put") == "max_loss"
+
+
+def test_a_call_bwb_is_the_exact_mirror():
+    """Same structure reflected: risk ABOVE the body. A transposed sign here would score the wall
+    trade as safe on precisely the days the wall failed."""
+    K = 6500.0
+    assert pin_study.bwb_zone(K - 5, K, "call") == "floor"
+    assert pin_study.bwb_zone(K, K, "call") == "profit"
+    assert pin_study.bwb_zone(K + 5, K, "call") == "risk"
+    assert pin_study.bwb_zone(K + 10.1, K, "call") == "max_loss"
+
+
+def test_the_ic_wins_inside_the_walls_and_names_the_breached_side():
+    assert pin_study.ic_outcome(6450, 6500, 6400) == {"outcome": "inside", "breach_points": 0.0}
+    assert pin_study.ic_outcome(6512, 6500, 6400) == {"outcome": "call_breach", "breach_points": 12.0}
+    assert pin_study.ic_outcome(6380, 6500, 6400) == {"outcome": "put_breach", "breach_points": 20.0}
+    # A missing wall is no structure; an inverted pair could not be built and is refused, not scored.
+    assert pin_study.ic_outcome(6450, None, 6400) is None
+    assert pin_study.ic_outcome(6450, 6400, 6500)["outcome"] == "inverted_walls"

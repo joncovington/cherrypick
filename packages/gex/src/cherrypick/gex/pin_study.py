@@ -38,6 +38,15 @@ Honesty rules, the module's own:
   "level" off a dead chain is not a level anyone could have traded.
 * **The sample is what it is.** This history starts 2026-07-29. The output carries n everywhere
   and draws no conclusion by itself.
+
+The structure scoring is GEOMETRY, not P&L. No historical option chain is on file, so a
+hypothetical entry at these levels cannot be priced -- what CAN be scored exactly is where the
+close landed in each structure's payoff shape. The bwb zones use the bwb module's own default
+geometry (near wing one $5 increment toward spot, far wing two below -- a 5/10 broken wing), with
+the wing facing AWAY from the risk the level is supposed to bound: call-side at the call wall,
+put-side at the put wall, and both sides at the flip, which bounds nothing by itself. The iron
+condor is the classic GEX placement, shorts at the two walls; "inside" means the close finished
+between them, which is the whole win condition whatever the wings cost.
 """
 
 from __future__ import annotations
@@ -106,6 +115,7 @@ def _score(reading: sqlite3.Row, close: float, open_spot: float | None) -> dict:
         winner = nearest[0] if len(nearest) == 1 else "tie"
     return {
         "levels": {level: reading[level] for level in LEVELS},
+        "structures": _score_structures(reading, close),
         "distance_to_close": distances,
         "winner": winner,
         "net_gex": reading["net_gex"],
@@ -116,6 +126,71 @@ def _score(reading: sqlite3.Row, close: float, open_spot: float | None) -> dict:
             level: None if reading[level] is None else round(abs(open_spot - reading[level]), 2)
             for level in LEVELS
         },
+    }
+
+
+# The bwb module's own default geometry, in points: near wing one $5 increment toward spot, far
+# wing two increments away. A different sweep arm would shift the boundaries, not the shape.
+BWB_NEAR = 5.0
+BWB_FAR = 10.0
+
+
+def bwb_zone(close: float, body: float, side: str) -> str:
+    """Where the close landed in a 5/10 broken-wing butterfly's expiry payoff, body at ``body``.
+
+    Four zones, from the safe side inward: ``floor`` (past the near wing on the protected side --
+    the zero-floor region where a net-credit entry keeps its credit), ``profit`` (inside the tent,
+    positive intrinsic, peak at the body), ``risk`` (between breakeven-side wing and the far wing,
+    increasingly negative), ``max_loss`` (beyond the far wing, flat at the full width difference).
+    ``side`` names which way the wings face: a put bwb's risk is BELOW the body, a call bwb's above.
+    """
+    offset = close - body if side == "call" else body - close
+    # offset > 0 means the close moved toward the RISK side of the body.
+    if offset <= -BWB_NEAR:
+        return "floor"
+    if offset < BWB_NEAR:
+        return "profit"
+    if offset <= BWB_FAR:
+        return "risk"
+    return "max_loss"
+
+
+def ic_outcome(close: float, call_wall: float | None, put_wall: float | None) -> dict | None:
+    """An iron condor with shorts at the two walls: inside keeps the credit, a breach pays it back.
+
+    Returns None when either wall is missing, and refuses an inverted pair (put wall at or above
+    the call wall) rather than scoring a structure that could not be built.
+    """
+    if call_wall is None or put_wall is None:
+        return None
+    if put_wall >= call_wall:
+        return {"outcome": "inverted_walls", "breach_points": None}
+    if close > call_wall:
+        return {"outcome": "call_breach", "breach_points": round(close - call_wall, 2)}
+    if close < put_wall:
+        return {"outcome": "put_breach", "breach_points": round(put_wall - close, 2)}
+    return {"outcome": "inside", "breach_points": 0.0}
+
+
+# Which bwb placements are scored, and which way each one's wings face. The wall placements face
+# their risk INTO the wall failing -- that is the trade's thesis -- and the flip is scored both
+# ways because it bounds nothing by itself.
+BWB_PLACEMENTS = (
+    ("call_wall", "call"),
+    ("zero_gamma", "call"),
+    ("zero_gamma", "put"),
+    ("put_wall", "put"),
+)
+
+
+def _score_structures(reading: sqlite3.Row, close: float) -> dict:
+    bwb = {}
+    for level, side in BWB_PLACEMENTS:
+        body = reading[level]
+        bwb[f"{level}:{side}"] = None if body is None else bwb_zone(close, body, side)
+    return {
+        "bwb": bwb,
+        "ic": ic_outcome(close, reading["call_wall"], reading["put_wall"]),
     }
 
 
@@ -197,9 +272,24 @@ def _summarise(sessions: list[dict], variant: str) -> dict:
             spans = v.get("open_spot_to_level")
             if spans and spans[level] is not None:
                 reach[level].append(spans[level])
+    bwb_zones: dict[str, dict[str, int]] = {f"{lv}:{sd}": {} for lv, sd in BWB_PLACEMENTS}
+    ic_counts: dict[str, int] = {}
+    breaches: list[float] = []
+    for s in scored:
+        v = s[variant]
+        for key, zone in v["structures"]["bwb"].items():
+            if zone is not None:
+                bwb_zones[key][zone] = bwb_zones[key].get(zone, 0) + 1
+        ic = v["structures"]["ic"]
+        if ic is not None:
+            ic_counts[ic["outcome"]] = ic_counts.get(ic["outcome"], 0) + 1
+            if ic["breach_points"]:
+                breaches.append(ic["breach_points"])
     return {
         "n": len(scored),
         "winners": winners,
+        "bwb_zones": bwb_zones,
+        "ic": {"outcomes": ic_counts, "median_breach_points": round(median(breaches), 2) if breaches else None},
         "winners_by_regime": by_regime,
         "median_close_distance": {k: (round(median(v), 2) if v else None) for k, v in dist.items()},
         "median_open_distance": {k: (round(median(v), 2) if v else None) for k, v in reach.items()},
