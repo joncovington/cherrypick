@@ -1,8 +1,9 @@
 """cherrypick-gex CLI.
 
-  gex     one-shot GEX payload for a symbol. `--json` prints the raw payload; otherwise a summary.
-  stream  run the streamer to populate this module's own cache.
-  record  the always-on spot-trail recorder.
+  gex        one-shot GEX payload for a symbol. `--json` prints the raw payload; otherwise a summary.
+  stream     run the streamer to populate this module's own cache.
+  record     the always-on spot-trail recorder.
+  pin-study  which recorded level the close settled nearest, over stored history. Read-only.
 
 The read surface for GEX is the console (packages/console) — this module computes and records; it
 does not serve.
@@ -42,6 +43,29 @@ def _cmd_stream(cfg: dict, args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_pin_study(cfg: dict, args: argparse.Namespace) -> int:
+    from cherrypick.gex import pin_study as _pin_study
+
+    result = _pin_study.pin_study(
+        cfg["history_db_path"], symbol=args.symbol, open_window_minutes=args.open_window
+    )
+    if args.json:
+        print(json.dumps(result, indent=2))
+        return 0
+    print(
+        f"{result['symbol']}  sessions on file {result['sessions_on_file']}, "
+        f"scored {result['scored']}, skipped {len(result['skipped'])}"
+    )
+    for variant in ("open", "prior_final"):
+        summary = result["summary"][variant]
+        print(f"\n{variant} (n={summary['n']}):")
+        print(f"  nearest to close : {summary['winners']}")
+        print(f"  by regime        : {summary['winners_by_regime']}")
+        print(f"  median |close-level| : {summary['median_close_distance']}")
+        print(f"  median |open-level|  : {summary['median_open_distance']}")
+    return 0
+
+
 def _cmd_record(cfg: dict, args: argparse.Namespace) -> int:
     if args.status:
         print(json.dumps(_service.recorder_status(cfg)))
@@ -76,8 +100,17 @@ def main(argv: list[str] | None = None) -> int:
     rec.add_argument("--status", action="store_true", help="print {running,pid} JSON and exit")
     rec.add_argument("--stop", action="store_true", help="stop a running recorder daemon")
 
+    ps = sub.add_parser("pin-study", help="which recorded level the close settled nearest (read-only)")
+    ps.add_argument("--symbol", default="SPX")
+    ps.add_argument("--open-window", type=int, default=30, help="minutes after 09:30 for the open reading")
+    ps.add_argument("--json", action="store_true", help="emit the full result as JSON")
+
     args = parser.parse_args(argv)
     cfg = _config.load()
+    if args.command == "pin-study":
+        # A read over stored history needs nothing streamed; registering would grow the shared
+        # producer's symbol union as a side effect of running a study.
+        return _cmd_pin_study(cfg, args)
     # Tell the streamer which underlyings we need kept fresh in the shared cache (best-effort).
     _stream_request.register(cfg)
     if args.command == "gex":
