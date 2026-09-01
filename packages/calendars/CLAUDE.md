@@ -156,6 +156,7 @@ python -m cherrypick.calendars.paper_loop --settle --date 2026-08-21 --price 654
 python run.py status                                    # open positions + the current week plan
 python run.py policies                                  # the derived exit-policy table + its validation
 python run.py validate                                  # the validation alone
+python run.py record-break --key K --date D [--old X] [--new Y] [--note N]  # journal a break
 python -m pytest                                        # temp CHERRYPICK_HOME; no broker, no streamer needed
 ruff check . && ruff format .                           # line-length 110
 ```
@@ -182,6 +183,20 @@ keys before changing a value.
    in the record (`dc_marks.usable = 0` with the refusal; `dc_snapshots` for the feed ledger).
 7. **The policy table travels with its validation.** No surface shows the ranking without the
    reason to believe it.
+8. **A spread is judged in money as well as in percent, and per leg.** The execution gate refuses a
+   leg only when it is wide on BOTH readings (`max_leg_spread_pct` and `max_leg_spread_abs`). A
+   percentage alone is the wrong instrument on the way out, where the winning case is a short that
+   has gone almost worthless: `bid 0.00 / ask 0.01` is a one-cent buyback and, as a ratio, exactly
+   a 200% spread. On 2026-08-28 that refused the control put's scheduled Friday close on all thirty
+   ticks of its window while the call side closed normally at 0.222 — the position missed its exit,
+   its front expired instead, the longs went Monday under `long_disposition`, and the result differed
+   from the replay by $1.30. curve reached the same rule from the entry side
+   (`_wing_spread_blocks`); it exempts the short leg there, because at entry the short's premium is
+   the whole credit and paying up is what the gate exists to prevent. That exception is entry-only:
+   on exit every leg is being closed and a penny is a penny. **Journaled as
+   `exit_gate_absolute_spread_floor`** — weeks before it are reported by `validate` under
+   `pre_break` rather than as mismatches, because the replay models a policy the gate was not yet
+   letting the book follow.
 
 ## Data source and the two expirations
 

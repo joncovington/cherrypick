@@ -181,6 +181,7 @@ def build_mark_snapshot(
         "fresh": 0,
         "stale": 0,
         "max_spread_pct": None,
+        "leg_spreads": [],
     }
     if not legs:
         return {**out, "reason": "no_legs"}
@@ -216,6 +217,18 @@ def build_mark_snapshot(
             if quote["mid"] > 0:
                 spread_pct = (quote["ask"] - quote["bid"]) / quote["mid"]
                 widest = spread_pct if widest is None else max(widest, spread_pct)
+                # Both readings of the same width, per leg. A percentage alone cannot tell a
+                # genuinely illiquid leg from a nearly-worthless one: a 0.00/0.01 quote is a 200%
+                # spread and a one-cent cost. The gate needs both to tell those apart, and it needs
+                # them PER LEG -- the widest-by-percent and the widest-by-money can be different
+                # legs, so two separate maxima would refuse a structure neither leg justifies.
+                out["leg_spreads"].append(
+                    {
+                        "symbol": sym,
+                        "pct": round(spread_pct, 4),
+                        "abs": round(quote["ask"] - quote["bid"], 4),
+                    }
+                )
         out["max_spread_pct"] = round(widest, 4) if widest is not None else None
         out["greeks"] = _greeks(conn, streamer_syms, now_ts=now_ts, max_age_seconds=max_quote_age_seconds * 6)
 
