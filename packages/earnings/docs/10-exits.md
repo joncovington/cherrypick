@@ -69,10 +69,16 @@ harder class of bug.
 
 ## What closes a position
 
-Checked in this order. The pin guard is first because it is about an outcome nothing else prices; the
-strategy's own verdict is next because it owns every threshold; the last two only ever turn a *hold*
-into a *close*, never the reverse.
+Checked in this order. Settlement comes before everything because it is the one case with no market
+to consult; the pin guard is next because it is about an outcome nothing else prices; the strategy's
+own verdict follows because it owns every threshold; the last two only ever turn a *hold* into a
+*close*, never the reverse.
 
+0. **Settlement** — any leg whose last trading day has passed. There is nothing to trade out of, so
+   the position is resolved at **intrinsic against the expiration day's own settlement close**,
+   read from the local `stocks.ohlcv` history rather than a quote. Reason `expired` when every leg
+   has gone, `front_expiry` when only a calendar's front month has and the back is closed at its own
+   real market. See *Settlement* below.
 1. **Pin guard** — any **short** strike within `pin_guard_dollars` (1.00) of spot inside the last
    `pin_guard_window_minutes` (60) of its expiration day. Fires on *proximity*, not on being in the
    money: assignment is decided by the settlement print, which has not happened yet. Reason `pin_risk`.
@@ -96,10 +102,14 @@ verdict with `executed = 0` and the gate that held it, and the next tick reconsi
 |---|---|
 | `before_exec_window` | earlier than `exec_window_start` (09:40) |
 | `open_window` | the tick's phase never acts |
-| `spread_too_wide` | widest leg spread over `max_leg_spread_pct` (0.35 of mid) |
+| `spread_too_wide` | a leg wide in percent (`max_leg_spread_pct`, 0.35 of mid) **and** in money (`max_leg_spread_abs`, $0.05), judged per leg. Percent alone refused the win case — a near-worthless short quotes 0.00/0.01, a one-cent buyback that reads as a 200% spread; before 2026-08-31 that blocked 32 positions' profit-target exits and every one rode to expiry instead |
 | `unusable_mark` | the position could not be priced at all this tick |
 | `tick_execution_cap` | more than `max_executions_per_tick` (3) closes already taken; deferred a minute |
 | `close_failed` | the close itself failed; `close_attempts` is bumped and it becomes `stranded` at 2 |
+
+**Settlement is not gated by any of these**, and that is the point of it being step 0. An expired
+contract quotes a zero bid against a stale ask, which is a 200% spread against a 0.35 policy, so a
+settlement routed through `spread_too_wide` would be refused on every tick forever.
 
 Any close decided on **cached** quotes is re-priced through the broker before it is recorded. The
 decision is the cache's; the price on the ledger should be one we could actually have traded.
@@ -111,7 +121,8 @@ Every close records one, on the trade itself (`trades.exit_reason`). Before this
 identify a position held across several sessions at all.
 
 `profit_target` · `stop_loss` · `pead_loser` · `max_hold` · `pin_risk` · `leg_stop_delta` ·
-`time_exit` · `iv_crush_backstop` · `close_window` · `legacy_next_morning` (every pre-cutover exit).
+`time_exit` · `iv_crush_backstop` · `close_window` · `expired` · `front_expiry` ·
+`legacy_next_morning` (every pre-cutover exit).
 
 ### The same-session backstop, and why it no longer binds
 
@@ -121,6 +132,64 @@ would fire on **every** position before any management rule was reached — mult
 unreachable while appearing to work. The management layer therefore injects a value past any hold it
 could preempt. Lowering `management.exit_after_announcement_minutes` re-enables the old behavior; the
 top-level key still applies to the agent-driven loop, which has no session cap of its own.
+
+## Settlement
+
+> **Measurement break, 2026-08-31.** Positions that expire now record a result instead of hanging
+> open. Recorded as an `expiry_settlement` row in `measurement_breaks`.
+
+Every rule above assumes a market: read a mark, compare it to a threshold, close by trading out.
+That assumption fails the morning after expiration, and until 2026-08-31 nothing noticed.
+
+An expired contract does not stop quoting. The feed keeps answering with a zero bid against a stale
+ask, which prices out as a usable-looking mark with a plausible mid and a 200% spread. So the
+position marked fine, the engine decided to close it, and `spread_too_wide` refused the close — every
+tick, on a spread that could never narrow, because there was nothing left to trade. `close_attempts`
+never reached 1. Positions did not fail to close; they never got as far as trying.
+
+The first expiration to run entirely under the 2026-08-12 managed lifecycle was 2026-08-28, and it
+stranded **59 positions** across all six strategies. Every prior expiration had cleared completely,
+because the pre-cutover design force-closed everything the next morning (`legacy_next_morning`,
+64 of the 83 closes on file) whether or not it could be priced sensibly. Retiring that sweep removed
+the only thing that had been resolving expiries, and nothing replaced it. `front_expiry` had been
+named in the schema since before the cutover and never had a producer.
+
+**What an expired option is worth is not a quote.** It is intrinsic against the settlement print — a
+number with no bid-ask width, no slippage, and no dependence on anyone still making a market. That
+comes from the same local `stocks.ohlcv` history the scanner already reads for winrate work, so
+settlement is a deterministic local lookup rather than a network call: the same answer next week as
+today, which is the only kind worth putting in a ledger. It must be the expiration day's **own**
+close; `_nearest_close` will walk back up to ten days, and a close from three days earlier is a
+fabricated print, so a non-exact match refuses rather than guesses.
+
+Two shapes arrive, and they are different trades:
+
+| Shape | Reason | How it resolves |
+|---|---|---|
+| Every leg expired — the credit structures | `expired` | All legs share one expiration, so the whole position settles at intrinsic. |
+| Only the front expired — the calendars | `front_expiry` | Front at intrinsic; the back month, which outlives it by weeks, is closed at its own real market. |
+
+**No share delivery is modelled, and does not need to be.** These are defined-risk verticals in one
+expiration: an assigned short and an exercised long net to the cash difference between the strikes,
+which is what intrinsic already says. That is why earnings is tractable where `pmcc`'s assignment
+problem was not. The calendars avoid it by ending at front expiry rather than carrying a naked back
+leg — which is what the structure's own thesis does anyway.
+
+Settlement reaches the ledger through `scanner.compute_generic_exit_debit`, the same function every
+other close uses. A settlement priced by a better formula would be a second measurement wearing the
+same column name. The zero-width quotes also make the cost model come out right on their own: no
+spread means no slippage haircut, and the fee stack reduces to the clearing and regulatory
+pass-throughs an expiring contract really does incur.
+
+The loop settles at expiry by itself now. For a backlog that accumulated before it could:
+
+```bash
+python -m cherrypick.earnings.paper_loop settle-expired          # dry run, prints what it would do
+python -m cherrypick.earnings.paper_loop settle-expired --apply  # write the closes
+```
+
+Deliberately a human-run verb rather than something a tick does silently: it resolves trades that
+have been open for days, and every one of them lands in the measurement.
 
 ## Thresholds, per strategy
 

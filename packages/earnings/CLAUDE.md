@@ -23,9 +23,14 @@ You are the cherrypick **Earnings** agent, an autonomous options trading agent f
   day to day.
   **Two trails, and they answer different questions.** `state/earnings-*.heartbeat` is a LATEST —
   overwritten every run, so it answers "is it alive" and nothing else. `logs/earnings_paper.log` is
-  the run trail, one JSON object per line, appended by `append_run_log` on each completed entry/exit
-  phase and carrying the whole entry result (the per-symbol accept/reject detail the heartbeat is too
-  terse to hold). It was the retired scheduled verbs' job; when entry and exit moved into this loop
+  the run trail, one JSON object per line, appended by `append_run_log` on each completed
+  forward-scan/entry/exit phase and carrying the whole entry result (the per-symbol accept/reject
+  detail the heartbeat is too terse to hold). The forward scan joined it on 2026-08-25, having been
+  the one phase that logged nothing: it is the TOP of the funnel, so a scan finding zero symbols
+  guarantees an empty entry scan hours later, and that is how eleven starved sessions stayed
+  invisible — the aged-out Dolt calendar left it finding nothing every morning while the only trace
+  anywhere was the entry phase's `opened: []`, which reads exactly like "screened, none cleared".
+  Its `symbols` count is what separates that from a broken universe filter. It was the retired scheduled verbs' job; when entry and exit moved into this loop
   at the 2026-08-12 cutover nothing took it over, the log simply stopped, and "did earnings run
   today, and what did it decide" stopped being answerable from the logs while the loop ran fine. It
   is best-effort by construction: a session that cannot write its log still trades.
@@ -34,8 +39,23 @@ You are the cherrypick **Earnings** agent, an autonomous options trading agent f
   three *trading* sessions; a loser closes on the first morning, because post-earnings drift continues
   rather than reverting. Quotes come from the shared stream cache first, the broker only to price what
   nobody subscribed and to confirm a close.
+  **Expired positions are SETTLED, not traded out** (added 2026-08-31, its own journaled break).
+  Retiring the next-morning sweep removed the only thing that had been resolving expiries and
+  nothing replaced it: an expired contract keeps quoting a zero bid against a stale ask, which marks
+  as usable with a 200% spread, so the engine decided to close and `spread_too_wide` refused —
+  every tick, forever, on a spread that could never narrow. The first expiration to run entirely
+  under the managed lifecycle stranded 59 positions across all six strategies. An expired leg is now
+  refused as a mark (`provider`) and resolved at intrinsic against the expiration day's own close
+  from local `stocks.ohlcv` (`settlement.py`), ahead of every gate, because settlement is
+  bookkeeping about something that already happened rather than an order. Details and the backfill
+  verb: `docs/10-exits.md`.
   **Screening is split across the day**: the `forward_scan` phase computes the slow, stable half
   (the earnings calendar and every Dolt-derived metric, next 10 trading days) pre-market at ~06:30.
+  It is bounded per symbol and per pass (`cherrypick/earnings/bounded.py`, the same primitive the
+  entry scan uses) and names what it skipped. It ran unbounded until 2026-08-25, which was only
+  survivable because a stale Dolt clone left it with an empty calendar and no work to do — its first
+  real pass took 13 minutes over 22 symbols, and it holds the loop's single-writer lock throughout,
+  so a hung Dolt query there blocks the 15:35 entry scan behind it.
   That snapshot both feeds the console's Upcoming surface and PRE-FILTERS the entry scan — on stable
   criteria only (winrate, average volume, market cap), against the loosest floor, so no morning
   reading ever decides an entry. The entry scan costs ~35s + ~8s per symbol, so a heavy night at the
@@ -53,10 +73,15 @@ You are the cherrypick **Earnings** agent, an autonomous options trading agent f
 - **Agent-driven loop (live or paper).** The **Loop Steps** below are executed by you, the agent, for
   live trading and manual sessions — `rank_strategies.py` picks each symbol's single best strategy, and
   Step 0 sets paper vs. live. cherrypick never runs this path, and never places live trades.
-- **Forward-preview scan (informational, no trading decision).** `symbol_watch.py refresh` runs on its
-  own OS-scheduled daily task (`symbol_watch` config block in the orchestrator, off by default) — never
-  the entry/exit loop, never touches a ledger. It writes `symbol_watch.json` for the console's read-only
-  Earnings page "Upcoming" section to read.
+- **Forward-preview scan (informational, no trading decision).** `symbol_watch.py refresh` writes
+  `symbol_watch.json` for the console's read-only Earnings page "Upcoming" section — never the
+  entry/exit loop, never touches a ledger.
+  **Since the 2026-08-12 cutover the paper loop's own `forward_scan` phase drives this at ~06:30**,
+  so the verb survives as a MANUAL/backfill one. The orchestrator's `symbol-watch` daily job still
+  exists and is still config-enablable (`symbol_watch` block, off by default and absent from the
+  deployed config) — and it **must stay disabled**, because enabling it runs the same scan twice.
+  Read "off by default" here as a constraint rather than as a feature waiting to be switched on;
+  this file described it both ways until 2026-08-20.
 
 ## The advised twin (paper only, off by default)
 
@@ -83,6 +108,14 @@ Three properties, each of which a simpler design gets wrong:
   unchanged. **Exit continuity is therefore free**: advice stops, no new twins open, and the twins
   already on the book keep being marked, managed and closed under the params they were opened with.
   No twin profile, no orphan handling.
+  **That continuity is only free once the loop actually SEES the twin.** `paper_loop.managed_book`
+  is what decides, and it must strip `advice.ADVISED_PREFIX` before asking whether the book is a
+  strat_test one — `advised:strat_test:iron_condor` is a different book, so the bare
+  `_is_strat_test_book` (the right question for `run_closes`) answered no. From 2026-08-26 to
+  2026-08-31 that filter left every twin unmarked, unevaluated and unclosed — 13 of them, against
+  4,953 marks on the controls beside them — while the choke point above worked exactly as designed
+  and never got called. A change here is invisible from the advice path; the guard is
+  `test_an_advised_twin_is_managed_beside_its_control`.
 
 **v1 bounds are management/exit params only.** Entry-side screens, tiering and sizing change *which*
 trades open, and a twin cannot express that — both books would have to face the same fills to be
@@ -137,6 +170,7 @@ All operations via `python -m cherrypick.earnings.tt <command>` (broker), `pytho
 | `python -m cherrypick.earnings.paper_loop once` | **One managed-loop tick** — the thing the supervisor fires every 60s. Derives its phase from the clock (mark-only in the opening window, mark/decide/act through the session, entry scan at 15:45, EOD 16:00–16:30, nothing off-hours), marks every open position, acts on what the execution gates allow, and records a `loop_iterations` row. Holds a single-writer lock; a tick that cannot get it exits OK with `status: busy` (the entry scan legitimately holds it ~25 min). |
 | `python -m cherrypick.earnings.paper_loop status` | Phase, last iteration, open-position count, whether the lock is held. Touches no broker. |
 | `python -m cherrypick.earnings.paper_loop record-break --key K [--date D] [--old X] [--new Y] [--note N]` | Record a `measurement_breaks` row: results either side of that date must never be pooled. |
+| `python -m cherrypick.earnings.paper_loop settle-expired [--apply]` | Settle every open position whose legs have already expired — intrinsic against the expiration day's own settlement close (local `stocks.ohlcv`), `front_expiry` for a calendar whose back month is still listed. **Dry by default**; `--apply` writes the closes. A backfill verb in the `run_closes` family: the loop settles at expiry by itself, so this is for a backlog that accumulated before it could. Deliberately human-run — it resolves trades open for days, and every one lands in the measurement. |
 | `python -m cherrypick.earnings.strat_test_harness run_entries --date MM/DD/YYYY` | **Strategy-testing program only** (see `docs/strategy-testing-plan.md`), never the live/paper loop. Opens a paper trade for **every** strategy that clears the screen on **every** viable symbol (not just each symbol's best) into the strat_test books (per-strategy by default, tagged `profile='strat_test:<strategy>'`; see `strat_test_portfolio`) — forced sampling so every strategy accumulates a sample fast enough to evaluate, since natural single-best-per-symbol selection would starve most strategies for months. Always paper-only regardless of `enable_live_trading`. |
 | `python -m cherrypick.earnings.strat_test_harness run_closes` | Closes every open strat_test position via the same generic exit-debit mechanism the loop uses (`scanner.compute_generic_exit_debit`), cost-adjusted via `costs.py`. |
 | `python -m cherrypick.earnings.screen_report [--mode live\|paper] [--profile X] [--strategy X] [--since YYYY-MM-DD] [--limit N] [--what-if REASON=THRESHOLD]` | Why the screen rejected what it rejected — thin CLI over `screen_metrics.py` (same split `strategy_report`/`strategy_metrics` uses, so a future console surface can't disagree with the terminal). Reads `scan_log` only: no broker, no Dolt, no ledger, safe to run mid-session. Sections: the calendar→prefilter→screen→execution funnel; rejection reasons with a **sole-blocker** column (the only rejections a threshold change can rescue — a name failing six gates still fails five, and a gate with 0 sole is shadowed by another and not worth tuning); distance to the bar; gates that always fire together; and `_unverified` rejections separated out as coverage gaps rather than screening results. A **cost-to-risk** section reports modelled cost as a fraction of capital at risk per strategy, with `--cost-gate 0.05` (repeatable, default 0.05/0.10/0.15) showing what an entry-side ceiling would have excluded — record-only, gating nothing, and derived from `entry_cost`/`exit_cost`/`capital_at_risk` already on `trades` rather than a stored field, so it answers retroactively for every trade on file. Those trades were actually taken, so that is the one counterfactual here that may honestly report P&L. `--what-if avg_volume_below_minimum=1000000` counts which candidates a different bar would have admitted — **counts and symbols only, never P&L**, since a name that was never traded has no outcome. Rows are classified before they are counted (`screen_metrics.classify`): `scan_log` holds four incompatible vocabularies — the current binary accept/reject, the retired graded tier ladder, position closes the exit path logs to the same table, and strategies removed from the suite — and what it excludes is printed, never silent. `--json` emits those same classified metrics (funnel, reasons, sole blockers, exclusions, coverage) as one object on stdout instead of the report — that is how the console's rejection card reads them, since it cannot import this package and must not re-derive the classification. One derivation, two renderers: before it existed, the console built its own histogram off `scan_log` and named gates that have never blocked a candidate alone. |
@@ -167,7 +201,7 @@ See `config.example.json` for authoritative list. Top-level options are project-
 
 **Strategy-specific options** (iron_fly, double_calendar, iron_condor, atm_calendar, directional_credit_spread, broken_wing_butterfly): See their respective strategy docs (`docs/05-strategies.md`) and `config.example.json` for detailed parameters (wing width multiples, profit targets, stops, exit thresholds, etc.). Each has its own screening/entry condition tuning.
 
-**Correlation risk is not currently guarded**: opening multiple earnings names in the same sector on the same date can silently correlate overnight gap risk — avoid correlated block-list entries together until guard is implemented.
+**Correlation risk is not currently guarded here**: opening multiple earnings names in the same sector on the same date can silently correlate overnight gap risk — avoid correlated block-list entries together until a guard exists. Note the suite-wide lint added 2026-08-20 (`orchestrator/tests/test_symbol_correlation_lint.py`) does NOT cover this: it refuses two vehicles on one INDEX, and single-name sector clustering is a different question this module still answers by hand through `correlation_block_list`.
 
 ## Database
 

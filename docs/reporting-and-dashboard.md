@@ -33,10 +33,20 @@ TypeScript port read `fly_books`.
 `eod-analysis-<day>.md`, the suite `eod-digest`, the opt-in `eod-insight` AI synthesis, and `advise`.
 
 `calibrate` sits alongside `report`, reading the same paper DBs to produce per-profile qualification
-readings. It compares a **champion** (the currently-live profile) against every other observed tag as a
-challenger; where a module's tags are parallel experiment arms rather than a risk sequence, it declares
-no champion and reports each arm on its own. The older fixed-ladder "promote to the next rung" model was
-retired 2026-08-01 — it produced a meaningless recommendation for parallel arms.
+readings — sample, sessions, win rate, net of cost, and the threshold checks against a declared rule.
+Every tag is reported on its own.
+
+**The champion/challenger comparison was retired 2026-08-20**, and with it
+`core.profiles.recommend_champion` and the console's `/champions` page. It named one tag the live
+champion, judged every other tag against it, and emitted an advisory promote/retain verdict.
+Deciding whether a variant earned anything is `packages/advisor`'s job now, through its experiments,
+so there is ONE mechanism rather than two answering the same question from different evidence and
+different thresholds. `compare_profiles`, `qualify_readings` and `QUALIFICATION_RULE` all stayed —
+the advisor reads through exactly that chain.
+
+(This is the second model retired from that surface. The original fixed-ladder "promote to the next
+rung" went in 2026-08-01, because it produced a real, reproducible, meaningless recommendation the
+moment a module's tags were parallel arms rather than a risk sequence.)
 `logrotate` (`archive`) sweeps finished months into `logs/archive/`.
 
 ## `report` — unified paper P&L
@@ -116,6 +126,12 @@ decides how its events reach you:
 - **`summary`** — every MEIC trade accumulates into a periodic per-symbol digest, pushed every
   `interval_minutes`; `profile_prefixes` is ignored. A quiet window pushes nothing rather than an empty
   heartbeat, and wing stops fold into the eventual exit line rather than firing mid-trade.
+
+The digest only fires **intraday on a trading day** (09:15–17:00 ET, the tail running past the bell so
+the day's closing exits still make that day's roll-up). MEIC only trades the session, so an evening or
+weekend push would repeat figures the last in-session digest already carried. A flush that comes due
+outside that window is *held*, not dropped: the pending batch stays in state and goes out as one digest
+on the next tick inside the window.
 
 A digest line reads `MEIC digest 13:45 ET — SPX: 30 entries (open×10 width-10×10 width-5×10) · 2 exits
 net +$48 · day 7 trades net +$61`, with a matching Discord card. Arms are **counted, not listed** — a

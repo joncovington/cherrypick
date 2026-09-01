@@ -59,6 +59,34 @@ absolute paths.
   once, at startup — see its `servicecfg`), and two implementations of "what did every module ask for"
   would recycle this daemon over a difference it never sees. `union_legs` stays local — legs are re-read
   every poll from module-declared DBs, this package's own sqlite concern.
+
+  **A `window_hint` is a `(below, above)` span, not a width.** A module may declare a plain count
+  (symmetric — what every module but pmcc declares) or `{"down": N, "up": M}`; both normalize
+  through `streamcache.window_span`, and the union takes the max **per side**, so two modules with
+  opposite needs on one symbol are both served rather than the wider single number winning. The
+  configured `window_strike_count` floors both sides, so a directional hint only ever asks for more
+  on one side and can never narrow the base on the other. This exists because pmcc's deep-ITM long
+  sits far below spot while its short sits at it: a symmetric count bought an identical block of
+  strikes above spot that no module could read, and on 2026-08-24 that block was the largest single
+  waste in the suite's subscription budget (`docs/streamer-subscription-budget.md`).
+
+  **A confirmed session value is never erased by a later event that omits it.** The
+  `stream_summary` upsert COALESCEs every OHLC field against what is already stored. It did not
+  until 2026-08-27, and the cost was 22 consecutive sessions of SPX and XSP closes: both kept
+  receiving Summary events until ~20:07 ET with `day_close_price` cleared, and the bare overwrite
+  copied that null over the settled value. `daily_closes` — the suite's only multi-year series —
+  froze at 2026-07-28 for SPX while every other symbol stayed current, because symbols whose last
+  event of the day landed earlier (VIX 10:08, SPY 16:15) never met the clearing event. A close does
+  not un-happen; a value only ever gets MORE known through a session.
+
+  **Quote and Greeks are filtered by what a symbol can PUBLISH, not by what it is.** `build_streamer`
+  asks `streamcache.publishes_quotes` / `publishes_greeks` per leg: nothing cash-settled has greeks,
+  and an index has no order book to quote from (the 2026-08-24 entitlement probe — SKEW, VIX9D, VIX
+  and VIX1D all printed Trade, none printed Quote). **ETF and single-name legs keep Quote**; modules
+  price legs off their real book. The quoteless set is a declared list rather than a pattern match
+  on the ticker, because a leg with no price at all is the expensive failure here (2026-08-14
+  Summary, 2026-08-17 Trade) and an unlisted symbol must default to paying for a possibly-wasted
+  subscription rather than to starving a reader.
 - **`cherrypick/streamer/config.py`** — config loading + path resolution. Owns the **canonical cache** default
   (`data/marketdata/stream_cache.db`, a neutral scope owned by no trading module), the operator *base*
   symbols (a seed the registry union adds to), and the log/PID paths, all via `cherrypick.core.home`.
@@ -91,7 +119,8 @@ absolute paths.
   do not add a second writer path.
 - **Only the daemon talks to the broker.** The `--status`/`--stop` paths read files and the PID only;
   `--secrets-set`/`--secrets-status` touch only the OS keyring. None of them open a broker session, and
-  each emits a single JSON object on stdout. No MCP/AI on any path.
+  each emits a single JSON object on stdout. Deterministic throughout: this is a producer, and what
+  it writes must depend only on what the feed sent.
 - **Credentials live in the OS keyring only** (Windows Credential Manager / macOS Keychain / Linux Secret
   Service) under the shared `meicagent` service — never files, env vars, or logs. The streamer stores
   only the two bearer secrets; account selection is a trading module's concern, not the streamer's.

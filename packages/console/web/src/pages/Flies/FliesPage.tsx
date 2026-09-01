@@ -5,7 +5,8 @@ import { useMode } from "../../lib/useMode";
 import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
-import { Pager, usePage } from "../../components/ScopeBar";
+import { EraSelect, LoopPill, Pager, TabStrip, usePage } from "../../components/ScopeBar";
+import { ModuleIntegrityStrip } from "../../components/ModuleIntegrityStrip";
 import type { TradingMode } from "@console/shared";
 import { ForestCard } from "./ForestCard";
 import { ArmRail, AttemptTimeline } from "../../components/Attempts";
@@ -16,6 +17,16 @@ import { JournalCard } from "./JournalCard";
 import { DivergenceCard } from "./DivergenceCard";
 import { PerformanceTab } from "./PerformanceTab";
 import { ExperimentGuideView } from "../../components/ExperimentGuide";
+import { structureLabel } from "./structure";
+
+interface FliesLoopStatus {
+  state: "live" | "idle" | "no-data";
+  lastIterationAt: string | null;
+  ageSeconds: number | null;
+  symbol: string | null;
+  arm: string | null;
+  underlyingPrice: number | null;
+}
 
 interface FliesAnalytics {
   today: {
@@ -68,15 +79,33 @@ export function FliesPage() {
   // rather than offering a one-option filter.
   const [symbol, setSymbol] = useState<string | null>(null);
   const [tab, setTab] = useState<FliesTab>("today");
-  const filter: FliesFilter = { arm, date, symbol, era };
   const meta = useFliesMeta(mode, era);
+  // ONE day governs every Today card, the way it already does on the MEIC page.
+  //
+  // Left null, each card resolved its own: the attempts views default to the latest day with
+  // ATTEMPTS while the forest, occupancy and session tiles default to the latest day with
+  // POSITIONS. Before anything fills those are different days, so the tab could show yesterday's
+  // book beside today's refusals — each correctly labelled, and contradictory side by side.
+  const resolvedDate = date ?? meta.data?.dates[0] ?? null;
+  const filter: FliesFilter = { arm, date: resolvedDate, symbol, era };
+  // History and Performance span sessions by definition, so they keep the RAW date — resolving a
+  // "latest day" for them would collapse both to one session and empty every trend on them.
+  const multiDayFilter: FliesFilter = { arm, date, symbol, era };
   // Two tables on one payload, each with its own page — turning one leaves the
   // other where it was. Both reset when the filter changes underneath them.
   const booksPage = usePage([mode, arm, date, symbol, era]);
   const positionsPage = usePage([mode, arm, date, symbol, era]);
-  const { data, isLoading, isError, isPlaceholderData } = useFlies(mode, filter, booksPage.page, positionsPage.page);
+  const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useFlies(mode, filter, booksPage.page, positionsPage.page);
   const analytics = useFliesAnalytics(mode, filter);
   const a = analytics.data;
+  // Whether the loop is alive is a property of the module, not of the arm/era being viewed, so
+  // this is deliberately unscoped by the filter above.
+  const loop = useQuery<FliesLoopStatus>({
+    queryKey: ["flies-loop", mode],
+    queryFn: async () => (await fetch(`/api/flies/loop?mode=${mode}`)).json() as Promise<FliesLoopStatus>,
+    refetchInterval: 30_000,
+  });
+  const l = loop.data;
 
   // Narrowing the era can remove the arm or date currently selected (width-2/3/4 are XSP-only).
   // Clear a selection the new scope no longer offers, so the page never filters on a value the
@@ -93,13 +122,12 @@ export function FliesPage() {
       <div className="page-title-row">
         <h1>Flies</h1>
         <PaperLiveBadge mode={mode} />
-        <div className="mode-toggle" style={{ marginLeft: 0 }}>
-          {(["today", "history", "performance", "help"] as FliesTab[]).map((t) => (
-            <button key={t} type="button" className={tab === t ? "mode-btn active" : "mode-btn"} onClick={() => setTab(t)}>
-              {t}
-            </button>
-          ))}
-        </div>
+        <TabStrip
+          tabs={["today", "history", "performance", "help"] as FliesTab[]}
+          value={tab}
+          onChange={setTab}
+          ariaLabel="flies tabs"
+        />
         {/* Arm, symbol and era scope EVERY tab — a per-arm ranking on History or an equity curve on
             Performance is exactly where a silently-pooled era does the most damage. Only the date
             select stays Today-only: the multi-day views drop it, since pinning one session would
@@ -132,16 +160,17 @@ export function FliesPage() {
             ))}
           </select>
         )}
-        <select
-          className="text-input"
-          value={era ?? ""}
-          onChange={(e) => setEra(e.target.value === "" ? null : e.target.value)}
-          aria-label="era scope"
+        {/* Each era is selectable on its own. The control used to offer only the current era or
+            "all", so the XSP and pre-XSP books could be read only POOLED with the current one —
+            which is the exact comparison the module says distorts every per-arm breakdown. */}
+        <EraSelect
+          value={era}
+          eras={meta.data?.eras}
+          currentEra={meta.data?.currentEra}
+          onChange={setEra}
+          pooledLabel="all eras — pooled"
           title="The XSP books (2026-07-29..07-31) are a different trade — 1-wide structures at 41% fee drag against the SPX book's 11%. Pooling them distorts every per-arm breakdown."
-        >
-          <option value="">SPX era (current)</option>
-          <option value="ALL">all eras</option>
-        </select>
+        />
         {tab === "today" && (
         <>
         <select
@@ -159,20 +188,39 @@ export function FliesPage() {
         </select>
         </>
         )}
+        <LoopPill
+          state={l?.state}
+          ageSeconds={l?.ageSeconds}
+          detail={
+            l?.lastIterationAt != null
+              ? `last iteration ${l.lastIterationAt}${l.arm !== null ? ` · ${l.arm}` : ""}`
+              : undefined
+          }
+        />
+        {l?.underlyingPrice != null && <span className="chip">{l.underlyingPrice.toFixed(2)}</span>}
         <ModeToggle mode={mode} onChange={setMode} />
       </div>
 
       {tab === "history" && (
         <HistoryTab
           mode={mode}
-          filter={filter}
+          filter={multiDayFilter}
           onReplayDay={(d) => {
             setDate(d);
             setTab("today");
           }}
         />
       )}
-      {tab === "performance" && <PerformanceTab mode={mode} filter={filter} />}
+      {/* Above the numbers it qualifies, on every tab. The 2026-08-20 partial session cost
+          09:30-10:52 ET and 95 positions, and a reader of History or Performance had no way to
+          know that day is not a whole day. */}
+      <ModuleIntegrityStrip
+        integrity={data?.integrity}
+        collapseKey="flies-integrity"
+        updatedAt={dataUpdatedAt}
+      />
+
+      {tab === "performance" && <PerformanceTab mode={mode} filter={multiDayFilter} />}
       {tab === "help" && (
         <ExperimentGuideView
           url="/api/flies/arms"
@@ -354,7 +402,7 @@ export function FliesPage() {
               <td>{p.symbol}</td>
               <td className="muted">{p.arm ?? "—"}</td>
               <td className="muted">{p.entryMode ?? "—"}</td>
-              <td>{p.kind === "fly" ? "fly" : p.kind === "iron_fly" ? "iron fly" : p.kind === "bwb" ? `bwb ${p.side}` : `short ${p.side}`}</td>
+              <td>{structureLabel(p.kind, p.side)}</td>
               <td>{fmtNum(p.center, 0)}</td>
               <td>{fmtNum(p.net, 2)}</td>
               <td>{p.floorDollars !== null ? <PnlCell v={p.floorDollars} /> : "—"}</td>

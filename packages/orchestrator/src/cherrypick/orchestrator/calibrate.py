@@ -1,24 +1,21 @@
-"""Profiles calibration + champion/challenger advisor surface (read-only).
+"""Per-profile paper calibration readings (read-only).
 
-Turns accumulated **paper** P&L into a per-profile calibration *reading* (sample, win rate, distinct
-sessions, net-of-cost P&L) and an **advisory** verdict on whether a challenger should replace the
-live champion — the reporting hub's calibration read-side, alongside `report`. Reads paper DBs only
-(files, no broker, no network); it never mutates config or switches live risk — that is a human
-decision.
+Turns accumulated **paper** P&L into a per-profile calibration *reading* — sample, win rate,
+distinct sessions, net-of-cost P&L — plus the qualification checks against a declared rule. Reads
+paper DBs only (files, no broker, no network); it mutates nothing.
 
-The closed-trade extraction is reused from `report` (its per-schema readers also emit a `session`
-date), so the net-of-cost SQL lives in one place. Grouping and the qualification rule come from the
-shared `cherrypick.core.profiles` engine (`compare_profiles`, `recommend_champion`,
-`qualify_readings`, `QUALIFICATION_RULE`).
+**The champion/challenger surface was retired 2026-08-20.** This module used to name one tag the
+live champion and judge every other tag against it as a challenger, emitting an advisory
+"promote / hold" verdict. Judging arms is `packages/advisor`'s job now, through its experiments —
+one mechanism rather than two answering the same question from different evidence and different
+thresholds. `core.profiles.recommend_champion` went with it; `compare_profiles`,
+`qualify_readings` and `QUALIFICATION_RULE` stayed, because the advisor reads through exactly that
+chain.
 
-A module either declares `calibration.champion` (the tag currently live — every other tag observed
-is a challenger judged against it, `recommend_champion`) or declares no champion at all (its tags are
-parallel, unordered experiments with nothing to compare against — `qualify_readings`, readings only,
-no recommendation). This replaced a fixed-ladder "graduate to the next rung" model 2026-08-01: that
-model assumed every module's tags form one ordered sequence, which produced a real, reproducible,
-meaningless recommendation the moment a module's tags were parallel experiments instead (flies'
-control/gex/time_window/width-N arms) — a fully-qualifying reading recommended "graduate" into an
-unrelated sibling arm with no basis for that direction.
+What remains is the reading itself, which nothing else in the suite emits as a CLI verb. The
+closed-trade extraction is reused from `report` (its per-schema readers also emit a `session`
+date), so the net-of-cost SQL lives in one place, and the grouping comes from the shared
+`cherrypick.core.profiles` engine.
 """
 
 from __future__ import annotations
@@ -30,7 +27,6 @@ from cherrypick.core.profiles import (
     QUALIFICATION_RULE,
     compare_profiles,
     qualify_readings,
-    recommend_champion,
 )
 
 from . import config as cfgmod
@@ -52,7 +48,7 @@ def _group_readings(records: list[dict]) -> dict:
 
 # --------------------------------------------------------------------------- entrypoint
 def run(cfg: dict | None = None) -> dict:
-    """Per-module, per-profile calibration readings + advisory champion/challenger verdicts. Read-only."""
+    """Per-module, per-profile calibration readings and their qualification checks. Read-only."""
     cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
     epoch = cfgmod.data_epoch(cfg)
     modules_out: dict[str, dict] = {}
@@ -63,10 +59,11 @@ def run(cfg: dict | None = None) -> dict:
         reader = report._READERS.get(schema)
         db_path = cfgmod.paper_db_path(mcfg, name)
         cal = mcfg.get("calibration", {}) or {}
-        champion = cal.get("champion")  # None -> readings-only mode (qualify_readings)
-        deliberate_only = tuple(cal.get("deliberate_only", []))
         rule = dict(cal.get("rule") or {})
-        margin = rule.pop("margin", 0.0)
+        # `margin` and `deliberate_only` belonged to the retired champion comparison — a margin a
+        # challenger had to beat, and tags never auto-recommended. Popped rather than passed so a
+        # config still carrying them is read without error and without effect.
+        rule.pop("margin", None)
 
         if reader is None:
             modules_out[name] = {"ok": False, "reason": f"unknown schema {schema!r}"}
@@ -86,7 +83,7 @@ def run(cfg: dict | None = None) -> dict:
         finally:
             conn.close()
 
-        # The epoch is ENFORCED here: a champion/challenger reading must never blend sessions
+        # The epoch is ENFORCED here: a calibration reading must never blend sessions
         # produced by retired code (pre-fix leg ratios, fee undercounts, status-based wins) into
         # its sample/days/win-rate. Records without a session date are treated as pre-epoch —
         # if we can't date it, it can't support a recommendation.
@@ -95,47 +92,22 @@ def run(cfg: dict | None = None) -> dict:
 
         readings = _group_readings(records)
 
-        if champion is not None:
-            verdict = recommend_champion(
-                readings, champion, rule=rule, deliberate_only=deliberate_only, margin=margin
-            )
-            profiles_out: dict[str, dict] = {}
-            for tag, reading in readings.items():
-                if tag == champion:
-                    profiles_out[tag] = {
-                        "reading": reading,
-                        "role": "champion",
-                        "metric": verdict["champion_metric"],
-                    }
-                else:
-                    c = verdict["challengers"].get(tag, {})
-                    profiles_out[tag] = {"reading": reading, "role": "challenger", **c}
-            modules_out[name] = {
-                "ok": True,
-                "schema": schema,
-                "champion": champion,
-                "rule": {**QUALIFICATION_RULE, **rule},
-                "recommendation": {
-                    "eligible": verdict["eligible"],
-                    "recommendation": verdict["recommendation"],
-                    "reason": verdict["reason"],
-                },
-                "profiles": profiles_out,
-            }
-        else:
-            qualifications = qualify_readings(readings, rule=rule)
-            profiles_out = {
-                tag: {"reading": reading, "role": None, **qualifications.get(tag, {})}
-                for tag, reading in readings.items()
-            }
-            modules_out[name] = {
-                "ok": True,
-                "schema": schema,
-                "champion": None,
-                "rule": {**QUALIFICATION_RULE, **rule},
-                "recommendation": None,
-                "profiles": profiles_out,
-            }
+        # Readings only. The champion/challenger comparison was retired 2026-08-20 — arms are
+        # judged by `packages/advisor`'s experiments now, which is the one place that decides
+        # whether a variant earned anything. What survives here is the per-tag READING (sample,
+        # sessions, win rate, net of cost) and the qualification checks, both of which the advisor
+        # reads through the same `cherrypick.core.profiles` chain.
+        qualifications = qualify_readings(readings, rule=rule)
+        profiles_out = {
+            tag: {"reading": reading, "role": None, **qualifications.get(tag, {})}
+            for tag, reading in readings.items()
+        }
+        modules_out[name] = {
+            "ok": True,
+            "schema": schema,
+            "rule": {**QUALIFICATION_RULE, **rule},
+            "profiles": profiles_out,
+        }
 
     return {
         "ok": True,

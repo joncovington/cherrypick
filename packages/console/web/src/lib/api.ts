@@ -11,9 +11,23 @@ import type {
   TtWatchlistIndex,
   TtWatchlistPayload,
   TtWatchlistRow,
-  SymbolCardPayload,
   ReviewPayload,
   AdvisorPayload,
+  MorningPayload,
+  PmccPayload,
+  PmccCycleRow,
+  PmccMeta,
+  PmccAssignment,
+  CurvePayload,
+  CurveCycleRow,
+  CurveMeta,
+  BwbPayload,
+  BwbCycleRow,
+  BwbMeta,
+  CalendarsPayload,
+  CalendarsPoliciesPayload,
+  CalendarsPosition,
+  CalendarsWeekRow,
 } from "@console/shared";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -66,6 +80,16 @@ export function useReview(session?: string) {
     queryKey: ["review", session ?? "latest"],
     queryFn: () => getJson<ReviewPayload>(`/api/review${session ? `?session=${session}` : ""}`),
     // The fact set changes twice a day, not continuously — polling it hard would be noise.
+    refetchInterval: 60_000,
+  });
+}
+
+export function useMorningReport(session?: string) {
+  return useQuery<MorningPayload>({
+    queryKey: ["morning", session ?? "latest"],
+    queryFn: () => getJson<MorningPayload>(`/api/morning${session ? `?session=${session}` : ""}`),
+    // The pack is written once before the open (the narrative may land a little later) — a minute
+    // is already far finer than the data.
     refetchInterval: 60_000,
   });
 }
@@ -174,12 +198,18 @@ export function useFlies(mode: TradingMode, filter: FliesFilter, books: PageStat
 
 export interface FliesTradeLogRow {
   tradeDate: string;
+  /** Full ISO entry timestamp with its market offset — rendered from the string, never via a Date. */
+  entryTime: string | null;
   symbol: string;
   arm: string | null;
   entryMode: string | null;
   kind: string | null;
   side: string | null;
   center: number | null;
+  /** Near wing, in points. */
+  wingWidth: number | null;
+  /** Far wing, only when the wing is BROKEN; null on a symmetric fly. */
+  farWidth: number | null;
   window: string | null;
   net: number | null;
   fees: number | null;
@@ -188,12 +218,35 @@ export interface FliesTradeLogRow {
   pinned: boolean;
 }
 
-export function useFliesTradeLog(mode: TradingMode, outcome: string, search: string, page: PageState) {
+/** Scope-wide totals for the log — every matching row, never the rendered page. */
+export interface FliesTradeLogTotals {
+  trades: number;
+  sessions: number;
+  netPnl: number;
+  grossPnl: number;
+  fees: number;
+}
+
+export type FliesTradeLog = Paged<FliesTradeLogRow> & { totals: FliesTradeLogTotals };
+
+export function useFliesTradeLog(
+  mode: TradingMode,
+  outcome: string,
+  search: string,
+  page: PageState,
+  era: string | null = null,
+  range: { from: string | null; to: string | null } = { from: null, to: null },
+  arm: string | null = null,
+) {
   const params = new URLSearchParams({ mode, outcome, search });
+  if (era !== null) params.set("era", era);
+  if (arm !== null) params.set("arm", arm);
+  if (range.from !== null) params.set("from", range.from);
+  if (range.to !== null) params.set("to", range.to);
   pageParams(params, "", page);
-  return useQuery<Paged<FliesTradeLogRow>>({
-    queryKey: ["flies-tradelog", mode, outcome, search, page],
-    queryFn: () => getJson<Paged<FliesTradeLogRow>>(`/api/flies/tradelog?${params.toString()}`),
+  return useQuery<FliesTradeLog>({
+    queryKey: ["flies-tradelog", mode, outcome, search, page, era, range.from, range.to, arm],
+    queryFn: () => getJson<FliesTradeLog>(`/api/flies/tradelog?${params.toString()}`),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   });
@@ -201,23 +254,201 @@ export function useFliesTradeLog(mode: TradingMode, outcome: string, search: str
 
 /** The filter selects' own options, narrowed to the same era as the data — an option that selects
  *  nothing reads as "nothing happened" rather than "not in this era". */
+export interface FliesMeta {
+  arms: string[];
+  dates: string[];
+  symbols: string[];
+  eras: Array<{ era: string; label: string; trades: number }>;
+  currentEra: string;
+}
+
 export function useFliesMeta(mode: TradingMode, era: string | null = null) {
-  return useQuery<{ arms: string[]; dates: string[]; symbols: string[] }>({
+  return useQuery<FliesMeta>({
     queryKey: ["flies-meta", mode, era],
     queryFn: () =>
-      getJson<{ arms: string[]; dates: string[]; symbols: string[] }>(
-        `/api/flies/meta?mode=${mode}${era !== null ? `&era=${era}` : ""}`,
-      ),
+      getJson<FliesMeta>(`/api/flies/meta?mode=${mode}${era !== null ? `&era=${era}` : ""}`),
     staleTime: 300_000,
   });
 }
 
-export function useEarnings(trades: PageState, reviews: PageState) {
+/**
+ * PMCC-99. No mode argument anywhere: the module is paper-only by construction, not by preference.
+ */
+export function usePmcc() {
+  return useQuery<PmccPayload>({
+    queryKey: ["pmcc"],
+    queryFn: () => getJson<PmccPayload>("/api/pmcc"),
+    // The loop marks every tick in session; 15s matches the other module dashboards.
+    refetchInterval: 15_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export interface PmccHistoryFilter {
+  book: string | null;
+  symbol: string | null;
+}
+
+export function usePmccHistory(filter: PmccHistoryFilter, page: PageState) {
+  const params = new URLSearchParams();
+  if (filter.book !== null) params.set("book", filter.book);
+  if (filter.symbol !== null) params.set("symbol", filter.symbol);
+  pageParams(params, "", page);
+  return useQuery<Paged<PmccCycleRow>>({
+    queryKey: ["pmcc-history", filter, page],
+    queryFn: () => getJson<Paged<PmccCycleRow>>(`/api/pmcc/history?${params.toString()}`),
+    // A cycle closes a few times a week at most — polling it hard would be noise.
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function usePmccMeta() {
+  return useQuery<PmccMeta>({
+    queryKey: ["pmcc-meta"],
+    queryFn: () => getJson<PmccMeta>("/api/pmcc/meta"),
+    staleTime: 300_000,
+  });
+}
+
+/**
+ * curve (VXX term-structure roll-yield harvest). No mode argument: paper-only by construction, the
+ * same reasoning as pmcc's hook above.
+ */
+export function useCurve() {
+  return useQuery<CurvePayload>({
+    queryKey: ["curve"],
+    queryFn: () => getJson<CurvePayload>("/api/curve"),
+    refetchInterval: 15_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export interface CurveHistoryFilter {
+  book: string | null;
+  symbol: string | null;
+}
+
+export function useCurveHistory(filter: CurveHistoryFilter, page: PageState) {
+  const params = new URLSearchParams();
+  if (filter.book !== null) params.set("book", filter.book);
+  if (filter.symbol !== null) params.set("symbol", filter.symbol);
+  pageParams(params, "", page);
+  return useQuery<Paged<CurveCycleRow>>({
+    queryKey: ["curve-history", filter, page],
+    queryFn: () => getJson<Paged<CurveCycleRow>>(`/api/curve/history?${params.toString()}`),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useCurveMeta() {
+  return useQuery<CurveMeta>({
+    queryKey: ["curve-meta"],
+    queryFn: () => getJson<CurveMeta>("/api/curve/meta"),
+    staleTime: 300_000,
+  });
+}
+
+/**
+ * bwb (SPX daily-laddered put broken-wing butterfly / 1-3-2 add-on trigger experiment). No mode
+ * argument: paper-only by construction, the same reasoning as pmcc/curve above.
+ */
+export function useBwb() {
+  return useQuery<BwbPayload>({
+    queryKey: ["bwb"],
+    queryFn: () => getJson<BwbPayload>("/api/bwb"),
+    refetchInterval: 15_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export interface BwbHistoryFilter {
+  book: string | null;
+  symbol: string | null;
+}
+
+export function useBwbHistory(filter: BwbHistoryFilter, page: PageState) {
+  const params = new URLSearchParams();
+  if (filter.book !== null) params.set("book", filter.book);
+  if (filter.symbol !== null) params.set("symbol", filter.symbol);
+  pageParams(params, "", page);
+  return useQuery<Paged<BwbCycleRow>>({
+    queryKey: ["bwb-history", filter, page],
+    queryFn: () => getJson<Paged<BwbCycleRow>>(`/api/bwb/history?${params.toString()}`),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useBwbMeta() {
+  return useQuery<BwbMeta>({
+    queryKey: ["bwb-meta"],
+    queryFn: () => getJson<BwbMeta>("/api/bwb/meta"),
+    staleTime: 300_000,
+  });
+}
+
+export interface PmccAssignmentRow extends PmccAssignment {
+  positionId: string;
+  symbol: string;
+  assignedSession: string;
+}
+
+export function usePmccAssignments() {
+  return useQuery<{ rows: PmccAssignmentRow[] }>({
+    queryKey: ["pmcc-assignments"],
+    queryFn: () => getJson<{ rows: PmccAssignmentRow[] }>("/api/pmcc/assignments"),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useCalendars() {
+  return useQuery<CalendarsPayload>({
+    queryKey: ["calendars"],
+    queryFn: () => getJson<CalendarsPayload>("/api/calendars"),
+    // The loop marks every 30s in session; 15s matches the other module dashboards.
+    refetchInterval: 15_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useCalendarsWeeks() {
+  return useQuery<{ rows: CalendarsWeekRow[] }>({
+    queryKey: ["calendars-weeks"],
+    queryFn: () => getJson<{ rows: CalendarsWeekRow[] }>("/api/calendars/weeks"),
+    // A week finishes once a week. Polling this hard would be noise.
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useCalendarsWeek(week: string | null) {
+  return useQuery<{ rows: CalendarsPosition[] }>({
+    queryKey: ["calendars-week", week],
+    queryFn: () => getJson<{ rows: CalendarsPosition[] }>(`/api/calendars/week?week=${week ?? ""}`),
+    enabled: week !== null,
+    staleTime: 60_000,
+  });
+}
+
+export function useCalendarsPolicies() {
+  return useQuery<CalendarsPoliciesPayload>({
+    queryKey: ["calendars-policies"],
+    queryFn: () => getJson<CalendarsPoliciesPayload>("/api/calendars/policies"),
+    // A replay over the whole mark path, memoised server-side; the answer only moves when a week
+    // completes. Nothing here justifies a poll.
+    staleTime: 300_000,
+  });
+}
+
+export function useEarnings(trades: PageState, reviews: PageState, era: string | null = null) {
   const params = new URLSearchParams();
   pageParams(params, "trades", trades);
   pageParams(params, "reviews", reviews);
+  if (era !== null) params.set("era", era);
   return useQuery<EarningsPayload>({
-    queryKey: ["earnings", trades, reviews],
+    queryKey: ["earnings", trades, reviews, era],
     queryFn: () => getJson<EarningsPayload>(`/api/earnings?${params.toString()}`),
     refetchInterval: 30_000,
     placeholderData: (prev) => prev,
@@ -298,44 +529,10 @@ export interface SymbolAnalysis {
   trend: { "1m": string | null; "6m": string | null };
 }
 
-export function useWatchlist() {
-  return useQuery<{ symbols: string[]; rows: TtWatchlistRow[] }>({
-    queryKey: ["watchlist"],
-    queryFn: () => getJson<{ symbols: string[]; rows: TtWatchlistRow[] }>("/api/watchlist"),
-    refetchInterval: 60_000,
-    placeholderData: (prev) => prev,
-  });
-}
-
-export function useTtWatchlists() {
-  return useQuery<TtWatchlistIndex & { lastError: string | null }>({
-    queryKey: ["tt-watchlists"],
-    queryFn: () => getJson<TtWatchlistIndex & { lastError: string | null }>("/api/tt-watchlists"),
-    refetchInterval: 60_000,
-  });
-}
-
-export function useTtWatchlist(key: string | null) {
-  return useQuery<TtWatchlistPayload>({
-    queryKey: ["tt-watchlist", key],
-    queryFn: () => getJson<TtWatchlistPayload>(`/api/tt-watchlists/${encodeURIComponent(key!)}`),
-    enabled: key !== null,
-    refetchInterval: 30_000,
-    placeholderData: (prev) => prev,
-  });
-}
-
 export interface BlacklistRow {
   symbol: string;
   reason: string;
   addedAt: string;
-}
-
-export function useBlacklist() {
-  return useQuery<{ rows: BlacklistRow[] }>({
-    queryKey: ["blacklist"],
-    queryFn: () => getJson<{ rows: BlacklistRow[] }>("/api/blacklist"),
-  });
 }
 
 export interface ChainEodStatus {
@@ -359,46 +556,32 @@ export interface CollectorsPayload {
   };
 }
 
-export function useCollectors() {
-  return useQuery<CollectorsPayload>({
-    queryKey: ["collectors"],
-    queryFn: () => getJson<CollectorsPayload>("/api/collectors"),
-    refetchInterval: 10_000,
-  });
-}
-
-export function useChainEodStatus() {
-  return useQuery<ChainEodStatus>({
-    queryKey: ["chain-eod-status"],
-    queryFn: () => getJson<ChainEodStatus>("/api/chain-eod/status"),
-    refetchInterval: 60_000,
-  });
-}
-
-export function useSymbolCard(symbol: string) {
-  const valid = /^[A-Z][A-Z0-9./]{0,9}$/.test(symbol);
-  return useQuery<SymbolCardPayload>({
-    queryKey: ["symbol-card", symbol],
-    queryFn: () => getJson<SymbolCardPayload>(`/api/symbol-card/${encodeURIComponent(symbol)}`),
-    enabled: valid,
-    refetchInterval: 60_000,
+/**
+ * The integrity block alone, for the strip that rides every tab.
+ *
+ * Separate from `useGex` because that one is gated to the history tab -- it pages the regime table,
+ * and fetching 100 rows every ten seconds on tabs that do not show them would be waste. This asks
+ * for `limit=1` (2.9KB against 21KB) and is always enabled, because a stale flip is exactly what a
+ * reader of the CHART tab needs to know and that is the tab where the table is not wanted.
+ */
+export function useGexIntegrity() {
+  return useQuery<GexPayload>({
+    queryKey: ["gex-integrity"],
+    queryFn: () => getJson<GexPayload>("/api/gex?limit=1"),
+    refetchInterval: 30_000,
     placeholderData: (prev) => prev,
   });
 }
 
-export function useSymbolAnalysis(symbol: string) {
-  return useQuery<SymbolAnalysis>({
-    queryKey: ["symbol", symbol],
-    queryFn: () => getJson<SymbolAnalysis>(`/api/symbol/${symbol}`),
-    retry: false,
+export function useGex(enabled = true, page: PageState = FIRST_PAGE) {
+  const params = new URLSearchParams();
+  pageParams(params, "", page);
+  return useQuery<GexPayload>({
+    queryKey: ["gex", page],
+    queryFn: () => getJson<GexPayload>(`/api/gex?${params.toString()}`),
+    refetchInterval: 10_000,
+    enabled,
+    placeholderData: (prev) => prev,
   });
 }
 
-export function useGex(enabled = true) {
-  return useQuery<GexPayload>({
-    queryKey: ["gex"],
-    queryFn: () => getJson<GexPayload>("/api/gex"),
-    refetchInterval: 10_000,
-    enabled,
-  });
-}

@@ -504,3 +504,66 @@ def test_cmd_refresh_dispatches_with_days(monkeypatch):
     result = symbol_watch.cmd_refresh(Args())
     assert result == {"ok": True}
     assert captured["days"] == 21
+
+
+# ------------------------------------------------------------------ the forward scan's own bounds
+def _stub_scan(monkeypatch, symbols, compute):
+    """Drive refresh_symbol_watch over `symbols` with everything external stubbed."""
+    monkeypatch.setattr(
+        symbol_watch._scanner,
+        "fetch_dolthub_calendar_range",
+        lambda s, e, c: [{"symbol": s_, "date": "2026-09-01", "timing": None} for s_ in symbols],
+    )
+    monkeypatch.setattr(symbol_watch._scanner, "fetch_watch_universe", lambda: set(symbols))
+    monkeypatch.setattr(symbol_watch._scanner, "_load_config", lambda *a, **k: {})
+    monkeypatch.setattr(symbol_watch, "_compute_symbol_entry", compute)
+
+
+def test_a_hung_symbol_is_skipped_and_the_pass_still_completes(snapshot_path, monkeypatch):
+    """This loop holds the paper loop's single-writer lock, and Dolt queries cannot be bounded from
+    the caller -- so one hung symbol did not merely stall the preview, it blocked every later phase
+    of the session behind it, the 15:35 entry scan included.
+
+    Unbounded was survivable only while this scan had an empty calendar and did no work at all. Its
+    first real pass (2026-08-25) took 13 minutes over 22 symbols.
+    """
+    import time as _t
+
+    def compute(symbol, date, timing, config):
+        if symbol == "HUNG":
+            _t.sleep(30)
+        return {"symbol": symbol, "tier": "near_miss"}
+
+    _stub_scan(monkeypatch, ["AAA", "HUNG", "ZZZ"], compute)
+    monkeypatch.setattr(symbol_watch, "_SYMBOL_TIMEOUT_S", 0.3)
+
+    out = symbol_watch.refresh_symbol_watch(days=5, config={"symbol_watch": {"symbol_timeout_seconds": 0.3}})
+
+    assert out["ok"] is True, "a pass abandoned partway leaves the prefilter reading a stale snapshot"
+    assert out["done"] == 2, "the two healthy symbols still got measured"
+    assert out["skipped"] == {"HUNG": "symbol_timeout"}, "and the gap is NAMED, never silent"
+
+
+def test_the_pass_budget_stops_a_runaway_scan(snapshot_path, monkeypatch):
+    _stub_scan(monkeypatch, ["AAA", "BBB"], lambda s, d, t, c: {"symbol": s})
+
+    out = symbol_watch.refresh_symbol_watch(days=5, config={"symbol_watch": {"pass_budget_seconds": -1}})
+
+    assert out["ok"] is True
+    assert out["done"] == 0
+    assert set(out["skipped"]) == {"AAA", "BBB"}
+    assert all(r == "pass_budget_exceeded" for r in out["skipped"].values())
+
+
+def test_one_unreachable_name_never_costs_the_whole_preview(snapshot_path, monkeypatch):
+    def compute(symbol, date, timing, config):
+        if symbol == "BAD":
+            raise RuntimeError("dolt went away")
+        return {"symbol": symbol}
+
+    _stub_scan(monkeypatch, ["AAA", "BAD"], compute)
+
+    out = symbol_watch.refresh_symbol_watch(days=5, config={})
+
+    assert out["done"] == 1
+    assert out["skipped"] == {"BAD": "symbol_error"}

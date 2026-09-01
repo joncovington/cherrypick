@@ -39,8 +39,8 @@ beforeEach(() => {
       fliesDir: path.join(tmp, "flies"),
       earningsDir: path.join(tmp, "earnings"),
       gexDir: path.join(tmp, "gex"),
-      scoutDir: path.join(tmp, "scout"),
       reviewDir: path.join(tmp, "review"),
+      overviewDir: path.join(tmp, "overview"),
       advisorDir: path.join(tmp, "advisor"),
       adviceDir: path.join(tmp, "state", "advice"),
       meicRiskConfig: path.join(tmp, "config.risk.json"),
@@ -70,6 +70,13 @@ describe("module live gates", () => {
     expect(readModuleGate(config, "meic").liveEnabled).toBeNull();
     writeModuleConfig("earnings", "not an object");
     expect(readModuleGate(config, "earnings").liveEnabled).toBeNull();
+  });
+
+  it("calendars and pmcc carry the same nested live.enabled placeholder as flies", () => {
+    writeModuleConfig("calendars", { live: { enabled: false } });
+    expect(readModuleGate(config, "calendars")).toMatchObject({ liveEnabled: false });
+    writeModuleConfig("pmcc", { live: { enabled: false } });
+    expect(readModuleGate(config, "pmcc")).toMatchObject({ liveEnabled: false });
   });
 });
 

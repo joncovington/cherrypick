@@ -43,33 +43,9 @@ def _strategy_config(config: dict) -> dict:
     return config.get("strategies", {}).get("double_calendar", {})
 
 
-def realized_move_dispersion(symbol: str, config: dict, lookback_quarters: int = 8) -> dict:
-    """Standard deviation of historical realized earnings moves (as a % of
-    pre-earnings price). Thin wrapper around scanner.compute_historical_move_stats
-    (shared with every strategy, not just the calendar spreads) that keeps this
-    function's own field names (mean_realized_move_pct/realized_move_dispersion_pct)
-    so apply_tiering below doesn't change. A low-dispersion name is a
-    better double-calendar candidate than a name with the same average
-    winrate but occasional huge surprise moves -- a single blowout move
-    can wipe out this strategy's debit more completely than the iron
-    fly's width-defined max loss, so consistency matters here in a way
-    plain average winrate doesn't capture.
-    """
-    stats = scanner.compute_historical_move_stats(symbol, config, lookback_quarters)
-    if not stats.get("ok"):
-        return {
-            "ok": False,
-            "symbol": symbol,
-            "sample_size": stats.get("sample_size", 0),
-            "error": stats.get("error", "insufficient sample for dispersion"),
-        }
-    return {
-        "ok": True,
-        "symbol": symbol,
-        "sample_size": stats["sample_size"],
-        "mean_realized_move_pct": stats["avg_actual_move_pct"],
-        "realized_move_dispersion_pct": stats["move_dispersion_pct"],
-    }
+# A screening metric, not order-shaping code, and it was byte-identical in both calendar
+# strategies. Re-exported under the local name callers and tests already use.
+realized_move_dispersion = scanner.realized_move_dispersion  # noqa: F401
 
 
 def fetch_price_and_expected_move(
@@ -400,6 +376,8 @@ def evaluate_position(
     quotes: dict,
     config: dict,
     is_first_check_of_day: bool = False,
+    *,
+    now=None,
 ) -> dict:
     """Decide what (if anything) to do with an open double calendar position
     this tick. Pure calculation, no I/O -- callers fetch `open_legs` (via
@@ -456,7 +434,11 @@ def evaluate_position(
             return {"action": "close_all", "reason": f"stop_loss{gap_suffix}"}
 
     front_expiration = datetime.strptime(position["expiration"], "%Y-%m-%d").date()
-    days_to_front_expiration = (front_expiration - date.today()).days
+    # The caller's session date when it supplies one. Reading the machine's date here made
+    # the front-DTE stop depend on when the code happened to run rather than on the tick
+    # being evaluated.
+    today = date.today() if now is None else now.date()
+    days_to_front_expiration = (front_expiration - today).days
     if days_to_front_expiration <= cfg.get("exit_days_before_front_expiration", 5):
         return {"action": "close_all", "reason": "time_exit"}
 

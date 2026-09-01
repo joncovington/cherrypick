@@ -62,6 +62,36 @@ def _at(day: str, hhmm: str) -> datetime:
     return datetime.fromisoformat(day).replace(hour=hour, minute=minute, tzinfo=clock.ET)
 
 
+def test_an_idle_in_session_tick_still_publishes_a_heartbeat(tmp_path):
+    """The bug this module was killed by for four days.
+
+    Holding no position and outside the entry window, a tick has nothing to log — and the supervisor
+    used to measure this loop's liveness against its LOG, so a quiet healthy tick was indistinguishable
+    from a wedged process. It was restarted every two minutes (107 times on 2026-08-17), losing up to
+    61% of a session's ticks. Liveness is published now, so the tick that says nothing still says it is
+    alive.
+    """
+    conn = db.connect(str(tmp_path / "paper.db"))
+    beat = paper_loop.heartbeat_file()
+    assert not beat.exists()
+    # Friday, in session, no positions, nothing to enter: the quietest tick this loop has.
+    paper_loop.run_once({}, conn, cache_path=str(tmp_path / "none.db"), when=_at("2026-08-21", "12:00"))
+    assert beat.exists(), "an idle in-session tick must still prove the loop is turning over"
+
+
+def test_the_heartbeat_leads_every_gate(tmp_path):
+    """It is written at the TOP of the tick, so it means "the loop is turning over" and never "the
+    loop did work" — a non-trading day and an out-of-session tick are both healthy, and both return
+    before anything else happens."""
+    conn = db.connect(str(tmp_path / "paper.db"))
+    beat = paper_loop.heartbeat_file()
+    for day, hhmm in (("2026-08-22", "12:00"), ("2026-08-18", "08:00")):  # Saturday, pre-open
+        if beat.exists():
+            beat.unlink()
+        paper_loop.run_once({}, conn, cache_path=str(tmp_path / "none.db"), when=_at(day, hhmm))
+        assert beat.exists(), f"{day} {hhmm} returns early but the loop still reached the top of a tick"
+
+
 def test_non_trading_day_is_a_clean_no_op(tmp_path):
     conn = db.connect(str(tmp_path / "paper.db"))
     out = paper_loop.run_once({}, conn, cache_path=str(tmp_path / "none.db"), when=_at("2026-08-22", "12:00"))

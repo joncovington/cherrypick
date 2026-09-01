@@ -45,14 +45,12 @@ def write(config: dict, conn, db_path: str, *, today: date | None = None) -> Pat
     symbols = config.get("symbols") or ["SPX"]
     today = today or clock.now_et().date()
     leg_sources = [
-        {
-            "db": db_path,
-            "query": (
-                "SELECT l.streamer_symbol FROM dc_legs l JOIN dc_positions p "
-                "ON p.position_id = l.position_id "
-                "WHERE l.status = 'open' AND p.status != 'closed'"
-            ),
-        }
+        _sr.leg_source(
+            db_path,
+            "SELECT l.streamer_symbol FROM dc_legs l JOIN dc_positions p "
+            "ON p.position_id = l.position_id "
+            "WHERE l.status = 'open' AND p.status != 'closed'",
+        )
     ]
     return _sr.write_request(
         _MODULE,
@@ -64,7 +62,4 @@ def write(config: dict, conn, db_path: str, *, today: date | None = None) -> Pat
 
 def register(config: dict, conn, db_path: str) -> None:
     """Best-effort: never raises into the caller."""
-    try:
-        write(config, conn, db_path)
-    except Exception as exc:  # noqa: BLE001 — registration is advisory, never fatal to the loop
-        _log.warning("stream request registration failed: %s", exc)
+    _sr.register_best_effort(write, config, conn, db_path, log=_log)

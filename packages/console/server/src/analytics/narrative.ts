@@ -1,4 +1,13 @@
 /**
+ * **Preserved evidence, 2026-08-31.** The research/screener section this backed was retired, but
+ * this module and its test suite are kept: each of the 43 cases across `describe.test.ts` and
+ * `narrative.test.ts` replays an observed reference-platform card, and together they are the
+ * evidence that justified these formulae. That evidence is irreplaceable and costs nothing to keep,
+ * where re-deriving it would mean re-observing a platform we no longer run against.
+ *
+ * Nothing in the console calls this now. It is a reference implementation, not a live path.
+ */
+/**
  * Port of scout's analytics/narrative.py: plain-language per-symbol analysis, generated from data
  * the console already computes — the two-paragraph shape a commercial research platform shows under
  * each chart (a scan-classification headline plus a "Price Action" observation), emulated from our

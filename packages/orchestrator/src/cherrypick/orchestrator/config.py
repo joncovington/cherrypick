@@ -14,6 +14,8 @@ from typing import Any
 
 from cherrypick.core import home as _home
 
+from .util import read_json
+
 # cherrypick runtime root — where config.json, logs/, and state/ live. In a source checkout that is the
 # repo root; this module sits at <root>/src/cherrypick/orchestrator/config.py, so the root is 3 parents
 # up. An installed copy (no repo root) sets CHERRYPICK_HOME to its runtime dir instead.
@@ -282,12 +284,38 @@ def review_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def morning_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved pre-open market-overview config (packages/overview). ON by default for the pack,
+    OFF for the narrative, mirroring the review's posture.
+
+    Two jobs: `factpack_at` builds the deterministic morning pack (a pure stream-cache + GEX
+    consumer — no credential, no network, so it is as safe to run unattended as the review), and
+    `narrative_at` runs scripts/morning_narrative.py against it. The narrative shells out to Claude
+    Code and — unlike the EOD narrative — is allowed web lookups for the macro calendar, which is
+    one more reason it lives outside every package and stays off by default.
+    """
+    mv = cfg.get("morning", {}) or {}
+    return {
+        "enabled": mv.get("enabled", True),
+        # ET, box-local. 08:30 leaves the pack a full hour before the open; the narrative follows
+        # at 09:00 so a human reading pre-open gets facts even when the AI step fails or is off.
+        "factpack_at": mv.get("factpack_at", "08:30"),
+        "narrative": mv.get("narrative", False),
+        "narrative_at": mv.get("narrative_at", "09:00"),
+    }
+
+
 def advisor_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved AI-advisor scheduling (packages/advisor + scripts/advisor_checkpoint.py). OFF by default.
 
-    Eight daily slots: seven light intraday checkpoints on a cheap model, and one deep post-close run
-    on the strong one. The deep slot follows the review's provisional pass (16:30) so it can read
-    that fact set, and it is the slot that issues the next session's advice.
+    One deep post-close run on the strong model, following the review's provisional pass (16:30) so
+    it can read that fact set. It is the slot that issues the next session's advice, and since
+    2026-08-26 it is the only slot: the seven light intraday checkpoints were cut to one on 08-21
+    and to none on 08-26, because across 36 of them they produced four `creative` proposals and one
+    critical flag the deep slot re-derived anyway (see packages/advisor/CLAUDE.md). Light slots
+    remain fully supported — `checkpoints` still schedules them — they are simply not the default.
+
+    An EMPTY `checkpoints` (list or dict) derives no light jobs and leaves `advisor-deep` alone.
 
     Off by default twice over, because two independent things have to be true before anything
     happens: the suite has to schedule the advisor (this block), and each module has to declare an
@@ -302,12 +330,29 @@ def advisor_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     the config surfaces show one complete block rather than half of one.
     """
     av = cfg.get("advisor", {}) or {}
+    # Defaults to NO light checkpoints (2026-08-26). The old seven-time default is what a fresh
+    # install used to inherit, and the evidence says it buys drafts nobody acts on while adding
+    # ~10% to the deep pack the model must read.
+    raw_checkpoints = av.get("checkpoints", [])
+    # Two accepted shapes. A LIST of times keeps the original behavior: slots are named
+    # positionally from ADVISOR_LIGHT_SLOTS in jobspec. A DICT of {slot_name: time} names each
+    # checkpoint explicitly — added 2026-08-21 when the schedule was cut to one light slot, because
+    # a single-entry LIST would run the 12:30 checkpoint under the positional name "open", and a
+    # slot name that lies about its own hour is exactly the legibility failure the positional
+    # naming comment warns about. `checkpoint_slots` is None for the list form (jobspec falls back
+    # to positional) and the aligned name list for the dict form, sorted by time.
+    if isinstance(raw_checkpoints, dict):
+        ordered = sorted(raw_checkpoints.items(), key=lambda kv: kv[1])
+        checkpoints = [at for _slot, at in ordered]
+        checkpoint_slots = [slot for slot, _at in ordered]
+    else:
+        checkpoints = list(raw_checkpoints)
+        checkpoint_slots = None
     return {
         "enabled": av.get("enabled", False),
         # ET, box-local like every other schedule in this file.
-        "checkpoints": list(av.get("checkpoints", [
-            "09:45", "10:30", "11:30", "12:30", "13:30", "14:30", "15:30",
-        ])),
+        "checkpoints": checkpoints,
+        "checkpoint_slots": checkpoint_slots,
         "deep_at": av.get("deep_at", "17:00"),
         "light_model": av.get("light_model", "sonnet"),
         "deep_model": av.get("deep_model", "opus"),
@@ -389,35 +434,10 @@ def preopen_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def follow_feed_settings(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Resolved Follow Feed notifier config. OFF by default. When enabled, `install` registers its
-    own recurring task -- deliberately NOT a watchdog-tick call like trade_notify, because this is
-    the one notifier that makes a network request and the reliability path stays network-free."""
-    ff = cfg.get("follow_feed", {}) or {}
-    return {
-        "enabled": ff.get("enabled", False),
-        "task_name": ff.get("task_name", "cherrypick-follow-notify"),
-        "interval_minutes": ff.get("interval_minutes", 5),
-        "channels": ff.get("channels") or ["log", "discord_follow"],
-        "max_per_run": ff.get("max_per_run", 8),
-        "filters": ff.get("filters", {}) or {},
-    }
-
-
-def lossdog_settings(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Resolved Lossdog VIP trade-feed notifier config. OFF by default. Network -> its own
-    supervisor job, never the watchdog tick (the same treatment as follow_feed, for the same
-    reason). Auth is minted per run from the keyring __client cookie, with the LOSSDOG_TOKEN env
-    var as the manual fallback -- neither ever appears in this config."""
-    ld = cfg.get("lossdog", {}) or {}
-    return {
-        "enabled": ld.get("enabled", False),
-        "task_name": ld.get("task_name", "cherrypick-lossdog-notify"),
-        "interval_minutes": ld.get("interval_minutes", 10),
-        "channels": ld.get("channels") or ["log", "discord_follow"],
-        "max_per_run": ld.get("max_per_run", 8),
-        "filters": ld.get("filters", {}) or {},
-    }
+# The follow_feed and lossdog notifier settings lived here until 2026-08-21, when both feed
+# notifiers moved wholesale to the standalone follow-feed-notifier repo (~/Claude/follow-feed-
+# notifier), which schedules itself through the OS Task Scheduler and manages its own keyring
+# entries. Nothing in this suite reads a `follow_feed` or `lossdog` config block any more.
 
 
 def desk_notify_settings(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -493,13 +513,49 @@ def console_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "server_entry": root / "server" / "dist" / "index.js",
         "silence_seconds": int(con.get("silence_seconds", 60)),
         "dev_backoff_seconds": int(dev_backoff) if dev_backoff else None,
+        "port": console_serve_port(),
+        "reclaim_stuck_port": bool(con.get("reclaim_stuck_port", True)),
     }
+
+
+# Mirrors packages/console/shared/src/paths.ts DEFAULT_CONSOLE_PORT. Duplicated rather than shared
+# because the two sides are different languages; kept in sync by the same reasoning that names the
+# port there — 5060/5061 sit on Chrome's unsafe-port list.
+DEFAULT_CONSOLE_PORT = 5070
+
+
+def console_serve_port() -> int:
+    """The console's listen port, resolved the same way the Node server resolves its own
+    (`serve.port` in `home()/config/console.json`, else the default). The supervisor needs this to
+    tell its OWN console child apart from an unrelated process that happens to hold the port —
+    see `supervisor._reclaim_stuck_port`. Never raises: a missing/malformed console.json reads as
+    the default, same as the TypeScript side."""
+    raw = read_json(_home.config_path("console"), default={})
+    try:
+        port = int(((raw or {}).get("serve") or {}).get("port"))
+        if 0 < port < 65536:
+            return port
+    except (TypeError, ValueError):
+        pass
+    return DEFAULT_CONSOLE_PORT
+
+
+def resident_heartbeat_path(name: str) -> Path:
+    """Where a supervised resident job publishes its liveness (`state/<name>.heartbeat`).
+
+    The FILENAME convention has exactly one definition, `cherrypick.core.home.heartbeat_path` —
+    stated there because the writer (a module, or the console) and the watcher (this package) have to
+    agree about it and cannot import each other. Only the directory is re-derived here, off
+    `STATE_DIR`, because that is the seam this package's tests redirect (`tests/conftest.py`) and a
+    call straight through to the resolver would ignore it.
+    """
+    return STATE_DIR / _home.heartbeat_path(name).name
 
 
 def console_heartbeat_path() -> Path:
     """Where the console writes its liveness file (`state/console.heartbeat`). One definition, read by
     the supervisor's silence check and by anything reporting whether the read surface is up."""
-    return STATE_DIR / "console.heartbeat"
+    return resident_heartbeat_path("console")
 
 
 def python_exe() -> str:

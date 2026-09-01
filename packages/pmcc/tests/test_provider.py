@@ -39,25 +39,27 @@ def test_adjusted_root_is_filtered(cache):
     assert snap["reason"] == "not_root_listed"
 
 
-def test_deep_window_includes_the_99_delta_strike(cache):
+def test_deep_window_includes_the_85_delta_strike(cache):
     cache.spot("TNA", 70.60)
-    # 45% window floor is ~38.8 — the deep long at 50 is INSIDE, a 30 strike is outside.
+    # The default 20% window floor is ~56.48 — the deep long at 60 is INSIDE, a 40 strike is
+    # outside (2026-08-23 redesign: the shallower 85-90-delta long needs a much narrower window
+    # than the old ~99-delta design's 45%).
     cache.option("TNA", "2026-08-28", 67.0, bid=4.70, ask=4.80)
-    cache.option("TNA", "2026-09-04", 50.0, bid=20.60, ask=20.80, delta=0.99)
-    deep_out = cache.option("TNA", "2026-09-04", 30.0, bid=40.60, ask=40.80)
+    cache.option("TNA", "2026-09-04", 60.0, bid=10.60, ask=10.80, delta=0.88)
+    deep_out = cache.option("TNA", "2026-09-04", 40.0, bid=30.60, ask=30.80)
     snap = provider.build_entry_snapshot(cache.path, "TNA", PLAN, root="TNA")
     assert snap["ok"], snap
     assert any(q for q in snap["quotes"])
     assert deep_out not in snap["quotes"]  # outside the window: metadata yes, quote fetch no
-    long_sym = [e["streamer_symbol"] for e in snap["long_chain"] if e["strike_price"] == 50.0][0]
-    assert snap["quotes"][long_sym]["mid"] == pytest.approx(20.70)
-    assert snap["greeks"][long_sym]["delta"] == 0.99
+    long_sym = [e["streamer_symbol"] for e in snap["long_chain"] if e["strike_price"] == 60.0][0]
+    assert snap["quotes"][long_sym]["mid"] == pytest.approx(10.70)
+    assert snap["greeks"][long_sym]["delta"] == 0.88
 
 
 def test_stale_and_crossed_quotes_rejected(cache):
     cache.spot("TNA", 70.60)
     cache.option("TNA", "2026-08-28", 67.0, bid=4.70, ask=4.80, age=9999)
-    cache.option("TNA", "2026-09-04", 50.0, bid=21.00, ask=20.00)  # crossed
+    cache.option("TNA", "2026-09-04", 60.0, bid=11.00, ask=10.00)  # crossed
     snap = provider.build_entry_snapshot(cache.path, "TNA", PLAN, root="TNA")
     assert not snap["ok"]
     assert snap["reason"] == "no_fresh_quotes"

@@ -55,6 +55,9 @@ interface MeicForest {
 // No brand accent (#d23f57) here -- reserved for brand/live/alert moments, not "just the first arm".
 const ARM_COLORS = ["#7aa2ff", "#43b57a", "#d9a13b", "#a06bd9", "#4fc3d9", "#e88a5c", "#8a9c4a"];
 
+// Matches the flies forest's spot/settlement marker (ForestCard.tsx) — same amber line + outlined tag.
+const SPOT_COLOR = "#d9a13b";
+
 function useMeicForest(mode: TradingMode, date: string | null) {
   return useQuery<MeicForest>({
     queryKey: ["meic-forest", mode, date],
@@ -214,6 +217,37 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
             strokeDasharray="2 2"
           />
         ))}
+
+        {/* Where the underlying actually sits, against the price axis this curve is drawn over —
+            the payoff is at expiry, but "how far are we from that strike right now" still needs
+            a mark on the same axis. Same treatment as the flies forest's spot/settlement marker:
+            solid amber line, outlined amber tag. */}
+        {data?.lastSpot != null && data.lastSpot >= xMin && data.lastSpot <= xMax && (
+          <>
+            <line
+              x1={X(data.lastSpot)}
+              x2={X(data.lastSpot)}
+              y1={pad.t}
+              y2={height - pad.b}
+              stroke={SPOT_COLOR}
+              strokeWidth={2}
+              opacity={0.9}
+            />
+            {(() => {
+              const label = `spot ${data.lastSpot.toFixed(2)}`;
+              const lw = label.length * 5.6 + 12;
+              const lx = Math.min(Math.max(X(data.lastSpot) - lw / 2, pad.l), width - pad.r - lw);
+              return (
+                <>
+                  <rect x={lx} y={1} width={lw} height={15} rx={4} fill="#101216" stroke={SPOT_COLOR} strokeWidth={1} />
+                  <text x={lx + lw / 2} y={12} fontSize={9.5} fontWeight={700} fill={SPOT_COLOR} textAnchor="middle" fontFamily="Consolas, monospace">
+                    {label}
+                  </text>
+                </>
+              );
+            })()}
+          </>
+        )}
 
         {hoverIdx !== null && hover !== null && (
           <line x1={X(hover.price)} x2={X(hover.price)} y1={pad.t} y2={height - pad.b} stroke="#3a424e" strokeDasharray="3 3" />

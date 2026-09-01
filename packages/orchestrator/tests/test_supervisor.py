@@ -83,7 +83,6 @@ def base_cfg(**overrides):
         "modules": {},
         "watchdog": {"interval_minutes": 10},
         "trade_notify": {"task_name": "cherrypick-trade-notify", "interval_seconds": 30},
-        "follow_feed": {"enabled": False},
     }
     cfg.update(overrides)
     return cfg
@@ -228,12 +227,209 @@ def test_resident_child_starts_in_window_only(spawned, tmp_path):
     assert not any(p.argv[-1] == "--once" for p in spawned[n:])
 
 
+def test_windowless_resident_start_counter_resets_at_the_day_boundary(spawned):
+    """The console churn latch of 2026-08-21: `starts_in_window` only reset in the window-shut
+    branch, and a windowless resident has no window-shut, so one evening's 27 deliberate
+    rebuild/restart cycles kept the churn WARN firing on a day with ZERO restarts. A windowless
+    job's window is the calendar day."""
+    from cherrypick.orchestrator import jobspec
+
+    spec = jobspec.JobSpec(
+        id="console", argv=("node", "server.js"), kind=jobspec.KIND_RESIDENT, interval_seconds=30
+    )
+    sup = supervisor.Supervisor(base_cfg())
+    child = FakeProc(["node", "server.js"])
+    spawned.append(child)  # registers the pid as alive for _job_running
+
+    st = {"running_pid": child.pid, "starts_in_window": 27, "starts_window_day": "2026-08-09"}
+    sup._manage_resident(spec, st, MONDAY_NOON, holidays=set())
+    assert "starts_in_window" not in st  # yesterday's storm is not today's alarm
+    assert st["starts_window_day"] == "2026-08-10"
+
+    # Same day: the counter is NOT touched — churn detection within a day stays intact.
+    st["starts_in_window"] = 7
+    sup._manage_resident(spec, st, MONDAY_NOON, holidays=set())
+    assert st["starts_in_window"] == 7
+
+
 def test_offsession_tick_fires_outside_window(spawned, tmp_path):
     sup = supervisor.Supervisor(flies_cfg(tmp_path))
     evening = datetime(2026, 8, 10, 16, 20, tzinfo=ET)  # settlement time
     res = sup.pass_once(now=evening)
     assert "flies-paper-offsession" in res["started"]
     assert not any("--interval" in p.argv for p in spawned)
+
+
+def _settle(st, seconds=1000):
+    """Back-date a child's start so it counts as settled (the tests' stand-in for a clock)."""
+    from datetime import timedelta, timezone
+
+    st["last_start"] = (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat()
+
+
+def test_a_windowed_resident_that_exits_cleanly_is_believed_not_respawned(spawned, tmp_path):
+    """The 16:00 storm, and the rule that ends it.
+
+    A session-scoped loop exiting 0 is a statement -- "my own gate closed" -- not "the run finished,
+    go again". Read as the latter it erased the only throttle there is (`code == 0` resets backoff)
+    while `in_window` still said 16:00 for the whole inclusive minute, and the ~1s loop respawned
+    calendars 53 times and flies 53 times in that one minute, with no backoff line between them.
+    """
+    sup = supervisor.Supervisor(flies_cfg(tmp_path))
+    sup.pass_once(now=MONDAY_NOON)
+    child = next(p for p in spawned if "--interval" in p.argv)
+    st = sup._state["flies-paper"]
+    _settle(st)  # it ran a full session before its gate closed
+    child.exit(0)
+
+    n = len(spawned)
+    for _ in range(20):  # twenty passes is twenty seconds of the old storm
+        sup.pass_once(now=MONDAY_NOON)
+    assert len(spawned) == n, "a module that says it is finished is believed, not restarted"
+    assert st["resident_state"] == "module reports session complete"
+    assert st["backoff_until"] is None, "this is not a failure and must not scar the ladder"
+
+
+def test_the_next_window_starts_the_module_again(spawned, tmp_path):
+    """Believing it is scoped to THIS window. The mark is spent the moment the window shuts, so
+    tomorrow's session is never suppressed by yesterday's clean exit."""
+    sup = supervisor.Supervisor(flies_cfg(tmp_path))
+    sup.pass_once(now=MONDAY_NOON)
+    child = next(p for p in spawned if "--interval" in p.argv)
+    st = sup._state["flies-paper"]
+    _settle(st)
+    child.exit(0)
+    sup.pass_once(now=MONDAY_NOON)
+    assert st.get("module_stopped")
+
+    sup.pass_once(now=datetime(2026, 8, 10, 16, 20, tzinfo=ET))  # window shut
+    assert not st.get("module_stopped"), "the mark is spent when the window closes"
+    res = sup.pass_once(now=datetime(2026, 8, 11, 12, 0, tzinfo=ET))  # next session
+    assert "flies-paper" in res["started"]
+
+
+def test_a_resident_that_exits_instantly_backs_off_instead_of_declaring_itself_done(spawned, tmp_path):
+    """The backstop. A child exiting 0 the moment it starts is a misconfiguration, not a session
+    end -- and taking it at its word would stop the job for its whole window on the first tick. It
+    takes the ladder instead, which bounds the spawn rate without ever declaring the job finished."""
+    sup = supervisor.Supervisor(flies_cfg(tmp_path))
+    sup.pass_once(now=MONDAY_NOON)
+    child = next(p for p in spawned if "--interval" in p.argv)
+    st = sup._state["flies-paper"]
+    child.exit(0)  # never settled: last_start is now
+    sup.pass_once(now=MONDAY_NOON)
+    assert not st.get("module_stopped")
+    assert st["consecutive_failures"] == 1 and st["backoff_until"] > time.time()
+
+
+def test_an_unwindowed_resident_exiting_cleanly_is_still_restarted(spawned, tmp_path):
+    """The console declares no window on purpose -- a read surface only up during RTH cannot read the
+    session that just ended -- so "terminal for the window" is meaningless for it, and a server
+    exiting cleanly is never expected. Believing it there would take the suite's only read surface
+    down and leave it down."""
+    cfg = base_cfg()
+    cfg["console"] = {"enabled": True, "path": str(tmp_path / "console")}
+    entry = tmp_path / "console" / "server" / "dist"
+    entry.mkdir(parents=True, exist_ok=True)
+    (entry / "index.js").write_text("//")
+    (tmp_path / "console" / "run.py").write_text("#")
+    sup = supervisor.Supervisor(cfg)
+    sup.pass_once(now=MONDAY_NOON)
+    st = sup._state.get("console")
+    assert st is not None and st.get("running_pid"), "console job should be running to test its exit"
+    child = next(p for p in spawned if "dashboard" in p.argv)
+    _settle(st)
+    child.exit(0)
+    res = sup.pass_once(now=MONDAY_NOON)
+    assert not st.get("module_stopped"), "an unwindowed resident never declares a session complete"
+    assert "console" in res["started"], "the read surface is brought back up"
+
+
+def test_a_dead_adopted_orphan_is_throttled_rather_than_hot_looped(spawned, tmp_path):
+    """The second storm path. An orphan adopted from a prior supervisor dies with an unknowable exit
+    code, and this branch used to record nothing at all -- leaving backoff untouched, so the respawn
+    was ungated exactly like the clean-exit case. We cannot tell a finished session from a crash, so
+    it counts as a failure to bound the rate while still being restarted."""
+    sup = supervisor.Supervisor(flies_cfg(tmp_path))
+    st = sup._state.setdefault("flies-paper", {})
+    st.update({"running_pid": 999_999, "kind": "resident"})  # a pid that is not alive
+    sup._handles.pop("flies-paper", None)
+    sup.pass_once(now=MONDAY_NOON)
+    assert st["last_exit_code"] == supervisor._EXIT_UNKNOWN
+    assert st["consecutive_failures"] >= 1 and st["backoff_until"] > time.time()
+
+
+def _port_job(port=5070, reclaim=True):
+    from cherrypick.orchestrator import jobspec
+
+    return jobspec.JobSpec(
+        id="console",
+        argv=("node", "server.js"),
+        kind=jobspec.KIND_RESIDENT,
+        interval_seconds=30,
+        port=port,
+        reclaim_stuck_port=reclaim,
+    )
+
+
+def test_stuck_port_is_not_reclaimed_before_the_failure_threshold(spawned, monkeypatch):
+    """A first, or third, failed spawn must never trigger a kill — that would turn a normal restart
+    race (or a developer's own manual console) into collateral damage. Only sustained failure counts
+    as 'stuck'."""
+    killed: list[int] = []
+    monkeypatch.setattr(supervisor, "_terminate_tree", lambda pid: killed.append(pid) or True)
+    monkeypatch.setattr(supervisor, "port_owner_pid", lambda port: 424242)
+    monkeypatch.setattr(supervisor, "pid_alive", lambda pid: pid == 424242)
+    sup = supervisor.Supervisor(base_cfg())
+    spec = _port_job()
+    st = {"consecutive_failures": supervisor._PORT_RECLAIM_AFTER_FAILURES - 1}
+    sup._manage_resident(spec, st, MONDAY_NOON, holidays=set())
+    assert killed == []
+
+
+def test_stuck_port_is_reclaimed_from_an_untracked_pid_after_sustained_failure(spawned, monkeypatch):
+    """The 2026-08-23 incident: an orphaned console child held :5070 for 9 hours and ~1600 failed
+    spawns because nothing ever recognized the port-holder as neither ours nor reachable. Past the
+    failure threshold, an untracked but alive port-holder gets its whole tree killed and the ladder
+    resets so the very next attempt gets a clean shot at the port."""
+    killed: list[int] = []
+    monkeypatch.setattr(supervisor, "_terminate_tree", lambda pid: killed.append(pid) or True)
+    monkeypatch.setattr(supervisor, "port_owner_pid", lambda port: 424242)
+    monkeypatch.setattr(supervisor, "pid_alive", lambda pid: pid == 424242)
+    sup = supervisor.Supervisor(base_cfg())
+    spec = _port_job()
+    st = {"consecutive_failures": supervisor._PORT_RECLAIM_AFTER_FAILURES}
+    sup._manage_resident(spec, st, MONDAY_NOON, holidays=set())
+    assert killed == [424242]
+    assert st["consecutive_failures"] == 0
+    assert st["backoff_until"] is None
+
+
+def test_stuck_port_reclaim_never_kills_a_pid_the_supervisor_already_recognizes(spawned, monkeypatch):
+    """A job's own child mid-restart, or a sibling job's tracked pid, must never look 'untracked' just
+    because ITS OWN state row has no running_pid at this instant."""
+    killed: list[int] = []
+    monkeypatch.setattr(supervisor, "_terminate_tree", lambda pid: killed.append(pid) or True)
+    monkeypatch.setattr(supervisor, "port_owner_pid", lambda port: 555)
+    monkeypatch.setattr(supervisor, "pid_alive", lambda pid: pid == 555)
+    sup = supervisor.Supervisor(base_cfg())
+    sup._state["other-job"] = {"running_pid": 555}  # some other tracked job happens to hold the port
+    spec = _port_job()
+    st = {"consecutive_failures": supervisor._PORT_RECLAIM_AFTER_FAILURES}
+    sup._manage_resident(spec, st, MONDAY_NOON, holidays=set())
+    assert killed == []
+
+
+def test_stuck_port_reclaim_is_opt_outable(spawned, monkeypatch):
+    killed: list[int] = []
+    monkeypatch.setattr(supervisor, "_terminate_tree", lambda pid: killed.append(pid) or True)
+    monkeypatch.setattr(supervisor, "port_owner_pid", lambda port: 424242)
+    monkeypatch.setattr(supervisor, "pid_alive", lambda pid: pid == 424242)
+    sup = supervisor.Supervisor(base_cfg())
+    spec = _port_job(reclaim=False)
+    st = {"consecutive_failures": supervisor._PORT_RECLAIM_AFTER_FAILURES}
+    sup._manage_resident(spec, st, MONDAY_NOON, holidays=set())
+    assert killed == []
 
 
 def test_silent_resident_child_is_restarted_with_backoff(spawned, tmp_path, monkeypatch):
@@ -246,12 +442,14 @@ def test_silent_resident_child_is_restarted_with_backoff(spawned, tmp_path, monk
     sup.pass_once(now=MONDAY_NOON)
     child = next(p for p in spawned if "--interval" in p.argv)
     st = sup._state["flies-paper"]
-    # age the child past the settle grace and its log past the silence window
-    log = cfgmod.module_logs_dir("flies") / "flies_paper.log"
-    log.parent.mkdir(parents=True, exist_ok=True)
-    log.write_text("x")
+    # Age the child past the settle grace and its HEARTBEAT past the silence window. Silence is
+    # measured against the loop's published liveness, not its log -- a log is a side effect of having
+    # something to say, and supervising on it killed the quiet module every two minutes for days.
+    beat = cfgmod.resident_heartbeat_path("flies")
+    beat.parent.mkdir(parents=True, exist_ok=True)
+    beat.write_text("x")
     old = time.time() - 1000
-    os.utime(log, (old, old))
+    os.utime(beat, (old, old))
     from datetime import timedelta, timezone
 
     st["last_start"] = (datetime.now(timezone.utc) - timedelta(seconds=1000)).isoformat()
@@ -276,10 +474,10 @@ def test_healthy_resident_child_clears_stale_failure_history(spawned, tmp_path):
     # simulate scar tissue from a crash-loop that happened well before this (still-alive) child
     st["consecutive_failures"] = 25
     st["backoff_until"] = time.time() - 5000  # long expired, but never cleared
-    # a fresh, current log keeps it from being judged silent
-    log = cfgmod.module_logs_dir("flies") / "flies_paper.log"
-    log.parent.mkdir(parents=True, exist_ok=True)
-    log.write_text("x")
+    # a fresh, current heartbeat keeps it from being judged silent
+    beat = cfgmod.resident_heartbeat_path("flies")
+    beat.parent.mkdir(parents=True, exist_ok=True)
+    beat.write_text("x")
     from datetime import timedelta, timezone
 
     old_start = datetime.now(timezone.utc) - timedelta(seconds=1000)
@@ -290,13 +488,35 @@ def test_healthy_resident_child_clears_stale_failure_history(spawned, tmp_path):
 
 
 def test_fresh_resident_child_is_never_judged_silent(spawned, tmp_path):
-    """The settling grace: a just-started child hasn't logged yet and must not be restart-looped
-    (the streamer's settling lesson)."""
+    """The settling grace: a just-started child hasn't published a heartbeat yet and must not be
+    restart-looped (the streamer's settling lesson)."""
     sup = supervisor.Supervisor(flies_cfg(tmp_path))
     sup.pass_once(now=MONDAY_NOON)
     child = next(p for p in spawned if "--interval" in p.argv)
-    sup.pass_once(now=MONDAY_NOON)  # log file doesn't even exist yet
+    sup.pass_once(now=MONDAY_NOON)  # heartbeat file doesn't even exist yet
     assert not child.terminated
+
+
+def test_a_module_that_publishes_no_heartbeat_is_never_judged_silent(spawned, tmp_path):
+    """The safe degrade, and the reason this change could not disable a job instead.
+
+    A module that never writes a heartbeat is simply not silence-supervised: `_resident_silent`
+    returns False for a file that does not exist, so the supervisor leaves it alone rather than
+    killing a process it cannot judge. Restarting on "I can't tell" is what produced the original
+    bug, and refusing to derive the job at all would have taken a trading loop down over telemetry.
+    The gap is reported by the watchdog instead, where a diagnosis belongs.
+    """
+    sup = supervisor.Supervisor(flies_cfg(tmp_path))
+    sup.pass_once(now=MONDAY_NOON)
+    child = next(p for p in spawned if "--interval" in p.argv)
+    st = sup._state["flies-paper"]
+    from datetime import timedelta, timezone
+
+    # Well past both the settle grace and the silence window, with no heartbeat ever written.
+    st["last_start"] = (datetime.now(timezone.utc) - timedelta(seconds=5000)).isoformat()
+    assert not cfgmod.resident_heartbeat_path("flies").exists()
+    sup.pass_once(now=MONDAY_NOON)
+    assert not child.terminated, "an unjudgeable child is left running, never killed on suspicion"
 
 
 def test_run_honors_stop_file_and_lock(spawned, monkeypatch):
@@ -336,7 +556,7 @@ def test_snapshot_reflects_daemon_state(spawned):
     info = supersnap.job_run_info("watchdog", snap)
     assert info and info["last_run_time"]
     # the disabled opt-in stays visible with its reason
-    assert snap["jobs"]["follow-notify"]["enabled"] is False
+    assert snap["jobs"]["symbol-watch"]["enabled"] is False
 
 
 def test_derive_error_disables_one_job_and_is_reported(spawned):

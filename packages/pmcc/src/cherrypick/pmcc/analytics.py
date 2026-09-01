@@ -10,17 +10,43 @@ an empty bucket is `None`, because "not recorded" and "was zero" are different f
 
 from __future__ import annotations
 
+# The era the module counts as evidence, MEIC's `CURRENT_ERA` convention adopted verbatim. `era` on
+# `pmcc_positions` is an ADDED column (2026-08-23) — every row from before it existed reads back
+# NULL, which never equals a literal era string, so old rows are excluded from `headline()` by
+# construction rather than by a backfilled guess.
+#
+# One era so far: `"redesign"` (2026-08-23 ->), stamped by `book.enter_position` on every new row.
+# It closes the pre-redesign window — TNA/UPRO alongside TQQQ, the `keltner`/`roll` books, the
+# ~99-delta-floor long and yield-targeted ITM short, the early-tv-exhaustion default exit — which
+# ran symbol/book/rule combinations the redesigned engine no longer produces and never will again.
+# Four closed cycles exist from that window (all TQQQ, one apiece across control/keltner/roll/
+# advised:control); they stay in the ledger as history and are still visible in the console's
+# History tab and any `era="ALL"` read, but pooling them into the new design's headline would
+# average two incomparable strategies into one number. See the module CLAUDE.md's 2026-08-23
+# measurement-break note and the `measurement_breaks` row this reset journals.
+CURRENT_ERA = "redesign"
 
-def headline(conn) -> dict:
+
+def headline(conn, era: str | None = CURRENT_ERA) -> dict:
     """Per-book, per-symbol results over CLOSED positions, plus what is still open. Net is
     `gross_pnl - fees`, the same subtraction the suite's ledger reader performs — one convention,
-    stated once."""
+    stated once.
+
+    `era=CURRENT_ERA` (the default) scopes to the module's current evidence window; `era="ALL"`
+    disables the filter for an explicit cross-era read; any other value scopes to that era alone.
+    """
+    where = "status = 'closed'"
+    params: list[str] = []
+    if era and era != "ALL":
+        where += " AND era = ?"
+        params.append(era)
     books: dict[str, dict] = {}
     for row in conn.execute(
         "SELECT book, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees, "
         "SUM(gross_pnl) - SUM(fees) AS net, SUM((gross_pnl - fees) > 0) AS wins, "
-        "SUM(roll_count) AS rolls FROM pmcc_positions WHERE status = 'closed' "
-        "GROUP BY book, symbol ORDER BY book, symbol"
+        f"SUM(roll_count) AS rolls FROM pmcc_positions WHERE {where} "
+        "GROUP BY book, symbol ORDER BY book, symbol",
+        params,
     ):
         books.setdefault(row["book"], {})[row["symbol"]] = {
             "positions": row["n"],
@@ -95,37 +121,6 @@ def exposure(conn) -> dict:
         )
     exposed_positions = sum(1 for p in positions if (p["exposed_ticks"] or 0) > 0)
     return {"positions": positions, "positions_with_exposure": exposed_positions}
-
-
-def rolls(conn) -> list[dict]:
-    """Every executed roll, from the events trail — the roll book's own ledger."""
-    import json as _json
-
-    out = []
-    for row in conn.execute(
-        "SELECT position_id, session_date, detail_json FROM pmcc_management_events "
-        "WHERE action = 'roll_short' AND executed = 1 ORDER BY occurred_at"
-    ):
-        detail = {}
-        try:
-            detail = _json.loads(row["detail_json"]) if row["detail_json"] else {}
-        except (TypeError, ValueError):
-            pass
-        out.append({"position_id": row["position_id"], "session": row["session_date"], **detail})
-    return out
-
-
-def keltner_readiness(conn, symbols: list[str], today: str) -> dict:
-    """Completed-bar counts per symbol — how far through the keltner book's cold start we are."""
-    out = {}
-    for symbol in symbols:
-        row = conn.execute(
-            "SELECT COUNT(*) AS n FROM pmcc_daily_bars WHERE symbol = ? AND trade_date < ? "
-            "AND day_close IS NOT NULL",
-            (symbol.strip().upper(), today),
-        ).fetchone()
-        out[symbol.strip().upper()] = row["n"]
-    return out
 
 
 def mark_coverage(conn, session_date: str) -> dict:

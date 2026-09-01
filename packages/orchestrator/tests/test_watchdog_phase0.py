@@ -47,11 +47,33 @@ def test_freshness_still_warns_when_nothing_was_written(monkeypatch, tmp_path):
     monkeypatch.setattr(wd.cfgmod, "module_logs_dir", lambda name: tmp_path / "logs" / name)
     monkeypatch.setattr(wd.cfgmod, "module_root", lambda mcfg, name=None: tmp_path / "checkout")
     monkeypatch.setattr(wd.tasks, "exists", lambda _n: True)
+    # Point the heartbeat at the tmp home too — without this, the developer machine's LIVE flies
+    # loop keeps ~/.cherrypick/state/flies.heartbeat fresh and this test reads production state.
+    monkeypatch.setattr(wd.core_home, "heartbeat_path", lambda name: tmp_path / "state" / f"{name}.heartbeat")
 
     mcfg = {"paper": {"kind": "self_healing", "task_name": "t", "log": "flies_paper.log"}}
     findings = wd._check_meic("flies", mcfg, in_session=True)
     fresh = next(f for f in findings if f.key == "flies.fresh")
     assert fresh.status == wd.WARN
+
+
+def test_fresh_heartbeat_keeps_an_idle_loop_ok(monkeypatch, tmp_path):
+    """The calendars flap of 2026-08-21: a healthy loop with no positions writes no DB rows and no
+    log lines, so both conditional signals age out and `.fresh` WARNs for most of a session. The
+    per-tick heartbeat (written unconditionally) must be enough on its own."""
+    monkeypatch.setattr(wd.cfgmod, "module_logs_dir", lambda name: tmp_path / "logs" / name)
+    monkeypatch.setattr(wd.cfgmod, "module_root", lambda mcfg, name=None: tmp_path / "checkout")
+    monkeypatch.setattr(wd.tasks, "exists", lambda _n: True)
+    monkeypatch.setattr(wd.core_home, "heartbeat_path", lambda name: tmp_path / "state" / f"{name}.heartbeat")
+
+    hb = tmp_path / "state" / "calendars.heartbeat"
+    hb.parent.mkdir(parents=True, exist_ok=True)
+    hb.write_text("tick")
+
+    mcfg = {"paper": {"kind": "self_healing", "task_name": "t", "log": "calendars_paper.log"}}
+    findings = wd._check_meic("calendars", mcfg, in_session=True)
+    fresh = next(f for f in findings if f.key == "calendars.fresh")
+    assert fresh.status == wd.OK
 
 
 # --------------------------------------------------------------------- (2) entry SLA grace

@@ -41,6 +41,9 @@ Subcommands:
                        Never scheduled, never called from the watchdog.
   reconcile            Paper↔live isolation guard: query the real broker account (read-only) and flag
                        any open positions/BP a paper-only suite shouldn't have. On-demand; never trades.
+  positions            Live P/L by underlying for the REAL broker account: positions priced from the
+                       stream cache first, the feed only for what the cache lacks. --detail for legs,
+                       --account <last4> for one account, --json. Read-only; never trades.
   connect              Guided per-module onboarding (--module): set OAuth creds (via the module's own
                        hidden-input tool) and select the live-trading account. Never trades.
   account              List (--module), set (--set <last4|index>), or clear (--clear) a module's
@@ -51,11 +54,8 @@ Subcommands:
   ensure-dolt          Start any module's declared Dolt server if down (invoked by its keep-alive task).
   notify-test          Fire a test notification through all configured channels.
   notify-trades        Push new paper entries/exits to the trade channels (also runs on each watchdog tick).
-  notify-follow        Push new tastylive Follow Feed orders to their own channel (own task, network call).
-  notify-lossdog       Push new Lossdog VIP feed trades to the follow channel (own task, private API).
-                       --replay-last N re-posts the newest N; --dry-run prints embeds instead of posting.
   notify-desk          Card manual-desk orders and watch them to fill (own task, broker + network call).
-  secrets-set          Store a webhook URL or the lossdog cookie in the keyring (--channel; --url or prompt).
+  secrets-set          Store a webhook URL in the keyring (--channel; --url or prompt).
   secrets-status       Show which push-channel secrets are configured (secret-free).
   secrets-delete       Remove a stored secret (--channel).
 """
@@ -80,10 +80,8 @@ from cherrypick.orchestrator import (
     connect,
     desk_notifier,
     doctor,
-    follow_notifier,
     init,
     logrotate,
-    lossdog_notifier,
     migrate,
     reconcile,
     report,
@@ -96,6 +94,9 @@ from cherrypick.orchestrator import (
     watchdog,
 )
 from cherrypick.orchestrator import config as cfgmod
+from cherrypick.orchestrator import (
+    positions as positions_mod,
+)
 from cherrypick.orchestrator.util import CREATE_NO_WINDOW, first_json, pid_alive, read_json
 
 # The OS scheduler invokes the in-place launcher `pythonw <repo>/run.py <cmd>`. This module is
@@ -703,6 +704,49 @@ def _run_review(cfg, *, final: bool) -> None:
     _emit(rec)
 
 
+def _run_morning(cfg) -> None:
+    """Invoked by the daily morning-factpack job (see cfgmod.morning_settings). Runs
+    packages/overview, a pure stream-cache + GEX-history consumer that writes only into its own
+    home — so like the review, the cost of a bad pass is a missing report, never a trade.
+
+    WHICH session the pack describes is overview's own contract: `cherrypick.overview build`
+    resolves today's ET trading day itself, so no `--session` is passed."""
+    hb_path = cfgmod.state_file("morning.last.json")
+    log_path = _module_log("overview")
+
+    try:
+        r = subprocess.run(
+            [cfgmod.python_exe(), "-m", "cherrypick.overview", "build"],
+            capture_output=True,
+            text=True,
+            timeout=900,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        try:
+            result = json.loads(r.stdout or "{}")
+        except json.JSONDecodeError:
+            result = {"raw": (r.stdout or "")[:2000]}
+        ok = r.returncode == 0 and result.get("ok", True) is not False
+        error = None if ok else (result.get("error") or (r.stderr or "")[:500])
+    except Exception as exc:
+        ok, result, error = False, {}, f"{type(exc).__name__}: {exc}"
+
+    rec = {
+        "ok": ok,
+        "error": error,
+        "session": (result or {}).get("session"),
+        "phase": (result or {}).get("phase"),
+    }
+    hb_path.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    _append_log(log_path, {**rec, "result": result})
+
+    if not ok:
+        Notifier(cfg.get("notify")).notify(
+            "WARNING", "overview", "Morning overview pack failed", f"{error or 'see logs/overview.log'}"
+        )
+    _emit(rec)
+
+
 def _console_port(cfg) -> int:
     """The console's listen port: `serve.port` in console.json, else 5070.
 
@@ -1024,16 +1068,23 @@ def cmd_reconcile(cfg, scheduled: bool = False) -> None:
     sys.exit({reconcile.FLAT: 0, reconcile.DRIFT: 1, reconcile.UNKNOWN: 2}.get(verdict, 2))
 
 
+def cmd_positions(cfg, args) -> None:
+    """Live P/L by underlying. Read-only and advisory, so it exits 0 whenever a report was produced — a
+    losing book is not a failed command. An unreachable broker is the failure (2), and a leg nothing
+    could price exits 3 so a caller notices rather than reading a total that quietly omits it."""
+    result = positions_mod.run(cfg, account=args.account)
+    if args.json:
+        print(json.dumps(result, indent=2, default=str))
+    else:
+        print(positions_mod.format_report(result, detail=args.detail))
+    if not result.get("ok"):
+        sys.exit(2)
+    if any(a.get("unpriced_count") for a in result.get("accounts") or []):
+        sys.exit(3)
+
+
 def cmd_notify_trades(cfg) -> None:
     _emit(trade_notifier.run(cfg))
-
-
-def cmd_notify_follow(cfg) -> None:
-    _emit(follow_notifier.run(cfg))
-
-
-def cmd_notify_lossdog(cfg, args) -> None:
-    _emit(lossdog_notifier.run(cfg, replay_last=args.replay_last or 0, dry_run=args.dry_run))
 
 
 def cmd_notify_desk(cfg) -> None:
@@ -1127,9 +1178,8 @@ def cmd_secrets_set(channel: str | None, url: str | None) -> None:
         _emit({"ok": False, "error": f"--channel must be one of {list(notify_secrets.SUPPORTED)}"})
         sys.exit(2)
     if not url:
-        # Read without echo / shell history. A webhook URL (or the Clerk cookie) is a bearer secret.
-        label = "Clerk __client cookie value" if channel == "lossdog" else "webhook URL"
-        url = getpass.getpass(f"Paste the {channel} {label} (input hidden): ").strip()
+        # Read without echo / shell history. A webhook URL is a bearer secret.
+        url = getpass.getpass(f"Paste the {channel} webhook URL (input hidden): ").strip()
     if not url:
         _emit({"ok": False, "error": "no URL provided"})
         sys.exit(2)
@@ -1175,6 +1225,7 @@ def build_parser() -> argparse.ArgumentParser:
             "report",
             "archive",
             "reconcile",
+            "positions",
             "connect",
             "account",
             "migrate-home",
@@ -1183,12 +1234,11 @@ def build_parser() -> argparse.ArgumentParser:
             "run-earnings-exit",
             "run-earnings-symbol-watch",
             "review",
+            "morning",
             "restart-console",
             "ensure-dolt",
             "notify-test",
             "notify-trades",
-            "notify-follow",
-            "notify-lossdog",
             "notify-desk",
             "secrets-set",
             "secrets-status",
@@ -1226,6 +1276,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--fast",
         action="store_true",
         help="For doctor: skip the authenticated broker check (local/offline checks only)",
+    )
+    parser.add_argument(
+        "--detail",
+        action="store_true",
+        help="For positions: expand each underlying into its individual legs",
+    )
+    parser.add_argument(
+        "--account",
+        default=None,
+        help="For positions: restrict to one account by its last 4 digits",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="For positions: emit the structured result instead of the text report",
     )
     parser.add_argument("--module", default=None, help="For connect/account: which module to target")
     parser.add_argument(
@@ -1279,16 +1344,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="For archive: report what would be archived without writing or deleting. "
-        "For notify-lossdog: print embeds as JSON instead of posting (state untouched)",
-    )
-    parser.add_argument(
-        "--replay-last",
-        type=int,
-        default=0,
-        metavar="N",
-        help="For notify-lossdog: re-post the N most recent trades regardless of seen state "
-        "(a rendering test; state untouched)",
+        help="For archive: report what would be archived without writing or deleting",
     )
     parser.add_argument(
         "--stop",
@@ -1330,18 +1386,18 @@ def main() -> None:
         "report": lambda: cmd_report(cfg, args),
         "archive": lambda: cmd_archive(cfg, args),
         "reconcile": lambda: cmd_reconcile(cfg, scheduled=args.scheduled),
+        "positions": lambda: cmd_positions(cfg, args),
         "connect": lambda: cmd_connect(cfg, args),
         "account": lambda: cmd_account(cfg, args),
         "migrate-home": lambda: cmd_migrate_home(cfg, args.apply),
         "calibrate": lambda: cmd_calibrate(cfg),
         "notify-trades": lambda: cmd_notify_trades(cfg),
-        "notify-follow": lambda: cmd_notify_follow(cfg),
-        "notify-lossdog": lambda: cmd_notify_lossdog(cfg, args),
         "notify-desk": lambda: cmd_notify_desk(cfg),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),
         "run-earnings-exit": lambda: _run_earnings(cfg, "exit"),
         "run-earnings-symbol-watch": lambda: _run_earnings_symbol_watch(cfg),
         "review": lambda: _run_review(cfg, final="--final" in sys.argv),
+        "morning": lambda: _run_morning(cfg),
         "restart-console": lambda: cmd_restart_console(cfg),
         "ensure-dolt": lambda: _ensure_dolt(cfg),
         "notify-test": lambda: cmd_notify_test(cfg),

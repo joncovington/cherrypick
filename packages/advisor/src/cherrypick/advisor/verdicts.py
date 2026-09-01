@@ -24,6 +24,7 @@ from cherrypick.core.metrics import calibration_reading
 from cherrypick.core.profiles import QUALIFICATION_RULE, compare_profiles, qualify_readings
 
 from cherrypick.advisor import bounds as _bounds
+from cherrypick.advisor import clock as _clock
 from cherrypick.advisor import paths as _paths
 
 # Module -> ledger schema. The same map review keeps, for the same reason: the schema decides which
@@ -76,7 +77,12 @@ def _delta(advised: dict | None, base: dict | None) -> dict[str, Any]:
 
 
 def reading_pair(
-    module: str, base_profile: str, *, strategy: str | None = None, rule: dict | None = None
+    module: str,
+    base_profile: str,
+    *,
+    strategy: str | None = None,
+    rule: dict | None = None,
+    start: str | None = None,
 ) -> dict[str, Any]:
     """The advised book beside its control, with the qualification checks for both.
 
@@ -84,11 +90,17 @@ def reading_pair(
     against the same underlying, so the difference between them is worth far more than either
     book's absolute numbers. Reporting the advised book alone would invite exactly the conclusion
     the pairing exists to prevent.
+
+    `start` bounds BOTH sides to sessions on/after it. Until 2026-08-20 this read the whole ledger,
+    which made the docstring's own claim false on the base side: the advised tag only exists for the
+    experiment's sessions, while the base pooled its entire history — for flies that was 23 sessions
+    reaching back into the XSP era. `for_experiment` passes the experiment's own first session, so
+    the pair really does compare the same window.
     """
     tag_advised = _bounds.advised_tag(module, base_profile, strategy)
     tag_base = f"{base_profile}:{strategy}" if (module == "earnings" and strategy) else base_profile
 
-    every = readings(module)
+    every = readings(module, start=start)
     advised, base = every.get(tag_advised), every.get(tag_base)
     qualified = qualify_readings(
         {t: r for t, r in ((tag_advised, advised), (tag_base, base)) if r}, rule=rule
@@ -130,8 +142,15 @@ def for_experiment(experiment: dict[str, Any], *, rule: dict | None = None) -> d
     params = json.loads(experiment.get("params_json") or "{}")
     base = experiment["base_profile"]
 
+    # Window both sides from the first session this experiment could have issued advice for —
+    # enact targets next_session(created_session), so that is the experiment's true start.
+    created = experiment.get("created_session")
+    try:
+        start = _clock.next_session(created) if created else None
+    except Exception:  # noqa: BLE001 — an unparseable date must degrade to unwindowed, not crash a verdict
+        start = created
     strategies = _bounds.strategies_in(module, params) or [None]
-    pairs = [reading_pair(module, base, strategy=s, rule=rule) for s in strategies]
+    pairs = [reading_pair(module, base, strategy=s, rule=rule, start=start) for s in strategies]
 
     return {
         "experiment_id": experiment["id"],

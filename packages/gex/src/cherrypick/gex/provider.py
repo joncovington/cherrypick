@@ -15,10 +15,17 @@ for the ATM/GEX window.
 from __future__ import annotations
 
 import json
-import sqlite3
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# Read-only opens go through cherrypick.core.db.connect_ro: it percent-escapes the path, so a
+# directory containing '?', '#' or '%' cannot silently change the URI's meaning. The local
+# copies interpolated the path raw, where a '#' truncated the URI and opened a DIFFERENT,
+# empty database — which a provider reports as "nothing cached" rather than as an error.
+from cherrypick.core import clock as _clock
+from cherrypick.core.db import connect_ro as _connect_ro
+from cherrypick.core.streamcache import read_spot as _core_read_spot
 
 
 @dataclass
@@ -46,12 +53,8 @@ class GexSnapshot:
     input_age_seconds: float | None = None
 
 
-def _connect_ro(db_path: Path) -> sqlite3.Connection:
-    """Open the stream cache strictly read-only (mirrors report._connect_ro in the umbrella) so a
-    viewer can never mutate the streamer's live database."""
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
+# SQLite's default host-parameter limit is 999; stay under it with room to spare.
+_SPOT_CHUNK = 900
 
 
 def _normalise_iv(raw_iv: float) -> float:
@@ -60,28 +63,62 @@ def _normalise_iv(raw_iv: float) -> float:
     return raw_iv if raw_iv > 1 else raw_iv * 100
 
 
-def read_spot(db_path: Path | str, symbol: str) -> float | None:
-    """The underlying's latest spot (``stream_trades.last``) for one symbol, read-only — a light lookup
-    the dashboard's spot-trail recorder uses to sample every offered symbol without building a full
-    snapshot. ``None`` when the cache is missing or the symbol isn't cached."""
+def read_spot(db_path: Path | str, symbol: str, *, max_age_seconds: float | None = None) -> float | None:
+    """The underlying's latest spot (``stream_trades.last``) for one symbol, read-only. ``None``
+    when the cache is missing, the symbol isn't cached, or the print is older than
+    ``max_age_seconds``. Passing ``None`` keeps the last known price whatever its age."""
+    return _core_read_spot(db_path, symbol, max_age_seconds=max_age_seconds)
+
+
+def read_spots(
+    db_path: Path | str, symbols: list[str], *, max_age_seconds: float | None = None
+) -> dict[str, float]:
+    """Latest spot for several symbols at once, read-only. Absent symbols are simply missing.
+
+    A symbol whose print is older than ``max_age_seconds`` is treated as absent, which is the point
+    rather than an optimisation. This feeds the spot TRAIL, and the trail is a record of what the
+    market did: writing a frozen print as a fresh sample every tick makes a stalled feed and a
+    quiet market look identical, which is the one thing the suite's recording rules exist to
+    prevent. Skipping leaves a GAP, and a gap is legible as "we were not receiving prices".
+
+    Chunked under SQLite's variable limit, the same way the other providers in the suite do it.
+    """
+    syms = [s.strip().upper() for s in symbols if s and s.strip()]
     db_path = Path(db_path)
-    if not db_path.exists():
-        return None
+    if not syms or not db_path.exists():
+        return {}
+    now = time.time()
+    out: dict[str, float] = {}
     conn = _connect_ro(db_path)
     try:
-        r = conn.execute(
-            "SELECT last FROM stream_trades WHERE symbol = ?", (symbol.strip().upper(),)
-        ).fetchone()
-        return float(r["last"]) if r and r["last"] is not None else None
+        for i in range(0, len(syms), _SPOT_CHUNK):
+            chunk = syms[i : i + _SPOT_CHUNK]
+            placeholders = ",".join("?" for _ in chunk)
+            for r in conn.execute(
+                f"SELECT symbol, last, updated_at FROM stream_trades WHERE symbol IN ({placeholders})",
+                chunk,
+            ):
+                if r["last"] is None:
+                    continue
+                if max_age_seconds is not None:
+                    updated = r["updated_at"]
+                    if updated is None or (now - float(updated)) > max_age_seconds:
+                        continue
+                out[str(r["symbol"]).upper()] = float(r["last"])
     finally:
         conn.close()
+    return out
 
 
-def snapshot_from_stream_cache(db_path: Path | str, symbol: str) -> GexSnapshot:
+def snapshot_from_stream_cache(
+    db_path: Path | str, symbol: str, today: str | None = None
+) -> GexSnapshot:
     """Build a ``GexSnapshot`` for ``symbol`` from a MEIC-style stream cache, read-only.
 
     Returns a snapshot with ``spot``/``expiration`` possibly ``None`` when the symbol (or its chain)
     isn't cached yet — the caller reports that as "not ready" rather than an error.
+
+    ``today`` (ET, ISO) bounds which expirations may be used; it is a parameter so a test can pin it.
     """
     symbol = symbol.strip().upper()
     db_path = Path(db_path)
@@ -95,12 +132,32 @@ def snapshot_from_stream_cache(db_path: Path | str, symbol: str) -> GexSnapshot:
 
         # Candidate expirations for this underlying, nearest first. The underlying_symbol filter
         # matters: XSP and SPX share 0DTE dates, so an expiration-only match would blend two chains.
+        #
+        # **Never an expiration that has already passed**, and this is the load-bearing clause. It
+        # used to order by ABS(JULIANDAY(expiration) - JULIANDAY('now')), which ranks yesterday's
+        # chain as near as tomorrow's and nearer than the day after. Nothing prunes `stream_greeks`,
+        # so an expired chain keeps stale non-zero gammas, satisfies the has-greeks test in the loop
+        # below, and wins — producing a GEX reading frozen at one value for the whole session.
+        #
+        # It was not rare. Measured 2026-08-26 over `gex_regime_history`: 3,991 of 10,516 recorded
+        # readings (38%) came from a chain that had already expired, nearly all of them a single
+        # constant net_gex repeated for hours — 96 readings on 2026-08-19 all reading -16.99bn off
+        # the expired 08-18 chain, and so on across 23 sessions. Those readings reach the advisor's
+        # fact pack as `market.gex.today_counts` and the overview's gamma flip and walls, and they
+        # are what made the advisor report a regime signal that "three sources in this pack describe
+        # three different ways".
+        #
+        # A forward-only ordering, so "nearest" means nearest AHEAD. When nothing valid has greeks
+        # the loop below falls back to the nearest future expiration and the caller reports "not
+        # ready", which is the correct answer and the one a stale chain was silently replacing.
+        today = today or _clock.today_iso()
         exps = [
             r["expiration"]
             for r in conn.execute(
                 "SELECT expiration FROM stream_chain WHERE underlying_symbol = ? "
-                "GROUP BY expiration ORDER BY ABS(JULIANDAY(expiration) - JULIANDAY('now'))",
-                (symbol,),
+                "AND expiration >= ? "
+                "GROUP BY expiration ORDER BY JULIANDAY(expiration) - JULIANDAY(?)",
+                (symbol, today, today),
             )
         ]
         if not exps:

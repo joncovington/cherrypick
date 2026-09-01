@@ -9,16 +9,15 @@ One `run_once` carries the whole position lifecycle, gated by the clock rather t
 (the flies rule: the schedule carries no session logic, so it can never disagree with the engine
 about when the day starts or ends):
 
-- Any trading day, in session: mirror the daily bars (keltner substrate), mark every open leg every
-  tick, then run management on what the gates allow — the tv-exhausted both-legs close, the roll
-  book's breach roll, the covered-call hold.
+- Any trading day, in session: mark every open leg every tick, then run management on what the
+  gates allow — the default hold-to-short-expiration exit, or (advised-only) the early
+  tv-exhaustion close.
 - Past the disposition time: cover shares delivered by an earlier session's assignment, then sell
   the orphan longs of short-settled positions — oldest obligation first, before this tick can enter
   anything new.
-- Inside the entry window, per (symbol, book) with no open position and headroom under
-  `max_positions`: plan and enter. `control` and `roll` enter from the SAME plan on the same tick
-  (the roll experiment's exact pairing); `keltner` enters only when its pullback-and-reversal gate
-  passes, which is its whole variable.
+- Inside the entry window, for each configured symbol (TQQQ, XSP) with no open position and
+  headroom under `max_positions`: plan and enter `control` (and `advised:control` when the advisor
+  has admitted params for today).
 - Past the settle time on any day legs expire: settle them off a staleness-gated spot read. A
   missed settlement day is NOT settled late against a later print — the cache keeps no history, so
   that needs `--settle --date --price` with the official print, and the loop says so rather than
@@ -34,13 +33,15 @@ import os
 import time
 from datetime import datetime
 
+from cherrypick.core import advice as _core_advice
 from cherrypick.core import calendar as _cal
 from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
+from cherrypick.core import looplock
 
 from cherrypick.pmcc import book as bookmod
 from cherrypick.pmcc import cli as climod
-from cherrypick.pmcc import clock, db, engine, keltner, management, provider, stream_request
+from cherrypick.pmcc import clock, db, engine, management, provider, stream_request
 
 RTH_OPEN_MIN = 9 * 60 + 30
 RTH_CLOSE_MIN = 16 * 60
@@ -79,7 +80,7 @@ def settle_time_min(config: dict) -> int:
 
 
 def _symbols(config: dict) -> list[str]:
-    return [s.strip().upper() for s in (config.get("symbols") or ["TNA", "TQQQ", "UPRO"])]
+    return [s.strip().upper() for s in (config.get("symbols") or ["TQQQ"])]
 
 
 # --------------------------------------------------------------------------- loop lock + cadence
@@ -91,69 +92,20 @@ def _loop_lock_path() -> str:
     return os.path.join(_paper_data_dir(), "paper_loop.lock")
 
 
-def _pid_alive(pid: int) -> bool:
-    """The settled probe chain (psutil → Win32 OpenProcess → os.kill last)."""
-    if pid <= 0:
-        return False
-    try:
-        import psutil  # type: ignore
-
-        return bool(psutil.pid_exists(pid))
-    except ImportError:
-        pass
-    try:
-        import ctypes
-
-        synchronize = 0x00100000
-        handle = ctypes.windll.kernel32.OpenProcess(synchronize, False, pid)
-        if handle:
-            ctypes.windll.kernel32.CloseHandle(handle)
-            return True
-        return False
-    except Exception:
-        try:
-            os.kill(pid, 0)
-            return True
-        except PermissionError:
-            return True
-        except (OSError, SystemError):
-            return False
+_pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch this name)
 
 
 def _acquire_loop_lock(stale_seconds: int = 180) -> bool:
     """Single-instance guard shared by `--interval` and `--once`, so the supervised resident loop
-    and an off-session/manual `--once` can never iterate the same book concurrently. A held-but-
-    ALIVE lock is never stolen regardless of age; the mtime fallback applies only when the holder's
-    PID is unreadable."""
-    path = _loop_lock_path()
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.write(fd, str(os.getpid()).encode())
-        os.close(fd)
-        return True
-    except FileExistsError:
-        try:
-            with open(path, encoding="utf-8") as fh:
-                holder = int(fh.read().strip())
-        except (OSError, ValueError):
-            holder = None
-        if holder is not None and _pid_alive(holder):
-            return False
-        try:
-            if holder is not None or time.time() - os.path.getmtime(path) > stale_seconds:
-                os.unlink(path)
-                return _acquire_loop_lock(stale_seconds)
-        except OSError:
-            pass
-        return False
+    and an off-session/manual `--once` can never iterate the same book concurrently.
+
+    `cherrypick.core.looplock` holds the semantics (a live holder is never stolen, whatever its
+    age); `_pid_alive` is passed explicitly so a test monkeypatching that name still steers it."""
+    return looplock.acquire(_loop_lock_path(), stale_seconds, alive=_pid_alive)
 
 
 def _release_loop_lock() -> None:
-    try:
-        os.unlink(_loop_lock_path())
-    except OSError:
-        pass
+    looplock.release(_loop_lock_path())
 
 
 def _note_cadence_change(conn, interval_seconds: int) -> None:
@@ -195,58 +147,27 @@ def _advice_decision_path() -> str:
 def advice_decision(config: dict, today: str) -> dict:
     """Today's advice decision, derived ONCE per session and replayed thereafter (the flies
     read-once rule: advice can never start, stop, or change mid-session across `--once`
-    processes)."""
-    acfg = config.get("advice") or {}
-    base = acfg.get("base_book", "control")
-    path = _advice_decision_path()
+    processes).
 
-    decision = None
-    if os.path.exists(path):
-        try:
-            with open(path, encoding="utf-8") as handle:
-                decision = json.load(handle)
-        except (OSError, ValueError):
-            decision = None
-        if decision is not None and decision.get("day") != today:
-            decision = None
-    if decision is not None:
-        return decision
-
-    if acfg.get("enabled") and acfg.get("bounds"):
-        from cherrypick.core import advice as _core_advice
-
-        result = _core_advice.load(_home.state_dir(), "pmcc", today, acfg.get("bounds") or {})
-        params = {p["param"]: p["value"] for p in result["proposals"]} or None
-        decision = {
-            "day": today,
-            "base_book": base,
-            "params": params,
-            "reason": result["reason"],
-            "proposals": result["proposals"],
-            "rejected": result.get("rejected") or [],
-        }
-        for proposal in result["proposals"]:
-            _log(
-                f"advice applied: {proposal['param']}={proposal['value']!r} — {proposal.get('rationale', '')}"
-            )
-        if not result["proposals"]:
-            _log(f"advice: baseline ({result['reason'] or 'no proposals'})")
-    else:
-        decision = {"day": today, "base_book": base, "params": None, "reason": "advice_disabled"}
-
-    try:
-        with open(path, "w", encoding="utf-8") as handle:
-            json.dump(decision, handle, indent=2)
-    except OSError:
-        pass
-    return decision
+    The mechanics live in `cherrypick.core.advice.session_decision` — three modules had written this
+    read-once-and-replay identically, and it carries a safety property rather than a convenience.
+    """
+    return _core_advice.session_decision(
+        _home.state_dir(),
+        "pmcc",
+        today,
+        config,
+        _advice_decision_path(),
+        base_key="base_book",
+        log=_log,
+    )
 
 
 def session_books(config: dict, today: str) -> tuple[list[str], dict | None]:
     """(the books entry may open today, the admitted advice params or None). The roster only
     matters at ENTRY — marking, management, disposition, and settlement all iterate open positions
     from the ledger whatever their book tag, so a book once opened can never be stranded by a later
-    roster change."""
+    roster change. Single book (`control`) since the 2026-08-23 redesign, plus its advised twin."""
     books = [b for b in engine.BOOKS if (config.get("books") or {}).get(b, {}).get("enabled", True)]
     decision = advice_decision(config, today)
     params = decision.get("params")
@@ -261,6 +182,13 @@ def run_once(
 ) -> dict:
     """One iteration. Owns the whole lifecycle's phase logic — there is exactly one thing to
     schedule and one thing that can fail."""
+    # At the TOP of the tick, before any gate: liveness means "the loop is turning over",
+    # never "it did work". Moved here from the resident branch on 2026-08-24 — the supervisor
+    # drives this module as repeated `--once` ticks, so a beat that lived only in the
+    # `--interval` path never fired at all and this module published no heartbeat. The
+    # watchdog then fell back to the DB mtime and the log, both CONDITIONAL writes, and
+    # warned "paper data is stale" every time the module was healthy but idle.
+    _beat()
     when = when or clock.now_et()
     now_min = clock.minute_of_day(when)
     today = when.date()
@@ -294,10 +222,6 @@ def run_once(
     actions = 0
     marks_written = 0
     phase = "manage"
-
-    # Phase: mirror the daily bars — the keltner substrate accumulates whether or not anything
-    # trades today. Telemetry class, never costs the tick.
-    keltner.upsert_daily_bars(conn, cache_path, _symbols(config))
 
     # Phase: disposals — oldest obligation first, before this tick can enter anything new.
     # Delivered shares go first and on EVERY session: a short-call assignment hands them over at
@@ -364,24 +288,6 @@ def _entry_guards(config: dict, symbol: str, plan_dates: dict, day: str) -> str 
     return None
 
 
-def _keltner_state(config: dict, conn, cache_path: str, symbol: str, day: str, spot: float | None) -> dict:
-    """The keltner channel + gate verdict for one symbol at the current spot. Measures come back
-    whatever the verdict, and are stamped on EVERY book's entries."""
-    params = {**keltner.PARAM_DEFAULTS, **engine.merged_params(config, "keltner")}
-    bars = keltner.completed_bars(conn, symbol, day)
-    chan = keltner.channel(bars, params)
-    session = provider.read_session(cache_path, symbol, day) or {}
-    if spot is None:
-        return {"ok": False, "reason": "no_spot_price", "measures": {}}
-    return keltner.entry_ok(
-        spot,
-        chan,
-        prev_close=session.get("prev_day_close"),
-        day_low=session.get("day_low"),
-        params=params,
-    )
-
-
 def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: str) -> int:
     books, advice_params = session_books(config, day)
     defaults = config.get("defaults") or {}
@@ -397,6 +303,20 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             and db.open_position_count(conn, b) < max_positions
         ]
         if not wanting:
+            # Every book already holds this symbol, so there is nothing to attempt. Recorded rather
+            # than skipped: a session with no attempt rows at all reads identically to a loop that
+            # never evaluated entry, and "all slots full" is the benign half of that pair. Collapsed
+            # per (day, book, symbol, reason), so a whole session costs one counted row.
+            for b in books:
+                db.record_decision(
+                    conn,
+                    trade_date=day,
+                    book=b,
+                    symbol=symbol,
+                    mode="entry",
+                    reason="slot_held",
+                    accepted=False,
+                )
             continue
         if plan_dates is None:
             for b in wanting:
@@ -442,7 +362,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             root=root,
             when=when,
             **provider.snapshot_kwargs(config),
-            deep_window_pct=defaults.get("deep_window_pct", provider.DEFAULT_DEEP_WINDOW_PCT),
+            deep_window_pct=provider.deep_window_pct_for(config, symbol),
         )
         if not snapshot.get("ok"):
             _log(f"{symbol}: entry snapshot refused ({snapshot['reason']})")
@@ -483,12 +403,8 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             spot=snapshot["spot"],
         )
 
-        # The keltner read happens once per symbol per tick, at the snapshot's spot — measures for
-        # every book's rows, a gate only for the keltner book.
-        kel = _keltner_state(config, conn, cache_path, symbol, day, snapshot["spot"])
-
-        # One plan for the base books (control/roll/keltner share control's entry params — the
-        # exact-pairing property); the advised book plans separately when its overlay touches entry.
+        # One plan for the base book; the advised book plans separately when its overlay touches
+        # entry.
         base_params = {**management.PARAM_DEFAULTS, **engine.merged_params(config, "control")}
         planned = engine.plan_entry(snapshot, base_params)
         plans: dict[str, dict] = {}
@@ -501,25 +417,6 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
 
         for b in wanting:
             result = plans[b]
-            if b == "keltner" and not kel.get("ok"):
-                db.record_entry_attempt(
-                    conn,
-                    trade_date=day,
-                    symbol=symbol,
-                    book=b,
-                    outcome=kel["reason"],
-                    spot=snapshot["spot"],
-                )
-                db.record_decision(
-                    conn,
-                    trade_date=day,
-                    book=b,
-                    symbol=symbol,
-                    mode="entry",
-                    reason=kel["reason"],
-                    accepted=False,
-                )
-                continue
             if not result.get("ok"):
                 db.record_entry_attempt(
                     conn,
@@ -529,8 +426,6 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                     outcome=result["reason"],
                     block_detail=result.get("detail"),
                     spot=snapshot["spot"],
-                    target_yield=base_params.get("target_weekly_yield_min", 0.012),
-                    best_yield=result.get("best_yield"),
                 )
                 db.record_decision(
                     conn,
@@ -543,6 +438,19 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                 )
                 continue
             plan = result["plan"]
+            if plan.get("long_selected_by") == "extrinsic":
+                # Temporary visibility while the feed's own greeks coverage is unproven for this
+                # deep-ITM window: extrinsic-only selection is a legitimate degrade (the delta
+                # floor simply can't be checked), not a defect, but every occurrence is worth a
+                # human noticing until there is enough history to know how often the feed lacks
+                # deep-strike deltas here.
+                _logger.warning(
+                    "pmcc entry (%s/%s): long strike %.2f selected via extrinsic-only fallback, "
+                    "feed had no delta for this deep-ITM candidate",
+                    symbol,
+                    b,
+                    plan["long_strike"],
+                )
             opened = bookmod.enter_position(
                 conn,
                 plan,
@@ -550,7 +458,6 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                 b,
                 entry_session=day,
                 advice_params=advice_params,
-                keltner_measures=kel.get("measures"),
             )
             if opened is None:
                 continue
@@ -562,8 +469,6 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                 book=b,
                 outcome="filled",
                 spot=plan["spot"],
-                target_yield=base_params.get("target_weekly_yield_min", 0.012),
-                achieved_yield=plan["weekly_yield_pct"],
                 long_strike=plan["long_strike"],
                 short_strike=plan["short_strike"],
                 net_debit=plan["net_debit"],
@@ -578,7 +483,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                 reason=(
                     f"entered {plan['long_strike']:g}/{plan['short_strike']:g} "
                     f"debit {plan['net_debit']:.2f} tv {plan['net_tv']:.2f} "
-                    f"yield {plan['weekly_yield_pct']:.2%} protection {plan['downside_protection_pct']:.1%}"
+                    f"protection {plan['downside_protection_pct']:.1%}"
                 ),
                 accepted=True,
             )
@@ -586,7 +491,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                 f"[{b}] {symbol}: entered long {plan['long_strike']:g} ({plan['long_expiration']}) / "
                 f"short {plan['short_strike']:g} ({plan['short_expiration']}) — "
                 f"debit {plan['net_debit']:.2f}, net TV {plan['net_tv']:.2f}, "
-                f"weekly yield {plan['weekly_yield_pct']:.2%}, protection {plan['downside_protection_pct']:.1%}, "
+                f"protection {plan['downside_protection_pct']:.1%}, "
                 f"long by {plan['long_selected_by']}"
             )
     return opened_count
@@ -609,6 +514,7 @@ def _mark_positions(config: dict, conn, *, cache_path: str, when: datetime, day:
             cache_path, legs, when=when, **provider.snapshot_kwargs(config)
         )
         params = management.effective_params(position, config)
+        style = engine.settlement_style(config, position["symbol"])
         spot = snapshot.get("spot")
         short_tv = None
         exposed = False
@@ -620,7 +526,9 @@ def _mark_positions(config: dict, conn, *, cache_path: str, when: datetime, day:
             leg_exposed = None
             if is_short and quote is not None and spot is not None:
                 leg_tv = engine.short_time_value(quote["mid"], spot, leg["strike"])
-                leg_exposed = 1 if management.assignment_exposed(leg_tv, params) else 0
+                leg_exposed = (
+                    1 if management.assignment_exposed(leg_tv, params, settlement_style=style) else 0
+                )
                 short_tv = leg_tv
                 exposed = bool(leg_exposed)
             db.record_mark(
@@ -679,30 +587,22 @@ def _manage_positions(config: dict, conn, values: dict, *, cache_path: str, when
             now=when,
             short_tv=state["short_tv"],
             spot=state["snapshot"].get("spot"),
-            rolled_today=db.rolled_today(conn, pid, day),
         )
         if not decision.acts:
             continue
         gate = management.execution_gate(state["snapshot"], params, now=when)
         executed = 0
         detail = dict(decision.detail)
-        if gate is None:
-            if decision.action == "close_all":
-                result = bookmod.close_open_legs(
-                    conn, position, state["snapshot"], config, reason=decision.reason, session_date=day
-                )
-                executed = 1 if result.get("ok") else 0
-                if not result.get("ok"):
-                    gate = result.get("reason")
-                else:
-                    actions += 1
-                    _log(f"[{position['book']}] {pid} closed — {decision.reason}")
-            elif decision.action == "roll_short":
-                rolled, gate, detail = _roll_position(
-                    config, conn, position, state, cache_path=cache_path, when=when, day=day
-                )
-                executed = 1 if rolled else 0
-                actions += 1 if rolled else 0
+        if gate is None and decision.action == "close_all":
+            result = bookmod.close_open_legs(
+                conn, position, state["snapshot"], config, reason=decision.reason, session_date=day
+            )
+            executed = 1 if result.get("ok") else 0
+            if not result.get("ok"):
+                gate = result.get("reason")
+            else:
+                actions += 1
+                _log(f"[{position['book']}] {pid} closed — {decision.reason}")
         db.record_management_event(
             conn,
             position_id=pid,
@@ -715,64 +615,6 @@ def _manage_positions(config: dict, conn, values: dict, *, cache_path: str, when
             detail_json=json.dumps(detail) if detail else None,
         )
     return actions
-
-
-def _roll_position(
-    config: dict, conn, position: dict, state: dict, *, cache_path: str, when: datetime, day: str
-) -> tuple[bool, str | None, dict]:
-    """Execute one breach roll: pick the landing expiration, snapshot its deep window, plan, book.
-    Returns (rolled, gate-or-refusal, detail). A refusal leaves the position holding like a covered
-    call — the verdict repeats next tick."""
-    params = state["params"]
-    target = clock.roll_expiration(when.date(), position["long_expiration"], params)
-    if target is None:
-        return False, "no_roll_expiration", {}
-    symbol = position["symbol"]
-    root = ((config.get("occ_roots") or {}).get(symbol)) or symbol
-    defaults = config.get("defaults") or {}
-    snapshot = provider.build_roll_snapshot(
-        cache_path,
-        symbol,
-        target,
-        root=root,
-        when=when,
-        **provider.snapshot_kwargs(config),
-        deep_window_pct=defaults.get("deep_window_pct", provider.DEFAULT_DEEP_WINDOW_PCT),
-    )
-    if not snapshot.get("ok"):
-        return False, snapshot["reason"], {"target": target}
-    # The buyback quote comes from the MARK snapshot (the old short may sit on a different
-    # expiration than the roll target's chain); inject it so plan_roll prices both sides.
-    short_legs = [
-        leg for leg in db.open_legs_for(conn, position["position_id"]) if leg["leg_role"] != "long_call"
-    ]
-    if not short_legs:
-        return False, "no_open_short", {}
-    old = short_legs[0]
-    mark_quote = (state["snapshot"].get("quotes") or {}).get(old["streamer_symbol"])
-    if mark_quote is None:
-        return False, "missing_leg_quotes", {}
-    snapshot["quotes"][old["streamer_symbol"]] = mark_quote
-    roll = engine.plan_roll(snapshot, position, old, params)
-    if not roll.get("ok"):
-        return False, roll["reason"], {"target": target, "best_yield": roll.get("best_yield")}
-    result = bookmod.roll_short_leg(conn, position, roll, config, session_date=day)
-    if not result.get("ok"):
-        return False, result.get("reason"), {}
-    detail = {
-        "old_strike": result["old_strike"],
-        "new_strike": result["new_strike"],
-        "old_expiration": result["old_expiration"],
-        "new_expiration": result["new_expiration"],
-        "net_roll_credit": result["net_roll_credit"],
-    }
-    _log(
-        f"[{position['book']}] {position['position_id']} rolled short "
-        f"{result['old_strike']:g} ({result['old_expiration']}) -> "
-        f"{result['new_strike']:g} ({result['new_expiration']}), "
-        f"net credit {result['net_roll_credit']:+.2f}"
-    )
-    return True, None, detail
 
 
 # --------------------------------------------------------------------------- disposition
@@ -950,11 +792,6 @@ def run_status(config: dict, conn, *, cache_path: str) -> dict:
             None if os.path.exists(cache_path) else "stream_cache_missing",
         )
 
-    keltner_days = {}
-    for symbol in _symbols(config):
-        bars = keltner.completed_bars(conn, symbol, today)
-        keltner_days[symbol] = len([b for b in bars if b.get("day_close") is not None])
-
     return {
         "ok": True,
         "date": today,
@@ -963,12 +800,28 @@ def run_status(config: dict, conn, *, cache_path: str) -> dict:
         "positions_today": entered_today + expiring_positions,
         "open_positions": len(open_now),
         "expiration_plan": clock.expiration_plan(when.date(), config.get("defaults") or {}),
-        "keltner_days": keltner_days,
         "stream_cache": cache_path,
         "stream_cache_present": os.path.exists(cache_path),
         "data_ok": data_ok,
         "data_reason": data_reason,
     }
+
+
+def _beat() -> None:
+    """Publish liveness: this loop reached the top of a tick.
+
+    Same contract as the calendars loop, learned from the same incident (107 restarts on
+    2026-08-17): every line this loop logs is event-driven, and the ledger only moves when a mark
+    or an entry lands, so a quiet-but-healthy tick writes nothing anyone can see — on 2026-08-21
+    the watchdog's freshness check WARNed mid-session over a 17-minute gap between mark writes.
+    Touched at the TOP of the tick, before any branch; failure is swallowed (a heartbeat that
+    costs a tick would be worse than the problem it solves)."""
+    try:
+        path = _home.heartbeat_path("pmcc")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(datetime.now().astimezone().isoformat(), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def main(argv=None) -> int:

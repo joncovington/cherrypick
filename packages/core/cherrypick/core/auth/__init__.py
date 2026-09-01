@@ -9,11 +9,13 @@ from .credentials import (
     SHARED_SERVICE,
     CredentialError,
     CredentialStore,
+    prompt_and_store,
 )
 from .session import SessionFactory, SessionManager
 
 __all__ = [
     "CredentialStore",
+    "prompt_and_store",
     "CredentialError",
     "SessionManager",
     "SessionFactory",

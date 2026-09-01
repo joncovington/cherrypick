@@ -15,6 +15,7 @@ them is here because a simpler design would have been wrong:
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -129,8 +130,24 @@ def test_the_decision_is_read_once_and_replayed(homes):
 
 
 def test_a_module_that_declares_no_advice_block_takes_none(homes):
+    """Baseline, with the cause named, and — since 2026-08-25 — not written down. Earnings lost
+    that session's artifact to an 03:03 entry pass whose recorded `advice_disabled` stuck all day."""
     _write_artifact(homes, _proposal())
-    assert advice.decision({"strategies": {}}, DAY)["reason"] == "advice_disabled"
+    decided = advice.decision({"strategies": {}}, DAY)
+    assert decided["reason"] == "advice_disabled: no advice block in config"
+    assert not os.path.exists(advice.decision_path())
+
+    # ...so the scan that follows, with a config that does accept advice, still sees the artifact.
+    assert advice.decision(config(), DAY)["params"] is not None
+
+
+def test_a_replay_does_not_fix_the_live_days_decision(homes):
+    """The harness runs against arbitrary past dates (`cmd_run_entries` on a backfill). Such a run
+    needs a decision; it must not be the one the live session recorded."""
+    _write_artifact(homes, _proposal())
+    decided = advice.decision(config(), DAY, persist=False)
+    assert decided["params"] is not None
+    assert not os.path.exists(advice.decision_path())
 
 
 # --------------------------------------------------------------------------- the twin

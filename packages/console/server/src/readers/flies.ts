@@ -1,8 +1,18 @@
 import path from "node:path";
 import type { FliesPayload, FliesBookRow, FliesPositionRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { withReadOnlyDb, num, str } from "./db.js";
+import { hasColumn, memoOnStore, readOnlyDb, withReadOnlyDb, num, str, type DatabaseHandle } from "./db.js";
+import {
+  EMPTY_RISK,
+  equityCurve,
+  median,
+  periodKey,
+  riskSummary,
+  type EquityPoint,
+  type RiskSummary,
+} from "../analytics/riskMetrics.js";
 import { emptyPage, pagedQuery, pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
+import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 
 /**
  * The era this module counts as evidence — the SPX 5-wide books from 2026-08-01.
@@ -17,7 +27,73 @@ import { emptyPage, pagedQuery, pageArray, FIRST_PAGE, type PageRequest } from "
  * FILTER and never a deletion — the XSP books are the record of a documented fee finding, and the
  * module keeps negative results on purpose.
  */
-export const CURRENT_ERA = { symbol: "SPX", from: "2026-08-01" } as const;
+export const CURRENT_ERA = { symbol: "SPX", from: "2026-08-21" } as const;
+
+/**
+ * Every era the ledger holds, declared rather than derived.
+ *
+ * There is no `era` column to group by, and the boundaries are facts about what the module was
+ * trading rather than anything the rows announce — so they are written down here, matching the
+ * module's own record (XSP 2026-07-29..07-31, SPX through 07-28, SPX 5-wide hand-designed
+ * arms 08-01..08-20, advisor era from 08-21 — the cutover where every variant arm retired and
+ * packages/advisor became the only experiment mechanism).
+ *
+ * The point of listing them is that each is readable ALONE. Before this the control offered the
+ * current era or "all", so the two earlier books could only be seen pooled with the current one —
+ * which is the exact comparison the module says distorts every per-arm breakdown, and the only way
+ * it offered to look at them at all.
+ */
+export const ERAS = [
+  { key: "advisor", label: "SPX advisor era (current)", symbol: "SPX", from: "2026-08-21", to: null },
+  { key: "spx", label: "SPX 5-wide (hand-designed arms)", symbol: "SPX", from: "2026-08-01", to: "2026-08-20" },
+  { key: "xsp", label: "XSP 1-wide", symbol: "XSP", from: "2026-07-29", to: "2026-07-31" },
+  { key: "spx-early", label: "SPX (pre-XSP)", symbol: "SPX", from: null, to: "2026-07-28" },
+] as const;
+
+export type FliesEraKey = (typeof ERAS)[number]["key"];
+
+export interface FliesMeta {
+  arms: string[];
+  dates: string[];
+  symbols: string[];
+  /** Every declared era with how many positions it holds in THIS store. */
+  eras: Array<{ era: string; label: string; trades: number }>;
+  currentEra: string;
+  /**
+   * Set when the empty lists above mean "the read failed", not "there is nothing".
+   *
+   * This endpoint IS the documented incident: it once served `{arms: [], dates: [], symbols: []}`
+   * off one bad column in a UNION, indistinguishable from a store that had simply never traded.
+   * Absent on a healthy read and on a legitimately absent store, so a consumer that ignores it is
+   * correct in every case that is not a defect.
+   */
+  degraded?: { reason: string };
+}
+
+/** The era a null filter means: the module's own evidence window. */
+export const DEFAULT_ERA: FliesEraKey = "advisor";
+
+/**
+ * SQL for one era, as clause + params. "ALL" pools every era and is only ever a stated choice.
+ *
+ * One helper because three call sites applied this by hand and would otherwise drift — the same
+ * shape of copy that let a stale expiration selector survive in four places in this suite.
+ */
+export function eraClause(era: string | null): { sql: string | null; params: string[] } {
+  if (era === "ALL") return { sql: null, params: [] };
+  const found = ERAS.find((e) => e.key === era) ?? ERAS.find((e) => e.key === DEFAULT_ERA)!;
+  const parts = ["symbol = ?"];
+  const params: string[] = [found.symbol];
+  if (found.from !== null) {
+    parts.push("trade_date >= ?");
+    params.push(found.from);
+  }
+  if (found.to !== null) {
+    parts.push("trade_date <= ?");
+    params.push(found.to);
+  }
+  return { sql: parts.join(" AND "), params };
+}
 
 export interface FliesFilter {
   arm: string | null;
@@ -54,9 +130,10 @@ function filterSql(filter: FliesFilter): { where: string; params: string[] } {
   // Era last, so an explicit date the caller asked for is never silently overridden — asking for a
   // specific XSP-era day and getting an empty page would read as "nothing happened" rather than
   // "filtered out", which is the failure the scope control exists to prevent.
-  if (filter.era !== "ALL") {
-    clauses.push("symbol = ? AND trade_date >= ?");
-    params.push(CURRENT_ERA.symbol, CURRENT_ERA.from);
+  const era = eraClause(filter.era);
+  if (era.sql !== null) {
+    clauses.push(era.sql);
+    params.push(...era.params);
   }
   return { where: clauses.length > 0 ? clauses.join(" AND ") : "1=1", params };
 }
@@ -66,12 +143,59 @@ function filterSql(filter: FliesFilter): { where: string; params: string[] } {
  * tab has to name the SAME day, and a per-arm "latest" would let the books table show one session
  * while the arm rail beside it showed another.
  */
-function latestTradeDate(dbPath: string): string | null {
-  return withReadOnlyDb<string | null>(
-    dbPath,
-    null,
-    (db) => db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM fly_positions").get()?.d ?? null,
+/**
+ * The latest session across every table that records one — positions, iterations and decisions.
+ *
+ * It reads all three because they do not agree in general. `fly_iterations` and `fly_decisions` are
+ * written on every tick the loop runs; `fly_positions` only when something is entered. So on a
+ * session the loop worked through and took nothing — a barren day, which this module has by design
+ * and which the calendars module hit on its very first scheduled Monday — a card resolving from
+ * positions would silently show the PREVIOUS session while the timeline beside it showed today,
+ * with nothing on the page saying they disagreed.
+ *
+ * That has not happened yet in 23 sessions of this ledger. It is fixed now because a barren day is
+ * exactly the session someone reads carefully, and "the cards quietly disagree" is the worst
+ * possible failure mode on the day the answer matters.
+ */
+const DAY_SOURCE_TABLES = ["fly_positions", "fly_iterations", "fly_decisions"] as const;
+
+function latestTradeDateIn(db: DatabaseHandle): string | null {
+  // Only the tables this ledger actually has. A live book, an older paper book and a test fixture
+  // do not all carry the journal tables, and naming a missing one throws -- which withReadOnlyDb
+  // would turn into "no latest session at all", i.e. every row in the era on a tab that should
+  // show one day. Asking sqlite_master first is what keeps a partial ledger from reading as empty.
+  const present = new Set(
+    db
+      .prepare<[], { name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .all()
+      .map((r) => r.name),
   );
+  const usable = DAY_SOURCE_TABLES.filter((t) => present.has(t));
+  if (usable.length === 0) return null;
+  const sql = usable.map((t) => `SELECT MAX(trade_date) AS d FROM ${t}`).join(" UNION ALL ");
+  return db.prepare<[], { d: string | null }>(`SELECT MAX(d) AS d FROM (${sql})`).get()?.d ?? null;
+}
+
+/**
+ * A date that cannot match any row, used when the day RESOLVER itself failed.
+ *
+ * `null` means "latest day" and `filterSql` turns it into no date clause at all — every session in
+ * the era. That is the right reading of "this ledger has no rows"; it is the wrong reading of "the
+ * query threw", and the difference is not symmetric. A failed resolve that falls back to null WIDENS
+ * the answer: the Today tab shows 289 rows beside a 34-position day, both correctly labelled and
+ * irreconcilable, which is the failure this file already documents. Showing nothing is visibly
+ * wrong; showing the whole era looks plausible.
+ */
+const UNRESOLVABLE_DAY = " unresolved";
+
+function latestTradeDate(dbPath: string): string | null {
+  const outcome = readOnlyDb<string | null>(dbPath, latestTradeDateIn);
+  if (outcome.status === "ok") return outcome.value;
+  // An absent store has no day and no rows either way — null is correct and costs nothing.
+  if (outcome.status === "absent") return null;
+  // A THROWN resolve is different: it is recorded and logged by `readOnlyDb`, and the tab is scoped
+  // to a day that matches nothing rather than silently unscoped to the era.
+  return UNRESOLVABLE_DAY;
 }
 
 export function readFlies(
@@ -153,8 +277,24 @@ export function readFlies(
       })),
   );
 
-  return { mode, books, positions };
+  // flies journals four breaks and none of them reached this page until 2026-08-27 -- including
+  // the 2026-08-20 partial session, where a provider bug cost 09:30-10:52 ET and 95 positions.
+  // A reader of the History tab had no way to know that day is not a whole day.
+  const integrity = withReadOnlyDb<FliesPayload["integrity"]>(
+    dbPath,
+    { measurementBreaks: [], schemaDrift: [] },
+    (db) => ({
+      measurementBreaks: readMeasurementBreaks(db),
+      schemaDrift: readSchemaDrift(db, FLIES_KNOWN_COLUMNS),
+    }),
+  );
+
+  return { mode, books, positions, integrity };
 }
+
+const FLIES_KNOWN_COLUMNS: Record<string, string[]> = {
+  measurement_breaks: ["id", "break_date", "scope", "kind", "reason", "detail", "created_at"],
+};
 
 import { payoffCurve, stateAt, bookPnl, positionFloor, type FlyPosition, type FlyRow, type PayoffCurve } from "../analytics/fliesPayoff.js";
 
@@ -188,24 +328,51 @@ export function readFliesMeta(
   config: ConsoleConfig,
   mode: TradingMode,
   era: string | null = null,
-): { arms: string[]; dates: string[]; symbols: string[] } {
+): FliesMeta {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
-  const scope = era === "ALL" ? "" : " AND symbol = ? AND trade_date >= ?";
-  const params: string[] = era === "ALL" ? [] : [CURRENT_ERA.symbol, CURRENT_ERA.from];
-  return withReadOnlyDb<{ arms: string[]; dates: string[]; symbols: string[] }>(
-    dbPath,
-    { arms: [], dates: [], symbols: [] },
-    (db) => ({
+  const ec = eraClause(era);
+  const scope = ec.sql === null ? "" : ` AND ${ec.sql}`;
+  const params: string[] = ec.params;
+  const empty: FliesMeta = { arms: [], dates: [], symbols: [], eras: [], currentEra: DEFAULT_ERA };
+  // `readOnlyDb` rather than `withReadOnlyDb`: this reader's emptiness is meaningful, and
+  // collapsing "no rows" into "the query threw" is what let the UNION defect look healthy. The
+  // shape returned is the same either way — the caller gets a FliesMeta — so nothing downstream
+  // has to change to keep working; `degraded` is there for whoever wants to say so.
+  const outcome = readOnlyDb<FliesMeta>(dbPath, (db) => ({
+      // Every era with what it holds, so choosing one is a choice between known quantities rather
+      // than a guess — and an era this store never traded reads as 0 rather than vanishing.
+      eras: ERAS.map((e) => {
+        const c = eraClause(e.key);
+        const row = db
+          .prepare<string[], { n: number }>(
+            `SELECT COUNT(*) AS n FROM fly_positions WHERE ${c.sql ?? "1=1"}`,
+          )
+          .get(...c.params);
+        return { era: e.key, label: e.label, trades: Number(row?.n ?? 0) };
+      }),
+      currentEra: DEFAULT_ERA,
       arms: db
         .prepare<string[], { arm: string }>(
           `SELECT DISTINCT arm FROM fly_positions WHERE arm IS NOT NULL${scope} ORDER BY arm`,
         )
         .all(...params)
         .map((r) => r.arm),
+      // Sessions the LOOP ran, not sessions that produced positions. `fly_iterations` gets a row
+      // every tick whether or not anything filled, so a morning that has been evaluating for an
+      // hour without an entry is still a session — and it is the day the attempts views are
+      // showing. Listing only days with positions meant the page's own "latest day" could resolve
+      // to yesterday while the loop was plainly working on today, which happened on 2026-08-20:
+      // flies iterated from the open and took its first position at 10:52.
       dates: db
         .prepare<string[], { d: string }>(
-          `SELECT DISTINCT trade_date AS d FROM fly_positions WHERE 1=1${scope} ORDER BY trade_date DESC`,
+          // The inner columns keep their own names: the era scope below filters on `trade_date`
+          // and `symbol`, so renaming either inside the subquery puts them out of its reach.
+          `SELECT DISTINCT trade_date AS d FROM (
+             SELECT trade_date, symbol FROM fly_positions
+             UNION
+             SELECT trade_date, symbol FROM fly_iterations
+           ) WHERE 1=1${scope} ORDER BY trade_date DESC`,
         )
         .all(...params)
         .map((r) => r.d),
@@ -215,8 +382,11 @@ export function readFliesMeta(
         )
         .all(...params)
         .map((r) => r.s),
-    }),
-  );
+  }));
+
+  if (outcome.status === "ok") return outcome.value;
+  if (outcome.status === "absent") return empty;  // the module has never run here; nothing is wrong
+  return { ...empty, degraded: { reason: outcome.error } };
 }
 
 /** The profit forest: per-arm book payoff curves for the latest (or given) day. */
@@ -231,7 +401,7 @@ export function readFliesForest(
   const empty: FliesForest = { mode, tradeDate: null, symbol: null, arms: [], settlement: null, lastTickSpot: null };
   return withReadOnlyDb<FliesForest>(dbPath, empty, (db) => {
     const tradeDate =
-      day ?? db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM fly_positions").get()?.d ?? null;
+      day ?? latestTradeDateIn(db);
     if (tradeDate === null) return empty;
 
     const settleRow = db
@@ -350,6 +520,15 @@ export interface FliesTimeline {
 export function readFliesTimeline(config: ConsoleConfig, mode: TradingMode, day: string | null): FliesTimeline {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
+  // Memoised on the ledger's stamp: this replays every position at every recorded tick (~140ms for
+  // a session), and the page re-polls every 30s while the ledger only changes on a 15s write --
+  // and not at all outside a session, which is when the timeline is most often read.
+  return memoOnStore(dbPath, `flies-timeline:${mode}:${day ?? "latest"}`, () =>
+    buildFliesTimeline(dbPath, mode, day),
+  );
+}
+
+function buildFliesTimeline(dbPath: string, mode: TradingMode, day: string | null): FliesTimeline {
   const empty: FliesTimeline = {
     mode,
     date: null,
@@ -363,7 +542,7 @@ export function readFliesTimeline(config: ConsoleConfig, mode: TradingMode, day:
   };
   return withReadOnlyDb<FliesTimeline>(dbPath, empty, (db) => {
     const date =
-      day ?? db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM fly_iterations").get()?.d ?? null;
+      day ?? latestTradeDateIn(db);
     if (date === null) return empty;
 
     interface TimelineRow extends FlyRow {
@@ -524,7 +703,7 @@ export function readFliesJournal(config: ConsoleConfig, mode: TradingMode, day: 
   const dbPath = path.join(config.paths.fliesDir, file);
   return withReadOnlyDb<{ date: string | null; rows: JournalRow[] }>(dbPath, { date: null, rows: [] }, (db) => {
     const date =
-      day ?? db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM fly_decisions").get()?.d ?? null;
+      day ?? latestTradeDateIn(db);
     if (date === null) return { date: null, rows: [] };
     const clause = arm !== null ? " AND arm = ?" : "";
     const params: string[] = arm !== null ? [date, arm] : [date];
@@ -657,7 +836,7 @@ export function readArmDivergence(config: ConsoleConfig, mode: TradingMode, day:
   const empty: ArmDivergence = { date: null, iterations: 0, allAgreeRatePct: null, pairs: [] };
   return withReadOnlyDb<ArmDivergence>(dbPath, empty, (db) => {
     const date =
-      day ?? db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM fly_iterations").get()?.d ?? null;
+      day ?? latestTradeDateIn(db);
     if (date === null) return empty;
     const rows = db
       .prepare<[string], Record<string, unknown>>(
@@ -722,12 +901,21 @@ export interface FliesHistory {
 
 export interface FliesTradeLogRow {
   tradeDate: string;
+  /** Full ISO entry timestamp WITH its market offset — the caller renders the clock time from the
+   *  string rather than through a Date, so a viewer in another timezone still reads the session. */
+  entryTime: string | null;
   symbol: string;
   arm: string | null;
   entryMode: string | null;
   kind: string | null;
   side: string | null;
   center: number | null;
+  /** Near wing, in points. Always present. */
+  wingWidth: number | null;
+  /** Far wing, only when the structure is BROKEN — null on a symmetric fly, where both sides are
+   *  `wingWidth`. Kept separate rather than folded into one number because the asymmetry is the
+   *  whole trade in a bwb, and a single width would quietly describe it as something it is not. */
+  farWidth: number | null;
   window: string | null;
   net: number | null;
   fees: number | null;
@@ -738,34 +926,98 @@ export interface FliesTradeLogRow {
 
 export type FliesOutcome = "all" | "wins" | "losses" | "pinned" | "risk-free";
 
-export interface FliesTradeLogQuery extends PageRequest {
-  outcome: FliesOutcome;
-  search: string;
+/** Scope-wide totals for the trade log — every matching row, never just the rendered page. */
+export interface FliesTradeLogTotals {
+  trades: number;
+  /** Same-day trades share a regime and are not independent; this module's own experiment docs put
+   *  the effective N at the SESSION count, so a net is never shown without one beside it. */
+  sessions: number;
+  netPnl: number;
+  grossPnl: number;
+  fees: number;
 }
 
-export const NO_TRADE_LOG_QUERY: FliesTradeLogQuery = { ...FIRST_PAGE, outcome: "all", search: "" };
+export interface FliesTradeLogQuery extends PageRequest {
+  arm: string | null;
+  outcome: FliesOutcome;
+  search: string;
+  /** null = the current era; "ALL" = every era, deliberately — same contract as FliesFilter. */
+  era: string | null;
+  /**
+   * Inclusive ISO date bounds, either side independently null for "unbounded that way". The search
+   * box could already match a date as TEXT, which answers "2026-08" but cannot answer "the week
+   * either side of the cadence change" — and every measurement break in this suite is a date, so a
+   * log that can only be filtered by prefix cannot be pointed at one side of a break.
+   */
+  from: string | null;
+  to: string | null;
+}
+
+export const NO_TRADE_LOG_QUERY: FliesTradeLogQuery = {
+  ...FIRST_PAGE,
+  arm: null,
+  outcome: "all",
+  search: "",
+  era: null,
+  from: null,
+  to: null,
+};
 
 /**
  * The settled trade log, filtered and paged in SQL. It lives apart from
  * `readFliesHistory` so turning a page costs one indexed query instead of
  * recomputing every summary on the tab.
  */
+export type FliesTradeLog = Paged<FliesTradeLogRow> & { totals: FliesTradeLogTotals };
+
+const EMPTY_TOTALS: FliesTradeLogTotals = {
+  trades: 0,
+  sessions: 0,
+  netPnl: 0,
+  grossPnl: 0,
+  fees: 0,
+};
+
 export function readFliesTradeLog(
   config: ConsoleConfig,
   mode: TradingMode,
   query: FliesTradeLogQuery = NO_TRADE_LOG_QUERY,
-): Paged<FliesTradeLogRow> {
+): FliesTradeLog {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
-  return withReadOnlyDb<Paged<FliesTradeLogRow>>(dbPath, emptyPage(query), (db) => {
+  return withReadOnlyDb<FliesTradeLog>(dbPath, { ...emptyPage(query), totals: EMPTY_TOTALS }, (db) => {
     const clauses = [SETTLED];
     const params: string[] = [];
+    // Era-bounded like every other read on the page — this endpoint shipped without it and the
+    // trade log answered for retired arms while the cards above it answered for the current era.
+    const era = eraClause(query.era);
+    if (era.sql !== null) {
+      clauses.push(era.sql);
+      params.push(...era.params);
+    }
+    // The page-level arm selector already scopes every other card on this tab; the log ignored it,
+    // so narrowing to one arm left the log answering for all of them beside tables that did not.
+    if (query.arm !== null) {
+      clauses.push("arm = ?");
+      params.push(query.arm);
+    }
     if (query.outcome === "wins") clauses.push("pnl IS NOT NULL AND pnl > 0");
     if (query.outcome === "losses") clauses.push("pnl IS NOT NULL AND pnl < 0");
     if (query.outcome === "pinned") clauses.push("pinned = 1");
     // Risk-free is the fly that came back whole: a butterfly closed at or above
     // flat, the shape the module is built to manufacture.
     if (query.outcome === "risk-free") clauses.push("pnl IS NOT NULL AND pnl >= 0 AND kind = 'fly'");
+    // Date bounds are ANDed with the era clause rather than replacing it: narrowing to a range
+    // inside a wider era is the common case, and a range that reaches outside the selected era must
+    // still not pull in another era's arms.
+    if (query.from !== null) {
+      clauses.push("trade_date >= ?");
+      params.push(query.from);
+    }
+    if (query.to !== null) {
+      clauses.push("trade_date <= ?");
+      params.push(query.to);
+    }
     if (query.search !== "") {
       clauses.push(
         `(trade_date LIKE ? OR symbol LIKE ? OR COALESCE(arm, '') LIKE ? OR COALESCE(entry_mode, '') LIKE ?
@@ -774,25 +1026,48 @@ export function readFliesTradeLog(
       const like = `%${query.search.replace(/[%_]/g, "")}%`;
       params.push(like, like, like, like, like, like);
     }
-    return pagedQuery<FliesTradeLogRow>(
+    const where = clauses.join(" AND ");
+    // Computed over the SAME where-clause as the page, never by summing the rendered rows: a total
+    // that describes 50 of 853 matching trades is not a total, and the page size is an accident of
+    // the viewport. Same contract the match count already follows.
+    const agg = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT COUNT(*) AS trades, COUNT(DISTINCT trade_date) AS sessions,
+                COALESCE(SUM(pnl), 0) AS net_pnl,
+                COALESCE(SUM(gross_pnl), 0) AS gross_pnl,
+                COALESCE(SUM(fees), 0) AS fees
+         FROM fly_positions WHERE ${where}`,
+      )
+      .get(...params);
+    const totals: FliesTradeLogTotals = {
+      trades: Number(agg?.["trades"] ?? 0),
+      sessions: Number(agg?.["sessions"] ?? 0),
+      netPnl: Number(agg?.["net_pnl"] ?? 0),
+      grossPnl: Number(agg?.["gross_pnl"] ?? 0),
+      fees: Number(agg?.["fees"] ?? 0),
+    };
+    const paged = pagedQuery<FliesTradeLogRow>(
       db,
       {
-        columns: `trade_date, symbol, arm, entry_mode, kind, side, center, entry_window, net, fees, pnl,
-                  completion_latency_min, pinned`,
+        columns: `trade_date, entry_time, symbol, arm, entry_mode, kind, side, center, wing_width,
+                  far_width, entry_window, net, fees, pnl, completion_latency_min, pinned`,
         from: "fly_positions",
-        where: clauses.join(" AND "),
+        where,
         params,
         orderBy: "trade_date DESC, entry_time DESC",
       },
       query,
       (r) => ({
         tradeDate: String(r["trade_date"]),
+        entryTime: str(r["entry_time"]),
         symbol: String(r["symbol"] ?? ""),
         arm: str(r["arm"]),
         entryMode: str(r["entry_mode"]),
         kind: str(r["kind"]),
         side: str(r["side"]),
         center: num(r["center"]),
+        wingWidth: num(r["wing_width"]),
+        farWidth: num(r["far_width"]),
         window: str(r["entry_window"]),
         net: num(r["net"]),
         fees: num(r["fees"]),
@@ -801,6 +1076,7 @@ export function readFliesTradeLog(
         pinned: r["pinned"] === 1,
       }),
     );
+    return { ...paged, totals };
   });
 }
 
@@ -823,9 +1099,10 @@ function scopeClause(filter: FliesFilter): { and: string; params: string[] } {
     clauses.push("symbol = ?");
     params.push(filter.symbol);
   }
-  if (filter.era !== "ALL") {
-    clauses.push("symbol = ? AND trade_date >= ?");
-    params.push(CURRENT_ERA.symbol, CURRENT_ERA.from);
+  const era = eraClause(filter.era);
+  if (era.sql !== null) {
+    clauses.push(era.sql);
+    params.push(...era.params);
   }
   return { and: clauses.length > 0 ? ` AND ${clauses.join(" AND ")}` : "", params };
 }
@@ -920,6 +1197,18 @@ export interface FliesPerformance {
   tiles: FliesSummary & { completionRatePct: number | null };
   series: Array<{ bucket: string; netPnl: number; cumulative: number }>;
   /**
+   * The daily cumulative curve with its running drawdown, and the risk ratios over it — the same
+   * pair MEIC's performance tab has, from the same shared module so the two cannot disagree about
+   * what a Sharpe means.
+   *
+   * Always DAILY, whatever granularity `series` is showing: these annualize on 252 sessions, so
+   * feeding them weekly buckets would rescale them without saying so. And `equity` is
+   * BANKROLL_BASE plus cumulative net — a drawing aid, not a balance, since these are one-lot
+   * sampling streams rather than a sized book. The drawdown under it is real.
+   */
+  equity: EquityPoint[];
+  risk: RiskSummary;
+  /**
    * The bwb arm's equivalent of `completion`, and it needs its own block rather than a row in that
    * one: a bwb is entered WHOLE for a credit and converted by a ROLL, not legged in and completed,
    * so "completion rate" is not a number it has. Null when the scope holds no bwb_roll entries.
@@ -955,23 +1244,6 @@ export interface FliesPerformance {
   } | null;
 }
 
-function median(values: number[]): number | null {
-  if (values.length === 0) return null;
-  const ordered = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(ordered.length / 2);
-  return ordered.length % 2 === 1 ? ordered[mid]! : (ordered[mid - 1]! + ordered[mid]!) / 2;
-}
-
-/** Weekly buckets are Monday-anchored (SQLite's %W would split a trading week). */
-function bucketKey(tradeDate: string, granularity: string): string {
-  if (granularity === "monthly") return tradeDate.slice(0, 7);
-  if (granularity === "weekly") {
-    const d = new Date(tradeDate + "T00:00:00Z");
-    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
-    return d.toISOString().slice(0, 10);
-  }
-  return tradeDate;
-}
 
 const ABORT_MIN_LIVE_ENTRIES = 30;
 const ABORT_COMPLETION_GAP = 0.15;
@@ -997,6 +1269,8 @@ export function readFliesPerformance(
     completionTrend: [],
     rollTrend: [],
     liveVsPaper: null,
+    equity: [],
+    risk: EMPTY_RISK,
   };
   const result = withReadOnlyDb<FliesPerformance>(dbPath, empty, (db) => {
     const sc = scopeClause(filter);
@@ -1005,7 +1279,7 @@ export function readFliesPerformance(
 
     const buckets = new Map<string, PnlRow[]>();
     for (const r of all) {
-      const k = bucketKey(String(r["trade_date"]), granularity);
+      const k = periodKey(granularity, String(r["trade_date"]));
       let list = buckets.get(k);
       if (list === undefined) {
         list = [];
@@ -1021,6 +1295,21 @@ export function readFliesPerformance(
         cumulative += net;
         return { bucket, netPnl: net, cumulative };
       });
+
+    // --- equity curve and risk, from the DAILY series regardless of display granularity ---
+    // Shared with MEIC (analytics/riskMetrics.ts) rather than reimplemented: two pages disagreeing
+    // about what a Sharpe is would be worse than neither page having one. Always daily, because
+    // annualizing on 252 means the input has to be sessions — bucketing weekly first would rescale
+    // it silently.
+    const daily = new Map<string, number>();
+    for (const r of all) {
+      const d = String(r["trade_date"]);
+      daily.set(d, (daily.get(d) ?? 0) + toPnl(r).pnl);
+    }
+    const equity = equityCurve(
+      [...daily.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([date, net]) => ({ date, net })),
+    );
+    const risk = riskSummary(equity);
 
     // completion_stats, legged: the counterfactual's floor split reads the
     // decisions journal (the engine's own recorded reason), never recomputed.
@@ -1189,6 +1478,8 @@ export function readFliesPerformance(
         completionRatePct: legged.completionRatePct,
       },
       series,
+      equity,
+      risk,
       completion: legged,
       // Null rather than a block of zeros when the scope holds no bwb entries: an empty panel that
       // says "0% roll rate" is a claim, and there is nothing to claim.
@@ -1281,10 +1572,7 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
     feeDrag: [],
   };
   return withReadOnlyDb<FliesAnalytics>(dbPath, empty, (db) => {
-    const latest = db
-      .prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM fly_positions")
-      .get();
-    const tradeDate = filter.date ?? latest?.d ?? null;
+    const tradeDate = filter.date ?? latestTradeDateIn(db);
     const armClause = filter.arm !== null ? " AND arm = ?" : "";
     const armParams: string[] = filter.arm !== null ? [filter.arm] : [];
 
@@ -1386,5 +1674,112 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
       });
 
     return { mode, today, byArm, feeDrag };
+  });
+}
+
+// ── Loop freshness ──────────────────────────────────────────────────────────
+
+export interface FliesLoopStatus {
+  /** LIVE while the loop has written an iteration inside its own tick window, else IDLE. */
+  state: "live" | "idle" | "no-data";
+  lastIterationAt: string | null;
+  ageSeconds: number | null;
+  symbol: string | null;
+  arm: string | null;
+  underlyingPrice: number | null;
+}
+
+/**
+ * Is the flies loop actually running?
+ *
+ * `fly_iterations` is the right source rather than the ledger: it records what every arm WANTED on
+ * each tick, so it advances on a quiet market where positions and books do not, which is exactly
+ * when "is this thing alive" is worth asking. The window is 120s against a 15s tick — several
+ * cadences wide, so one slow pass is never reported as a stall.
+ */
+export function readFliesLoopStatus(config: ConsoleConfig, mode: TradingMode): FliesLoopStatus {
+  const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.fliesDir, file);
+  const empty: FliesLoopStatus = {
+    state: "no-data",
+    lastIterationAt: null,
+    ageSeconds: null,
+    symbol: null,
+    arm: null,
+    underlyingPrice: null,
+  };
+  return withReadOnlyDb<FliesLoopStatus>(dbPath, empty, (db) => {
+    const r = db
+      .prepare<[], Record<string, unknown>>(
+        `SELECT iteration_ts, symbol, arm, underlying_price
+           FROM fly_iterations ORDER BY id DESC LIMIT 1`,
+      )
+      .get();
+    if (r === undefined) return empty;
+    const lastIterationAt = str(r["iteration_ts"]);
+    let ageSeconds: number | null = null;
+    if (lastIterationAt !== null) {
+      const t = Date.parse(lastIterationAt.includes("T") ? lastIterationAt : lastIterationAt.replace(" ", "T"));
+      if (!Number.isNaN(t)) ageSeconds = Math.max(0, (Date.now() - t) / 1000);
+    }
+    return {
+      state: ageSeconds !== null && ageSeconds < 120 ? "live" : "idle",
+      lastIterationAt,
+      ageSeconds,
+      symbol: str(r["symbol"]),
+      arm: str(r["arm"]),
+      underlyingPrice: num(r["underlying_price"]),
+    };
+  });
+}
+
+export interface VoidedRows {
+  total: number;
+  pnl: number;
+  byReason: Array<{ reason: string; arm: string; entryMode: string | null; rows: number; pnl: number }>;
+}
+
+/**
+ * Rows held back as VOID, stated rather than left as a gap.
+ *
+ * Every total on this page filters `void_reason IS NULL`, and until now said nothing about what
+ * that removed. The module's own analytics.voided() exists for this exact reason — "so the
+ * exclusion is stated rather than inferred from a gap in a total" — and the console was the one
+ * surface not honouring it.
+ *
+ * A void row is one whose DECISIONS rest on a defect a later fix proved wrong: the bwb roll priced
+ * the wrong legs until 2026-08-07, so those positions were opened and rolled on a spread that was
+ * never the trade. It is NOT a losing row, and not one a caller filtered out — those stay in every
+ * table. That distinction is the point: "we excluded these because they lost" is precisely the
+ * claim this module refuses to make, so the reason travels with the count.
+ */
+export function readVoidedRows(config: ConsoleConfig, mode: TradingMode, filter: FliesFilter): VoidedRows {
+  const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.fliesDir, file);
+  const empty: VoidedRows = { total: 0, pnl: 0, byReason: [] };
+  return withReadOnlyDb<VoidedRows>(dbPath, empty, (db) => {
+    if (!hasColumn(db, "fly_positions", "void_reason")) return empty;
+    const sc = scopeClause(filter);
+    const rows = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT void_reason AS reason, arm, entry_mode, COUNT(*) AS rows, COALESCE(SUM(pnl), 0) AS pnl
+           FROM fly_positions
+          WHERE void_reason IS NOT NULL${sc.and}
+          GROUP BY void_reason, arm, entry_mode
+          ORDER BY COUNT(*) DESC`,
+      )
+      .all(...sc.params);
+    const byReason = rows.map((r) => ({
+      reason: str(r["reason"]) ?? "unstated",
+      arm: str(r["arm"]) ?? "?",
+      entryMode: str(r["entry_mode"]),
+      rows: Number(r["rows"]),
+      pnl: Number(r["pnl"]),
+    }));
+    return {
+      total: byReason.reduce((n, r) => n + r.rows, 0),
+      pnl: byReason.reduce((n, r) => n + r.pnl, 0),
+      byReason,
+    };
   });
 }

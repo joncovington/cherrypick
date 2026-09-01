@@ -5,7 +5,29 @@ the general paper-trading system and [risk-profiles.md](risk-profiles.md) for th
 ladder (now disabled, kept for history and for live `/set-risk-profile`). Part of the
 [MEIC module](../README.md) in the cherrypick suite.
 
-## The forward test (2026-08-07) — four streams, one breakeven identity
+## CLOSED 2026-08-21 — the advisor-era cutover
+
+The four-stream test below ran 2026-08-07..2026-08-20 and closed at the suite-wide advisor-era
+boundary with this verdict: **insufficient to separate the widths — not falsified.** A width
+comparison must be bucketed on `control_fired` (per this document's own rule), and control never
+fired on any of the ten sessions — its 0.30 IV-rank floor kept it dark throughout — so the paired
+same-session reading the design depended on never existed. sign and control-drift additionally
+never separated from control on a single entry decision (100% agreement, 3,036 blocked attempts
+each): redundant as configured.
+
+From 2026-08-21, `packages/advisor` designs and runs every experiment. At that day's EOD the
+baseline itself was redefined: `control` is now the permissive sampling substrate (formerly
+`open`), and the gated ex-control is retired as `control-gated` — its floor + gate combination
+never produced a fill, so every experiment against it could only end underpowered. The era's first
+meic experiment against the base that trades is `exp-2026-08-21-meic-1`
+(`regime_gex_block_negative: true` on the advised book): the retired book's own question, run
+properly. (`exp-2026-08-20-meic-1`, `min_iv_rank: 0.0` against the gated base, was killed as
+`base_redefined` — its parameter is a no-op against the permissive base.) The width question stays
+expressible through the `wing_width_points` bound. The retired profiles keep their exact key sets
+and verdicts in `config.risk.json`, per the kill rule below; `control` remains the substrate every
+read-side derivation is answered from (`analytics.py`'s arm defaults renamed with it).
+
+## The forward test (2026-08-07..2026-08-20, closed) — four streams, one breakeven identity
 
 **Why this exists.** MEIC is not broken by gates or throughput — it sits just below its own
 breakeven identity. Under the per-side buy-back design an IC has three outcomes: both sides expire
@@ -39,7 +61,7 @@ worthless anyway. That gap is what the derived stop policies below are built to 
 
 | stream | what it is | why it exists |
 |---|---|---|
-| `control` | today's deployed policy incl. its 0.95×net stop, `overlap_scope: "shorts"` | the reference book **and** the champion (`calibration.champion` in the orchestrator config) — validates every derivation below |
+| `control` | today's deployed policy incl. its 0.95×net stop, `overlap_scope: "shorts"` | the reference book — validates every derivation below. (It was also the champion under `calibration.champion` until the champion/challenger surface was retired 2026-08-20; arms are judged by `packages/advisor`'s experiments now.) |
 | `open` | every study gate off, no per-side stop, `overlap_scope: "none"`, full per-side path recording (running max cost, settle values on every exit path, first strike-touch time) | the **permissive superset** — every gate variant and every stop policy is a read-side split of this one stream's own recorded rows, never a reason to run a sixth or seventh arm |
 | `width-5` | SPX wing pinned to 5, otherwise identical gates to `open`, but keeps `control`'s real 0.95×net stop | the one genuinely non-derivable structural variant — wing width isn't a float you can re-derive after the fact |
 | `width-10` | SPX wing pinned to 10, same design as `width-5` | paired against `width-5` on the same ticks; expected to near-duplicate `control`'s own book under `control`'s widest-first selection — `analytics.arm_divergence` reports how often the two streams actually realized different strikes, so that isn't assumed |

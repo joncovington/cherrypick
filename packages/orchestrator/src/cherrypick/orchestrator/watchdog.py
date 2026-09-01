@@ -22,10 +22,13 @@ from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core import home as core_home
+from cherrypick.core import streamrequests as _streamrequests
+
 from cherrypick.notify import Notifier
 
 from . import config as cfgmod
-from . import eval_activity, servicecfg, tasks, timeutil, util
+from . import eval_activity, jobspec, servicecfg, tasks, timeutil, util
 from .util import CREATE_NO_WINDOW, first_json
 
 _WATCHDOG_LOG = cfgmod.LOGS_DIR / "watchdog.log"
@@ -122,11 +125,60 @@ def _check_supervisor(cfg: dict[str, Any]) -> list[Finding]:
     return findings
 
 
+def _check_job_registry_drift(cfg: dict[str, Any]) -> list[Finding]:
+    """Jobs config DERIVES that the running supervisor has never heard of — see
+    `supersnap.jobs_missing_from_registry` for why this is invisible everywhere else.
+
+    Deliberately WARN rather than CRITICAL: nothing is broken *right now*, the missed work is
+    whatever the undelivered jobs would have done, and the remedy is a human restarting the daemon
+    rather than something to page about at 3am."""
+    from . import supersnap
+
+    findings: list[Finding] = []
+    for job_id, reason in sorted(supersnap.jobs_failing_derivation().items()):
+        findings.append(
+            Finding(
+                "supervisor.job_derive_failed",
+                WARN,
+                f"Job {job_id} could not be built from config",
+                f"{reason}. It is not scheduled and will not fire; the supervisor keeps its row so "
+                "the history is not erased. Fix the config or the derivation, then restart it.",
+            )
+        )
+
+    missing = supersnap.jobs_missing_from_registry(cfg)
+    if missing is None:
+        return findings  # not answerable; `_check_supervisor` owns the dead-daemon alarm
+    if not missing:
+        return [*findings, Finding("supervisor.jobs_current", OK, "Supervisor job table", "matches config")]
+    return [
+        *findings,
+        Finding(
+            "supervisor.jobs_stale",
+            WARN,
+            "Supervisor is running a stale job table",
+            f"{len(missing)} job(s) derived from config that the running supervisor has never seen: "
+            f"{', '.join(missing)}. It loads jobspec once at startup, so these are not scheduled and "
+            "will not fire. Restart it to pick them up: cherrypick supervise --stop, then "
+            "cherrypick ensure-supervisor.",
+        )
+    ]
+
+
 def _check_console(cfg: dict[str, Any]) -> list[Finding]:
     """The console (the suite's only read surface since 2026-08-12) is a supervisor-managed
     resident job like a module's paper loop, but with no paper-freshness backstop: a module's own
     (b) check would eventually flag a stalled resident loop by proxy (no new trade writes), while
-    the console produces no other artifact whose staleness would out it. Found live on 2026-08-14:
+    the console produces no other artifact whose staleness would out it.
+
+    **That parenthetical was wrong about modules, and cost four days.** A module's freshness check
+    does NOT backstop a stuck resident loop: a restart loop keeps writing (each new child records a
+    loop iteration), so the paper DB reads 0 min old precisely BECAUSE the job is thrashing.
+    `calendars-paper` was restarted 107 times on 2026-08-17 under an unbroken `OK / 0 min old`.
+    `_check_resident_health` is the check that actually covers that, for every resident job
+    including this one; what stays here is the console's job-presence and enabled state.
+
+    Found live on 2026-08-14:
     its job sat un-running (backoff/orphaned bookkeeping) for ~21 hours with nothing surfacing it,
     because process-liveness/HTTP checks were deliberately never added here (console_settings:
     "keeps the reliability path free of network calls") and nothing else read `resident_state`.
@@ -172,6 +224,85 @@ def _check_console(cfg: dict[str, Any]) -> list[Finding]:
     # "running" is healthy; "idle" never applies (console declares no window); an unset state means
     # the supervisor hasn't evaluated it on this box yet. None of those are worth alarming on.
     return [Finding("console.task", OK, "Console", state or "not yet evaluated")]
+
+
+# Starts in one window past which a resident job is churning rather than running. Generous on
+# purpose: a couple of genuine crashes in a session is bad luck, and this must fire on the shape the
+# 2026-08-17 sessions had (49 and 107) rather than on noise.
+_RESIDENT_CHURN_STARTS = 6
+
+
+def _check_resident_health(cfg: dict[str, Any]) -> list[Finding]:
+    """Restart churn and unexpected stops across every resident job.
+
+    The gap this closes was found the hard way. On 2026-08-17 `calendars-paper` was killed and
+    restarted 107 times and the watchdog reported it `OK — supervised, 0 min old` on every single
+    tick. Three reasons, all structural:
+
+    * `_check_console`'s own docstring states the assumption — *"a module's paper loop gets an
+      indirect backstop from its own freshness check (no new trade writes eventually goes stale)"*.
+      **That is false for a restart loop.** The restart's own `record_iteration` write keeps the
+      paper DB fresh, so freshness reads 0 min old precisely BECAUSE the job is thrashing.
+    * `resident_state` reads `"running"` on every pass during a storm, so the one signal that was
+      being read said nothing.
+    * `consecutive_failures` cannot serve either: a clean exit resets it, and a clean exit is the
+      storm's own signature (161 spawns beside 0 failures).
+
+    So this reads `starts_in_window`, which the supervisor keeps for exactly this, plus the two
+    states that are now silent by design rather than by accident: a job the module stopped early,
+    and a job publishing no heartbeat (which is deliberately not silence-supervised — restarting on
+    "I can't tell" is the bug that started all of this, so the diagnosis belongs here instead).
+    """
+    from . import supersnap
+
+    if not _supervisor_driving():
+        return []
+    findings: list[Finding] = []
+    for jid, st in sorted(supersnap.all_job_states().items()):
+        if st.get("kind") != jobspec.KIND_RESIDENT or not st.get("enabled", False):
+            continue
+        starts = int(st.get("starts_in_window") or 0)
+        if starts > _RESIDENT_CHURN_STARTS:
+            findings.append(
+                Finding(
+                    f"{jid}.churn",
+                    WARN,
+                    f"{jid} is restarting repeatedly",
+                    f"{starts} starts since its window opened. A supervised job that keeps being "
+                    "restarted is not running -- check logs/supervisor.log for the reason "
+                    "(silence, or a crash) and the module's own log beside it.",
+                )
+            )
+        # A resident that publishes no heartbeat is not silence-supervised at all. That degrade is
+        # deliberate -- the alternative was killing a process nobody can judge, which is the bug
+        # this area is recovering from, and refusing to derive the job would take a trading loop
+        # down over telemetry. But it is not free, and this is the only place that says so.
+        if st.get("silence_file") and not st.get("heartbeat_seen") and st.get("running_pid"):
+            findings.append(
+                Finding(
+                    f"{jid}.heartbeat",
+                    WARN,
+                    f"{jid} publishes no heartbeat",
+                    f"Nothing has been written to {cfgmod.portable_path(Path(st['silence_file']))}, so a "
+                    "wedged loop here would never be caught. The module should touch it at the top of "
+                    "every tick (cherrypick.core.home.heartbeat_path).",
+                )
+            )
+        # Stopped early by its own exit. The supervisor believes a session-scoped loop that says it
+        # is finished (that is what ended the 16:00 respawn storm), so if it said so WRONGLY nothing
+        # brings it back until the window reopens -- and this is the only thing that would say so.
+        if st.get("module_stopped") and st.get("resident_state") == "module reports session complete":
+            findings.append(
+                Finding(
+                    f"{jid}.stopped",
+                    WARN,
+                    f"{jid} stopped itself mid-window",
+                    "The module exited cleanly and the supervisor is honoring that until its window "
+                    "reopens. Expected at the session's end; anything earlier means the loop's own "
+                    "gate closed early, or another instance held its lock.",
+                )
+            )
+    return findings
 
 
 def _file_age_minutes(path: Path) -> float | None:
@@ -251,14 +382,31 @@ def _streamer_chain_fetch_errors(status: dict[str, Any]) -> dict[str, str]:
     return errors if isinstance(errors, dict) else {}
 
 
+def _streamer_dead_underlyings(status: dict[str, Any]) -> dict[str, float]:
+    """Union underlyings whose spot has been individually stale past the producer's dead limit
+    during regular hours (`stream_trades` age per symbol), or `{}` if unreported/healthy.
+
+    Distinct from `_streamer_underlying_stale_age`, which deliberately takes the FRESHEST
+    underlying so one quiet name can't false-trip — the choice that let TQQQ's dead trade
+    subscription hide behind a live SPX for four sessions (2026-08-17..21) while pmcc read
+    `no_long_chain` and overview's breadth legs froze. The producer self-heals a stale
+    subscription at 10 minutes (cherrypick.core.streamer); this field only names a symbol the
+    self-heal has already failed to revive (15 min), so a restart is the right medicine by the
+    time the watchdog sees it. A producer that doesn't report this field degrades cleanly."""
+    dead = status.get("dead_underlyings")
+    return dead if isinstance(dead, dict) else {}
+
+
 def _streamer_stale_detail(
     global_age: float | None,
     underlying_age: float | None,
     limit: int,
     chain_errors: dict[str, str] | None = None,
+    dead_underlyings: dict[str, float] | None = None,
 ) -> str:
     """Name whichever feed(s) are stale, so the alert distinguishes a whole-stream silence from an
-    underlying-spot-only stall or a single symbol's dead chain fetch (all different causes)."""
+    underlying-spot-only stall, a single symbol's dead chain fetch, or a single symbol's dead spot
+    subscription (all different causes)."""
     parts = []
     if global_age is not None and global_age > limit:
         parts.append(f"no events for {global_age:.0f}s")
@@ -267,6 +415,9 @@ def _streamer_stale_detail(
     if chain_errors:
         named = ", ".join(f"{sym}: {err}" for sym, err in chain_errors.items())
         parts.append(f"chain fetch failing for {named}")
+    if dead_underlyings:
+        named = ", ".join(f"{sym} {age:.0f}s" for sym, age in dead_underlyings.items())
+        parts.append(f"dead spot subscription for {named}")
     return " and ".join(parts) or f"stale (limit {limit}s)"
 
 
@@ -350,14 +501,21 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
     stale_age = _streamer_stale_age(status)
     underlying_age = _streamer_underlying_stale_age(status)
     chain_errors = _streamer_chain_fetch_errors(status)
+    dead_underlyings = _streamer_dead_underlyings(status)
     limit = spec.get("stale_restart_seconds", 240)
     # A stall is the whole stream going quiet, OR the underlying-spot feed dying while option quotes
     # keep the global age fresh (2026-07-22), OR a single symbol's chain fetch exhausting its in-process
-    # retries while every other symbol stays fresh (2026-07-31) — judge on whichever signal fires.
+    # retries while every other symbol stays fresh (2026-07-31), OR one symbol's spot subscription
+    # dying mid-flight while others keep every aggregate fresh (2026-08-17, TQQQ) — judge on
+    # whichever signal fires.
     stale_candidates = [a for a in (stale_age, underlying_age) if a is not None]
     worst_stale = max(stale_candidates) if stale_candidates else None
-    is_stalled = (worst_stale is not None and worst_stale > limit) or bool(chain_errors)
-    detail = _streamer_stale_detail(stale_age, underlying_age, limit, chain_errors)
+    is_stalled = (
+        (worst_stale is not None and worst_stale > limit)
+        or bool(chain_errors)
+        or bool(dead_underlyings)
+    )
+    detail = _streamer_stale_detail(stale_age, underlying_age, limit, chain_errors, dead_underlyings)
     connection_age = _streamer_connection_age(status)
     # Don't count a connection that has not had time to populate yet — a restart takes a few seconds to
     # resubscribe, and without this the next tick would see stale data and restart again, forever.
@@ -415,7 +573,208 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
         )
     else:
         findings.append(_recycle_streamer_if_stale(label, root, spec, settling))
+    churn = _streamer_churn_finding(label, status)
+    if churn is not None:
+        findings.append(churn)
     return findings
+
+
+# How much forward earnings calendar the scanner needs to keep finding candidates. Below this it
+# is running out, not out — the distinction that makes the warning actionable rather than a
+# post-mortem.
+_EARNINGS_CALENDAR_MIN_DAYS = 7
+
+
+def _check_earnings_calendar(cfg: dict[str, Any]) -> list[Finding]:
+    """Warn while the earnings announcement calendar is RUNNING OUT, not after it has.
+
+    The failure this exists for (2026-08-25): the module had not paper traded for eleven sessions
+    and nothing anywhere said so. Dolt was up, its tables were full, the loop ticked and the config
+    was enabled — but the local clone was 55 commits behind, so the calendar ended on 2026-08-14 and
+    the scanner had nothing to scan. It is invisible by nature: "no candidates today" and "a quiet
+    earnings week" are the same observation, and this module produces no ledger row either way.
+
+    Reads the state file `scripts/refresh_dolt_data.py` writes, never Dolt itself — the reliability
+    path is stdlib and files only, and adding a MySQL driver to it would put a network client on the
+    one path that must never have one.
+    """
+    if not (cfg.get("modules", {}).get("earnings") or {}).get("enabled"):
+        return []
+    raw = _read_json_file(cfgmod.state_file("dolt_data.json"))
+    if raw is None:
+        return [
+            Finding(
+                "earnings.calendar",
+                WARN,
+                "Earnings calendar coverage unknown",
+                "No state/dolt_data.json — the earnings-dolt-pull job has never completed, so "
+                "nothing is refreshing the announcement calendar the scanner reads.",
+            )
+        ]
+    max_date = raw.get("earnings_calendar_max_date")
+    if not isinstance(max_date, str):
+        return [
+            Finding(
+                "earnings.calendar",
+                WARN,
+                "Earnings calendar unreadable",
+                "The last pull could not read earnings_calendar; a calendar nothing can query is "
+                "as useless to the scanner as an empty one.",
+            )
+        ]
+    try:
+        remaining = (datetime.fromisoformat(max_date).date() - timeutil.now_et().date()).days
+    except ValueError:
+        return []
+    if remaining < _EARNINGS_CALENDAR_MIN_DAYS:
+        return [
+            Finding(
+                "earnings.calendar",
+                WARN,
+                "Earnings calendar running out",
+                f"The announcement calendar reaches only {max_date} ({remaining} day(s) ahead). "
+                "Past it the scanner finds nothing and the module stops trading SILENTLY — no "
+                "error, no ledger row. Run scripts/refresh_dolt_data.py or check the "
+                "earnings-dolt-pull job.",
+            )
+        ]
+    return [
+        Finding(
+            "earnings.calendar",
+            OK,
+            "Earnings calendar",
+            f"covers to {max_date} ({remaining} days ahead).",
+        )
+    ]
+
+
+def _read_json_file(path: Path) -> dict[str, Any] | None:
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _streamer_window_strike_count(cfg: dict[str, Any]) -> int:
+    """The producer's base ATM window width, from ITS OWN config — the file the daemon reads, not a
+    copy. Falls back to the engine's default when the machine has no streamer config."""
+    try:
+        raw = json.loads(core_home.config_path("streamer").read_text(encoding="utf-8"))
+        value = ((raw.get("streamer") or {}).get("window_strike_count"))
+        if isinstance(value, (int, float)):
+            return int(value)
+    except (OSError, ValueError, AttributeError):
+        pass
+    return int(((cfg.get("streamer") or {}).get("window_strike_count")) or 60)
+
+
+def _check_subscription_budget(cfg: dict[str, Any]) -> list[Finding]:
+    """Warn when the DECLARED registry would cost a producer more than the suite's ceiling.
+
+    The 2026-08-24 outage was discovered at an open, in production: a module had declared something
+    expensive and nothing said so until the producer was already crash-looping and every trading
+    module was starving. `cherrypick.core.streamer`'s pacing removed that failure mode; this exists
+    so the next expensive declaration announces itself when it is DECLARED.
+
+    Estimated from the same registry union the producer subscribes from, so the two cannot disagree
+    about what was asked for — and reported with the single most expensive symbol named, because a
+    total alone does not say which declaration to look at (that morning's book was dominated by one
+    symbol's widened window). Report-only: what to shed is a measurement decision, not the
+    watchdog's to make.
+    """
+    budget = int(
+        (cfg.get("streamer") or {}).get("subscription_budget")
+        or _streamrequests.DEFAULT_SUBSCRIPTION_BUDGET
+    )
+    try:
+        status = _streamrequests.budget_status(
+            default_strike_count=_streamer_window_strike_count(cfg), budget=budget
+        )
+    except Exception:  # noqa: BLE001 — a registry read must never fail the tick
+        return []
+    if not status["over"]:
+        return [
+            Finding(
+                "streamer.budget",
+                OK,
+                "Subscription budget",
+                f"~{status['total']:,} of {status['budget']:,} across {status['windows']} window(s).",
+            )
+        ]
+    worst = status["worst"] or {}
+    return [
+        Finding(
+            "streamer.budget",
+            WARN,
+            "Declared subscriptions over budget",
+            f"The registry would cost ~{status['total']:,} subscriptions against a budget of "
+            f"{status['budget']:,} ({status['windows']} windows). Largest: {worst.get('symbol')} at "
+            f"~{worst.get('subscriptions', 0):,} over {worst.get('windows')} window(s) at "
+            f"{worst.get('strike_count')} strikes/side"
+            + (" (widened by a module hint)" if worst.get("hinted") else "")
+            + ". A producer restart would subscribe this; shed before it does.",
+        )
+    ]
+
+
+# A producer reconnecting more than this often is churning rather than recovering. A healthy day is
+# 0-2 reconnects; 2026-08-24's rate-limit spiral ran ~60/hour for a whole morning while every branch
+# above reported the streamer as running and, between kills, streaming.
+_RECONNECT_CHURN_PER_HOUR = 6.0
+_RECONNECT_CHURN_MIN_DELTA = 3
+
+
+def _streamer_churn_state_path() -> Path:
+    return cfgmod.state_file("streamer-reconnects.json")
+
+
+def _streamer_churn_finding(label: str, status: dict[str, Any]) -> Finding | None:
+    """WARN when a producer is RECONNECTING repeatedly — the state no other check can see.
+
+    Every branch above judges one instant: is it running, is its data fresh. A producer in a
+    reconnect loop passes all of them between kills, which is exactly how 2026-08-24 went
+    unreported — 79 reconnects in a morning, and the only symptoms that surfaced were two trading
+    modules complaining about stale quotes, a diagnosis one level removed from the cause. This is
+    the same lesson `starts_in_window` already encodes for resident jobs: **a process that keeps
+    coming back looks healthy at every instant and is not.**
+
+    Report-only, deliberately. Churn means the producer is ALREADY restarting itself, so a restart
+    is not a remedy — it is another instance of the problem (the suite's own rule that ambiguity is
+    reported, never remediated, and that restart is the most expensive remedy there is).
+    """
+    count = status.get("reconnect_count")
+    if not isinstance(count, (int, float)):
+        return None
+    now = datetime.now(timezone.utc).timestamp()
+    try:
+        state = json.loads(_streamer_churn_state_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        state = {}
+    prev = state.get(label) or {}
+    finding = None
+    prev_count, prev_at = prev.get("count"), prev.get("at")
+    if isinstance(prev_count, (int, float)) and isinstance(prev_at, (int, float)):
+        delta = count - prev_count
+        hours = max((now - prev_at) / 3600.0, 1e-6)
+        rate = delta / hours
+        # A counter that went DOWN means the daemon restarted and reset it — not churn, and not a
+        # comparable baseline, so it only re-baselines.
+        if delta >= _RECONNECT_CHURN_MIN_DELTA and rate >= _RECONNECT_CHURN_PER_HOUR:
+            finding = Finding(
+                f"{label}.churn",
+                WARN,
+                "Streamer reconnect churn",
+                f"{int(delta)} reconnect(s) in {(now - prev_at) / 60:.0f} min "
+                f"(~{rate:.0f}/hour, total {int(count)}). It is restarting itself, so quotes are "
+                "arriving in bursts even while it reports running; check the streamer log for the "
+                "reason before restarting anything.",
+            )
+    try:
+        state[label] = {"count": count, "at": now}
+        _streamer_churn_state_path().write_text(json.dumps(state), encoding="utf-8")
+    except OSError:
+        pass  # telemetry about telemetry: never fail the tick over it
+    return finding
 
 
 def _recycle_streamer_if_stale(label: str, root: Path, spec: dict[str, Any], settling: bool) -> Finding:
@@ -583,11 +942,20 @@ def _check_meic(name: str, mcfg: dict[str, Any], in_session: bool) -> list[Findi
     # file, so half the freshness signal was dead with no error).
     if in_session:
         log_rel = paper.get("log")
+        # Three candidate signals, freshest wins. The DB mtime and the log are both conditional
+        # writes — in WAL mode the main DB file's mtime only moves on a checkpoint, and a log line
+        # is a side effect of having something to say — so a healthy-but-idle loop (calendars, most
+        # weeks: no positions, nothing to mark, nothing to log) looked dead through both and this
+        # check flapped WARN for most of 2026-08-21's session. The heartbeat is the one file a
+        # resident loop writes UNCONDITIONALLY every tick (cherrypick.core.home.heartbeat_path — the
+        # same lesson the supervisor learned from calendars' 107 restarts on 2026-08-17); a module
+        # that doesn't write one degrades cleanly to the two conditional signals.
         ages = [
             a
             for a in (
                 _file_age_minutes(cfgmod.paper_db_path(mcfg, name)) if paper.get("paper_db") else None,
                 _file_age_minutes(cfgmod.module_logs_dir(name) / Path(log_rel).name) if log_rel else None,
+                _file_age_minutes(core_home.heartbeat_path(name)),
             )
             if a is not None
         ]
@@ -847,6 +1215,88 @@ def _check_eval_activity(
     finding = WARN if status == eval_activity.WARN else OK
     return [Finding(f"{name}.eval_activity", finding, f"{label} eval activity", detail)]
 
+
+
+def _check_advice_enactment(cfg: dict[str, Any], now_et: datetime, is_trading: bool) -> list[Finding]:
+    """Did today's modules actually APPLY the advice artifact issued for them last night?
+
+    This is the check that replaced a scheduled AI checkpoint (2026-08-26). `advice_enacted` rides
+    on every fact pack partly so a dropped artifact is visible at 10am rather than in the evening
+    verdict that scores it — but a model was never needed to answer it, and across its whole history
+    the midday slot never once caught one. All three enactment failures found so far (08-25 meic,
+    08-25 earnings, 08-26 calendars) were found by the deep slot, after the close. The question is
+    deterministic, so it belongs here, where it costs nothing and fails the same way twice.
+
+    It matters because of the 2026-08-25 incident: five artifacts went out with zero rejections,
+    three were applied and two were not, and the two were the modules whose experiments had their
+    most informative session available. A `not_enacted` session buys an experiment nothing, and
+    earnings carries a kill-at-session-6 rule — so "the parameter did nothing" and "the parameter
+    never reached a session with trades" would have concluded identically.
+
+    Driven by SUBPROCESS, never by import: this package drives the advisor by subprocess by rule
+    (see jobspec's ADVISOR_LIGHT_SLOTS note and packages/advisor/CLAUDE.md's fence), and the verdict
+    stays in `enactment.py` rather than being re-derived here. The comparison is genuinely subtle —
+    a reject-all artifact beside a baseline decision IS enacted — and a second opinion here would be
+    free to drift from the one the console and the evening pass both read.
+
+    Silent unless something is wrong. `no_artifact` (no active experiment) and `carried` (the
+    admitted params are frozen on positions an earlier session opened and the module still holds)
+    are both ordinary states and are not reported; only `not_enacted` is, because that is an
+    artifact that existed, validated, and was ignored on a session the module did act.
+
+    `carried` was added 2026-08-27 for exactly this check's sake. calendars enters once a week and
+    earnings only when a name reports, so both spend most sessions with nothing to decide — and
+    scored as `not_enacted`, calendars alone raised this WARN four days in five, forever. A warning
+    that fires 80% of the time on a module behaving as designed cannot catch the 2026-08-25 case it
+    exists for.
+    """
+    if not is_trading or not cfgmod.advisor_settings(cfg).get("enabled"):
+        return []
+    # After the loops have had a session start in which to record a decision, and before the deep
+    # slot scores it anyway — a warning that arrives with the verdict is not an early warning.
+    if not (time(10, 30) <= now_et.time() <= time(16, 30)):
+        return []
+
+    session = now_et.date().isoformat()
+    try:
+        # cwd is irrelevant to `-m` resolution (the advisor is an installed package); the home
+        # directory is used because it always exists, unlike a module root the advisor has none of.
+        r = _run_module(
+            core_home.home(),
+            ["-m", "cherrypick.advisor", "enactment", "--session", session],
+            timeout=25,
+        )
+        payload = first_json(r.stdout or "")
+    except Exception as exc:  # noqa: BLE001 -- a check that cannot run must not break the sweep
+        return [
+            Finding(
+                "advisor.enactment",
+                WARN,
+                "Advice enactment unknown",
+                f"Could not read enactment for {session}: {type(exc).__name__}: {exc}",
+            )
+        ]
+    if not isinstance(payload, dict) or not payload.get("ok"):
+        return []
+
+    dropped = [
+        (name, (row or {}).get("detail") or "")
+        for name, row in (payload.get("modules") or {}).items()
+        if isinstance(row, dict) and row.get("status") == "not_enacted"
+    ]
+    if not dropped:
+        return []
+    listed = "; ".join(f"{name}: {detail}" for name, detail in sorted(dropped))
+    return [
+        Finding(
+            "advisor.enactment",
+            WARN,
+            f"Advice not applied by {len(dropped)} module(s)",
+            f"An artifact was issued for {session} and the loop's own record disagrees with it. "
+            f"The session buys those experiments nothing and their counters do not advance. "
+            f"{listed}",
+        )
+    ]
 
 def _check_settlement(name: str, mcfg: dict[str, Any], now_et: datetime, is_trading: bool) -> list[Finding]:
     """Warn when a module is past the close on a trading day with open positions it has not settled.
@@ -1203,9 +1653,11 @@ def _check_services(cfg: dict[str, Any]) -> list[Finding]:
             findings.append(Finding(f"service.{sid}", WARN, f"{sid} checkout missing", msg))
             continue
         running = None
+        status: dict[str, Any] = {}
         try:
             r = _run_module(root, svc["status_argv"], timeout=15)
-            running = bool(first_json(r.stdout).get("running")) if r.returncode == 0 else None
+            status = first_json(r.stdout) if r.returncode == 0 else {}
+            running = bool(status.get("running")) if r.returncode == 0 else None
         except Exception:
             running = None
         if running is False and svc.get("auto_restart"):
@@ -1226,6 +1678,39 @@ def _check_services(cfg: dict[str, Any]) -> list[Finding]:
             findings.append(
                 Finding(f"service.{sid}", WARN, f"{sid} status unknown", "Could not read status_argv.")
             )
+        elif status.get("stalled") is True:
+            # Alive but wedged: the service's own published heartbeat went silent (see the gex
+            # recorder's status contract). A pid check cannot see this — the 2026-07-23 shape with a
+            # different cause — and a plain start would lose to the wedged pid's single-instance
+            # lock, so the remedy is the stale-config recycle: stop, then start. Same auto_restart
+            # gate as every other touch.
+            age = status.get("heartbeat_age_seconds")
+            silent = f"heartbeat silent {int(age)}s" if isinstance(age, (int, float)) else "heartbeat silent"
+            if svc.get("auto_restart"):
+                stopped = _stop_streamer(root, svc)
+                started = _start_streamer(root, svc["start_argv"]) if stopped else False
+                findings.append(
+                    Finding(
+                        f"service.{sid}",
+                        WARN,
+                        f"{sid} stalled — recycled" if started else f"{sid} stalled — recycle failed",
+                        f"Process alive but {silent}; "
+                        + (
+                            "stopped and relaunched."
+                            if started
+                            else f"the {'restart' if stopped else 'stop'} failed and it is still wedged."
+                        ),
+                    )
+                )
+            else:
+                findings.append(
+                    Finding(
+                        f"service.{sid}",
+                        WARN,
+                        f"{sid} stalled",
+                        f"Process alive but {silent}; auto_restart is off, so recycle it by hand.",
+                    )
+                )
         else:
             findings.append(_recycle_if_stale(svc, root, sid))
     return findings
@@ -1435,6 +1920,20 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
             Finding("supervisor.error", WARN, "Supervisor check failed", f"{type(exc).__name__}: {exc}")
         )
 
+    # Jobs config derives that the running daemon has never heard of — invisible to every other
+    # surface, because they enumerate the registry a stale supervisor wrote.
+    try:
+        findings += _check_job_registry_drift(cfg)
+    except Exception as exc:
+        findings.append(
+            Finding(
+                "supervisor.jobs_error",
+                WARN,
+                "Supervisor job-table check failed",
+                f"{type(exc).__name__}: {exc}",
+            )
+        )
+
     # The console: the suite's only read surface, and the one resident job with no other artifact
     # (paper writes, a log) whose staleness would catch it if its restart loop got stuck.
     try:
@@ -1444,11 +1943,29 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
             Finding("console.error", WARN, "Console check failed", f"{type(exc).__name__}: {exc}")
         )
 
+    # Every resident job's restart churn and self-stops. A module's freshness check cannot backstop
+    # these -- a restart loop's own writes keep the paper DB looking fresh -- which is exactly how
+    # 107 restarts in a session went unreported.
+    try:
+        findings += _check_resident_health(cfg)
+    except Exception as exc:
+        findings.append(
+            Finding("resident.error", WARN, "Resident job check failed", f"{type(exc).__name__}: {exc}")
+        )
+
     # Drift alert: report-driven paper-drawdown check (opt-in). Flows through the same notify path.
     findings += _check_drawdown(cfg)
 
     # Keep generic background services (e.g. the gex spot-trail recorder) alive.
     findings += _check_services(cfg)
+    # Declared-cost check: the next expensive declaration should announce itself here rather than
+    # at an open (see _check_subscription_budget).
+    findings += _check_subscription_budget(cfg)
+    # The data dependency that stops earnings silently (see _check_earnings_calendar).
+    findings += _check_earnings_calendar(cfg)
+    # Was last night's advice actually applied? Deterministic, and it replaced an AI checkpoint
+    # that never once caught this (see _check_advice_enactment).
+    findings += _check_advice_enactment(cfg, now, is_trading)
 
     # Watchdog the standalone market-data producer (dormant until the cutover enables the top-level
     # `streamer` block; today MEIC still owns the streamer under modules.meic.streamer).

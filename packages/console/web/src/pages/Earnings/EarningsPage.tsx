@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import type { TradingMode } from "@console/shared";
 import { useEarnings } from "../../lib/api";
+import { useMode } from "../../lib/useMode";
+import { ModeToggle } from "../../components/ModeToggle";
+import { IntegrityStrip } from "./IntegrityStrip";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 import { TabStrip, Pager, usePage } from "../../components/ScopeBar";
@@ -74,11 +78,11 @@ interface EarningsAnalytics {
   }>;
 }
 
-function useEarningsAnalytics() {
+function useEarningsAnalytics(mode: TradingMode, era: string | null) {
   return useQuery<EarningsAnalytics>({
-    queryKey: ["earnings-analytics"],
+    queryKey: ["earnings-analytics", mode, era],
     queryFn: async () => {
-      const res = await fetch("/api/earnings/analytics?mode=paper");
+      const res = await fetch(`/api/earnings/analytics?mode=${mode}${era !== null ? `&era=${era}` : ""}`);
       if (!res.ok) throw new Error(`earnings analytics: HTTP ${res.status}`);
       return (await res.json()) as EarningsAnalytics;
     },
@@ -86,13 +90,36 @@ function useEarningsAnalytics() {
   });
 }
 
+
+/**
+ * The earnings era scope: current era (the suite's data_epoch, 2026-08-21 advisor-era cutover) or
+ * full history. Earnings has no era column of its own, so this is a two-state control rather than
+ * the flies/meic era list — same default-narrow, widen-on-request convention.
+ */
+function EraScope({ era, onChange }: { era: string | null; onChange: (v: string | null) => void }) {
+  return (
+    <select
+      className={`text-input ${era === null ? "" : "scope-select-off-default"}`}
+      value={era ?? ""}
+      onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
+      aria-label="era"
+      title="The advisor era began 2026-08-21, when every hand-designed variant retired and management params came under advisor experiments. Earlier trades ran under different rules — pooling them reads as one experiment when it is really two."
+    >
+      <option value="">this era (default)</option>
+      <option value="ALL">all history</option>
+    </select>
+  );
+}
+
 export function EarningsPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("open");
+  const [mode, setMode] = useMode();
+  const [era, setEra] = useState<string | null>(null);
   const tradesPage = usePage();
   const reviewsPage = usePage();
-  const { data, isLoading, isError, isPlaceholderData } = useEarnings(tradesPage.page, reviewsPage.page);
+  const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useEarnings(tradesPage.page, reviewsPage.page, era);
   const upcoming = useUpcoming();
-  const analytics = useEarningsAnalytics();
+  const analytics = useEarningsAnalytics(mode, era);
   const a = analytics.data;
 
   return (
@@ -100,8 +127,18 @@ export function EarningsPage() {
       <div className="page-title-row">
         <h1>Earnings</h1>
         <TabStrip tabs={TABS} value={tab} onChange={setTab} />
-        <span className="chip">both books</span>
+        {/* The badge and toggle scope the analytics and the strategy detail. The trade and review
+            tables on Overview deliberately span both books and say so in their own titles, with a
+            per-row badge — a single page-level claim of "both books" was wrong for everything
+            else on the page. */}
+        <PaperLiveBadge mode={mode} />
+        <ModeToggle mode={mode} onChange={setMode} />
+        <EraScope era={era} onChange={setEra} />
       </div>
+
+      {/* Above the numbers it qualifies, on every tab. The live/paper split is this page's sharpest
+          way to mislead: these tables span BOTH books while the analytics follow the toggle. */}
+      <IntegrityStrip data={data} updatedAt={dataUpdatedAt} />
 
       <div className="cards cards-wide">
         {tab === "open" && (
@@ -110,11 +147,11 @@ export function EarningsPage() {
             <EarningsManagementLog />
           </>
         )}
-        {tab === "strategy detail" && <EarningsDetailCards mode="paper" />}
+        {tab === "strategy detail" && <EarningsDetailCards mode={mode} era={era} />}
         {tab === "overview" && (
         <>
         <section className="card">
-          <h2>Strategy test — paper</h2>
+          <h2>Strategy test — {mode}</h2>
           <div className="stats-grid">
             <div className="stat-tile">
               <span className="stat-label">net expectancy / trade</span>

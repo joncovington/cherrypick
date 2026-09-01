@@ -5,6 +5,14 @@ in the ledger under their own symbol and widths) — the "profit forest". A **pa
 narrow live pilot: it measures whether the strategy makes money net of costs, and it is built so that
 a negative answer is a usable result rather than something to tune away.
 
+**Where things live.** The dated record of what each session measured is
+[docs/experiment-log.md](docs/experiment-log.md), append-only, and that is where a new FINDING goes.
+This file keeps the rules that constrain what the code may do — but note they are deliberately
+written as *rule plus the measurement that produced it*, so a live parameter (the 20-point trend
+band, the stale-GEX limits, `min_floor_dollars`) sits next to the evidence for its value. That is
+not narrative to be tidied away: this module's history is largely of rules being "fixed" by someone
+who did not know why they were set, and separating the two would make that easier, not harder.
+
 **The 2026-08-01 SPX switch, and what it cost.** XSP fees were eating the result: on the 1-wide XSP
 book the median completed fly collected **$12.00 against $4.97 of fees — 41.4% drag** — while the
 5-wide SPX book collected **$63.12 against $6.89, or 10.9%**. Credit scales with the structure; the
@@ -686,6 +694,20 @@ These are the constraints the module exists to enforce. Breaking one makes the n
    evaluated per tick, so not every one of the seven was necessarily transactable. **No live money
    was involved** — the live pilot's ledger records no floor-gate refusal.
 
+## Liveness is published, not inferred
+
+The resident loop touches `state/flies.heartbeat` (`paper_loop._beat`, via
+`cherrypick.core.home.heartbeat_path`) at the **top of every tick**, before any gate, and the
+supervisor measures this job's silence against that file rather than against
+`logs/flies/flies_paper.log`.
+
+This module was never broken by the old arrangement, and that is the point: it survived only because
+`run_once` happens to log a line per symbol per tick, so its log was never quiet in session. Calendars,
+whose lines are all event-driven, was killed and restarted every two minutes for four days on the
+identical mechanism. **Luck is not a supervision contract** — and any change that merely made this
+loop quieter would have inherited that bug silently, with the restarts looking like ordinary
+supervision. The log is now free to be exactly as talkative as a human reading it needs.
+
 ## Guardrails (suite-wide)
 
 - Paper by default; live is a deliberately narrow, per-day-armed pilot (one arm, one symbol, one
@@ -705,9 +727,11 @@ These are the constraints the module exists to enforce. Breaking one makes the n
   were re-settled through the corrected math. `fee_reconcile` now compares modeled vs real fee
   **per settlement symbol**, not just as an aggregate P&L delta — the aggregate is what let this
   hide as ~$12 of apparent slippage noise for a day.
-- **No AI, no MCP, and no network on any decision path.** `fly.py` and `engine.py` are pure functions
-  over a pre-fetched snapshot. Learning happens offline in the orchestrator's read side (`report`,
-  `calibrate`) and in `packages/review` over closed rows — never inside the loop.
+- **The decision path is deterministic.** `fly.py` and `engine.py` are pure functions over a
+  pre-fetched snapshot — no model, no MCP, no network in the decision itself. Learning happens
+  offline in the orchestrator's read side (`report`, `calibrate`) and in `packages/review` over
+  closed rows, never inside the loop. That split is the preference in the root file applied here,
+  and it is what lets a completion rate be re-derived from stored rows months later.
 - **The streamer comes before API calls** whenever practical, for efficiency or latency: all pricing
   reads the shared stream cache, and cached quotes GATE broker calls (a resting entry order is only
   cancelled/replaced when the cached evaluation moved; fill-status polls fire only when cached quotes
@@ -793,3 +817,44 @@ resolve (a 1-lot measurement pilot with an abort rule for the first; legged-only
 second), the live-loop architecture, kill switches, the fee-math symbol decision, and the rung-by-rung
 rollout — is [docs/live-trading-plan.md](docs/live-trading-plan.md). Until Gate 0 passes, the only
 work it calls for is running the paper experiment honestly.
+
+
+## Band placement (`python run.py bands`)
+
+Where each book's band sat relative to the range the session actually printed. Requested by the
+advisor on 2026-08-18, repeated 08-19 and 08-20, and sharpened on 08-21 — four proposals for one
+instrument, which is why it is here rather than in a notebook.
+
+The argument: a butterfly's floor holding is the joint event of a band placement and a realized
+range, so scoring arms on `floor_holds` alone credits a wide band on a quiet day and blames a tight
+band on a fast one. Every established arm wins 64-77% of the time and loses money lifetime, which is
+what you get when the thing being optimised is not the thing that decides the tail.
+
+**Both edges, not just the lower one**, and that correction came from the wing experiment
+contradicting the original metric. `band_low - session_low` classified held-versus-failed perfectly
+for four sessions; then `advised:control` (wing_width_strikes=2) put its lower edge 45.06 points
+below the session low — more than twice control's margin — and failed anyway, because the narrow
+wing had pulled the UPPER edge to 7697 against a 7697.11 high. Price traded 0.11 points through it.
+
+So the metric is `min(low_margin, high_margin)` with the binding edge named, normalised two ways:
+by the session's realized range (ex-post, how close this band came on this tape) and by the VIX1D
+one-day implied move (knowable at entry — the only one that can separate "places wider bands" from
+"got quieter days").
+
+Two details that are easy to get wrong, both of which were:
+
+- **The range comes from the shared stream cache's `day_high`/`day_low`, not `fly_iterations`.**
+  The 08-21 breach was 0.11 points and the loop samples the underlying per tick, observing 7697.01
+  where the feed's session high was 7697.11. Scoring off sampled ticks reads that book as HELD.
+- **Ranges key on (session, symbol).** This module has traded SPX and XSP — the same index at a
+  tenth the notional — so keying on date alone scores XSP bands near 731 against SPX ranges near
+  7690 and produces six confident "classifier failures" that are an indexing bug.
+
+`band_placement_classifier` reports agreement for both rules over identical rows. On 152 settled
+books the two-edge rule agrees with `floor_holds` 97.4% against the one-edge rule's 72.4%, and 72 of
+those books were bound by the UPPER edge — invisible to the rule it replaces, which is why that one
+caps out where it does. **Read it as agreement, not prediction:** `floor_holds` is `worst >= 0` over
+the payoff grid, a property of the structure that is settled before the session opens, so part of
+the agreement is mechanical. The clean result is the rule-vs-rule comparison, not the rate. All four
+residual disagreements are books that touched an edge and settled back inside, and are labelled as
+such.

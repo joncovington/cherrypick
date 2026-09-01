@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { fliesQuery, type FliesFilter } from "../../lib/api";
 import { fmtMoney } from "../../components/DataTable";
+import { EquityUnderwater } from "../../components/EquityUnderwater";
+import { VoidedNote } from "./VoidedNote";
 
 interface Performance {
   tiles: {
@@ -14,6 +16,15 @@ interface Performance {
     completionRatePct: number | null;
   };
   series: Array<{ bucket: string; netPnl: number; cumulative: number }>;
+  equity: Array<{ date: string; netPnl: number; equity: number; drawdown: number }>;
+  risk: {
+    sharpe: number | null;
+    sortino: number | null;
+    calmar: number | null;
+    recoveryFactor: number | null;
+    sampleSize: number;
+    sharpeOverfitFlag: boolean;
+  };
   roll: {
     leggedEntries: number;
     completed: number;
@@ -89,6 +100,16 @@ function Tile({ label, value, tone }: { label: string; value: string; tone?: "po
       <span className={`stat-value ${cls}`}>{value}</span>
     </div>
   );
+}
+
+/** A ratio, or an em-dash where it is undefined. Never 0 — see riskMetrics.ts on why. */
+function fmtRatio(v: number | null): string {
+  return v === null ? "—" : v.toFixed(2);
+}
+
+function tone(v: number | null): "pos" | "neg" | "dim" | undefined {
+  if (v === null) return "dim";
+  return v >= 0 ? "pos" : "neg";
 }
 
 /** P&L over time bars with a cumulative overlay line. */
@@ -216,6 +237,45 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
           </label>
         </div>
         {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <PnlBars series={data?.series ?? []} cumulative={cumulative} />}
+      </section>
+
+      <VoidedNote mode={mode} filter={filter} />
+
+      {/* The same pair MEIC's performance tab carries, from the same shared module so the two
+          cannot disagree about what a Sharpe is. Titled "1-lot samples, not a sized book" for the
+          reason MEIC's is: the base under the curve is a drawing constant, these arms take one-lot
+          entries and do not compound, and this is the most authoritative-looking chart on the page.
+          The drawdown is real. */}
+      <section className="card">
+        <div className="panel-head-row">
+          <h2>Cumulative net P&amp;L and drawdown (1-lot samples, not a sized book)</h2>
+          <span className="muted lbl">daily, whatever granularity is selected above</span>
+        </div>
+        {isLoading ? (
+          <span className="skeleton skeleton-text" style={{ width: "40%" }} />
+        ) : (data?.equity.length ?? 0) === 0 ? (
+          <p className="muted">not enough history yet</p>
+        ) : (
+          <>
+            <EquityUnderwater equity={data?.equity ?? []} />
+            <div className="stats-grid" style={{ marginTop: "0.75rem" }}>
+              <Tile label="sharpe" value={fmtRatio(data?.risk.sharpe ?? null)} tone={tone(data?.risk.sharpe ?? null)} />
+              <Tile label="sortino" value={fmtRatio(data?.risk.sortino ?? null)} tone={tone(data?.risk.sortino ?? null)} />
+              <Tile label="calmar" value={fmtRatio(data?.risk.calmar ?? null)} tone={tone(data?.risk.calmar ?? null)} />
+              <Tile
+                label="max drawdown"
+                value={fmtMoney(Math.max(...(data?.equity ?? []).map((e) => e.drawdown), 0))}
+                tone="neg"
+              />
+              <Tile label="sessions" value={String(data?.risk.sampleSize ?? 0)} tone="dim" />
+            </div>
+            <p className="muted lbl" style={{ marginTop: "0.5rem" }}>
+              Annualized on 252 sessions from {data?.risk.sampleSize ?? 0} of them. A ratio over that
+              few sessions describes this stretch, not the strategy.
+              {data?.risk.sharpeOverfitFlag === true && " Sharpe above 3 on a sample this small is a warning about the sample."}
+            </p>
+          </>
+        )}
       </section>
 
       <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(22rem, 1fr))" }}>

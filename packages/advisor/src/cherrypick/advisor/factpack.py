@@ -29,9 +29,11 @@ from pathlib import Path
 from typing import Any
 
 from cherrypick.core import home as _home
+from cherrypick.core import regime as _regime
 
 from cherrypick.advisor import bounds as _bounds
 from cherrypick.advisor import clock as _clock
+from cherrypick.advisor import enactment as _enactment
 from cherrypick.advisor import paths as _paths
 from cherrypick.advisor import settings as _settings
 from cherrypick.advisor import store as _store
@@ -43,13 +45,51 @@ LIGHT_SLOTS = ("open", "am1", "am2", "midday", "pm1", "pm2", "close")
 DEEP_SLOT = "deep"
 SLOTS = (*LIGHT_SLOTS, DEEP_SLOT)
 
-MODULES = ("meic", "flies", "earnings", "calendars", "pmcc")
+# Derived from `bounds`, not restated. This was a literal tuple until 2026-08-26 and it was the
+# third hand-kept module list in this package — bwb and curve were absent from it while
+# `enactment.MODULES` (which does derive) already had them, so the same pack could reconcile a
+# module's enactment and carry no facts about it at all.
+MODULES = _bounds.MODULES
+
+# How much a model should be asked to READ AT ONCE, in bytes. This is an attention budget, and
+# saying so is a 2026-08-26 correction: the earlier numbers were derived from token targets and the
+# warning was worded like a resource overrun, which is what nobody acted on it for nine sessions.
+#
+# It is not a capacity limit and not a cost limit, and both were checked rather than assumed. The
+# deep pack at 472KB is ~130-160k tokens against a 1M-token window — about 15%, so it could
+# quadruple and still fit. At list rates the whole schedule (seven light slots on the cheap model,
+# one deep on the strong one) runs about $1.40 a day. Neither is a reason to trim anything. The
+# reason to trim is that a finding buried in 470KB of context is a finding nobody acts on, which is
+# the same failure as not recording it.
+#
+# The bar moved once, here, deliberately: light 32,000 -> 48,000 and deep 120,000 -> 200,000. The
+# light target predated the suite having SEVEN modules — `paper` alone is 23KB of the 42KB light
+# pack, and that is the section the pack exists to carry. A ceiling that every honest pack breaches
+# is not a ceiling. Moving it to meet the artifact is still how a ceiling stops meaning anything,
+# so: this is the last move that gets made without cutting something first.
+#
+# Enforced against the REAL pack by `write` — the gap that let it run from 250KB to 731KB unnoticed
+# was a budget test asserting against a seeded fixture, i.e. measuring a pack nobody reads.
+# Exceeding the ceiling is reported, never fatal: a session's advice must not be lost to a size check.
+LIGHT_MAX_BYTES = 48_000
+DEEP_MAX_BYTES = 200_000
 
 # How many rows a "top N" section may carry. Refusal reasons have a long tail of one-offs; the head
 # is the story, and the tail costs tokens that the deep sections need.
 TOP_N = 8
 TREND_SESSIONS = 5
 JOURNAL_SESSIONS = 10
+
+# How many of those sessions keep their proposals, observations and non-critical flags IN FULL.
+# Beyond this an entry keeps its identity — enough to not re-propose it — and drops the argument.
+# See `_advisor_journal`.
+JOURNAL_FULL_SESSIONS = 2
+
+# Flag severities that survive the taper at ANY age, carried verbatim. A critical flag is a standing
+# caveat about a module — the kind of thing that must never age out of view — and there are twelve
+# of them across the whole ten-session window, costing 8.3KB. `warn` and `info` are 210 flags and
+# 86.5KB, and past the full-detail window they are history rather than a standing caveat.
+JOURNAL_STANDING_SEVERITIES = frozenset({"critical"})
 CONCLUDED_SHOWN = 10
 
 _NOTE_LIVE = (
@@ -70,11 +110,14 @@ def _paper_db(module: str) -> Path:
 def _live_db(module: str) -> Path:
     """Each module named its live ledger differently before there was a convention; the names are
     load-bearing in deployed homes, so they are recorded here rather than normalised."""
-    return _paths.module_data_dir(module) / {
-        "meic": "meic_trades.db",
-        "earnings": "earnings_trades.db",
-        "flies": "live_trades.db",
-    }[module]
+    return (
+        _paths.module_data_dir(module)
+        / {
+            "meic": "meic_trades.db",
+            "earnings": "earnings_trades.db",
+            "flies": "live_trades.db",
+        }[module]
+    )
 
 
 def _stream_cache() -> Path:
@@ -101,6 +144,53 @@ def _read(path: Path, fn):
         conn.close()
 
 
+def carried_advice_params(module: str) -> list[dict[str, Any]] | None:
+    """The frozen advice params on the module's currently-OPEN advised positions.
+
+    Lives here rather than in `enactment.py` because this is a live read of another package's
+    ledger, and every one of those is fenced into this file by the package contract. `enactment`
+    forms the verdict; this only reports what the rows say.
+
+    Three distinguishable answers, and the distinction is the point:
+
+    * ``None`` — the module's ledger declares no ``advice_params`` column anywhere, so it CANNOT
+      carry advice across sessions. A missing decision there is a real miss (meic and flies are
+      flat overnight and decide every session).
+    * ``[]`` — it can carry and currently carries nothing.
+    * a list of param dicts — advice frozen at entry is still governing open positions.
+
+    The table is DISCOVERED from the schema rather than named in a table here: a module that starts
+    freezing advice on its rows is covered the moment it declares the column, and one that stops is
+    uncovered the moment it drops it. A hand-kept list would be a second declaration free to drift
+    from the ledger it describes.
+    """
+
+    def read(conn):
+        table = None
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'"):
+            name = row[0]
+            columns = {c[1] for c in conn.execute(f"PRAGMA table_info({name})")}
+            if {"advice_params", "status"} <= columns:
+                table = name
+                break
+        if table is None:
+            return None
+        out: list[dict[str, Any]] = []
+        for row in conn.execute(
+            f"SELECT DISTINCT advice_params FROM {table}"  # noqa: S608 - name from sqlite_master
+            " WHERE advice_params IS NOT NULL AND status != 'closed'"
+        ):
+            try:
+                params = json.loads(row[0]) if isinstance(row[0], str) else dict(row[0])
+            except (TypeError, ValueError):
+                continue  # an unreadable stamp proves nothing either way; it is not evidence
+            if isinstance(params, dict) and params not in out:
+                out.append(params)
+        return out
+
+    return _read(_paper_db(module), read)
+
+
 def _counts(rows: list[dict], key: str, value: str = "n") -> dict[str, Any]:
     return {str(r[key] or "unknown"): r[value] for r in rows}
 
@@ -117,7 +207,8 @@ def _market(session: str) -> dict[str, Any]:
 
     def vix(conn):
         rows = _store.rows(
-            conn, "SELECT vix, vix1d, vix1d_ratio FROM market_context WHERE context_date = ?",
+            conn,
+            "SELECT vix, vix1d, vix1d_ratio FROM market_context WHERE context_date = ?",
             (session,),
         )
         return rows[0] if rows else None
@@ -129,13 +220,30 @@ def _market(session: str) -> dict[str, Any]:
             " FROM gex_regime_history WHERE trade_date = ? ORDER BY ts DESC LIMIT 1",
             (session,),
         )
+        # RTH rows only. The recorder runs around the clock and freezes on the last streamed value
+        # once the market quiets, so an unbounded per-date count double-weights whatever sign the
+        # session ENDED on: on 2026-08-21 the unfiltered count read 181 positive / 26 negative while
+        # the RTH-only truth was 67 / 11 — two-thirds of the "distribution" was one frozen overnight
+        # value repeated every five minutes. The model flagged the resulting snapshot-vs-counts
+        # contradiction six sessions running; this was most of it.
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo
+
+        et = ZoneInfo("America/New_York")
+        rth_open = _dt.fromisoformat(f"{session}T09:30:00").replace(tzinfo=et).timestamp()
+        rth_close = _dt.fromisoformat(f"{session}T16:00:00").replace(tzinfo=et).timestamp()
         buckets = _store.rows(
             conn,
             "SELECT CASE WHEN net_gex >= 0 THEN 'positive' ELSE 'negative' END sign, COUNT(*) n"
-            " FROM gex_regime_history WHERE trade_date = ? GROUP BY sign",
-            (session,),
+            " FROM gex_regime_history WHERE trade_date = ? AND ts BETWEEN ? AND ? GROUP BY sign",
+            (session, rth_open, rth_close),
         )
-        return {"latest": latest[0] if latest else None, "today_counts": _counts(buckets, "sign")}
+        return {
+            "latest": latest[0] if latest else None,
+            "today_counts": _counts(buckets, "sign"),
+            "_counts_note": "RTH snapshots only (09:30-16:00 ET); the recorder also logs frozen "
+            "off-hours rows that would double-weight the closing sign.",
+        }
 
     def day_range(conn):
         return _store.rows(
@@ -148,10 +256,55 @@ def _market(session: str) -> dict[str, Any]:
         )
 
     return {
-        "vix": _read(_paper_db("meic"), vix),
+        "regime": _regime_now(session, fallback=lambda: _read(_paper_db("meic"), vix)),
         "gex": _read(_gex_history(), gex),
         "day_range": _read(_stream_cache(), day_range) or [],
         "_note": "day_range is today's rows only; a stale row is omitted rather than relabeled",
+    }
+
+
+def _regime_now(session: str, *, fallback) -> dict[str, Any]:
+    """The market regime at fact-pack time, from the suite's canonical series.
+
+    Replaces this pack's old habit of reading MEIC's private `market_context` table — a cross-module
+    scrape that worked only because MEIC happened to record what the advisor happened to need, and
+    that carried VIX alone. `cherrypick.core.regime.regime_at` is the one join every consumer uses,
+    so the pack, the console and any read-side analysis now describe the same moment the same way,
+    and it carries the whole complex: the vol curve, breadth, credit, the commodity pair, the VIX
+    futures term structure, and the per-symbol chain measures.
+
+    ONE regime block, never two sources side by side. A fact pack that showed a canonical VIX beside
+    a scraped one would invite exactly the contradiction the GEX counts note below records the model
+    chasing for six sessions. When the series is unmeasured — a recorder outage, or a checkpoint
+    outside RTH when nothing is sampled — this falls back to the old reading and SAYS SO in
+    `source`, rather than presenting a hole as a calm market.
+    """
+    try:
+        out = _regime.regime_at(_clock.now_et().timestamp())
+        market = out.get("market") or {}
+    except Exception:  # noqa: BLE001 — a fact pack must never fail on a telemetry read
+        market = {"status": "unmeasured", "reason": "regime_read_failed"}
+    if market.get("status") == "measured":
+        readings = {
+            name: r.get("value") for name, r in (market.get("readings") or {}).items() if r.get("usable")
+        }
+        refused = sorted(name for name, r in (market.get("readings") or {}).items() if not r.get("usable"))
+        return {
+            "source": "market_regime_history (canonical)",
+            "age_seconds": market.get("age_seconds"),
+            "readings": readings,
+            "derived": market.get("derived") or {},
+            "chain": market.get("chain") or {},
+            "refused": refused,
+            "_refused_note": "readings the recorder marked unusable at that sample — a stale or "
+            "missing quote, never a value it guessed.",
+        }
+    return {
+        "source": "meic.market_context (fallback)",
+        "reason": market.get("reason"),
+        "readings": fallback() or {},
+        "_fallback_note": "the canonical series had no usable sample at this moment, so this is "
+        "the older single-source read; it carries VIX only.",
     }
 
 
@@ -212,6 +365,15 @@ def _meic(session: str) -> dict[str, Any]:
             "top_block_details": blocks,
             "book_by_profile": book,
             "latest_regime": regime[0] if regime else None,
+            "_gex_gate_series_note": "MEIC's regime_gex_block_negative gate reads NONE of the "
+            "market.gex series above. It recomputes GEX fresh on every entry tick from the stream "
+            "cache (cherrypick.meic.tt cmd_get_gex): nearest expiration only (0DTE intraday), "
+            "±20 strikes around spot, OI-weighted positioning basis, and blocks when that "
+            "instantaneous net is negative. The engine series in market.gex is a wider-window "
+            "recorder sampled ~5min; the two can legitimately disagree, especially late in a 0DTE "
+            "session. Per-entry rows record BOTH bases (gex_net_at_entry, gex_net_vol_at_entry), "
+            "so which basis better separates outcomes is a read-side derivation once session "
+            "depth allows, not a reason for parallel experiments now.",
             "closed_with_stop_instrumentation": _counts(stops, "risk_profile"),
             "control_fired": {
                 "fired": by_profile.get("control", 0) > 0,
@@ -324,6 +486,43 @@ def _earnings(session: str) -> dict[str, Any]:
     return out
 
 
+def _mark_coverage(conn, table: str, session: str) -> dict[str, Any]:
+    """Usable-vs-refused mark counts for one session, in words rather than in a flag column.
+
+    This was `SELECT usable, COUNT(*) n ... GROUP BY usable`, which serialises as
+    `[{"usable": 0, "n": 1}, {"usable": 1, "n": 2201}]` -- and on 2026-08-24 the advisor read that
+    as "usable 1 of 664" and concluded, in a proposal, that 663 of 664 marks were unusable and that
+    "the assignment-exposure metric every pmcc experiment is scored on" had a meaningless
+    denominator. The true figure was 664 of 664 usable. A boolean flag sitting next to a count is
+    two numbers that look like one ratio, and a reader that misreads it does not misread it
+    slightly -- it inverts the finding and proposes rebuilding something that works.
+
+    So the pack states the denominator, the numerator, and the refusal reasons by name.
+    """
+    total = 0
+    usable = 0
+    for row in _store.rows(
+        conn,
+        f"SELECT usable, COUNT(*) n FROM {table} WHERE session_date = ? GROUP BY usable",
+        (session,),
+    ):
+        total += row["n"]
+        if row["usable"]:
+            usable += row["n"]
+    return {
+        "marks_total": total,
+        "marks_usable": usable,
+        "marks_refused": total - usable,
+        "usable_fraction": round(usable / total, 4) if total else None,
+        "refusals_by_reason": _store.rows(
+            conn,
+            f"SELECT refusal, COUNT(*) n FROM {table} WHERE session_date = ? AND usable = 0"
+            " GROUP BY refusal ORDER BY n DESC",
+            (session,),
+        ),
+    }
+
+
 def _calendars(session: str) -> dict[str, Any]:
     """Weekly double calendars: the advisable surface is exit parameters only (the entry is
     unconditional every week), so the pack carries what an exit judgement needs — each open
@@ -362,11 +561,7 @@ def _calendars(session: str) -> dict[str, Any]:
             " WHERE session_date = ? GROUP BY action, reason, executed, gate ORDER BY n DESC LIMIT ?",
             (session, TOP_N),
         )
-        marks = _store.rows(
-            conn,
-            "SELECT usable, COUNT(*) n FROM dc_marks WHERE session_date = ? GROUP BY usable",
-            (session,),
-        )
+        marks = _mark_coverage(conn, "dc_marks", session)
         return {
             "open_positions": open_rows,
             "closed_by_exit_reason": closed,
@@ -404,13 +599,22 @@ def _pmcc(session: str) -> dict[str, Any]:
             "   last_short_tv,"
             " (SELECT m.spot FROM pmcc_marks m WHERE m.position_id = p.position_id AND m.usable = 1"
             "   ORDER BY m.marked_at DESC LIMIT 1) last_spot"
-            " FROM pmcc_positions p WHERE p.status != 'closed' ORDER BY p.book, p.symbol",
+            " , p.era FROM pmcc_positions p WHERE p.status != 'closed' ORDER BY p.book, p.symbol",
         )
+        # GROUPED BY ERA, and that is the point rather than an extra column. pmcc's 2026-08-23
+        # redesign cut the module from three books to one; the four pre-redesign rows in this
+        # ledger are ONE TQQQ trade recorded four times, once per retired book, with identical
+        # economics. Pooled with a redesign-era row they read as four independent observations, and
+        # on 2026-08-24 the advisor read exactly that and proposed rebuilding a book structure that
+        # was already correct -- "one trade, four identical rows... a module net of four rows
+        # overstates the evidence fourfold". The rows were real; the pooling was the defect. The
+        # module's own analytics.py has defaulted to CURRENT_ERA since the redesign; this pack was
+        # the one reader that did not.
         closed = _store.rows(
             conn,
-            "SELECT book, symbol, exit_reason, COUNT(*) n, SUM(gross_pnl) gross, SUM(fees) fees,"
-            " SUM(roll_count) rolls FROM pmcc_positions WHERE status = 'closed'"
-            " GROUP BY book, symbol, exit_reason ORDER BY book",
+            "SELECT COALESCE(era, '(pre-redesign)') era, book, symbol, exit_reason, COUNT(*) n,"
+            " SUM(gross_pnl) gross, SUM(fees) fees, SUM(roll_count) rolls FROM pmcc_positions"
+            " WHERE status = 'closed' GROUP BY era, book, symbol, exit_reason ORDER BY era, book",
         )
         attempts = _store.rows(
             conn,
@@ -430,11 +634,7 @@ def _pmcc(session: str) -> dict[str, Any]:
             " WHERE session_date = ? AND assignment_exposed = 1 GROUP BY position_id",
             (session,),
         )
-        marks = _store.rows(
-            conn,
-            "SELECT usable, COUNT(*) n FROM pmcc_marks WHERE session_date = ? GROUP BY usable",
-            (session,),
-        )
+        marks = _mark_coverage(conn, "pmcc_marks", session)
         return {
             "open_positions": open_rows,
             "closed_by_exit_reason": closed,
@@ -454,12 +654,132 @@ def _pmcc(session: str) -> dict[str, Any]:
     return out
 
 
+def _bwb(session: str) -> dict[str, Any]:
+    """SPX daily-laddered put BWB. Four books trade the IDENTICAL base structure and differ only in
+    whether, and on what trigger, a reversal add-on fires — so the advisable surface is the trigger
+    thresholds and the entry geometry, never the base fly, and the book contrast is the experiment
+    rather than something to average.
+
+    `trigger_ticks` is the module's declared second product: a cohort-keyed path recorded every
+    session for a future read-side threshold replay. It is carried here because a session with
+    positions and no trigger ticks means that replay will have nothing to score, which is a fact
+    about the evidence rather than about the trades.
+    """
+
+    def read(conn):
+        open_rows = _store.rows(
+            conn,
+            "SELECT position_id, book, symbol, entry_session, body_strike, near_strike, far_strike,"
+            " entry_credit, entry_max_loss, entry_dte, expiration, peak_abs_delta, below_flip_seen,"
+            " armed_at, arm_reason, addon_fired_at, addon_credit, status"
+            " FROM bwb_positions WHERE status != 'closed' ORDER BY book, entry_session",
+        )
+        closed = _store.rows(
+            conn,
+            "SELECT book, exit_reason, COUNT(*) n, SUM(gross_pnl) gross, SUM(fees) fees"
+            " FROM bwb_positions WHERE status = 'closed' GROUP BY book, exit_reason ORDER BY book",
+        )
+        attempts = _store.rows(
+            conn,
+            "SELECT book, outcome, block_detail, COUNT(*) n FROM bwb_entry_attempts"
+            " WHERE trade_date = ? GROUP BY book, outcome, block_detail ORDER BY n DESC LIMIT ?",
+            (session, TOP_N),
+        )
+        events = _store.rows(
+            conn,
+            "SELECT action, reason, executed, gate, COUNT(*) n FROM bwb_management_events"
+            " WHERE session_date = ? GROUP BY action, reason, executed, gate ORDER BY n DESC LIMIT ?",
+            (session, TOP_N),
+        )
+        triggers = _store.rows(
+            conn,
+            "SELECT structure_signature, COUNT(*) ticks, MAX(peak_abs_delta) peak_abs_delta"
+            " FROM bwb_trigger_ticks WHERE session_date = ? GROUP BY structure_signature",
+            (session,),
+        )
+        marks = _mark_coverage(conn, "bwb_marks", session)
+        return {
+            "open_positions": open_rows,
+            "closed_by_exit_reason": closed,
+            "entry_attempts": attempts,
+            "management_events": events,
+            "trigger_ticks": triggers,
+            "mark_coverage": marks,
+            "_note": (
+                "the four books trade the IDENTICAL base fly and differ only in the add-on trigger, "
+                "so their contrast is the experiment — never pool them into a module net; the "
+                "advisable surface is the trigger thresholds and entry geometry, not the base "
+                "structure. SPX is cash-settled and European, so settlement carries no assignment "
+                "model to caveat"
+            ),
+        }
+
+    out = _read(_paper_db("bwb"), read) or {"_absent": "no bwb paper ledger"}
+    out["advice_active"] = _store.read_json(_advice_active("bwb"), default=None)
+    return out
+
+
+def _curve(session: str) -> dict[str, Any]:
+    """VXX call-credit-spread module gated on a daily VIX/VIX3M regime read.
+
+    Its declared SECOND PRODUCT is that regime classification, recorded every session whether or not
+    anything traded — so `regime_readings` is carried even when the book is empty, which it has been
+    so far. A session with no reading is a gap in the module's own record rather than a quiet market,
+    and entries are gated on the classification, so zero attempts beside zero readings is one fault
+    rather than two.
+    """
+
+    def read(conn):
+        open_rows = _store.rows(
+            conn,
+            "SELECT position_id, book, symbol, entry_session, short_strike, long_strike,"
+            " expiration, status FROM curve_positions WHERE status != 'closed' ORDER BY book",
+        )
+        closed = _store.rows(
+            conn,
+            "SELECT book, exit_reason, COUNT(*) n, SUM(gross_pnl) gross, SUM(fees) fees"
+            " FROM curve_positions WHERE status = 'closed' GROUP BY book, exit_reason ORDER BY book",
+        )
+        attempts = _store.rows(
+            conn,
+            "SELECT book, outcome, block_detail, COUNT(*) n FROM curve_entry_attempts"
+            " WHERE trade_date = ? GROUP BY book, outcome, block_detail ORDER BY n DESC LIMIT ?",
+            (session, TOP_N),
+        )
+        regime = _store.rows(
+            conn,
+            "SELECT tick, ratio, regime, hook, vix, vix3m FROM curve_regime"
+            " WHERE trade_date = ? ORDER BY tick DESC LIMIT ?",
+            (session, TOP_N),
+        )
+        marks = _mark_coverage(conn, "curve_marks", session)
+        return {
+            "open_positions": open_rows,
+            "closed_by_exit_reason": closed,
+            "entry_attempts": attempts,
+            "regime_readings": regime,
+            "mark_coverage": marks,
+            "_note": (
+                "control and noflip are byte-identical by construction until a regime flip fires, "
+                "so a difference between them IS a flip and nothing else; the daily regime read is "
+                "recorded traded or not, and is the module's second product. Early assignment and "
+                "VXX reverse splits are measured, never modelled — treat paper net as an upper bound"
+            ),
+        }
+
+    out = _read(_paper_db("curve"), read) or {"_absent": "no curve paper ledger"}
+    out["advice_active"] = _store.read_json(_advice_active("curve"), default=None)
+    return out
+
+
 _MODULE_SECTIONS = {
     "meic": _meic,
     "flies": _flies,
     "earnings": _earnings,
     "calendars": _calendars,
     "pmcc": _pmcc,
+    "bwb": _bwb,
+    "curve": _curve,
 }
 
 
@@ -507,12 +827,14 @@ def _live(session: str) -> dict[str, Any]:
         )
         settled = _store.rows(
             conn,
-            "SELECT COUNT(*) n, SUM(pnl) pnl FROM fly_positions WHERE trade_date = ?"
-            " AND status = 'settled'",
+            "SELECT COUNT(*) n, SUM(pnl) pnl FROM fly_positions WHERE trade_date = ? AND status = 'settled'",
             (session,),
         )
-        return {"by_status": today, "entry_fills": _counts(fills, "entry_fill_status"),
-                "settled_today": settled[0] if settled else None}
+        return {
+            "by_status": today,
+            "entry_fills": _counts(fills, "entry_fill_status"),
+            "settled_today": settled[0] if settled else None,
+        }
 
     def paper_flies(conn):
         rows = _store.rows(
@@ -557,20 +879,22 @@ def _experiments_running(conn) -> list[dict[str, Any]]:
     for exp in _store.experiments(conn, status="active"):
         params = json.loads(exp["params_json"] or "{}")
         pairs = _verdicts.for_experiment(exp)["pairs"]
-        out.append({
-            "id": exp["id"],
-            "module": exp["module"],
-            "base_profile": exp["base_profile"],
-            "name": exp["name"],
-            "hypothesis": exp["hypothesis"],
-            "params": params,
-            "sessions_run": exp["sessions_run"],
-            "expires_after_sessions": exp["expires_after_sessions"],
-            "reading": [
-                {"advised_tag": p["advised_tag"], "delta": p["delta"], "underpowered": p["underpowered"]}
-                for p in pairs
-            ],
-        })
+        out.append(
+            {
+                "id": exp["id"],
+                "module": exp["module"],
+                "base_profile": exp["base_profile"],
+                "name": exp["name"],
+                "hypothesis": exp["hypothesis"],
+                "params": params,
+                "sessions_run": exp["sessions_run"],
+                "expires_after_sessions": exp["expires_after_sessions"],
+                "reading": [
+                    {"advised_tag": p["advised_tag"], "delta": p["delta"], "underpowered": p["underpowered"]}
+                    for p in pairs
+                ],
+            }
+        )
     return out
 
 
@@ -587,15 +911,102 @@ def _pending_proposals(conn, session: str) -> list[dict[str, Any]]:
     )
 
 
+def _journal_proposal(row, *, full: bool) -> dict[str, Any]:
+    """One journal proposal, in full or as its identity.
+
+    The identity form keeps what "do not re-propose what was dismissed" needs — which module, what
+    kind, what became of it, and the title that names the idea — and drops the body. A creative
+    proposal's body runs several thousand characters of argument, and ten sessions of them is what
+    took this section past the whole pack's budget.
+    """
+    payload = json.loads(row["payload_json"] or "{}")
+    base = {
+        "session": row["session"],
+        "module": row["module"],
+        "kind": row["kind"],
+        "fate": row["status"],
+        "reason": row["reject_reason"],
+    }
+    if full:
+        return {**base, "payload": payload}
+    # `title` for a creative proposal, `name` for an experiment spec, and the experiment id for a
+    # verdict — each kind's own one-line identity, so none of them degrades to an anonymous row.
+    return {
+        **base,
+        "title": payload.get("title") or payload.get("name") or payload.get("experiment_id"),
+        "_elided": "older than the full-detail window; ask if the argument matters",
+    }
+
+
+def _journal_flags(flags_json: str | None, *, full: bool) -> dict[str, Any]:
+    """One checkpoint's flags, tapered by SEVERITY once outside the full-detail window.
+
+    Flags were carried verbatim at every age until 2026-08-26, on the reasoning that a flag is a
+    standing caveat about a module. That reasoning is right about `critical` and wrong about the
+    rest, and the cost of not separating them was the single largest item in the pack: 97.6KB of
+    120KB of `checkpoints`, and 21% of the whole 472KB deep pack. The taper added the same day cut
+    observations instead — the *small* half, 12.3KB — because nobody had measured which was which.
+
+    Two things were checked before writing this rather than assumed. The flags are not repetition:
+    222 instances across the window are 222 DISTINCT texts, so deduplicating them would have saved
+    nothing (the first fix attempted here, and the measurement is why it was not the one shipped).
+    And the severity split is lopsided in the useful direction — 12 `critical` flags cost 8.3KB,
+    while 113 `warn` and 97 `info` cost 86.5KB.
+
+    So `critical` survives at any age, verbatim. An aged `warn`/`info` keeps its module, severity
+    and a truncated text — enough to know the caveat existed and ask for it — and drops the prose.
+    """
+    flags = json.loads(flags_json or "[]")
+    if full:
+        return {"flags": flags}
+    kept, elided = [], 0
+    for f in flags:
+        if not isinstance(f, dict) or f.get("severity") in JOURNAL_STANDING_SEVERITIES:
+            kept.append(f)
+            continue
+        elided += 1
+        # No per-flag `_elided` marker: `advisor_journal._taper` states the rule once for the whole
+        # section, and repeating the sentence on each of ~210 aged flags costs ~13KB to say a thing
+        # already said. The truncated text is its own evidence that it was truncated.
+        kept.append(
+            {
+                "module": f.get("module"),
+                "severity": f.get("severity"),
+                "text": (f.get("text") or "")[:120],
+            }
+        )
+    return {"flags": kept} if not elided else {"flags": kept, "flags_elided": elided}
+
+
 def _advisor_journal(conn, session: str) -> dict[str, Any]:
     """The advisor's own memory: what it has recently observed, proposed, and been told.
 
     Without this the model re-proposes the idea a human dismissed last Tuesday, every Tuesday. With
     it, a dismissal is a fact in evidence and a thread can build across sessions. Compact and
     capped, oldest first.
+
+    **Tapered by age since 2026-08-26, and that is a change to what the model reads.** The window is
+    and was ten sessions; what grew was the prose per session — a creative proposal runs ~7.7KB and
+    ten sessions of them, carried verbatim, made this section 466KB of a 690KB pack against a stated
+    ceiling of 150KB. The pack had grown from 250KB to 731KB in nine sessions and nothing caught it,
+    because the budget test runs against a fixture rather than the real thing.
+
+    So the recent sessions keep their full payloads and the older ones keep their IDENTITY —
+    title, module, kind, fate, reason. That is what the section is actually for: "do not re-propose
+    what was dismissed" needs the title and the fate, not the argument. The argument was written by
+    the model that is reading it, and in practice it restates its own history in new proposals
+    anyway ("I proposed this on 08-18, 08-20 and 08-21"), so the verbatim text is partly redundant
+    with what the next proposal will say regardless.
+
+    **That first taper cut the wrong half, and the correction is `_journal_flags`.** It exempted
+    flags at every age and trimmed observations, which sounded right and was never measured: flags
+    were 97.6KB of this section's 120KB and observations were 12.3KB. Flags now taper by severity —
+    `critical` verbatim at any age, `warn`/`info` to identity outside the window. See that function
+    for what was measured before it was written, including the dedup fix that was NOT shipped.
     """
     sessions = [session, *_clock.previous_sessions(session, JOURNAL_SESSIONS)]
     oldest = min(sessions)
+    full_sessions = set(sorted(sessions)[-JOURNAL_FULL_SESSIONS:])
     checkpoints = _store.rows(
         conn,
         "SELECT session, slot, ok, observations_json, flags_json FROM checkpoints"
@@ -609,12 +1020,6 @@ def _advisor_journal(conn, session: str) -> dict[str, Any]:
         " WHERE c.session >= ? ORDER BY c.session, p.id",
         (oldest,),
     )
-    concluded = _store.rows(
-        conn,
-        "SELECT id, module, params_json, status, created_session, sessions_run, verdict_json"
-        " FROM experiments WHERE status IN ('expired', 'killed') ORDER BY updated_at DESC LIMIT ?",
-        (CONCLUDED_SHOWN,),
-    )
     return {
         "_note": "your own recent history. Do not re-propose what was dismissed; build on threads.",
         "checkpoints": [
@@ -622,34 +1027,27 @@ def _advisor_journal(conn, session: str) -> dict[str, Any]:
                 "session": r["session"],
                 "slot": r["slot"],
                 "ok": bool(r["ok"]),
-                "observations": json.loads(r["observations_json"] or "[]"),
-                "flags": json.loads(r["flags_json"] or "[]"),
+                **(
+                    {"observations": json.loads(r["observations_json"] or "[]")}
+                    if r["session"] in full_sessions
+                    else {"observations_count": len(json.loads(r["observations_json"] or "[]"))}
+                ),
+                **_journal_flags(r["flags_json"], full=r["session"] in full_sessions),
             }
             for r in checkpoints
         ],
-        "proposals": [
-            {
-                "session": r["session"],
-                "module": r["module"],
-                "kind": r["kind"],
-                "fate": r["status"],
-                "reason": r["reject_reason"],
-                "payload": json.loads(r["payload_json"] or "{}"),
-            }
-            for r in proposals
-        ],
-        "concluded_experiments": [
-            {
-                "id": r["id"],
-                "module": r["module"],
-                "params": json.loads(r["params_json"] or "{}"),
-                "status": r["status"],
-                "created_session": r["created_session"],
-                "sessions_run": r["sessions_run"],
-                "verdict": json.loads(r["verdict_json"]) if r["verdict_json"] else None,
-            }
-            for r in concluded
-        ],
+        "_taper": (
+            f"proposals, observations and flags are carried in full for the most recent "
+            f"{JOURNAL_FULL_SESSIONS} sessions; older entries keep title/module/kind/fate/reason "
+            f"only. CRITICAL flags are the exception and are carried verbatim at every age, because "
+            f"a critical flag is a standing caveat rather than history. Ask if you need an older "
+            f"argument in full rather than assuming it was thin."
+        ),
+        "proposals": [_journal_proposal(r, full=r["session"] in full_sessions) for r in proposals],
+        # Concluded experiments are NOT repeated here. They are carried once, in full, by
+        # `experiments_full.concluded` in the deep pack — the same seven experiments were appearing
+        # twice, 34KB and 17KB, saying the same thing in two shapes.
+        "_concluded_experiments": "see experiments_full.concluded (deep slot); not duplicated here",
     }
 
 
@@ -671,15 +1069,68 @@ def _review_trend(session: str) -> list[dict[str, Any]]:
         facts = _store.read_json(_paths.module_data_dir("review") / f"eod-{prior}.json", default=None)
         if not isinstance(facts, dict):
             continue
-        out.append({
-            "session": prior,
-            "status": facts.get("status"),
-            "modules": {
-                name: {k: v for k, v in (block or {}).items() if k in ("net_pnl", "trades", "by_profile")}
-                for name, block in (facts.get("modules") or {}).items()
-            },
-        })
+        out.append(
+            {
+                "session": prior,
+                "status": facts.get("status"),
+                "modules": {
+                    name: {k: v for k, v in (block or {}).items() if k in ("net_pnl", "trades", "by_profile")}
+                    for name, block in (facts.get("modules") or {}).items()
+                },
+            }
+        )
     return out
+
+
+def _settlement_integrity(session: str) -> dict[str, Any]:
+    """Two settlement facts about meic's ledger that a reader needs before trusting an arm reading.
+
+    The advisor asked for a full settlement audit on 2026-08-17, 08-18, 08-19, 08-20 and 08-21,
+    escalating each time, and finally noted it was "upstream of the era's baseline rather than
+    upstream of one arm". That audit was run on 2026-08-26 and lives in
+    `meic.analytics.settlement_audit`: 7,908 of 7,908 resolved fills reproduce exactly from the
+    stated convention, one settlement price per session throughout, and the sensitivity of each
+    session's net to the price is bounded there.
+
+    What is carried HERE is only the part that can recur, because a settled question does not need
+    re-reporting every evening and this pack is paid for by the token:
+
+    * `settlement_prices_today` must be 1. Every fill on one session and symbol shares an
+      expiration and a settlement; two prices means the loop settled across iterations at drifting
+      spot, and no same-session arm comparison survives that.
+    * `settled_with_no_price_today` must be 0. A side that reached expiry with no settlement price
+      was scored at zero intrinsic — full credit, the most favorable outcome available, on exactly
+      the fills whose outcome nobody could see. `paper.evaluate_open_trade` refuses to settle
+      without a price as of 2026-08-26; a non-zero count here means that guard has regressed.
+
+    Deliberately a query rather than a call into `meic.analytics`: this package depends on
+    `cherrypick.core` alone, the same reason the module sections below re-state their queries.
+    """
+
+    def read(conn):
+        prices = _store.rows(
+            conn,
+            "SELECT symbol, COUNT(DISTINCT settle_underlying) n FROM ic_trades"
+            " WHERE trade_date = ? AND settle_underlying IS NOT NULL GROUP BY symbol",
+            (session,),
+        )
+        unpriced = _store.rows(
+            conn,
+            "SELECT COUNT(*) n FROM ic_trades WHERE trade_date = ?"
+            " AND settle_underlying IS NULL AND exit_reason LIKE '%expired_settlement%'"
+            " AND (put_stop_cost IS NULL OR call_stop_cost IS NULL)",
+            (session,),
+        )
+        return {
+            "settlement_prices_today": {r["symbol"]: r["n"] for r in prices},
+            "settled_with_no_price_today": (unpriced[0]["n"] if unpriced else 0),
+            "_note": (
+                "prices per symbol must be 1 and no-price settlements must be 0; the full audit "
+                "was run 2026-08-26 and lives in meic.analytics.settlement_audit"
+            ),
+        }
+
+    return _read(_paper_db("meic"), read) or {"_absent": "no meic paper ledger"}
 
 
 def _arm_readings() -> dict[str, Any]:
@@ -720,16 +1171,25 @@ def _arm_readings() -> dict[str, Any]:
 
 
 def _advice_audit(session: str) -> dict[str, Any]:
-    """The last artifact written per module, including its rejections. Reject-all is silent from
-    the loop's side (it just runs baseline), so this is where a proposal that was refused at the
-    gate becomes visible."""
+    """The last artifact written per module, including its rejections and whether it was APPLIED.
+
+    Reject-all is silent from the loop's side (it just runs baseline), so this is where a proposal
+    refused at the gate becomes visible. `enacted` is the other half, and until 2026-08-25 it was
+    missing: an artifact that was written and never reached its loop looked, from here, exactly like
+    one that was written and applied. It is not a cosmetic distinction -- five artifacts were issued
+    in one batch on 2026-08-24 and two were dropped, on the two sessions their experiments most
+    needed, and nothing in this pack said so.
+    """
     out = {}
+    enacted = _enactment.audit(session, MODULES)
     for module in MODULES:
         artifact = _store.read_json(_paths.advice_path(module, session), default=None)
-        upcoming = _store.read_json(
-            _paths.advice_path(module, _clock.next_session(session)), default=None
-        )
-        out[module] = {"for_today": artifact, "for_next_session": upcoming}
+        upcoming = _store.read_json(_paths.advice_path(module, _clock.next_session(session)), default=None)
+        out[module] = {
+            "for_today": artifact,
+            "for_next_session": upcoming,
+            "enacted": enacted[module],
+        }
     return out
 
 
@@ -751,6 +1211,18 @@ def build(session: str, slot: str, modules: tuple[str, ...] | list[str] | None =
             "generated_at": _store.now_iso(),
             "modules": list(selected),
             "market": _market(session),
+            # Every slot, not just the evening one: an artifact that was dropped is worth knowing
+            # about at 10am, while the session can still be understood, rather than in the verdict
+            # that scores it. Compact here; the full reconciliation rides on advice_audit below.
+            "advice_enacted": {
+                m: {
+                    k: v
+                    for k, v in _enactment.reconcile(m, session).items()
+                    if k in ("status", "detail", "experiment_id")
+                }
+                for m in selected
+                if m in _enactment.MODULES
+            },
             "paper": {m: _MODULE_SECTIONS[m](session) for m in selected if m in _MODULE_SECTIONS},
             "live": _live(session),
             "experiments": _experiments_running(conn),
@@ -768,9 +1240,16 @@ def build(session: str, slot: str, modules: tuple[str, ...] | list[str] | None =
         }
 
         if slot == DEEP_SLOT:
+            # Today's drafts are already in `advisor_journal.proposals` in full — the current
+            # session is inside the full-detail window — so carrying them here too was the same
+            # rows twice, 31KB of a pack already past its ceiling. The light slots keep the real
+            # section: they have no journal, and compounding earlier slots' output is the whole
+            # reason it exists.
+            pack["pending_proposals"] = "see advisor_journal.proposals (this session, in full)"
             pack["review_today"] = _review_today(session)
             pack["review_trend"] = _review_trend(session)
             pack["arm_readings"] = _arm_readings()
+            pack["settlement_integrity"] = _settlement_integrity(session)
             pack["bounds"] = _bounds.all_modules(selected)
             pack["experiments_full"] = {
                 "active": _store.experiments(conn, status="active"),
@@ -790,10 +1269,52 @@ def build(session: str, slot: str, modules: tuple[str, ...] | list[str] | None =
         conn.close()
 
 
+def pack_size(pack: dict, slot: str, *, warn=None) -> dict[str, Any]:
+    """Measured size against the ceiling for this slot. Reports; never raises.
+
+    Separated from `write` so a caller can ask the question without producing a pack, and so the
+    check is testable against a real pack rather than only a fixture.
+
+    Serialised the way `store.write_json` serialises it — indent=2 — because that is the file the
+    checkpoint script reads and hands to the model. A compact measure understates the real cost by
+    about a quarter (366KB against 472KB on the 2026-08-26 deep pack), and the number that matters
+    is the one the model is actually charged for.
+    """
+    size = len(json.dumps(pack, indent=2, default=str))
+    ceiling = DEEP_MAX_BYTES if slot == DEEP_SLOT else LIGHT_MAX_BYTES
+    over = size > ceiling
+    if over and warn is not None:
+        warn(
+            f"fact pack over its ATTENTION budget: {slot} slot is {size:,} bytes against a "
+            f"{ceiling:,} ceiling ({size / ceiling:.1f}x). This is not a context-window or cost "
+            f"problem — the pack is well inside the window and the whole schedule costs about "
+            f"$1.40/day — it is that a finding buried in a pack this size is one nobody acts on. "
+            f"Cut the largest section; do not raise the ceiling."
+        )
+    return {
+        "slot": slot,
+        "bytes": size,
+        "ceiling": ceiling,
+        "over_budget": over,
+        "ratio": round(size / ceiling, 2),
+    }
+
+
 def write(session: str, slot: str, modules: tuple[str, ...] | list[str] | None = None) -> Path:
     """Build and persist the pack. Write-once by convention: the pack is the record of what the
     model was shown, so a re-run (`--force`) deliberately overwrites the whole (session, slot)
     triple — pack, raw reply and checkpoint — rather than leaving a pack that describes a different
-    reply than the one on file."""
+    reply than the one on file.
+
+    `build` stays pure; this is the write path, so the enactment reconciliation is persisted here.
+    It runs every slot, which is the point: a dropped artifact should be visible on the console at
+    10am while the session can still be understood, not in the verdict that scores it that evening.
+    """
     pack = build(session, slot, modules)
-    return _store.write_json(_paths.pack_path(session, slot), pack)
+    path = _store.write_json(_paths.pack_path(session, slot), pack)
+    conn = _store.connect()
+    try:
+        _enactment.record(conn, session, modules)
+    finally:
+        conn.close()
+    return path

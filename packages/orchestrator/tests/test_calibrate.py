@@ -66,61 +66,20 @@ def test_reading_counts_sample_winrate_and_days():
     assert r["net_pnl"] == 13.0
 
 
-def test_qualified_challenger_recommends_champion_change(tmp_path):
-    # conservative (champion): thin net_pnl per trade. moderate (challenger): qualifies AND has
-    # far higher net_pnl -> beats the champion -> recommend the champion change.
-    rows = _winning_rows(_CHAMPION, 20, pnl=1.0, fees=0.0) + _winning_rows("moderate", 20, pnl=20.0, fees=5.0)
-    _rows_to_db(tmp_path, rows)
-    cfg = _cfg(tmp_path, {"champion": _CHAMPION, "deliberate_only": ["very-aggressive"]})
-    out = calibrate.run(cfg)
-    mod = out["modules"]["meic"]
-    assert mod["champion"] == _CHAMPION
-    assert mod["profiles"][_CHAMPION]["role"] == "champion"
-    assert mod["profiles"]["moderate"]["role"] == "challenger"
-    assert mod["profiles"]["moderate"]["beats_champion"] is True
-    assert mod["recommendation"]["eligible"] is True
-    assert mod["recommendation"]["recommendation"] == "champion:moderate"
 
 
-def test_unqualified_challenger_retains_champion(tmp_path):
-    # champion has a real reading; the challenger has only 5 trades -> below sample/days -> never
-    # counted as beating the champion regardless of its raw net_pnl.
-    rows = _winning_rows(_CHAMPION, 20) + _winning_rows("moderate", 5, pnl=1000.0, fees=0.0)
-    _rows_to_db(tmp_path, rows)
-    cfg = _cfg(tmp_path, {"champion": _CHAMPION})
-    out = calibrate.run(cfg)["modules"]["meic"]
-    assert out["profiles"]["moderate"]["qualified"] is False
-    assert out["profiles"]["moderate"]["beats_champion"] is False
-    assert out["recommendation"]["eligible"] is False
-    assert out["recommendation"]["recommendation"] == f"retain:{_CHAMPION}"
 
 
-def test_deliberate_only_challenger_never_recommended(tmp_path):
-    # very-aggressive fully qualifies and has the best net_pnl of any challenger, but it's
-    # deliberate-only -> never auto-recommended even though it would otherwise win outright.
-    rows = _winning_rows(_CHAMPION, 20, pnl=5.0, fees=0.0) + _winning_rows(
-        "very-aggressive", 20, pnl=9000.0, fees=0.0
-    )
-    _rows_to_db(tmp_path, rows)
-    cfg = _cfg(tmp_path, {"champion": _CHAMPION, "deliberate_only": ["very-aggressive"]})
-    out = calibrate.run(cfg)["modules"]["meic"]
-    assert out["profiles"]["very-aggressive"]["qualified"] is True
-    assert out["profiles"]["very-aggressive"]["beats_champion"] is True
-    assert out["profiles"]["very-aggressive"]["deliberate_only"] is True
-    assert out["recommendation"]["eligible"] is False
-    assert out["recommendation"]["recommendation"] == f"retain:{_CHAMPION}"
 
 
-def test_readings_only_mode_has_no_recommendation(tmp_path):
-    # No "champion" key at all -> qualify_readings, not recommend_champion: every tag gets a
-    # reading and a qualification, never a recommendation/eligible/role anywhere in the shape.
-    # This is the calibrate-level regression test for the original bug (flies' arms used to be
-    # forced through a ladder-graduation comparison that meant nothing for parallel experiments).
+def test_every_tag_gets_a_reading_and_a_qualification(tmp_path):
+    # Readings and qualification checks, never a recommendation — the champion/challenger
+    # comparison was retired 2026-08-20 and judging arms belongs to packages/advisor.
     _rows_to_db(tmp_path, _winning_rows("experimental", 20))
-    cfg = _cfg(tmp_path, {"rule": {"min_days": 14}})  # calibration present, but no champion
+    cfg = _cfg(tmp_path, {"rule": {"min_days": 14}})
     out = calibrate.run(cfg)["modules"]["meic"]
-    assert out["champion"] is None
-    assert out["recommendation"] is None
+    assert "champion" not in out
+    assert "recommendation" not in out
     prof = out["profiles"]["experimental"]
     assert prof["role"] is None
     assert prof["reading"]["sample"] == 20
@@ -129,26 +88,15 @@ def test_readings_only_mode_has_no_recommendation(tmp_path):
     assert "beats_champion" not in prof
 
 
-def test_missing_calibration_block_defaults_to_readings_only(tmp_path):
+def test_a_module_with_no_calibration_block_still_reads(tmp_path):
     _rows_to_db(tmp_path, _winning_rows("conservative", 3))
     cfg = _cfg(tmp_path, meic_cal=None)  # no calibration block at all
     m = calibrate.run(cfg)["modules"]["meic"]
-    assert m["ok"] is True and m["champion"] is None
-    assert m["recommendation"] is None
+    assert m["ok"] is True
+    assert "champion" not in m and "recommendation" not in m
     assert m["profiles"]["conservative"]["role"] is None
 
 
-def test_multiple_qualified_challengers_best_one_wins_at_calibrate_level(tmp_path):
-    rows = (
-        _winning_rows(_CHAMPION, 20, pnl=1.0, fees=0.0)
-        + _winning_rows("moderate", 20, pnl=10.0, fees=0.0)
-        + _winning_rows("aggressive", 20, pnl=20.0, fees=0.0)  # best of the two challengers
-    )
-    _rows_to_db(tmp_path, rows)
-    cfg = _cfg(tmp_path, {"champion": _CHAMPION})
-    out = calibrate.run(cfg)["modules"]["meic"]
-    assert out["recommendation"]["recommendation"] == "champion:aggressive"
-    assert out["profiles"]["moderate"]["beats_champion"] is True  # also beats, just not the best
 
 
 def test_missing_db_reported_not_fatal(tmp_path):

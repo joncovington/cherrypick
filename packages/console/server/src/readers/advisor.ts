@@ -18,6 +18,7 @@ import path from "node:path";
 import type {
   AdvisorApplyStatus,
   AdvisorCheckpoint,
+  AdvisorEnactment,
   AdvisorEvent,
   AdvisorExperiment,
   AdvisorFlag,
@@ -26,7 +27,8 @@ import type {
   AdvisorVerdict,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { withReadOnlyDb } from "./db.js";
+import type Database from "better-sqlite3";
+import { hasTable, readJson, str, withReadOnlyDb } from "./db.js";
 
 /** The advisor's own slot order — chronological, not alphabetical. Mirrors
  * packages/advisor/src/cherrypick/advisor/factpack.py's LIGHT_SLOTS + DEEP_SLOT. */
@@ -41,18 +43,6 @@ function parse<T>(raw: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
-}
-
-function readJson(file: string): Record<string, unknown> | null {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf-8")) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-function str(v: unknown): string | null {
-  return typeof v === "string" ? v : null;
 }
 
 function dbPath(config: ConsoleConfig): string {
@@ -91,7 +81,11 @@ function shapeCheckpoint(row: CheckpointRow): AdvisorCheckpoint {
  * has not started its session yet, a reject-all artifact that legitimately carries nothing — and
  * collapsing them into one "advice is on" badge would hide exactly the cases worth looking at.
  */
-function readApplyStatus(config: ConsoleConfig, nextSession: string | null): AdvisorApplyStatus[] {
+function readApplyStatus(
+  config: ConsoleConfig,
+  nextSession: string | null,
+  enactment: Map<string, AdvisorEnactment>,
+): AdvisorApplyStatus[] {
   return MODULES.map((module) => {
     const artifact =
       nextSession === null ? null : readJson(path.join(config.paths.adviceDir, `${module}-${nextSession}.json`));
@@ -114,8 +108,43 @@ function readApplyStatus(config: ConsoleConfig, nextSession: string | null): Adv
       artifactRejected: (artifact?.["rejected"] ?? []) as AdvisorApplyStatus["artifactRejected"],
       consumerDecision: decision,
       disabledReason,
+      enactment: enactment.get(module) ?? null,
     };
   });
+}
+
+/**
+ * The advisor's stored enactment reconciliation for one session, keyed by module.
+ *
+ * Read, not computed. Whether a loop applied an artifact is decided once in `enactment.py` and
+ * written to the `enactment` table; re-deriving it here from the artifact and the decision file
+ * would be the second opinion this reader's own header warns about.
+ *
+ * Absent before the advisor has run a slot for the session, which the page renders as "not scored
+ * yet" rather than as a failure — an unscored session and a dropped artifact are different facts.
+ */
+function readEnactment(db: Database.Database, session: string | null): Map<string, AdvisorEnactment> {
+  const out = new Map<string, AdvisorEnactment>();
+  // An advisor.db predating the table is the ordinary state of a machine that has not run the
+  // current build yet, not an error: the page must render without the column rather than 500.
+  if (session === null || !hasTable(db, "enactment")) return out;
+  const rows = db
+    .prepare<[string], Record<string, unknown>>(
+      "SELECT session, module, status, detail, experiment_id, decision_reason, scored_at" +
+        " FROM enactment WHERE session = ?",
+    )
+    .all(session);
+  for (const r of rows) {
+    out.set(String(r["module"]), {
+      session: String(r["session"]),
+      status: String(r["status"]),
+      detail: str(r["detail"]),
+      experimentId: str(r["experiment_id"]),
+      decisionReason: str(r["decision_reason"]),
+      scoredAt: str(r["scored_at"]),
+    });
+  }
+  return out;
 }
 
 export function readAdvisor(config: ConsoleConfig, session?: string): AdvisorPayload {
@@ -126,7 +155,7 @@ export function readAdvisor(config: ConsoleConfig, session?: string): AdvisorPay
     checkpoints: [],
     proposals: [],
     experiments: [],
-    applyStatus: readApplyStatus(config, null),
+    applyStatus: readApplyStatus(config, null, new Map()),
     storePresent: false,
   };
 
@@ -221,7 +250,7 @@ export function readAdvisor(config: ConsoleConfig, session?: string): AdvisorPay
       checkpoints: history,
       proposals,
       experiments,
-      applyStatus: readApplyStatus(config, nextSession),
+      applyStatus: readApplyStatus(config, nextSession, readEnactment(db, chosen ?? null)),
       storePresent: true,
     };
   });

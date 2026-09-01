@@ -14,18 +14,22 @@ from cherrypick.flies import stream_request  # noqa: E402
 def test_register_writes_deduped_upper_symbols(managed_home):
     stream_request.register({"symbols": ["spx", " xsp ", "spx"]})
     path = managed_home / "state" / "stream_requests" / "flies.json"
-    assert json.loads(path.read_text()) == {
-        "symbols": ["SPX", "XSP"],
-        "legs": [],
-        "leg_sources": [],
-        "window_hints": {},
-    }
+    payload = json.loads(path.read_text())
+    # Field-by-field rather than whole-payload equality: the request schema is owned by
+    # `cherrypick.core.streamrequests` and grows when ANOTHER module needs something (it gained
+    # `expirations` for calendars and `history_days` since this was written), so an exact-match
+    # assertion here fails on a change that has nothing to do with flies. What this test is about is
+    # the normalizing — upper-cased, trimmed, deduped — and the empty defaults for what flies does
+    # not declare.
+    assert payload["symbols"] == ["SPX", "XSP"]
+    assert payload["legs"] == [] and payload["leg_sources"] == []
+    assert payload["window_hints"] == {}
 
 
 def test_register_carries_window_hints(managed_home):
     stream_request.register({"symbols": ["XSP"]}, window_hints={"XSP": 90})
     path = managed_home / "state" / "stream_requests" / "flies.json"
-    assert json.loads(path.read_text())["window_hints"] == {"XSP": 90}
+    assert json.loads(path.read_text())["window_hints"] == {"XSP": [90, 90]}
 
 
 def test_live_register_writes_a_separate_file(managed_home):
@@ -34,8 +38,8 @@ def test_live_register_writes_a_separate_file(managed_home):
 
     paper = json.loads((managed_home / "state" / "stream_requests" / "flies.json").read_text())
     live = json.loads((managed_home / "state" / "stream_requests" / "flies-live.json").read_text())
-    assert paper["window_hints"] == {"XSP": 40}
-    assert live["window_hints"] == {"XSP": 90}
+    assert paper["window_hints"] == {"XSP": [40, 40]}
+    assert live["window_hints"] == {"XSP": [90, 90]}
 
 
 def test_register_empty_symbols(managed_home):

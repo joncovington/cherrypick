@@ -298,7 +298,7 @@ def fetch_iron_condor_order(
         return {"ok": False, "error": str(exc)}
 
 
-def evaluate_position(position: dict, quotes: dict, config: dict) -> dict:
+def evaluate_position(position: dict, quotes: dict, config: dict, *, now=None) -> dict:
     """Decide whether to close an open iron condor position early
     (CLAUDE.md Step 3c) ahead of Step 3's unconditional close-window
     sweep. Identical pattern to iron_fly.py's evaluate_position() -- same
@@ -312,7 +312,11 @@ def evaluate_position(position: dict, quotes: dict, config: dict) -> dict:
     # IV-CRUSH BACKSTOP: Close after 4 hours have elapsed since entry
     exit_after_announcement_minutes = config.get("exit_after_announcement_minutes", 240)
     if position.get("opened_at") is not None:
-        elapsed_minutes = (time.time() - position["opened_at"]) / 60.0
+        # The caller's clock when it supplies one. This is a decision rule, not a wall-clock
+        # reading: the manager already threads `now` through every other exit, and taking the
+        # time here instead made the rule untestable and wrong under any replay.
+        reference_ts = time.time() if now is None else now.timestamp()
+        elapsed_minutes = (reference_ts - position["opened_at"]) / 60.0
         if elapsed_minutes >= exit_after_announcement_minutes:
             return {"action": "close_all", "reason": "iv_crush_backstop"}
 
@@ -325,14 +329,10 @@ def evaluate_position(position: dict, quotes: dict, config: dict) -> dict:
 
 
 def cmd_get_candidates(args) -> dict:
-    """Full tiered scan for a date. Thin wrapper around
-    scanner.run_candidate_scan -- shared with every other strategy's
-    cmd_get_candidates.
-    """
-    config = scanner._load_config()
-    strategy_config = _strategy_config(config)
-    return scanner.run_candidate_scan(
-        args.date, config, fetch_price_and_term_structure, apply_tiering, strategy_config
+    """Full tiered scan for a date -- wiring only, shared with the other strategies whose verb is
+    identical. The positional argument order to run_candidate_scan is what this single-sources."""
+    return scanner.candidates_command(
+        args, fetch_price_and_term_structure, apply_tiering, _strategy_config
     )
 
 

@@ -25,6 +25,7 @@ from cherrypick.core.auth import (
     REFRESH_TOKEN,
     SHARED_SERVICE,
     CredentialStore,
+    prompt_and_store,
 )
 
 SERVICE = "meicagent"
@@ -54,12 +55,4 @@ def set_secrets(
     Empty input for a key skips it, leaving any existing value untouched. Returns the keys actually
     written. ``prompt_fn`` is injectable so this is unit-testable without a real terminal.
     """
-    creds = store()
-    keys = keys or list(STREAMER_SECRETS)
-    written: list[str] = []
-    for key in keys:
-        value = prompt_fn(f"{key}: ")
-        if value:
-            creds.set_secret(key, value)
-            written.append(key)
-    return written
+    return prompt_and_store(store(), keys or list(STREAMER_SECRETS), prompt_fn=prompt_fn)

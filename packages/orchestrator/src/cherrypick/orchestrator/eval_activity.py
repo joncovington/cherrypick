@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from . import config as cfgmod
@@ -83,10 +83,18 @@ _BENIGN_REASON = frozenset(
 from cherrypick.core.db import connect_ro as _connect_ro  # noqa: E402 — shared read-only opener
 
 
-def _age_min(ts_iso: str | None) -> float | None:
-    """Minutes since an ISO timestamp (tz-aware or naive), or None if unparseable/absent."""
-    if not ts_iso:
+def _age_min(ts_iso: str | float | None) -> float | None:
+    """Minutes since a timestamp, or None if unparseable/absent.
+
+    Accepts an ISO string (tz-aware or naive) or a unix epoch. The epoch form matters because the
+    per-tick ledgers store one, and the ISO-only version returned None for those -- which reads as
+    "no data" rather than "could not parse", the difference between a module looking idle and a
+    module looking absent.
+    """
+    if ts_iso in (None, ""):
         return None
+    if isinstance(ts_iso, (int, float)):
+        return max(0.0, (datetime.now(timezone.utc).timestamp() - float(ts_iso)) / 60.0)
     try:
         t = datetime.fromisoformat(str(ts_iso))
     except ValueError:
@@ -98,6 +106,58 @@ def _age_min(ts_iso: str | None) -> float | None:
 def _in_window(ts_iso: str | None, window_min: int) -> bool:
     age = _age_min(ts_iso)
     return age is not None and age <= window_min
+
+
+def _loop_ticks(conn, module: str, day: str, window_min: int) -> tuple[list[float], list[float]]:
+    """``(all today's loop timestamps, the ones inside the window)`` from ``<module>_loop_iterations``.
+
+    **The post-entry liveness signal, and why it has to exist.** The entry-feed ledgers
+    (``*_snapshots``) only get a row while a module is still evaluating ENTRY. A hold-to-expiry
+    module stops entering — because its slots filled, or its window closed, or it took its one
+    trade of the day — and from that moment the feed ledger is silent while the loop carries on
+    marking and managing every tick. Reading the feed ledger alone therefore reported "stopped
+    evaluating" every single session from the moment entering finished, and reported *exactly the
+    same thing* if the loop had died a minute later. The one failure this check exists to catch
+    became indistinguishable from ordinary operation.
+
+    bwb hit this on 2026-08-25 and was fixed with its own per-tick table; pmcc and curve hit it on
+    2026-08-27 (pmcc 314 min, curve 264 min, both loops demonstrably alive and iterating 0.3 min
+    earlier). Rather than a third module-specific signal, all three now read the loop's OWN
+    iteration record, which every module writes every tick in every phase and is therefore the
+    thing that actually stops when a loop stops.
+    """
+    try:
+        rows = conn.execute(
+            f"SELECT ran_at, status FROM {module}_loop_iterations WHERE session_date = ? ORDER BY id",
+            (day,),
+        ).fetchall()
+    except sqlite3.Error:
+        # A ledger written before this table existed. Degrade to the feed ledger alone rather than
+        # taking the whole reader down with it — `for_module` turns any sqlite error into "no
+        # reader", which would disable the check entirely instead of narrowing it.
+        return [], []
+    every = [r["ran_at"] for r in rows if r["ran_at"] is not None]
+    recent = [r["ran_at"] for r in rows if r["status"] == "ok" and _in_window(r["ran_at"], window_min)]
+    return every, recent
+
+
+def _with_loop_liveness(act: dict[str, Any], every: list, recent: list) -> dict[str, Any]:
+    """Fold the loop's own ticks into an entry-feed activity snapshot.
+
+    `last_age_min` becomes the FRESHEST of the two, because the question it answers is "is this
+    module still running", and a loop that is marking is running. The tick counts join `iterations`
+    and `evaluated` so a module that has finished entering does not then trip the
+    `no iterations in the last N min` branch — the same false alarm wearing a different label.
+    `errors` is deliberately left alone: it counts entry evaluations that failed, and a healthy
+    manage tick is not evidence about those.
+    """
+    ages = [a for a in (act["last_age_min"], _age_min(every[-1]) if every else None) if a is not None]
+    return {
+        **act,
+        "iterations": act["iterations"] + len(recent),
+        "evaluated": act["evaluated"] + len(recent),
+        "last_age_min": min(ages) if ages else None,
+    }
 
 
 def _empty() -> dict[str, Any]:
@@ -180,28 +240,135 @@ def _pmcc_activity(conn, day: str, window_min: int) -> dict[str, Any]:
     rows = conn.execute(
         "SELECT ts, status FROM pmcc_snapshots WHERE trade_date = ? ORDER BY id", (day,)
     ).fetchall()
-    if not rows:
+    every, recent_ticks = _loop_ticks(conn, "pmcc", day, window_min)
+    if not rows and not every:
         return _empty()
-    last_age = _age_min(rows[-1]["ts"])
+    last_age = _age_min(rows[-1]["ts"]) if rows else None
     recent = [r for r in rows if _in_window(r["ts"], window_min)]
     evaluated = sum(1 for r in recent if r["status"] == "ok")
     refused = [r["status"] for r in recent if r["status"] != "ok"]
     top = max(set(refused), key=refused.count) if refused else None
-    ent = conn.execute(
-        "SELECT entry_time FROM pmcc_positions WHERE entry_session = ?", (day,)
-    ).fetchall()
+    ent = conn.execute("SELECT entry_time FROM pmcc_positions WHERE entry_session = ?", (day,)).fetchall()
     entries = sum(1 for e in ent if _in_window(e["entry_time"], window_min))
-    return {
-        "iterations": len(recent),
-        "evaluated": evaluated,
-        "errors": len(refused),
-        "entries": entries,
-        "last_age_min": last_age,
-        "top_reason": top,
-    }
+    return _with_loop_liveness(
+        {
+            "iterations": len(recent),
+            "evaluated": evaluated,
+            "errors": len(refused),
+            "entries": entries,
+            "last_age_min": last_age,
+            "top_reason": top,
+        },
+        every,
+        recent_ticks,
+    )
 
 
-_READERS = {"meic_ic": _meic_activity, "fly_book": _flies_activity, "pmcc_99": _pmcc_activity}
+# --------------------------------------------------------------------------- curve_vx (curve_snapshots)
+def _curve_activity(conn, day: str, window_min: int) -> dict[str, Any]:
+    """curve ladders a daily regime read and evaluates entry every session (like pmcc, not
+    calendars' once-a-week window), so it gets a real reader: its feed ledger `curve_snapshots`
+    is the fly_snapshots/pmcc_snapshots shape, and entries come from
+    `curve_positions.entry_session` on the day's rows."""
+    rows = conn.execute(
+        "SELECT ts, status FROM curve_snapshots WHERE trade_date = ? ORDER BY id", (day,)
+    ).fetchall()
+    every, recent_ticks = _loop_ticks(conn, "curve", day, window_min)
+    if not rows and not every:
+        return _empty()
+    last_age = _age_min(rows[-1]["ts"]) if rows else None
+    recent = [r for r in rows if _in_window(r["ts"], window_min)]
+    evaluated = sum(1 for r in recent if r["status"] == "ok")
+    refused = [r["status"] for r in recent if r["status"] != "ok"]
+    top = max(set(refused), key=refused.count) if refused else None
+    ent = conn.execute("SELECT entry_time FROM curve_positions WHERE entry_session = ?", (day,)).fetchall()
+    entries = sum(1 for e in ent if _in_window(e["entry_time"], window_min))
+    return _with_loop_liveness(
+        {
+            "iterations": len(recent),
+            "evaluated": evaluated,
+            "errors": len(refused),
+            "entries": entries,
+            "last_age_min": last_age,
+            "top_reason": top,
+        },
+        every,
+        recent_ticks,
+    )
+
+
+# --------------------------------------------------------------------------- bwb_132 (bwb_snapshots)
+def _bwb_activity(conn, day: str, window_min: int) -> dict[str, Any]:
+    """bwb's feed ledger `bwb_snapshots` is pmcc/curve-shaped, and entries come from
+    `bwb_positions.entry_session` on the day's rows.
+
+    **It does NOT ladder, which this reader assumed until 2026-08-25.** bwb takes ONE entry per
+    session (all four books at once), so its snapshot ledger holds a single row and then goes quiet
+    for the rest of the day, while the module carries on marking every leg and evaluating its
+    reversal triggers each tick. Reading snapshots alone therefore reported "stopped evaluating"
+    from the moment the entry filled, every session -- and it reported exactly that whether the
+    module was healthy or had died five minutes later, so the one failure this check exists to catch
+    became indistinguishable from normal operation.
+
+    Post-entry liveness comes from `bwb_trigger_ticks`, which the module records every tick by
+    design and calls its second product. Counted by DISTINCT tick timestamp, since one tick writes a
+    row per open cohort.
+
+    **The loop's own iteration record rides alongside it (2026-08-27).** Trigger ticks are written
+    per OPEN COHORT, so on a session that entered nothing they are silent too and the same false
+    alarm returns through the back door. `bwb_loop_iterations` advances every tick whatever the book
+    holds, which is what actually stops when a loop stops — the same signal pmcc and curve now
+    read."""
+    rows = conn.execute(
+        "SELECT ts, status FROM bwb_snapshots WHERE trade_date = ? ORDER BY id", (day,)
+    ).fetchall()
+    ticks = [
+        r["ticked_at"]
+        for r in conn.execute(
+            "SELECT DISTINCT ticked_at FROM bwb_trigger_ticks WHERE session_date = ? ORDER BY ticked_at",
+            (day,),
+        ).fetchall()
+    ]
+    every, recent_loop = _loop_ticks(conn, "bwb", day, window_min)
+    if not rows and not ticks and not every:
+        return _empty()
+    _ages = [
+        a
+        for a in (
+            _age_min(rows[-1]["ts"]) if rows else None,
+            _age_min(ticks[-1]) if ticks else None,
+        )
+        if a is not None
+    ]
+    last_age = min(_ages) if _ages else None
+    recent = [r for r in rows if _in_window(r["ts"], window_min)]
+    evaluated = sum(1 for r in recent if r["status"] == "ok")
+    refused = [r["status"] for r in recent if r["status"] != "ok"]
+    top = max(set(refused), key=refused.count) if refused else None
+    ent = conn.execute("SELECT entry_time FROM bwb_positions WHERE entry_session = ?", (day,)).fetchall()
+    entries = sum(1 for e in ent if _in_window(e["entry_time"], window_min))
+    recent_ticks = [t for t in ticks if _in_window(t, window_min)]
+    return _with_loop_liveness(
+        {
+            "iterations": len(recent) + len(recent_ticks),
+            "evaluated": evaluated + len(recent_ticks),
+            "errors": len(refused),
+            "entries": entries,
+            "last_age_min": last_age,
+            "top_reason": top,
+        },
+        every,
+        recent_loop,
+    )
+
+
+_READERS = {
+    "meic_ic": _meic_activity,
+    "fly_book": _flies_activity,
+    "pmcc_99": _pmcc_activity,
+    "curve_vx": _curve_activity,
+    "bwb_132": _bwb_activity,
+}
 
 # Schemas with NO eval-activity reader BY DESIGN, stated executably rather than only in
 # the module docstring: earnings is an event-driven daily scan whose "did it run" is the

@@ -27,7 +27,10 @@ import json
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from datetime import time as _time
-from zoneinfo import ZoneInfo
+
+# One ET for the suite — see cherrypick.core.clock. Re-exported: callers and tests read
+# `management.ET` rather than deriving their own.
+from cherrypick.core.clock import ET  # noqa: F401
 
 from cherrypick.earnings import scanner
 from cherrypick.earnings.strategies import (
@@ -39,24 +42,26 @@ from cherrypick.earnings.strategies import (
     iron_fly,
 )
 
-ET = ZoneInfo("America/New_York")
-
 _HOLD_NOTE = """Holding a winner past the first morning is worth roughly +1.4pp on average as the
 residual IV crush drains over three to five sessions; holding a LOSER fights post-earnings drift,
 which continues rather than mean-reverting. So the carry is gated on profitability, not on the
 verdict alone."""
 
-# Every strategy's evaluate_position, with the shape of its signature. The three shapes are real and
-# predate this module (only the strategies that can act on a first-of-day gap take the flag, and only
-# double_calendar has independently-closeable legs); normalising them here keeps that history in one
-# place instead of at every call site.
+# Every strategy's evaluate_position, as (module, takes_first_check_flag, takes_open_legs, takes_now).
+# The first three shapes are real and predate this module (only the strategies that can act on a
+# first-of-day gap take the flag, and only double_calendar has independently-closeable legs);
+# normalising them here keeps that history in one place instead of at every call site.
+#
+# `takes_now` marks the evaluators carrying a time-based rule — the credit strategies' backstop and
+# the calendars' front-expiration stop. They are handed the tick's own clock; broken_wing_butterfly
+# has no such rule and is not.
 _EVALUATORS = {
-    "iron_fly": (iron_fly, False, False),
-    "iron_condor": (iron_condor, False, False),
-    "directional_credit_spread": (directional_credit_spread, False, False),
-    "broken_wing_butterfly": (broken_wing_butterfly, True, False),
-    "atm_calendar": (atm_calendar, True, False),
-    "double_calendar": (double_calendar, True, True),
+    "iron_fly": (iron_fly, False, False, True),
+    "iron_condor": (iron_condor, False, False, True),
+    "directional_credit_spread": (directional_credit_spread, False, False, True),
+    "broken_wing_butterfly": (broken_wing_butterfly, True, False, False),
+    "atm_calendar": (atm_calendar, True, False, True),
+    "double_calendar": (double_calendar, True, True, True),
 }
 
 # Strategies entered the afternoon before an announcement and meant to be out once the crush is
@@ -74,6 +79,10 @@ POLICY_DEFAULTS = {
     # being managed, and a target computed off that mid is arithmetic rather than a price.
     "exec_window_start": "09:40",
     "max_leg_spread_pct": 0.35,
+    # The floor under the percentage: a leg is refused only when wide in percent AND in money.
+    # A short that has done its job quotes 0.00/0.01 -- a one-cent buyback and, as a ratio, a 200%
+    # spread -- and that is the WIN case, not an illiquidity case. See `_spread_blocks`.
+    "max_leg_spread_abs": 0.05,
     # Pin risk: a short strike sitting on spot into the close of its expiration day.
     "pin_guard_dollars": 1.00,
     "pin_guard_window_minutes": 60,
@@ -197,18 +206,22 @@ def _pin_risk(trade: dict, legs: list[dict], spot: float | None, policy: dict, n
     return any(abs(strike - spot) <= policy["pin_guard_dollars"] for strike in short_strikes(legs))
 
 
-def _strategy_verdict(trade: dict, quotes: dict, config: dict, *, open_legs, is_first_check_of_day):
-    """Run the strategy's own evaluate_position, whatever shape its signature takes."""
-    module, takes_flag, takes_legs = _EVALUATORS[trade["strategy"]]
-    if takes_legs:
-        return module.evaluate_position(
-            dict(trade), open_legs or [], quotes, config, is_first_check_of_day=is_first_check_of_day
-        )
+def _strategy_verdict(trade: dict, quotes: dict, config: dict, *, open_legs, is_first_check_of_day, now):
+    """Run the strategy's own evaluate_position, whatever shape its signature takes.
+
+    `now` is threaded to every evaluator that has a time-based rule, so the clock those rules read is
+    the tick being evaluated rather than whenever the process happens to be running. They each still
+    default to the machine clock for callers outside this manager.
+    """
+    module, takes_flag, takes_legs, takes_now = _EVALUATORS[trade["strategy"]]
+    kwargs = {}
     if takes_flag:
-        return module.evaluate_position(
-            dict(trade), quotes, config, is_first_check_of_day=is_first_check_of_day
-        )
-    return module.evaluate_position(dict(trade), quotes, config)
+        kwargs["is_first_check_of_day"] = is_first_check_of_day
+    if takes_now:
+        kwargs["now"] = now
+    if takes_legs:
+        return module.evaluate_position(dict(trade), open_legs or [], quotes, config, **kwargs)
+    return module.evaluate_position(dict(trade), quotes, config, **kwargs)
 
 
 def evaluate(
@@ -249,6 +262,7 @@ def evaluate(
         strategy_config(strategy, config, policy),
         open_legs=open_legs,
         is_first_check_of_day=is_first_check_of_day,
+        now=now,
     )
     action = verdict.get("action", "hold")
     if action != "hold":
@@ -293,7 +307,37 @@ def execution_gate(snapshot: dict, config: dict, strategy: str, *, now: datetime
     if now.timetz().replace(tzinfo=None) < _time(hour, minute):
         return "before_exec_window"
 
-    widest = snapshot.get("max_spread_pct")
-    if widest is not None and widest > policy["max_leg_spread_pct"]:
+    if _spread_blocks(snapshot, policy):
         return "spread_too_wide"
     return None
+
+
+def _spread_blocks(snapshot: dict, policy: dict) -> bool:
+    """Whether any leg is too wide to act on -- wide in PERCENT and in MONEY, both, per leg.
+
+    A percentage alone is the wrong instrument on the way out, where the common case is a short
+    that has gone nearly worthless: `bid 0.00 / ask 0.01` is a one-cent buyback and, as a ratio,
+    exactly a 200% spread. Measured before this change: 32 distinct positions hit their profit
+    target, were refused by the percentage test (5,695 of the gated ticks at exactly 2.000), and
+    every one of them rode to expiry instead of taking the exit the 2026-08-12 managed lifecycle
+    exists to test. calendars had the same defect on its Friday close (fixed 2026-08-31); curve's
+    entry gate documented the identical arithmetic from the other side.
+
+    Judged PER LEG off the snapshot's own quotes: the widest-by-percent and widest-by-money can be
+    different legs, and two separate maxima would refuse a structure neither leg justifies. A
+    snapshot without quotes falls back to the aggregate percentage, so nothing widens silently.
+    """
+    max_pct = policy["max_leg_spread_pct"]
+    quotes = snapshot.get("quotes")
+    if not quotes:
+        widest = snapshot.get("max_spread_pct")
+        return widest is not None and widest > max_pct
+    max_abs = policy.get("max_leg_spread_abs", 0.05)
+    for q in quotes.values():
+        bid, ask, mid = q.get("bid"), q.get("ask"), q.get("mid")
+        if bid is None or ask is None or not mid or mid <= 0:
+            continue
+        pct = (ask - bid) / mid
+        if pct > max_pct and (ask - bid) > max_abs:
+            return True
+    return False

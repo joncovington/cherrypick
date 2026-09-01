@@ -1845,3 +1845,50 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+def realized_move_dispersion(symbol: str, config: dict, lookback_quarters: int = 8) -> dict:
+    """Standard deviation of historical realized earnings moves, as a % of pre-earnings price.
+
+    A thin wrapper over `compute_historical_move_stats` that renames the fields to
+    `mean_realized_move_pct` / `realized_move_dispersion_pct`. Those names are load-bearing: the
+    calendar strategies' `apply_tiering` reads them, so the rename travels with the function.
+
+    Low dispersion means the name's earnings-move behaviour is consistent; high dispersion means
+    occasional blowout quarters that undermine a calendar spread's assumptions.
+
+    Lives here rather than in a strategy because two strategies had byte-identical copies and both
+    docstrings already said "shared for consistency" -- it is a SCREENING metric, not order-shaping
+    code, so the one-order-builder-per-file convention does not apply to it.
+    """
+    stats = compute_historical_move_stats(symbol, config, lookback_quarters)
+    if not stats.get("ok"):
+        return {
+            "ok": False,
+            "symbol": symbol,
+            "sample_size": stats.get("sample_size", 0),
+            "error": stats.get("error", "insufficient sample for dispersion"),
+        }
+    return {
+        "ok": True,
+        "symbol": symbol,
+        "sample_size": stats["sample_size"],
+        "mean_realized_move_pct": stats["avg_actual_move_pct"],
+        "realized_move_dispersion_pct": stats["move_dispersion_pct"],
+    }
+
+
+def candidates_command(args, fetch_price_and_term_structure, apply_tiering, strategy_config) -> dict:
+    """The `get_candidates` CLI verb, which three strategies implemented identically.
+
+    Wiring only -- it loads the config and hands `run_candidate_scan` its four arguments in the
+    right order. That ORDER is the thing worth single-sourcing: it is positional, and a strategy
+    that transposed two of them would scan happily against the wrong screen.
+
+    Strategies whose verb does more than this keep their own (atm_calendar, double_calendar and
+    broken_wing_butterfly all do), and no order-shaping code moves here.
+    """
+    config = _load_config()
+    return run_candidate_scan(
+        args.date, config, fetch_price_and_term_structure, apply_tiering, strategy_config(config)
+    )
+

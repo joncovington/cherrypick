@@ -39,7 +39,7 @@ from typing import Any
 
 from . import config as cfgmod
 from . import jobspec, timeutil
-from .util import CREATE_NO_WINDOW, atomic_write_json, pid_alive, read_json, rotate_if_large
+from .util import CREATE_NO_WINDOW, atomic_write_json, pid_alive, port_owner_pid, read_json, rotate_if_large
 
 HEARTBEAT_FILE = "supervisor.last.json"
 JOBS_FILE = "supervisor-jobs.json"
@@ -55,11 +55,29 @@ _LAUNCHER = Path(__file__).resolve().parents[3] / "run.py"
 HEARTBEAT_WRITE_SECONDS = 5
 HEARTBEAT_FRESH_SECONDS = 90
 
+# A resident orphan (adopted from a prior supervisor) that died while we held no handle. Not a real
+# exit status -- the code is unknowable by construction -- so it is given one that cannot collide
+# with a child's own, and is treated as a failure purely so the backoff ladder bounds the respawn.
+_EXIT_UNKNOWN = -3
+
+# A windowed resident that exited 0 before it had settled. Not a session end -- a loop cannot finish
+# a session in a second -- so it is recorded distinctly and takes the backoff ladder.
+_EXIT_TOO_SOON = -4
+
 _BACKOFF_BASE_SECONDS = 30
 _BACKOFF_CAP_SECONDS = 600
 # A resident child younger than this is never judged for silence — the settling grace the streamer
 # taught (a just-started process hasn't had time to produce output yet).
 _RESIDENT_SETTLE_SECONDS = 90
+
+# A resident job declaring a `port` gets this many failed spawn attempts before the supervisor will
+# even consider reclaiming that port from an untracked process — roughly 3-4 minutes at the default
+# 30s backoff base. Short enough that a genuinely stuck job (the 2026-08-23 incident: an orphaned
+# console child held :5070 for 9 hours and ~1600 failures) recovers on its own within minutes; long
+# enough that a developer's own `pnpm dev:server` iteration, or the normal adopt-on-restart path,
+# is never mistaken for the stuck case. Adoption (`adopt_prior_state`) already handles the ordinary
+# "supervisor restarted, child is still mine" case without ever reaching this ladder.
+_PORT_RECLAIM_AFTER_FAILURES = 8
 
 
 def heartbeat_path() -> Path:
@@ -256,15 +274,39 @@ class Supervisor:
         if pid and pid_alive(pid):
             return True  # adopted orphan still going
         if pid:
-            # Orphan finished while we weren't holding a handle: exit code unknowable.
-            st["running_pid"] = None
-            st["last_exit_at"] = _utc_iso()
+            # Orphan finished while we weren't holding a handle: exit code unknowable. This used to
+            # record nothing at all, which left `backoff_until` untouched and so gave a dead orphan
+            # no throttle whatsoever -- the same respawn storm as the clean-exit path, by a second
+            # route. We cannot tell a finished session from a crash here, so take the middle: count
+            # it as a failure so the ladder bounds the rate, but keep restarting it. An unknown is
+            # throttled and made visible, never silently stopped and never hot-looped.
+            self._record_exit(spec, st, _EXIT_UNKNOWN)
         return False
 
     def _record_exit(self, spec: jobspec.JobSpec, st: dict[str, Any], code: int) -> None:
         st["running_pid"] = None
         st["last_exit_code"] = code
         st["last_exit_at"] = _utc_iso()
+        # A WINDOWED resident exiting 0 is a statement -- "my own gate closed", or "another instance
+        # holds my lock" -- not "the run finished, go again". Reading it as the latter is what
+        # produced the 16:00 storm: the module's gate closes on the dot while `in_window` still says
+        # 16:00 (whole minutes, inclusive), so the child exited 0, `code == 0` erased the only
+        # throttle there is, and the ~1s loop respawned it 53 times in that minute -- with flies
+        # doing the same beside it, and not one backoff line between them.
+        #
+        # Believe it only once it has SETTLED, though. A child that exits 0 the instant it starts is
+        # a misconfiguration, not a session end, and taking that at its word would stop the job for
+        # its whole window on the first tick. That one takes the ladder, which bounds the spawn rate
+        # without ever declaring the job done.
+        if code == 0 and self._resident_windowed(spec):
+            if self._resident_settled(spec, st):
+                st["module_stopped"] = True
+                st["consecutive_failures"] = 0
+                st["backoff_until"] = None
+                _log(f"{spec.id}: module reports session complete (exit 0) — idle until its window reopens")
+                return
+            code = _EXIT_TOO_SOON
+
         if code == 0:
             st["consecutive_failures"] = 0
             st["backoff_until"] = None
@@ -275,6 +317,51 @@ class Supervisor:
             delay = min(cap, _BACKOFF_BASE_SECONDS * (2 ** (n - 1)))
             st["backoff_until"] = time.time() + delay
             _log(f"{spec.id}: exit {code} (failure #{n}), backoff {delay}s")
+
+    def _known_pids(self) -> set[int]:
+        """PIDs this supervisor spawned or adopted this run — its own, plus every job's tracked
+        `running_pid` (live handles and adopted orphans alike). Deliberately broad: a false "known"
+        only means a stuck-port kill is skipped for a pass, which is safe; a false "unknown" is what
+        would kill a legitimate process, which is not."""
+        pids = {os.getpid()}
+        for handle in self._handles.values():
+            pids.add(handle.pid)
+        for st in self._state.values():
+            pid = st.get("running_pid")
+            if pid:
+                pids.add(int(pid))
+        return pids
+
+    def _reclaim_stuck_port(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> None:
+        """Before spawning a resident job that declares a `port`, check whether something we did not
+        spawn or adopt is already squatting on it.
+
+        This exists because the ordinary failure path had no way to recover from it: a console child
+        left running by a manual/dev launch (or a supervisor that itself died uncleanly) can hold
+        :5070 indefinitely while every subsequent spawn attempt fails with EADDRINUSE and the
+        supervisor climbs its own backoff ladder forever — 9 hours and ~1600 failures on 2026-08-23,
+        entirely invisible to `adopt_prior_state` because that PID was never in OUR registry to adopt.
+
+        Gated on `_PORT_RECLAIM_AFTER_FAILURES` consecutive failures so this never fires on the
+        normal first-attempt case, and on the PID not being one we already recognize as ours so it
+        can never kill a job's own legitimate child mid-restart.
+        """
+        n = int(st.get("consecutive_failures") or 0)
+        if n < _PORT_RECLAIM_AFTER_FAILURES:
+            return
+        owner = port_owner_pid(spec.port)
+        if not owner or owner in self._known_pids() or not pid_alive(owner):
+            return
+        _log(
+            f"{spec.id}: port {spec.port} held by untracked pid {owner} after {n} failed spawns "
+            "— reclaiming"
+        )
+        _terminate_tree(owner)
+        # Reset the ladder: the failures so far were the port fight, not this job's own health, and
+        # charging the post-reclaim spawn attempt against that history would jump straight to a long
+        # backoff on what should read as a clean recovery.
+        st["consecutive_failures"] = 0
+        st["backoff_until"] = None
 
     def _spawn(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> bool:
         try:
@@ -327,6 +414,13 @@ class Supervisor:
                 }
             )
             if spec.kind == jobspec.KIND_RESIDENT:
+                # What this job's liveness is judged against, recorded so a reader does not have to
+                # re-derive the whole job table to find out. `heartbeat_seen` false means the module
+                # publishes nothing, which is NOT silence-supervised (deliberately -- restarting on
+                # "I can't tell" is the failure this whole area is recovering from) and so is a gap
+                # only the watchdog can report.
+                st["silence_file"] = spec.silence_file
+                st["heartbeat_seen"] = bool(spec.silence_file and os.path.exists(spec.silence_file))
                 if self._manage_resident(spec, st, now, holidays):
                     started.append(spec.id)
                 continue
@@ -355,7 +449,24 @@ class Supervisor:
             # Outside its window the child exits on its own (the module loop is session-scoped);
             # never terminate here — a settlement or final write may still be in flight.
             st["resident_state"] = why or "idle"
+            # The window is shut, so the module's "I am done" is spent: the next open starts clean.
+            # Cleared here rather than on the opening edge because this branch is the only place
+            # that runs for certain between two windows. The start counter resets with it, which is
+            # what makes it mean "starts since this window opened" and therefore readable as churn.
+            st.pop("module_stopped", None)
+            st.pop("starts_in_window", None)
+            st.pop("starts_window_day", None)
             return False
+        # A job with NO window never takes the branch above, so without this its start counter
+        # accumulated for the life of the registry: the console latched a churn WARN on 2026-08-21
+        # showing 27 starts — every one of them from the previous evening's deliberate
+        # rebuild/restart cycles, none from the day the alert fired. A windowless resident's
+        # "window" is the calendar day; windowed jobs reset at window close as before, and this
+        # extra day-boundary reset is a no-op for them (no suite window spans midnight).
+        today = now.date().isoformat()
+        if st.get("starts_window_day") != today:
+            st.pop("starts_in_window", None)
+            st["starts_window_day"] = today
         if alive:
             st["resident_state"] = "running"
             if self._resident_silent(spec, st):
@@ -389,12 +500,28 @@ class Supervisor:
                 st["backoff_until"] = None
                 _log(f"{spec.id}: settled and healthy, failure/backoff history cleared")
             return False
+        if st.get("module_stopped"):
+            # The module said its session was over. Believe it for the rest of this window rather
+            # than restarting it into the same gate once a second. If it said so WRONGLY it now
+            # stays down until the window reopens, which is the trade this makes deliberately --
+            # a loud silence over a quiet restart loop -- and `watchdog._check_resident_health`
+            # is what makes the silence loud.
+            st["resident_state"] = "module reports session complete"
+            return False
         if st.get("backoff_until") and time.time() < float(st["backoff_until"]):
             st["resident_state"] = "backoff"
             return False
+        if spec.port and spec.reclaim_stuck_port:
+            self._reclaim_stuck_port(spec, st)
         ok = self._spawn(spec, st)
         st["resident_state"] = "running" if ok else "start failed"
         if ok:
+            # Starts since this window opened. Deliberately NOT `consecutive_failures`, which cannot
+            # serve: a clean exit resets it, and a clean exit is exactly the storm's own signature --
+            # the 2026-08-17 registry showed 0 failures beside 161 spawns. This is the only number
+            # that would have made either the churn or the storm legible to anything but a human
+            # reading supervisor.log.
+            st["starts_in_window"] = int(st.get("starts_in_window") or 0) + 1
             _log(f"{spec.id}: resident child started (pid {st['running_pid']})")
         return ok
 
@@ -427,6 +554,18 @@ class Supervisor:
         if started is None:
             return False
         return time.time() - started >= max(_RESIDENT_SETTLE_SECONDS, spec.silence_seconds)
+
+    def _resident_windowed(self, spec: jobspec.JobSpec) -> bool:
+        """A resident job whose clean exit could mean "my session is over".
+
+        Both halves are load-bearing. **Resident**, because an interval job exiting 0 has genuinely
+        finished a run and is gated by `next_run_epoch` — nothing about it needs believing.
+        **Windowed**, because the console declares no window and no trading-day gate on purpose (a
+        read surface only up during RTH cannot read the session that just ended), so "terminal for
+        the window" is meaningless for it and a server exiting cleanly is never expected. Believing
+        an unwindowed resident would take the suite's only read surface down and leave it down.
+        """
+        return spec.kind == jobspec.KIND_RESIDENT and bool(spec.window_start and spec.window_end)
 
     def _resident_silent(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> bool:
         if not spec.silence_file or not spec.silence_seconds:

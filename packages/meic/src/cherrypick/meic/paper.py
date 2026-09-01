@@ -21,14 +21,8 @@ import sqlite3
 import sys
 from datetime import datetime
 
-try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
-    from zoneinfo import ZoneInfo
-
-    _ET = ZoneInfo("America/New_York")
-except Exception:  # pragma: no cover - only where zoneinfo has no tz database
-    import pytz
-
-    _ET = pytz.timezone("America/New_York")
+# One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core.clock import ET as _ET  # noqa: E402
 
 
 def _now_et():
@@ -189,7 +183,15 @@ def _merged_params(base_config: dict, profile: dict) -> dict:
 def _profile_widths_for_symbol(params: dict, symbol: str) -> list | None:
     """This profile's wing shortlist for `symbol` (its own `wing_widths_by_symbol[symbol]`,
     falling back to `DEFAULT`), or None when it declares none — in which case the historical
-    behavior applies (consider every scanned candidate width)."""
+    behavior applies (consider every scanned candidate width).
+
+    `wing_width_points` — a single scalar — wins over the per-symbol dict when present. It exists
+    for the advisor: `core.advice` bounds can express a number or a choice, never a dict of lists,
+    so without a scalar seam the width question would be unaskable as an advisor experiment. A
+    scalar pins ONE width, which is also what a width experiment means."""
+    wp = params.get("wing_width_points")
+    if wp is not None:
+        return [int(wp)]
     wbs = params.get("wing_widths_by_symbol") or {}
     lst = wbs.get(symbol) or wbs.get(symbol.upper()) or wbs.get("DEFAULT")
     return list(lst) if lst else None
@@ -1081,7 +1083,12 @@ def _mae_updates(trade: dict, underlying_price: float | None) -> dict:
 def _settlement_value(strike, underlying, wing_width, side) -> float:
     """The value a defined-risk spread settles for at expiration: the short strike's intrinsic
     value, floored at 0 (expires worthless) and capped at the wing width (fully-ITM = max
-    loss). Used for the cash-settled 'left to expire' path."""
+    loss). Used for the cash-settled 'left to expire' path.
+
+    The None guard returns 0.0 and CALLERS MUST NOT rely on it to mean "expired worthless" — 0.0 is
+    the most favorable outcome a short side can have. `evaluate_open_trade` refuses to settle at all
+    without an underlying price; this stays permissive only so the recorded-but-not-charged
+    `*_settle_value` telemetry cannot raise."""
     if strike is None or underlying is None:
         return 0.0
     intrinsic = (strike - underlying) if side == "put" else (underlying - strike)
@@ -1126,6 +1133,18 @@ def evaluate_open_trade(
     # so a missing quote at the close can't strand an expiring position. force_close (events /
     # non-cash) takes precedence since it fires earlier in the day.
     if settle and not force_close:
+        # No settlement price, no settlement. `_settlement_value` returns 0.0 for a None underlying,
+        # which reads as "expired worthless" — so a missing price silently booked FULL CREDIT on
+        # every side still open, the most favorable outcome available, on exactly the trades whose
+        # outcome nobody could see. The 2026-08-26 settlement audit found 90 such trades (13 booked
+        # at full credit outright, 77 with one side already stopped), all in the retired profile-
+        # ladder era and so already excluded by `analytics.CURRENT_ERA` — historical, not harmless.
+        #
+        # Holding matches what an unquotable leg already does two blocks below, and for the same
+        # reason: a paper ledger may be incomplete, and must never be confidently wrong. The next
+        # iteration settles it when a price arrives.
+        if underlying_price is None:
+            return {"action": "hold", "reason": "settlement_price_unavailable", **touch_updates}
         # `*_exit_price` stays gated on the side still being open — it drives P&L, and a side that
         # already stopped was paid for at its stop.
         #

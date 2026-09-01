@@ -102,6 +102,24 @@ CREATE TABLE IF NOT EXISTS experiment_events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_experiment ON experiment_events(experiment_id);
 
+-- Did the artifact issued for a session reach the module's loop? Two facts that had never been
+-- reconciled, and on 2026-08-25 two experiments each spent their most informative session on an
+-- artifact no loop read. The reconciliation is computed in `enactment.py` and STORED here rather
+-- than recomputed by each reader: the console renders the advisor's judgements and derives none of
+-- its own, the same rule that keeps verdicts on the experiment row.
+CREATE TABLE IF NOT EXISTS enactment (
+    session         TEXT NOT NULL,
+    module          TEXT NOT NULL,
+    status          TEXT NOT NULL,  -- enacted|carried|not_enacted|no_artifact
+    detail          TEXT,
+    experiment_id   TEXT,
+    artifact_params TEXT,
+    decision_params TEXT,
+    decision_reason TEXT,
+    scored_at       TEXT NOT NULL,
+    PRIMARY KEY (session, module)
+);
+
 CREATE TABLE IF NOT EXISTS schema_meta (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -352,6 +370,22 @@ def journal(
         ),
     )
     conn.commit()
+
+
+def has_journal_event(
+    conn: sqlite3.Connection, experiment_id: str, event: str, *, session: str
+) -> bool:
+    """Has this experiment already been journaled with `event` for `session`?
+
+    The idempotence check behind the enactment counter. The evening pass is re-runnable by design --
+    it runs again after a failed AI call -- and a counter that advanced on every re-run would
+    reintroduce, from the other direction, exactly the overcount it was written to remove.
+    """
+    row = conn.execute(
+        "SELECT 1 FROM experiment_events WHERE experiment_id=? AND event=? AND session=? LIMIT 1",
+        (experiment_id, event, session),
+    ).fetchone()
+    return row is not None
 
 
 def events(conn: sqlite3.Connection, experiment_id: str) -> list[dict[str, Any]]:

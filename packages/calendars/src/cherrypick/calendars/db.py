@@ -23,7 +23,8 @@ from __future__ import annotations
 import os
 import sqlite3
 
-from cherrypick.calendars import clock
+from cherrypick.core import db as _core_db
+from cherrypick.core import ledgerstore as _ledgerstore
 
 _SCHEMA = """
 -- One row per calendar structure per book: a put-side or call-side calendar, two legs each.
@@ -220,6 +221,37 @@ CREATE TABLE IF NOT EXISTS dc_entry_attempts (
 );
 CREATE INDEX IF NOT EXISTS idx_dc_attempts_date ON dc_entry_attempts(trade_date);
 
+-- The Friday-vs-Monday entry comparison, at MATCHED strikes (docs/friday-entry-arm.md).
+--
+-- One row per (week, side): what the Friday regime paid for a structure, and what the SAME strikes
+-- and expirations cost at the Monday entry moment. Because the contracts are identical, both
+-- entrances' value paths are identical from Monday onward, so `monday_debit - friday_debit` IS the
+-- entire P&L difference between entering early and entering on the day -- weekend decay netted
+-- against weekend gap risk, in one number whose variance is a fraction of a week's P&L. Letting
+-- each regime price its own EM-chosen strikes instead would bury that small systematic effect
+-- under a large noisy one, and answer the question in years rather than weeks.
+--
+-- Recorded, never traded: no position is opened from this table. A Monday whose snapshot cannot
+-- price the Friday strikes writes usable = 0 with the refusal -- "we could not have priced it",
+-- which is a real answer -- rather than a nearest-strike substitute.
+CREATE TABLE IF NOT EXISTS dc_paired_debits (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    recorded_at     TEXT NOT NULL,
+    week_of         TEXT NOT NULL,
+    symbol          TEXT NOT NULL,
+    side            TEXT NOT NULL,
+    strike          REAL,
+    friday_session  TEXT,
+    friday_debit    REAL,
+    friday_spot     REAL,
+    monday_session  TEXT NOT NULL,
+    monday_debit    REAL,
+    monday_spot     REAL,
+    usable          INTEGER NOT NULL DEFAULT 0,
+    refusal         TEXT,
+    UNIQUE(week_of, side)
+);
+
 -- The feed ledger: one row per (tick x symbol) recording what the cache gave us, refusals
 -- included — a stretch of refused rows is a feed problem, a stretch with NO rows is the loop not
 -- running, and without this table those two silences are identical (flies' fly_snapshots lesson).
@@ -284,236 +316,117 @@ def default_db_path() -> str:
     return os.path.join(home, "data", "calendars", "paper_trades.db")
 
 
-def _migrate(conn: sqlite3.Connection) -> list[str]:
-    """Add any columns missing from an older DB. Returns what it added (for tests and logs)."""
-    added = []
-    for table, columns in _ADDED_COLUMNS.items():
-        existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
-        for column, sql_type in columns.items():
-            if column not in existing:
-                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
-                added.append(f"{table}.{column}")
-    if added:
-        conn.commit()
-    return added
+# ---------------------------------------------------------------------------
+# Row mechanics live in `cherrypick.core.ledgerstore`: 22 of these were byte-identical to pmcc's
+# once the table prefix was normalized. The SCHEMA stays here -- a module owns what its tables ARE,
+# the store owns how rows get into and out of them. Every public name below is the one this
+# module's callers and tests already use.
+_store = _ledgerstore.LedgerStore("dc_", _SCHEMA, _ADDED_COLUMNS)
+
+_now = _store.now
+_upsert = _store.upsert
+_migrate = _store.migrate
+_declared_columns = _store.declared_columns
+stale_writer_columns = _store.stale_writer_columns
+
+save_position = _store.save_position
+save_leg = _store.save_leg
+save_assignment = _store.save_assignment
+
+record_mark = _store.record_mark
+record_management_event = _store.record_management_event
+record_decision = _store.record_decision
+record_entry_attempt = _store.record_entry_attempt
+record_snapshot = _store.record_snapshot
+record_iteration = _store.record_iteration
+record_measurement_break = _store.record_measurement_break
+
+open_positions = _store.open_positions
+legs_for = _store.legs_for
+open_legs_for = _store.open_legs_for
+open_leg_expirations = _store.open_leg_expirations
+open_assignments = _store.open_assignments
+assignments_for = _store.assignments_for
+open_assignment_count = _store.open_assignment_count
+# ---------------------------------------------------------------------------
 
 
-def stale_writer_columns(conn: sqlite3.Connection) -> list[str]:
-    """Columns the LEDGER has but this RUNNING CODE does not know. Empty is healthy.
-
-    The flies 2026-08-05 failure shape: migration is additive and permanent, so a ledger opened
-    once by a newer checkout keeps columns an older checkout will silently NULL all week. The code
-    side of the comparison is the schema this file declares plus its migration table — the database
-    side is the file — so the check catches exactly the stale-checkout case and nothing else.
-    Reports rather than repairs: a stale checkout cannot fix itself, and refusing to run would turn
-    a telemetry gap into an outage.
-    """
-    drift: list[str] = []
-    for table, extra in _ADDED_COLUMNS.items():
-        known = set(_declared_columns(table)) | set(extra)
-        present = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
-        drift.extend(f"{table}.{c}" for c in sorted(present - known))
-    return drift
 
 
-def _declared_columns(table: str) -> list[str]:
-    """Column names as _SCHEMA declares them, parsed from the DDL text so the two cannot drift."""
-    marker = f"CREATE TABLE IF NOT EXISTS {table} ("
-    start = _SCHEMA.index(marker) + len(marker)
-    body = _SCHEMA[start : _SCHEMA.index(");", start)]
-    cols = []
-    for line in body.splitlines():
-        word = line.strip().split(" ")[0]
-        if word and word.isidentifier() and word.upper() not in ("UNIQUE", "PRIMARY", "FOREIGN"):
-            cols.append(word)
-    return cols
+
 
 
 def connect(db_path: str | None = None) -> sqlite3.Connection:
+    """Open the ledger. WAL + NORMAL, because this is a write path on a 30s tick.
+
+    It was running in SQLite's default rollback-journal mode, where every commit creates and deletes
+    a journal file and fsyncs twice — and the mark path commits per leg, so a tick pays that several
+    times over while the console reads the same file. WAL turns those into appends and stops readers
+    and the writer blocking each other. MEIC's ledger has been WAL since it was written and the
+    console reads it read-only without trouble, so this is the shape already proven in the suite
+    rather than a new bet.
+
+    NOT a measurement break: nothing about which rows get written, or their values, changes here.
+    """
     path = db_path or os.environ.get("CALENDARS_DB_PATH") or default_db_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
+    conn = _core_db.connect(path, pragmas=("journal_mode=WAL", "synchronous=NORMAL"))
     conn.executescript(_SCHEMA)
     _migrate(conn)
     return conn
 
 
-def _now() -> str:
-    return clock.now_iso()
 
 
-def _upsert(conn, table: str, keys: tuple[str, ...], row: dict) -> None:
-    """Insert `row`, or update the existing row with the same natural key — a restart mid-session
-    re-writes the same position rather than duplicating it."""
-    row = {**row, "updated_at": _now()}
-    where = " AND ".join(f"{k} = ?" for k in keys)
-    existing = conn.execute(f"SELECT id FROM {table} WHERE {where}", [row[k] for k in keys]).fetchone()
-    if existing is None:
-        row.setdefault("created_at", _now())
-        cols = ", ".join(row)
-        marks = ", ".join("?" for _ in row)
-        conn.execute(f"INSERT INTO {table} ({cols}) VALUES ({marks})", list(row.values()))
-    else:
-        sets = ", ".join(f"{c} = ?" for c in row if c not in keys)
-        vals = [v for c, v in row.items() if c not in keys] + [row[k] for k in keys]
-        conn.execute(f"UPDATE {table} SET {sets} WHERE {where}", vals)
-    conn.commit()
 
 
-def save_position(conn, row: dict) -> None:
-    _upsert(conn, "dc_positions", ("position_id",), row)
 
 
-def save_leg(conn, row: dict) -> None:
-    _upsert(conn, "dc_legs", ("position_id", "leg_role"), row)
 
 
-def save_assignment(conn, row: dict) -> None:
-    """Not wrapped like the telemetry writers below: a delivered share position is POSITION STATE,
-    not a record of one. Losing it silently would leave a week whose option legs are settled and
-    whose shares nobody knows are held."""
-    _upsert(conn, "dc_assignments", ("position_id", "leg_role"), row)
 
 
-def open_assignments(conn, before_session: str | None = None) -> list[dict]:
-    """Share positions still held. `before_session` restricts to those delivered on an EARLIER
-    session — the disposal rule, since shares delivered by tonight's settlement cannot be sold
-    until the next session opens."""
-    sql = "SELECT a.*, p.book, p.quantity FROM dc_assignments a "
-    sql += "JOIN dc_positions p ON p.position_id = a.position_id WHERE a.status = 'open'"
-    args: list = []
-    if before_session is not None:
-        sql += " AND a.assigned_session < ?"
-        args.append(before_session)
-    return [dict(r) for r in conn.execute(sql + " ORDER BY a.assigned_session, a.position_id", args)]
 
 
-def assignments_for(conn, position_id: str) -> list[dict]:
-    return [
-        dict(r)
-        for r in conn.execute(
-            "SELECT * FROM dc_assignments WHERE position_id = ? ORDER BY leg_role", (position_id,)
-        )
-    ]
 
 
-def open_assignment_count(conn, position_id: str) -> int:
-    return int(
-        conn.execute(
-            "SELECT COUNT(*) FROM dc_assignments WHERE position_id = ? AND status = 'open'",
-            (position_id,),
-        ).fetchone()[0]
-    )
 
 
 # --------------------------------------------------------------------------- telemetry writers
 # Wrapped: telemetry may never cost a trade or a tick. A decision writer failing is logged by the
 # caller's own log line, never raised into the loop.
-def record_mark(conn, **fields) -> None:
-    try:
-        cols = ", ".join(fields)
-        marks = ", ".join("?" for _ in fields)
-        conn.execute(f"INSERT INTO dc_marks ({cols}) VALUES ({marks})", list(fields.values()))
-        conn.commit()
-    except Exception:  # noqa: BLE001, S110 — see the wrapper comment above
-        pass
 
 
-def record_management_event(conn, **fields) -> None:
-    try:
-        fields.setdefault("detail_json", None)
-        cols = ", ".join(fields)
-        marks = ", ".join("?" for _ in fields)
-        conn.execute(f"INSERT INTO dc_management_events ({cols}) VALUES ({marks})", list(fields.values()))
-        conn.commit()
-    except Exception:  # noqa: BLE001, S110
-        pass
 
 
-def record_decision(conn, *, trade_date, book, symbol, mode, reason, accepted, detail=None) -> None:
-    """Collapsing journal write: a run of identical (date, book, symbol, mode, reason) rows becomes
-    one row with a count."""
-    try:
-        ts = _now()
-        row = conn.execute(
-            "SELECT id, occurrences FROM dc_decisions WHERE trade_date = ? AND book = ? AND "
-            "symbol = ? AND mode = ? AND reason = ? ORDER BY id DESC LIMIT 1",
-            (trade_date, book, symbol, mode, reason),
-        ).fetchone()
-        if row is not None:
-            conn.execute(
-                "UPDATE dc_decisions SET occurrences = ?, last_ts = ? WHERE id = ?",
-                (row["occurrences"] + 1, ts, row["id"]),
-            )
-        else:
-            conn.execute(
-                "INSERT INTO dc_decisions (trade_date, book, symbol, mode, reason, accepted, "
-                "occurrences, first_ts, last_ts, detail) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)",
-                (trade_date, book, symbol, mode, reason, int(bool(accepted)), ts, ts, detail),
-            )
-        conn.commit()
-    except Exception:  # noqa: BLE001, S110
-        pass
 
 
-def record_entry_attempt(conn, **fields) -> None:
-    try:
-        fields.setdefault("ts", _now())
-        cols = ", ".join(fields)
-        marks = ", ".join("?" for _ in fields)
-        conn.execute(f"INSERT INTO dc_entry_attempts ({cols}) VALUES ({marks})", list(fields.values()))
-        conn.commit()
-    except Exception:  # noqa: BLE001, S110
-        pass
 
 
-def record_snapshot(conn, **fields) -> None:
-    try:
-        fields.setdefault("ts", _now())
-        cols = ", ".join(fields)
-        marks = ", ".join("?" for _ in fields)
-        conn.execute(f"INSERT INTO dc_snapshots ({cols}) VALUES ({marks})", list(fields.values()))
-        conn.commit()
-    except Exception:  # noqa: BLE001, S110
-        pass
 
 
-def record_iteration(conn, **fields) -> None:
-    try:
-        cols = ", ".join(fields)
-        marks = ", ".join("?" for _ in fields)
-        conn.execute(f"INSERT INTO dc_loop_iterations ({cols}) VALUES ({marks})", list(fields.values()))
-        conn.commit()
-    except Exception:  # noqa: BLE001, S110
-        pass
 
 
-def record_measurement_break(conn, *, break_date, key, old_value=None, new_value=None, note=None) -> None:
-    """NOT wrapped in the swallow-everything pattern on the insert itself — a break that fails to
-    record is a real problem — but idempotent: the UNIQUE(break_date, key) makes a re-run a no-op."""
-    import time as _time
-
-    try:
-        conn.execute(
-            "INSERT INTO measurement_breaks (break_date, key, old_value, new_value, note, recorded_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (break_date, key, old_value, new_value, note, _time.time()),
-        )
-        conn.commit()
-    except sqlite3.IntegrityError:
-        pass  # already recorded — the idempotent re-run
 
 
 # --------------------------------------------------------------------------- readers
-def open_positions(conn, statuses: tuple[str, ...] = ("open", "short_settled")) -> list[dict]:
-    marks = ", ".join("?" for _ in statuses)
-    return [
-        dict(r)
-        for r in conn.execute(
-            f"SELECT * FROM dc_positions WHERE status IN ({marks}) ORDER BY position_id", list(statuses)
-        )
-    ]
+
+
+def pending_closing_exits(conn, expiration: str) -> list[dict]:
+    """Open positions expiring on `expiration` whose book still INTENDS to close — the Friday
+    regime's ordering gate (docs/friday-entry-arm.md).
+
+    The filter is deliberately "intends to close", not "is open": `path` never closes by design, so
+    a gate waiting for the book to go flat would be satisfied on no Friday ever and the Friday entry
+    would silently never fire — a deadlock presenting as a skipped week, which this module has
+    already produced twice for unrelated reasons and would be misdiagnosed as a third. The base-book
+    split is what separates the two (see engine.base_book), so `friday:path` is excluded here for
+    the same reason `path` is.
+    """
+    rows = conn.execute(
+        "SELECT * FROM dc_positions WHERE front_expiration = ? AND status = 'open' ORDER BY book, side",
+        (expiration,),
+    )
+    return [dict(r) for r in rows if r["book"].rsplit(":", 1)[-1] != "path"]
 
 
 def positions_for_week(conn, week_of: str) -> list[dict]:
@@ -523,33 +436,10 @@ def positions_for_week(conn, week_of: str) -> list[dict]:
     ]
 
 
-def legs_for(conn, position_id: str) -> list[dict]:
-    return [
-        dict(r)
-        for r in conn.execute("SELECT * FROM dc_legs WHERE position_id = ? ORDER BY leg_role", (position_id,))
-    ]
 
 
-def open_legs_for(conn, position_id: str) -> list[dict]:
-    return [
-        dict(r)
-        for r in conn.execute(
-            "SELECT * FROM dc_legs WHERE position_id = ? AND status = 'open' ORDER BY leg_role",
-            (position_id,),
-        )
-    ]
 
 
-def open_leg_expirations(conn) -> list[str]:
-    """Distinct expirations still held open — what the stream request must keep subscribed."""
-    return [
-        r["expiration"]
-        for r in conn.execute(
-            "SELECT DISTINCT l.expiration FROM dc_legs l JOIN dc_positions p "
-            "ON p.position_id = l.position_id WHERE l.status = 'open' AND p.status != 'closed' "
-            "ORDER BY l.expiration"
-        )
-    ]
 
 
 def expiring_open_legs(conn, day: str) -> list[dict]:
@@ -565,3 +455,39 @@ def expiring_open_legs(conn, day: str) -> list[dict]:
             (day,),
         )
     ]
+
+
+def record_paired_debit(conn, **row) -> None:
+    """Upsert one (week, side) row of the Friday-vs-Monday matched-strike comparison.
+
+    Telemetry-class and best-effort: this records a measurement, never a position, so a failure
+    here must cost the number and never the tick. Idempotent per (week_of, side) so a retried
+    Monday tick restates rather than duplicating."""
+    try:
+        cols = (
+            "recorded_at", "week_of", "symbol", "side", "strike",
+            "friday_session", "friday_debit", "friday_spot",
+            "monday_session", "monday_debit", "monday_spot", "usable", "refusal",
+        )
+        values = [row.get(c) for c in cols]
+        placeholders = ", ".join("?" * len(cols))
+        updates = ", ".join(f"{c}=excluded.{c}" for c in cols if c not in ("week_of", "side"))
+        conn.execute(
+            f"INSERT INTO dc_paired_debits ({', '.join(cols)}) VALUES ({placeholders}) "
+            f"ON CONFLICT(week_of, side) DO UPDATE SET {updates}",
+            values,
+        )
+        conn.commit()
+    except sqlite3.Error:
+        pass
+
+
+def paired_debits(conn, week_of: str | None = None) -> list[dict]:
+    """The matched-strike comparison rows, newest week first (or one week's)."""
+    if week_of is None:
+        rows = conn.execute("SELECT * FROM dc_paired_debits ORDER BY week_of DESC, side")
+    else:
+        rows = conn.execute(
+            "SELECT * FROM dc_paired_debits WHERE week_of = ? ORDER BY side", (week_of,)
+        )
+    return [dict(r) for r in rows]

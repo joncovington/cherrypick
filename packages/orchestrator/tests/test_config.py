@@ -78,6 +78,21 @@ def test_runtime_paths_resolve_under_home_not_repo():
     assert c.ROOT not in c.CONFIG_PATH.parents
 
 
+def test_resident_heartbeat_path_matches_the_shared_resolver():
+    """The writer (a module, or the console) and the watcher (this package) must agree on where a
+    resident job's liveness file lives, and they cannot import each other — so the convention lives
+    in `cherrypick.core.home` and this package mirrors it off its own patchable `STATE_DIR`. Pinned
+    here because a silent disagreement would mean the supervisor watching a file nobody writes,
+    which reads as a permanently healthy job."""
+    from cherrypick.core import home as _core_home
+
+    # The filename is the shared half and must match exactly; the directory is this package's own
+    # patchable STATE_DIR, which is why the whole path is not compared.
+    assert c.resident_heartbeat_path("calendars").name == _core_home.heartbeat_path("calendars").name
+    assert c.resident_heartbeat_path("calendars").parent == c.STATE_DIR
+    assert c.console_heartbeat_path() == c.resident_heartbeat_path("console")
+
+
 def test_reconcile_schedule_settings_off_by_default():
     s = c.reconcile_schedule_settings({})
     assert s == {"enabled": False, "task_name": "cherrypick-reconcile", "at": "16:30"}

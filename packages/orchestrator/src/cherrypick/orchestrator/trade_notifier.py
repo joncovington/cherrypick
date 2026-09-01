@@ -31,6 +31,7 @@ import json
 import os
 import sqlite3
 import time
+from datetime import time as dtime
 from typing import Any
 
 from cherrypick.notify import Notifier
@@ -143,7 +144,7 @@ def _meic_new_stops(conn) -> list:
 
 
 # --------------------------------------------------------------------------- Discord embed cards
-# Same card language as follow_notifier's Follow Feed push: a colored stripe carries the lifecycle at
+# Same card language as the (since-moved) follow-feed push: a colored stripe carries the lifecycle at
 # a glance. Colors are deliberately not a pure green/red pair — a position going on isn't a win and a
 # stop isn't the same shape of event as a normal close, so each gets its own color rather than reusing
 # "good"/"bad".
@@ -162,6 +163,21 @@ COLOR_REJECTED = 0x6B7280  # slate — earnings: a symbol was screened and passe
 COLOR_DIGEST = 0x6366F1  # indigo — the periodic MEIC roll-up: many trades, no single lifecycle event
 
 _FIELD_MAX = 1024  # Discord's per-field value limit; over it the whole message is rejected
+
+#: The digest is an intraday push and nothing else: MEIC only trades the session, so a roll-up that
+#: fires at 03:00 on a Saturday carries the same figures the last in-session one already carried.
+#: Outside this ET window — and on any non-trading day — a due flush is *held*, not dropped: the
+#: pending batch stays in state and goes out on the next tick inside the window. The tail runs past
+#: the bell because the day's last exits land at the close and still belong to that day's digest.
+_DIGEST_OPEN = dtime(9, 15)
+_DIGEST_CLOSE = dtime(17, 0)
+
+
+def _digest_window_open(now: float) -> bool:
+    et = timeutil.et_from_epoch(now)
+    if not timeutil.is_trading_day(et, timeutil.load_holidays([et.year])):
+        return False
+    return _DIGEST_OPEN <= et.time() <= _DIGEST_CLOSE
 
 
 def _embed(color: int, title: str, details: str, footer: str | None = None) -> dict:
@@ -411,7 +427,11 @@ def _meic_process(
     last_flush = st.get("last_summary_flush")
     if last_flush is None:
         st["last_summary_flush"] = now  # first activation of the digest path — flush from here on
-    elif pending and (now - last_flush) >= summary_interval_minutes * 60:
+    elif (
+        pending
+        and (now - last_flush) >= summary_interval_minutes * 60
+        and _digest_window_open(now)
+    ):
         et = timeutil.et_from_epoch(now)
         day, hhmm = et.strftime("%Y-%m-%d"), et.strftime("%H:%M")
         notifier.notify(
@@ -1096,6 +1116,242 @@ def _pmcc_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     return counts
 
 
+# cherrypick-curve keys on a text `position_id` and holds ~30-45 DTE with three notifiable
+# moments: it opens, its short call may settle at expiry (assignment delivers short shares that
+# ride to the next session's disposal), and it closes (profit-take, regime-flip hard exit, or
+# close_dte). No roll — the calendars three-stage shape, not pmcc's four.
+def _curve_seed(conn) -> dict:
+    rows = conn.execute(
+        "SELECT position_id, settlement_spot, status FROM curve_positions"
+    ).fetchall()
+    return {
+        "notified_entry_ids": [r["position_id"] for r in rows],
+        "notified_settlement_ids": [r["position_id"] for r in rows if r["settlement_spot"] is not None],
+        "notified_exit_ids": [r["position_id"] for r in rows if r["status"] == "closed"],
+    }
+
+
+def _fmt_curve_entry(r) -> str:
+    return (
+        f"\U0001f7e2 Curve paper ENTRY — {r['symbol']} short {r['short_strike']:.0f}C / "
+        f"long {r['long_strike']:.0f}C for ${r['entry_credit']:.2f} credit [{r['book']}]"
+    )
+
+
+def _embed_curve_entry(r) -> dict:
+    details = (
+        f"short {r['short_strike']:.0f}C / long {r['long_strike']:.0f}C {r['expiration']} · "
+        f"credit ${r['entry_credit']:.2f} · spot {r['entry_spot'] or 0:.2f}"
+    )
+    title = f"ENTRY · {r['symbol']} curve {r['short_strike']:.0f}/{r['long_strike']:.0f}"[:256]
+    return _embed(COLOR_ENTRY, title, details, footer=r["book"])
+
+
+def _fmt_curve_settlement(r) -> str:
+    itm = "ITM (shares delivered)" if (r["itm_settlements"] or 0) > 0 else "OTM"
+    return (
+        f"⚖️ Curve SHORT SETTLED — {r['symbol']} {r['short_strike']:.0f}C {itm} "
+        f"at {r['settlement_spot']:.2f}; the long rides to the next session [{r['book']}]"
+    )
+
+
+def _embed_curve_settlement(r) -> dict:
+    details = f"settled {r['settlement_spot']:.2f} · {r['itm_settlements'] or 0} ITM"
+    title = f"SHORT SETTLED · {r['symbol']} curve {r['short_strike']:.0f}"[:256]
+    return _embed(COLOR_COMPLETE, title, details, footer=r["book"])
+
+
+def _fmt_curve_exit(r) -> str:
+    net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
+    return (
+        f"\U0001f3c1 Curve paper CLOSED — {r['symbol']} "
+        f"{r['short_strike']:.0f}/{r['long_strike']:.0f} net ${net:+.2f} "
+        f"({r['exit_reason']}) [{r['book']}]"
+    )
+
+
+def _embed_curve_exit(r) -> dict:
+    net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
+    details = (
+        f"net ${net:+.2f} (gross ${r['gross_pnl'] or 0:+.2f}, fees ${r['fees'] or 0:.2f}) · "
+        f"{r['exit_reason']} · entered {r['entry_session']}"
+    )
+    title = f"CLOSED · {r['symbol']} curve {r['short_strike']:.0f}/{r['long_strike']:.0f}"[:256]
+    return _embed(COLOR_EXIT, title, details, footer=r["book"])
+
+
+def _curve_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
+    counts = {}
+    stages = [
+        (
+            "notified_entry_ids",
+            "entry",
+            "Paper entry",
+            _fmt_curve_entry,
+            _embed_curve_entry,
+            "SELECT * FROM curve_positions",
+        ),
+        (
+            "notified_settlement_ids",
+            "settlement",
+            "Short settled",
+            _fmt_curve_settlement,
+            _embed_curve_settlement,
+            "SELECT * FROM curve_positions WHERE settlement_spot IS NOT NULL",
+        ),
+        (
+            "notified_exit_ids",
+            "exit",
+            "Paper closed",
+            _fmt_curve_exit,
+            _embed_curve_exit,
+            "SELECT * FROM curve_positions WHERE status = 'closed'",
+        ),
+    ]
+    for key, event, title, fmt, embed_fn, query in stages:
+        notified = set(st.get(key, []))
+        rows = [r for r in conn.execute(query).fetchall() if r["position_id"] not in notified]
+        for r in rows:
+            notifier.notify(
+                "INFO", f"trade.{name}.{event}.{r['position_id']}", title, fmt(r), embed=embed_fn(r)
+            )
+            notified.add(r["position_id"])
+        st[key] = sorted(notified)[-_ID_CAP:]
+        counts[f"{event}s_notified"] = len(rows)
+    return counts
+
+
+# cherrypick-bwb keys on a text `position_id` and ladders daily like pmcc, with four notifiable
+# moments: it opens (the base 1-3-2 put broken-wing fly), its add-on may FIRE (the reversal
+# trigger — keyed by position_id since only one add-on ever fires per position), its short legs
+# may settle at expiry, and it closes.
+def _bwb_seed(conn) -> dict:
+    rows = conn.execute(
+        "SELECT position_id, addon_fired_at, settlement_spot, status FROM bwb_positions"
+    ).fetchall()
+    return {
+        "notified_entry_ids": [r["position_id"] for r in rows],
+        "notified_addon_ids": [r["position_id"] for r in rows if r["addon_fired_at"] is not None],
+        "notified_settlement_ids": [r["position_id"] for r in rows if r["settlement_spot"] is not None],
+        "notified_exit_ids": [r["position_id"] for r in rows if r["status"] == "closed"],
+    }
+
+
+def _fmt_bwb_entry(r) -> str:
+    return (
+        f"\U0001f7e2 BWB paper ENTRY — {r['symbol']} put fly body {r['body_strike']:.0f} "
+        f"near {r['near_strike']:.0f} / far {r['far_strike']:.0f} for ${r['entry_credit']:.2f} "
+        f"credit [{r['book']}]"
+    )
+
+
+def _embed_bwb_entry(r) -> dict:
+    details = (
+        f"body {r['body_strike']:.0f} · near {r['near_strike']:.0f} / far {r['far_strike']:.0f} "
+        f"{r['expiration']} · credit ${r['entry_credit']:.2f} · spot {r['entry_spot'] or 0:.2f}"
+    )
+    title = f"ENTRY · {r['symbol']} BWB {r['body_strike']:.0f}"[:256]
+    return _embed(COLOR_ENTRY, title, details, footer=r["book"])
+
+
+def _fmt_bwb_addon(r) -> str:
+    return (
+        f"\U0001f504 BWB ADD-ON FIRED — {r['symbol']} credit spread "
+        f"{r['addon_short_strike']:.0f}/{r['addon_long_strike']:.0f} for ${r['addon_credit']:.2f} "
+        f"credit, now a 1-3-2 [{r['book']}]"
+    )
+
+
+def _embed_bwb_addon(r) -> dict:
+    details = (
+        f"add-on {r['addon_short_strike']:.0f}/{r['addon_long_strike']:.0f} · "
+        f"credit ${r['addon_credit']:.2f}"
+    )
+    title = f"ADD-ON FIRED · {r['symbol']} BWB {r['body_strike']:.0f}"[:256]
+    return _embed(COLOR_COMPLETE, title, details, footer=r["book"])
+
+
+def _fmt_bwb_settlement(r) -> str:
+    itm = "ITM (shares delivered)" if (r["itm_settlements"] or 0) > 0 else "OTM"
+    return (
+        f"⚖️ BWB SETTLED — {r['symbol']} body {r['body_strike']:.0f} {itm} "
+        f"at {r['settlement_spot']:.2f} [{r['book']}]"
+    )
+
+
+def _embed_bwb_settlement(r) -> dict:
+    details = f"settled {r['settlement_spot']:.2f} · {r['itm_settlements'] or 0} ITM"
+    title = f"SETTLED · {r['symbol']} BWB {r['body_strike']:.0f}"[:256]
+    return _embed(COLOR_COMPLETE, title, details, footer=r["book"])
+
+
+def _fmt_bwb_exit(r) -> str:
+    net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
+    return (
+        f"\U0001f3c1 BWB paper CLOSED — {r['symbol']} body {r['body_strike']:.0f} "
+        f"net ${net:+.2f} ({r['exit_reason']}) [{r['book']}]"
+    )
+
+
+def _embed_bwb_exit(r) -> dict:
+    net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
+    details = (
+        f"net ${net:+.2f} (gross ${r['gross_pnl'] or 0:+.2f}, fees ${r['fees'] or 0:.2f}) · "
+        f"{r['exit_reason']} · entered {r['entry_session']}"
+    )
+    title = f"CLOSED · {r['symbol']} BWB {r['body_strike']:.0f}"[:256]
+    return _embed(COLOR_EXIT, title, details, footer=r["book"])
+
+
+def _bwb_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
+    counts = {}
+    stages = [
+        (
+            "notified_entry_ids",
+            "entry",
+            "Paper entry",
+            _fmt_bwb_entry,
+            _embed_bwb_entry,
+            "SELECT * FROM bwb_positions",
+        ),
+        (
+            "notified_addon_ids",
+            "addon",
+            "Add-on fired",
+            _fmt_bwb_addon,
+            _embed_bwb_addon,
+            "SELECT * FROM bwb_positions WHERE addon_fired_at IS NOT NULL",
+        ),
+        (
+            "notified_settlement_ids",
+            "settlement",
+            "Short settled",
+            _fmt_bwb_settlement,
+            _embed_bwb_settlement,
+            "SELECT * FROM bwb_positions WHERE settlement_spot IS NOT NULL",
+        ),
+        (
+            "notified_exit_ids",
+            "exit",
+            "Paper closed",
+            _fmt_bwb_exit,
+            _embed_bwb_exit,
+            "SELECT * FROM bwb_positions WHERE status = 'closed'",
+        ),
+    ]
+    for key, event, title, fmt, embed_fn, query in stages:
+        notified = set(st.get(key, []))
+        rows = [r for r in conn.execute(query).fetchall() if r["position_id"] not in notified]
+        for r in rows:
+            notifier.notify(
+                "INFO", f"trade.{name}.{event}.{r['position_id']}", title, fmt(r), embed=embed_fn(r)
+            )
+            notified.add(r["position_id"])
+        st[key] = sorted(notified)[-_ID_CAP:]
+        counts[f"{event}s_notified"] = len(rows)
+    return counts
+
+
 # Registry: paper.trade_schema -> (seed_fn, process_fn). Schemas not listed here skip cleanly.
 _SCHEMAS = {
     "meic_ic": (_meic_seed, _meic_process),
@@ -1103,6 +1359,8 @@ _SCHEMAS = {
     "fly_book": (_flies_seed, _flies_process),
     "dc_week": (_calendars_seed, _calendars_process),
     "pmcc_99": (_pmcc_seed, _pmcc_process),
+    "curve_vx": (_curve_seed, _curve_process),
+    "bwb_132": (_bwb_seed, _bwb_process),
 }
 
 

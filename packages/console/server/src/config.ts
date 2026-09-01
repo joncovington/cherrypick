@@ -27,9 +27,12 @@ export interface ConsoleConfig {
     earningsDir: string;
     calendarsDir: string;
     pmccDir: string;
+    curveDir: string;
+    bwbDir: string;
     gexDir: string;
-    scoutDir: string;
     reviewDir: string;
+    /** `data/overview/` — the morning fact packs (`morning-<session>.json`) and their narratives. */
+    overviewDir: string;
     advisorDir: string;
     /** `state/advice/` — the artifacts the advisor issues and every module's loop reads. */
     adviceDir: string;
@@ -39,6 +42,20 @@ export interface ConsoleConfig {
     /** ~/.cherrypick/config/flies.json (the deployed config the module actually runs off) --
         arms.<tag>.enabled is what cli.py's enabled_arms() reads. */
     fliesConfig: string;
+    /** pmcc's config, in the module's OWN resolution order (deployed, then the repo's config.json,
+        then the shipped example). First readable wins -- pmcc/cli.py's load_config resolves the same
+        way, and a page showing a threshold the module isn't running would be worse than none. */
+    pmccConfigCandidates: string[];
+    /** calendars' config, in the module's OWN resolution order (`cli.load_config`): the managed
+        home, then the repo's config.json, then the shipped example. Same reason as pmcc's -- a page
+        showing an entry window or a dividend table the module isn't running would be worse than
+        none. */
+    calendarsConfigCandidates: string[];
+    /** curve's config, in the module's OWN resolution order (`cli.load_config`): the managed home,
+        then the repo's config.json, then the shipped example. Same reason as pmcc's/calendars' --
+        a page showing a contango_max or hook_threshold the module isn't running would be worse
+        than none. */
+    curveConfigCandidates: string[];
   };
 }
 
@@ -57,13 +74,30 @@ export function loadConfig(): ConsoleConfig {
       earningsDir: path.join(data, "earnings"),
       calendarsDir: path.join(data, "calendars"),
       pmccDir: path.join(data, "pmcc"),
+      curveDir: path.join(data, "curve"),
+      bwbDir: path.join(data, "bwb"),
       gexDir: path.join(data, "gex"),
-      scoutDir: path.join(data, "scout"),
       reviewDir: path.join(data, "review"),
+      overviewDir: path.join(data, "overview"),
       advisorDir: path.join(data, "advisor"),
       adviceDir: path.join(CHERRYPICK, "state", "advice"),
       meicRiskConfig: path.join(REPO_ROOT, "packages", "meic", "config.risk.json"),
       fliesConfig: path.join(CHERRYPICK, "config", "flies.json"),
+      pmccConfigCandidates: [
+        path.join(CHERRYPICK, "config", "pmcc.json"),
+        path.join(REPO_ROOT, "packages", "pmcc", "config.json"),
+        path.join(REPO_ROOT, "packages", "pmcc", "config.example.json"),
+      ],
+      calendarsConfigCandidates: [
+        path.join(CHERRYPICK, "config", "calendars.json"),
+        path.join(REPO_ROOT, "packages", "calendars", "config.json"),
+        path.join(REPO_ROOT, "packages", "calendars", "config.example.json"),
+      ],
+      curveConfigCandidates: [
+        path.join(CHERRYPICK, "config", "curve.json"),
+        path.join(REPO_ROOT, "packages", "curve", "config.json"),
+        path.join(REPO_ROOT, "packages", "curve", "config.example.json"),
+      ],
     },
   };
 }

@@ -63,3 +63,5 @@ target-version = "py310"
 # repo's broad py310 target ruff flags the 3.11 builtin BaseExceptionGroup as undefined (F821); it is
 # defined at runtime everywhere this module actually runs.
 "cherrypick/core/streamer/__init__.py" = ["F821"]
+# Same reason: this test drives that engine's TaskGroup and catches what unwinds it.
+"tests/test_streamer_reconnect.py" = ["F821"]

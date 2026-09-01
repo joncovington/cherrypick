@@ -11,13 +11,16 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 
-# The registry after the 2026-08-07 arms cutover: the four active streams (control/open/width-5/
-# width-10) plus every retired/disabled profile kept for historical record (the four-tier ladder,
-# and the GEX study pair). See config.risk.json's _arms_cutover_note for the full rationale.
-ACTIVE_STREAMS = {"control", "sign", "control-drift", "open", "width-5", "width-10"}
+# The registry after the 2026-08-21 advisor-era cutover: two active streams — control (the
+# reference book) — since the 2026-08-21 EOD amendment, 'control' IS the permissive sampling
+# substrate (formerly 'open'; the gated ex-control retired as 'control-gated' with its verdict in
+# its _disabled_note) — plus every retired profile kept for historical record. sign/control-drift/
+# width-5/width-10 retired at the cutover with written verdicts; the advisor's advised book is
+# synthesized per-session and never lives in this registry.
+ACTIVE_STREAMS = {"control"}
 LADDER = {"conservative", "moderate", "aggressive", "very-aggressive"}
-RETIRED_STUDY_ARMS = {"gex-open", "gex-blocked"}
-UNCAPPED_SAMPLING_STREAMS = {"open", "width-5", "width-10"}
+RETIRED_STUDY_ARMS = {"gex-open", "gex-blocked", "sign", "control-drift", "width-5", "width-10", "control-gated"}
+UNCAPPED_SAMPLING_STREAMS = {"control", "width-5", "width-10"}
 EXPERIMENT_PREFIXES = {"small", "medium", "large", "explore", "width", "gex"}
 STUDY_ARM_PREFIXES = ("width-", "gex-")
 # Keys that describe the registry entry itself (documentation, enable switch), never a gate value
@@ -64,7 +67,7 @@ def test_active_profile_points_at_control(sample_risk_profiles):
 
 
 def test_config_risk_json_has_the_expected_profiles(sample_risk_profiles):
-    """The registry holds the four active streams plus whichever retired/historical profiles are
+    """The registry holds the active streams plus whichever retired/historical profiles are
     kept for the record. Any name outside that set must be a recognized experiment prefix."""
     names = set(sample_risk_profiles["profiles"].keys())
     assert ACTIVE_STREAMS <= names
@@ -73,8 +76,7 @@ def test_config_risk_json_has_the_expected_profiles(sample_risk_profiles):
 
 
 def test_registry_is_the_active_streams_plus_the_historical_record(sample_risk_profiles):
-    """What the registry holds, pinned exactly: the four active streams, the four retired ladder
-    tiers, and the two retired GEX-study arms. Adding or removing a profile should be a
+    """What the registry holds, pinned exactly: the active streams and the retired record. Adding or removing a profile should be a
     deliberate edit here, not a silent one."""
     assert set(sample_risk_profiles["profiles"]) == ACTIVE_STREAMS | LADDER | RETIRED_STUDY_ARMS
 
@@ -93,10 +95,11 @@ def test_only_the_active_streams_are_enabled(sample_risk_profiles):
 
 
 def test_control_matches_config_json_defaults(sample_risk_profiles, sample_config):
-    """control's own gate keys must equal config.json's defaults exactly — it is the reference
-    book / champion (see calibrate.py's champion/challenger surface), and its whole point is
-    that it changes nothing from today's deployed policy."""
-    control_gates = _gates(sample_risk_profiles["profiles"]["control"])
+    """The GATED reference book's gate keys must equal config.json's defaults exactly — its whole
+    point was changing nothing from the deployed policy. Since the 2026-08-21 EOD amendment it is
+    retired as 'control-gated' (the era's 'control' is the permissive sampling book, which
+    deliberately differs from the deployed defaults), but the frozen record must stay faithful."""
+    control_gates = _gates(sample_risk_profiles["profiles"]["control-gated"])
     for gate, value in control_gates.items():
         assert sample_config.get(gate) == value, (
             f"Gate {gate}: config.json={sample_config.get(gate)}, control={value}"
@@ -121,7 +124,7 @@ def test_control_and_conservative_carry_the_same_gate_values(sample_risk_profile
     agree, or `control` silently stopped meaning 'today's deployed policy'."""
     profiles = sample_risk_profiles["profiles"]
     conservative_gates = _gates(profiles["conservative"])
-    control_gates = _gates(profiles["control"])
+    control_gates = _gates(profiles["control-gated"])
     for key, value in conservative_gates.items():
         assert control_gates.get(key) == value, key
 
@@ -133,7 +136,7 @@ def test_open_is_control_with_every_study_gate_relaxed(sample_risk_profiles):
     """open is the permissive superset every gate-relief question is answered from by splitting
     its own recorded rows — pin the specific relaxations that make it so, rather than just
     trusting the _note prose."""
-    open_arm = sample_risk_profiles["profiles"]["open"]
+    open_arm = sample_risk_profiles["profiles"]["control"]
     assert open_arm["min_iv_rank"] == 0.0
     assert open_arm["min_call_otm_pct"] < 0.0035
     assert open_arm["min_put_otm_pct"] < 0.003
@@ -157,7 +160,7 @@ def test_open_gate_thresholds_never_crash_evaluate_entry():
     from cherrypick.meic import paper
 
     base = paper.load_base_config()
-    open_arm = paper.load_profiles()["open"]
+    open_arm = paper.load_profiles()["control"]
     params = paper._merged_params(base, open_arm)
     snapshot = {
         "symbol": "SPX",
@@ -190,12 +193,12 @@ def test_width_arms_differ_from_open_only_in_wing_width(sample_risk_profiles):
     (deliberately kept ON, unlike `open`'s hold-to-expiry, so the pair measures a pure width
     effect rather than a width-times-stop-policy confound — see width-5's _note)."""
     profiles = sample_risk_profiles["profiles"]
-    open_arm = profiles["open"]
+    open_arm = profiles["control"]
     allowed_diff = {"_note", "wing_widths_by_symbol", "per_side_stop_management"}
     for name in ("width-5", "width-10"):
         arm = profiles[name]
         # Documentation keys (_note, _gate_thresholds_note, ...) don't count against the invariant.
-        keys = {k for k in set(open_arm) | set(arm) if not k.startswith("_")}
+        keys = {k for k in set(open_arm) | set(arm) if not k.startswith("_") and k not in META_KEYS}
         differing = {k for k in keys if open_arm.get(k) != arm.get(k)}
         assert differing <= allowed_diff, f"{name} diverges from open beyond the width pin: {differing}"
         assert arm["per_side_stop_management"] is True  # unlike open
@@ -212,8 +215,8 @@ def test_width_arms_differ_from_each_other_only_in_wing_width(sample_risk_profil
     profiles = sample_risk_profiles["profiles"]
     w5, w10 = profiles["width-5"], profiles["width-10"]
     keys = set(w5) | set(w10)
-    differing = {k for k in keys if w5.get(k) != w10.get(k)}
-    assert differing == {"_note", "wing_widths_by_symbol"}, differing
+    differing = {k for k in keys if w5.get(k) != w10.get(k) and not k.startswith("_")}
+    assert differing == {"wing_widths_by_symbol"}, differing
 
 
 def test_uncapped_sampling_streams_never_bind_on_concurrency(sample_risk_profiles):
@@ -569,8 +572,8 @@ def test_sign_is_control_with_only_the_overlap_scope_changed(sample_risk_profile
     variable; adding it here would confound the one this arm is for.
     """
     profiles = sample_risk_profiles["profiles"]
-    control = {k: v for k, v in profiles["control"].items() if not k.startswith("_")}
-    sign = {k: v for k, v in profiles["sign"].items() if not k.startswith("_")}
+    control = {k: v for k, v in profiles["control-gated"].items() if not k.startswith("_") and k not in META_KEYS}
+    sign = {k: v for k, v in profiles["sign"].items() if not k.startswith("_") and k not in META_KEYS}
 
     assert sign["overlap_scope"] == "sign"
     assert control["overlap_scope"] == "shorts"
@@ -587,7 +590,7 @@ def test_the_unconstrained_superset_never_gains_an_overlap_rule(sample_risk_prof
     """`open` is the permissive stream every gate variant is answered from read-side. Constraining
     it — including with the sign rule — destroys what it is for, so this is pinned rather than left
     to the reader of a config diff."""
-    assert sample_risk_profiles["profiles"]["open"]["overlap_scope"] == "none"
+    assert sample_risk_profiles["profiles"]["control"]["overlap_scope"] == "none"
 
 
 def test_control_drift_is_control_with_only_the_drift_skew_added(sample_risk_profiles):
@@ -598,8 +601,8 @@ def test_control_drift_is_control_with_only_the_drift_skew_added(sample_risk_pro
     difference in their books stops being attributable to the rule.
     """
     profiles = sample_risk_profiles["profiles"]
-    control = {k: v for k, v in profiles["control"].items() if not k.startswith("_")}
-    drift = {k: v for k, v in profiles["control-drift"].items() if not k.startswith("_")}
+    control = {k: v for k, v in profiles["control-gated"].items() if not k.startswith("_") and k not in META_KEYS}
+    drift = {k: v for k, v in profiles["control-drift"].items() if not k.startswith("_") and k not in META_KEYS}
 
     assert drift["drift_skew_otm_multiple"] == 1.5
     assert "drift_skew_otm_multiple" not in control, "the skew must be the twin's alone"

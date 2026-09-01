@@ -158,10 +158,11 @@ export function BarChart({
 /**
  * A zero-centered diverging bar: a loss and a win of the same size read as the same visual weight
  * in opposite colors, off a shared zero tick, rather than scaling losses against wins (which makes
- * a bad result look smaller than it is). Shared by Champions' arm comparison and Review's per-arm
- * table -- those two used to solve the identical stated problem with two different bar mechanics
- * (a zero-centered track vs. a plain 0-100% left-anchored one with no zero reference at all).
- * `compact` fits inside a table cell (Review); the default size matches a standalone row (Champions).
+ * a bad result look smaller than it is). It was shared by the Champions arm comparison and Review's
+ * per-arm table -- those two used to solve the identical stated problem with two different bar
+ * mechanics (a zero-centered track vs. a plain 0-100% left-anchored one with no zero reference at
+ * all). Champions was removed 2026-08-20, so Review is the remaining caller; `compact` fits inside
+ * a table cell, and the default size still matches a standalone row.
  */
 export function SignedBar({
   value,
@@ -183,6 +184,134 @@ export function SignedBar({
         style={value >= 0 ? { left: "50%", width: `${half}%` } : { right: "50%", width: `${half}%` }}
       />
     </span>
+  );
+}
+
+/**
+ * A cumulative sparkline: the running sum of `values` drawn bare, no axes, sized to sit inside a
+ * stat tile. Cumulative rather than per-period on purpose — a row of per-session bars at this size
+ * is noise, while the running total shows the trajectory, which is the one thing a tile-sized chart
+ * can carry honestly. Colored by where the line ENDS (up or down overall), with a zero reference
+ * whenever the path crosses it.
+ *
+ * Under `minPoints` (default 2) it renders nothing at all: a single point is a dot, and a dot drawn
+ * as a trend is the "one session dressed as a result" failure the Review page's own styling rule
+ * warns about.
+ */
+export function Sparkline({
+  values,
+  width = 120,
+  height = 26,
+  minPoints = 2,
+  title,
+}: {
+  values: number[];
+  width?: number;
+  height?: number;
+  minPoints?: number;
+  title?: string;
+}) {
+  if (values.length < minPoints) return null;
+  let running = 0;
+  const cum = values.map((v) => (running += v));
+  const lo = Math.min(...cum, 0);
+  const hi = Math.max(...cum, 0);
+  const span = hi - lo || 1;
+  const X = (i: number) => (i * width) / Math.max(cum.length - 1, 1);
+  const Y = (v: number) => 2 + (1 - (v - lo) / span) * (height - 4);
+  const up = (cum[cum.length - 1] ?? 0) >= 0;
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      role="img"
+      aria-label={title ?? "trend"}
+      style={{ width: "100%", height, display: "block" }}
+      preserveAspectRatio="none"
+    >
+      {lo < 0 && hi > 0 && (
+        <line x1={0} y1={Y(0)} x2={width} y2={Y(0)} stroke={AXIS_MUTED} strokeWidth={0.5} strokeDasharray="2 2" />
+      )}
+      <polyline
+        fill="none"
+        stroke={up ? "#43b57a" : "#d95c4a"}
+        strokeWidth={1.3}
+        points={cum.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ")}
+      />
+      {title !== undefined && <title>{title}</title>}
+    </svg>
+  );
+}
+
+/**
+ * A number line with labeled markers — for price levels whose SPATIAL relationship is the point
+ * (spot against the gamma flip and the walls). Read as a table, "6380 flip / 6450 call wall /
+ * 6400 spot" makes a reader do the arithmetic; drawn, "just above the flip, well short of the call
+ * wall" is immediate.
+ *
+ * Levels with a null value are dropped rather than placed at zero. Under two placeable levels it
+ * renders nothing — one point on a number line shows no relationship, which is the only thing this
+ * chart is for. `marker` is drawn distinctly (the "you are here" reading) and participates in the
+ * extent so it is never off the strip.
+ */
+export function LevelStrip({
+  levels,
+  marker,
+  height = 54,
+}: {
+  levels: Array<{ label: string; value: number | null; color?: string }>;
+  marker?: { label: string; value: number | null; muted?: boolean };
+  height?: number;
+}) {
+  const placed = levels.filter((l): l is { label: string; value: number; color?: string } => l.value !== null);
+  const markerValue = marker?.value ?? null;
+  if (placed.length < 2) return null;
+  const all = [...placed.map((l) => l.value), ...(markerValue !== null ? [markerValue] : [])];
+  const lo = Math.min(...all);
+  const hi = Math.max(...all);
+  const span = hi - lo || 1;
+  const pad = span * 0.12;
+  const width = 720;
+  const m = { l: 40, r: 40 };
+  const X = (v: number) => m.l + ((v - (lo - pad)) / (span + pad * 2)) * (width - m.l - m.r);
+  const axisY = height - 22;
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      role="img"
+      aria-label="price levels"
+      style={{ width: "100%", height: "auto", display: "block" }}
+    >
+      <line x1={m.l} y1={axisY} x2={width - m.r} y2={axisY} stroke={AXIS_MUTED} strokeWidth={0.75} />
+      {placed.map((l) => (
+        <g key={l.label}>
+          <line
+            x1={X(l.value)}
+            y1={axisY - 8}
+            x2={X(l.value)}
+            y2={axisY + 5}
+            stroke={l.color ?? AXIS_MUTED}
+            strokeWidth={1.4}
+          />
+          <text x={X(l.value)} y={axisY + 16} textAnchor="middle" {...AXIS_FONT}>
+            {l.label}
+          </text>
+          <text x={X(l.value)} y={axisY - 12} textAnchor="middle" {...AXIS_FONT} fill={l.color ?? AXIS_MUTED}>
+            {Math.round(l.value).toLocaleString()}
+          </text>
+        </g>
+      ))}
+      {markerValue !== null && marker !== undefined && (
+        <g opacity={marker.muted === true ? 0.55 : 1}>
+          <polygon
+            points={`${X(markerValue)},${axisY - 3} ${X(markerValue) - 5},${axisY - 13} ${X(markerValue) + 5},${axisY - 13}`}
+            fill="#d9a13b"
+          />
+          <text x={X(markerValue)} y={axisY - 17} textAnchor="middle" {...AXIS_FONT} fill="#d9a13b">
+            {marker.label} {Math.round(markerValue).toLocaleString()}
+          </text>
+        </g>
+      )}
+    </svg>
   );
 }
 

@@ -36,21 +36,15 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
-    from zoneinfo import ZoneInfo
-
-    _ET = ZoneInfo("America/New_York")
-except Exception:  # pragma: no cover - only where zoneinfo has no tz database
-    import pytz
-
-    _ET = pytz.timezone("America/New_York")
-
-
 from cherrypick.core import advice as _core_advice  # bounded-advice validator
 from cherrypick.core import calendar as _cal  # shared NYSE trading-day calendar
 from cherrypick.core import home as _core_home  # the shared state dir
 from cherrypick.core import logs as _logs
+from cherrypick.core import looplock
 from cherrypick.core import viz as _viz  # the suite's one money formatter
+
+# One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core.clock import ET as _ET  # noqa: E402
 
 from cherrypick.meic import (
     paper,
@@ -159,9 +153,36 @@ def _run_json(cmd, timeout=90):
         return {"ok": False, "error": (r.stdout[-200:] + r.stderr[-200:]).strip()}
 
 
+_config_cache: tuple[tuple[float, int], dict] | None = None
+
+
 def _load_config():
-    with open(_paths.config_path()) as f:
-        return json.load(f)
+    """Read config, re-parsing only when the file has actually changed.
+
+    The daemon calls this once per iteration on purpose: an edit is meant to take effect on the next
+    iteration without a restart, and that property is preserved here — the cache is keyed on the
+    file's mtime and size, so a rewritten config is picked up exactly as before. What goes away is
+    re-reading and re-parsing an unchanged file every tick for the life of the process.
+
+    Callers must treat the result as READ-ONLY. Iterations used to each get their own freshly parsed
+    dict, so an in-place edit could not outlive one tick; they now share this one, and a mutation
+    would persist for the life of the process. Nothing writes to it today — profile overlays go
+    through `core.profiles.merge_profile`, which returns a new dict — and anything that needs a
+    changed config should keep doing it that way."""
+    global _config_cache
+    path = _paths.config_path()
+    try:
+        st = os.stat(path)
+        stamp = (st.st_mtime, st.st_size)
+    except OSError:
+        stamp = None
+    if stamp is not None and _config_cache is not None and _config_cache[0] == stamp:
+        return _config_cache[1]
+    with open(path) as f:
+        cfg = json.load(f)
+    if stamp is not None:
+        _config_cache = (stamp, cfg)
+    return cfg
 
 
 def _symbols(cfg):
@@ -376,9 +397,14 @@ def _build_candidates(symbol, last, widths, delta_targets, default_delta, today)
     return candidates, leg_quotes, None
 
 
-def _open_count():
+def _open_trades_today():
+    """Today's still-open positions. `get_open_trades` already scopes to `trade_date = today`."""
     d = _run_json(_DB + ["get_open_trades"])
-    return len(d.get("open_trades", [])) if d.get("ok") else 0
+    return d.get("open_trades", []) if d.get("ok") else []
+
+
+def _open_count():
+    return len(_open_trades_today())
 
 
 # ---------------------------------------------------------------------------
@@ -724,7 +750,7 @@ def _open_advised_tags():
         return []
 
 
-def _advice_profiles(cfg, today):
+def _advice_profiles(cfg, today, *, persist=True):
     """The advised shadow book's synthetic profile(s) for `today`: (profiles dict, reason).
 
     Tier 1 of the agentic layer, loop side. The orchestrator's `advise` command wrote (or didn't
@@ -732,10 +758,15 @@ def _advice_profiles(cfg, today):
     (cherrypick.core.advice) against this module's own config `advice.bounds` manifest --
     absent, stale, or invalid means baseline, i.e. no synthetic profile at all.
 
-    Read-once-per-session across --once processes: the first iteration of the day records its
-    decision in advice_active.json in the data home, and every later iteration replays that
-    decision -- so advice can never start, stop, or change mid-session, however late an
-    artifact lands or however the config is flipped intraday.
+    The read-once-per-session mechanics live in `cherrypick.core.advice.session_decision`, which
+    meic, earnings and five other modules had each written out separately. Folding meic's copy in
+    was not tidying: the 2026-08-25 fix -- a baseline decision is never made sticky -- landed in
+    core, and meic was one of the two modules that had lost a session to the bug it fixes.
+
+    `persist=False` is passed by an iteration forced outside the trading window. Such an iteration
+    still needs a decision to run under, but it must not be the one the session is recorded as
+    having made: meic's 08-25 artifact was lost to a 01:05 ET forced run that fixed the day's
+    decision four hours before the market-open iteration that would have applied it.
 
     The advised book is a synthetic profile `advised:<base>`: the base profile's registry def
     with the admitted params overlaid, evaluated by process_symbol beside the un-advised base
@@ -743,41 +774,17 @@ def _advice_profiles(cfg, today):
     Open advised positions always keep a profile to run their exits: if advice is off today, a
     management-only twin (entries capped to zero) stands in.
     """
-    acfg = cfg.get("advice") or {}
-    base = acfg.get("base_profile", "control")
-    state_file = _paths.data_path("advice_active.json")
-    decision = None
-    if state_file.exists():
-        try:
-            decision = json.loads(state_file.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            decision = None
-        if decision is not None and decision.get("day") != today:
-            decision = None  # yesterday's decision; today re-derives its own
-    if decision is None:
-        if acfg.get("enabled") and acfg.get("bounds"):
-            res = _core_advice.load(_core_home.state_dir(), "meic", today, acfg.get("bounds") or {})
-            params = {p["param"]: p["value"] for p in res["proposals"]} if res["proposals"] else None
-            decision = {
-                "day": today,
-                "base_profile": base,
-                "params": params,
-                "reason": res["reason"],
-                "proposals": res["proposals"],
-                "rejected": res.get("rejected") or [],
-            }
-            for prop in res["proposals"]:
-                logger.info(
-                    "advice applied: %s=%r -- %s", prop["param"], prop["value"], prop.get("rationale", "")
-                )
-            if not res["proposals"]:
-                logger.info("advice: baseline (%s)", res["reason"] or "no proposals")
-        else:
-            decision = {"day": today, "base_profile": base, "params": None, "reason": "advice_disabled"}
-        try:
-            state_file.write_text(json.dumps(decision, indent=2), encoding="utf-8")
-        except OSError:
-            pass  # the decision still applies this process; the next --once re-derives it
+    base = (cfg.get("advice") or {}).get("base_profile", "control")
+    decision = _core_advice.session_decision(
+        _core_home.state_dir(),
+        "meic",
+        today,
+        cfg,
+        _paths.data_path("advice_active.json"),
+        base_key="base_profile",
+        log=lambda message: logger.info("%s", message),
+        persist=persist,
+    )
 
     registry = paper.load_profiles()
     out = {}
@@ -817,7 +824,30 @@ def _ensure_paper_schema() -> None:
         logging.warning("paper schema ensure errored: %s: %s", type(exc).__name__, exc)
 
 
+def _beat() -> None:
+    """Publish liveness at the top of every tick: `state/meic.heartbeat`, the suite's one
+    unconditional signal (`cherrypick.core.home.heartbeat_path`).
+
+    Distinct from `_heartbeat_lock` below, which touches the --once LOCK file so a long iteration
+    is not mistaken for a dead one. This is the watchdog's freshness signal, and meic was the last
+    module without it: the check takes the freshest of the paper DB's mtime, the log's mtime and
+    this file, and the first two are CONDITIONAL writes — a WAL database's main file only moves on
+    a checkpoint and a log line is a side effect of having something to say. meic writes trades
+    often enough that it never surfaced, which is luck rather than a contract (the calendars
+    2026-08-17 lesson: a quiet healthy loop must not be indistinguishable from a wedged one).
+
+    Best-effort: a beat that cannot be written degrades to not-silence-supervised, never to a
+    failed tick."""
+    try:
+        path = _core_home.heartbeat_path("meic")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(str(time.time()), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def run_iteration(cfg, force=False):
+    _beat()  # before every gate below: "the loop is turning over", never "it did work"
     # Wall-clock for this whole iteration, logged below alongside open-position count. Was
     # nowhere -- loop_log.duration_ms existed as a column and get_step_timing could read it, but
     # nothing here ever wrote one, so the load ceiling that governs how many streams/positions
@@ -841,7 +871,7 @@ def run_iteration(cfg, force=False):
     # Load the profile registry once per iteration so each symbol's candidate menu is the UNION
     # of every profile's wing widths (each profile then picks its own allowed subset in paper.py).
     profiles = paper.load_profiles()
-    advice_profiles, _advice_reason = _advice_profiles(cfg, today)
+    advice_profiles, _advice_reason = _advice_profiles(cfg, today, persist=not force)
     session = _session_quality(now)
 
     summary = {}
@@ -860,8 +890,12 @@ def run_iteration(cfg, force=False):
         if price is None:
             summary[symbol] = {"error": "no price"}
             continue
-        widths = paper.union_widths_for_symbol(symbol, cfg, profiles)
-        extra_deltas = paper.union_short_deltas_for_symbol(symbol, cfg, profiles)
+        # The ADVISED profile's widths must join the candidate menu too: a width the menu never
+        # scanned can never fill, so without this an advisor width experiment would silently take
+        # zero entries and read as a market refusal rather than a plumbing one.
+        all_profiles = {**profiles, **advice_profiles}
+        widths = paper.union_widths_for_symbol(symbol, cfg, all_profiles)
+        extra_deltas = paper.union_short_deltas_for_symbol(symbol, cfg, all_profiles)
         delta_targets = [delta_target] + [d for d in extra_deltas if abs(d - delta_target) > 1e-9]
         candidates, leg_quotes, cand_err = _build_candidates(
             symbol, price, widths, delta_targets, delta_target, today
@@ -1012,19 +1046,7 @@ def _sleep_seconds(now, cfg, open_positions):
 # ---------------------------------------------------------------------------
 
 
-def _pid_alive(pid: int) -> bool:
-    try:
-        import psutil
-
-        return psutil.pid_exists(pid)
-    except ImportError:
-        try:
-            os.kill(pid, 0)
-            return True
-        except PermissionError:
-            return True
-        except (OSError, SystemError):
-            return False
+_pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch this name)
 
 
 def _running_pid():
@@ -1051,13 +1073,40 @@ def _task_installed():
 
 
 def _cmd_status():
+    """Daemon/task status, plus the settlement signal the orchestrator's watchdog reads.
+
+    `session_settled` / `positions_today` / `data_reason` are the three fields
+    `watchdog._check_settlement` looks for, and their absence is why meic was the one paper module
+    with no `settle_overdue` check while flies, calendars, pmcc, curve and bwb all had one — the
+    check reads a module's own `--status` and says nothing when it cannot find the signal, so
+    enabling it for meic without these would have been a check that could not fire.
+
+    It matters more since 2026-08-26: `paper.evaluate_open_trade` now REFUSES to settle a position
+    without an underlying price rather than booking it at zero intrinsic (i.e. full credit). That is
+    the right failure, but it is a silent one — the position simply stays open — and this is what
+    makes it audible. The flies 2026-07-22 incident is the same shape: 5 positions unsettled for 9
+    hours because settlement refuses a stale price, logged every 2 minutes, alerting nobody.
+
+    `positions_today` deliberately repeats `open_positions` rather than being a second count: both
+    come from the one `get_open_trades` call, which already scopes to today. The watchdog's field
+    name is kept so this module reads like every other one it checks.
+    """
     pid = _running_pid()
+    open_today = _open_trades_today()
+    # A row the loop could not mark is the most likely reason it is still open past the close. Left
+    # absent when it is not the cause: the watchdog supplies its own wording rather than being
+    # handed a guess.
+    unmarked = [t for t in open_today if (t.get("unmarked_iterations") or 0) > 0]
     info = {
         "daemon_running": pid is not None,  # a long-running --start daemon (if used)
         "pid": pid,
         "scheduled_task": _task_installed(),  # the recommended --install-task automation
-        "open_positions": _open_count(),
+        "open_positions": len(open_today),
+        "positions_today": len(open_today),
+        "session_settled": not open_today,
     }
+    if unmarked:
+        info["data_reason"] = f"{len(unmarked)} position(s) could not be marked this session"
     _emit(info)
 
 
@@ -1159,38 +1208,15 @@ def _loop():
 
 
 def _acquire_once_lock():
-    try:
-        fd = os.open(str(_LOCK_FILE), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.write(fd, str(os.getpid()).encode())
-        os.close(fd)
-        return True
-    except FileExistsError:
-        # A held-but-alive lock is NEVER stolen, regardless of age. Age-only staleness let a
-        # still-running-but-slow iteration (chiefly the 16:00 settlement pass, which can touch
-        # hundreds of open positions) get its lock stolen by the next --once at minute 3, so both
-        # processes settled the same trades concurrently -- P&L corruption, not a skipped tick.
-        # PID liveness is the primary guard; the age check below is only a fallback for a lock
-        # file whose PID can't be read (corrupt/truncated write), never a substitute for it.
-        try:
-            holder_pid = int(_LOCK_FILE.read_text().strip())
-        except (OSError, ValueError):
-            holder_pid = None
-        if holder_pid is not None and _pid_alive(holder_pid):
-            return False
-        try:
-            if holder_pid is not None or time.time() - os.path.getmtime(_LOCK_FILE) > 180:
-                os.unlink(_LOCK_FILE)
-                return _acquire_once_lock()
-        except OSError:
-            pass
-        return False
+    """The --once overlap guard. Two processes settling the same trades concurrently is P&L
+    corruption, not a skipped tick, which is why PID liveness is the primary guard and the age
+    check only a fallback for an unreadable lock file. Semantics live in
+    `cherrypick.core.looplock`; `_pid_alive` is passed so tests monkeypatching it still apply."""
+    return looplock.acquire(str(_LOCK_FILE), 180, alive=_pid_alive)
 
 
 def _release_once_lock():
-    try:
-        os.unlink(_LOCK_FILE)
-    except OSError:
-        pass
+    looplock.release(_LOCK_FILE)
 
 
 def _heartbeat_lock():

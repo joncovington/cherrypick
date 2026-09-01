@@ -61,11 +61,20 @@ export function streamerFreshness(config: ConsoleConfig): SourceFreshness {
   try {
     db = new Database(p, { readonly: true, fileMustExist: true });
     db.pragma("busy_timeout = 2000");
+    // The producer publishes its own last-event time on a single-row table, so ask it rather than
+    // scanning every quote for the newest one: `stream_quotes` has no index on `updated_at`, so that
+    // was a full scan of ~20k rows on the suite's hottest endpoint (/api/status polls every 5s per
+    // open tab) plus a walk of the cache's write-ahead log.
+    //
+    // `last_event_at` is flushed every ~5s and covers every event type, not quotes alone, so it can
+    // read up to five seconds behind and answers the slightly broader question "is the producer
+    // receiving anything". Both are what this chip wants: it reports liveness, and its age is only
+    // ever rendered at 90-second/minute/hour granularity.
     const row = db
-      .prepare("SELECT MAX(updated_at) AS latest FROM stream_quotes")
-      .get() as { latest: string | number | null };
+      .prepare("SELECT last_event_at AS latest FROM stream_status WHERE id = 1")
+      .get() as { latest: string | number | null } | undefined;
     let ageSeconds: number | null = null;
-    if (row.latest !== null) {
+    if (row && row.latest !== null && row.latest !== undefined) {
       const t = typeof row.latest === "number" ? row.latest * 1000 : Date.parse(row.latest);
       if (!Number.isNaN(t)) ageSeconds = Math.max(0, (Date.now() - t) / 1000);
     }

@@ -38,6 +38,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 from cherrypick.core import broker as _broker
 from cherrypick.core import dxfeed as _dx
 
+# One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core.clock import ET as _ET
+
 from cherrypick.meic import credentials as _creds
 from cherrypick.meic import gex_math
 from cherrypick.meic import paths as _paths
@@ -1246,16 +1249,8 @@ def cmd_get_orb_range(args) -> dict:
     """Read the day's ORB (Opening Range Breakout) high/low, captured by the streamer
     from live Trade events during 9:30-9:35 ET (see streamer.py's _track_orb) rather than
     by the AI loop's own iterations, which aren't guaranteed to land inside that window."""
-    try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
-        from zoneinfo import ZoneInfo
-
-        _et = ZoneInfo("America/New_York")
-    except Exception:  # pragma: no cover - only where zoneinfo has no tz database
-        import pytz
-
-        _et = pytz.timezone("America/New_York")
     symbol = args.symbol.strip().upper()
-    et_today = datetime.now(_et).strftime("%Y-%m-%d")
+    et_today = datetime.now(_ET).strftime("%Y-%m-%d")
     conn = _cache_conn()
     if conn is None:
         return {"ok": False, "error": "stream cache not found — is the streamer running?"}
@@ -1281,15 +1276,7 @@ def cmd_get_orb_range(args) -> dict:
 
 
 def _et_today() -> str:
-    try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
-        from zoneinfo import ZoneInfo
-
-        _et = ZoneInfo("America/New_York")
-    except Exception:  # pragma: no cover - only where zoneinfo has no tz database
-        import pytz
-
-        _et = pytz.timezone("America/New_York")
-    return datetime.now(_et).strftime("%Y-%m-%d")
+    return datetime.now(_ET).strftime("%Y-%m-%d")
 
 
 def _true_ranges(rows) -> list[float]:
@@ -1526,6 +1513,39 @@ async def cmd_stream_subscribe(args) -> dict:
         conn.close()
 
 
+async def cmd_get_quotes(args) -> dict:
+    """Live bid/ask/mid for a list of streamer symbols. Reads the feed; writes NOTHING.
+
+    The read-only sibling of `stream_subscribe`. That command exists to *warm* the shared cache, so it
+    upserts what it fetches — correct for a module priming its own declared symbols, wrong for a caller
+    that just wants marks for symbols no module declared (a discretionary position, say). The shared
+    cache has a single producer by design, and quietly seeding it with undeclared symbols would leave
+    rows nothing refreshes, going stale with no owner to notice. So this one hands the quotes back and
+    leaves the cache alone.
+
+    Symbols are DXLink streamer symbols (".APO260918C120"), as `stream_subscribe` takes. A symbol the
+    feed does not answer for within the timeout is listed in `missing` rather than guessed at.
+    """
+    symbols = list(dict.fromkeys(args.symbols or []))
+    if not symbols:
+        return {"ok": False, "error": "No symbols provided"}
+    timeout = getattr(args, "timeout", 8.0)
+    try:
+        quotes = await _collect_quotes(symbols, timeout)
+    except Exception as exc:
+        return _error(exc)
+    out: dict[str, dict] = {}
+    for sym, q in quotes.items():
+        bid = _num(q.bid_price)
+        ask = _num(q.ask_price)
+        out[sym] = {
+            "bid": bid,
+            "ask": ask,
+            "mid": round((bid + ask) / 2, 4) if bid is not None and ask is not None else None,
+        }
+    return {"ok": True, "quotes": out, "missing": [s for s in symbols if s not in out]}
+
+
 # ---------------------------------------------------------------------------
 # CLI dispatch
 # ---------------------------------------------------------------------------
@@ -1630,6 +1650,10 @@ def main():
     p_ir = sub.add_parser("get_intraday_range")
     p_ir.add_argument("--symbol", required=True, help="Trading symbol (e.g. SPX)")
 
+    p_gqs = sub.add_parser("get_quotes")
+    p_gqs.add_argument("--symbols", nargs="+", required=True, help="Streamer symbols to quote (no cache write)")
+    p_gqs.add_argument("--timeout", type=float, default=8.0)
+
     p_ss = sub.add_parser("stream_subscribe")
     p_ss.add_argument("--symbols", nargs="+", required=True, help="Streamer symbols to warm up in cache")
     p_ss.add_argument("--timeout", type=float, default=6.0)
@@ -1670,6 +1694,7 @@ def main():
         "list_accounts": cmd_list_accounts,
         "get_account_info": cmd_get_account_info,
         "get_positions": cmd_get_positions,
+        "get_quotes": cmd_get_quotes,
         "get_market_overview": cmd_get_market_overview,
         "get_quote": cmd_get_quote,
         "get_vix1d": cmd_get_vix1d,

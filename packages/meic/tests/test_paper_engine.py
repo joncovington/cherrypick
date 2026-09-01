@@ -976,6 +976,45 @@ def test_expire_both_otm_keeps_full_credit():
     assert d["put_exit_price"] == 0.0 and d["call_exit_price"] == 0.0  # full credit retained
 
 
+def test_settlement_refuses_to_settle_without_a_price():
+    """The 2026-08-26 settlement audit. `_settlement_value` returns 0.0 for a None underlying, which
+    reads as "expired worthless" — so a missing settlement price booked FULL CREDIT on every open
+    side, the most favorable outcome available, on exactly the trades whose outcome nobody saw. The
+    audit found 90 of them (all in the retired profile-ladder era, so already excluded from every
+    reading, but wrong on the row). Holding matches what an unquotable leg already does."""
+    d = paper.evaluate_open_trade(
+        _expiring_trade(),
+        {},
+        _params(MODERATE),
+        force_close=False,
+        underlying_price=None,
+        is_cash_settled=True,
+        settle=True,
+    )
+    assert d["action"] == "hold"
+    assert d["reason"] == "settlement_price_unavailable"
+    # Emphatically NOT an expiry: nothing may be booked, favorably or otherwise.
+    assert "put_exit_price" not in d and "call_exit_price" not in d
+    assert "settle_underlying" not in d
+
+
+def test_a_missing_price_does_not_rescue_a_side_that_would_have_settled_ITM():
+    """The direction of the bug is what makes it worth a test of its own: the trade below is 6 points
+    ITM on the call. Under the old behaviour a dropped price turned that into full credit."""
+    trade = _expiring_trade()
+    priced = paper.evaluate_open_trade(
+        trade, {}, _params(MODERATE), force_close=False,
+        underlying_price=7526.0, is_cash_settled=True, settle=True,
+    )
+    assert priced["call_exit_price"] == pytest.approx(6.0)
+
+    unpriced = paper.evaluate_open_trade(
+        trade, {}, _params(MODERATE), force_close=False,
+        underlying_price=None, is_cash_settled=True, settle=True,
+    )
+    assert unpriced["action"] == "hold"
+
+
 def test_expire_itm_call_settles_for_intrinsic():
     # underlying 7526 → call ITM by 6, put OTM
     d = paper.evaluate_open_trade(
@@ -2306,7 +2345,12 @@ def test_process_symbol_reports_save_failed_not_filled_when_the_insert_fails(tmp
         now_et="13:00",
         underlying_price=7500.0,
         iv_rank=0.32,
-        candidates=[_candidate(5, 7380, 7560, sp_delta=-0.15, sc_delta=0.15)],
+        # Credit fattened above the permissive control's 15%-of-width floor (the ex-'open' book
+        # became 'control' at the 2026-08-21 EOD amendment) — this test is about the SAVE path,
+        # and the entry must clear every gate to reach it.
+        candidates=[
+            _candidate(5, 7380, 7560, sp_delta=-0.15, sc_delta=0.15, sp_bid=0.85, sp_ask=0.95, sc_bid=0.80, sc_ask=0.90)
+        ],
     )
     out = paper.process_symbol(snapshot, db_path, "paper")
     entries = [a for acts in out["results"].values() for a in acts if "entry" in a]
@@ -2396,7 +2440,7 @@ def test_uncapped_sampling_streams_share_the_same_caps():
     produces stream-dependent entry counts (exit speed feeds back into entry capacity), so the
     caps must be non-binding and equal across the whole family, not just present."""
     profiles = paper.load_profiles()
-    sampling = {"open", "width-5", "width-10"}
+    sampling = {"control", "width-5", "width-10"}  # 'control' is the ex-'open' substrate since 2026-08-21 EOD
     assert sampling <= set(profiles)
     for name in sampling:
         spec = profiles[name]
@@ -2405,12 +2449,12 @@ def test_uncapped_sampling_streams_share_the_same_caps():
         assert spec.get("daily_ic_trade_target") == 999, name
 
 
-def test_control_keeps_todays_deployed_policy():
-    """control is the reference book/champion — its overlap_scope and concurrency cap must match
-    the pre-cutover deployed policy ('shorts', 99), not the uncapped sampling family, since it is
-    what the derived stop policies (Phase 3) and recommend_champion (Phase 4) both validate
-    against."""
-    control = paper.load_profiles()["control"]
+def test_control_gated_keeps_the_pre_cutover_deployed_policy():
+    """The gated ex-control (retired as 'control-gated' at the 2026-08-21 EOD amendment) was the
+    reference book whose whole point was matching the pre-cutover deployed policy ('shorts', 99).
+    The frozen record must stay faithful — the derived stop policies (Phase 3) validated against
+    exactly these values."""
+    control = paper.load_profiles()["control-gated"]
     assert control["overlap_scope"] == "shorts"
     assert control["max_concurrent_ics"] == 99
     assert control["per_side_stop_management"] is True
@@ -2660,3 +2704,35 @@ def test_the_skew_actually_refuses_a_candidate_that_the_plain_floor_admits():
     skewed = {**base, "drift_skew_otm_multiple": 1.5, "drift_band_points": 2.0}
     entered, reason, _ = paper.evaluate_entry(snap, skewed, [])
     assert entered is False and reason == "put_otm_below_floor"
+
+
+# --------------------------------------------------------------------------- wing_width_points seam
+
+
+def test_wing_width_points_scalar_wins_over_the_symbol_dict():
+    """The advisor's width seam: core.advice bounds can express a number or a choice, never a dict
+    of lists, so a scalar `wing_width_points` pins the profile's width for every symbol."""
+    params = {
+        "wing_width_points": 10,
+        "wing_widths_by_symbol": {"SPX": [5], "DEFAULT": [2, 3]},
+    }
+    assert paper._profile_widths_for_symbol(params, "SPX") == [10]
+    assert paper._profile_widths_for_symbol(params, "XSP") == [10]
+
+
+def test_absent_scalar_preserves_the_dict_behavior():
+    params = {"wing_widths_by_symbol": {"SPX": [5, 10], "DEFAULT": [2]}}
+    assert paper._profile_widths_for_symbol(params, "SPX") == [5, 10]
+    assert paper._profile_widths_for_symbol(params, "IWM") == [2]
+    assert paper._profile_widths_for_symbol({}, "SPX") is None
+
+
+def test_union_widths_includes_a_scalar_profile_width():
+    """A width the candidate menu never scanned can never fill — the union must see the advised
+    profile's scalar, or an advisor width experiment silently takes zero entries."""
+    base = {"wing_widths_by_symbol": {"SPX": [5]}}
+    profiles = {
+        "control": {},
+        "advised:control": {"wing_width_points": 10},
+    }
+    assert paper.union_widths_for_symbol("SPX", base, profiles) == [5, 10]

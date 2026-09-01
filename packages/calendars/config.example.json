@@ -28,7 +28,7 @@
   "_entry_window_note": "Entry is attempted on the entry day only, inside [entry_window_start, entry_window_end] ET, retried each tick until it fills or the window closes (an exhausted window is a journaled skipped week). 10:00 sits past the opening rotation so the EM is measured on real two-way flow.",
   "_exit_window_note": "exit_window_start..exit_window_end is the Friday scheduled-exit window the control book closes in (and the terminal every derived policy falls through to). noon_exit_start anchors the derived fri_noon variant. mon_disposition_time is when surviving longs are sold on their own Monday expiration morning. exec_window_start gates ALL management action until the open stabilizes.",
   "_settle_note": "settle_time is when expiring legs settle off the last streamed trade, refused rather than used if older than settlement_max_age_seconds — a stale print would decide a week's P&L at once. A settlement missed entirely (loop down through Friday evening) is NEVER back-settled from a later print; use `python -m cherrypick.calendars.paper_loop --settle --date <expiration> --price <official print>`. Under physical settlement the print also sets the delivered shares' basis, so a stale one would misprice the weekend leg as well as the option one.",
-  "_quality_note": "max_quote_age_seconds bounds every quote the module prices against (a 4-7DTE chain ticks slower than 0DTE, hence looser than flies' 120). max_leg_spread_pct is the execution gate's is-this-mark-actionable bar. strike_window_pct bounds the entry snapshot's quote fetch around spot — the EM lands well inside it.",
+  "_quality_note": "max_quote_age_seconds bounds every quote the module prices against (a 4-7DTE chain ticks slower than 0DTE, hence looser than flies' 120). max_leg_spread_pct is the execution gate's is-this-mark-actionable bar, and max_leg_spread_abs is the floor under it: a leg is refused only when it is wide on BOTH readings. A short that has done its job quotes 0.00/0.01, which is a one-cent buyback and, as a ratio, a 200% spread — on 2026-08-28 that refused the control put's scheduled close on all thirty ticks of its window and cost the position its exit. curve carries the same floor as max_wing_spread_abs for the identical arithmetic. strike_window_pct bounds the entry snapshot's quote fetch around spot — the EM lands well inside it.",
   "defaults": {
     "quantity": 1,
     "em_factor": 0.85,
@@ -43,6 +43,7 @@
     "settlement_max_age_seconds": 300,
     "max_quote_age_seconds": 300,
     "max_leg_spread_pct": 0.25,
+    "max_leg_spread_abs": 0.05,
     "strike_window_pct": 0.04
   },
 
@@ -51,6 +52,15 @@
   "books": {
     "control": { "enabled": true },
     "path": { "enabled": true }
+  },
+
+  "friday_entry_header": "===== the Friday entry regime (paper, OFF by default) =====",
+  "_friday_entry_note": "A SECOND ENTRY REGIME, not a third book — see docs/friday-entry-arm.md. It enters the IDENTICAL contracts (same strikes horizon, same two expirations) on the trading day BEFORE the entry session, to measure whether the weekend's differential decay is worth owning versus the Monday entrance. Because the tag is computed from the actual entry date it reads dc_7_10 on an ordinary week against the Monday regime's dc_4_7, so the two populations can never pool (honesty rule 4) — and the read-side exit grid already groups by tag, so its policy derivation and validation extend for free. Its books are the base roster under a `friday:` prefix (friday:control, friday:path); there is no advised twin in v1. OFF by default because a second regime roughly doubles this module's open positions and buying power, and because the two regimes skip DIFFERENT weeks (the ex-dividend refusal span widens by three days when entry moves earlier), so they are not a matched set week-for-week and no surface may assume alignment.",
+  "_friday_entry_window_note": "The window deliberately OPENS INSIDE the exit window's tail (exit runs 15:45-15:55) rather than after it: that buys twenty attempts at a 30s cadence instead of ten, and lets the entry start the moment the exits are actually done instead of waiting out a clock boundary they may have cleared minutes earlier. Ordering is enforced by STATE, never by these times alone — the entry is blocked while any book that intends to close today still holds an expiring position, because run_once runs entry BEFORE management within a tick and a clock-only gate over an overlapping window would open the new week before closing the old one. That gate reads 'every book that intends to exit has done so', never 'the book is flat': `path` never closes by design, so a wait-until-flat condition would be satisfied on no Friday ever and the entry would silently never fire. Entering at the close is the maximum capture the idea can produce and equally the sharpest test of it, since Friday's closing premiums are exactly where weekend decay is already marked down.",
+  "friday_entry": {
+    "enabled": false,
+    "window_start": "15:50",
+    "window_end": "16:00"
   },
 
   "_tastytrade_costs_note": "Overrides for the shared cost model (cherrypick.core.fees.DEFAULT_COSTS): slippage_frac_of_spread, slippage_cap_frac_of_mid, commissions. Empty means the suite defaults. The per-symbol pieces are automatic: SPX would carry its $0.60/contract index exchange fee, SPY carries none (it is not on the broad-based index schedule), and each ITM expiry costs the $5 settlement/assignment event — plus, under physical settlement, the SEC and FINRA pass-throughs on the share disposal.",
@@ -69,5 +79,11 @@
       "long_disposition": { "choices": ["fri_close", "mon_open"] },
       "short_strike_touch_exit": { "choices": [true, false] }
     }
+  },
+
+  "live_header": "===== live gate (placeholder — see the module CLAUDE.md's Live-trading prerequisites) =====",
+  "_live_note": "This module has NO live loop, no order-placement code, and no live account designation. `enabled` exists only so the suite's config/console surfaces can read a real gate for this module instead of reporting an absent one as 'unknown' — flipping it to true does nothing until a live loop is built, and post-assignment management plus a calculated ex-div decision (the module CLAUDE.md's prerequisites) land first. Guarded the same as every other live gate: hand-edit only, never through the settings surface.",
+  "live": {
+    "enabled": false
   }
 }

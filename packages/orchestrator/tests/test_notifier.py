@@ -76,3 +76,18 @@ def test_discord_posts_content_payload_from_keyring(temp_floor, monkeypatch):
     assert captured["url"].endswith("/abc")
     assert "content" in captured["payload"]  # Discord uses `content`, not `text`
     assert "CRITICAL" in captured["payload"]["content"]
+
+
+def test_discord_embed_needs_no_content_beside_it(temp_floor, monkeypatch):
+    """An embed carries its own author/title/fields; the [LEVEL] prefix a plain message gets is
+    dropped, and nothing else rides the payload — the exact bytes every caller relies on."""
+    captured = {}
+    monkeypatch.setattr(secrets_mod, "get_webhook", lambda ch: "https://discord.example/webhook/abc")
+    monkeypatch.setattr(
+        Notifier,
+        "_post_json",
+        staticmethod(lambda url, payload: captured.update(payload) or {"ok": True, "status": 204}),
+    )
+    n = Notifier({"channels": ["discord"]})
+    n.notify("INFO", "k", "T", "B", embed={"title": "card"})
+    assert captured == {"embeds": [{"title": "card"}]}

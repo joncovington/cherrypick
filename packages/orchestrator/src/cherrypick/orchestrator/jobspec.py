@@ -44,11 +44,22 @@ CATCHUP_MINUTES = {
     "symbol-watch": 150,  # 06:30 scheduled; still useful until ~09:00
     "reconcile": 240,
     "log-archive": 7 * 24 * 60,
+    # Generous: the map only changes when a contract rolls (monthly), and a missed refresh
+    # degrades safely -- the recorder drops its futures readings rather than sampling a
+    # rolled-off contract -- so catching one up late is strictly better than skipping it.
+    "futures-contracts": 8 * 60,
+    # Very generous: the calendar reaches weeks ahead, so a late pull is harmless while a skipped
+    # one eventually starves the scanner. Catching up beats waiting for tomorrow.
+    "earnings-dolt-pull": 12 * 60,
     # A missed review is worth catching up on: the fact set is the input to every read surface,
     # and a session with no artifact is a hole in the trend rather than a late report.
     "review-provisional": 180,
     "review-final": 240,
     "review-narrative": 240,
+    # Tight on purpose, unlike the review's: a pre-open pack caught up at 11:00 describes a market
+    # that already opened. Late enough to still fire after a 09:00 wake, dead by mid-morning.
+    "morning-factpack": 90,
+    "morning-narrative": 90,
     # A light checkpoint describes the session as it stands, so catching one up past the next slot
     # would produce two checkpoints describing nearly the same afternoon. The deep slot is
     # different: it issues the next session's advice, so it stays worth firing until late evening.
@@ -97,6 +108,12 @@ class JobSpec:
     # crash backoff was ever sized for. Never widens the general "no broken command hot-loops"
     # guarantee -- it only ever lowers the cap, and a job with no override behaves exactly as before.
     backoff_cap_seconds: int | None = None
+    # A resident job that binds a known TCP port. None for every job but the console today. Lets the
+    # supervisor tell "my own child, restarting" apart from "something else already holds this port" —
+    # see `supervisor._reclaim_stuck_port`. Never guessed from argv; only set where the job's own
+    # config exposes the port it will bind.
+    port: int | None = None
+    reclaim_stuck_port: bool = True
 
     def __post_init__(self) -> None:
         """Validate at construction so a malformed config block fails inside `derive_jobs`'s
@@ -268,6 +285,18 @@ def _advisor_script(launcher: str) -> str:
     return _suite_script(launcher, "advisor_checkpoint.py")
 
 
+def _morning_narrative_script(launcher: str) -> str:
+    return _suite_script(launcher, "morning_narrative.py")
+
+
+def _futures_contracts_script(launcher: str) -> str:
+    return _suite_script(launcher, "refresh_futures_contracts.py")
+
+
+def _dolt_data_script(launcher: str) -> str:
+    return _suite_script(launcher, "refresh_dolt_data.py")
+
+
 def _module_tick_argv(paper: dict[str, Any]) -> list[str] | None:
     """The argv (sans interpreter) for one supervisor-fired paper tick. `tick_argv` when declared;
     else `once_argv` with `--force` stripped — MEIC's once_argv carries `--force` for the manual
@@ -369,33 +398,9 @@ def derive_jobs(
         ),
     )
 
-    # --- follow-notify (network → its own job, never on the watchdog tick)
-    ff = cfgmod.follow_feed_settings(cfg)
-    add(
-        "follow-notify",
-        lambda: JobSpec(
-            id="follow-notify",
-            argv=_run_py(pythonw, launcher, "notify-follow"),
-            kind=KIND_INTERVAL,
-            interval_seconds=int(ff["interval_minutes"]) * 60,
-            enabled=ff["enabled"],
-            enabled_reason="" if ff["enabled"] else "disabled in config (follow_feed)",
-        ),
-    )
-
-    # --- lossdog-notify (network → its own job, never on the watchdog tick)
-    ld = cfgmod.lossdog_settings(cfg)
-    add(
-        "lossdog-notify",
-        lambda: JobSpec(
-            id="lossdog-notify",
-            argv=_run_py(pythonw, launcher, "notify-lossdog"),
-            kind=KIND_INTERVAL,
-            interval_seconds=int(ld["interval_minutes"]) * 60,
-            enabled=ld["enabled"],
-            enabled_reason="" if ld["enabled"] else "disabled in config (lossdog)",
-        ),
-    )
+    # follow-notify and lossdog-notify were derived here until 2026-08-21 — both feed notifiers
+    # moved to the standalone follow-feed-notifier repo, scheduled by the OS Task Scheduler.
+    # `_prune_retired` drops their registry rows once config stops carrying the blocks.
 
     # --- desk-notify (broker call + webhook → its own job, never on the watchdog tick)
     dn = cfgmod.desk_notify_settings(cfg)
@@ -437,6 +442,8 @@ def derive_jobs(
             enabled=not con_reason,
             enabled_reason=con_reason,
             backoff_cap_seconds=con["dev_backoff_seconds"],
+            port=con["port"],
+            reclaim_stuck_port=con["reclaim_stuck_port"],
         ),
     )
 
@@ -572,6 +579,85 @@ def derive_jobs(
             tags=("ai",),
         ),
     )
+    mv = cfgmod.morning_settings(cfg)
+    add(
+        "morning-factpack",
+        lambda: JobSpec(
+            id="morning-factpack",
+            argv=_run_py(pythonw, launcher, "morning"),
+            kind=KIND_DAILY,
+            at_et=mv["factpack_at"],
+            catchup_minutes=CATCHUP_MINUTES["morning-factpack"],
+            # A daily job fires every calendar day; without this a Saturday pass writes a pack for
+            # a session that never happened -- same weekend lesson as the review jobs.
+            trading_days_only=True,
+            enabled=mv["enabled"],
+            enabled_reason="" if mv["enabled"] else "disabled in config (morning)",
+        ),
+    )
+    add(
+        "morning-narrative",
+        lambda: JobSpec(
+            id="morning-narrative",
+            # scripts\, not a package -- same fence as review-narrative: nothing a loop can import
+            # is allowed to reach an AI call. This one additionally does web lookups for the macro
+            # calendar, which is one more reason it can only ever be a spawned script.
+            argv=(pythonw, _morning_narrative_script(launcher)),
+            kind=KIND_DAILY,
+            at_et=mv["narrative_at"],
+            catchup_minutes=CATCHUP_MINUTES["morning-narrative"],
+            trading_days_only=True,
+            enabled=mv["enabled"] and mv["narrative"],
+            enabled_reason=(
+                "" if (mv["enabled"] and mv["narrative"]) else "disabled in config (morning.narrative)"
+            ),
+            tags=("ai",),
+        ),
+    )
+    add(
+        "earnings-dolt-pull",
+        lambda: JobSpec(
+            id="earnings-dolt-pull",
+            # A script, not package code: it reaches DoltHub, and nothing on a decision path may.
+            # This is the job whose ABSENCE stopped earnings paper trading for eleven sessions in
+            # August 2026 -- the sql-server job kept the server alive while the DATA silently aged
+            # out of its forward calendar. Not trading-days-only: pulling on a weekend is free and
+            # means Monday opens with a current calendar.
+            #
+            # 05:30, an hour AHEAD of earnings' own 06:30 pre-market forward scan, and the ordering
+            # is the whole point rather than a preference. The scan reads this data to decide which
+            # names are even eligible that night, so a pull that lands after it means the scan walked
+            # yesterday's calendar -- the exact staleness this job exists to prevent, just one day
+            # smaller. Landed at 06:30 on 2026-08-24 and moved 2026-08-25: same minute as the scan,
+            # so it also had the two contending for Dolt while the clones were being rewritten.
+            argv=(pythonw, _dolt_data_script(launcher)),
+            kind=KIND_DAILY,
+            at_et="05:30",
+            catchup_minutes=CATCHUP_MINUTES["earnings-dolt-pull"],
+            trading_days_only=False,
+            enabled=bool((cfg.get("modules", {}).get("earnings") or {}).get("enabled")),
+            enabled_reason=(
+                "" if (cfg.get("modules", {}).get("earnings") or {}).get("enabled")
+                else "earnings module disabled"
+            ),
+        ),
+    )
+    add(
+        "futures-contracts",
+        lambda: JobSpec(
+            id="futures-contracts",
+            # A script, not a package: resolving a futures contract needs the broker's instruments
+            # endpoint, and the regime recorder that consumes this map is deliberately
+            # credential-free and network-free. Same fence as the narratives -- a spawned process
+            # whose failure costs a refresh and nothing else.
+            argv=(pythonw, _futures_contracts_script(launcher)),
+            kind=KIND_DAILY,
+            at_et="08:45",
+            catchup_minutes=CATCHUP_MINUTES["futures-contracts"],
+            trading_days_only=True,
+            enabled=True,
+        ),
+    )
     av = cfgmod.advisor_settings(cfg)
     advisor_modules = ",".join(
         name for name, mod in av["modules"].items() if (mod or {}).get("enabled")
@@ -582,9 +668,14 @@ def derive_jobs(
         # regardless of the configured hours so the store's filenames stay legible. A checkpoints
         # list longer than ADVISOR_LIGHT_SLOTS falls back to a generic name the advisor package
         # will reject -- that job's own derivation fails and is reported, nothing else is affected.
-        slot = (
-            ADVISOR_LIGHT_SLOTS[index] if index < len(ADVISOR_LIGHT_SLOTS) else f"slot{index + 1}"
-        )
+        named = av.get("checkpoint_slots")
+        if named is not None and index < len(named):
+            # The dict config form names each checkpoint explicitly (config.py advisor_settings).
+            slot = named[index]
+        else:
+            slot = (
+                ADVISOR_LIGHT_SLOTS[index] if index < len(ADVISOR_LIGHT_SLOTS) else f"slot{index + 1}"
+            )
         add(
             f"advisor-{slot}",
             lambda slot=slot, at=at: JobSpec(
@@ -662,8 +753,6 @@ def _add_self_healing_jobs(add, name, mcfg, paper, tick, pythonw, root) -> None:
     the session so settlement, retries, and the idle heartbeat keep the exact shape they have today.
     """
     interval = int(paper.get("tick_interval_seconds", 120))
-    log_name = paper.get("log")
-    silence_file = str(cfgmod.module_logs_dir(name) / log_name) if log_name else None
 
     if interval >= 60:
         add(
@@ -687,12 +776,27 @@ def _add_self_healing_jobs(add, name, mcfg, paper, tick, pythonw, root) -> None:
             kind=KIND_RESIDENT,
             cwd=root,
             interval_seconds=interval,
-            # In-session only: the module's own --interval loop is RTH-scoped, and every in-session
-            # iteration writes at least one log line per symbol, which is what silence watches.
+            # In-session only: the module's own --interval loop is RTH-scoped.
             window_start=paper.get("resident_start", "09:30"),
             window_end=paper.get("resident_end", "16:00"),
             trading_days_only=True,
-            silence_file=silence_file,
+            # Silence is measured against the loop's own HEARTBEAT, never its log. This used to point
+            # at the log file on the assumption -- stated here as fact, enforced nowhere -- that
+            # "every in-session iteration writes at least one log line per symbol". Flies and MEIC
+            # happened to satisfy it; calendars does not, because a week holding no position has
+            # nothing to say, and it was killed and restarted every two minutes for four days as a
+            # result (107 times on 2026-08-17 alone). A log is a side effect of having something to
+            # report, so supervising on it makes verbosity a reliability dependency and makes a quiet
+            # healthy loop look exactly like a wedged one.
+            #
+            # The contract is now the one the console already had: the loop touches this file at the
+            # top of every tick. A module that does NOT publish one degrades safely rather than
+            # loudly -- `_resident_silent` returns False for a file that does not exist, so it simply
+            # is not silence-supervised, and the watchdog reports the gap instead of the supervisor
+            # killing a healthy process over it.
+            # Keyed on the MODULE name, not the job id: the module writes this file and knows only
+            # its own package name (`core.home.heartbeat_path("calendars")`).
+            silence_file=str(cfgmod.resident_heartbeat_path(name)),
             silence_seconds=int(paper.get("silence_seconds", 120)),
         ),
     )

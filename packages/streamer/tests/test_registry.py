@@ -34,13 +34,13 @@ def test_union_symbols_across_modules_plus_seed(home):
 def test_union_window_hints_takes_the_max_per_symbol(home):
     _registry.write_request("flies", ["XSP"], window_hints={"XSP": 40})
     _registry.write_request("gex", ["XSP", "QQQ"], window_hints={"XSP": 90, "QQQ": 30})
-    assert _registry.union_window_hints() == {"XSP": 90, "QQQ": 30}
+    assert _registry.union_window_hints() == {"XSP": (90, 90), "QQQ": (30, 30)}
 
 
 def test_union_window_hints_one_modules_silence_never_narrows_another(home):
     _registry.write_request("flies", ["XSP"], window_hints={"XSP": 90})
     _registry.write_request("gex", ["XSP"])  # no hint at all for XSP
-    assert _registry.union_window_hints() == {"XSP": 90}
+    assert _registry.union_window_hints() == {"XSP": (90, 90)}
 
 
 def test_union_window_hints_empty_when_none_set(home):
@@ -158,6 +158,24 @@ def test_build_streamer_uses_registry_union(home, tmp_path):
     assert ".SPX250620P6800" in streamer._protected_symbols()
 
 
+def test_build_streamer_trade_subscribes_cash_legs_but_not_option_legs(home):
+    """Overview's breadth legs (VIX/VIX3M/VVIX are INDICES: Trade events only, never quotes) must
+    ride the Trade subscription — Quote-only left them with no price at all, and overview reads
+    every breadth spot from stream_trades. Option legs stay off Trade deliberately: sparse prints
+    would read as perpetually stale to the engine's stale-trade self-heal."""
+    _registry.write_request("overview", ["SPX"], legs=["VIX", "GLD", ".SPXW260821C7700"])
+    streamer = _daemon.build_streamer({})
+    subs = streamer._extra_subscriptions(streamer.symbols)
+    assert "VIX" in subs["Trade"] and "GLD" in subs["Trade"]
+    assert ".SPXW260821C7700" not in subs["Trade"]
+    assert ".SPXW260821C7700" in subs["Quote"]  # options keep their marks
+    # An index has no order book, so its Quote subscription could never deliver an event; an ETF
+    # leg has a real one and modules price off it. Nothing cash-settled has greeks at all.
+    assert "VIX" not in subs["Quote"]
+    assert "GLD" in subs["Quote"]
+    assert subs["Greeks"] == [".SPXW260821C7700"]
+
+
 def test_build_streamer_no_legs_matches_engine_default(home):
     _registry.write_request("flies", ["SPX"])
     streamer = _daemon.build_streamer({})
@@ -170,8 +188,21 @@ def test_build_streamer_window_strike_count_for_widens_on_a_hint(home):
     _registry.write_request("flies", ["XSP"], window_hints={"XSP": 90})
     streamer = _daemon.build_streamer({"symbols": ["XSP"], "streamer": {"window_strike_count": 60}})
     assert streamer.window_strike_count == 60
-    assert streamer._window_strike_count_for("XSP") == 90  # hint wins over the configured default
-    assert streamer._window_strike_count_for("QQQ") == 60  # no hint -> falls back to the default
+    # (below, above): a hint wins over the configured default, and the default is the floor.
+    assert streamer._window_strike_count_for("XSP") == (90, 90)
+    assert streamer._window_strike_count_for("QQQ") == (60, 60)  # no hint -> the default
+
+
+def test_build_streamer_serves_a_directional_hint_without_widening_the_other_side(home):
+    """pmcc's deep-ITM long sits below spot; the strikes an equal distance above it are the largest
+    block of subscriptions in the suite that no module can read (2026-08-24)."""
+    _registry.write_request("pmcc", ["TQQQ"], window_hints={"TQQQ": {"down": 163, "up": 5}})
+    streamer = _daemon.build_streamer(
+        {"symbols": ["TQQQ"], "streamer": {"window_strike_count": 30}}
+    )
+    # The shallow side falls back to the configured default rather than to the hint's own 5: a
+    # directional hint asks for MORE on one side, it never narrows the base on the other.
+    assert streamer._window_strike_count_for("TQQQ") == (163, 30)
 
 
 def test_write_request_schema_is_flat_json(home):
@@ -211,3 +242,44 @@ def test_union_expirations_reads_across_module_files(home):
     _registry.write_request("calendars", ["SPX"], expirations={"SPX": ["2099-01-15", "2099-01-18"]})
     _registry.write_request("other", ["SPX"], expirations={"SPX": ["2099-01-18", "2099-01-22"]})
     assert _registry.union_expirations() == {"SPX": ["2099-01-15", "2099-01-18", "2099-01-22"]}
+
+
+def test_build_streamer_summary_subscribes_cash_legs_too(home):
+    """`day_close` arrives ONLY on Summary, and it is the input to every percentile and seasonal
+    reading in the suite.
+
+    Same bug as the Trade case above, one event type later and eleven days quieter. Summary was
+    underlyings-only, so the entire vol complex and the commodity proxies -- all declared as legs --
+    stopped accumulating daily closes on 2026-08-14 and nothing noticed, because SPY kept its own
+    only by virtue of another module declaring it an underlying.
+
+    Option legs stay off Summary as they stay off Trade: a per-contract daily bar is not a series
+    anything reads, and it would be thousands of subscriptions for nothing.
+    """
+    _registry.write_request("gex", ["SPX"], legs=["VIX", "VIX3M", "GLD", ".SPXW260821C7700"])
+    streamer = _daemon.build_streamer({})
+
+    subs = streamer._extra_subscriptions(streamer.symbols)
+
+    for sym in ("VIX", "VIX3M", "GLD"):
+        assert sym in subs["Summary"], f"{sym} needs Summary or it accumulates no daily closes"
+    assert "SPX" in subs["Summary"], "underlyings keep theirs"
+    assert ".SPXW260821C7700" not in subs["Summary"], "a per-contract daily bar is nobody's series"
+
+
+def test_history_backfill_covers_every_symbol_we_maintain_summary_for(home):
+    """`history_days` declared for a LEG was silently ignored: the backfill iterated the underlyings
+    alone, so the 270 days the whole vol complex asked for delivered not one row.
+
+    The deficit scan is keyed off the Summary subscription because those are exactly the symbols
+    whose rows stay current -- backfilling anything else writes history that is stale from day one.
+    """
+    _registry.write_request(
+        "gex", ["SPX"], legs=["VIX", "VVIX"], history_days={"VIX": 270, "VVIX": 270, "SPX": 30}
+    )
+    streamer = _daemon.build_streamer({})
+
+    maintained = set(streamer._extra_subscriptions(streamer.symbols)["Summary"])
+
+    assert {"VIX", "VVIX"} <= maintained, "declared history for a leg the backfill would never visit"
+    assert streamer._history_days_for("VVIX") == 270

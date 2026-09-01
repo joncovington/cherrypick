@@ -77,6 +77,30 @@ def nearest_zero_gamma(strikes: list[dict], spot: float, key: str = "net_gex") -
     return min(crossings, key=lambda z: abs(z - spot)) if crossings else None
 
 
+def _no_data_reason(missing: dict) -> str:
+    """Name the input that actually starved the computation, not a guess at the usual one.
+
+    Ordered by which is the caller's problem: a greeks row present but gamma-less means whoever
+    supplied the greeks narrowed them (the 2026-08-27 bwb defect); no greeks row at all or no open
+    interest means the cache has not filled that part of the chain yet.
+    """
+    if not any(missing.values()):
+        return "insufficient GEX data - no chain entries supplied"
+    if missing.get("gamma"):
+        return (
+            f"insufficient GEX data - {missing['gamma']} strike(s) had greeks WITHOUT gamma "
+            "(the supplied greeks are missing the gamma field, not the cache)"
+        )
+    if missing.get("oi") and not missing.get("greeks"):
+        return "insufficient GEX data - open interest not cached for these symbols yet"
+    if missing.get("greeks") and not missing.get("oi"):
+        return "insufficient GEX data - no fresh greeks for these symbols"
+    return (
+        f"insufficient GEX data - {missing['greeks']} strike(s) without greeks, "
+        f"{missing['oi']} without open interest"
+    )
+
+
 def compute_gex(
     chain_entries: list[dict], greeks: dict, oi: dict, spot: float, multiplier: int = DEFAULT_MULTIPLIER
 ) -> dict:
@@ -92,6 +116,10 @@ def compute_gex(
     or {"ok": False, "error": ...} when no strike has both greeks and non-zero OI.
     """
     per_strike: dict[float, dict] = {}
+    # Why each entry was skipped, so an empty result can name the input that was actually missing.
+    # Until 2026-08-27 this always reported "OI not yet cached", which sent a four-session bwb
+    # outage looking at the streamer while the real cause was a reader that never selected `gamma`.
+    missing = {"greeks": 0, "oi": 0, "gamma": 0}
 
     for entry in chain_entries:
         strike = _num(entry.get("strike_price"))
@@ -101,9 +129,13 @@ def compute_gex(
         g = greeks.get(sym)
         open_interest = oi.get(sym)
         if g is None or open_interest is None or open_interest == 0:
+            missing["greeks" if g is None else "oi"] += 1
             continue
         gamma = _num(g.get("gamma") if isinstance(g, dict) else getattr(g, "gamma", None))
         if gamma is None:
+            # A greeks row that exists but carries no gamma — a different failure from no row at
+            # all, and the one that is a caller bug rather than a cold cache.
+            missing["gamma"] += 1
             continue
         gex_val = dollar_gamma(gamma, open_interest, multiplier, spot)
         opt_type = entry.get("option_type", "")
@@ -116,7 +148,7 @@ def compute_gex(
             per_strike[strike]["put_gex"] += gex_val
 
     if not per_strike:
-        return {"ok": False, "error": "insufficient GEX data — OI not yet cached (streamer must run first)"}
+        return {"ok": False, "error": _no_data_reason(missing), "missing": dict(missing)}
 
     strikes_sorted = sorted(per_strike.values(), key=lambda x: x["strike"])
     for s in strikes_sorted:

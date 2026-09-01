@@ -1,11 +1,10 @@
 # cherrypick-pmcc
 
-PMCC-99: a paper-only module trading deep-ITM covered calls on leveraged ETFs (TNA, TQQQ, UPRO).
-Buy the deepest ~99-delta call at ~21 DTE as a stock substitute, sell an ITM call at ~9 DTE; the
-short's intrinsic is the downside buffer, its time value the profit; close both legs when that time
-value is exhausted. Three books isolate one variable each: `control` (as taught), `keltner` (entry
-timed to a Keltner-channel pullback-and-reversal), `roll` (rolls the short on a breach instead of
-holding).
+PMCC-99: a paper-only module trading deep-ITM covered calls on TQQQ. Buy an 85-90-delta call at
+~21 DTE as a stock substitute, sell the ATM call nearest spot at ~7 DTE (no yield floor, either
+side of spot); hold to the short's own expiration, then close both legs together. Single `control`
+book plus the advisor's `advised:control` twin, where the old early-tv-exit rule survives as a
+tunable A/B against the new hold-to-expiry default.
 
 See [CLAUDE.md](CLAUDE.md) for the experiment design, the honesty rules (early assignment is
 measured, not modelled — the paper result is an upper bound), and the layout.

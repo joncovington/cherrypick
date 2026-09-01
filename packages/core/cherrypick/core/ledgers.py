@@ -29,7 +29,7 @@ Every closed reader yields the same record shape, keyed by `paper.trade_schema`:
                  quantity, a long calendar's defined max loss.
   - "pmcc_99"  : pmcc's `pmcc_positions`; closed = status 'closed'; net = gross_pnl - fees (fees
                  is the TOTAL modeled cost, entry+exit+rolls+settlement, that module's own
-                 convention); tag = book (control / keltner / roll / advised:control); capital =
+                 convention); tag = book (control / advised:control); capital =
                  net_debit x 100 x quantity, the structure's defined max loss.
 
 `None` never means zero anywhere in here. A row written before an instrumentation column existed
@@ -268,7 +268,7 @@ PMCC_UNTAGGED = "unassigned"
 
 def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list[dict]:
     """pmcc's `pmcc_positions`; closed = status 'closed'. The attribution tag is the BOOK
-    (control / keltner / roll / advised:control) — the module's contrast, same reasoning as flies'
+    (control / advised:control) — the module's contrast, same reasoning as flies'
     arm tag; `strategy` is the schema constant, since every position is the same two-leg structure.
     `fees` is that module's TOTAL modeled cost (entry+exit+rolls+settlement, slippage included), so
     net is one subtraction. Capital = the net debit paid ×100×qty — the defined max loss of the
@@ -308,12 +308,148 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
     ]
 
 
+CURVE_UNTAGGED = "unassigned"
+
+
+def _curve_closed(conn, start: str | None = None, end: str | None = None) -> list[dict]:
+    """curve's `curve_positions`; closed = status 'closed'. The attribution tag is the BOOK
+    (control / noflip / hook / advised:control) — the module's contrast, same reasoning as pmcc's
+    book tag; `strategy` is the schema constant, since every position is the same call-credit-
+    spread structure. `fees` is that module's TOTAL modeled cost (entry+exit+settlement, slippage
+    included), so net is one subtraction. Capital = the spread's max loss (width - credit) x100xqty
+    — the defined max loss of the structure. A leg assigned/exercised at expiry and held as shares
+    over a weekend is the one exposure not bounded by it, same caveat as pmcc's delivered shares."""
+    where, params = _session_where("closed_session", start, end)
+    rows = conn.execute(
+        f"SELECT symbol, book, gross_pnl, fees, entry_slippage, exit_slippage, "
+        f"entry_max_loss, quantity, closed_session FROM curve_positions WHERE status = 'closed'{where}",
+        params,
+    ).fetchall()
+
+    def _slip(r):
+        if r["entry_slippage"] is None and r["exit_slippage"] is None:
+            return None  # pre-instrumentation row — unknown, not zero
+        return round((r["entry_slippage"] or 0.0) + (r["exit_slippage"] or 0.0), 2)
+
+    def _capital(r):
+        if r["entry_max_loss"] is None:
+            return None
+        return round(float(r["entry_max_loss"]) * 100 * (r["quantity"] or 1), 2)
+
+    return [
+        {
+            "profile": r["book"] or CURVE_UNTAGGED,
+            "symbol": r["symbol"],
+            "strategy": "curve_vx",
+            "gross_pnl": (r["gross_pnl"] or 0.0),
+            "cost": (r["fees"] or 0.0),
+            "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
+            "slippage": _slip(r),
+            "capital": _capital(r),
+            "session": r["closed_session"] or "",
+        }
+        for r in rows
+    ]
+
+
+def _curve_open(conn) -> list[dict]:
+    """curve's `curve_positions` still on the book — a position lives ~30-45 DTE and carries
+    overnight throughout. Capital at risk is the spread's max loss (defined risk); a
+    `short_settled` position's delivered/received shares are the one leg that bound does not
+    cover, per the module's own caveat."""
+    rows = conn.execute(
+        "SELECT symbol, book, entry_max_loss, quantity, entry_session FROM curve_positions "
+        "WHERE status != 'closed'"
+    ).fetchall()
+    return [
+        {
+            "profile": r["book"] or CURVE_UNTAGGED,
+            "symbol": r["symbol"],
+            "strategy": "curve_vx",
+            "capital_at_risk": (
+                round(float(r["entry_max_loss"]) * 100 * (r["quantity"] or 1), 2)
+                if r["entry_max_loss"] is not None
+                else 0.0
+            ),
+            "session": r["entry_session"] or "",
+        }
+        for r in rows
+    ]
+
+
+BWB_UNTAGGED = "unassigned"
+
+
+def _bwb_closed(conn, start: str | None = None, end: str | None = None) -> list[dict]:
+    """bwb's `bwb_positions`; closed = status 'closed'. The attribution tag is the BOOK
+    (control / delta / bounce / flip / advised:control) — the module's contrast, same reasoning as
+    curve's book tag; `strategy` is the schema constant, since every position starts as the same
+    put-BWB structure (a fired add-on turns it into a 1-3-2, but the schema doesn't fork). `fees`
+    is that module's TOTAL modeled cost (entry + addon entry + settlement), so net is one
+    subtraction. Capital = the structure's worst-case max loss (entry_max_loss, already the
+    larger of the up/down loss) x100xqty."""
+    where, params = _session_where("closed_session", start, end)
+    rows = conn.execute(
+        f"SELECT symbol, book, gross_pnl, fees, entry_max_loss, quantity, closed_session "
+        f"FROM bwb_positions WHERE status = 'closed'{where}",
+        params,
+    ).fetchall()
+
+    def _capital(r):
+        if r["entry_max_loss"] is None:
+            return None
+        return round(float(r["entry_max_loss"]) * 100 * (r["quantity"] or 1), 2)
+
+    return [
+        {
+            "profile": r["book"] or BWB_UNTAGGED,
+            "symbol": r["symbol"],
+            "strategy": "bwb_132",
+            "gross_pnl": (r["gross_pnl"] or 0.0),
+            "cost": (r["fees"] or 0.0),
+            "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
+            # bwb does not yet split entry/exit slippage on the row (a single modeled cost total),
+            # so this stays unknown rather than a misleading zero -- same posture as flies' capital.
+            "slippage": None,
+            "capital": _capital(r),
+            "session": r["closed_session"] or "",
+        }
+        for r in rows
+    ]
+
+
+def _bwb_open(conn) -> list[dict]:
+    """bwb's `bwb_positions` still on the book — the daily ladder holds ~5-7 concurrent positions
+    per book at steady state, all carrying overnight through their ~7 DTE life. Capital at risk is
+    the structure's defined max loss."""
+    rows = conn.execute(
+        "SELECT symbol, book, entry_max_loss, quantity, entry_session FROM bwb_positions "
+        "WHERE status != 'closed'"
+    ).fetchall()
+    return [
+        {
+            "profile": r["book"] or BWB_UNTAGGED,
+            "symbol": r["symbol"],
+            "strategy": "bwb_132",
+            "capital_at_risk": (
+                round(float(r["entry_max_loss"]) * 100 * (r["quantity"] or 1), 2)
+                if r["entry_max_loss"] is not None
+                else 0.0
+            ),
+            "session": r["entry_session"] or "",
+        }
+        for r in rows
+    ]
+
+
 READERS = {
     "meic_ic": _meic_closed,
     "earnings": _earnings_closed,
     "fly_book": _flies_closed,
     "dc_week": _calendars_closed,
     "pmcc_99": _pmcc_closed,
+    "curve_vx": _curve_closed,
+    "bwb_132": _bwb_closed,
 }
 
 
@@ -412,4 +548,109 @@ OPEN_READERS = {
     "fly_book": _no_overnight,
     "dc_week": _calendars_open,
     "pmcc_99": _pmcc_open,
+    "curve_vx": _curve_open,
+    "bwb_132": _bwb_open,
 }
+
+
+# --------------------------------------------------------------------------- concentration
+# A module net is an average over arms, and averaging is exactly what hides the finding when the
+# arms are the experiment. Requested by the advisor on 2026-08-19 after flies published +6,748.01
+# for a session in which ONE seven-fill book returned +7,828.42 and the other twelve together came
+# to -1,080.41: the sign of the day rested on an arm with an eleven-trade lifetime, whose book that
+# session carried a modelled worst 3.5x the credit it collected and settled positive because price
+# happened to stay put. Two sessions earlier in the same journal make the point in the other
+# direction, -8,071.69 and -4,023.05, both dominated by width-ladder books on 4-7 fills.
+#
+# "No bounded parameter can fix a presentation defect" was the proposal's closing line, and it is
+# right: this is not a rule about which trades to take, it is a rule about which totals may be read
+# on their own.
+
+
+def concentration(records: list[dict], *, key: str = "profile", net_key: str = "net_pnl") -> dict:
+    """How much of a net rests on its single largest contributor.
+
+    Takes the normalised records every reader in this module yields, so it answers the same way for
+    every schema — the point of the request was "for every module net", and a per-module
+    implementation would be seven chances to disagree about what a share is.
+
+    Two share denominators, because one of them lies in exactly the case worth flagging:
+
+    * ``share_of_net`` is the signed arm/total. It is what a reader expects, and it goes past 100%
+      whenever the other arms net against the leader — width-10's 116% of that flies session is the
+      honest number and it is *why* the total cannot be read alone. ``None`` when the total is ~0,
+      where the ratio is meaningless rather than large.
+    * ``share_of_movement`` is |arm| / sum|arm|, which is bounded, stable near a zero total, and
+      answers "how much of what happened was this one arm".
+
+    ``sign_flips_without_largest`` is the field the request was really about. A total that changes
+    sign when its biggest contributor is removed is not a measurement of the module; it is a
+    measurement of that arm, and every reader of it should be told so.
+
+    This function labels nothing PROVISIONAL. Whether the largest contributor clears its module's
+    sample and day bars is that module's own rule, and importing qualification into the ledger layer
+    would put two gates in play. The facts it needs — the leader's trade and session counts — are
+    returned so the caller can apply its own.
+    """
+    total = 0.0
+    per: dict[str, dict] = {}
+    for record in records:
+        name = record.get(key) or "unassigned"
+        net = record.get(net_key) or 0.0
+        slot = per.setdefault(name, {key: name, "net": 0.0, "trades": 0, "sessions": set()})
+        slot["net"] += net
+        slot["trades"] += 1
+        if record.get("session"):
+            slot["sessions"].add(record["session"])
+        total += net
+
+    movement = sum(abs(slot["net"]) for slot in per.values())
+    rows = []
+    for slot in per.values():
+        rows.append({
+            key: slot[key],
+            "net": round(slot["net"], 2),
+            "trades": slot["trades"],
+            "sessions": len(slot["sessions"]),
+            "share_of_net": round(slot["net"] / total, 4) if abs(total) > 1e-9 else None,
+            "share_of_movement": round(abs(slot["net"]) / movement, 4) if movement > 0 else None,
+        })
+    # Ranked by absolute contribution: the largest mover, not the largest winner. An arm that lost
+    # more than everything else made is the same presentation problem wearing the other sign.
+    rows.sort(key=lambda r: abs(r["net"]), reverse=True)
+
+    if not rows:
+        return {
+            "net": 0.0, "by_" + key: [], "largest": None,
+            "net_excluding_largest": 0.0, "sign_flips_without_largest": False,
+            "contributors": 0,
+        }
+
+    largest = rows[0]
+    without = round(total - largest["net"], 2)
+    flips = abs(total) > 1e-9 and abs(without) > 1e-9 and (total > 0) != (without > 0)
+    return {
+        "net": round(total, 2),
+        "by_" + key: rows,
+        "largest": largest,
+        "net_excluding_largest": without,
+        # The headline caveat: the module's sign is this arm's sign.
+        "sign_flips_without_largest": flips,
+        "contributors": len(rows),
+    }
+
+
+def tail_to_credit(worst: float | None, credit: float | None) -> float | None:
+    """How many times the collected credit the modelled worst case is.
+
+    A book's floor and the band it holds over already travel together by the flies module's own
+    rule; this is the same argument for the other tail. The session that prompted it collected
+    7,852.50 against a modelled worst of -27,171.58 — a ratio of 3.46 — and nothing in the output
+    said so, while the book's positive settlement was being read as a result.
+
+    ``None`` when there is no credit to compare against, rather than a large number or a zero: an
+    undefined ratio and a small one are different facts.
+    """
+    if not credit or credit <= 0 or worst is None:
+        return None
+    return round(abs(min(worst, 0.0)) / credit, 2)

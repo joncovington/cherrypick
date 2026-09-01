@@ -19,6 +19,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { ConsoleConfig } from "../config.js";
+import { num, suiteEra } from "./db.js";
 
 export interface ReviewArm {
   arm: string;
@@ -71,17 +72,30 @@ export interface ReviewSession {
 export interface ReviewPayload {
   sessions: string[];
   current: ReviewSession | null;
-  allTime: {
+  /**
+   * Era totals — the sum of fact sets from the suite's declared era (`data_epoch`) onward.
+   *
+   * This was `allTime` until 2026-08-21: a sum over every artifact ever built. The advisor-era
+   * cutover retired every hand-designed arm at that boundary, so a total pooled across it reads as
+   * one experiment when it is really two incomparable ones. `eraFrom` names the boundary on the
+   * payload so the page can say what the number covers; a null `eraFrom` (no declared epoch) falls
+   * back to everything, labeled accordingly.
+   */
+  era: {
+    eraFrom: string | null;
+    eraNote: string | null;
     sessions: number;
     from: string | null;
     to: string | null;
     netByModule: Record<string, number>;
     closedByModule: Record<string, number>;
+    /** Per-module per-session nets in session order — the sparkline series. Same pass as the
+     *  totals above, so the line and the tile it sits under cannot disagree. */
+    trendByModule: Record<string, Array<{ session: string; net: number }>>;
+    /** Suite net per session (every readable module summed) — the Overview calendar strip's
+     *  series. A session with no readable module is ABSENT, never a zero day. */
+    suiteDaily: Array<{ session: string; net: number; closed: number }>;
   };
-}
-
-function num(v: unknown): number | null {
-  return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
 function rec(v: unknown): Record<string, unknown> {
@@ -212,32 +226,59 @@ export function readReview(config: ConsoleConfig, session?: string): ReviewPaylo
     }
   }
 
-  // All-time is a sum of the artifacts, never a fresh pass over the ledgers — so it cannot disagree
-  // with the per-session view, and its depth is exactly what has been built.
+  // Era totals are a sum of the artifacts, never a fresh pass over the ledgers — so they cannot
+  // disagree with the per-session view. Bounded to the declared era (data_epoch): the advisor-era
+  // cutover retired every hand-designed arm at 2026-08-21, and pooling across that boundary reads
+  // as one experiment when it is really two incomparable ones.
+  const era = suiteEra(config.paths.orchestratorConfig);
+  const eraSessions = era.from === null ? sessions : sessions.filter((s) => era.from !== null && s >= era.from);
   const netByModule: Record<string, number> = {};
   const closedByModule: Record<string, number> = {};
-  for (const s of sessions) {
+  // The per-session series come out of the SAME pass as the totals, so a sparkline and the tile it
+  // sits under can never disagree, and reading them costs no extra artifact reads.
+  const trendByModule: Record<string, Array<{ session: string; net: number }>> = {};
+  const suiteDaily: Array<{ session: string; net: number; closed: number }> = [];
+  for (const s of eraSessions) {
     const facts = readFacts(dir, s);
     if (!facts) continue;
     const modules = rec(facts["modules"]);
+    let dayNet = 0;
+    let dayClosed = 0;
+    let dayReadable = false;
     for (const [name, raw] of Object.entries(modules)) {
       const m = rec(raw);
       if (m["ok"] !== true) continue;
       const results = rec(m["results"]);
-      netByModule[name] = (netByModule[name] ?? 0) + (num(results["net"]) ?? 0);
-      closedByModule[name] = (closedByModule[name] ?? 0) + (num(results["closed"]) ?? 0);
+      const net = num(results["net"]) ?? 0;
+      const closed = num(results["closed"]) ?? 0;
+      netByModule[name] = (netByModule[name] ?? 0) + net;
+      closedByModule[name] = (closedByModule[name] ?? 0) + closed;
+      (trendByModule[name] ??= []).push({ session: s, net: Math.round(net * 100) / 100 });
+      dayNet += net;
+      dayClosed += closed;
+      dayReadable = true;
+    }
+    // A session where nothing was readable is left OUT of the suite series rather than pushed as a
+    // zero day — the page's own null-is-not-zero rule applied to the series, so a broken artifact
+    // reads as a gap in the strip and never as a flat day.
+    if (dayReadable) {
+      suiteDaily.push({ session: s, net: Math.round(dayNet * 100) / 100, closed: dayClosed });
     }
   }
 
   return {
     sessions,
     current,
-    allTime: {
-      sessions: sessions.length,
-      from: sessions[0] ?? null,
-      to: sessions[sessions.length - 1] ?? null,
+    era: {
+      eraFrom: era.from,
+      eraNote: era.note,
+      sessions: eraSessions.length,
+      from: eraSessions[0] ?? null,
+      to: eraSessions[eraSessions.length - 1] ?? null,
       netByModule,
       closedByModule,
+      trendByModule,
+      suiteDaily,
     },
   };
 }

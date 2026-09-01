@@ -25,11 +25,21 @@ a reliability bug in someone else's module.
 from __future__ import annotations
 
 import json
-import sqlite3
 import time
+from datetime import date, datetime
 from pathlib import Path
 
 from cherrypick.core import home as _home
+
+# Read-only opens go through cherrypick.core.db.connect_ro: it percent-escapes the path, so a
+# directory containing '?', '#' or '%' cannot silently change the URI's meaning. The local
+# copies interpolated the path raw, where a '#' truncated the URI and opened a DIFFERENT,
+# empty database — which a provider reports as "nothing cached" rather than as an error.
+from cherrypick.core.clock import ET
+from cherrypick.core.db import connect_ro as _connect_ro
+
+# Shared with every other provider — see cherrypick.core.streamcache.
+from cherrypick.core.streamcache import usable_quote as _usable_quote
 
 # A minute-cadence loop reading a continuously-streamed cache: anything older than this is a feed
 # that stopped, not a market that went quiet. Deliberately longer than flies' 120s — an earnings
@@ -46,10 +56,6 @@ def cache_path() -> Path:
     return _home.data_dir() / "marketdata" / "stream_cache.db"
 
 
-def _connect_ro(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 def _fail(reason: str, **extra) -> dict:
@@ -59,28 +65,6 @@ def _fail(reason: str, **extra) -> dict:
     return {"ok": False, "reason": reason, **extra}
 
 
-def _usable_quote(row, now_ts: float, max_age: float) -> dict | None:
-    """A quote worth pricing a close against, or None.
-
-    Rejects stale, crossed, and non-positive-ask quotes. None rather than a degraded quote is the
-    point: a position skipped this tick is marked unusable and looked at again in a minute, while a
-    position priced off a bad leg can be closed on a number that was never real.
-    """
-    bid, ask, updated = row["bid"], row["ask"], row["updated_at"]
-    if bid is None or ask is None or updated is None:
-        return None
-    if now_ts - float(updated) > max_age:
-        return None
-    bid, ask = float(bid), float(ask)
-    if ask <= 0 or bid < 0 or bid > ask:
-        return None
-    mid = row["mid"]
-    return {
-        "bid": bid,
-        "ask": ask,
-        "mid": float(mid) if mid is not None else (bid + ask) / 2.0,
-        "age_seconds": round(now_ts - float(updated), 1),
-    }
 
 
 def spread_pct(quote: dict) -> float | None:
@@ -161,6 +145,34 @@ def read_spot(conn, symbol: str, *, now_ts: float, max_age: float) -> float | No
     return float(row["last"])
 
 
+def expiry_from_occ(symbol: str) -> date | None:
+    """Expiration date out of a standard OCC symbol — the six digits after the padded root.
+
+    The sibling of `management.strike_from_occ`, which takes the last eight. Both read the symbol
+    rather than the trade's `expiration` column, because a calendar's legs do not share one: the
+    column names the FRONT expiry, and the back month outlives it by weeks.
+    """
+    raw = (symbol or "")[6:12]
+    try:
+        return date(2000 + int(raw[0:2]), int(raw[2:4]), int(raw[4:6]))
+    except (TypeError, ValueError):
+        return None
+
+
+def expired_legs(legs: list[dict], today: date) -> list[str]:
+    """The legs whose last trading day is already past. Empty on expiration day itself.
+
+    Strictly-before, not on-or-before, because an option is tradeable right up to its own close --
+    which is where the pin guard does its work.
+    """
+    out = []
+    for leg in legs:
+        expiry = expiry_from_occ(leg.get("symbol") or "")
+        if expiry is not None and expiry < today:
+            out.append(leg["symbol"])
+    return out
+
+
 def legs_from_trade(trade: dict) -> list[dict]:
     """A trade's entry legs, parsed. Returns [] on anything unparseable rather than raising — a row
     with a broken legs_json is a position to skip and report, not a loop to crash."""
@@ -196,6 +208,14 @@ def snapshot(
     legs = legs_from_trade(trade)
     if not legs:
         return _fail("no_legs_recorded")
+
+    # An expired contract does not have a price, it has a residue: the feed keeps answering with a
+    # zero bid against a stale ask, which prices out as a 200% spread and a plausible-looking mid.
+    # Recording that as a usable mark writes a number no market ever offered. What an expired leg
+    # needs is settlement at intrinsic, which is `management`'s job, not a quote.
+    gone = expired_legs(legs, datetime.fromtimestamp(now_ts, ET).date())
+    if gone:
+        return _fail("legs_expired", expired=gone)
 
     # A leg whose streamer symbol was never captured cannot be looked up at all. Report that as its
     # own refusal: it is a gap in what was stored at entry, not a feed problem, and the two want

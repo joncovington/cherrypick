@@ -10,8 +10,8 @@ import it, so that the submit path stays unreachable from scheduled code. This r
 append-only audit journal as a *file* and asks the broker about order ids it finds there. It can
 observe desk orders; it cannot create one.
 
-**Network, therefore its own job.** Like `follow_notifier` (and unlike `trade_notifier`, which is
-files-only and may ride the watchdog tick), this makes both an HTTP push and a broker call, so it is
+**Network, therefore its own job.** Unlike `trade_notifier` (files-only, may ride the watchdog
+tick), this makes both an HTTP push and a broker call, so it is
 a standalone scheduled job and is never invoked from the watchdog. A dead broker or a dead webhook
 degrades to "no notifications", never to a failed tick.
 

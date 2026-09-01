@@ -4,26 +4,32 @@ No I/O, no clock reads, no network — the same split every module in the suite 
 fetches, engine decides, book persists, paper_loop owns the clock), which is both what makes the
 strategy testable and the suite guardrail on loop-decision paths.
 
-The structure: one deep-ITM long call (~99 delta, ~21 DTE — a stock substitute whose extrinsic is
-bounded at entry, NOT a LEAP) against one ITM short call (~9 DTE). The short's intrinsic is the
-downside buffer; its time value is the entire profit. The short strike is selected by working
-BACKWARDS from a target weekly cash-on-cash yield on the position's net debit — the worksheet's own
-logic — taking the DEEPEST strike that clears the floor, which maximizes protection subject to the
-yield. The long is the highest strike that still qualifies as deep (max extrinsic bound, delta
-floor), which minimizes capital subject to being a stock substitute.
+The structure: one deep-ITM long call (85-90 delta, ~21 DTE — a stock substitute, NOT a LEAP)
+against one ATM short call (~7 DTE). The long is selected to fall inside a DELTA BAND rather than
+past a floor (2026-08-23 redesign: the 99-delta/yield-targeted design gave a near-zero-extrinsic
+long and a yield-chased ITM short; the replacement trades a little more long extrinsic for real
+leverage and prices the short at the market's own nearest-the-money strike, whichever side of spot
+that lands). The short's strike is simply the one nearest spot — no yield floor — so it can land OTM
+as easily as ITM depending on where the chain quotes; the worksheet math below is written to handle
+either.
 """
 
 from __future__ import annotations
 
 from cherrypick.core import fees as _fees
+from cherrypick.core import settlement as _settlement
 
-BOOKS = ("control", "keltner", "roll")
+BOOKS = ("control",)
 
 # How an expiring leg settles, per underlying. The module models both styles and refuses a symbol it
 # has been told nothing about — the calendars guard, kept verbatim: an unmodelled settlement produces
-# bookkeeping that is wrong at its first Friday, and wrong quietly. Every symbol this module is built
-# for (TNA, TQQQ, UPRO) is American physical delivery; `cash` exists so the shared settlement math
-# stays the calendars decomposition with the share term zeroed, not a second model.
+# bookkeeping that is wrong at its first Friday, and wrong quietly. TQQQ is American physical
+# delivery; XSP (added 2026-08-23) is European, cash-settled — `cash` exists so the shared
+# settlement math stays the calendars decomposition with the share term zeroed, not a second model.
+# The two symbols are NOT interchangeable substitutes for each other: different settlement
+# mechanics, different early-assignment risk profile (XSP has none), different fee schedule (XSP is
+# a broad-based index option; TQQQ is an ETF) — see `assignment_from`, `management.assignment_exposed`,
+# and `entry_cost`/`close_cost` for where each of those differences is actually applied.
 SETTLEMENT_STYLES = ("cash", "physical")
 
 
@@ -95,99 +101,121 @@ def _quoted_calls(entries: list[dict], quotes: dict) -> list[dict]:
 
 
 def select_long(entries: list[dict], quotes: dict, greeks: dict, spot: float, params: dict) -> dict:
-    """The deep-ITM long call: the HIGHEST strike below spot that still qualifies as a stock
-    substitute — extrinsic at most `max_long_extrinsic` per share AND (where greeks exist) delta at
-    least `long_delta_min`. Highest-qualifying minimizes capital subject to being deep.
+    """The deep-ITM long call: the candidate whose delta falls inside
+    `[long_delta_min, long_delta_max]` (default 0.85-0.90) — a delta BAND, not a floor
+    (2026-08-23 redesign). Among candidates inside the band the one nearest the band's midpoint
+    wins; a tie prefers the higher strike (marginally less capital).
 
     Greeks are refused-when-stale upstream and genuinely absent for deep strikes on a cold window,
-    so the delta floor DEGRADES rather than blocks: a candidate with no delta on file is admitted on
-    the extrinsic bound alone, and the selection records `selected_by` ("delta" or "extrinsic") so
-    degraded entries stay excludable later (the flies `center_reason` lesson).
+    so the band check DEGRADES rather than blocks ONLY for a candidate with NO delta on file at
+    all — that candidate is judged on `max_long_extrinsic` instead, and the selection records
+    `selected_by` ("delta" or "extrinsic") so degraded entries stay excludable later (the flies
+    `center_reason` lesson). A candidate whose delta IS known but falls outside the band is simply
+    excluded — a known delta outside the band is a real disqualification, not something the
+    no-delta fallback should launder through. The fallback's own heuristic — highest strike whose
+    extrinsic is at most `max_long_extrinsic` per share, i.e. the deepest-still-qualifying candidate
+    by the extrinsic bound — is a deliberate choice documented here rather than in config: it is the
+    closest available proxy to "still deep enough to behave like stock" when the feed cannot say
+    where in the band a strike actually sits.
+
+    The fallback itself is config-gated: `allow_extrinsic_fallback` (default True) must be True
+    for a no-delta candidate to be admitted at all. Set False to require a real delta on every
+    candidate — a strike with no delta on file is then skipped rather than admitted, useful for
+    isolating whether the extrinsic-only fallback is itself shaping results.
     """
     max_extrinsic = params.get("max_long_extrinsic", 0.15)
-    delta_min = params.get("long_delta_min", 0.97)
-    best = None
+    delta_min = params.get("long_delta_min", 0.85)
+    delta_max = params.get("long_delta_max", 0.90)
+    delta_mid = (delta_min + delta_max) / 2.0
+    allow_fallback = params.get("allow_extrinsic_fallback", True)
+    best_delta = None
+    best_extrinsic = None
     for e in _quoted_calls(entries, quotes):
         strike = e["strike_price"]
         if strike >= spot:
             continue
         mid = e["quote"]["mid"]
         extrinsic = mid - (spot - strike)
-        if extrinsic > max_extrinsic:
-            continue
         delta = (greeks.get(e["streamer_symbol"]) or {}).get("delta")
-        if delta is not None and delta < delta_min:
+        if delta is not None:
+            if not (delta_min <= delta <= delta_max):
+                continue
+            candidate = {
+                "entry": e,
+                "strike": strike,
+                "mid": mid,
+                "extrinsic": round(extrinsic, 4),
+                "delta": delta,
+                "selected_by": "delta",
+            }
+            if (
+                best_delta is None
+                or abs(delta - delta_mid) < abs(best_delta["delta"] - delta_mid)
+                or (
+                    abs(delta - delta_mid) == abs(best_delta["delta"] - delta_mid)
+                    and strike > best_delta["strike"]
+                )
+            ):
+                best_delta = candidate
+            continue
+        if not allow_fallback:
+            continue
+        if extrinsic > max_extrinsic:
             continue
         candidate = {
             "entry": e,
             "strike": strike,
             "mid": mid,
             "extrinsic": round(extrinsic, 4),
-            "delta": delta,
-            "selected_by": "delta" if delta is not None else "extrinsic",
+            "delta": None,
+            "selected_by": "extrinsic",
         }
-        if best is None or strike > best["strike"]:
-            best = candidate
+        if best_extrinsic is None or strike > best_extrinsic["strike"]:
+            best_extrinsic = candidate
+    best = best_delta if best_delta is not None else best_extrinsic
     if best is None:
         return {"ok": False, "reason": "no_deep_itm_long"}
     return {"ok": True, **best}
 
 
-def select_short(
-    entries: list[dict],
-    quotes: dict,
-    spot: float,
-    long_strike: float,
-    long_mid: float,
-    long_extrinsic: float,
-    short_dte: int,
-    params: dict,
-) -> dict:
-    """The yield-targeted ITM short call: iterate ITM strikes (long_strike, spot) from DEEPEST
-    upward and take the first whose weekly cash-on-cash yield clears `target_weekly_yield_min` —
-    maximum downside protection subject to the yield floor, the worksheet's own logic.
-
-    Per share: `tv = short_mid − (spot − K)`, `capital = long_mid − short_mid` (the net debit),
-    `net_tv = tv − long_extrinsic` (the long's extrinsic is paid time value and comes out of the
-    harvest), `weekly_yield = (net_tv / capital) × (7 / short_dte)`. There is deliberately no
-    ceiling — a richer market is taken, and the achieved yield is recorded on the entry so any
-    band question stays answerable read-side.
-    """
-    yield_min = params.get("target_weekly_yield_min", 0.012)
-    best_yield = None
+def select_short(entries: list[dict], quotes: dict, spot: float, params: dict) -> dict:
+    """The ATM short call: the strike nearest spot by absolute distance, whichever side of spot it
+    falls on (2026-08-23 redesign — no yield floor, no ITM-only restriction). A tie prefers the
+    ITM side (the strike below spot), matching the strategy's original downside-buffer intent when
+    the market happens to straddle spot exactly."""
+    best = None
+    best_dist = None
     for e in _quoted_calls(entries, quotes):
         strike = e["strike_price"]
-        if strike <= long_strike or strike >= spot:
-            continue
         mid = e["quote"]["mid"]
-        intrinsic = spot - strike
-        tv = mid - intrinsic
-        capital = long_mid - mid
-        if capital <= 0:
-            # A "position" priced at a credit is a torn read, not free money.
-            return {"ok": False, "reason": "non_positive_debit", "detail": f"strike {strike:g}"}
-        if tv <= 0:
-            continue  # no premium to harvest at this strike — deeper strikes often quote at intrinsic
-        net_tv = tv - long_extrinsic
-        weekly_yield = (net_tv / capital) * (7.0 / max(short_dte, 1))
-        if best_yield is None or weekly_yield > best_yield:
-            best_yield = weekly_yield
-        if weekly_yield >= yield_min:
-            return {
-                "ok": True,
-                "entry": e,
-                "strike": strike,
-                "mid": mid,
-                "intrinsic": round(intrinsic, 4),
-                "tv": round(tv, 4),
-                "net_tv": round(net_tv, 4),
-                "weekly_yield": round(weekly_yield, 6),
-            }
+        dist = abs(strike - spot)
+        if best is None or dist < best_dist or (dist == best_dist and strike < best["strike"]):
+            best = {"entry": e, "strike": strike, "mid": mid}
+            best_dist = dist
+    if best is None:
+        return {"ok": False, "reason": "no_short_candidate"}
+    intrinsic = max(0.0, spot - best["strike"])
+    tv = best["mid"] - intrinsic
     return {
-        "ok": False,
-        "reason": "yield_unreachable",
-        "best_yield": round(best_yield, 6) if best_yield is not None else None,
+        "ok": True,
+        "entry": best["entry"],
+        "strike": best["strike"],
+        "mid": best["mid"],
+        "intrinsic": round(intrinsic, 4),
+        "tv": round(tv, 4),
     }
+
+
+def _spread_pct(quote: dict) -> float | None:
+    """A leg's bid/ask spread as a fraction of its mid, or None when it cannot be computed.
+
+    None is "unknown", never "fine": a leg the cache cannot price is refused earlier by the
+    selectors, so reaching here without a mid means the quote is malformed rather than absent.
+    """
+    mid = quote.get("mid")
+    if mid in (None, 0) or quote.get("bid") is None or quote.get("ask") is None:
+        return None
+    return (quote["ask"] - quote["bid"]) / mid
 
 
 def plan_entry(snapshot: dict, params: dict) -> dict:
@@ -204,18 +232,31 @@ def plan_entry(snapshot: dict, params: dict) -> dict:
     long_pick = select_long(snapshot["long_chain"], quotes, greeks, spot, params)
     if not long_pick["ok"]:
         return long_pick
-    short_pick = select_short(
-        snapshot["short_chain"],
-        quotes,
-        spot,
-        long_pick["strike"],
-        long_pick["mid"],
-        long_pick["extrinsic"],
-        snapshot["short_dte"],
-        params,
-    )
+    short_pick = select_short(snapshot["short_chain"], quotes, spot, params)
     if not short_pick["ok"]:
         return short_pick
+
+    # The entry-side spread check, added 2026-08-28. `max_leg_spread_pct` existed from the start and
+    # was enforced ONLY in `management.execution_gate` -- on whether a mark may be ACTED on when
+    # closing -- so nothing ever measured the spread being paid at entry. curve and bwb both hold
+    # the same parameter at the same default and check it in their own `plan_entry`; this module
+    # was the outlier, and its CLAUDE.md already described a gate the code did not have ("deep-ITM
+    # spreads may trip max_leg_spread_pct ... the attempts table measures").
+    #
+    # Measured over all 8 entries before landing: seven sat at 0.018-0.072 -- including the deep-ITM
+    # long legs the docs worried about -- and one sat at 0.293. So this refuses the anomaly and not
+    # the strategy. The refused entry is the XSP advised:control fill of 2026-08-27, whose long_call
+    # went in $9.95 wide against its control twin's $0.13, which is a 76x difference in execution
+    # cost on the two arms of one A/B.
+    max_leg_spread_pct = params.get("max_leg_spread_pct", 0.25)
+    for role, pick in (("long_call", long_pick), ("short_call_1", short_pick)):
+        pct = _spread_pct(pick["entry"]["quote"])
+        if pct is not None and pct > max_leg_spread_pct:
+            return {
+                "ok": False,
+                "reason": "spread_too_wide",
+                "detail": {"leg": role, "spread_pct": round(pct, 4)},
+            }
 
     metrics = worksheet_metrics(
         spot=spot,
@@ -282,9 +323,13 @@ def worksheet_metrics(
 ) -> dict:
     """The user's worksheet, computed once and stored as MEASURES on the position (never only as
     buckets — a threshold can be re-cut later, a bucket cannot). All per share except nothing; the
-    ledger scales by ×100×quantity."""
+    ledger scales by ×100×quantity.
+
+    The short can now land on either side of spot (the 2026-08-23 ATM redesign dropped the
+    ITM-only yield search), so `short_intrinsic` is floored at 0 rather than assumed positive: an
+    OTM short has zero intrinsic and its whole mid is extrinsic/time value."""
     long_extrinsic = long_mid - (spot - long_strike)
-    short_intrinsic = spot - short_strike
+    short_intrinsic = max(0.0, spot - short_strike)
     short_tv = short_mid - short_intrinsic
     net_tv = short_tv - long_extrinsic
     net_debit = long_mid - short_mid
@@ -307,70 +352,6 @@ def worksheet_metrics(
         "downside_protection_pct": round((spot - short_strike) / spot, 6) if spot else None,
         "breakeven": round(breakeven, 4),
         "buffer_to_breakeven_pct": round((spot - breakeven) / spot, 6) if spot else None,
-    }
-
-
-def plan_roll(snapshot: dict, position: dict, short_leg: dict, params: dict) -> dict:
-    """A roll for a breached short: buy back the current short at its mark, sell a new ITM short
-    from the roll snapshot's chain via the SAME yield search the entry used, at the current spot.
-    Constraints: the new strike stays strictly above the held long's strike and below spot; the new
-    expiration is the snapshot's (chosen by `clock.roll_expiration`, never past the long).
-
-    Refusals (`roll_unreachable`, `non_positive_debit`, missing quotes) leave the position holding
-    like a covered call — the roll book retries next tick; it never force-rolls on a bad read.
-    """
-    spot = snapshot["spot"]
-    quotes = snapshot["quotes"]
-    buyback = quotes.get(short_leg["streamer_symbol"])
-    if buyback is None:
-        return {"ok": False, "reason": "missing_leg_quotes"}
-    # Yield is judged against the position's ORIGINAL net debit — the capital actually spent —
-    # never a mark-to-market restatement of it.
-    net_debit = position.get("net_debit") or 0.0
-    yield_min = params.get("target_weekly_yield_min", 0.012)
-    best_yield = None
-    chosen = None
-    for e in _quoted_calls(snapshot["chain"], quotes):
-        strike = e["strike_price"]
-        if strike <= position["long_strike"] or strike >= spot:
-            continue
-        mid = e["quote"]["mid"]
-        tv = mid - (spot - strike)
-        if tv <= 0:
-            continue
-        weekly_yield = (tv / net_debit) * (7.0 / max(snapshot["dte"], 1)) if net_debit > 0 else 0.0
-        if best_yield is None or weekly_yield > best_yield:
-            best_yield = weekly_yield
-        if weekly_yield >= yield_min:
-            chosen = {
-                "entry": e,
-                "strike": strike,
-                "mid": mid,
-                "tv": round(tv, 4),
-                "weekly_yield": round(weekly_yield, 6),
-            }
-            break
-    if chosen is None:
-        return {
-            "ok": False,
-            "reason": "roll_unreachable",
-            "best_yield": round(best_yield, 6) if best_yield is not None else None,
-        }
-    greeks = snapshot.get("greeks") or {}
-    return {
-        "ok": True,
-        "buyback": {"bid": buyback["bid"], "ask": buyback["ask"], "mid": buyback["mid"]},
-        "new_leg": _leg(
-            "pending",  # the book assigns short_call_<n>
-            "Sell to Open",
-            chosen["entry"],
-            chosen["entry"]["quote"],
-            greeks.get(chosen["entry"]["streamer_symbol"]) or {},
-            snapshot["expiration"],
-        ),
-        "net_roll_credit": round(chosen["mid"] - buyback["mid"], 4),
-        "new_tv": chosen["tv"],
-        "weekly_yield": chosen["weekly_yield"],
     }
 
 
@@ -425,7 +406,13 @@ def settle_intrinsic(strike: float, option_type: str, spot: float) -> float:
 def assignment_from(leg: dict, spot: float, quantity: int) -> dict | None:
     """The share position one ITM leg delivers at expiry, or None if it expires worthless. `basis`
     is the settlement spot, per the decomposition above. You end up SHORT shares when a short call
-    is assigned, LONG shares when a long call is exercised at its own expiry."""
+    is assigned, LONG shares when a long call is exercised at its own expiry.
+
+    This function has NO settlement-style opinion of its own — it does not look at the symbol at
+    all, only at the leg's own strike/type/action. That is deliberate: a cash-settled leg (XSP)
+    never delivers shares, and the guard against that lives at the ONE call site
+    (`book.settle_expiring_legs`, gated `if physical:`) rather than duplicated here. Do not call
+    this for a cash-settled leg — nothing downstream would catch a phantom share assignment."""
     option_type = leg["option_type"]
     if settle_intrinsic(leg["strike"], option_type, spot) <= 0:
         return None
@@ -440,10 +427,9 @@ def assignment_from(leg: dict, spot: float, quantity: int) -> dict | None:
     }
 
 
-def share_pnl(direction: str, shares: int, basis: float, price: float) -> float:
-    """Dollar P&L of a delivered share position disposed at `price`. Long earns the rise."""
-    move = price - basis if direction == "long" else basis - price
-    return round(move * shares, 2)
+# Delivered-share P&L lives in core: calendars and pmcc both model physical settlement and must
+# not disagree about the money. Re-exported under the local name every call site already uses.
+share_pnl = _settlement.share_pnl  # noqa: F401
 
 
 def leg_pnl(leg: dict) -> float | None:
@@ -477,9 +463,13 @@ def _slippage_dollars(leg_quotes: list[dict], quantity: int, config: dict) -> fl
 
 
 def entry_cost(symbol: str, leg_quotes: list[dict], quantity: int, config: dict) -> dict:
-    """Cost of opening the position (2 legs, 1 sold) — commission, clearing, ORF, TAF on the sell
-    (no index exchange fee: TNA/TQQQ/UPRO are ETFs, off the broad-based index schedule) plus
-    modeled slippage."""
+    """Cost of opening the position (2 legs, 1 sold) — commission, clearing, ORF, TAF on the sell,
+    plus modeled slippage. The per-symbol broad-based index exchange fee
+    (`_fees.INDEX_EXCHANGE_FEE_PER_CONTRACT`) is applied automatically by `_fees.ic_open_fee`: TQQQ
+    is an ETF and is off that schedule entirely (0.0), while XSP IS a broad-based index option and
+    is looked up on it by symbol (currently $0.00/contract under 10 contracts/leg, same number as
+    the ETF default today but arrived at through the index schedule rather than by exemption — a
+    rate change to that table reaches XSP without touching this module)."""
     fee = _fees.ic_open_fee(symbol, quantity, legs=2, sell_legs=1, ndigits=4)
     slippage = _slippage_dollars(leg_quotes, quantity, config)
     return {"fee": round(fee, 2), "slippage": slippage, "total": round(fee + slippage, 2)}

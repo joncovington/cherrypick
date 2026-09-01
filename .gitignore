@@ -54,3 +54,6 @@ dashboard.html
 # OS junk
 .DS_Store
 Thumbs.db
+# MSYS/Git Bash writes one of these wherever a process segfaults. `git subtree split`
+# reliably segfaults in this environment, so a routine core check litters the repo root.
+*.stackdump

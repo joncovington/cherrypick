@@ -7,10 +7,11 @@ Nothing here writes, trades, or reaches the network. Every function takes an ope
 **`ic_trades.pnl` is GROSS, not net** — the one schema difference from flies worth stating up
 front. flies stores `gross_pnl` and `pnl` (net) as separate columns; MEIC stores only `pnl`
 (gross — see `_apply_exit_decision`'s `delta_pnl`, which never subtracts a fee) and `fees`
-separately. Every function here computes net as `pnl - fees` at read time, matching the win/loss
-definition `dashboard._stats_for_period` already uses (its own `net_pnl` accumulator does NOT
-subtract fees, which is a pre-existing inconsistency in that module, not a convention to copy —
-see that file's TODO when it's next touched).
+separately. Every function here computes net as `pnl - fees` at read time, which is the definition
+`db._range_stats_for_rows` and `get_eod_summary` also use, so the module has one answer for what
+net means. (This note used to point at a `dashboard._stats_for_period` whose own accumulator did
+NOT subtract fees; that module went with the dashboards on 2026-08-12 and the inconsistency went
+with it.)
 
 **Win rate is per IC, net of fees** — one resolved trade, one verdict. Matches
 `db._range_stats_for_rows` and the orchestrator's calibrate reading.
@@ -28,13 +29,15 @@ from __future__ import annotations
 # it as one would flatter whichever stream happens to be holding something at read time.
 _RESOLVED = "status IN ('stopped', 'expired', 'force_closed')"
 
-# Sampling era (see db.py's `era` column / _migrate). Defaults to the current arms/uncapped-
-# sampling era: pre-cutover ('book') rows had an order-of-magnitude different selection intensity
-# (max_concurrent_ics/entry spacing bounded each portfolio), so pooling them with post-cutover rows
-# in one aggregate reads as one book when it is really two incomparable ones. Pass era="ALL" for an
-# explicit cross-era read (e.g. a historical retrospective); era="book" for the pre-cutover ledger
-# alone.
-CURRENT_ERA = "sample"
+# Sampling era (see db.py's `era` column / _migrate). THE ONE PYTHON LITERAL — db.py's save path
+# stamps every new row with this constant, and the console's readers/meic.ts hand-syncs it.
+# Three eras: 'advisor' (2026-08-21 →) — the advisor designs and runs every experiment, hand-built
+# variant arms retired at the cutover; 'sample' (2026-08-07..2026-08-20) — the hand-designed
+# arms/uncapped-sampling window; 'book' (pre-2026-08-07) — the profile-ladder era, an order of
+# magnitude different selection intensity (max_concurrent_ics/entry spacing bounded each
+# portfolio). Pooling across any pair reads as one book when it is really two incomparable ones.
+# Pass era="ALL" for an explicit cross-era read; a specific era name for that window alone.
+CURRENT_ERA = "advisor"
 
 
 def _round(value, digits=2):
@@ -50,7 +53,7 @@ def _period_clause(start=None, end=None, arm=None, symbol=None, era=CURRENT_ERA)
 
     `arm` filters `risk_profile` — MEIC has no separate `arm` column (see the Phase 2 design
     note: the stream/arm tag IS `risk_profile`, the same column every existing reader —
-    orchestrator report/calibrate, dashboard.py, section.py — already groups on). `era="ALL"`
+    orchestrator report/calibrate, section.py, and the console — already groups on). `era="ALL"`
     disables the era filter for an explicit cross-era read; any other value (including the
     CURRENT_ERA default) filters to exactly that era.
     """
@@ -117,6 +120,29 @@ def by_arm(conn, start=None, end=None, symbol=None, era=CURRENT_ERA) -> list[dic
         grouped.setdefault(r["risk_profile"] or "unassigned", []).append(r)
     out = [{"arm": arm, **_summarize(rs)} for arm, rs in grouped.items()]
     return sorted(out, key=lambda x: x["net_pnl"] or 0, reverse=True)
+
+
+def headline(conn, start=None, end=None, symbol=None, era=CURRENT_ERA) -> dict:
+    """Per-arm results plus what is still open — the module's one-glance answer.
+
+    Thin over `by_arm` on purpose: that function's docstring already calls itself the headline
+    output, and a second aggregation here would be a second net convention free to disagree with it.
+    What this adds is the open count, so a reader can tell an empty book from a quiet one, and the
+    resolved era, so a number is never reported without the window it was taken over.
+
+    Shape mirrors `pmcc.analytics.headline` because the console's mirror tests compare a page
+    against exactly this, and three modules answering the same question in three shapes is how the
+    checks stop being writable.
+    """
+    open_row = conn.execute(
+        "SELECT COUNT(*) AS n FROM ic_trades WHERE status IN ('open', 'partial')"
+    ).fetchone()
+    arms = by_arm(conn, start=start, end=end, symbol=symbol, era=era)
+    return {
+        "era": era,
+        "arms": {row["arm"]: {k: v for k, v in row.items() if k != "arm"} for row in arms},
+        "open_positions": open_row["n"],
+    }
 
 
 # --------------------------------------------------------------------------- regime conditioning
@@ -417,7 +443,7 @@ def breakeven_scorecard(conn, start=None, end=None, symbol=None, era=CURRENT_ERA
 
 
 def stop_counterfactual(
-    conn, policy_name: str, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="open"
+    conn, policy_name: str, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="control"
 ) -> dict:
     """What `policy_name` (see stop_policies.POLICIES) would have paid across `arm`'s (default
     `open`) recorded rows, vs. what those trades actually realized under their real exit. Every
@@ -485,7 +511,7 @@ def validate_stop_derivation(conn, start=None, end=None, era=CURRENT_ERA, tolera
 
 
 def stop_grid(
-    conn, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="open", ratios=None
+    conn, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="control", ratios=None
 ) -> dict:
     """The whole `stop_trigger_ratio` curve, scored over already-recorded paths (proposal #12).
 
@@ -573,7 +599,7 @@ def stop_grid(
 
 
 def stop_session_rollup(
-    conn, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="open"
+    conn, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="control"
 ) -> list[dict]:
     """Per session: what the book really made, what it would have made with no stop at all, and the
     difference. `stop_cost` positive means the stop COST money that session.
@@ -894,4 +920,220 @@ def daily_rollup(conn, day: str, era: str | None = None) -> dict:
         "win_rate_pct": _round(_rate(wins, len(resolved), 4) * 100 if resolved else None),
         "avg_iv_rank": _round(sum(iv_ranks) / len(iv_ranks), 4) if iv_ranks else None,
         "sessions_entered": sessions,
+    }
+
+
+def gex_gate_counterfactual(
+    conn, start=None, end=None, symbol=None, era="ALL", arm=("control", "open")
+) -> dict:
+    """What the negative-GEX entry gate has cost or saved, measured on the permissive book's own rows.
+
+    The advisor asked for this on 2026-08-18, 08-20, 08-21 and 08-25 and it was never computed. Its
+    proposed form was to sum the permissive book's net on the sessions the gated book was dark. That
+    number is available and it does not answer the question: `control-gated` and `control` differ in
+    a dozen keys, not one -- min_iv_rank 0.3 vs 0.0, min_call_otm_pct 0.0035 vs 0.0001,
+    per_side_stop_management on vs off, overlap_scope 'shorts' vs 'none' -- so a difference between
+    them is the whole design, not the gate.
+
+    The gate IS answerable, exactly, and from one book. `regime_gex_block_negative` refuses an entry
+    when net GEX is confirmed negative, and the permissive book records `gex_positive_at_entry` on
+    every fill it took. Its rows where that flag is 0 are precisely the entries the gate would have
+    refused -- same book, same sessions, same tape, same stop policy, perfect pairing, no
+    cross-arm confound. This is the read the risk-profile registry itself describes as the PRIMARY
+    one ("split its own trades by the recorded gex_positive_at_entry"), which had never been run.
+
+    `era` defaults to "ALL" here, unlike every other reader in this file, and the reason is specific
+    rather than a relaxation: `open` was RENAMED to `control` at the 2026-08-21 cutover and the
+    registry records them as one continuous stream with identical gates and stop policy. The eras
+    differ in what ran BESIDE this book, which is not something this measurement reads. Both era
+    slices are returned anyway, because a reader should be able to check that for themselves.
+
+    The per-session table is not decoration. Whatever the pooled number says, this gate's entire
+    result may rest on a single session, and a caller that prints only the total will not see it.
+    """
+    where, params = _period_clause(start, end, None, symbol, era)
+    arms = [arm] if isinstance(arm, str) else list(arm)
+    where += f" AND risk_profile IN ({','.join('?' * len(arms))})"
+    params = list(params) + arms
+
+    rows = conn.execute(
+        "SELECT pnl, fees, trade_date, era, gex_positive_at_entry"
+        f" FROM ic_trades WHERE {where}",
+        params,
+    ).fetchall()
+
+    def slice_of(predicate, source=rows):
+        return _summarize([r for r in source if predicate(r)])
+
+    refused = slice_of(lambda r: r["gex_positive_at_entry"] == 0)
+    allowed = slice_of(lambda r: r["gex_positive_at_entry"] == 1)
+    untagged = [r for r in rows if r["gex_positive_at_entry"] is None]
+
+    sessions = []
+    for day in sorted({r["trade_date"] for r in rows if r["trade_date"]}):
+        same_day = [r for r in rows if r["trade_date"] == day]
+        day_refused = slice_of(lambda r: r["gex_positive_at_entry"] == 0, same_day)
+        if not day_refused["trades"]:
+            continue
+        sessions.append({
+            "session": day,
+            "refused_trades": day_refused["trades"],
+            "refused_net": day_refused["net_pnl"],
+            "refused_win_rate": day_refused["win_rate"],
+        })
+
+    worst = min(sessions, key=lambda s: s["refused_net"]) if sessions else None
+    without_worst = (
+        slice_of(lambda r: r["gex_positive_at_entry"] == 0 and r["trade_date"] != worst["session"])
+        if worst else None
+    )
+
+    return {
+        "arms": arms,
+        "era": era,
+        # The headline: what the gate refused. A NEGATIVE net here means the gate saved that much;
+        # a positive one means it cost that much, in entries the book would have taken and won on.
+        "refused_by_the_gate": refused,
+        "allowed_by_the_gate": allowed,
+        "untagged_trades": len(untagged),
+        "by_session": sessions,
+        # The gate is insurance, so the question is never the mean -- it is whether the tail it
+        # covers is real. Read `refused_by_the_gate` against this: if dropping one session flips the
+        # sign, the gate's whole case is that session and should be argued as such.
+        "worst_session": worst,
+        "refused_excluding_worst_session": without_worst,
+        "eras_present": sorted({r["era"] for r in rows if r["era"]}),
+    }
+
+
+def _side_settle_value(strike, underlying, wing_width, side) -> float:
+    """`paper._settlement_value`, restated here so the audit is INDEPENDENT of the writer.
+
+    Deliberately duplicated, against this repo's usual rule. An audit that imports the function it
+    is auditing can only ever confirm that the function equals itself; the whole value of this one
+    is that the stored numbers are reproduced from the convention as WRITTEN DOWN, by a second
+    implementation. If the two ever disagree, that disagreement is the finding.
+    """
+    if strike is None or underlying is None:
+        return 0.0
+    intrinsic = (strike - underlying) if side == "put" else (underlying - strike)
+    return min(max(intrinsic, 0.0), wing_width or 0.0)
+
+
+def settlement_audit(conn, start=None, end=None, symbol=None, era="ALL") -> dict:
+    """Does the ledger's recorded P&L match the settlement convention it claims to use?
+
+    The advisor asked for this on 2026-08-17, 08-18, 08-19, 08-20 and 08-21 and it was never run.
+    Its concern was specific and correct in principle: this module's expiring fills show a striking
+    rate of exact full-credit capture, and if the marking convention is wrong then every arm
+    comparison resting on it is wrong in the same direction. It matters most for the negative-GEX
+    gate reading (`gex_gate_counterfactual`), whose entire result rests on one session.
+
+    Four questions, in the order that decides whether the rest is worth reading:
+
+    * **one_price_per_session** — every fill on one (session, symbol) must settle at ONE price.
+      They share an expiration and a settlement; more than one price means the loop settled across
+      iterations at drifting spot, and no comparison between two arms on that session is sound.
+    * **reproduced / mismatched** — each resolved fill recomputed from the convention as stated:
+      per side, the credit received less what that side cost, which is its stop cost if it stopped
+      and its settlement intrinsic (floored at 0, capped at the wing) if it expired.
+    * **unpriced** — fills settled with NO underlying price. This is not a rounding concern: a
+      None underlying scores every open side at zero intrinsic, i.e. full credit, the most
+      favorable outcome available. `paper.evaluate_open_trade` refuses to settle without a price
+      as of 2026-08-26; these are the rows written before it did.
+    * **sensitivity** — per session, how far net P&L moves if the settlement price were off by a
+      point, and by a tenth. This is what makes the audit actionable without an official
+      settlement print to compare against: it bounds how much the answer could depend on the
+      number, which is the question a reader actually has.
+    """
+    where, params = _period_clause(start, end, None, symbol, era)
+    rows = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT id, trade_date, symbol, risk_profile, exit_reason, put_strike, call_strike,"
+            " wing_width, quantity, net_credit, put_credit, call_credit, settle_underlying, pnl,"
+            f" put_stop_cost, call_stop_cost FROM ic_trades WHERE {where}",
+            params,
+        )
+    ]
+
+    def modelled(row, underlying):
+        total = 0.0
+        for side, strike, cost, credit in (
+            ("put", row["put_strike"], row["put_stop_cost"], row["put_credit"]),
+            ("call", row["call_strike"], row["call_stop_cost"], row["call_credit"]),
+        ):
+            paid = cost if cost is not None else _side_settle_value(
+                strike, underlying, row["wing_width"], side
+            )
+            total += ((credit or 0.0) - paid) * 100 * (row["quantity"] or 1)
+        return total
+
+    priced = [r for r in rows if r["settle_underlying"] is not None]
+
+    def survived_to_settlement(row):
+        """A side that reached expiry still open, so its value had to come from a settlement price.
+
+        Both filters matter. A force-closed position (`force_close_*`, the non-cash-settled path)
+        was bought back at quotes and never settles, so it needs no price and counting it here
+        would cry wolf on every XSP fill. A position with BOTH sides stopped needs none either —
+        nothing was left to settle.
+        """
+        if "expired_settlement" not in (row["exit_reason"] or ""):
+            return False
+        return row["put_stop_cost"] is None or row["call_stop_cost"] is None
+
+    # A side that reached expiry, never stopped, and had no settlement price was scored at zero
+    # intrinsic — i.e. full credit. That is the defect, and it is favorable by construction.
+    unpriced = [r for r in rows if r["settle_underlying"] is None and survived_to_settlement(r)]
+
+    mismatched = [
+        {
+            "id": r["id"], "session": r["trade_date"], "arm": r["risk_profile"],
+            "recorded_pnl": _round(r["pnl"]), "modelled_pnl": _round(modelled(r, r["settle_underlying"])),
+        }
+        for r in priced
+        if abs(modelled(r, r["settle_underlying"]) - (r["pnl"] or 0.0)) > 0.011
+    ]
+
+    prices, one_price = {}, True
+    for r in priced:
+        key = (r["trade_date"], r["symbol"])
+        prices.setdefault(key, set()).add(r["settle_underlying"])
+    multi = {f"{d}/{s}": sorted(v) for (d, s), v in prices.items() if len(v) > 1}
+    one_price = not multi
+
+    sensitivity = []
+    for (day, sym), price_set in sorted(prices.items()):
+        same = [r for r in priced if r["trade_date"] == day and r["symbol"] == sym]
+        base_price = next(iter(price_set))
+        base = sum(modelled(r, base_price) for r in same)
+        def swing(delta):
+            return abs(sum(modelled(r, base_price + delta) for r in same) - base)
+        sensitivity.append({
+            "session": day,
+            "symbol": sym,
+            "settle_price": base_price,
+            "trades": len(same),
+            # Fills whose short strike sits within a point of settlement: the pin-risk population,
+            # and the only rows a small price error can actually move.
+            "within_1pt": sum(
+                1 for r in same
+                if min(abs((r["put_strike"] or 0) - base_price),
+                       abs((r["call_strike"] or 0) - base_price)) <= 1.0
+            ),
+            "pnl_swing_1pt": _round(max(swing(1.0), swing(-1.0))),
+            "pnl_swing_0_1pt": _round(max(swing(0.1), swing(-0.1))),
+        })
+
+    return {
+        "era": era,
+        "resolved_trades": len(rows),
+        "one_price_per_session": one_price,
+        "sessions_with_multiple_prices": multi,
+        "reproduced": len(priced) - len(mismatched),
+        "mismatched": mismatched,
+        "unpriced_settlements": len(unpriced),
+        "unpriced_detail": sorted({(r["trade_date"], r["risk_profile"]) for r in unpriced}),
+        "by_session": sensitivity,
     }

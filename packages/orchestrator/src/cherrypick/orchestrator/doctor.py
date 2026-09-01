@@ -35,13 +35,16 @@ class Check:
 
 
 _ARTIFACT_SUFFIXES = (".db", ".log")
+# `dashboard.html` is a legacy name: nothing has generated one since the console became the suite's
+# only read surface (2026-08-12). It stays in the sweep so a checkout carrying a pre-cutover copy
+# still gets it flagged and removed.
 _ARTIFACT_NAMES = ("dashboard.html",)
 _SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", ".ruff_cache", "node_modules", ".tmp", ".venv"}
 
 
 def find_stray_artifacts(roots: list[Path], *, limit: int = 50) -> list[Path]:
     """Runtime files that leaked into a checkout — everything runtime now lives under the cherrypick
-    home, so a `*.db`/`*.log` anywhere, a generated `dashboard.html`, a `state/*.json`, or a
+    home, so a `*.db`/`*.log` anywhere, a leftover `dashboard.html`, a `state/*.json`, or a
     `reports/*.html` inside a checkout root is a leak. Cache/VCS dirs (`.git`, `__pycache__`, …) are
     skipped. Pure filesystem read — the `no-leak` guard and its test share it."""
     found: list[Path] = []
@@ -185,6 +188,33 @@ def _supervisor_checks(cfg: dict[str, Any], fast: bool) -> list[Check]:
                 "supervisor (run: cherrypick install)",
             )
         )
+        # A job config declares that the supervisor could not BUILD is invisible from both
+        # directions — omitted from the derived table, its registry row deliberately kept — so it
+        # gets its own line rather than folding into the drift check below.
+        for job_id, reason in sorted(supersnap.jobs_failing_derivation().items()):
+            checks.append(
+                Check(
+                    "supervisor.job_derive_failed",
+                    WARN,
+                    f"job {job_id} could not be built from config: {reason} — it will not fire",
+                )
+            )
+
+        # The same derivation the watchdog renders — one answer, two surfaces, so doctor and the
+        # watchdog cannot disagree about whether the daemon is running the job table config describes.
+        undelivered = supersnap.jobs_missing_from_registry(cfg)
+        if undelivered is not None:
+            checks.append(
+                Check(
+                    "supervisor.jobs",
+                    WARN if undelivered else OK,
+                    f"supervisor never derived {len(undelivered)} job(s) config declares: "
+                    f"{', '.join(undelivered)} — it loads jobspec once at startup, so these will "
+                    "not fire (run: cherrypick supervise --stop, then cherrypick ensure-supervisor)"
+                    if undelivered
+                    else "job table matches config",
+                )
+            )
         leftovers = [n for n in tasks.legacy_task_names(cfg) if tasks.exists(n)]
         checks.append(
             Check(
@@ -220,8 +250,6 @@ def _suite_task_checks(cfg: dict[str, Any]) -> list[Check]:
             _job_check("task.trade_notify", "trade-notify"),
             _job_check("task.log_archive", "log-archive", cfgmod.archive_settings(cfg)["enabled"]),
             _job_check("task.reconcile", "reconcile", cfgmod.reconcile_schedule_settings(cfg)["enabled"]),
-            _job_check("task.follow_notify", "follow-notify", cfgmod.follow_feed_settings(cfg)["enabled"]),
-            _job_check("task.lossdog_notify", "lossdog-notify", cfgmod.lossdog_settings(cfg)["enabled"]),
             # streamer-health is preopen's whole-session replacement under the supervisor
             _job_check("task.streamer_health", "streamer-health", sh.get("enabled", True)),
             # The suite's only read surface had no entry here at all until 2026-08-14 — a green
@@ -236,11 +264,6 @@ def _suite_task_checks(cfg: dict[str, Any]) -> list[Check]:
             "reconcile",
             cfgmod.reconcile_schedule_settings(cfg)["task_name"],
             cfgmod.reconcile_schedule_settings(cfg)["enabled"],
-        ),
-        (
-            "follow_notify",
-            cfgmod.follow_feed_settings(cfg)["task_name"],
-            cfgmod.follow_feed_settings(cfg)["enabled"],
         ),
         ("preopen", cfgmod.preopen_settings(cfg)["task_name"], cfgmod.preopen_settings(cfg)["enabled"]),
     ]
@@ -408,7 +431,20 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
                 checks.append(Check(f"{name}.eval_activity", mark, detail))
 
         # scheduled task(s) — or, on a supervisor-driven box, the matching supervisor job(s)
-        task_keys = (("task_name", "paper"), ("entry_task_name", "entry"), ("exit_task_name", "exit"))
+        #
+        # The entry/exit pair only exists for the two-daily-jobs shape. A `self_healing` module runs
+        # ONE continuous job whose loop does entry and exit from its own clock, so looking up
+        # `<name>-entry` there warns about a job that is CORRECTLY absent — every single run.
+        # `entry_task_name`/`exit_task_name` stay in config for deleting the pre-cutover scheduled
+        # tasks by name, so their presence is not the discriminator; the kind is.
+        #
+        # `watchdog._check_scheduled_entry_exit_jobs` has drawn that distinction since the 2026-08-12
+        # earnings cutover and carries the comment explaining it. This surface did not, and warned on
+        # every doctor run for the thirteen days since — the cost being that two permanent WARNs
+        # teach a reader to skim past the section where a real one would appear.
+        task_keys = (("task_name", "paper"),)
+        if paper.get("kind") == "cherrypick_scheduled":
+            task_keys += (("entry_task_name", "entry"), ("exit_task_name", "exit"))
         for tkey, suffix in task_keys:
             tn = paper.get(tkey)
             if not tn:
@@ -577,6 +613,28 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
                         checks.append(Check("streamer", OK, f"running, {fresh}{quiet}"))
             except Exception as exc:
                 checks.append(Check("streamer", WARN, f"status error: {exc}"))
+
+    # Resident jobs: churn and self-stops. Same gap and the same reason the console got an entry
+    # here on 2026-08-14 — a green doctor never meant "the loop is actually running", and for a
+    # thrashing job every other signal reads healthy (its restarts keep its own data fresh).
+    try:
+        from . import jobspec as _jobspec  # local imports avoid a cycle at module load, as above
+        from . import supersnap as _supersnap
+        from .watchdog import _RESIDENT_CHURN_STARTS
+
+        for jid, st in sorted(_supersnap.all_job_states().items()):
+            if st.get("kind") != _jobspec.KIND_RESIDENT or not st.get("enabled", False):
+                continue
+            starts = int(st.get("starts_in_window") or 0)
+            state = st.get("resident_state") or "not yet evaluated"
+            if starts > _RESIDENT_CHURN_STARTS:
+                checks.append(Check(f"resident.{jid}", WARN, f"restarting repeatedly — {starts} starts"))
+            elif st.get("silence_file") and not st.get("heartbeat_seen") and st.get("running_pid"):
+                checks.append(Check(f"resident.{jid}", WARN, "running but publishes no heartbeat"))
+            else:
+                checks.append(Check(f"resident.{jid}", OK, state))
+    except Exception as exc:
+        checks.append(Check("resident", WARN, f"resident job check failed: {exc}"))
 
     # background services (e.g. the gex spot-trail recorder): report each enabled daemon's status
     for svc in cfgmod.enabled_services(cfg):
