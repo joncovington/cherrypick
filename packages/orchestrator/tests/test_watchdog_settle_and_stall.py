@@ -96,18 +96,22 @@ def test_every_module_that_opts_into_the_settlement_check_can_actually_produce_a
     """
     import json
 
-    config = json.loads((Path(__file__).resolve().parents[1] / "config.example.json").read_text(encoding="utf-8"))
+    config = json.loads(
+        (Path(__file__).resolve().parents[1] / "config.example.json").read_text(encoding="utf-8")
+    )
     offenders = [
         name
         for name, mcfg in (config.get("modules") or {}).items()
-        if (mcfg.get("paper") or {}).get("settlement_check") and not (mcfg.get("paper") or {}).get("status_argv")
+        if (mcfg.get("paper") or {}).get("settlement_check")
+        and not (mcfg.get("paper") or {}).get("status_argv")
     ]
     assert offenders == [], f"opted into the settlement check with no status_argv to read: {offenders}"
 
     # ...and the flag is not merely decorative: at least one module must be using it, or a refactor
     # that quietly dropped it everywhere would leave this lint passing over an empty set.
     opted_in = [
-        name for name, mcfg in (config.get("modules") or {}).items()
+        name
+        for name, mcfg in (config.get("modules") or {}).items()
         if (mcfg.get("paper") or {}).get("settlement_check")
     ]
     assert len(opted_in) >= 5, f"only {opted_in} still opt into the settlement check"

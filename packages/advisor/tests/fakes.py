@@ -40,6 +40,7 @@ def next_session(session: str | None = None) -> str:
     """The trading day after `anchor_session()` — where tomorrow's advice artifact lands."""
     return _clock.next_session(session or anchor_session())
 
+
 MEIC_DDL = """
 CREATE TABLE ic_trades (
     id INTEGER PRIMARY KEY AUTOINCREMENT, trade_date TEXT NOT NULL, entry_time TEXT,
@@ -161,91 +162,297 @@ def seed_suite(home: Path, session: str, *, with_live: bool = True) -> None:
     data = home / "data"
 
     meic = make_db(data / "meic" / "paper_trades.db", MEIC_DDL)
-    insert(meic, "market_context", [
-        {"context_date": session, "vix": 15.4, "vix1d": 12.2, "vix1d_ratio": 0.79,
-         "updated_at": f"{session}T13:00:00+00:00"},
-    ])
-    insert(meic, "entry_attempts", [
-        {"ts": f"{session}T14:31:00", "trade_date": session, "risk_profile": "control",
-         "symbol": "SPX", "outcome": "filled", "ic_order_id": "ic-1"},
-        {"ts": f"{session}T14:41:00", "trade_date": session, "risk_profile": "control",
-         "symbol": "SPX", "outcome": "gate_blocked", "block_detail": "regime_gex_negative"},
-        {"ts": f"{session}T14:51:00", "trade_date": session, "risk_profile": "width-5",
-         "symbol": "SPX", "outcome": "cadence_blocked", "block_detail": "cadence_not_clear"},
-    ])
-    insert(meic, "ic_trades", [
-        {"trade_date": session, "symbol": "SPX", "risk_profile": "control", "net_credit": 2.4,
-         "wing_width": 20, "quantity": 1, "pnl": 180.0, "fees": 6.0, "status": "closed",
-         "exit_time": f"{session}T20:10:00", "put_max_cost": 3.2,
-         "ic_order_id": "ic-1", "created_at": f"{session}T14:31:00"},
-        {"trade_date": session, "symbol": "SPX", "risk_profile": "advised:control",
-         "net_credit": 2.4, "wing_width": 20, "quantity": 1, "pnl": 210.0, "fees": 6.0,
-         "status": "closed", "exit_time": f"{session}T20:10:00",
-         "ic_order_id": "ic-2", "created_at": f"{session}T14:31:00"},
-    ])
-    insert(meic, "iteration_regime", [
-        {"loop_date": session, "loop_time": "15:05:00", "symbol": "SPX", "underlying_price": 5600.0,
-         "vol_implied_bucket": "low", "gex_bucket": "positive", "trend_bucket": "flat",
-         "created_at": f"{session}T15:05:00"},
-    ])
+    insert(
+        meic,
+        "market_context",
+        [
+            {
+                "context_date": session,
+                "vix": 15.4,
+                "vix1d": 12.2,
+                "vix1d_ratio": 0.79,
+                "updated_at": f"{session}T13:00:00+00:00",
+            },
+        ],
+    )
+    insert(
+        meic,
+        "entry_attempts",
+        [
+            {
+                "ts": f"{session}T14:31:00",
+                "trade_date": session,
+                "risk_profile": "control",
+                "symbol": "SPX",
+                "outcome": "filled",
+                "ic_order_id": "ic-1",
+            },
+            {
+                "ts": f"{session}T14:41:00",
+                "trade_date": session,
+                "risk_profile": "control",
+                "symbol": "SPX",
+                "outcome": "gate_blocked",
+                "block_detail": "regime_gex_negative",
+            },
+            {
+                "ts": f"{session}T14:51:00",
+                "trade_date": session,
+                "risk_profile": "width-5",
+                "symbol": "SPX",
+                "outcome": "cadence_blocked",
+                "block_detail": "cadence_not_clear",
+            },
+        ],
+    )
+    insert(
+        meic,
+        "ic_trades",
+        [
+            {
+                "trade_date": session,
+                "symbol": "SPX",
+                "risk_profile": "control",
+                "net_credit": 2.4,
+                "wing_width": 20,
+                "quantity": 1,
+                "pnl": 180.0,
+                "fees": 6.0,
+                "status": "closed",
+                "exit_time": f"{session}T20:10:00",
+                "put_max_cost": 3.2,
+                "ic_order_id": "ic-1",
+                "created_at": f"{session}T14:31:00",
+            },
+            {
+                "trade_date": session,
+                "symbol": "SPX",
+                "risk_profile": "advised:control",
+                "net_credit": 2.4,
+                "wing_width": 20,
+                "quantity": 1,
+                "pnl": 210.0,
+                "fees": 6.0,
+                "status": "closed",
+                "exit_time": f"{session}T20:10:00",
+                "ic_order_id": "ic-2",
+                "created_at": f"{session}T14:31:00",
+            },
+        ],
+    )
+    insert(
+        meic,
+        "iteration_regime",
+        [
+            {
+                "loop_date": session,
+                "loop_time": "15:05:00",
+                "symbol": "SPX",
+                "underlying_price": 5600.0,
+                "vol_implied_bucket": "low",
+                "gex_bucket": "positive",
+                "trend_bucket": "flat",
+                "created_at": f"{session}T15:05:00",
+            },
+        ],
+    )
 
     flies = make_db(data / "flies" / "paper_trades.db", FLIES_DDL)
-    insert(flies, "fly_books", [
-        {"book_id": "b1", "trade_date": session, "arm": "control", "symbol": "SPX",
-         "credit_collected": 420.0, "debits_paid": 260.0, "fees": 18.0, "net_cash": 142.0,
-         "worst": -85.0, "floor_holds": 1, "band_low": 5540.0, "band_high": 5660.0,
-         "unbounded_below": 0, "completion_rate": 0.66, "modeled_pnl": 120.0, "pnl": 142.0,
-         "status": "settled"},
-    ])
-    insert(flies, "fly_entry_attempts", [
-        {"ts": f"{session}T14:00:00", "trade_date": session, "arm": "control", "symbol": "SPX",
-         "mode": "legged", "outcome": "filled", "position_id": "p1"},
-        {"ts": f"{session}T14:20:00", "trade_date": session, "arm": "control", "symbol": "SPX",
-         "mode": "legged", "outcome": "gate_blocked", "block_detail": "credit_below_floor"},
-    ])
-    insert(flies, "fly_positions", [
-        {"position_id": "p1", "book_id": "b1", "trade_date": session, "arm": "control",
-         "symbol": "SPX", "kind": "fly", "net": 60.0, "fees": 9.0, "gross_pnl": 151.0,
-         "pnl": 142.0, "status": "settled", "completion_latency_min": 12.0},
-    ])
+    insert(
+        flies,
+        "fly_books",
+        [
+            {
+                "book_id": "b1",
+                "trade_date": session,
+                "arm": "control",
+                "symbol": "SPX",
+                "credit_collected": 420.0,
+                "debits_paid": 260.0,
+                "fees": 18.0,
+                "net_cash": 142.0,
+                "worst": -85.0,
+                "floor_holds": 1,
+                "band_low": 5540.0,
+                "band_high": 5660.0,
+                "unbounded_below": 0,
+                "completion_rate": 0.66,
+                "modeled_pnl": 120.0,
+                "pnl": 142.0,
+                "status": "settled",
+            },
+        ],
+    )
+    insert(
+        flies,
+        "fly_entry_attempts",
+        [
+            {
+                "ts": f"{session}T14:00:00",
+                "trade_date": session,
+                "arm": "control",
+                "symbol": "SPX",
+                "mode": "legged",
+                "outcome": "filled",
+                "position_id": "p1",
+            },
+            {
+                "ts": f"{session}T14:20:00",
+                "trade_date": session,
+                "arm": "control",
+                "symbol": "SPX",
+                "mode": "legged",
+                "outcome": "gate_blocked",
+                "block_detail": "credit_below_floor",
+            },
+        ],
+    )
+    insert(
+        flies,
+        "fly_positions",
+        [
+            {
+                "position_id": "p1",
+                "book_id": "b1",
+                "trade_date": session,
+                "arm": "control",
+                "symbol": "SPX",
+                "kind": "fly",
+                "net": 60.0,
+                "fees": 9.0,
+                "gross_pnl": 151.0,
+                "pnl": 142.0,
+                "status": "settled",
+                "completion_latency_min": 12.0,
+            },
+        ],
+    )
 
     earnings = make_db(data / "earnings" / "paper_trades.db", EARNINGS_DDL)
     opened = 1_754_000_000.0
-    insert(earnings, "trades", [
-        {"order_id": "e-1", "strategy": "iron_fly", "symbol": "AAPL", "expiration": session,
-         "entry_credit": 3.1, "pnl": None, "opened_at": opened, "profile": "strat_test:iron_fly",
-         "quantity": 1, "capital_at_risk": 690.0, "entry_cost": 2.6, "status": "open",
-         "hold_days": 1, "max_unrealized_pnl": 90.0, "min_unrealized_pnl": -30.0},
-    ])
-    insert(earnings, "position_marks", [
-        {"order_id": "e-1", "marked_at": opened + 3600, "session_date": session,
-         "unrealized_pnl": 42.0, "usable": 1},
-        {"order_id": "e-1", "marked_at": opened + 7200, "session_date": session,
-         "unrealized_pnl": None, "usable": 0, "refusal": "quotes_stale"},
-    ])
-    insert(earnings, "scan_log", [
-        {"scan_date": session, "strategy": "iron_fly", "symbol": "AAPL", "outcome": "accepted",
-         "stage": "screen", "profile": "strat_test:iron_fly"},
-        {"scan_date": session, "strategy": "iron_fly", "symbol": "TSLA", "outcome": "rejected",
-         "reason": "iv_rv_ratio_below_floor", "stage": "screen"},
-    ])
-    insert(earnings, "loop_iterations", [
-        {"ran_at": opened + 100, "session_date": session, "phase": "manage", "status": "ok",
-         "open_positions": 1},
-    ])
-    insert(earnings, "management_events", [
-        {"order_id": "e-1", "occurred_at": opened + 200, "session_date": session, "phase": "manage",
-         "action": "hold", "reason": "target_not_hit", "executed": 0},
-    ])
+    insert(
+        earnings,
+        "trades",
+        [
+            {
+                "order_id": "e-1",
+                "strategy": "iron_fly",
+                "symbol": "AAPL",
+                "expiration": session,
+                "entry_credit": 3.1,
+                "pnl": None,
+                "opened_at": opened,
+                "profile": "strat_test:iron_fly",
+                "quantity": 1,
+                "capital_at_risk": 690.0,
+                "entry_cost": 2.6,
+                "status": "open",
+                "hold_days": 1,
+                "max_unrealized_pnl": 90.0,
+                "min_unrealized_pnl": -30.0,
+            },
+        ],
+    )
+    insert(
+        earnings,
+        "position_marks",
+        [
+            {
+                "order_id": "e-1",
+                "marked_at": opened + 3600,
+                "session_date": session,
+                "unrealized_pnl": 42.0,
+                "usable": 1,
+            },
+            {
+                "order_id": "e-1",
+                "marked_at": opened + 7200,
+                "session_date": session,
+                "unrealized_pnl": None,
+                "usable": 0,
+                "refusal": "quotes_stale",
+            },
+        ],
+    )
+    insert(
+        earnings,
+        "scan_log",
+        [
+            {
+                "scan_date": session,
+                "strategy": "iron_fly",
+                "symbol": "AAPL",
+                "outcome": "accepted",
+                "stage": "screen",
+                "profile": "strat_test:iron_fly",
+            },
+            {
+                "scan_date": session,
+                "strategy": "iron_fly",
+                "symbol": "TSLA",
+                "outcome": "rejected",
+                "reason": "iv_rv_ratio_below_floor",
+                "stage": "screen",
+            },
+        ],
+    )
+    insert(
+        earnings,
+        "loop_iterations",
+        [
+            {
+                "ran_at": opened + 100,
+                "session_date": session,
+                "phase": "manage",
+                "status": "ok",
+                "open_positions": 1,
+            },
+        ],
+    )
+    insert(
+        earnings,
+        "management_events",
+        [
+            {
+                "order_id": "e-1",
+                "occurred_at": opened + 200,
+                "session_date": session,
+                "phase": "manage",
+                "action": "hold",
+                "reason": "target_not_hit",
+                "executed": 0,
+            },
+        ],
+    )
 
     cache = make_db(data / "marketdata" / "stream_cache.db", STREAM_CACHE_DDL)
-    insert(cache, "stream_summary", [
-        {"symbol": "SPX", "trade_date": session, "day_open": 5590.0, "day_high": 5620.0,
-         "day_low": 5570.0, "day_close": 5605.0, "prev_day_close": 5580.0, "updated_at": opened},
-        # Yesterday's row: the pack must not report it as today's range.
-        {"symbol": "SPX", "trade_date": "1999-01-04", "day_open": 1.0, "day_high": 2.0,
-         "day_low": 0.5, "day_close": 1.5, "prev_day_close": 1.0, "updated_at": 0.0},
-    ])
+    insert(
+        cache,
+        "stream_summary",
+        [
+            {
+                "symbol": "SPX",
+                "trade_date": session,
+                "day_open": 5590.0,
+                "day_high": 5620.0,
+                "day_low": 5570.0,
+                "day_close": 5605.0,
+                "prev_day_close": 5580.0,
+                "updated_at": opened,
+            },
+            # Yesterday's row: the pack must not report it as today's range.
+            {
+                "symbol": "SPX",
+                "trade_date": "1999-01-04",
+                "day_open": 1.0,
+                "day_high": 2.0,
+                "day_low": 0.5,
+                "day_close": 1.5,
+                "prev_day_close": 1.0,
+                "updated_at": 0.0,
+            },
+        ],
+    )
 
     gex = make_db(data / "gex" / "gex_history.db", GEX_DDL)
     # Timestamps INSIDE the session's RTH: the pack's today_counts is RTH-gated (the recorder also
@@ -254,23 +461,61 @@ def seed_suite(home: Path, session: str, *, with_live: bool = True) -> None:
     from zoneinfo import ZoneInfo as _Zi
 
     rth_1000 = _dt.fromisoformat(f"{session}T10:00:00").replace(tzinfo=_Zi("America/New_York")).timestamp()
-    insert(gex, "gex_regime_history", [
-        {"symbol": "SPX", "trade_date": session, "ts": rth_1000, "spot": 5600.0, "net_gex": 1.2e9,
-         "zero_gamma": 5570.0, "call_wall": 5650.0, "put_wall": 5500.0},
-        {"symbol": "SPX", "trade_date": session, "ts": rth_1000 + 300, "spot": 5605.0,
-         "net_gex": -0.4e9, "zero_gamma": 5580.0},
-        # A frozen overnight copy of the closing sign: MUST NOT appear in today_counts.
-        {"symbol": "SPX", "trade_date": session, "ts": rth_1000 + 13 * 3600, "spot": 5605.0,
-         "net_gex": -0.4e9, "zero_gamma": 5580.0},
-    ])
+    insert(
+        gex,
+        "gex_regime_history",
+        [
+            {
+                "symbol": "SPX",
+                "trade_date": session,
+                "ts": rth_1000,
+                "spot": 5600.0,
+                "net_gex": 1.2e9,
+                "zero_gamma": 5570.0,
+                "call_wall": 5650.0,
+                "put_wall": 5500.0,
+            },
+            {
+                "symbol": "SPX",
+                "trade_date": session,
+                "ts": rth_1000 + 300,
+                "spot": 5605.0,
+                "net_gex": -0.4e9,
+                "zero_gamma": 5580.0,
+            },
+            # A frozen overnight copy of the closing sign: MUST NOT appear in today_counts.
+            {
+                "symbol": "SPX",
+                "trade_date": session,
+                "ts": rth_1000 + 13 * 3600,
+                "spot": 5605.0,
+                "net_gex": -0.4e9,
+                "zero_gamma": 5580.0,
+            },
+        ],
+    )
 
     if with_live:
         live = make_db(data / "flies" / "live_trades.db", FLIES_DDL)
-        insert(live, "fly_positions", [
-            {"position_id": "lp1", "book_id": "lb1", "trade_date": session, "arm": "control",
-             "symbol": "SPX", "kind": "fly", "net": 40.0, "fees": 3.0, "pnl": 37.0,
-             "status": "settled", "entry_fill_status": "filled"},
-        ])
+        insert(
+            live,
+            "fly_positions",
+            [
+                {
+                    "position_id": "lp1",
+                    "book_id": "lb1",
+                    "trade_date": session,
+                    "arm": "control",
+                    "symbol": "SPX",
+                    "kind": "fly",
+                    "net": 40.0,
+                    "fees": 3.0,
+                    "pnl": 37.0,
+                    "status": "settled",
+                    "entry_fill_status": "filled",
+                },
+            ],
+        )
         make_db(data / "meic" / "meic_trades.db", MEIC_DDL)
         make_db(data / "earnings" / "earnings_trades.db", EARNINGS_DDL)
 
@@ -284,8 +529,9 @@ def write_config(home: Path, module: str, config: dict) -> Path:
     return path
 
 
-def advice_block(bounds: dict, *, enabled: bool = True, base_key: str = "base_profile",
-                 base: str = "control") -> dict:
+def advice_block(
+    bounds: dict, *, enabled: bool = True, base_key: str = "base_profile", base: str = "control"
+) -> dict:
     return {"advice": {"enabled": enabled, base_key: base, "bounds": bounds}}
 
 

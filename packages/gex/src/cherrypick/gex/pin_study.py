@@ -316,7 +316,10 @@ def _summarise(sessions: list[dict], variant: str) -> dict:
         "winners": winners,
         "bwb_zones": bwb_zones,
         "iron_fly_zones": fly_zones,
-        "ic": {"outcomes": ic_counts, "median_breach_points": round(median(breaches), 2) if breaches else None},
+        "ic": {
+            "outcomes": ic_counts,
+            "median_breach_points": round(median(breaches), 2) if breaches else None,
+        },
         "winners_by_regime": by_regime,
         "median_close_distance": {k: (round(median(v), 2) if v else None) for k, v in dist.items()},
         "median_open_distance": {k: (round(median(v), 2) if v else None) for k, v in reach.items()},

@@ -51,16 +51,14 @@ def check_params(
     """
     posture = _bounds.resolve(module)
     if not posture["enabled"]:
-        return {"ok": False, "reason": posture["reason"], "proposals": [], "rejected": [],
-                "posture": posture}
+        return {"ok": False, "reason": posture["reason"], "proposals": [], "rejected": [], "posture": posture}
 
     artifact = {
         "module": module,
         "session": target_session,
         "expires_at": _clock.end_of_session_iso(target_session),
         "proposals": [
-            {"param": p, "value": v, "rationale": (rationales or {}).get(p, "")}
-            for p, v in params.items()
+            {"param": p, "value": v, "rationale": (rationales or {}).get(p, "")} for p, v in params.items()
         ],
     }
     result = _advice.validate(artifact, posture["bounds"], target_session)
@@ -101,35 +99,58 @@ def admit_spec(
     length = _settings.clamp_sessions(sessions, resolved)
 
     experiment_id = _store.next_experiment_id(conn, session, module)
-    _store.insert_experiment(conn, {
-        "id": experiment_id,
-        "module": module,
-        "base_profile": checked["posture"]["base_profile"],
-        "name": name,
-        "hypothesis": hypothesis,
-        "success_metric": success_metric,
-        "params_json": json.dumps({p["param"]: p["value"] for p in checked["proposals"]}),
-        # What the bounds were when this was admitted. A later human tightening that starts
-        # rejecting the overlay then reads as a change, not a mystery.
-        "bounds_snapshot_json": json.dumps(checked["posture"]["bounds"]),
-        "status": status,
-        "created_session": session,
-        "expires_after_sessions": length,
-        "origin_proposal_id": proposal_id,
-    })
-    _store.journal(conn, experiment_id, "created", session=session, detail={
-        "params": params, "sessions": length, "status": status,
-        "queued_because": f"{cap} active experiment(s) already" if over_cap else None,
-    })
+    _store.insert_experiment(
+        conn,
+        {
+            "id": experiment_id,
+            "module": module,
+            "base_profile": checked["posture"]["base_profile"],
+            "name": name,
+            "hypothesis": hypothesis,
+            "success_metric": success_metric,
+            "params_json": json.dumps({p["param"]: p["value"] for p in checked["proposals"]}),
+            # What the bounds were when this was admitted. A later human tightening that starts
+            # rejecting the overlay then reads as a change, not a mystery.
+            "bounds_snapshot_json": json.dumps(checked["posture"]["bounds"]),
+            "status": status,
+            "created_session": session,
+            "expires_after_sessions": length,
+            "origin_proposal_id": proposal_id,
+        },
+    )
+    _store.journal(
+        conn,
+        experiment_id,
+        "created",
+        session=session,
+        detail={
+            "params": params,
+            "sessions": length,
+            "status": status,
+            "queued_because": f"{cap} active experiment(s) already" if over_cap else None,
+        },
+    )
     if status == STATUS_ACTIVE:
         _store.journal(conn, experiment_id, "activated", session=session)
 
-    return {"ok": True, "experiment_id": experiment_id, "status": status, "sessions": length,
-            "reason": None if not over_cap else "queued behind the per-module cap"}
+    return {
+        "ok": True,
+        "experiment_id": experiment_id,
+        "status": status,
+        "sessions": length,
+        "reason": None if not over_cap else "queued behind the per-module cap",
+    }
 
 
-def tune(conn, *, session: str, experiment_id: str, params: dict[str, Any],
-         rationale: str = "", rationales: dict | None = None) -> dict[str, Any]:
+def tune(
+    conn,
+    *,
+    session: str,
+    experiment_id: str,
+    params: dict[str, Any],
+    rationale: str = "",
+    rationales: dict | None = None,
+) -> dict[str, Any]:
     """Adjust an experiment the advisor owns. Anything else is refused.
 
     The advisor may only ever tune its OWN experiments — never a control arm, never a
@@ -147,17 +168,20 @@ def tune(conn, *, session: str, experiment_id: str, params: dict[str, Any],
         return {"ok": False, "reason": checked["reason"], "rejected": checked["rejected"]}
 
     _store.update_experiment(
-        conn, experiment_id,
+        conn,
+        experiment_id,
         params_json=json.dumps({p["param"]: p["value"] for p in checked["proposals"]}),
         bounds_snapshot_json=json.dumps(checked["posture"]["bounds"]),
     )
-    _store.journal(conn, experiment_id, "tuned", session=session,
-                   detail={"params": params, "rationale": rationale})
+    _store.journal(
+        conn, experiment_id, "tuned", session=session, detail={"params": params, "rationale": rationale}
+    )
     return {"ok": True, "experiment_id": experiment_id}
 
 
-def record_verdict_recommendation(conn, *, session: str, experiment_id: str, recommendation: str,
-                                  rationale: str = "") -> dict[str, Any]:
+def record_verdict_recommendation(
+    conn, *, session: str, experiment_id: str, recommendation: str, rationale: str = ""
+) -> dict[str, Any]:
     """Attach the model's keep/kill/promote to an experiment's computed verdict.
 
     Stored *beside* the numbers `verdicts.py` computed, never instead of them. If the experiment has
@@ -175,11 +199,20 @@ def record_verdict_recommendation(conn, *, session: str, experiment_id: str, rec
         # Same per-module rule the fact pack shows the model — never the library default.
         module_rule = _settings.calibration_rule(experiment["module"]) or None
         body = _verdicts.for_experiment(experiment, rule=module_rule)
-    body["recommendation"] = {"value": recommendation, "rationale": rationale, "by": "model",
-                              "session": session}
+    body["recommendation"] = {
+        "value": recommendation,
+        "rationale": rationale,
+        "by": "model",
+        "session": session,
+    }
     _store.update_experiment(conn, experiment_id, verdict_json=json.dumps(body))
-    _store.journal(conn, experiment_id, "verdict", session=session,
-                   detail={"recommendation": recommendation, "rationale": rationale})
+    _store.journal(
+        conn,
+        experiment_id,
+        "verdict",
+        session=session,
+        detail={"recommendation": recommendation, "rationale": rationale},
+    )
     return {"ok": True, "experiment_id": experiment_id, "recommendation": recommendation}
 
 
@@ -196,8 +229,14 @@ def verdict_for(experiment: dict, *, rule: dict | None = None, cfg: dict | None 
     return _verdicts.for_experiment(experiment, rule=module_rule)
 
 
-def kill(conn, experiment_id: str, *, session: str | None = None,
-         reason: str = "killed by user", cfg: dict | None = None) -> dict[str, Any]:
+def kill(
+    conn,
+    experiment_id: str,
+    *,
+    session: str | None = None,
+    reason: str = "killed by user",
+    cfg: dict | None = None,
+) -> dict[str, Any]:
     """Stop an experiment now. No artifact is issued for it tonight; a queued one takes its slot.
 
     **The verdict is computed here too, for the same reason `expire_due` computes one.** An
@@ -215,8 +254,12 @@ def kill(conn, experiment_id: str, *, session: str | None = None,
     if experiment is None:
         return {"ok": False, "reason": f"no such experiment {experiment_id!r}"}
     if experiment["status"] in (STATUS_EXPIRED, STATUS_KILLED):
-        return {"ok": True, "experiment_id": experiment_id, "status": experiment["status"],
-                "reason": "already concluded"}
+        return {
+            "ok": True,
+            "experiment_id": experiment_id,
+            "status": experiment["status"],
+            "reason": "already concluded",
+        }
 
     body = verdict_for(experiment, cfg=cfg)
     body["killed_reason"] = reason
@@ -225,16 +268,14 @@ def kill(conn, experiment_id: str, *, session: str | None = None,
     _store.update_experiment(conn, experiment_id, status=STATUS_KILLED)
     _store.journal(conn, experiment_id, "killed", session=session, detail={"reason": reason})
     promoted = activate_queued(conn, experiment["module"], session=session)
-    return {"ok": True, "experiment_id": experiment_id, "status": STATUS_KILLED,
-            "activated": promoted}
+    return {"ok": True, "experiment_id": experiment_id, "status": STATUS_KILLED, "activated": promoted}
 
 
 def dismiss(conn, proposal_id: int) -> dict[str, Any]:
     """Mark a proposal dismissed by the user. It stays in the record and travels in the deep pack's
     journal, which is the whole point — a dismissal the model cannot see gets re-proposed."""
     ok = _store.set_proposal_status(conn, proposal_id, "dismissed", "dismissed by user")
-    return {"ok": ok, "proposal_id": proposal_id,
-            "reason": None if ok else f"no such proposal {proposal_id}"}
+    return {"ok": ok, "proposal_id": proposal_id, "reason": None if ok else f"no such proposal {proposal_id}"}
 
 
 def activate_queued(conn, module: str, *, session: str | None = None, cfg: dict | None = None) -> list[str]:
@@ -245,8 +286,7 @@ def activate_queued(conn, module: str, *, session: str | None = None, cfg: dict 
         if _active_count(conn, module) >= cap:
             break
         _store.update_experiment(conn, candidate["id"], status=STATUS_ACTIVE)
-        _store.journal(conn, candidate["id"], "activated", session=session,
-                       detail={"reason": "slot freed"})
+        _store.journal(conn, candidate["id"], "activated", session=session, detail={"reason": "slot freed"})
         activated.append(candidate["id"])
     return activated
 
@@ -271,13 +311,21 @@ def expire_due(
         if experiment["sessions_run"] < experiment["expires_after_sessions"]:
             continue
         body = verdict_for(experiment, rule=rule, cfg=cfg)
-        _store.update_experiment(conn, experiment["id"], status=STATUS_EXPIRED,
-                                 verdict_json=json.dumps(body))
-        _store.journal(conn, experiment["id"], "expired", session=session,
-                       detail={"sessions_run": experiment["sessions_run"],
-                               "underpowered": body["underpowered"]})
-        concluded.append({"experiment_id": experiment["id"], "module": experiment["module"],
-                          "underpowered": body["underpowered"]})
+        _store.update_experiment(conn, experiment["id"], status=STATUS_EXPIRED, verdict_json=json.dumps(body))
+        _store.journal(
+            conn,
+            experiment["id"],
+            "expired",
+            session=session,
+            detail={"sessions_run": experiment["sessions_run"], "underpowered": body["underpowered"]},
+        )
+        concluded.append(
+            {
+                "experiment_id": experiment["id"],
+                "module": experiment["module"],
+                "underpowered": body["underpowered"],
+            }
+        )
         activate_queued(conn, experiment["module"], session=session)
     return concluded
 
@@ -304,23 +352,42 @@ def admit_reply(
     accept.
     """
     checkpoint_id = _store.record_checkpoint(
-        conn, session=session, slot=slot, model=model, ok=True, pack_path=pack_path,
-        raw_path=raw_path, observations=reply.get("observations"), flags=reply.get("flags"),
+        conn,
+        session=session,
+        slot=slot,
+        model=model,
+        ok=True,
+        pack_path=pack_path,
+        raw_path=raw_path,
+        observations=reply.get("observations"),
+        flags=reply.get("flags"),
     )
 
     admitted, rejected = [], []
 
     for bad in reply.get("malformed") or []:
-        pid = _store.add_proposal(conn, checkpoint_id=checkpoint_id, module=None, kind="malformed",
-                                  payload=bad.get("raw"), status="rejected",
-                                  reject_reason=bad.get("reason"))
+        pid = _store.add_proposal(
+            conn,
+            checkpoint_id=checkpoint_id,
+            module=None,
+            kind="malformed",
+            payload=bad.get("raw"),
+            status="rejected",
+            reject_reason=bad.get("reason"),
+        )
         rejected.append({"proposal_id": pid, "kind": "malformed", "reason": bad.get("reason")})
 
     for proposal in reply.get("proposals") or []:
         kind = proposal["kind"]
         module = proposal.get("module")
-        pid = _store.add_proposal(conn, checkpoint_id=checkpoint_id, module=module, kind=kind,
-                                  payload=proposal.get("raw", proposal), status="proposed")
+        pid = _store.add_proposal(
+            conn,
+            checkpoint_id=checkpoint_id,
+            module=module,
+            kind=kind,
+            payload=proposal.get("raw", proposal),
+            status="proposed",
+        )
         outcome = _apply(conn, session=session, slot=slot, proposal=proposal, proposal_id=pid, cfg=cfg)
         if outcome["ok"]:
             _store.set_proposal_status(conn, pid, "admitted")
@@ -329,10 +396,19 @@ def admit_reply(
             _store.set_proposal_status(conn, pid, "rejected", outcome.get("reason"))
             rejected.append({"proposal_id": pid, "kind": kind, "reason": outcome.get("reason")})
 
-    summary = {"ok": True, "checkpoint_id": checkpoint_id, "session": session, "slot": slot,
-               "model": model, "observations": reply.get("observations") or [],
-               "flags": reply.get("flags") or [], "admitted": admitted, "rejected": rejected,
-               "pack": pack_path, "raw": raw_path}
+    summary = {
+        "ok": True,
+        "checkpoint_id": checkpoint_id,
+        "session": session,
+        "slot": slot,
+        "model": model,
+        "observations": reply.get("observations") or [],
+        "flags": reply.get("flags") or [],
+        "admitted": admitted,
+        "rejected": rejected,
+        "pack": pack_path,
+        "raw": raw_path,
+    }
     # The write-once summary beside the pack and the raw reply. Its existence is what freezes the
     # slot: the record of what the model was shown and said on a given afternoon should not quietly
     # become a different record on a re-run. `--force` overwrites the whole triple, deliberately.
@@ -340,8 +416,9 @@ def admit_reply(
     return summary
 
 
-def _apply(conn, *, session: str, slot: str, proposal: dict[str, Any], proposal_id: int,
-           cfg: dict | None) -> dict[str, Any]:
+def _apply(
+    conn, *, session: str, slot: str, proposal: dict[str, Any], proposal_id: int, cfg: dict | None
+) -> dict[str, Any]:
     """Route one typed proposal to its lifecycle action.
 
     `creative` is the deliberate no-op: full reach on what may be *proposed* — a new arm, a new
@@ -354,25 +431,39 @@ def _apply(conn, *, session: str, slot: str, proposal: dict[str, Any], proposal_
         return {"ok": True, "action": "recorded", "propose_only": True}
 
     if kind == "tune":
-        return tune(conn, session=session, experiment_id=proposal["experiment_id"],
-                    params=proposal["params"], rationale=proposal.get("rationale", ""),
-                    rationales=proposal.get("rationales"))
+        return tune(
+            conn,
+            session=session,
+            experiment_id=proposal["experiment_id"],
+            params=proposal["params"],
+            rationale=proposal.get("rationale", ""),
+            rationales=proposal.get("rationales"),
+        )
 
     if kind == "verdict":
         return record_verdict_recommendation(
-            conn, session=session, experiment_id=proposal["experiment_id"],
-            recommendation=proposal["recommendation"], rationale=proposal.get("rationale", ""),
+            conn,
+            session=session,
+            experiment_id=proposal["experiment_id"],
+            recommendation=proposal["recommendation"],
+            rationale=proposal.get("rationale", ""),
         )
 
     if kind in ("bounded_adjustment", "experiment_spec"):
         if not proposal.get("module"):
             return {"ok": False, "reason": "missing required field(s): module"}
         return admit_spec(
-            conn, session=session, module=proposal["module"], params=proposal["params"],
-            proposal_id=proposal_id, name=proposal.get("name") or f"{slot}-{kind}",
+            conn,
+            session=session,
+            module=proposal["module"],
+            params=proposal["params"],
+            proposal_id=proposal_id,
+            name=proposal.get("name") or f"{slot}-{kind}",
             hypothesis=proposal.get("hypothesis", ""),
-            success_metric=proposal.get("success_metric", ""), sessions=proposal.get("sessions"),
-            rationales=proposal.get("rationales"), cfg=cfg,
+            success_metric=proposal.get("success_metric", ""),
+            sessions=proposal.get("sessions"),
+            rationales=proposal.get("rationales"),
+            cfg=cfg,
         )
 
     return {"ok": False, "reason": f"unknown_kind: {kind!r}"}

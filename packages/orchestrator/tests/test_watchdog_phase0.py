@@ -186,5 +186,3 @@ def _cfg():
         "eod_insight": {"enabled": False},
         "modules": {},
     }
-
-

@@ -351,11 +351,6 @@ open_assignment_count = _store.open_assignment_count
 # ---------------------------------------------------------------------------
 
 
-
-
-
-
-
 def connect(db_path: str | None = None) -> sqlite3.Connection:
     """Open the ledger. WAL + NORMAL, because this is a write path on a 30s tick.
 
@@ -375,37 +370,9 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
     return conn
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # --------------------------------------------------------------------------- telemetry writers
 # Wrapped: telemetry may never cost a trade or a tick. A decision writer failing is logged by the
 # caller's own log line, never raised into the loop.
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # --------------------------------------------------------------------------- readers
@@ -436,12 +403,6 @@ def positions_for_week(conn, week_of: str) -> list[dict]:
     ]
 
 
-
-
-
-
-
-
 def expiring_open_legs(conn, day: str) -> list[dict]:
     """Open legs whose expiration is `day` — the settlement pass's work list, position row joined
     on so the settle path never needs a second query per leg."""
@@ -465,9 +426,19 @@ def record_paired_debit(conn, **row) -> None:
     Monday tick restates rather than duplicating."""
     try:
         cols = (
-            "recorded_at", "week_of", "symbol", "side", "strike",
-            "friday_session", "friday_debit", "friday_spot",
-            "monday_session", "monday_debit", "monday_spot", "usable", "refusal",
+            "recorded_at",
+            "week_of",
+            "symbol",
+            "side",
+            "strike",
+            "friday_session",
+            "friday_debit",
+            "friday_spot",
+            "monday_session",
+            "monday_debit",
+            "monday_spot",
+            "usable",
+            "refusal",
         )
         values = [row.get(c) for c in cols]
         placeholders = ", ".join("?" * len(cols))
@@ -487,7 +458,5 @@ def paired_debits(conn, week_of: str | None = None) -> list[dict]:
     if week_of is None:
         rows = conn.execute("SELECT * FROM dc_paired_debits ORDER BY week_of DESC, side")
     else:
-        rows = conn.execute(
-            "SELECT * FROM dc_paired_debits WHERE week_of = ? ORDER BY side", (week_of,)
-        )
+        rows = conn.execute("SELECT * FROM dc_paired_debits WHERE week_of = ? ORDER BY side", (week_of,))
     return [dict(r) for r in rows]

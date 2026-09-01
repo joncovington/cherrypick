@@ -360,7 +360,9 @@ def test_a_snapshot_without_leg_detail_keeps_the_old_percentage_test():
     more than it used to -- absent evidence is not evidence of a penny-wide leg."""
     params = management.effective_params(_pos(), {})
     now = _at("2026-08-21", "10:00")
-    assert management.execution_gate({"ok": True, "max_spread_pct": 2.0}, params, now=now) == "spread_too_wide"
+    assert (
+        management.execution_gate({"ok": True, "max_spread_pct": 2.0}, params, now=now) == "spread_too_wide"
+    )
 
 
 # --------------------------------------------------------------- physical settlement (SPY shape)
@@ -409,20 +411,37 @@ def test_a_week_cannot_close_while_its_shares_are_still_held(conn):
     book.settle_expiring_legs(conn, "2026-08-21", 770.0, SPY_CONFIG, symbol="SPY")
     # Close the surviving long so every OPTION leg is done — the shares alone must hold it open.
     pid = "2026-08-17:control:put"
-    db.save_leg(conn, {"position_id": pid, "leg_role": "back_put", "status": "closed",
-                       "close_kind": "traded", "close_value": 8.0})
+    db.save_leg(
+        conn,
+        {
+            "position_id": pid,
+            "leg_role": "back_put",
+            "status": "closed",
+            "close_kind": "traded",
+            "close_value": 8.0,
+        },
+    )
     assert book.finalize_if_done(conn, pid, reason="test", session_date="2026-08-24") is False
-    assert conn.execute(
-        "SELECT status FROM dc_positions WHERE position_id = ?", (pid,)
-    ).fetchone()["status"] != "closed"
+    assert (
+        conn.execute("SELECT status FROM dc_positions WHERE position_id = ?", (pid,)).fetchone()["status"]
+        != "closed"
+    )
 
 
 def test_disposal_books_the_weekend_move_and_then_the_week_closes(conn):
     book.enter_week(conn, _spy_plan(), SPY_CONFIG, ["control"], week=WEEK, advice_params=None)
     book.settle_expiring_legs(conn, "2026-08-21", 770.0, SPY_CONFIG, symbol="SPY")
     pid = "2026-08-17:control:put"
-    db.save_leg(conn, {"position_id": pid, "leg_role": "back_put", "status": "closed",
-                       "close_kind": "traded", "close_value": 8.0})
+    db.save_leg(
+        conn,
+        {
+            "position_id": pid,
+            "leg_role": "back_put",
+            "status": "closed",
+            "close_kind": "traded",
+            "close_value": 8.0,
+        },
+    )
 
     assignment = db.open_assignments(conn, before_session="2026-08-24")[0]
     result = book.dispose_assignment(conn, assignment, 774.5, session_date="2026-08-24")

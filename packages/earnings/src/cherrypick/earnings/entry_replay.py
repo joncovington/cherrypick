@@ -108,8 +108,7 @@ def levels_in_force(conn: sqlite3.Connection, config: dict) -> tuple[dict, list]
     now = {c: (config.get("symbol_screen") or {}).get(c, "pass") for c in SOFT_CRITERIA}
     try:
         rows = conn.execute(
-            "SELECT break_date, old_value FROM measurement_breaks WHERE key = ?"
-            " ORDER BY break_date DESC",
+            "SELECT break_date, old_value FROM measurement_breaks WHERE key = ? ORDER BY break_date DESC",
             (SCREEN_BREAK_KEY,),
         ).fetchall()
     except sqlite3.Error:
@@ -151,10 +150,15 @@ def _reviews(conn: sqlite3.Connection, start: str | None, end: str | None) -> li
             criteria = json.loads(r["criteria_json"])
         except (TypeError, ValueError):
             continue
-        out.append({
-            "scan_date": r["scan_date"], "symbol": r["symbol"],
-            "selected": bool(r["selected"]), "reason": r["reason"] or "", "criteria": criteria,
-        })
+        out.append(
+            {
+                "scan_date": r["scan_date"],
+                "symbol": r["symbol"],
+                "selected": bool(r["selected"]),
+                "reason": r["reason"] or "",
+                "criteria": criteria,
+            }
+        )
     return out
 
 
@@ -163,8 +167,7 @@ def _outcomes(conn: sqlite3.Connection) -> dict:
     per symbol and each admitted strategy opens its own position."""
     out: dict[tuple, list[dict]] = {}
     for t in conn.execute(
-        "SELECT order_id, symbol, strategy, opened_at, pnl, entry_cost, exit_cost, status"
-        " FROM trades"
+        "SELECT order_id, symbol, strategy, opened_at, pnl, entry_cost, exit_cost, status FROM trades"
     ):
         session = _session_of(t["opened_at"])
         if session:
@@ -316,11 +319,16 @@ def validate(conn: sqlite3.Connection, *, config: dict | None = None, **kw) -> d
         replayable += 1
         would_admit = not failures
         if would_admit != review["selected"]:
-            disagreements.append({
-                "scan_date": review["scan_date"], "symbol": review["symbol"],
-                "recorded_selected": review["selected"], "replay_admits": would_admit,
-                "soft_failures": failures, "recorded_reason": review["reason"][:120],
-            })
+            disagreements.append(
+                {
+                    "scan_date": review["scan_date"],
+                    "symbol": review["symbol"],
+                    "recorded_selected": review["selected"],
+                    "replay_admits": would_admit,
+                    "soft_failures": failures,
+                    "recorded_reason": review["reason"][:120],
+                }
+            )
 
     # The first date from which the replay reproduces reality with no disagreement. More useful
     # than a bare failure count: it says which answers to trust rather than only that some are not

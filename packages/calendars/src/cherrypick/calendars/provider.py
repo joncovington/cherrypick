@@ -49,15 +49,9 @@ DEFAULT_MAX_QUOTE_AGE_SECONDS = 300
 DEFAULT_STRIKE_WINDOW_PCT = 0.04
 
 
-
-
 def _fail(symbol: str, reason: str, **extra) -> dict:
     """A refusal, not an error — `extra` carries the telemetry that explains it afterwards."""
     return {"ok": False, "symbol": symbol, "reason": reason, **extra}
-
-
-
-
 
 
 def snapshot_kwargs(config: dict) -> dict:
@@ -67,8 +61,6 @@ def snapshot_kwargs(config: dict) -> dict:
     return {
         "max_quote_age_seconds": defaults.get("max_quote_age_seconds", DEFAULT_MAX_QUOTE_AGE_SECONDS),
     }
-
-
 
 
 def build_entry_snapshot(
@@ -239,7 +231,3 @@ def build_mark_snapshot(
         return {**out, "ok": True}
     finally:
         conn.close()
-
-
-
-

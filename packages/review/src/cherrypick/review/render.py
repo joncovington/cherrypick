@@ -48,9 +48,7 @@ def _attention(facts: dict) -> list[str]:
             continue
         health = m.get("health") or {}
         if not health.get("loop_ticked"):
-            out.append(
-                f"**{name}** did not tick at all this session — a stopped loop, not a quiet day"
-            )
+            out.append(f"**{name}** did not tick at all this session — a stopped loop, not a quiet day")
         if health.get("errors"):
             out.append(f"**{name}** logged {health['errors']} iteration error(s)")
         suspected = (m.get("sample") or {}).get("suspected_break")

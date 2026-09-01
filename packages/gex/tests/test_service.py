@@ -6,13 +6,18 @@ No streamer, no network — just a temp SQLite shaped like the real stream_cache
 import json
 import sqlite3
 import time
-from datetime import date
+from datetime import date, timedelta
 
 from cherrypick.core import gex
 
 from cherrypick.gex import provider, service
 
-TODAY = date.today().isoformat()
+# Two days out, not today: the provider's forward-only horizon compares against the CURRENT date,
+# and a chain seeded to expire "today" in local time is already expired once UTC (and ET) cross
+# midnight -- which made this whole file fail every night between roughly 22:00 local and midnight,
+# exactly the window the CI schedule sits in. The fixture needs an unexpired chain, not a same-day
+# one; nothing here tests expiry selection except the two-expiration tests, which seed their own.
+EXPIRY = (date.today() + timedelta(days=2)).isoformat()
 
 # One 0DTE-ish chain for SPX: two strikes, calls + puts. gamma/OI/volume chosen so the OI and volume
 # GEX series clearly diverge (C610 has heavy OI but light volume).
@@ -46,7 +51,7 @@ def _seed_cache(path) -> None:
         conn.execute(
             "INSERT INTO stream_chain (streamer_symbol, expiration, underlying_symbol, data_json, updated_at)"
             " VALUES (?,?,?,?,0)",
-            (opt["streamer_symbol"], TODAY, "SPX", json.dumps(opt)),
+            (opt["streamer_symbol"], EXPIRY, "SPX", json.dumps(opt)),
         )
         sym = opt["streamer_symbol"]
         gamma, iv = _GREEKS[sym]
@@ -78,7 +83,7 @@ def _cfg(tmp_path):
 def test_provider_reads_chain_greeks_oi_volume(tmp_path):
     cfg = _cfg(tmp_path)
     snap = provider.snapshot_from_stream_cache(cfg["stream_cache_db"], "SPX")
-    assert snap.spot == 605.0 and snap.expiration == TODAY
+    assert snap.spot == 605.0 and snap.expiration == EXPIRY
     assert len(snap.chain_entries) == 3
     assert snap.oi[".SPX_c610"] == 50 and snap.volume[".SPX_c600"] == 10
     # IV normalised from raw decimal to percent
@@ -141,7 +146,7 @@ def test_build_gex_payload_shape_and_oi_vs_volume(tmp_path):
     cfg = _cfg(tmp_path)
     out = service.build_gex(cfg, "SPX")
     assert out["ok"] is True
-    assert out["symbol"] == "SPX" and out["expiration"] == TODAY
+    assert out["symbol"] == "SPX" and out["expiration"] == EXPIRY
     assert {"series", "totals", "spot_history", "market_open_ts", "market_close_ts"} <= out.keys()
     s600 = next(s for s in out["series"] if s["strike"] == 600)
     # OI ("positioning") and volume ("flow") series are computed independently and diverge
@@ -266,7 +271,7 @@ def _seed_two_expirations(db, today, other, *, greeks_on):
     `greeks_on` is where the non-zero gammas go. `stream_greeks` is never pruned, so an expired
     chain keeps its last gammas indefinitely — which is precisely what let one win the horizon.
     """
-    _seed_cache(db)  # the standard SPX chain, expiring TODAY
+    _seed_cache(db)  # the standard SPX chain, expiring EXPIRY
     conn = sqlite3.connect(db)
     conn.execute("DELETE FROM stream_chain")
     conn.execute("DELETE FROM stream_greeks")

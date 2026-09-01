@@ -96,8 +96,7 @@ def trend(module: str, end_session: str, window: int = DEFAULT_WINDOW) -> dict:
         for arm, g in (entry.get("by_profile") or {}).items():
             acc = by_profile.setdefault(
                 arm,
-                {"closed": 0, "net": 0.0, "wins": 0, "sessions": 0,
-                 "capital": 0.0, "capital_seen": False},
+                {"closed": 0, "net": 0.0, "wins": 0, "sessions": 0, "capital": 0.0, "capital_seen": False},
             )
             acc["closed"] += g["closed"]
             acc["net"] += g["net"]

@@ -358,15 +358,13 @@ def test_the_spreads_this_module_actually_trades_are_admitted():
     rather than protect it -- the curve lesson from the day before."""
     for pct in (0.018, 0.052, 0.072, 0.24):
         half = 20.70 * pct / 2
-        out = _planned(
-            {"bid": 20.70 - half, "ask": 20.70 + half, "mid": 20.70}, (0.90, 1.00)
-        )
+        out = _planned({"bid": 20.70 - half, "ask": 20.70 + half, "mid": 20.70}, (0.90, 1.00))
         assert out["ok"] is True, f"{pct} should be admitted: {out}"
 
 
 def test_the_bound_is_configurable_and_the_default_is_the_suite_one():
     wide = {"bid": 18.0, "ask": 24.0, "mid": 21.0}
-    assert _planned(wide, (0.90, 1.00))["ok"] is False          # default 0.25
+    assert _planned(wide, (0.90, 1.00))["ok"] is False  # default 0.25
     assert _planned(wide, (0.90, 1.00), {"max_leg_spread_pct": 0.50})["ok"] is True
 
 

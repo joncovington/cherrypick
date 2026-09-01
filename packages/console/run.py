@@ -43,8 +43,7 @@ def main() -> int:
         return 1
     if not SERVER_ENTRY.exists():
         print(
-            "console server is not built. From packages/console run:\n"
-            "    pnpm install\n    pnpm build",
+            "console server is not built. From packages/console run:\n    pnpm install\n    pnpm build",
             file=sys.stderr,
         )
         return 1

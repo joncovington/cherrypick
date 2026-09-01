@@ -765,9 +765,7 @@ def cmd_run_entries(args) -> dict:
             # future edit moves the call.
             def drop(reason: str, _sym=symbol, _s=strategy_name, _b=book) -> None:
                 skipped.append({"symbol": _sym, "strategy": _s, "reason": reason})
-                _log_scan_row(
-                    scan_date, _sym, _s, _b, stage="execution", outcome="dropped", reason=reason
-                )
+                _log_scan_row(scan_date, _sym, _s, _b, stage="execution", outcome="dropped", reason=reason)
 
             # The write phase is unbounded by construction -- one live chain fetch per accepted
             # (symbol, strategy) pair -- which was harmless while the screen admitted about one name
@@ -857,8 +855,9 @@ def cmd_run_entries(args) -> dict:
                         argparse.Namespace(data=json.dumps(twin, default=str))
                     )
                     if not twin_result.get("ok"):
-                        print(f"advised twin not saved for {symbol} {strategy_name}: "
-                              f"{twin_result.get('error')}")
+                        print(
+                            f"advised twin not saved for {symbol} {strategy_name}: {twin_result.get('error')}"
+                        )
                     else:
                         # The twin holds the same legs under its own order_id, and the producer's
                         # query joins on order_id -- so without this the twin alone would be priced

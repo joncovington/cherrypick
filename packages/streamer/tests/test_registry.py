@@ -197,9 +197,7 @@ def test_build_streamer_serves_a_directional_hint_without_widening_the_other_sid
     """pmcc's deep-ITM long sits below spot; the strikes an equal distance above it are the largest
     block of subscriptions in the suite that no module can read (2026-08-24)."""
     _registry.write_request("pmcc", ["TQQQ"], window_hints={"TQQQ": {"down": 163, "up": 5}})
-    streamer = _daemon.build_streamer(
-        {"symbols": ["TQQQ"], "streamer": {"window_strike_count": 30}}
-    )
+    streamer = _daemon.build_streamer({"symbols": ["TQQQ"], "streamer": {"window_strike_count": 30}})
     # The shallow side falls back to the configured default rather than to the hint's own 5: a
     # directional hint asks for MORE on one side, it never narrows the base on the other.
     assert streamer._window_strike_count_for("TQQQ") == (163, 30)

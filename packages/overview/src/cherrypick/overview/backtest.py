@@ -59,8 +59,7 @@ def _sessions(history: dict[str, list[dict]]) -> list[str]:
 def _as_of(history: dict[str, list[dict]], session: str) -> dict[str, list[dict]]:
     """History truncated to end on `session` inclusive -- what a reader on that day could see."""
     return {
-        symbol: [row for row in series if row["session"] <= session]
-        for symbol, series in history.items()
+        symbol: [row for row in series if row["session"] <= session] for symbol, series in history.items()
     }
 
 
@@ -88,12 +87,14 @@ def score_series(history: dict[str, list[dict]], sector_symbols) -> list[dict]:
         block = _score.evaluate(_readings_on(history, session), sliced, sector_symbols)
         if block.get("score") is None:
             continue
-        out.append({
-            "session": session,
-            "score": block["score"],
-            "zone": block["zone"],
-            "signals_measured": block["signals_measured"],
-        })
+        out.append(
+            {
+                "session": session,
+                "score": block["score"],
+                "zone": block["zone"],
+                "signals_measured": block["signals_measured"],
+            }
+        )
     return out
 
 
@@ -144,8 +145,9 @@ def run(history: dict[str, list[dict]], sector_symbols) -> dict[str, Any]:
             "share_pct": round(len(moves) / len(rows) * 100.0, 1) if rows else None,
             "spx_mean_forward_return_pct": round(fmean(moves), 4) if moves else None,
             "spx_median_forward_return_pct": round(median(moves), 4) if moves else None,
-            "spx_positive_share_pct": (round(sum(1 for m in moves if m > 0) / len(moves) * 100.0, 1)
-                                       if moves else None),
+            "spx_positive_share_pct": (
+                round(sum(1 for m in moves if m > 0) / len(moves) * 100.0, 1) if moves else None
+            ),
         }
 
     return {

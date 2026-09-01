@@ -216,9 +216,7 @@ def fresh_snapshot(session: str | None = None) -> dict | None:
     if not completed:
         return None
     try:
-        if _dt.date.fromtimestamp(float(completed)).isoformat() != (
-            session or _dt.date.today().isoformat()
-        ):
+        if _dt.date.fromtimestamp(float(completed)).isoformat() != (session or _dt.date.today().isoformat()):
             return None
     except (TypeError, ValueError, OSError, OverflowError):
         return None

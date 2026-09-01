@@ -49,10 +49,19 @@ def _status(capsys) -> dict:
 
 def _open_trade(path, order_id, day, **over):
     row = {
-        "trade_date": day, "symbol": "SPX", "status": "open", "risk_profile": "control",
-        "era": analytics.CURRENT_ERA, "net_credit": 1.8, "wing_width": 10,
-        "put_strike": 7450.0, "call_strike": 7550.0, "quantity": 1,
-        "ic_order_id": order_id, "created_at": "x", "updated_at": "x",
+        "trade_date": day,
+        "symbol": "SPX",
+        "status": "open",
+        "risk_profile": "control",
+        "era": analytics.CURRENT_ERA,
+        "net_credit": 1.8,
+        "wing_width": 10,
+        "put_strike": 7450.0,
+        "call_strike": 7550.0,
+        "quantity": 1,
+        "ic_order_id": order_id,
+        "created_at": "x",
+        "updated_at": "x",
     }
     row.update(over)
     conn = sqlite3.connect(path)

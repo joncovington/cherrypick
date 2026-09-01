@@ -19,5 +19,3 @@ from __future__ import annotations
 # the same functions and ~10 more sites re-derived the zone inline, which is how two of them come to
 # disagree about what date a session belongs to. The arithmetic BELOW is this module's own.
 from cherrypick.core.clock import ET, hhmm_to_min, minute_of_day, now_et, now_iso, today_iso  # noqa: F401
-
-

@@ -110,8 +110,8 @@ def test_status_flags_individually_dead_underlyings_in_rth(home, monkeypatch):
     conn = streamcache.connect(cache)
     now = _time.time()
     rows = [
-        ("SPX", 7517.0, now - 5),        # ticking fine, keeps every aggregate fresh
-        ("TQQQ", 92.0, now - 3600),      # dead an hour -- far past the 900s limit
+        ("SPX", 7517.0, now - 5),  # ticking fine, keeps every aggregate fresh
+        ("TQQQ", 92.0, now - 3600),  # dead an hour -- far past the 900s limit
     ]
     for sym, last, ts in rows:
         conn.execute(

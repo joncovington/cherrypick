@@ -47,30 +47,22 @@ def _flies_open(conn) -> list[dict]:
 
 
 def _calendars_open(conn) -> list[dict]:
-    rows = conn.execute(
-        "SELECT symbol, book FROM dc_positions WHERE status != 'closed'"
-    ).fetchall()
+    rows = conn.execute("SELECT symbol, book FROM dc_positions WHERE status != 'closed'").fetchall()
     return [{"symbol": r["symbol"], "profile": r["book"]} for r in rows]
 
 
 def _pmcc_open(conn) -> list[dict]:
-    rows = conn.execute(
-        "SELECT symbol, book FROM pmcc_positions WHERE status != 'closed'"
-    ).fetchall()
+    rows = conn.execute("SELECT symbol, book FROM pmcc_positions WHERE status != 'closed'").fetchall()
     return [{"symbol": r["symbol"], "profile": r["book"]} for r in rows]
 
 
 def _curve_open(conn) -> list[dict]:
-    rows = conn.execute(
-        "SELECT symbol, book FROM curve_positions WHERE status != 'closed'"
-    ).fetchall()
+    rows = conn.execute("SELECT symbol, book FROM curve_positions WHERE status != 'closed'").fetchall()
     return [{"symbol": r["symbol"], "profile": r["book"]} for r in rows]
 
 
 def _bwb_open(conn) -> list[dict]:
-    rows = conn.execute(
-        "SELECT symbol, book FROM bwb_positions WHERE status != 'closed'"
-    ).fetchall()
+    rows = conn.execute("SELECT symbol, book FROM bwb_positions WHERE status != 'closed'").fetchall()
     return [{"symbol": r["symbol"], "profile": r["book"]} for r in rows]
 
 

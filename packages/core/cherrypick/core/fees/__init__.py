@@ -248,8 +248,9 @@ def stock_trade_fee(shares: int, price: float, *, side: str, ndigits: int = 2) -
     return round(sec + taf, ndigits)
 
 
-def assignment_round_trip_fee(shares: int, assign_price: float, dispose_price: float, *, direction: str,
-                              ndigits: int = 2) -> float:
+def assignment_round_trip_fee(
+    shares: int, assign_price: float, dispose_price: float, *, direction: str, ndigits: int = 2
+) -> float:
     """Every pass-through one assignment costs, from delivery to disposal.
 
     `ASSIGNMENT_FEE_PER_SETTLEMENT` for the exercise/assignment event itself -- the same charge and

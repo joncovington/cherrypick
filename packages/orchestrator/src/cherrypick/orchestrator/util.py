@@ -118,12 +118,7 @@ def port_owner_pid(port: int) -> int | None:
         import psutil  # type: ignore
 
         for conn in psutil.net_connections(kind="inet"):
-            if (
-                conn.status == psutil.CONN_LISTEN
-                and conn.laddr
-                and conn.laddr.port == port
-                and conn.pid
-            ):
+            if conn.status == psutil.CONN_LISTEN and conn.laddr and conn.laddr.port == port and conn.pid:
                 return conn.pid
         return None
     except ImportError:

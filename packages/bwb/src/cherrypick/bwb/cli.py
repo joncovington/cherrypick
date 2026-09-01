@@ -63,7 +63,9 @@ def cmd_triggers(args) -> int:
 
     conn = db.connect(args.db)
     session = args.date or clock.today_iso()
-    print(json.dumps({"ok": True, "coverage": analytics.trigger_coverage(conn, session)}, indent=2, default=str))
+    print(
+        json.dumps({"ok": True, "coverage": analytics.trigger_coverage(conn, session)}, indent=2, default=str)
+    )
     return 0
 
 
@@ -81,7 +83,10 @@ def cmd_replay(args) -> int:
     conn = db.connect(args.db)
     thresholds = json.loads(args.thresholds) if args.thresholds else None
     result = replay.replay_thresholds(
-        conn, entry_session=args.entry_session, structure_signature=args.structure_signature, thresholds=thresholds
+        conn,
+        entry_session=args.entry_session,
+        structure_signature=args.structure_signature,
+        thresholds=thresholds,
     )
     if args.validate:
         result["validation"] = replay.validate_against_real(
@@ -103,12 +108,16 @@ def main(argv=None) -> int:
     p_trig = sub.add_parser("triggers", help="trigger-tick coverage for a session")
     p_trig.add_argument("--date")
     p_trig.set_defaults(func=cmd_triggers)
-    sub.add_parser("headline", help="per-book results through the analytics layer").set_defaults(func=cmd_headline)
+    sub.add_parser("headline", help="per-book results through the analytics layer").set_defaults(
+        func=cmd_headline
+    )
     p_replay = sub.add_parser("replay", help="read-side threshold replay over bwb_trigger_ticks")
     p_replay.add_argument("--entry-session", dest="entry_session", required=True)
     p_replay.add_argument("--structure-signature", dest="structure_signature", required=True)
     p_replay.add_argument("--thresholds", help="JSON overrides for delta_trigger/bounce_pullback/flip_buffer")
-    p_replay.add_argument("--validate", action="store_true", help="also validate base thresholds against reality")
+    p_replay.add_argument(
+        "--validate", action="store_true", help="also validate base thresholds against reality"
+    )
     p_replay.set_defaults(func=cmd_replay)
 
     args = ap.parse_args(argv)

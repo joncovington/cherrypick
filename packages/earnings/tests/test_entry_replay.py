@@ -20,11 +20,16 @@ from cherrypick.earnings import entry_replay as er
 CONFIG = {
     "symbol_screen": {"winrate": "off", "iv_rv_ratio": "off", "market_cap": "off"},
     "strategy_defaults": {
-        "min_avg_volume": 1_500_000, "near_miss_min_avg_volume": 1_000_000,
-        "min_winrate": 0.5, "near_miss_min_winrate": 0.4,
-        "min_iv_rv_ratio": 1.25, "near_miss_min_iv_rv_ratio": 1.0,
-        "min_market_cap": 2_000_000_000, "near_miss_min_market_cap": 1_000_000_000,
-        "min_combined_option_volume": 500, "near_miss_min_combined_option_volume": 200,
+        "min_avg_volume": 1_500_000,
+        "near_miss_min_avg_volume": 1_000_000,
+        "min_winrate": 0.5,
+        "near_miss_min_winrate": 0.4,
+        "min_iv_rv_ratio": 1.25,
+        "near_miss_min_iv_rv_ratio": 1.0,
+        "min_market_cap": 2_000_000_000,
+        "near_miss_min_market_cap": 1_000_000_000,
+        "min_combined_option_volume": 500,
+        "near_miss_min_combined_option_volume": 200,
     },
 }
 STRICT = {c: "pass" for c in er.SOFT_CRITERIA}
@@ -46,22 +51,31 @@ def conn():
 
 
 def _criteria(**over):
-    base = {"avg_volume": 5_000_000, "winrate": 0.7, "iv_rv_ratio": 1.5,
-            "market_cap": 50_000_000_000, "combined_option_volume": 5000}
+    base = {
+        "avg_volume": 5_000_000,
+        "winrate": 0.7,
+        "iv_rv_ratio": 1.5,
+        "market_cap": 50_000_000_000,
+        "combined_option_volume": 5000,
+    }
     base.update(over)
     return json.dumps(base)
 
 
 def _review(conn, scan_date, symbol, selected, criteria=None, reason=""):
-    conn.execute("INSERT INTO entry_reviews VALUES (?,?,?,?,?)",
-                 (scan_date, symbol, int(selected), reason, criteria or _criteria()))
+    conn.execute(
+        "INSERT INTO entry_reviews VALUES (?,?,?,?,?)",
+        (scan_date, symbol, int(selected), reason, criteria or _criteria()),
+    )
     conn.commit()
 
 
 def _trade(conn, symbol, day, pnl, *, order_id="T1", status="closed"):
     epoch = time.mktime(time.strptime(f"{day} 15:45", "%Y-%m-%d %H:%M"))
-    conn.execute("INSERT INTO trades VALUES (?,?,?,?,?,?,?,?)",
-                 (order_id, symbol, "iron_fly", epoch, pnl, 2.0, 1.0, status))
+    conn.execute(
+        "INSERT INTO trades VALUES (?,?,?,?,?,?,?,?)",
+        (order_id, symbol, "iron_fly", epoch, pnl, 2.0, 1.0, status),
+    )
     conn.commit()
 
 
@@ -149,10 +163,15 @@ def test_the_screen_in_force_is_read_per_date_not_from_todays_config(conn):
     2026-08-25, so a row scanned on 08-20 and refused by market cap was refused BY THE SCREEN —
     while today's levels say market cap is off, which would classify it as refused OUTSIDE the
     screen and quietly drop it from the universe."""
-    conn.execute("INSERT INTO measurement_breaks VALUES (?,?,?,?)",
-                 ("2026-08-25", er.SCREEN_BREAK_KEY,
-                  "winrate=pass,iv_rv_ratio=pass,market_cap=pass",
-                  "winrate=off,iv_rv_ratio=off,market_cap=off"))
+    conn.execute(
+        "INSERT INTO measurement_breaks VALUES (?,?,?,?)",
+        (
+            "2026-08-25",
+            er.SCREEN_BREAK_KEY,
+            "winrate=pass,iv_rv_ratio=pass,market_cap=pass",
+            "winrate=off,iv_rv_ratio=off,market_cap=off",
+        ),
+    )
     conn.commit()
     # Below the market-cap bar: screen-refused in July, not screened at all today.
     _review(conn, "2026-07-20", "AAA", selected=False, criteria=_criteria(market_cap=5_000_000))

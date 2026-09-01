@@ -39,8 +39,7 @@ def history_db(tmp_path):
     def mrow(ts, reading, symbol, value, usable=1, reason=None, trade_date="2026-08-18"):
         conn.execute(
             "INSERT INTO market_regime_history VALUES (?,?,?,?,?,?,?,?)",
-            (trade_date, ts, reading, symbol, value, ts - 3 if value is not None else None,
-             usable, reason),
+            (trade_date, ts, reading, symbol, value, ts - 3 if value is not None else None, usable, reason),
         )
 
     # One full sample at T0, another at T0+60 with a different VIX.
@@ -123,9 +122,7 @@ def test_sector_dispersion_bounds_closes_before_the_sample_session(tmp_path):
         # Prior close 100 for every sector -> all 0% change -> dispersion exactly 0. The same-day
         # closes VARY, so the wrong (look-ahead) reference would produce a nonzero dispersion.
         conn.execute("INSERT INTO daily_closes VALUES (?,'2026-08-17',100.0,?, 'test')", (sym, T0))
-        conn.execute(
-            "INSERT INTO daily_closes VALUES (?,'2026-08-18',?,?, 'test')", (sym, 80.0 + i, T0)
-        )
+        conn.execute("INSERT INTO daily_closes VALUES (?,'2026-08-18',?,?, 'test')", (sym, 80.0 + i, T0))
     conn.commit()
     conn.close()
     out = regime.regime_at(T0 + 10, history_db=path)

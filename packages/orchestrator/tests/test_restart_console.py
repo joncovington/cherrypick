@@ -142,6 +142,11 @@ def test_console_port_ignores_an_out_of_range_value(tmp_path, monkeypatch):
 
 
 def test_find_listening_pid_parses_netstat_output(monkeypatch):
+    # The implementation is deliberately Windows-only and short-circuits to None on POSIX before
+    # reaching the parser -- so without pinning the platform, this test proved the parser on
+    # Windows and proved the short-circuit on CI's Linux runner, passing locally and failing there.
+    # Pin the platform so the PARSER is what runs everywhere; the stubbed netstat never executes.
+    monkeypatch.setattr(cli.os, "name", "nt")
     output = (
         "  TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       800\n"
         "  TCP    127.0.0.1:5070         0.0.0.0:0              LISTENING       12868\n"
@@ -154,6 +159,8 @@ def test_find_listening_pid_parses_netstat_output(monkeypatch):
 
 
 def test_find_listening_pid_returns_none_when_nothing_matches(monkeypatch):
+    # Same platform pin, or on POSIX this asserts the short-circuit rather than the no-match branch.
+    monkeypatch.setattr(cli.os, "name", "nt")
     monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: types.SimpleNamespace(stdout=""))
     assert cli._find_listening_pid(5070) is None
 

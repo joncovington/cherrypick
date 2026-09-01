@@ -73,9 +73,7 @@ def _unmeasured(reason: str) -> dict:
 
 
 def _market_block(conn, ts: float, max_staleness: float) -> dict:
-    row = conn.execute(
-        "SELECT MAX(ts) FROM market_regime_history WHERE ts <= ?", (ts,)
-    ).fetchone()
+    row = conn.execute("SELECT MAX(ts) FROM market_regime_history WHERE ts <= ?", (ts,)).fetchone()
     if not row or row[0] is None:
         return _unmeasured("no_sample_at_or_before")
     sample_ts = float(row[0])
@@ -150,10 +148,7 @@ def _gex_block(conn, ts: float, max_staleness: float, symbol: str | None) -> dic
         symbols = [symbol.strip().upper()]
     else:
         symbols = [
-            r[0]
-            for r in conn.execute(
-                "SELECT DISTINCT symbol FROM gex_regime_history WHERE ts <= ?", (ts,)
-            )
+            r[0] for r in conn.execute("SELECT DISTINCT symbol FROM gex_regime_history WHERE ts <= ?", (ts,))
         ]
     out: dict[str, dict] = {}
     for sym in symbols:

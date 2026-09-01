@@ -35,8 +35,13 @@ def cmd_build(args) -> dict:
     built = _facts.build(session, status=status)
     target = _facts.write(built)
     rendered = _render.write(session)
-    return {"ok": True, "session": session, "status": status,
-            "written": str(target), "rendered": str(rendered)}
+    return {
+        "ok": True,
+        "session": session,
+        "status": status,
+        "written": str(target),
+        "rendered": str(rendered),
+    }
 
 
 def cmd_backfill(args) -> dict:
@@ -51,8 +56,12 @@ def cmd_backfill(args) -> dict:
         _facts.write(_facts.build(session, status=_facts.STATUS_FINAL))
         _render.write(session)
         written.append(session)
-    return {"ok": True, "sessions": len(written), "first": written[0] if written else None,
-            "last": written[-1] if written else None}
+    return {
+        "ok": True,
+        "sessions": len(written),
+        "first": written[0] if written else None,
+        "last": written[-1] if written else None,
+    }
 
 
 def cmd_render(args) -> dict:
@@ -69,10 +78,14 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_build = sub.add_parser("build")
-    p_build.add_argument("--session", default=None,
-                         help="YYYY-MM-DD (default: today, or the prior trading day with --final)")
-    p_build.add_argument("--final", action="store_true",
-                         help="mark the set final, not provisional; closes out the PRIOR session")
+    p_build.add_argument(
+        "--session", default=None, help="YYYY-MM-DD (default: today, or the prior trading day with --final)"
+    )
+    p_build.add_argument(
+        "--final",
+        action="store_true",
+        help="mark the set final, not provisional; closes out the PRIOR session",
+    )
 
     p_backfill = sub.add_parser("backfill")
     p_backfill.add_argument("--since", default=None)
@@ -84,8 +97,9 @@ def main() -> None:
     p_render.add_argument("--session", default=None)
 
     args = parser.parse_args()
-    result = {"build": cmd_build, "backfill": cmd_backfill, "reconcile": cmd_reconcile,
-              "render": cmd_render}[args.command](args)
+    result = {"build": cmd_build, "backfill": cmd_backfill, "reconcile": cmd_reconcile, "render": cmd_render}[
+        args.command
+    ](args)
     json.dump(result, sys.stdout, indent=2, default=str)
     print()
 

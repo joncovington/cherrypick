@@ -353,8 +353,7 @@ class Supervisor:
         if not owner or owner in self._known_pids() or not pid_alive(owner):
             return
         _log(
-            f"{spec.id}: port {spec.port} held by untracked pid {owner} after {n} failed spawns "
-            "— reclaiming"
+            f"{spec.id}: port {spec.port} held by untracked pid {owner} after {n} failed spawns — reclaiming"
         )
         _terminate_tree(owner)
         # Reset the ladder: the failures so far were the port fight, not this job's own health, and
