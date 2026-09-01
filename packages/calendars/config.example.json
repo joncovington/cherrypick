@@ -28,7 +28,7 @@
   "_entry_window_note": "Entry is attempted on the entry day only, inside [entry_window_start, entry_window_end] ET, retried each tick until it fills or the window closes (an exhausted window is a journaled skipped week). 10:00 sits past the opening rotation so the EM is measured on real two-way flow.",
   "_exit_window_note": "exit_window_start..exit_window_end is the Friday scheduled-exit window the control book closes in (and the terminal every derived policy falls through to). noon_exit_start anchors the derived fri_noon variant. mon_disposition_time is when surviving longs are sold on their own Monday expiration morning. exec_window_start gates ALL management action until the open stabilizes.",
   "_settle_note": "settle_time is when expiring legs settle off the last streamed trade, refused rather than used if older than settlement_max_age_seconds — a stale print would decide a week's P&L at once. A settlement missed entirely (loop down through Friday evening) is NEVER back-settled from a later print; use `python -m cherrypick.calendars.paper_loop --settle --date <expiration> --price <official print>`. Under physical settlement the print also sets the delivered shares' basis, so a stale one would misprice the weekend leg as well as the option one.",
-  "_quality_note": "max_quote_age_seconds bounds every quote the module prices against (a 4-7DTE chain ticks slower than 0DTE, hence looser than flies' 120). max_leg_spread_pct is the execution gate's is-this-mark-actionable bar. strike_window_pct bounds the entry snapshot's quote fetch around spot — the EM lands well inside it.",
+  "_quality_note": "max_quote_age_seconds bounds every quote the module prices against (a 4-7DTE chain ticks slower than 0DTE, hence looser than flies' 120). max_leg_spread_pct is the execution gate's is-this-mark-actionable bar, and max_leg_spread_abs is the floor under it: a leg is refused only when it is wide on BOTH readings. A short that has done its job quotes 0.00/0.01, which is a one-cent buyback and, as a ratio, a 200% spread — on 2026-08-28 that refused the control put's scheduled close on all thirty ticks of its window and cost the position its exit. curve carries the same floor as max_wing_spread_abs for the identical arithmetic. strike_window_pct bounds the entry snapshot's quote fetch around spot — the EM lands well inside it.",
   "defaults": {
     "quantity": 1,
     "em_factor": 0.85,
@@ -43,6 +43,7 @@
     "settlement_max_age_seconds": 300,
     "max_quote_age_seconds": 300,
     "max_leg_spread_pct": 0.25,
+    "max_leg_spread_abs": 0.05,
     "strike_window_pct": 0.04
   },
 
