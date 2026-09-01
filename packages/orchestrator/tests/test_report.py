@@ -250,5 +250,3 @@ def _flies_live_db(path, rows):
     )
     conn.commit()
     conn.close()
-
-

@@ -65,31 +65,72 @@ def evaluate(readings: dict[str, Any], levels: dict[str, Any]) -> list[dict]:
     if vix is None or vix3m is None:
         gates.append(_gate("vol_curve", "Vol curve contango", UNKNOWN, "VIX or VIX3M not measured"))
     elif vix < vix3m:
-        gates.append(_gate("vol_curve", "Vol curve contango", MET,
-                           f"VIX {vix:.2f} < VIX3M {vix3m:.2f}", value=vix, threshold=vix3m))
+        gates.append(
+            _gate(
+                "vol_curve",
+                "Vol curve contango",
+                MET,
+                f"VIX {vix:.2f} < VIX3M {vix3m:.2f}",
+                value=vix,
+                threshold=vix3m,
+            )
+        )
     else:
-        gates.append(_gate("vol_curve", "Vol curve contango", NOT_MET,
-                           f"inverted: VIX {vix:.2f} >= VIX3M {vix3m:.2f}", value=vix, threshold=vix3m))
+        gates.append(
+            _gate(
+                "vol_curve",
+                "Vol curve contango",
+                NOT_MET,
+                f"inverted: VIX {vix:.2f} >= VIX3M {vix3m:.2f}",
+                value=vix,
+                threshold=vix3m,
+            )
+        )
 
     vvix = _num(readings, "vvix")
     if vvix is None:
-        gates.append(_gate("vol_of_vol", f"Vol-of-vol below {VVIX_STRESS:.0f}", UNKNOWN,
-                           "VVIX not measured", threshold=VVIX_STRESS))
+        gates.append(
+            _gate(
+                "vol_of_vol",
+                f"Vol-of-vol below {VVIX_STRESS:.0f}",
+                UNKNOWN,
+                "VVIX not measured",
+                threshold=VVIX_STRESS,
+            )
+        )
     else:
         ok = vvix < VVIX_STRESS
-        gates.append(_gate("vol_of_vol", f"Vol-of-vol below {VVIX_STRESS:.0f}",
-                           MET if ok else NOT_MET,
-                           f"VVIX {vvix:.2f}", value=vvix, threshold=VVIX_STRESS))
+        gates.append(
+            _gate(
+                "vol_of_vol",
+                f"Vol-of-vol below {VVIX_STRESS:.0f}",
+                MET if ok else NOT_MET,
+                f"VVIX {vvix:.2f}",
+                value=vvix,
+                threshold=VVIX_STRESS,
+            )
+        )
 
     ref = levels.get("reference_price")
     flip = levels.get("zero_gamma")
     if not isinstance(ref, (int, float)) or not isinstance(flip, (int, float)):
-        gates.append(_gate("spot_vs_flip", "Spot above gamma flip", UNKNOWN,
-                           "reference price or gamma flip not measured"))
+        gates.append(
+            _gate(
+                "spot_vs_flip", "Spot above gamma flip", UNKNOWN, "reference price or gamma flip not measured"
+            )
+        )
     else:
         ok = ref > flip
-        gates.append(_gate("spot_vs_flip", "Spot above gamma flip", MET if ok else NOT_MET,
-                           f"ref {ref:.2f} vs flip {flip:.2f}", value=ref, threshold=flip))
+        gates.append(
+            _gate(
+                "spot_vs_flip",
+                "Spot above gamma flip",
+                MET if ok else NOT_MET,
+                f"ref {ref:.2f} vs flip {flip:.2f}",
+                value=ref,
+                threshold=flip,
+            )
+        )
 
     put_wall = levels.get("put_wall")
     call_wall = levels.get("call_wall")
@@ -98,23 +139,44 @@ def evaluate(readings: dict[str, Any], levels: dict[str, Any]) -> list[dict]:
         or not isinstance(put_wall, (int, float))
         or not isinstance(call_wall, (int, float))
     ):
-        gates.append(_gate("inside_walls", "Inside the wall band", UNKNOWN,
-                           "reference price or walls not measured"))
+        gates.append(
+            _gate("inside_walls", "Inside the wall band", UNKNOWN, "reference price or walls not measured")
+        )
     else:
         ok = put_wall <= ref <= call_wall
-        gates.append(_gate("inside_walls", "Inside the wall band", MET if ok else NOT_MET,
-                           f"ref {ref:.2f} in [{put_wall:.0f}, {call_wall:.0f}]", value=ref))
+        gates.append(
+            _gate(
+                "inside_walls",
+                "Inside the wall band",
+                MET if ok else NOT_MET,
+                f"ref {ref:.2f} in [{put_wall:.0f}, {call_wall:.0f}]",
+                value=ref,
+            )
+        )
 
     change = _num(readings, "spx_prior_change_pct")
     if change is None:
-        gates.append(_gate("calm_tape", f"Prior session within {CALM_TAPE_MAX_ABS_PCT}%", UNKNOWN,
-                           "prior-session SPX change not measured", threshold=CALM_TAPE_MAX_ABS_PCT))
+        gates.append(
+            _gate(
+                "calm_tape",
+                f"Prior session within {CALM_TAPE_MAX_ABS_PCT}%",
+                UNKNOWN,
+                "prior-session SPX change not measured",
+                threshold=CALM_TAPE_MAX_ABS_PCT,
+            )
+        )
     else:
         ok = abs(change) < CALM_TAPE_MAX_ABS_PCT
-        gates.append(_gate("calm_tape", f"Prior session within {CALM_TAPE_MAX_ABS_PCT}%",
-                           MET if ok else NOT_MET,
-                           f"prior SPX move {change:+.2f}%", value=change,
-                           threshold=CALM_TAPE_MAX_ABS_PCT))
+        gates.append(
+            _gate(
+                "calm_tape",
+                f"Prior session within {CALM_TAPE_MAX_ABS_PCT}%",
+                MET if ok else NOT_MET,
+                f"prior SPX move {change:+.2f}%",
+                value=change,
+                threshold=CALM_TAPE_MAX_ABS_PCT,
+            )
+        )
 
     return gates
 
@@ -134,12 +196,16 @@ def phase(gates: list[dict]) -> dict:
     for gate_id in STRESS_GATES:
         gate = by_id.get(gate_id)
         if gate and gate["status"] == NOT_MET:
-            return {"phase": "red", "reason": f"stress gate failed: {gate['label']} ({gate['detail']})",
-                    **counts}
+            return {
+                "phase": "red",
+                "reason": f"stress gate failed: {gate['label']} ({gate['detail']})",
+                **counts,
+            }
 
     failed = [g for g in measured if g["status"] == NOT_MET]
     unmeasured_required = [
-        by_id[g].get("label", g) for g in GREEN_REQUIRED_MEASURED
+        by_id[g].get("label", g)
+        for g in GREEN_REQUIRED_MEASURED
         if by_id.get(g, {}).get("status", UNKNOWN) == UNKNOWN
     ]
     if not failed and not unmeasured_required and len(measured) >= MIN_MEASURED_FOR_GREEN:

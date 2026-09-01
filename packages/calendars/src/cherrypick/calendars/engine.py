@@ -37,6 +37,7 @@ def base_book(book: str) -> str:
     book whose entire job is never to close."""
     return book.rsplit(":", 1)[-1]
 
+
 # How an expiring leg settles, per underlying. The module models both styles and refuses a symbol it
 # has been told nothing about — the guard's original point, kept: an unmodelled settlement produces
 # bookkeeping that is wrong at its first Friday, and wrong quietly.

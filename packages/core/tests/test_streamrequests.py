@@ -36,9 +36,7 @@ def test_write_request_carries_a_directional_window_hint(tmp_path, monkeypatch):
     """pmcc's deep-ITM long sits below spot and its short sits at it; a symmetric count bought an
     identical depth upward that no module could read."""
     monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
-    path = streamrequests.write_request(
-        "demo", ["TQQQ"], window_hints={"tqqq": {"down": 163, "up": 12}}
-    )
+    path = streamrequests.write_request("demo", ["TQQQ"], window_hints={"tqqq": {"down": 163, "up": 12}})
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["window_hints"] == {"TQQQ": [163, 12]}
 
@@ -214,6 +212,7 @@ def test_register_best_effort_swallows_and_logs(caplog):
     A loop that refused to run because it could not write a request file would trade a
     data-quality problem for an outage.
     """
+
     def boom():
         raise OSError("disk gone")
 

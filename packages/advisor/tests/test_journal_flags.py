@@ -17,9 +17,7 @@ from cherrypick.advisor import factpack
 
 
 def _flags(*specs):
-    return json.dumps([
-        {"module": m, "severity": s, "text": t} for m, s, t in specs
-    ])
+    return json.dumps([{"module": m, "severity": s, "text": t} for m, s, t in specs])
 
 
 def test_inside_the_window_nothing_is_touched():

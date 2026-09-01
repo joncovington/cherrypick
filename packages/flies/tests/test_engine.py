@@ -1683,7 +1683,9 @@ def test_callwall_refuses_rather_than_degrading_to_atm():
     """The wall IS the thesis. The gex arm degrades to ATM so a cold cache costs a signal rather
     than a session -- this arm must NOT, because an ATM fallback would trade control's trade under
     callwall's name and dissolve the one-variable comparison the arm exists for."""
-    center, reason = engine.select_center(snapshot(gex={"ok": False}), params("control", center_rule="call_wall"))
+    center, reason = engine.select_center(
+        snapshot(gex={"ok": False}), params("control", center_rule="call_wall")
+    )
     assert center is None and reason == "gex_unavailable_for_call_wall"
     center, reason = engine.select_center(snapshot(), params("control", center_rule="call_wall"))
     assert center is None and reason == "gex_unavailable_for_call_wall"

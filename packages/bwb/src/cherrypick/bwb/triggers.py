@@ -90,7 +90,9 @@ def evaluate(book: str, state: dict, tick: dict, params: dict | None = None) -> 
     caller persists the latches regardless of book (every book's rows carry the same telemetry, the
     module's counterfactual-on-control property) and only ACTS on `fired` for its own book."""
     peak = update_peak(state.get("peak_abs_delta"), tick.get("abs_delta"))
-    below_flip = update_below_flip(bool(state.get("below_flip_seen")), tick.get("spot"), tick.get("gamma_flip"))
+    below_flip = update_below_flip(
+        bool(state.get("below_flip_seen")), tick.get("spot"), tick.get("gamma_flip")
+    )
     fired = {
         "control": False,
         "delta": delta_fires(tick.get("abs_delta"), params),

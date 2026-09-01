@@ -429,9 +429,9 @@ def manage(config: dict, now: datetime, *, phase: str, execute: bool) -> dict:
                 trade,
                 config,
                 now,
-                max_quote_age_seconds=management.policy_for(
-                    trade.get("strategy") or "", config
-                ).get("quote_max_age_seconds"),
+                max_quote_age_seconds=management.policy_for(trade.get("strategy") or "", config).get(
+                    "quote_max_age_seconds"
+                ),
                 rest_snapshot=_rest_snapshot,
             )
             gate = None if settled.get("ok") else (settled.get("reason") or "unsettleable")
@@ -439,8 +439,14 @@ def manage(config: dict, now: datetime, *, phase: str, execute: bool) -> dict:
                 gate = "open_window"
             if gate:
                 _record_event(
-                    trade, "settle", settle_reason, now, phase,
-                    executed=False, gate=gate, mark_id=mark_id,
+                    trade,
+                    "settle",
+                    settle_reason,
+                    now,
+                    phase,
+                    executed=False,
+                    gate=gate,
+                    mark_id=mark_id,
                 )
                 continue
             # No execution cap and no exec window: settling is bookkeeping about something that has
@@ -448,16 +454,25 @@ def manage(config: dict, now: datetime, *, phase: str, execute: bool) -> dict:
             result = close_position(trade, settled, settle_reason, config, now)
             if not result.get("ok"):
                 _record_event(
-                    trade, "settle", settle_reason, now, phase,
-                    executed=False, gate=result.get("error") or "close_failed", mark_id=mark_id,
+                    trade,
+                    "settle",
+                    settle_reason,
+                    now,
+                    phase,
+                    executed=False,
+                    gate=result.get("error") or "close_failed",
+                    mark_id=mark_id,
                 )
                 continue
             actions += 1
-            closed.append(
-                {"order_id": trade["order_id"], "symbol": trade["symbol"], "reason": settle_reason}
-            )
+            closed.append({"order_id": trade["order_id"], "symbol": trade["symbol"], "reason": settle_reason})
             _record_event(
-                trade, "settle", settle_reason, now, phase, executed=True,
+                trade,
+                "settle",
+                settle_reason,
+                now,
+                phase,
+                executed=True,
                 detail={"source": "settlement", "settled_legs": settled.get("settled_legs")},
                 mark_id=mark_id,
             )
@@ -786,9 +801,9 @@ def cmd_settle_expired(args) -> dict:
             trade,
             config,
             now,
-            max_quote_age_seconds=management.policy_for(
-                trade.get("strategy") or "", config
-            ).get("quote_max_age_seconds"),
+            max_quote_age_seconds=management.policy_for(trade.get("strategy") or "", config).get(
+                "quote_max_age_seconds"
+            ),
             rest_snapshot=_rest_snapshot,
         )
         legs = provider.legs_from_trade(trade)
@@ -819,7 +834,12 @@ def cmd_settle_expired(args) -> dict:
             refused.append({**row, "reason": result.get("error") or "close_failed"})
             continue
         _record_event(
-            trade, "settle", reason, now, "backfill", executed=True,
+            trade,
+            "settle",
+            reason,
+            now,
+            "backfill",
+            executed=True,
             detail={"source": "settlement", "settled_legs": snap.get("settled_legs")},
         )
         settled.append(row)
@@ -849,9 +869,7 @@ def main() -> None:
     p_break.add_argument("--note", default=None)
 
     p_settle = sub.add_parser("settle-expired")
-    p_settle.add_argument(
-        "--apply", action="store_true", help="write the closes (default is a dry run)"
-    )
+    p_settle.add_argument("--apply", action="store_true", help="write the closes (default is a dry run)")
 
     parser.add_argument("--once", action="store_true", help="run one tick (the default)")
     args = parser.parse_args()

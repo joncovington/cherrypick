@@ -48,9 +48,7 @@ class Greeks:
 
 
 def _engine(**kw):
-    return ChainStreamer(
-        session_factory=lambda: None, db_path=":memory:", symbols=["SPX"], **kw
-    )
+    return ChainStreamer(session_factory=lambda: None, db_path=":memory:", symbols=["SPX"], **kw)
 
 
 def test_large_subscription_is_chunked_never_one_message():

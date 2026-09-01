@@ -1003,14 +1003,24 @@ def test_a_missing_price_does_not_rescue_a_side_that_would_have_settled_ITM():
     ITM on the call. Under the old behaviour a dropped price turned that into full credit."""
     trade = _expiring_trade()
     priced = paper.evaluate_open_trade(
-        trade, {}, _params(MODERATE), force_close=False,
-        underlying_price=7526.0, is_cash_settled=True, settle=True,
+        trade,
+        {},
+        _params(MODERATE),
+        force_close=False,
+        underlying_price=7526.0,
+        is_cash_settled=True,
+        settle=True,
     )
     assert priced["call_exit_price"] == pytest.approx(6.0)
 
     unpriced = paper.evaluate_open_trade(
-        trade, {}, _params(MODERATE), force_close=False,
-        underlying_price=None, is_cash_settled=True, settle=True,
+        trade,
+        {},
+        _params(MODERATE),
+        force_close=False,
+        underlying_price=None,
+        is_cash_settled=True,
+        settle=True,
     )
     assert unpriced["action"] == "hold"
 
@@ -2349,7 +2359,17 @@ def test_process_symbol_reports_save_failed_not_filled_when_the_insert_fails(tmp
         # became 'control' at the 2026-08-21 EOD amendment) — this test is about the SAVE path,
         # and the entry must clear every gate to reach it.
         candidates=[
-            _candidate(5, 7380, 7560, sp_delta=-0.15, sc_delta=0.15, sp_bid=0.85, sp_ask=0.95, sc_bid=0.80, sc_ask=0.90)
+            _candidate(
+                5,
+                7380,
+                7560,
+                sp_delta=-0.15,
+                sc_delta=0.15,
+                sp_bid=0.85,
+                sp_ask=0.95,
+                sc_bid=0.80,
+                sc_ask=0.90,
+            )
         ],
     )
     out = paper.process_symbol(snapshot, db_path, "paper")

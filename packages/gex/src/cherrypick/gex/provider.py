@@ -110,9 +110,7 @@ def read_spots(
     return out
 
 
-def snapshot_from_stream_cache(
-    db_path: Path | str, symbol: str, today: str | None = None
-) -> GexSnapshot:
+def snapshot_from_stream_cache(db_path: Path | str, symbol: str, today: str | None = None) -> GexSnapshot:
     """Build a ``GexSnapshot`` for ``symbol`` from a MEIC-style stream cache, read-only.
 
     Returns a snapshot with ``spot``/``expiration`` possibly ``None`` when the symbol (or its chain)

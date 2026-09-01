@@ -19,7 +19,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 # synthesized per-session and never lives in this registry.
 ACTIVE_STREAMS = {"control"}
 LADDER = {"conservative", "moderate", "aggressive", "very-aggressive"}
-RETIRED_STUDY_ARMS = {"gex-open", "gex-blocked", "sign", "control-drift", "width-5", "width-10", "control-gated"}
+RETIRED_STUDY_ARMS = {
+    "gex-open",
+    "gex-blocked",
+    "sign",
+    "control-drift",
+    "width-5",
+    "width-10",
+    "control-gated",
+}
 UNCAPPED_SAMPLING_STREAMS = {"control", "width-5", "width-10"}
 EXPERIMENT_PREFIXES = {"small", "medium", "large", "explore", "width", "gex"}
 STUDY_ARM_PREFIXES = ("width-", "gex-")
@@ -572,7 +580,9 @@ def test_sign_is_control_with_only_the_overlap_scope_changed(sample_risk_profile
     variable; adding it here would confound the one this arm is for.
     """
     profiles = sample_risk_profiles["profiles"]
-    control = {k: v for k, v in profiles["control-gated"].items() if not k.startswith("_") and k not in META_KEYS}
+    control = {
+        k: v for k, v in profiles["control-gated"].items() if not k.startswith("_") and k not in META_KEYS
+    }
     sign = {k: v for k, v in profiles["sign"].items() if not k.startswith("_") and k not in META_KEYS}
 
     assert sign["overlap_scope"] == "sign"
@@ -601,8 +611,12 @@ def test_control_drift_is_control_with_only_the_drift_skew_added(sample_risk_pro
     difference in their books stops being attributable to the rule.
     """
     profiles = sample_risk_profiles["profiles"]
-    control = {k: v for k, v in profiles["control-gated"].items() if not k.startswith("_") and k not in META_KEYS}
-    drift = {k: v for k, v in profiles["control-drift"].items() if not k.startswith("_") and k not in META_KEYS}
+    control = {
+        k: v for k, v in profiles["control-gated"].items() if not k.startswith("_") and k not in META_KEYS
+    }
+    drift = {
+        k: v for k, v in profiles["control-drift"].items() if not k.startswith("_") and k not in META_KEYS
+    }
 
     assert drift["drift_skew_otm_multiple"] == 1.5
     assert "drift_skew_otm_multiple" not in control, "the skew must be the twin's alone"

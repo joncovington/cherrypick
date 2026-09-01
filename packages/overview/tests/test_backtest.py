@@ -45,6 +45,7 @@ def _history(n=400, vix=None, spx=None):
 
 # --------------------------------------------------------------------------- the join
 
+
 def test_a_zone_is_never_credited_with_its_own_days_move():
     """Built so a look-ahead would be obvious: SPX rips exactly on the sessions where VIX spikes.
 
@@ -56,10 +57,10 @@ def test_a_zone_is_never_credited_with_its_own_days_move():
     days = _days(n)
     vix = [18.0] * n
     spx = [4000.0] * n
-    for i in range(300, n, 10):          # every tenth late session: VIX spikes, SPX rips same day
+    for i in range(300, n, 10):  # every tenth late session: VIX spikes, SPX rips same day
         vix[i] = 60.0
         spx[i] = spx[i - 1] * 1.10
-        for j in range(i + 1, n):        # carry the level forward so the next move is ordinary
+        for j in range(i + 1, n):  # carry the level forward so the next move is ordinary
             spx[j] = spx[i]
     _, history = _history(n=n, vix=vix, spx=spx)
     history["SPX"] = _series(days, spx)
@@ -85,13 +86,14 @@ def test_forward_returns_key_off_the_session_they_follow():
     days = _days(5)
     history = {"SPX": _series(days, [100.0, 110.0, 121.0, 121.0, 121.0])}
     returns = backtest._spx_returns(history)
-    assert round(returns[days[0]], 4) == 10.0   # the move from day0's close to day1's
+    assert round(returns[days[0]], 4) == 10.0  # the move from day0's close to day1's
     assert round(returns[days[1]], 4) == 10.0
     assert returns[days[3]] == 0.0
-    assert days[4] not in returns               # nothing follows the last session
+    assert days[4] not in returns  # nothing follows the last session
 
 
 # --------------------------------------------------------------------------- warmup and honesty
+
 
 def test_the_warmup_produces_no_scored_days():
     _, history = _history(n=backtest.WARMUP_SESSIONS - 10)
@@ -164,7 +166,6 @@ def test_the_backtest_scores_through_the_same_function_the_pack_uses():
     days, history = _history(n=300)
     target = days[280]
     entry = next(e for e in backtest.score_series(history, SECTORS) if e["session"] == target)
-    direct = score.evaluate(backtest._readings_on(history, target),
-                            backtest._as_of(history, target), SECTORS)
+    direct = score.evaluate(backtest._readings_on(history, target), backtest._as_of(history, target), SECTORS)
     assert entry["score"] == direct["score"]
     assert entry["zone"] == direct["zone"]

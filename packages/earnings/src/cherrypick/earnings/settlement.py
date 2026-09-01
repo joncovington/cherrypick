@@ -84,9 +84,7 @@ def settlement_close(symbol: str, expiry: date, config: dict) -> float | None:
 def split_legs(legs: list[dict], today: date) -> tuple[list[dict], list[dict]]:
     """`(expired, live)` -- the legs past their last trading day, and those still listed."""
     gone = set(provider.expired_legs(legs, today))
-    return [leg for leg in legs if leg["symbol"] in gone], [
-        leg for leg in legs if leg["symbol"] not in gone
-    ]
+    return [leg for leg in legs if leg["symbol"] in gone], [leg for leg in legs if leg["symbol"] not in gone]
 
 
 def due(trade: dict, now: datetime) -> str | None:

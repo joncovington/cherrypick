@@ -121,6 +121,7 @@ def test_an_unreadable_reply_reports_nothing_rather_than_guessing(advisor):
 def test_a_subprocess_that_throws_is_reported_not_swallowed(monkeypatch):
     """The check failing is itself worth knowing — silently returning [] here would look exactly
     like a clean session, which is the same defect the console's readOnlyDb fallback had."""
+
     def boom(*a, **k):
         raise OSError("advisor not installed")
 

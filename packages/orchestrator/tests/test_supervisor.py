@@ -175,8 +175,7 @@ def test_job_backoff_cap_override_shortens_the_wait(spawned, monkeypatch):
     def capped_derive_jobs(*a, **kw):
         jobs, errors = real_derive_jobs(*a, **kw)
         jobs = [
-            supervisor.jobspec.replace(j, backoff_cap_seconds=5) if j.id == "watchdog" else j
-            for j in jobs
+            supervisor.jobspec.replace(j, backoff_cap_seconds=5) if j.id == "watchdog" else j for j in jobs
         ]
         return jobs, errors
 

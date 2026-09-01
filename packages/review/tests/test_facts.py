@@ -4,8 +4,8 @@ import json
 import sqlite3
 
 import pytest
-
 from cherrypick.core import ledgers as _ledgers
+
 from cherrypick.review import facts, reconcile
 
 
@@ -51,10 +51,34 @@ def test_a_session_only_counts_trades_that_closed_in_it(tmp_path, monkeypatch):
     _earnings_db(
         db,
         [
-            ("CSCO", "p", "iron_fly", 100.0, 5.0, 5.0, _epoch("2026-08-12 15:00"), 0, 1000.0,
-             None, None, None),
-            ("AMAT", "p", "iron_fly", 999.0, 5.0, 5.0, _epoch("2026-08-05 15:00"), 0, 1000.0,
-             None, None, None),
+            (
+                "CSCO",
+                "p",
+                "iron_fly",
+                100.0,
+                5.0,
+                5.0,
+                _epoch("2026-08-12 15:00"),
+                0,
+                1000.0,
+                None,
+                None,
+                None,
+            ),
+            (
+                "AMAT",
+                "p",
+                "iron_fly",
+                999.0,
+                5.0,
+                5.0,
+                _epoch("2026-08-05 15:00"),
+                0,
+                1000.0,
+                None,
+                None,
+                None,
+            ),
         ],
     )
     got = facts.build_module_facts("earnings", "2026-08-12", db_path=db)

@@ -66,12 +66,6 @@ def test_reading_counts_sample_winrate_and_days():
     assert r["net_pnl"] == 13.0
 
 
-
-
-
-
-
-
 def test_every_tag_gets_a_reading_and_a_qualification(tmp_path):
     # Readings and qualification checks, never a recommendation — the champion/challenger
     # comparison was retired 2026-08-20 and judging arms belongs to packages/advisor.
@@ -95,8 +89,6 @@ def test_a_module_with_no_calibration_block_still_reads(tmp_path):
     assert m["ok"] is True
     assert "champion" not in m and "recommendation" not in m
     assert m["profiles"]["conservative"]["role"] is None
-
-
 
 
 def test_missing_db_reported_not_fatal(tmp_path):

@@ -56,6 +56,7 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 | `report` | Unified cross-module paper P&L: totals + per-profile breakdown, **gross and net** of costs. | `--eod` (today ET), `--date YYYY-MM-DD` (one session; default all-time) |
 | `calibrate` | Per-profile calibration readings + advisory promotion recommendations (never changes risk settings). | — |
 | `review` | Suite end-of-day review (`packages/review`): build one session's cross-module fact set and render it. `--final` marks the session final and re-runs reconciliation; without it the pass is provisional. Read-only over every module's ledger. What the two daily supervisor jobs run. | `--final` |
+| `morning` | Build the pre-open morning fact pack (`packages/overview`): index/vol/sector readings from the stream cache, gamma flip and walls from the suite's own GEX history, and the mechanical GREEN/YELLOW/RED phase. What the daily morning-factpack job runs; a pure stream-cache + GEX consumer writing only into its own home, so a bad pass costs a report, never a trade. The session it describes is overview's own contract (today's ET trading day, resolved internally). | — |
 | `archive` | End-of-month rotation: zip each finished month's dated reports + rotated log backups into `logs/archive/<YYYY-MM>/<scope>.zip` and remove the originals (idempotent; never touches the current month or an active `.log`). | `--month YYYY-MM`, `--dry-run` |
 
 There is no `dashboard` command. The suite's read surface is the **console** (`packages/console`, on

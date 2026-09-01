@@ -167,6 +167,6 @@ def test_a_closed_window_drops_at_the_execution_stage(monkeypatch, stub_entry_sc
     assert any(s["reason"] == "entry_window_closed" for s in result["skipped"])
     stages = [kw.get("stage") for _, kw in rows]
     assert "screen" in stages, "the screen verdict is still recorded -- the replay needs every one"
-    assert ("execution", "dropped") in [
-        (kw.get("stage"), kw.get("outcome")) for _, kw in rows
-    ], "the refusal is recorded, never silent"
+    assert ("execution", "dropped") in [(kw.get("stage"), kw.get("outcome")) for _, kw in rows], (
+        "the refusal is recorded, never silent"
+    )

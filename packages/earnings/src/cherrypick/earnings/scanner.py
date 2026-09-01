@@ -1846,6 +1846,7 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 
+
 def realized_move_dispersion(symbol: str, config: dict, lookback_quarters: int = 8) -> dict:
     """Standard deviation of historical realized earnings moves, as a % of pre-earnings price.
 
@@ -1891,4 +1892,3 @@ def candidates_command(args, fetch_price_and_term_structure, apply_tiering, stra
     return run_candidate_scan(
         args.date, config, fetch_price_and_term_structure, apply_tiering, strategy_config(config)
     )
-

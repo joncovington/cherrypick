@@ -120,26 +120,6 @@ _GOOD = {"sample": 40, "win_rate": 0.65, "days": 20, "net_pnl": 500.0}
 _THIN = {"sample": 3, "win_rate": 0.9, "days": 2, "net_pnl": 50.0}
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # --------------------------------------------------------------------------- qualify_readings
 def test_qualify_readings_returns_per_tag_qualification_only():
     # The direct regression test for the bug this replaces: a fully-qualifying reading must NOT

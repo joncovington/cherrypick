@@ -197,17 +197,13 @@ def shadow_settle(row: dict, *, fee_one_side, fee_full_ic) -> dict:
         "shadow_settle_net": shadow_net,
         # Positive means the stop COST money: holding would have paid more than stopping did.
         "stop_cost": None if (shadow_net is None or real_net is None) else round(shadow_net - real_net, 2),
-        "mae_over_credit": (
-            None if (worst is None or not net_credit) else round(worst / net_credit, 4)
-        ),
+        "mae_over_credit": (None if (worst is None or not net_credit) else round(worst / net_credit, 4)),
         "mfe_over_credit": None,  # not recorded; see the docstring
         "censored_above": censored_above(row),
     }
 
 
-def score_grid(
-    row: dict, *, fee_one_side, fee_full_ic, ratios: tuple = GRID_RATIOS
-) -> dict[float, dict]:
+def score_grid(row: dict, *, fee_one_side, fee_full_ic, ratios: tuple = GRID_RATIOS) -> dict[float, dict]:
     """Score one row at every ratio in `ratios` on the net basis — the whole stop curve for one
     fill, from one recorded path, at zero risk and zero extra position cost.
 
@@ -219,8 +215,14 @@ def score_grid(
     out: dict[float, dict] = {}
     for ratio in ratios:
         if limit is not None and ratio > limit:
-            out[ratio] = {"derivable": False, "censored": True, "pnl": None, "fee": None,
-                          "put_fired": None, "call_fired": None}
+            out[ratio] = {
+                "derivable": False,
+                "censored": True,
+                "pnl": None,
+                "fee": None,
+                "put_fired": None,
+                "call_fired": None,
+            }
             continue
         scored = derive(row, ("net", ratio), fee_one_side=fee_one_side, fee_full_ic=fee_full_ic)
         out[ratio] = {**scored, "censored": False}

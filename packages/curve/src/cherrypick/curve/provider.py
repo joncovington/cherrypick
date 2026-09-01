@@ -115,7 +115,15 @@ def build_mark_snapshot(
     is priceable; a partial mark is still recorded as a refusal row by the caller."""
     when = when or now_et()
     db_path = Path(db_path)
-    out: dict = {"ok": False, "spot": None, "quotes": {}, "fresh": 0, "stale": 0, "max_spread_pct": None, "leg_spreads": []}
+    out: dict = {
+        "ok": False,
+        "spot": None,
+        "quotes": {},
+        "fresh": 0,
+        "stale": 0,
+        "max_spread_pct": None,
+        "leg_spreads": [],
+    }
     if not legs:
         return {**out, "reason": "no_legs"}
     if not db_path.exists():

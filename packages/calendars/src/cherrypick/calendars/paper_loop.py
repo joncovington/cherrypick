@@ -379,9 +379,7 @@ def friday_books(config: dict) -> list[str]:
     """The Friday regime's books: the base roster under the `friday:` prefix. No advised twin in
     v1 — it would double the advisor surface for a regime with no history."""
     enabled = config.get("books") or {}
-    return [
-        f"{engine.FRIDAY_PREFIX}{b}" for b in engine.BOOKS if enabled.get(b, {}).get("enabled", True)
-    ]
+    return [f"{engine.FRIDAY_PREFIX}{b}" for b in engine.BOOKS if enabled.get(b, {}).get("enabled", True)]
 
 
 def _monday_regime_positions(conn, week_of: str) -> list[dict]:
@@ -426,9 +424,7 @@ def _journal_friday_skip(conn, config: dict, plan: dict) -> None:
         _log(f"friday-skip journalling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
-def _maybe_friday_entry(
-    config: dict, conn, *, cache_path: str, when: datetime, now_min: int
-) -> int:
+def _maybe_friday_entry(config: dict, conn, *, cache_path: str, when: datetime, now_min: int) -> int:
     """The Friday regime's entry phase: the same structure entered a session early, to measure
     whether the weekend's differential decay is worth owning (docs/friday-entry-arm.md).
 
@@ -509,15 +505,22 @@ def _try_entry(
     if style == "physical":
         if not engine.dividend_coverage_ok(config, symbol, week["back_expiration"]):
             db.record_entry_attempt(
-                conn, trade_date=day, week_of=week["week_of"], symbol=symbol,
+                conn,
+                trade_date=day,
+                week_of=week["week_of"],
+                symbol=symbol,
                 outcome="dividend_calendar_lapsed",
             )
             return 0
         hit = engine.ex_date_in_span(config, symbol, week["entry_session"], week["back_expiration"])
         if hit is not None:
             db.record_entry_attempt(
-                conn, trade_date=day, week_of=week["week_of"], symbol=symbol,
-                outcome="ex_dividend_week", block_detail=f"ex-date {hit}",
+                conn,
+                trade_date=day,
+                week_of=week["week_of"],
+                symbol=symbol,
+                outcome="ex_dividend_week",
+                block_detail=f"ex-date {hit}",
             )
             return 0
     if books is None:

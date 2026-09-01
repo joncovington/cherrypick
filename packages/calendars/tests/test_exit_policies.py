@@ -252,7 +252,7 @@ def test_comparison_table_shape(week_conn):
 
 # ------------------------------------------------------- physical settlement inside the derivation
 SPY_CONFIG = {"settlement_style": {"SPY": "physical"}}
-SPY_SETTLE_SPOT = 6440.0   # same shape as SETTLE_SPOT: the put finishes 25 ITM, the call worthless
+SPY_SETTLE_SPOT = 6440.0  # same shape as SETTLE_SPOT: the put finishes 25 ITM, the call worthless
 SPY_DISPOSE_SPOT = 6470.0  # Monday's print, where the delivered shares are sold
 
 
@@ -271,22 +271,38 @@ def spy_week_conn(tmp_path):
     _tick(conn, "2026-08-17", "10:05", 6500.0, {"front": 20.0, "back": 25.0})
     _tick(conn, "2026-08-21", "15:50", 6445.0, {"front": 5.0, "back": 20.0})
     for side in ("put", "call"):
-        position = dict(conn.execute(
-            "SELECT * FROM dc_positions WHERE position_id = ?", (f"2026-08-17:control:{side}",)
-        ).fetchone())
-        book.close_open_legs(conn, position, _snapshot_from({"front": 5.0, "back": 20.0}, 6445.0),
-                             SPY_CONFIG, reason="scheduled_exit", session_date="2026-08-21")
+        position = dict(
+            conn.execute(
+                "SELECT * FROM dc_positions WHERE position_id = ?", (f"2026-08-17:control:{side}",)
+            ).fetchone()
+        )
+        book.close_open_legs(
+            conn,
+            position,
+            _snapshot_from({"front": 5.0, "back": 20.0}, 6445.0),
+            SPY_CONFIG,
+            reason="scheduled_exit",
+            session_date="2026-08-21",
+        )
 
     book.settle_expiring_legs(conn, "2026-08-21", SPY_SETTLE_SPOT, SPY_CONFIG, symbol="SPY")
     _tick(conn, "2026-08-24", "09:50", SPY_DISPOSE_SPOT, {"back": 26.0}, books=("path",))
     for assignment in db.open_assignments(conn, before_session="2026-08-24"):
         book.dispose_assignment(conn, assignment, SPY_DISPOSE_SPOT, session_date="2026-08-24")
     for side in ("put", "call"):
-        position = dict(conn.execute(
-            "SELECT * FROM dc_positions WHERE position_id = ?", (f"2026-08-17:path:{side}",)
-        ).fetchone())
-        book.close_open_legs(conn, position, _snapshot_from({"back": 26.0}, SPY_DISPOSE_SPOT),
-                             SPY_CONFIG, reason="long_disposition", session_date="2026-08-24")
+        position = dict(
+            conn.execute(
+                "SELECT * FROM dc_positions WHERE position_id = ?", (f"2026-08-17:path:{side}",)
+            ).fetchone()
+        )
+        book.close_open_legs(
+            conn,
+            position,
+            _snapshot_from({"back": 26.0}, SPY_DISPOSE_SPOT),
+            SPY_CONFIG,
+            reason="long_disposition",
+            session_date="2026-08-24",
+        )
     return conn
 
 
@@ -301,12 +317,15 @@ def test_expiry_derivation_carries_the_delivered_shares(spy_week_conn):
 
     # Long 100 shares based at Friday's 6440 print, sold into Monday's 6470.
     share_move = (SPY_DISPOSE_SPOT - SPY_SETTLE_SPOT) * 100
-    option_only = sum(
-        (leg["entry_mid"] - derived["exits"][role]["value"])
-        if leg["action"] == "Sell to Open"
-        else (derived["exits"][role]["value"] - leg["entry_mid"])
-        for role, leg in week["legs"].items()
-    ) * 100
+    option_only = (
+        sum(
+            (leg["entry_mid"] - derived["exits"][role]["value"])
+            if leg["action"] == "Sell to Open"
+            else (derived["exits"][role]["value"] - leg["entry_mid"])
+            for role, leg in week["legs"].items()
+        )
+        * 100
+    )
     assert round(derived["gross_pnl"] - option_only, 2) == round(share_move, 2)
 
 

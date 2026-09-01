@@ -175,9 +175,7 @@ def test_the_forward_scan_leaves_a_run_trail(tmp_path, monkeypatch):
     from cherrypick.core import home as _home
 
     monkeypatch.setattr(_home, "logs_dir", lambda: tmp_path / "logs")
-    monkeypatch.setattr(
-        symbol_watch, "refresh_symbol_watch", lambda **kw: {"ok": True, "symbols": {}}
-    )
+    monkeypatch.setattr(symbol_watch, "refresh_symbol_watch", lambda **kw: {"ok": True, "symbols": {}})
 
     paper_loop.run_iteration(CONFIG, at("06:30"))
 

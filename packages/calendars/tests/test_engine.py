@@ -228,15 +228,13 @@ def test_an_assignment_costs_the_settlement_event_plus_the_equity_pass_throughs(
     fee = engine.assignment_fee(long_shares, 774.5)
     assert fee > _fees.ASSIGNMENT_FEE_PER_SETTLEMENT
     assert fee == round(
-        _fees.ASSIGNMENT_FEE_PER_SETTLEMENT
-        + _fees.stock_trade_fee(100, 774.5, side="sell", ndigits=4),
+        _fees.ASSIGNMENT_FEE_PER_SETTLEMENT + _fees.stock_trade_fee(100, 774.5, side="sell", ndigits=4),
         2,
     )
     # A short delivery's sell happened at assignment, so its pass-through is priced there.
     short_shares = {"direction": "short", "shares": 100, "basis": 770.0}
     assert engine.assignment_fee(short_shares, 774.5) == round(
-        _fees.ASSIGNMENT_FEE_PER_SETTLEMENT
-        + _fees.stock_trade_fee(100, 770.0, side="sell", ndigits=4),
+        _fees.ASSIGNMENT_FEE_PER_SETTLEMENT + _fees.stock_trade_fee(100, 770.0, side="sell", ndigits=4),
         2,
     )
 
@@ -255,9 +253,10 @@ def test_coverage_is_declared_never_assumed():
     assert engine.dividend_coverage_ok(DIV_CFG, "SPY", "2026-12-31") is True
     assert engine.dividend_coverage_ok(DIV_CFG, "SPY", "2027-01-04") is False
     # A block without a horizon covers nothing, even with dates listed.
-    assert engine.dividend_coverage_ok(
-        {"dividends": {"SPY": {"ex_dates": ["2026-09-18"]}}}, "SPY", "2026-09-18"
-    ) is False
+    assert (
+        engine.dividend_coverage_ok({"dividends": {"SPY": {"ex_dates": ["2026-09-18"]}}}, "SPY", "2026-09-18")
+        is False
+    )
 
 
 def test_ex_date_in_span_hits_the_span_closed_on_both_ends():

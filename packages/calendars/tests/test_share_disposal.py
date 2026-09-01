@@ -59,8 +59,16 @@ def _position(conn, position_id="p1", book="path"):
     )
 
 
-def _assignment(conn, *, position_id="p1", session=FRIDAY, direction="short", shares=100,
-                basis=6500.0, leg_role="front_call"):
+def _assignment(
+    conn,
+    *,
+    position_id="p1",
+    session=FRIDAY,
+    direction="short",
+    shares=100,
+    basis=6500.0,
+    leg_role="front_call",
+):
     db.save_assignment(
         conn,
         {
@@ -135,8 +143,9 @@ def test_a_missing_spot_refuses_rather_than_guessing(conn, tmp_path):
     assert _run(CONFIG, conn, _cache(tmp_path, spot=None)) == 0
 
     assert db.assignments_for(conn, "p1")[0]["status"] == "open"
-    events = [dict(r) for r in conn.execute(
-        "SELECT * FROM dc_management_events WHERE action = 'dispose_shares'")]
+    events = [
+        dict(r) for r in conn.execute("SELECT * FROM dc_management_events WHERE action = 'dispose_shares'")
+    ]
     assert len(events) == 1
     assert events[0]["executed"] == 0
     assert events[0]["gate"] == "no_spot"
@@ -171,8 +180,9 @@ def test_share_pnl_and_the_executed_event_are_both_recorded(conn, tmp_path):
     assert row["share_pnl"] == pytest.approx(10_000.0)
     assert row["fees"] is not None
 
-    events = [dict(r) for r in conn.execute(
-        "SELECT * FROM dc_management_events WHERE action = 'dispose_shares'")]
+    events = [
+        dict(r) for r in conn.execute("SELECT * FROM dc_management_events WHERE action = 'dispose_shares'")
+    ]
     assert [e["executed"] for e in events] == [1]
 
 
@@ -205,7 +215,8 @@ def test_the_spot_is_read_once_per_symbol_not_once_per_assignment(conn, tmp_path
     calls = []
     real = provider.read_spot
     monkeypatch.setattr(
-        provider, "read_spot",
+        provider,
+        "read_spot",
         lambda *a, **kw: (calls.append(a[1] if len(a) > 1 else None), real(*a, **kw))[1],
     )
     _run(CONFIG, conn, _cache(tmp_path))

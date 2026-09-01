@@ -95,9 +95,7 @@ def test_cancel_is_refused_when_the_account_is_not_allowlisted(
     assert any("allowed_accounts" in r for r in out["refusals"])
 
 
-def test_cancel_is_allowed_under_the_suite_halt_flag(
-    enabled_cfg, tmp_journal, fake_keyring, monkeypatch
-):
+def test_cancel_is_allowed_under_the_suite_halt_flag(enabled_cfg, tmp_journal, fake_keyring, monkeypatch):
     """The load-bearing assertion: `evaluate_management` never receives a halt-flag argument at all
     (it has no `halt_present` parameter, unlike `evaluate`), so a cancel proceeds regardless of the
     suite halt flag's presence — pulling a resting order only reduces exposure. This test never
@@ -141,9 +139,7 @@ def test_a_failed_broker_cancel_is_journaled_as_cancel_failed(
     assert entry["event"] == "cancel_failed"
 
 
-def test_env_pin_is_honored_same_as_confirm(
-    enabled_cfg, tmp_journal, fake_keyring, monkeypatch
-):
+def test_env_pin_is_honored_same_as_confirm(enabled_cfg, tmp_journal, fake_keyring, monkeypatch):
     """`cancel` must read `CHERRYPICK_DESK_PIN` the same way `confirm` does — a remote session that
     exported it for confirm should not need a second mechanism for cancel."""
     value = _pin_set(fake_keyring)

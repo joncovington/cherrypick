@@ -413,5 +413,3 @@ def _eod(tmp_path, monkeypatch, day):
     monkeypatch.setattr(metrics, "DB_PATH", db_paper.DB_PATH)
     monkeypatch.setattr(harness, "_eod_report_path", lambda d: tmp_path / f"paper-eod-{d}.md")
     return harness._write_eod_report(day).read_text(encoding="utf-8")
-
-

@@ -374,6 +374,7 @@ def format_report(result: dict[str, Any], *, detail: bool = False) -> str:
             )
             if not detail:
                 continue
+
             def _leg_order(leg: dict):
                 """Expiry, then calls before puts, then strike — how a spread reads on a ticket."""
                 return (leg.get("expiration") or "", leg.get("right") or "", leg.get("strike") or 0)
