@@ -48,6 +48,20 @@ def _puts(entries: list[dict], quotes: dict) -> dict[float, dict]:
     return out
 
 
+def _calls(entries: list[dict], quotes: dict) -> dict[float, dict]:
+    """The call side of the chain with a usable quote, keyed by strike — `_puts`' mirror, for the
+    wall book's call-side structure."""
+    out = {}
+    for e in entries:
+        if e["option_type"] != "call":
+            continue
+        q = quotes.get(e["streamer_symbol"])
+        if q is None:
+            continue
+        out[e["strike_price"]] = {**e, "quote": q}
+    return out
+
+
 def _nearest_strike(strikes: list[float], target: float) -> float | None:
     if not strikes:
         return None
@@ -105,7 +119,9 @@ def select_strikes(spot: float, expected_move: float, params: dict, listed: list
     return {"ok": True, "body": body, "near": near, "far": far}
 
 
-def _leg(role: str, action: str, entry: dict, quote: dict, greeks: dict | None, expiration: str) -> dict:
+def _leg(
+    role: str, action: str, entry: dict, quote: dict, greeks: dict | None, expiration: str, option_type: str = "put"
+) -> dict:
     g = greeks or {}
     return {
         "leg_role": role,
@@ -113,7 +129,7 @@ def _leg(role: str, action: str, entry: dict, quote: dict, greeks: dict | None, 
         "streamer_symbol": entry["streamer_symbol"],
         "expiration": expiration,
         "strike": entry["strike_price"],
-        "option_type": "put",
+        "option_type": option_type,
         "action": action,
         "bid": quote["bid"],
         "ask": quote["ask"],
@@ -179,6 +195,134 @@ def plan_entry(snapshot: dict, params: dict) -> dict:
             "dte": snapshot["dte"],
             **em_result,
             **metrics,
+            "legs": legs,
+        },
+    }
+
+
+def select_wall_strikes(call_wall: float, spot: float, params: dict, listed: list[float]) -> dict:
+    """`select_strikes` mirrored for the wall book: body (short x2) at the CALL WALL; near wing one
+    increment BELOW the body (toward spot); far wing `far_wing_increments` (>=2) increments ABOVE.
+    Snapped to listed strikes, and the wall must still sit above spot AFTER snapping — a body at or
+    below spot is short calls in the money, a directional bet, not a "wall holds" bet."""
+    increment = params.get("strike_increment", STRIKE_INCREMENT)
+    near_incr = int(params.get("near_wing_increments", 1))
+    far_incr = int(params.get("far_wing_increments", 2))
+    if far_incr < 2:
+        return {"ok": False, "reason": "far_wing_increments_below_floor"}
+    if not listed:
+        return {"ok": False, "reason": "no_strikes_in_window"}
+
+    body = _nearest_strike(listed, call_wall)
+    if body is None:
+        return {"ok": False, "reason": "no_strikes_in_window"}
+    if body <= spot:
+        return {"ok": False, "reason": "call_wall_not_above_spot"}
+    near = _nearest_strike(listed, body - near_incr * increment)
+    far = _nearest_strike(listed, body + far_incr * increment)
+    if near is None or far is None:
+        return {"ok": False, "reason": "no_strikes_in_window"}
+    if not (near < body < far):
+        return {"ok": False, "reason": "no_strikes_in_window"}
+    return {"ok": True, "body": body, "near": near, "far": far}
+
+
+def plan_wall_entry(snapshot: dict, params: dict, call_wall: float | None) -> dict:
+    """The wall book's call-side BWB off the same snapshot: +1 near / -2 body / +1 far in CALLS,
+    body at the GEX call wall, net credit required.
+
+    Origin: the gex module's pin study (2026-08-31, 23 sessions) — a BOUND bet, not a pin bet: the
+    close finished at or below the morning wall 19-21/23 while the tent captured 2/23. At ~7 DTE
+    this book asks a question the study did not answer (does the wall bound price over a WEEK?),
+    which is exactly why it gets its own book instead of borrowing the study as evidence.
+
+    Two deliberate differences from `plan_entry`, both stated rather than silent:
+
+    * No expected-move dependency — the wall is the placement, so a session with no wall reading
+      is a refusal (`call_wall_unavailable`), never an EM fallback wearing this book's name.
+    * The spread gate is percent AND absolute money, per leg (the curve/calendars rule). These are
+      OTM calls at and above the wall, where a done short quotes 0.00 bid against a penny ask —
+      a 200% ratio and a one-cent width. The put books' gate stays percentage-only: their legs sit
+      an expected move below spot where that arithmetic has not bitten, and changing what THEY
+      admit would be its own measurement break.
+    """
+    if call_wall is None:
+        return {"ok": False, "reason": "call_wall_unavailable"}
+    spot = snapshot["spot"]
+    if call_wall <= spot:
+        return {"ok": False, "reason": "call_wall_not_above_spot"}
+
+    quotes = snapshot["quotes"]
+    greeks = snapshot.get("greeks") or {}
+    call_book = _calls(snapshot["chain"], quotes)
+    listed = sorted(call_book)
+
+    strikes = select_wall_strikes(call_wall, spot, params, listed)
+    if not strikes["ok"]:
+        return strikes
+
+    body_e, near_e, far_e = call_book[strikes["body"]], call_book[strikes["near"]], call_book[strikes["far"]]
+    max_pct = params.get("max_leg_spread_pct", 0.25)
+    max_abs = params.get("max_leg_spread_abs", 0.05)
+    for name, e in (("body", body_e), ("near", near_e), ("far", far_e)):
+        pct = _spread_pct(e["quote"])
+        width = (
+            None
+            if e["quote"].get("ask") is None or e["quote"].get("bid") is None
+            else e["quote"]["ask"] - e["quote"]["bid"]
+        )
+        if pct is not None and pct > max_pct and (width is None or width > max_abs):
+            return {"ok": False, "reason": "spread_too_wide", "detail": {"leg": name, "spread_pct": pct}}
+
+    # The same worksheet keys as `bwb_metrics`, with the widths read from the mirrored geometry:
+    # narrow is body-to-near (below, toward spot), wide is body-to-far (above). The loss directions
+    # swap sides with the structure — the risk is a rally through the far wing.
+    credit = 2 * body_e["quote"]["mid"] - near_e["quote"]["mid"] - far_e["quote"]["mid"]
+    narrow_width = strikes["body"] - strikes["near"]
+    wide_width = strikes["far"] - strikes["body"]
+    credit_floor = params.get("credit_floor", 0.0)
+    if credit <= credit_floor:
+        return {"ok": False, "reason": "no_credit", "detail": {"credit": round(credit, 4)}}
+
+    expiration = snapshot["expiration"]
+    legs = [
+        _leg(
+            "near_long", "Buy to Open", near_e, near_e["quote"], greeks.get(near_e["streamer_symbol"]),
+            expiration, option_type="call",
+        ),
+        _leg(
+            "body_short_1", "Sell to Open", body_e, body_e["quote"], greeks.get(body_e["streamer_symbol"]),
+            expiration, option_type="call",
+        ),
+        _leg(
+            "body_short_2", "Sell to Open", body_e, body_e["quote"], greeks.get(body_e["streamer_symbol"]),
+            expiration, option_type="call",
+        ),
+        _leg(
+            "far_long", "Buy to Open", far_e, far_e["quote"], greeks.get(far_e["streamer_symbol"]),
+            expiration, option_type="call",
+        ),
+    ]
+    return {
+        "ok": True,
+        "plan": {
+            "symbol": snapshot["symbol"],
+            "spot": spot,
+            "expiration": expiration,
+            "dte": snapshot["dte"],
+            "call_wall": call_wall,
+            "body_strike": strikes["body"],
+            "body_mid": round(body_e["quote"]["mid"], 4),
+            "near_strike": strikes["near"],
+            "near_mid": round(near_e["quote"]["mid"], 4),
+            "far_strike": strikes["far"],
+            "far_mid": round(far_e["quote"]["mid"], 4),
+            "credit": round(credit, 4),
+            "narrow_width": round(narrow_width, 4),
+            "wide_width": round(wide_width, 4),
+            "max_loss_up": round(wide_width - credit, 4),
+            "max_loss_down": round(narrow_width - credit, 4),
+            "max_loss": round(max(wide_width, narrow_width) - credit, 4),
             "legs": legs,
         },
     }
@@ -273,8 +417,11 @@ def close_cost(items: list[dict]) -> float | None:
     return round(total, 4)
 
 
-def settle_intrinsic(strike: float, spot: float) -> float:
-    """A PUT's intrinsic value at cash settlement."""
+def settle_intrinsic(strike: float, spot: float, option_type: str = "put") -> float:
+    """One leg's intrinsic value at cash settlement. Defaulting to put kept every existing call
+    site meaning what it always meant; the wall book's call legs pass their own type."""
+    if option_type == "call":
+        return round(max(0.0, spot - strike), 4)
     return round(max(0.0, strike - spot), 4)
 
 

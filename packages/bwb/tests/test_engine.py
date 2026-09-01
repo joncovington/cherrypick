@@ -175,3 +175,67 @@ def test_leg_pnl_sold_and_bought():
     assert engine.leg_pnl(sold) == 1.5
     assert engine.leg_pnl(bought) == -1.5
     assert engine.leg_pnl({"action": "Sell to Open", "entry_mid": 2.0, "close_value": None}) is None
+
+
+# --------------------------------------------------------------------------- the wall book
+def test_plan_wall_entry_builds_the_call_side_mirror():
+    """Body at the wall, near wing BELOW toward spot, far wing ABOVE — all calls, net credit.
+
+    The geometry is the put ladder reflected: the risk is a rally through the far wing, so
+    max_loss_up carries the wide width and the floor is below the near wing. Spot sits at 6490 so
+    the 6500 wall is genuinely above it, and the far call's fixture quote is tightened — the
+    fixture's default far-OTM width (0.20 on a 0.50 mid) is wide in percent AND in money, which the
+    gate is right to refuse.
+    """
+    snap = _snapshot(spot=6490.0)
+    snap["quotes"]["c6510"] = {"bid": 0.48, "ask": 0.52, "mid": 0.5}
+    plan = engine.plan_wall_entry(snap, PARAMS, 6500.0)
+    assert plan["ok"], plan
+    inner = plan["plan"]
+    assert (inner["near_strike"], inner["body_strike"], inner["far_strike"]) == (6495.0, 6500.0, 6510.0)
+    assert all(leg["option_type"] == "call" for leg in inner["legs"])
+    assert inner["credit"] > 0
+    assert inner["narrow_width"] == 5.0 and inner["wide_width"] == 10.0
+    assert inner["max_loss_up"] == round(inner["wide_width"] - inner["credit"], 4)
+
+
+def test_plan_wall_entry_refuses_without_a_wall_rather_than_borrowing_the_em():
+    """No EM fallback: a session with no wall reading is a refusal, or the book trades control's
+    placement under its own name and the comparison dissolves."""
+    snap = _snapshot(spot=6490.0)
+    assert engine.plan_wall_entry(snap, PARAMS, None) == {"ok": False, "reason": "call_wall_unavailable"}
+
+
+def test_plan_wall_entry_refuses_a_wall_at_or_below_spot():
+    snap = _snapshot()
+    assert engine.plan_wall_entry(snap, PARAMS, 6500.0)["reason"] == "call_wall_not_above_spot"
+    # And after SNAPPING: a wall at 6501 snaps to the 6500 body, which is at spot.
+    assert engine.plan_wall_entry(snap, PARAMS, 6501.0)["reason"] == "call_wall_not_above_spot"
+
+
+def test_wall_spread_gate_admits_a_penny_wide_leg_and_refuses_a_wide_one():
+    """The curve/calendars rule, entry-side: a 0.00/0.01 far call is a 200% ratio and a one-cent
+    width — admitted. Wide in percent AND in money — refused. Verified by dropping the absolute
+    floor and watching the penny-wide case refuse."""
+    snap = _snapshot(spot=6490.0)
+    snap["quotes"]["c6510"] = {"bid": 0.0, "ask": 0.01, "mid": 0.005}
+    plan = engine.plan_wall_entry(snap, PARAMS, 6500.0)
+    assert plan["ok"], plan
+
+    snap2 = _snapshot(spot=6490.0)
+    snap2["quotes"]["c6510"] = {"bid": 0.0, "ask": 0.60, "mid": 0.30}
+    refused = engine.plan_wall_entry(snap2, PARAMS, 6500.0)
+    assert refused == {
+        "ok": False,
+        "reason": "spread_too_wide",
+        "detail": {"leg": "far", "spread_pct": 2.0},
+    }
+
+
+def test_settle_intrinsic_knows_both_sides():
+    """A call settles on spot ABOVE strike. Transposed, the wall book's settlement would book its
+    max-loss case as a win."""
+    assert engine.settle_intrinsic(6500, 6520, "call") == 20.0
+    assert engine.settle_intrinsic(6500, 6480, "call") == 0.0
+    assert engine.settle_intrinsic(6500, 6480) == 20.0  # default stays put
+    assert engine.settle_intrinsic(6500, 6520, "put") == 0.0

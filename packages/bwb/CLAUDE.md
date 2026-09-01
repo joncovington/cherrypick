@@ -71,6 +71,27 @@ independently (`triggers.derive_latches_from_ticks`), which doubles as the integ
 the same basis MEIC's own gate reads, NOT the GEX recorder's ~5-min history, so a stalled recorder
 can never silently freeze this module's trigger. The basis read is stamped on every trigger row.
 
+### The `wall` book (opt-in, 2026-08-31) — outside the paired design on purpose
+
+A fifth book, `books.wall`, trades a CALL-side BWB with the body at the GEX call wall (read off the
+same `gamma_flip_reading` compute the flip trigger uses — one basis, one provenance): +1 near
+(one increment below, toward spot) / −2 body / +1 far (two increments above), net credit required.
+Origin: the gex module's pin study over 23 recorded sessions — a BOUND bet (the close finished at
+or below the morning wall 19–21/23), never a pin bet (the tent captured 2/23). At ~7 DTE it asks a
+question that study did not answer — does the wall bound price over a WEEK? — so its result stands
+on its own evidence and must never pool with the four base books.
+
+It is deliberately NOT in `engine.BOOKS`: the four base books' contract ("every book enters the
+IDENTICAL BWB") stays true because the wall book is additive and opt-in. It never arms
+(`triggers.evaluate` returns fired=False for an unknown book) and has no add-on in phase one; its
+trigger-tick cohort records the call-side candidates (near-long call delta, spot, flip, wall) the
+same way the put books earned their triggers — a future add-on is a read-side replay away, and its
+own journaled break. Its entry spread gate is percent AND absolute money (`max_leg_spread_abs`,
+the curve/calendars rule — OTM calls zero-bid routinely); the put books' percentage-only gate is
+deliberately untouched, because changing what THEY admit would be its own measurement break.
+Settlement is option-type aware (`engine.settle_intrinsic` takes the leg's own type); a transposed
+call intrinsic would book the wall book's max-loss case as a win, and a test pins the mirror.
+
 ## Pairing, collisions, and effective sample
 
 Until an arm's add-on actually fires, that arm's positions are byte-identical to control's — an
