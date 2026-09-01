@@ -155,6 +155,24 @@ def bwb_zone(close: float, body: float, side: str) -> str:
     return "max_loss"
 
 
+def iron_fly_zone(close: float, body: float) -> str:
+    """How far the close finished from an iron fly's shorts, in wing-width terms.
+
+    An iron fly's win condition is |close - body| < credit received, and the credit cannot be
+    priced from this history -- so the honest report is the distance itself, bucketed at the wing
+    widths the suite actually trades (flies' arms run $5-$25). A reader supplies their own credit
+    assumption; this table only says where the close landed.
+    """
+    d = abs(close - body)
+    if d <= 5:
+        return "within_5"
+    if d <= 10:
+        return "within_10"
+    if d <= 25:
+        return "within_25"
+    return "beyond_25"
+
+
 def ic_outcome(close: float, call_wall: float | None, put_wall: float | None) -> dict | None:
     """An iron condor with shorts at the two walls: inside keeps the credit, a breach pays it back.
 
@@ -190,6 +208,10 @@ def _score_structures(reading: sqlite3.Row, close: float) -> dict:
         bwb[f"{level}:{side}"] = None if body is None else bwb_zone(close, body, side)
     return {
         "bwb": bwb,
+        "iron_fly": {
+            level: None if reading[level] is None else iron_fly_zone(close, reading[level])
+            for level in LEVELS
+        },
         "ic": ic_outcome(close, reading["call_wall"], reading["put_wall"]),
     }
 
@@ -273,6 +295,7 @@ def _summarise(sessions: list[dict], variant: str) -> dict:
             if spans and spans[level] is not None:
                 reach[level].append(spans[level])
     bwb_zones: dict[str, dict[str, int]] = {f"{lv}:{sd}": {} for lv, sd in BWB_PLACEMENTS}
+    fly_zones: dict[str, dict[str, int]] = {level: {} for level in LEVELS}
     ic_counts: dict[str, int] = {}
     breaches: list[float] = []
     for s in scored:
@@ -280,6 +303,9 @@ def _summarise(sessions: list[dict], variant: str) -> dict:
         for key, zone in v["structures"]["bwb"].items():
             if zone is not None:
                 bwb_zones[key][zone] = bwb_zones[key].get(zone, 0) + 1
+        for level, zone in v["structures"]["iron_fly"].items():
+            if zone is not None:
+                fly_zones[level][zone] = fly_zones[level].get(zone, 0) + 1
         ic = v["structures"]["ic"]
         if ic is not None:
             ic_counts[ic["outcome"]] = ic_counts.get(ic["outcome"], 0) + 1
@@ -289,6 +315,7 @@ def _summarise(sessions: list[dict], variant: str) -> dict:
         "n": len(scored),
         "winners": winners,
         "bwb_zones": bwb_zones,
+        "iron_fly_zones": fly_zones,
         "ic": {"outcomes": ic_counts, "median_breach_points": round(median(breaches), 2) if breaches else None},
         "winners_by_regime": by_regime,
         "median_close_distance": {k: (round(median(v), 2) if v else None) for k, v in dist.items()},
