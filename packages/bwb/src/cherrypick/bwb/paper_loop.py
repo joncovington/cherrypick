@@ -101,6 +101,14 @@ def advice_decision(config: dict, today: str) -> dict:
 
 def session_books(config: dict, today: str) -> tuple[list[str], dict | None]:
     books = [b for b in engine.BOOKS if (config.get("books") or {}).get(b, {}).get("enabled", True)]
+    # The wall book is OPT-IN, the reverse of the base four: it trades a different structure
+    # (call-side, body at the GEX call wall) rather than a different add-on timing, so absence
+    # from `engine.BOOKS` is what keeps "the four books enter the identical BWB" true. It never
+    # arms (`triggers.evaluate` returns fired=False for an unknown book) and its trigger-tick
+    # cohort records the call-side candidates for a future replay, the way the put books' own
+    # triggers were earned.
+    if (config.get("books") or {}).get("wall", {}).get("enabled"):
+        books.append("wall")
     decision = advice_decision(config, today)
     params = decision.get("params")
     if params:
@@ -252,8 +260,25 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
     base_params = {**management.PARAM_DEFAULTS, **engine.merged_params(config, "control")}
     planned = engine.plan_entry(snapshot, base_params)
     plans: dict[str, dict] = {}
+    wall_reading: dict | None = None
     for b in wanting:
-        if b.startswith("advised:") and advice_params:
+        if b == "wall":
+            # The wall comes off the SAME reading the flip trigger uses — one compute, one basis —
+            # read once here rather than per-book. A session with no reading is a refusal the
+            # attempt rows record; the wall book never borrows the EM placement as a fallback.
+            if wall_reading is None:
+                wall_reading = provider.gamma_flip_reading(
+                    cache_path,
+                    symbol,
+                    snapshot["expiration"],
+                    root,
+                    max_age_seconds=defaults.get("max_quote_age_seconds", 300),
+                )
+            wall = wall_reading.get("call_wall") if wall_reading.get("ok") else None
+            plans[b] = engine.plan_wall_entry(
+                snapshot, {**base_params, **engine.merged_params(config, "wall")}, wall
+            )
+        elif b.startswith("advised:") and advice_params:
             plans[b] = engine.plan_entry(snapshot, {**base_params, **advice_params})
         else:
             plans[b] = planned

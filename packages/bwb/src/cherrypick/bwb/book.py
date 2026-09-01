@@ -167,7 +167,7 @@ def settle_expiring_legs(conn, day: str, spot: float, config: dict, *, symbol: s
     for leg in db.expiring_open_legs(conn, day):
         if symbol is not None and leg["position_symbol"] != symbol:
             continue
-        intrinsic = engine.settle_intrinsic(leg["strike"], spot)
+        intrinsic = engine.settle_intrinsic(leg["strike"], spot, leg.get("option_type") or "put")
         itm = intrinsic > 0
         db.save_leg(
             conn,
