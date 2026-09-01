@@ -78,7 +78,8 @@ config file's directory — never hardcode absolute paths.
   samples **every** offered symbol's spot into this module's **own** SQLite (`history_db`) so a trail has
   no gap when the viewer switches symbols; `run_recorder(cfg)` is the always-on loop (`run.py record`).
 - **`cherrypick/gex/cli.py` + `run.py`** — the CLI: `gex` (one-shot payload), `stream`, `record`,
-  `pin-study` (below).
+  `pin-study` (below). Nothing here is an integration point any more — the console reads this
+  module's **data**, not its commands, which is why deleting the serving layer changed no consumer.
 - **`cherrypick/gex/pin_study.py`** — a read-side study over this module's own history: which
   recorded level (call wall / zero gamma / put wall) each session's close settled nearest, per
   regime, for both the session's own first RTH reading and the prior session's final one. Exists to
@@ -87,8 +88,6 @@ config file's directory — never hardcode absolute paths.
   crossed midnight mid-session once), and expired-chain rows are excluded by `core.regime`'s own
   forward-only rule. It reports skipped sessions with reasons and carries n everywhere; it draws no
   conclusion by itself.
-  Nothing here is an integration point any more — the console reads this module's **data**, not its
-  commands, which is why deleting the serving layer changed no consumer.
 - **`cherrypick.core`** — an installed dependency (`packages/core` in this monorepo, `pip install -e
   packages/core`); the GEX math (`core.gex`), the streaming engine (`core.streamer`), and the cache
   schema (`core.streamcache`) live there so this module and cherrypick-meic compute/stream identically.
