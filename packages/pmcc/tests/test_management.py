@@ -92,3 +92,34 @@ def test_effective_params_advised_overlay_and_control_untouched(config):
     d = management.evaluate(advised, params, now=NOW, short_tv=0.08, spot=70.0)
     assert d.action == "close_all"
     assert d.reason == "tv_exhausted"
+
+
+def test_a_penny_wide_leg_is_not_too_wide_to_close():
+    """This module holds the short to its own expiration by design, which is exactly when its quote goes penny-wide: 0.00/0.01 is a one-cent buyback and a 200% ratio, and refusing it blocks the combined disposal on the day the design says to take it. Verified by restoring the aggregate percentage test and watching this admit-case
+    refuse."""
+    snap = {
+        "ok": True,
+        "max_spread_pct": 2.0,
+        "leg_spreads": [
+            {"symbol": "short", "pct": 2.0, "abs": 0.01},
+            {"symbol": "long", "pct": 0.05, "abs": 0.02},
+        ],
+    }
+    assert management.execution_gate(snap, _params(), now=NOW) is None
+
+
+def test_a_leg_wide_in_money_as_well_as_percent_still_blocks():
+    snap = {"ok": True, "max_spread_pct": 2.0, "leg_spreads": [{"symbol": "s", "pct": 2.0, "abs": 0.60}]}
+    assert management.execution_gate(snap, _params(), now=NOW) == "spread_too_wide"
+
+
+def test_the_two_readings_are_judged_per_leg_not_as_separate_maxima():
+    snap = {
+        "ok": True,
+        "max_spread_pct": 2.0,
+        "leg_spreads": [
+            {"symbol": "cheap-wide-pct", "pct": 2.0, "abs": 0.01},
+            {"symbol": "fat-wide-money", "pct": 0.05, "abs": 0.60},
+        ],
+    }
+    assert management.execution_gate(snap, _params(), now=NOW) is None

@@ -160,3 +160,32 @@ def test_control_and_noflip_share_the_same_plan_from_one_snapshot():
     control_plan = engine.plan_entry(snapshot, params)
     noflip_plan = engine.plan_entry(snapshot, params)
     assert control_plan == noflip_plan
+
+
+# --------------------------------------------------------------- the spread gate reads money too
+NOON = datetime(2026, 9, 1, 12, 0)
+
+
+def test_a_penny_wide_leg_is_not_too_wide_to_close():
+    """The far-OTM VXX wing is routinely bid-less (this module's own entry finding: 56 of 62
+    refusals in one session at exactly 2.000), so at any exit the wing alone would gate the whole
+    close on a percentage test. Verified by restoring the aggregate percentage and watching this
+    admit-case refuse."""
+    snap = {
+        "ok": True,
+        "max_spread_pct": 2.0,
+        "leg_spreads": [
+            {"symbol": "wing", "pct": 2.0, "abs": 0.01},
+            {"symbol": "short", "pct": 0.08, "abs": 0.03},
+        ],
+    }
+    assert management.execution_gate(snap, dict(management.PARAM_DEFAULTS), now=NOON) is None
+
+
+def test_a_leg_wide_in_money_as_well_as_percent_still_blocks():
+    snap = {"ok": True, "max_spread_pct": 2.0, "leg_spreads": [{"symbol": "s", "pct": 2.0, "abs": 0.60}]}
+    assert management.execution_gate(snap, dict(management.PARAM_DEFAULTS), now=NOON) == "spread_too_wide"
+
+
+def test_a_snapshot_without_leg_detail_keeps_the_percentage_test():
+    assert management.execution_gate({"ok": True, "max_spread_pct": 2.0}, dict(management.PARAM_DEFAULTS), now=NOON) == "spread_too_wide"
