@@ -72,9 +72,20 @@ from cherrypick.core import calendar as _calendar
 
 from cherrypick.earnings import paths as _paths
 from cherrypick.earnings import scanner as _scanner
+from cherrypick.earnings.bounded import OpTimeout as _OpTimeout
+from cherrypick.earnings.bounded import run_bounded as _run_bounded
 
 _SNAPSHOT_NAME = "symbol_watch.json"
 _DEFAULT_DAYS = 10  # trading days, not calendar days -- see refresh_symbol_watch
+
+# Wall-clock ceilings for the per-symbol work, mirroring the entry scan's own two-level bound.
+# Measured 2026-08-25, the first pass this scan ever ran against a populated calendar: 22 symbols in
+# 13.0 minutes, ~35s each. The per-symbol ceiling is generous against that mean on purpose -- it
+# exists to catch a Dolt query that has stopped returning, not to clip a slow one -- and the overall
+# budget covers a much heavier window than any observed while still finishing long before the
+# session needs the loop back.
+_SYMBOL_TIMEOUT_S = 120
+_PASS_BUDGET_S = 3600
 _DEFAULT_BACK_MONTH_MIN_DAYS_AFTER = 21
 
 # EarningsEdgeDetection-derived screener tier bar (github.com/Jayesh-Chhabra/
@@ -560,9 +571,33 @@ def refresh_symbol_watch(days: int = _DEFAULT_DAYS, config: dict | None = None) 
     symbols = {symbol: previous_symbols[symbol] for symbol in by_symbol if symbol in previous_symbols}
     _write_snapshot(symbols, pass_started_at, None, total, 0)
 
+    sw = config.get("symbol_watch") or {}
+    symbol_timeout = sw.get("symbol_timeout_seconds", _SYMBOL_TIMEOUT_S)
+    budget = sw.get("pass_budget_seconds", _PASS_BUDGET_S)
+
     done = 0
+    skipped: dict[str, str] = {}
     for symbol, info in sorted(by_symbol.items()):
-        symbols[symbol] = _compute_symbol_entry(symbol, info["date"], info["timing"], config)
+        # Bounded two ways, for the same reason the entry scan is (see `bounded`): a Dolt query can
+        # block forever, and this loop holds the paper loop's single-writer lock the whole time -- so
+        # one hung symbol does not merely stall the preview, it blocks every later phase of the
+        # session behind it, the 15:35 entry scan included. Unbounded was survivable only while this
+        # scan had an empty calendar and did no work at all.
+        if budget is not None and (time.time() - pass_started_at) > budget:
+            skipped[symbol] = "pass_budget_exceeded"
+            continue
+        try:
+            symbols[symbol] = _run_bounded(
+                _compute_symbol_entry, symbol_timeout, symbol, info["date"], info["timing"], config
+            )
+        except _OpTimeout:
+            # Skip the symbol, keep the pass. A preview missing one row is a gap the next pass fills;
+            # a pass abandoned partway leaves the entry scan's prefilter reading a stale snapshot.
+            skipped[symbol] = "symbol_timeout"
+            continue
+        except Exception:  # noqa: BLE001 -- one unreachable name must not cost the whole preview
+            skipped[symbol] = "symbol_error"
+            continue
         done += 1
         _write_snapshot(symbols, pass_started_at, None, total, done)
 
@@ -572,6 +607,9 @@ def refresh_symbol_watch(days: int = _DEFAULT_DAYS, config: dict | None = None) 
         "ok": True,
         "total": total,
         "done": done,
+        # Named, never silent: a preview that quietly measured 18 of 22 names reads exactly like one
+        # that measured all of them, and the entry scan's prefilter consults this snapshot.
+        "skipped": skipped,
         "pass_started_at": pass_started_at,
         "pass_completed_at": pass_completed_at,
     }

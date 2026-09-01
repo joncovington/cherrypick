@@ -169,7 +169,12 @@ def record_verdict_recommendation(conn, *, session: str, experiment_id: str, rec
         return {"ok": False, "reason": f"not_an_advisor_experiment: {experiment_id!r}"}
 
     stored = experiment["verdict_json"]
-    body = json.loads(stored) if stored else _verdicts.for_experiment(experiment)
+    if stored:
+        body = json.loads(stored)
+    else:
+        # Same per-module rule the fact pack shows the model — never the library default.
+        module_rule = _settings.calibration_rule(experiment["module"]) or None
+        body = _verdicts.for_experiment(experiment, rule=module_rule)
     body["recommendation"] = {"value": recommendation, "rationale": rationale, "by": "model",
                               "session": session}
     _store.update_experiment(conn, experiment_id, verdict_json=json.dumps(body))
@@ -178,15 +183,44 @@ def record_verdict_recommendation(conn, *, session: str, experiment_id: str, rec
     return {"ok": True, "experiment_id": experiment_id, "recommendation": recommendation}
 
 
+def verdict_for(experiment: dict, *, rule: dict | None = None, cfg: dict | None = None) -> dict:
+    """The computed verdict for one experiment, with its module's own calibration rule resolved.
+
+    Shared so a killed experiment and an expired one are judged by the identical gate. Resolving the
+    rule in two places is how the 2026-08-14 incident happened: the model was shown one gate and the
+    stored verdict computed against another.
+    """
+    module_rule = rule
+    if module_rule is None:
+        module_rule = _settings.calibration_rule(experiment["module"], cfg) or None
+    return _verdicts.for_experiment(experiment, rule=module_rule)
+
+
 def kill(conn, experiment_id: str, *, session: str | None = None,
-         reason: str = "killed by user") -> dict[str, Any]:
-    """Stop an experiment now. No artifact is issued for it tonight; a queued one takes its slot."""
+         reason: str = "killed by user", cfg: dict | None = None) -> dict[str, Any]:
+    """Stop an experiment now. No artifact is issued for it tonight; a queued one takes its slot.
+
+    **The verdict is computed here too, for the same reason `expire_due` computes one.** An
+    experiment's result is a fact about the ledger, and stopping it is a decision to spend no MORE
+    sessions — not a statement that the sessions already spent produced nothing. Until 2026-08-26
+    this path stored only a status and a reason, so seven concluded experiments carried no verdict
+    at all, three of them after five or six live sessions: the evidence was bought and then never
+    read.
+
+    Most kills land underpowered, and the verdict says so on its face (`underpowered`), which is a
+    far more useful record than silence. The kill reason is stored BESIDE the numbers rather than
+    instead of them — the same rule `record_verdict_recommendation` follows for a model's keep/kill.
+    """
     experiment = _store.experiment(conn, experiment_id)
     if experiment is None:
         return {"ok": False, "reason": f"no such experiment {experiment_id!r}"}
     if experiment["status"] in (STATUS_EXPIRED, STATUS_KILLED):
         return {"ok": True, "experiment_id": experiment_id, "status": experiment["status"],
                 "reason": "already concluded"}
+
+    body = verdict_for(experiment, cfg=cfg)
+    body["killed_reason"] = reason
+    _store.update_experiment(conn, experiment_id, verdict_json=json.dumps(body))
 
     _store.update_experiment(conn, experiment_id, status=STATUS_KILLED)
     _store.journal(conn, experiment_id, "killed", session=session, detail={"reason": reason})
@@ -217,18 +251,26 @@ def activate_queued(conn, module: str, *, session: str | None = None, cfg: dict 
     return activated
 
 
-def expire_due(conn, session: str, *, rule: dict | None = None) -> list[dict[str, Any]]:
+def expire_due(
+    conn, session: str, *, rule: dict | None = None, cfg: dict | None = None
+) -> list[dict[str, Any]]:
     """Conclude every experiment that has run its course: compute the verdict, stop issuing, let the
     queue move up.
 
     The verdict is computed here even when the model never ran — an experiment's result is a fact
     about the ledger, not something that depends on an AI being reachable that evening.
+
+    The rule is resolved PER EXPERIMENT from the module's own `calibration.rule` (the same block
+    the fact pack shows the model) unless an explicit `rule` overrides it. Until 2026-08-20 this
+    used the library default while the pack showed the module rule — the model was shown one gate
+    and the stored verdict computed against another, the exact 2026-08-14 incident
+    `settings.calibration_rule` was written to end.
     """
     concluded = []
     for experiment in _store.experiments(conn, status=STATUS_ACTIVE):
         if experiment["sessions_run"] < experiment["expires_after_sessions"]:
             continue
-        body = _verdicts.for_experiment(experiment, rule=rule)
+        body = verdict_for(experiment, rule=rule, cfg=cfg)
         _store.update_experiment(conn, experiment["id"], status=STATUS_EXPIRED,
                                  verdict_json=json.dumps(body))
         _store.journal(conn, experiment["id"], "expired", session=session,

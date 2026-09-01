@@ -300,6 +300,69 @@ def test_execution_gate():
     assert management.execution_gate({"ok": True, "max_spread_pct": 0.03}, params, now=now) is None
 
 
+def test_a_penny_wide_leg_is_not_too_wide_to_close():
+    """The 2026-08-28 defect, in one test.
+
+    The control put's front leg quoted `bid 0.00 / ask 0.01` into its exit window. As a ratio that
+    is exactly 2.000 -- a "200% spread" -- and it refused the scheduled Friday close on all thirty
+    ticks of the window, while the call side closed normally at 0.222. The position missed its exit,
+    its front expired instead, the longs went on Monday, and the result differed from the policy
+    replay by $1.30, which is how the disagreement surfaced at all.
+
+    A short that has gone almost worthless is the WIN case. Refusing to close it because a
+    one-cent quote reads as a wide percentage is the gate working against the thing it protects.
+    """
+    params = management.effective_params(_pos(), {})
+    now = _at("2026-08-21", "10:00")
+    cheap = {
+        "ok": True,
+        "max_spread_pct": 2.0,
+        "leg_spreads": [
+            {"symbol": ".SPY260828P600", "pct": 2.0, "abs": 0.01},
+            {"symbol": ".SPY260918P600", "pct": 0.154, "abs": 0.01},
+        ],
+    }
+    assert management.execution_gate(cheap, params, now=now) is None
+
+
+def test_a_leg_wide_in_money_as_well_as_percent_still_blocks():
+    """The gate must still do its job. Only the cheap case is exempted, and cheapness is measured
+    in money -- a leg that is wide on both readings is genuinely illiquid and refusing it is right."""
+    params = management.effective_params(_pos(), {})
+    now = _at("2026-08-21", "10:00")
+    wide = {
+        "ok": True,
+        "max_spread_pct": 2.0,
+        "leg_spreads": [{"symbol": ".SPY260828P600", "pct": 2.0, "abs": 0.60}],
+    }
+    assert management.execution_gate(wide, params, now=now) == "spread_too_wide"
+
+
+def test_the_two_readings_are_judged_per_leg_not_as_separate_maxima():
+    """The widest-by-percent and the widest-by-money can be different legs. Comparing two separate
+    maxima would refuse a structure that no single leg justifies -- here the cheap leg supplies the
+    percentage and the expensive one supplies the money, and neither is actually unclosable."""
+    params = management.effective_params(_pos(), {})
+    now = _at("2026-08-21", "10:00")
+    snapshot = {
+        "ok": True,
+        "max_spread_pct": 2.0,
+        "leg_spreads": [
+            {"symbol": "cheap-and-wide-in-pct", "pct": 2.0, "abs": 0.01},
+            {"symbol": "wide-in-money-but-tight", "pct": 0.05, "abs": 0.60},
+        ],
+    }
+    assert management.execution_gate(snapshot, params, now=now) is None
+
+
+def test_a_snapshot_without_leg_detail_keeps_the_old_percentage_test():
+    """A mark recorded before this change carries no per-leg detail. It must not silently admit
+    more than it used to -- absent evidence is not evidence of a penny-wide leg."""
+    params = management.effective_params(_pos(), {})
+    now = _at("2026-08-21", "10:00")
+    assert management.execution_gate({"ok": True, "max_spread_pct": 2.0}, params, now=now) == "spread_too_wide"
+
+
 # --------------------------------------------------------------- physical settlement (SPY shape)
 SPY_CONFIG = {"settlement_style": {"SPY": "physical"}}
 

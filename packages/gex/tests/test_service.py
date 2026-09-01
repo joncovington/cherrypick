@@ -5,6 +5,7 @@ No streamer, no network — just a temp SQLite shaped like the real stream_cache
 
 import json
 import sqlite3
+import time
 from datetime import date
 
 from cherrypick.core import gex
@@ -35,7 +36,12 @@ def _seed_cache(path) -> None:
         CREATE TABLE stream_trades (symbol TEXT PRIMARY KEY, last REAL, change REAL, volume REAL, updated_at REAL);
         CREATE TABLE stream_oi (symbol TEXT PRIMARY KEY, open_interest INTEGER, updated_at REAL);
     """)
-    conn.execute("INSERT INTO stream_trades (symbol, last, volume, updated_at) VALUES ('SPX', 605.0, 0, 0)")
+    # A FRESH print: the recorder age-gates its samples, so updated_at=0 would now read as a
+    # stalled feed and be skipped (which the dedicated test below covers).
+    conn.execute(
+        "INSERT INTO stream_trades (symbol, last, volume, updated_at) VALUES ('SPX', 605.0, 0, ?)",
+        (time.time(),),
+    )
     for opt in _CHAIN:
         conn.execute(
             "INSERT INTO stream_chain (streamer_symbol, expiration, underlying_symbol, data_json, updated_at)"
@@ -216,3 +222,120 @@ def test_build_gex_reports_missing_cache(tmp_path):
     }
     out = service.build_gex(cfg, "SPX")
     assert out["ok"] is False and "not found" in out["error"]
+
+
+def test_record_spots_skips_a_stale_print(tmp_path):
+    """A frozen print must not be written as a fresh sample.
+
+    The recorder had no age check and sampled through the night and through any stall: on
+    2026-08-19 that produced 5,737 rows of which 4,193 consecutive pairs were the identical value,
+    so a dead feed and a quiet market drew the same flat line. Skipping leaves a gap instead.
+    """
+    cfg = _cfg(tmp_path)
+    conn = sqlite3.connect(cfg["stream_cache_db"])
+    conn.execute("UPDATE stream_trades SET updated_at = ? WHERE symbol = 'SPX'", (time.time() - 600,))
+    conn.commit()
+    conn.close()
+
+    assert service.record_spots(cfg) == 0
+
+
+def test_the_age_gate_can_be_turned_off(tmp_path):
+    """`source.max_spot_age_seconds: null` restores the pre-2026-08-20 behaviour."""
+    cfg = {**_cfg(tmp_path), "source": {"max_spot_age_seconds": None}}
+    conn = sqlite3.connect(cfg["stream_cache_db"])
+    conn.execute("UPDATE stream_trades SET updated_at = ? WHERE symbol = 'SPX'", (time.time() - 600,))
+    conn.commit()
+    conn.close()
+
+    assert service.record_spots(cfg) == 1
+
+
+def test_spot_max_age_default_and_override():
+    assert service.spot_max_age_seconds({}) == service.DEFAULT_SPOT_MAX_AGE_SECONDS
+    assert service.spot_max_age_seconds({"source": {"max_spot_age_seconds": 30}}) == 30.0
+    assert service.spot_max_age_seconds({"source": {"max_spot_age_seconds": None}}) is None
+
+
+# --------------------------------------------------------------------------- expired-chain guard
+
+
+def _seed_two_expirations(db, today, other, *, greeks_on):
+    """A cache holding two expirations, with live greeks on only one of them.
+
+    `greeks_on` is where the non-zero gammas go. `stream_greeks` is never pruned, so an expired
+    chain keeps its last gammas indefinitely — which is precisely what let one win the horizon.
+    """
+    _seed_cache(db)  # the standard SPX chain, expiring TODAY
+    conn = sqlite3.connect(db)
+    conn.execute("DELETE FROM stream_chain")
+    conn.execute("DELETE FROM stream_greeks")
+    for expiration in (today, other):
+        for opt in _CHAIN:
+            sym = f"{opt['streamer_symbol']}@{expiration}"
+            stamped = dict(opt, streamer_symbol=sym)
+            conn.execute(
+                "INSERT INTO stream_chain (streamer_symbol, expiration, underlying_symbol,"
+                " data_json, updated_at) VALUES (?,?,?,?,0)",
+                (sym, expiration, "SPX", json.dumps(stamped)),
+            )
+            gamma = _GREEKS[opt["streamer_symbol"]][0] if expiration == greeks_on else None
+            conn.execute(
+                "INSERT INTO stream_greeks (symbol, gamma, iv, updated_at) VALUES (?,?,?,0)",
+                (sym, gamma, 0.2),
+            )
+    conn.commit()
+    conn.close()
+
+
+def test_an_expired_chain_is_never_used_as_the_gex_horizon(tmp_path):
+    """The 2026-08-26 finding: 3,991 of 10,516 recorded regime readings (38%) were computed from a
+    chain that had already expired, nearly all frozen at one constant net_gex for hours.
+
+    The mechanism was two-part and both halves are covered here: candidates were ordered by ABSOLUTE
+    distance from now, which ranks yesterday as near as tomorrow, and `stream_greeks` is never
+    pruned, so the expired chain still satisfied the has-greeks test and won. Gamma exposure on
+    contracts that no longer exist is not a reading.
+    """
+    db = tmp_path / "stream_cache.db"
+    today, yesterday = "2026-08-19", "2026-08-18"
+    # Only the EXPIRED chain has live greeks — the exact shape that used to win.
+    _seed_two_expirations(db, today, yesterday, greeks_on=yesterday)
+
+    snap = provider.snapshot_from_stream_cache(db, "SPX", today=today)
+
+    assert snap.expiration != yesterday, "an expired expiration was used as the GEX horizon"
+    assert snap.expiration == today
+
+
+def test_a_future_expiration_still_wins_when_it_is_the_one_with_greeks(tmp_path):
+    """Forward-only ordering must not become today-only: on a session whose own chain is not live
+    yet, the nearest FUTURE expiration is the right horizon and the recorder should use it. That is
+    what happened on 2026-08-20, where every reading came off the +1d chain."""
+    db = tmp_path / "stream_cache.db"
+    today, tomorrow = "2026-08-20", "2026-08-21"
+    _seed_two_expirations(db, today, tomorrow, greeks_on=tomorrow)
+
+    snap = provider.snapshot_from_stream_cache(db, "SPX", today=today)
+
+    assert snap.expiration == tomorrow
+
+
+def test_the_nearest_future_expiration_wins_when_both_are_live(tmp_path):
+    db = tmp_path / "stream_cache.db"
+    today, tomorrow = "2026-08-20", "2026-08-21"
+    _seed_two_expirations(db, today, tomorrow, greeks_on=today)
+
+    assert provider.snapshot_from_stream_cache(db, "SPX", today=today).expiration == today
+
+
+def test_an_all_expired_cache_reports_not_ready_rather_than_a_stale_number(tmp_path):
+    """The answer a stale chain was silently replacing. "No usable chain" and "GEX is negative" are
+    different facts, and the second is what 38% of the history recorded."""
+    db = tmp_path / "stream_cache.db"
+    _seed_two_expirations(db, "2026-08-17", "2026-08-18", greeks_on="2026-08-18")
+
+    snap = provider.snapshot_from_stream_cache(db, "SPX", today="2026-08-19")
+
+    assert snap.expiration is None
+    assert not snap.chain_entries

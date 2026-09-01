@@ -1178,24 +1178,32 @@ select.text-input {
   line-height: 1.5;
 }
 
-/* A proposal's param table inverts what `data-table-labelled` assumes. There the prose is the FIRST
-   column and the figures follow; here the first column is a config key that must read on one line,
-   and the prose is the LAST column — a rationale the model writes in full sentences, several
-   hundred characters of it. Under the labelled shape that rationale kept the table's default
-   `nowrap` and ran the card four thousand pixels off the page, which in turn squeezed the key
-   column to a sliver where `overflow-wrap: anywhere` broke it one character per line. So the
-   treatment goes where the prose actually is: key and value size to their content, the rationale
-   takes what is left and wraps there. */
-.advisor-params th:first-child,
-.advisor-params td:first-child,
-.advisor-params th:nth-child(2),
-.advisor-params td:nth-child(2) {
+/* Tables whose PROSE IS THE LAST COLUMN — the inverse of what `data-table-labelled` assumes.
+   There the prose is the first column and the figures follow; in these the leading columns are
+   short identifiers that must read on one line and the prose trails: a proposal's rationale (the
+   model writes full sentences, several hundred characters), or the advisor's account of why an
+   artifact never reached a loop.
+
+   Under the labelled shape that prose kept the table's default `nowrap` and ran the card four
+   thousand pixels off the page, which in turn squeezed the leading column to a sliver where
+   `overflow-wrap: anywhere` broke it one character per line — "m e i c" down the left edge. So the
+   treatment goes where the prose actually is: every column but the last sizes to its content, and
+   the last takes what is left and wraps there.
+
+   Written as one rule over both tables rather than copied: they are the same shape with the same
+   failure, and the second one was authored by re-hitting the first one's bug in a browser. */
+.advisor-params th:not(:last-child),
+.advisor-params td:not(:last-child),
+.advisor-apply th:not(:last-child),
+.advisor-apply td:not(:last-child) {
   width: 1%;
   white-space: nowrap;
 }
 
 .advisor-params th:last-child,
-.advisor-params td:last-child {
+.advisor-params td:last-child,
+.advisor-apply th:last-child,
+.advisor-apply td:last-child {
   width: auto;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -1892,4 +1900,420 @@ select.text-input {
 
 .shell.dense .data-table td {
   font-size: 12px;
+}
+
+/* ===== PMCC-99 =====================================================================
+   The page's own vocabulary. Warnings are amber (--warn) throughout and never the cherry
+   accent: --accent is reserved for brand, live-mode and alert moments, and none of this
+   module's caveats are alerts. A cold start and a lapsing dividend table are honest states
+   the page is obliged to show, not faults it is raising. */
+
+.mono {
+  font-family: var(--num-face);
+  font-size: 12px;
+}
+
+
+
+
+
+
+/* The upper-bound banner. A left rule rather than a filled panel: it has to read as the
+   frame around the numbers below it, not as an error interrupting them. */
+
+
+.integrity-grid h3,
+.pmcc-chart-grid h3,
+.pmcc-compare h3 {
+  font-size: 12px;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin: 0 0 0.45rem;
+}
+
+
+
+/* The gate's own line, under a symbol card whose keltner book holds nothing. Sits in the
+   card footer because it explains an ABSENCE in the table above -- a row would have implied
+   a position. */
+.pmcc-gate-row {
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.pmcc-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 1.2rem;
+  margin-top: 0.6rem;
+}
+
+.pmcc-chart-grid h3 {
+  display: flex;
+  align-items: center;
+  font-family: var(--num-face);
+  color: var(--text);
+  font-size: 13px;
+  text-transform: none;
+}
+
+/* Time value against the threshold that closes the position. Two steps only -- near, and at
+   -- because a continuous gradient would imply a precision the mark cadence does not have. */
+.pmcc-tv-near {
+  color: var(--warn);
+}
+
+.pmcc-tv-at {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.pmcc-activity {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  gap: 1rem;
+}
+
+.pmcc-compare {
+  margin-bottom: 1.2rem;
+}
+
+.pmcc-compare:last-child {
+  margin-bottom: 0;
+}
+
+.pmcc-detail-row > td {
+  background: var(--bg-raised);
+}
+
+.pmcc-detail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 1.1rem;
+  padding: 0.7rem 0.4rem;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.pmcc-detail h4 {
+  font-size: 11.5px;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin: 0 0 0.3rem;
+}
+
+.pmcc-detail p {
+  margin: 0 0 0.3rem;
+}
+
+.pmcc-prose {
+  font-size: 13px;
+  line-height: 1.7;
+  max-width: 78ch;
+}
+
+.pmcc-prose p {
+  margin: 0 0 0.7rem;
+}
+
+.pmcc-defs {
+  margin: 0;
+}
+
+.pmcc-defs dt {
+  font-family: var(--num-face);
+  color: var(--text);
+  margin-top: 0.7rem;
+}
+
+.pmcc-defs dd {
+  margin: 0.15rem 0 0;
+  color: var(--text-muted);
+}
+
+.pmcc-rules {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--text-muted);
+}
+
+.pmcc-rules li {
+  margin-bottom: 0.55rem;
+}
+
+.pmcc-rules strong {
+  color: var(--text);
+}
+
+/* The ordinary close. `.chip-missing` is red and `.chip-warn` amber; a short that simply traded out
+   is neither -- it is the strategy working. Quiet by default so `assigned`, which hands over shares
+   and carries the weekend, is the only close kind that catches the eye. */
+
+/* The expanded cycle detail. `.data-table td` is nowrap by house rule ("a cell that genuinely needs
+   to wrap sets white-space itself") -- this one does: it holds prose, not figures, and without this
+   the explanation of the fee stack ran off the card instead of wrapping inside it. */
+.pmcc-detail-row > td {
+  white-space: normal;
+}
+
+/* ---------------------------------------------------------------- calendars (dc_week)
+   Deliberately the same restrained palette as the PMCC page: amber for the honest states this
+   module is obliged to show (a skipped ex-dividend week, a lapsing calendar, a thin feed), red
+   only where the derivation and the books actually disagree, and never the cherry accent — that
+   is reserved for brand, live-mode and alerts, and nothing on a paper experiment's page is one. */
+
+
+
+
+.cal-ok {
+  color: var(--ok);
+}
+
+
+
+
+/* The same sentence, inline inside a banner rather than under it — a refusal and its explanation
+   belong in one breath, not in a paragraph the eye can skip. */
+.cal-note-inline {
+  color: var(--text-muted);
+}
+
+
+
+/* .integrity-grid h3 is styled with the pmcc chart/compare group above. */
+
+
+
+/* The week's anchors. A row of labelled dates rather than a table: they are one fact in five
+   parts (entry, both expirations, the tag they imply), not five comparable rows. */
+.cal-plan-anchors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.6rem;
+}
+
+.cal-plan-label {
+  display: block;
+  font-size: 11px;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.cal-plan-value {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.cal-plan-when {
+  margin-left: 0.4rem;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* The entry verdict. Amber-ruled when the week went untraded, green when it entered: for a strategy
+   with one entry attempt a week, whether that attempt landed is the page's first fact. */
+.cal-entry-banner {
+  border-left: 2px solid var(--warn);
+  padding: 0.5rem 0 0.5rem 0.75rem;
+  margin-bottom: 0.7rem;
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.cal-entry-ok {
+  border-left-color: var(--ok);
+}
+
+.cal-feed {
+  font-size: 12.5px;
+  margin: 0 0 0.7rem;
+}
+
+.cal-feed .cal-plan-label {
+  display: inline-block;
+  min-width: 3.2rem;
+}
+
+.cal-attempts {
+  width: 100%;
+}
+
+/* The refusal glossary's affordance. A superscript question mark rather than a dotted underline:
+   the token beside it is monospace and an underline read as part of the identifier. */
+.cal-help {
+  margin-left: 0.3rem;
+  font-size: 10px;
+  vertical-align: super;
+  color: var(--text-muted);
+  cursor: help;
+}
+
+.cal-row-click {
+  cursor: pointer;
+}
+
+.cal-row-click:hover {
+  background: var(--row-hover, rgba(255, 255, 255, 0.03));
+}
+
+/* The expanded week. `.data-table td` is nowrap by house rule; this one holds prose and legs
+   rather than figures, so it wraps inside the card instead of running off it. */
+.cal-detail-row > td {
+  white-space: normal;
+}
+
+.cal-detail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 1.2rem;
+  padding: 0.6rem 0;
+}
+
+.cal-detail h4 {
+  font-size: 12.5px;
+  font-weight: 500;
+  margin: 0 0 0.4rem;
+}
+
+.cal-prose {
+  font-size: 13px;
+  line-height: 1.65;
+  max-width: 78ch;
+}
+
+.cal-prose p {
+  margin: 0 0 0.7rem;
+}
+
+.cal-defs {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1.2rem;
+  font-size: 12.5px;
+  margin: 0;
+}
+
+.cal-defs dt {
+  color: var(--text-muted);
+}
+
+.cal-defs dd {
+  margin: 0;
+  color: var(--text);
+}
+
+.cal-rules {
+  font-size: 13px;
+  line-height: 1.65;
+  margin: 0;
+  padding-left: 1.1rem;
+  max-width: 78ch;
+}
+
+.cal-rules li {
+  margin-bottom: 0.5rem;
+}
+
+/* The measurement-integrity strip, shared by Calendars and PMCC.
+ *
+ * These were two families, .cal-* and .pmcc-*, that rendered the same strip on two pages.
+ * Nine of the ten rules were byte-identical; the tenth differed by a 250px-vs-260px minmax
+ * floor, which is drift rather than a decision, so one value is kept.
+ */
+.integrity-sym {
+  font-family: var(--num-face);
+  color: var(--text);
+  min-width: 3.4rem;
+  display: inline-block;
+}
+.integrity-warn {
+  color: var(--warn);
+}
+.integrity-err {
+  color: var(--err);
+}
+.integrity-chip {
+  margin-left: 0.4rem;
+  font-size: 11px;
+}
+.integrity-chip-quiet {
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+.integrity-note {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin: 0.35rem 0 0;
+  line-height: 1.5;
+}
+.integrity-banner {
+  border-left: 2px solid var(--warn);
+  padding: 0.5rem 0 0.5rem 0.75rem;
+  margin-bottom: 0.9rem;
+  line-height: 1.6;
+  font-size: 13px;
+}
+.integrity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 1.1rem;
+}
+.integrity-alerts {
+  margin-top: 0.9rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.7rem;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.integrity-plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12.5px;
+  line-height: 1.85;
+}
+
+/* --------------------------------------------------------------- vol term structure (Morning) */
+/* A refused percentile has to look refused. It renders as words plus its sample count rather than
+   an empty bar, because an empty bar and a bar pinned at the bottom of the range are the same
+   picture and completely different facts. */
+.pct-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.pct-row {
+  display: grid;
+  grid-template-columns: 62px 72px 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.pct-bar {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2, #1d2129);
+  overflow: hidden;
+}
+
+.pct-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  /* Amber, not the brand red: red on a trading surface reads as loss, and this bar states a
+     neutral position-in-range that gates nothing. Matches the curve stroke above it. */
+  background: #d9a13b;
+}
+
+.pct-refusal {
+  font-size: 12px;
+  font-style: italic;
 }

@@ -1,11 +1,12 @@
-"""Leg selection, worksheet math, rolls, and the settlement decomposition's cash equivalence."""
+"""Leg selection (delta-band long, ATM short), worksheet math, and the settlement decomposition's
+cash equivalence."""
 
 import pytest
 
 from cherrypick.pmcc import engine
 
 
-def _entry(strike, root="TNA", expiration="2026-08-28"):
+def _entry(strike, root="TQQQ", expiration="2026-08-28"):
     return {
         "strike_price": float(strike),
         "streamer_symbol": f".{root}{strike:g}C{expiration}",
@@ -39,11 +40,11 @@ def _snapshot(long_spec, short_spec, greeks=None):
     short_chain = _chain(short_spec)
     return {
         "ok": True,
-        "symbol": "TNA",
+        "symbol": "TQQQ",
         "spot": SPOT,
         "short_expiration": "2026-08-28",
         "long_expiration": "2026-09-04",
-        "short_dte": 9,
+        "short_dte": 7,
         "long_dte": 16,
         "short_chain": short_chain,
         "long_chain": long_chain,
@@ -52,29 +53,51 @@ def _snapshot(long_spec, short_spec, greeks=None):
     }
 
 
-def test_long_selection_prefers_highest_qualifying_strike():
-    # 45 has 0.05 extrinsic, 50 has 0.10, 55 has 0.40 (too much) — the highest qualifying is 50.
+def test_long_selection_picks_delta_nearest_band_midpoint():
+    # Band is [0.85, 0.90], midpoint 0.875. 45 has delta 0.99 (outside), 50 has 0.88 (inside,
+    # nearest midpoint), 55 has 0.86 (inside but farther from midpoint).
     quotes = _quotes({45.0: (25.55, 25.75), 50.0: (20.60, 20.80), 55.0: (15.90, 16.10)})
-    greeks = {}
-    pick = engine.select_long(_chain([45.0, 50.0, 55.0]), quotes, greeks, SPOT, {})
+    chain = _chain([45.0, 50.0, 55.0])
+    greeks = {
+        chain[0]["streamer_symbol"]: {"delta": 0.99},
+        chain[1]["streamer_symbol"]: {"delta": 0.88},
+        chain[2]["streamer_symbol"]: {"delta": 0.86},
+    }
+    pick = engine.select_long(chain, quotes, greeks, SPOT, {})
+    assert pick["ok"]
+    assert pick["strike"] == 50.0
+    assert pick["selected_by"] == "delta"
+
+
+def test_long_selection_fallback_disabled_by_config_skips_no_delta_strike():
+    quotes = _quotes({45.0: (25.55, 25.75), 50.0: (20.60, 20.80)})
+    chain = _chain([45.0, 50.0])
+    # No delta on file for either strike, and the fallback is disabled -- neither may be admitted.
+    pick = engine.select_long(chain, quotes, {}, SPOT, {"allow_extrinsic_fallback": False})
+    assert pick == {"ok": False, "reason": "no_deep_itm_long"}
+
+
+def test_long_selection_extrinsic_fallback_when_no_greeks():
+    # No delta on file for either strike: falls back to the highest strike within the extrinsic
+    # bound (45 has 0.05 extrinsic, 50 has 0.10 -- both qualify, 50 is deeper-still-qualifying).
+    quotes = _quotes({45.0: (25.55, 25.75), 50.0: (20.60, 20.80)})
+    chain = _chain([45.0, 50.0])
+    pick = engine.select_long(chain, quotes, {}, SPOT, {})
     assert pick["ok"]
     assert pick["strike"] == 50.0
     assert pick["selected_by"] == "extrinsic"
 
 
-def test_long_selection_delta_gate_and_degrade():
-    quotes = _quotes({45.0: (25.55, 25.75), 50.0: (20.60, 20.80)})
-    chain = _chain([45.0, 50.0])
-    # A present-but-low delta refuses the strike; the deeper one (no greeks) still qualifies.
-    greeks = {chain[1]["streamer_symbol"]: {"delta": 0.90, "iv": 0.5, "vega": None}}
+def test_long_selection_known_delta_outside_band_is_excluded_not_degraded():
+    # A present delta OUTSIDE the band disqualifies that strike outright -- a KNOWN delta outside
+    # the band is a real disqualification, not a case for the no-delta extrinsic fallback (which
+    # exists only for candidates the feed cannot say anything about).
+    quotes = _quotes({45.0: (25.55, 25.75)})
+    chain = _chain([45.0])
+    greeks = {chain[0]["streamer_symbol"]: {"delta": 0.99}}  # outside [0.85, 0.90]
     pick = engine.select_long(chain, quotes, greeks, SPOT, {})
-    assert pick["strike"] == 45.0
-    assert pick["selected_by"] == "extrinsic"
-    # With a qualifying delta on file, the selection records the delta path.
-    greeks = {chain[1]["streamer_symbol"]: {"delta": 0.99, "iv": 0.5, "vega": None}}
-    pick = engine.select_long(chain, quotes, greeks, SPOT, {})
-    assert pick["strike"] == 50.0
-    assert pick["selected_by"] == "delta"
+    assert not pick["ok"]
+    assert pick["reason"] == "no_deep_itm_long"
 
 
 def test_long_selection_refuses_when_nothing_deep():
@@ -84,67 +107,61 @@ def test_long_selection_refuses_when_nothing_deep():
     assert pick["reason"] == "no_deep_itm_long"
 
 
-def test_short_selection_takes_deepest_meeting_yield_floor():
-    # Long: 50 @ 20.70 mid, extrinsic 0.10. Shorts: 62 offers thin TV, 67 rich TV — with the
-    # floor at 1.2%/wk both clear? 62: tv = mid - 8.60; make mid 8.65 -> tv 0.05, net -0.05: fails.
-    # 67: mid 4.75, intrinsic 3.60, tv 1.15, net 1.05, capital 20.70-4.75=15.95,
-    # weekly = (1.05/15.95)*(7/9) = 5.1% -> passes; deepest passing wins.
-    quotes = _quotes({62.0: (8.60, 8.70), 67.0: (4.70, 4.80)})
-    pick = engine.select_short(
-        _chain([62.0, 67.0]), quotes, SPOT, 50.0, 20.70, 0.10, 9, {"target_weekly_yield_min": 0.012}
-    )
+def test_short_selection_takes_nearest_strike_below_spot():
+    quotes = _quotes({67.0: (4.70, 4.80), 62.0: (8.60, 8.70)})
+    pick = engine.select_short(_chain([62.0, 67.0]), quotes, SPOT, {})
     assert pick["ok"]
-    assert pick["strike"] == 67.0
-    assert pick["tv"] == pytest.approx(4.75 - 3.60, abs=1e-6)
-    assert pick["weekly_yield"] == pytest.approx((1.05 / 15.95) * (7 / 9), rel=1e-4)
+    assert pick["strike"] == 67.0  # 3.60 away vs 8.60 away
+    assert pick["intrinsic"] == pytest.approx(70.60 - 67.0)
+    assert pick["tv"] == pytest.approx(4.75 - (70.60 - 67.0))
 
 
-def test_short_selection_yield_unreachable_records_best():
-    quotes = _quotes({67.0: (3.65, 3.75)})  # mid 3.70, tv 0.10, net 0.0 after long extrinsic
-    pick = engine.select_short(
-        _chain([67.0]), quotes, SPOT, 50.0, 20.70, 0.10, 9, {"target_weekly_yield_min": 0.012}
-    )
-    assert not pick["ok"]
-    assert pick["reason"] == "yield_unreachable"
-    assert pick["best_yield"] == pytest.approx(0.0, abs=1e-6)
+def test_short_selection_can_land_otm():
+    # Spot 70.60: 71 is 0.40 away (OTM), 67 is 3.60 away (ITM) -- 71 wins nearest.
+    quotes = _quotes({67.0: (4.70, 4.80), 71.0: (0.90, 1.00)})
+    pick = engine.select_short(_chain([67.0, 71.0]), quotes, SPOT, {})
+    assert pick["ok"]
+    assert pick["strike"] == 71.0
+    assert pick["intrinsic"] == 0.0  # OTM: no intrinsic
+    assert pick["tv"] == pytest.approx(0.95)  # OTM: mid is entirely time value
 
 
-def test_plan_entry_worksheet_matches_the_example():
-    # The user's worksheet: TNA 70.60, short 67 @ 4.75 -> intrinsic 3.60, TV 1.15,
-    # protection 5.1%.
-    quotes = _quotes({67.0: (4.70, 4.80)})
-    quotes.update(
-        {
-            _entry(50.0, expiration="2026-09-04")["streamer_symbol"]: {
-                "bid": 20.60,
-                "ask": 20.80,
-                "mid": 20.70,
-                "age_seconds": 1.0,
-            }
-        }
-    )
-    snapshot = _snapshot([50.0], [67.0])
-    # Long chain fixtures were built with the short's expiration in the streamer symbol; rebuild
-    # the long side so quotes key onto it.
+def test_short_selection_ties_prefer_itm_side():
+    # 68 and 73.20 are both 2.60 away from 70.60 -- ties prefer the strike below spot.
+    quotes = _quotes({68.0: (3.00, 3.10), 73.2: (0.20, 0.30)})
+    pick = engine.select_short(_chain([68.0, 73.2]), quotes, SPOT, {})
+    assert pick["ok"]
+    assert pick["strike"] == 68.0
+
+
+def test_plan_entry_worksheet_with_atm_short():
+    # Long 50 @ 20.70 mid (delta 0.88, inside band); short nearest spot at 71 (OTM by 0.40).
+    long_entry = _entry(50.0, expiration="2026-09-04")
+    quotes = _quotes({71.0: (0.90, 1.00)})
+    quotes[long_entry["streamer_symbol"]] = {
+        "bid": 20.60,
+        "ask": 20.80,
+        "mid": 20.70,
+        "age_seconds": 1.0,
+    }
+    snapshot = _snapshot([50.0], [71.0])
     snapshot["long_chain"] = [
         {
             "strike_price": 50.0,
-            "streamer_symbol": _entry(50.0, expiration="2026-09-04")["streamer_symbol"],
-            "occ_symbol": "TNA   260904C00050000",
+            "streamer_symbol": long_entry["streamer_symbol"],
+            "occ_symbol": "TQQQ  260904C00050000",
             "option_type": "call",
         }
     ]
     snapshot["quotes"] = quotes
-    planned = engine.plan_entry(snapshot, {"target_weekly_yield_min": 0.012})
+    snapshot["greeks"] = {long_entry["streamer_symbol"]: {"delta": 0.88}}
+    planned = engine.plan_entry(snapshot, {})
     assert planned["ok"], planned
     plan = planned["plan"]
-    assert plan["short_strike"] == 67.0
-    assert plan["total_premium"] == 4.75
-    assert plan["short_intrinsic"] == pytest.approx(3.60)
-    assert plan["short_tv"] == pytest.approx(1.15)
-    assert plan["downside_protection_pct"] == pytest.approx((70.60 - 67.0) / 70.60, abs=1e-6)
-    assert plan["net_debit"] == pytest.approx(20.70 - 4.75)
-    assert plan["breakeven"] == pytest.approx(50.0 + 15.95)
+    assert plan["short_strike"] == 71.0
+    assert plan["short_intrinsic"] == 0.0
+    assert plan["short_tv"] == pytest.approx(0.95)
+    assert plan["net_debit"] == pytest.approx(20.70 - 0.95)
     roles = {leg["leg_role"]: leg for leg in plan["legs"]}
     assert roles["long_call"]["action"] == "Buy to Open"
     assert roles["short_call_1"]["action"] == "Sell to Open"
@@ -201,58 +218,160 @@ def test_otm_expiry_delivers_nothing():
     assert engine.assignment_from(leg, 66.50, 1) is None
 
 
-def test_plan_roll_constraints_and_credit():
-    position = {"long_strike": 50.0, "net_debit": 15.95}
-    short_leg = {"streamer_symbol": ".OLD", "strike": 67.0}
-    chain = _chain([48.0, 60.0, 64.0])
-    quotes = _quotes({60.0: (6.30, 6.40), 64.0: (2.80, 2.90)})
-    quotes[".OLD"] = {"bid": 1.50, "ask": 1.60, "mid": 1.55, "age_seconds": 1.0}
-    # Spot breached to 66: eligible new strikes must be in (50, 66). 48 is below the long — never
-    # eligible. 60: mid 6.35, intrinsic 6.0, tv 0.35 -> weekly (0.35/15.95)*(7/9) ≈ 1.7% passes.
-    snapshot = {
-        "spot": 66.0,
-        "expiration": "2026-09-04",
-        "dte": 9,
-        "chain": chain,
-        "quotes": quotes,
-        "greeks": {},
-    }
-    roll = engine.plan_roll(snapshot, position, short_leg, {"target_weekly_yield_min": 0.012})
-    assert roll["ok"], roll
-    assert roll["new_leg"]["strike"] == 60.0
-    assert roll["net_roll_credit"] == pytest.approx(6.35 - 1.55)
-
-
-def test_plan_roll_unreachable():
-    position = {"long_strike": 50.0, "net_debit": 15.95}
-    short_leg = {"streamer_symbol": ".OLD", "strike": 67.0}
-    chain = _chain([60.0])
-    quotes = _quotes({60.0: (6.00, 6.02)})  # mid 6.01, intrinsic 6.0, tv 0.01 -> fails the floor
-    quotes[".OLD"] = {"bid": 1.50, "ask": 1.60, "mid": 1.55, "age_seconds": 1.0}
-    snapshot = {
-        "spot": 66.0,
-        "expiration": "2026-09-04",
-        "dte": 9,
-        "chain": chain,
-        "quotes": quotes,
-        "greeks": {},
-    }
-    roll = engine.plan_roll(snapshot, position, short_leg, {"target_weekly_yield_min": 0.012})
-    assert not roll["ok"]
-    assert roll["reason"] == "roll_unreachable"
-
-
 def test_dividend_guards():
-    config = {"dividends": {"TNA": {"declared_through": "2026-09-30", "ex_dates": ["2026-09-23"]}}}
-    assert engine.dividend_coverage_ok(config, "TNA", "2026-09-30")
-    assert not engine.dividend_coverage_ok(config, "TNA", "2026-10-01")
-    assert not engine.dividend_coverage_ok(config, "TQQQ", "2026-09-01")
-    assert engine.ex_date_in_span(config, "TNA", "2026-09-21", "2026-09-25") == "2026-09-23"
-    assert engine.ex_date_in_span(config, "TNA", "2026-09-24", "2026-09-30") is None
+    config = {"dividends": {"TQQQ": {"declared_through": "2026-09-30", "ex_dates": ["2026-09-23"]}}}
+    assert engine.dividend_coverage_ok(config, "TQQQ", "2026-09-30")
+    assert not engine.dividend_coverage_ok(config, "TQQQ", "2026-10-01")
+    assert not engine.dividend_coverage_ok(config, "TNA", "2026-09-01")
+    assert engine.ex_date_in_span(config, "TQQQ", "2026-09-21", "2026-09-25") == "2026-09-23"
+    assert engine.ex_date_in_span(config, "TQQQ", "2026-09-24", "2026-09-30") is None
 
 
 def test_settlement_style_refuses_undeclared():
-    config = {"settlement_style": {"TNA": "physical"}}
-    assert engine.settlement_style(config, "TNA") == "physical"
-    assert engine.settlement_style(config, "TQQQ") is None
-    assert engine.settlement_style({}, "TNA") is None
+    config = {"settlement_style": {"TQQQ": "physical"}}
+    assert engine.settlement_style(config, "TQQQ") == "physical"
+    assert engine.settlement_style(config, "TNA") is None
+    assert engine.settlement_style({}, "TQQQ") is None
+
+
+def test_settlement_style_xsp_is_cash():
+    config = {"settlement_style": {"TQQQ": "physical", "XSP": "cash"}}
+    assert engine.settlement_style(config, "XSP") == "cash"
+    assert engine.settlement_style(config, "xsp") == "cash"  # case-insensitive lookup
+
+
+def test_xsp_worksheet_math_with_cash_settled_short():
+    # Same worksheet arithmetic as TQQQ -- settlement style never enters worksheet_metrics/
+    # plan_entry, only the settle-time/assignment path (settle_expiring_legs) branches on it.
+    long_entry = _entry(4300.0, root="XSP", expiration="2026-09-04")
+    short_entry = _entry(4550.0, root="XSP", expiration="2026-08-28")
+    quotes = {
+        long_entry["streamer_symbol"]: {"bid": 249.0, "ask": 251.0, "mid": 250.0, "age_seconds": 1.0},
+        short_entry["streamer_symbol"]: {"bid": 9.0, "ask": 11.0, "mid": 10.0, "age_seconds": 1.0},
+    }
+    snapshot = {
+        "ok": True,
+        "symbol": "XSP",
+        "spot": 4551.0,
+        "short_expiration": "2026-08-28",
+        "long_expiration": "2026-09-04",
+        "short_dte": 7,
+        "long_dte": 16,
+        "short_chain": [short_entry],
+        "long_chain": [long_entry],
+        "quotes": quotes,
+        "greeks": {long_entry["streamer_symbol"]: {"delta": 0.88}},
+    }
+    planned = engine.plan_entry(snapshot, {})
+    assert planned["ok"], planned
+    plan = planned["plan"]
+    assert plan["short_strike"] == 4550.0
+    assert plan["short_intrinsic"] == pytest.approx(1.0)  # spot 4551 vs strike 4550
+    assert plan["short_tv"] == pytest.approx(9.0)
+
+
+def test_settle_intrinsic_is_settlement_style_agnostic():
+    # settle_intrinsic/leg_pnl handle cash settlement identically to the option-leg half of
+    # physical settlement -- "the calendars decomposition with the share term zeroed", not a
+    # second model. A cash-settled short expiring ITM just settles to this intrinsic in dollars,
+    # no share leg.
+    leg = {
+        "strike": 4550.0,
+        "option_type": "call",
+        "action": "Sell to Open",
+        "entry_mid": 10.0,
+        "close_value": engine.settle_intrinsic(4550.0, "call", 4560.0),
+    }
+    assert leg["close_value"] == pytest.approx(10.0)
+    assert engine.leg_pnl(leg) == pytest.approx(10.0 - 10.0)  # entry credit minus intrinsic paid
+    # And assignment_from must never be called for a cash-settled leg -- book.py's call site is
+    # gated `if physical:`, so this is a documentation assertion of the contract, not exercised
+    # through book.py here.
+
+
+def test_xsp_index_exchange_fee_is_looked_up_by_symbol():
+    # The one place TQQQ and XSP genuinely differ in the fee stack: XSP is a broad-based index
+    # option and is priced off cherrypick.core.fees.INDEX_EXCHANGE_FEE_PER_CONTRACT; TQQQ (an ETF)
+    # is off that schedule entirely (implicit 0.0). Both currently net to the same number because
+    # XSP's listed rate is $0.00/contract under 10 contracts/leg, but they arrive at it through
+    # different code paths, which is what this test pins.
+    from cherrypick.core import fees as _fees
+
+    assert "XSP" in _fees.INDEX_EXCHANGE_FEE_PER_CONTRACT
+    assert "TQQQ" not in _fees.INDEX_EXCHANGE_FEE_PER_CONTRACT
+    leg_quotes = [{"bid": 249.0, "ask": 251.0}, {"bid": 9.0, "ask": 11.0}]
+    cost_xsp = engine.entry_cost("XSP", leg_quotes, 1, {})
+    cost_tqqq = engine.entry_cost("TQQQ", leg_quotes, 1, {})
+    assert cost_xsp["fee"] == pytest.approx(cost_tqqq["fee"])  # both 0.0 exchange fee today
+
+
+# ------------------------------------------ the entry-side spread gate (added 2026-08-28)
+#
+# `max_leg_spread_pct` existed from the start and was enforced ONLY in
+# `management.execution_gate` -- on whether a mark may be ACTED on when closing -- so nothing ever
+# measured the spread being PAID at entry. curve and bwb both hold the same parameter at the same
+# default and check it in their own `plan_entry`; this module was the outlier, and its CLAUDE.md
+# already described a gate the code did not have.
+#
+# Measured over all 8 recorded entries before landing: seven sat at 0.018-0.072, including the
+# deep-ITM long legs the docs worried about, and one sat at 0.293. The gate refuses the anomaly and
+# not the strategy.
+
+
+def _planned(long_quote, short_quote, params=None):
+    long_entry = _entry(50.0, expiration="2026-09-04")
+    quotes = _quotes({71.0: short_quote})
+    quotes[long_entry["streamer_symbol"]] = {**long_quote, "age_seconds": 1.0}
+    snapshot = _snapshot([50.0], [71.0])
+    snapshot["long_chain"] = [
+        {
+            "strike_price": 50.0,
+            "streamer_symbol": long_entry["streamer_symbol"],
+            "occ_symbol": "TQQQ  260904C00050000",
+            "option_type": "call",
+        }
+    ]
+    snapshot["quotes"] = quotes
+    snapshot["greeks"] = {long_entry["streamer_symbol"]: {"delta": 0.88}}
+    return engine.plan_entry(snapshot, params or {})
+
+
+def test_a_wide_long_leg_refuses_the_entry():
+    """The 2026-08-27 XSP fill: the long_call went in $9.95 wide (0.293) against its control twin's
+    $0.13, a 76x difference in execution cost on the two arms of one A/B."""
+    out = _planned({"bid": 18.0, "ask": 24.0, "mid": 21.0}, (0.90, 1.00))
+    assert out["ok"] is False
+    assert out["reason"] == "spread_too_wide"
+    assert out["detail"]["leg"] == "long_call"
+    assert out["detail"]["spread_pct"] > 0.25
+
+
+def test_a_wide_short_leg_refuses_it_too():
+    """The short is the leg being SOLD; paying up there is the same cost wearing the other sign."""
+    out = _planned({"bid": 20.60, "ask": 20.80, "mid": 20.70}, (0.60, 1.30))
+    assert out["ok"] is False
+    assert out["detail"]["leg"] == "short_call_1"
+
+
+def test_the_spreads_this_module_actually_trades_are_admitted():
+    """The seven real entries sat at 0.018-0.072. A gate that refused those would starve the module
+    rather than protect it -- the curve lesson from the day before."""
+    for pct in (0.018, 0.052, 0.072, 0.24):
+        half = 20.70 * pct / 2
+        out = _planned(
+            {"bid": 20.70 - half, "ask": 20.70 + half, "mid": 20.70}, (0.90, 1.00)
+        )
+        assert out["ok"] is True, f"{pct} should be admitted: {out}"
+
+
+def test_the_bound_is_configurable_and_the_default_is_the_suite_one():
+    wide = {"bid": 18.0, "ask": 24.0, "mid": 21.0}
+    assert _planned(wide, (0.90, 1.00))["ok"] is False          # default 0.25
+    assert _planned(wide, (0.90, 1.00), {"max_leg_spread_pct": 0.50})["ok"] is True
+
+
+def test_an_unpriceable_quote_is_not_silently_treated_as_tight():
+    """None is 'unknown', never 'fine'. A malformed quote must not slip through as a pass."""
+    assert engine._spread_pct({"bid": None, "ask": 1.0, "mid": 0.5}) is None
+    assert engine._spread_pct({"bid": 0.4, "ask": 0.6, "mid": 0}) is None
+    assert engine._spread_pct({"bid": 0.4, "ask": 0.6, "mid": 0.5}) == pytest.approx(0.4)

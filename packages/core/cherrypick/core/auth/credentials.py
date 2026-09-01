@@ -8,7 +8,8 @@ OS keyring — never files, env vars, or logs.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import getpass
+from collections.abc import Callable, Iterable, Sequence
 
 import keyring
 import keyring.errors
@@ -97,3 +98,32 @@ class CredentialStore:
     def secrets_status(self) -> dict[str, bool]:
         """Return {key: is_set} for all known secrets."""
         return {k: bool(self.get_secret(k)) for k in ALL_SECRETS}
+
+
+def prompt_and_store(
+    store: CredentialStore,
+    keys: Sequence[str],
+    prompt_fn: Callable[[str], str] = getpass.getpass,
+) -> list[str]:
+    """Prompt for each key and store what was entered. Returns the keys actually written.
+
+    **Blank input leaves the existing value untouched.** That is the rule worth having in one place:
+    these prompts are hidden, so a stray Enter is indistinguishable from a typo, and treating it as
+    "" would silently erase a working credential and take a module offline at its next broker call.
+    Every caller wants that behaviour and each had written it separately.
+
+    `prompt_fn` is injectable so the flow is testable without a terminal — the modules' own CLIs are
+    the thing being onboarded, and a prompt loop nobody can exercise is a poor place for this rule
+    to live. The value is stripped: a trailing newline or space pasted alongside a token is not part
+    of the token, and a secret that differs by whitespace fails at the broker with no clue why.
+
+    Takes an already-constructed store rather than a service name, so core never has to know which
+    service a module keeps its credentials under.
+    """
+    written: list[str] = []
+    for key in keys:
+        value = (prompt_fn(f"{key} (input hidden, blank to keep current): ") or "").strip()
+        if value:
+            store.set_secret(key, value)
+            written.append(key)
+    return written

@@ -195,7 +195,6 @@ export const FIELDS: FieldMeta[] = [
     section: "notify",
   },
   { target: "orchestrator", pointer: "/reconcile/schedule/enabled", label: "Daily reconcile job", type: "boolean", section: "notify" },
-  { target: "orchestrator", pointer: "/follow_feed/enabled", label: "Follow feed", type: "boolean", section: "notify" },
   { target: "orchestrator", pointer: "/review/narrative", label: "Review narrative", type: "boolean", section: "notify" },
 
   // --- dev knobs ---------------------------------------------------------------------------

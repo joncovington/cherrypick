@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useReview } from "../../lib/api";
 import type { ReviewArm, ReviewModule } from "@console/shared";
 import { NoteMarkdown } from "./NoteMarkdown";
-import { SignedBar } from "../../components/Charts";
+import { SignedBar, Sparkline } from "../../components/Charts";
 
 /**
  * The suite review. Renders the fact set and computes nothing.
@@ -230,7 +230,9 @@ function ModuleCard({ m }: { m: ReviewModule }) {
   );
 }
 
-export function ReviewPage() {
+/** `tabs` is the Reports page's tab strip, rendered inside this page's own title row. Optional so
+ *  the page still stands alone if it is ever routed to directly. */
+export function ReviewPage({ tabs }: { tabs?: ReactNode } = {}) {
   const [session, setSession] = useState<string | undefined>(undefined);
   const { data, isLoading, isError } = useReview(session);
 
@@ -242,6 +244,7 @@ export function ReviewPage() {
     <div className="page">
       <div className="page-title-row">
         <h1>Suite review</h1>
+        {tabs}
         {current && (
           <span className={`chip ${current.status === "final" ? "chip-ok" : "chip-warn"}`}>{current.status}</span>
         )}
@@ -326,28 +329,46 @@ export function ReviewPage() {
         </>
       )}
 
-      {data && data.allTime.sessions > 0 && (
+      {data && data.era.sessions > 0 && (
         <section className="card">
           <div className="card-head">
-            <h2>All time</h2>
-            <span className="card-asof">
-              {data.allTime.sessions} sessions · {data.allTime.from} → {data.allTime.to}
+            <h2>{data.era.eraFrom !== null ? "This era" : "All time"}</h2>
+            <span
+              className="card-asof"
+              title={data.era.eraNote ?? undefined}
+            >
+              {data.era.eraFrom !== null && <>era from {data.era.eraFrom} · </>}
+              {data.era.sessions} sessions{data.era.from !== null && <> · {data.era.from} → {data.era.to}</>}
             </span>
           </div>
           <div className="stats-grid">
-            {Object.keys(data.allTime.netByModule).map((name) => (
-              <div className="stat-tile" key={name}>
-                <span className="stat-label">{name}</span>
-                <span className={`stat-value ${pnlClass(data.allTime.netByModule[name])}`}>
-                  {compactMoney(data.allTime.netByModule[name])}
-                </span>
-                <span className="stat-label">{count(data.allTime.closedByModule[name])} closed</span>
-              </div>
-            ))}
+            {Object.keys(data.era.netByModule).map((name) => {
+              // Small multiples: the same shape per module, read side by side. The line is the
+              // running total of the sessions summed into the tile above it — one pass, one story.
+              const trend = data.era.trendByModule[name] ?? [];
+              return (
+                <div className="stat-tile" key={name}>
+                  <span className="stat-label">{name}</span>
+                  <span className={`stat-value ${pnlClass(data.era.netByModule[name])}`}>
+                    {compactMoney(data.era.netByModule[name])}
+                  </span>
+                  <Sparkline
+                    values={trend.map((t) => t.net)}
+                    title={`${name}: cumulative net across ${trend.length} session${trend.length === 1 ? "" : "s"}`}
+                  />
+                  <span className="stat-label">
+                    {count(data.era.closedByModule[name])} closed
+                    {trend.length === 1 && <span className="muted"> · 1 session</span>}
+                  </span>
+                </div>
+              );
+            })}
           </div>
           <p className="muted review-note-line">
             Summed from the built fact sets, not a fresh pass over the ledgers — so it cannot disagree with the
-            sessions above, and its depth is exactly what has been built.
+            sessions above, and its depth is exactly what has been built. Each line is that module's cumulative
+            net across the era's sessions; a module with one session gets no line, because one point is not a
+            trend.
           </p>
         </section>
       )}

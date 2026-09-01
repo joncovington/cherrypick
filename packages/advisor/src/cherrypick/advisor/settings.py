@@ -79,8 +79,10 @@ def calibration_rule(module: str, cfg: dict[str, Any] | None = None) -> dict[str
     advisor reasoned, correctly but from the weaker gate, that arms passing qualification were
     losing money. The fix is to read the rule rather than to restate its defaults here.
 
-    `margin` is stripped: it belongs to `recommend_champion`'s comparison, not to the per-tag
-    threshold check, and `calibrate` pops it off the same way before passing the rule down.
+    `margin` is stripped: it belonged to the retired champion/challenger COMPARISON, never to the
+    per-tag threshold check, and `calibrate` pops it off the same way before passing the rule down.
+    Both still tolerate a config that carries it (2026-08-20: that surface is gone, and judging arms
+    is this package's job now — the key is inert rather than removed so existing configs load).
     """
     if cfg is None:
         cfg = _store.read_json(_home.config_path(), default={}) or {}

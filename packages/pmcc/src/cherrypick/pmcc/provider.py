@@ -13,8 +13,8 @@ frequent (a streamer still warming up, a deep strike outside the producer's quot
 recorded by the caller and are not errors.
 
 The quote window here is ONE-SIDED AND DEEP, unlike every sibling module's symmetric ATM band: the
-long leg lives 30–45% below spot, so the entry fetch spans
-`[spot × (1 − deep_window_pct), spot × 1.02]`. Whether those strikes actually carry quotes depends
+long leg (85-90 delta since the 2026-08-23 redesign) lives noticeably below spot, so the entry fetch
+spans `[spot × (1 − deep_window_pct), spot × 1.02]`. Whether those strikes actually carry quotes depends
 on the producer honoring this module's `window_hints` — a gap there surfaces as `no_deep_itm_long`
 refusals, which is exactly the signal `stream_window.py` escalates on.
 
@@ -25,52 +25,41 @@ configured root is admitted; an expiration listing only adjusted roots refuses `
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
 
+# Read-only opens go through cherrypick.core.db.connect_ro: it percent-escapes the path, so a
+# directory containing '?', '#' or '%' cannot silently change the URI's meaning. The local
+# copies interpolated the path raw, where a '#' truncated the URI and opened a DIFFERENT,
+# empty database — which a provider reports as "nothing cached" rather than as an error.
+from cherrypick.core.db import connect_ro as _connect_ro
+
+# occ_root is re-exported: the modules' own code calls provider.occ_root.
+from cherrypick.core.streamcache import chain_for_expiration as _chain_for_expiration
+from cherrypick.core.streamcache import greeks_for as _greeks
+
+# Shared with every other provider — see cherrypick.core.streamcache.
+# read_spot is re-exported deliberately: the loops call provider.read_spot and their tests
+# monkeypatch it there, so it is unused *inside* this module and ruff will drop it otherwise.
+from cherrypick.core.streamcache import (
+    occ_root,  # noqa: F401
+    read_spot,  # noqa: F401
+)
+from cherrypick.core.streamcache import usable_quote as _usable_quote
+
 from cherrypick.pmcc.clock import now_et  # noqa: F401  (re-exported for the loop's convenience)
 
 DEFAULT_MAX_QUOTE_AGE_SECONDS = 300
-DEFAULT_DEEP_WINDOW_PCT = 0.45
-
-
-def _connect_ro(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
+# The 85-90-delta long (2026-08-23 redesign) sits far shallower than the old ~99-delta long, so the
+# deep window needed to see it is much narrower — 0.20 comfortably covers an 85-delta TQQQ strike
+# with margin, versus the old design's 0.45.
+DEFAULT_DEEP_WINDOW_PCT = 0.20
 
 
 def _fail(symbol: str, reason: str, **extra) -> dict:
     """A refusal, not an error — `extra` carries the telemetry that explains it afterwards."""
     return {"ok": False, "symbol": symbol, "reason": reason, **extra}
-
-
-def _usable_quote(row, now_ts: float, max_age: float) -> dict | None:
-    """A quote we are willing to price a fill against, or None — rejects stale, crossed, and
-    non-positive-ask quotes. A position with a missing leg is skipped (costs a sample); a position
-    priced off a bad leg costs the whole experiment."""
-    bid, ask, updated = row["bid"], row["ask"], row["updated_at"]
-    if bid is None or ask is None or updated is None:
-        return None
-    if now_ts - float(updated) > max_age:
-        return None
-    bid, ask = float(bid), float(ask)
-    if ask <= 0 or bid < 0 or bid > ask:
-        return None
-    mid = row["mid"]
-    return {
-        "bid": bid,
-        "ask": ask,
-        "mid": float(mid) if mid is not None else (bid + ask) / 2.0,
-        "age_seconds": round(now_ts - float(updated), 1),
-    }
-
-
-def occ_root(occ_symbol: str | None) -> str:
-    """The root portion of an OCC symbol (`"TNA   260724C00067000"` -> `"TNA"`)."""
-    return (occ_symbol or "")[:6].strip().upper()
 
 
 def snapshot_kwargs(config: dict) -> dict:
@@ -82,36 +71,26 @@ def snapshot_kwargs(config: dict) -> dict:
     }
 
 
-def _chain_for_expiration(conn, symbol: str, expiration: str, root: str) -> list[dict]:
-    """Cached chain entries for exactly this (underlying, expiration), filtered to the configured
-    OCC root — the adjusted-root (post-split `TNA1`) filter."""
-    import json as _json
+def deep_window_pct_for(config: dict, symbol: str) -> float:
+    """How far below spot this SYMBOL's deep window must reach.
 
-    entries = []
-    for row in conn.execute(
-        "SELECT data_json FROM stream_chain WHERE expiration = ? AND underlying_symbol = ?",
-        (expiration, symbol),
-    ):
-        try:
-            opt = _json.loads(row["data_json"])
-        except (ValueError, TypeError):
-            continue
-        sym, strike = opt.get("streamer_symbol"), opt.get("strike_price")
-        occ = opt.get("symbol")
-        if not sym or strike is None or not occ:
-            continue
-        if occ_root(occ) != root:
-            continue
-        otype = str(opt.get("option_type", "")).strip().lower()
-        entries.append(
-            {
-                "strike_price": float(strike),
-                "streamer_symbol": sym,
-                "occ_symbol": occ,
-                "option_type": "call" if otype.startswith("c") else "put",
-            }
-        )
-    return entries
+    One shared bound is necessarily sized for the deepest symbol and wasteful for every other, and
+    the gap is not small: measured 2026-08-24, an 85-90-delta call at ~21 DTE sat **15.2-18.8% ITM
+    on TQQQ** against **4.0% on XSP**, because a 3x leveraged ETF carries several times a broad
+    index's implied volatility. A single 0.20 therefore buys TQQQ a correct window and buys XSP
+    roughly five times the strikes it can use — which is what made XSP's hint the largest window in
+    the suite.
+
+    Resolution order: `defaults.deep_window_pct_by_symbol[SYMBOL]`, then `defaults.deep_window_pct`,
+    then the module default. A config that declares neither behaves exactly as before, so this is
+    additive: the per-symbol map is an override, never a requirement.
+    """
+    defaults = config.get("defaults", {}) or {}
+    by_symbol = defaults.get("deep_window_pct_by_symbol") or {}
+    value = by_symbol.get(symbol.strip().upper())
+    if isinstance(value, (int, float)) and value > 0:
+        return float(value)
+    return float(defaults.get("deep_window_pct", DEFAULT_DEEP_WINDOW_PCT))
 
 
 def _quotes_for(conn, streamer_syms: list[str], now_ts: float, max_age: float) -> tuple[dict, int]:
@@ -207,54 +186,6 @@ def build_entry_snapshot(
         conn.close()
 
 
-def build_roll_snapshot(
-    db_path,
-    symbol: str,
-    target: dict,
-    *,
-    root: str,
-    when: datetime | None = None,
-    max_quote_age_seconds: float = DEFAULT_MAX_QUOTE_AGE_SECONDS,
-    deep_window_pct: float = DEFAULT_DEEP_WINDOW_PCT,
-) -> dict:
-    """The chain + quotes `engine.plan_roll` needs: the roll target expiration's calls in the deep
-    window at the CURRENT spot. `target` is `clock.roll_expiration`'s output."""
-    symbol = symbol.strip().upper()
-    db_path = Path(db_path)
-    when = when or now_et()
-    if not db_path.exists():
-        return _fail(symbol, "stream_cache_missing")
-    conn = _connect_ro(db_path)
-    try:
-        tr = conn.execute("SELECT last FROM stream_trades WHERE symbol = ?", (symbol,)).fetchone()
-        spot = float(tr["last"]) if tr and tr["last"] is not None else None
-        if not spot:
-            return _fail(symbol, "no_spot_price")
-        chain = _chain_for_expiration(conn, symbol, target["expiration"], root)
-        if not chain:
-            return _fail(symbol, "no_roll_chain")
-        lo, hi = spot * (1.0 - deep_window_pct), spot * 1.02
-        near = [e for e in chain if lo <= e["strike_price"] <= hi]
-        now_ts = time.time()
-        quotes, stale = _quotes_for(conn, [e["streamer_symbol"] for e in near], now_ts, max_quote_age_seconds)
-        if not quotes:
-            return _fail(symbol, "no_fresh_quotes", rejected=stale)
-        greeks = _greeks(conn, list(quotes), now_ts=now_ts, max_age_seconds=max_quote_age_seconds * 6)
-        return {
-            "ok": True,
-            "symbol": symbol,
-            "spot": spot,
-            "expiration": target["expiration"],
-            "dte": target["dte"],
-            "chain": chain,
-            "quotes": quotes,
-            "greeks": greeks,
-            "quote_stats": {"fresh": len(quotes), "rejected": stale},
-        }
-    finally:
-        conn.close()
-
-
 def build_mark_snapshot(
     db_path,
     legs: list[dict],
@@ -278,6 +209,7 @@ def build_mark_snapshot(
         "fresh": 0,
         "stale": 0,
         "max_spread_pct": None,
+        "leg_spreads": [],
     }
     if not legs:
         return {**out, "reason": "no_legs"}
@@ -313,6 +245,12 @@ def build_mark_snapshot(
             if quote["mid"] > 0:
                 spread_pct = (quote["ask"] - quote["bid"]) / quote["mid"]
                 widest = spread_pct if widest is None else max(widest, spread_pct)
+                # Both readings of the same width, PER LEG: a percentage alone cannot tell a
+                # genuinely illiquid leg from a nearly-worthless one (0.00/0.01 is a 200% ratio and
+                # a one-cent width), and the two maxima can sit on different legs.
+                out["leg_spreads"].append(
+                    {"symbol": sym, "pct": round(spread_pct, 4), "abs": round(quote["ask"] - quote["bid"], 4)}
+                )
         out["max_spread_pct"] = round(widest, 4) if widest is not None else None
         out["greeks"] = _greeks(conn, streamer_syms, now_ts=now_ts, max_age_seconds=max_quote_age_seconds * 6)
 
@@ -321,53 +259,6 @@ def build_mark_snapshot(
         if out["stale"]:
             return {**out, "reason": "missing_leg_quotes"}
         return {**out, "ok": True}
-    finally:
-        conn.close()
-
-
-def _greeks(conn, streamer_syms: list[str], *, now_ts: float, max_age_seconds: float) -> dict:
-    """delta/iv/vega per streamer symbol, age-bounded (looser than quotes — greeks tick slower).
-    Missing rows are simply absent; greeks degrade the long selection to extrinsic-only, they never
-    crash it."""
-    out: dict[str, dict] = {}
-    if not streamer_syms:
-        return out
-    for i in range(0, len(streamer_syms), 900):
-        chunk = streamer_syms[i : i + 900]
-        placeholders = ", ".join("?" * len(chunk))
-        for r in conn.execute(
-            f"SELECT symbol, delta, iv, vega, updated_at FROM stream_greeks WHERE symbol IN ({placeholders})",
-            chunk,
-        ):
-            if r["updated_at"] is None or now_ts - float(r["updated_at"]) > max_age_seconds:
-                continue
-            out[r["symbol"]] = {
-                "delta": float(r["delta"]) if r["delta"] is not None else None,
-                "iv": float(r["iv"]) if r["iv"] is not None else None,
-                "vega": float(r["vega"]) if r["vega"] is not None else None,
-            }
-    return out
-
-
-def read_spot(db_path, symbol: str, *, max_age_seconds: float | None = None) -> float | None:
-    """Latest spot for one symbol — the settlement read. The staleness gate is mandatory practice
-    here: settlement decides every expiring leg's P&L at once and cannot be undone, so a stalled
-    feed must refuse rather than settle the day against an old print (the flies 2026-07-20 lesson)."""
-    db_path = Path(db_path)
-    if not db_path.exists():
-        return None
-    conn = _connect_ro(db_path)
-    try:
-        r = conn.execute(
-            "SELECT last, updated_at FROM stream_trades WHERE symbol = ?", (symbol.strip().upper(),)
-        ).fetchone()
-        if not r or r["last"] is None:
-            return None
-        if max_age_seconds is not None:
-            updated = r["updated_at"]
-            if updated is None or (time.time() - float(updated)) > max_age_seconds:
-                return None
-        return float(r["last"])
     finally:
         conn.close()
 
@@ -386,5 +277,186 @@ def read_session(db_path, symbol: str, trade_date: str) -> dict | None:
             (symbol.strip().upper(), trade_date),
         ).fetchone()
         return dict(r) if r else None
+    finally:
+        conn.close()
+
+
+# --------------------------------------------------------------------------- calibration
+def _open_interest(conn, streamer_syms: list[str]) -> dict:
+    """Open interest per streamer symbol. Deliberately NOT age-bounded: OI is published once a day
+    against the prior session, so a freshness gate would reject every row every morning and report
+    an empty ladder as an illiquid one."""
+    out: dict[str, int] = {}
+    for i in range(0, len(streamer_syms), 900):
+        chunk = streamer_syms[i : i + 900]
+        placeholders = ", ".join("?" * len(chunk))
+        for r in conn.execute(
+            f"SELECT symbol, open_interest FROM stream_oi WHERE symbol IN ({placeholders})", chunk
+        ):
+            if r["open_interest"] is not None:
+                out[r["symbol"]] = int(r["open_interest"])
+    return out
+
+
+def _raw_quote(row, now_ts: float, max_age: float) -> dict:
+    """`_usable_quote`'s reading WITHOUT its rejection: the same bid/ask/mid/age, plus `usable` and
+    the reason it would have been refused. The selectors must refuse a torn quote; a calibration
+    step that dropped those rows would be measuring the ladder it wishes it had."""
+    bid, ask, updated = row["bid"], row["ask"], row["updated_at"]
+    if bid is None or ask is None or updated is None:
+        return {
+            "bid": None,
+            "ask": None,
+            "mid": None,
+            "age_seconds": None,
+            "usable": False,
+            "refusal": "no_quote",
+        }
+    bid, ask = float(bid), float(ask)
+    age = round(now_ts - float(updated), 1)
+    mid = float(row["mid"]) if row["mid"] is not None else (bid + ask) / 2.0
+    refusal = None
+    if age > max_age:
+        refusal = "stale"
+    elif ask <= 0 or bid < 0:
+        refusal = "non_positive"
+    elif bid > ask:
+        refusal = "crossed"
+    return {
+        "bid": bid,
+        "ask": ask,
+        "mid": mid,
+        "age_seconds": age,
+        "usable": refusal is None,
+        "refusal": refusal,
+    }
+
+
+def ladder_snapshot(
+    db_path,
+    symbol: str,
+    expiration: str,
+    *,
+    root: str,
+    when: datetime | None = None,
+    max_quote_age_seconds: float = DEFAULT_MAX_QUOTE_AGE_SECONDS,
+    deep_window_pct: float = DEFAULT_DEEP_WINDOW_PCT,
+) -> dict:
+    """Every ITM call strike for one (symbol, expiration) with exactly what a short-leg selector
+    would see: strike, moneyness, delta, mid, intrinsic, extrinsic, absolute and %-of-mid spread,
+    open interest, and the age of each input.
+
+    This is the CALIBRATION read, not a decision path — it exists so `short_delta_target` is set
+    against an observed ladder rather than declared from theory, and so the deep-ITM liquidity risk
+    stays monitorable afterwards. Two deliberate departures from the entry snapshot:
+
+    1. Rows are returned WITH their staleness rather than filtered by it (`usable` plus the refusal
+       per row). A measurement step that hides stale rows cannot measure staleness.
+    2. Greeks use the same loose age bound the selectors get, so the delta column here is the delta
+       the selector would actually have read — not a fresher one this function could have fetched.
+
+    Refusal-shaped like every other builder: `{"ok": False, "reason": ...}`.
+    """
+    symbol = symbol.strip().upper()
+    db_path = Path(db_path)
+    when = when or now_et()
+    if not db_path.exists():
+        return _fail(symbol, "stream_cache_missing")
+
+    conn = _connect_ro(db_path)
+    try:
+        tr = conn.execute("SELECT last, updated_at FROM stream_trades WHERE symbol = ?", (symbol,)).fetchone()
+        spot = float(tr["last"]) if tr and tr["last"] is not None else None
+        if not spot:
+            return _fail(symbol, "no_spot_price")
+        now_ts = time.time()
+        spot_age = round(now_ts - float(tr["updated_at"]), 1) if tr["updated_at"] is not None else None
+
+        chain = _chain_for_expiration(conn, symbol, expiration, root)
+        if not chain:
+            any_root = conn.execute(
+                "SELECT COUNT(*) FROM stream_chain WHERE expiration = ? AND underlying_symbol = ?",
+                (expiration, symbol),
+            ).fetchone()[0]
+            return _fail(symbol, "not_root_listed" if any_root else "no_chain", expiration=expiration)
+
+        lo = spot * (1.0 - deep_window_pct)
+        itm = sorted(
+            (e for e in chain if e["option_type"] == "call" and lo <= e["strike_price"] < spot),
+            key=lambda e: e["strike_price"],
+        )
+        if not itm:
+            return _fail(symbol, "no_strikes_in_window", expiration=expiration)
+
+        syms = [e["streamer_symbol"] for e in itm]
+        raw: dict[str, dict] = {}
+        for i in range(0, len(syms), 900):
+            chunk = syms[i : i + 900]
+            placeholders = ", ".join("?" * len(chunk))
+            for r in conn.execute(
+                f"SELECT symbol, bid, ask, mid, updated_at FROM stream_quotes "
+                f"WHERE symbol IN ({placeholders})",
+                chunk,
+            ):
+                raw[r["symbol"]] = _raw_quote(r, now_ts, max_quote_age_seconds)
+        greeks = _greeks(conn, syms, now_ts=now_ts, max_age_seconds=max_quote_age_seconds * 6)
+        oi = _open_interest(conn, syms)
+
+        rows = []
+        for e in itm:
+            sym, strike = e["streamer_symbol"], e["strike_price"]
+            q = raw.get(sym) or {
+                "bid": None,
+                "ask": None,
+                "mid": None,
+                "age_seconds": None,
+                "usable": False,
+                "refusal": "no_quote",
+            }
+            g = greeks.get(sym) or {}
+            mid = q["mid"]
+            intrinsic = spot - strike
+            spread = (q["ask"] - q["bid"]) if q["bid"] is not None and q["ask"] is not None else None
+            rows.append(
+                {
+                    "strike": strike,
+                    "streamer_symbol": sym,
+                    "moneyness_pct": round(intrinsic / spot, 5),
+                    "delta": g.get("delta"),
+                    "iv": g.get("iv"),
+                    "mid": mid,
+                    "bid": q["bid"],
+                    "ask": q["ask"],
+                    "intrinsic": round(intrinsic, 4),
+                    "extrinsic": round(mid - intrinsic, 4) if mid is not None else None,
+                    "spread_abs": round(spread, 4) if spread is not None else None,
+                    "spread_pct_of_mid": round(spread / mid, 5) if spread is not None and mid else None,
+                    "open_interest": oi.get(sym),
+                    "quote_age_seconds": q["age_seconds"],
+                    "usable": q["usable"],
+                    "refusal": q["refusal"],
+                }
+            )
+
+        spacings = sorted({round(b["strike"] - a["strike"], 4) for a, b in zip(rows, rows[1:], strict=False)})
+        return {
+            "ok": True,
+            "symbol": symbol,
+            "expiration": expiration,
+            "date": when.date().isoformat(),
+            "spot": spot,
+            "spot_age_seconds": spot_age,
+            "deep_window_pct": deep_window_pct,
+            "strike_spacings": spacings,
+            "rows": rows,
+            "counts": {
+                "itm_strikes": len(rows),
+                "quoted": sum(1 for r in rows if r["mid"] is not None),
+                "usable": sum(1 for r in rows if r["usable"]),
+                "greeked": sum(1 for r in rows if r["delta"] is not None),
+                "oi_present": sum(1 for r in rows if r["open_interest"] is not None),
+                "below_intrinsic": sum(1 for r in rows if r["extrinsic"] is not None and r["extrinsic"] <= 0),
+            },
+        }
     finally:
         conn.close()

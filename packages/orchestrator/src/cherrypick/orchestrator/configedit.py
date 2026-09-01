@@ -45,6 +45,18 @@ GUARDED: dict[str, dict[str, str]] = {
         "/live/daily_loss_halt_dollars": "live loss halt — hand-edit deliberately, not from this surface",
         "/live/account_deploy_limit_pct": "live risk cap — hand-edit deliberately, not from this surface",
     },
+    "calendars": {
+        "/live/enabled": (
+            "placeholder — no live loop exists yet; "
+            "see the module CLAUDE.md's live-trading prerequisites"
+        ),
+    },
+    "pmcc": {
+        "/live/enabled": (
+            "placeholder — no live loop exists yet; "
+            "see the module CLAUDE.md's live-trading prerequisites"
+        ),
+    },
 }
 
 # Keys whose change breaks an orchestrator coupling if done silently (docs/configuration-and-storage.md):

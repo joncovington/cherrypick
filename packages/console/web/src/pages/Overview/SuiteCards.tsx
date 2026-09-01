@@ -1,11 +1,22 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, fmtMoney, fmtPct } from "../../components/DataTable";
+import { CalendarHeatmap } from "../../components/CalendarHeatmap";
+import { useReview } from "../../lib/api";
 
 interface SystemPanel {
   timezone: string | null;
-  modules: Array<{ id: string; enabled: boolean; kind: string | null; streamer: boolean | null; champion: string | null; liveTrading: boolean | null }>;
-  services: Array<{ id: string; enabled: boolean; autoRestart: boolean; launched: string | null; pid: number | null }>;
+  modules: Array<{ id: string; enabled: boolean; kind: string | null; streamer: boolean | null; liveTrading: boolean | null }>;
+  services: Array<{
+    id: string;
+    enabled: boolean;
+    autoRestart: boolean;
+    launched: string | null;
+    pid: number | null;
+    health: string | null;
+    note: string | null;
+    detail: string | null;
+  }>;
   watchdog: { intervalMinutes: number | null; renotifyMinutes: number | null; drawdownGuard: boolean | null };
   notify: { channels: string[]; tradeChannels: string[]; webhookStatus: string | null };
   halted: { active: boolean; path: string };
@@ -45,7 +56,7 @@ export function SystemCard() {
           <div className="table-scroll">
             <table className="data-table num-from-1">
               <thead>
-                <tr><th>module</th><th>enabled</th><th>kind</th><th>streamer</th><th>champion</th><th>live trading</th></tr>
+                <tr><th>module</th><th>enabled</th><th>kind</th><th>streamer</th><th>live trading</th></tr>
               </thead>
               <tbody>
                 {data?.modules.map((m) => (
@@ -54,7 +65,6 @@ export function SystemCard() {
                     <td>{m.enabled ? "yes" : "no"}</td>
                     <td className="muted">{m.kind ?? "—"}</td>
                     <td className="muted">{m.streamer === null ? "—" : m.streamer ? "on" : "off"}</td>
-                    <td className="muted">{m.champion ?? "—"}</td>
                     <td className={m.liveTrading === true ? "pnl-neg" : "muted"}>
                       {m.liveTrading === null ? "—" : m.liveTrading ? "ENABLED" : "paper only"}
                     </td>
@@ -66,12 +76,17 @@ export function SystemCard() {
           <div className="table-scroll" style={{ marginTop: "0.6rem" }}>
             <table className="data-table num-from-1">
               <thead>
-                <tr><th>service</th><th>enabled</th><th>auto-restart</th><th>launched</th><th>pid</th></tr>
+                <tr><th>service</th><th>status</th><th>enabled</th><th>auto-restart</th><th>launched</th><th>pid</th></tr>
               </thead>
               <tbody>
                 {data?.services.map((s) => (
                   <tr key={s.id}>
                     <td>{s.id}</td>
+                    {/* The watchdog's own verdict from its last tick — the console renders it,
+                        never re-derives it. Hover shows the finding's full message. */}
+                    <td className={s.health === "OK" ? "pnl-pos" : s.health === null ? "muted" : "pnl-neg"} title={s.detail ?? undefined}>
+                      {s.note ?? "no watchdog report"}
+                    </td>
                     <td>{s.enabled ? "yes" : "no"}</td>
                     <td className="muted">{s.autoRestart ? "yes" : "no"}</td>
                     <td className="muted">{s.launched?.slice(0, 16).replace("T", " ") ?? "—"}</td>
@@ -84,6 +99,52 @@ export function SystemCard() {
           <p className="muted" style={{ fontSize: 11, marginBottom: 0 }}>
             watchdog every {data?.watchdog.intervalMinutes ?? "—"}m · renotify {data?.watchdog.renotifyMinutes ?? "—"}m
             {data?.watchdog.drawdownGuard !== null && ` · drawdown guard ${data?.watchdog.drawdownGuard === true ? "on" : "off"}`}
+          </p>
+        </>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Suite consistency at a glance: one cell per session, the whole era on one strip. The EOD card
+ * below answers for ONE session and cannot show this — a run of red days beside a green total is
+ * exactly what a single-session view hides, and it is the view every trading journal leads with.
+ *
+ * Fed from the review fact sets (`era.suiteDaily`), not a fresh pass over any ledger, so it cannot
+ * disagree with the Review page. A session whose modules were all unreadable is absent from the
+ * series and renders as a gap, never as a flat zero day.
+ */
+export function SuiteCalendarCard() {
+  const { data, isLoading, dataUpdatedAt } = useReview();
+  const days = data?.era.suiteDaily ?? [];
+  const from = data?.era.from ?? null;
+  const to = data?.era.to ?? null;
+  return (
+    <Card
+      title="Suite net by session"
+      collapseKey="suite-calendar"
+      updatedAt={dataUpdatedAt}
+      controls={
+        from !== null ? (
+          <span className="chip">
+            {from} → {to} · {days.length} sessions
+          </span>
+        ) : undefined
+      }
+    >
+      {isLoading ? (
+        <span className="skeleton skeleton-text" style={{ width: "40%" }} />
+      ) : (
+        <>
+          <CalendarHeatmap
+            days={days.map((d) => ({ date: d.session, net: d.net, count: d.closed }))}
+            countLabel="closed"
+          />
+          <p className="muted" style={{ fontSize: 11, marginBottom: 0, marginTop: "0.4rem" }}>
+            Every readable module summed per session, from the review fact sets. Deliberately a
+            shape, not a total: these books differ in scale by more than an order of magnitude, so
+            read the pattern of days rather than the size of any one cell.
           </p>
         </>
       )}
@@ -138,7 +199,7 @@ export function EodCard() {
               <span className={`stat-value ${(data?.suite.net ?? 0) >= 0 ? "pnl-pos" : "pnl-neg"}`}>{fmtMoney(data?.suite.net ?? 0)}</span>
             </div>
             <div className="stat-tile">
-              <span className="stat-label">trades (all-time)</span>
+              <span className="stat-label">trades (this era)</span>
               <span className="stat-value">{data?.suite.trades ?? "—"}</span>
             </div>
             <div className="stat-tile">

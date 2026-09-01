@@ -6,9 +6,11 @@ back to in-repo files until this runs, so migration is explicit and never automa
   1. **Move the config files into the home** — the suite config to ``~/.cherrypick/config.json`` and each
      module's config to ``~/.cherrypick/config/<pkg>.json`` — so the home copy is authoritative (no more
      silent fallback to a stale in-repo config). An existing home config is never overwritten.
-  2. **Sweep regenerable leftovers** out of the checkouts — old ``*.log``, a generated ``dashboard.html``,
-     ``state/*.json``, and ``reports/*.html``. These all regenerate under the home, so removing the repo
-     copies is safe. **``*.db`` files are never deleted** (they may hold data) — they are only reported.
+  2. **Sweep regenerable leftovers** out of the checkouts — old ``*.log``, a leftover ``dashboard.html``
+     (nothing has generated one since the console cutover, but a pre-cutover checkout may still carry
+     one), ``state/*.json``, and ``reports/*.html``. These either regenerate under the home or are dead
+     artifacts, so removing the repo copies is safe. **``*.db`` files are never deleted** (they may hold
+     data) — they are only reported.
 
 ``dry_run=True`` (the CLI default) prints the plan and touches nothing.
 """

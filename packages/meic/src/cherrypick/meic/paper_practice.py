@@ -43,7 +43,6 @@ import urllib.error
 import urllib.request
 import uuid
 from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
 
 from cherrypick.meic import paper  # noqa: E402  (reused: evaluate_entry, profiles, merge, settlement value)
 from cherrypick.meic import (
@@ -54,7 +53,9 @@ from cherrypick.meic import paths as _paths  # noqa: E402  (practice_trades.db d
 # `-m` rather than a path to db.py: location-independent, same reason as paper_loop's _DB.
 _DB_CMD = ["-m", "cherrypick.meic.db"]
 
-_ET = ZoneInfo("America/New_York")
+# One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core.clock import ET as _ET  # noqa: E402
+
 _TARGET_DELTA = 0.15
 # VIX-band pseudo iv_rank for practice runs (Phase 3; ToS-safe — no historical reads). A true
 # iv_rank is a multi-day VIX percentile, which would mean systematically walking past sessions to

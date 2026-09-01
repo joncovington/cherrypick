@@ -489,3 +489,37 @@ def test_stale_writer_guard_ignores_ordinary_phase_prefixed_columns(conn):
     conn.execute("ALTER TABLE fly_positions ADD COLUMN completion_something_min REAL")
     conn.execute("ALTER TABLE fly_positions ADD COLUMN entry_some_id TEXT")
     assert dbmod.stale_writer_columns(conn) == []
+
+
+def test_settlement_records_where_its_price_came_from(conn):
+    """The price decides every position's P&L at once, and a last streamed trade is not the official
+    print. Two modules settling the same index off their own final ticks land on different numbers --
+    flies read SPX 7677.28 on 2026-08-25 where MEIC recorded 7677.20 -- and a fly centred within a
+    point of spot settles on the wrong side of its own centre for exactly that reason.
+
+    The column has existed since the schema was written and `run_settle` always computed the value,
+    but nothing carried it into the row: 789 sessions recorded a settlement price with no provenance
+    at all, against 43 rows from one 2026-07-30 run that say `official`.
+    """
+    config = one_arm_config(entry_modes=["legged"])
+    bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
+
+    result = bookmod.settle_book(
+        conn, "2026-07-20", "control", "SPX", 5990.0, config, settlement_source="last_trade"
+    )
+    rows = dbmod.book_positions(conn, result["book_id"])
+    assert rows[0]["settlement_source"] == "last_trade", (
+        "a settled row must say whether its price was the official print or a final tick"
+    )
+
+
+def test_settlement_source_is_optional_so_a_backfill_never_lies(conn):
+    """Absent stays absent. An unstated source must not default to a claim -- writing 'last_trade'
+    for a caller that did not say would assert provenance nobody established, which is worse than
+    the null it replaces."""
+    config = one_arm_config(entry_modes=["legged"])
+    bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
+
+    result = bookmod.settle_book(conn, "2026-07-20", "control", "SPX", 5990.0, config)
+    rows = dbmod.book_positions(conn, result["book_id"])
+    assert rows[0]["settlement_source"] is None

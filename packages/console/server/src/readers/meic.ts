@@ -1,10 +1,12 @@
 import path from "node:path";
-import type { MeicPayload, MeicTradeRow, MeicSummaryRow, Paged, TradingMode } from "@console/shared";
+import type { MeicDivergence, MeicPayload, MeicTradeRow, MeicSummaryRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import type { DatabaseHandle } from "./db.js";
-import { withReadOnlyDb, hasColumn, num, str } from "./db.js";
+import { withReadOnlyDb, hasColumn, hasTable, num, str } from "./db.js";
+import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
 import { payoffAt, type Leg } from "../analytics/payoff.js";
+import { equityCurve, periodKey, riskSummary, stdev } from "../analytics/riskMetrics.js";
 
 
 /**
@@ -14,7 +16,39 @@ import { payoffAt, type Leg } from "../analytics/payoff.js";
  * rather than imported so the packages stay decoupled; kept in step with
  * `CURRENT_ERA` in `packages/meic/.../analytics.py`.
  */
-export const CURRENT_ERA = "sample";
+export const CURRENT_ERA = "advisor";
+
+/**
+ * Era date spans, for tables WITHOUT an era column (`daily_summary` is a per-day aggregate the
+ * module writes with no era tag). Facts mirrored from the module's journaled measurement breaks —
+ * the four-stream sample ran 2026-08-07..2026-08-20 and the advisor era opened 2026-08-21 — under
+ * the same hand-sync contract as `CURRENT_ERA` above. An era key not listed here widens rather
+ * than inventing a span.
+ */
+const ERA_DATES: Record<string, { from: string | null; to: string | null }> = {
+  book: { from: null, to: "2026-08-06" },
+  sample: { from: "2026-08-07", to: "2026-08-20" },
+  advisor: { from: "2026-08-21", to: null },
+};
+
+/** WHERE fragment bounding a date column to the scope's era, `null` when unbounded ("ALL"). */
+function eraDateSql(era: string | null, column: string): { sql: string | null; params: string[] } {
+  const key = era ?? CURRENT_ERA;
+  if (key === "ALL") return { sql: null, params: [] };
+  const span = ERA_DATES[key];
+  if (span === undefined) return { sql: null, params: [] };
+  const parts: string[] = [];
+  const params: string[] = [];
+  if (span.from !== null) {
+    parts.push(`${column} >= ?`);
+    params.push(span.from);
+  }
+  if (span.to !== null) {
+    parts.push(`${column} <= ?`);
+    params.push(span.to);
+  }
+  return { sql: parts.length > 0 ? parts.join(" AND ") : null, params };
+}
 
 export interface MeicScopeFilter {
   symbol: string | null;
@@ -145,14 +179,19 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
     );
   });
 
+  // Bounded to the same era as the trade log above it — daily_summary has no era column, so the
+  // bound is the era's DATE span; pre-cutover rows aggregate the retired arms and answering with
+  // them beside an era-scoped log was the mismatch the 2026-08-21 report caught.
+  const eraSql = eraDateSql(query.era, "summary_date");
   const summaries = withReadOnlyDb<MeicSummaryRow[]>(dbPath, [], (db) =>
     db
-      .prepare<[], Record<string, unknown>>(
+      .prepare<string[], Record<string, unknown>>(
         `SELECT summary_date, symbol, total_entries, entries_filled, entries_stopped,
                 net_pnl, win_rate_pct
-           FROM daily_summary ORDER BY summary_date DESC LIMIT 20`,
+           FROM daily_summary${eraSql.sql !== null ? ` WHERE ${eraSql.sql}` : ""}
+          ORDER BY summary_date DESC LIMIT 20`,
       )
-      .all()
+      .all(...eraSql.params)
       .map((r: Record<string, unknown>) => ({
         mode,
         summaryDate: str(r["summary_date"]) ?? "",
@@ -165,12 +204,29 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
       })),
   );
 
-  return { mode, trades, summaries };
+  // What bounds how far the numbers above can be trusted. MEIC records five measurement breaks and
+  // none of them reached this page until 2026-08-27 -- including the 2026-08-21 control
+  // redefinition, which changes what "control" MEANS either side of that date.
+  const integrity = withReadOnlyDb<MeicPayload["integrity"]>(
+    dbPath,
+    { measurementBreaks: [], schemaDrift: [] },
+    (db) => ({
+      measurementBreaks: readMeasurementBreaks(db),
+      schemaDrift: readSchemaDrift(db, KNOWN_COLUMNS),
+    }),
+  );
+
+  return { mode, trades, summaries, integrity };
 }
+
+/** Columns this build knows about, so a ledger written by a NEWER checkout is visible as drift
+ *  rather than silently NULLed -- the flies 2026-08-05 failure shape. */
+const KNOWN_COLUMNS: Record<string, string[]> = {
+  measurement_breaks: ["id", "break_date", "scope", "kind", "reason", "detail", "created_at"],
+};
 
 const RESOLVED = "status NOT IN ('cancelled','pending','partial_entry')";
 
-const BANKROLL_BASE = 100_000;
 
 export interface MeicScope {
   symbols: string[];
@@ -323,22 +379,6 @@ export interface MeicPerformance {
   regimeCoverage: Array<{ dimension: string; tagged: number; untagged: number; coveragePct: number; degenerate: boolean }>;
 }
 
-function stdev(values: number[]): number | null {
-  if (values.length < 2) return null;
-  const m = values.reduce((s, v) => s + v, 0) / values.length;
-  const varr = values.reduce((s, v) => s + (v - m) ** 2, 0) / (values.length - 1);
-  return Math.sqrt(varr);
-}
-
-function periodKey(granularity: string, tradeDate: string): string {
-  if (granularity === "monthly") return tradeDate.slice(0, 7);
-  if (granularity === "weekly") {
-    const d = new Date(tradeDate + "T00:00:00Z");
-    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
-    return d.toISOString().slice(0, 10);
-  }
-  return tradeDate;
-}
 
 const REGIME_DIMENSIONS: Array<[string, string]> = [
   ["vol_implied", "entry_vol_implied_bucket"],
@@ -397,7 +437,21 @@ export function readMeicPerformance(
     const where = clauses.join(" AND ");
 
     // --- profile comparison: symbol-scoped, profile-unscoped (compare them all) ---
-    const profileClauses = [RESOLVED, "risk_profile IS NOT NULL"];
+    //
+    // `pnl IS NOT NULL` is load-bearing and is NOT implied by RESOLVED. RESOLVED is a deny-list
+    // (`NOT IN ('cancelled','pending','partial_entry')`) and this ledger holds none of those, so it
+    // admits every row including the still-open ones; the module's own analytics uses an allow-list
+    // (`status IN ('stopped','expired','force_closed')`) and admits only settled trades. On this
+    // ledger the two tests coincide exactly — every open row has a NULL pnl and every settled row
+    // has one — so this is the same filter the module applies, written in the terms this file uses.
+    //
+    // Without it an open position contributes its FEES with no gross, reporting each arm down by
+    // exactly what it has paid so far: `advised:control` read gross 0, fees 860.83, net -860.83 on
+    // 125 rows that have not settled. `readMeicAnalytics` below already guards this by subtracting
+    // inside the SUM, and its comment describes this exact failure — "a number that looks like a
+    // result". The guard was applied there and not here. Caught by server/test/meic-mirror.test.ts
+    // on its first run, which is what that test exists for.
+    const profileClauses = [RESOLVED, "pnl IS NOT NULL", "risk_profile IS NOT NULL"];
     const profileParams: string[] = [];
     if (eraOn) {
       profileClauses.push("era = ?");
@@ -460,43 +514,23 @@ export function readMeicPerformance(
         })()
       : [];
 
-    // --- daily equity + drawdown (net = SUM(pnl), the stats-grid convention) ---
+    // --- daily equity + drawdown, NET OF FEES ---
+    // These two read gross `SUM(pnl)` while the calendar beside them read net, so one MEIC page
+    // showed two different curves both labelled net. Net-of-fees is the module-wide definition
+    // (core.ledgers, flies, and the calendar below all use it), and fees are a real drag on this
+    // strategy -- a gross equity curve overstates every drawdown recovery.
     const dailyRows = db
       .prepare<string[], Record<string, unknown>>(
-        `SELECT trade_date, COALESCE(SUM(pnl), 0) AS net FROM ic_trades WHERE ${where}
+        `SELECT trade_date, COALESCE(SUM(pnl - COALESCE(fees, 0)), 0) AS net FROM ic_trades WHERE ${where}
           GROUP BY trade_date ORDER BY trade_date`,
       )
       .all(...params);
-    let cum = 0;
-    let peak = 0;
-    const equity = dailyRows.map((r) => {
-      const net = Number(r["net"]);
-      cum += net;
-      peak = Math.max(peak, cum);
-      return { date: String(r["trade_date"]), netPnl: net, equity: BANKROLL_BASE + cum, drawdown: peak - cum };
-    });
+    const equity = equityCurve(
+      dailyRows.map((r) => ({ date: String(r["trade_date"]), net: Number(r["net"]) })),
+    );
 
     // --- risk-adjusted metrics from the DAILY series regardless of display granularity ---
-    const returns = equity.map((b) => b.netPnl / BANKROLL_BASE);
-    const n = returns.length;
-    const meanR = n > 0 ? returns.reduce((s, v) => s + v, 0) / n : 0;
-    const sd = stdev(returns);
-    const downside = returns.filter((r) => r < 0);
-    const ddSd = downside.length >= 2 ? stdev(downside) : null;
-    const maxDd = Math.max(...equity.map((b) => b.drawdown), 0);
-    const totalReturn = returns.reduce((s, v) => s + v, 0);
-    const annualized = n > 0 ? totalReturn * (252 / n) : 0;
-    const maxDdPct = maxDd / BANKROLL_BASE;
-    const netTotal = equity.reduce((s, b) => s + b.netPnl, 0);
-    const sharpe = sd !== null && sd !== 0 ? (meanR / sd) * Math.sqrt(252) : null;
-    const risk = {
-      sharpe: sharpe !== null ? Math.round(sharpe * 1000) / 1000 : null,
-      sortino: ddSd !== null && ddSd !== 0 ? Math.round((meanR / ddSd) * Math.sqrt(252) * 1000) / 1000 : null,
-      calmar: maxDdPct > 0 ? Math.round((annualized / maxDdPct) * 1000) / 1000 : null,
-      recoveryFactor: maxDd > 0 ? Math.round((netTotal / maxDd) * 1000) / 1000 : null,
-      sampleSize: n,
-      sharpeOverfitFlag: sharpe !== null && sharpe > 3,
-    };
+    const risk = riskSummary(equity);
 
     // --- per-period series ---
     const tradeRows = db
@@ -542,7 +576,7 @@ export function readMeicPerformance(
       ? (() => {
           const rows = db
             .prepare<string[], Record<string, unknown>>(
-              `SELECT risk_profile, trade_date, COALESCE(SUM(pnl), 0) AS net FROM ic_trades
+              `SELECT risk_profile, trade_date, COALESCE(SUM(pnl - COALESCE(fees, 0)), 0) AS net FROM ic_trades
                 WHERE ${RESOLVED} AND risk_profile IS NOT NULL${eraOn ? " AND era = ?" : ""}
                 GROUP BY risk_profile, trade_date ORDER BY risk_profile, trade_date`,
             )
@@ -690,11 +724,14 @@ export function readMeicDeepAnalytics(
       .all(...sc.params)
       .map((r) => ({ date: String(r["trade_date"]), net: Number(r["net"]), trades: Number(r["trades"]) }));
 
+    const nlvEra = eraDateSql(scope.era, "summary_date");
     const nlv = db
-      .prepare<[], Record<string, unknown>>(
-        `SELECT summary_date, closing_nlv FROM daily_summary WHERE closing_nlv IS NOT NULL ORDER BY summary_date`,
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT summary_date, closing_nlv FROM daily_summary
+          WHERE closing_nlv IS NOT NULL${nlvEra.sql !== null ? ` AND ${nlvEra.sql}` : ""}
+          ORDER BY summary_date`,
       )
-      .all()
+      .all(...nlvEra.params)
       .map((r) => ({ date: String(r["summary_date"]), nlv: Number(r["closing_nlv"]) }));
 
     // Signal breakdowns, MEIC-dashboard rules: pnl IS NOT NULL, avg net = pnl − fees.
@@ -754,8 +791,20 @@ export function readMeicDeepAnalytics(
 
 export interface MeicAnalytics {
   mode: TradingMode;
-  /** TODAY / WEEK / MONTH / YEAR / ALL, MEIC-dashboard rules: net = SUM(pnl); win = pnl − fees > 0. */
+  /** TODAY / WEEK / MONTH / YEAR / ALL. Net is after fees, as everywhere else in the suite. */
   periods: Array<{ label: string; net: number; trades: number; wins: number; losses: number }>;
+  /**
+   * Today's result per profile — which arm actually made the money, the question the page could
+   * not answer. The Performance tab's per-profile table is cumulative and states that it ignores
+   * the page's scope, so it never covered this.
+   */
+  byProfile: Array<{ profile: string; trades: number; net: number; winPct: number | null; avg: number | null; profitFactor: number | null }>;
+  /** Today's fee drag per profile, same grouping as byProfile.
+   *
+   * `gross` here is premium COLLECTED, not gross P&L -- it does not reconcile with `net` the way
+   * flies' identically-named field does. Renaming the field would ripple through the page; the
+   * column it renders is labelled "credit" instead. */
+  profileFeeDrag: Array<{ profile: string; gross: number; fees: number; net: number; dragPct: number | null }>;
   exitReasons: Array<{ reason: string; count: number }>;
   feeDrag: { grossCredit: number; fees: number; netPnl: number; dragPct: number | null };
 }
@@ -770,6 +819,8 @@ export function readMeicAnalytics(
   const empty: MeicAnalytics = {
     mode,
     periods: [],
+    byProfile: [],
+    profileFeeDrag: [],
     exitReasons: [],
     feeDrag: { grossCredit: 0, fees: 0, netPnl: 0, dragPct: null },
   };
@@ -788,16 +839,27 @@ export function readMeicAnalytics(
       ["year", `${today.slice(0, 4)}-01-01`],
       ["all", null],
     ];
+    // Net is `pnl - fees`. `ic_trades.pnl` is gross of fees, so summing it alone reported a
+    // different "net" from the deep-analytics calendar right beside it on the same page, and from
+    // this very query's own win/loss test, which has always been fee-adjusted. Fees are a real cost
+    // of the trade and every other net in the suite subtracts them.
+    //
+    // Subtracted INSIDE the sum on purpose. RESOLVED only excludes cancelled/pending entries, so
+    // mid-session it still admits 0DTE rows that have not settled and carry a NULL pnl. Summing the
+    // two columns separately would charge those rows' fees against a P&L they have not earned yet
+    // and report every profile down by exactly its fees — a number that looks like a result. With
+    // the subtraction inside, an unsettled row is NULL and drops out of the sum entirely.
+    const NET = "COALESCE(SUM(pnl - COALESCE(fees, 0)), 0)";
+    // The rows that actually contribute to NET, so an average has the same denominator as its total.
+    const SETTLED = "SUM(CASE WHEN pnl IS NOT NULL THEN 1 ELSE 0 END)";
+    const WINS = "SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) > 0 THEN 1 ELSE 0 END)";
+    const LOSSES = "SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) <= 0 THEN 1 ELSE 0 END)";
     const periodStmt = db.prepare<string[], Record<string, unknown>>(
-      `SELECT COALESCE(SUM(pnl), 0) AS net, COUNT(*) AS trades,
-              SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) > 0 THEN 1 ELSE 0 END) AS wins,
-              SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) <= 0 THEN 1 ELSE 0 END) AS losses
+      `SELECT ${NET} AS net, COUNT(*) AS trades, ${WINS} AS wins, ${LOSSES} AS losses
          FROM ic_trades WHERE ${RESOLVED} AND trade_date >= ?${sc.and}`,
     );
     const allStmt = db.prepare<string[], Record<string, unknown>>(
-      `SELECT COALESCE(SUM(pnl), 0) AS net, COUNT(*) AS trades,
-              SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) > 0 THEN 1 ELSE 0 END) AS wins,
-              SUM(CASE WHEN pnl IS NOT NULL AND pnl - COALESCE(fees, 0) <= 0 THEN 1 ELSE 0 END) AS losses
+      `SELECT ${NET} AS net, COUNT(*) AS trades, ${WINS} AS wins, ${LOSSES} AS losses
          FROM ic_trades WHERE ${RESOLVED}${sc.and}`,
     );
     const periods = starts.map(([label, start]) => {
@@ -810,6 +872,58 @@ export function readMeicAnalytics(
         losses: Number(r["losses"] ?? 0),
       };
     });
+
+    // TODAY, per profile. Scoped to the same session the tiles above it report, so the page does
+    // not put "this year" and "today" beside each other under one heading — the mistake the flies
+    // reader already carries a note about.
+    const profileRows = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT risk_profile AS profile, ${SETTLED} AS trades,
+                ${NET} AS net, ${WINS} AS wins, ${LOSSES} AS losses,
+                COALESCE(SUM(CASE WHEN pnl - COALESCE(fees, 0) > 0 THEN pnl - COALESCE(fees, 0) ELSE 0 END), 0) AS won,
+                COALESCE(SUM(CASE WHEN pnl - COALESCE(fees, 0) < 0 THEN COALESCE(fees, 0) - pnl ELSE 0 END), 0) AS lost
+           FROM ic_trades WHERE ${RESOLVED} AND trade_date = ?${sc.and}
+          GROUP BY risk_profile HAVING trades > 0 ORDER BY net DESC`,
+      )
+      .all(today, ...sc.params);
+    const byProfile = profileRows.map((r) => {
+      const trades = Number(r["trades"]);
+      const wins = Number(r["wins"]);
+      const losses = Number(r["losses"]);
+      const lost = Number(r["lost"]);
+      const net = Number(r["net"]);
+      return {
+        profile: String(r["profile"] ?? "?"),
+        trades,
+        net,
+        winPct: wins + losses > 0 ? (wins / (wins + losses)) * 100 : null,
+        avg: trades > 0 ? net / trades : null,
+        profitFactor: lost > 0 ? Number(r["won"]) / lost : null,
+      };
+    });
+
+    const profileFeeDrag = db
+      .prepare<string[], Record<string, unknown>>(
+        // Restricted to settled rows so gross, fees and net all describe the same trades — a drag
+        // percentage mixing an unsettled row's fees into a settled row's credit means nothing.
+        `SELECT risk_profile AS profile,
+                COALESCE(SUM(net_credit * COALESCE(quantity, 1) * 100), 0) AS gross,
+                COALESCE(SUM(fees), 0) AS fees, ${NET} AS net
+           FROM ic_trades WHERE ${RESOLVED} AND pnl IS NOT NULL AND trade_date = ?${sc.and}
+          GROUP BY risk_profile ORDER BY risk_profile`,
+      )
+      .all(today, ...sc.params)
+      .map((r) => {
+        const gross = Number(r["gross"]);
+        const fees = Number(r["fees"]);
+        return {
+          profile: String(r["profile"] ?? "?"),
+          gross,
+          fees,
+          net: Number(r["net"]),
+          dragPct: Math.abs(gross) > 0 ? (fees / Math.abs(gross)) * 100 : null,
+        };
+      });
 
     // Grouped on the LEG PAIR, not on ic_trades.exit_reason.
     //
@@ -849,7 +963,7 @@ export function readMeicAnalytics(
     const fd = db
       .prepare<string[], Record<string, unknown>>(
         `SELECT COALESCE(SUM(net_credit * COALESCE(quantity, 1) * 100), 0) AS gross,
-                COALESCE(SUM(fees), 0) AS fees, COALESCE(SUM(pnl), 0) AS net
+                COALESCE(SUM(fees), 0) AS fees, ${NET} AS net
            FROM ic_trades WHERE ${RESOLVED}${sc.and}`,
       )
       .get(...sc.params) ?? {};
@@ -858,6 +972,8 @@ export function readMeicAnalytics(
     return {
       mode,
       periods,
+      byProfile,
+      profileFeeDrag,
       exitReasons,
       feeDrag: {
         grossCredit: gross,
@@ -1102,6 +1218,95 @@ export function readMeicForest(
       arms,
       releasedStrikes: released,
       lastSpot,
+    };
+  });
+}
+
+/**
+ * Profile divergence: how often MEIC's arms reached DIFFERENT entry decisions on the same tick.
+ *
+ * The flies page has had this since week one and the reasoning carries over unchanged: an
+ * experiment can only separate two arms to the extent they actually disagree, and a pair agreeing
+ * above 80% cannot answer the question as framed no matter how long it runs. Far better learned in
+ * week one than in month three.
+ *
+ * MEIC's arms differ in GATES rather than in centring, so the thing to compare is the outcome each
+ * profile reached, not a strike. `entry_attempts` is the right table because it records one
+ * uncollapsed row per (profile x symbol) per tick INCLUDING refusals — the arms that matter most
+ * here are the ones that go dark on a low-IV day, and a table of fills alone cannot see them.
+ *
+ * Bucketed on (ts, symbol): the loop stamps every profile in one tick with the same HH:MM, so a
+ * tick is directly comparable across arms.
+ */
+export function readMeicDivergence(config: ConsoleConfig, mode: TradingMode, day: string | null): MeicDivergence {
+  const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.meicDir, file);
+  const empty: MeicDivergence = { date: null, ticks: 0, allAgreeRatePct: null, pairs: [], outcomes: [] };
+  return withReadOnlyDb<MeicDivergence>(dbPath, empty, (db) => {
+    if (!hasTable(db, "entry_attempts")) return empty;
+    const date =
+      day ??
+      db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM entry_attempts").get()?.d ??
+      null;
+    if (date === null) return empty;
+
+    const rows = db
+      .prepare<[string], Record<string, unknown>>(
+        "SELECT ts, symbol, risk_profile, outcome FROM entry_attempts WHERE trade_date = ? ORDER BY ts",
+      )
+      .all(date);
+
+    const ticks = new Map<string, Record<string, string>>();
+    const outcomeCounts = new Map<string, number>();
+    for (const r of rows) {
+      const profile = str(r["risk_profile"]);
+      const outcome = str(r["outcome"]);
+      if (profile === null || outcome === null) continue;
+      outcomeCounts.set(outcome, (outcomeCounts.get(outcome) ?? 0) + 1);
+      const key = `${String(r["ts"])}|${String(r["symbol"])}`;
+      let bucket = ticks.get(key);
+      if (bucket === undefined) {
+        bucket = {};
+        ticks.set(key, bucket);
+      }
+      bucket[profile] = outcome;
+    }
+
+    const pairs = new Map<string, boolean[]>();
+    let allAgree = 0;
+    let considered = 0;
+    for (const outcomes of ticks.values()) {
+      const profiles = Object.keys(outcomes).sort();
+      if (profiles.length < 2) continue; // agreement is undefined for one arm
+      considered += 1;
+      if (new Set(Object.values(outcomes)).size === 1) allAgree += 1;
+      for (let i = 0; i < profiles.length; i++) {
+        for (let j = i + 1; j < profiles.length; j++) {
+          const key = `${profiles[i]} vs ${profiles[j]}`;
+          let list = pairs.get(key);
+          if (list === undefined) {
+            list = [];
+            pairs.set(key, list);
+          }
+          list.push(outcomes[profiles[i]!] === outcomes[profiles[j]!]);
+        }
+      }
+    }
+
+    return {
+      date,
+      ticks: considered,
+      allAgreeRatePct: considered > 0 ? (allAgree / considered) * 100 : null,
+      pairs: [...pairs.entries()]
+        .map(([profiles, matches]) => ({
+          profiles,
+          ticks: matches.length,
+          agreementRatePct: matches.length > 0 ? (matches.filter(Boolean).length / matches.length) * 100 : null,
+        }))
+        .sort((a, b) => (b.agreementRatePct ?? 0) - (a.agreementRatePct ?? 0)),
+      outcomes: [...outcomeCounts.entries()]
+        .map(([outcome, count]) => ({ outcome, count }))
+        .sort((a, b) => b.count - a.count),
     };
   });
 }

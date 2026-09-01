@@ -1,18 +1,9 @@
 import { useState, type ReactNode } from "react";
 
-export function fmtMoney(v: number | null): string {
-  if (v === null) return "—";
-  const sign = v < 0 ? "-" : "";
-  return `${sign}$${Math.abs(v).toFixed(2)}`;
-}
-
-export function fmtNum(v: number | null, digits = 2): string {
-  return v === null ? "—" : v.toFixed(digits);
-}
-
-export function fmtPct(v: number | null, digits = 0): string {
-  return v === null ? "—" : `${v.toFixed(digits)}%`;
-}
+// The formatters live in lib/format.ts now -- nothing should import a TABLE component to render a
+// number. Re-exported here so the 35 existing call sites keep working unchanged.
+export { fmtMoney, fmtNum, fmtPct, fmtPctSigned } from "../lib/format";
+import { fmtMoney } from "../lib/format";
 
 export function PnlCell({ v }: { v: number | null }) {
   if (v === null) return <span className="muted">—</span>;

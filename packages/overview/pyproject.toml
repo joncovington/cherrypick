@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cherrypick-overview"
+version = "0.1.0"
+description = "Daily pre-open market overview: a deterministic fact pack, mechanical phase gates, and a render"
+requires-python = ">=3.11"
+# cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this
+# one. Not on PyPI -- packages/core must be installed first, or resolution fails.
+# Deliberately NO broker dependency: this package is a pure stream-cache + gex-history consumer --
+# no keyring, no tastytrade, no REST, no network. The narrative that accompanies its fact pack is
+# written OUTSIDE this package by scripts/morning_narrative.py, the same fence that holds
+# scripts/eod_narrative.py.
+dependencies = ["cherrypick-core"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests", "src"]
+
+[tool.ruff]
+extend = "../../ruff.toml"
+target-version = "py311"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["src/cherrypick"]
+sources = ["src"]

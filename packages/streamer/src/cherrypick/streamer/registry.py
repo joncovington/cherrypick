@@ -65,14 +65,6 @@ def _clean_sources(sources) -> list[dict]:
     return out
 
 
-def _clean_window_hints(window_hints) -> dict[str, int]:
-    out: dict[str, int] = {}
-    for symbol, count in (window_hints or {}).items():
-        if isinstance(symbol, str) and symbol.strip() and isinstance(count, int) and count > 0:
-            out[symbol.strip().upper()] = count
-    return out
-
-
 def write_request(
     module: str,
     symbols,
@@ -94,7 +86,7 @@ def write_request(
         "symbols": _clean(symbols, upper=True),
         "legs": _clean(legs, upper=False),
         "leg_sources": _clean_sources(leg_sources),
-        "window_hints": _clean_window_hints(window_hints),
+        "window_hints": _streamrequests.clean_window_hints(window_hints),
         "expirations": _streamrequests.clean_expirations(expirations),
         "history_days": _streamrequests.clean_history_days(history_days),
     }

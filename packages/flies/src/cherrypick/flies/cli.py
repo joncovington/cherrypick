@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import pathlib
 import sys
 
@@ -22,32 +21,17 @@ import sys
 # (SystemExit "no config found"), unlike gex's equivalent, but fix it for the same reason.
 _PKG_ROOT = str(pathlib.Path(__file__).resolve().parents[3])
 
+from cherrypick.core import home as _core_home  # noqa: E402
+
 from cherrypick.flies import book as bookmod  # noqa: E402
 from cherrypick.flies import db as dbmod  # noqa: E402
 from cherrypick.flies import engine  # noqa: E402
 
 
 def load_config(path: str | None = None) -> dict:
-    """Explicit path, then FLIES_CONFIG, then the managed home, then the repo, then the example.
-
-    The managed-home entry (`~/.cherrypick/config/flies.json`) matters: it is where the suite keeps
-    per-module config and where `cherrypick doctor` looks. Without it, doctor reports the module as
-    unconfigured while the module happily runs off its in-repo copy — the two disagreeing about
-    where configuration lives is exactly how a machine ends up running settings nobody can find.
-    """
-    home = os.environ.get("CHERRYPICK_HOME") or os.path.join(os.path.expanduser("~"), ".cherrypick")
-    candidates = [
-        path,
-        os.environ.get("FLIES_CONFIG"),
-        os.path.join(home, "config", "flies.json"),
-        os.path.join(_PKG_ROOT, "config.json"),
-        os.path.join(_PKG_ROOT, "config.example.json"),
-    ]
-    for c in candidates:
-        if c and os.path.isfile(c):
-            with open(c, encoding="utf-8") as f:
-                return json.load(f)
-    raise SystemExit("no config found — copy config.example.json to config.json")
+    """This module's config, by the suite's precedence — see
+    `cherrypick.core.home.load_module_config`, which three modules had written out identically."""
+    return _core_home.load_module_config("flies", _PKG_ROOT, path)
 
 
 def enabled_arms(config: dict) -> list[str]:
@@ -125,11 +109,62 @@ def cmd_regime(args) -> int:
     return 0
 
 
+def cmd_bands(args) -> int:
+    """Where each book's band sat relative to the range the session actually printed.
+
+    Asked for by the advisor on 2026-08-18, repeated 08-19 and 08-20, and sharpened on 08-21 after
+    its own single-edge classifier was contradicted by the wing experiment. See
+    `analytics.band_placement` for the metric and why it reads BOTH edges.
+
+    The session range comes from the shared stream cache (`day_high`/`day_low`), not this module's
+    own tick record: the 08-21 breach was 0.11 points and `fly_iterations` samples the underlying,
+    so a sampled extreme cannot measure a margin that fine.
+    """
+    import sqlite3
+
+    from cherrypick.flies import analytics, paper_loop
+
+    config = load_config(args.config)
+    conn = dbmod.connect(args.db)
+    sessions = [r[0] for r in conn.execute("SELECT DISTINCT trade_date FROM fly_books ORDER BY 1")]
+    symbols = [r[0] for r in conn.execute("SELECT DISTINCT symbol FROM fly_books")]
+
+    cache_path = args.stream_cache or paper_loop.stream_cache_path(config)
+    cache = sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True)
+    try:
+        ranges = analytics.session_ranges_from_cache(cache, sessions, symbols)
+    finally:
+        cache.close()
+
+    placements = analytics.band_placement(
+        conn, ranges, start=args.start, end=args.end, arm=args.arm, symbol=args.symbol
+    )
+    out = {
+        "ok": True,
+        # The classifier first: a placement table is only readable next to whether the margin it
+        # reports actually predicts the outcome it is meant to explain.
+        "classifier": analytics.band_placement_classifier(placements),
+        "placements": placements,
+    }
+    print(json.dumps(out, indent=2, default=str))
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="flies", description="0DTE net-credit butterfly paper module")
     ap.add_argument("--config")
     ap.add_argument("--db")
     sub = ap.add_subparsers(dest="command", required=True)
+
+    p_bands = sub.add_parser(
+        "bands", help="band placement against the session's realized range, and whether it predicts the floor"
+    )
+    p_bands.add_argument("--start")
+    p_bands.add_argument("--end")
+    p_bands.add_argument("--arm")
+    p_bands.add_argument("--symbol")
+    p_bands.add_argument("--stream-cache", dest="stream_cache", help="override the shared cache path")
+    p_bands.set_defaults(func=cmd_bands)
 
     p_once = sub.add_parser("once", help="one iteration of every enabled arm")
     p_once.add_argument("--snapshot", help="snapshot JSON file (default: stdin)")

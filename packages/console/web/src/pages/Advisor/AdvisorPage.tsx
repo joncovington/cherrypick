@@ -1,14 +1,16 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type {
   AdvisorApplyStatus,
   AdvisorCheckpoint,
+  AdvisorEvent,
   AdvisorExperiment,
   AdvisorPair,
   AdvisorProposal,
 } from "@console/shared";
 import { dismissAdvisorProposal, killAdvisorExperiment, useAdvisor } from "../../lib/api";
 import { otherFields, paramRows, scalar } from "./proposalPayload";
+import { TabStrip } from "../../components/ScopeBar";
 
 /**
  * The AI advisor. Renders what it observed, proposed and ran — and judges none of it here.
@@ -53,24 +55,205 @@ type Tab = "today" | "proposals" | "experiments" | "history";
 
 const TABS: Tab[] = ["today", "proposals", "experiments", "history"];
 
-// --------------------------------------------------------------------------- apply-status banner
+/**
+ * A card that starts CLOSED and remembers nothing.
+ *
+ * Deliberately local state rather than the shared `Card`'s `useCollapsed`, which is
+ * localStorage-backed and defaults to open. This page's sections are dense and numerous — several
+ * checkpoints, a card per proposal, a card per experiment — and the reader needs the tab's summary
+ * first and the detail on request. The page body is keyed by tab, so switching tabs remounts these
+ * and every section closes again: "collapsed on entering the tab", while an expansion sticks for as
+ * long as you stay on it.
+ */
+function CollapsibleCard({
+  head,
+  children,
+  className = "",
+}: {
+  head: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  const [collapsed, setCollapsed] = useState(true);
+  return (
+    <section className={`card ${className}`}>
+      <div className="card-head">
+        <button
+          type="button"
+          className="btn btn-quiet collapse-toggle"
+          onClick={() => setCollapsed(!collapsed)}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "expand" : "collapse"}
+        >
+          {collapsed ? "▸" : "▾"}
+        </button>
+        {head}
+      </div>
+      {!collapsed && children}
+    </section>
+  );
+}
 
-function ApplyBanner({ status }: { status: AdvisorApplyStatus[] }) {
+/**
+ * What this tab is, in plain English, above the detail.
+ *
+ * It explains the sections below and states the safety facts that are easy to lose in a wall of
+ * cards — nothing here has touched a live loop, and both buttons on the page only ever make the
+ * advisor do LESS. The counts are reads of data already fetched; no verdict is computed here, which
+ * is the same rule the rest of the page follows (`packages/advisor` decides, this renders).
+ */
+function TabSummary({
+  tab,
+  session,
+  checkpoints,
+  proposals,
+  activeExperiments,
+  concludedExperiments,
+  totalCheckpoints,
+  okCheckpoints,
+}: {
+  tab: Tab;
+  session: string | null;
+  checkpoints: number;
+  proposals: number;
+  activeExperiments: number;
+  concludedExperiments: number;
+  totalCheckpoints: number;
+  okCheckpoints: number;
+}) {
+  const when = session ?? "this session";
+  const body: Record<Tab, ReactNode> = {
+    today: (
+      <>
+        <p>
+          Each card below is one <strong>checkpoint</strong> — a moment in the trading day when the
+          advisor read a fact pack of the suite's own numbers and replied. The card shows what it
+          observed, anything it flagged, and what it proposed.
+        </p>
+        <p className="muted">
+          {checkpoints === 0
+            ? `No checkpoints recorded for ${when}. The advisor is off by default twice over: the suite must schedule it, and each module must declare its own advice bounds.`
+            : `${checkpoints} checkpoint${checkpoints === 1 ? "" : "s"} recorded for ${when}. A checkpoint that failed costs a checkpoint and nothing else — modules run their baseline whenever no advice is admitted.`}
+        </p>
+      </>
+    ),
+    proposals: (
+      <>
+        <p>
+          A <strong>proposal</strong> is a parameter change the model suggested, after the
+          deterministic validator in <code>packages/advisor</code> accepted or refused it against the
+          bounds the module itself declared. One out-of-bounds value refuses the whole artifact.
+        </p>
+        <p className="muted">
+          {proposals === 0
+            ? `Nothing proposed for ${when} — a quiet day is a real answer, not a failure.`
+            : `${proposals} proposal${proposals === 1 ? "" : "s"} for ${when}. Nothing here has been applied to a live loop: an admitted proposal runs as paper, on a synthetic advised book beside the module's unchanged control. Dismissing one stops it being offered again.`}
+        </p>
+      </>
+    ),
+    experiments: (
+      <>
+        <p>
+          Each card is a paper <strong>A/B</strong>: the admitted parameters running as an{" "}
+          <code>advised:</code> book beside the module's own control, entered from the same plan, so
+          the comparison is exactly paired and any difference is the parameters and nothing else.
+        </p>
+        <p className="muted">
+          {activeExperiments} running, {concludedExperiments} concluded. Verdicts come from the
+          suite's own promotion chain, not from the model — an{" "}
+          <em>underpowered</em> chip means the sample has not reached the gate, which is neither a
+          pass nor a fail. Killing an experiment journals a reason and frees its slot; it never
+          touches the control book.
+        </p>
+      </>
+    ),
+    history: (
+      <>
+        <p>
+          Every checkpoint the advisor has run, newest session first — <strong>including the ones
+          that failed</strong>, which is the point of keeping them.
+        </p>
+        <p className="muted">
+          {okCheckpoints} ok of {totalCheckpoints}. The model is invoked outside every package by a
+          scheduled script, so a failed checkpoint can never damage a ledger or a loop — the modules
+          simply run their baseline.
+        </p>
+      </>
+    ),
+  };
   return (
     <section className="card">
       <div className="card-head">
-        <h2>Advice for the next session</h2>
-        <span className="card-asof">{status[0]?.nextSession ?? "nothing issued yet"}</span>
+        <h2>What you are looking at</h2>
+        <span className="card-asof">{tab}</span>
       </div>
+      {body[tab]}
+    </section>
+  );
+}
+
+// --------------------------------------------------------------------------- apply-status banner
+
+/** One module's answer to "did the artifact issued for this session actually reach the loop?" */
+export function EnactmentCell({ status }: { status: AdvisorApplyStatus }) {
+  const e = status.enactment;
+  if (e === null) {
+    // No stored reconciliation: the advisor has not run a slot for this session. Not a failure —
+    // an unscored session and a dropped artifact are different facts and must not share a chip.
+    return <span className="muted">not scored yet</span>;
+  }
+  if (e.status === "no_artifact") return <span className="muted">nothing issued</span>;
+  if (e.status === "enacted") return <span className="chip">applied</span>;
+  if (e.status === "carried") {
+    // Not a dropped artifact and not a fresh decision: the module had nothing to decide this
+    // session, and the params it already applied are frozen on positions it still holds. Its own
+    // chip rather than "applied", so a reader can tell a session that DECIDED from one that
+    // inherited -- the experiment is charged for the first and not the second.
+    return (
+      <>
+        <span className="chip">carried</span>
+        {e.detail !== null && <div className="muted">{e.detail}</div>}
+      </>
+    );
+  }
+  return (
+    <>
+      <span className="chip chip-warn">not applied</span>
+      {e.detail !== null && <div className="muted">{e.detail}</div>}
+    </>
+  );
+}
+
+export function ApplyBanner({ status }: { status: AdvisorApplyStatus[] }) {
+  // The card is collapsed by default, so the head is the only thing most readers ever see. A
+  // dropped artifact has to be legible THERE: on 2026-08-25 meic and earnings both sat inside this
+  // card reading "written" beside "advice_disabled", and nothing on the closed head said so.
+  const dropped = status.filter((s) => s.enactment?.status === "not_enacted");
+  return (
+    <CollapsibleCard
+      head={
+        <>
+          <h2>Advice: written, and whether it landed</h2>
+          {dropped.length > 0 ? (
+            <span className="chip chip-warn" title={dropped.map((s) => s.module).join(", ")}>
+              {dropped.length} not applied
+            </span>
+          ) : (
+            <span className="chip">all applied</span>
+          )}
+          <span className="card-asof">{status[0]?.nextSession ?? "nothing issued yet"}</span>
+        </>
+      }
+    >
       <div className="table-scroll">
-        <table className="data-table data-table-labelled">
+        <table className="data-table advisor-apply">
           <thead>
             <tr>
               <th>Module</th>
-              <th>Artifact</th>
+              <th>Queued for next session</th>
               <th>Admitted</th>
               <th>Rejected</th>
-              <th>The loop&apos;s own decision</th>
+              <th>Did this session&apos;s artifact land?</th>
             </tr>
           </thead>
           <tbody>
@@ -108,14 +291,12 @@ function ApplyBanner({ status }: { status: AdvisorApplyStatus[] }) {
                         </div>
                       ))}
                 </td>
-                <td className="muted">
-                  {/* The module froze this at session start and replays it all day. It is the only
-                      evidence that advice actually reached a loop rather than merely being written. */}
-                  {s.consumerDecision === null
-                    ? "not read yet"
-                    : `${String(s.consumerDecision["day"] ?? "?")} · ${String(
-                        s.consumerDecision["reason"] ?? "applied",
-                      )}`}
+                <td>
+                  {/* The advisor's own reconciliation of the CHOSEN session, not this reader's.
+                      Previously this column showed the loop's decision for today beside an artifact
+                      for tomorrow — two different sessions, which can never agree, which is exactly
+                      why "written" next to "advice_disabled" read as normal for two whole days. */}
+                  <EnactmentCell status={s} />
                 </td>
               </tr>
             ))}
@@ -127,7 +308,12 @@ function ApplyBanner({ status }: { status: AdvisorApplyStatus[] }) {
         side, so a written artifact with zero admitted params runs the baseline — exactly as an
         absent one would — and the rejections above are the only record that the advisor tried.
       </p>
-    </section>
+      <p className="muted">
+        <strong>Not applied</strong> is different, and it is not free: the advisor wrote an artifact
+        and the loop never ran under it, so the session bought that experiment no evidence. Those
+        sessions are excluded from its <code>sessions run</code> count for the same reason.
+      </p>
+    </CollapsibleCard>
   );
 }
 
@@ -135,12 +321,15 @@ function ApplyBanner({ status }: { status: AdvisorApplyStatus[] }) {
 
 function CheckpointCard({ c }: { c: AdvisorCheckpoint }) {
   return (
-    <section className="card">
-      <div className="card-head">
-        <h2>{c.slot}</h2>
-        {c.ok ? <span className="chip">ok</span> : <span className="chip chip-warn">failed</span>}
-        <span className="card-asof">{c.model ?? "model not recorded"}</span>
-      </div>
+    <CollapsibleCard
+      head={
+        <>
+          <h2>{c.slot}</h2>
+          {c.ok ? <span className="chip">ok</span> : <span className="chip chip-warn">failed</span>}
+          <span className="card-asof">{c.model ?? "model not recorded"}</span>
+        </>
+      }
+    >
       {!c.ok && <p className="pnl-neg">{c.error}</p>}
       {c.flags.map((f, i) => (
         <p className="review-caveat" key={i}>
@@ -157,7 +346,7 @@ function CheckpointCard({ c }: { c: AdvisorCheckpoint }) {
           <li key={i}>{o}</li>
         ))}
       </ul>
-    </section>
+    </CollapsibleCard>
   );
 }
 
@@ -212,8 +401,9 @@ function ProposalCard({
   const sessions = p.payload["sessions"];
 
   return (
-    <section className="card">
-      <div className="card-head">
+    <CollapsibleCard
+      head={
+        <>
         <h2>
           {p.kind}
           {p.module !== null && <span className="muted"> · {p.module}</span>}
@@ -235,7 +425,9 @@ function ProposalCard({
           {p.slot ?? "—"}
           {typeof sessions === "number" ? ` · ${sessions} sessions` : ""} · #{p.id}
         </span>
-      </div>
+        </>
+      }
+    >
 
       {typeof p.payload["title"] === "string" && <p>{String(p.payload["title"])}</p>}
       {typeof p.payload["hypothesis"] === "string" && (
@@ -293,7 +485,7 @@ function ProposalCard({
           Dismiss
         </button>
       )}
-    </section>
+    </CollapsibleCard>
   );
 }
 
@@ -346,7 +538,43 @@ function PairTable({ pairs }: { pairs: AdvisorPair[] }) {
   );
 }
 
-function ExperimentCard({
+/**
+ * Why this experiment's session count is what it is.
+ *
+ * Split out of the card so it can be rendered on its own: `CollapsibleCard` draws no children while
+ * collapsed, which is every card's default, so anything asserted only through the card is asserted
+ * against an empty body.
+ *
+ * Without this the number on the head is bare — an experiment reading 2/10 after four evenings
+ * looks stalled when it was actually starved, which is the reading that nearly fired earnings'
+ * kill-at-session-6 rule on sessions its parameter was never applied to.
+ */
+export function CountingCaveat({ journal }: { journal: AdvisorEvent[] }) {
+  const dropped = journal.filter((j) => j.event === "counted" && j.detail?.["enacted"] === false);
+  const recount = journal.filter((j) => j.event === "recounted").slice(-1)[0];
+  if (dropped.length === 0 && recount === undefined) return null;
+  return (
+    <p className="review-caveat">
+      {dropped.length > 0 && (
+        <>
+          {`${dropped.length} session${dropped.length === 1 ? "" : "s"} did not count`}: an artifact
+          was issued and the loop never ran under it
+          {` (${dropped.map((j) => j.session ?? "?").join(", ")}). `}
+        </>
+      )}
+      {recount !== undefined && (
+        <>
+          {"Counts were re-derived from what the loops recorded: "}
+          {`${String(recount.detail?.["sessions_run_recorded"] ?? "?")} → ${String(
+            recount.detail?.["sessions_run_derived"] ?? "?",
+          )}.`}
+        </>
+      )}
+    </p>
+  );
+}
+
+export function ExperimentCard({
   e,
   onKill,
   busy,
@@ -360,8 +588,9 @@ function ExperimentCard({
   const lastEnact = enacted[enacted.length - 1];
 
   return (
-    <section className="card">
-      <div className="card-head">
+    <CollapsibleCard
+      head={
+        <>
         <h2>
           {e.module} <span className="muted">· {e.name ?? e.id}</span>
         </h2>
@@ -377,7 +606,9 @@ function ExperimentCard({
         <span className="card-asof">
           {e.sessionsRun} / {e.expiresAfter} sessions
         </span>
-      </div>
+        </>
+      }
+    >
 
       {e.hypothesis !== null && e.hypothesis !== "" && <p>{e.hypothesis}</p>}
       {e.successMetric !== null && e.successMetric !== "" && (
@@ -427,12 +658,14 @@ function ExperimentCard({
           : `last enacted ${lastEnact.session ?? "?"} → ${String(lastEnact.detail?.["target"] ?? "?")}`}
       </p>
 
+      <CountingCaveat journal={e.journal} />
+
       {running && (
         <button type="button" className="btn" disabled={busy} onClick={() => onKill(e.id)}>
           Kill experiment
         </button>
       )}
-    </section>
+    </CollapsibleCard>
   );
 }
 
@@ -469,18 +702,7 @@ export function AdvisorPage() {
     <div className="page">
       <div className="page-title-row">
         <h1>Advisor</h1>
-        <div className="mode-toggle" style={{ marginLeft: 0 }}>
-          {TABS.map((t) => (
-            <button
-              key={t}
-              type="button"
-              className={tab === t ? "mode-btn active" : "mode-btn"}
-              onClick={() => setTab(t)}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+        <TabStrip tabs={TABS} value={tab} onChange={setTab} ariaLabel="advisor tabs" />
         <select
           className="text-input"
           value={session ?? ""}
@@ -514,6 +736,21 @@ export function AdvisorPage() {
         </section>
       )}
 
+      {/* Summary first, then the detail. The body is keyed by tab so every CollapsibleCard below
+          remounts closed when you switch tabs — "collapsed on entering the tab" — while an
+          expansion sticks for as long as you stay on that tab. */}
+      <TabSummary
+        tab={tab}
+        session={data.session}
+        checkpoints={data.latest.length}
+        proposals={data.proposals.length}
+        activeExperiments={active.length}
+        concludedExperiments={concluded.length}
+        totalCheckpoints={data.checkpoints.length}
+        okCheckpoints={data.checkpoints.filter((c) => c.ok).length}
+      />
+
+      <div key={tab}>
       <ApplyBanner status={data.applyStatus} />
 
       {tab === "today" &&
@@ -559,13 +796,16 @@ export function AdvisorPage() {
       )}
 
       {tab === "history" && (
-        <section className="card">
-          <div className="card-head">
-            <h2>Checkpoints</h2>
-            <span className="card-asof">
-              {data.checkpoints.filter((c) => c.ok).length} ok of {data.checkpoints.length}
-            </span>
-          </div>
+        <CollapsibleCard
+          head={
+            <>
+              <h2>Checkpoints</h2>
+              <span className="card-asof">
+                {data.checkpoints.filter((c) => c.ok).length} ok of {data.checkpoints.length}
+              </span>
+            </>
+          }
+        >
           <div className="table-scroll">
             <table className="data-table data-table-labelled">
               <thead>
@@ -590,8 +830,9 @@ export function AdvisorPage() {
               </tbody>
             </table>
           </div>
-        </section>
+        </CollapsibleCard>
       )}
+      </div>
     </div>
   );
 }

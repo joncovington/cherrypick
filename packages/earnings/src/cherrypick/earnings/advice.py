@@ -27,7 +27,6 @@ which a twin cannot express: propose those as `creative` and let a human decide.
 from __future__ import annotations
 
 import json
-import os
 from typing import Any
 
 from cherrypick.core import advice as _core_advice
@@ -42,47 +41,34 @@ def decision_path() -> str:
     return str(_paths.data_path("advice_active.json"))
 
 
-def decision(config: dict, session: str) -> dict[str, Any]:
+def decision(config: dict, session: str, *, persist: bool = True) -> dict[str, Any]:
     """Today's advice decision, derived ONCE per session and replayed thereafter.
 
     Read-once across processes: the entry scan records what it decided, and anything later replays
     that record, so advice cannot start, stop or change mid-session however late an artifact lands
     or however the config is flipped.
+
+    The mechanics live in `cherrypick.core.advice.session_decision`, which earnings, meic and five
+    other modules had each written out separately. Folding this copy in was not tidying: the
+    2026-08-25 fix — a baseline decision is never made sticky — landed in core, and earnings was one
+    of the two modules that lost a session to the bug it fixes. Earnings broke a thirteen-session
+    drought and opened four iron_condors that day, all at the control target, because an 03:03 entry
+    pass had already recorded `advice_disabled` against a live, valid artifact.
+
+    `base_key=None`: earnings names no base book. Its advice is keyed by strategy
+    (`iron_condor.profit_target_pct`) and each strategy carries its own, so there is nothing for a
+    single base name to mean here. `persist=False` is for a caller replaying a past session — the
+    harness runs against arbitrary dates, and a replay must not fix the live day's decision.
     """
-    acfg = config.get("advice") or {}
-    path = decision_path()
-
-    recorded = None
-    if os.path.exists(path):
-        try:
-            with open(path, encoding="utf-8") as handle:
-                recorded = json.load(handle)
-        except (OSError, ValueError):
-            recorded = None
-        if recorded is not None and recorded.get("day") != session:
-            recorded = None  # yesterday's decision; today re-derives its own
-    if recorded is not None:
-        return recorded
-
-    if acfg.get("enabled") and acfg.get("bounds"):
-        result = _core_advice.load(_core_home.state_dir(), "earnings", session, acfg.get("bounds") or {})
-        params = {p["param"]: p["value"] for p in result["proposals"]} or None
-        recorded = {
-            "day": session,
-            "params": params,
-            "reason": result["reason"],
-            "proposals": result["proposals"],
-            "rejected": result.get("rejected") or [],
-        }
-    else:
-        recorded = {"day": session, "params": None, "reason": "advice_disabled"}
-
-    try:
-        with open(path, "w", encoding="utf-8") as handle:
-            json.dump(recorded, handle, indent=2)
-    except OSError:
-        pass  # the decision still applies to this process; the next one re-derives it
-    return recorded
+    return _core_advice.session_decision(
+        _core_home.state_dir(),
+        "earnings",
+        session,
+        config,
+        decision_path(),
+        base_key=None,
+        persist=persist,
+    )
 
 
 def params_for(decided: dict, strategy: str) -> dict[str, Any]:

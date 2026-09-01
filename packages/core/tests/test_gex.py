@@ -203,3 +203,47 @@ def test_volume_totals_over_profile_series():
         "total_put_gex_vol": 72000,
         "net_gex_vol": 54000,
     }
+
+
+# --------------------------------------------------------- what starved the computation (2026-08-27)
+#
+# `compute_gex` used to answer every empty result with "OI not yet cached (streamer must run
+# first)". That message sent a four-session bwb outage looking at the producer while the real cause
+# was a reader that never selected `gamma` — OI was cached the whole time. An error that names the
+# wrong input is worse than a vague one: it is a confident wrong answer.
+
+_ENTRY = [{"strike_price": 100.0, "streamer_symbol": ".X", "option_type": "C"}]
+
+
+def test_greeks_without_gamma_says_so_rather_than_blaming_oi():
+    r = gex.compute_gex(_ENTRY, {".X": {"delta": 1.0, "iv": 0.2}}, {".X": 50}, 100.0)
+    assert r["ok"] is False
+    assert "WITHOUT gamma" in r["error"]
+    assert "not the cache" in r["error"]
+    assert r["missing"] == {"greeks": 0, "oi": 0, "gamma": 1}
+
+
+def test_missing_open_interest_still_says_open_interest():
+    r = gex.compute_gex(_ENTRY, {".X": {"gamma": 0.1}}, {}, 100.0)
+    assert r["ok"] is False
+    assert "open interest not cached" in r["error"]
+    assert r["missing"]["oi"] == 1
+
+
+def test_missing_greeks_rows_are_distinct_from_gamma_less_rows():
+    r = gex.compute_gex(_ENTRY, {}, {".X": 50}, 100.0)
+    assert r["ok"] is False
+    assert "no fresh greeks" in r["error"]
+    assert r["missing"] == {"greeks": 1, "oi": 0, "gamma": 0}
+
+
+def test_zero_open_interest_counts_as_missing_oi_not_missing_greeks():
+    r = gex.compute_gex(_ENTRY, {".X": {"gamma": 0.1}}, {".X": 0}, 100.0)
+    assert r["ok"] is False
+    assert r["missing"]["oi"] == 1 and r["missing"]["greeks"] == 0
+
+
+def test_no_chain_entries_at_all_is_its_own_answer():
+    r = gex.compute_gex([], {}, {}, 100.0)
+    assert r["ok"] is False
+    assert "no chain entries" in r["error"]

@@ -4,6 +4,38 @@ import type { TradingMode } from "@console/shared";
 import { useFliesTradeLog, fliesQuery, type FliesFilter } from "../../lib/api";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
+import { structureLabel } from "./structure";
+
+/**
+ * The clock time of an entry, read off the stored ISO string rather than through a `Date`.
+ *
+ * `entry_time` carries the market's own UTC offset, so parsing it and formatting it would re-render
+ * a 13:54 SPX entry as 10:54 for a viewer on the west coast — a session-relative fact silently
+ * restated in a timezone the session never happened in. Slicing keeps the market clock, which is
+ * the only one the entry windows and the module's own buckets are expressed in.
+ */
+function clockTime(iso: string | null | undefined): string {
+  // Truthiness rather than `=== null`: a server that predates this column omits the field entirely,
+  // and `undefined.length` throws where a missing value should simply render as a dash. The console
+  // is deployed independently of nothing, but it IS built and restarted independently, so the two
+  // halves disagree for as long as one has restarted and the other has not.
+  if (!iso || iso.length < 16) return "—";
+  return iso.slice(11, 16);
+}
+
+/**
+ * Wing width in points, `near/far` when the wing is broken.
+ *
+ * A symmetric fly records only `wingWidth` and both sides are that wide; a bwb records a wider
+ * `farWidth` beside it, and the gap between them IS the trade. Collapsing the pair to one number
+ * would describe a 5/10 broken wing as a 5-point fly, which is a different structure with a
+ * different risk profile.
+ */
+function wingWidth(near: number | null | undefined, far: number | null | undefined): string {
+  if (near === null || near === undefined) return "—";
+  const n = fmtNum(near, 0);
+  return far === null || far === undefined || far === near ? n : `${n}/${fmtNum(far, 0)}`;
+}
 
 interface Summary {
   trades: number;
@@ -144,10 +176,26 @@ export function HistoryTab({
     return () => clearTimeout(t);
   }, [search]);
 
-  const { page, setOffset, setLimit } = usePage([mode, outcome, debouncedSearch]);
-  const logQuery = useFliesTradeLog(mode, outcome, debouncedSearch, page);
+  // Explicit date bounds, either side independently empty. The search box could already match a
+  // date as text, which answers "2026-08" but not "the week either side of the cadence change" —
+  // and every measurement break in this module is a date, so a log filterable only by prefix cannot
+  // be pointed at one side of a break.
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const range = { from: from === "" ? null : from, to: to === "" ? null : to };
+
+  const { page, setOffset, setLimit } = usePage([
+    mode, outcome, debouncedSearch, from, to, filter.arm, filter.era,
+  ]);
+  // `filter.arm` and `filter.era` are the PAGE-level scope, the same one every other card on this
+  // tab already honours. The log took era and ignored arm, so narrowing to one arm left it
+  // answering for all of them beside tables that did not.
+  const logQuery = useFliesTradeLog(
+    mode, outcome, debouncedSearch, page, filter.era, range, filter.arm,
+  );
   const log = logQuery.data?.rows ?? [];
   const logTotal = logQuery.data?.total ?? 0;
+  const totals = logQuery.data?.totals;
 
   // Sessions beside trades, everywhere. Same-day trades share a regime and are not independent
   // observations — this module's own experiment docs put the effective N at the day count, so a
@@ -189,7 +237,20 @@ export function HistoryTab({
       <section className="card">
         <div className="panel-head-row">
           <h2>Trade log — {logTotal.toLocaleString()} matching</h2>
-          <div className="mode-toggle">
+          {totals !== undefined && totals.trades > 0 && (
+            // Over every matching row, not the page. Sessions ride beside the net because same-day
+            // trades share a regime and are not independent observations — this module's own
+            // experiment docs put the effective N at the session count, so a net over 40 trades
+            // from 3 sessions is a 3-sample reading wearing a 40-sample coat.
+            <span className="chip" title="Net is after fees, over every row matching these filters — not just this page.">
+              net <PnlCell v={totals.netPnl} /> · {totals.trades.toLocaleString()} trades ·{" "}
+              {totals.sessions.toLocaleString()} session{totals.sessions === 1 ? "" : "s"} ·{" "}
+              fees {fmtMoney(totals.fees)}
+            </span>
+          )}
+          {/* A filter, not a tab strip: role=group rather than tablist, which would promise
+              tab semantics for something that narrows one table. */}
+          <div className="mode-toggle" role="group" aria-label="outcome filter">
             {OUTCOMES.map((o) => (
               <button key={o} type="button" className={outcome === o ? "mode-btn active" : "mode-btn"} onClick={() => setOutcome(o)}>
                 {o}
@@ -197,24 +258,40 @@ export function HistoryTab({
             ))}
           </div>
           <input className="text-input" placeholder="search…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ textTransform: "none" }} />
+          <label className="muted" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+            from
+            <input className="text-input" type="date" value={from} max={to === "" ? undefined : to} onChange={(e) => setFrom(e.target.value)} aria-label="from date" />
+          </label>
+          <label className="muted" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+            to
+            <input className="text-input" type="date" value={to} min={from === "" ? undefined : from} onChange={(e) => setTo(e.target.value)} aria-label="to date" />
+          </label>
+          {(from !== "" || to !== "") && (
+            <button type="button" className="mode-btn" onClick={() => { setFrom(""); setTo(""); }}>
+              clear dates
+            </button>
+          )}
         </div>
         <div className={`table-scroll ${logQuery.isPlaceholderData ? "table-busy" : ""}`}>
           <table className="data-table">
             <thead>
               <tr>
-                <th>date</th><th>sym</th><th>arm</th><th>mode</th><th>kind</th><th>centre</th><th>window</th>
-                <th>net</th><th>fees</th><th>P&L</th><th>latency</th><th></th>
+                <th>date</th><th>entry</th><th>sym</th><th>arm</th><th>mode</th><th>kind</th>
+                <th>centre</th><th title="wing width in points; near/far when the wing is broken">wing</th>
+                <th>window</th><th>net</th><th>fees</th><th>P&L</th><th>latency</th><th></th>
               </tr>
             </thead>
             <tbody>
               {log.map((r, i) => (
                 <tr key={i}>
                   <td>{r.tradeDate}</td>
+                  <td className="muted">{clockTime(r.entryTime)}</td>
                   <td>{r.symbol}</td>
                   <td className="muted">{r.arm ?? "—"}</td>
                   <td className="muted">{r.entryMode ?? "—"}</td>
-                  <td>{r.kind === "fly" ? "fly" : r.kind === "iron_fly" ? "iron fly" : `short ${r.side}`}</td>
+                  <td>{structureLabel(r.kind, r.side)}</td>
                   <td>{fmtNum(r.center, 0)}</td>
+                  <td>{wingWidth(r.wingWidth, r.farWidth)}</td>
                   <td className="muted">{r.window ?? "—"}</td>
                   <td>{fmtNum(r.net, 2)}</td>
                   <td className="muted">{r.fees !== null ? fmtMoney(r.fees) : "—"}</td>

@@ -7,9 +7,6 @@ Channels:
                 set via `cherrypick secrets-set --channel slack`). Never in config/files/env vars.
   - "discord" : POST to a Discord Incoming Webhook whose URL is stored in the OS keyring
                 (`cherrypick secrets-set --channel discord`). Never in config/files/env vars.
-  - "discord_follow" : a SECOND Discord webhook (own keyring entry, so it can point at a different
-                Discord channel), carrying the tastylive Follow Feed. Same POST, separate secret —
-                that feed's cadence is other people's fills and shouldn't share our trade channel.
 
 No push channel may raise; failures are swallowed after the floor has been written. This module
 uses only the stdlib + the OS shell — no MCP, no third-party client — so it is safe to call from
@@ -42,12 +39,6 @@ def _default_log_dir() -> Path:
 
 
 _LOG = _default_log_dir() / "notify.log"
-
-# Discord-shaped channels: same webhook POST, different keyring entry (and so a different Discord
-# channel). "discord_follow" carries the tastylive Follow Feed, which fires on other people's trades
-# and would otherwise drown our own fills in the shared channel.
-_DISCORD_CHANNELS = ("discord", "discord_follow")
-
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -161,33 +152,44 @@ class Notifier:
         return self._post_json(url, {"text": f"[{level}] {self.app_name} — {title}\n{message}"})
 
     def _push_discord(
-        self, level: str, title: str, message: str, channel: str = "discord", embed: dict | None = None
+        self,
+        level: str,
+        title: str,
+        message: str,
+        embed: dict | None = None,
     ) -> dict[str, Any]:
-        url = secrets.get_webhook(channel)
+        url = secrets.get_webhook("discord")
         if not url:
             return {
                 "ok": False,
-                "skipped": f"{channel} webhook not set (run: cherrypick secrets-set --channel {channel})",
+                "skipped": "discord webhook not set (run: cherrypick secrets-set --channel discord)",
             }
+        payload: dict[str, Any]
         if embed:
             # An embed carries its own author/title/fields, so it needs no text alongside it. The
             # `[LEVEL] app — title` prefix a plain message gets is dropped here — in a channel
             # dedicated to this kind of push it's the same characters on every message, saying
-            # nothing the card doesn't already say better (mirrors the standalone follow-feed-notifier).
-            return self._post_json(url, {"embeds": [embed]})
-        # Discord caps `content` at 2000 chars; keep well under with a margin for the prefix.
-        body = f"**[{level}] {self.app_name} — {title}**\n{message}"[:1900]
-        return self._post_json(url, {"content": body})
+            # nothing the card doesn't already say better.
+            payload = {"embeds": [embed]}
+        else:
+            # Discord caps `content` at 2000 chars; keep well under with a margin for the prefix.
+            payload = {"content": f"**[{level}] {self.app_name} — {title}**\n{message}"[:1900]}
+        return self._post_json(url, payload)
 
     # -- public --------------------------------------------------------------------
     def notify(
-        self, level: str, key: str, title: str, message: str, embed: dict | None = None
+        self,
+        level: str,
+        key: str,
+        title: str,
+        message: str,
+        embed: dict | None = None,
     ) -> dict[str, Any]:
         """Emit a notification. Always writes the log floor first, then any push channels.
 
-        `embed` is a Discord-only enrichment (a colored card — see `follow_notifier.build_embed`).
-        `message` stays the canonical text: it is what the log floor records and what every
-        non-Discord channel receives, so a channel that can't render a card loses nothing but layout.
+        `embed` is a Discord-only enrichment (a colored card), ignored everywhere else. `message`
+        stays the canonical text: it is what the log floor records and what every non-Discord
+        channel receives, so a channel that can't render a card loses nothing but layout.
         """
         level = level.upper()
         self._write_log(level, key, title, message)  # the guarantee
@@ -200,8 +202,8 @@ class Notifier:
                     results["desktop"] = self._push_desktop(level, title, message)
                 elif ch == "slack":
                     results["slack"] = self._push_slack(level, title, message)
-                elif ch in _DISCORD_CHANNELS:
-                    results[ch] = self._push_discord(level, title, message, channel=ch, embed=embed)
+                elif ch == "discord":
+                    results["discord"] = self._push_discord(level, title, message, embed=embed)
                 else:
                     results[ch] = {"ok": False, "skipped": f"unknown channel '{ch}'"}
             except Exception as exc:

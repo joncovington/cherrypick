@@ -11,6 +11,7 @@ The properties worth holding:
   - a leg whose streamer symbol was never captured is its own refusal, not a feed problem.
 """
 
+import datetime as dt
 import json
 import sqlite3
 import time
@@ -19,6 +20,12 @@ import pytest
 from cherrypick.core.streamcache import DDL
 
 from cherrypick.earnings import provider
+
+# Fixture legs must be LIVE. `snapshot` refuses an expired contract outright -- there is no market in
+# one, only the residue the feed keeps answering with -- so a hardcoded expiry silently converts every
+# test in this file into a test of that one refusal the day it passes. Rolled forward off today so the
+# suite keeps testing what it is named for, and so the trap cannot re-arm.
+EXPIRY = (dt.date.today() + dt.timedelta(days=21)).strftime("%y%m%d")
 
 
 @pytest.fixture()
@@ -36,26 +43,26 @@ def cache(tmp_path):
 # quotes by; streamer symbols are what the cache stores them under.
 LEGS = [
     {
-        "symbol": "AAPL  260821C00190000",
-        "streamer_symbol": ".AAPL260821C190",
+        "symbol": f"AAPL  {EXPIRY}C00190000",
+        "streamer_symbol": f".AAPL{EXPIRY}C190",
         "action": "Sell to Open",
         "quantity": 1,
     },
     {
-        "symbol": "AAPL  260821P00190000",
-        "streamer_symbol": ".AAPL260821P190",
+        "symbol": f"AAPL  {EXPIRY}P00190000",
+        "streamer_symbol": f".AAPL{EXPIRY}P190",
         "action": "Sell to Open",
         "quantity": 1,
     },
     {
-        "symbol": "AAPL  260821C00200000",
-        "streamer_symbol": ".AAPL260821C200",
+        "symbol": f"AAPL  {EXPIRY}C00200000",
+        "streamer_symbol": f".AAPL{EXPIRY}C200",
         "action": "Buy to Open",
         "quantity": 1,
     },
     {
-        "symbol": "AAPL  260821P00180000",
-        "streamer_symbol": ".AAPL260821P180",
+        "symbol": f"AAPL  {EXPIRY}P00180000",
+        "streamer_symbol": f".AAPL{EXPIRY}P180",
         "action": "Buy to Open",
         "quantity": 1,
     },
@@ -96,7 +103,7 @@ def test_a_fully_quoted_position_prices(cache):
 
     assert snap["ok"] and snap["source"] == "stream"
     assert set(snap["quotes"]) == {leg["symbol"] for leg in LEGS}
-    assert snap["quotes"]["AAPL  260821C00190000"]["ask"] == 1.10
+    assert snap["quotes"][f"AAPL  {EXPIRY}C00190000"]["ask"] == 1.10
     assert snap["fresh"] == 4 and snap["stale"] == 0
 
 
@@ -115,7 +122,7 @@ def test_the_snapshot_prices_a_close_through_the_existing_path(cache):
 
 def test_greeks_ride_along_for_the_leg_delta_stops(cache):
     seed(cache)
-    quote = provider.snapshot(_trade(), db_path=cache)["quotes"]["AAPL  260821C00190000"]
+    quote = provider.snapshot(_trade(), db_path=cache)["quotes"][f"AAPL  {EXPIRY}C00190000"]
     assert quote["delta"] == 0.42 and quote["iv"] == 0.55
 
 
@@ -140,7 +147,7 @@ def test_one_missing_leg_refuses_the_position_and_names_it(cache):
     snap = provider.snapshot(_trade(), db_path=cache)
 
     assert snap["reason"] == "missing_leg_quotes"
-    assert snap["missing"] == ["AAPL  260821P00180000"]  # named in OCC, the caller's vocabulary
+    assert snap["missing"] == [f"AAPL  {EXPIRY}P00180000"]  # named in OCC, the caller's vocabulary
 
 
 def test_a_crossed_quote_is_refused(cache):
@@ -167,7 +174,7 @@ def test_a_leg_with_no_streamer_symbol_is_its_own_refusal(cache):
     snap = provider.snapshot(_trade(legs), db_path=cache)
 
     assert snap["reason"] == "legs_missing_streamer_symbol"
-    assert snap["missing"] == ["AAPL  260821C00200000"]
+    assert snap["missing"] == [f"AAPL  {EXPIRY}C00200000"]
 
 
 def test_a_missing_cache_refuses_rather_than_raising(tmp_path):
@@ -189,7 +196,7 @@ def test_missing_greeks_do_not_cost_a_position_its_quotes(cache):
     snap = provider.snapshot(_trade(), db_path=cache)
 
     assert snap["ok"] is True
-    assert snap["quotes"]["AAPL  260821C00190000"]["delta"] is None
+    assert snap["quotes"][f"AAPL  {EXPIRY}C00190000"]["delta"] is None
 
 
 def test_stale_greeks_are_dropped_but_the_quotes_stand(cache):
@@ -197,7 +204,7 @@ def test_stale_greeks_are_dropped_but_the_quotes_stand(cache):
     snap = provider.snapshot(_trade(), db_path=cache)
 
     assert snap["ok"] is True
-    assert snap["quotes"]["AAPL  260821C00190000"]["iv"] is None
+    assert snap["quotes"][f"AAPL  {EXPIRY}C00190000"]["iv"] is None
 
 
 def test_an_unsubscribed_underlying_costs_only_spot(cache):
@@ -238,15 +245,15 @@ def test_streamer_symbols_are_attached_from_the_chain():
     and is not, and an invented symbol would not fail loudly — it would just never match."""
     from cherrypick.earnings import scanner
 
-    legs = [{"symbol": "AAPL  260821C00190000", "action": "Sell to Open", "quantity": 1}]
-    attached = scanner.attach_streamer_symbols(legs, {"AAPL  260821C00190000": ".AAPL260821C190"})
+    legs = [{"symbol": f"AAPL  {EXPIRY}C00190000", "action": "Sell to Open", "quantity": 1}]
+    attached = scanner.attach_streamer_symbols(legs, {f"AAPL  {EXPIRY}C00190000": f".AAPL{EXPIRY}C190"})
 
-    assert attached[0]["streamer_symbol"] == ".AAPL260821C190"
+    assert attached[0]["streamer_symbol"] == f".AAPL{EXPIRY}C190"
     assert legs[0].get("streamer_symbol") is None  # the input is not mutated
 
 
 def test_a_leg_the_chain_did_not_know_is_left_unmarked_rather_than_guessed():
     from cherrypick.earnings import scanner
 
-    legs = [{"symbol": "AAPL  260821C00190000", "action": "Sell to Open", "quantity": 1}]
+    legs = [{"symbol": f"AAPL  {EXPIRY}C00190000", "action": "Sell to Open", "quantity": 1}]
     assert "streamer_symbol" not in scanner.attach_streamer_symbols(legs, {})[0]

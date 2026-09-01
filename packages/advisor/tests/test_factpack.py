@@ -11,11 +11,12 @@ from cherrypick.advisor import factpack, paths, store
 
 SESSION = "2026-08-13"
 
-# The pack is paid for by the token. These are generous ceilings on the JSON, not targets: light
-# packs aim at ~8K tokens and deep at ~30K, and a pack that blows through them is a section that
-# started dumping rows.
-LIGHT_MAX_BYTES = 40_000
-DEEP_MAX_BYTES = 150_000
+# The ceilings live in `factpack` now, derived from the plan's token targets, and are enforced
+# against the REAL pack by `write` — not only here. These tests run against a seeded fixture, which
+# is why they went on passing while the live deep pack grew from 250KB to 731KB across nine
+# sessions: they were measuring a pack nobody reads.
+LIGHT_MAX_BYTES = factpack.LIGHT_MAX_BYTES
+DEEP_MAX_BYTES = factpack.DEEP_MAX_BYTES
 
 
 @pytest.fixture
@@ -53,6 +54,17 @@ def test_the_light_pack_carries_each_modules_day(seeded):
     earnings = pack["paper"]["earnings"]
     assert earnings["open_positions"][0]["order_id"] == "e-1"
     assert earnings["open_positions"][0]["last_mark"] == 42.0  # the usable mark, not the refused one
+
+
+def test_gex_counts_are_rth_only(seeded):
+    """The recorder logs frozen off-hours copies of the closing value, so an unbounded per-date
+    count double-weights whatever sign the session ended on (2026-08-21: 181/26 unfiltered vs
+    67/11 in RTH — two-thirds of the "distribution" was one frozen value on repeat). The fake home
+    seeds two RTH snapshots (one positive, one negative) plus one overnight copy of the negative:
+    the overnight row must not be counted."""
+    pack = factpack.build(SESSION, "midday")
+    counts = pack["market"]["gex"]["today_counts"]
+    assert counts == {"positive": 1, "negative": 1}
 
 
 def test_todays_range_only(seeded):
@@ -111,7 +123,7 @@ def test_each_module_is_qualified_against_its_own_configured_rule(seeded, tmp_ho
 
     flies_rule = deep["arm_readings"]["flies"]["rule"]
     assert flies_rule["min_net_pnl"] == 0.0
-    assert "margin" not in flies_rule, "margin belongs to the champion comparison, not the checks"
+    assert "margin" not in flies_rule, "margin belonged to the retired champion comparison, not the checks"
     assert flies_rule["min_days"] == 14, "the configured rule overlays the default, never replaces it"
     # A module with no calibration block is unaffected and still reports the default it was judged by.
     assert "min_net_pnl" not in deep["arm_readings"]["meic"]["rule"]
@@ -192,3 +204,273 @@ def test_write_puts_the_pack_where_the_script_looks_for_it(seeded):
 def test_an_unknown_slot_is_a_programming_error_not_a_pack():
     with pytest.raises(ValueError):
         factpack.build(SESSION, "afternoon-ish")
+
+
+# --- the regime block: canonical series, with an honest fallback ----------------------------
+
+
+def _measured(**over):
+    market = {
+        "status": "measured",
+        "age_seconds": 12.0,
+        "readings": {
+            "vix": {"value": 15.9, "usable": True, "symbol": "VIX"},
+            "skew": {"value": 143.9, "usable": True, "symbol": "SKEW"},
+            "uso": {"value": None, "usable": False, "symbol": "USO", "reason": "stale_quote"},
+        },
+        "derived": {"vix_vix3m_ratio": 0.857},
+        "chain": {"SPX": {"atm_iv": 0.24}},
+    }
+    market.update(over)
+    return {"market": market, "gex": {}}
+
+
+def test_regime_block_prefers_the_canonical_series(monkeypatch):
+    from cherrypick.advisor import factpack
+
+    monkeypatch.setattr(factpack._regime, "regime_at", lambda *_a, **_k: _measured())
+    block = factpack._regime_now("2026-08-25", fallback=lambda: {"vix": 99.0})
+
+    assert block["source"].startswith("market_regime_history")
+    assert block["readings"] == {"vix": 15.9, "skew": 143.9}  # unusable readings are not values
+    assert block["refused"] == ["uso"]  # ...but they ARE named, so a hole is legible
+    assert block["derived"]["vix_vix3m_ratio"] == 0.857
+    assert block["chain"]["SPX"]["atm_iv"] == 0.24
+    assert "99.0" not in json.dumps(block)  # the fallback was not consulted
+
+
+def test_regime_block_falls_back_and_says_so_when_unmeasured(monkeypatch):
+    """A recorder outage, or any checkpoint outside RTH: the pack must not present a hole as a calm
+    market, and must not silently look like the canonical read."""
+    from cherrypick.advisor import factpack
+
+    monkeypatch.setattr(
+        factpack._regime,
+        "regime_at",
+        lambda *_a, **_k: {"market": {"status": "unmeasured", "reason": "stale_sample"}},
+    )
+    block = factpack._regime_now("2026-08-25", fallback=lambda: {"vix": 15.85})
+
+    assert block["source"] == "meic.market_context (fallback)"
+    assert block["reason"] == "stale_sample"
+    assert block["readings"] == {"vix": 15.85}
+
+
+def test_regime_block_survives_a_failing_read(monkeypatch):
+    """A fact pack must never fail on a telemetry read."""
+    from cherrypick.advisor import factpack
+
+    def boom(*_a, **_k):
+        raise RuntimeError("history db locked")
+
+    monkeypatch.setattr(factpack._regime, "regime_at", boom)
+    block = factpack._regime_now("2026-08-25", fallback=lambda: {"vix": 1.0})
+    assert block["source"].endswith("(fallback)")
+    assert block["reason"] == "regime_read_failed"
+
+
+# --------------------------------------------------------------------------- mark coverage
+
+
+def _marks_db(tmp_path, rows):
+    import sqlite3
+    conn = sqlite3.connect(tmp_path / "m.db")
+    conn.row_factory = sqlite3.Row
+    conn.execute("CREATE TABLE pmcc_marks (session_date TEXT, usable INTEGER, refusal TEXT)")
+    conn.executemany("INSERT INTO pmcc_marks VALUES (?,?,?)", rows)
+    conn.commit()
+    return conn
+
+
+def test_mark_coverage_states_the_denominator_in_words(tmp_path):
+    """The regression this exists for. `SELECT usable, COUNT(*) n GROUP BY usable` serialises as
+    `[{"usable": 1, "n": 664}]`, which the advisor read on 2026-08-24 as "1 usable of 664" and
+    turned into a proposal asserting that 663 of 664 marks were unusable and that pmcc's
+    assignment-exposure metric had a meaningless denominator. 664 of 664 were usable. A flag beside
+    a count is two numbers that look like one ratio, and misreading it inverts the finding."""
+    conn = _marks_db(tmp_path, [(SESSION, 1, None)] * 664)
+
+    out = factpack._mark_coverage(conn, "pmcc_marks", SESSION)
+
+    assert out["marks_total"] == 664
+    assert out["marks_usable"] == 664
+    assert out["marks_refused"] == 0
+    assert out["usable_fraction"] == 1.0
+    # No key whose value is a bare flag: every number in this dict is a count or a fraction.
+    assert "usable" not in out
+
+
+def test_mark_coverage_names_the_refusals(tmp_path):
+    conn = _marks_db(tmp_path, [(SESSION, 1, None)] * 10
+                     + [(SESSION, 0, "missing_leg_quotes")] * 3
+                     + [(SESSION, 0, "stale_quote")])
+
+    out = factpack._mark_coverage(conn, "pmcc_marks", SESSION)
+
+    assert (out["marks_total"], out["marks_usable"], out["marks_refused"]) == (14, 10, 4)
+    assert out["usable_fraction"] == 0.7143
+    assert out["refusals_by_reason"][0] == {"refusal": "missing_leg_quotes", "n": 3}
+
+
+def test_mark_coverage_on_a_session_with_no_marks(tmp_path):
+    conn = _marks_db(tmp_path, [])
+    out = factpack._mark_coverage(conn, "pmcc_marks", SESSION)
+    assert out["marks_total"] == 0 and out["usable_fraction"] is None
+
+
+def test_no_section_reports_a_bare_usable_flag_beside_a_count():
+    """The unit tests above exercise `_mark_coverage`; they cannot see a section that stops calling
+    it. This one reads the source, because the defect was never in the helper -- it was in what the
+    sections emitted, and a helper nobody calls is not a fix.
+
+    Driven off the pattern rather than a list of tables, so a module added later is covered the
+    moment it writes the same query.
+    """
+    import inspect
+    import re
+
+    source = inspect.getsource(factpack)
+    helper = inspect.getsource(factpack._mark_coverage)
+    offenders = [
+        match.group(0)
+        for match in re.finditer(r"SELECT\s+usable,\s*COUNT\(\*\).*", source)
+        if match.group(0) not in helper
+    ]
+    assert offenders == [], f"a section is emitting a raw usable flag beside a count: {offenders}"
+
+
+def test_pmcc_lifetime_rows_are_separated_by_era():
+    """pmcc's 2026-08-23 redesign cut three books to one, so its four pre-redesign rows are ONE
+    trade recorded four times. Pooled with a redesign-era row they read as four observations --
+    which is what the advisor read on 2026-08-24 before proposing that the book structure be
+    rebuilt. Any lifetime query over pmcc_positions must carry era or it will pool the boundary."""
+    import inspect
+    import re
+
+    source = inspect.getsource(factpack._pmcc)
+    lifetime = [
+        statement for statement in re.findall(r'"[^"]*pmcc_positions[^"]*"', source)
+        if "session" not in statement
+    ]
+    assert lifetime, "the pmcc section stopped reading pmcc_positions"
+    joined = " ".join(lifetime) + source
+    assert "era" in joined, "a lifetime pmcc query pools across the redesign boundary"
+    assert "GROUP BY era" in source or "GROUP BY era," in source
+
+
+def test_the_deep_pack_carries_the_two_settlement_facts_that_can_recur(seeded):
+    """The full audit ran once (2026-08-26) and is a settled question. What the pack carries is the
+    part that can regress: two settlement prices on one session, or a side that reached expiry with
+    no price and was therefore scored at full credit."""
+    pack = factpack.build(SESSION, "deep")
+    integrity = pack["settlement_integrity"]
+    assert "settlement_prices_today" in integrity
+    assert integrity["settled_with_no_price_today"] == 0
+
+
+def test_settlement_integrity_is_deep_slot_only(seeded):
+    """It answers a question about the whole session, and the light slots are paid for by the token."""
+    assert "settlement_integrity" not in factpack.build(SESSION, "midday")
+
+
+def test_the_advisor_still_depends_on_core_alone():
+    """The audit it asked for lives in `meic.analytics`, and importing it here would have been the
+    obvious way to surface it. This package declares `cherrypick-core` as its only dependency, so
+    that import would work in a dev checkout and fail on a clean install of the advisor alone."""
+    import ast
+    from pathlib import Path
+
+    src = Path(factpack.__file__).resolve().parent
+    offenders = []
+    for py in sorted(src.rglob("*.py")):
+        tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
+        for node in ast.walk(tree):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+                names = [node.module]
+            for name in names:
+                if name.startswith("cherrypick.") and not name.startswith(
+                    ("cherrypick.core", "cherrypick.advisor")
+                ):
+                    offenders.append(f"{py.name}: {name}")
+    assert offenders == [], f"the advisor imported a module package: {offenders}"
+
+
+def test_the_pack_covers_every_module_the_advisor_may_act_on():
+    """Three hand-kept module lists lived in this package and one of them went stale.
+
+    `bounds._BASE_KEY` is the source of truth — a module the advisor may resolve bounds for. Until
+    2026-08-26 `factpack.MODULES` was a separate literal that omitted bwb and curve, so the pack
+    could reconcile a module's enactment while carrying no facts about it: the advisor would be
+    asked to design an experiment for a module it could not see. A section per module is what makes
+    a proposal about it evidence-based rather than blind.
+    """
+    from cherrypick.advisor import bounds as _bounds
+
+    assert factpack.MODULES == _bounds.MODULES
+    missing = sorted(set(_bounds.MODULES) - set(factpack._MODULE_SECTIONS))
+    assert missing == [], f"the advisor may act on these but the pack carries no facts: {missing}"
+
+
+def test_no_pack_section_exists_for_a_module_the_advisor_cannot_act_on():
+    """The other direction: a section for a module absent from bounds is tokens spent on a module
+    that can never receive an artifact."""
+    from cherrypick.advisor import bounds as _bounds
+
+    extra = sorted(set(factpack._MODULE_SECTIONS) - set(_bounds.MODULES))
+    assert extra == [], f"pack sections with no bounds entry: {extra}"
+
+
+def test_pack_size_reports_over_budget_without_raising(seeded):
+    """A size check must never cost a session its advice, so it reports and returns."""
+    pack = factpack.build(SESSION, "deep")
+    lines = []
+    out = factpack.pack_size(pack, "deep", warn=lines.append)
+
+    assert out["ceiling"] == factpack.DEEP_MAX_BYTES
+    assert out["over_budget"] is (out["bytes"] > out["ceiling"])
+    assert lines == ([] if not out["over_budget"] else lines)
+
+
+def test_pack_size_warns_with_the_slot_and_the_ratio():
+    lines = []
+    huge = {"filler": "x" * (factpack.DEEP_MAX_BYTES + 10)}
+    out = factpack.pack_size(huge, "deep", warn=lines.append)
+
+    assert out["over_budget"] is True
+    assert len(lines) == 1
+    assert "deep" in lines[0] and "ceiling" in lines[0]
+
+
+def test_the_ceilings_are_pinned_so_a_raise_is_a_deliberate_act():
+    """Moving the bar to meet the pack is how a ceiling stops meaning anything.
+
+    Raised once, on 2026-08-26, and this test is what made that a deliberate act rather than a
+    quiet one — it failed, which is the whole reason it exists. The numbers are no longer derived
+    from token targets: they are ATTENTION budgets, because neither of the things a size limit
+    usually protects was actually at risk. The deep pack is ~15% of a 1M-token window, and the
+    whole eight-slot schedule costs about $1.40 a day. What a 470KB pack costs is that findings
+    inside it go unread.
+
+    Light moved 32,000 -> 48,000 against measured evidence: 35 stored light packs run a median of
+    28.6KB and a maximum of 42,707, so the old bar was breached by honest packs. The ~8k-token
+    target predated the suite having seven modules.
+    """
+    assert factpack.LIGHT_MAX_BYTES == 48_000
+    assert factpack.DEEP_MAX_BYTES == 200_000
+
+
+def test_the_deep_ceiling_stays_below_the_pack_it_is_meant_to_constrain():
+    """The anti-drift half, and the reason the pin above is not just a number to bump.
+
+    A ceiling raised until it clears the artifact reports success forever. The deep pack is ~425KB
+    after the flag taper and the ceiling is 200KB, so it still reports over-budget every session —
+    which is the honest state and is recorded as debt rather than hidden. If someone raises
+    DEEP_MAX_BYTES past the real pack to silence the warning, this fails.
+
+    Bounded by the smallest deep pack observed rather than the current one, so the test does not
+    itself drift upward with the artifact.
+    """
+    assert factpack.DEEP_MAX_BYTES < 400_000

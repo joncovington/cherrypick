@@ -43,6 +43,14 @@ recorded net (they must agree to the cent — same ticks, same mids, same cost m
 `expiry-longs-mon` against the path book's real net. A derivation that cannot reproduce the books it
 sits beside has no business ranking the policies between them.
 
+**A proposed second ENTRY REGIME (Friday entry) is designed but not built** —
+[docs/friday-entry-arm.md](docs/friday-entry-arm.md). It enters the same expirations on the previous
+Friday to capture weekend theta, which makes it `dc_7_10` against this design's `dc_4_7`. Read that
+doc before treating it as an arm: it is deliberately NOT a fourth book, because a book here shares
+the one entry plan and a Friday entry prices its own snapshot and picks its own strikes. It is a
+parallel regime with its own books, its own population, and an ordering problem on the Friday
+session that already carries the exit, the settlement and the share delivery.
+
 **One deliberate exemption from the one-variable arm rule:** `control` and `path` differ in short
 AND long handling at once. That is the permissive-superset design, not an oversight — the
 single-variable questions are answered by the read-side grid, not by pairing these two books. Do not
@@ -108,6 +116,13 @@ cannot be excluded by skipping weeks; and (b) a **calculated ex-div decision** �
 ex-div week priced as expected assignment cost against the week's edge, never as a default. Neither
 exists today. Both are prerequisites, not enhancements, for any `enable_live_trading` rung.
 
+**The config's `live.enabled` field (added 2026-08-16) is an inert placeholder, not a rung.** It
+lets the suite's config/console surfaces show this module as "paper only" instead of "unknown" —
+`readModuleGate`/`liveops._live_enabled` read it the same way they read flies' nested switch — but
+no code anywhere checks it, and it is `configedit.GUARDED` so the settings surface can't touch it.
+Flipping it to `true` by hand does nothing until the prerequisites above are built and a real live
+loop reads the flag.
+
 **`capital` is no longer the whole risk story for `path`.** `cherrypick.core.ledgers` reports
 `dc_week` capital as `entry_debit × 100 × quantity`, a long calendar's defined max loss — still
 exactly right for `control` and for every derived policy that exits before the bell, because none of
@@ -141,6 +156,7 @@ python -m cherrypick.calendars.paper_loop --settle --date 2026-08-21 --price 654
 python run.py status                                    # open positions + the current week plan
 python run.py policies                                  # the derived exit-policy table + its validation
 python run.py validate                                  # the validation alone
+python run.py record-break --key K --date D [--old X] [--new Y] [--note N]  # journal a break
 python -m pytest                                        # temp CHERRYPICK_HOME; no broker, no streamer needed
 ruff check . && ruff format .                           # line-length 110
 ```
@@ -167,6 +183,20 @@ keys before changing a value.
    in the record (`dc_marks.usable = 0` with the refusal; `dc_snapshots` for the feed ledger).
 7. **The policy table travels with its validation.** No surface shows the ranking without the
    reason to believe it.
+8. **A spread is judged in money as well as in percent, and per leg.** The execution gate refuses a
+   leg only when it is wide on BOTH readings (`max_leg_spread_pct` and `max_leg_spread_abs`). A
+   percentage alone is the wrong instrument on the way out, where the winning case is a short that
+   has gone almost worthless: `bid 0.00 / ask 0.01` is a one-cent buyback and, as a ratio, exactly
+   a 200% spread. On 2026-08-28 that refused the control put's scheduled Friday close on all thirty
+   ticks of its window while the call side closed normally at 0.222 — the position missed its exit,
+   its front expired instead, the longs went Monday under `long_disposition`, and the result differed
+   from the replay by $1.30. curve reached the same rule from the entry side
+   (`_wing_spread_blocks`); it exempts the short leg there, because at entry the short's premium is
+   the whole credit and paying up is what the gate exists to prevent. That exception is entry-only:
+   on exit every leg is being closed and a penny is a penny. **Journaled as
+   `exit_gate_absolute_spread_floor`** — weeks before it are reported by `validate` under
+   `pre_break` rather than as mismatches, because the replay models a policy the gate was not yet
+   letting the book follow.
 
 ## Data source and the two expirations
 
@@ -183,11 +213,34 @@ won't print — each is a recorded refusal the loop steps past, not an error. On
 the OCC-root filter admits only the PM-settled weekly (`SPXW`); if none is listed the week is
 skipped and journaled (`not_weekly_listed`), never traded on the AM-settled monthly.
 
+## Liveness is published, not inferred
+
+The resident loop touches `state/calendars.heartbeat` (`paper_loop._beat`, via
+`cherrypick.core.home.heartbeat_path`) at the **top of every tick**, before any gate, and the
+supervisor measures this job's silence against that file. It means *the loop is turning over* and
+deliberately says nothing about whether the tick did any work.
+
+**This replaced supervising on the module's LOG, which nearly cost the experiment its first real
+week.** Every line this loop writes is event-driven — a refusal, a close, a settlement — so a week
+holding no position writes nothing, and a healthy quiet loop was indistinguishable from a wedged
+one. The supervisor killed and restarted it every two minutes from launch (49 times on 08-14, 107 on
+08-17), and the only thing refreshing the log was the restart's own startup line. Measured against
+the declared 30s cadence, that cost **61% and 28% of those sessions' ticks**, in gaps of up to ten
+minutes.
+
+Nothing in the ledger was corrupted, only because the module had never opened a position — `dc_marks`
+was empty throughout. Had an entry succeeded, the mark path this module exists to record would have
+been shot through with ten-minute holes at a ragged, undeclared, day-varying cadence. **So: keep the
+heartbeat at the top of the tick, and never make this loop's log carry reliability meaning again.**
+The log is free to stay quiet; that is now correct rather than fatal.
+
 ## Guardrails (suite-wide)
 
-- **Paper only. There is no live path** — no `enable_live_trading`, no live loop, no order code.
-- **No AI, no MCP, no network on any decision path.** `engine.py` and `management.py` are pure
-  functions over pre-fetched snapshots.
+- **Paper only. There is no live path** — no live loop, no order code. `live.enabled` in config is
+  a documented placeholder only (see Live-trading prerequisites above); it is not a working gate.
+- **The decision path is deterministic.** `engine.py` and `management.py` are pure functions over
+  pre-fetched snapshots — no model, no MCP, no network in the decision itself. Keep it that way by
+  preference (see the root file): a policy table is only worth its reproducibility.
 - **Declared settlement only** (`settlement_style`): `cash` and `physical` are both modelled; a
   symbol declared as neither is refused at entry (`unknown_settlement`). Adding a style is a code
   change, not a config edit. `cash_settled_symbols` is the pre-SPY spelling and still reads.
@@ -206,5 +259,21 @@ Complete and tested: clock/week anchors, entry engine, both books, marking, mana
 disposition, the exit-policy derivation with its validation, analytics, and the suite wiring
 (`dc_week` across every registry, enforced by the orchestrator's schema-coverage test). Paper data
 collection starts with its first scheduled Monday; the policy table is empty until completed weeks
-exist, and underpowered until many do. The console renders this module through the generic Review
-page; a dedicated page is deliberately deferred until real weeks accumulate.
+exist, and underpowered until many do.
+
+The console has a dedicated page (`/calendars`, landed 2026-08-17). It reads this ledger directly
+for state, but it does **not** re-implement two things and must not start: `exit_policies` and
+`clock.week_plan` are invoked as a subprocess through `cli.py`'s `policies` and `status` verbs. The
+first because the derivation arrives welded to the validation that reproduces the real books to the
+cent, and a second implementation would be free to drift in exactly the direction the validation
+could not catch — it would be validating the wrong derivation. The second because the structure tag
+is the key every result is grouped by, and a second holiday calendar is a second calendar free to
+disagree with the one this module trades off. **Keep `cli.py`'s JSON shape stable**, or that page
+degrades to an error banner.
+
+The first scheduled Monday (2026-08-17) took **no position**: every entry attempt in the 10:00–10:15
+window refused with `no_fresh_quotes` — 248 near-spot option quotes present in the stream cache and
+every one of them older than `max_quote_age_seconds` — and the week was journaled
+`week_skipped_entry_window_exhausted`. The module behaved correctly; the cache did not have fresh
+SPY option quotes to price. Worth knowing before reading the first weeks of this ledger, and worth
+watching on the next entry Monday.

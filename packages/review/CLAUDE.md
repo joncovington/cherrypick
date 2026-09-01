@@ -123,10 +123,11 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 > - **Mask account numbers** to the last 4 digits (`****1234`) anywhere they surface.
 > - **Portable paths only** — never hardcode absolute paths, usernames, hostnames, or drive letters.
 > - **Human-voice docs & commits** — never add AI/co-author attribution to commit messages.
-> - **No AI or network on any loop-decision or reliability path.** The narrative is deliberately
->   generated *outside* this package by a scheduled agent reading the fact set, so no suite package
->   ever acquires an API key or a network dependency, and a failed narrative can never damage a
->   report.
+> - **The fact set is deterministic; the narrative is not, and is fenced accordingly.** Every figure
+>   here is computed from closed rows. The narrative is deliberately generated *outside* this
+>   package by a scheduled agent reading the fact set, so this package acquires no API key and no
+>   network dependency, and a failed narrative can never damage a report. That containment is the
+>   pattern the root file's preference points at.
 
 ## Tool Reference
 
@@ -143,3 +144,55 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 rules across `meic_ic`, `fly_book` and `earnings`. The orchestrator's report imports from there;
 so does this package. **Do not add a fourth implementation** — that module's docstring records what
 happened the first three times.
+
+
+## Concentration (fact set v6, 2026-08-26)
+
+Each module's facts carry `concentration` beside `by_profile`: every arm's contribution, the largest
+one, the net recomputed without it, and `sign_flips_without_largest`.
+
+Requested by the advisor on 2026-08-19 and it is a presentation rule rather than a trading one — its
+own closing line was "no bounded parameter can fix a presentation defect". flies published +6,748.01
+for that session. One seven-fill book returned +7,828.42 and the other twelve came to −1,080.41, so
+the sign of the day was that arm's sign, on a book whose modelled worst was 3.5× the credit it
+collected and which settled positive because price stayed put. Two sessions earlier make the point in
+the other direction: −8,071.69 and −4,023.05, both dominated by width-ladder books on 4–7 fills.
+
+**Read `sign_flips_without_largest` first.** A total that changes sign when its biggest contributor is
+removed is a measurement of that arm, not of the module. Being *dominated* is not the same as being
+*inverted* — 08-17 and 08-18 were dominated and kept their sign, and a flag that fired on all three
+would be ignored inside a week.
+
+Two share denominators, because one lies in exactly the case worth flagging. `share_of_net` is the
+signed arm/total and goes past 100% when the other arms net against the leader — width-10's 116% is
+the honest number and it is *why* the total cannot be read alone; it is `None` at a ~0 total, where
+the ratio is meaningless rather than large. `share_of_movement` is |arm| / Σ|arm|, bounded and stable.
+
+The arithmetic lives in `cherrypick.core.ledgers`, over the records every schema reader already
+normalises, so the answer is the same for every module — the request was "for every module net", and
+a per-module implementation would be seven chances to disagree about what a share is. This package
+publishes it and labels nothing: whether the leading arm clears its own module's sample and day bars
+is that module's rule, so the leader's trade and session counts travel with it and the gate stays
+where it belongs.
+
+
+## Every module with a ledger reader is reviewed (2026-08-26)
+
+`MODULES` gained **bwb** and **curve**. Both had SQLite ledgers, `cherrypick.core.ledgers` readers,
+console pages and watchdog entries from the day they landed, and were simply never added to this
+dict — so the suite's cross-module end-of-day review did not know they existed. bwb was carrying
+**twelve open positions** at the time.
+
+That is precisely the failure this package was created to prevent: answering "what did the suite do
+today" per-package produced six incomparable report families, and a module missing from the one
+place that unifies them is back to having no report at all.
+
+`tests/test_module_coverage.py` now fails when a schema has a `core.ledgers` reader and no entry
+here, driven off `READERS` rather than a list kept in the test — a module is covered the moment it
+gains a normalised reader, which is the earliest point at which the review could have read it. It
+also checks the reverse (a reviewed module naming a schema that does not exist would KeyError every
+session) and that both `HEALTH_READERS` and `EXPECTED_READERS` carry an entry for each module, since
+`build_module_facts` indexes them directly.
+
+curve is included despite having no positions yet. A module with no results reports as a module with
+no results; being absent is a different statement, and it is the one that was wrong.

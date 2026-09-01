@@ -20,8 +20,11 @@ import subprocess
 import sys
 import time
 
+from cherrypick.core import advice as _core_advice
 from cherrypick.core import calendar as _cal  # noqa: E402
+from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
+from cherrypick.core import looplock
 
 from cherrypick.flies import book as bookmod  # noqa: E402
 from cherrypick.flies import cli as climod  # noqa: E402
@@ -95,8 +98,12 @@ def _setup_logging() -> None:
 
     The scheduled task runs under pythonw.exe with no console, so anything printed to stdout is
     discarded. Without a file the first live session would leave no trace of why it did or didn't
-    trade — and the orchestrator's freshness check watches this exact file to tell "the loop is
-    running quietly" from "the loop is dead", so its absence would also read as an outage.
+    trade.
+
+    This file used to carry a second, unstated job: the supervisor measured the resident loop's
+    silence against its mtime, so how much this logged decided whether the process was allowed to
+    live. It no longer does — liveness is `_beat()`'s heartbeat file — so this log is free to be
+    exactly as talkative as a human reading it needs, and no more.
 
     The file handler is rebuilt if the resolved path has moved since it was attached, so a redirected
     home takes effect even though the logger itself is process-global state.
@@ -120,6 +127,34 @@ def _log(message: str) -> None:
     _logger.info(message)
 
 
+def heartbeat_file():
+    """Resolved on every call, never at import — same reason as `log_file` above."""
+    from cherrypick.core import home as _core_home
+
+    return _core_home.heartbeat_path("flies")
+
+
+def _beat() -> None:
+    """Publish liveness: this loop reached the top of a tick.
+
+    Until 2026-08-17 the supervisor measured this module's silence against its LOG, which worked here
+    only by luck — `run_once` happens to log a line per symbol per tick, so the file was never quiet
+    in session. Calendars, whose lines are all event-driven, was killed and restarted every two
+    minutes for four days on the same mechanism. Luck is not a supervision contract, and a change that
+    merely made this loop quieter would have inherited that bug silently.
+
+    Touched at the TOP of the tick, before any branch: it means "the loop is turning over" and nothing
+    about what the tick then decided. Failures are swallowed — a heartbeat that costs a tick would be
+    worse than the problem it solves.
+    """
+    try:
+        path = heartbeat_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(provider.now_et().isoformat(timespec="seconds"), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def in_session(now_min: int) -> bool:
     return RTH_OPEN_MIN <= now_min < RTH_CLOSE_MIN
 
@@ -133,72 +168,20 @@ def _loop_lock_path() -> str:
     return os.path.join(_paper_data_dir(), "paper_loop.lock")
 
 
-def _pid_alive(pid: int) -> bool:
-    """The settled probe chain (psutil → Win32 OpenProcess → os.kill last) — never bare
-    os.kill first, which is unreliable on Windows."""
-    if pid <= 0:
-        return False
-    try:
-        import psutil  # type: ignore
-
-        return bool(psutil.pid_exists(pid))
-    except ImportError:
-        pass
-    try:
-        import ctypes
-
-        synchronize = 0x00100000
-        handle = ctypes.windll.kernel32.OpenProcess(synchronize, False, pid)
-        if handle:
-            ctypes.windll.kernel32.CloseHandle(handle)
-            return True
-        return False
-    except Exception:
-        try:
-            os.kill(pid, 0)
-            return True
-        except PermissionError:
-            return True
-        except (OSError, SystemError):
-            return False
+_pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch this name)
 
 
 def _acquire_loop_lock(stale_seconds: int = 180) -> bool:
     """Single-instance guard shared by `--interval` and `--once`, so the supervised resident loop
-    and an off-session/manual `--once` can never iterate the same book concurrently (nothing
-    guarded this before the resident mode existed — the 1-minute task never overlapped itself for
-    long thanks to MEIC-style short ticks, but a resident process changes that calculus). MEIC's
-    lock semantics: a held-but-ALIVE lock is never stolen regardless of age; the mtime fallback
-    applies only when the holder's PID is unreadable."""
-    path = _loop_lock_path()
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.write(fd, str(os.getpid()).encode())
-        os.close(fd)
-        return True
-    except FileExistsError:
-        try:
-            with open(path, encoding="utf-8") as fh:
-                holder = int(fh.read().strip())
-        except (OSError, ValueError):
-            holder = None
-        if holder is not None and _pid_alive(holder):
-            return False
-        try:
-            if holder is not None or time.time() - os.path.getmtime(path) > stale_seconds:
-                os.unlink(path)
-                return _acquire_loop_lock(stale_seconds)
-        except OSError:
-            pass
-        return False
+    and an off-session/manual `--once` can never iterate the same book concurrently.
+
+    `cherrypick.core.looplock` holds the semantics (a live holder is never stolen, whatever its
+    age); `_pid_alive` is passed explicitly so a test monkeypatching that name still steers it."""
+    return looplock.acquire(_loop_lock_path(), stale_seconds, alive=_pid_alive)
 
 
 def _release_loop_lock() -> None:
-    try:
-        os.unlink(_loop_lock_path())
-    except OSError:
-        pass
+    looplock.release(_loop_lock_path())
 
 
 def _cadence_state_path() -> str:
@@ -334,50 +317,19 @@ def advice_decision(config: dict, today: str) -> dict:
     Read-once matters across `--once` processes: the first tick of the day records what it decided,
     and every later tick replays that record, so advice can never start, stop, or change mid-session
     however late an artifact lands or however the config is flipped intraday.
+
+    The mechanics live in `cherrypick.core.advice.session_decision` — three modules had written this
+    read-once-and-replay identically, and it carries a safety property rather than a convenience.
     """
-    acfg = config.get("advice") or {}
-    base = acfg.get("base_arm", "control")
-    path = _advice_decision_path()
-
-    decision = None
-    if os.path.exists(path):
-        try:
-            with open(path, encoding="utf-8") as handle:
-                decision = json.load(handle)
-        except (OSError, ValueError):
-            decision = None
-        if decision is not None and decision.get("day") != today:
-            decision = None  # yesterday's decision; today re-derives its own
-    if decision is not None:
-        return decision
-
-    if acfg.get("enabled") and acfg.get("bounds"):
-        from cherrypick.core import advice as _core_advice
-        from cherrypick.core import home as _core_home
-
-        result = _core_advice.load(_core_home.state_dir(), "flies", today, acfg.get("bounds") or {})
-        params = {p["param"]: p["value"] for p in result["proposals"]} or None
-        decision = {
-            "day": today,
-            "base_arm": base,
-            "params": params,
-            "reason": result["reason"],
-            "proposals": result["proposals"],
-            "rejected": result.get("rejected") or [],
-        }
-        for proposal in result["proposals"]:
-            _log(f"advice applied: {proposal['param']}={proposal['value']!r} — {proposal.get('rationale', '')}")
-        if not result["proposals"]:
-            _log(f"advice: baseline ({result['reason'] or 'no proposals'})")
-    else:
-        decision = {"day": today, "base_arm": base, "params": None, "reason": "advice_disabled"}
-
-    try:
-        with open(path, "w", encoding="utf-8") as handle:
-            json.dump(decision, handle, indent=2)
-    except OSError:
-        pass  # the decision still applies to this process; the next --once re-derives it
-    return decision
+    return _core_advice.session_decision(
+        _home.state_dir(),
+        "flies",
+        today,
+        config,
+        _advice_decision_path(),
+        base_key="base_arm",
+        log=_log,
+    )
 
 
 def _advised_arms_with_books(conn, trade_date: str) -> list[str]:
@@ -458,6 +410,7 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
     Also owns end-of-day settlement. The recurring task calls only this, so there is exactly one
     thing to schedule and one thing that can fail.
     """
+    _beat()  # before every gate below: liveness is "the loop is turning over", not "it did work"
     when = when or provider.now_et()
     now_min = provider.minute_of_day(when)
     day = when.date().isoformat()
@@ -574,7 +527,9 @@ def run_settle(config: dict, conn, *, cache_path: str, when=None, price: float |
         # The same roster the tick entered on, including any advised arm — settling a narrower list
         # than the one that traded would strand an advised book open with no way to close it.
         for arm in session_arms(config, conn, trade_date):
-            result = bookmod.settle_book(conn, trade_date, arm, symbol, settlement, config)
+            result = bookmod.settle_book(
+                conn, trade_date, arm, symbol, settlement, config, settlement_source=source
+            )
             _log(
                 f"{symbol} [{arm}] settled at {settlement:.2f} ({source}): "
                 f"P&L {result['pnl']:+.2f}, stats {result['stats']}"

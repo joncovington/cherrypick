@@ -24,6 +24,7 @@ import sys
 import time
 from logging.handlers import RotatingFileHandler
 
+from cherrypick.core import looplock, streamcache
 from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 from cherrypick.core.streamer import ChainStreamer
 
@@ -42,6 +43,33 @@ _LEGACY = ("tastytrade-mcp", SHARED_SERVICE)
 # Self-reported staleness threshold (mirrors MEIC's 600s). The orchestrator computes its own, tighter age
 # from oldest_event_age_s and does not trust this flag — it exists only for a human running --status.
 _STALE_WARN_S = 600
+
+# Age past which a single union underlying's spot counts as DEAD during regular hours. The
+# aggregate `underlyings_stale_age_s` below deliberately uses the FRESHEST underlying so one quiet
+# name can't false-trip a whole-feed alarm — and the price of that choice was paid 2026-08-17..21,
+# when TQQQ's trade subscription died mid-flight and streamed nothing for four sessions while SPX
+# kept the aggregate fresh. This per-symbol field is the other half of the bargain: generous enough
+# (15 min) that no liquid underlying hits it in RTH, and 5 minutes beyond the producer's own
+# self-heal resubscribe (cherrypick.core.streamer, 10 min), so the watchdog only ever sees a
+# symbol the self-heal has already failed to revive.
+_DEAD_UNDERLYING_S = 900.0
+
+
+def _in_rth_clock(now_utc: float) -> bool:
+    """Weekday 09:35-15:55 ET, clock-only. Holidays are the CALLER'S problem by design: the
+    watchdog asks through a holiday-aware session gate (`timeutil.is_session_window`), and this
+    daemon deliberately holds no holiday calendar of its own."""
+    try:
+        from datetime import UTC, datetime
+        from zoneinfo import ZoneInfo
+
+        et = datetime.fromtimestamp(now_utc, tz=UTC).astimezone(ZoneInfo("America/New_York"))
+    except Exception:
+        return False
+    if et.weekday() >= 5:
+        return False
+    minutes = et.hour * 60 + et.minute
+    return 9 * 60 + 35 <= minutes <= 15 * 60 + 55
 
 
 def make_session_factory():
@@ -71,18 +99,54 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
         # Base underlying subscriptions (matching the engine's own default) PLUS the registered legs on
         # Quote/Greeks so their prices stay fresh beyond the ATM window. union_legs re-reads the registry
         # and re-runs each module's leg_sources query, so an opened/closed position is picked up here.
+        #
+        # Non-option legs (no leading '.') ALSO get Trade: index legs like overview's VIX/VIX3M/VVIX
+        # publish Trade events, never quotes, so Quote-only left them with no price at all — and
+        # overview reads every breadth spot from stream_trades (facts.py), so its whole panel froze
+        # at the 2026-08-17 subscription drop and nothing brought it back. ETF legs trade constantly
+        # in RTH, so the engine's stale-trade self-heal won't false-trip on them; OPTION legs stay
+        # off Trade deliberately — sparse prints would read as perpetually stale there.
         legs = _registry.union_legs()
-        return {"Trade": list(underlyings), "Quote": legs, "Greeks": legs, "Summary": list(underlyings)}
+        cash_legs = [leg for leg in legs if not leg.startswith(".")]
+        # Quote and Greeks are filtered by what the symbol can actually PUBLISH, not by what it is.
+        # Every cash leg carried a Greeks subscription that could never deliver an event, and the
+        # index legs carried a Quote subscription with the same problem — an index is a computed
+        # level with no order book (the 2026-08-24 entitlement probe: SKEW/VIX9D/VIX/VIX1D all
+        # printed Trade, none printed Quote). ETF and single-name legs KEEP Quote: they have a real
+        # book and modules price off it. The predicate lives in core.streamcache beside the rest of
+        # the symbology so the producer and any reader cannot disagree about it.
+        quote_legs = [leg for leg in legs if streamcache.publishes_quotes(leg)]
+        greeks_legs = [leg for leg in legs if streamcache.publishes_greeks(leg)]
+        # Cash legs get Summary for the same reason they got Trade, one event type later: the daily
+        # OHLC (`day_close`) arrives ONLY on Summary, and it is what `gex.regime.harvest_daily_closes`
+        # copies into `daily_closes` — the suite's only multi-year series, and the input to every
+        # percentile and seasonal reading. Summary was underlyings-only, so the whole vol complex
+        # (VIX/VIX3M/VIX9D/VVIX/SKEW) and the commodity proxies, all declared as legs, silently
+        # stopped accumulating closes on 2026-08-14. SPY kept its own only because another module
+        # happens to declare it as an underlying, which is exactly how the gap stayed invisible.
+        # OPTION legs stay off Summary as they stay off Trade: a per-contract daily bar is not a
+        # series anything here reads, and it would be thousands of subscriptions for nothing.
+        return {
+            "Trade": list(underlyings) + cash_legs,
+            "Quote": quote_legs,
+            "Greeks": greeks_legs,
+            "Summary": list(underlyings) + cash_legs,
+        }
 
     def _protected_symbols() -> set[str]:
         return set(_registry.union_legs())
 
     default_strike_count = int(scfg.get("window_strike_count", 60))
 
-    def _window_strike_count_for(symbol: str) -> int:
+    def _window_strike_count_for(symbol: str) -> tuple[int, int]:
         # A module's widened per-symbol request (e.g. flies escalating after repeated
-        # missing_leg_quotes) never narrows the configured default -- only ever widens it.
-        return max(default_strike_count, _registry.union_window_hints().get(symbol, 0))
+        # missing_leg_quotes) never narrows the configured default -- only ever widens it, and now
+        # per DIRECTION: a hint may be a plain count (symmetric, the common case) or a
+        # {"down": N, "up": M} declaration, so a module whose structure sits below spot stops
+        # buying the mirror image above it. The max is taken per side, so a directional hint can
+        # never narrow the default on the side it is silent about.
+        down, up = _registry.union_window_hints().get(symbol, (0, 0))
+        return (max(default_strike_count, down), max(default_strike_count, up))
 
     def _expirations_for(symbol: str) -> list[str]:
         # Extra expirations (e.g. the calendars module's 4DTE/7DTE legs) are dynamic like the legs:
@@ -132,32 +196,7 @@ def _setup_logging(cfg: dict) -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
-def _pid_alive(pid: int) -> bool:
-    # os.kill(pid, 0) is unreliable on Windows (raises SystemError for some process states). Prefer
-    # psutil, then the Win32 OpenProcess probe, then os.kill as a last resort.
-    try:
-        import psutil  # type: ignore
-
-        return bool(psutil.pid_exists(pid))
-    except ImportError:
-        pass
-    try:
-        import ctypes
-
-        synchronize = 0x00100000
-        handle = ctypes.windll.kernel32.OpenProcess(synchronize, False, pid)
-        if handle:
-            ctypes.windll.kernel32.CloseHandle(handle)
-            return True
-        return False
-    except Exception:
-        try:
-            os.kill(pid, 0)
-            return True
-        except PermissionError:
-            return True
-        except (OSError, SystemError):
-            return False
+_pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch this name)
 
 
 def running_pid(cfg: dict) -> int | None:
@@ -192,6 +231,7 @@ def status(cfg: dict) -> dict:
     age: float | None = None
     u_age: float | None = None
     symbol_health: dict[str, dict] = {}
+    dead_underlyings: dict[str, float] = {}
     if cache.exists():
         conn = sqlite3.connect(f"file:{cache}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
@@ -216,11 +256,24 @@ def status(cfg: dict) -> dict:
             u_newest: float | None = None
             if underlyings:
                 placeholders = ",".join("?" * len(underlyings))
-                r = conn.execute(
-                    f"SELECT MAX(updated_at) AS last FROM stream_trades WHERE symbol IN ({placeholders})",
-                    underlyings,
-                ).fetchone()
-                u_newest = r["last"] if r and r["last"] is not None else None
+                spot_ages = {
+                    r["symbol"]: now - r["updated_at"]
+                    for r in conn.execute(
+                        f"SELECT symbol, updated_at FROM stream_trades WHERE symbol IN ({placeholders})",
+                        underlyings,
+                    )
+                    if r["updated_at"] is not None
+                }
+                if spot_ages:
+                    u_newest = now - min(spot_ages.values())
+                # Per-symbol dead-spot detection (see _DEAD_UNDERLYING_S). Only symbols WITH a row
+                # can report dead: a union symbol that has never written is the recycle-on-union-
+                # growth path's job, and flagging it here would loop the watchdog's restart against
+                # a symbol a restart cannot fix.
+                if _in_rth_clock(now):
+                    dead_underlyings = {
+                        sym: round(age, 1) for sym, age in spot_ages.items() if age > _DEAD_UNDERLYING_S
+                    }
             # Per-symbol chain-fetch health: the aggregate ages above are freshest-of-any-symbol, so
             # ONE symbol's chain fetch silently failing (window disabled) is invisible whenever other
             # symbols keep ticking fine — this is that symbol's own signal (see
@@ -250,6 +303,7 @@ def status(cfg: dict) -> dict:
     info["chain_fetch_errors"] = {
         s: h["chain_fetch_error"] for s, h in symbol_health.items() if h["chain_fetch_error"]
     }
+    info["dead_underlyings"] = dead_underlyings
     # What the registry union currently asks beyond each symbol's nearest expiration. The per-date
     # serving state is the `SYMBOL@date` rows already present in symbol_health above.
     try:

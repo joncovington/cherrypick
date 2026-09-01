@@ -31,7 +31,7 @@ def _insert(conn, **overrides):
         "symbol": "SPX",
         "status": "expired",
         "risk_profile": "control",
-        "era": "sample",
+        "era": analytics.CURRENT_ERA,
         "put_credit": 0.9,
         "call_credit": 0.9,
         "net_credit": 1.8,
@@ -65,7 +65,7 @@ def test_period_clause_defaults_to_current_era_and_resolved_status(conn):
 
 def test_period_clause_era_all_includes_every_era(conn):
     _insert(conn, ic_order_id="1", era="book", pnl=50.0, fees=5.0)
-    _insert(conn, ic_order_id="2", era="sample", pnl=30.0, fees=3.0)
+    _insert(conn, ic_order_id="2", era=analytics.CURRENT_ERA, pnl=30.0, fees=3.0)
     out = analytics.stats_for_period(conn, era="ALL")
     assert out["trades"] == 2
 
@@ -373,11 +373,11 @@ def test_arm_divergence_no_shared_sessions(conn):
 # --------------------------------------------------------------------------- stop_counterfactual (live wiring)
 
 
-def test_stop_counterfactual_runs_against_open_stream(conn):
+def test_stop_counterfactual_runs_against_the_substrate_stream(conn):
     _insert(
         conn,
         ic_order_id="1",
-        risk_profile="open",
+        risk_profile="control",
         status="expired",
         put_credit=0.9,
         call_credit=0.9,
@@ -393,7 +393,7 @@ def test_stop_counterfactual_runs_against_open_stream(conn):
     assert out["trades"] == 1
     assert out["derivable"] == 1
     assert out["policy"] == "stop-0.75-net"
-    assert out["arm"] == "open"
+    assert out["arm"] == "control"
 
 
 def test_validate_stop_derivation_wired_to_control(conn):
@@ -587,11 +587,11 @@ def test_daily_rollup_is_era_scoped_like_every_other_reader(conn):
     """A roll-up written during one sampling era must never be a blend of two — the pre-cutover
     ledger had an order-of-magnitude different selection intensity."""
     _insert(
-        conn, ic_order_id="A", trade_date="2026-08-11", status="expired", pnl=10.0, fees=1.0, era="sample"
+        conn, ic_order_id="A", trade_date="2026-08-11", status="expired", pnl=10.0, fees=1.0, era=analytics.CURRENT_ERA
     )
     _insert(conn, ic_order_id="B", trade_date="2026-08-11", status="expired", pnl=999.0, fees=1.0, era="book")
 
-    assert analytics.daily_rollup(conn, "2026-08-11", era="sample")["gross_pnl"] == pytest.approx(10.0)
+    assert analytics.daily_rollup(conn, "2026-08-11", era=analytics.CURRENT_ERA)["gross_pnl"] == pytest.approx(10.0)
     assert analytics.daily_rollup(conn, "2026-08-11", era="ALL")["gross_pnl"] == pytest.approx(1009.0)
 
 
@@ -603,13 +603,13 @@ def test_stop_grid_scores_the_whole_curve_from_one_recorded_path(conn):
     argument for deriving it read-side rather than running a 15-session bounded experiment per
     threshold."""
     _insert(
-        conn, ic_order_id="1", risk_profile="open", status="expired",
+        conn, ic_order_id="1", risk_profile="control", status="expired",
         put_max_cost=1.71, call_max_cost=0.2,        # 1.71 / 1.8 = exactly 0.95x
         put_settle_value=2.0, call_settle_value=0.0,
         pnl=-20.0, fees=0.0,
     )
     out = analytics.stop_grid(conn)
-    assert out["arm"] == "open" and out["trades"] == 1
+    assert out["arm"] == "control" and out["trades"] == 1
     assert [p["ratio"] for p in out["curve"]] == list(analytics_grid_ratios())
 
     by_ratio = {p["ratio"]: p for p in out["curve"]}
@@ -648,12 +648,12 @@ def test_stop_grid_reports_censored_points_instead_of_folding_them_into_totals(c
 
 def test_stop_session_rollup_names_what_the_stop_cost_per_session(conn):
     _insert(
-        conn, ic_order_id="1", risk_profile="open", status="expired", trade_date="2026-08-13",
+        conn, ic_order_id="1", risk_profile="control", status="expired", trade_date="2026-08-13",
         put_max_cost=1.8, call_max_cost=0.1, put_settle_value=0.0, call_settle_value=0.0,
         pnl=180.0, fees=0.0,
     )
     _insert(
-        conn, ic_order_id="2", risk_profile="open", status="expired", trade_date="2026-08-14",
+        conn, ic_order_id="2", risk_profile="control", status="expired", trade_date="2026-08-14",
         put_max_cost=0.2, call_max_cost=0.2, put_settle_value=0.0, call_settle_value=0.0,
         pnl=180.0, fees=0.0,
     )
@@ -697,3 +697,158 @@ def test_control_fired_buckets_rather_than_excludes(conn):
     out = analytics.control_fired(conn)
     assert out["n_sessions"] == 1, "the dark session is still reported, not filtered away"
     assert out["sessions"][0]["by_arm"] == {"width-5": 1}
+
+
+# --------------------------------------------------------------------------- the GEX gate counterfactual
+
+
+def test_gex_gate_counterfactual_splits_the_book_on_the_recorded_flag(conn):
+    """`regime_gex_block_negative` refuses an entry when net GEX is confirmed negative, so the
+    permissive book's own rows carrying gex_positive_at_entry=0 ARE the entries it would have
+    refused. Same book, same tape, same stop policy: no cross-arm confound to argue about."""
+    _insert(conn, ic_order_id="1", gex_positive_at_entry=0, pnl=100.0, fees=10.0)
+    _insert(conn, ic_order_id="2", gex_positive_at_entry=0, pnl=-500.0, fees=10.0)
+    _insert(conn, ic_order_id="3", gex_positive_at_entry=1, pnl=200.0, fees=10.0)
+
+    out = analytics.gex_gate_counterfactual(conn)
+
+    assert out["refused_by_the_gate"]["trades"] == 2
+    assert out["refused_by_the_gate"]["net_pnl"] == -420.0
+    assert out["allowed_by_the_gate"]["net_pnl"] == 190.0
+
+
+def test_gex_gate_counterfactual_reports_an_untagged_denominator(conn):
+    """A row with no recorded flag belongs to neither side. Folding it into 'allowed' would make the
+    gate look better every time the tag was missing."""
+    _insert(conn, ic_order_id="1", gex_positive_at_entry=None, pnl=100.0, fees=10.0)
+    out = analytics.gex_gate_counterfactual(conn)
+    assert out["untagged_trades"] == 1
+    assert out["refused_by_the_gate"]["trades"] == 0
+    assert out["allowed_by_the_gate"]["trades"] == 0
+
+
+def test_gex_gate_counterfactual_isolates_the_session_the_result_rests_on(conn):
+    """The gate is insurance, and insurance is judged on its tail rather than its mean. On the live
+    ledger one session (2026-08-20, -129,344.54 across 306 refused entries) is the entire pooled
+    result: without it the refused entries netted +123,618.21. A caller printing only the total
+    would read 'the gate roughly breaks even' and miss that its whole case is one day."""
+    _insert(conn, ic_order_id="1", trade_date="2026-08-18", gex_positive_at_entry=0,
+            pnl=1000.0, fees=10.0)
+    _insert(conn, ic_order_id="2", trade_date="2026-08-20", gex_positive_at_entry=0,
+            pnl=-5000.0, fees=10.0)
+
+    out = analytics.gex_gate_counterfactual(conn)
+
+    assert out["refused_by_the_gate"]["net_pnl"] == -4020.0
+    assert out["worst_session"]["session"] == "2026-08-20"
+    assert out["refused_excluding_worst_session"]["net_pnl"] == 990.0, "the sign must flip"
+    assert [s["session"] for s in out["by_session"]] == ["2026-08-18", "2026-08-20"]
+
+
+def test_gex_gate_counterfactual_reads_across_the_open_to_control_rename(conn):
+    """`open` was renamed `control` at the 2026-08-21 cutover and the registry records them as one
+    continuous stream. Reading only the current era would drop two thirds of the evidence."""
+    _insert(conn, ic_order_id="1", risk_profile="open", era="sample",
+            gex_positive_at_entry=0, pnl=100.0, fees=10.0)
+    _insert(conn, ic_order_id="2", risk_profile="control", era=analytics.CURRENT_ERA,
+            gex_positive_at_entry=0, pnl=100.0, fees=10.0)
+
+    out = analytics.gex_gate_counterfactual(conn)
+
+    assert out["refused_by_the_gate"]["trades"] == 2
+    assert out["eras_present"] == ["advisor", "sample"]
+    assert analytics.gex_gate_counterfactual(conn, era=analytics.CURRENT_ERA
+                                             )["refused_by_the_gate"]["trades"] == 1
+
+
+# --------------------------------------------------------------------------- the settlement audit
+
+
+def test_settlement_audit_reproduces_a_plain_expiry_from_the_convention(conn):
+    """Requested by the advisor on 08-17, 08-18, 08-19, 08-20 and 08-21 and never run. The concern
+    was that this module's rate of exact full-credit capture might mean the marking convention is
+    wrong — in which case every arm comparison resting on it is wrong the same way."""
+    # 7480/7520 shorts, 10-wide, settling at 7526 → call 6 ITM, put worthless.
+    _insert(conn, ic_order_id="1", exit_reason="expired_settlement", settle_underlying=7526.0,
+            put_strike=7480.0, call_strike=7520.0, wing_width=10.0,
+            net_credit=0.58, put_credit=0.30, call_credit=0.28, pnl=(0.58 - 6.0) * 100)
+
+    out = analytics.settlement_audit(conn)
+
+    assert out["reproduced"] == 1
+    assert out["mismatched"] == []
+
+
+def test_settlement_audit_names_a_row_that_does_not_match_its_own_convention(conn):
+    _insert(conn, ic_order_id="1", exit_reason="expired_settlement", settle_underlying=7526.0,
+            put_strike=7480.0, call_strike=7520.0, wing_width=10.0,
+            net_credit=0.58, put_credit=0.30, call_credit=0.28, pnl=58.0)  # booked as full credit
+
+    out = analytics.settlement_audit(conn)
+
+    assert out["reproduced"] == 0
+    assert out["mismatched"][0]["recorded_pnl"] == 58.0
+    assert out["mismatched"][0]["modelled_pnl"] == pytest.approx(-542.0)
+
+
+def test_settlement_audit_charges_a_stopped_side_its_stop_not_its_intrinsic(conn):
+    """A partially stopped fill is the larger population (3,412 rows on the live ledger) and it is
+    scored differently: the stopped side paid its stop, the survivor pays settlement."""
+    _insert(conn, ic_order_id="1", exit_reason="stopped+expired_settlement", settle_underlying=7526.0,
+            put_strike=7480.0, call_strike=7520.0, wing_width=10.0,
+            net_credit=0.58, put_credit=0.30, call_credit=0.28,
+            put_stop_cost=0.90, pnl=(0.30 - 0.90) * 100 + (0.28 - 6.0) * 100)
+
+    assert analytics.settlement_audit(conn)["mismatched"] == []
+
+
+def test_settlement_audit_flags_a_side_that_settled_with_no_price(conn):
+    """The defect this audit actually found: `_settlement_value` scores a None underlying at zero
+    intrinsic, which is FULL CREDIT — the most favorable outcome available, on exactly the fills
+    whose outcome nobody could see. 90 such rows on the live ledger, all pre-2026-08-04."""
+    _insert(conn, ic_order_id="1", exit_reason="expired_settlement", settle_underlying=None,
+            net_credit=0.58, put_credit=0.30, call_credit=0.28, pnl=58.0)
+
+    out = analytics.settlement_audit(conn)
+
+    assert out["unpriced_settlements"] == 1
+    assert out["reproduced"] == 0, "an unpriced row must not be counted as reproduced"
+
+
+def test_settlement_audit_does_not_cry_wolf_on_a_force_close_or_a_double_stop(conn):
+    """Neither needs a settlement price. A force-closed position was bought back at quotes (the
+    non-cash-settled path), and a fill with both sides stopped had nothing left to settle."""
+    _insert(conn, ic_order_id="1", exit_reason="force_close_physical_settlement",
+            settle_underlying=None, pnl=10.0)
+    _insert(conn, ic_order_id="2", exit_reason="stopped+expired_settlement", settle_underlying=None,
+            put_stop_cost=0.5, call_stop_cost=0.5, pnl=-40.0)
+
+    assert analytics.settlement_audit(conn)["unpriced_settlements"] == 0
+
+
+def test_settlement_audit_refuses_two_settlement_prices_on_one_session(conn):
+    """Every fill on one (session, symbol) shares an expiration and a settlement. More than one
+    price means the loop settled across iterations at drifting spot, and no arm comparison on that
+    session is sound — so this is reported before anything else is worth reading."""
+    _insert(conn, ic_order_id="1", exit_reason="expired_settlement", settle_underlying=7526.0)
+    _insert(conn, ic_order_id="2", exit_reason="expired_settlement", settle_underlying=7527.5)
+
+    out = analytics.settlement_audit(conn)
+
+    assert out["one_price_per_session"] is False
+    assert out["sessions_with_multiple_prices"]["2026-08-07/SPX"] == [7526.0, 7527.5]
+
+
+def test_settlement_audit_bounds_how_much_the_answer_depends_on_the_price(conn):
+    """There is no official settlement print stored to compare against, so the useful question is
+    not 'is it exact' but 'how much could it matter'. On the live ledger 2026-08-20 — the session
+    the whole negative-GEX reading rests on — moves $14,300 per point and $1,430 per tenth, against
+    a result of -129,344: about 1%."""
+    _insert(conn, ic_order_id="1", exit_reason="expired_settlement", settle_underlying=7500.0,
+            put_strike=7480.0, call_strike=7520.0, wing_width=10.0, quantity=1)
+
+    row = analytics.settlement_audit(conn)["by_session"][0]
+
+    assert row["settle_price"] == 7500.0
+    assert row["within_1pt"] == 0  # both shorts are 20 points away
+    assert row["pnl_swing_1pt"] == 0.0  # ...so a point of error changes nothing here

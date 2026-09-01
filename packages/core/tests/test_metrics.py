@@ -56,6 +56,114 @@ def test_sample_progress_tracks_the_next_unmet_target():
     assert metrics.sample_progress(150)["progress"] == 1.0
 
 
+# --- phase-1 expansion (docs/metrics-plan.md): edge, risk-adjusted, tail, duration ----
+
+
+def test_expectancy_is_mean_per_trade_and_refuses_empty():
+    assert metrics.expectancy([20.0, -8.0, 12.0]) == 8.0
+    assert metrics.expectancy([]) is None
+
+
+def test_profit_factor_refuses_one_sided_books():
+    assert metrics.profit_factor([30.0, -10.0, 10.0]) == 4.0
+    # No losses yet -> UNDEFINED, not infinite; no wins -> unmeasurable, not zero-quality.
+    assert metrics.profit_factor([30.0, 10.0]) is None
+    assert metrics.profit_factor([-30.0, -10.0]) is None
+    assert metrics.profit_factor([]) is None
+
+
+def test_sortino_punishes_downside_not_upside_volatility():
+    # Same mean and same losses; wild UPSIDE swings must not lower the score the way sharpe's
+    # symmetric stdev does — that asymmetry is the reason sortino exists.
+    steady = [10.0, -5.0, 10.0, -5.0, 10.0]
+    upside_wild = [1.0, -5.0, 30.0, -5.0, -1.0]
+    s1, s2 = metrics.sortino(steady), metrics.sortino(upside_wild)
+    assert s1 is not None and s2 is not None
+    sh1, sh2 = metrics.sharpe(steady), metrics.sharpe(upside_wild)
+    assert (s2 / s1) > (sh2 / sh1)  # sortino degrades less for upside-only wildness
+
+
+def test_sortino_refuses_below_two_losses():
+    assert metrics.sortino([10.0, 12.0, 11.0]) is None  # lossless: undefined, not infinite
+    assert metrics.sortino([10.0, -2.0, 11.0]) is None  # one loss says nothing about shape
+    assert metrics.sortino([10.0, -2.0, -3.0, 11.0]) is not None
+
+
+def test_sqn_scales_with_sample_size_at_the_same_edge():
+    small = metrics.sqn([10.0, -5.0, 12.0, -4.0])
+    large = metrics.sqn([10.0, -5.0, 12.0, -4.0] * 4)
+    assert small is not None and large is not None
+    # 4x the sample at the same edge -> ~2x the score (sqrt(4); slightly over, since the
+    # sample stdev's n-1 denominator shrinks it as n grows).
+    assert small * 1.9 < large < small * 2.4
+    assert metrics.sqn([5.0]) is None
+    assert metrics.sqn([5.0, 5.0]) is None  # zero variance is not infinite quality
+
+
+def test_session_nets_pool_by_session_in_order():
+    records = [
+        _rec(20.0, session="2026-07-22"),
+        _rec(-8.0, session="2026-07-21"),
+        _rec(5.0, session="2026-07-22"),
+        {"net_pnl": 99.0, "session": None},  # unknown day cannot be pooled anywhere
+    ]
+    assert metrics.session_nets(records) == [-8.0, 25.0]
+
+
+def test_worst_session_is_the_worst_day_not_the_worst_trade():
+    records = [
+        _rec(-50.0, session="2026-07-21"),
+        _rec(60.0, session="2026-07-21"),  # day nets +10
+        _rec(-6.0, session="2026-07-22"),  # day nets -6: the worst DAY
+    ]
+    assert metrics.worst_session(records) == {"session": "2026-07-22", "net": -6.0}
+    assert metrics.worst_session([{"net_pnl": 5.0, "session": None}]) is None
+
+
+def test_cvar_refuses_below_the_minimum_session_count():
+    """A CVaR over six sessions reads as a risk number and is not one — the stamped contract
+    (worst 10%, >= 20 sessions) refuses rather than fabricating."""
+    nineteen = [10.0] * 18 + [-100.0]
+    assert metrics.cvar(nineteen) is None
+    twenty = nineteen + [10.0]
+    assert metrics.cvar(twenty) == -45.0  # worst 10% of 20 = worst 2: (-100 + 10)/2
+
+
+def test_cvar_is_the_mean_of_the_tail_not_the_single_worst():
+    values = [-100.0, -50.0] + [10.0] * 28  # 30 sessions -> worst 3
+    assert metrics.cvar(values) == pytest.approx(round((-100.0 - 50.0 + 10.0) / 3, 2))
+
+
+def test_drawdown_span_reports_duration_and_keeps_an_open_drawdown_open():
+    # Peak after 10, then three sessions spent below it; the recovering session itself sits
+    # at a new peak and is not part of the stretch.
+    closed = metrics.drawdown_span([10.0, -4.0, -2.0, 1.0, 6.0])
+    assert closed == {"longest": 3, "open": 0}
+    # Still below peak at the end: the live bleed is reported open, never folded into history.
+    bleeding = metrics.drawdown_span([10.0, -4.0, -2.0])
+    assert bleeding == {"longest": 2, "open": 2}
+    assert metrics.drawdown_span([]) == {"longest": 0, "open": 0}
+
+
+def test_calibration_reading_carries_the_expansion_report_only():
+    records = [
+        _rec(20.0, capital=500.0, session="2026-07-21", slippage=4.0),
+        _rec(-8.0, capital=500.0, session="2026-07-22", slippage=4.0),
+        _rec(-2.0, capital=500.0, session="2026-07-23", slippage=4.0),
+        _rec(12.0, capital=500.0, session="2026-07-24", slippage=4.0),
+    ]
+    r = metrics.calibration_reading(records)
+    assert r["expectancy"] == 5.5
+    assert r["profit_factor"] == 3.2
+    assert r["sortino"] is not None and r["sqn"] is not None
+    assert r["worst_session"] == {"session": "2026-07-22", "net": -8.0}
+    assert r["cvar"] is None and r["cvar_min_sessions"] == 20  # 4 sessions: refused, stated
+    assert r["drawdown_span"] == {"longest": 2, "open": 0}
+    # Report-only: the qualification rule set is untouched by the new keys.
+    out = qualify_readings({"a": r})
+    assert set(out["a"]["checks"]) == {"sample", "win_rate", "days"}
+
+
 # --- calibration_reading -------------------------------------------------------
 
 

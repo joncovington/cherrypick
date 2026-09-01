@@ -32,8 +32,6 @@ DST-correct, and no longer bound by the OS scheduler's 1-minute floor.
 | `watchdog` | every **10 min** | `run.py watchdog` | unchanged cadence; overlap-guarded by the supervisor |
 | `streamer-health` | every **60 s**, 09:00–16:00, trading days | `run.py streamer-health` | replaces `cherrypick-preopen` with whole-session coverage — a silent streamer is caught within ~5 min all day |
 | `trade-notify` | every **30 s** | `run.py notify-trades` | was 2 min (the scheduler floor made faster spawns pointless); fills now reach you in ~30 s |
-| `follow-notify` | every 5 min — opt-in | `run.py notify-follow` | network → its own job, never on the watchdog tick (unchanged) |
-| `lossdog-notify` | every 10 min — opt-in | `run.py notify-lossdog` | private-API poll (Lossdog VIP feed) with a per-run minted token → its own job, never on the watchdog tick; a dead credential warns once and goes quiet until it changes |
 | `earnings-dolt` | every 5 min | `run.py ensure-dolt` | keep-alive: starts `dolt sql-server` only when 3306 is down |
 | `meic-paper` | every **60 s** | `pythonw -m cherrypick.meic.paper_loop --once` | was a module-registered 2-min task with a hardcoded cadence; now `modules.meic.paper.tick_interval_seconds` |
 | `flies-paper` | **resident** `--interval 15`, 09:30–16:00, trading days | `pythonw -m cherrypick.flies.paper_loop --interval 15` | the one resident child: supervised (restart on death + on 120 s of log silence). 15 s samples completion-debit dips ~4× finer than the old 1-min floor — a journaled measurement break (completion rates are not comparable across 2026-08-09) |
@@ -41,7 +39,7 @@ DST-correct, and no longer bound by the OS scheduler's 1-minute floor.
 | `flies-live` | every 60 s — **enabled only while the arm record is valid for today** | `pythonw -m cherrypick.flies.live_loop --once --live` | armed by `/live-flies-start` writing `state/flies-live-arm.json` (fresh YES each day); self-disarms by deleting the record at `live.disarm_time` (17:00 ET) or on a stale date; the watchdog backstops with the halt flag if the record survives. Burst `--watch-fills` watchers unchanged. |
 | `calendars-paper` | **resident** `--interval 30`, 09:30–16:00, trading days | `pythonw -m cherrypick.calendars.paper_loop --interval 30` | the weekly double-calendar module: the loop self-gates entry to the entry day (Monday, or Tuesday after a Monday holiday) and marks every open leg every tick — that mark path is its exit study's substrate, so the cadence is a journaled measurement break if changed |
 | `calendars-paper-offsession` | every 60 s **outside** 09:30–16:00 | `…calendars.paper_loop --once` | owns the 16:20 cash settlement of expiring legs (Friday shorts, Monday longs), retry-until-settled off a staleness-gated spot read |
-| `pmcc-paper` | **resident** `--interval 60`, 09:30–16:00, trading days | `pythonw -m cherrypick.pmcc.paper_loop --interval 60` | the PMCC-99 deep-ITM covered-call module: enters whenever a (symbol, book) slot is free, marks every open leg every tick (the tv-exhaustion trigger and the assignment-exposure telemetry read that path), rolls the roll book's breaches |
+| `pmcc-paper` | **resident** `--interval 60`, 09:30–16:00, trading days | `pythonw -m cherrypick.pmcc.paper_loop --interval 60` | the PMCC-99 deep-ITM covered-call module: enters whenever the (symbol, book) slot is free, marks every open leg every tick (the assignment-exposure telemetry reads that path), holds to the short's own expiration before closing both legs |
 | `pmcc-paper-offsession` | every 60 s **outside** 09:30–16:00 | `…pmcc.paper_loop --once` | owns the 16:20 settlement of expiring legs (a short's Friday; an ITM short delivers shares covered the next session), retry-until-settled off a staleness-gated spot read |
 | `earnings-entry` / `earnings-exit` | daily 15:45 / 09:45 | `run.py run-earnings-entry/-exit` | missed-fire catchup: entry 30 min (under the 35-min SLA grace), exit 120 min |
 | `symbol-watch` | daily 06:30 — opt-in | `run.py run-earnings-symbol-watch` | catchup until ~09:00 |
@@ -238,8 +236,8 @@ Each open gap below is tracked as an issue — the entry here is the operator-fa
   tick still never speeds up to protect the streamer — the check just has its own cadence now that
   per-job cadences are free.
 - ~~**`doctor` coverage holes.**~~ **Mostly fixed 2026-08-06** ([#65](https://github.com/joncovington/cherrypick/issues/65)).
-  `doctor` now checks every orchestrator-owned task — `trade-notify`, `log-archive`, `reconcile`,
-  `follow-notify` and `preopen` — resolving each name through the same settings helper `install` uses,
+  `doctor` now checks every orchestrator-owned task — `trade-notify`, `log-archive`, `reconcile`
+  and `preopen` — resolving each name through the same settings helper `install` uses,
   so a config-driven rename can't desync the check. Opted-out-and-absent reports as healthy; enabled-
   but-missing, and disabled-but-still-registered, both warn. **Still open:** nothing cross-checks that
   `stream_requests/*.json` cover the symbols the modules actually trade — that half is better done

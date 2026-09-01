@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import type { ConsoleConfig } from "../config.js";
+import { readJson } from "../readers/db.js";
 
 /**
  * The live-lock read: the suite halt flag, each module's live gate, and flies' per-day arm record.
@@ -15,14 +16,6 @@ import type { ConsoleConfig } from "../config.js";
  * File-only and read-only, cheap enough for the page to poll. The one thing here that WRITES is not
  * here at all: the halt toggle goes through the orchestrator's `liveops.set_halt` via the bridge.
  */
-
-function readJson(p: string): Record<string, unknown> | null {
-  try {
-    return JSON.parse(fs.readFileSync(p, "utf-8")) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
 
 export interface ModuleGate {
   id: string;
@@ -45,9 +38,11 @@ export interface LockStatus {
 
 /**
  * A module's live gate, covering BOTH conventions the suite uses: a top-level
- * `enable_live_trading` (meic, earnings) and flies' nested `live.enabled`. Reading only the first
- * reports flies as paper-only even while its live loop is armed — the same trap
- * `liveops._live_enabled` documents on the Python side.
+ * `enable_live_trading` (meic, earnings) and the nested `live.enabled` (flies, and now calendars/
+ * pmcc as inert placeholders — see their config `_live_note`: no loop reads the field yet, it exists
+ * only so this surface can report "paper only" instead of blurring "no live path built" with "gate
+ * file missing"). Reading only the top-level form reports a nested-gate module as paper-only even
+ * while armed — the same trap `liveops._live_enabled` documents on the Python side.
  */
 export function readModuleGate(config: ConsoleConfig, id: string): ModuleGate {
   const doc = readJson(path.join(config.paths.cherrypick, "config", `${id}.json`));
@@ -109,7 +104,7 @@ export function readLockStatus(config: ConsoleConfig): LockStatus {
   const ids =
     typeof modulesRaw === "object" && modulesRaw !== null && !Array.isArray(modulesRaw)
       ? Object.keys(modulesRaw as Record<string, unknown>)
-      : ["meic", "flies", "earnings", "calendars", "pmcc"]; // calendars/pmcc are paper-only; their gates read as absent
+      : ["meic", "flies", "earnings", "calendars", "pmcc"];
 
   const arm = readJson(path.join(config.paths.cherrypick, "state", "flies-live-arm.json"));
   const armDate = typeof arm?.["date"] === "string" ? (arm["date"] as string) : null;

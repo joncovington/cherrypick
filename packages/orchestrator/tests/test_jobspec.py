@@ -259,7 +259,6 @@ def suite_cfg(**overrides):
         },
         "watchdog": {"task_name": "cherrypick-watchdog", "interval_minutes": 10},
         "trade_notify": {"task_name": "cherrypick-trade-notify", "interval_seconds": 30},
-        "follow_feed": {"enabled": False},
     }
     cfg.update(overrides)
     return cfg
@@ -283,8 +282,6 @@ def test_derive_full_suite_job_table():
         "watchdog",
         "streamer-health",
         "trade-notify",
-        "follow-notify",
-        "lossdog-notify",
         "desk-notify",
         "console",
         "meic-paper",
@@ -297,16 +294,13 @@ def test_derive_full_suite_job_table():
         "symbol-watch",
         "reconcile",
         "log-archive",
+        "futures-contracts",
+        "earnings-dolt-pull",
         "review-provisional",
         "review-final",
         "review-narrative",
-        "advisor-open",
-        "advisor-am1",
-        "advisor-am2",
-        "advisor-midday",
-        "advisor-pm1",
-        "advisor-pm2",
-        "advisor-close",
+        "morning-factpack",
+        "morning-narrative",
         "advisor-deep",
     }
     assert by_id["watchdog"].interval_seconds == 600
@@ -334,7 +328,17 @@ def test_derive_flies_subminute_becomes_resident_plus_offsession():
     assert res.kind == jobspec.KIND_RESIDENT
     assert res.argv == ("pythonw", "-m", "cherrypick.flies.paper_loop", "--interval", "15")
     assert (res.window_start, res.window_end, res.trading_days_only) == ("09:30", "16:00", True)
-    assert res.silence_file and res.silence_file.endswith("flies_paper.log")
+    # Silence is measured against the loop's own heartbeat, never its log. Pointing it at the log
+    # made supervision a function of how talkative a module happened to be, and killed the quiet one
+    # (calendars) every two minutes for four days. Pinned against the module's OWN resolver, so the
+    # writer and the watcher cannot drift apart unnoticed.
+    from cherrypick.core import home as _core_home
+
+    from cherrypick.orchestrator import config as cfgmod
+
+    assert res.silence_file == str(cfgmod.resident_heartbeat_path("flies"))
+    assert res.silence_file.endswith(_core_home.heartbeat_path("flies").name)
+    assert not res.silence_file.endswith(".log")
     off = by_id["flies-paper-offsession"]
     assert off.kind == jobspec.KIND_INTERVAL and off.interval_seconds == 60
     assert off.window_invert and off.argv[-1] == "--once"
@@ -358,8 +362,6 @@ def test_derive_flies_live_enabled_with_todays_arm_record():
 def test_derive_disabled_optins_included_disabled():
     """Off-by-choice jobs stay visible (doctor's healthy-disabled distinction), never omitted."""
     jobs, _ = derive(suite_cfg())
-    follow = next(j for j in jobs if j.id == "follow-notify")
-    assert not follow.enabled and "disabled in config" in follow.enabled_reason
     sw = next(j for j in jobs if j.id == "symbol-watch")
     assert not sw.enabled
 
@@ -483,6 +485,30 @@ def test_the_narrative_is_off_by_default_and_tagged_ai():
     assert "ai" in job.tags
 
 
+def test_morning_factpack_on_by_default_narrative_off_and_tagged_ai():
+    """The pack is credential-free and read-only, so it defaults on like the review; the narrative
+    shells out to Claude Code (and, unlike the EOD one, does web lookups), so it stays off until
+    someone turns it on. Both are pre-open jobs with a deliberately tight catch-up — a morning pack
+    caught up at 11:00 describes a market that already opened."""
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    pack, note = by_id["morning-factpack"], by_id["morning-narrative"]
+    assert pack.enabled and pack.trading_days_only
+    assert (pack.at_et, note.at_et) == ("08:30", "09:00")
+    assert pack.catchup_minutes == 90
+    assert not note.enabled
+    assert "morning.narrative" in note.enabled_reason
+    assert "ai" in note.tags
+    assert "morning_narrative.py" in note.argv[1]
+
+
+def test_morning_can_be_turned_off():
+    cfg = suite_cfg()
+    cfg["morning"] = {"enabled": False}
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    assert not by_id["morning-factpack"].enabled
+    assert "disabled in config (morning)" in by_id["morning-factpack"].enabled_reason
+
+
 def test_every_derived_run_py_job_actually_parses():
     """The guard that was missing: a derived argv the CLI's parser rejects.
 
@@ -516,26 +542,40 @@ def test_every_derived_run_py_job_actually_parses():
     assert not offenders, f"derived argv the CLI would reject at the parser: {offenders}"
 
 
-def test_the_advisor_derives_eight_slots_off_by_default():
-    """Seven light checkpoints and one deep run, all AI-tagged and trading-days-only, all disabled
-    until someone turns the advisor on."""
-    by_id = {j.id: j for j in derive(suite_cfg())[0]}
-    slots = [
-        "advisor-open", "advisor-am1", "advisor-am2", "advisor-midday",
-        "advisor-pm1", "advisor-pm2", "advisor-close", "advisor-deep",
-    ]
-    for job_id in slots:
-        job = by_id[job_id]
-        assert not job.enabled
-        assert "disabled in config (advisor)" in job.enabled_reason
-        assert "ai" in job.tags
-        assert job.trading_days_only
-        assert job.kind == "daily"
-        assert "advisor_checkpoint.py" in " ".join(job.argv)
+def test_the_advisor_derives_only_the_deep_slot_by_default():
+    """One deep run at 17:00, AI-tagged and trading-days-only, disabled until someone turns the
+    advisor on.
 
-    assert [by_id[s].at_et for s in slots] == [
-        "09:45", "10:30", "11:30", "12:30", "13:30", "14:30", "15:30", "17:00",
-    ]
+    The default was seven light checkpoints plus deep until 2026-08-26. It is deep-only now because
+    the light slots' own record did not justify them — 36 of them produced four `creative` proposals
+    and one critical flag the deep slot re-derived anyway, while adding ~10% to the pack the deep
+    slot has to read (packages/advisor/CLAUDE.md). Light slots are still fully supported and still
+    derive when configured; the two tests below now say so explicitly rather than leaning on a
+    default, which is the more honest shape for them anyway."""
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+
+    job = by_id["advisor-deep"]
+    assert not job.enabled
+    assert "disabled in config (advisor)" in job.enabled_reason
+    assert "ai" in job.tags
+    assert job.trading_days_only
+    assert job.kind == "daily"
+    assert job.at_et == "17:00"
+    assert "advisor_checkpoint.py" in " ".join(job.argv)
+
+    light = [j for j in by_id if j.startswith("advisor-") and j != "advisor-deep"]
+    assert light == [], f"no light checkpoint should derive by default, got {light}"
+
+
+def test_configured_light_checkpoints_still_derive():
+    """Dropping the DEFAULT must not drop the capability. An empty `checkpoints` derives no light
+    jobs; a populated one derives them exactly as before, named by the dict form."""
+    cfg = suite_cfg()
+    cfg["advisor"] = {"enabled": True, "checkpoints": {"midday": "12:30", "close": "15:30"}}
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    assert by_id["advisor-midday"].at_et == "12:30"
+    assert by_id["advisor-close"].at_et == "15:30"
+    assert by_id["advisor-deep"].at_et == "17:00"
 
 
 def test_the_scheduled_scripts_resolve_to_files_that_exist():
@@ -566,6 +606,7 @@ def test_the_light_slots_carry_the_light_model_and_the_deep_slot_the_deep_one():
     """Model names live in config and travel on argv — no model id appears in this suite's code."""
     cfg = suite_cfg()
     cfg["advisor"] = {"enabled": True, "light_model": "haiku", "deep_model": "opus",
+                      "checkpoints": {"open": "09:45"},
                       "modules": {"flies": {"enabled": True}}}
     by_id = {j.id: j for j in derive(cfg)[0]}
     assert "haiku" in by_id["advisor-open"].argv
@@ -578,7 +619,9 @@ def test_the_light_slots_carry_the_light_model_and_the_deep_slot_the_deep_one():
 def test_a_missed_light_checkpoint_goes_stale_but_a_missed_deep_run_does_not():
     """A light slot describes the session as it stands; the deep slot issues tomorrow's advice, so
     it stays worth firing until late evening."""
-    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    cfg = suite_cfg()
+    cfg["advisor"] = {"checkpoints": {"open": "09:45"}}
+    by_id = {j.id: j for j in derive(cfg)[0]}
     assert by_id["advisor-open"].catchup_minutes == 45
     assert by_id["advisor-deep"].catchup_minutes == 300
 
@@ -592,3 +635,65 @@ def test_the_narrative_runs_after_the_final_pass_never_with_it():
     assert by_id["review-narrative"].enabled
     assert by_id["review-narrative"].at_et > by_id["review-final"].at_et
     assert by_id["review-narrative"].trading_days_only
+
+
+def test_named_checkpoints_carry_their_own_slot_names():
+    """The dict config form: {slot_name: time}. Added when the schedule was cut to one light slot —
+    a single-entry LIST would run the 12:30 checkpoint under the positional name "open", and a slot
+    name that lies about its own hour is the legibility failure the positional naming comment
+    warns about."""
+    cfg = suite_cfg()
+    cfg["advisor"] = {"enabled": True, "checkpoints": {"midday": "12:30"}, "deep_at": "17:00"}
+    by_id = {j.id: j for j in derive(cfg)[0]}
+
+    assert "advisor-midday" in by_id
+    assert by_id["advisor-midday"].at_et == "12:30"
+    assert "--slot midday" in " ".join(by_id["advisor-midday"].argv).replace('"', "")
+    # None of the positional names exist as jobs when the dict names one slot.
+    for gone in ("advisor-open", "advisor-am1", "advisor-am2", "advisor-pm1", "advisor-pm2", "advisor-close"):
+        assert gone not in by_id
+    assert by_id["advisor-deep"].at_et == "17:00"
+
+
+def test_named_checkpoints_sort_by_time_not_by_name():
+    cfg = suite_cfg()
+    cfg["advisor"] = {"enabled": True, "checkpoints": {"pm1": "13:30", "open": "09:45"}}
+    from cherrypick.orchestrator.config import advisor_settings
+
+    av = advisor_settings(cfg)
+    assert av["checkpoints"] == ["09:45", "13:30"]
+    assert av["checkpoint_slots"] == ["open", "pm1"]
+
+
+def test_list_checkpoints_keep_positional_names():
+    """The original form is untouched: a list is named positionally and checkpoint_slots is None."""
+    from cherrypick.orchestrator.config import advisor_settings
+
+    av = advisor_settings({"advisor": {"checkpoints": ["09:45", "10:30"]}})
+    assert av["checkpoints"] == ["09:45", "10:30"]
+    assert av["checkpoint_slots"] is None
+
+
+def test_the_dolt_pull_lands_before_the_forward_scan_reads_it():
+    """An ordering invariant, not a scheduling preference.
+
+    The earnings module's 06:30 ET pre-market forward scan reads the Dolt earnings calendar to decide
+    which names are even eligible that night, and bounds the entry universe from what it measures. A
+    pull that lands at or after 06:30 means the scan walked YESTERDAY's calendar -- the same silent
+    staleness this job exists to prevent, one day smaller instead of five weeks. Both sat at 06:30
+    for a day, which also had them contending for Dolt while the clones were being rewritten.
+
+    Pinned because nothing else can see it: both jobs succeed, the scan reports a clean pass, and the
+    only symptom is a forward scan quietly measuring a stale universe.
+    """
+    jobs, errors = derive(suite_cfg())
+    assert errors == {}
+    pull = {j.id: j for j in jobs}["earnings-dolt-pull"]
+
+    # The scan's own time, as the earnings module defaults it (symbol_watch.at, "06:30").
+    scan_minutes = 6 * 60 + 30
+    hour, minute = (int(x) for x in pull.at_et.split(":"))
+    assert hour * 60 + minute < scan_minutes, (
+        f"the pull runs at {pull.at_et} ET, at or after the 06:30 forward scan that reads it -- "
+        "the scan would walk the previous day's calendar"
+    )

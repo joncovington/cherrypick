@@ -11,7 +11,7 @@ assert the rules that replace that sweep — and, as much, the ones that must NO
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -52,9 +52,13 @@ def snapshot(exit_debit, *, spot=190.0, spread=0.05, ok=True):
     Both shorts are bought back at ask and both longs sold at bid, so putting the whole debit on one
     short's ask and zeroing the rest gives an exact, readable target.
     """
+    # The gate judges legs in percent AND in money now, so a "wide" stub must carry a leg that is
+    # genuinely wide on both readings -- a synthesized aggregate over zero-width quotes tests
+    # nothing. Kept off the priced leg so the exit debit the other tests read stays exact.
+    wide = spread if spread > 0.25 else 0.0
     quotes = {
         LEGS[0]["symbol"]: {"bid": exit_debit, "ask": exit_debit, "mid": max(exit_debit, 0.01)},
-        LEGS[1]["symbol"]: {"bid": 0.0, "ask": 0.0, "mid": 0.01},
+        LEGS[1]["symbol"]: {"bid": 0.0, "ask": wide, "mid": max(wide / 2, 0.01)},
         LEGS[2]["symbol"]: {"bid": 0.0, "ask": 0.0, "mid": 0.01},
         LEGS[3]["symbol"]: {"bid": 0.0, "ask": 0.0, "mid": 0.01},
     }
@@ -174,23 +178,54 @@ def test_the_four_hour_backstop_cannot_preempt_a_multi_day_hold():
     """18 hours pass between a 15:45 entry and the first morning mark. Left at its 240-minute
     default the backstop would fire on every position before any management rule was reached, and
     multi-day holds would be unreachable — so the policy injects a value past any hold it could
-    preempt."""
-    import time
+    preempt.
 
+    Both times are taken from the tick being evaluated. Reading the machine clock here measured the
+    gap between the fixture and whenever the suite happened to run, which is how the policy's
+    ten-day ceiling was silently overshot and this rule looked unreachable."""
+    now = at("10:00")
     t = trade()
-    t["opened_at"] = time.time() - 18 * 3600
-    assert evaluate(t, snapshot(4.50)).action == "hold"
+    t["opened_at"] = (now - timedelta(hours=18)).timestamp()
+    assert evaluate(t, snapshot(4.50), now=now).action == "hold"
 
 
 def test_lowering_the_backstop_re_enables_a_same_session_close():
     """It is superseded, not deleted — a shorter hold is still expressible."""
-    import time
-
+    now = at("10:00")
     t = trade()
-    t["opened_at"] = time.time() - 5 * 3600
+    t["opened_at"] = (now - timedelta(hours=5)).timestamp()
     config = {**CONFIG, "management": {"exit_after_announcement_minutes": 240}}
-    decision = evaluate(t, snapshot(4.50), config=config)
+    decision = evaluate(t, snapshot(4.50), now=now, config=config)
     assert decision.action == "close_all" and decision.reason == "iv_crush_backstop"
+
+
+def test_the_time_rules_follow_the_tick_and_not_the_machine_clock():
+    """The same position, evaluated at two different moments, must decide differently.
+
+    A rule that reads the machine clock answers identically whatever tick it is handed, so this is
+    what separates the two. It is not hypothetical: the front-DTE stop and the four-hour backstop
+    both did, which made one of them fire or not depending on what day the suite happened to run,
+    and hid a real defect behind a test that passed most days.
+    """
+    # The calendars' front-expiration stop: five days out holds, two days out closes.
+    cal_config = {
+        "strategies": {"atm_calendar": {"profit_target_pct": 0.15, "exit_days_before_front_expiration": 5}},
+        "management": {},
+    }
+    cal = trade("atm_calendar", credit=-3.0, expiration="2026-08-21")
+    assert evaluate(cal, snapshot(-3.2), now=at("10:00", "2026-08-12"), config=cal_config).action == "hold"
+    late = evaluate(cal, snapshot(-3.2), now=at("10:00", "2026-08-19"), config=cal_config)
+    assert late.action == "close_all" and late.reason == "time_exit"
+
+    # The credit strategies' post-announcement backstop, at a 240-minute setting.
+    fly_config = {**CONFIG, "management": {"exit_after_announcement_minutes": 240}}
+    entry = at("15:45", "2026-08-11")
+    fly = trade()
+    fly["opened_at"] = entry.timestamp()
+    early = evaluate(fly, snapshot(4.50), now=entry + timedelta(hours=1), config=fly_config)
+    assert early.action == "hold"
+    later = evaluate(fly, snapshot(4.50), now=entry + timedelta(hours=5), config=fly_config)
+    assert later.action == "close_all" and later.reason == "iv_crush_backstop"
 
 
 # --------------------------------------------------------------------------- the pin guard
@@ -253,6 +288,32 @@ def test_quotes_wider_than_the_policy_are_not_acted_on():
     arithmetic, not a price."""
     wide = snapshot(3.50, spread=0.80)
     assert management.execution_gate(wide, CONFIG, "iron_fly", now=at("10:00")) == "spread_too_wide"
+
+
+def test_a_penny_wide_leg_is_not_too_wide_to_close():
+    """The win case: a short that has done its job quotes 0.00/0.01 -- a one-cent buyback and, as a
+    ratio, a 200% spread. Before 2026-08-31 this refused 32 distinct positions their profit-target
+    exits (5,695 gated ticks at exactly 2.000) and every one rode to expiry instead. Verified by
+    restoring the aggregate percentage test and watching this admit-case refuse."""
+    snap = snapshot(0.01)
+    snap["quotes"][LEGS[1]["symbol"]] = {"bid": 0.0, "ask": 0.01, "mid": 0.005, "delta": None, "iv": None}
+    snap["max_spread_pct"] = 2.0  # the aggregate the old gate read
+    assert management.execution_gate(snap, CONFIG, "iron_fly", now=at("10:00")) is None
+
+
+def test_the_two_readings_are_judged_per_leg():
+    """The widest-by-percent and the widest-by-money can be different legs; two separate maxima
+    would refuse a structure neither leg justifies."""
+    snap = snapshot(2.0)
+    snap["quotes"][LEGS[1]["symbol"]] = {"bid": 0.0, "ask": 0.01, "mid": 0.005, "delta": None, "iv": None}  # wide pct, 1c
+    snap["quotes"][LEGS[2]["symbol"]] = {"bid": 5.0, "ask": 5.6, "mid": 5.3, "delta": None, "iv": None}  # 60c, 11% pct
+    assert management.execution_gate(snap, CONFIG, "iron_fly", now=at("10:00")) is None
+
+
+def test_a_snapshot_without_quotes_keeps_the_aggregate_percentage_test():
+    """A mark that carries no per-leg quotes must not silently admit more than it used to."""
+    bare = {"ok": True, "max_spread_pct": 2.0}
+    assert management.execution_gate(bare, CONFIG, "iron_fly", now=at("10:00")) == "spread_too_wide"
 
 
 def test_an_unusable_mark_gates_everything():

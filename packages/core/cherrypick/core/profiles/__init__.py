@@ -235,127 +235,12 @@ def qualify_readings(readings: Mapping[str, Mapping], *, rule: Mapping | None = 
     return {tag: _qualify_one(reading, thresholds) for tag, reading in readings.items()}
 
 
-def recommend_champion(
-    readings: Mapping[str, Mapping],
-    champion: str | None,
-    *,
-    rule: Mapping | None = None,
-    deliberate_only=(),
-    margin: float = 0.0,
-) -> dict:
-    """Advisory-only: does any challenger beat the current champion? (replaces the fixed-ladder
-    `recommend_promotion` — plan Part 10 Phase D, champion/challenger revision, 2026-08-01)
-
-    The ladder model assumed risk profiles form one conservative-to-aggressive sequence and a
-    profile only ever "graduates" to its fixed next rung. That is the wrong shape for the actual
-    question — *which currently-tested configuration has earned the right to replace what's live* —
-    which is a selection among competitors, not an ordinal climb. This function compares the tag
-    that is currently live (`champion`) against every OTHER tag in `readings` (`challengers`), not
-    just an adjacent one, so a challenger can win outright without first "graduating through"
-    whatever used to sit between it and the champion in a list. It NEVER mutates config or switches
-    the live profile — auto-promoting live risk from paper results is a capital-authority action,
-    kept human-gated (consistent with the governor/watchdog fail-closed philosophy); the
-    caller/human applies the recommendation.
-
-    - `readings`: `{tag: reading}` for every tag observed this epoch — typically `compare_profiles`'s
-      return value directly. The WHOLE table, not one profile's reading, because every non-champion
-      tag is a candidate challenger. A tag absent from `readings` (no closed trades yet) is simply
-      absent from `challengers`, not an error.
-    - `champion`: the tag currently live for this module. Champions with no reading at all
-      (`champion not in readings` — brand new, zero closed trades) degrade gracefully: every
-      qualified, non-`deliberate_only` challenger trivially beats a champion with nothing to lose to.
-      The champion's OWN reading is never required to itself clear `QUALIFICATION_RULE` — it is
-      already live; requiring it to re-qualify every reading period would make a freshly-promoted
-      champion briefly unbeatable by construction, re-introducing the rigidity this replaces.
-    - `rule`: threshold overrides merged onto `QUALIFICATION_RULE`.
-    - `deliberate_only`: tags never auto-recommended even when they qualify and beat the champion
-      outright (a human opts in explicitly) — e.g. an experimental arm allowed to run and be
-      measured, but never silently promoted to champion.
-    - `margin`: how much a challenger's ranking metric must exceed the champion's before it "beats"
-      the champion (default 0.0 — any positive edge counts).
-
-    Ranking metric, decided independently per champion/challenger pairing: `return_on_capital` when
-    BOTH sides carry a non-None value, else `net_pnl` (see `cherrypick.core.metrics.
-    calibration_reading`'s own docstring — "a 2-wide and a 10-wide IC must not weigh equally"; net
-    P&L alone rewards bigger size, not better risk-adjusted return). Never forces a missing value to
-    0 — that would be exactly the "misleadingly precise zero" `metrics.py` warns against.
-
-    Returns `{champion, champion_metric, challengers, eligible, recommendation, reason}`.
-    `challengers` maps every non-champion tag in `readings` to `{qualified, checks, metric,
-    beats_champion, deliberate_only}` — `checks` is the same `{name: {value, threshold, pass}}` shape
-    the old ladder model used, unchanged. `eligible` is True iff at least one qualified,
-    non-`deliberate_only` challenger beats the champion by >= `margin`; `recommendation` is
-    `"retain:<champion>"` or `"champion:<tag>"` for the single best such challenger (highest metric
-    value; first-seen order — matching `compare_profiles`'s own determinism — breaks an exact tie). A
-    challenger's own `beats_champion` is always reported even when it isn't the overall winner or is
-    vetoed by `deliberate_only`, so a caller can distinguish "qualified, ahead, but never
-    auto-recommended" from "qualified, not yet ahead."
-    """
-    thresholds = {**QUALIFICATION_RULE, **(rule or {})}
-    champion_reading = readings.get(champion) if champion is not None else None
-    champion_metric = _metric(champion_reading) if champion_reading is not None else None
-
-    challengers: dict[str, dict] = {}
-    for tag, reading in readings.items():
-        if tag == champion:
-            continue
-        q = _qualify_one(reading, thresholds)
-        metric = _metric(reading)
-        beats = _beats(metric, champion_metric, margin)
-        challengers[tag] = {
-            "qualified": q["qualified"],
-            "checks": q["checks"],
-            "metric": metric,
-            "beats_champion": bool(q["qualified"] and beats),
-            "deliberate_only": tag in deliberate_only,
-        }
-
-    winners = {tag: c for tag, c in challengers.items() if c["beats_champion"] and not c["deliberate_only"]}
-    if winners:
-        best = max(winners, key=lambda t: winners[t]["metric"]["value"])
-        eligible, recommendation = True, f"champion:{best}"
-        c = winners[best]
-        reason = (
-            f"{best} qualified and beats champion {champion} on {c['metric']['name']} "
-            f"({_fmt_metric(c['metric'])} vs {_fmt_metric(champion_metric)}); recommending promotion."
-        )
-    else:
-        eligible, recommendation = False, f"retain:{champion}"
-        reason = f"no qualified, non-deliberate-only challenger beats champion {champion}; retaining."
-
-    return {
-        "champion": champion,
-        "champion_metric": champion_metric,
-        "challengers": challengers,
-        "eligible": eligible,
-        "recommendation": recommendation,
-        "reason": reason,
-    }
 
 
-def _metric(reading: Mapping) -> dict:
-    """`{"name": "return_on_capital" | "net_pnl", "value": float}` for one reading. Prefers
-    return_on_capital (never forced from a missing value); net_pnl is always numeric on a
-    `calibration_reading`, so this never returns a None value."""
-    roc = reading.get("return_on_capital")
-    if roc is not None:
-        return {"name": "return_on_capital", "value": roc}
-    return {"name": "net_pnl", "value": reading.get("net_pnl", 0.0)}
 
 
-def _beats(challenger_metric: dict, champion_metric: dict | None, margin: float) -> bool:
-    """Does the challenger's metric exceed the champion's by at least `margin`? A champion with no
-    metric at all (no reading yet) has nothing to lose to -- any challenger trivially beats it."""
-    if champion_metric is None:
-        return True
-    return challenger_metric["value"] - champion_metric["value"] >= margin
 
 
-def _fmt_metric(metric: dict | None) -> str:
-    if metric is None:
-        return "n/a (no champion reading)"
-    value = metric["value"]
-    return f"{value * 100:.1f}%" if metric["name"] == "return_on_capital" else f"{value:.2f}"
 
 
 def merge_profile(

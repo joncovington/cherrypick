@@ -1428,3 +1428,246 @@ def session_overview(conn, day: str | None = None, arm: str | None = None, symbo
         "divergence": arm_divergence(conn, day),
         "journal": decision_journal(conn, day, arm),
     }
+
+
+# --------------------------------------------------------------------------- band placement
+# Requested by the advisor on 2026-08-18 (#28), repeated 08-19 and 08-20, and sharpened on 08-21
+# (#54) after its own classifier failed. The short version of four proposals: a butterfly's floor
+# holding is not primarily a property of the structure, it is the joint event of a band placement
+# and a realized range — so scoring arms on floor_holds alone credits a wide band on a quiet day and
+# blames a tight band on a fast one. Every established arm wins 64-77% of the time and loses money
+# lifetime, which is what you get when the thing being optimised is not the thing that decides the
+# tail.
+#
+# The 08-21 sharpening is what makes it correct, and it came from the wing experiment contradicting
+# the original metric. `band_low - session_low` classified held-versus-failed perfectly for four
+# sessions; then advised:control (wing_width_strikes=2) placed its lower edge 45.06 points below the
+# session low — more than twice control's margin — and failed anyway, because the narrow wing had
+# pulled the UPPER edge to 7697 against a 7697.11 high. Price traded 0.11 points through it. A rule
+# reading only the lower edge predicts that book to hold.
+#
+# So the metric is the MINIMUM of the two edge margins, and the label is which edge bound.
+
+# Trading days per year, for turning an annualised vol quote into a one-session expected move.
+_SESSIONS_PER_YEAR = 252
+
+
+def session_ranges_from_cache(cache_conn, sessions, symbols=("SPX",), vol_symbol="VIX1D") -> dict:
+    """Session high/low and the ex-ante vol quote, read from the shared stream cache.
+
+    Keyed by **(trade_date, symbol)**, not by date alone, and that is not defensive — this module
+    has traded both SPX and XSP, which are the same index at a tenth the notional. Keying on the
+    date alone scored the 2026-07-29..07-31 XSP books (bands around 731) against SPX's range (around
+    7690) and produced binding margins of ~6,700 points, which read as six confident classifier
+    failures until the numbers were looked at.
+
+    Separated from `band_placement` so that function stays a pure read over the ledger it is given,
+    and so a test can supply ranges without a cache fixture. This is the only part needing a second
+    store: the realized range is genuinely not in the flies ledger.
+
+    **The cache's `day_high`/`day_low`, not this module's own tick record**, and the difference is
+    not academic. `fly_iterations` samples the underlying each tick, so it observed 7697.01 as the
+    2026-08-21 high where the feed's session high was 7697.11 — and the breach that day was 0.11
+    points. Scoring the binding edge off sampled ticks would have read that book as HELD, the
+    opposite of what happened. A sampled extreme cannot measure a margin finer than its own
+    sampling error.
+    """
+    sessions, symbols = list(sessions), list(symbols)
+    if not sessions or not symbols:
+        return {}
+    smarks, ymarks = ",".join("?" * len(sessions)), ",".join("?" * len(symbols))
+    out: dict = {}
+    for row in cache_conn.execute(
+        "SELECT trade_date, symbol, day_high, day_low FROM stream_summary"
+        f" WHERE symbol IN ({ymarks}) AND trade_date IN ({smarks})",
+        [*symbols, *sessions],
+    ):
+        out[(row[0], row[1])] = {"session_high": row[2], "session_low": row[3], "vix1d": None}
+    # One vol quote per session, shared by every symbol: SPX and XSP are the same index, so the same
+    # one-day implied move applies to both once it is scaled by each band's own centre.
+    vol = {
+        row[0]: row[1]
+        for row in cache_conn.execute(
+            "SELECT trade_date, day_close FROM stream_summary"
+            f" WHERE symbol = ? AND trade_date IN ({smarks})",
+            [vol_symbol, *sessions],
+        )
+    }
+    for (session, _symbol), entry in out.items():
+        entry["vix1d"] = vol.get(session)
+    return out
+
+
+def band_placement(conn, session_ranges: dict, start=None, end=None, arm=None, symbol=None) -> list[dict]:
+    """Per book: where its band sat relative to the range the session actually printed.
+
+    `session_ranges` maps **(trade_date, symbol)** -> {"session_high", "session_low", "vix1d"} (see
+    `session_ranges_from_cache`). A book whose (session, symbol) is absent yields a row with null
+    margins rather than being dropped: "the range was not recorded" and "the band was badly placed"
+    are different facts, and the second must not absorb the first.
+
+    Margins are signed so POSITIVE MEANS SAFE on both edges:
+      low_margin  = session_low - band_low     (the lower edge sat this far below the day's low)
+      high_margin = band_high - session_high   (the upper edge sat this far above the day's high)
+    `binding_margin` is the smaller of the two and `binding_edge` names it. Negative means price
+    traded through that edge.
+
+    Two normalisations, answering different questions. Against the session's realized range, which
+    is ex-post and says how close this band came on this tape. Against the expected move implied by
+    the session's VIX1D, which was knowable at entry and is the only one that can separate "this arm
+    places wider bands" from "this arm got quieter days" — the question the original proposal was
+    actually asking, and the one floor_holds cannot answer either way.
+
+    `floor_holds` is carried through unchanged so the classifier can be SCORED against the outcome
+    rather than assumed to predict it.
+    """
+    clauses, params = ["1=1"], []
+    if start:
+        clauses.append("trade_date >= ?")
+        params.append(start)
+    if end:
+        clauses.append("trade_date <= ?")
+        params.append(end)
+    if arm and arm != "ALL":
+        clauses.append("arm = ?")
+        params.append(arm)
+    if symbol and symbol != "ALL":
+        clauses.append("symbol = ?")
+        params.append(symbol)
+    # fly_books, not fly_positions: a band is a property of the book, and so is floor_holds. Its
+    # status vocabulary is its own, so `_period_clause`'s settled filter does not apply here.
+    rows = conn.execute(
+        "SELECT trade_date, arm, symbol, book_id, band_low, band_high, floor_holds,"
+        " unbounded_below, worst, settlement_price, status FROM fly_books"
+        f" WHERE {' AND '.join(clauses)} ORDER BY trade_date, arm",
+        params,
+    ).fetchall()
+
+    out = []
+    for r in rows:
+        row = dict(r)
+        rng = session_ranges.get((row["trade_date"], row["symbol"])) or {}
+        high, low, vix1d = rng.get("session_high"), rng.get("session_low"), rng.get("vix1d")
+        band_low, band_high = row["band_low"], row["band_high"]
+
+        entry = {
+            "session": row["trade_date"],
+            "arm": row["arm"],
+            "symbol": row["symbol"],
+            "book_id": row["book_id"],
+            "band_low": band_low,
+            "band_high": band_high,
+            "session_low": low,
+            "session_high": high,
+            "session_range": _round(high - low) if (high is not None and low is not None) else None,
+            "floor_holds": row["floor_holds"],
+            "unbounded_below": row["unbounded_below"],
+            "worst": row["worst"],
+            "settlement_price": row["settlement_price"],
+            "settled": row["status"] == "settled",
+            # Price crossed an edge intraday and settled back inside the band. Recorded because a
+            # band margin is a TOUCH measure — it says whether price reached an edge, not where the
+            # session ended — and the two come apart exactly here.
+            "touched_but_recovered": None,
+            "low_margin": None,
+            "high_margin": None,
+            "binding_margin": None,
+            "binding_edge": None,
+            "binding_margin_range_frac": None,
+            "expected_move": None,
+            "binding_margin_expected_moves": None,
+        }
+        if band_low is None or band_high is None or high is None or low is None:
+            out.append(entry)
+            continue
+
+        low_margin = low - band_low
+        high_margin = band_high - high
+        binding = min(low_margin, high_margin)
+        entry["low_margin"] = _round(low_margin)
+        entry["high_margin"] = _round(high_margin)
+        entry["binding_margin"] = _round(binding)
+        entry["binding_edge"] = "low" if low_margin <= high_margin else "high"
+
+        settle = row["settlement_price"]
+        if settle is not None:
+            entry["touched_but_recovered"] = bool(binding < 0 and band_low <= settle <= band_high)
+
+        session_range = high - low
+        if session_range > 0:
+            entry["binding_margin_range_frac"] = _round(binding / session_range, 4)
+        if vix1d:
+            # A one-session move implied by an annualised vol quote, taken at the band's own centre
+            # so both edges are measured against the same yardstick.
+            centre = (band_low + band_high) / 2
+            expected = centre * (vix1d / 100.0) / (_SESSIONS_PER_YEAR**0.5)
+            entry["expected_move"] = _round(expected)
+            if expected > 0:
+                entry["binding_margin_expected_moves"] = _round(binding / expected, 4)
+        out.append(entry)
+    return out
+
+
+def band_placement_classifier(placements: list[dict]) -> dict:
+    """How often the binding margin agrees with `floor_holds`, for both rules, on the same rows.
+
+    This exists rather than leaving the caller to eyeball the table because of how the request
+    arrived: the original classifier (`band_low - session_low`) fit two sessions perfectly and was
+    reported on four before the fifth broke it. A rule fit to a handful of days is a hypothesis, and
+    the honest way to carry one is with its agreement rate AND its disagreements listed, so the
+    session that breaks it is visible rather than absorbed.
+
+    **Read "agreement", not "prediction", and the distinction is not pedantic.** `floor_holds` is
+    `worst >= 0` over the payoff scan grid (`fly.book_floor`) — a property of the STRUCTURE, true or
+    false before the session prints a single tick. The binding margin is a property of the structure
+    AND the tape. So part of any agreement here is mechanical: a book that is non-negative
+    everywhere has a band spanning its whole scan grid, which will usually contain the day's range.
+    The overlap is real but not total — on the live ledger, holding books span 30-315 points of band
+    and failing ones 4-205 — so the number is informative and it is NOT an out-of-sample hit rate.
+
+    What the comparison DOES establish cleanly is the 08-21 proposal's own claim: that reading both
+    edges classifies books the one-edge rule gets wrong. Both rules are scored over identical rows,
+    so their difference is the rule and nothing else. Asserting that without measuring it would
+    repeat the error that produced the original.
+    """
+    # Settled books only. An open book's `floor_holds` is a default rather than a result, and
+    # scoring against it counts a session that has not happened yet as a classifier miss — which is
+    # what the 2026-08-26 advised:control row did before this filter.
+    scored = [
+        p for p in placements
+        if p["binding_margin"] is not None and p["floor_holds"] is not None and p["settled"]
+    ]
+    if not scored:
+        return {"scored": 0, "two_edge": None, "low_edge_only": None, "disagreements": []}
+
+    def agreement(key):
+        hits = sum(1 for p in scored if (p[key] > 0) == bool(p["floor_holds"]))
+        return {"agree": hits, "of": len(scored), "rate": _rate(hits, len(scored))}
+
+    return {
+        "scored": len(scored),
+        # The 08-21 rule: the smaller of the two edge margins.
+        "two_edge": agreement("binding_margin"),
+        # The 08-18 rule it replaces, on the same rows, so the improvement is measured not asserted.
+        "low_edge_only": agreement("low_margin"),
+        # Books where price crossed an edge and settled back inside. Counted separately because it
+        # is the most common way the two measures come apart honestly — and on the live ledger all
+        # four residual disagreements are of this kind. Note it is NOT confined to disagreements: a
+        # book can be touched, recover, and still fail floor_holds, which is negative-somewhere
+        # rather than negative-at-settlement.
+        "touched_but_recovered": sum(1 for p in scored if p["touched_but_recovered"]),
+        "disagreements": [
+            {
+                "session": p["session"], "arm": p["arm"], "floor_holds": p["floor_holds"],
+                "binding_margin": p["binding_margin"], "binding_edge": p["binding_edge"],
+                "low_margin": p["low_margin"], "high_margin": p["high_margin"],
+                "settlement_price": p["settlement_price"],
+                "touched_but_recovered": p["touched_but_recovered"],
+            }
+            for p in scored
+            if (p["binding_margin"] > 0) != bool(p["floor_holds"])
+        ],
+        "binding_edge_counts": {
+            edge: sum(1 for p in scored if p["binding_edge"] == edge) for edge in ("low", "high")
+        },
+    }

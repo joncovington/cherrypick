@@ -4,24 +4,19 @@ import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
+import { listReaderFailures, setReaderFailureLogger } from "./readers/db.js";
 import { loadConfig, BIND_HOST } from "./config.js";
 import { registerStatusRoutes } from "./routes/status.js";
 import { registerOverviewRoutes } from "./routes/overview.js";
 import { registerReviewRoutes } from "./routes/review.js";
+import { registerMorningRoutes } from "./routes/morning.js";
 import { registerAdvisorRoutes } from "./routes/advisor.js";
 import { registerAdvisorOpsRoutes } from "./routes/advisorOps.js";
 import { registerModuleRoutes } from "./routes/modules.js";
 import { MarketDataService } from "./market/marketData.js";
 import { registerWsHub } from "./ws/hub.js";
 import { registerSecurity } from "./security.js";
-import { registerScoutRoutes } from "./routes/scout.js";
-import { registerPayoffRoutes } from "./routes/payoff.js";
-import { registerOrderRoutes } from "./routes/orders.js";
-import { registerScreenerRoutes } from "./routes/screener.js";
-import { registerTtWatchlistRoutes } from "./routes/ttWatchlists.js";
 import { registerConfigRoutes } from "./routes/configOps.js";
-import { startChainEodScheduler } from "./services/chainEod.js";
-import { startCandleWarmScheduler } from "./services/candleWarm.js";
 import { startHeartbeat } from "./services/heartbeat.js";
 import { createLogStream } from "./logging.js";
 
@@ -36,26 +31,26 @@ const app = Fastify({
 const market = new MarketDataService(config);
 
 registerSecurity(app);
-registerScoutRoutes(app, config, market);
-registerPayoffRoutes(app);
-registerOrderRoutes(app, config);
-registerScreenerRoutes(app, config, market);
-registerTtWatchlistRoutes(app, config, market);
 await app.register(fastifyWebsocket);
 registerWsHub(app, market);
 registerStatusRoutes(app, config, market);
 registerOverviewRoutes(app, config);
 registerReviewRoutes(app, config);
+registerMorningRoutes(app, config);
 registerAdvisorRoutes(app, config);
 registerAdvisorOpsRoutes(app, config);
 registerModuleRoutes(app, config);
 registerConfigRoutes(app, config);
-app.get("/api/health", async () => ({ ok: true }));
+// `ok` still means "the server is up", unchanged — a watchdog reading it must not start failing
+// because one module's ledger has a bad column. `readers` is the addition: a store whose reads are
+// throwing is served as an empty result by `withReadOnlyDb`, and until this it left no trace on the
+// wire, on the page, or in the log. An empty list is the healthy case.
+app.get("/api/health", async () => ({ ok: true, readers: listReaderFailures() }));
 
-// Daily EOD chain snapshot (~15:30 ET weekdays) on the console's own session.
-startChainEodScheduler(config, market, (msg) => app.log.info(msg));
-// Morning candle warm (~09:35 ET weekdays) over the same watchlist universe.
-startCandleWarmScheduler(config, market, (msg) => app.log.info(msg));
+// Swallowed reader failures get a log line. `db.ts` has no request context and 65 call sites do not
+// pass a logger, so it is injected once here rather than threaded through.
+setReaderFailureLogger((message) => app.log.warn(message));
+
 // RTH watchdog for the silently-dying DXLink websocket.
 market.startHeartbeat((msg) => app.log.info(msg));
 

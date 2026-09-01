@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useGex } from "../../lib/api";
+import { useGex, useGexIntegrity } from "../../lib/api";
 import { DataCard, fmtNum } from "../../components/DataTable";
+import { IntegrityStrip } from "./IntegrityStrip";
+import { Pager, TabStrip, usePage } from "../../components/ScopeBar";
 import { useFlashOnChange } from "../../lib/useFlashOnChange";
 import { GexProfileChart, IvSkewChart, StrikeBarsChart, fmtGexDollars, type GexStrikeRow, type GexView } from "./GexProfileChart";
 
@@ -128,7 +130,11 @@ export function GexPage() {
   // Each query only backs the tab(s) that read it -- the history table needs the overview
   // endpoint, everything else needs the per-symbol profile, and there's no reason to keep
   // polling either one for a tab that isn't on screen.
-  const { data, isLoading, isError } = useGex(tab === "history");
+  const { page, setOffset, setLimit } = usePage();
+  const { data, isLoading, isError } = useGex(tab === "history", page);
+  // Its own tiny query: `useGex` is gated to the history tab, and a stale flip is precisely what a
+  // reader of the chart tab needs to know.
+  const integrity = useGexIntegrity();
   const symbols = useGexSymbols();
   const profile = useGexProfile(symbol, tab !== "history");
   const p = profile.data;
@@ -154,15 +160,15 @@ export function GexPage() {
             as of {new Date(p.spotUpdatedAt * 1000).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour12: false })} ET
           </span>
         )}
-        <div className="mode-toggle">
-          {TABS.map(([t, label]) => (
-            <button key={t} type="button" className={tab === t ? "mode-btn active" : "mode-btn"} onClick={() => setTab(t)}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <TabStrip
+          tabs={TABS.map(([t]) => t)}
+          value={tab}
+          onChange={setTab}
+          labels={Object.fromEntries(TABS) as Partial<Record<GexTab, string>>}
+          ariaLabel="gex tabs"
+        />
         {tab === "gex" && (
-          <div className="mode-toggle" style={{ marginLeft: 0 }}>
+          <div className="mode-toggle" style={{ marginLeft: 0 }} role="group" aria-label="chart view">
             {(["oivol", "net", "abs"] as GexView[]).map((v) => (
               <button key={v} type="button" className={view === v ? "mode-btn active" : "mode-btn"} onClick={() => setView(v)}>
                 {v === "oivol" ? "OI vs Vol" : v === "net" ? "Net" : "Abs"}
@@ -171,6 +177,10 @@ export function GexPage() {
           </div>
         )}
       </div>
+
+      {/* Above the numbers it qualifies, on every tab. This module journals no measurement breaks;
+          what makes a flip or a wall untrustworthy is staleness and truncation, and both have bitten. */}
+      <IntegrityStrip data={integrity.data} updatedAt={integrity.dataUpdatedAt} />
 
       <div className="cards cards-wide">
         {tab === "gex" && (
@@ -306,11 +316,22 @@ export function GexPage() {
           numFrom={1}
           loading={isLoading}
           isError={isError}
-          rowCount={data?.recent.length ?? 0}
+          rowCount={data?.recent.rows.length ?? 0}
           skeletonRows={10}
           className="view-fade"
+          footer={
+            data !== undefined && (
+              <Pager
+                offset={data.recent.offset}
+                limit={data.recent.limit}
+                total={data.recent.total}
+                onOffset={setOffset}
+                onLimit={setLimit}
+              />
+            )
+          }
         >
-          {data?.recent.map((g, i) => (
+          {data?.recent.rows.map((g, i) => (
             <tr key={`${g.symbol}-${g.ts}-${i}`}>
               <td className="muted">{fmtEt(g.ts)}</td>
               <td>{g.symbol}</td>

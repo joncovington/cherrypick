@@ -87,11 +87,11 @@ suite once collected $4.00 of credit against $4.96 of fees.
   mechanical control book, a permissive path book recording every tick, and a read-side replay that
   scores profit targets, stops and exit timings over the recorded path — validated against the real
   books to the cent. Paper-only and credential-free. See [packages/calendars](packages/calendars).
-- **PMCC-99** — deep-ITM covered calls on leveraged ETFs (TNA, TQQQ, UPRO): buy a ~99-delta ~21DTE
-  call as a stock substitute, sell an ITM ~9DTE call whose intrinsic is the downside buffer and whose
-  time value is the profit. Three books isolate entry timing (Keltner pullback-and-reversal) and
-  breach handling (roll vs hold); early assignment is measured, never modelled, so paper results are
-  an explicit upper bound. Paper-only and credential-free. See [packages/pmcc](packages/pmcc).
+- **PMCC-99** — deep-ITM covered calls on TQQQ: buy an 85-90-delta ~21DTE call as a stock
+  substitute, sell the ATM ~7DTE call nearest spot (no yield floor), hold to the short's own
+  expiration and close both legs together. Single `control` book plus an advised A/B against the
+  old early-tv-exit rule; early assignment is measured, never modelled, so paper results are an
+  explicit upper bound. Paper-only and credential-free. See [packages/pmcc](packages/pmcc).
 
 ## Where you look at the results
 
@@ -288,7 +288,7 @@ only — it never places a trade, and it does not enable live trading.
 **Notification webhooks** are stored in the keyring the same way, never in your config file:
 
 ```bash
-python run.py secrets-set --channel discord    # prompts without echo; also: slack, discord_follow
+python run.py secrets-set --channel discord    # prompts without echo; also: slack
 python run.py secrets-status                   # which channels are configured (prints no secrets)
 ```
 

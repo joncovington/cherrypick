@@ -18,7 +18,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 
-from cherrypick.pmcc import clock
+from cherrypick.pmcc import clock, db, provider
 
 DEFAULT_BASE_WIDTH = 60
 DEFAULT_MARGIN = 10
@@ -164,16 +164,78 @@ def evaluate(
     return width
 
 
+def entry_possible(conn, symbol: str, books: list[str], max_positions: int) -> bool:
+    """Whether ANY book could still open `symbol` — the same condition `paper_loop`'s entry phase
+    uses to decide it has something to do (a free (symbol, book) slot, under the book's cap).
+
+    Deliberately the same test rather than an approximation of it: this decides whether the widened
+    window is subscribed at all, so a window that disagreed with the entry gate would either starve
+    a reachable entry or keep paying for an unreachable one.
+
+    **`books` must include the advised twin, and did not until 2026-08-27.** `engine.BOOKS` holds
+    the BASE books only, so this asked "can control still enter?" while `advised:control` is a real
+    book with its own slot and its own entry. Control filled XSP on 2026-08-24, the gate went False,
+    the widened window was dropped — and the advised twin, still looking, recorded **658
+    `no_deep_itm_long` refusals across the whole of 08-25 and 08-26** before a lucky re-centre let
+    it in on the 27th. An A/B whose two arms cannot enter the same days is not an A/B.
+    """
+    return any(
+        db.open_position_for(conn, symbol, b) is None and db.open_position_count(conn, b) < max_positions
+        for b in books
+    )
+
+
 def hints_for_symbols(
-    conn, cache_path, symbols: list[str], trade_date: str, config: dict, *, deep_window_pct: float
-) -> dict[str, int]:
-    """`{symbol: width}` — max(structural need, escalated width) per symbol, entries only where the
-    result exceeds `base_width` (absent/empty is the request payload's own default convention)."""
+    conn,
+    cache_path,
+    symbols: list[str],
+    trade_date: str,
+    config: dict,
+    *,
+    deep_window_pct: float | None = None,
+    books: list[str] | None = None,
+    max_positions: int = 1,
+) -> dict[str, dict[str, int]]:
+    """`{symbol: {"down": width, "up": margin}}` — max(structural need, escalated width) per symbol,
+    entries only where the result exceeds `base_width` (absent/empty is the request payload's own
+    default convention).
+
+    **The hint is DIRECTIONAL, and this module is why the request schema grew that.** Everything the
+    widened window exists to find sits BELOW spot: the 85-90-delta long is 15-19% in the money on
+    TQQQ. The short is ATM by definition and needs no depth at all. A symmetric count therefore
+    bought an identical block of strikes above spot that no book here can read, and on 2026-08-24
+    that block was the single largest waste in the suite's subscription budget. The upward figure is
+    the declared margin only; the producer floors both sides at its own `window_strike_count`, so
+    the ATM short is covered by the default window regardless of what this asks.
+
+    **A symbol with no free slot gets no hint at all.** The widened window exists for exactly one
+    purpose — finding the 85-90-delta long AT ENTRY — and once every book holds `symbol`, nothing
+    can be entered until one closes, which for a hold-to-expiration cycle is one to two WEEKS. The
+    open position's own marks come from the request's `leg_sources`, never from this window, so the
+    window is pure cost for the whole holding period. It was measured at 84% of the suite's
+    updating option quotes on 2026-08-24 while pmcc held its only slot.
+
+    Dropping a hint is safe and cheap by construction: the producer recomputes each window every
+    pass and unsubscribes the difference, and the watchdog's subscription-staleness check is
+    growth-only, so a shrink never recycles the producer. The state changes twice per multi-week
+    cycle, which is the cadence this is safe at — a per-tick toggle would re-create the subscribe
+    burst that `cherrypick.core.streamer`'s pacing exists to prevent.
+
+    The hint returns the moment a slot frees rather than when an entry is attempted, so the quotes
+    have a subscription poll or two to arrive before the module wants them.
+    """
     p = window_params(config)
-    hints: dict[str, int] = {}
+    hints: dict[str, dict[str, int]] = {}
+    roster = list(books) if books else []
     for symbol in symbols:
         symbol = symbol.strip().upper()
-        computed = needed_width(cache_path, symbol, deep_window_pct=deep_window_pct, margin=p["margin"])
+        if roster and not entry_possible(conn, symbol, roster, max_positions):
+            continue
+        # Per SYMBOL: one shared bound is sized for the deepest symbol and buys every other
+        # one strikes it cannot use (see provider.deep_window_pct_for). An explicit argument
+        # still wins, so a caller pricing a hypothetical keeps full control.
+        pct = deep_window_pct if deep_window_pct is not None else provider.deep_window_pct_for(config, symbol)
+        computed = needed_width(cache_path, symbol, deep_window_pct=pct, margin=p["margin"])
         escalated = evaluate(
             conn,
             symbol,
@@ -186,6 +248,17 @@ def hints_for_symbols(
         )
         width = max(computed or 0, escalated)
         width = min(width, p["max_width"])
-        if width > p["base_width"]:
-            hints[symbol] = width
+        # Emit whatever the chain actually needs. This used to be suppressed below `base_width` on
+        # the reasoning that the producer already covered that much -- and `base_width` was a
+        # hand-copied mirror of the producer's default, which its own config note still claims it
+        # is. The producer was cut 60 -> 30 during the 2026-08-24 subscription incident and this
+        # copy was not, leaving a silent dead band: any need between 31 and 60 was swallowed here
+        # while the producer served 30. TQQQ's computed need is 39 and sits squarely in it.
+        #
+        # The suppression was never load-bearing anyway: the producer already resolves
+        # `max(default, hint)`, so a hint under its default is correctly ignored at the other end.
+        # Deleting the threshold deletes the duplicated constant, and with it the only thing that
+        # could drift.
+        if width > 0:
+            hints[symbol] = {"down": width, "up": p["margin"]}
     return hints

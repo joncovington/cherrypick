@@ -1,7 +1,7 @@
 import { useOverview } from "../../lib/api";
 import { LiveQuoteRow } from "../../components/LiveQuote";
 import { EquityCard, LogsCard } from "./EquityCard";
-import { SystemCard, EodCard, useSystem } from "./SuiteCards";
+import { SystemCard, EodCard, SuiteCalendarCard, useSystem } from "./SuiteCards";
 import type { WatchdogFinding } from "@console/shared";
 
 const WATCH_SYMBOLS = ["SPX", "XSP", "QQQ", "IWM"];
@@ -109,29 +109,10 @@ export function OverviewPage() {
           )}
         </section>
 
-        <section className="card">
-          <h2>Managed services</h2>
-          <table className="data-table">
-            <tbody>
-              {data ? (
-                data.services.map((s) => (
-                  <tr key={s.id}>
-                    <td>
-                      <span className={`dot ${s.enabled ? "status-ok" : "status-off"}`} />
-                    </td>
-                    <td>{s.id}</td>
-                    <td className="muted">{s.enabled ? "enabled" : "disabled"}</td>
-                  </tr>
-                ))
-              ) : (
-                <SkeletonRows n={2} />
-              )}
-            </tbody>
-          </table>
-        </section>
       </div>
 
       <div className="cards cards-wide" style={{ marginTop: "0.75rem" }}>
+        <SuiteCalendarCard />
         <EodCard />
         <SystemCard />
         <LogsCard />

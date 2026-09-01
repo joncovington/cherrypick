@@ -14,9 +14,28 @@ leg independently was caught live producing calendars whose legs sat on differen
 from __future__ import annotations
 
 from cherrypick.core import fees as _fees
+from cherrypick.core import settlement as _settlement
 from cherrypick.core import structures as _structures
 
 BOOKS = ("control", "path")
+
+# Entry-regime prefix for the Friday-entry books (docs/friday-entry-arm.md). `friday:path` must
+# behave exactly like `path` under management and exactly unlike it under structure tagging — the
+# first because exit POLICY is the base book's, the second because a Friday entry is dc_7_10 and
+# never pools with dc_4_7.
+FRIDAY_PREFIX = "friday:"
+
+
+def base_book(book: str) -> str:
+    """The exit-policy identity behind a book name. `advised:control` is a control with overlaid
+    params and `friday:path` is a path entered a session earlier; both answer to their base book's
+    policy. Taking the LAST segment composes for any prefix stack without enumerating them —
+    `advised:friday:control` reads as `control`.
+
+    Every policy check must go through this rather than comparing the raw name. `management.decide`
+    compared `book == "path"` directly, which silently made `friday:path` a CLOSING book — the one
+    book whose entire job is never to close."""
+    return book.rsplit(":", 1)[-1]
 
 # How an expiring leg settles, per underlying. The module models both styles and refuses a symbol it
 # has been told nothing about — the guard's original point, kept: an unmodelled settlement produces
@@ -185,6 +204,39 @@ def plan_entry(snapshot: dict, params: dict) -> dict:
     }
 
 
+def price_at_strikes(snapshot: dict, strikes: dict[str, float]) -> dict:
+    """The debit of a double calendar at strikes ALREADY CHOSEN, priced off this snapshot.
+
+    `plan_entry` picks strikes from the expected move and prices them; this prices strikes some
+    other entry already picked. That difference is the whole point of the Friday-regime comparison
+    (docs/friday-entry-arm.md): with the same strikes AND the same expirations, both entrances hold
+    the same contracts, so their value paths are identical from the later entry onward and the
+    entire P&L difference between them is what each PAID. Letting each regime pick its own strikes
+    instead would fold a large, noisy selection difference into a small, systematic decay effect.
+
+    Refusals reuse the entry vocabulary. `{"ok": True, "sides": {side: {strike, debit}}, "debit"}`.
+    """
+    quotes = snapshot["quotes"]
+    front, back = snapshot["front"], snapshot["back"]
+    sides: dict[str, dict] = {}
+    for side, strike in strikes.items():
+        front_by_strike = _quoted_strikes(front, quotes, side)
+        back_by_strike = _quoted_strikes(back, quotes, side)
+        if strike not in front_by_strike or strike not in back_by_strike:
+            # The strike is not quoted on both legs in THIS snapshot — a real answer ("we could not
+            # have priced it then"), not a hole to fill with the nearest neighbour.
+            return {"ok": False, "reason": "strike_not_quoted", "detail": f"{side} {strike}"}
+        front_quote = quotes[front_by_strike[strike]["streamer_symbol"]]
+        back_quote = quotes[back_by_strike[strike]["streamer_symbol"]]
+        debit = back_quote["mid"] - front_quote["mid"]
+        if debit <= 0:
+            return {"ok": False, "reason": "non_positive_debit", "detail": side}
+        sides[side] = {"strike": strike, "debit": round(debit, 4)}
+    if not sides:
+        return {"ok": False, "reason": "no_strikes_given"}
+    return {"ok": True, "sides": sides, "debit": round(sum(s["debit"] for s in sides.values()), 4)}
+
+
 def _leg(which: str, side: str, entry: dict, quote: dict, greeks: dict, expiration: str) -> dict:
     g = greeks.get(entry["streamer_symbol"]) or {}
     return {
@@ -285,10 +337,9 @@ def assignment_from(leg: dict, spot: float, quantity: int) -> dict | None:
     }
 
 
-def share_pnl(direction: str, shares: int, basis: float, price: float) -> float:
-    """Dollar P&L of a delivered share position disposed at `price`. Long earns the rise."""
-    move = price - basis if direction == "long" else basis - price
-    return round(move * shares, 2)
+# Delivered-share P&L lives in core: calendars and pmcc both model physical settlement and must
+# not disagree about the money. Re-exported under the local name every call site already uses.
+share_pnl = _settlement.share_pnl  # noqa: F401
 
 
 def leg_pnl(leg: dict) -> float | None:

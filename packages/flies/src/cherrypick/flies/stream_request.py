@@ -43,7 +43,6 @@ def write(symbols, window_hints=None, *, live: bool = False) -> Path:
 def register(config: dict, window_hints=None, *, live: bool = False) -> None:
     """Best-effort: declare the configured ``symbols`` (and any ``window_hints``) to the streamer.
     Never raises into the caller."""
-    try:
-        write(config.get("symbols") or [], window_hints=window_hints, live=live)
-    except Exception as exc:  # noqa: BLE001 — registration is advisory, never fatal to the loop
-        _log.warning("stream request registration failed: %s", exc)
+    _sr.register_best_effort(
+        write, config.get("symbols") or [], window_hints=window_hints, live=live, log=_log
+    )

@@ -574,7 +574,7 @@ def cmd_save_leg_close(args) -> dict:
 
 def cmd_save_close(args) -> dict:
     """Close a position. `exit_reason` names WHY from the lifecycle taxonomy (profit_target,
-    stop_loss, wing_breach, side_breach, leg_delta_stop, time_stop, pin_risk, front_expiry,
+    stop_loss, wing_breach, side_breach, leg_delta_stop, time_stop, pin_risk, expired, front_expiry,
     iv_crush_backstop, close_window, forced_eod, manual) -- previously the reason reached only
     scan_log, joinable back to a trade by nothing better than (date, symbol, strategy), which a
     position held across several sessions cannot be identified by at all.

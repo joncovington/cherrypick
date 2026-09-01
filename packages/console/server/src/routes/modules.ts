@@ -8,6 +8,7 @@ import { readOccupancy } from "../readers/occupancy.js";
 import {
   readMeic,
   readMeicAnalytics,
+  readMeicDivergence,
   readMeicDeepAnalytics,
   readMeicPerformance,
   readMeicScope,
@@ -26,9 +27,17 @@ import {
   readFliesPerformance,
   readFliesJournal,
   readArmDivergence,
+  readVoidedRows,
   readFliesTradeLog,
+  readFliesLoopStatus,
+  ERAS,
   type FliesFilter,
 } from "../readers/flies.js";
+import { readPmcc, readPmccAssignments, readPmccHistory, readPmccMeta } from "../readers/pmcc.js";
+import { readCurve, readCurveHistory, readCurveMeta } from "../readers/curve.js";
+import { readBwb, readBwbHistory, readBwbMeta } from "../readers/bwb.js";
+import { readCalendars, readCalendarsWeek, readCalendarsWeeks } from "../readers/calendars.js";
+import { readCalendarsPolicies } from "../services/calendarsBridge.js";
 import { readEarnings, readSymbolWatch, readEarningsAnalytics, readEarningsDetail } from "../readers/earnings.js";
 import { readEarningsLive } from "../readers/earningsLive.js";
 import { readScreenMetrics } from "../services/screenBridge.js";
@@ -36,8 +45,8 @@ import { readGex } from "../readers/gex.js";
 import { buildGexProfile, gexSymbols } from "../services/gexProfile.js";
 import { buildSuiteReport } from "../services/report.js";
 import { readLogTail } from "../readers/logs.js";
-import { buildCalibration } from "../services/calibrate.js";
 import { readSystemPanel, readEod, renderReport } from "../services/suite.js";
+import { suiteEra } from "../readers/db.js";
 
 function parseMode(q: unknown): TradingMode {
   const mode = (q as Record<string, unknown> | undefined)?.["mode"];
@@ -83,7 +92,10 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   // The screening metrics, classified by the module that owns them rather than re-derived here.
   app.get("/api/earnings/screen", async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
-    const since = typeof q["since"] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(q["since"]) ? q["since"] : null;
+    const explicit = typeof q["since"] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(q["since"]) ? q["since"] : null;
+    // Era-default like every other earnings surface: screen_report already takes --since, so the
+    // era bound rides the module's own classifier rather than a console-side re-derivation.
+    const since = explicit ?? (q["era"] === "ALL" ? null : suiteEra(config.paths.orchestratorConfig).from);
     return readScreenMetrics(parseMode(req.query) === "live" ? "live" : "paper", since);
   });
 
@@ -91,6 +103,14 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/meic/analytics", async (req) =>
     readMeicAnalytics(config, parseMode(req.query), parseMeicScope(req.query)),
   );
+  // `date` is not part of MeicScopeFilter (symbol/profile/era), so it is read on its own here --
+  // null means "the latest session", which the reader resolves from entry_attempts.
+  app.get("/api/meic/divergence", async (req) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const raw = q["date"];
+    const date = typeof raw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
+    return readMeicDivergence(config, parseMode(req.query), date);
+  });
   app.get("/api/meic/deep", async (req) =>
     readMeicDeepAnalytics(config, parseMode(req.query), parseMeicScope(req.query)),
   );
@@ -115,6 +135,12 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const f = parseFliesFilter(req.query);
     return readEntryAttempts(config, "flies", parseMode(req.query), f.date);
   });
+  // pmcc is paper-only, so mode is fixed rather than parsed. calendars has no equivalent route:
+  // its books share one entry plan, so there is no per-arm entry decision to show.
+  app.get("/api/pmcc/attempts", async (req) => {
+    const f = parseFliesFilter(req.query);
+    return readEntryAttempts(config, "pmcc", "paper", f.date);
+  });
   app.get("/api/meic/loop", async (req) =>
     readMeicLoopStatus(config, parseMode(req.query), parseMeicScope(req.query)),
   );
@@ -128,7 +154,15 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const query = (q ?? {}) as Record<string, unknown>;
     const date = typeof query["date"] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(query["date"]) ? query["date"] : null;
     const arm = typeof query["arm"] === "string" && query["arm"] !== "" && query["arm"].length <= 40 ? query["arm"] : null;
-    const era = query["era"] === "ALL" ? "ALL" : null;
+    // "ALL", any declared era key, or null for the module's own evidence window. An unknown value
+    // falls back to the default rather than pooling — widening is only ever a stated choice.
+    const rawEra = query["era"];
+    const era =
+      rawEra === "ALL"
+        ? "ALL"
+        : typeof rawEra === "string" && ERAS.some((e) => e.key === rawEra)
+          ? rawEra
+          : null;
     const symbol =
       typeof query["symbol"] === "string" && query["symbol"] !== "" && query["symbol"].length <= 12
         ? query["symbol"]
@@ -141,6 +175,10 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       positions: parsePage(req.query, "positions"),
     }),
   );
+  /** An ISO date, or null for "no bound this way". See the tradelog route below. */
+  const isoDate = (v: unknown): string | null =>
+    typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.trim()) ? v.trim() : null;
+
   app.get("/api/flies/tradelog", async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     const outcome = typeof q["outcome"] === "string" ? q["outcome"] : "all";
@@ -151,6 +189,14 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
           ? outcome
           : "all",
       search: typeof q["search"] === "string" ? q["search"].slice(0, 60) : "",
+      // The page-level arm selector, threaded through like `era` — the log used to ignore it.
+      arm: parseFliesFilter(req.query).arm,
+      era: parseFliesFilter(req.query).era,
+      // Validated to an ISO date rather than passed through: these go into a `trade_date >= ?`
+      // comparison against TEXT dates, where a malformed bound would silently match nothing and
+      // read as "no trades in that range".
+      from: isoDate(q["from"]),
+      to: isoDate(q["to"]),
     });
   });
   // The experiment guides: what each arm/profile is and how it got there. Config + ledger only, so
@@ -161,8 +207,12 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/flies/analytics", async (req) =>
     readFliesAnalytics(config, parseMode(req.query), parseFliesFilter(req.query)),
   );
+  app.get("/api/flies/loop", async (req) => readFliesLoopStatus(config, parseMode(req.query)));
   app.get("/api/flies/meta", async (req) => readFliesMeta(config, parseMode(req.query), parseFliesFilter(req.query).era));
   app.get("/api/flies/history", async (req) => readFliesHistory(config, parseMode(req.query), parseFliesFilter(req.query)));
+  app.get("/api/flies/voided", async (req) =>
+    readVoidedRows(config, parseMode(req.query), parseFliesFilter(req.query)),
+  );
   app.get("/api/flies/divergence", async (req) =>
     readArmDivergence(config, parseMode(req.query), parseFliesFilter(req.query).date),
   );
@@ -183,15 +233,80 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const f = parseFliesFilter(req.query);
     return readFliesForest(config, parseMode(req.query), f.date, f.arm);
   });
+  // PMCC-99. No `mode` on any of these: the module has no live loop and no live store, so a mode
+  // parameter could only ever name a book that does not exist.
+  app.get("/api/pmcc", async () => readPmcc(config));
+  app.get("/api/pmcc/meta", async () => readPmccMeta(config));
+  app.get("/api/pmcc/assignments", async () => ({ rows: readPmccAssignments(config) }));
+  app.get("/api/pmcc/history", async (req) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const pick = (k: string, max: number): string | null => {
+      const v = q[k];
+      return typeof v === "string" && v !== "" && v.length <= max ? v : null;
+    };
+    return readPmccHistory(config, { book: pick("book", 40), symbol: pick("symbol", 12) }, parsePage(req.query));
+  });
+
+  // curve (VXX term-structure roll-yield harvest). No `mode` here either -- paper-only, no live loop.
+  app.get("/api/curve", async () => readCurve(config));
+  app.get("/api/curve/meta", async () => readCurveMeta(config));
+  app.get("/api/curve/history", async (req) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const pick = (k: string, max: number): string | null => {
+      const v = q[k];
+      return typeof v === "string" && v !== "" && v.length <= max ? v : null;
+    };
+    return readCurveHistory(config, { book: pick("book", 40), symbol: pick("symbol", 12) }, parsePage(req.query));
+  });
+
+  // bwb (SPX daily-laddered put broken-wing butterfly / 1-3-2 add-on trigger experiment). No `mode`
+  // here either -- paper-only, no live loop.
+  app.get("/api/bwb", async () => readBwb(config));
+  app.get("/api/bwb/meta", async () => readBwbMeta(config));
+  app.get("/api/bwb/history", async (req) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    const pick = (k: string, max: number): string | null => {
+      const v = q[k];
+      return typeof v === "string" && v !== "" && v.length <= max ? v : null;
+    };
+    return readBwbHistory(config, { book: pick("book", 40), symbol: pick("symbol", 12) }, parsePage(req.query));
+  });
+
+  // Weekly double calendars. No `mode` here either, and for the same structural reason as PMCC's.
+  app.get("/api/calendars", async () => readCalendars(config));
+  app.get("/api/calendars/weeks", async () => ({ rows: readCalendarsWeeks(config) }));
+  app.get("/api/calendars/week", async (req) => {
+    const week = (req.query as Record<string, unknown> | undefined)?.["week"];
+    if (typeof week !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(week)) return { rows: [] };
+    return { rows: readCalendarsWeek(config, week) };
+  });
+  // The derived exit-policy table, from the module's own derivation. Served with its validation
+  // attached because that is how the module hands it over -- the ranking never travels alone.
+  app.get("/api/calendars/policies", async () => readCalendarsPolicies());
+
+  // "ALL" widens an earnings surface to full history; anything else (or absence) means the current
+  // era — the suite's data_epoch, since earnings has no era column of its own.
+  const parseEarningsEra = (q: unknown): string | null => {
+    const v = ((q ?? {}) as Record<string, unknown>)["era"];
+    return v === "ALL" ? "ALL" : null;
+  };
   app.get("/api/earnings", async (req) =>
-    readEarnings(config, { trades: parsePage(req.query, "trades"), reviews: parsePage(req.query, "reviews") }),
+    readEarnings(
+      config,
+      { trades: parsePage(req.query, "trades"), reviews: parsePage(req.query, "reviews") },
+      parseEarningsEra(req.query),
+    ),
   );
   app.get("/api/earnings/upcoming", async () => readSymbolWatch(config));
-  app.get("/api/earnings/analytics", async (req) => readEarningsAnalytics(config, parseMode(req.query)));
-  app.get("/api/earnings/detail", async (req) => readEarningsDetail(config, parseMode(req.query)));
+  app.get("/api/earnings/analytics", async (req) =>
+    readEarningsAnalytics(config, parseMode(req.query), parseEarningsEra(req.query)),
+  );
+  app.get("/api/earnings/detail", async (req) =>
+    readEarningsDetail(config, parseMode(req.query), parseEarningsEra(req.query)),
+  );
   // Open positions as the managed loop sees them: latest mark, and whether the loop is alive.
   app.get("/api/earnings/live", async () => readEarningsLive(config));
-  app.get("/api/gex", async () => readGex(config));
+  app.get("/api/gex", async (req) => readGex(config, parsePage(req.query)));
   app.get("/api/gex/symbols", async () => ({ symbols: gexSymbols(config) }));
   app.get("/api/gex/profile/:symbol", async (req) => {
     const { symbol } = req.params as { symbol: string };
@@ -199,7 +314,6 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   });
   app.get("/api/report", async () => buildSuiteReport(config));
   app.get("/api/logs", async () => ({ lines: readLogTail(config) }));
-  app.get("/api/calibration", async () => ({ modules: buildCalibration(config) }));
   app.get("/api/system", async () => readSystemPanel(config));
   app.get("/api/eod", async () => readEod(config));
   app.get("/api/eod/report", async (req, reply) => {

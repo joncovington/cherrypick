@@ -20,10 +20,28 @@ survive; if none do, the refusal is `not_weekly_listed`, which is the skip-this-
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
+
+# Read-only opens go through cherrypick.core.db.connect_ro: it percent-escapes the path, so a
+# directory containing '?', '#' or '%' cannot silently change the URI's meaning. The local
+# copies interpolated the path raw, where a '#' truncated the URI and opened a DIFFERENT,
+# empty database — which a provider reports as "nothing cached" rather than as an error.
+from cherrypick.core.db import connect_ro as _connect_ro
+
+# occ_root is re-exported: the modules' own code calls provider.occ_root.
+from cherrypick.core.streamcache import chain_for_expiration as _chain_for_expiration
+from cherrypick.core.streamcache import greeks_for as _greeks
+
+# Shared with every other provider — see cherrypick.core.streamcache.
+# read_spot is re-exported deliberately: the loops call provider.read_spot and their tests
+# monkeypatch it there, so it is unused *inside* this module and ruff will drop it otherwise.
+from cherrypick.core.streamcache import (
+    occ_root,  # noqa: F401
+    read_spot,  # noqa: F401
+)
+from cherrypick.core.streamcache import usable_quote as _usable_quote
 
 from cherrypick.calendars.clock import now_et  # noqa: F401  (re-exported for the loop's convenience)
 
@@ -31,10 +49,6 @@ DEFAULT_MAX_QUOTE_AGE_SECONDS = 300
 DEFAULT_STRIKE_WINDOW_PCT = 0.04
 
 
-def _connect_ro(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 def _fail(symbol: str, reason: str, **extra) -> dict:
@@ -42,30 +56,8 @@ def _fail(symbol: str, reason: str, **extra) -> dict:
     return {"ok": False, "symbol": symbol, "reason": reason, **extra}
 
 
-def _usable_quote(row, now_ts: float, max_age: float) -> dict | None:
-    """A quote we are willing to price a fill against, or None — rejects stale, crossed, and
-    non-positive-ask quotes. A structure with a missing leg is skipped (costs a sample); a
-    structure priced off a bad leg costs the whole experiment."""
-    bid, ask, updated = row["bid"], row["ask"], row["updated_at"]
-    if bid is None or ask is None or updated is None:
-        return None
-    if now_ts - float(updated) > max_age:
-        return None
-    bid, ask = float(bid), float(ask)
-    if ask <= 0 or bid < 0 or bid > ask:
-        return None
-    mid = row["mid"]
-    return {
-        "bid": bid,
-        "ask": ask,
-        "mid": float(mid) if mid is not None else (bid + ask) / 2.0,
-        "age_seconds": round(now_ts - float(updated), 1),
-    }
 
 
-def occ_root(occ_symbol: str | None) -> str:
-    """The root portion of an OCC symbol (`"SPXW  260821P06400000"` -> `"SPXW"`)."""
-    return (occ_symbol or "")[:6].strip().upper()
 
 
 def snapshot_kwargs(config: dict) -> dict:
@@ -77,37 +69,6 @@ def snapshot_kwargs(config: dict) -> dict:
     }
 
 
-def _chain_for_expiration(conn, symbol: str, expiration: str, root: str) -> list[dict]:
-    """Cached chain entries for exactly this (underlying, expiration), filtered to the configured
-    OCC root. Filtering on `underlying_symbol` matters (SPX and XSP share dates); filtering on the
-    root drops an AM-settled third-Friday monthly that shares the date with the weekly."""
-    import json as _json
-
-    entries = []
-    for row in conn.execute(
-        "SELECT data_json FROM stream_chain WHERE expiration = ? AND underlying_symbol = ?",
-        (expiration, symbol),
-    ):
-        try:
-            opt = _json.loads(row["data_json"])
-        except (ValueError, TypeError):
-            continue
-        sym, strike = opt.get("streamer_symbol"), opt.get("strike_price")
-        occ = opt.get("symbol")
-        if not sym or strike is None or not occ:
-            continue
-        if occ_root(occ) != root:
-            continue
-        otype = str(opt.get("option_type", "")).strip().lower()
-        entries.append(
-            {
-                "strike_price": float(strike),
-                "streamer_symbol": sym,
-                "occ_symbol": occ,
-                "option_type": "call" if otype.startswith("c") else "put",
-            }
-        )
-    return entries
 
 
 def build_entry_snapshot(
@@ -220,6 +181,7 @@ def build_mark_snapshot(
         "fresh": 0,
         "stale": 0,
         "max_spread_pct": None,
+        "leg_spreads": [],
     }
     if not legs:
         return {**out, "reason": "no_legs"}
@@ -255,6 +217,18 @@ def build_mark_snapshot(
             if quote["mid"] > 0:
                 spread_pct = (quote["ask"] - quote["bid"]) / quote["mid"]
                 widest = spread_pct if widest is None else max(widest, spread_pct)
+                # Both readings of the same width, per leg. A percentage alone cannot tell a
+                # genuinely illiquid leg from a nearly-worthless one: a 0.00/0.01 quote is a 200%
+                # spread and a one-cent cost. The gate needs both to tell those apart, and it needs
+                # them PER LEG -- the widest-by-percent and the widest-by-money can be different
+                # legs, so two separate maxima would refuse a structure neither leg justifies.
+                out["leg_spreads"].append(
+                    {
+                        "symbol": sym,
+                        "pct": round(spread_pct, 4),
+                        "abs": round(quote["ask"] - quote["bid"], 4),
+                    }
+                )
         out["max_spread_pct"] = round(widest, 4) if widest is not None else None
         out["greeks"] = _greeks(conn, streamer_syms, now_ts=now_ts, max_age_seconds=max_quote_age_seconds * 6)
 
@@ -267,47 +241,5 @@ def build_mark_snapshot(
         conn.close()
 
 
-def _greeks(conn, streamer_syms: list[str], *, now_ts: float, max_age_seconds: float) -> dict:
-    """delta/iv/vega per streamer symbol, age-bounded (looser than quotes — greeks tick slower).
-    Missing rows are simply absent; greeks are context for the record, never a gate."""
-    out: dict[str, dict] = {}
-    if not streamer_syms:
-        return out
-    for i in range(0, len(streamer_syms), 900):
-        chunk = streamer_syms[i : i + 900]
-        placeholders = ", ".join("?" * len(chunk))
-        for r in conn.execute(
-            f"SELECT symbol, delta, iv, vega, updated_at FROM stream_greeks WHERE symbol IN ({placeholders})",
-            chunk,
-        ):
-            if r["updated_at"] is None or now_ts - float(r["updated_at"]) > max_age_seconds:
-                continue
-            out[r["symbol"]] = {
-                "delta": float(r["delta"]) if r["delta"] is not None else None,
-                "iv": float(r["iv"]) if r["iv"] is not None else None,
-                "vega": float(r["vega"]) if r["vega"] is not None else None,
-            }
-    return out
 
 
-def read_spot(db_path, symbol: str, *, max_age_seconds: float | None = None) -> float | None:
-    """Latest spot for one symbol — the settlement read. The staleness gate is mandatory practice
-    here: settlement decides every expiring leg's P&L at once and cannot be undone, so a stalled
-    feed must refuse rather than settle the week against an old print (the flies 2026-07-20 lesson)."""
-    db_path = Path(db_path)
-    if not db_path.exists():
-        return None
-    conn = _connect_ro(db_path)
-    try:
-        r = conn.execute(
-            "SELECT last, updated_at FROM stream_trades WHERE symbol = ?", (symbol.strip().upper(),)
-        ).fetchone()
-        if not r or r["last"] is None:
-            return None
-        if max_age_seconds is not None:
-            updated = r["updated_at"]
-            if updated is None or (time.time() - float(updated)) > max_age_seconds:
-                return None
-        return float(r["last"])
-    finally:
-        conn.close()

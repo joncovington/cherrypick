@@ -12,15 +12,13 @@ advice lands on Monday and nothing is ever issued for a holiday.
 from __future__ import annotations
 
 from datetime import date, datetime
-from zoneinfo import ZoneInfo
 
 from cherrypick.core import calendar as _calendar
 
-ET = ZoneInfo("America/New_York")
-
-
-def now_et() -> datetime:
-    return datetime.now(ET)
+# See cherrypick.core.clock: one definition of "now, in ET" for the suite. `session_today` below is
+# this module's own — it names the ET calendar day whether or not it is a trading day, which is a
+# different question from the trading-session helpers under it.
+from cherrypick.core.clock import ET, now_et  # noqa: F401
 
 
 def session_today() -> str:

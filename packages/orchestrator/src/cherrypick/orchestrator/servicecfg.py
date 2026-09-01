@@ -45,10 +45,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from pathlib import Path
 from typing import Any
 
 from cherrypick.core import home as _home
+from cherrypick.core import streamcache
 from cherrypick.core import streamrequests as _streamrequests
 
 from . import config as cfgmod
@@ -56,6 +58,22 @@ from . import util
 
 _STAMP_PREFIX = "service-"
 _STAMP_SUFFIX = ".launch.json"
+
+# How long after a launch a WIDER-WINDOW shortfall is allowed to recycle the producer again.
+#
+# A widened window and a new symbol are not the same urgency, and treating them alike cost a session.
+# On 2026-08-17 pmcc walked its per-symbol window hint up its escalation ladder (60 -> 90 -> ... ->
+# 200) as its deep-ITM misses accumulated, and every single step was "growth", so every step stopped
+# and restarted the producer -- roughly one restart every five minutes for two hours, each one
+# reloading every chain. The module's hint also DECAYS after a quiet hour, so the ladder was climbed
+# more than once; there is no natural end to that loop.
+#
+# A new symbol still recycles on sight: a module that cannot see an instrument at all is blind, and
+# waiting is the wrong answer. A narrower-than-ideal window is not blindness -- the module records a
+# refusal and retries, and its own escalation will still be asking a few minutes from now. So the
+# cooldown applies to hint-only growth, and the cost of it is bounded: at worst one escalation step
+# is served late.
+HINT_RECYCLE_COOLDOWN_S = 900
 
 
 def stamp_path(service_id: str) -> Path:
@@ -124,7 +142,14 @@ def write_stamp(
     """
     if not config_hash:
         return
-    payload: dict[str, Any] = {"config_hash": config_hash, "config_source": source}
+    # `stamped_at` is the launch time, and it is what the hint cooldown measures against — "how long
+    # has this process been up" is exactly "how recently did we last recycle it". Epoch seconds
+    # rather than ISO so a reader never has to parse a date to make a restart decision.
+    payload: dict[str, Any] = {
+        "config_hash": config_hash,
+        "config_source": source,
+        "stamped_at": time.time(),
+    }
     if subscriptions is not None:
         payload["subscriptions"] = subscriptions
     try:
@@ -158,17 +183,52 @@ def subscription_shortfall(stamped: dict[str, Any] | None, current: dict[str, An
         return {}
     new_symbols = sorted(set(current.get("symbols") or []) - set(stamped.get("symbols") or []))
     was_hints = stamped.get("window_hints") or {}
-    widened = {
-        symbol: count
-        for symbol, count in (current.get("window_hints") or {}).items()
-        if count > int(was_hints.get(symbol, 0) or 0)
-    }
+    # Hints are (below, above) spans, and a stamp written before they were directional holds a bare
+    # int -- `window_span` normalizes both, so an old stamp compares correctly instead of reading as
+    # a widening on the first tick after this landed. Growth on EITHER side is a shortfall: a window
+    # that deepened downward and narrowed upward still asks for strikes the running producer does
+    # not hold.
+    widened = {}
+    for symbol, span in (current.get("window_hints") or {}).items():
+        want = streamcache.window_span(span)
+        had = streamcache.window_span(was_hints.get(symbol, 0))
+        if want[0] > had[0] or want[1] > had[1]:
+            widened[symbol] = list(want)
     out: dict[str, Any] = {}
     if new_symbols:
         out["symbols"] = new_symbols
     if widened:
         out["window_hints"] = widened
     return out
+
+
+def hint_recycle_deferred(
+    short: dict[str, Any], stamp: dict[str, Any], *, now: float | None = None
+) -> float | None:
+    """Seconds still to wait before a WIDER-WINDOW-only shortfall may recycle, or None to go ahead.
+
+    Three ways this returns None (go ahead), and each is deliberate:
+      * the shortfall names a new symbol — blindness beats tidiness, recycle now;
+      * the stamp carries no `stamped_at` — written before this existed, so its age is unknown and
+        the old behaviour stands rather than an invented one;
+      * the cooldown has elapsed.
+    """
+    if short.get("symbols"):
+        return None
+    if not short.get("window_hints"):
+        return None
+    stamped_at = stamp.get("stamped_at")
+    if not isinstance(stamped_at, (int, float)):
+        return None
+    age = (now if now is not None else time.time()) - float(stamped_at)
+    remaining = HINT_RECYCLE_COOLDOWN_S - age
+    return remaining if remaining > 0 else None
+
+
+def _describe_span(span: Any) -> str:
+    """A window span for a human: `30` when symmetric, `163v/12^` when it is not."""
+    below, above = streamcache.window_span(span)
+    return str(below) if below == above else f"{below}v/{above}^"
 
 
 def describe_shortfall(short: dict[str, Any]) -> str:
@@ -178,7 +238,9 @@ def describe_shortfall(short: dict[str, Any]) -> str:
         parts.append("new symbols " + ", ".join(short["symbols"]))
     if short.get("window_hints"):
         widened = short["window_hints"]
-        parts.append("wider windows " + ", ".join(f"{s}={widened[s]}" for s in sorted(widened)))
+        parts.append(
+            "wider windows " + ", ".join(f"{s}={_describe_span(widened[s])}" for s in sorted(widened))
+        )
     return " and ".join(parts) or "nothing"
 
 
@@ -238,6 +300,20 @@ def staleness(
             return {**base, "adopt": True, "reason": "no subscription stamp"}
         short = subscription_shortfall(stamp.get("subscriptions"), subscriptions)
         if short:
+            wait = hint_recycle_deferred(short, stamp)
+            if wait is not None:
+                # A window widening on a producer we only just launched. Say so rather than going
+                # quiet: "not stale" and "stale but holding off" are different states, and a reader
+                # chasing a module's missing strikes needs to see which one this is.
+                return {
+                    **base,
+                    "reason": (
+                        f"holding off a window-only recycle for {wait / 60:.0f} more min "
+                        f"({describe_shortfall(short)})"
+                    ),
+                    "deferred": short,
+                    "defer_seconds": wait,
+                }
             return {
                 **base,
                 "stale": True,

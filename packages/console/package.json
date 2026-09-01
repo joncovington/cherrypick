@@ -8,6 +8,11 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "ui-check": "node tools/ui-check.mjs"
+  },
+  "devDependencies": {
+    "@console/shared": "workspace:*",
+    "puppeteer-core": "^23.0.0"
   }
 }

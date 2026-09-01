@@ -8,7 +8,7 @@ You are an autonomous quantitative options trading agent. Your objective is to m
 
 **Symbol requirement**: every symbol in `symbols` must offer daily-expiring (0DTE) option chains. Most single-name equities do not — only a handful of major indices/ETFs (SPX, XSP, NDX, RUT, SPY, QQQ, IWM, etc.) list same-day expirations every trading day. See the **0DTE expiration hard stop** in Step 6 below, which rejects any entry where the fetched chain's nearest expiration isn't actually today.
 
-**Multi-symbol model**: each loop iteration processes `symbols` sequentially, one symbol's full market-assessment-through-entry-decision pass at a time (Steps 4 and 6), before moving to the next symbol. Buying power, `max_concurrent_ics`, and `daily_ic_trade_target` are account-wide totals shared across every symbol, not per-symbol caps — see Step 4/6 for how these are re-checked between symbols within the same iteration. **These are the LIVE loop's semantics and they deliberately differ from the paper engine**, which scopes both caps per **(profile × symbol)** portfolio and treats the daily target as soft guidance (see the paper portfolio model below); the divergence is intentional, not drift. Stop management (Step 5) always covers every open trade across every symbol in one pass, regardless of which symbols are currently in the per-symbol entry sub-loop. **Correlation risk is not currently guarded**: trading two highly correlated symbols simultaneously (e.g. SPX and XSP move together) can silently double directional exposure without either symbol's individual checks catching it — avoid configuring correlated symbol combinations together until this guard exists.
+**Multi-symbol model**: each loop iteration processes `symbols` sequentially, one symbol's full market-assessment-through-entry-decision pass at a time (Steps 4 and 6), before moving to the next symbol. Buying power, `max_concurrent_ics`, and `daily_ic_trade_target` are account-wide totals shared across every symbol, not per-symbol caps — see Step 4/6 for how these are re-checked between symbols within the same iteration. **These are the LIVE loop's semantics and they deliberately differ from the paper engine**, which scopes both caps per **(profile × symbol)** portfolio and treats the daily target as soft guidance (see the paper portfolio model below); the divergence is intentional, not drift. Stop management (Step 5) always covers every open trade across every symbol in one pass, regardless of which symbols are currently in the per-symbol entry sub-loop. **Correlation risk is PARTLY guarded (2026-08-20).** Trading two highly correlated symbols simultaneously can silently double directional exposure without either symbol's individual checks catching it, because per-symbol caps count them as independent risks. The sharp case — two vehicles on the SAME index, e.g. SPX and XSP, which are the same 500 companies at a tenth the notional — is now refused by `packages/orchestrator/tests/test_symbol_correlation_lint.py`, which reads what each module declares in `state/stream_requests/`. What is still NOT guarded is broad correlation across different indices (SPY against QQQ runs ~0.9 in practice); that is reported by the same test and left as a portfolio judgement rather than a configuration error, so avoid stacking such combinations deliberately rather than assuming a check will stop you.
 
 ## How this runs now
 
@@ -29,7 +29,7 @@ You are an autonomous quantitative options trading agent. Your objective is to m
   live trading and manual sessions; live-order tools require `enable_live_trading: true`. cherrypick
   never runs this path — it only ever drives paper, and never places live trades.
 
-> ⚠️ **No new dependency on the loop path.** The loop's entry/stop/logging decisions must depend only on `cherrypick/meic/tt.py`, `cherrypick/meic/db.py`, `cherrypick/meic/streamer.py`'s cache, and this file — introducing an MCP/network dependency there adds a new failure mode to a system that has already had silent-stall incidents from an external dependency (the DXLink streamer).
+> ⚠️ **Think hard before adding a dependency to the loop path.** The loop's entry/stop/logging decisions depend only on `cherrypick/meic/tt.py`, `cherrypick/meic/db.py`, `cherrypick/meic/streamer.py`'s cache, and this file. Every dependency added there is a new failure mode on a system that has already had silent-stall incidents from an external one (the DXLink streamer, 34 hours) — and a hung dependency looks exactly like a quiet market from inside a loop. Deterministic and local is the preference (root file); reaching outward is a decision to make deliberately and write down.
 
 ## Orchestrator & shared core
 
@@ -56,6 +56,67 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 > - **Portable paths only** — never hardcode absolute paths, usernames, hostnames (except `127.0.0.1`/`localhost`), or drive letters; derive from `Path(__file__)`, an env var, or config. Keep working files in `/src`, `/tests`, `/docs`, `/config`, not the repo root.
 > - **Human-voice docs & commits** — write docs/PRs as a human developer; never add AI/co-author attribution or signatures to commit messages.
 
+## Read-side CLI
+
+`python run.py <verb>` (or `python -m cherrypick.meic.cli`) — added 2026-08-26, the last module in
+the suite to get one. Every verb is a READ and emits one JSON object.
+
+```bash
+python run.py headline                       # per-arm results + what is still open
+python run.py arms --era ALL                 # the per-stream comparison, cross-era
+python run.py regime gex                     # outcomes by the regime an entry was tagged with
+python run.py coverage                       # how much of the book is regime-tagged at all
+python run.py exits                          # resolved outcomes, expiries split OTM/ITM
+python run.py stops [--sessions]             # the stop_trigger_ratio curve, or per-session
+python run.py gate-blocks --date 2026-08-25  # per-stream block reasons for one session
+python run.py settlement-audit               # does the ledger reproduce its own convention?
+python run.py gex-gate                       # what the negative-GEX gate refused
+```
+
+**Why it exists, beyond consistency.** `analytics.py` has carried ~20 read functions that nothing
+could invoke without writing Python — which is why two questions the advisor asked repeatedly
+(`settlement-audit` five times, `gex-gate` four) went years-of-sessions unanswered while the code to
+answer them was already present. The other reason is `packages/console/server/test/meic-mirror.test.ts`:
+the console's MEIC reader is the largest TypeScript re-implementation in that package, over the
+module with the most data and the only live sibling, and until there was a `run.py headline` to
+compare against there was nothing to check it with. bwb, curve and pmcc had that test; meic could
+not. **It caught a real divergence on its first run** — the console counted still-open positions in
+per-arm P&L, reporting each arm down by exactly the fees it had paid so far.
+
+**Deliberately NOT here: anything that runs or writes**, and `tests/test_cli.py` pins that. The paper
+loop, the streamer, the ledger writer and the broker client keep their own argv: `paper_loop` shells
+out to `python -m cherrypick.meic.db` and `...meic.tt` on EVERY TICK, and the orchestrator's
+jobspec, onboarding and the suite's skills all name those module paths. Folding them behind this CLI
+would repoint the live loop to buy a reader nothing.
+
+## What the advisor may move (`advice.bounds`)
+
+Bounds are the guardrail: nothing the advisor proposes can leave these closed ranges, and the loop
+re-validates with the same `cherrypick.core.advice` code the producer used, so the two sides cannot
+disagree. `tests/test_advice_bounds.py` lints the block itself, driven off the shipped
+`config.example.json` so a bound added later is covered the moment it is declared.
+
+**A bound over a parameter the engine does not read is not harmless.** It validates, it is admitted,
+and the loop then produces an `advised:control` book byte-identical to its control — a spent
+experiment slot that could not have measured anything either way. That is the `sign` arm's verdict
+(3,036 blocked attempts, zero fills, 100% decision-agreement with control) reachable by
+configuration. `entry_price_strategy` was exactly that and was removed 2026-08-26: it is consumed
+only by the agent-driven live path in `.claude/commands/`, and the advisor only ever influences
+paper.
+
+**`min_call_otm_pct` (added 2026-08-26, range 0.0001–0.006)** is the second of the two gates that
+kept control dark. With `min_iv_rank` at 0.0 the IV floor was provably inert and
+`call_otm_below_floor` still refused 29 of `advised:control`'s entries — the difference between "the
+regime gate is the sole remaining constraint" and "there are two", which is what the running
+experiment's kill rule turns on.
+
+The range is **one-directional by construction, and that is why it is safe to grant**: `control`
+runs 0.0001, so the floor of the range IS the baseline, and every admissible value pushes the short
+call further out of the money. This bound can only make the advised book refuse MORE than its
+control — never take a trade the control would not. A test pins that property, so lowering the floor
+below the base is a deliberate act rather than a silent one. The ceiling (0.006) sits above the
+deployed default (0.0035) and below the quarterly-expiry override (0.0067).
+
 ## Tastytrade Auth
 - **OAuth2** authentication via the official [`tastytrade`](https://github.com/tastyware/tastytrade) Python SDK (session tokens auto-refresh; refresh tokens are long-lived).
 - **Credentials stored in the OS keyring** (Windows Credential Manager / DPAPI, macOS Keychain, Linux Secret Service) — never in files, never in env vars, never logged.
@@ -80,6 +141,7 @@ All tastytrade operations are called via `python -m cherrypick.meic.tt <command>
 | `python -m cherrypick.meic.tt get_account_info` | Buying power, NLV, balances | No |
 | `python -m cherrypick.meic.tt get_positions` | Open positions detail | No |
 | `python -m cherrypick.meic.tt get_working_orders` | Live/unfilled orders | No |
+| `python -m cherrypick.meic.tt get_quotes --symbols .APO260918C120 ...` | Live bid/ask/mid for specific streamer symbols, **without writing the shared cache** — the read-only sibling of `stream_subscribe`. For symbols no module declared (a discretionary position priced by `cherrypick positions`), where seeding the cache would leave rows nothing refreshes. | No |
 | `python -m cherrypick.meic.tt list_accounts` | Account numbers | No |
 | `python -m cherrypick.meic.tt execute_trade --order '<JSON>'` | Dry-run validate an order (default) | No |
 | `python -m cherrypick.meic.tt execute_trade --order '<JSON>' --live` | Place a live order | Yes |
@@ -128,9 +190,22 @@ paper is running: `config.risk.json`'s `active_profile` is `control`, and all fo
 
 See [docs/risk-profiles.md](docs/risk-profiles.md) for the full rationale, trade-off tables per tier, and progression guidance.
 
-**The registry is a four-stream forward test, not a risk ladder, since 2026-08-07.**
+**The registry is control + the advisor's book, since the 2026-08-21 advisor-era cutover — and since that day's EOD amendment, `control` IS the permissive sampling substrate (formerly `open`; the gated ex-control is retired as `control-gated`, whose IV floor + default negative-GEX gate never produced a fill and whose questions moved to the advice bounds `min_iv_rank` and `regime_gex_block_negative`). Era day-1 ledger rows were re-stamped to the new names in the same amendment; see the `meic_control_redefinition` measurement break.**
+The four-stream forward test below CLOSED at that boundary: sign/control-drift retired (zero fills,
+100% decision-agreement with control — redundant as configured), width-5/width-10 retired
+(ten sessions with control dark on every one, so the paired width-vs-control reading the test was
+designed around never existed — insufficient to separate, not falsified; the width question moved
+to advisor experiments via the `wing_width_points` bound). Verdicts live on each profile's
+`_disabled_note`. From this era `packages/advisor` designs and runs every experiment; the era is
+stamped on every row (`ic_trades.era = 'advisor'`, written by `cmd_save_trade` from
+`analytics.CURRENT_ERA`) and journaled in `measurement_breaks`. The section below is kept as the
+record of the closed test.
+
+**The registry was a four-stream forward test, not a risk ladder, 2026-08-07..2026-08-20.**
 `config.risk.json`'s enabled profiles are `control` (today's deployed policy — the reference book
-and the champion/challenger surface's champion), `open` (every study gate off, no per-side stop,
+every other stream is read against; it was also the champion/challenger surface's champion until
+that surface was retired 2026-08-20, and judging arms now belongs to `packages/advisor`'s
+experiments), `open` (every study gate off, no per-side stop,
 `overlap_scope: "none"`, full per-side path recording — the permissive superset every gate variant
 and every derived stop policy is answered from read-side, rather than by running a separate arm per
 question), and `width-5`/`width-10` (wing width pinned, the one genuinely non-derivable structural
@@ -296,6 +371,42 @@ six market dimensions — `skew` and `center_offset` describe the structure we c
 tick they would read `unknown` 100% of the time, a column degenerate by construction. Tagged with the
 **base config's** thresholds, never an arm's overlay, or each stream would get its own denominator and
 the streams would stop being comparable. Nothing in the loop reads this table.
+
+**The settlement convention was audited 2026-08-26, and the answer is a settled question.** The
+advisor asked for this five times (08-17 through 08-21), escalating to "upstream of the era's
+baseline rather than upstream of one arm", on the concern that this module's striking rate of exact
+full-credit capture might mean the marking convention was wrong — in which case every arm comparison
+resting on it is wrong in the same direction. `analytics.settlement_audit` is the answer and is
+re-runnable. It reproduces each resolved fill from the convention as *written down*, by a second
+implementation (`_side_settle_value` is deliberately duplicated rather than imported: an audit that
+imports what it audits can only confirm the function equals itself).
+
+What it found: **7,908 of 7,908 resolved fills reproduce exactly**, and **one settlement price per
+(session, symbol) on every session** — the invariant that matters most, since fills sharing an
+expiration must share a settlement or no same-session arm comparison survives. There is no official
+SPXW settlement print stored to compare against, so the audit bounds the exposure instead: 2026-08-20
+— the session the whole negative-GEX reading rests on — moves **$14,300 per point** of settlement
+error and **$1,430 per tenth**, against a result of −129,344. The two independent write paths that
+record the close (`settle_underlying` and `market_context`) agree to within about a tenth. So the
+convention is not load-bearing for that finding.
+
+What it also found, and this one was a real defect: **`_settlement_value` scores a `None` underlying
+at zero intrinsic, i.e. full credit** — the most favorable outcome available, on exactly the fills
+whose outcome nobody could see. 90 rows, all between 2026-07-13 and 2026-07-27, so all in the retired
+profile-ladder era and already excluded by `CURRENT_ERA` from every reading — historical, but wrong
+on the row. `paper.evaluate_open_trade` now **refuses to settle without a price**, holding with
+`settlement_price_unavailable` exactly as an unquotable leg already does: a paper ledger may be
+incomplete and must never be confidently wrong.
+
+**That guard is audible, as of the same day.** Refusing to settle is the right failure and a silent
+one — the position simply stays open — so `paper_loop --status` now reports `session_settled`,
+`positions_today` and (when the ledger says so) `data_reason`, and `settlement_check` is enabled for
+this module in the orchestrator config. meic was the last paper module without that check: flies,
+calendars, pmcc, curve and bwb all had one, and this one was off because `watchdog._check_settlement`
+reads those fields from a module's own `--status` and meic's reported none of them. Enabling the flag
+alone would have produced a check that could never fire — which is worse than none, because it reads
+as coverage. The orchestrator's own tests now lint that combination, and `tests/test_paper_loop_status.py`
+pins the field names this module has to keep emitting.
 
 **Max adverse excursion (`put_mae_spot`/`call_mae_spot` + times) generalizes first-touch.** First-touch
 is write-once at the crossing and therefore answers exactly one stop policy; it records the identical

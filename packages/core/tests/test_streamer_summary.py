@@ -112,3 +112,55 @@ def test_stream_summary_table_in_shared_ddl(tmp_path):
         "prev_day_close",
         "updated_at",
     }
+
+
+# ------------------------------------------------- a confirmed close is never erased (2026-08-27)
+#
+# SPX and XSP kept receiving Summary events until ~20:07 ET with `day_close_price` cleared, and the
+# upsert copied that null straight over the close the 16:00 event had confirmed. 22 consecutive
+# sessions of SPX closes were lost that way (2026-07-29 onward), freezing `daily_closes` — the
+# suite's only multi-year series — at 2026-07-28 while every other symbol stayed current. Symbols
+# whose last event of the day landed earlier (VIX at 10:08, SPY at 16:15) were untouched, which is
+# precisely why a month-long gap in the index everything is priced against stayed invisible.
+
+
+def test_a_later_event_without_a_close_does_not_erase_the_confirmed_one(tmp_path):
+    conn = _run_summary(
+        tmp_path,
+        [
+            # 16:00 — the settling print.
+            _summary_event("SPX", o=6000.0, h=6050.0, lo=5980.0, c=6040.0, prev=5995.0),
+            # 20:07 — the evening event, session fields cleared. A close does not un-happen.
+            _summary_event("SPX", o=None, h=6050.0, lo=5980.0, c=None, prev=5995.0),
+        ],
+    )
+    row = conn.execute("SELECT * FROM stream_summary WHERE symbol='SPX'").fetchone()
+    assert row["day_close"] == 6040.0
+    assert row["day_open"] == 6000.0
+
+
+def test_a_later_event_still_updates_a_value_it_actually_carries(tmp_path):
+    """COALESCE must preserve, not freeze: the session high genuinely widens through the day."""
+    conn = _run_summary(
+        tmp_path,
+        [
+            _summary_event("SPX", h=6050.0, lo=5980.0, prev=5995.0),
+            _summary_event("SPX", h=6075.0, lo=5960.0, prev=5995.0),
+        ],
+    )
+    row = conn.execute("SELECT * FROM stream_summary WHERE symbol='SPX'").fetchone()
+    assert row["day_high"] == 6075.0
+    assert row["day_low"] == 5960.0
+
+
+def test_a_close_that_arrives_late_is_still_written(tmp_path):
+    """The ordinary case: nothing has a close until the session settles."""
+    conn = _run_summary(
+        tmp_path,
+        [
+            _summary_event("SPX", h=6050.0, lo=5980.0, c=None, prev=5995.0),
+            _summary_event("SPX", h=6050.0, lo=5980.0, c=6040.0, prev=5995.0),
+        ],
+    )
+    row = conn.execute("SELECT * FROM stream_summary WHERE symbol='SPX'").fetchone()
+    assert row["day_close"] == 6040.0

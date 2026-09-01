@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { powerNote } from "../../lib/power";
-import { DataCard, PnlCell, fmtMoney } from "../../components/DataTable";
+import { DataCard, PnlCell } from "../../components/DataTable";
+import { CalendarHeatmap } from "../../components/CalendarHeatmap";
 
 interface BreakdownRow {
   bucket: string;
@@ -35,49 +36,6 @@ function useDeep(mode: TradingMode, symbol: string | null, profile: string | nul
     },
     refetchInterval: 60_000,
   });
-}
-
-/** Daily net P&L calendar: one cell per session, alpha-scaled green/red, week columns. */
-function Calendar({ days }: { days: Array<{ date: string; net: number; trades: number }> }) {
-  const recent = days.slice(-90);
-  if (recent.length === 0) return <p className="muted">no sessions</p>;
-  const maxAbs = Math.max(...recent.map((d) => Math.abs(d.net)), 1);
-  // Group into ISO week columns, Monday at the top.
-  const weeks = new Map<string, Array<{ date: string; net: number; trades: number; weekday: number }>>();
-  for (const d of recent) {
-    const dt = new Date(d.date + "T00:00:00Z");
-    const weekday = (dt.getUTCDay() + 6) % 7;
-    const monday = new Date(dt);
-    monday.setUTCDate(dt.getUTCDate() - weekday);
-    const key = monday.toISOString().slice(0, 10);
-    let col = weeks.get(key);
-    if (col === undefined) {
-      col = [];
-      weeks.set(key, col);
-    }
-    col.push({ ...d, weekday });
-  }
-  return (
-    <div style={{ display: "flex", gap: 3, overflowX: "auto", paddingBottom: 4 }}>
-      {[...weeks.entries()].map(([week, cells]) => (
-        <div key={week} style={{ display: "grid", gridTemplateRows: "repeat(5, 14px)", gap: 3 }}>
-          {[0, 1, 2, 3, 4].map((wd) => {
-            const cell = cells.find((c) => c.weekday === wd);
-            if (cell === undefined) return <div key={wd} style={{ width: 14, height: 14, background: "var(--row-line)", borderRadius: 2 }} />;
-            const alpha = 0.15 + 0.85 * (Math.abs(cell.net) / maxAbs);
-            const color = cell.net >= 0 ? `rgba(67, 181, 122, ${alpha})` : `rgba(217, 92, 74, ${alpha})`;
-            return (
-              <div
-                key={wd}
-                title={`${cell.date}: ${fmtMoney(cell.net)} (${cell.trades} trades)`}
-                style={{ width: 14, height: 14, background: color, borderRadius: 2 }}
-              />
-            );
-          })}
-        </div>
-      ))}
-    </div>
-  );
 }
 
 function NlvChart({ points }: { points: Array<{ date: string; nlv: number }> }) {
@@ -165,7 +123,11 @@ export function MeicDeepCards({
     <>
       <section className="card">
         <h2>Daily net P&L (after fees) — calendar</h2>
-        {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <Calendar days={data?.calendar ?? []} />}
+        {isLoading ? (
+          <span className="skeleton skeleton-text" style={{ width: "40%" }} />
+        ) : (
+          <CalendarHeatmap days={(data?.calendar ?? []).map((d) => ({ date: d.date, net: d.net, count: d.trades }))} />
+        )}
       </section>
 
       {/* Paper mode has no NLV and cannot have one: `closing_nlv` is written only by
@@ -175,7 +137,17 @@ export function MeicDeepCards({
           absence as a flat line. */}
       {mode === "live" && (
         <section className="card">
-          <h2>Account value (NLV) over time</h2>
+          <h2>
+            Account value (NLV) over time{" "}
+            {/* Every other card here answers for the symbol/profile/era the page is scoped to; this
+                one cannot. `closing_nlv` is a broker balance for the whole account, and
+                `daily_summary` carries no profile column to group it by, so narrowing the scope
+                leaves this line unchanged. Say so on the card rather than letting it read as a
+                filtered result. */}
+            <span className="chip chip-warn" title="closing_nlv is a whole-account broker balance; the page's symbol, profile and era filters do not narrow it">
+              account-level · unscoped
+            </span>
+          </h2>
           {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <NlvChart points={data?.nlv ?? []} />}
         </section>
       )}

@@ -60,6 +60,20 @@ def _pmcc_open(conn) -> list[dict]:
     return [{"symbol": r["symbol"], "profile": r["book"]} for r in rows]
 
 
+def _curve_open(conn) -> list[dict]:
+    rows = conn.execute(
+        "SELECT symbol, book FROM curve_positions WHERE status != 'closed'"
+    ).fetchall()
+    return [{"symbol": r["symbol"], "profile": r["book"]} for r in rows]
+
+
+def _bwb_open(conn) -> list[dict]:
+    rows = conn.execute(
+        "SELECT symbol, book FROM bwb_positions WHERE status != 'closed'"
+    ).fetchall()
+    return [{"symbol": r["symbol"], "profile": r["book"]} for r in rows]
+
+
 # Same registry shape as report._READERS, but for OPEN (not-yet-closed) rows, keyed by paper.trade_schema.
 _OPEN_READERS = {
     "meic_ic": _meic_open,
@@ -67,6 +81,8 @@ _OPEN_READERS = {
     "fly_book": _flies_open,
     "dc_week": _calendars_open,
     "pmcc_99": _pmcc_open,
+    "curve_vx": _curve_open,
+    "bwb_132": _bwb_open,
 }
 
 

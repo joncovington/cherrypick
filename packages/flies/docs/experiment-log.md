@@ -128,3 +128,54 @@ in the decision journal, written by `_note_cadence_change` on the first resident
 
 Live arming re-keyed the same day: the armed signal is now the arm record in the shared state dir, not a
 schtasks registration.
+
+## 2026-08-21 — the advisor era: every variant arm retired, one experiment mechanism
+
+The suite-wide cutover: from this session, `packages/advisor` designs and runs every experiment.
+Eleven arms retired at once, each with its verdict in the deployed config's `_note` (originals
+preserved after a `||` separator). The roster is `control` + `advised:control`.
+
+- **gex** — centring lags spot (offsets −22..+23 on the 08-04/08-05 mirror sessions; it centres on
+  where OI is, which is where price was). Superseded: `center_rule` is now an advisable bound.
+- **time_window** — finding banked: monotone completion decline 72% → 63% → 58% across the re-cut
+  windows; the mechanism (less session left to drift in) is the result.
+- **debit-first / bwb** — void, not falsified: the roll-pricing defect voided 25 rows and the
+  corrected orientation never accumulated a sample.
+- **width-2..5 / width-10** — underpowered on the corrected strike-count basis (3–7 SPX sessions).
+  The width question moves to advisor experiments via the `wing_width_strikes` bound — and the
+  era's first experiment (`exp-2026-08-20-flies-1`) is exactly that, `wing_width_strikes: 2`
+  against control.
+- **gex-intrinsic / control-drift** — under 8 sessions; underpowered, no reading.
+
+**Finding worth its own line: `bwb-atm` and `debit-first-atm` never ran at all.** `engine.ARMS`
+carries them, this file designed them (2026-08-07) to fix their parents' two-variable confound —
+and the deployed config never gained arm entries, so `enabled_arms` (registry ∩ config) excluded
+them silently from the day they were written. Check that seam whenever an arm is added.
+
+**The era boundary is journaled** (`measurement_breaks`, 2026-08-21, `advisor_era_cutover`) and the
+console's era control carries it (`advisor` era from 08-21; the hand-designed-arms era closed at
+08-20). **Asymmetry to know:** this module's own `analytics.py` scopes by date, not era — a
+Python-side read that should honour the boundary must date-bound at 2026-08-21 itself.
+
+## 2026-08-21 — GEX concentration tag recut (read-side calibration, no measurement break)
+
+The second degeneracy on the same tag, caught by the same `regime_coverage` guard as the first.
+The 2026-08-01 windowing fix made the share vary, but the 0.60 'pinning' cut was a guess that sat
+above the p95 of everything the tag then recorded — 605 settled SPX entries over 15 sessions:
+median 0.359, p90 0.511, max 0.838 — so 'thin' still swallowed 97% of rows and the dimension could
+never accumulate gate evidence.
+
+Cuts are now the recorded distribution's own terciles, rounded (p33=0.291, p67=0.412 → **0.30 /
+0.42**), three ways: **diffuse / clustered / pinning**. Kept on the same standard as the
+11:00/13:00 time recut — the direction matches the mechanism rather than a boundary flattering
+itself: a legged fly completes only when spot drifts off the centre, near-spot gamma concentration
+suppresses exactly that drift, and completion falls monotonically **68% → 63% → 55%** across the
+three buckets, in both halves of the calibration window (72/63/59 and 64/63/52). The alternative
+0.28/0.40 cut separated P&L harder but left 'diffuse' with 7 sessions — the overfit shape, not the
+honest one.
+
+A tag, not a gate — nothing entries on it, so no measurement break. Chosen on the rows that measure
+it: a current best estimate, to be re-derived again when the advisor era has its own depth.
+Historical rows re-bucket at read time via `analytics.by_regime(..., bucket_edges=[0.30, 0.42])`
+(159/185/141 legged trades, +76 unknown); rows tagged before this date carry 'thin'/'pinning'
+labels from the old binary scheme and the stored float is the truth either way.

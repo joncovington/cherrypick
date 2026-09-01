@@ -258,3 +258,85 @@ def test_watermark_advances_once_per_row_across_both_paths():
     assert len(n.sent) == 1  # only the ladder exit fires a per-trade push
     again = tn._meic_process(conn, state, _Recorder(), "meic", summary_prefixes=_PREFIXES, now=1001.0)
     assert again["exits_notified"] == 0, "both ids must be watermarked, not just the notified one"
+
+
+def _due_state(conn, start):
+    """Seed state and accumulate one pending entry, leaving a flush due `start`-onward."""
+    state = tn._meic_seed(_conn([]))
+    tn._meic_process(conn, state, _Recorder(), "meic", summary_prefixes=_PREFIXES, now=start)
+    return state
+
+
+def test_digest_holds_outside_the_intraday_window():
+    """The digest is an intraday push: with a flush due after the tail (17:00 ET), the bucket is
+    held rather than emptied into an evening notification."""
+    conn = _conn([_row(id=1, status="open")])
+    start = _et_epoch(2026, 7, 28, 17, 30)  # Tuesday evening, past the tail
+    state = _due_state(conn, start)
+
+    n = _Recorder()
+    counts = tn._meic_process(
+        conn, state, n, "meic", summary_prefixes=_PREFIXES, summary_interval_minutes=15, now=start + 15 * 60
+    )
+
+    assert n.sent == []
+    assert counts["summary_pushed"] is False
+    assert state["pending_summary"]["XSP"]["entries"] == ["gex-open"], "held, not dropped"
+
+
+def test_digest_holds_on_a_non_trading_day():
+    """Saturday and market holidays get no digest at all, whatever the interval says."""
+    conn = _conn([_row(id=1, status="open")])
+    for label, start in (
+        ("saturday", _et_epoch(2026, 8, 1, 12, 0)),
+        ("july 4th observed", _et_epoch(2026, 7, 3, 12, 0)),
+    ):
+        state = _due_state(conn, start)
+        n = _Recorder()
+        tn._meic_process(
+            conn,
+            state,
+            n,
+            "meic",
+            summary_prefixes=_PREFIXES,
+            summary_interval_minutes=15,
+            now=start + 15 * 60,
+        )
+        assert n.sent == [], label
+        assert state["pending_summary"]["XSP"]["entries"] == ["gex-open"], label
+
+
+def test_held_digest_goes_out_on_the_next_in_window_tick():
+    """What the weekend held is pushed by Monday morning's first eligible tick — one digest, not one
+    per skipped tick."""
+    conn = _conn([_row(id=1, status="open")])
+    friday_evening = _et_epoch(2026, 7, 31, 18, 0)
+    state = _due_state(conn, friday_evening)
+
+    tn._meic_process(
+        conn, state, _Recorder(), "meic", summary_prefixes=_PREFIXES, now=_et_epoch(2026, 8, 2, 11, 0)
+    )  # Sunday — still held
+    n = _Recorder()
+    counts = tn._meic_process(
+        conn, state, n, "meic", summary_prefixes=_PREFIXES, now=_et_epoch(2026, 8, 3, 9, 46)
+    )
+
+    assert counts["summary_pushed"] is True
+    assert len(n.sent) == 1
+    assert state["pending_summary"] == {}
+
+
+def test_digest_still_flushes_just_after_the_bell():
+    """The day's last exits land at the close, so the window's tail runs past 16:00 — a 16:14 flush
+    still goes out that day."""
+    conn = _conn([_row(id=1, status="open")])
+    start = _et_epoch(2026, 7, 28, 15, 59)
+    state = _due_state(conn, start)
+
+    n = _Recorder()
+    counts = tn._meic_process(
+        conn, state, n, "meic", summary_prefixes=_PREFIXES, summary_interval_minutes=15, now=start + 15 * 60
+    )
+
+    assert counts["summary_pushed"] is True
+    assert len(n.sent) == 1

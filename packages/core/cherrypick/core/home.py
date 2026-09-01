@@ -35,6 +35,7 @@ the reliability path). Call :func:`ensure` at the point you actually write.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -86,6 +87,25 @@ def state_dir() -> Path:
     return home() / "state"
 
 
+def heartbeat_path(package: str) -> Path:
+    """Where a supervised resident loop publishes its liveness (``home()/state/<package>.heartbeat``).
+
+    A resident loop is watched by the orchestrator for *silence*, and what silence is measured against
+    has to be something the loop writes unconditionally — not its log. A log file is a side effect of
+    having something to say, so using its mtime makes log verbosity a reliability dependency and makes
+    a quiet-but-healthy loop indistinguishable from a wedged one. The calendars module was killed and
+    restarted every two minutes for four days on exactly that confusion: it holds no position, so it
+    logged nothing, so it looked dead.
+
+    Touched at the TOP of each tick, before any branch, this file means "the loop reached the top of a
+    tick" and nothing else — which is the one thing a restart actually fixes.
+
+    The path convention lives here rather than in either consumer because both the module (writing it)
+    and the orchestrator (watching it) have to agree, and they cannot import each other.
+    """
+    return state_dir() / f"{package}.heartbeat"
+
+
 def modules_dir(*, env: str | None = "CHERRYPICK_MODULES_HOME") -> Path:
     """Installed module checkouts (``home()/modules``), or ``$CHERRYPICK_MODULES_HOME`` if set."""
     override = _env(env)
@@ -115,3 +135,37 @@ def ensure(path: Path) -> Path:
     where a caller is about to write. ``exist_ok`` so it is idempotent and safe under concurrency."""
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def load_module_config(
+    module: str,
+    pkg_root: Path | str,
+    path: Path | str | None = None,
+    *,
+    env: str | None = None,
+) -> dict:
+    """A module's config, by the suite's own precedence: explicit path, then ``<MODULE>_CONFIG``,
+    then the managed home, then the package's ``config.json``, then its ``config.example.json``.
+
+    The managed-home entry is the one that matters and the reason this is shared. It is where the
+    suite keeps per-module config and where ``cherrypick doctor`` looks — so a module that skipped
+    it would run happily off its in-repo copy while doctor reported it unconfigured, and the two
+    disagreeing about where configuration lives is exactly how a machine ends up running settings
+    nobody can find.
+
+    Falling through to the checked-in example is deliberate: a fresh clone runs, and the example is
+    every module's design document. `SystemExit` rather than an exception because every caller is a
+    CLI entry point for which a traceback would be noise.
+    """
+    candidates = [
+        path,
+        os.environ.get(env or f"{module.upper()}_CONFIG"),
+        config_path(module),
+        Path(pkg_root) / "config.json",
+        Path(pkg_root) / "config.example.json",
+    ]
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate):
+            with open(candidate, encoding="utf-8") as handle:
+                return json.load(handle)
+    raise SystemExit("no config found — copy config.example.json to config.json")

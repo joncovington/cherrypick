@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
+
+/** Modules with a per-arm entry decision. calendars has none — its books share one entry plan. */
+export type AttemptsModule = "meic" | "flies" | "pmcc";
 import { AXIS_MUTED } from "./Charts";
 // The two ledgers stamp their attempts differently and both mean ET — see etTime.ts for why
 // reading them with one rule silently slides a whole session sideways.
@@ -51,7 +54,7 @@ export interface ArmRailEntry {
 
 export interface AttemptsPayload {
   mode: TradingMode;
-  module: "meic" | "flies";
+  module: AttemptsModule;
   tradeDate: string | null;
   breaks: Array<{ arm: string; reason: string }>;
   arms: ArmRailEntry[];
@@ -88,7 +91,7 @@ const LABEL_OF: Record<string, string> = Object.fromEntries(OUTCOMES.map((o) => 
 /** Exported for OccupancyMap, which needs the same day's timeline to derive which strikes
     refused an entry -- sharing this hook (rather than a second near-identical query on the
     same endpoint) means one interval, one in-flight request, one type. */
-export function useAttempts(module: "meic" | "flies", mode: TradingMode, date: string | null) {
+export function useAttempts(module: AttemptsModule, mode: TradingMode, date: string | null) {
   return useQuery<AttemptsPayload>({
     queryKey: ["attempts", module, mode, date],
     queryFn: async () => {
@@ -211,7 +214,7 @@ export function ArmRail({
   mode,
   date = null,
 }: {
-  module: "meic" | "flies";
+  module: AttemptsModule;
   mode: TradingMode;
   date?: string | null;
 }) {
@@ -225,7 +228,11 @@ export function ArmRail({
         <h2>Arms{data?.tradeDate != null ? ` (${data.tradeDate})` : ""}</h2>
         <span className="muted lbl">
           {mode === "paper"
-            ? "one portfolio each · unbounded capital · paced by cadence"
+            ? module === "pmcc"
+              // pmcc's books isolate one variable each and it has no entry-cadence gate, so the
+              // meic/flies subtitle would describe pacing this module does not do.
+              ? "one book per variable · paper only"
+              : "one portfolio each · unbounded capital · paced by cadence"
             : module === "flies"
               ? "live pilot — real capital, one arm, one position at a time"
               : "live — real capital, under the configured concurrency cap"}
@@ -442,7 +449,7 @@ export function AttemptTimeline({
   mode,
   date = null,
 }: {
-  module: "meic" | "flies";
+  module: AttemptsModule;
   mode: TradingMode;
   date?: string | null;
 }) {

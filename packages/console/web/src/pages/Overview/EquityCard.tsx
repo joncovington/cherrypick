@@ -5,6 +5,7 @@ import { fmtMoney } from "../../components/DataTable";
 import { useFlashOnChange } from "../../lib/useFlashOnChange";
 
 interface SuiteReport {
+  era: { from: string | null; note: string | null };
   suite: { net: number; trades: number; wins: number; losses: number; winRatePct: number | null; avg: number | null };
   daily: Array<{ session: string; net: number; cumulative: number; byModule: Record<string, number> }>;
   modules: Record<string, { net: number; trades: number; wins: number; losses: number }>;
@@ -107,7 +108,13 @@ export function EquityCard() {
   const avgFlash = useFlashOnChange<HTMLSpanElement>(s?.avg);
   return (
     <section className="card">
-      <h2>suite equity — paper ({data?.daily.length ?? 0} sessions · cumulative net P&L)</h2>
+      {/* Era-bounded since 2026-08-21: the suite report starts at data_epoch, so this curve
+          covers the declared era rather than all of history — pooling across the advisor-era
+          boundary would draw one line through two incomparable experiments. */}
+      <h2>
+        suite equity — paper ({data?.daily.length ?? 0} sessions
+        {data?.era.from != null && <> · era from {data.era.from}</>} · cumulative net P&L)
+      </h2>
       <div className="stats-grid" style={{ marginBottom: "0.7rem" }}>
         {/* No combined "suite net" tile, deliberately -- see the chart's own note: these books
             differ in scale by more than an order of magnitude, so a summed dollar figure would
@@ -168,7 +175,7 @@ export function LogsCard() {
     <section className="card">
       <div className="card-head">
         <h2>recent logs (watchdog · notify · module paper logs)</h2>
-        <div className="mode-toggle" style={{ marginLeft: "auto" }}>
+        <div className="mode-toggle" style={{ marginLeft: "auto" }} role="group" aria-label="log level filter">
           {LOG_LEVELS.map((lv) => (
             <button key={lv} type="button" className={level === lv ? "mode-btn active" : "mode-btn"} onClick={() => setLevel(lv)}>
               {lv}

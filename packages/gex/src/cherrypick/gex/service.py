@@ -14,8 +14,10 @@ import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
+# One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core import looplock
+from cherrypick.core.clock import ET as _ET
 from cherrypick.core.gex import (
     compute_gex_profile,
     nearest_zero_gamma,
@@ -24,8 +26,7 @@ from cherrypick.core.gex import (
 )
 
 from cherrypick.gex import provider as _provider
-
-_ET = ZoneInfo("America/New_York")
+from cherrypick.gex import regime as _regime
 
 
 def _today() -> str:
@@ -40,7 +41,17 @@ def _market_open_close_ts() -> tuple[float, float]:
     return open_dt.timestamp(), close_dt.timestamp()
 
 
-def _ensure_history_table(conn: sqlite3.Connection) -> None:
+_ensured_history_dbs: set[str] = set()
+
+
+def _ensure_history_table(conn: sqlite3.Connection, db_path: Path | str | None = None) -> None:
+    """Create the history tables if absent. Idempotent, and skipped once a given file has been
+    prepared in this process — the recorder calls this every tick for the life of the daemon, and
+    a table cannot go missing underneath a process that already made it."""
+    if db_path is not None:
+        key = str(Path(db_path).resolve())
+        if key in _ensured_history_dbs:
+            return
     conn.execute(
         "CREATE TABLE IF NOT EXISTS gex_spot_history ("
         "symbol TEXT NOT NULL, trade_date TEXT NOT NULL, ts REAL NOT NULL, spot REAL NOT NULL)"
@@ -57,6 +68,8 @@ def _ensure_history_table(conn: sqlite3.Connection) -> None:
         "expiration TEXT)"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_grh_sym_date ON gex_regime_history(symbol, trade_date)")
+    if db_path is not None:
+        _ensured_history_dbs.add(str(Path(db_path).resolve()))
 
 
 def _fetch_spot_history(db_path: Path, symbol: str) -> list[dict]:
@@ -77,6 +90,22 @@ def _fetch_spot_history(db_path: Path, symbol: str) -> list[dict]:
         conn.close()
 
 
+# Default matches the quote-freshness limit the trading modules use. The recorder samples every
+# ~15s, so anything approaching two minutes without a print means the underlying is not trading —
+# outside RTH, or the producer has stalled. Set `source.max_spot_age_seconds` to null to record
+# whatever the cache holds, which is the pre-2026-08-20 behaviour.
+DEFAULT_SPOT_MAX_AGE_SECONDS = 120
+
+
+def spot_max_age_seconds(cfg: dict) -> float | None:
+    """How old a cached print may be and still count as a sample, or None to accept any age."""
+    source = cfg.get("source") or {}
+    if "max_spot_age_seconds" in source:
+        value = source["max_spot_age_seconds"]
+        return None if value is None else float(value)
+    return DEFAULT_SPOT_MAX_AGE_SECONDS
+
+
 def record_spots(cfg: dict, symbols: list[str] | None = None) -> int:
     """Record the current spot for EVERY offered symbol (default `cfg['symbols']`) into this module's
     history DB — not just the one on screen — so each symbol's trail stays continuous and there is no
@@ -88,22 +117,26 @@ def record_spots(cfg: dict, symbols: list[str] | None = None) -> int:
         return 0
     db_path = Path(cfg["history_db_path"])
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    # One read of the shared cache for every symbol, rather than a fresh connection each — the
+    # recorder runs this on a 15s cadence for the whole session.
+    #
+    # Age-gated: a print older than this is treated as absent, so the trail gets a GAP rather than
+    # another copy of a frozen price. Before this the recorder had no age check at all and wrote
+    # whatever the cache held — on 2026-08-19 that produced 5,737 samples of which 4,193
+    # consecutive pairs were the identical value, because it kept sampling through the night and
+    # through any stall. A flat line and a dead feed read the same; a gap does not.
+    spots = _provider.read_spots(cfg["stream_cache_db"], syms, max_age_seconds=spot_max_age_seconds(cfg))
+    if not spots:
+        return 0
     conn = sqlite3.connect(db_path)
     try:
-        _ensure_history_table(conn)
+        _ensure_history_table(conn, db_path)
         today = _today()
         now = time.time()
-        n = 0
-        for sym in syms:
-            spot = _provider.read_spot(cfg["stream_cache_db"], sym)
-            if spot is not None:
-                conn.execute(
-                    "INSERT INTO gex_spot_history (symbol, trade_date, ts, spot) VALUES (?,?,?,?)",
-                    (sym, today, now, spot),
-                )
-                n += 1
+        rows = [(sym, today, now, spots[sym]) for sym in syms if sym in spots]
+        conn.executemany("INSERT INTO gex_spot_history (symbol, trade_date, ts, spot) VALUES (?,?,?,?)", rows)
         conn.commit()
-        return n
+        return len(rows)
     finally:
         conn.close()
 
@@ -113,23 +146,32 @@ def _recorder_pid_file(cfg: dict) -> Path:
     return Path(cfg["history_db_path"]).parent / "recorder.pid"
 
 
-def _pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    try:
-        if os.name == "nt":
-            import ctypes
+# A live pid is not a live loop: the 2026-07-23 recorder was up, answering --status truthfully, and
+# wrong — and a WEDGED loop is the same shape with a different cause, invisible to a pid check. So
+# the daemon PUBLISHES its liveness (the flies heartbeat convention: top of every tick, before any
+# work), and --status reports `stalled` when the beat goes silent, which is what lets the watchdog
+# recycle a wedged recorder the way it already recycles a stale-config one. 180s is 12 missed beats
+# at the 15s cadence — generous on purpose, so tripping it means the loop is genuinely stuck rather
+# than one slow tick.
+RECORDER_STALL_SECONDS = 180
 
-            SYNCHRONIZE = 0x00100000
-            h = ctypes.windll.kernel32.OpenProcess(SYNCHRONIZE, False, pid)
-            if h:
-                ctypes.windll.kernel32.CloseHandle(h)
-                return True
-            return False
-        os.kill(pid, 0)
-        return True
-    except (OSError, ProcessLookupError, ValueError):
-        return False
+
+def _recorder_heartbeat_path(cfg: dict) -> Path:
+    return Path(cfg["history_db_path"]).parent / "recorder.heartbeat"
+
+
+def _beat(cfg: dict) -> None:
+    """Touch the heartbeat. Best-effort: a beat that cannot be written must never stop the loop —
+    the degrade is 'not silence-supervised', the calendars lesson applied here."""
+    try:
+        hb = _recorder_heartbeat_path(cfg)
+        hb.parent.mkdir(parents=True, exist_ok=True)
+        hb.write_text(str(time.time()), encoding="utf-8")
+    except OSError:
+        pass
+
+
+_pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch this name)
 
 
 def _running_recorder_pid(cfg: dict) -> int | None:
@@ -149,9 +191,23 @@ def _running_recorder_pid(cfg: dict) -> int | None:
 
 
 def recorder_status(cfg: dict) -> dict:
-    """{"ok", "running", "pid"} — the daemon-liveness contract the orchestrator's status_argv reads."""
+    """{"ok", "running", "pid", "stalled", ...} — the daemon-liveness contract the orchestrator's
+    status_argv reads. `stalled` is true only when the process is ALIVE and its published heartbeat
+    has gone silent past RECORDER_STALL_SECONDS — the signal the watchdog recycles on. A missing
+    heartbeat (pre-heartbeat daemon, or a beat that could not be written) reports `stalled: false`:
+    restarting on "I can't tell" is the failure the heartbeat convention exists to fix."""
     pid = _running_recorder_pid(cfg)
-    return {"ok": True, "running": pid is not None, "pid": pid}
+    status: dict = {"ok": True, "running": pid is not None, "pid": pid}
+    if pid is None:
+        return status
+    status["stalled"] = False
+    try:
+        age = time.time() - _recorder_heartbeat_path(cfg).stat().st_mtime
+    except OSError:
+        return status
+    status["heartbeat_age_seconds"] = round(age, 1)
+    status["stalled"] = age > RECORDER_STALL_SECONDS
+    return status
 
 
 def acquire_recorder_lock(cfg: dict) -> bool:
@@ -240,7 +296,11 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
     if once:
         n = record_spots(cfg)
         r = record_regimes(cfg)
-        print(f"recorded spot for {n}/{len(syms)} symbols, {r} regime row(s)")
+        m = _regime.sample(cfg)
+        print(
+            f"recorded spot for {n}/{len(syms)} symbols, {r} gex regime row(s), "
+            f"market regime: {m['status']} ({m['usable']}/{m['written']} usable)"
+        )
         return 0
 
     if not acquire_recorder_lock(cfg):
@@ -265,13 +325,40 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
     log.info("spot recorder starting: %s every %ss -> %s", syms, interval, cfg["history_db_path"])
     print(f"cherrypick-gex spot recorder: {syms} every {interval}s  (Ctrl-C to stop)")
 
+    # The recorder is the long-lived process, so it (re)declares the regime sampler's quote-only
+    # legs itself at startup — the series must not depend on some other module's declaration.
+    from cherrypick.gex import stream_request as _stream_request
+
+    _stream_request.register(cfg)
+
+    # The dropped-readings guard (flies' stale-writer lesson, long-row form): a reading the ledger
+    # recorded last session that this checkout no longer declares means the running code is behind
+    # the database. Logged, never enforced — a stale checkout cannot fix itself, and refusing to
+    # record would turn a telemetry gap into an outage.
+    try:
+        _gconn = sqlite3.connect(Path(cfg["history_db_path"]))
+        try:
+            _regime.ensure_tables(_gconn, cfg["history_db_path"])
+            dropped = _regime.dropped_readings(_gconn, today=_today())
+            if dropped:
+                log.warning(
+                    "stale checkout? readings recorded last session but not declared now: %s",
+                    sorted(dropped),
+                )
+        finally:
+            _gconn.close()
+    except Exception as exc:  # noqa: BLE001 — the guard is telemetry about telemetry
+        log.warning("dropped-readings check failed: %s", exc)
+
     heartbeat_every = max(1, 300 // interval)  # a ~5-minute INFO heartbeat; otherwise stay quiet
     ticks = 0
     try:
         while True:
+            _beat(cfg)  # top of every tick, before any work — liveness is published, never inferred
             try:
                 n = record_spots(cfg)
                 record_regimes(cfg)  # internally throttled to ~5-minute rows
+                _regime.sample(cfg)  # internally throttled to ~1-minute rows, RTH-gated
                 ticks += 1
                 if ticks % heartbeat_every == 0:
                     log.info("recorded %d/%d symbols (tick %d)", n, len(syms), ticks)

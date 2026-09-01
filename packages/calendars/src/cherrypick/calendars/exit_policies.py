@@ -386,6 +386,15 @@ def comparison_table(conn, config: dict) -> dict:
     }
 
 
+SPREAD_GATE_BREAK = "exit_gate_absolute_spread_floor"
+
+
+def _break_date(conn, key: str) -> str | None:
+    """The date a named measurement break was recorded, or None if it never was."""
+    row = conn.execute("SELECT break_date FROM measurement_breaks WHERE key = ?", (key,)).fetchone()
+    return None if row is None else str(row[0])
+
+
 def validate_against_control(conn, config: dict, tolerance: float = 0.50) -> dict:
     """The derivation reproduced against reality: derived `control` vs the control book's real
     recorded net (from the control book's OWN marks), and derived `expiry-longs-mon` vs the path
@@ -414,8 +423,23 @@ def validate_against_control(conn, config: dict, tolerance: float = 0.50) -> dic
                     "ok": abs(diff) <= tolerance,
                 }
             )
+
+    # A week traded before the exit gate learned to read a spread in money as well as in percent is
+    # not evidence about the replay. The gate could refuse a penny-wide leg on percentage alone, so
+    # a book could MISS its scheduled exit and take a different path -- which is exactly what
+    # 2026-08-24 control did -- and the replay would then be compared against a week the policy it
+    # models never actually governed. Those weeks are reported separately rather than as failures,
+    # and separately rather than silently: a suppressed row is how a check stops being a check.
+    #
+    # Read from the module's own `measurement_breaks` rather than a date written here, so the
+    # partition moves only when the break moves, and is absent entirely until one is recorded.
+    cutoff = _break_date(conn, SPREAD_GATE_BREAK)
+    pre_break = [c for c in checks if cutoff is not None and not c["ok"] and c["week_of"] < cutoff]
+    graded = [c for c in checks if c not in pre_break]
     return {
         "compared": len(checks),
-        "ok": all(c["ok"] for c in checks) if checks else True,
-        "mismatches": [c for c in checks if not c["ok"]],
+        "ok": all(c["ok"] for c in graded) if graded else True,
+        "mismatches": [c for c in graded if not c["ok"]],
+        "pre_break": pre_break,
+        "pre_break_key": SPREAD_GATE_BREAK if pre_break else None,
     }

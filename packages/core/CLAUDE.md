@@ -23,6 +23,20 @@ reproduction of the standalone repo, the escape hatch if core ever needs to be s
 `tastytrade-mcp`, or if the suite's structure changes again). A reach-back into a consumer's `src/`
 would make that split lossy or impossible.
 
+**Do not rely on running that split as the check — it segfaults on this machine.** `git subtree` is
+a large shell script and it exits 139 under Git Bash (git 2.44.0.windows.1), verified pre-existing:
+it fails identically at commits from before any of this work, so a failure there says nothing about
+your change. Check the invariant directly instead, which is what it was standing in for:
+
+```bash
+test -f packages/core/cherrypick/__init__.py && echo VIOLATION || echo "PEP 420 intact"
+grep -rn "cherrypick\.\(meic\|flies\|calendars\|pmcc\|gex\|earnings\|orchestrator\|streamer\|console\|review\|advisor\|desk\|overview\)"   packages/core/cherrypick/ --include=*.py    # must print nothing
+```
+
+Plus the obvious one: a new core module should import from `cherrypick.core.*` and the standard
+library, nothing else. If the split ever needs to run for real, do it somewhere `git subtree` works
+rather than treating a segfault here as a finding.
+
 ## Layout stays flat, not src-layout
 
 `packages/core/cherrypick/` sits directly under the package root (no `src/` prefix), unlike the other
@@ -65,7 +79,9 @@ module is the real reference; this is the index that tells you which one to open
 | `gex` | The GEX engine: a pure function over an option-chain snapshot. Copying this once let the math drift ~75×. |
 | `profiles` | The named risk-profile registry and merge engine — how a partial override becomes an effective config. |
 | `metrics` | The shared calibration metric bundle: one vocabulary for promotion evidence. |
-| `advice` | Bounded, expiring, deterministically-validated parameter advice. Both the orchestrator and the module loop validate through this same code. |
+| `advice` | Bounded, expiring, deterministically-validated parameter advice. Both the orchestrator and the module loop validate through this same code. `session_decision` is the read-once rule all seven consuming modules share; a **baseline** decision is deliberately never persisted, so a process reaching it with an advice-less config cannot fix the day for the loop that comes after it (2026-08-25: meic and earnings each lost their most informative session to exactly that). |
+| `ledgers` | Per-schema readers for every module's ledger — the one home for the net, cost, capital and session rules. `concentration` answers, over those normalised records, how much of a module net rests on a single arm and whether removing it flips the sign; a total that changes sign without its largest contributor is a measurement of that arm, not of the module. |
+| `regime` | The one at-or-before, staleness-bounded join against the recorded market-regime series (gex's history DB). Derived ratios/dispersion are computed here at read time, never stored. |
 | `viz` | A declarative dashboard-section contract plus one generic renderer. |
 
 The reason to put something here is that **two packages would otherwise disagree** — on what a fee is,

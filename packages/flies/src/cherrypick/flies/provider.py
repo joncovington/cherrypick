@@ -21,21 +21,25 @@ Precondition: MEIC's streamer must be running, and must be subscribed to the sym
 from __future__ import annotations
 
 import json
-import sqlite3
 import time
 from datetime import date, datetime
 from pathlib import Path
 
+# One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core.clock import ET as _ET
+
+# Read-only opens go through cherrypick.core.db.connect_ro: it percent-escapes the path, so a
+# directory containing '?', '#' or '%' cannot silently change the URI's meaning. The local
+# copies interpolated the path raw, where a '#' truncated the URI and opened a DIFFERENT,
+# empty database — which a provider reports as "nothing cached" rather than as an error.
+from cherrypick.core.db import connect_ro as _connect_ro
 from cherrypick.core.gex import compute_gex
 
-try:
-    from zoneinfo import ZoneInfo
-
-    _ET = ZoneInfo("America/New_York")
-except Exception:  # pragma: no cover - only where zoneinfo has no tz database
-    import pytz
-
-    _ET = pytz.timezone("America/New_York")
+# Shared with every other provider — see cherrypick.core.streamcache.
+# read_spot is re-exported deliberately: the loops call provider.read_spot and their tests
+# monkeypatch it there, so it is unused *inside* this module and ruff will drop it otherwise.
+from cherrypick.core.streamcache import read_spot  # noqa: F401
+from cherrypick.core.streamcache import usable_quote as _usable_quote
 
 DEFAULT_MAX_QUOTE_AGE_SECONDS = 120
 DEFAULT_STRIKE_WINDOW_PCT = 0.015
@@ -60,12 +64,6 @@ def minute_of_day(when: datetime) -> int:
     return when.hour * 60 + when.minute
 
 
-def _connect_ro(db_path: Path) -> sqlite3.Connection:
-    """Strictly read-only. MEIC's streamer is writing this file live; a reader that could mutate it
-    would be a reliability bug in someone else's module."""
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 def _fail(symbol: str, reason: str, **extra) -> dict:
@@ -74,28 +72,6 @@ def _fail(symbol: str, reason: str, **extra) -> dict:
     return {"ok": False, "symbol": symbol, "reason": reason, **extra}
 
 
-def _usable_quote(row, now_ts: float, max_age: float) -> dict | None:
-    """A quote we are willing to price a fill against, or None.
-
-    Rejects stale, crossed, and non-positive-ask quotes. Returning None rather than a degraded quote is
-    deliberate: a structure with a missing leg is skipped, which costs a sample. A structure priced off
-    a bad leg produces a paper result that looks real and isn't, which costs the whole experiment.
-    """
-    bid, ask, updated = row["bid"], row["ask"], row["updated_at"]
-    if bid is None or ask is None or updated is None:
-        return None
-    if now_ts - float(updated) > max_age:
-        return None
-    bid, ask = float(bid), float(ask)
-    if ask <= 0 or bid < 0 or bid > ask:
-        return None
-    mid = row["mid"]
-    return {
-        "bid": bid,
-        "ask": ask,
-        "mid": float(mid) if mid is not None else (bid + ask) / 2.0,
-        "age_seconds": round(now_ts - float(updated), 1),
-    }
 
 
 def _chain_for_expiration(conn, symbol: str, expiration: str) -> list[dict]:
@@ -126,16 +102,28 @@ def _chain_for_expiration(conn, symbol: str, expiration: str) -> list[dict]:
     return entries
 
 
-def nearest_expiration(conn, symbol: str) -> str | None:
-    """Soonest cached expiration for this underlying.
+def nearest_expiration(conn, symbol: str, today: str) -> str | None:
+    """Soonest cached expiration for this underlying that has not already passed.
 
     Filtering on `underlying_symbol` matters: SPX and XSP share 0DTE dates, so an expiration-only
     match would silently blend two chains with a 10x strike difference between them.
+
+    `today` is the ET trading date and is required rather than derived from SQLite's clock, because
+    getting that comparison wrong is what this function used to do. It ranked candidates by
+    `ABS(JULIANDAY(expiration) - JULIANDAY('now'))` — absolute distance from the current UTC INSTANT,
+    while an expiration is midnight. Past 12:00 UTC (08:00 ET) tomorrow is therefore always "nearer"
+    than today, so from mid-morning on it returned tomorrow's date whenever a chain for it happened
+    to be cached. `stream_chain` retains old rows, so on 2026-08-20 that was a six-day-old copy of
+    the 08-21 chain: every quote in it was stale, the snapshot was refused as `no_fresh_quotes` on
+    every tick, and the module recorded 212 refusals and not one iteration for the session.
+
+    ISO dates sort lexicographically, so plain ordering is chronological and the comparison holds at
+    any time of day.
     """
     row = conn.execute(
-        "SELECT expiration FROM stream_chain WHERE underlying_symbol = ? "
-        "GROUP BY expiration ORDER BY ABS(JULIANDAY(expiration) - JULIANDAY('now')) LIMIT 1",
-        (symbol,),
+        "SELECT expiration FROM stream_chain WHERE underlying_symbol = ? AND expiration >= ? "
+        "GROUP BY expiration ORDER BY expiration LIMIT 1",
+        (symbol, today),
     ).fetchone()
     return row["expiration"] if row else None
 
@@ -186,7 +174,7 @@ def build_snapshot(
             # MEIC hit exactly this with RUT: a subscribed symbol that never streamed a Trade event.
             return _fail(symbol, "no_spot_price")
 
-        expiration = nearest_expiration(conn, symbol)
+        expiration = nearest_expiration(conn, symbol, when.date().isoformat())
         if not expiration:
             return _fail(symbol, "no_chain_cached")
 
@@ -399,30 +387,3 @@ def _greeks_and_oi(
     return greeks, oi, stats
 
 
-def read_spot(db_path, symbol: str, *, max_age_seconds: float | None = None) -> float | None:
-    """Latest spot for one symbol — used at settlement, where no chain is needed.
-
-    `max_age_seconds` rejects a stale print. This matters more here than anywhere else in the module:
-    settlement is the single most consequential price read, it decides every position's P&L at once,
-    and it is irreversible once written. Every other read has the staleness gate applied in
-    `build_snapshot`; this one did not, so a stalled streamer would have settled the whole session
-    against a price hours old without any complaint. Observed 2026-07-20, when the upstream streamer
-    stalled twice and was 99 minutes silent half an hour before the settle time.
-    """
-    db_path = Path(db_path)
-    if not db_path.exists():
-        return None
-    conn = _connect_ro(db_path)
-    try:
-        r = conn.execute(
-            "SELECT last, updated_at FROM stream_trades WHERE symbol = ?", (symbol.strip().upper(),)
-        ).fetchone()
-        if not r or r["last"] is None:
-            return None
-        if max_age_seconds is not None:
-            updated = r["updated_at"]
-            if updated is None or (time.time() - float(updated)) > max_age_seconds:
-                return None
-        return float(r["last"])
-    finally:
-        conn.close()

@@ -5,26 +5,25 @@ from datetime import date
 from cherrypick.pmcc import clock
 
 
-def test_plan_ordinary_monday():
-    # Monday 2026-08-17: short should land Fri 2026-08-28 (11 DTE — the soonest Friday inside
-    # [6, 12]; 08-21 is only 4 days out), long Fri 2026-09-04 (18 DTE, nearest 21 inside [17, 25]).
-    plan = clock.expiration_plan(date(2026, 8, 17))
-    assert plan is not None
-    assert plan["short_expiration"] == "2026-08-28"
-    assert plan["long_expiration"] == "2026-09-04"
-    assert plan["short_dte"] == 11
-    assert plan["long_dte"] == 18
-    assert plan["long_expiration"] > plan["short_expiration"]
-
-
-def test_plan_midweek_hits_target_dtes():
-    # Wednesday 2026-08-19: Fri 08-28 is 9 DTE (the target exactly); long Fri 09-11 is 23 DTE
-    # against 09-04's 16 (outside [17, 25]), so 09-11 wins.
+def test_plan_midweek_hits_short_target():
+    # Wednesday 2026-08-19: the nearest Friday (08-21) is only 2 DTE, below the [5, 9] short
+    # window, so the SECOND Friday (08-28, 9 DTE -- the window's own max) is taken. Long: 09-04 is
+    # 16 DTE (below the [17, 25] floor), so 09-11 at 23 DTE (nearest 21) wins.
     plan = clock.expiration_plan(date(2026, 8, 19))
+    assert plan is not None
     assert plan["short_expiration"] == "2026-08-28"
     assert plan["short_dte"] == 9
     assert plan["long_expiration"] == "2026-09-11"
     assert plan["long_dte"] == 23
+    assert plan["long_expiration"] > plan["short_expiration"]
+
+
+def test_plan_thursday_hits_short_target():
+    # Thursday 2026-08-20: the nearest Friday (08-21) is 1 DTE, below the window, so 08-28 at 8 DTE
+    # (nearest the 7-day target) is taken.
+    plan = clock.expiration_plan(date(2026, 8, 20))
+    assert plan["short_expiration"] == "2026-08-28"
+    assert plan["short_dte"] == 8
 
 
 def test_plan_is_date_stable():
@@ -42,15 +41,3 @@ def test_labor_day_week_keeps_friday():
     # Labor Day Mon 2026-09-07 does not move the Friday.
     exp = clock.weekly_expiration(date(2026, 9, 8), 0)
     assert exp == date(2026, 9, 11)
-
-
-def test_roll_expiration_capped_by_long():
-    target = clock.roll_expiration(date(2026, 8, 24), "2026-09-04")
-    assert target is not None
-    assert target["expiration"] <= "2026-09-04"
-    # Nearest to the 9-day target among eligible Fridays (08-28 = 4d, 09-04 = 11d) -> 09-04.
-    assert target["expiration"] == "2026-09-04"
-
-
-def test_roll_expiration_none_when_long_passed():
-    assert clock.roll_expiration(date(2026, 9, 7), "2026-09-04") is None

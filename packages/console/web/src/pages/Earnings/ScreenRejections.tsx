@@ -35,11 +35,11 @@ interface ScreenPayload {
   } | null;
 }
 
-function useScreenMetrics(mode: TradingMode) {
+function useScreenMetrics(mode: TradingMode, era: string | null) {
   return useQuery<ScreenPayload>({
-    queryKey: ["earnings-screen", mode],
+    queryKey: ["earnings-screen", mode, era],
     queryFn: async () => {
-      const res = await fetch(`/api/earnings/screen?mode=${mode}`);
+      const res = await fetch(`/api/earnings/screen?mode=${mode}${era !== null ? `&era=${era}` : ""}`);
       if (!res.ok) throw new Error(`HTTP ${String(res.status)}`);
       return (await res.json()) as ScreenPayload;
     },
@@ -49,8 +49,8 @@ function useScreenMetrics(mode: TradingMode) {
   });
 }
 
-export function ScreenRejections({ mode }: { mode: TradingMode }) {
-  const { data, isLoading, isError, dataUpdatedAt } = useScreenMetrics(mode);
+export function ScreenRejections({ mode, era }: { mode: TradingMode; era: string | null }) {
+  const { data, isLoading, isError, dataUpdatedAt } = useScreenMetrics(mode, era);
   const m = data?.metrics ?? null;
   const reasons = m?.reasons ?? [];
   const max = Math.max(...reasons.map((r) => r.total), 1);

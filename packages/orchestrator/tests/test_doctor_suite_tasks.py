@@ -35,7 +35,6 @@ def test_every_orchestrator_task_is_reported(monkeypatch):
         "task.trade_notify",
         "task.log_archive",
         "task.reconcile",
-        "task.follow_notify",
         "task.preopen",
     }
 
@@ -70,17 +69,17 @@ def test_opted_out_and_absent_is_healthy_not_a_warning(monkeypatch):
     checks = _by_name(doctor._suite_task_checks({}))
     assert checks["task.reconcile"].status == doctor.OK
     assert checks["task.reconcile"].detail == "disabled (not registered)"
-    assert checks["task.follow_notify"].status == doctor.OK
 
 
 def test_disabled_but_still_registered_is_drift(monkeypatch):
-    """The live example on this machine: follow_feed switched off because the standalone repo runs
-    it now. A leftover task is benign — the command re-reads config and no-ops — but it is drift,
-    and drift nobody can see is what this whole check is for."""
-    monkeypatch.setattr(doctor.tasks, "exists", _registered("cherrypick-follow-notify"))
+    """The original live example was follow_feed, switched off because a standalone repo ran
+    it — since 2026-08-21 the whole feature lives out there, so reconcile plays the part. A
+    leftover task is benign — the command re-reads config and no-ops — but it is drift, and
+    drift nobody can see is what this whole check is for."""
+    monkeypatch.setattr(doctor.tasks, "exists", _registered("cherrypick-reconcile"))
     checks = _by_name(doctor._suite_task_checks({}))
-    assert checks["task.follow_notify"].status == doctor.WARN
-    assert "still registered" in checks["task.follow_notify"].detail
+    assert checks["task.reconcile"].status == doctor.WARN
+    assert "still registered" in checks["task.reconcile"].detail
 
 
 def test_a_task_with_no_configured_name_is_skipped(monkeypatch):

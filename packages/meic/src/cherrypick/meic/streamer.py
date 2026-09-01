@@ -50,16 +50,9 @@ from pathlib import Path
 # Allow running as `python src/streamer.py` from the project root.
 sys.path.insert(0, os.path.dirname(__file__))
 
-try:  # stdlib zoneinfo first (tzdata supplies the db on Windows); pytz only as fallback
-    from zoneinfo import ZoneInfo
-
-    _ET = ZoneInfo("America/New_York")
-except Exception:  # pragma: no cover - only where zoneinfo has no tz database
-    import pytz
-
-    _ET = pytz.timezone("America/New_York")
-
+# One ET for the suite — see cherrypick.core.clock.
 from cherrypick.core import streamcache  # noqa: E402
+from cherrypick.core.clock import ET as _ET  # noqa: E402
 from cherrypick.core.streamer import ChainStreamer  # noqa: E402
 
 from cherrypick.meic import paths as _paths  # noqa: E402

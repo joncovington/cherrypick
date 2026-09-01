@@ -4,6 +4,7 @@ Pins the override precedence (CHERRYPICK_HOME master → per-scope env → defau
 so the four packages that delegate here can't drift back to package-local paths.
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -102,3 +103,61 @@ def test_ensure_creates_directory_idempotently(tmp_path):
     assert home.ensure(target) == target
     assert target.is_dir()
     assert home.ensure(target) == target  # second call is a no-op, not an error
+
+
+# --------------------------------------------------------------------------- load_module_config
+def _write(path, payload):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def test_load_module_config_precedence(tmp_path, monkeypatch):
+    """Explicit path wins, then the env var, then the managed home, then the package's own files."""
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path / "home"))
+    pkg = tmp_path / "pkg"
+    _write(pkg / "config.example.json", {"src": "example"})
+    _write(pkg / "config.json", {"src": "repo"})
+    _write(tmp_path / "home" / "config" / "demo.json", {"src": "managed"})
+    env_cfg = _write(tmp_path / "env.json", {"src": "env"})
+    explicit = _write(tmp_path / "explicit.json", {"src": "explicit"})
+
+    assert home.load_module_config("demo", pkg, explicit)["src"] == "explicit"
+    monkeypatch.setenv("DEMO_CONFIG", str(env_cfg))
+    assert home.load_module_config("demo", pkg)["src"] == "env"
+    monkeypatch.delenv("DEMO_CONFIG")
+    assert home.load_module_config("demo", pkg)["src"] == "managed"
+
+
+def test_load_module_config_prefers_the_managed_home_over_the_repo(tmp_path, monkeypatch):
+    """The one that matters: doctor reads the managed home, so a module that preferred its in-repo
+    copy would run settings doctor reports as absent."""
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path / "home"))
+    pkg = tmp_path / "pkg"
+    _write(pkg / "config.json", {"src": "repo"})
+    _write(tmp_path / "home" / "config" / "demo.json", {"src": "managed"})
+    assert home.load_module_config("demo", pkg)["src"] == "managed"
+
+
+def test_load_module_config_falls_through_to_the_example(tmp_path, monkeypatch):
+    """A fresh clone runs — the checked-in example is every module's design document."""
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path / "home"))
+    pkg = tmp_path / "pkg"
+    _write(pkg / "config.example.json", {"src": "example"})
+    assert home.load_module_config("demo", pkg)["src"] == "example"
+
+
+def test_load_module_config_exits_when_nothing_is_present(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path / "home"))
+    with pytest.raises(SystemExit):
+        home.load_module_config("demo", tmp_path / "empty")
+
+
+def test_load_module_config_env_name_follows_the_module(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path / "home"))
+    pkg = tmp_path / "pkg"
+    _write(pkg / "config.example.json", {"src": "example"})
+    cfg = _write(tmp_path / "c.json", {"src": "env"})
+    monkeypatch.setenv("PMCC_CONFIG", str(cfg))
+    assert home.load_module_config("pmcc", pkg)["src"] == "env"
+    assert home.load_module_config("flies", pkg)["src"] == "example"

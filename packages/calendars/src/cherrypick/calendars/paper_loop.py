@@ -30,9 +30,11 @@ import os
 import time
 from datetime import datetime
 
+from cherrypick.core import advice as _core_advice
 from cherrypick.core import calendar as _cal
 from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
+from cherrypick.core import looplock
 
 from cherrypick.calendars import book as bookmod
 from cherrypick.calendars import cli as climod
@@ -66,6 +68,34 @@ def _log(message: str) -> None:
     _logger.info(message)
 
 
+def heartbeat_file():
+    """Resolved on every call for the same reason as `log_file` — never captured at import."""
+    return _home.heartbeat_path("calendars")
+
+
+def _beat() -> None:
+    """Publish liveness: this loop reached the top of a tick.
+
+    The supervisor restarts a resident job whose liveness signal goes quiet, and until 2026-08-17
+    that signal was this module's LOG. Every line this loop writes is event-driven, so a week holding
+    no position wrote nothing and looked exactly like a wedged process — the supervisor killed and
+    restarted it every two minutes for four days (107 times on 08-17), costing ~28-61% of the
+    session's ticks to restart gaps of up to ten minutes.
+
+    So liveness is published rather than inferred, the way the console already does it. This is
+    touched at the TOP of the tick, before any branch: it must mean "the loop is turning over" and
+    nothing about what the tick then decided to do. Failure to write it is swallowed — a heartbeat
+    that costs a tick would be worse than the problem it solves — and a missing file is not judged
+    silent by the supervisor, so the degrade is safe in both directions.
+    """
+    try:
+        path = heartbeat_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(clock.now_iso(), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def in_session(now_min: int) -> bool:
     return RTH_OPEN_MIN <= now_min < RTH_CLOSE_MIN
 
@@ -83,69 +113,20 @@ def _loop_lock_path() -> str:
     return os.path.join(_paper_data_dir(), "paper_loop.lock")
 
 
-def _pid_alive(pid: int) -> bool:
-    """The settled probe chain (psutil → Win32 OpenProcess → os.kill last)."""
-    if pid <= 0:
-        return False
-    try:
-        import psutil  # type: ignore
-
-        return bool(psutil.pid_exists(pid))
-    except ImportError:
-        pass
-    try:
-        import ctypes
-
-        synchronize = 0x00100000
-        handle = ctypes.windll.kernel32.OpenProcess(synchronize, False, pid)
-        if handle:
-            ctypes.windll.kernel32.CloseHandle(handle)
-            return True
-        return False
-    except Exception:
-        try:
-            os.kill(pid, 0)
-            return True
-        except PermissionError:
-            return True
-        except (OSError, SystemError):
-            return False
+_pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch this name)
 
 
 def _acquire_loop_lock(stale_seconds: int = 180) -> bool:
     """Single-instance guard shared by `--interval` and `--once`, so the supervised resident loop
-    and an off-session/manual `--once` can never iterate the same book concurrently. A held-but-
-    ALIVE lock is never stolen regardless of age; the mtime fallback applies only when the holder's
-    PID is unreadable."""
-    path = _loop_lock_path()
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.write(fd, str(os.getpid()).encode())
-        os.close(fd)
-        return True
-    except FileExistsError:
-        try:
-            with open(path, encoding="utf-8") as fh:
-                holder = int(fh.read().strip())
-        except (OSError, ValueError):
-            holder = None
-        if holder is not None and _pid_alive(holder):
-            return False
-        try:
-            if holder is not None or time.time() - os.path.getmtime(path) > stale_seconds:
-                os.unlink(path)
-                return _acquire_loop_lock(stale_seconds)
-        except OSError:
-            pass
-        return False
+    and an off-session/manual `--once` can never iterate the same book concurrently.
+
+    `cherrypick.core.looplock` holds the semantics (a live holder is never stolen, whatever its
+    age); `_pid_alive` is passed explicitly so a test monkeypatching that name still steers it."""
+    return looplock.acquire(_loop_lock_path(), stale_seconds, alive=_pid_alive)
 
 
 def _release_loop_lock() -> None:
-    try:
-        os.unlink(_loop_lock_path())
-    except OSError:
-        pass
+    looplock.release(_loop_lock_path())
 
 
 def _note_cadence_change(conn, interval_seconds: int) -> None:
@@ -188,51 +169,20 @@ def advice_decision(config: dict, today: str) -> dict:
     """Today's advice decision, derived ONCE per session and replayed thereafter (the flies
     read-once rule: advice can never start, stop, or change mid-session across `--once`
     processes). Entries only happen on the entry day, so an artifact landing any other day admits
-    params that open nothing — `advice: baseline` on a Tuesday is the design, not a failure."""
-    acfg = config.get("advice") or {}
-    base = acfg.get("base_book", "control")
-    path = _advice_decision_path()
+    params that open nothing — `advice: baseline` on a Tuesday is the design, not a failure.
 
-    decision = None
-    if os.path.exists(path):
-        try:
-            with open(path, encoding="utf-8") as handle:
-                decision = json.load(handle)
-        except (OSError, ValueError):
-            decision = None
-        if decision is not None and decision.get("day") != today:
-            decision = None
-    if decision is not None:
-        return decision
-
-    if acfg.get("enabled") and acfg.get("bounds"):
-        from cherrypick.core import advice as _core_advice
-
-        result = _core_advice.load(_home.state_dir(), "calendars", today, acfg.get("bounds") or {})
-        params = {p["param"]: p["value"] for p in result["proposals"]} or None
-        decision = {
-            "day": today,
-            "base_book": base,
-            "params": params,
-            "reason": result["reason"],
-            "proposals": result["proposals"],
-            "rejected": result.get("rejected") or [],
-        }
-        for proposal in result["proposals"]:
-            _log(
-                f"advice applied: {proposal['param']}={proposal['value']!r} — {proposal.get('rationale', '')}"
-            )
-        if not result["proposals"]:
-            _log(f"advice: baseline ({result['reason'] or 'no proposals'})")
-    else:
-        decision = {"day": today, "base_book": base, "params": None, "reason": "advice_disabled"}
-
-    try:
-        with open(path, "w", encoding="utf-8") as handle:
-            json.dump(decision, handle, indent=2)
-    except OSError:
-        pass
-    return decision
+    The mechanics live in `cherrypick.core.advice.session_decision` — three modules had written this
+    read-once-and-replay identically, and it carries a safety property rather than a convenience.
+    """
+    return _core_advice.session_decision(
+        _home.state_dir(),
+        "calendars",
+        today,
+        config,
+        _advice_decision_path(),
+        base_key="base_book",
+        log=_log,
+    )
 
 
 def session_books(config: dict, today: str) -> tuple[list[str], dict | None]:
@@ -255,6 +205,7 @@ def run_once(
 ) -> dict:
     """One iteration. Owns the whole week's phase logic — there is exactly one thing to schedule
     and one thing that can fail."""
+    _beat()  # before every gate below: liveness is "the loop is turning over", not "it did work"
     when = when or clock.now_et()
     now_min = clock.minute_of_day(when)
     today = when.date()
@@ -310,7 +261,7 @@ def run_once(
         if window_start <= now_min <= window_end:
             phase = "entry"
             actions += _try_entry(config, conn, cache_path=cache_path, when=when, week=plan_dates)
-        elif now_min > window_end and not db.positions_for_week(conn, plan_dates["week_of"]):
+        elif now_min > window_end and not _monday_regime_positions(conn, plan_dates["week_of"]):
             db.record_decision(
                 conn,
                 trade_date=day,
@@ -320,6 +271,11 @@ def run_once(
                 reason="week_skipped_entry_window_exhausted",
                 accepted=False,
             )
+
+    # Phase: the Friday entry regime, off unless configured (docs/friday-entry-arm.md). Placed
+    # after the Monday phase so the two can never both fire on one tick, and gated on this
+    # session's exits rather than on the clock — see _try_friday_entry.
+    actions += _maybe_friday_entry(config, conn, cache_path=cache_path, when=when, now_min=now_min)
 
     # Phase: mark everything open, every tick — the exit study's substrate — then manage.
     marked, values = _mark_positions(config, conn, cache_path=cache_path, when=when, day=day)
@@ -355,7 +311,182 @@ def _unsettled_today(conn, day: str) -> bool:
     return bool(db.expiring_open_legs(conn, day))
 
 
-def _try_entry(config: dict, conn, *, cache_path: str, when: datetime, week: dict) -> int:
+def _record_paired_debits(conn, snapshot: dict, *, week: dict, day: str) -> None:
+    """Price the Friday regime's own strikes at the Monday entry moment and record the pair.
+
+    This is the Friday arm's PRIMARY measurement. Both entrances hold the same contracts — same
+    strikes, same two expirations — so their value paths are identical from here on and the entire
+    P&L difference between entering Friday and entering Monday is what each paid:
+    `monday_debit - friday_debit`, weekend decay netted against weekend gap risk in one figure
+    whose variance is a fraction of a week's P&L.
+
+    Runs once per week and does nothing when the Friday regime holds nothing for it — which is
+    every week until that regime is enabled, and any week it refused. Best-effort throughout: a
+    failure here costs the measurement, never the entry beside it.
+    """
+    try:
+        friday_rows = [
+            p
+            for p in db.positions_for_week(conn, week["week_of"])
+            if str(p.get("book") or "").startswith(engine.FRIDAY_PREFIX)
+        ]
+        if not friday_rows:
+            return
+        # One row per SIDE: the books within the regime share the same fills, so any of them
+        # carries the same strike and debit for a side.
+        by_side: dict[str, dict] = {}
+        for p in friday_rows:
+            by_side.setdefault(p["side"], p)
+
+        strikes = {side: float(p["strike"]) for side, p in by_side.items()}
+        priced = engine.price_at_strikes(snapshot, strikes)
+        now = clock.now_iso()
+        for side, p in by_side.items():
+            row = {
+                "recorded_at": now,
+                "week_of": week["week_of"],
+                "symbol": p["symbol"],
+                "side": side,
+                "strike": p["strike"],
+                "friday_session": p.get("entry_session"),
+                "friday_debit": p.get("entry_debit"),
+                "friday_spot": p.get("entry_spot"),
+                "monday_session": day,
+                "monday_spot": snapshot.get("spot"),
+            }
+            if priced.get("ok"):
+                row.update(
+                    monday_debit=priced["sides"][side]["debit"],
+                    usable=1,
+                    refusal=None,
+                )
+            else:
+                # "We could not have priced it then" is a real answer; a nearest-strike substitute
+                # would silently change what was compared.
+                row.update(monday_debit=None, usable=0, refusal=priced.get("reason"))
+            db.record_paired_debit(conn, **row)
+    except Exception as exc:  # noqa: BLE001 — a measurement must never cost the entry beside it
+        _log(f"paired-debit record failed (continuing): {type(exc).__name__}: {exc}")
+
+
+def friday_settings(config: dict) -> dict:
+    """The Friday-entry regime's config block. OFF unless the config says otherwise — a second
+    entry regime doubles this module's open positions and its buying power, so it is opt-in."""
+    return dict(config.get("friday_entry") or {})
+
+
+def friday_books(config: dict) -> list[str]:
+    """The Friday regime's books: the base roster under the `friday:` prefix. No advised twin in
+    v1 — it would double the advisor surface for a regime with no history."""
+    enabled = config.get("books") or {}
+    return [
+        f"{engine.FRIDAY_PREFIX}{b}" for b in engine.BOOKS if enabled.get(b, {}).get("enabled", True)
+    ]
+
+
+def _monday_regime_positions(conn, week_of: str) -> list[dict]:
+    """The default regime's rows for a week. The skipped-week journal keys on THIS rather than on
+    every row for the week: once the Friday regime can enter the same `week_of`, a bare
+    positions-for-week check would read the Friday arm's entry as the Monday arm having traded and
+    silently stop journaling genuinely skipped Mondays."""
+    return [
+        p
+        for p in db.positions_for_week(conn, week_of)
+        if not str(p.get("book") or "").startswith(engine.FRIDAY_PREFIX)
+    ]
+
+
+def _journal_friday_skip(conn, config: dict, plan: dict) -> None:
+    """Record, once, that the Friday window closed with nothing entered — and the reason that
+    dominated the attempts. Idempotent per week: `record_decision` collapses a repeated identical
+    reason, so every tick after the window may call this."""
+    try:
+        if any(
+            str(p.get("book") or "").startswith(engine.FRIDAY_PREFIX)
+            for p in db.positions_for_week(conn, plan["week_of"])
+        ):
+            return
+        rows = conn.execute(
+            "SELECT outcome, COUNT(*) n FROM dc_entry_attempts "
+            "WHERE trade_date = ? GROUP BY outcome ORDER BY n DESC LIMIT 1",
+            (plan["entry_session"],),
+        ).fetchone()
+        dominant = rows["outcome"] if rows else "no_attempts_recorded"
+        db.record_decision(
+            conn,
+            trade_date=plan["entry_session"],
+            book="*",
+            symbol=(config.get("symbols") or ["SPX"])[0],
+            mode="entry",
+            reason="friday_week_skipped",
+            detail=dominant,
+            accepted=False,
+        )
+    except Exception as exc:  # noqa: BLE001 — journalling must never cost a tick
+        _log(f"friday-skip journalling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
+def _maybe_friday_entry(
+    config: dict, conn, *, cache_path: str, when: datetime, now_min: int
+) -> int:
+    """The Friday regime's entry phase: the same structure entered a session early, to measure
+    whether the weekend's differential decay is worth owning (docs/friday-entry-arm.md).
+
+    Two gates, and the second is the load-bearing one:
+
+    * the clock window (default 15:50-16:00), which deliberately OPENS inside the exit window's
+      tail rather than after it, so the entry gets twice the attempts and can start the moment the
+      exits are actually done; and
+    * `db.pending_closing_exits`, which blocks the entry while any book that intends to close today
+      still holds an expiring position. Ordering here is enforced by STATE, not by the clock,
+      because `run_once` runs entry BEFORE management within a tick — a clock-only gate over an
+      overlapping window would let one tick open the new week before closing the old one.
+    """
+    settings = friday_settings(config)
+    if not settings.get("enabled"):
+        return 0
+    plan = clock.friday_entry_plan(when.date())
+    if plan is None:
+        return 0
+    start = clock.hhmm_to_min(settings.get("window_start"), 15 * 60 + 50)
+    end = clock.hhmm_to_min(settings.get("window_end"), 16 * 60)
+    if not (start <= now_min <= end):
+        # Past the window with nothing entered: journal the skipped week, the way the Monday regime
+        # already does. Self-reporting rather than scheduled — it needs no watcher, works every
+        # Friday rather than only the first, and names WHY, which is the whole diagnosis. In
+        # particular a week whose attempts are all `awaiting_session_exits` is the exit-gate
+        # DEADLOCK (the `path` book never closes, so a gate reading "flat" would wait forever) and
+        # not a market outcome; a week of `no_fresh_quotes` is the feed.
+        if now_min > end:
+            _journal_friday_skip(conn, config, plan)
+        return 0
+    books = friday_books(config)
+    if not books:
+        return 0
+    # Positions expiring TODAY are the ones this session closes; today is the Friday entry session.
+    pending = db.pending_closing_exits(conn, when.date().isoformat())
+    if pending:
+        # Ordinary and expected early in the window; recorded so a week the Friday arm never
+        # entered can be read as "the exits ran long" rather than as a feed problem.
+        db.record_entry_attempt(
+            conn,
+            trade_date=plan["entry_session"],
+            week_of=plan["week_of"],
+            symbol=(config.get("symbols") or ["SPX"])[0],
+            outcome="awaiting_session_exits",
+            block_detail=f"{len(pending)} position(s) still to close",
+        )
+        return 0
+    return _try_entry(config, conn, cache_path=cache_path, when=when, week=plan, books=books)
+
+
+def _try_entry(
+    config: dict, conn, *, cache_path: str, when: datetime, week: dict, books: list[str] | None = None
+) -> int:
+    """Open the week's calendars. `books` overrides the session roster for a non-default entry
+    regime (the Friday arm passes its own); `week` carries the identity every row is stamped with,
+    so a Friday plan's `entry_session` and `dc_7_10` tag flow through unchanged and this stays the
+    ONE entry path rather than growing a second copy per regime."""
     day = week["entry_session"]
     symbol = (config.get("symbols") or ["SPX"])[0].strip().upper()
     # Two settlement models are implemented: European cash (shorts settle at intrinsic) and American
@@ -389,7 +520,10 @@ def _try_entry(config: dict, conn, *, cache_path: str, when: datetime, week: dic
                 outcome="ex_dividend_week", block_detail=f"ex-date {hit}",
             )
             return 0
-    books, advice_params = session_books(config, day)
+    if books is None:
+        books, advice_params = session_books(config, day)
+    else:
+        advice_params = None  # no advised twin for a non-default regime (see the arm's doc)
     already = {(p["book"], p["side"]) for p in db.positions_for_week(conn, week["week_of"])}
     if all((b, s) in already for b in books for s in ("put", "call")):
         return 0
@@ -431,6 +565,13 @@ def _try_entry(config: dict, conn, *, cache_path: str, when: datetime, week: dic
         quotes_stale=snapshot["quote_stats"]["rejected"],
         spot=snapshot["spot"],
     )
+
+    # The Friday regime's matched-strike comparison, recorded at the MONDAY entry moment and only
+    # from the default regime's own pass (docs/friday-entry-arm.md). Pure telemetry beside the
+    # entry, never a position: it prices the strikes the Friday arm already bought, so the two
+    # entrances hold identical contracts and the difference in what they paid is the whole effect.
+    if books is None:
+        _record_paired_debits(conn, snapshot, week=week, day=day)
 
     params = engine.merged_params(config, "control")
     planned = engine.plan_entry(snapshot, params)

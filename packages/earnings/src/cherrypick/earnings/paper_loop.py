@@ -43,11 +43,13 @@ from cherrypick.core import calendar as _calendar
 from cherrypick.core import home as _home
 
 from cherrypick.earnings import (
+    advice,
     costs,
     db_paper,
     management,
     provider,
     scanner,
+    settlement,
     stream_request,
     symbol_watch,
 )
@@ -241,9 +243,29 @@ def _ns(**kwargs):
     return argparse.Namespace(**kwargs)
 
 
+def managed_book(profile: str | None) -> bool:
+    """Whether this loop manages the book -- a strat_test book, or an advised twin of one.
+
+    The twin has to be in, and reading `_is_strat_test_book` alone left it out. That predicate
+    answers "is this a strat_test book", which is the right question for `run_closes` and the wrong
+    one here: `advised:strat_test:iron_condor` is a different book, so it answered no, and the loop
+    never saw a single twin. They were opened, and then never marked, never evaluated, never closed
+    -- 13 of them over six days against 4,953 marks on the control beside them.
+
+    The failure was invisible from the design, which is why it lasted: `management.effective_config`
+    really is the one choke point restating a twin's frozen params, and it really is called from
+    `management.evaluate`. But `evaluate` only ever sees what this function returns, so a filter two
+    steps upstream silently decided the advised experiment recorded nothing at all.
+    """
+    base = profile or ""
+    if base.startswith(advice.ADVISED_PREFIX):
+        base = base[len(advice.ADVISED_PREFIX) :]
+    return harness._is_strat_test_book(base)
+
+
 def open_positions() -> list[dict]:
     rows = db_paper.cmd_get_open_positions(_ns())["positions"]
-    return [r for r in rows if harness._is_strat_test_book(r.get("profile"))]
+    return [r for r in rows if managed_book(r.get("profile"))]
 
 
 def refresh_stream_request(positions: list[dict]) -> None:
@@ -310,9 +332,12 @@ def mark_position(trade: dict, config: dict, now: datetime) -> tuple[dict, int |
         max_quote_age_seconds=policy.get("quote_max_age_seconds"),
         max_spot_age_seconds=policy.get("spot_max_age_seconds"),
     )
-    if not snap.get("ok"):
+    if not snap.get("ok") and snap.get("reason") != "legs_expired":
         # One REST attempt before giving up on the tick: the cache not having a leg is common early
-        # in a name's life, and the broker can always price it.
+        # in a name's life, and the broker can always price it. An expired leg is the exception --
+        # the broker cannot price it either, so retrying costs a subprocess and a DXLink session per
+        # position per tick to be told the same thing, and replaces the honest refusal with a
+        # misleading one. It reads as a quote problem; it is a settlement problem.
         snap = _rest_snapshot(trade)
 
     session = now.date().isoformat()
@@ -392,6 +417,51 @@ def manage(config: dict, now: datetime, *, phase: str, execute: bool) -> dict:
         open_legs = []
         if trade.get("strategy") == "double_calendar":
             open_legs = db_paper.cmd_get_open_legs(_ns(order_id=trade["order_id"])).get("legs", [])
+
+        # A position whose legs have expired cannot be traded out, only settled -- so this runs
+        # AHEAD of the unusable-mark refusal below rather than behind it. Settlement needs no quote,
+        # and the mark it would have waited for is exactly the one that no longer exists. Left
+        # behind that refusal, these positions hold forever: the ledger fills with close decisions
+        # blocked on a spread that cannot narrow, and the trade never records a result at all.
+        settle_reason = settlement.due(trade, now)
+        if settle_reason is not None:
+            settled = settlement.resolve(
+                trade,
+                config,
+                now,
+                max_quote_age_seconds=management.policy_for(
+                    trade.get("strategy") or "", config
+                ).get("quote_max_age_seconds"),
+                rest_snapshot=_rest_snapshot,
+            )
+            gate = None if settled.get("ok") else (settled.get("reason") or "unsettleable")
+            if not gate and not execute:
+                gate = "open_window"
+            if gate:
+                _record_event(
+                    trade, "settle", settle_reason, now, phase,
+                    executed=False, gate=gate, mark_id=mark_id,
+                )
+                continue
+            # No execution cap and no exec window: settling is bookkeeping about something that has
+            # already happened, not an order competing for the broker's attention.
+            result = close_position(trade, settled, settle_reason, config, now)
+            if not result.get("ok"):
+                _record_event(
+                    trade, "settle", settle_reason, now, phase,
+                    executed=False, gate=result.get("error") or "close_failed", mark_id=mark_id,
+                )
+                continue
+            actions += 1
+            closed.append(
+                {"order_id": trade["order_id"], "symbol": trade["symbol"], "reason": settle_reason}
+            )
+            _record_event(
+                trade, "settle", settle_reason, now, phase, executed=True,
+                detail={"source": "settlement", "settled_legs": settled.get("settled_legs")},
+                mark_id=mark_id,
+            )
+            continue
 
         if not snap.get("ok"):
             _record_event(
@@ -553,12 +623,27 @@ def run_iteration(config: dict | None = None, now: datetime | None = None) -> di
         # narrow its candidate list, and the console's Upcoming surface reads the same snapshot.
         _, _, days = _forward_scan_settings(config)
         result = symbol_watch.refresh_symbol_watch(days=days, config=config)
-        record["forward_scan"] = {
-            "days": days,
-            "symbols": len(result.get("entries") or result.get("symbols") or []),
-            "ok": result.get("ok", True),
-        }
+        found = len(result.get("entries") or result.get("symbols") or [])
+        record["forward_scan"] = {"days": days, "symbols": found, "ok": result.get("ok", True)}
         record["ok"] = bool(result.get("ok", True))
+        # The run trail gets this phase too, which it did not until 2026-08-25.
+        #
+        # This is the TOP of the funnel — it bounds the entry universe, so a scan that finds nothing
+        # guarantees an empty entry scan hours later. It was the only phase that logged nothing, and
+        # that is exactly how eleven starved sessions stayed invisible: the calendar had aged out, so
+        # this returned `symbols: 0` every morning, and the only trace anywhere was the entry phase's
+        # `opened: []` — which reads identically to "candidates were screened and none cleared".
+        #
+        # `symbols: 0` beside a healthy calendar means something else entirely (the liquid-universe
+        # filter, or the watchlist fetch), so recording the count is what separates the two.
+        hb = {
+            "date": session,
+            "phase": PHASE_FORWARD_SCAN,
+            "ok": record["ok"],
+            "symbols": found,
+            "days": days,
+        }
+        append_run_log({"ts": datetime.now(timezone.utc).isoformat(), **hb})
 
     elif phase == PHASE_PRE_OPEN:
         refresh_stream_request(open_positions())
@@ -586,10 +671,22 @@ def run_iteration(config: dict | None = None, now: datetime | None = None) -> di
         # The heartbeat stays terse -- it is a liveness file. The log carries the whole result,
         # which is where the per-symbol accept/reject detail lives.
         append_run_log({"ts": datetime.now(timezone.utc).isoformat(), **hb, "result": entry})
-        # Deliberately NOT refreshing the stream request here. Tonight's new underlyings would grow
-        # the union and recycle the producer mid-session, blinding the 0DTE modules into their own
-        # close -- to make symbols available fourteen hours before this module marks anything.
-        # `pre_open` picks them up tomorrow, ahead of the first mark that needs them.
+        # Declaring tonight's underlyings HERE became safe on 2026-08-25, and the reason it was
+        # forbidden is worth keeping because it was correct at the time.
+        #
+        # It used to grow the `symbols` union, which a producer binds once at startup -- so the
+        # watchdog recycled it, and a recycle costs a settling window during which NOTHING streams.
+        # Doing that at 15:45 would have blinded the 0DTE modules trading into their own close, to
+        # make symbols available fourteen hours before this module marked anything. Plainly a bad
+        # trade, so `pre_open` picked them up the next morning instead.
+        #
+        # They are declared as quote-only `legs` now (see stream_request.write), and legs are re-read
+        # every subscription poll rather than bound at startup. This module can no longer force a
+        # recycle at all, so the hazard that shaped the old rule does not exist and the cost of
+        # waiting is real: a position opened tonight has no underlying spot until tomorrow's
+        # pre-open, which silently disables the pin guard (`management._pin_risk` returns False on a
+        # null spot) for every mark in between.
+        refresh_stream_request(open_positions())
 
     elif phase == PHASE_EOD:
         # The per-module EOD reports were retired 2026-08-13: the suite review (packages/review)
@@ -669,6 +766,75 @@ def cmd_record_break(args) -> dict:
     )
 
 
+def cmd_settle_expired(args) -> dict:
+    """Settle every open position whose legs have already expired. Dry by default.
+
+    A backfill verb, in the same family as `run_closes`: the loop settles at expiry by itself now,
+    so this exists for the backlog that accumulated BEFORE it could -- positions stranded because
+    the only exit the module had was to trade out of a contract that no longer existed. It is
+    deliberately a separate, human-run verb rather than something a tick does silently, because it
+    resolves trades that have been open for days and every one of them lands in the measurement.
+    """
+    config = scanner._load_config()
+    now = datetime.now(ET)
+    settled, refused = [], []
+    for trade in open_positions():
+        reason = settlement.due(trade, now)
+        if reason is None:
+            continue
+        snap = settlement.resolve(
+            trade,
+            config,
+            now,
+            max_quote_age_seconds=management.policy_for(
+                trade.get("strategy") or "", config
+            ).get("quote_max_age_seconds"),
+            rest_snapshot=_rest_snapshot,
+        )
+        legs = provider.legs_from_trade(trade)
+        debit = scanner.compute_generic_exit_debit(legs, snap["quotes"]) if snap.get("ok") else None
+        if debit is None:
+            refused.append(
+                {
+                    "order_id": trade["order_id"],
+                    "symbol": trade["symbol"],
+                    "strategy": trade["strategy"],
+                    "reason": snap.get("reason") or "exit_debit_unavailable",
+                }
+            )
+            continue
+        row = {
+            "order_id": trade["order_id"],
+            "symbol": trade["symbol"],
+            "strategy": trade["strategy"],
+            "settled_as": reason,
+            "exit_debit": round(debit, 2),
+            "gross_pnl": round(management.unrealized_pnl(trade, debit) * (trade.get("quantity") or 1), 2),
+        }
+        if not args.apply:
+            settled.append(row)
+            continue
+        result = close_position(trade, snap, reason, config, now)
+        if not result.get("ok"):
+            refused.append({**row, "reason": result.get("error") or "close_failed"})
+            continue
+        _record_event(
+            trade, "settle", reason, now, "backfill", executed=True,
+            detail={"source": "settlement", "settled_legs": snap.get("settled_legs")},
+        )
+        settled.append(row)
+    if args.apply and settled:
+        refresh_stream_request(open_positions())
+    return {
+        "applied": bool(args.apply),
+        "settled": len(settled),
+        "refused": len(refused),
+        "gross_pnl": round(sum(r["gross_pnl"] for r in settled), 2),
+        "positions": settled,
+        "not_settled": refused,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Managed earnings paper loop")
     sub = parser.add_subparsers(dest="command")
@@ -682,10 +848,20 @@ def main() -> None:
     p_break.add_argument("--new", default=None)
     p_break.add_argument("--note", default=None)
 
+    p_settle = sub.add_parser("settle-expired")
+    p_settle.add_argument(
+        "--apply", action="store_true", help="write the closes (default is a dry run)"
+    )
+
     parser.add_argument("--once", action="store_true", help="run one tick (the default)")
     args = parser.parse_args()
 
-    dispatch = {"once": cmd_once, "status": cmd_status, "record-break": cmd_record_break}
+    dispatch = {
+        "once": cmd_once,
+        "status": cmd_status,
+        "record-break": cmd_record_break,
+        "settle-expired": cmd_settle_expired,
+    }
     result = dispatch.get(args.command or "once", cmd_once)(args)
     if sys.stdout is not None:
         json.dump(result, sys.stdout, indent=2, default=str)

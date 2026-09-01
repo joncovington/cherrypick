@@ -74,7 +74,7 @@ def wired(tmp_path, monkeypatch):
     return tmp_path
 
 
-def open_trade(order_id="T1", credit=5.00, opened_at=None, expiration="2026-08-21"):
+def open_trade(order_id="T1", credit=5.00, opened_at=None, expiration="2026-08-21", profile="strat_test:iron_fly"):
     db_paper.cmd_save_trade(
         _ns(
             data=json.dumps(
@@ -85,7 +85,7 @@ def open_trade(order_id="T1", credit=5.00, opened_at=None, expiration="2026-08-2
                     "expiration": expiration,
                     "entry_credit": credit,
                     "legs_json": json.dumps(LEGS),
-                    "profile": "strat_test:iron_fly",
+                    "profile": profile,
                     "quantity": 1,
                     "capital_at_risk": 500.0,
                     "opened_at": opened_at
@@ -111,7 +111,10 @@ def quotes_pricing(exit_debit, *, spread=0.05):
             "max_spread_pct": spread,
             "quotes": {
                 LEGS[0]["symbol"]: {"bid": exit_debit, "ask": exit_debit, "mid": max(exit_debit, 0.01)},
-                LEGS[1]["symbol"]: {"bid": 0.0, "ask": 0.0, "mid": 0.01},
+                # A wide stub carries a genuinely wide leg (percent AND money); the default stays
+                # zero-width so priced closes stay exact. Widening the second short shifts the exit
+                # debit, which only the blocked-exit test uses this for -- and there no close prices.
+                LEGS[1]["symbol"]: {"bid": 0.0, "ask": spread if spread > 0.25 else 0.0, "mid": 0.01},
             },
         }
 
@@ -154,6 +157,38 @@ def test_a_management_tick_records_its_vital_signs(priced):
     assert row["phase"] == "management" and row["status"] == "ok"
     assert row["open_positions"] == 1 and row["marks_written"] == 1
     assert row["open_capital"] == 500.0
+
+
+def test_an_advised_twin_is_managed_beside_its_control(priced):
+    """The twin is a different book (`advised:strat_test:<strategy>`), and the loop must still see it.
+
+    It did not, for six days: `open_positions` filtered on `_is_strat_test_book`, which answers "is
+    this a strat_test book" -- the right question for `run_closes` and the wrong one here -- so every
+    advised twin ever opened was never marked, never evaluated and never closed. 13 of them, against
+    4,953 marks on the controls beside them, and the advised experiment recorded nothing at all.
+
+    The failure was invisible from the design: `management.effective_config` really is the one choke
+    point restating a twin's frozen params, and it really is reached from `management.evaluate`. But
+    `evaluate` only ever sees what `open_positions` returns.
+
+    Verified by restoring the bare `_is_strat_test_book` call and watching the twin go unmarked while
+    its control closed normally.
+    """
+    control = open_trade("T1")
+    twin = open_trade("T2", profile="advised:strat_test:iron_fly")
+    priced(quotes_pricing(3.00))  # past the 25% target for both
+    paper_loop.run_iteration(CONFIG, at("10:00"))
+
+    row = db_paper.cmd_get_iterations(_ns(session_date=None, limit=None))["iterations"][0]
+    assert row["open_positions"] == 2 and row["marks_written"] == 2
+
+    for order_id in (control, twin):
+        events = db_paper.cmd_get_management_events(
+            _ns(order_id=order_id, session_date=None, limit=None)
+        )["events"]
+        assert events, f"{order_id} was never evaluated"
+        assert events[0]["reason"] == "profit_target"
+    assert not db_paper.cmd_get_open_positions(_ns())["positions"], "both should have closed"
 
 
 # --------------------------------------------------------------------------- marking and gating
@@ -228,7 +263,9 @@ def test_the_broker_confirms_the_price_before_a_close_is_recorded(monkeypatch):
 
 def test_wide_quotes_are_marked_but_not_acted_on(priced):
     order_id = open_trade()
-    priced(quotes_pricing(3.00, spread=0.90))
+    # 2.10 + the wide leg's 0.90 ask prices the close at 3.00 -- past the 25% target, so the
+    # decision fires and only the gate stands between it and execution.
+    priced(quotes_pricing(2.10, spread=0.90))
     paper_loop.run_iteration(CONFIG, at("10:00"))
 
     assert db_paper.cmd_get_open_positions(_ns())["positions"]
@@ -388,21 +425,29 @@ def test_the_entry_scan_still_runs_inside_the_window(monkeypatch):
     assert paper_loop.run_iteration(CONFIG, at("15:54"))["phase"] == "entry"
 
 
-def test_the_entry_scan_does_not_grow_the_stream_request(monkeypatch):
-    """A producer binds its underlyings at startup, so growing the union recycles it — and a recycle
-    costs a settling window in which nothing streams at all. Doing that at 15:45 would blind the
-    0DTE modules trading into their own close, to make symbols available fourteen hours before this
-    module marks anything. pre_open picks them up instead."""
+def test_the_entry_scan_declares_what_it_just_opened(monkeypatch):
+    """Changed 2026-08-25, and the rule it replaces was right for its time.
+
+    Declaring here used to grow the `symbols` union, which a producer binds once at startup -- so
+    the watchdog recycled it, and a recycle costs a settling window in which nothing streams at all.
+    At 15:45 that blinded the 0DTE modules trading into their own close, to make symbols available
+    fourteen hours before this module marked anything, so `pre_open` picked them up instead.
+
+    They are quote-only `legs` now, re-read every subscription poll rather than bound at startup, so
+    this module cannot force a recycle at all. The cost of waiting is what remains: a position
+    opened tonight has no underlying spot until the next pre-open, which silently disables the pin
+    guard for every mark in between.
+    """
     registered = []
     monkeypatch.setattr(paper_loop.stream_request, "register", lambda syms: registered.append(syms))
     monkeypatch.setattr(harness, "cmd_run_entries", lambda args: {"ok": True, "opened": 3})
     open_trade()
 
     paper_loop.run_iteration(CONFIG, at("15:45"))
-    assert registered == []
+    assert registered == [["AAPL"]], "the entry declares its own underlyings now"
 
     paper_loop.run_iteration(CONFIG, at("09:05"))
-    assert registered == [["AAPL"]], "pre_open is where the union is allowed to grow"
+    assert registered[-1] == ["AAPL"], "pre_open still declares, so a restart cannot lose them"
 
 
 def test_closing_a_position_still_refreshes_the_request(priced, monkeypatch):
