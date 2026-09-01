@@ -161,7 +161,7 @@ def _check_job_registry_drift(cfg: dict[str, Any]) -> list[Finding]:
             f"{', '.join(missing)}. It loads jobspec once at startup, so these are not scheduled and "
             "will not fire. Restart it to pick them up: cherrypick supervise --stop, then "
             "cherrypick ensure-supervisor.",
-        )
+        ),
     ]
 
 
@@ -511,9 +511,7 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
     stale_candidates = [a for a in (stale_age, underlying_age) if a is not None]
     worst_stale = max(stale_candidates) if stale_candidates else None
     is_stalled = (
-        (worst_stale is not None and worst_stale > limit)
-        or bool(chain_errors)
-        or bool(dead_underlyings)
+        (worst_stale is not None and worst_stale > limit) or bool(chain_errors) or bool(dead_underlyings)
     )
     detail = _streamer_stale_detail(stale_age, underlying_age, limit, chain_errors, dead_underlyings)
     connection_age = _streamer_connection_age(status)
@@ -660,7 +658,7 @@ def _streamer_window_strike_count(cfg: dict[str, Any]) -> int:
     copy. Falls back to the engine's default when the machine has no streamer config."""
     try:
         raw = json.loads(core_home.config_path("streamer").read_text(encoding="utf-8"))
-        value = ((raw.get("streamer") or {}).get("window_strike_count"))
+        value = (raw.get("streamer") or {}).get("window_strike_count")
         if isinstance(value, (int, float)):
             return int(value)
     except (OSError, ValueError, AttributeError):
@@ -683,8 +681,7 @@ def _check_subscription_budget(cfg: dict[str, Any]) -> list[Finding]:
     watchdog's to make.
     """
     budget = int(
-        (cfg.get("streamer") or {}).get("subscription_budget")
-        or _streamrequests.DEFAULT_SUBSCRIPTION_BUDGET
+        (cfg.get("streamer") or {}).get("subscription_budget") or _streamrequests.DEFAULT_SUBSCRIPTION_BUDGET
     )
     try:
         status = _streamrequests.budget_status(
@@ -1216,7 +1213,6 @@ def _check_eval_activity(
     return [Finding(f"{name}.eval_activity", finding, f"{label} eval activity", detail)]
 
 
-
 def _check_advice_enactment(cfg: dict[str, Any], now_et: datetime, is_trading: bool) -> list[Finding]:
     """Did today's modules actually APPLY the advice artifact issued for them last night?
 
@@ -1297,6 +1293,7 @@ def _check_advice_enactment(cfg: dict[str, Any], now_et: datetime, is_trading: b
             f"{listed}",
         )
     ]
+
 
 def _check_settlement(name: str, mcfg: dict[str, Any], now_et: datetime, is_trading: bool) -> list[Finding]:
     """Warn when a module is past the close on a trading day with open positions it has not settled.

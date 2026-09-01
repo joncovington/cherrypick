@@ -40,6 +40,7 @@ def _default_log_dir() -> Path:
 
 _LOG = _default_log_dir() / "notify.log"
 
+
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 

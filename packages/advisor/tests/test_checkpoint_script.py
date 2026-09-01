@@ -32,9 +32,13 @@ GOOD_REPLY = {
     "observations": ["control took no stops all session"],
     "flags": [],
     "proposals": [
-        {"kind": "bounded_adjustment", "module": "meic", "sessions": 15,
-         "hypothesis": "a wider trigger survives midday chop",
-         "params": [{"param": "stop_trigger_ratio", "value": 0.9, "rationale": "wider"}]},
+        {
+            "kind": "bounded_adjustment",
+            "module": "meic",
+            "sessions": 15,
+            "hypothesis": "a wider trigger survives midday chop",
+            "params": [{"param": "stop_trigger_ratio", "value": 0.9, "rationale": "wider"}],
+        },
     ],
 }
 
@@ -42,8 +46,9 @@ GOOD_REPLY = {
 @pytest.fixture
 def home(tmp_home):
     fakes.seed_suite(tmp_home, SESSION)
-    fakes.write_config(tmp_home, "meic", fakes.advice_block(
-        {"stop_trigger_ratio": {"min": 0.85, "max": 0.95}}))
+    fakes.write_config(
+        tmp_home, "meic", fakes.advice_block({"stop_trigger_ratio": {"min": 0.85, "max": 0.95}})
+    )
     fakes.write_suite_config(tmp_home, {"enabled": True, "modules": {"meic": {"enabled": True}}})
     return tmp_home
 
@@ -57,8 +62,10 @@ def _shim(directory: Path, behavior: str) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     body = {
         "good": f"import sys; sys.stdin.read(); print({json.dumps(json.dumps(GOOD_REPLY))})",
-        "prose": ("import sys; sys.stdin.read(); "
-                  f"print('Here is what I found:'); print({json.dumps(json.dumps(GOOD_REPLY))})"),
+        "prose": (
+            "import sys; sys.stdin.read(); "
+            f"print('Here is what I found:'); print({json.dumps(json.dumps(GOOD_REPLY))})"
+        ),
         "garbage": "import sys; sys.stdin.read(); print('I was unable to analyse this today.')",
         "silent": "import sys; sys.stdin.read()",
         "angry": "import sys; sys.stdin.read(); sys.stderr.write('rate limited'); sys.exit(1)",
@@ -88,7 +95,11 @@ def _run(*argv: str, shim: str | None = "good", tmp_path: Path | None = None) ->
 
     proc = subprocess.run(
         [sys.executable, str(SCRIPT), *argv],
-        capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
     )
     assert proc.returncode == 0, f"the script must always exit 0: {proc.stderr}"
     # --dry-run prints the prompt and pack rather than an envelope.
@@ -139,12 +150,15 @@ def test_a_recorded_slot_is_frozen_until_forced(home, tmp_path):
     assert forced["ok"] is True
 
 
-@pytest.mark.parametrize("shim,expected", [
-    ("garbage", "no JSON object found"),
-    ("silent", "claude returned nothing"),
-    ("angry", "rate limited"),
-    (None, "claude not on PATH"),
-])
+@pytest.mark.parametrize(
+    "shim,expected",
+    [
+        ("garbage", "no JSON object found"),
+        ("silent", "claude returned nothing"),
+        ("angry", "rate limited"),
+        (None, "claude not on PATH"),
+    ],
+)
 def test_every_ai_failure_is_an_envelope_not_a_crash(home, tmp_path, shim, expected):
     result = _run("--slot", "open", "--session", SESSION, shim=shim, tmp_path=tmp_path)
     assert result["ok"] is False
@@ -158,8 +172,7 @@ def test_the_deep_slot_enacts_even_when_the_ai_failed(home, tmp_path, shim):
     from cherrypick.advisor import experiments, paths, store
 
     conn = store.connect()
-    experiments.admit_spec(conn, session=SESSION, module="meic",
-                           params={"stop_trigger_ratio": 0.9})
+    experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9})
     conn.close()
 
     result = _run("--slot", "deep", "--session", SESSION, shim=shim, tmp_path=tmp_path)
@@ -174,7 +187,7 @@ def test_dry_run_prints_the_prompt_and_writes_nothing_but_the_pack(home, tmp_pat
 
     out = _run("--slot", "deep", "--session", SESSION, "--dry-run", tmp_path=tmp_path)["stdout"]
     assert "--- prompt (deep) ---" in out
-    assert "read-only context" in out          # the live-facts note reaches the model
+    assert "read-only context" in out  # the live-facts note reaches the model
     assert '"pack_version": 1' in out
     assert not paths.raw_path(SESSION, "deep").exists()
     assert not paths.checkpoint_path(SESSION, "deep").exists()

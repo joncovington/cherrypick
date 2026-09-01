@@ -8,8 +8,14 @@ from cherrypick.overview import gates
 
 
 def _reading(value):
-    return {"value": value, "basis": "prior", "session": "2026-08-14", "as_of": None,
-            "source": "test", "label": "test"}
+    return {
+        "value": value,
+        "basis": "prior",
+        "session": "2026-08-14",
+        "as_of": None,
+        "source": "test",
+        "label": "test",
+    }
 
 
 def _readings(vix=14.6, vix3m=18.9, vvix=90.9, change=0.7):
@@ -22,8 +28,7 @@ def _readings(vix=14.6, vix3m=18.9, vvix=90.9, change=0.7):
 
 
 def _levels(ref=7798.99, flip=7560.58, put_wall=7500.0, call_wall=7800.0):
-    return {"reference_price": ref, "zero_gamma": flip, "put_wall": put_wall,
-            "call_wall": call_wall}
+    return {"reference_price": ref, "zero_gamma": flip, "put_wall": put_wall, "call_wall": call_wall}
 
 
 def _by_id(gate_list):

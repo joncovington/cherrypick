@@ -230,9 +230,7 @@ def test_the_same_symbol_in_two_accounts_is_quoted_once(monkeypatch):
 
     result = positions.run({})
     assert result["marks"]["requested"] == 1
-    assert [a for a in asked if a and a[0] == "get_quotes"] == [
-        ["get_quotes", "--symbols", ".APO260918C125"]
-    ]
+    assert [a for a in asked if a and a[0] == "get_quotes"] == [["get_quotes", "--symbols", ".APO260918C125"]]
     assert len(result["accounts"]) == 2
 
 

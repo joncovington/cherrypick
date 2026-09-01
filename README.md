@@ -92,6 +92,18 @@ suite once collected $4.00 of credit against $4.96 of fees.
   expiration and close both legs together. Single `control` book plus an advised A/B against the
   old early-tv-exit rule; early assignment is measured, never modelled, so paper results are an
   explicit upper bound. Paper-only and credential-free. See [packages/pmcc](packages/pmcc).
+- **Curve** — VXX call credit spreads harvesting the VIX term-structure roll yield, gated by a daily
+  VIX/VIX3M regime read. Three books (contango-gated control, no-flip-exit, deep-backwardation hook)
+  trade the identical structure and differ only in entry gate and exit rule; the daily regime
+  classification is recorded every session as the module's second product. Paper-only and
+  credential-free. See [packages/curve](packages/curve).
+- **BWB** — a daily-laddered SPX put broken-wing butterfly entered at the expected move for a net
+  credit, ~7 DTE, held to expiry. Four books trade the identical base structure and differ only in
+  whether a reversal-triggered add-on fires (never / delta touch / confirmed bounce / gamma-flip
+  reclaim), plus an opt-in call-side book at the GEX call wall. See [packages/bwb](packages/bwb).
+- **Overview** — the pre-open morning market overview: one deterministic fact pack per session with a
+  mechanical GREEN/YELLOW/RED phase from five declared gates; missing data can never produce RED and
+  always blocks GREEN. See [packages/overview](packages/overview).
 
 ## Where you look at the results
 
@@ -168,10 +180,11 @@ read them:
 |---|---|
 | [packages/orchestrator](packages/orchestrator) | The supervisor, watchdog, notifications, and the read side (report / calibrate / EOD). Drives the engines by subprocess. |
 | [packages/core](packages/core) | The shared `cherrypick.core` library — calendar, fees, profiles, GEX math, broker, auth. Install it first. |
-| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) · [packages/calendars](packages/calendars) · [packages/pmcc](packages/pmcc) | The five strategy engines (calendars and pmcc are paper-only). |
+| [packages/meic](packages/meic) · [packages/earnings](packages/earnings) · [packages/flies](packages/flies) · [packages/calendars](packages/calendars) · [packages/pmcc](packages/pmcc) · [packages/curve](packages/curve) · [packages/bwb](packages/bwb) | The seven strategy engines (calendars, pmcc, curve and bwb are paper-only). |
 | [packages/streamer](packages/streamer) | The single market-data producer. Everything else reads the cache it writes; nothing else writes it. |
 | [packages/gex](packages/gex) | The GEX engine and spot-trail recorder; the console renders it. |
 | [packages/console](packages/console) | The unified web console (`127.0.0.1:5070`) — every module's read models plus research and screening, in one app. Read-only. |
+| [packages/overview](packages/overview) | The pre-open morning market overview: one deterministic fact pack per session with a mechanical GREEN/YELLOW/RED phase. Read-only over everything it touches. |
 | [packages/review](packages/review) | The cross-module end-of-day review: one versioned fact set per session over every engine, plus the renders of it. Read-only over every other package. |
 | [packages/advisor](packages/advisor) | The deterministic half of the AI advisor — fact packs, reply validation, and paper A/B experiments. Contains no AI itself; off by default. |
 | [packages/desk](packages/desk) | ⚠️ **Experimental.** The manual trading desk — the only *discretionary* live-order path, driven by you per order. [Read the warning](#before-you-go-anywhere-near-live-trading). |

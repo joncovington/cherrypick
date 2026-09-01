@@ -56,15 +56,11 @@ def cache_path() -> Path:
     return _home.data_dir() / "marketdata" / "stream_cache.db"
 
 
-
-
 def _fail(reason: str, **extra) -> dict:
     """A refusal, not an error. `extra` carries whatever explains it afterwards — how many legs were
     stale, which ones were missing — so a barren stretch reads as "the feed was thin" rather than
     being mistaken for "nothing happened"."""
     return {"ok": False, "reason": reason, **extra}
-
-
 
 
 def spread_pct(quote: dict) -> float | None:

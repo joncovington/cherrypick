@@ -144,13 +144,9 @@ def _calendars_health(conn, session: str) -> dict:
         "SELECT outcome, COUNT(*) n FROM dc_entry_attempts WHERE trade_date = ? GROUP BY outcome",
         (session,),
     )
-    iterations = _scalar(
-        conn, "SELECT COUNT(*) FROM dc_loop_iterations WHERE session_date = ?", (session,)
-    )
+    iterations = _scalar(conn, "SELECT COUNT(*) FROM dc_loop_iterations WHERE session_date = ?", (session,))
     marks = _scalar(conn, "SELECT COUNT(*) FROM dc_marks WHERE session_date = ?", (session,))
-    refused = _scalar(
-        conn, "SELECT COUNT(*) FROM dc_marks WHERE session_date = ? AND usable = 0", (session,)
-    )
+    refused = _scalar(conn, "SELECT COUNT(*) FROM dc_marks WHERE session_date = ? AND usable = 0", (session,))
     return {
         "loop_ticked": bool(iterations),
         "iterations": iterations,
@@ -169,9 +165,7 @@ def _pmcc_health(conn, session: str) -> dict:
         "SELECT outcome, COUNT(*) n FROM pmcc_entry_attempts WHERE trade_date = ? GROUP BY outcome",
         (session,),
     )
-    iterations = _scalar(
-        conn, "SELECT COUNT(*) FROM pmcc_loop_iterations WHERE session_date = ?", (session,)
-    )
+    iterations = _scalar(conn, "SELECT COUNT(*) FROM pmcc_loop_iterations WHERE session_date = ?", (session,))
     marks = _scalar(conn, "SELECT COUNT(*) FROM pmcc_marks WHERE session_date = ?", (session,))
     refused = _scalar(
         conn, "SELECT COUNT(*) FROM pmcc_marks WHERE session_date = ? AND usable = 0", (session,)
@@ -205,16 +199,12 @@ def _bwb_health(conn, session: str) -> dict:
         "SELECT outcome, COUNT(*) n FROM bwb_entry_attempts WHERE trade_date = ? GROUP BY outcome",
         (session,),
     )
-    iterations = _scalar(
-        conn, "SELECT COUNT(*) FROM bwb_loop_iterations WHERE session_date = ?", (session,)
-    )
+    iterations = _scalar(conn, "SELECT COUNT(*) FROM bwb_loop_iterations WHERE session_date = ?", (session,))
     marks = _scalar(conn, "SELECT COUNT(*) FROM bwb_marks WHERE session_date = ?", (session,))
     refused = _scalar(
         conn, "SELECT COUNT(*) FROM bwb_marks WHERE session_date = ? AND usable = 0", (session,)
     )
-    triggers = _scalar(
-        conn, "SELECT COUNT(*) FROM bwb_trigger_ticks WHERE session_date = ?", (session,)
-    )
+    triggers = _scalar(conn, "SELECT COUNT(*) FROM bwb_trigger_ticks WHERE session_date = ?", (session,))
     return {
         "loop_ticked": bool(iterations),
         "iterations": iterations,
@@ -385,9 +375,7 @@ def _pmcc_expected(conn, session: str) -> dict:
             continue
         net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
         try:
-            days = max(
-                (date.fromisoformat(session) - date.fromisoformat(r["entry_session"])).days, 1
-            )
+            days = max((date.fromisoformat(session) - date.fromisoformat(r["entry_session"])).days, 1)
         except (TypeError, ValueError):
             continue
         expected.append(r["entry_weekly_yield_pct"])

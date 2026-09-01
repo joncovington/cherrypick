@@ -77,7 +77,9 @@ def test_plan_expected_move_refuses_without_atm_quote():
 
 
 def test_select_strikes_orders_far_body_near():
-    result = engine.select_strikes(6500.0, 20.0, PARAMS, [6470, 6475, 6480, 6485, 6490, 6495, 6500, 6505, 6510])
+    result = engine.select_strikes(
+        6500.0, 20.0, PARAMS, [6470, 6475, 6480, 6485, 6490, 6495, 6500, 6505, 6510]
+    )
     assert result["ok"] is True
     assert result["far"] < result["body"] < result["near"]
     assert result["near"] - result["body"] == 5.0

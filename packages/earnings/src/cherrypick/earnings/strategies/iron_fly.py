@@ -369,9 +369,7 @@ def evaluate_position(position: dict, quotes: dict, config: dict, *, now=None) -
 def cmd_get_candidates(args) -> dict:
     """Full tiered scan for a date -- wiring only, shared with the other strategies whose verb is
     identical. The positional argument order to run_candidate_scan is what this single-sources."""
-    return scanner.candidates_command(
-        args, fetch_price_and_term_structure, apply_tiering, _strategy_config
-    )
+    return scanner.candidates_command(args, fetch_price_and_term_structure, apply_tiering, _strategy_config)
 
 
 def main() -> None:

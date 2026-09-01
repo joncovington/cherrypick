@@ -305,8 +305,20 @@ def test_the_two_readings_are_judged_per_leg():
     """The widest-by-percent and the widest-by-money can be different legs; two separate maxima
     would refuse a structure neither leg justifies."""
     snap = snapshot(2.0)
-    snap["quotes"][LEGS[1]["symbol"]] = {"bid": 0.0, "ask": 0.01, "mid": 0.005, "delta": None, "iv": None}  # wide pct, 1c
-    snap["quotes"][LEGS[2]["symbol"]] = {"bid": 5.0, "ask": 5.6, "mid": 5.3, "delta": None, "iv": None}  # 60c, 11% pct
+    snap["quotes"][LEGS[1]["symbol"]] = {
+        "bid": 0.0,
+        "ask": 0.01,
+        "mid": 0.005,
+        "delta": None,
+        "iv": None,
+    }  # wide pct, 1c
+    snap["quotes"][LEGS[2]["symbol"]] = {
+        "bid": 5.0,
+        "ask": 5.6,
+        "mid": 5.3,
+        "delta": None,
+        "iv": None,
+    }  # 60c, 11% pct
     assert management.execution_gate(snap, CONFIG, "iron_fly", now=at("10:00")) is None
 
 

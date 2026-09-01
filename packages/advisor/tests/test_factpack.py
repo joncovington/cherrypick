@@ -93,8 +93,9 @@ def test_the_deep_pack_adds_what_the_deep_slot_reasons_from(seeded, tmp_home):
     fakes.write_config(tmp_home, "meic", fakes.advice_block(stop_bounds))
     review = tmp_home / "data" / "review" / f"eod-{SESSION}.json"
     review.parent.mkdir(parents=True, exist_ok=True)
-    review.write_text(json.dumps({"session": SESSION, "status": "provisional", "modules": {}}),
-                      encoding="utf-8")
+    review.write_text(
+        json.dumps({"session": SESSION, "status": "provisional", "modules": {}}), encoding="utf-8"
+    )
 
     light = factpack.build(SESSION, "close")
     deep = factpack.build(SESSION, "deep")
@@ -138,9 +139,20 @@ def test_the_deep_pack_flags_identically_reading_arms(seeded, tmp_home):
     model read two tags as two independent pieces of evidence."""
     meic_db = tmp_home / "data" / "meic" / "paper_trades.db"
     twin_trades = [
-        {"trade_date": SESSION, "symbol": "SPX", "risk_profile": profile, "net_credit": 2.4,
-         "wing_width": 20, "quantity": 1, "pnl": pnl, "fees": 6.0, "status": "closed",
-         "exit_time": f"{SESSION}T20:10:00", "ic_order_id": order_id, "created_at": f"{SESSION}T14:31:00"}
+        {
+            "trade_date": SESSION,
+            "symbol": "SPX",
+            "risk_profile": profile,
+            "net_credit": 2.4,
+            "wing_width": 20,
+            "quantity": 1,
+            "pnl": pnl,
+            "fees": 6.0,
+            "status": "closed",
+            "exit_time": f"{SESSION}T20:10:00",
+            "ic_order_id": order_id,
+            "created_at": f"{SESSION}T14:31:00",
+        }
         for profile in ("gex-open", "gex-blocked")
         for order_id, pnl in [(f"{profile}-1", 20.0), (f"{profile}-2", -6.0)]
     ]
@@ -155,9 +167,15 @@ def test_the_deep_pack_flags_identically_reading_arms(seeded, tmp_home):
 def test_the_journal_carries_dismissals_so_they_are_not_re_proposed(seeded):
     conn = store.connect()
     cid = store.record_checkpoint(conn, session=SESSION, slot="deep", model="opus", ok=True)
-    store.add_proposal(conn, checkpoint_id=cid, module="meic", kind="creative",
-                       payload={"title": "trade overnight gaps"}, status="dismissed",
-                       reject_reason="user dismissed")
+    store.add_proposal(
+        conn,
+        checkpoint_id=cid,
+        module="meic",
+        kind="creative",
+        payload={"title": "trade overnight gaps"},
+        status="dismissed",
+        reject_reason="user dismissed",
+    )
     conn.close()
 
     journal = factpack.build(SESSION, "deep")["advisor_journal"]
@@ -168,9 +186,14 @@ def test_the_journal_carries_dismissals_so_they_are_not_re_proposed(seeded):
 def test_pending_proposals_compound_into_the_next_slot(seeded):
     conn = store.connect()
     cid = store.record_checkpoint(conn, session=SESSION, slot="open", model="sonnet", ok=True)
-    store.add_proposal(conn, checkpoint_id=cid, module="flies", kind="bounded_adjustment",
-                       payload={"params": [{"param": "fee_buffer", "value": 0.1}]},
-                       status="proposed")
+    store.add_proposal(
+        conn,
+        checkpoint_id=cid,
+        module="flies",
+        kind="bounded_adjustment",
+        payload={"params": [{"param": "fee_buffer", "value": 0.1}]},
+        status="proposed",
+    )
     conn.close()
 
     pack = factpack.build(SESSION, "am1")
@@ -181,8 +204,14 @@ def test_pending_proposals_compound_into_the_next_slot(seeded):
 def test_packs_stay_inside_their_token_budget(seeded, tmp_home):
     """Aggregates, not row dumps. Seed a busy day and check the serialized size."""
     busy = [
-        {"ts": f"{SESSION}T14:{m:02d}:00", "trade_date": SESSION, "risk_profile": f"arm-{m % 4}",
-         "symbol": "SPX", "outcome": "gate_blocked", "block_detail": f"reason_{m % 11}"}
+        {
+            "ts": f"{SESSION}T14:{m:02d}:00",
+            "trade_date": SESSION,
+            "risk_profile": f"arm-{m % 4}",
+            "symbol": "SPX",
+            "outcome": "gate_blocked",
+            "block_detail": f"reason_{m % 11}",
+        }
         for m in range(0, 60)
     ]
     fakes.insert(tmp_home / "data" / "meic" / "paper_trades.db", "entry_attempts", busy)
@@ -274,6 +303,7 @@ def test_regime_block_survives_a_failing_read(monkeypatch):
 
 def _marks_db(tmp_path, rows):
     import sqlite3
+
     conn = sqlite3.connect(tmp_path / "m.db")
     conn.row_factory = sqlite3.Row
     conn.execute("CREATE TABLE pmcc_marks (session_date TEXT, usable INTEGER, refusal TEXT)")
@@ -301,9 +331,10 @@ def test_mark_coverage_states_the_denominator_in_words(tmp_path):
 
 
 def test_mark_coverage_names_the_refusals(tmp_path):
-    conn = _marks_db(tmp_path, [(SESSION, 1, None)] * 10
-                     + [(SESSION, 0, "missing_leg_quotes")] * 3
-                     + [(SESSION, 0, "stale_quote")])
+    conn = _marks_db(
+        tmp_path,
+        [(SESSION, 1, None)] * 10 + [(SESSION, 0, "missing_leg_quotes")] * 3 + [(SESSION, 0, "stale_quote")],
+    )
 
     out = factpack._mark_coverage(conn, "pmcc_marks", SESSION)
 
@@ -349,7 +380,8 @@ def test_pmcc_lifetime_rows_are_separated_by_era():
 
     source = inspect.getsource(factpack._pmcc)
     lifetime = [
-        statement for statement in re.findall(r'"[^"]*pmcc_positions[^"]*"', source)
+        statement
+        for statement in re.findall(r'"[^"]*pmcc_positions[^"]*"', source)
         if "session" not in statement
     ]
     assert lifetime, "the pmcc section stopped reading pmcc_positions"

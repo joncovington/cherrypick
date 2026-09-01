@@ -235,14 +235,6 @@ def qualify_readings(readings: Mapping[str, Mapping], *, rule: Mapping | None = 
     return {tag: _qualify_one(reading, thresholds) for tag, reading in readings.items()}
 
 
-
-
-
-
-
-
-
-
 def merge_profile(
     base: Mapping,
     profile_def: Mapping,

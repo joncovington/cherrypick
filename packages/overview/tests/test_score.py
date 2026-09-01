@@ -13,9 +13,11 @@ SECTORS = tuple(symbols.SECTOR_ETFS)
 def _series(values, start="2025-01-02"):
     """Close series with synthetic ascending session dates -- the math only reads order."""
     from datetime import date, timedelta
+
     day = date.fromisoformat(start)
-    return [{"session": (day + timedelta(days=i)).isoformat(), "close": float(v)}
-            for i, v in enumerate(values)]
+    return [
+        {"session": (day + timedelta(days=i)).isoformat(), "close": float(v)} for i, v in enumerate(values)
+    ]
 
 
 def _wobble(base, n=260):
@@ -42,6 +44,7 @@ def _readings(vix=20.0, vix3m=22.0):
 
 
 # --------------------------------------------------------------------------- individual signals
+
 
 def test_vix_percentile_scores_a_calm_tape_high():
     # Today's VIX under every one of 260 history closes -> 100th percentile calm, plus the bonus.
@@ -107,7 +110,7 @@ def test_credit_stress_pushes_the_ratio_down_and_the_score_to_zero():
 
 
 def test_credit_risk_appetite_scores_high():
-    hyg = _wobble(80.0)[:-1] + [90.0]   # high yield ripping against Treasuries
+    hyg = _wobble(80.0)[:-1] + [90.0]  # high yield ripping against Treasuries
     block = score.evaluate(_readings(), _full_history(hyg=hyg), SECTORS)
     signal = next(s for s in block["signals"] if s["id"] == "credit")
     assert signal["value"] > 2.0
@@ -139,6 +142,7 @@ def test_vix_roc_reads_twenty_sessions_back():
 
 # --------------------------------------------------------------------------- the blend
 
+
 def test_all_signals_measured_blends_without_renormalizing():
     block = score.evaluate(_readings(), _full_history(), SECTORS)
     assert block["signals_measured"] == 5
@@ -157,7 +161,7 @@ def test_one_missing_signal_renormalizes_the_rest():
 
 
 def test_too_few_measured_signals_refuses_to_score():
-    block = score.evaluate({}, {}, SECTORS)   # nothing measured at all
+    block = score.evaluate({}, {}, SECTORS)  # nothing measured at all
     assert block["score"] is None
     assert block["zone"] is None
     assert "measured" in block["reason"]

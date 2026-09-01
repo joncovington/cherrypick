@@ -637,7 +637,8 @@ def derive_jobs(
             trading_days_only=False,
             enabled=bool((cfg.get("modules", {}).get("earnings") or {}).get("enabled")),
             enabled_reason=(
-                "" if (cfg.get("modules", {}).get("earnings") or {}).get("enabled")
+                ""
+                if (cfg.get("modules", {}).get("earnings") or {}).get("enabled")
                 else "earnings module disabled"
             ),
         ),
@@ -659,9 +660,7 @@ def derive_jobs(
         ),
     )
     av = cfgmod.advisor_settings(cfg)
-    advisor_modules = ",".join(
-        name for name, mod in av["modules"].items() if (mod or {}).get("enabled")
-    )
+    advisor_modules = ",".join(name for name, mod in av["modules"].items() if (mod or {}).get("enabled"))
     advisor_reason = "" if av["enabled"] else "disabled in config (advisor)"
     for index, at in enumerate(av["checkpoints"]):
         # Light slots share one shape; only the time differs. Named from ADVISOR_LIGHT_SLOTS
@@ -673,9 +672,7 @@ def derive_jobs(
             # The dict config form names each checkpoint explicitly (config.py advisor_settings).
             slot = named[index]
         else:
-            slot = (
-                ADVISOR_LIGHT_SLOTS[index] if index < len(ADVISOR_LIGHT_SLOTS) else f"slot{index + 1}"
-            )
+            slot = ADVISOR_LIGHT_SLOTS[index] if index < len(ADVISOR_LIGHT_SLOTS) else f"slot{index + 1}"
         add(
             f"advisor-{slot}",
             lambda slot=slot, at=at: JobSpec(
@@ -683,9 +680,16 @@ def derive_jobs(
                 # scripts/, not a package -- same fence as review-narrative: nothing a loop can
                 # import is allowed to reach an AI call.
                 argv=(
-                    pythonw, _advisor_script(launcher), "--slot", slot,
-                    "--model", av["light_model"], "--timeout", str(av["timeout_seconds"]),
-                ) + (("--modules", advisor_modules) if advisor_modules else ()),
+                    pythonw,
+                    _advisor_script(launcher),
+                    "--slot",
+                    slot,
+                    "--model",
+                    av["light_model"],
+                    "--timeout",
+                    str(av["timeout_seconds"]),
+                )
+                + (("--modules", advisor_modules) if advisor_modules else ()),
                 kind=KIND_DAILY,
                 at_et=at,
                 catchup_minutes=CATCHUP_MINUTES["advisor-light"],
@@ -700,9 +704,16 @@ def derive_jobs(
         lambda: JobSpec(
             id="advisor-deep",
             argv=(
-                pythonw, _advisor_script(launcher), "--slot", "deep",
-                "--model", av["deep_model"], "--timeout", str(av["timeout_seconds"]),
-            ) + (("--modules", advisor_modules) if advisor_modules else ()),
+                pythonw,
+                _advisor_script(launcher),
+                "--slot",
+                "deep",
+                "--model",
+                av["deep_model"],
+                "--timeout",
+                str(av["timeout_seconds"]),
+            )
+            + (("--modules", advisor_modules) if advisor_modules else ()),
             kind=KIND_DAILY,
             # After review-provisional (16:30) on purpose: the deep pack carries that fact set, and
             # the prompt tells the model it is provisional.

@@ -510,9 +510,7 @@ def validate_stop_derivation(conn, start=None, end=None, era=CURRENT_ERA, tolera
 # --------------------------------------------------------------------------- the stop curve
 
 
-def stop_grid(
-    conn, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="control", ratios=None
-) -> dict:
+def stop_grid(conn, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="control", ratios=None) -> dict:
     """The whole `stop_trigger_ratio` curve, scored over already-recorded paths (proposal #12).
 
     The bounded stop experiment tests ONE point on this curve and needs 15 sessions to say
@@ -540,14 +538,24 @@ def stop_grid(
     rows = [dict(r) for r in conn.execute(f"SELECT * FROM ic_trades WHERE {where}", params).fetchall()]
 
     points = {
-        r: {"ratio": r, "derivable": 0, "censored": 0, "stopped_sides": 0,
-            "pnl": 0.0, "fees": 0.0, "capital": 0.0, "capital_known": 0}
+        r: {
+            "ratio": r,
+            "derivable": 0,
+            "censored": 0,
+            "stopped_sides": 0,
+            "pnl": 0.0,
+            "fees": 0.0,
+            "capital": 0.0,
+            "capital_known": 0,
+        }
         for r in ratios
     }
     for row in rows:
         capital = _sp.capital_at_risk(row)
         scored = _sp.score_grid(
-            row, fee_one_side=_paper.close_fees_one_side, fee_full_ic=_paper.close_fees_full_ic,
+            row,
+            fee_one_side=_paper.close_fees_one_side,
+            fee_full_ic=_paper.close_fees_full_ic,
             ratios=ratios,
         )
         for ratio, out in scored.items():
@@ -573,16 +581,18 @@ def stop_grid(
         # on_max_risk only when capital is known for EVERY scored row -- a return computed over a
         # subset of the capital is not this arm's return, it is a different arm's.
         full_capital = n > 0 and b["capital_known"] == n and b["capital"] > 0
-        curve.append({
-            "ratio": ratio,
-            "derivable": n,
-            "censored": b["censored"],
-            "net_pnl": _round(net),
-            "fees": _round(b["fees"]),
-            # Sides stopped out of 2 per derivable trade -- the cost side of a tighter threshold.
-            "stop_out_rate": _rate(b["stopped_sides"], n * 2) if n else None,
-            "on_max_risk": _round(net / b["capital"], 4) if full_capital else None,
-        })
+        curve.append(
+            {
+                "ratio": ratio,
+                "derivable": n,
+                "censored": b["censored"],
+                "net_pnl": _round(net),
+                "fees": _round(b["fees"]),
+                # Sides stopped out of 2 per derivable trade -- the cost side of a tighter threshold.
+                "stop_out_rate": _rate(b["stopped_sides"], n * 2) if n else None,
+                "on_max_risk": _round(net / b["capital"], 4) if full_capital else None,
+            }
+        )
 
     return {
         "arm": arm,
@@ -622,10 +632,20 @@ def stop_session_rollup(
         shadow = _sp.shadow_settle(
             row, fee_one_side=_paper.close_fees_one_side, fee_full_ic=_paper.close_fees_full_ic
         )
-        bucket = by_session.setdefault(session, {
-            "session": session, "arm": arm, "trades": 0, "derivable": 0, "stops_fired": 0,
-            "realized_net": 0.0, "shadow_net": 0.0, "real_fees": 0.0, "shadow_fees": 0.0,
-        })
+        bucket = by_session.setdefault(
+            session,
+            {
+                "session": session,
+                "arm": arm,
+                "trades": 0,
+                "derivable": 0,
+                "stops_fired": 0,
+                "realized_net": 0.0,
+                "shadow_net": 0.0,
+                "real_fees": 0.0,
+                "shadow_fees": 0.0,
+            },
+        )
         bucket["trades"] += 1
         bucket["stops_fired"] += int(shadow["stop_fired"])
         bucket["real_fees"] += row.get("fees") or 0.0
@@ -636,24 +656,27 @@ def stop_session_rollup(
         bucket["shadow_net"] += shadow["shadow_settle_net"]
         # A held-to-settlement side pays no closing fee, so the shadow book's fees are whatever
         # stop-none itself incurs -- which is 0 when neither side fires.
-        none_out = _sp.derive(row, "stop-none", fee_one_side=_paper.close_fees_one_side,
-                              fee_full_ic=_paper.close_fees_full_ic)
+        none_out = _sp.derive(
+            row, "stop-none", fee_one_side=_paper.close_fees_one_side, fee_full_ic=_paper.close_fees_full_ic
+        )
         bucket["shadow_fees"] += none_out["fee"] or 0.0
 
     out = []
     for session in sorted(by_session):
         b = by_session[session]
-        out.append({
-            "session": session,
-            "arm": arm,
-            "trades": b["trades"],
-            "derivable": b["derivable"],
-            "stops_fired": b["stops_fired"],
-            "realized_pnl_with_stop": _round(b["realized_net"]),
-            "shadow_pnl_without_stop": _round(b["shadow_net"]),
-            "stop_cost": _round(b["shadow_net"] - b["realized_net"]),
-            "fee_delta": _round(b["real_fees"] - b["shadow_fees"]),
-        })
+        out.append(
+            {
+                "session": session,
+                "arm": arm,
+                "trades": b["trades"],
+                "derivable": b["derivable"],
+                "stops_fired": b["stops_fired"],
+                "realized_pnl_with_stop": _round(b["realized_net"]),
+                "shadow_pnl_without_stop": _round(b["shadow_net"]),
+                "stop_cost": _round(b["shadow_net"] - b["realized_net"]),
+                "fee_delta": _round(b["real_fees"] - b["shadow_fees"]),
+            }
+        )
     return out
 
 
@@ -691,16 +714,19 @@ def control_fired(conn, start=None, end=None, symbol=None, era=CURRENT_ERA) -> d
     for session in sorted(sessions):
         by_arm = sessions[session]["by_arm"]
         fired = by_arm.get("control", 0) > 0
-        out.append({
-            "session": session,
-            "control_fired": fired,
-            "control_fills": by_arm.get("control", 0),
-            "by_arm": by_arm,
-            # The arms that traded a day control did not — the ones whose result cannot be read
-            # against a same-session baseline.
-            "unbaselined_arms": sorted(a for a, n in by_arm.items() if n > 0 and a != "control")
-            if not fired else [],
-        })
+        out.append(
+            {
+                "session": session,
+                "control_fired": fired,
+                "control_fills": by_arm.get("control", 0),
+                "by_arm": by_arm,
+                # The arms that traded a day control did not — the ones whose result cannot be read
+                # against a same-session baseline.
+                "unbaselined_arms": sorted(a for a, n in by_arm.items() if n > 0 and a != "control")
+                if not fired
+                else [],
+            }
+        )
 
     fired_sessions = [s for s in out if s["control_fired"]]
     return {
@@ -957,8 +983,7 @@ def gex_gate_counterfactual(
     params = list(params) + arms
 
     rows = conn.execute(
-        "SELECT pnl, fees, trade_date, era, gex_positive_at_entry"
-        f" FROM ic_trades WHERE {where}",
+        f"SELECT pnl, fees, trade_date, era, gex_positive_at_entry FROM ic_trades WHERE {where}",
         params,
     ).fetchall()
 
@@ -975,17 +1000,20 @@ def gex_gate_counterfactual(
         day_refused = slice_of(lambda r: r["gex_positive_at_entry"] == 0, same_day)
         if not day_refused["trades"]:
             continue
-        sessions.append({
-            "session": day,
-            "refused_trades": day_refused["trades"],
-            "refused_net": day_refused["net_pnl"],
-            "refused_win_rate": day_refused["win_rate"],
-        })
+        sessions.append(
+            {
+                "session": day,
+                "refused_trades": day_refused["trades"],
+                "refused_net": day_refused["net_pnl"],
+                "refused_win_rate": day_refused["win_rate"],
+            }
+        )
 
     worst = min(sessions, key=lambda s: s["refused_net"]) if sessions else None
     without_worst = (
         slice_of(lambda r: r["gex_positive_at_entry"] == 0 and r["trade_date"] != worst["session"])
-        if worst else None
+        if worst
+        else None
     )
 
     return {
@@ -1063,8 +1091,8 @@ def settlement_audit(conn, start=None, end=None, symbol=None, era="ALL") -> dict
             ("put", row["put_strike"], row["put_stop_cost"], row["put_credit"]),
             ("call", row["call_strike"], row["call_stop_cost"], row["call_credit"]),
         ):
-            paid = cost if cost is not None else _side_settle_value(
-                strike, underlying, row["wing_width"], side
+            paid = (
+                cost if cost is not None else _side_settle_value(strike, underlying, row["wing_width"], side)
             )
             total += ((credit or 0.0) - paid) * 100 * (row["quantity"] or 1)
         return total
@@ -1089,8 +1117,11 @@ def settlement_audit(conn, start=None, end=None, symbol=None, era="ALL") -> dict
 
     mismatched = [
         {
-            "id": r["id"], "session": r["trade_date"], "arm": r["risk_profile"],
-            "recorded_pnl": _round(r["pnl"]), "modelled_pnl": _round(modelled(r, r["settle_underlying"])),
+            "id": r["id"],
+            "session": r["trade_date"],
+            "arm": r["risk_profile"],
+            "recorded_pnl": _round(r["pnl"]),
+            "modelled_pnl": _round(modelled(r, r["settle_underlying"])),
         }
         for r in priced
         if abs(modelled(r, r["settle_underlying"]) - (r["pnl"] or 0.0)) > 0.011
@@ -1108,23 +1139,30 @@ def settlement_audit(conn, start=None, end=None, symbol=None, era="ALL") -> dict
         same = [r for r in priced if r["trade_date"] == day and r["symbol"] == sym]
         base_price = next(iter(price_set))
         base = sum(modelled(r, base_price) for r in same)
+
         def swing(delta):
             return abs(sum(modelled(r, base_price + delta) for r in same) - base)
-        sensitivity.append({
-            "session": day,
-            "symbol": sym,
-            "settle_price": base_price,
-            "trades": len(same),
-            # Fills whose short strike sits within a point of settlement: the pin-risk population,
-            # and the only rows a small price error can actually move.
-            "within_1pt": sum(
-                1 for r in same
-                if min(abs((r["put_strike"] or 0) - base_price),
-                       abs((r["call_strike"] or 0) - base_price)) <= 1.0
-            ),
-            "pnl_swing_1pt": _round(max(swing(1.0), swing(-1.0))),
-            "pnl_swing_0_1pt": _round(max(swing(0.1), swing(-0.1))),
-        })
+
+        sensitivity.append(
+            {
+                "session": day,
+                "symbol": sym,
+                "settle_price": base_price,
+                "trades": len(same),
+                # Fills whose short strike sits within a point of settlement: the pin-risk population,
+                # and the only rows a small price error can actually move.
+                "within_1pt": sum(
+                    1
+                    for r in same
+                    if min(
+                        abs((r["put_strike"] or 0) - base_price), abs((r["call_strike"] or 0) - base_price)
+                    )
+                    <= 1.0
+                ),
+                "pnl_swing_1pt": _round(max(swing(1.0), swing(-1.0))),
+                "pnl_swing_0_1pt": _round(max(swing(0.1), swing(-0.1))),
+            }
+        )
 
     return {
         "era": era,

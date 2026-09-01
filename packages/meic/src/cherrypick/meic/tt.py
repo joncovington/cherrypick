@@ -1651,7 +1651,9 @@ def main():
     p_ir.add_argument("--symbol", required=True, help="Trading symbol (e.g. SPX)")
 
     p_gqs = sub.add_parser("get_quotes")
-    p_gqs.add_argument("--symbols", nargs="+", required=True, help="Streamer symbols to quote (no cache write)")
+    p_gqs.add_argument(
+        "--symbols", nargs="+", required=True, help="Streamer symbols to quote (no cache write)"
+    )
     p_gqs.add_argument("--timeout", type=float, default=8.0)
 
     p_ss = sub.add_parser("stream_subscribe")

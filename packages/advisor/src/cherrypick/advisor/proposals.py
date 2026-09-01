@@ -116,11 +116,13 @@ def normalize(payload: dict[str, Any]) -> dict[str, Any]:
     flags = []
     for flag in payload.get("flags") or []:
         if isinstance(flag, dict) and flag.get("text"):
-            flags.append({
-                "module": str(flag.get("module") or "suite"),
-                "severity": str(flag.get("severity") or "info"),
-                "text": str(flag["text"]),
-            })
+            flags.append(
+                {
+                    "module": str(flag.get("module") or "suite"),
+                    "severity": str(flag.get("severity") or "info"),
+                    "text": str(flag["text"]),
+                }
+            )
 
     proposals: list[dict[str, Any]] = []
     malformed: list[dict[str, Any]] = []
@@ -159,34 +161,40 @@ def _typed(raw: Any) -> tuple[dict[str, Any], str | None]:
         out["rationales"] = _rationales(raw.get("params"))
 
     if kind == "experiment_spec":
-        out.update({
-            "name": str(raw.get("name")),
-            "hypothesis": str(raw.get("hypothesis") or ""),
-            "success_metric": str(raw.get("success_metric") or ""),
-            "sessions": raw.get("sessions"),
-        })
+        out.update(
+            {
+                "name": str(raw.get("name")),
+                "hypothesis": str(raw.get("hypothesis") or ""),
+                "success_metric": str(raw.get("success_metric") or ""),
+                "sessions": raw.get("sessions"),
+            }
+        )
     if kind == "bounded_adjustment":
         out.update({"hypothesis": str(raw.get("hypothesis") or ""), "sessions": raw.get("sessions")})
     if kind == "tune":
         out["experiment_id"] = str(raw.get("experiment_id"))
         out["rationale"] = str(raw.get("rationale") or "")
     if kind == "creative":
-        out.update({
-            "title": str(raw.get("title")),
-            "text": str(raw.get("text") or ""),
-            # A creative idea is only actionable if it arrives ready to paste. Kept verbatim as a
-            # string so nothing here has to understand a module's config shape.
-            "spec_json": raw.get("spec_json"),
-        })
+        out.update(
+            {
+                "title": str(raw.get("title")),
+                "text": str(raw.get("text") or ""),
+                # A creative idea is only actionable if it arrives ready to paste. Kept verbatim as a
+                # string so nothing here has to understand a module's config shape.
+                "spec_json": raw.get("spec_json"),
+            }
+        )
     if kind == "verdict":
         recommendation = str(raw.get("recommendation") or "")
         if recommendation not in RECOMMENDATIONS:
             return {}, f"recommendation must be one of {', '.join(RECOMMENDATIONS)}"
-        out.update({
-            "experiment_id": str(raw.get("experiment_id")),
-            "recommendation": recommendation,
-            "rationale": str(raw.get("rationale") or ""),
-        })
+        out.update(
+            {
+                "experiment_id": str(raw.get("experiment_id")),
+                "recommendation": recommendation,
+                "rationale": str(raw.get("rationale") or ""),
+            }
+        )
 
     return out, None
 

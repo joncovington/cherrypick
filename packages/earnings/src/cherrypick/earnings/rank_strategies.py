@@ -535,9 +535,7 @@ def cmd_get_ranked_symbols(args) -> dict:
     # This morning's forward scan bounds which unannotated calendar rows are admissible as AMC --
     # the earnings calendar's `when` column is mostly NULL now, and requiring it dropped liquid
     # names on their own earnings day (see scanner.fetch_entry_window_calendar).
-    calendar = scanner.fetch_entry_window_calendar(
-        config, assume_amc_for=symbol_watch.covered_symbols()
-    )
+    calendar = scanner.fetch_entry_window_calendar(config, assume_amc_for=symbol_watch.covered_symbols())
     timing_assumed_by_symbol = {e["symbol"]: e.get("timing_assumed") for e in calendar}
 
     per_symbol = []

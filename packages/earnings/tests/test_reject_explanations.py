@@ -9,7 +9,9 @@ from cherrypick.earnings import rank_strategies, scanner
 
 
 def _all_apply_tiering():
-    return [(e["name"], e["apply_tiering_fn"], e["strategy_config_fn"]) for e in rank_strategies.STRATEGY_REGISTRY]
+    return [
+        (e["name"], e["apply_tiering_fn"], e["strategy_config_fn"]) for e in rank_strategies.STRATEGY_REGISTRY
+    ]
 
 
 def _empty_criteria_reasons():
@@ -80,9 +82,7 @@ def test_every_mapped_criterion_is_a_real_criteria_key():
 
 
 def test_it_records_the_measurement_and_the_bar_it_missed():
-    detail = scanner.explain_reject_reasons(
-        ["price_below_minimum"], {"price": 8.02}, {"min_price": 10.0}
-    )[0]
+    detail = scanner.explain_reject_reasons(["price_below_minimum"], {"price": 8.02}, {"min_price": 10.0})[0]
     assert detail == {
         "reason": "price_below_minimum",
         "criterion": "price",
@@ -109,15 +109,11 @@ def test_a_soft_criterion_records_whichever_bar_actually_applied():
         "near_miss_min_avg_volume": 1_000_000,
         "_symbol_screen": {"avg_volume": "near_miss"},
     }
-    detail = scanner.explain_reject_reasons(
-        ["avg_volume_below_minimum"], {"avg_volume": 900_000}, config
-    )[0]
+    detail = scanner.explain_reject_reasons(["avg_volume_below_minimum"], {"avg_volume": 900_000}, config)[0]
     assert detail["threshold"] == 1_000_000
 
     config["_symbol_screen"] = {"avg_volume": "pass"}
-    strict = scanner.explain_reject_reasons(
-        ["avg_volume_below_minimum"], {"avg_volume": 900_000}, config
-    )[0]
+    strict = scanner.explain_reject_reasons(["avg_volume_below_minimum"], {"avg_volume": 900_000}, config)[0]
     assert strict["threshold"] == 1_500_000
 
 
@@ -149,7 +145,11 @@ def logged(monkeypatch):
     from cherrypick.earnings import strat_test_harness as harness
 
     rows = []
-    monkeypatch.setattr(harness.db_paper, "cmd_log_scan", lambda args: rows.append(__import__("json").loads(args.data)) or {"ok": True})
+    monkeypatch.setattr(
+        harness.db_paper,
+        "cmd_log_scan",
+        lambda args: rows.append(__import__("json").loads(args.data)) or {"ok": True},
+    )
     return rows
 
 
@@ -157,7 +157,12 @@ def test_a_screening_verdict_is_recorded_at_the_screen_stage(logged):
     from cherrypick.earnings import strat_test_harness as harness
 
     harness._log_scan_row(
-        "2026-08-12", "SUZ", "iron_fly", "strat_test", stage="screen", outcome="rejected",
+        "2026-08-12",
+        "SUZ",
+        "iron_fly",
+        "strat_test",
+        stage="screen",
+        outcome="rejected",
         reason="price_below_minimum",
         reject_details=[{"reason": "price_below_minimum", "measured": 8.02, "threshold": 10.0}],
     )
@@ -172,7 +177,12 @@ def test_an_accepted_candidate_that_never_opened_is_recorded_too(logged):
     from cherrypick.earnings import strat_test_harness as harness
 
     harness._log_scan_row(
-        "2026-08-12", "CSCO", "iron_fly", "strat_test", stage="execution", outcome="dropped",
+        "2026-08-12",
+        "CSCO",
+        "iron_fly",
+        "strat_test",
+        stage="execution",
+        outcome="dropped",
         reason="order_build_failed: no strikes",
     )
     row = logged[0]

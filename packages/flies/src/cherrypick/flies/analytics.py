@@ -1488,8 +1488,7 @@ def session_ranges_from_cache(cache_conn, sessions, symbols=("SPX",), vol_symbol
     vol = {
         row[0]: row[1]
         for row in cache_conn.execute(
-            "SELECT trade_date, day_close FROM stream_summary"
-            f" WHERE symbol = ? AND trade_date IN ({smarks})",
+            f"SELECT trade_date, day_close FROM stream_summary WHERE symbol = ? AND trade_date IN ({smarks})",
             [vol_symbol, *sessions],
         )
     }
@@ -1634,7 +1633,8 @@ def band_placement_classifier(placements: list[dict]) -> dict:
     # scoring against it counts a session that has not happened yet as a classifier miss — which is
     # what the 2026-08-26 advised:control row did before this filter.
     scored = [
-        p for p in placements
+        p
+        for p in placements
         if p["binding_margin"] is not None and p["floor_holds"] is not None and p["settled"]
     ]
     if not scored:
@@ -1658,9 +1658,13 @@ def band_placement_classifier(placements: list[dict]) -> dict:
         "touched_but_recovered": sum(1 for p in scored if p["touched_but_recovered"]),
         "disagreements": [
             {
-                "session": p["session"], "arm": p["arm"], "floor_holds": p["floor_holds"],
-                "binding_margin": p["binding_margin"], "binding_edge": p["binding_edge"],
-                "low_margin": p["low_margin"], "high_margin": p["high_margin"],
+                "session": p["session"],
+                "arm": p["arm"],
+                "floor_holds": p["floor_holds"],
+                "binding_margin": p["binding_margin"],
+                "binding_edge": p["binding_edge"],
+                "low_margin": p["low_margin"],
+                "high_margin": p["high_margin"],
                 "settlement_price": p["settlement_price"],
                 "touched_but_recovered": p["touched_but_recovered"],
             }

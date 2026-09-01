@@ -102,7 +102,9 @@ def replay_cohort_ticks(ticks: list[dict], params: dict | None = None) -> dict:
     }
 
 
-def replay_thresholds(conn, *, entry_session: str, structure_signature: str, thresholds: dict | None = None) -> dict:
+def replay_thresholds(
+    conn, *, entry_session: str, structure_signature: str, thresholds: dict | None = None
+) -> dict:
     """Read `bwb_trigger_ticks` for one cohort and replay it under `thresholds` — the DB-touching
     entry point `cli.py replay` calls."""
     ticks = _db.trigger_ticks_for_cohort(conn, entry_session, structure_signature)

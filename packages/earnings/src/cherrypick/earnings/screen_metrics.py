@@ -288,9 +288,7 @@ def threshold_distances(rows: list[dict], reason: str) -> dict:
     thinning the sample.
     """
     blocked = [b for b in sole_blockers(rows) if b["reason"] == reason]
-    measured = [
-        b for b in blocked if _is_numeric(b["measured"]) and _is_numeric(b["threshold"])
-    ]
+    measured = [b for b in blocked if _is_numeric(b["measured"]) and _is_numeric(b["threshold"])]
 
     ratios = []
     for b in measured:
@@ -480,15 +478,11 @@ def measurement_coverage(rows: list[dict]) -> dict:
     trustworthy as this figure -- and it starts near zero, since `reject_details` began on
     2026-08-12 and every earlier row has reason names alone.
     """
-    rejections = [
-        r for r in strategy_rows(rows, STAGE_SCREEN) if r.get("outcome") != "accepted"
-    ]
+    rejections = [r for r in strategy_rows(rows, STAGE_SCREEN) if r.get("outcome") != "accepted"]
     with_details = [r for r in rejections if r["reject_details"]]
     return {
         "rejections": len(rejections),
         "with_details": len(with_details),
         "fraction": (len(with_details) / len(rejections)) if rejections else 0.0,
-        "first_detailed_scan": min(
-            (r["scan_date"] for r in with_details), default=None
-        ),
+        "first_detailed_scan": min((r["scan_date"] for r in with_details), default=None),
     }

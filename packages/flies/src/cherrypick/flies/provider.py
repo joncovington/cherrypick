@@ -64,14 +64,10 @@ def minute_of_day(when: datetime) -> int:
     return when.hour * 60 + when.minute
 
 
-
-
 def _fail(symbol: str, reason: str, **extra) -> dict:
     """A refusal, not an error. `extra` carries any telemetry the caller can use to explain the
     refusal afterwards — e.g. how many quotes were rejected as stale on a `no_fresh_quotes`."""
     return {"ok": False, "symbol": symbol, "reason": reason, **extra}
-
-
 
 
 def _chain_for_expiration(conn, symbol: str, expiration: str) -> list[dict]:
@@ -385,5 +381,3 @@ def _greeks_and_oi(
             stats["oi_fresh"] += 1
             oi[r["symbol"]] = int(r["open_interest"] or 0)
     return greeks, oi, stats
-
-

@@ -62,8 +62,7 @@ def _cmd_score_history(session: str | None) -> dict:
         "sessions_joined": result["sessions_joined"],
         "score_distribution": result["score_distribution"],
         # The zone summary without the per-session series, which belongs in the artifact.
-        "zones": {zone: {k: v for k, v in stats.items() if k != "series"}
-                  for zone, stats in zones.items()},
+        "zones": {zone: {k: v for k, v in stats.items() if k != "series"} for zone, stats in zones.items()},
         "artifact": path,
         "reason": None if result["sessions_joined"] else result["unscored_reason"],
     }

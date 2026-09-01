@@ -408,18 +408,14 @@ def test_a_session_with_every_slot_held_still_records_why(cache, config, tmp_pat
     for sym in config["symbols"]:
         _seed_position(conn, sym, "control")
 
-    paper_loop._try_entries(
-        config, conn, cache_path=cache.path, when=clock.now_et(), day="2026-08-28"
-    )
+    paper_loop._try_entries(config, conn, cache_path=cache.path, when=clock.now_et(), day="2026-08-28")
 
     held = conn.execute(
         "SELECT symbol, reason, occurrences FROM pmcc_decisions WHERE reason = 'slot_held'"
     ).fetchall()
     assert {r["symbol"] for r in held} == set(config["symbols"])
     # Collapsed, so a whole session of it is one counted row per book/symbol rather than one a tick.
-    paper_loop._try_entries(
-        config, conn, cache_path=cache.path, when=clock.now_et(), day="2026-08-28"
-    )
+    paper_loop._try_entries(config, conn, cache_path=cache.path, when=clock.now_et(), day="2026-08-28")
     again = conn.execute(
         "SELECT occurrences FROM pmcc_decisions WHERE reason = 'slot_held' LIMIT 1"
     ).fetchone()

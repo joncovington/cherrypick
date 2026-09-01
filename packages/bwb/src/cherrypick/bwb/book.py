@@ -36,7 +36,9 @@ def enter_position(
     leg_quotes = [{"bid": leg["bid"], "ask": leg["ask"]} for leg in plan["legs"]]
     cost = engine.entry_cost(plan["symbol"], leg_quotes, quantity, config)
     now = clock.now_iso()
-    sig = structure_signature(plan["expiration"], plan["body_strike"], plan["near_strike"], plan["far_strike"])
+    sig = structure_signature(
+        plan["expiration"], plan["body_strike"], plan["near_strike"], plan["far_strike"]
+    )
     db.save_position(
         conn,
         {
@@ -158,7 +160,9 @@ def fire_addon(conn, position: dict, addon_plan: dict, config: dict) -> dict:
     return {"position_id": position["position_id"], "credit": addon_plan["credit"], "cost": cost}
 
 
-def settle_expiring_legs(conn, day: str, spot: float, config: dict, *, symbol: str | None = None) -> list[dict]:
+def settle_expiring_legs(
+    conn, day: str, spot: float, config: dict, *, symbol: str | None = None
+) -> list[dict]:
     """Cash-settle every open leg expiring `day` at the settlement print. SPX is European and cash
     settled: intrinsic only, no assignment machinery, no shares."""
     now = clock.now_iso()

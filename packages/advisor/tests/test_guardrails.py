@@ -25,12 +25,23 @@ LIVE_FACTS_FILE = "factpack.py"
 
 FORBIDDEN_IMPORTS = {
     # broker / credentials
-    "tastytrade", "keyring", "cherrypick.core.auth", "cherrypick.core.broker",
+    "tastytrade",
+    "keyring",
+    "cherrypick.core.auth",
+    "cherrypick.core.broker",
     # network
-    "requests", "httpx", "urllib.request", "urllib3", "http.client", "socket",
-    "websocket", "websockets", "asyncio",
+    "requests",
+    "httpx",
+    "urllib.request",
+    "urllib3",
+    "http.client",
+    "socket",
+    "websocket",
+    "websockets",
+    "asyncio",
     # AI clients -- the model is invoked by scripts/advisor_checkpoint.py, never from a package
-    "anthropic", "openai",
+    "anthropic",
+    "openai",
     # this package shells out to nothing: it IS what gets shelled out to
     "subprocess",
 }
@@ -85,8 +96,7 @@ def test_there_is_exactly_one_read_only_opener():
             ):
                 offenders.append(f"{py.name}:{node.lineno}")
     assert not offenders, (
-        "direct sqlite3.connect() opens a foreign database read-WRITE -- use store.ro(): "
-        f"{offenders}"
+        f"direct sqlite3.connect() opens a foreign database read-WRITE -- use store.ro(): {offenders}"
     )
 
 
@@ -155,8 +165,7 @@ def test_every_enact_output_path_is_a_paper_advice_artifact():
     fakes.write_suite_config(home, {"enabled": True, "modules": {"meic": {"enabled": True}}})
 
     conn = store.connect()
-    experiments.admit_spec(conn, session=session, module="meic",
-                           params={"stop_trigger_ratio": 0.9})
+    experiments.admit_spec(conn, session=session, module="meic", params={"stop_trigger_ratio": 0.9})
     result = enact.run(conn, session)
     conn.close()
 
@@ -166,8 +175,7 @@ def test_every_enact_output_path_is_a_paper_advice_artifact():
         rel = Path(path).relative_to(paths.state_dir())
         assert rel.parts[0] == "advice"
         assert rel.name.split("-")[0] in ("meic", "flies", "earnings")
-        assert json.loads(Path(path).read_text(encoding="utf-8"))["module"] in (
-            "meic", "flies", "earnings")
+        assert json.loads(Path(path).read_text(encoding="utf-8"))["module"] in ("meic", "flies", "earnings")
 
 
 def test_the_package_declares_only_core_as_a_dependency():

@@ -442,9 +442,7 @@ def test_console_can_be_turned_off_and_stays_visible(tmp_path):
 def test_console_dev_backoff_seconds_overrides_the_default_cap(tmp_path):
     """Opt-in dev knob: a checkout under active iteration gets restarted by hand far more often than
     the supervisor's normal 10-minute crash-backoff cap was ever sized for."""
-    cfg = suite_cfg(
-        console={"path": str(_built_console(tmp_path)), "dev_backoff_seconds": 20}
-    )
+    cfg = suite_cfg(console={"path": str(_built_console(tmp_path)), "dev_backoff_seconds": 20})
     con = next(j for j in derive(cfg)[0] if j.id == "console")
     assert con.backoff_cap_seconds == 20
 
@@ -586,9 +584,7 @@ def test_the_scheduled_scripts_resolve_to_files_that_exist():
 
     from cherrypick.orchestrator.jobspec import _advisor_script, _narrative_script
 
-    launcher = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "run.py"
-    )
+    launcher = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "run.py")
     assert os.path.exists(_narrative_script(launcher))
     assert os.path.exists(_advisor_script(launcher))
 
@@ -605,9 +601,13 @@ def test_the_deep_slot_runs_after_the_reviews_provisional_pass():
 def test_the_light_slots_carry_the_light_model_and_the_deep_slot_the_deep_one():
     """Model names live in config and travel on argv — no model id appears in this suite's code."""
     cfg = suite_cfg()
-    cfg["advisor"] = {"enabled": True, "light_model": "haiku", "deep_model": "opus",
-                      "checkpoints": {"open": "09:45"},
-                      "modules": {"flies": {"enabled": True}}}
+    cfg["advisor"] = {
+        "enabled": True,
+        "light_model": "haiku",
+        "deep_model": "opus",
+        "checkpoints": {"open": "09:45"},
+        "modules": {"flies": {"enabled": True}},
+    }
     by_id = {j.id: j for j in derive(cfg)[0]}
     assert "haiku" in by_id["advisor-open"].argv
     assert "opus" in by_id["advisor-deep"].argv

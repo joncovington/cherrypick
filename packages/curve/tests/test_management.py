@@ -188,4 +188,9 @@ def test_a_leg_wide_in_money_as_well_as_percent_still_blocks():
 
 
 def test_a_snapshot_without_leg_detail_keeps_the_percentage_test():
-    assert management.execution_gate({"ok": True, "max_spread_pct": 2.0}, dict(management.PARAM_DEFAULTS), now=NOON) == "spread_too_wide"
+    assert (
+        management.execution_gate(
+            {"ok": True, "max_spread_pct": 2.0}, dict(management.PARAM_DEFAULTS), now=NOON
+        )
+        == "spread_too_wide"
+    )

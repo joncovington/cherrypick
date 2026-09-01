@@ -18,7 +18,13 @@ def tmp_home(tmp_path, monkeypatch):
     monkeypatch.setenv("CHERRYPICK_HOME", str(home))
     # Narrow per-scope overrides would defeat the master override; make sure none leaked in from
     # the developer's shell.
-    for leaked in ("ADVISOR_DATA_DIR", "ADVISOR_LOGS_DIR", "MEIC_DATA_DIR", "EARNINGS_DATA_DIR",
-                   "FLIES_DATA_DIR", "REVIEW_DATA_DIR"):
+    for leaked in (
+        "ADVISOR_DATA_DIR",
+        "ADVISOR_LOGS_DIR",
+        "MEIC_DATA_DIR",
+        "EARNINGS_DATA_DIR",
+        "FLIES_DATA_DIR",
+        "REVIEW_DATA_DIR",
+    ):
         monkeypatch.delenv(leaked, raising=False)
     return home

@@ -49,9 +49,7 @@ def families(symbols: list[str]) -> dict[str, list[str]]:
 
 def same_index_pairs(symbols: list[str]) -> list[tuple[str, str]]:
     return [
-        (a, b)
-        for members in families(symbols).values()
-        for a, b in combinations(sorted(set(members)), 2)
+        (a, b) for members in families(symbols).values() for a, b in combinations(sorted(set(members)), 2)
     ]
 
 
@@ -62,10 +60,10 @@ def same_index_pairs(symbols: list[str]) -> list[tuple[str, str]]:
     "symbols, expected",
     [
         (["SPX"], []),
-        (["SPX", "QQQ"], []),                       # different indices: allowed
-        (["TNA", "TQQQ", "UPRO"], []),              # three DIFFERENT indices, leveraged
-        (["SPX", "XSP"], [("SPX", "XSP")]),         # the case the docs name
-        (["SPY", "UPRO"], [("SPY", "UPRO")]),       # same index, leveraged vehicle
+        (["SPX", "QQQ"], []),  # different indices: allowed
+        (["TNA", "TQQQ", "UPRO"], []),  # three DIFFERENT indices, leveraged
+        (["SPX", "XSP"], [("SPX", "XSP")]),  # the case the docs name
+        (["SPY", "UPRO"], [("SPY", "UPRO")]),  # same index, leveraged vehicle
         (["QQQ", "TQQQ"], [("QQQ", "TQQQ")]),
         (["RUT", "IWM"], [("IWM", "RUT")]),
     ],
@@ -97,9 +95,7 @@ def _declared() -> dict[str, list[str]]:
 @pytest.mark.skipif(not REQUEST_DIR.exists(), reason="no deployed stream requests on this machine")
 def test_no_module_trades_one_index_through_two_vehicles():
     offenders = {
-        module: pairs
-        for module, symbols in _declared().items()
-        if (pairs := same_index_pairs(symbols))
+        module: pairs for module, symbols in _declared().items() if (pairs := same_index_pairs(symbols))
     }
     assert not offenders, (
         f"a module is configured on the same index twice: {offenders}. Per-symbol position caps "

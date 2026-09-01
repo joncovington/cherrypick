@@ -149,8 +149,11 @@ def test_regime_is_off_unless_configured(conn, tmp_path):
     cfg = _friday_cfg()
     cfg["friday_entry"]["enabled"] = False
     n = paper_loop._maybe_friday_entry(
-        cfg, conn, cache_path=str(tmp_path / "none.db"),
-        when=datetime(2026, 8, 28, 15, 55, tzinfo=ET), now_min=15 * 60 + 55,
+        cfg,
+        conn,
+        cache_path=str(tmp_path / "none.db"),
+        when=datetime(2026, 8, 28, 15, 55, tzinfo=ET),
+        now_min=15 * 60 + 55,
     )
     assert n == 0
     assert conn.execute("SELECT COUNT(*) FROM dc_entry_attempts").fetchone()[0] == 0
@@ -158,8 +161,11 @@ def test_regime_is_off_unless_configured(conn, tmp_path):
 
 def test_outside_the_window_does_nothing(conn, tmp_path):
     n = paper_loop._maybe_friday_entry(
-        _friday_cfg(), conn, cache_path=str(tmp_path / "none.db"),
-        when=datetime(2026, 8, 28, 15, 40, tzinfo=ET), now_min=15 * 60 + 40,
+        _friday_cfg(),
+        conn,
+        cache_path=str(tmp_path / "none.db"),
+        when=datetime(2026, 8, 28, 15, 40, tzinfo=ET),
+        now_min=15 * 60 + 40,
     )
     assert n == 0
     assert conn.execute("SELECT COUNT(*) FROM dc_entry_attempts").fetchone()[0] == 0
@@ -169,8 +175,11 @@ def test_pending_exits_block_the_entry_and_are_journaled(conn, tmp_path):
     """Ordering by state: inside the window, but the session's exits have not finished."""
     _pos(conn, "w:control:put", "control", "2026-08-28")
     n = paper_loop._maybe_friday_entry(
-        _friday_cfg(), conn, cache_path=str(tmp_path / "none.db"),
-        when=datetime(2026, 8, 28, 15, 52, tzinfo=ET), now_min=15 * 60 + 52,
+        _friday_cfg(),
+        conn,
+        cache_path=str(tmp_path / "none.db"),
+        when=datetime(2026, 8, 28, 15, 52, tzinfo=ET),
+        now_min=15 * 60 + 52,
     )
     assert n == 0
     row = conn.execute("SELECT outcome, block_detail FROM dc_entry_attempts").fetchone()
@@ -201,8 +210,14 @@ def _snapshot(strikes_priced: dict[float, tuple[float, float]]):
         quotes[fsym] = {"bid": fm, "ask": fm, "mid": fm}
         quotes[bsym] = {"bid": bm, "ask": bm, "mid": bm}
     return {
-        "symbol": "SPY", "spot": 760.0, "quotes": quotes, "front": front, "back": back,
-        "front_expiration": "2026-09-04", "back_expiration": "2026-09-08", "greeks": {},
+        "symbol": "SPY",
+        "spot": 760.0,
+        "quotes": quotes,
+        "front": front,
+        "back": back,
+        "front_expiration": "2026-09-04",
+        "back_expiration": "2026-09-08",
+        "greeks": {},
     }
 
 
@@ -230,17 +245,24 @@ def test_paired_debit_records_both_entrances_at_one_strike(conn):
         conn,
         {
             "position_id": "2026-08-31:friday:control:put",
-            "week_of": "2026-08-31", "entry_session": "2026-08-28",
-            "book": "friday:control", "side": "put", "symbol": "SPY", "structure": "dc_7_11",
-            "front_expiration": "2026-09-04", "back_expiration": "2026-09-08",
-            "strike": 750.0, "quantity": 1, "entry_debit": 1.20, "entry_spot": 758.0,
-            "entry_time": "2026-08-28T15:55:00-04:00", "status": "open",
+            "week_of": "2026-08-31",
+            "entry_session": "2026-08-28",
+            "book": "friday:control",
+            "side": "put",
+            "symbol": "SPY",
+            "structure": "dc_7_11",
+            "front_expiration": "2026-09-04",
+            "back_expiration": "2026-09-08",
+            "strike": 750.0,
+            "quantity": 1,
+            "entry_debit": 1.20,
+            "entry_spot": 758.0,
+            "entry_time": "2026-08-28T15:55:00-04:00",
+            "status": "open",
         },
     )
     snap = _snapshot({750.0: (1.0, 2.5)})
-    paper_loop._record_paired_debits(
-        conn, snap, week={"week_of": "2026-08-31"}, day="2026-08-31"
-    )
+    paper_loop._record_paired_debits(conn, snap, week={"week_of": "2026-08-31"}, day="2026-08-31")
     rows = db.paired_debits(conn, "2026-08-31")
     assert len(rows) == 1
     r = rows[0]
@@ -256,10 +278,18 @@ def test_paired_debit_is_a_marked_refusal_when_the_strike_cannot_be_priced(conn)
         conn,
         {
             "position_id": "2026-08-31:friday:control:put",
-            "week_of": "2026-08-31", "entry_session": "2026-08-28",
-            "book": "friday:control", "side": "put", "symbol": "SPY", "structure": "dc_7_11",
-            "front_expiration": "2026-09-04", "back_expiration": "2026-09-08",
-            "strike": 750.0, "quantity": 1, "entry_debit": 1.20, "status": "open",
+            "week_of": "2026-08-31",
+            "entry_session": "2026-08-28",
+            "book": "friday:control",
+            "side": "put",
+            "symbol": "SPY",
+            "structure": "dc_7_11",
+            "front_expiration": "2026-09-04",
+            "back_expiration": "2026-09-08",
+            "strike": 750.0,
+            "quantity": 1,
+            "entry_debit": 1.20,
+            "status": "open",
         },
     )
     paper_loop._record_paired_debits(
@@ -284,10 +314,18 @@ def test_paired_debit_restates_rather_than_duplicating_on_a_retried_tick(conn):
         conn,
         {
             "position_id": "2026-08-31:friday:control:put",
-            "week_of": "2026-08-31", "entry_session": "2026-08-28",
-            "book": "friday:control", "side": "put", "symbol": "SPY", "structure": "dc_7_11",
-            "front_expiration": "2026-09-04", "back_expiration": "2026-09-08",
-            "strike": 750.0, "quantity": 1, "entry_debit": 1.20, "status": "open",
+            "week_of": "2026-08-31",
+            "entry_session": "2026-08-28",
+            "book": "friday:control",
+            "side": "put",
+            "symbol": "SPY",
+            "structure": "dc_7_11",
+            "front_expiration": "2026-09-04",
+            "back_expiration": "2026-09-08",
+            "strike": 750.0,
+            "quantity": 1,
+            "entry_debit": 1.20,
+            "status": "open",
         },
     )
     for _ in range(3):
@@ -306,15 +344,21 @@ def test_friday_skip_is_journaled_with_the_dominant_reason(conn, tmp_path):
     (a market/ops outcome). Without this, the two silences look identical."""
     for _ in range(3):
         db.record_entry_attempt(
-            conn, trade_date="2026-08-28", week_of="2026-08-31", symbol="SPY",
+            conn,
+            trade_date="2026-08-28",
+            week_of="2026-08-31",
+            symbol="SPY",
             outcome="awaiting_session_exits",
         )
     db.record_entry_attempt(
         conn, trade_date="2026-08-28", week_of="2026-08-31", symbol="SPY", outcome="no_fresh_quotes"
     )
     paper_loop._maybe_friday_entry(
-        _friday_cfg(), conn, cache_path=str(tmp_path / "none.db"),
-        when=datetime(2026, 8, 28, 16, 30, tzinfo=ET), now_min=16 * 60 + 30,
+        _friday_cfg(),
+        conn,
+        cache_path=str(tmp_path / "none.db"),
+        when=datetime(2026, 8, 28, 16, 30, tzinfo=ET),
+        now_min=16 * 60 + 30,
     )
     row = conn.execute(
         "SELECT reason, detail FROM dc_decisions WHERE reason = 'friday_week_skipped'"
@@ -328,19 +372,27 @@ def test_friday_skip_is_not_journaled_when_the_regime_entered(conn, tmp_path):
     conn.execute("UPDATE dc_positions SET week_of = '2026-08-31'")
     conn.commit()
     paper_loop._maybe_friday_entry(
-        _friday_cfg(), conn, cache_path=str(tmp_path / "none.db"),
-        when=datetime(2026, 8, 28, 16, 30, tzinfo=ET), now_min=16 * 60 + 30,
+        _friday_cfg(),
+        conn,
+        cache_path=str(tmp_path / "none.db"),
+        when=datetime(2026, 8, 28, 16, 30, tzinfo=ET),
+        now_min=16 * 60 + 30,
     )
-    assert conn.execute(
-        "SELECT COUNT(*) FROM dc_decisions WHERE reason = 'friday_week_skipped'"
-    ).fetchone()[0] == 0
+    assert (
+        conn.execute("SELECT COUNT(*) FROM dc_decisions WHERE reason = 'friday_week_skipped'").fetchone()[0]
+        == 0
+    )
 
 
 def test_friday_skip_is_silent_before_the_window_closes(conn, tmp_path):
     paper_loop._maybe_friday_entry(
-        _friday_cfg(), conn, cache_path=str(tmp_path / "none.db"),
-        when=datetime(2026, 8, 28, 15, 40, tzinfo=ET), now_min=15 * 60 + 40,
+        _friday_cfg(),
+        conn,
+        cache_path=str(tmp_path / "none.db"),
+        when=datetime(2026, 8, 28, 15, 40, tzinfo=ET),
+        now_min=15 * 60 + 40,
     )
-    assert conn.execute(
-        "SELECT COUNT(*) FROM dc_decisions WHERE reason = 'friday_week_skipped'"
-    ).fetchone()[0] == 0
+    assert (
+        conn.execute("SELECT COUNT(*) FROM dc_decisions WHERE reason = 'friday_week_skipped'").fetchone()[0]
+        == 0
+    )

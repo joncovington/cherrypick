@@ -76,6 +76,7 @@ def test_nearest_close_after_bounds_how_far_forward_it_walks(monkeypatch):
     assert "date <= %s" in cur.sql
     assert cur.params == ("FAC", anchor, anchor + timedelta(days=4))
 
+
 # --- has_weekly_options -----------------------------------------------------
 
 
