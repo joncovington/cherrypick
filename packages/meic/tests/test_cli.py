@@ -27,12 +27,25 @@ def ledger(tmp_path, monkeypatch):
     db.cmd_init_db(None)
     conn = sqlite3.connect(path)
     row = {
-        "trade_date": "2026-08-25", "symbol": "SPX", "status": "expired",
-        "risk_profile": "control", "era": analytics.CURRENT_ERA,
-        "put_credit": 0.9, "call_credit": 0.9, "net_credit": 1.8, "wing_width": 10,
-        "put_strike": 7450.0, "call_strike": 7550.0, "pnl": 100.0, "fees": 6.89,
-        "quantity": 1, "ic_order_id": "IC-1", "exit_reason": "expired_settlement",
-        "settle_underlying": 7500.0, "created_at": "x", "updated_at": "x",
+        "trade_date": "2026-08-25",
+        "symbol": "SPX",
+        "status": "expired",
+        "risk_profile": "control",
+        "era": analytics.CURRENT_ERA,
+        "put_credit": 0.9,
+        "call_credit": 0.9,
+        "net_credit": 1.8,
+        "wing_width": 10,
+        "put_strike": 7450.0,
+        "call_strike": 7550.0,
+        "pnl": 100.0,
+        "fees": 6.89,
+        "quantity": 1,
+        "ic_order_id": "IC-1",
+        "exit_reason": "expired_settlement",
+        "settle_underlying": 7500.0,
+        "created_at": "x",
+        "updated_at": "x",
     }
     conn.execute(
         f"INSERT INTO ic_trades ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",

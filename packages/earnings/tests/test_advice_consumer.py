@@ -159,8 +159,18 @@ def test_the_twin_is_identical_in_everything_but_its_params():
     assert twin["order_id"].startswith("advised-")
     assert json.loads(twin["advice_params"]) == {"profit_target_pct": 0.3}
     # Every fill field is the control's, byte for byte — the comparison isolates management.
-    for field in ("legs_json", "entry_credit", "quantity", "capital_at_risk", "entry_cost",
-                  "entry_slippage", "entry_iv", "symbol", "expiration", "strategy"):
+    for field in (
+        "legs_json",
+        "entry_credit",
+        "quantity",
+        "capital_at_risk",
+        "entry_cost",
+        "entry_slippage",
+        "entry_iv",
+        "symbol",
+        "expiration",
+        "strategy",
+    ):
         assert twin[field] == SAVE_SPEC[field]
 
 
@@ -184,10 +194,15 @@ def test_effective_config_overlays_only_the_stamped_strategy():
 
 def test_a_control_row_gets_its_config_back_unchanged():
     base = config()
-    for trade in ({"strategy": "iron_fly"}, {"strategy": "iron_fly", "advice_params": None},
-                  {"strategy": "iron_fly", "advice_params": "{}"}):
-        assert management.effective_config(trade, base) is base or \
-            management.effective_config(trade, base) == base
+    for trade in (
+        {"strategy": "iron_fly"},
+        {"strategy": "iron_fly", "advice_params": None},
+        {"strategy": "iron_fly", "advice_params": "{}"},
+    ):
+        assert (
+            management.effective_config(trade, base) is base
+            or management.effective_config(trade, base) == base
+        )
 
 
 def test_an_unreadable_stamp_falls_back_to_the_control_never_to_a_guess():
@@ -209,9 +224,11 @@ def test_an_overlaid_target_closes_a_position_the_control_still_holds():
     trade = {
         "strategy": "iron_fly",
         "entry_credit": 4.0,
-        "legs_json": json.dumps([
-            {"symbol": "AAPL  260815C00200000", "action": "Sell to Open", "quantity": 1},
-        ]),
+        "legs_json": json.dumps(
+            [
+                {"symbol": "AAPL  260815C00200000", "action": "Sell to Open", "quantity": 1},
+            ]
+        ),
     }
     quotes = {"AAPL  260815C00200000": {"bid": 2.6, "ask": 2.8}}
 

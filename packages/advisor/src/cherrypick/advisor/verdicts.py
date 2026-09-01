@@ -124,9 +124,9 @@ def _underpowered(reading: dict | None, thresholds: dict) -> bool:
     only — a book can miss the win-rate bar honestly, but it cannot miss the sample bar honestly."""
     if not reading:
         return True
-    return (reading.get("sample") or 0) < thresholds["min_sample"] or (
-        reading.get("days") or 0
-    ) < thresholds["min_days"]
+    return (reading.get("sample") or 0) < thresholds["min_sample"] or (reading.get("days") or 0) < thresholds[
+        "min_days"
+    ]
 
 
 def for_experiment(experiment: dict[str, Any], *, rule: dict | None = None) -> dict[str, Any]:

@@ -1,6 +1,6 @@
 {
   "identity_header": "x",
-  "_comment": "cherrypick orchestration config. Copy to config.json and adjust. A module is located by 'path' (relative to this file's directory \u2014 in the monorepo every module ships in the same checkout) or, for an out-of-tree module, a 'repo' URL cloned by `cherrypick install` into ~/.cherrypick/modules/<repo-name>. Never hardcode absolute machine paths.",
+  "_comment": "cherrypick orchestration config. Copy to config.json and adjust. A module is located by 'path' (relative to this file's directory — in the monorepo every module ships in the same checkout) or, for an out-of-tree module, a 'repo' URL cloned by `cherrypick install` into ~/.cherrypick/modules/<repo-name>. Never hardcode absolute machine paths.",
   "_home_note": "Runtime home (this config.json, logs/, state/, dashboard.html) = CHERRYPICK_HOME if set, else the repo root in a source checkout, else ~/.cherrypick for a pip-installed copy. An installed copy thus reads ~/.cherrypick/config.json.",
   "_modules_home_note": "Managed module checkouts live under CHERRYPICK_MODULES_HOME, else CHERRYPICK_HOME/modules, else ~/.cherrypick/modules. `install` clones a module only when its checkout is absent and never touches an existing one; `uninstall` leaves checkouts in place.",
   "timezone": "America/New_York",
@@ -14,7 +14,7 @@
       "keyring_legacy_services": [
         "tastytrade-mcp"
       ],
-      "_live_db_note": "Phase-5 seam: the module's LIVE-trades ledger, read ONLY by the explicitly live-tagged surfaces (`cherrypick report --live`). Deliberately a separate key from paper.paper_db \u2014 calibrate and every promotion reading go through the paper path and can never see this file. Same resolution rules as paper_db (absolute / ~-expanded / module-root relative).",
+      "_live_db_note": "Phase-5 seam: the module's LIVE-trades ledger, read ONLY by the explicitly live-tagged surfaces (`cherrypick report --live`). Deliberately a separate key from paper.paper_db — calibrate and every promotion reading go through the paper path and can never see this file. Same resolution rules as paper_db (absolute / ~-expanded / module-root relative).",
       "live_db": "~/.cherrypick/data/meic/meic_trades.db",
       "paper": {
         "kind": "self_healing",
@@ -36,7 +36,7 @@
           "--once",
           "--force"
         ],
-        "_paper_db_note": "Path to the module's paper-trades SQLite DB \u2014 MUST point at the file the module actually WRITES (a mismatch silently blinds the orchestrator's report/reconcile/dashboard and the watchdog freshness check). Relative resolves against the module checkout; a leading '~' or env var expands (use e.g. '~/.cherrypick/data/meic/paper_trades.db' when the module keeps its data in the managed home); an absolute path is used as-is.",
+        "_paper_db_note": "Path to the module's paper-trades SQLite DB — MUST point at the file the module actually WRITES (a mismatch silently blinds the orchestrator's report/reconcile/dashboard and the watchdog freshness check). Relative resolves against the module checkout; a leading '~' or env var expands (use e.g. '~/.cherrypick/data/meic/paper_trades.db' when the module keeps its data in the managed home); an absolute path is used as-is.",
         "paper_db": "data/paper_trades.db",
         "notify_trades": true,
         "trade_schema": "meic_ic",
@@ -44,7 +44,7 @@
         "freshness_minutes": 20
       },
       "streamer": {
-        "_note": "MEIC's own in-module streamer \u2014 DISABLED since the 2026-07-21 producer cutover: the standalone streamer (top-level `streamer` block below) is the suite's sole producer, and exactly ONE producer ever runs. Kept only as the rollback path: to revert, set enabled=true here AND streamer.enabled=false below.",
+        "_note": "MEIC's own in-module streamer — DISABLED since the 2026-07-21 producer cutover: the standalone streamer (top-level `streamer` block below) is the suite's sole producer, and exactly ONE producer ever runs. Kept only as the rollback path: to revert, set enabled=true here AND streamer.enabled=false below.",
         "enabled": false,
         "status_argv": [
           "-m",
@@ -55,14 +55,14 @@
           "-m",
           "cherrypick.meic.streamer"
         ],
-        "_stop_argv_note": "Optional. Used to stop a STALLED streamer before relaunching it \u2014 the daemon is single-instance guarded, so relaunching without stopping is a silent no-op. Defaults to the status command with --stop.",
+        "_stop_argv_note": "Optional. Used to stop a STALLED streamer before relaunching it — the daemon is single-instance guarded, so relaunching without stopping is a silent no-op. Defaults to the status command with --stop.",
         "stop_argv": [
           "-m",
           "cherrypick.meic.streamer",
           "--stop"
         ],
         "auto_restart": true,
-        "_stale_restart_note": "Restart the streamer when it is CONNECTED but has received no market events for this many seconds during RTH. A process check cannot see this: observed 2026-07-20, the streamer reconnected then went silent for 8 minutes while still reporting running=true and its own stale_warning=false (that flag only trips at 600s), so nothing restarted it \u2014 MEIC degraded to REST and the flies module refused every iteration on stale quotes. 240s is well inside the 600s self-report and well outside a normal quiet tick. Restarts are skipped while a connection is younger than this, so a just-restarted streamer is not judged before it has resubscribed.",
+        "_stale_restart_note": "Restart the streamer when it is CONNECTED but has received no market events for this many seconds during RTH. A process check cannot see this: observed 2026-07-20, the streamer reconnected then went silent for 8 minutes while still reporting running=true and its own stale_warning=false (that flag only trips at 600s), so nothing restarted it — MEIC degraded to REST and the flies module refused every iteration on stale quotes. 240s is well inside the 600s self-report and well outside a normal quiet tick. Restarts are skipped while a connection is younger than this, so a just-restarted streamer is not judged before it has resubscribed.",
         "stale_restart_seconds": 240
       },
       "calibration": {
@@ -70,10 +70,6 @@
         "_arms_cutover_note": "Updated 2026-08-07 for the arms cutover (config.risk.json's _arms_cutover_note): champion is now `control` (today's deployed policy, formerly `conservative` -- same values, new name). The retired ladder/GEX tags (conservative/moderate/aggressive/very-aggressive/gex-open/gex-blocked) never write a new row again, so they simply stop appearing as challengers going forward; their historical rows stay under their own tag and never blend into `control`'s reading, since the tag NAME itself is what segregates the eras here -- no data_epoch needed (that key is suite-wide and would also truncate flies/earnings' unrelated history). `open` is deliberate_only: it runs with per_side_stop_management OFF (held to settlement/force-close, no per-side stop at all), a materially different risk posture from control's canonical MEIC+ stop, not just a quality-gate relaxation -- qualifying on paper should not auto-promote a no-stop policy without a human decision, the same reasoning very-aggressive's deliberate_only carried.",
         "_retired_2026_08_20": "The champion/challenger comparison this block drove is RETIRED. Judging arms belongs to packages/advisor's experiments now -- one mechanism rather than two answering the same question on different evidence and different thresholds. `cherrypick calibrate` still reports the per-tag READING and its qualification checks. 'champion', 'deliberate_only' and rule.'margin' are now read without error and have NO effect; left here so an existing config keeps loading, and safe to delete.",
         "champion": "control",
-        "deliberate_only": [
-          "open",
-          "very-aggressive"
-        ],
         "rule": {
           "min_days": 14,
           "min_win_rate": 0.6,
@@ -82,7 +78,7 @@
       }
     },
     "flies": {
-      "_comment": "cherrypick-flies: 0DTE net-credit butterflies ('profit forest'), paper only, XSP (SPX through 2026-07-28). Reads the shared stream cache READ-ONLY and runs no streamer of its own, so it REQUIRES the suite's streamer to be running and subscribed to its symbol. ENABLED, but it has still never completed a live session \u2014 watch the first one, in particular the quote_stats line in the log (which separates 'the streamer gave us nothing' from 'the strategy found nothing') and the arm_divergence figure (if the arms agree nearly always, the comparison cannot answer anything and max_center_distance_pct is the first thing to revisit).",
+      "_comment": "cherrypick-flies: 0DTE net-credit butterflies ('profit forest'), paper only, XSP (SPX through 2026-07-28). Reads the shared stream cache READ-ONLY and runs no streamer of its own, so it REQUIRES the suite's streamer to be running and subscribed to its symbol. ENABLED, but it has still never completed a live session — watch the first one, in particular the quote_stats line in the log (which separates 'the streamer gave us nothing' from 'the strategy found nothing') and the arm_divergence figure (if the arms agree nearly always, the comparison cannot answer anything and max_center_distance_pct is the first thing to revisit).",
       "enabled": true,
       "path": "../flies",
       "_broker_note": "Live-scaffold onboarding (docs/live-trading-plan.md in the module): flies has no tt.py, so its config-declared broker/credential CLI is broker_cli.py; `cherrypick connect/account --module flies` drive it exactly like MEIC's tt.py. keyring service fliesagent; live_db is the SEPARATE live ledger read only by `report --live` (never by calibrate/promotion).",
@@ -92,7 +88,7 @@
         "cherrypick.flies.broker_cli"
       ],
       "live_db": "~/.cherrypick/data/flies/live_trades.db",
-      "_live_note": "Watchdog + notification wiring for the module's LIVE loop (the module itself owns arming/trading; this block only tells the orchestrator how to WATCH it). task_name is the module's self-registered live task; the loop self-disarms at the module's live.disarm_time (arming is per-day) and disarm_time/disarm_grace_minutes here are the watchdog's BACKSTOP window \u2014 past it, a still-registered live task means self-disarm failed, so the watchdog sets the suite halt flag (risk-reducing only; it never touches the task) and raises CRITICAL. notify_trades pushes live entries/completions/settlements from live_db with a hard-to-miss LIVE prefix + desktop toast, from the notifier path (never the trading loop).",
+      "_live_note": "Watchdog + notification wiring for the module's LIVE loop (the module itself owns arming/trading; this block only tells the orchestrator how to WATCH it). task_name is the module's self-registered live task; the loop self-disarms at the module's live.disarm_time (arming is per-day) and disarm_time/disarm_grace_minutes here are the watchdog's BACKSTOP window — past it, a still-registered live task means self-disarm failed, so the watchdog sets the suite halt flag (risk-reducing only; it never touches the task) and raises CRITICAL. notify_trades pushes live entries/completions/settlements from live_db with a hard-to-miss LIVE prefix + desktop toast, from the notifier path (never the trading loop).",
       "live": {
         "task_name": "cherrypick-flies-live-loop",
         "status_argv": [
@@ -109,7 +105,7 @@
         "settlement_grace_minutes": 30
       },
       "paper": {
-        "_kind_note": "self_healing, NOT cherrypick_scheduled. This was cherrypick_scheduled, which registers one entry task at entry_time and one exit task at exit_time \u2014 a shape that fits Earnings (one entry, one exit per day) and is wrong for a legged 0DTE strategy. A single daily entry would open a credit spread at noon and never look at it again, so the completing spread could never be bought and the completion rate \u2014 the module's headline measurement \u2014 would read 0% every day for reasons that have nothing to do with the market. cherrypick_scheduled also hardcodes the earnings launcher verbs, so this module's own entry_argv would have been ignored entirely.",
+        "_kind_note": "self_healing, NOT cherrypick_scheduled. This was cherrypick_scheduled, which registers one entry task at entry_time and one exit task at exit_time — a shape that fits Earnings (one entry, one exit per day) and is wrong for a legged 0DTE strategy. A single daily entry would open a credit spread at noon and never look at it again, so the completing spread could never be bought and the completion rate — the module's headline measurement — would read 0% every day for reasons that have nothing to do with the market. cherrypick_scheduled also hardcodes the earnings launcher verbs, so this module's own entry_argv would have been ignored entirely.",
         "kind": "self_healing",
         "task_name": "cherrypick-flies-paper-loop",
         "_timing_note": "tick_interval_seconds is the supervisor cadence. Sub-minute (<60) runs the module's own resident `--interval N` loop IN-SESSION (the resident_start/resident_end window below, supervised: restarted on death and on silence_seconds of log silence) plus a 60s `--once` spawn job OUTSIDE that window, so settlement at 16:20, retry-until-settled, and the hourly idle heartbeat keep exactly the shape the 1-minute task gave them. 15s (2026-08-09 supervisor cutover, was 60 -- the OS scheduler's floor) samples transient completion-debit dips ~4x finer; the completion rate is NOT comparable across that date (any discrete poll understates what a resting limit order would catch, so faster polling measures a truer, higher rate). The change is journaled in the module's decision journal and its CLAUDE.md. `task_name` is the only legacy-schtasks key still read, for deleting the pre-cutover task by name.",
@@ -223,8 +219,16 @@
         "silence_seconds": 240,
         "resident_start": "09:30",
         "resident_end": "16:00",
-        "status_argv": ["-m", "cherrypick.curve.paper_loop", "--status"],
-        "once_argv": ["-m", "cherrypick.curve.paper_loop", "--once"],
+        "status_argv": [
+          "-m",
+          "cherrypick.curve.paper_loop",
+          "--status"
+        ],
+        "once_argv": [
+          "-m",
+          "cherrypick.curve.paper_loop",
+          "--once"
+        ],
         "paper_db": "~/.cherrypick/data/curve/paper_trades.db",
         "notify_trades": true,
         "trade_schema": "curve_vx",
@@ -351,7 +355,7 @@
   },
   "settings_header": "x",
   "settings": {
-    "_comment": "`cherrypick settings` \u2014 the local web editor for the suite's config files and keyring secrets. The suite's ONE mutating HTTP surface: loopback-only + per-session-token gated, run on demand in the foreground, never started by the watchdog or a scheduled task, and live-trading gate fields are read-only on it. Port 8804 is a fixed loopback slot, held over from the retired 88xx dashboard-embed range (those per-module dashboards were deleted at the 2026-08-12 console cutover; the console serves 5070).",
+    "_comment": "`cherrypick settings` — the local web editor for the suite's config files and keyring secrets. The suite's ONE mutating HTTP surface: loopback-only + per-session-token gated, run on demand in the foreground, never started by the watchdog or a scheduled task, and live-trading gate fields are read-only on it. Port 8804 is a fixed loopback slot, held over from the retired 88xx dashboard-embed range (those per-module dashboards were deleted at the 2026-08-12 console cutover; the console serves 5070).",
     "serve": {
       "host": "127.0.0.1",
       "port": 8804
@@ -359,7 +363,7 @@
   },
   "streamer_header": "x",
   "streamer": {
-    "_comment": "The suite's standalone market-data producer (packages/streamer) \u2014 the single streamer that writes the shared cache ~/.cherrypick/data/marketdata/stream_cache.db, which every module reads. THE sole producer since the 2026-07-21 cutover (modules.meic.streamer is the disabled rollback path; exactly ONE producer runs at a time). Session-gated and silence-restarted by the watchdog. Located by 'path' (relative to this file). Modules declare which symbols they need via ~/.cherrypick/state/stream_requests/<module>.json \u2014 every module regenerates its own file on each run \u2014 and the streamer streams the union.",
+    "_comment": "The suite's standalone market-data producer (packages/streamer) — the single streamer that writes the shared cache ~/.cherrypick/data/marketdata/stream_cache.db, which every module reads. THE sole producer since the 2026-07-21 cutover (modules.meic.streamer is the disabled rollback path; exactly ONE producer runs at a time). Session-gated and silence-restarted by the watchdog. Located by 'path' (relative to this file). Modules declare which symbols they need via ~/.cherrypick/state/stream_requests/<module>.json — every module regenerates its own file on each run — and the streamer streams the union.",
     "enabled": true,
     "path": "../streamer",
     "status_argv": [
@@ -399,7 +403,7 @@
       "auto_restart": true
     },
     {
-      "_comment": "MEIC's post-cutover sidecar: the REST account poller + the 127.0.0.1:7699 HTTP API ONLY, no DXLink streaming (the standalone `streamer` above is the market-data producer). It serves the shared cache read-only and caches account/positions/market-overview into MEIC's own rest_cache.db, so MEIC's interactive loop keeps its REST/quote fast-path without a second writer on the shared cache. Optional and OFF by default \u2014 MEIC works without it (quotes read the cache directly; account calls just go live). Enable it if you run MEIC's live/interactive loop and want the cached fast-path back.",
+      "_comment": "MEIC's post-cutover sidecar: the REST account poller + the 127.0.0.1:7699 HTTP API ONLY, no DXLink streaming (the standalone `streamer` above is the market-data producer). It serves the shared cache read-only and caches account/positions/market-overview into MEIC's own rest_cache.db, so MEIC's interactive loop keeps its REST/quote fast-path without a second writer on the shared cache. Optional and OFF by default — MEIC works without it (quotes read the cache directly; account calls just go live). Enable it if you run MEIC's live/interactive loop and want the cached fast-path back.",
       "id": "meic-sidecar",
       "enabled": false,
       "path": "../meic",
@@ -445,7 +449,6 @@
     "account_number": null,
     "_account_number_note": "Which account to resolve for order-status lookups. null uses the default account for those credentials."
   },
-
   "notify": {
     "_channels_note": "push channels: 'log' (always on, the floor), 'desktop', 'slack', 'discord'. Slack/Discord webhook URLs live in the OS keyring (cherrypick secrets-set --channel slack|discord), never in this file or env vars.",
     "channels": [

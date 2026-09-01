@@ -33,7 +33,9 @@ def db(tmp_path):
            net_gex REAL, net_gex_vol REAL, zero_gamma REAL, call_wall REAL, put_wall REAL,
            expiration TEXT)"""
     )
-    conn.execute("CREATE TABLE daily_closes (symbol TEXT, trade_date TEXT, close REAL, recorded_at REAL, source TEXT)")
+    conn.execute(
+        "CREATE TABLE daily_closes (symbol TEXT, trade_date TEXT, close REAL, recorded_at REAL, source TEXT)"
+    )
 
     def row(day, hhmm, spot, net, flip, cw, pw, *, stamp_day=None):
         conn.execute(

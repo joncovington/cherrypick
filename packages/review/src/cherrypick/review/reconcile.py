@@ -86,8 +86,13 @@ def check_session(session: str, facts: dict | None = None) -> dict:
                 continue
             if abs(float(a) - float(b)) > TOLERANCE:
                 mismatches.append(
-                    {"module": module, "field": field, "fact_set": a, "ledger": b,
-                     "delta": round(float(a) - float(b), 2)}
+                    {
+                        "module": module,
+                        "field": field,
+                        "fact_set": a,
+                        "ledger": b,
+                        "delta": round(float(a) - float(b), 2),
+                    }
                 )
     return {"session": session, "ok": not mismatches, "mismatches": mismatches}
 

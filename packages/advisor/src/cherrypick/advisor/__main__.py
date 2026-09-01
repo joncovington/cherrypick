@@ -43,13 +43,15 @@ def cmd_init_db(args) -> dict[str, Any]:
     conn = _store.connect()
     tables = [
         r["name"]
-        for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
-        ).fetchall()
+        for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").fetchall()
     ]
     conn.close()
-    return {"ok": True, "db": str(_paths.db_path()), "tables": tables,
-            "schema_version": _store.SCHEMA_VERSION}
+    return {
+        "ok": True,
+        "db": str(_paths.db_path()),
+        "tables": tables,
+        "schema_version": _store.SCHEMA_VERSION,
+    }
 
 
 def cmd_factpack(args) -> dict[str, Any]:
@@ -88,13 +90,25 @@ def cmd_admit(args) -> dict[str, Any]:
         try:
             reply = _proposals.parse(raw)
         except _proposals.ParseError as exc:
-            _store.record_checkpoint(conn, session=session, slot=args.slot, model=args.model,
-                                     ok=False, error=str(exc), raw_path=args.raw)
+            _store.record_checkpoint(
+                conn,
+                session=session,
+                slot=args.slot,
+                model=args.model,
+                ok=False,
+                error=str(exc),
+                raw_path=args.raw,
+            )
             return {"ok": False, "session": session, "slot": args.slot, "error": str(exc)}
 
         return _experiments.admit_reply(
-            conn, session=session, slot=args.slot, reply=reply, model=args.model,
-            pack_path=str(_paths.pack_path(session, args.slot)), raw_path=args.raw,
+            conn,
+            session=session,
+            slot=args.slot,
+            reply=reply,
+            model=args.model,
+            pack_path=str(_paths.pack_path(session, args.slot)),
+            raw_path=args.raw,
         )
     finally:
         conn.close()
@@ -147,8 +161,7 @@ def cmd_verdicts(args) -> dict[str, Any]:
 def cmd_kill(args) -> dict[str, Any]:
     conn = _store.connect()
     try:
-        return _experiments.kill(conn, args.experiment_id, session=_clock.session_today(),
-                                 reason=args.reason)
+        return _experiments.kill(conn, args.experiment_id, session=_clock.session_today(), reason=args.reason)
     finally:
         conn.close()
 
@@ -220,12 +233,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_enact.set_defaults(func=cmd_enact)
 
     p_recount = sub.add_parser(
-        "recount", help="re-derive sessions_run from what the loops recorded (read-only by default)")
+        "recount", help="re-derive sessions_run from what the loops recorded (read-only by default)"
+    )
     p_recount.add_argument("--apply", action="store_true", help="write the corrected counts")
     p_recount.set_defaults(func=cmd_recount)
 
-    p_enacted = sub.add_parser(
-        "enactment", help="did each module apply the artifact issued for a session?")
+    p_enacted = sub.add_parser("enactment", help="did each module apply the artifact issued for a session?")
     p_enacted.add_argument("--session", help="ISO date; defaults to today (ET)")
     p_enacted.set_defaults(func=cmd_enactment)
 
@@ -235,8 +248,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_kill = sub.add_parser("kill", help="stop an experiment tonight")
     p_kill.add_argument("experiment_id")
-    p_kill.add_argument("--reason", default="killed by user",
-                        help="journaled with the kill — a retired stream keeps its written verdict")
+    p_kill.add_argument(
+        "--reason",
+        default="killed by user",
+        help="journaled with the kill — a retired stream keeps its written verdict",
+    )
     p_kill.set_defaults(func=cmd_kill)
 
     p_dismiss = sub.add_parser("dismiss", help="mark a proposal dismissed by the user")

@@ -99,9 +99,7 @@ class LedgerStore:
         re-writes the same position rather than duplicating it."""
         row = {**row, "updated_at": self.now()}
         where = " AND ".join(f"{k} = ?" for k in keys)
-        existing = conn.execute(
-            f"SELECT id FROM {table} WHERE {where}", [row[k] for k in keys]
-        ).fetchone()
+        existing = conn.execute(f"SELECT id FROM {table} WHERE {where}", [row[k] for k in keys]).fetchone()
         if existing is None:
             row.setdefault("created_at", self.now())
             cols = ", ".join(row)
@@ -168,9 +166,7 @@ class LedgerStore:
         except Exception:  # noqa: BLE001, S110
             pass
 
-    def record_decision(
-        self, conn, *, trade_date, book, symbol, mode, reason, accepted, detail=None
-    ) -> None:
+    def record_decision(self, conn, *, trade_date, book, symbol, mode, reason, accepted, detail=None) -> None:
         """Collapsing journal write: a run of identical (date, book, symbol, mode, reason) rows
         becomes one row with a count."""
         table = self.table("decisions")
@@ -216,15 +212,12 @@ class LedgerStore:
 
     # ----------------------------------------------------------------- readers
 
-    def open_positions(
-        self, conn, statuses: tuple[str, ...] = ("open", "short_settled")
-    ) -> list[dict]:
+    def open_positions(self, conn, statuses: tuple[str, ...] = ("open", "short_settled")) -> list[dict]:
         marks = ", ".join("?" for _ in statuses)
         return [
             dict(r)
             for r in conn.execute(
-                f"SELECT * FROM {self.table('positions')} WHERE status IN ({marks}) "
-                "ORDER BY position_id",
+                f"SELECT * FROM {self.table('positions')} WHERE status IN ({marks}) ORDER BY position_id",
                 list(statuses),
             )
         ]
@@ -272,10 +265,7 @@ class LedgerStore:
         if before_session is not None:
             sql += " AND a.assigned_session < ?"
             args.append(before_session)
-        return [
-            dict(r)
-            for r in conn.execute(sql + " ORDER BY a.assigned_session, a.position_id", args)
-        ]
+        return [dict(r) for r in conn.execute(sql + " ORDER BY a.assigned_session, a.position_id", args)]
 
     def assignments_for(self, conn, position_id: str) -> list[dict]:
         return [
@@ -289,8 +279,7 @@ class LedgerStore:
     def open_assignment_count(self, conn, position_id: str) -> int:
         return int(
             conn.execute(
-                f"SELECT COUNT(*) FROM {self.table('assignments')} "
-                "WHERE position_id = ? AND status = 'open'",
+                f"SELECT COUNT(*) FROM {self.table('assignments')} WHERE position_id = ? AND status = 'open'",
                 (position_id,),
             ).fetchone()[0]
         )

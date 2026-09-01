@@ -47,14 +47,12 @@ GUARDED: dict[str, dict[str, str]] = {
     },
     "calendars": {
         "/live/enabled": (
-            "placeholder — no live loop exists yet; "
-            "see the module CLAUDE.md's live-trading prerequisites"
+            "placeholder — no live loop exists yet; see the module CLAUDE.md's live-trading prerequisites"
         ),
     },
     "pmcc": {
         "/live/enabled": (
-            "placeholder — no live loop exists yet; "
-            "see the module CLAUDE.md's live-trading prerequisites"
+            "placeholder — no live loop exists yet; see the module CLAUDE.md's live-trading prerequisites"
         ),
     },
 }

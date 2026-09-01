@@ -284,9 +284,9 @@ def set_proposal_status(
 
 def next_experiment_id(conn: sqlite3.Connection, session: str, module: str) -> str:
     prefix = f"exp-{session}-{module}-"
-    taken = conn.execute(
-        "SELECT COUNT(*) AS n FROM experiments WHERE id LIKE ?", (prefix + "%",)
-    ).fetchone()["n"]
+    taken = conn.execute("SELECT COUNT(*) AS n FROM experiments WHERE id LIKE ?", (prefix + "%",)).fetchone()[
+        "n"
+    ]
     return f"{prefix}{int(taken) + 1}"
 
 
@@ -372,9 +372,7 @@ def journal(
     conn.commit()
 
 
-def has_journal_event(
-    conn: sqlite3.Connection, experiment_id: str, event: str, *, session: str
-) -> bool:
+def has_journal_event(conn: sqlite3.Connection, experiment_id: str, event: str, *, session: str) -> bool:
     """Has this experiment already been journaled with `event` for `session`?
 
     The idempotence check behind the enactment counter. The evening pass is re-runnable by design --

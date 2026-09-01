@@ -129,16 +129,20 @@ def test_the_render_leads_with_what_needs_attention(store):
 def test_a_stopped_loop_is_called_out_not_read_as_a_quiet_day(store):
     facts.write(
         {
-            "session": "2026-08-12", "status": "final", "fact_version": 2,
-            "modules": {"meic": {
-                "ok": True,
-                "results": {"closed": 0, "net": 0.0, "wins": 0, "gross": 0, "cost": 0},
-                "return": {"capital_at_risk": None, "on_max_risk": None},
-                "carried_overnight": {"positions": 0, "capital_at_risk": None},
-                "expected_vs_observed": {"basis": "x", "expected": None, "observed": None},
-                "health": {"loop_ticked": False},
-                "sample": {"n": 0, "effective_n": 0, "breaks": [], "suspected_break": None},
-            }},
+            "session": "2026-08-12",
+            "status": "final",
+            "fact_version": 2,
+            "modules": {
+                "meic": {
+                    "ok": True,
+                    "results": {"closed": 0, "net": 0.0, "wins": 0, "gross": 0, "cost": 0},
+                    "return": {"capital_at_risk": None, "on_max_risk": None},
+                    "carried_overnight": {"positions": 0, "capital_at_risk": None},
+                    "expected_vs_observed": {"basis": "x", "expected": None, "observed": None},
+                    "health": {"loop_ticked": False},
+                    "sample": {"n": 0, "effective_n": 0, "breaks": [], "suspected_break": None},
+                }
+            },
         }
     )
     assert "a stopped loop, not a quiet day" in render.render("2026-08-12")
@@ -147,16 +151,20 @@ def test_a_stopped_loop_is_called_out_not_read_as_a_quiet_day(store):
 def test_unmeasured_values_render_as_a_dash_never_as_zero_or_none(store):
     facts.write(
         {
-            "session": "2026-08-12", "status": "final", "fact_version": 2,
-            "modules": {"flies": {
-                "ok": True,
-                "results": {"closed": 3, "net": 10.0, "wins": 2, "gross": 10.0, "cost": 0},
-                "return": {"capital_at_risk": None, "on_max_risk": None},
-                "carried_overnight": {"positions": 0, "capital_at_risk": None},
-                "expected_vs_observed": {"basis": "modeled_pnl", "expected": None, "observed": 10.0},
-                "health": {"loop_ticked": True},
-                "sample": {"n": 3, "effective_n": 1, "breaks": [], "suspected_break": None},
-            }},
+            "session": "2026-08-12",
+            "status": "final",
+            "fact_version": 2,
+            "modules": {
+                "flies": {
+                    "ok": True,
+                    "results": {"closed": 3, "net": 10.0, "wins": 2, "gross": 10.0, "cost": 0},
+                    "return": {"capital_at_risk": None, "on_max_risk": None},
+                    "carried_overnight": {"positions": 0, "capital_at_risk": None},
+                    "expected_vs_observed": {"basis": "modeled_pnl", "expected": None, "observed": 10.0},
+                    "health": {"loop_ticked": True},
+                    "sample": {"n": 3, "effective_n": 1, "breaks": [], "suspected_break": None},
+                }
+            },
         }
     )
     out = render.render("2026-08-12")
@@ -197,29 +205,38 @@ def _arm_session(session, arms: dict[str, tuple[int, float, int]], module="meic"
     """arms: {name: (closed, net, wins)}"""
     facts.write(
         {
-            "session": session, "status": "final", "fact_version": facts.FACT_VERSION,
-            "modules": {module: {
-                "ok": True,
-                "results": {
-                    "closed": sum(a[0] for a in arms.values()),
-                    "net": sum(a[1] for a in arms.values()),
-                    "wins": sum(a[2] for a in arms.values()),
-                    "gross": 0, "cost": 0,
-                },
-                "return": {"capital_at_risk": None, "on_max_risk": None},
-                "carried_overnight": {"positions": 0, "capital_at_risk": None},
-                "expected_vs_observed": {"basis": "x", "expected": None, "observed": None},
-                "health": {"loop_ticked": True},
-                "sample": {"n": 0, "effective_n": 1, "breaks": breaks, "suspected_break": None},
-                "by_profile": {
-                    name: {
-                        "closed": c, "net": n, "wins": w, "gross": n, "cost": 0,
-                        "return": {"capital_at_risk": None, "on_max_risk": None},
-                        "sample": {"n": c, "effective_n": 1},
-                    }
-                    for name, (c, n, w) in arms.items()
-                },
-            }},
+            "session": session,
+            "status": "final",
+            "fact_version": facts.FACT_VERSION,
+            "modules": {
+                module: {
+                    "ok": True,
+                    "results": {
+                        "closed": sum(a[0] for a in arms.values()),
+                        "net": sum(a[1] for a in arms.values()),
+                        "wins": sum(a[2] for a in arms.values()),
+                        "gross": 0,
+                        "cost": 0,
+                    },
+                    "return": {"capital_at_risk": None, "on_max_risk": None},
+                    "carried_overnight": {"positions": 0, "capital_at_risk": None},
+                    "expected_vs_observed": {"basis": "x", "expected": None, "observed": None},
+                    "health": {"loop_ticked": True},
+                    "sample": {"n": 0, "effective_n": 1, "breaks": breaks, "suspected_break": None},
+                    "by_profile": {
+                        name: {
+                            "closed": c,
+                            "net": n,
+                            "wins": w,
+                            "gross": n,
+                            "cost": 0,
+                            "return": {"capital_at_risk": None, "on_max_risk": None},
+                            "sample": {"n": c, "effective_n": 1},
+                        }
+                        for name, (c, n, w) in arms.items()
+                    },
+                }
+            },
         }
     )
 
@@ -287,24 +304,38 @@ def test_the_render_calls_out_arms_that_shared_a_centring_rule(store):
     reader has to be told which."""
     facts.write(
         {
-            "session": "2026-08-12", "status": "final", "fact_version": 4,
-            "modules": {"flies": {
-                "ok": True,
-                "results": {"closed": 8, "net": 20.0, "wins": 8, "gross": 20.0, "cost": 0},
-                "return": {"capital_at_risk": None, "on_max_risk": None},
-                "carried_overnight": {"positions": 0, "capital_at_risk": None},
-                "expected_vs_observed": {"basis": "modeled_pnl", "expected": None, "observed": 20.0},
-                "health": {"loop_ticked": True},
-                "sample": {"n": 8, "effective_n": 1, "breaks": [], "suspected_break": None},
-                "by_profile": {
-                    "control": {"closed": 4, "net": 10.0, "wins": 4, "centred_by": "atm",
-                                "return": {"capital_at_risk": None, "on_max_risk": None},
-                                "sample": {"n": 4, "effective_n": 1}},
-                    "gex-intrinsic": {"closed": 4, "net": 10.0, "wins": 4, "centred_by": "atm",
-                                      "return": {"capital_at_risk": None, "on_max_risk": None},
-                                      "sample": {"n": 4, "effective_n": 1}},
-                },
-            }},
+            "session": "2026-08-12",
+            "status": "final",
+            "fact_version": 4,
+            "modules": {
+                "flies": {
+                    "ok": True,
+                    "results": {"closed": 8, "net": 20.0, "wins": 8, "gross": 20.0, "cost": 0},
+                    "return": {"capital_at_risk": None, "on_max_risk": None},
+                    "carried_overnight": {"positions": 0, "capital_at_risk": None},
+                    "expected_vs_observed": {"basis": "modeled_pnl", "expected": None, "observed": 20.0},
+                    "health": {"loop_ticked": True},
+                    "sample": {"n": 8, "effective_n": 1, "breaks": [], "suspected_break": None},
+                    "by_profile": {
+                        "control": {
+                            "closed": 4,
+                            "net": 10.0,
+                            "wins": 4,
+                            "centred_by": "atm",
+                            "return": {"capital_at_risk": None, "on_max_risk": None},
+                            "sample": {"n": 4, "effective_n": 1},
+                        },
+                        "gex-intrinsic": {
+                            "closed": 4,
+                            "net": 10.0,
+                            "wins": 4,
+                            "centred_by": "atm",
+                            "return": {"capital_at_risk": None, "on_max_risk": None},
+                            "sample": {"n": 4, "effective_n": 1},
+                        },
+                    },
+                }
+            },
         }
     )
     out = render.render("2026-08-12")

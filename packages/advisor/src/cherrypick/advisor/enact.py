@@ -46,8 +46,9 @@ from cherrypick.advisor import store as _store
 ADVISOR_TAG = "cherrypick.advisor/enact-v1"
 
 
-def run(conn, session: str, *, modules: tuple[str, ...] | list[str] | None = None,
-        cfg: dict | None = None) -> dict[str, Any]:
+def run(
+    conn, session: str, *, modules: tuple[str, ...] | list[str] | None = None, cfg: dict | None = None
+) -> dict[str, Any]:
     """Conclude what is due, then issue for what remains. Returns one summary per module."""
     target = _clock.next_session(session)
     resolved = _settings.load(cfg)
@@ -59,13 +60,24 @@ def run(conn, session: str, *, modules: tuple[str, ...] | list[str] | None = Non
     issued: list[dict[str, Any]] = []
     for module in selected:
         if not _settings.module_enabled(module, resolved):
-            issued.append({"module": module, "written": False,
-                           "reason": f"module_advice_disabled: advisor.modules.{module} is off"})
+            issued.append(
+                {
+                    "module": module,
+                    "written": False,
+                    "reason": f"module_advice_disabled: advisor.modules.{module} is off",
+                }
+            )
             continue
         issued.append(_issue(conn, module=module, session=session, target=target))
 
-    return {"ok": True, "session": session, "target_session": target,
-            "counted": counted, "concluded": concluded, "enacted": issued}
+    return {
+        "ok": True,
+        "session": session,
+        "target_session": target,
+        "counted": counted,
+        "concluded": concluded,
+        "enacted": issued,
+    }
 
 
 def _count_enacted(conn, session: str, modules: tuple[str, ...] | list[str]) -> list[dict[str, Any]]:
@@ -100,19 +112,31 @@ def _count_enacted(conn, session: str, modules: tuple[str, ...] | list[str]) -> 
 
         enacted = outcome["status"] == _enactment.ENACTED
         if enacted:
-            _store.update_experiment(conn, experiment_id,
-                                     sessions_run=experiment["sessions_run"] + 1)
-        _store.journal(conn, experiment_id, "counted", session=session, detail={
-            "enacted": enacted,
-            "status": outcome["status"],
-            "detail": outcome["detail"],
-            "artifact_params": outcome["artifact_params"],
-            "decision_params": outcome["decision_params"],
-            "decision_reason": outcome["decision_reason"],
-            "sessions_run": experiment["sessions_run"] + (1 if enacted else 0),
-        })
-        scored.append({"module": module, "experiment_id": experiment_id,
-                       "session": session, "enacted": enacted, "detail": outcome["detail"]})
+            _store.update_experiment(conn, experiment_id, sessions_run=experiment["sessions_run"] + 1)
+        _store.journal(
+            conn,
+            experiment_id,
+            "counted",
+            session=session,
+            detail={
+                "enacted": enacted,
+                "status": outcome["status"],
+                "detail": outcome["detail"],
+                "artifact_params": outcome["artifact_params"],
+                "decision_params": outcome["decision_params"],
+                "decision_reason": outcome["decision_reason"],
+                "sessions_run": experiment["sessions_run"] + (1 if enacted else 0),
+            },
+        )
+        scored.append(
+            {
+                "module": module,
+                "experiment_id": experiment_id,
+                "session": session,
+                "enacted": enacted,
+                "detail": outcome["detail"],
+            }
+        )
     return scored
 
 
@@ -128,8 +152,13 @@ def _issue(conn, *, module: str, session: str, target: str) -> dict[str, Any]:
         # an absent artifact is the loop's baseline, which is exactly the intended behavior — and
         # the reason is recorded against the experiment so the gap in its sample is explained.
         for experiment in active:
-            _store.journal(conn, experiment["id"], "enacted", session=session,
-                           detail={"target": target, "written": False, "reason": posture["reason"]})
+            _store.journal(
+                conn,
+                experiment["id"],
+                "enacted",
+                session=session,
+                detail={"target": target, "written": False, "reason": posture["reason"]},
+            )
         return {"module": module, "written": False, "reason": posture["reason"]}
 
     # Structurally one per module: each consumer builds exactly one advised book from the artifact.
@@ -166,10 +195,20 @@ def _issue(conn, *, module: str, session: str, target: str) -> dict[str, Any]:
     # A rejection still costs a session: an artifact that reached the loop and was refused by the
     # bounds is a real outcome, and counting only admissions would let a bounds change silently
     # extend an experiment past the length a human agreed to.
-    _store.journal(conn, experiment["id"], "enacted", session=session, detail={
-        "target": target, "written": True, "admitted": len(checked["proposals"]),
-        "rejected": checked["rejected"], "reason": checked["reason"], "path": str(path),
-    })
+    _store.journal(
+        conn,
+        experiment["id"],
+        "enacted",
+        session=session,
+        detail={
+            "target": target,
+            "written": True,
+            "admitted": len(checked["proposals"]),
+            "rejected": checked["rejected"],
+            "reason": checked["reason"],
+            "path": str(path),
+        },
+    )
 
     return {
         "module": module,

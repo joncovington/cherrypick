@@ -96,9 +96,7 @@ class _FakeStore:
 
 def test_prompt_and_store_writes_what_was_entered():
     store = _FakeStore()
-    written = prompt_and_store(
-        store, ["client_secret", "refresh_token"], prompt_fn=lambda _p: "abc"
-    )
+    written = prompt_and_store(store, ["client_secret", "refresh_token"], prompt_fn=lambda _p: "abc")
     assert written == ["client_secret", "refresh_token"]
     assert store.values == {"client_secret": "abc", "refresh_token": "abc"}
 

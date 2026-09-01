@@ -14,6 +14,7 @@ from cherrypick.core import advice
 def _raise_oserror(*_args, **_kwargs):
     raise OSError("disk full")
 
+
 BOUNDS = {
     "stop_trigger_ratio": {"min": 0.85, "max": 0.95},
     "daily_ic_trade_target": {"min": 0, "max": 3},
@@ -136,6 +137,7 @@ def test_load_corrupt_file_is_baseline(tmp_path):
 
 # --------------------------------------------------------------------------- session_decision
 
+
 def _publish(state_dir, module, value, session="2026-08-20"):
     """An artifact on disk for `module`, the way the advisor writes one."""
     advice.write(
@@ -160,15 +162,17 @@ def test_session_decision_is_derived_once_and_replayed(tmp_path):
     bounds = {"stop": {"min": 0.5, "max": 1.5}}
     _publish(state, "flies", 1.0)
 
-    first = advice.session_decision(state, "flies", "2026-08-20", _cfg(enabled=True, bounds=bounds),
-                                    path, base_key="base_arm")
+    first = advice.session_decision(
+        state, "flies", "2026-08-20", _cfg(enabled=True, bounds=bounds), path, base_key="base_arm"
+    )
     assert first["params"] == {"stop": 1.0}
     assert first["base_arm"] == "control"
 
     # The artifact is replaced mid-session; the decision must not move.
     _publish(state, "flies", 1.4)
-    again = advice.session_decision(state, "flies", "2026-08-20", _cfg(enabled=True, bounds=bounds),
-                                    path, base_key="base_arm")
+    again = advice.session_decision(
+        state, "flies", "2026-08-20", _cfg(enabled=True, bounds=bounds), path, base_key="base_arm"
+    )
     assert again["params"] == {"stop": 1.0}, "advice changed mid-session"
 
 
@@ -211,8 +215,9 @@ def test_a_baseline_decision_is_never_made_sticky(tmp_path):
     assert early["params"] is None
     assert not path.exists(), "a baseline decision must not be recorded"
 
-    later = advice.session_decision(state, "flies", "2026-08-20", _cfg(enabled=True, bounds=bounds),
-                                    path, base_key="base_arm")
+    later = advice.session_decision(
+        state, "flies", "2026-08-20", _cfg(enabled=True, bounds=bounds), path, base_key="base_arm"
+    )
     assert later["params"] == {"stop": 1.0}, "the baseline decision blocked a valid artifact"
 
 
@@ -223,8 +228,15 @@ def test_persist_false_derives_without_fixing_the_day(tmp_path):
     bounds = {"stop": {"min": 0.5, "max": 1.5}}
     _publish(state, "flies", 1.0)
 
-    d = advice.session_decision(state, "flies", "2026-08-20", _cfg(enabled=True, bounds=bounds),
-                                path, base_key="base_arm", persist=False)
+    d = advice.session_decision(
+        state,
+        "flies",
+        "2026-08-20",
+        _cfg(enabled=True, bounds=bounds),
+        path,
+        base_key="base_arm",
+        persist=False,
+    )
     assert d["params"] == {"stop": 1.0}
     assert not path.exists()
 
@@ -234,9 +246,14 @@ def test_a_recorded_decision_carries_when_it_was_derived(tmp_path):
     the advisor reads this file and cannot stat it."""
     state, path = tmp_path / "state", tmp_path / "advice_active.json"
     _publish(state, "flies", 1.0)
-    d = advice.session_decision(state, "flies", "2026-08-20",
-                                _cfg(enabled=True, bounds={"stop": {"min": 0.5, "max": 1.5}}),
-                                path, base_key="base_arm")
+    d = advice.session_decision(
+        state,
+        "flies",
+        "2026-08-20",
+        _cfg(enabled=True, bounds={"stop": {"min": 0.5, "max": 1.5}}),
+        path,
+        base_key="base_arm",
+    )
     assert d["derived_at"].startswith("20")
 
 
@@ -244,10 +261,12 @@ def test_session_decision_carries_the_modules_own_base_key(tmp_path):
     """flies calls its books arms; calendars and pmcc call them books. The key is persisted and read
     by each module's loop, so it stays theirs rather than being normalised here."""
     state = tmp_path / "state"
-    fl = advice.session_decision(state, "flies", "2026-08-20", _cfg(base_arm="width-5"),
-                                 tmp_path / "f.json", base_key="base_arm")
-    cal = advice.session_decision(state, "calendars", "2026-08-20", _cfg(base_book="path"),
-                                  tmp_path / "c.json")
+    fl = advice.session_decision(
+        state, "flies", "2026-08-20", _cfg(base_arm="width-5"), tmp_path / "f.json", base_key="base_arm"
+    )
+    cal = advice.session_decision(
+        state, "calendars", "2026-08-20", _cfg(base_book="path"), tmp_path / "c.json"
+    )
     assert fl["base_arm"] == "width-5" and "base_book" not in fl
     assert cal["base_book"] == "path" and "base_arm" not in cal
 
@@ -257,9 +276,13 @@ def test_session_decision_survives_an_unwritable_path(tmp_path, monkeypatch):
     state = tmp_path / "state"
     _publish(state, "pmcc", 1.0)
     monkeypatch.setattr(Path, "write_text", _raise_oserror)
-    d = advice.session_decision(state, "pmcc", "2026-08-20",
-                                _cfg(enabled=True, bounds={"stop": {"min": 0.5, "max": 1.5}}),
-                                tmp_path / "d.json")
+    d = advice.session_decision(
+        state,
+        "pmcc",
+        "2026-08-20",
+        _cfg(enabled=True, bounds={"stop": {"min": 0.5, "max": 1.5}}),
+        tmp_path / "d.json",
+    )
     assert d["params"] == {"stop": 1.0}
 
 

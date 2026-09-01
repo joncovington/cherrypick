@@ -1246,14 +1246,36 @@ def test_by_regime_reports_sessions_per_bucket(conn):
 # --------------------------------------------------------------------------- band placement
 
 
-def _band_book(conn, day, arm, band_low, band_high, floor_holds, *, symbol="SPX", settle=None,
-          status="settled", book_id=None):
+def _band_book(
+    conn,
+    day,
+    arm,
+    band_low,
+    band_high,
+    floor_holds,
+    *,
+    symbol="SPX",
+    settle=None,
+    status="settled",
+    book_id=None,
+):
     conn.execute(
         "INSERT INTO fly_books (book_id, trade_date, arm, symbol, band_low, band_high,"
         " floor_holds, unbounded_below, worst, settlement_price, status, created_at, updated_at)"
         " VALUES (?,?,?,?,?,?,?,?,?,?,?,'x','x')",
-        (book_id or f"{symbol}:{arm}:{day}", day, arm, symbol, band_low, band_high,
-         1 if floor_holds else 0, 0 if floor_holds else 1, 0.0, settle, status),
+        (
+            book_id or f"{symbol}:{arm}:{day}",
+            day,
+            arm,
+            symbol,
+            band_low,
+            band_high,
+            1 if floor_holds else 0,
+            0 if floor_holds else 1,
+            0.0,
+            settle,
+            status,
+        ),
     )
     conn.commit()
 
@@ -1305,9 +1327,7 @@ def test_margins_are_normalized_by_the_range_and_by_the_expected_move(conn):
     assert row["binding_margin_range_frac"] == pytest.approx(20.06 / 37.05, abs=0.001)
     # centre 7685 x 10.07% / sqrt(252)
     assert row["expected_move"] == pytest.approx(7685 * 0.1007 / (252**0.5), abs=0.01)
-    assert row["binding_margin_expected_moves"] == pytest.approx(
-        20.06 / row["expected_move"], abs=0.001
-    )
+    assert row["binding_margin_expected_moves"] == pytest.approx(20.06 / row["expected_move"], abs=0.001)
 
 
 def test_a_book_is_scored_against_its_own_symbols_range(conn):
@@ -1328,7 +1348,7 @@ def test_a_book_is_scored_against_its_own_symbols_range(conn):
 
 
 def test_a_session_with_no_recorded_range_yields_nulls_not_a_dropped_row(conn):
-    """"The range was not recorded" and "the band was badly placed" are different facts."""
+    """ "The range was not recorded" and "the band was badly placed" are different facts."""
     _band_book(conn, "2026-07-29", "control", 7600.0, 7700.0, True, settle=7650.0)
 
     rows = analytics.band_placement(conn, {})
@@ -1370,6 +1390,8 @@ def test_the_classifier_reports_which_edge_bound(conn):
     _band_book(conn, "2026-08-21", "control", 7640.0, 7730.0, True, settle=7674.3)
     _band_book(conn, "2026-08-21", "advised:control", 7615.0, 7697.0, False, settle=7674.3)
 
-    counts = analytics.band_placement_classifier(analytics.band_placement(conn, _AUG21))["binding_edge_counts"]
+    counts = analytics.band_placement_classifier(analytics.band_placement(conn, _AUG21))[
+        "binding_edge_counts"
+    ]
 
     assert counts == {"low": 1, "high": 1}

@@ -74,7 +74,9 @@ def wired(tmp_path, monkeypatch):
     return tmp_path
 
 
-def open_trade(order_id="T1", credit=5.00, opened_at=None, expiration="2026-08-21", profile="strat_test:iron_fly"):
+def open_trade(
+    order_id="T1", credit=5.00, opened_at=None, expiration="2026-08-21", profile="strat_test:iron_fly"
+):
     db_paper.cmd_save_trade(
         _ns(
             data=json.dumps(
@@ -183,9 +185,9 @@ def test_an_advised_twin_is_managed_beside_its_control(priced):
     assert row["open_positions"] == 2 and row["marks_written"] == 2
 
     for order_id in (control, twin):
-        events = db_paper.cmd_get_management_events(
-            _ns(order_id=order_id, session_date=None, limit=None)
-        )["events"]
+        events = db_paper.cmd_get_management_events(_ns(order_id=order_id, session_date=None, limit=None))[
+            "events"
+        ]
         assert events, f"{order_id} was never evaluated"
         assert events[0]["reason"] == "profit_target"
     assert not db_paper.cmd_get_open_positions(_ns())["positions"], "both should have closed"

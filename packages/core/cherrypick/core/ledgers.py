@@ -58,8 +58,6 @@ EARNINGS_UNTAGGED = "default"
 FLIES_UNTAGGED = "unassigned"
 
 
-
-
 # --------------------------------------------------------------------------- per-schema readers
 def session_from_epoch(closed_at) -> str:
     """Trading-session date (ISO) from an epoch-seconds close time; '' if unparseable."""
@@ -523,8 +521,7 @@ def _pmcc_open(conn) -> list[dict]:
     position's delivered shares are the one leg that bound does not cover, per the module's own
     caveat — the debit stays the honest conservative bound without re-deriving marks here."""
     rows = conn.execute(
-        "SELECT symbol, book, net_debit, quantity, entry_session FROM pmcc_positions "
-        "WHERE status != 'closed'"
+        "SELECT symbol, book, net_debit, quantity, entry_session FROM pmcc_positions WHERE status != 'closed'"
     ).fetchall()
     return [
         {
@@ -607,22 +604,27 @@ def concentration(records: list[dict], *, key: str = "profile", net_key: str = "
     movement = sum(abs(slot["net"]) for slot in per.values())
     rows = []
     for slot in per.values():
-        rows.append({
-            key: slot[key],
-            "net": round(slot["net"], 2),
-            "trades": slot["trades"],
-            "sessions": len(slot["sessions"]),
-            "share_of_net": round(slot["net"] / total, 4) if abs(total) > 1e-9 else None,
-            "share_of_movement": round(abs(slot["net"]) / movement, 4) if movement > 0 else None,
-        })
+        rows.append(
+            {
+                key: slot[key],
+                "net": round(slot["net"], 2),
+                "trades": slot["trades"],
+                "sessions": len(slot["sessions"]),
+                "share_of_net": round(slot["net"] / total, 4) if abs(total) > 1e-9 else None,
+                "share_of_movement": round(abs(slot["net"]) / movement, 4) if movement > 0 else None,
+            }
+        )
     # Ranked by absolute contribution: the largest mover, not the largest winner. An arm that lost
     # more than everything else made is the same presentation problem wearing the other sign.
     rows.sort(key=lambda r: abs(r["net"]), reverse=True)
 
     if not rows:
         return {
-            "net": 0.0, "by_" + key: [], "largest": None,
-            "net_excluding_largest": 0.0, "sign_flips_without_largest": False,
+            "net": 0.0,
+            "by_" + key: [],
+            "largest": None,
+            "net_excluding_largest": 0.0,
+            "sign_flips_without_largest": False,
             "contributors": 0,
         }
 

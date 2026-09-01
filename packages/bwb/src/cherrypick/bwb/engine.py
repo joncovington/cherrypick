@@ -120,7 +120,13 @@ def select_strikes(spot: float, expected_move: float, params: dict, listed: list
 
 
 def _leg(
-    role: str, action: str, entry: dict, quote: dict, greeks: dict | None, expiration: str, option_type: str = "put"
+    role: str,
+    action: str,
+    entry: dict,
+    quote: dict,
+    greeks: dict | None,
+    expiration: str,
+    option_type: str = "put",
 ) -> dict:
     g = greeks or {}
     return {
@@ -177,14 +183,33 @@ def plan_entry(snapshot: dict, params: dict) -> dict:
 
     expiration = snapshot["expiration"]
     legs = [
-        _leg("near_long", "Buy to Open", near_e, near_e["quote"], greeks.get(near_e["streamer_symbol"]), expiration),
         _leg(
-            "body_short_1", "Sell to Open", body_e, body_e["quote"], greeks.get(body_e["streamer_symbol"]), expiration
+            "near_long",
+            "Buy to Open",
+            near_e,
+            near_e["quote"],
+            greeks.get(near_e["streamer_symbol"]),
+            expiration,
         ),
         _leg(
-            "body_short_2", "Sell to Open", body_e, body_e["quote"], greeks.get(body_e["streamer_symbol"]), expiration
+            "body_short_1",
+            "Sell to Open",
+            body_e,
+            body_e["quote"],
+            greeks.get(body_e["streamer_symbol"]),
+            expiration,
         ),
-        _leg("far_long", "Buy to Open", far_e, far_e["quote"], greeks.get(far_e["streamer_symbol"]), expiration),
+        _leg(
+            "body_short_2",
+            "Sell to Open",
+            body_e,
+            body_e["quote"],
+            greeks.get(body_e["streamer_symbol"]),
+            expiration,
+        ),
+        _leg(
+            "far_long", "Buy to Open", far_e, far_e["quote"], greeks.get(far_e["streamer_symbol"]), expiration
+        ),
     ]
     return {
         "ok": True,
@@ -287,20 +312,40 @@ def plan_wall_entry(snapshot: dict, params: dict, call_wall: float | None) -> di
     expiration = snapshot["expiration"]
     legs = [
         _leg(
-            "near_long", "Buy to Open", near_e, near_e["quote"], greeks.get(near_e["streamer_symbol"]),
-            expiration, option_type="call",
+            "near_long",
+            "Buy to Open",
+            near_e,
+            near_e["quote"],
+            greeks.get(near_e["streamer_symbol"]),
+            expiration,
+            option_type="call",
         ),
         _leg(
-            "body_short_1", "Sell to Open", body_e, body_e["quote"], greeks.get(body_e["streamer_symbol"]),
-            expiration, option_type="call",
+            "body_short_1",
+            "Sell to Open",
+            body_e,
+            body_e["quote"],
+            greeks.get(body_e["streamer_symbol"]),
+            expiration,
+            option_type="call",
         ),
         _leg(
-            "body_short_2", "Sell to Open", body_e, body_e["quote"], greeks.get(body_e["streamer_symbol"]),
-            expiration, option_type="call",
+            "body_short_2",
+            "Sell to Open",
+            body_e,
+            body_e["quote"],
+            greeks.get(body_e["streamer_symbol"]),
+            expiration,
+            option_type="call",
         ),
         _leg(
-            "far_long", "Buy to Open", far_e, far_e["quote"], greeks.get(far_e["streamer_symbol"]),
-            expiration, option_type="call",
+            "far_long",
+            "Buy to Open",
+            far_e,
+            far_e["quote"],
+            greeks.get(far_e["streamer_symbol"]),
+            expiration,
+            option_type="call",
         ),
     ]
     return {
@@ -335,7 +380,13 @@ def _spread_pct(quote: dict) -> float | None:
 
 
 def bwb_metrics(
-    *, body_mid: float, near_mid: float, far_mid: float, body_strike: float, near_strike: float, far_strike: float
+    *,
+    body_mid: float,
+    near_mid: float,
+    far_mid: float,
+    body_strike: float,
+    near_strike: float,
+    far_strike: float,
 ) -> dict:
     """The base structure's worksheet, computed once and stored as MEASURES. `credit` is what the
     structure pays at mid: sell 2x body, buy 1x near, buy 1x far."""
@@ -387,10 +438,20 @@ def plan_addon(snapshot: dict, far_strike: float, params: dict) -> dict:
     expiration = snapshot["expiration"]
     legs = [
         _leg(
-            "addon_short", "Sell to Open", short_e, short_e["quote"], greeks.get(short_e["streamer_symbol"]), expiration
+            "addon_short",
+            "Sell to Open",
+            short_e,
+            short_e["quote"],
+            greeks.get(short_e["streamer_symbol"]),
+            expiration,
         ),
         _leg(
-            "addon_long", "Buy to Open", long_e, long_e["quote"], greeks.get(long_e["streamer_symbol"]), expiration
+            "addon_long",
+            "Buy to Open",
+            long_e,
+            long_e["quote"],
+            greeks.get(long_e["streamer_symbol"]),
+            expiration,
         ),
     ]
     return {

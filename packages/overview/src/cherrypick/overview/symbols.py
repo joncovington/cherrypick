@@ -68,8 +68,9 @@ ALL_SYMBOLS = tuple(sorted({*INDEX_SYMBOLS, *SECTOR_ETFS, *COMMODITY_PROXIES, *C
 #
 # SPX stays an underlying because it genuinely is one for half the suite; the union means this
 # package's entry costs nothing extra.
-QUOTE_ONLY_SYMBOLS = tuple(sorted({*SECTOR_ETFS, *COMMODITY_PROXIES, *CREDIT_PROXIES,
-                                   "VIX", "VIX3M", "VVIX"}))
+QUOTE_ONLY_SYMBOLS = tuple(
+    sorted({*SECTOR_ETFS, *COMMODITY_PROXIES, *CREDIT_PROXIES, "VIX", "VIX3M", "VVIX"})
+)
 UNDERLYING_SYMBOLS = ("SPX",)
 
 # Completed daily rows the deployment score needs stream_summary to hold. 270 covers a trailing
@@ -87,10 +88,7 @@ HISTORY_LOOKBACK = 270
 
 # Only the symbols whose series the score actually reads. VIX3M is here for the backtest alone --
 # the live score takes it from a current quote, but a historical day needs its close.
-HISTORY_DAYS = {
-    symbol: HISTORY_LOOKBACK
-    for symbol in ("VIX", "VIX3M", "HYG", "TLT", "SPX", *SECTOR_ETFS)
-}
+HISTORY_DAYS = {symbol: HISTORY_LOOKBACK for symbol in ("VIX", "VIX3M", "HYG", "TLT", "SPX", *SECTOR_ETFS)}
 
 
 def register() -> str | None:
@@ -102,8 +100,13 @@ def register() -> str | None:
     set) is a reason for the producer to recycle, which is expected and safe outside market hours.
     """
     try:
-        return str(_requests.write_request(
-            MODULE, UNDERLYING_SYMBOLS, legs=QUOTE_ONLY_SYMBOLS, history_days=HISTORY_DAYS,
-        ))
+        return str(
+            _requests.write_request(
+                MODULE,
+                UNDERLYING_SYMBOLS,
+                legs=QUOTE_ONLY_SYMBOLS,
+                history_days=HISTORY_DAYS,
+            )
+        )
     except OSError:
         return None

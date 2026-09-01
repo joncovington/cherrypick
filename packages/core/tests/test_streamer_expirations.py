@@ -45,9 +45,7 @@ class _FakeStreamer:
 
 
 def _slice(expiration, tag, center=100, spread=30):
-    return {
-        f"{tag}{i}": _Opt(f"{tag}{i}", center + i, expiration) for i in range(-spread, spread + 1)
-    }
+    return {f"{tag}{i}": _Opt(f"{tag}{i}", center + i, expiration) for i in range(-spread, spread + 1)}
 
 
 NEAREST = "2099-01-10"
@@ -124,9 +122,7 @@ def test_none_hook_is_legacy_behavior(tmp_path, monkeypatch):
 
 def test_extra_dates_get_windows_chain_rows_and_health(tmp_path, monkeypatch):
     full = {NEAREST: _slice(NEAREST, "N"), FRI: _slice(FRI, "F"), MON: _slice(MON, "M")}
-    engine, state = _engine_and_state(
-        tmp_path, expirations_for=lambda sym: [FRI, MON], full_chain=full
-    )
+    engine, state = _engine_and_state(tmp_path, expirations_for=lambda sym: [FRI, MON], full_chain=full)
     streamer = _FakeStreamer()
     asyncio.run(_run_one_pass(engine, state, streamer, monkeypatch))
 
@@ -150,9 +146,7 @@ def test_extra_dates_get_windows_chain_rows_and_health(tmp_path, monkeypatch):
 def test_growth_is_served_on_the_next_pass_without_restart(tmp_path, monkeypatch):
     full = {NEAREST: _slice(NEAREST, "N"), FRI: _slice(FRI, "F"), MON: _slice(MON, "M")}
     wanted = {"dates": [FRI]}
-    engine, state = _engine_and_state(
-        tmp_path, expirations_for=lambda sym: wanted["dates"], full_chain=full
-    )
+    engine, state = _engine_and_state(tmp_path, expirations_for=lambda sym: wanted["dates"], full_chain=full)
     streamer = _FakeStreamer()
     asyncio.run(_run_one_pass(engine, state, streamer, monkeypatch))
     assert f"XSP@{MON}" not in state.window_syms
@@ -189,9 +183,7 @@ def test_departed_date_is_retired_minus_protected(tmp_path, monkeypatch):
 
 def test_past_dates_are_dropped(tmp_path, monkeypatch):
     full = {NEAREST: _slice(NEAREST, "N"), "2000-01-14": _slice("2000-01-14", "P")}
-    engine, state = _engine_and_state(
-        tmp_path, expirations_for=lambda sym: ["2000-01-14"], full_chain=full
-    )
+    engine, state = _engine_and_state(tmp_path, expirations_for=lambda sym: ["2000-01-14"], full_chain=full)
     asyncio.run(_run_one_pass(engine, state, _FakeStreamer(), monkeypatch))
     assert [k for k in state.window_syms if "@" in k] == []
 
@@ -213,9 +205,7 @@ def test_date_duplicating_the_nearest_window_is_skipped(tmp_path, monkeypatch):
     # the same symbols would fight the first over subscriptions.
     nearest_slice = _slice(NEAREST, "N")
     full = {NEAREST: nearest_slice}
-    engine, state = _engine_and_state(
-        tmp_path, expirations_for=lambda sym: [NEAREST], full_chain=full
-    )
+    engine, state = _engine_and_state(tmp_path, expirations_for=lambda sym: [NEAREST], full_chain=full)
     asyncio.run(_run_one_pass(engine, state, _FakeStreamer(), monkeypatch))
     assert f"XSP@{NEAREST}" not in state.window_syms
 

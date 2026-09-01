@@ -53,5 +53,6 @@ def end_of_session_iso(session: str) -> str:
     belt to that suspenders, and it is set at the END of the session so a loop that starts late (or
     a settlement pass that runs after the close) still reads the advice it ran the day under.
     """
-    return datetime.combine(date.fromisoformat(session), datetime.max.time().replace(microsecond=0),
-                            tzinfo=ET).isoformat()
+    return datetime.combine(
+        date.fromisoformat(session), datetime.max.time().replace(microsecond=0), tzinfo=ET
+    ).isoformat()

@@ -293,9 +293,7 @@ def dispose_assignment(conn, assignment: dict, price: float, *, session_date: st
     """Close one delivered share position at `price` and finalize its week if that was the last
     thing outstanding. The fee lands here rather than at settlement because only now is the disposal
     price known, and the equity pass-throughs are computed on it."""
-    pnl = engine.share_pnl(
-        assignment["direction"], assignment["shares"], assignment["basis"], price
-    )
+    pnl = engine.share_pnl(assignment["direction"], assignment["shares"], assignment["basis"], price)
     fee = engine.assignment_fee(assignment, price)
     db.save_assignment(
         conn,
@@ -311,7 +309,5 @@ def dispose_assignment(conn, assignment: dict, price: float, *, session_date: st
         },
     )
     _accumulate_exit_costs(conn, assignment["position_id"], fee=fee, slippage=0.0)
-    finalize_if_done(
-        conn, assignment["position_id"], reason="shares_disposed", session_date=session_date
-    )
+    finalize_if_done(conn, assignment["position_id"], reason="shares_disposed", session_date=session_date)
     return {"position_id": assignment["position_id"], "share_pnl": pnl, "fee": fee, "price": price}

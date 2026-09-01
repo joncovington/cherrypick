@@ -93,11 +93,13 @@ def cmd_regime(args) -> int:
 
     with _connect(args.db) as conn:
         scope = _scope(args)
-        return _emit({
-            "ok": True,
-            "dimension": args.dimension,
-            "buckets": analytics.by_regime(conn, args.dimension, arm=args.arm, **scope),
-        })
+        return _emit(
+            {
+                "ok": True,
+                "dimension": args.dimension,
+                "buckets": analytics.by_regime(conn, args.dimension, arm=args.arm, **scope),
+            }
+        )
 
 
 def cmd_coverage(args) -> int:
@@ -121,7 +123,9 @@ def cmd_stops(args) -> int:
     with _connect(args.db) as conn:
         scope = _scope(args)
         if args.sessions:
-            return _emit({"ok": True, "by_session": analytics.stop_session_rollup(conn, arm=args.arm, **scope)})
+            return _emit(
+                {"ok": True, "by_session": analytics.stop_session_rollup(conn, arm=args.arm, **scope)}
+            )
         return _emit({"ok": True, "grid": analytics.stop_grid(conn, arm=args.arm, **scope)})
 
 
@@ -134,8 +138,13 @@ def cmd_gate_blocks(args) -> int:
 
     with _connect(args.db) as conn:
         session = args.date or _clock.today_iso()
-        return _emit({"ok": True, "session": session,
-                      "blocks": analytics.gate_blocks(conn, session, symbol=args.symbol)})
+        return _emit(
+            {
+                "ok": True,
+                "session": session,
+                "blocks": analytics.gate_blocks(conn, session, symbol=args.symbol),
+            }
+        )
 
 
 def cmd_settlement_audit(args) -> int:
@@ -145,12 +154,14 @@ def cmd_settlement_audit(args) -> int:
     from cherrypick.meic import analytics
 
     with _connect(args.db) as conn:
-        return _emit({
-            "ok": True,
-            "audit": analytics.settlement_audit(
-                conn, start=args.start, end=args.end, symbol=args.symbol, era=args.era or "ALL"
-            ),
-        })
+        return _emit(
+            {
+                "ok": True,
+                "audit": analytics.settlement_audit(
+                    conn, start=args.start, end=args.end, symbol=args.symbol, era=args.era or "ALL"
+                ),
+            }
+        )
 
 
 def cmd_gex_gate(args) -> int:
@@ -160,12 +171,14 @@ def cmd_gex_gate(args) -> int:
     from cherrypick.meic import analytics
 
     with _connect(args.db) as conn:
-        return _emit({
-            "ok": True,
-            "counterfactual": analytics.gex_gate_counterfactual(
-                conn, start=args.start, end=args.end, symbol=args.symbol, era=args.era or "ALL"
-            ),
-        })
+        return _emit(
+            {
+                "ok": True,
+                "counterfactual": analytics.gex_gate_counterfactual(
+                    conn, start=args.start, end=args.end, symbol=args.symbol, era=args.era or "ALL"
+                ),
+            }
+        )
 
 
 def _add_scope(parser, *, symbol=True) -> None:

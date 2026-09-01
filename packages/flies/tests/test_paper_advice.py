@@ -188,22 +188,24 @@ def test_an_advised_book_settles_even_when_advice_has_gone_away(managed_home, ch
     """
     _write_artifact(managed_home, _proposal(0.15))
     paper_loop.run_once(config(), conn, cache_path=str(chain), when=at(12))
-    assert conn.execute(
-        "SELECT COUNT(*) FROM fly_positions WHERE arm = 'advised:control' AND status = 'open'"
-    ).fetchone()[0] > 0
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM fly_positions WHERE arm = 'advised:control' AND status = 'open'"
+        ).fetchone()[0]
+        > 0
+    )
 
     # Everything the decision depended on, gone.
     core_advice.advice_path(managed_home / "state", "flies", DAY).unlink()
     Path(paper_loop._advice_decision_path()).unlink()
 
-    paper_loop.run_settle(config(enabled=False), conn, cache_path=str(chain),
-                          when=at(16, 25), price=5000.0)
+    paper_loop.run_settle(config(enabled=False), conn, cache_path=str(chain), when=at(16, 25), price=5000.0)
 
     open_rows, settled_rows = conn.execute(
         "SELECT COALESCE(SUM(status = 'open'), 0), COALESCE(SUM(status = 'settled'), 0)"
         " FROM fly_positions WHERE arm = 'advised:control'"
     ).fetchone()
     assert open_rows == 0 and settled_rows > 0
-    assert conn.execute(
-        "SELECT status FROM fly_books WHERE arm = 'advised:control'"
-    ).fetchone()[0] == "settled"
+    assert (
+        conn.execute("SELECT status FROM fly_books WHERE arm = 'advised:control'").fetchone()[0] == "settled"
+    )

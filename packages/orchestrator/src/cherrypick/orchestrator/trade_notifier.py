@@ -427,11 +427,7 @@ def _meic_process(
     last_flush = st.get("last_summary_flush")
     if last_flush is None:
         st["last_summary_flush"] = now  # first activation of the digest path — flush from here on
-    elif (
-        pending
-        and (now - last_flush) >= summary_interval_minutes * 60
-        and _digest_window_open(now)
-    ):
+    elif pending and (now - last_flush) >= summary_interval_minutes * 60 and _digest_window_open(now):
         et = timeutil.et_from_epoch(now)
         day, hhmm = et.strftime("%Y-%m-%d"), et.strftime("%H:%M")
         notifier.notify(
@@ -1107,9 +1103,7 @@ def _pmcc_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
         notified = set(st.get(key, []))
         rows = [r for r in conn.execute(query).fetchall() if notif_id(r) not in notified]
         for r in rows:
-            notifier.notify(
-                "INFO", f"trade.{name}.{event}.{notif_id(r)}", title, fmt(r), embed=embed_fn(r)
-            )
+            notifier.notify("INFO", f"trade.{name}.{event}.{notif_id(r)}", title, fmt(r), embed=embed_fn(r))
             notified.add(notif_id(r))
         st[key] = sorted(notified)[-_ID_CAP:]
         counts[f"{event}s_notified"] = len(rows)
@@ -1121,9 +1115,7 @@ def _pmcc_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
 # ride to the next session's disposal), and it closes (profit-take, regime-flip hard exit, or
 # close_dte). No roll — the calendars three-stage shape, not pmcc's four.
 def _curve_seed(conn) -> dict:
-    rows = conn.execute(
-        "SELECT position_id, settlement_spot, status FROM curve_positions"
-    ).fetchall()
+    rows = conn.execute("SELECT position_id, settlement_spot, status FROM curve_positions").fetchall()
     return {
         "notified_entry_ids": [r["position_id"] for r in rows],
         "notified_settlement_ids": [r["position_id"] for r in rows if r["settlement_spot"] is not None],
@@ -1264,8 +1256,7 @@ def _fmt_bwb_addon(r) -> str:
 
 def _embed_bwb_addon(r) -> dict:
     details = (
-        f"add-on {r['addon_short_strike']:.0f}/{r['addon_long_strike']:.0f} · "
-        f"credit ${r['addon_credit']:.2f}"
+        f"add-on {r['addon_short_strike']:.0f}/{r['addon_long_strike']:.0f} · credit ${r['addon_credit']:.2f}"
     )
     title = f"ADD-ON FIRED · {r['symbol']} BWB {r['body_strike']:.0f}"[:256]
     return _embed(COLOR_COMPLETE, title, details, footer=r["book"])

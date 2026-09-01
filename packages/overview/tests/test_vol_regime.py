@@ -53,7 +53,8 @@ def test_shape_reads_the_ratio_not_the_slope_sign():
 
     backwardated = facts._vol_regime(
         _readings(vix={"value": 25.0, "basis": "live"}, vix3m={"value": 20.0, "basis": "live"}),
-        {}, "2026-08-25",
+        {},
+        "2026-08-25",
     )
     assert backwardated["shape"] == "backwardation"
 
@@ -135,7 +136,7 @@ def test_the_block_feeds_no_gate():
 
 
 def test_a_reading_with_no_obtainable_daily_series_says_so(monkeypatch):
-    """"No history yet" and "no history ever" are different messages, and nothing in the data tells
+    """ "No history yet" and "no history ever" are different messages, and nothing in the data tells
     them apart -- so the second is declared.
 
     SKEW's 270-day backfill returned five scattered rows across seven months on the same connection

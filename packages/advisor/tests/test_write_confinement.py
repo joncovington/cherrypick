@@ -27,11 +27,19 @@ ADMITTED_REPLY = {
     "observations": ["control is taking fewer stops than width-5"],
     "flags": [{"module": "meic", "severity": "info", "text": "gex flipped negative at 14:40"}],
     "proposals": [
-        {"kind": "bounded_adjustment", "module": "meic", "sessions": 15,
-         "hypothesis": "a wider stop trigger survives midday chop",
-         "params": [{"param": "stop_trigger_ratio", "value": 0.9, "rationale": "wider"}]},
-        {"kind": "creative", "module": "flies", "title": "a 15-wide wing arm",
-         "spec_json": {"arm": "width-15"}},
+        {
+            "kind": "bounded_adjustment",
+            "module": "meic",
+            "sessions": 15,
+            "hypothesis": "a wider stop trigger survives midday chop",
+            "params": [{"param": "stop_trigger_ratio", "value": 0.9, "rationale": "wider"}],
+        },
+        {
+            "kind": "creative",
+            "module": "flies",
+            "title": "a 15-wide wing arm",
+            "spec_json": {"arm": "width-15"},
+        },
     ],
 }
 
@@ -48,8 +56,7 @@ def _seed_home(home: Path) -> Path:
     """A home that looks like a machine which has been trading: real ledgers with rows in them, a
     module that accepts advice, live ledgers beside the paper ones, and orchestrator state."""
     fakes.seed_suite(home, SESSION)
-    fakes.write_config(home, "meic", fakes.advice_block(
-        {"stop_trigger_ratio": {"min": 0.85, "max": 0.95}}))
+    fakes.write_config(home, "meic", fakes.advice_block({"stop_trigger_ratio": {"min": 0.85, "max": 0.95}}))
     fakes.write_config(home, "flies", {"live": {"enabled": False}})
     fakes.write_suite_config(home, {"enabled": True, "modules": {"meic": {"enabled": True}}})
     state = home / "state"
@@ -66,7 +73,10 @@ def _seed_home(home: Path) -> Path:
 def _cli(*argv: str) -> dict:
     proc = subprocess.run(
         [sys.executable, "-m", "cherrypick.advisor", *argv],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     assert proc.returncode == 0, f"{argv}: {proc.stderr}\n{proc.stdout}"
     return json.loads(proc.stdout)
@@ -76,8 +86,7 @@ def _run_everything(raw: Path) -> None:
     """The whole deterministic pipeline, through the CLI the script and console actually call."""
     _cli("init-db")
     _cli("factpack", "--slot", "deep", "--session", SESSION)
-    admitted = _cli("admit", "--slot", "deep", "--session", SESSION, "--raw", str(raw),
-                    "--model", "opus")
+    admitted = _cli("admit", "--slot", "deep", "--session", SESSION, "--raw", str(raw), "--model", "opus")
     assert admitted["admitted"], admitted
     _cli("enact", "--session", SESSION)
     _cli("verdicts", "--session", SESSION)

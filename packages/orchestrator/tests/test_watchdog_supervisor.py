@@ -204,11 +204,7 @@ def test_a_module_that_stopped_itself_mid_window_is_reported(no_schtasks):
     only thing that would surface it."""
     write_heartbeat()
     write_jobs(
-        {
-            "calendars-paper": _resident(
-                module_stopped=True, resident_state="module reports session complete"
-            )
-        }
+        {"calendars-paper": _resident(module_stopped=True, resident_state="module reports session complete")}
     )
     stopped = next(f for f in watchdog._check_resident_health({}) if f.key == "calendars-paper.stopped")
     assert stopped.status == watchdog.WARN

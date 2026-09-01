@@ -30,11 +30,17 @@ MEIC_BOUNDS = {
 def home(tmp_home):
     fakes.seed_suite(tmp_home, SESSION)
     fakes.write_config(tmp_home, "meic", fakes.advice_block(MEIC_BOUNDS))
-    fakes.write_suite_config(tmp_home, {
-        "enabled": True,
-        "modules": {"meic": {"enabled": True}, "flies": {"enabled": False},
-                    "earnings": {"enabled": False}},
-    })
+    fakes.write_suite_config(
+        tmp_home,
+        {
+            "enabled": True,
+            "modules": {
+                "meic": {"enabled": True},
+                "flies": {"enabled": False},
+                "earnings": {"enabled": False},
+            },
+        },
+    )
     return tmp_home
 
 
@@ -46,13 +52,18 @@ def conn():
 
 
 def _reply(*props, observations=("noted",)):
-    return {"observations": list(observations), "flags": [], "proposals": list(props),
-            "malformed": []}
+    return {"observations": list(observations), "flags": [], "proposals": list(props), "malformed": []}
 
 
 def _adjustment(params, module="meic", **extra):
-    return {"kind": "bounded_adjustment", "module": module, "params": params,
-            "rationales": {}, "raw": {"kind": "bounded_adjustment"}, **extra}
+    return {
+        "kind": "bounded_adjustment",
+        "module": module,
+        "params": params,
+        "rationales": {},
+        "raw": {"kind": "bounded_adjustment"},
+        **extra,
+    }
 
 
 # --------------------------------------------------------------------------- admission
@@ -60,7 +71,9 @@ def _adjustment(params, module="meic", **extra):
 
 def test_an_in_bounds_proposal_becomes_an_active_experiment(home, conn):
     result = experiments.admit_reply(
-        conn, session=SESSION, slot="deep",
+        conn,
+        session=SESSION,
+        slot="deep",
         reply=_reply(_adjustment({"stop_trigger_ratio": 0.9}, sessions=15)),
     )
     assert result["rejected"] == []
@@ -76,7 +89,9 @@ def test_one_bad_param_rejects_the_whole_proposal(home, conn):
     """Reject-all, inherited from core.advice: partial admission would let an aggressive value ride
     in behind an innocuous one."""
     result = experiments.admit_reply(
-        conn, session=SESSION, slot="deep",
+        conn,
+        session=SESSION,
+        slot="deep",
         reply=_reply(_adjustment({"stop_trigger_ratio": 0.9, "entry_price_strategy": "market"})),
     )
     assert result["admitted"] == []
@@ -88,9 +103,14 @@ def test_the_same_validator_the_loop_uses_agrees(home):
     """Not a reimplementation: assert admission's answer against core.advice.validate directly."""
     checked = experiments.check_params("meic", {"stop_trigger_ratio": 0.99}, FRIDAY)
     direct = core_advice.validate(
-        {"module": "meic", "session": FRIDAY, "expires_at": clock.end_of_session_iso(FRIDAY),
-         "proposals": [{"param": "stop_trigger_ratio", "value": 0.99}]},
-        MEIC_BOUNDS, FRIDAY,
+        {
+            "module": "meic",
+            "session": FRIDAY,
+            "expires_at": clock.end_of_session_iso(FRIDAY),
+            "proposals": [{"param": "stop_trigger_ratio", "value": 0.99}],
+        },
+        MEIC_BOUNDS,
+        FRIDAY,
     )
     assert checked["ok"] is False and direct["ok"] is False
     assert checked["rejected"][0]["reason"] == direct["rejected"][0]["reason"]
@@ -99,7 +119,9 @@ def test_the_same_validator_the_loop_uses_agrees(home):
 def test_a_module_with_no_advice_block_refuses_everything(home, conn):
     fakes.write_suite_config(home, {"enabled": True, "modules": {"flies": {"enabled": True}}})
     result = experiments.admit_reply(
-        conn, session=SESSION, slot="deep",
+        conn,
+        session=SESSION,
+        slot="deep",
         reply=_reply(_adjustment({"fee_buffer": 0.1}, module="flies")),
     )
     assert "module_advice_disabled" in result["rejected"][0]["reason"]
@@ -107,20 +129,36 @@ def test_a_module_with_no_advice_block_refuses_everything(home, conn):
 
 def test_a_module_the_advisor_is_not_allowed_near_refuses_too(home, conn):
     """Two switches must agree: the suite's `advisor.modules.<m>` and the module's own block."""
-    fakes.write_config(home, "earnings", {"advice": {"enabled": True, "bounds": {
-        "iron_fly.profit_target_pct": {"min": 0.15, "max": 0.6}}}})
+    fakes.write_config(
+        home,
+        "earnings",
+        {"advice": {"enabled": True, "bounds": {"iron_fly.profit_target_pct": {"min": 0.15, "max": 0.6}}}},
+    )
     result = experiments.admit_reply(
-        conn, session=SESSION, slot="deep",
+        conn,
+        session=SESSION,
+        slot="deep",
         reply=_reply(_adjustment({"iron_fly.profit_target_pct": 0.3}, module="earnings")),
     )
     assert "advisor.modules.earnings is off" in result["rejected"][0]["reason"]
 
 
 def test_creative_proposals_are_recorded_and_never_run(home, conn):
-    result = experiments.admit_reply(conn, session=SESSION, slot="deep", reply=_reply(
-        {"kind": "creative", "module": "meic", "title": "a new arm", "text": "…",
-         "spec_json": {"wing_width": 15}, "raw": {"kind": "creative"}},
-    ))
+    result = experiments.admit_reply(
+        conn,
+        session=SESSION,
+        slot="deep",
+        reply=_reply(
+            {
+                "kind": "creative",
+                "module": "meic",
+                "title": "a new arm",
+                "text": "…",
+                "spec_json": {"wing_width": 15},
+                "raw": {"kind": "creative"},
+            },
+        ),
+    )
     assert result["admitted"][0]["propose_only"] is True
     assert store.experiments(conn) == []
 
@@ -130,17 +168,20 @@ def test_creative_proposals_are_recorded_and_never_run(home, conn):
 
 def test_over_the_cap_a_good_spec_queues_rather_than_being_refused(home, conn):
     for _ in range(2):
-        experiments.admit_reply(conn, session=SESSION, slot="deep",
-                                reply=_reply(_adjustment({"stop_trigger_ratio": 0.9})))
+        experiments.admit_reply(
+            conn, session=SESSION, slot="deep", reply=_reply(_adjustment({"stop_trigger_ratio": 0.9}))
+        )
     statuses = [e["status"] for e in store.experiments(conn, module="meic")]
     assert statuses == ["active", "queued"]
 
 
 def test_killing_the_active_experiment_activates_the_queued_one(home, conn):
-    first = experiments.admit_reply(conn, session=SESSION, slot="deep", reply=_reply(
-        _adjustment({"stop_trigger_ratio": 0.9})))["admitted"][0]["experiment_id"]
-    second = experiments.admit_reply(conn, session=SESSION, slot="deep", reply=_reply(
-        _adjustment({"stop_trigger_ratio": 0.88})))["admitted"][0]["experiment_id"]
+    first = experiments.admit_reply(
+        conn, session=SESSION, slot="deep", reply=_reply(_adjustment({"stop_trigger_ratio": 0.9}))
+    )["admitted"][0]["experiment_id"]
+    second = experiments.admit_reply(
+        conn, session=SESSION, slot="deep", reply=_reply(_adjustment({"stop_trigger_ratio": 0.88}))
+    )["admitted"][0]["experiment_id"]
 
     killed = experiments.kill(conn, first, session=SESSION)
     assert killed["activated"] == [second]
@@ -150,11 +191,14 @@ def test_killing_the_active_experiment_activates_the_queued_one(home, conn):
 
 def test_a_requested_length_is_honored_but_clamped(home, conn):
     resolved = settings.load()
-    for requested, expected in ((3, resolved["experiment_sessions_min"]),
-                                (99, resolved["experiment_sessions_max"]),
-                                (None, resolved["experiment_sessions"])):
-        out = experiments.admit_spec(conn, session=SESSION, module="meic",
-                                     params={"stop_trigger_ratio": 0.9}, sessions=requested)
+    for requested, expected in (
+        (3, resolved["experiment_sessions_min"]),
+        (99, resolved["experiment_sessions_max"]),
+        (None, resolved["experiment_sessions"]),
+    ):
+        out = experiments.admit_spec(
+            conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}, sessions=requested
+        )
         assert store.experiment(conn, out["experiment_id"])["expires_after_sessions"] == expected
 
 
@@ -167,16 +211,16 @@ def test_tune_only_reaches_the_advisors_own_active_experiments(home, conn):
     )["experiment_id"]
 
     for target in ("control", "exp-does-not-exist", "advised:control"):
-        refused = experiments.tune(conn, session=SESSION, experiment_id=target,
-                                   params={"stop_trigger_ratio": 0.92})
+        refused = experiments.tune(
+            conn, session=SESSION, experiment_id=target, params={"stop_trigger_ratio": 0.92}
+        )
         assert refused["reason"].startswith("not_an_advisor_experiment")
 
-    ok = experiments.tune(conn, session=SESSION, experiment_id=experiment_id,
-                          params={"stop_trigger_ratio": 0.92})
+    ok = experiments.tune(
+        conn, session=SESSION, experiment_id=experiment_id, params={"stop_trigger_ratio": 0.92}
+    )
     assert ok["ok"] is True
-    assert json.loads(store.experiment(conn, experiment_id)["params_json"]) == {
-        "stop_trigger_ratio": 0.92
-    }
+    assert json.loads(store.experiment(conn, experiment_id)["params_json"]) == {"stop_trigger_ratio": 0.92}
     assert "tuned" in [e["event"] for e in store.events(conn, experiment_id)]
 
 
@@ -184,19 +228,15 @@ def test_a_tune_that_leaves_bounds_is_refused_and_changes_nothing(home, conn):
     experiment_id = experiments.admit_spec(
         conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}
     )["experiment_id"]
-    experiments.tune(conn, session=SESSION, experiment_id=experiment_id,
-                     params={"stop_trigger_ratio": 2.0})
-    assert json.loads(store.experiment(conn, experiment_id)["params_json"]) == {
-        "stop_trigger_ratio": 0.9
-    }
+    experiments.tune(conn, session=SESSION, experiment_id=experiment_id, params={"stop_trigger_ratio": 2.0})
+    assert json.loads(store.experiment(conn, experiment_id)["params_json"]) == {"stop_trigger_ratio": 0.9}
 
 
 # --------------------------------------------------------------------------- enact
 
 
 def test_enact_writes_the_next_sessions_artifact_and_the_loop_can_read_it(home, conn):
-    experiments.admit_spec(conn, session=SESSION, module="meic",
-                           params={"stop_trigger_ratio": 0.9})
+    experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9})
     result = enact.run(conn, SESSION)
 
     assert result["target_session"] == FRIDAY
@@ -225,7 +265,10 @@ def test_advice_is_written_for_the_next_TRADING_day(home, conn):
     experiments.admit_spec(conn, session=friday, module="meic", params={"stop_trigger_ratio": 0.9})
     monday = enact.run(conn, friday)["target_session"]
     assert monday == clock.next_session(friday)
-    assert date.fromisoformat(monday).weekday() == 0, "a +1 day walk would have landed on Saturday"
+    # Weekday < 5 rather than == Monday: the claim under test is that the walk uses the trading
+    # calendar instead of +1 day (which lands on Saturday) -- and a holiday Monday legitimately
+    # yields Tuesday. The == 0 version rotted the week Labor Day arrived.
+    assert date.fromisoformat(monday).weekday() < 5, "a +1 day walk would have landed on Saturday"
 
     thanksgiving_eve = "2026-11-25"
     assert clock.next_session(thanksgiving_eve) == "2026-11-27"  # Thursday is the holiday
@@ -242,8 +285,7 @@ def test_the_artifact_expires_at_the_end_of_the_session_it_names(home, conn):
 def test_a_bounds_tightening_tonight_applies_tomorrow_morning(home, conn):
     """The experiment is not touched; the artifact simply stops being admitted, and says why."""
     experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9})
-    fakes.write_config(home, "meic", fakes.advice_block(
-        {"stop_trigger_ratio": {"min": 0.85, "max": 0.87}}))
+    fakes.write_config(home, "meic", fakes.advice_block({"stop_trigger_ratio": {"min": 0.85, "max": 0.87}}))
 
     enact.run(conn, SESSION)
     artifact = json.loads(paths.advice_path("meic", FRIDAY).read_text(encoding="utf-8"))
@@ -252,8 +294,9 @@ def test_a_bounds_tightening_tonight_applies_tomorrow_morning(home, conn):
     # Written anyway: the loop reads an admissible artifact carrying nothing, i.e. baseline —
     # exactly what an absent file would have produced — and this file is the only record that the
     # advisor tried and the tightened bounds said no.
-    loaded = core_advice.load(paths.state_dir(), "meic", FRIDAY,
-                              {"stop_trigger_ratio": {"min": 0.85, "max": 0.87}})
+    loaded = core_advice.load(
+        paths.state_dir(), "meic", FRIDAY, {"stop_trigger_ratio": {"min": 0.85, "max": 0.87}}
+    )
     assert loaded["proposals"] == []
 
 
@@ -322,8 +365,7 @@ def test_a_rejected_artifact_that_reached_the_loop_still_costs_a_session(home, c
     experiment_id = experiments.admit_spec(
         conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}
     )["experiment_id"]
-    fakes.write_config(home, "meic", fakes.advice_block(
-        {"stop_trigger_ratio": {"min": 0.85, "max": 0.87}}))
+    fakes.write_config(home, "meic", fakes.advice_block({"stop_trigger_ratio": {"min": 0.85, "max": 0.87}}))
     enact.run(conn, SESSION)
     assert json.loads(paths.advice_path("meic", FRIDAY).read_text(encoding="utf-8"))["proposals"] == []
     _record_decision(home, "meic", FRIDAY, None)  # the loop correctly ran baseline
@@ -381,10 +423,12 @@ def test_an_experiment_that_runs_its_course_expires_with_a_computed_verdict(home
 
 
 def test_expiry_lets_the_queue_move_up(home, conn):
-    first = experiments.admit_spec(conn, session=SESSION, module="meic",
-                                   params={"stop_trigger_ratio": 0.9}, sessions=5)["experiment_id"]
-    second = experiments.admit_spec(conn, session=SESSION, module="meic",
-                                    params={"stop_trigger_ratio": 0.88})["experiment_id"]
+    first = experiments.admit_spec(
+        conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}, sessions=5
+    )["experiment_id"]
+    second = experiments.admit_spec(
+        conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.88}
+    )["experiment_id"]
     store.update_experiment(conn, first, sessions_run=5)
     enact.run(conn, SESSION)
     assert store.experiment(conn, second)["status"] == "active"
@@ -395,24 +439,37 @@ def test_the_models_recommendation_sits_beside_the_numbers_never_instead_of_them
         conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}
     )["experiment_id"]
     experiments.record_verdict_recommendation(
-        conn, session=SESSION, experiment_id=experiment_id, recommendation="promote",
+        conn,
+        session=SESSION,
+        experiment_id=experiment_id,
+        recommendation="promote",
         rationale="advised book leads on every session",
     )
     verdict = json.loads(store.experiment(conn, experiment_id)["verdict_json"])
-    assert verdict["recommendation"] == {"value": "promote",
-                                         "rationale": "advised book leads on every session",
-                                         "by": "model", "session": SESSION}
+    assert verdict["recommendation"] == {
+        "value": "promote",
+        "rationale": "advised book leads on every session",
+        "by": "model",
+        "session": SESSION,
+    }
     assert verdict["pairs"] and verdict["computed_by"] == "cherrypick.advisor.verdicts"
 
 
 def test_a_dismissed_proposal_keeps_its_row(home, conn):
-    result = experiments.admit_reply(conn, session=SESSION, slot="deep", reply=_reply(
-        {"kind": "creative", "module": "meic", "title": "overnight gaps", "raw": {}},
-    ))
+    result = experiments.admit_reply(
+        conn,
+        session=SESSION,
+        slot="deep",
+        reply=_reply(
+            {"kind": "creative", "module": "meic", "title": "overnight gaps", "raw": {}},
+        ),
+    )
     proposal_id = result["admitted"][0]["proposal_id"]
     assert experiments.dismiss(conn, proposal_id)["ok"] is True
-    assert store.rows(conn, "SELECT status FROM proposals WHERE id = ?", (proposal_id,))[0][
-        "status"] == "dismissed"
+    assert (
+        store.rows(conn, "SELECT status FROM proposals WHERE id = ?", (proposal_id,))[0]["status"]
+        == "dismissed"
+    )
     assert experiments.dismiss(conn, 9999)["ok"] is False
 
 
@@ -420,15 +477,20 @@ def test_a_dismissed_proposal_keeps_its_row(home, conn):
 
 
 def test_each_modules_bounds_shape_resolves_to_the_same_contract(home):
-    fakes.write_config(home, "flies", fakes.advice_block(
-        {"fee_buffer": {"min": 0.05, "max": 0.25}}, base_key="base_arm", base="control"))
-    fakes.write_config(home, "earnings", {"advice": {"enabled": True, "bounds": {
-        "iron_fly.profit_target_pct": {"min": 0.15, "max": 0.6}}}})
+    fakes.write_config(
+        home,
+        "flies",
+        fakes.advice_block({"fee_buffer": {"min": 0.05, "max": 0.25}}, base_key="base_arm", base="control"),
+    )
+    fakes.write_config(
+        home,
+        "earnings",
+        {"advice": {"enabled": True, "bounds": {"iron_fly.profit_target_pct": {"min": 0.15, "max": 0.6}}}},
+    )
 
     assert bounds.resolve("flies")["base_profile"] == "control"
     assert bounds.resolve("earnings")["base_profile"] == "strat_test"
-    assert bounds.split_param("earnings", "iron_fly.profit_target_pct") == (
-        "iron_fly", "profit_target_pct")
+    assert bounds.split_param("earnings", "iron_fly.profit_target_pct") == ("iron_fly", "profit_target_pct")
     assert bounds.split_param("meic", "stop_trigger_ratio") == (None, "stop_trigger_ratio")
     assert bounds.advised_tag("earnings", "strat_test", "iron_fly") == "advised:strat_test:iron_fly"
     assert bounds.advised_tag("meic", "control") == "advised:control"
@@ -444,8 +506,9 @@ def test_a_killed_experiment_still_records_what_it_measured(home, conn):
     """
     import json
 
-    eid = experiments.admit_reply(conn, session=SESSION, slot="deep", reply=_reply(
-        _adjustment({"stop_trigger_ratio": 0.9})))["admitted"][0]["experiment_id"]
+    eid = experiments.admit_reply(
+        conn, session=SESSION, slot="deep", reply=_reply(_adjustment({"stop_trigger_ratio": 0.9}))
+    )["admitted"][0]["experiment_id"]
 
     experiments.kill(conn, eid, session=SESSION, reason="not separating from control")
 
@@ -464,8 +527,9 @@ def test_killing_an_already_concluded_experiment_does_not_rewrite_its_verdict(ho
     concluded experiment against a later ledger is the drift `verdict_for` exists to prevent."""
     import json
 
-    eid = experiments.admit_reply(conn, session=SESSION, slot="deep", reply=_reply(
-        _adjustment({"stop_trigger_ratio": 0.9})))["admitted"][0]["experiment_id"]
+    eid = experiments.admit_reply(
+        conn, session=SESSION, slot="deep", reply=_reply(_adjustment({"stop_trigger_ratio": 0.9}))
+    )["admitted"][0]["experiment_id"]
     experiments.kill(conn, eid, session=SESSION, reason="first")
     first = json.loads(store.experiment(conn, eid)["verdict_json"])
 

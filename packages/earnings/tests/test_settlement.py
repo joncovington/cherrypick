@@ -215,7 +215,11 @@ def test_a_back_month_the_cache_cannot_serve_falls_back_to_the_broker(monkeypatc
     def broker(remainder):
         legs = json.loads(remainder["legs_json"])
         assert {one["symbol"] for one in legs} == {occ(BACK, "C", 195), occ(BACK, "P", 185)}
-        return {"ok": True, "quotes": {one["symbol"]: {"bid": 2.0, "ask": 2.2} for one in legs}, "spot": 190.0}
+        return {
+            "ok": True,
+            "quotes": {one["symbol"]: {"bid": 2.0, "ask": 2.2} for one in legs},
+            "spot": 190.0,
+        }
 
     snap = settlement.resolve(row, {}, at("13:00"), rest_snapshot=broker)
     assert snap["ok"]
