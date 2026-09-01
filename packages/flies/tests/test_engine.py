@@ -1670,3 +1670,48 @@ def test_the_drift_gate_reports_the_drift_it_refused_on():
         snap, {**params(), "refuse_completion_against_trend": True}, [], None, detail
     )
     assert detail["drift_points"] == -52.0
+
+
+# --------------------------------------------------------------------------- the callwall arm
+def test_callwall_centers_the_shorts_at_the_wall():
+    gex = {"ok": True, "call_wall": 6005.0, "per_strike": [{"strike": 6005, "call_gex": 1, "put_gex": 1}]}
+    center, reason = engine.select_center(snapshot(gex=gex), params("control", center_rule="call_wall"))
+    assert (center, reason) == (6005.0, "call_wall")
+
+
+def test_callwall_refuses_rather_than_degrading_to_atm():
+    """The wall IS the thesis. The gex arm degrades to ATM so a cold cache costs a signal rather
+    than a session -- this arm must NOT, because an ATM fallback would trade control's trade under
+    callwall's name and dissolve the one-variable comparison the arm exists for."""
+    center, reason = engine.select_center(snapshot(gex={"ok": False}), params("control", center_rule="call_wall"))
+    assert center is None and reason == "gex_unavailable_for_call_wall"
+    center, reason = engine.select_center(snapshot(), params("control", center_rule="call_wall"))
+    assert center is None and reason == "gex_unavailable_for_call_wall"
+
+
+def test_callwall_refuses_a_wall_at_or_below_spot():
+    """Shorts at or below spot are calls in the money -- a directional bet the pin study's evidence
+    says nothing about, not a 'wall holds' bet."""
+    gex = {"ok": True, "call_wall": 6000.0}
+    center, reason = engine.select_center(
+        snapshot(underlying_price=6000.0, gex=gex), params("control", center_rule="call_wall")
+    )
+    assert center is None and reason == "call_wall_not_above_spot"
+
+
+def test_callwall_sells_the_call_spread_not_the_side_heuristic():
+    """`choose_side` picks the side spot is on the far end of, which for a centre ABOVE spot means
+    the PUT spread -- shorts at the wall, in the money, credit mostly intrinsic. The callwall entry
+    is the OTM call spread by thesis, so the side is forced.
+
+    Verified by removing the center_rule check from the side selection and watching this pick puts.
+    """
+    gex = {"ok": True, "call_wall": 6005.0}
+    enter, reason, plan = engine.evaluate_credit_spread_entry(
+        snapshot(gex=gex), params("control", center_rule="call_wall"), []
+    )
+    assert enter, reason
+    assert plan["side"] == "call"
+    assert plan["center"] == 6005.0
+    # Long wing above the shorts: 6005/6010 call credit spread, completing strike below.
+    assert plan["completing_strike"] == 6000.0
