@@ -134,6 +134,7 @@ def cmd_gate_blocks(args) -> int:
     # carries three ("today in ET" in db.py, gate_health.py and paper_loop.py), and gate_health's
     # own docstring records what the last divergence cost.
     from cherrypick.core import clock as _clock
+
     from cherrypick.meic import analytics
 
     with _connect(args.db) as conn:

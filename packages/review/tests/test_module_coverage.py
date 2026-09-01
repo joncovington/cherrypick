@@ -14,8 +14,8 @@ gains a normalised reader, which is the earliest point at which the review COULD
 from __future__ import annotations
 
 import pytest
-
 from cherrypick.core import ledgers as _ledgers
+
 from cherrypick.review import facts
 
 # Schemas deliberately outside the review, each with the reason. Empty today. A schema belongs here

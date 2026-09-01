@@ -4,8 +4,8 @@ import json
 import sqlite3
 
 import pytest
-
 from cherrypick.core import ledgers as _ledgers
+
 from cherrypick.review import facts, reconcile
 
 

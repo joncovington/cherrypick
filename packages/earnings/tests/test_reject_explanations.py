@@ -1,9 +1,27 @@
 """The rejection trail: every gate's reason carries the number behind it, and the funnel from
 screening to open position is recorded rather than inferred from what is missing."""
 
+import json
+from pathlib import Path
+
 import pytest
 
 from cherrypick.earnings import rank_strategies, scanner
+
+
+def _config() -> dict:
+    """The checked-in example config, never the developer's live one.
+
+    The old `scanner._load_config()` call resolves home-first, which made this file pass on any
+    machine with a deployed `~/.cherrypick/config/earnings.json` and fail on every machine without
+    one -- CI included, where it was the earnings job's only failure once the format wall came
+    down. Worse than the failure is what a pass meant: the gate sweep was checking the DEVELOPER'S
+    thresholds, so the same suite proved different things on different machines. The example is
+    the config the repo actually ships, and the only one every environment shares.
+    """
+    example = Path(__file__).resolve().parents[1] / "config" / "config.example.json"
+    return json.loads(example.read_text(encoding="utf-8"))
+
 
 # --------------------------------------------------------------------------- the map stays honest
 
@@ -17,7 +35,7 @@ def _all_apply_tiering():
 def _empty_criteria_reasons():
     """Every strategy's verdict on a criteria dict where nothing could be measured — the cheapest
     way to make every `_unverified` branch fire at once."""
-    config = scanner._load_config()
+    config = _config()
     for name, apply_tiering, strategy_config_fn in _all_apply_tiering():
         yield name, apply_tiering({}, strategy_config_fn(config))["reject_reasons"]
 
@@ -51,7 +69,7 @@ def test_reject_reason_map_covers_every_gate():
     """The map is derived alongside the gates rather than by them, so this is what stops the two
     drifting. A reason with no entry still records — but silently losing its measurement is the
     exact failure this whole trail exists to prevent."""
-    config = scanner._load_config()
+    config = _config()
     seen = set()
     for _name, reasons in _empty_criteria_reasons():
         seen.update(reasons)
