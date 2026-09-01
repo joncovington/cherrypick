@@ -1140,7 +1140,10 @@ def settlement_audit(conn, start=None, end=None, symbol=None, era="ALL") -> dict
         base_price = next(iter(price_set))
         base = sum(modelled(r, base_price) for r in same)
 
-        def swing(delta):
+        # Bound as defaults so the closure captures THIS iteration's values (B023). It is only
+        # called inside the same iteration today, but a late-bound loop variable is exactly the
+        # kind of hazard that stays invisible until someone hoists the call.
+        def swing(delta, *, base_price=base_price, same=same, base=base):
             return abs(sum(modelled(r, base_price + delta) for r in same) - base)
 
         sensitivity.append(
