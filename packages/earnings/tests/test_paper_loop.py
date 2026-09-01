@@ -111,7 +111,10 @@ def quotes_pricing(exit_debit, *, spread=0.05):
             "max_spread_pct": spread,
             "quotes": {
                 LEGS[0]["symbol"]: {"bid": exit_debit, "ask": exit_debit, "mid": max(exit_debit, 0.01)},
-                LEGS[1]["symbol"]: {"bid": 0.0, "ask": 0.0, "mid": 0.01},
+                # A wide stub carries a genuinely wide leg (percent AND money); the default stays
+                # zero-width so priced closes stay exact. Widening the second short shifts the exit
+                # debit, which only the blocked-exit test uses this for -- and there no close prices.
+                LEGS[1]["symbol"]: {"bid": 0.0, "ask": spread if spread > 0.25 else 0.0, "mid": 0.01},
             },
         }
 
@@ -260,7 +263,9 @@ def test_the_broker_confirms_the_price_before_a_close_is_recorded(monkeypatch):
 
 def test_wide_quotes_are_marked_but_not_acted_on(priced):
     order_id = open_trade()
-    priced(quotes_pricing(3.00, spread=0.90))
+    # 2.10 + the wide leg's 0.90 ask prices the close at 3.00 -- past the 25% target, so the
+    # decision fires and only the gate stands between it and execution.
+    priced(quotes_pricing(2.10, spread=0.90))
     paper_loop.run_iteration(CONFIG, at("10:00"))
 
     assert db_paper.cmd_get_open_positions(_ns())["positions"]

@@ -79,6 +79,10 @@ POLICY_DEFAULTS = {
     # being managed, and a target computed off that mid is arithmetic rather than a price.
     "exec_window_start": "09:40",
     "max_leg_spread_pct": 0.35,
+    # The floor under the percentage: a leg is refused only when wide in percent AND in money.
+    # A short that has done its job quotes 0.00/0.01 -- a one-cent buyback and, as a ratio, a 200%
+    # spread -- and that is the WIN case, not an illiquidity case. See `_spread_blocks`.
+    "max_leg_spread_abs": 0.05,
     # Pin risk: a short strike sitting on spot into the close of its expiration day.
     "pin_guard_dollars": 1.00,
     "pin_guard_window_minutes": 60,
@@ -303,7 +307,37 @@ def execution_gate(snapshot: dict, config: dict, strategy: str, *, now: datetime
     if now.timetz().replace(tzinfo=None) < _time(hour, minute):
         return "before_exec_window"
 
-    widest = snapshot.get("max_spread_pct")
-    if widest is not None and widest > policy["max_leg_spread_pct"]:
+    if _spread_blocks(snapshot, policy):
         return "spread_too_wide"
     return None
+
+
+def _spread_blocks(snapshot: dict, policy: dict) -> bool:
+    """Whether any leg is too wide to act on -- wide in PERCENT and in MONEY, both, per leg.
+
+    A percentage alone is the wrong instrument on the way out, where the common case is a short
+    that has gone nearly worthless: `bid 0.00 / ask 0.01` is a one-cent buyback and, as a ratio,
+    exactly a 200% spread. Measured before this change: 32 distinct positions hit their profit
+    target, were refused by the percentage test (5,695 of the gated ticks at exactly 2.000), and
+    every one of them rode to expiry instead of taking the exit the 2026-08-12 managed lifecycle
+    exists to test. calendars had the same defect on its Friday close (fixed 2026-08-31); curve's
+    entry gate documented the identical arithmetic from the other side.
+
+    Judged PER LEG off the snapshot's own quotes: the widest-by-percent and widest-by-money can be
+    different legs, and two separate maxima would refuse a structure neither leg justifies. A
+    snapshot without quotes falls back to the aggregate percentage, so nothing widens silently.
+    """
+    max_pct = policy["max_leg_spread_pct"]
+    quotes = snapshot.get("quotes")
+    if not quotes:
+        widest = snapshot.get("max_spread_pct")
+        return widest is not None and widest > max_pct
+    max_abs = policy.get("max_leg_spread_abs", 0.05)
+    for q in quotes.values():
+        bid, ask, mid = q.get("bid"), q.get("ask"), q.get("mid")
+        if bid is None or ask is None or not mid or mid <= 0:
+            continue
+        pct = (ask - bid) / mid
+        if pct > max_pct and (ask - bid) > max_abs:
+            return True
+    return False
