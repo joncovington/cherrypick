@@ -182,3 +182,14 @@ def test_the_ic_wins_inside_the_walls_and_names_the_breached_side():
     # A missing wall is no structure; an inverted pair could not be built and is refused, not scored.
     assert pin_study.ic_outcome(6450, None, 6400) is None
     assert pin_study.ic_outcome(6450, 6400, 6500)["outcome"] == "inverted_walls"
+
+
+def test_the_iron_fly_reports_distance_buckets_because_its_credit_is_unpriceable():
+    """The win condition is |close - body| < credit, and no credit is on file -- so the buckets
+    hand the reader the distance and nothing else. Boundaries are inclusive on the near side."""
+    assert pin_study.iron_fly_zone(6400, 6400) == "within_5"
+    assert pin_study.iron_fly_zone(6405, 6400) == "within_5"
+    assert pin_study.iron_fly_zone(6405.1, 6400) == "within_10"
+    assert pin_study.iron_fly_zone(6410, 6400) == "within_10"
+    assert pin_study.iron_fly_zone(6425, 6400) == "within_25"
+    assert pin_study.iron_fly_zone(6374.9, 6400) == "beyond_25"

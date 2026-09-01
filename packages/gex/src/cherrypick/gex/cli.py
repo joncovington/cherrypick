@@ -65,6 +65,9 @@ def _cmd_pin_study(cfg: dict, args: argparse.Namespace) -> int:
         print(f"  median |open-level|  : {summary['median_open_distance']}")
         ic = summary["ic"]
         print(f"  IC shorts at the walls : {ic['outcomes']}  median breach {ic['median_breach_points']}")
+        print("  iron fly |close-shorts| buckets:")
+        for level, zones in summary["iron_fly_zones"].items():
+            print(f"    {level:22s} {zones}")
         print("  bwb (5/10) zones:")
         for key, zones in summary["bwb_zones"].items():
             print(f"    {key:22s} {zones}")
