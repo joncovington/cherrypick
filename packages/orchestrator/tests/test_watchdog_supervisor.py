@@ -101,19 +101,26 @@ def test_live_supervisor_and_anchor_are_ok(monkeypatch):
     }
 
 
-def test_stale_heartbeat_is_critical(monkeypatch):
+def test_stale_heartbeat_is_critical_and_says_stale(monkeypatch):
     write_heartbeat(age_seconds=600)
     monkeypatch.setattr(watchdog.tasks, "exists", lambda name: True)
     alive = next(f for f in watchdog._check_supervisor({}) if f.key == "supervisor.alive")
     assert alive.status == watchdog.CRITICAL and "600" in alive.message
+    assert "stale" in alive.message
 
 
-def test_dead_pid_with_fresh_heartbeat_is_critical(monkeypatch):
-    """A fresh file with a dead PID is a just-crashed daemon — freshness alone must not read OK."""
+def test_dead_pid_with_fresh_heartbeat_is_critical_and_names_the_dead_pid(monkeypatch):
+    """A fresh file with a dead PID is a just-crashed daemon — freshness alone must not read OK.
+
+    The message must also SAY that: the 2026-09-01 alert read 'Heartbeat is 2s old (limit 90s).
+    Not running.' — self-contradictory on its face, the one time the check caught its most
+    interesting case. The reader has to be told which half of the liveness test failed."""
     write_heartbeat(pid=999999999)
     monkeypatch.setattr(watchdog.tasks, "exists", lambda name: True)
     alive = next(f for f in watchdog._check_supervisor({}) if f.key == "supervisor.alive")
     assert alive.status == watchdog.CRITICAL
+    assert "fresh" in alive.message and "pid 999999999 is dead" in alive.message
+    assert "old (limit" not in alive.message  # the self-contradictory wording this replaced
 
 
 def test_missing_anchor_is_critical_while_supervisor_runs(monkeypatch):

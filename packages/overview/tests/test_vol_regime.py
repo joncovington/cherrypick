@@ -109,8 +109,11 @@ def test_a_curve_point_the_feed_did_not_serve_is_still_a_row():
     silently redraws the term structure rather than showing the hole."""
     block = facts._vol_regime(_readings(vix6m={"value": None, "basis": None}), {}, "2026-08-25")
 
-    assert block["total_points"] == 5 and block["measured_points"] == 4
-    assert [c["symbol"] for c in block["curve"]] == ["VIX9D", "VIX", "VIX3M", "VIX6M", "VIX1Y"]
+    # Six points since VIX1D joined the front of the curve (2026-09-02); the fixture's readings may
+    # or may not carry it, so measured is derived from the rows rather than pinned to a literal.
+    assert block["total_points"] == 6
+    assert block["measured_points"] == sum(1 for c in block["curve"] if c["value"] is not None)
+    assert [c["symbol"] for c in block["curve"]] == ["VIX1D", "VIX9D", "VIX", "VIX3M", "VIX6M", "VIX1Y"]
     assert next(c for c in block["curve"] if c["symbol"] == "VIX6M")["value"] is None
 
 

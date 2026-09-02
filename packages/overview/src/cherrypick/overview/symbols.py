@@ -69,7 +69,7 @@ ALL_SYMBOLS = tuple(sorted({*INDEX_SYMBOLS, *SECTOR_ETFS, *COMMODITY_PROXIES, *C
 # SPX stays an underlying because it genuinely is one for half the suite; the union means this
 # package's entry costs nothing extra.
 QUOTE_ONLY_SYMBOLS = tuple(
-    sorted({*SECTOR_ETFS, *COMMODITY_PROXIES, *CREDIT_PROXIES, "VIX", "VIX3M", "VVIX"})
+    sorted({*SECTOR_ETFS, *COMMODITY_PROXIES, *CREDIT_PROXIES, "VIX", "VIX1D", "VIX3M", "VVIX"})
 )
 UNDERLYING_SYMBOLS = ("SPX",)
 

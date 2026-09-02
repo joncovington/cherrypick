@@ -334,6 +334,12 @@
   "advice": {
     "enabled": false,
     "base_arm": "control",
-    "bounds": {}
+    "bounds": {
+      "max_forecast_range_points": {
+        "min": 30,
+        "max": 150,
+        "_note": "The containment gate (engine.evaluate_credit_spread_entry): the advised book skips a session whose trailing realized range (provider._trailing_range, prior 5 sessions) exceeds this many points. Declared 2026-09-02 for the advisor's band-containment experiment; the advisor sweeps the cap. Off on every other arm."
+      }
+    }
   }
 }

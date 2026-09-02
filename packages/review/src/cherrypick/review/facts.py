@@ -42,7 +42,7 @@ from cherrypick.review import paths as _paths
 
 # 6 (2026-08-26): each module's facts gained `concentration` — how much of the net rests on one arm.
 # Additive; nothing gates on this number, it is displayed so a reader can tell which shape they have.
-FACT_VERSION = 6
+FACT_VERSION = 7  # 7: + health.entries per module, flies health.completions (2026-09-01)
 
 STATUS_PROVISIONAL = "provisional"
 STATUS_FINAL = "final"
@@ -101,6 +101,10 @@ def _meic_health(conn, session: str) -> dict:
         "loop_ticked": bool(_scalar(conn, "SELECT COUNT(*) FROM loop_log WHERE loop_date = ?", (session,))),
         "iterations": _scalar(conn, "SELECT COUNT(*) FROM loop_log WHERE loop_date = ?", (session,)),
         "entry_attempts": {r["outcome"] or "unknown": r["n"] for r in attempts} or None,
+        # Positions OPENED this session, not closed in it — `results.closed` answers the settled
+        # half, and for a multi-day module the two are different populations. A measured 0 stays 0;
+        # None means the table itself is absent (the null-is-not-zero rule, via _scalar).
+        "entries": _scalar(conn, "SELECT COUNT(*) FROM ic_trades WHERE trade_date = ?", (session,)),
     }
 
 
@@ -115,6 +119,21 @@ def _flies_health(conn, session: str) -> dict:
         "loop_ticked": bool(iterations),
         "iterations": iterations,
         "entry_attempts": {r["outcome"] or "unknown": r["n"] for r in attempts} or None,
+        # Entered vs completed is this module's own lifecycle split: an entry is one leg of a
+        # two-stage structure until it completes into a fly (`kind = 'fly'`, the same rule the
+        # trade notifier's completion cards key on), at which point the floor becomes a guarantee.
+        # Voided rows are neither. A measured 0 stays 0; None means the table is absent.
+        "entries": _scalar(
+            conn,
+            "SELECT COUNT(*) FROM fly_positions WHERE trade_date = ? AND void_reason IS NULL",
+            (session,),
+        ),
+        "completions": _scalar(
+            conn,
+            "SELECT COUNT(*) FROM fly_positions WHERE trade_date = ? AND kind = 'fly'"
+            " AND void_reason IS NULL",
+            (session,),
+        ),
     }
 
 
@@ -132,6 +151,13 @@ def _earnings_health(conn, session: str) -> dict:
         # candidate could have been taken regardless of what the screen thought.
         "phases": {f"{r['phase']}:{r['status']}": r["n"] for r in phases} or None,
         "errors": sum(r["n"] for r in phases if r["status"] != "ok") or None,
+        # opened_at is epoch seconds; 'localtime' matches _earnings_expected's own session read
+        # (a bare 'unixepoch' is UTC and shifts evening entries into the wrong session).
+        "entries": _scalar(
+            conn,
+            "SELECT COUNT(*) FROM trades WHERE date(opened_at, 'unixepoch', 'localtime') = ?",
+            (session,),
+        ),
     }
 
 
@@ -151,6 +177,7 @@ def _calendars_health(conn, session: str) -> dict:
         "loop_ticked": bool(iterations),
         "iterations": iterations,
         "entry_attempts": {r["outcome"] or "unknown": r["n"] for r in attempts} or None,
+        "entries": _scalar(conn, "SELECT COUNT(*) FROM dc_positions WHERE entry_session = ?", (session,)),
         "marks": marks or None,
         "marks_refused": refused or None,
     }
@@ -179,6 +206,7 @@ def _pmcc_health(conn, session: str) -> dict:
         "loop_ticked": bool(iterations),
         "iterations": iterations,
         "entry_attempts": {r["outcome"] or "unknown": r["n"] for r in attempts} or None,
+        "entries": _scalar(conn, "SELECT COUNT(*) FROM pmcc_positions WHERE entry_session = ?", (session,)),
         "marks": marks or None,
         "marks_refused": refused or None,
         "assignment_exposed_ticks": exposed or None,
@@ -209,6 +237,7 @@ def _bwb_health(conn, session: str) -> dict:
         "loop_ticked": bool(iterations),
         "iterations": iterations,
         "entry_attempts": {r["outcome"] or "unknown": r["n"] for r in attempts} or None,
+        "entries": _scalar(conn, "SELECT COUNT(*) FROM bwb_positions WHERE entry_session = ?", (session,)),
         "marks": marks or None,
         "marks_refused": refused or None,
         "trigger_ticks": triggers or None,
@@ -240,6 +269,7 @@ def _curve_health(conn, session: str) -> dict:
         "loop_ticked": bool(iterations),
         "iterations": iterations,
         "entry_attempts": {r["outcome"] or "unknown": r["n"] for r in attempts} or None,
+        "entries": _scalar(conn, "SELECT COUNT(*) FROM curve_positions WHERE entry_session = ?", (session,)),
         "marks": marks or None,
         "marks_refused": refused or None,
         "regime_readings": regime or None,

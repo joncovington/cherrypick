@@ -413,3 +413,70 @@ def _eod(tmp_path, monkeypatch, day):
     monkeypatch.setattr(metrics, "DB_PATH", db_paper.DB_PATH)
     monkeypatch.setattr(harness, "_eod_report_path", lambda d: tmp_path / f"paper-eod-{d}.md")
     return harness._write_eod_report(day).read_text(encoding="utf-8")
+
+
+def test_a_management_event_carries_the_profile_it_judged(tmp_path):
+    """The advisor's earnings_comparison_integrity spec (2026-09-01): an advised twin runs
+    different exit params than its control, and without a profile stamp "did the advised target
+    ever fire" was unanswerable from this table. NULL on rows predating the stamp, never
+    backfilled from order_id parsing."""
+    db_paper.cmd_record_management_event(
+        _ns(
+            data=json.dumps(
+                {
+                    "order_id": "advised-st-ic-X-1",
+                    "action": "close_all",
+                    "reason": "profit_target",
+                    "executed": True,
+                    "profile": "advised:strat_test:iron_condor",
+                }
+            )
+        )
+    )
+    event = db_paper.cmd_get_management_events(
+        _ns(order_id="advised-st-ic-X-1", session_date=None, limit=None)
+    )["events"][0]
+    assert event["profile"] == "advised:strat_test:iron_condor"
+    # An event recorded without one stays NULL -- "recorded before the stamp existed" is a fact.
+    db_paper.cmd_record_management_event(
+        _ns(data=json.dumps({"order_id": "legacy-1", "action": "hold", "reason": "target_not_hit"}))
+    )
+    legacy = db_paper.cmd_get_management_events(_ns(order_id="legacy-1", session_date=None, limit=None))[
+        "events"
+    ][0]
+    assert legacy["profile"] is None
+
+
+def test_hold_days_backfill_derives_only_what_two_recorded_timestamps_prove(tmp_path):
+    """Dry by default; --apply writes; a row session_span cannot read stays NULL and is named."""
+    from datetime import datetime
+
+    def epoch(s):
+        return datetime.fromisoformat(s).timestamp()
+
+    conn = db_paper._conn()
+    conn.execute(
+        "INSERT INTO trades (order_id, strategy, symbol, expiration, opened_at, closed_at, status)"
+        " VALUES ('L1', 'iron_fly', 'X', '2026-07-24', ?, ?, 'closed')",
+        (epoch("2026-07-23 15:50"), epoch("2026-07-24 09:45")),
+    )
+    conn.execute(
+        "INSERT INTO trades (order_id, strategy, symbol, expiration, opened_at, closed_at, status)"
+        " VALUES ('L2', 'iron_fly', 'Y', '2026-07-24', NULL, ?, 'closed')",
+        (epoch("2026-07-24 09:45"),),
+    )
+    conn.commit()
+    conn.close()
+
+    dry = db_paper.cmd_backfill_hold_days(_ns(apply=False))
+    assert dry["derived"] == 1 and dry["unreadable"] == ["L2"] and dry["applied"] is False
+    conn = db_paper._conn()
+    assert conn.execute("SELECT hold_days FROM trades WHERE order_id='L1'").fetchone()[0] is None
+    conn.close()
+
+    applied = db_paper.cmd_backfill_hold_days(_ns(apply=True))
+    assert applied["applied"] is True and applied["by_span"] == {"1": 1}
+    conn = db_paper._conn()
+    assert conn.execute("SELECT hold_days FROM trades WHERE order_id='L1'").fetchone()[0] == 1
+    assert conn.execute("SELECT hold_days FROM trades WHERE order_id='L2'").fetchone()[0] is None
+    conn.close()

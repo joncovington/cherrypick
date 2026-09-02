@@ -55,6 +55,8 @@ Subcommands:
   notify-test          Fire a test notification through all configured channels.
   notify-trades        Push new paper entries/exits to the trade channels (also runs on each watchdog tick).
   notify-desk          Card manual-desk orders and watch them to fill (own task, broker + network call).
+  notify-status        Post the hourly suite-status digest card (own job, webhook push). --close posts
+                       the day's CLOSE card (the daily 16:35 job); --force posts on a non-trading day too.
   secrets-set          Store a webhook URL in the keyring (--channel; --url or prompt).
   secrets-status       Show which push-channel secrets are configured (secret-free).
   secrets-delete       Remove a stored secret (--channel).
@@ -87,6 +89,7 @@ from cherrypick.orchestrator import (
     report,
     servicecfg,
     settings_serve,
+    status_digest,
     supervisor,
     tasks,
     timeutil,
@@ -1091,6 +1094,10 @@ def cmd_notify_desk(cfg) -> None:
     _emit(desk_notifier.run(cfg))
 
 
+def cmd_notify_status(cfg, force: bool = False, close: bool = False) -> None:
+    _emit(status_digest.run(cfg, force=force, close=close))
+
+
 def _resolve_session(args) -> str | None:
     """The session an EOD-scoped command targets: an explicit --date wins, else --eod means today
     (ET), else None (the all-time cumulative view)."""
@@ -1240,6 +1247,7 @@ def build_parser() -> argparse.ArgumentParser:
             "notify-test",
             "notify-trades",
             "notify-desk",
+            "notify-status",
             "secrets-set",
             "secrets-status",
             "secrets-delete",
@@ -1258,7 +1266,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--force",
         action="store_true",
         help="For init: overwrite an existing config.json. For install: proceed while flies is "
-        "live-armed today.",
+        "live-armed today. For notify-status: post on a non-trading day too.",
     )
     parser.add_argument(
         "--date", default=None, help="For report/eod-digest: a session day 'YYYY-MM-DD' (default today)"
@@ -1351,6 +1359,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="For supervise: ask the running supervisor daemon to exit (via its stop file)",
     )
+    parser.add_argument(
+        "--close",
+        action="store_true",
+        help="For notify-status: post the day's CLOSE card (what the daily status-digest-close job passes)",
+    )
     return parser
 
 
@@ -1393,6 +1406,7 @@ def main() -> None:
         "calibrate": lambda: cmd_calibrate(cfg),
         "notify-trades": lambda: cmd_notify_trades(cfg),
         "notify-desk": lambda: cmd_notify_desk(cfg),
+        "notify-status": lambda: cmd_notify_status(cfg, force=args.force, close=args.close),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),
         "run-earnings-exit": lambda: _run_earnings(cfg, "exit"),
         "run-earnings-symbol-watch": lambda: _run_earnings_symbol_watch(cfg),

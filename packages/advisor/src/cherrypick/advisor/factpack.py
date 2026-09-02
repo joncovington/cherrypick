@@ -191,6 +191,55 @@ def carried_advice_params(module: str) -> list[dict[str, Any]] | None:
     return _read(_paper_db(module), read)
 
 
+def closed_advice_params(module: str, session: str) -> list[dict[str, Any]] | None:
+    """The frozen advice params on advised positions this module CLOSED during `session`.
+
+    `carried_advice_params`'s sibling, for the morning that motivated it (2026-09-01): earnings
+    closed 13 advised iron condors at 09:45, all managed under the params their entry had frozen,
+    then held nothing — so the open-row read said "carries nothing" and the enactment check warned
+    hourly about an artifact that was in force for every decision the module actually made.
+
+    Same discovery, same three answers as the open read (None = cannot stamp; [] = stamps but
+    closed nothing advised this session; a list = the frozen params those exits ran under). The
+    close-date column is discovered from the schema too: `closed_session` where the table declares
+    one, else epoch `closed_at` read with 'localtime' (earnings' convention — a bare 'unixepoch'
+    is UTC and shifts evening closes into the wrong session). A table that dates its closes no way
+    at all returns [] — an undated close proves nothing about any particular session.
+    """
+
+    def read(conn):
+        table, columns = None, set()
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'"):
+            name = row[0]
+            cols = {c[1] for c in conn.execute(f"PRAGMA table_info({name})")}
+            if {"advice_params", "status"} <= cols:
+                table, columns = name, cols
+                break
+        if table is None:
+            return None
+        if "closed_session" in columns:
+            where = "closed_session = ?"
+        elif "closed_at" in columns:
+            where = "date(closed_at, 'unixepoch', 'localtime') = ?"
+        else:
+            return []
+        out: list[dict[str, Any]] = []
+        for row in conn.execute(
+            f"SELECT DISTINCT advice_params FROM {table}"  # noqa: S608 - name from sqlite_master
+            f" WHERE advice_params IS NOT NULL AND status = 'closed' AND {where}",
+            (session,),
+        ):
+            try:
+                params = json.loads(row[0]) if isinstance(row[0], str) else dict(row[0])
+            except (TypeError, ValueError):
+                continue  # an unreadable stamp proves nothing either way; it is not evidence
+            if isinstance(params, dict) and params not in out:
+                out.append(params)
+        return out
+
+    return _read(_paper_db(module), read)
+
+
 def _counts(rows: list[dict], key: str, value: str = "n") -> dict[str, Any]:
     return {str(r[key] or "unknown"): r[value] for r in rows}
 
@@ -472,6 +521,23 @@ def _earnings(session: str) -> dict[str, Any]:
             " WHERE session_date = ? GROUP BY action, reason, executed ORDER BY n DESC LIMIT ?",
             (session, TOP_N),
         )
+        # The advised-twin pairing, MEASURED — because unstated it reads as a defect. An advised
+        # entry mirrors its control's fills by design: identical entry_credit and capital, its own
+        # order_id ('advised-' + the control's), divergent management thereafter. The pack carried
+        # none of that, so the model flagged the pairs as "double-tagging" twice (#94 on 08-31,
+        # #103 on 09-01) and reasoned that their delta contribution was zero by construction —
+        # which is wrong precisely because the twins are managed separately (the 13-vs-1 close
+        # split of 09-01 was the unmanaged-twin backlog of 08-26→08-31 flushing through the fixed
+        # loop, not doubled rows). `paired` is the by-design case; `unpaired_advised` — a twin
+        # whose control row is missing under the stripped id — is the actual defect to flag.
+        twins = _store.rows(
+            conn,
+            "SELECT COUNT(*) advised_rows,"
+            " SUM(CASE WHEN c.order_id IS NOT NULL THEN 1 ELSE 0 END) paired,"
+            " SUM(CASE WHEN c.order_id IS NULL THEN 1 ELSE 0 END) unpaired_advised"
+            " FROM trades a LEFT JOIN trades c ON c.order_id = substr(a.order_id, 9)"
+            " WHERE a.order_id LIKE 'advised-%'",
+        )
         return {
             "scans": scans,
             "top_reject_reasons": rejects,
@@ -479,6 +545,14 @@ def _earnings(session: str) -> dict[str, Any]:
             "closed_today": closed,
             "loop_health": health,
             "management_events": events,
+            "advised_twins": dict(twins[0]) if twins else None,
+            "_twin_note": (
+                "an advised row sharing entry_credit/capital with a control row under the same "
+                "stripped order_id is the PAIRED-TWIN DESIGN (identical fills, divergent "
+                "management), not double-tagging; only unpaired_advised > 0 is a defect. "
+                "management_events carry a `profile` stamp from 2026-09-01 (NULL before), so "
+                "whether an advised exit param fired is answerable from that table directly."
+            ),
         }
 
     out = _read(_paper_db("earnings"), read) or {"_absent": "no earnings paper ledger"}
@@ -698,6 +772,18 @@ def _bwb(session: str) -> dict[str, Any]:
             (session,),
         )
         marks = _mark_coverage(conn, "bwb_marks", session)
+        # Which books exist OUTSIDE the four-book contrast. The 'wall' book (added 2026-08-31 by
+        # config, opt-in: a call-side BWB at the GEX call wall) trades a DIFFERENT structure by
+        # its own declaration — but the pack's note still said "the four books trade the identical
+        # base fly", so the model read wall's rows as the contrast silently breaking (#101).
+        # Derived from the rows, not a list: a book is non-base the moment it appears.
+        base_books = {"control", "delta", "bounce", "flip"}
+        seen = _store.rows(conn, "SELECT DISTINCT book FROM bwb_positions ORDER BY book")
+        non_base = [
+            r["book"]
+            for r in seen
+            if r["book"] not in base_books and not str(r["book"]).startswith("advised:")
+        ]
         return {
             "open_positions": open_rows,
             "closed_by_exit_reason": closed,
@@ -705,10 +791,15 @@ def _bwb(session: str) -> dict[str, Any]:
             "management_events": events,
             "trigger_ticks": triggers,
             "mark_coverage": marks,
+            "non_base_books": non_base,
             "_note": (
-                "the four books trade the IDENTICAL base fly and differ only in the add-on trigger, "
-                "so their contrast is the experiment — never pool them into a module net; the "
-                "advisable surface is the trigger thresholds and entry geometry, not the base "
+                "the four BASE books (control/delta/bounce/flip) trade the IDENTICAL base fly and "
+                "differ only in the add-on trigger — their contrast is the experiment, and only "
+                "they (plus advised:*) belong in it. Any book named in non_base_books (e.g. "
+                "'wall', added 2026-08-31: an opt-in call-side BWB at the GEX call wall) is a "
+                "SEPARATE structure by the module's own config declaration — never pool it into "
+                "the contrast or a module net, and do not read its rows as the contrast breaking. "
+                "The advisable surface is the trigger thresholds and entry geometry, not the base "
                 "structure. SPX is cash-settled and European, so settlement carries no assignment "
                 "model to caveat"
             ),
@@ -1133,6 +1224,206 @@ def _settlement_integrity(session: str) -> dict[str, Any]:
     return _read(_paper_db("meic"), read) or {"_absent": "no meic paper ledger"}
 
 
+# Fixed binding-margin buckets (points). Fixed rather than the proposal's deciles, deliberately:
+# at ~60 recorded books a decile holds six, and the bucket edges would move every session, so the
+# same book would migrate between rows and the trend would describe the bucketing. Revisit at ~200.
+_BAND_MARGIN_BUCKETS = ((float("-inf"), 0.0), (0.0, 10.0), (10.0, 25.0), (25.0, 50.0), (50.0, float("inf")))
+
+
+def _flies_band_containment() -> dict[str, Any]:
+    """Band placement vs the session's realized range, over every flies book ever recorded.
+
+    The advisor requested exactly this derivation (proposal #102, 2026-09-01) after reporting the
+    same finding on six consecutive sessions in exp-2026-08-20-flies-1's SECONDARY metric: whether
+    a book's floor held has been classified perfectly by whether the session's realized range
+    stayed inside the book's band — across the upper edge (08-17 through 08-31) and, on 09-01, the
+    lower edge (advised:control's band_low sat 12.80 points above the session low; floor_holds 0,
+    worst −1,171.34, while control's band_low cleared the low by 31.20 and held at +143.63).
+
+    Day ranges come from the gex spot-trail (min/max recorded SPX spot per session) — the same
+    recorded series the suite's own gates read, never a live fetch. A book whose session has no
+    recorded range is counted `unmatched` and excluded rather than guessed. SPX-only, which today
+    is all of flies.
+
+    The `forecasts` block answers the proposal's second question — is the range forecastable at
+    entry, so a containment rule could actually be implemented — for the two candidates the
+    suite's own stores can answer: the trailing realized range and the morning GEX walls, each
+    scored on whether its band contained the session's realized range. The proposal's third
+    candidate (vix1d_implied) reads the gex recorder's own `market_regime_history` (the first
+    usable VIX1D reading of the session) against the prior SPX close from `daily_closes` — the
+    first cut of this derivation said no VIX1D series existed, which was wrong: the recorder has
+    carried it since 2026-08-24.
+    """
+
+    def books(conn):
+        return _store.rows(
+            conn,
+            "SELECT trade_date, arm, band_low, band_high, worst, floor_holds FROM fly_books"
+            " WHERE band_low IS NOT NULL AND band_high IS NOT NULL AND floor_holds IS NOT NULL"
+            " ORDER BY trade_date",
+        )
+
+    def ranges(conn):
+        return _store.rows(
+            conn,
+            "SELECT trade_date, MIN(spot) lo, MAX(spot) hi, COUNT(*) n FROM gex_regime_history"
+            " WHERE symbol = 'SPX' AND spot IS NOT NULL GROUP BY trade_date ORDER BY trade_date",
+        )
+
+    def walls(conn):
+        return _store.rows(
+            conn,
+            "SELECT g.trade_date, g.spot open_spot, g.put_wall, g.call_wall FROM gex_regime_history g"
+            " WHERE g.symbol = 'SPX' AND g.ts = (SELECT MIN(ts) FROM gex_regime_history"
+            "  WHERE symbol = 'SPX' AND trade_date = g.trade_date)",
+        )
+
+    def vix1d(conn):
+        return _store.rows(
+            conn,
+            "SELECT m.trade_date, m.value FROM market_regime_history m"
+            " WHERE m.reading = 'vix1d' AND m.usable = 1 AND m.ts = (SELECT MIN(ts) FROM"
+            "  market_regime_history WHERE reading = 'vix1d' AND usable = 1 AND trade_date = m.trade_date)",
+        )
+
+    def closes(conn):
+        return _store.rows(
+            conn, "SELECT trade_date, close FROM daily_closes WHERE symbol = 'SPX' ORDER BY trade_date"
+        )
+
+    rows = _read(_paper_db("flies"), books) or []
+    day = {r["trade_date"]: r for r in (_read(_gex_history(), ranges) or [])}
+    first = {r["trade_date"]: r for r in (_read(_gex_history(), walls) or [])}
+    vix1d_open = {r["trade_date"]: float(r["value"]) for r in (_read(_gex_history(), vix1d) or [])}
+    close_by_date = {r["trade_date"]: float(r["close"]) for r in (_read(_gex_history(), closes) or [])}
+    if not rows:
+        return {"_absent": "no flies books recorded"}
+
+    def bucket_label(margin: float) -> str:
+        for lo, hi in _BAND_MARGIN_BUCKETS:
+            if lo <= margin < hi:
+                lo_s = "-inf" if lo == float("-inf") else f"{lo:.0f}"
+                hi_s = "inf" if hi == float("inf") else f"{hi:.0f}"
+                return f"[{lo_s},{hi_s})"
+        return "?"
+
+    scored: list[dict[str, Any]] = []
+    unmatched = 0
+    for r in rows:
+        rng = day.get(r["trade_date"])
+        if rng is None:
+            unmatched += 1
+            continue
+        lower = round(float(rng["lo"]) - float(r["band_low"]), 2)  # positive = band clears the low
+        upper = round(float(r["band_high"]) - float(rng["hi"]), 2)  # positive = band clears the high
+        binding = min(lower, upper)
+        scored.append(
+            {
+                "arm": r["arm"],
+                "held": bool(r["floor_holds"]),
+                "worst": r["worst"],
+                "binding_margin": binding,
+                "binding_edge": "lower" if lower <= upper else "upper",
+            }
+        )
+
+    def rate(rows_: list[dict[str, Any]]) -> dict[str, Any]:
+        n = len(rows_)
+        held = sum(1 for s in rows_ if s["held"])
+        worsts = [s["worst"] for s in rows_ if s["worst"] is not None]
+        return {
+            "n": n,
+            "floor_holds_rate": round(held / n, 4) if n else None,
+            "mean_worst": round(sum(worsts) / len(worsts), 2) if worsts else None,
+            "min_worst": round(min(worsts), 2) if worsts else None,
+        }
+
+    by_bucket = []
+    for lo, hi in _BAND_MARGIN_BUCKETS:
+        members = [s for s in scored if lo <= s["binding_margin"] < hi]
+        if members:
+            by_bucket.append({"bucket": bucket_label(members[0]["binding_margin"]), **rate(members)})
+    breached = [s for s in scored if s["binding_margin"] < 0]
+    contained = [s for s in scored if s["binding_margin"] >= 0]
+
+    # Forecast scoring: for each session with a recorded range, did the candidate band contain it?
+    sessions = sorted(day)
+    trailing_n = 5
+    trailing_hits, trailing_scored = 0, 0
+    wall_hits, wall_scored = 0, 0
+    vix_hits, vix_scored = 0, 0
+    for i, s in enumerate(sessions):
+        rng = day[s]
+        realized = float(rng["hi"]) - float(rng["lo"])
+        if i >= trailing_n:
+            mean_width = sum(float(day[p]["hi"]) - float(day[p]["lo"]) for p in sessions[i - trailing_n : i])
+            mean_width /= trailing_n
+            f = first.get(s)
+            center = float(f["open_spot"]) if f and f.get("open_spot") is not None else None
+            if center is not None:
+                trailing_scored += 1
+                if center - mean_width / 2 <= float(rng["lo"]) and center + mean_width / 2 >= float(
+                    rng["hi"]
+                ):
+                    trailing_hits += 1
+        f = first.get(s)
+        if f and f.get("put_wall") is not None and f.get("call_wall") is not None:
+            wall_scored += 1
+            if float(f["put_wall"]) <= float(rng["lo"]) and float(f["call_wall"]) >= float(rng["hi"]):
+                wall_hits += 1
+        # vix1d_implied: prev_close * vix1d/100 / sqrt(252) as a symmetric band around the open.
+        v = vix1d_open.get(s)
+        prev_close = close_by_date.get(max((d for d in close_by_date if d < s), default=""))
+        center = float(f["open_spot"]) if f and f.get("open_spot") is not None else None
+        if v is not None and prev_close and center is not None:
+            half = prev_close * v / 100.0 / (252**0.5)
+            vix_scored += 1
+            if center - half <= float(rng["lo"]) and center + half >= float(rng["hi"]):
+                vix_hits += 1
+        _ = realized
+
+    return {
+        "books_scored": len(scored),
+        "books_unmatched": unmatched,
+        "by_binding_margin": by_bucket,
+        "by_edge": {
+            edge: rate([s for s in scored if s["binding_edge"] == edge]) for edge in ("lower", "upper")
+        },
+        "by_arm": {
+            arm: {
+                "breached": rate([s for s in scored if s["arm"] == arm and s["binding_margin"] < 0]),
+                "contained": rate([s for s in scored if s["arm"] == arm and s["binding_margin"] >= 0]),
+            }
+            for arm in sorted({s["arm"] for s in scored})
+        },
+        "separation": {
+            "breached": rate(breached),
+            "contained": rate(contained),
+            "_reading": "the proposal's claim is that these two hold rates separate cleanly",
+        },
+        "forecasts": {
+            "trailing_realized_5": {
+                "hit_rate": round(trailing_hits / trailing_scored, 4) if trailing_scored else None,
+                "n": trailing_scored,
+                "_basis": "band = first recorded spot +/- half the mean of the prior 5 realized ranges",
+            },
+            "gex_walls": {
+                "hit_rate": round(wall_hits / wall_scored, 4) if wall_scored else None,
+                "n": wall_scored,
+                "_basis": "band = the session's first recorded put_wall..call_wall",
+            },
+            "vix1d_implied": {
+                "hit_rate": round(vix_hits / vix_scored, 4) if vix_scored else None,
+                "n": vix_scored,
+                "_basis": (
+                    "band = first recorded spot +/- prev_close x (first usable VIX1D of the session)"
+                    "/100/sqrt(252)"
+                ),
+            },
+        },
+    }
+
+
 def _arm_readings() -> dict[str, Any]:
     """Every arm's reading and qualification, per module — the numbers a verdict reasons FROM.
 
@@ -1250,6 +1541,11 @@ def build(session: str, slot: str, modules: tuple[str, ...] | list[str] | None =
             pack["review_trend"] = _review_trend(session)
             pack["arm_readings"] = _arm_readings()
             pack["settlement_integrity"] = _settlement_integrity(session)
+            # The derivation the advisor requested in proposal #102 (2026-09-01): band placement vs
+            # realized range over every flies book, nightly. Deep-only — it aggregates all history
+            # and the light slots have no verdict to inform with it.
+            if "flies" in selected:
+                pack["flies_band_containment"] = _flies_band_containment()
             pack["bounds"] = _bounds.all_modules(selected)
             pack["experiments_full"] = {
                 "active": _store.experiments(conn, status="active"),

@@ -449,6 +449,20 @@
     "account_number": null,
     "_account_number_note": "Which account to resolve for order-status lookups. null uses the default account for those credentials."
   },
+  "status_digest": {
+    "_comment": "Hourly suite-status card to Discord: one field per module (closes, net, entry attempts, open risk, loop liveness) plus a header with the morning phase, watchdog verdict and the live halt flag. Composes existing artifacts only - it refreshes the provisional review fact set (the same idempotent build the 16:30 job runs) and reads it, watchdog.last.json and the morning pack; it never opens a module ledger itself. Pushes a webhook, so it is its own supervisor job and is never called from the watchdog tick. Two rendering rules are load-bearing: an unmeasured figure shows as an em dash (never $0), and no suite-wide net is ever printed (per-module nets only - see the review package's concentration rationale). OFF by default; set enabled=true, store the webhook (cherrypick secrets-set --channel discord), and the supervisor derives the job on its next pass.",
+    "enabled": false,
+    "interval_minutes": 60,
+    "start": "10:00",
+    "end": "16:10",
+    "_window_note": "ET wall-clock, trading days only. 10:00 gives the first card a half-session to describe; 16:10 lets the ~16:00 fire land after the 0DTE modules settle.",
+    "close_at": "16:35",
+    "_close_note": "The one daily CLOSE card (status-digest-close job): same composition, posted after the 0DTE books settle and the official 16:30 review-provisional build, with deltas against the last hourly post.",
+    "channels": [
+      "log",
+      "discord"
+    ]
+  },
   "notify": {
     "_channels_note": "push channels: 'log' (always on, the floor), 'desktop', 'slack', 'discord'. Slack/Discord webhook URLs live in the OS keyring (cherrypick secrets-set --channel slack|discord), never in this file or env vars.",
     "channels": [
