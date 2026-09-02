@@ -5,6 +5,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import type { ConsoleConfig } from "../src/config.js";
 import { readGex } from "../src/readers/gex.js";
+import { gexSymbols } from "../src/services/gexProfile.js";
 
 /**
  * GEX journals no measurement breaks; what makes its numbers untrustworthy is staleness and
@@ -35,6 +36,15 @@ beforeAll(() => {
   // A retired symbol: last written weeks ago, on an older session. Its rows are history, not
   // staleness, and ageing it would put a permanent warning on the page.
   r.run("QQQ", "2026-07-29", "2026-07-29T16:00:00.000Z", 500);
+  // The SHARED stream cache, as every module leaves it: the picker used to read this table, so the
+  // fixture carries the same shape the live box has -- earnings single names, a pmcc ETF and
+  // retired index experiments alongside the symbols GEX actually records.
+  const cache = new Database(path.join(tmp, "s.db"));
+  cache.exec("CREATE TABLE stream_chain (streamer_symbol TEXT, expiration TEXT, underlying_symbol TEXT, data_json TEXT, updated_at REAL);");
+  const ch = cache.prepare("INSERT INTO stream_chain (streamer_symbol, expiration, underlying_symbol) VALUES (?, ?, ?)");
+  for (const u of ["SPX", "XSP", "QQQ", "NDX", "META", "TQQQ"]) ch.run(`.${u}x`, "2026-09-18", u);
+  cache.close();
+
   const c = db.prepare("INSERT INTO daily_closes (symbol, trade_date, close) VALUES (?, ?, ?)");
   c.run("SPX", "2026-08-27", 7700);
   c.run("SPY", "2026-08-26", 766);                 // one day behind — the ordinary case
@@ -104,5 +114,23 @@ describe("gex close-series continuity", () => {
     const i = readGex(config).integrity;
     const spy = i.closeSeries.find((r) => r.symbol === "SPY");
     expect(spy?.daysBehind).toBeLessThanOrEqual(5);
+  });
+});
+
+describe("the GEX symbol picker", () => {
+  it("offers only what the recorder is still writing", () => {
+    // Until 2026-09-02 this read `DISTINCT underlying_symbol FROM stream_chain` -- the SHARED
+    // cache every module writes -- and offered 35 symbols on the live box: earnings' single names,
+    // pmcc's leveraged ETFs, the overview's sector ETFs, and retired index experiments, most weeks
+    // stale, while only SPX had a recorded GEX profile. Requesting NDX would have computed a gamma
+    // profile off a five-week-old chain and presented it as a claim about now.
+    const symbols = gexSymbols(config);
+    expect(symbols).toEqual(["SPX", "XSP"]); // the latest session's roster, sorted
+    expect(symbols).not.toContain("QQQ"); // retired: last written on an older session
+  });
+
+  it("offers nothing when the recorder has never run, rather than another module's leftovers", () => {
+    const bare = { ...config, paths: { ...config.paths, gexDir: path.join(os.tmpdir(), "no-such-gex") } };
+    expect(gexSymbols(bare)).toEqual([]);
   });
 });

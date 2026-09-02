@@ -171,18 +171,38 @@ export function buildGexProfile(config: ConsoleConfig, symbol: string): Record<s
   }
 }
 
+/**
+ * The symbols the GEX recorder is STILL writing, derived from its latest session.
+ *
+ * One definition, imported by `readers/gex.ts` for its staleness roster too: "which symbols does
+ * this suite track GEX for" must have a single answer, or the picker and the freshness check drift
+ * into disagreeing about the same question.
+ */
+export const CURRENT_GEX_SYMBOLS_SQL = `SELECT DISTINCT symbol FROM gex_regime_history
+   WHERE trade_date = (SELECT MAX(trade_date) FROM gex_regime_history) ORDER BY symbol`;
+
 export function gexSymbols(config: ConsoleConfig): string[] {
-  const p = config.paths.streamCacheDb;
+  // Derived from what the RECORDER writes, not from every underlying the shared stream cache has
+  // ever held. That cache is written by every module in the suite, so `DISTINCT underlying_symbol
+  // FROM stream_chain` -- what this read until 2026-09-02 -- offered 35 symbols: earnings' single
+  // names (META, AVGO, GOOG...), pmcc's leveraged ETFs, the overview's eleven sector ETFs, and
+  // retired index experiments (NDX, RUT, IWM), most of them weeks stale. Only SPX has a live GEX
+  // profile. Picking NDX would have computed a gamma profile off a five-week-old chain and
+  // presented it as a claim about now, which is precisely what a GEX read must never be.
+  //
+  // Empty when the recorder has never run: a suite with no recorded GEX has nothing to profile,
+  // and saying so is better than offering a list built from another module's leftovers.
+  const p = path.join(config.paths.gexDir, "gex_history.db");
   if (!fs.existsSync(p)) return [];
   let db: Database.Database | null = null;
   try {
     db = new Database(p, { readonly: true, fileMustExist: true });
+    db.pragma("busy_timeout = 2000");
     return db
-      .prepare<[], { underlying_symbol: string }>(
-        "SELECT DISTINCT underlying_symbol FROM stream_chain ORDER BY underlying_symbol",
-      )
+      .prepare<[], { symbol: string }>(CURRENT_GEX_SYMBOLS_SQL)
       .all()
-      .map((r) => r.underlying_symbol);
+      .map((r) => r.symbol)
+      .filter((s) => s.length > 0);
   } catch {
     return [];
   } finally {
