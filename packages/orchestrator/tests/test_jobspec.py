@@ -284,6 +284,7 @@ def test_derive_full_suite_job_table():
         "trade-notify",
         "desk-notify",
         "status-digest",
+        "status-digest-close",
         "console",
         "meic-paper",
         "flies-paper",

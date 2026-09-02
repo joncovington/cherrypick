@@ -472,6 +472,10 @@ def status_digest_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # entries to describe; 16:10 lets the ~16:00 fire land after the 0DTE modules settle.
         "start": sd.get("start", "10:00"),
         "end": sd.get("end", "16:10"),
+        # The one daily CLOSE card, after the 0DTE modules settle (~16:15) and after the official
+        # review-provisional build (16:30) — the day's final intraday word, deltas against the
+        # last hourly post.
+        "close_at": sd.get("close_at", "16:35"),
         "channels": sd.get("channels") or ["log", "discord"],
     }
 

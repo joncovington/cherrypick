@@ -216,13 +216,16 @@ def build_digest(
     morning: dict | None,
     halted: bool,
     prev: dict | None,
+    close: bool = False,
 ) -> tuple[str, str, dict, dict]:
     """The digest as (title, canonical message, Discord embed, snapshot-for-next-delta).
 
     Pure over its inputs so tests can pin the two conventions (null renders as an em dash; no
     suite-level net anywhere in the output) without touching a file or a clock.
     """
-    title = f"DIGEST · SUITE {hhmm} ET"
+    # The close card is the same composition with the day settled — the 0DTE books have expired by
+    # 16:35, so its figures are the day's final intraday word, delta'd against the last hourly post.
+    title = f"{'CLOSE' if close else 'DIGEST'} · SUITE {hhmm} ET"
     phase_line, phase = _phase_line(morning)
     wd_lines, overall = _watchdog_lines(watchdog)
 
@@ -256,7 +259,7 @@ def build_digest(
         else:
             msg_bits.append(f"{name} unreadable")
 
-    message = f"Suite digest {hhmm} ET — {phase_line} · watchdog {overall or _DASH}"
+    message = f"Suite {'close' if close else 'digest'} {hhmm} ET — {phase_line} · watchdog {overall or _DASH}"
     if halted:
         message += " · LIVE HALTED"
     if msg_bits:
@@ -267,7 +270,7 @@ def build_digest(
 
 
 # --------------------------------------------------------------------------- entrypoint
-def run(cfg: dict | None = None, force: bool = False) -> dict:
+def run(cfg: dict | None = None, force: bool = False, close: bool = False) -> dict:
     cfg = cfgmod.load_config() if cfg is None else cfg
     settings = cfgmod.status_digest_settings(cfg)
     now = timeutil.now_et(cfg.get("timezone", "America/New_York"))
@@ -286,7 +289,9 @@ def run(cfg: dict | None = None, force: bool = False) -> dict:
     if not (isinstance(prev, dict) and prev.get("session") == session):
         prev = None  # yesterday's watermark must not produce a delta against today
 
-    title, message, embed, snapshot = build_digest(session, hhmm, facts, watchdog, morning, halted, prev)
+    title, message, embed, snapshot = build_digest(
+        session, hhmm, facts, watchdog, morning, halted, prev, close=close
+    )
     notifier = Notifier({**cfg.get("notify", {}), "channels": settings["channels"]})
     results = notifier.notify("INFO", "status.digest", title, message, embed=embed)
 
