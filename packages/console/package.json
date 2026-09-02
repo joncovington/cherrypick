@@ -1,0 +1,18 @@
+{
+  "name": "cherrypick-console",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:server": "pnpm --filter @console/server dev",
+    "dev:web": "pnpm --filter @console/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "ui-check": "node tools/ui-check.mjs"
+  },
+  "devDependencies": {
+    "@console/shared": "workspace:*",
+    "puppeteer-core": "^23.0.0"
+  }
+}

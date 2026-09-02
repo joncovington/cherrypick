@@ -1,0 +1,67 @@
+{
+  "_comment": "Three real tastytrade order chains, transcribed from the operator's screenshots. These are the module's most valuable tests because they come from OUTSIDE our own assumptions: they check the accounting against something that actually happened, not against a model we also wrote. Sign convention: positive = credit received, negative = debit paid. `mark` is the position's value as a long at the moment of the screenshot; P/L = (net + mark) * 100 * quantity.",
+
+  "book_c": {
+    "_comment": "Feb 4 — the decisive book. Two flies LEGGED IN for a net credit, running alongside one bought outright. Each legged fly's floor is its own credit, so each is individually risk-free, not merely the book. Note the direction inversion: the put fly completed as price ROSE away from the completing spread, the call fly as price FELL. Encode that backwards and the module never completes anything.",
+    "symbol": "SPX",
+    "chains": [
+      {
+        "label": "put fly 6855/6860/6865",
+        "kind": "fly", "side": "put", "center": 6860, "wing_width": 5, "quantity": 1,
+        "entry_mode": "legged",
+        "orders": [
+          {"time": "12:49", "action": "STO 6860P / BTO 6855P", "net": 2.55},
+          {"time": "13:12", "action": "BTO 6865P / STO 6860P", "net": -1.50}
+        ],
+        "expected_net": 1.05, "mark": 0.0, "expected_pnl": 105.0
+      },
+      {
+        "label": "call fly 6895/6900/6905",
+        "kind": "fly", "side": "call", "center": 6900, "wing_width": 5, "quantity": 1,
+        "entry_mode": "legged",
+        "orders": [
+          {"time": "09:06", "action": "STO 6900C / BTO 6905C", "net": 2.65},
+          {"time": "10:09", "action": "BTO 6895C / STO 6900C", "net": -2.30}
+        ],
+        "expected_net": 0.35, "mark": 0.0, "expected_pnl": 35.0
+      },
+      {
+        "label": "put fly 6870/6875/6880",
+        "kind": "fly", "side": "put", "center": 6875, "wing_width": 5, "quantity": 1,
+        "entry_mode": "outright",
+        "orders": [
+          {"time": "13:51", "action": "bought outright", "net": -0.20}
+        ],
+        "expected_net": -0.20, "mark": 0.06, "expected_pnl": -14.0
+      }
+    ],
+    "expected_avg_trd_pr": 1.20,
+    "expected_total_pnl": 126.0
+  },
+
+  "book_a": {
+    "_comment": "Mar 4 — the funded (book-level) mode. One iron condor's credit pays for three flies. The book nets a credit, but that floor is BOOK-level and only holds inside the condor's wings, which is exactly the distinction `fly.book_floor` exists to report.",
+    "symbol": "SPX",
+    "chains": [
+      {"label": "iron condor", "kind": "short_vertical", "net": 1.45},
+      {"label": "fly 1", "kind": "fly", "net": -0.50},
+      {"label": "fly 2", "kind": "fly", "net": -0.15},
+      {"label": "fly 3", "kind": "fly", "net": -0.50}
+    ],
+    "expected_net": 0.30,
+    "_chain_check": "The two flies filled on one chain price at -0.65 combined, marking 3.97 for 332.00 of P/L — the arithmetic that pins the sign convention.",
+    "chain_check": {"net": -0.65, "mark": 3.97, "expected_pnl": 332.0}
+  },
+
+  "book_b": {
+    "_comment": "Feb 27 — the losing-fly branch, and the honest counterexample. A fly bought for a 0.10 debit expired worthless while plain verticals carried the session's P&L. The book also held real open losses, which is the proof that a 'risk-free' book claim needs its price band attached.",
+    "symbol": "SPX",
+    "chains": [
+      {"label": "fly (expired worthless)", "kind": "fly", "net": -0.10, "mark": 0.0, "expected_pnl": -10.0},
+      {"label": "vertical A", "kind": "short_vertical", "net": 3.35},
+      {"label": "vertical B", "kind": "short_vertical", "net": 1.90},
+      {"label": "vertical C", "kind": "short_vertical", "net": 4.00}
+    ],
+    "open_losses": [-162.0, -30.0]
+  }
+}

@@ -10,30 +10,94 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Repo-wide documentation guardrails (portable paths, no out-of-repo pointers, masked accounts,
+  # no broken relative links). Separate from the package matrix because it is inherently cross-package
+  # -- a link in one package's docs routinely points at another's.
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      # The linter's own tests run first: a broken check reports OK over real errors, which has
+      # already happened twice (a case-insensitive existence test passing on Windows while failing
+      # here, and a path-normalization bug that called all 186 relative links broken).
+      - name: Test the docs linter
+        run: |
+          pip install pytest
+          python -m pytest tools/tests -q
+      - name: Check docs guardrails
+        run: python tools/check_docs.py
+
   test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        # Min supported (requires-python >=3.10) and current.
-        python-version: ["3.10", "3.13"]
+        package: [core, orchestrator, meic, earnings, gex, flies, calendars, pmcc, streamer, desk]
+    defaults:
+      run:
+        working-directory: packages/${{ matrix.package }}
+    env:
+      # Headless CI runners have no OS keyring service; the orchestrator's auth-CLI subprocess
+      # smoke test (test_onboarding.py) needs a real backend to exercise the keyring plumbing it
+      # actually asserts on. keyrings.alt (an orchestrator dev-only dependency) supplies one.
+      # No-op for every other package's job -- keyring reads OS-native backends unless this is set.
+      PYTHON_KEYRING_BACKEND: ${{ matrix.package == 'orchestrator' && 'keyrings.alt.file.PlaintextKeyring' || '' }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
-
-      # Install only the dev extra (no `broker`): confirms the library imports and unit-tests
-      # without tastytrade, per the lazy-import invariant in auth.session.
+          python-version: "3.13"
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-
+          # packages/core is not on PyPI (Private :: Do Not Upload); every consumer declares it as a
+          # plain named dependency, resolved only from what's already installed -- so it must go first.
+          if [ "${{ matrix.package }}" != "core" ]; then
+            pip install -e ../core
+          fi
+          if [ "${{ matrix.package }}" == "core" ]; then
+            # core's own broker/ tests (wait_for_order_alerts) deserialize real tastytrade alert
+            # payloads via tastytrade.order.PlacedOrder -- a genuine dependency of the test, not
+            # something auth.session's lazy-session-building invariant covers. Install the `broker`
+            # extra too, so this is honest coverage rather than narrowed to fit a dev-only install.
+            pip install -e ".[dev,broker]"
+          else
+            pip install -e ".[dev]"
+          fi
       - name: Lint (ruff)
         run: ruff check .
-
+      - name: Format (ruff)
+        run: ruff format --check .
       - name: Test (pytest)
         run: pytest
+
+  # The console is the one Node package (pnpm workspace inside packages/console), so it gets its
+  # own job rather than a row in the Python matrix. Typecheck stands in for lint; the vitest run
+  # includes the dry-run-only source scan (the invariant that no code path can place an order).
+  console:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/console
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: packages/console/pnpm-lock.yaml
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      # Build first: @console/shared resolves through its dist/, so the server's
+      # typecheck and tests need it emitted. tsc runs inside the build, so this
+      # step IS the typecheck.
+      - name: Build (tsc + vite)
+        run: pnpm build
+      - name: Test (vitest, incl. dry-run-only invariant scan)
+        run: pnpm --filter @console/server test

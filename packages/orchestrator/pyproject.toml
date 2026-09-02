@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cherrypick"
+version = "0.1.0"
+description = "Unattended paper-trading orchestrator + reporting hub for the cherrypick trading suite (drives MEICAgent / EarningsAgent in place). Imports as the cherrypick namespace package."
+readme = "ROADMAP.md"
+requires-python = ">=3.10"
+authors = [{ name = "Jon Covington", email = "jon.covington@gmail.com" }]
+keywords = ["trading", "options", "orchestrator", "paper-trading", "cherrypick"]
+# License intentionally unset until the suite's licensing is decided (all rights reserved by default).
+classifiers = [
+    "Private :: Do Not Upload",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.13",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+# cherrypick-core supplies the `cherrypick.core` namespace that report/calibrate/dashboard import. It
+# is a sibling in-repo package (packages/core) installed editable alongside this one -- a plain named
+# dependency, resolved the same way for every install shape (editable checkout, wheel, pipx). It is
+# NOT on PyPI (Private :: Do Not Upload); pip only ever satisfies it from what's already installed, so
+# packages/core must be installed before this package or `pip install -e .` here fails to resolve it.
+dependencies = [
+    "keyring>=24",
+    # zoneinfo needs an IANA tz database; Windows (this suite's target) ships none, so tzdata supplies
+    # it for an installed copy. pytz remains a call-time fallback (see orchestrator/timeutil._tz).
+    "tzdata>=2023",
+    "pytz>=2023",
+    "cherrypick-core",
+]
+
+[project.optional-dependencies]
+# keyrings.alt supplies a pure-Python backend for headless CI runners (no OS keyring service),
+# so the auth-CLI subprocess smoke test (test_onboarding.py) exercises real keyring plumbing
+# there too, not just on developer machines with a native backend. Never used outside CI/tests
+# (see .github/workflows/ci.yml's PYTHON_KEYRING_BACKEND) — real runs always use the OS backend.
+dev = ["pytest>=8", "ruff>=0.6", "keyrings.alt>=5"]
+
+# `pipx install cherrypick` (or an editable install) exposes the `cherrypick` command; the in-place
+# root cherrypick.py launcher stays for source-checkout / scheduler use.
+[project.scripts]
+cherrypick = "cherrypick.cli:main"
+
+[project.urls]
+Repository = "https://github.com/joncovington/cherrypick"
+
+[tool.hatch.build.targets.wheel]
+# src layout + PEP 420 native namespace: `src/cherrypick/` has NO __init__.py, so it composes with the
+# cherrypick.core distribution (a separate installed package, packages/core) under one `cherrypick.*`
+# import namespace. `sources = ["src"]` maps the src/ prefix away, so src/cherrypick/... installs as
+# cherrypick/... -- same shape as every sibling package. Nothing here synthesizes an __init__.py, and
+# nothing should: adding one at the namespace root would break composition for the whole suite.
+only-include = ["src/cherrypick"]
+sources = ["src"]
+
+[tool.ruff]
+# line-length + lint.select come from the suite-wide ../../ruff.toml.
+extend = "../../ruff.toml"
+target-version = "py310"

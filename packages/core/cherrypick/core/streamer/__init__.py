@@ -1,0 +1,1073 @@
+"""cherrypick.core.streamer — a generic persistent DXLink option-chain streaming engine.
+
+Maintains one WebSocket to tastytrade's DXLink feed and writes the latest Quote / Greeks / Trade /
+Summary events to a `cherrypick.core.streamcache` cache, giving each traded underlying its own
+near-the-money strike window (which doubles as that symbol's GEX profile). Extracted from MEIC's
+streamer daemon (plan Phase A) so both MEIC and the standalone GEX module run one engine instead of two.
+
+Everything MEIC-specific is injected, so the engine itself has no MEIC dependency:
+  * `session_factory()` -> a tastytrade Session (thread-appropriate; the engine calls it on its loop).
+  * `extra_subscriptions(symbols)` -> {event_type: [streamer_symbol]} — extra symbols to keep subscribed
+    beyond each symbol's live window (MEIC adds its open-position legs; the default is underlyings only).
+  * `protected_symbols()` -> a set never unsubscribed when a window re-centres (MEIC's open legs).
+  * `trade_hook(engine, symbol, price, ts)` -> called on every underlying Trade tick (MEIC's ORB capture).
+  * `expirations_for(symbol)` -> extra ISO expiration dates to serve chain metadata plus an ATM quote
+    window for, beyond the nearest expiration served by default (a weekly calendar module's 4DTE/7DTE
+    legs). Re-read every window pass — like the legs above, growth is served with no restart. None
+    (the default) is exactly the historical nearest-expiration-only behavior.
+  * `history_days_for(symbol)` -> how many completed daily OHLC rows `stream_summary` should hold for
+    an underlying (a consumer indicator's lookback). A deficit is
+    backfilled once per connection from DXLink daily Candle events — filling only dates the live
+    Summary listener has not written, never overwriting a row, and never today's (partial) candle.
+    None/0 (the default) backfills nothing.
+
+Pure engine: no argparse, no HTTP server, no PID file, no config file — a thin per-consumer wrapper adds
+those. `run()` blocks with reconnect/backoff until `stop()` (or SIGTERM/SIGINT if `install_signals`).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import signal
+import time
+import traceback
+from collections.abc import Callable
+from datetime import UTC, date, datetime
+from pathlib import Path
+from typing import Any
+
+from cherrypick.core import streamcache
+
+# One ET for the suite — see cherrypick.core.clock.
+from cherrypick.core.clock import ET as _ET
+
+_RECONNECT_BASE = 2.0
+_RECONNECT_MAX = 60.0
+
+# DXLink enforces a subscription RATE limit and kills the socket outright with "Your subscription
+# rate is too high". On 2026-08-24 the producer held ~12,000 subscriptions and re-sent every one of
+# them on each reconnect as fast as the socket would accept: killed ~5s after connecting, 60s
+# backoff, repeat — 79 reconnects in a morning, delivering roughly five seconds of data per
+# sixty-five second cycle while every trading module starved on stale quotes.
+#
+# The loop was unrecoverable BY CONSTRUCTION: a burst that trips the limit cannot recover by
+# retrying the identical burst a minute later. Reducing the subscription count lowers the odds of
+# tripping it; only pacing removes the failure mode. So every subscribe and unsubscribe goes
+# through one choke point — chunked, and spaced by a global minimum interval so that four event
+# types fired back to back cannot stack into one burst. A full 12k resubscribe costs a few seconds
+# against a 240s settling window, which is free.
+SUBSCRIBE_CHUNK = 200
+SUBSCRIBE_PACE_S = 0.15
+_COMMIT_BATCH_INTERVAL_S = 0.5
+_COMMIT_BATCH_MAX_PENDING = 25
+# 2+4+8+16+32+60s ~= 2 minutes of retries for a single symbol's chain fetch before giving up and
+# disabling its window for the rest of this connection's lifetime (same as before this existed).
+_CHAIN_FETCH_MAX_ATTEMPTS = 6
+# A requested extra expiration that is not listed yet (a next-Monday weekly asked for up to ~13 days
+# out) re-checks the full chain on this cooldown rather than every window pass — the retry IS the
+# next cooldown lapse, so there is no backoff loop to stall the window task.
+_EXTRA_CHAIN_REFETCH_COOLDOWN_S = 900.0
+# Daily-candle backfill: the history arrives as one front-loaded burst after subscribe, so the
+# collector stops after a quiet gap once anything has arrived, bounded by a hard deadline either way.
+_HISTORY_QUIET_GAP_S = 5.0
+_HISTORY_MAX_WAIT_S = 90.0
+# How often to try resetting the WAL. Slow on purpose: an attempt only succeeds when readers happen
+# to leave a gap, so this is a standing offer rather than a schedule to keep, and one success in a
+# quiet stretch puts the file back on the floor for the rest of the day.
+_WAL_CHECKPOINT_INTERVAL_S = 300.0
+
+# The self-heal belt for a subscription that dies WITHOUT a reconnect. `_apply_subscriptions`
+# diffs wanted against `state.subscribed` — the producer's own memory of what it asked for — so a
+# server-side drop leaves the memory intact and the symbol is never re-added; the
+# reset_for_new_connection fix only clears that memory on a NEW connection. Found live 2026-08-21:
+# TQQQ's trade subscription died 2026-08-17 mid-flight and stayed dead for four sessions while SPX
+# streamed happily beside it (its window re-centering re-touches subscriptions constantly, which is
+# the accidental self-heal the other symbols never had).
+#
+# RTH-gated because outside regular hours an underlying legitimately goes quiet — the SPX index is
+# frozen overnight by design — and per-symbol rate-limited so a holiday session (nothing ticks
+# anywhere) costs one idempotent resubscribe per symbol per interval, not a storm.
+_STALE_TRADE_RESUB_AGE_S = 600.0
+_STALE_TRADE_RESUB_MIN_GAP_S = 600.0
+
+
+def _resub_clock_gate() -> bool:
+    """Weekday 09:35-15:55 ET, clock only — outside it a quiet underlying is legitimate (the SPX
+    index is frozen overnight by design). Holidays cost one idempotent resubscribe per symbol per
+    rate-limit interval, visible in the log and harmless."""
+    try:
+        from zoneinfo import ZoneInfo
+
+        now_et = datetime.now(UTC).astimezone(ZoneInfo("America/New_York"))
+    except Exception:  # noqa: BLE001 — a tz failure must not take down the poll loop
+        return False
+    if now_et.weekday() >= 5:
+        return False
+    minutes = now_et.hour * 60 + now_et.minute
+    return 9 * 60 + 35 <= minutes <= 15 * 60 + 55
+
+
+def _et_date(ts: float) -> str:
+    """The ET trading date a wall-clock timestamp belongs to (stream_summary's day key)."""
+    return datetime.fromtimestamp(ts, tz=_ET).date().isoformat()
+
+
+class _State:
+    """Engine state for one connection lifetime (the connection is recreated across reconnects, but
+    the cache connection and per-symbol window tracking persist for the daemon's whole run)."""
+
+    def __init__(self, conn, symbols: list[str]) -> None:
+        self.stop_event = asyncio.Event()
+        self.subscribed: dict[str, list[str]] = {"Trade": [], "Quote": [], "Greeks": [], "Summary": []}
+        self.reconnect_count = 0
+        self.last_event_at: str | None = None
+        self.conn = conn
+        self.symbols = list(symbols)
+        self.chains: dict[str, dict] = {}  # symbol -> {streamer_symbol: option}
+        # Window tracking is keyed by the underlying symbol for the default nearest-expiration
+        # window, and by "SYMBOL@YYYY-MM-DD" for each extra requested expiration — one key space, so
+        # _total_subscribed and _apply_subscriptions' window-union protection cover both unchanged.
+        self.window_syms: dict[str, list[str]] = {}  # window key -> subscribed window symbols
+        self.centers: dict[str, float] = {}  # window key -> price the window is centred on
+        self.window_strike_counts: dict[str, int] = {}  # window key -> strike count last used
+        self.full_chains: dict[str, dict[str, dict]] = {}  # symbol -> {iso date -> {streamer_symbol: option}}
+        self.last_full_fetch: dict[str, float] = {}  # symbol -> monotonic-ish ts of last full-chain fetch
+        self.pending_writes = 0
+        self.last_commit_at = 0.0
+
+    def reset_for_new_connection(self) -> None:
+        """Forget what the PREVIOUS socket was subscribed to.
+
+        Everything below mirrors the state of one DXLink connection, but this object outlives the
+        connection — so after a reconnect it described a socket that no longer exists. Both paths
+        that subscribe work by diffing against it (`_apply_subscriptions` computes `wanted - current`,
+        `_symbol_refresher` computes a window delta and skips entirely while `centers` says the price
+        has not moved), so a stale-but-full picture made both compute an empty delta and subscribe
+        NOTHING to the fresh socket.
+
+        The result was a connection that looked healthy and delivered almost nothing: the underlying
+        Trade subscription was never re-established, so spot froze while a couple of newly-wanted
+        strikes still ticked, and the watchdog recycled the producer ~240s later. Chains and the
+        cache connection are deliberately NOT cleared — they are data, not subscription state.
+        """
+        self.subscribed = {"Trade": [], "Quote": [], "Greeks": [], "Summary": []}
+        self.window_syms.clear()
+        self.centers.clear()
+        self.window_strike_counts.clear()
+
+
+class ChainStreamer:
+    def __init__(
+        self,
+        *,
+        session_factory: Callable[[], Any],
+        db_path: Path | str,
+        symbols: list[str],
+        extra_subscriptions: Callable[[list[str]], dict[str, list[str]]] | None = None,
+        protected_symbols: Callable[[], set[str]] | None = None,
+        trade_hook: Callable[[ChainStreamer, str, float | None, float], None] | None = None,
+        expirations_for: Callable[[str], list[str]] | None = None,
+        history_days_for: Callable[[str], int] | None = None,
+        window_strike_count: int = 60,
+        window_strike_count_for: Callable[[str], int] | None = None,
+        window_refresh_pts: float = 1.0,
+        window_poll_s: float = 5.0,
+        subscription_poll_s: float = 30.0,
+        subscribe_chunk: int = SUBSCRIBE_CHUNK,
+        subscribe_pace_s: float = SUBSCRIBE_PACE_S,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        self.session_factory = session_factory
+        self.db_path = Path(db_path)
+        self.symbols = [s.strip().upper() for s in symbols]
+        self._extra_subscriptions = extra_subscriptions
+        self._protected_symbols = protected_symbols or (lambda: set())
+        self._trade_hook = trade_hook
+        self._expirations_for = expirations_for
+        self._history_days_for = history_days_for
+        self.window_strike_count = window_strike_count
+        self._window_strike_count_for = window_strike_count_for
+        self.window_refresh_pts = window_refresh_pts
+        self.window_poll_s = window_poll_s
+        self.subscription_poll_s = subscription_poll_s
+        self.subscribe_chunk = max(1, int(subscribe_chunk))
+        self.subscribe_pace_s = max(0.0, float(subscribe_pace_s))
+        self._last_subscribe_at = 0.0
+        self._stale_resub_at: dict[str, float] = {}
+        self.log = logger or logging.getLogger("cherrypick.core.streamer")
+        self.state: _State | None = None
+
+    # -- injected policy defaults ----------------------------------------------------------------
+    def _subscriptions(self) -> dict[str, list[str]]:
+        if self._extra_subscriptions is not None:
+            return self._extra_subscriptions(self.symbols)
+        # Default: subscribe Trade + Summary for the underlyings (spot + session data); per-symbol
+        # windows add the option Quote/Greeks/Summary/Trade themselves.
+        return {"Trade": list(self.symbols), "Quote": [], "Greeks": [], "Summary": list(self.symbols)}
+
+    # -- commit batching -------------------------------------------------------------------------
+    def _maybe_commit(self, state: _State) -> None:
+        state.pending_writes += 1
+        now = time.time()
+        if (
+            state.pending_writes >= _COMMIT_BATCH_MAX_PENDING
+            or (now - state.last_commit_at) >= _COMMIT_BATCH_INTERVAL_S
+        ):
+            state.conn.commit()
+            state.pending_writes = 0
+            state.last_commit_at = now
+
+    def _total_subscribed(self, state: _State) -> int:
+        window_union: set[str] = set()
+        for syms in state.window_syms.values():
+            window_union.update(syms)
+        total = 0
+        for key in ("Trade", "Quote", "Greeks", "Summary"):
+            total += len(set(state.subscribed.get(key, [])) | window_union)
+        return total
+
+    # -- connection lifetime ---------------------------------------------------------------------
+    async def _run_stream(self, state: _State) -> None:
+        from tastytrade import DXLinkStreamer
+        from tastytrade.dxfeed import Candle, Greeks, Quote, Summary, Trade
+
+        session = self.session_factory()
+        self.log.info("Connecting DXLinkStreamer…")
+        async with DXLinkStreamer(session) as streamer:
+            streamcache.upsert_status(
+                state.conn,
+                pid=os.getpid(),
+                connected_since=datetime.now(UTC).isoformat(),
+                reconnect_count=state.reconnect_count,
+            )
+            self.log.info("DXLinkStreamer connected (reconnects: %d)", state.reconnect_count)
+            # This socket is subscribed to nothing yet, whatever the last one was carrying.
+            state.reset_for_new_connection()
+            await self._apply_subscriptions(
+                streamer, state, self._subscriptions(), Trade, Quote, Greeks, Summary
+            )
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(self._listen_trade(streamer, state, Trade))
+                tg.create_task(self._listen_quote(streamer, state, Quote))
+                tg.create_task(self._listen_greeks(streamer, state, Greeks))
+                tg.create_task(self._listen_summary(streamer, state, Summary))
+                tg.create_task(self._poll_subscriptions(streamer, state, Trade, Quote, Greeks, Summary))
+                tg.create_task(self._flush_status(state))
+                tg.create_task(self._checkpoint_wal(state))
+                tg.create_task(self._watch_stop(state))
+                if self._history_days_for is not None:
+                    tg.create_task(self._backfill_history(streamer, state, Candle))
+                for sym in self.symbols:
+                    tg.create_task(
+                        self._symbol_refresher(streamer, state, sym, Quote, Greeks, Summary, Trade)
+                    )
+
+    async def _send_subs(self, streamer, cls, symbols, *, remove: bool = False) -> None:
+        """The ONE place a subscription message reaches the socket. Chunked, and paced against a
+        GLOBAL last-send clock rather than a per-call one: the window paths subscribe the same
+        add-list to four event types back to back, and per-call pacing would let those four stack
+        into exactly the burst this exists to prevent. See SUBSCRIBE_CHUNK for the incident."""
+        syms = list(symbols)
+        if not syms:
+            return
+        op = streamer.unsubscribe if remove else streamer.subscribe
+        for i in range(0, len(syms), self.subscribe_chunk):
+            if self.subscribe_pace_s:
+                wait = self._last_subscribe_at + self.subscribe_pace_s - time.monotonic()
+                if wait > 0:
+                    await asyncio.sleep(wait)
+            await op(cls, syms[i : i + self.subscribe_chunk])
+            self._last_subscribe_at = time.monotonic()
+
+    async def _apply_subscriptions(
+        self, streamer, state: _State, subs: dict, Trade, Quote, Greeks, Summary
+    ) -> None:
+        cls_map = {"Trade": Trade, "Quote": Quote, "Greeks": Greeks, "Summary": Summary}
+        window_union: set[str] = set()
+        for syms in state.window_syms.values():
+            window_union.update(syms)
+        for key, symbols in subs.items():
+            current = set(state.subscribed.get(key, []))
+            wanted = set(symbols)
+            add = wanted - current
+            remove = current - wanted
+            if key in ("Quote", "Greeks", "Summary"):
+                remove -= window_union  # a window still wants these even if the extra-policy dropped them
+            cls = cls_map[key]
+            if add:
+                await self._send_subs(streamer, cls, list(add))
+                self.log.info("Subscribed %s %s", key, list(add))
+            if remove:
+                await self._send_subs(streamer, cls, list(remove), remove=True)
+                self.log.info("Unsubscribed %s %s", key, list(remove))
+            state.subscribed[key] = list(wanted)
+        streamcache.upsert_status(state.conn, subscribed_symbols=self._total_subscribed(state))
+
+    async def _poll_subscriptions(self, streamer, state: _State, Trade, Quote, Greeks, Summary) -> None:
+        while not state.stop_event.is_set():
+            await asyncio.sleep(self.subscription_poll_s)
+            if state.stop_event.is_set():
+                break
+            try:
+                await self._apply_subscriptions(
+                    streamer, state, self._subscriptions(), Trade, Quote, Greeks, Summary
+                )
+                await self._reheal_stale_trades(streamer, state, Trade)
+                if state.last_event_at:
+                    streamcache.upsert_status(state.conn, last_event_at=state.last_event_at)
+            except Exception as exc:
+                self.log.warning("Subscription poll error: %s", exc)
+
+    async def _reheal_stale_trades(self, streamer, state: _State, Trade) -> None:
+        """Resubscribe any Trade symbol whose cache row has gone stale during regular hours.
+
+        The cache is the ground truth consumers see, so staleness is read from it rather than from
+        any connection-side state — a subscription the feed silently dropped looks exactly like a
+        quiet symbol from in here, and during RTH liquid underlyings are never quiet for 10 minutes.
+        Resubscribing an already-live symbol is idempotent at DXLink, so a false positive costs a
+        log line, never data. See the constants above for why this exists.
+        """
+        if not _resub_clock_gate():
+            return
+
+        subscribed = list(state.subscribed.get("Trade", []))
+        if not subscribed:
+            return
+        now = time.time()
+        placeholders = ",".join("?" for _ in subscribed)
+        try:
+            rows = dict(
+                state.conn.execute(
+                    f"SELECT symbol, updated_at FROM stream_trades WHERE symbol IN ({placeholders})",
+                    subscribed,
+                ).fetchall()
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.log.warning("Stale-trade check skipped: %s", exc)
+            return
+
+        stale = []
+        for sym in subscribed:
+            updated = rows.get(sym)
+            if updated is not None and now - float(updated) <= _STALE_TRADE_RESUB_AGE_S:
+                continue
+            last_try = self._stale_resub_at.get(sym, 0.0)
+            if now - last_try < _STALE_TRADE_RESUB_MIN_GAP_S:
+                continue
+            self._stale_resub_at[sym] = now
+            stale.append((sym, None if updated is None else now - float(updated)))
+
+        if not stale:
+            return
+        syms = [s for s, _ in stale]
+        ages = {s: ("never" if a is None else f"{a / 60:.0f}m") for s, a in stale}
+        self.log.warning("Resubscribing stale Trade symbols (dead subscription self-heal): %s", ages)
+        await self._send_subs(streamer, Trade, syms)
+
+    # -- listeners -------------------------------------------------------------------------------
+    def _touch(self, state: _State, ts: float) -> None:
+        state.last_event_at = datetime.fromtimestamp(ts, tz=UTC).isoformat()
+
+    async def _listen_trade(self, streamer, state: _State, Trade) -> None:
+        conn = state.conn
+        async for event in streamer.listen(Trade):
+            if state.stop_event.is_set():
+                break
+            ts = time.time()
+            try:
+                conn.execute(
+                    "INSERT INTO stream_trades (symbol, last, change, volume, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?) ON CONFLICT(symbol) DO UPDATE SET "
+                    "last=excluded.last, change=excluded.change, volume=excluded.volume, "
+                    "updated_at=excluded.updated_at",
+                    (
+                        event.event_symbol,
+                        streamcache.to_float(event.price),
+                        streamcache.to_float(event.change),
+                        streamcache.to_float(event.day_volume),
+                        ts,
+                    ),
+                )
+                self._maybe_commit(state)
+                self._touch(state, ts)
+                if self._trade_hook is not None:
+                    self._trade_hook(self, event.event_symbol, streamcache.to_float(event.price), ts)
+            except Exception as exc:
+                self.log.warning("Trade write error: %s", exc)
+
+    async def _listen_quote(self, streamer, state: _State, Quote) -> None:
+        conn = state.conn
+        async for event in streamer.listen(Quote):
+            if state.stop_event.is_set():
+                break
+            ts = time.time()
+            bid = streamcache.to_float(event.bid_price)
+            ask = streamcache.to_float(event.ask_price)
+            mid = round((bid + ask) / 2, 4) if bid is not None and ask is not None else None
+            try:
+                conn.execute(
+                    "INSERT INTO stream_quotes (symbol, bid, ask, mid, bid_size, ask_size, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(symbol) DO UPDATE SET "
+                    "bid=excluded.bid, ask=excluded.ask, mid=excluded.mid, "
+                    "bid_size=excluded.bid_size, ask_size=excluded.ask_size, updated_at=excluded.updated_at",
+                    (
+                        event.event_symbol,
+                        bid,
+                        ask,
+                        mid,
+                        streamcache.to_float(event.bid_size),
+                        streamcache.to_float(event.ask_size),
+                        ts,
+                    ),
+                )
+                self._maybe_commit(state)
+                self._touch(state, ts)
+            except Exception as exc:
+                self.log.warning("Quote write error: %s", exc)
+
+    async def _listen_greeks(self, streamer, state: _State, Greeks) -> None:
+        conn = state.conn
+        async for event in streamer.listen(Greeks):
+            if state.stop_event.is_set():
+                break
+            ts = time.time()
+            try:
+                conn.execute(
+                    "INSERT INTO stream_greeks "
+                    "(symbol, delta, gamma, theta, vega, rho, iv, price, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(symbol) DO UPDATE SET "
+                    "delta=excluded.delta, gamma=excluded.gamma, theta=excluded.theta, "
+                    "vega=excluded.vega, rho=excluded.rho, iv=excluded.iv, "
+                    "price=excluded.price, updated_at=excluded.updated_at",
+                    (
+                        event.event_symbol,
+                        streamcache.to_float(event.delta),
+                        streamcache.to_float(event.gamma),
+                        streamcache.to_float(event.theta),
+                        streamcache.to_float(event.vega),
+                        streamcache.to_float(event.rho),
+                        streamcache.to_float(event.volatility),
+                        streamcache.to_float(event.price),
+                        ts,
+                    ),
+                )
+                self._maybe_commit(state)
+                self._touch(state, ts)
+            except Exception as exc:
+                self.log.warning("Greeks write error: %s", exc)
+
+    async def _listen_summary(self, streamer, state: _State, Summary) -> None:
+        conn = state.conn
+        async for event in streamer.listen(Summary):
+            if state.stop_event.is_set():
+                break
+            ts = time.time()
+            wrote = False
+            try:
+                oi = event.open_interest
+                if oi is not None:
+                    conn.execute(
+                        "INSERT INTO stream_oi (symbol, open_interest, updated_at) "
+                        "VALUES (?, ?, ?) ON CONFLICT(symbol) DO UPDATE SET "
+                        "open_interest=excluded.open_interest, updated_at=excluded.updated_at",
+                        (event.event_symbol, int(oi), ts),
+                    )
+                    wrote = True
+                # The UNDERLYING's Summary carries the session's exchange-official OHLC and
+                # prior close. Cash indices have no OI, so the old oi-only branch dropped
+                # these events on the floor even though they were already on the wire.
+                # Persisted per (symbol, trade_date): today's row feeds the intraday-range
+                # gates; the accumulated rows feed a true-range ATR once a lookback's worth
+                # of sessions exists.
+                if event.event_symbol in self.symbols:
+                    high = streamcache.to_float(getattr(event, "day_high_price", None))
+                    low = streamcache.to_float(getattr(event, "day_low_price", None))
+                    if high is not None or low is not None:
+                        conn.execute(
+                            "INSERT INTO stream_summary (symbol, trade_date, day_open, day_high, "
+                            "day_low, day_close, prev_day_close, updated_at) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                            # COALESCE, never a bare overwrite: a later event that omits a field
+                            # must not ERASE one an earlier event confirmed. SPX and XSP kept
+                            # receiving Summary events until ~20:07 ET with `day_close_price`
+                            # cleared, and this upsert copied that null over the real close every
+                            # session from 2026-07-29 — 22 sessions of SPX closes lost, freezing
+                            # `daily_closes` (the suite's only multi-year series) at 2026-07-28
+                            # while every other symbol stayed current. Symbols whose last event of
+                            # the day landed earlier (VIX 10:08, SPY 16:15) were untouched, which
+                            # is exactly why it stayed invisible. A close does not un-happen.
+                            "ON CONFLICT(symbol, trade_date) DO UPDATE SET "
+                            "day_open=COALESCE(excluded.day_open, stream_summary.day_open), "
+                            "day_high=COALESCE(excluded.day_high, stream_summary.day_high), "
+                            "day_low=COALESCE(excluded.day_low, stream_summary.day_low), "
+                            "day_close=COALESCE(excluded.day_close, stream_summary.day_close), "
+                            "prev_day_close=COALESCE(excluded.prev_day_close, "
+                            "                        stream_summary.prev_day_close), "
+                            "updated_at=excluded.updated_at",
+                            (
+                                event.event_symbol,
+                                _et_date(ts),
+                                streamcache.to_float(getattr(event, "day_open_price", None)),
+                                high,
+                                low,
+                                streamcache.to_float(getattr(event, "day_close_price", None)),
+                                streamcache.to_float(getattr(event, "prev_day_close_price", None)),
+                                ts,
+                            ),
+                        )
+                        wrote = True
+                if wrote:
+                    self._maybe_commit(state)
+                    self._touch(state, ts)
+            except Exception as exc:
+                self.log.warning("Summary write error: %s", exc)
+
+    @staticmethod
+    def _previous_session(today: str) -> str:
+        """The most recent completed trading day before `today` -- what a current series must reach.
+
+        Calendar-aware rather than a fixed day count: a fixed slack wide enough for a long holiday
+        weekend is also wide enough to hide four missing sessions.
+        """
+        try:
+            from datetime import date as _date
+
+            from cherrypick.core import calendar as _cal
+
+            return _cal.previous_trading_day(_date.fromisoformat(today)).isoformat()
+        except Exception:  # noqa: BLE001 -- an unparseable date must not stop the backfill
+            return ""
+
+    # -- daily-history backfill ------------------------------------------------------------------
+    async def _backfill_history(self, streamer, state: _State, Candle) -> None:
+        """Fill each symbol's `stream_summary` history deficit from DXLink daily Candle events,
+        once per connection. Telemetry-class by construction: everything is wrapped, the candle
+        subscription is torn down whatever happens, and a failure costs the backfill — never the
+        stream. The write path (`streamcache.backfill_summary`) only ever inserts ABSENT dates and
+        never today's, so the live Summary listener stays the sole owner of current rows.
+
+        Once per connection rather than once ever: the deficit check short-circuits to nothing as
+        soon as enough rows exist, so re-running on a reconnect is a cheap no-op that also happens
+        to repair a history lost to a deleted cache file."""
+        try:
+            today = datetime.now(tz=_ET).date().isoformat()
+            # Drain any non-price closes before measuring the deficit, so a repaired hole is one the
+            # refetch below actually refills rather than one that silently stays empty.
+            purged = streamcache.purge_nonpositive_closes(state.conn)
+            if purged:
+                self.log.info("Purged %d stored close(s) that were not prices", purged)
+            # Drop chain rows no consumer can legitimately want -- passed expirations, and
+            # underlyings this producer no longer streams. Here rather than on a tick because it is
+            # a backlog drain, not a per-event concern, and once per connection is the same cadence
+            # the close purge above already runs at. `self.symbols` is the set this process actually
+            # BOUND, so a symbol being streamed can never be pruned out from under itself.
+            #
+            # Telemetry-class like everything else in this method: wrapped, and a failure costs the
+            # prune rather than the stream.
+            try:
+                pruned = streamcache.prune_cache(
+                    state.conn, declared_underlyings=self.symbols, today=today, apply=True
+                )
+                if pruned.get("chain_rows") or pruned.get("orphaned_option_rows"):
+                    self.log.info(
+                        "Pruned %s dead chain row(s) and %s orphaned option row(s) "
+                        "(expirations before %s; retired underlyings: %s)",
+                        pruned.get("chain_rows"),
+                        pruned.get("orphaned_option_rows"),
+                        pruned.get("expired_before"),
+                        ", ".join(pruned.get("undeclared_underlyings") or []) or "none",
+                    )
+            except Exception as exc:  # noqa: BLE001 -- a failed prune must never cost the stream
+                self.log.warning("Cache prune failed: %s", exc)
+            deficits: dict[str, int] = {}
+            # Whatever we actually maintain Summary rows for -- not `self.symbols`. The two differ
+            # whenever a consumer declares an instrument as a LEG, which is the normal way to ask for
+            # a quote-only cash symbol, and backfilling a `stream_summary` deficit for something whose
+            # Summary we never subscribe would write history that then goes stale from its first day.
+            # Keyed off the subscription map so the two cannot disagree: a symbol is backfillable
+            # exactly when it is maintained. Underlyings-only here meant every `history_days` a module
+            # declared for a leg was silently ignored -- 270 days asked for by the whole vol complex,
+            # and not one row delivered.
+            for symbol in dict.fromkeys(self._subscriptions().get("Summary") or self.symbols):
+                try:
+                    wanted = int(self._history_days_for(symbol) or 0)
+                except Exception as exc:
+                    self.log.warning("[%s] history_days_for error: %s", symbol, exc)
+                    continue
+                if wanted <= 0:
+                    continue
+                held = streamcache.completed_summary_days(state.conn, symbol, today=today)
+                latest = streamcache.latest_summary_date(state.conn, symbol, today=today)
+                # Two deficits, not one. DEPTH (do we hold enough history) was the only test until
+                # 2026-08-25, and it cannot see a hole at the recent end -- which is the end every
+                # percentile, SMA and z-score is computed over. VIX held 1,380 rows and nothing after
+                # 2026-08-14, so this read "satisfied" on every connection while the series it exists
+                # to protect had stopped a week earlier. Re-fetching is cheap and idempotent (the
+                # write path inserts absent dates only), so erring toward a refetch costs a few
+                # candles; erring the other way costs a silently stale series nobody can see.
+                if held >= wanted and latest and latest >= self._previous_session(today):
+                    continue
+                deficits[symbol] = wanted
+            if not deficits:
+                return
+            # Trading days -> calendar days: x2 + margin covers weekends/holidays comfortably; the
+            # insert path drops anything already held, so over-fetching costs bytes, not rows.
+            from datetime import timedelta
+
+            start = datetime.now(tz=UTC) - timedelta(days=max(deficits.values()) * 2 + 10)
+            self.log.info("Backfilling daily history %s from %s", deficits, start.date().isoformat())
+            await streamer.subscribe_candle(list(deficits), interval="1d", start_time=start)
+            bars: dict[str, list[dict]] = {}
+            listener = streamer.listen(Candle).__aiter__()
+            deadline = time.monotonic() + _HISTORY_MAX_WAIT_S
+            try:
+                while time.monotonic() < deadline:
+                    try:
+                        event = await asyncio.wait_for(listener.__anext__(), timeout=_HISTORY_QUIET_GAP_S)
+                    except TimeoutError:
+                        if bars:
+                            break  # the burst has gone quiet — history is delivered front-loaded
+                        continue  # nothing yet; keep waiting until the deadline
+                    except StopAsyncIteration:
+                        break
+                    base = str(event.event_symbol or "").split("{", 1)[0]
+                    if base not in deficits:
+                        continue
+                    stamp = streamcache.to_float(event.time)
+                    if stamp is None:
+                        continue
+                    # Daily candles are stamped at the session's start; the UTC calendar date reads
+                    # correctly whether that start is midnight UTC or midnight ET, where the ET date
+                    # of a midnight-UTC stamp would land on the previous day.
+                    day = datetime.fromtimestamp(stamp / 1000.0, tz=UTC).date().isoformat()
+                    bars.setdefault(base, []).append(
+                        {
+                            "date": day,
+                            "open": streamcache.to_float(event.open),
+                            "high": streamcache.to_float(event.high),
+                            "low": streamcache.to_float(event.low),
+                            "close": streamcache.to_float(event.close),
+                        }
+                    )
+            finally:
+                for symbol in deficits:
+                    try:
+                        await streamer.unsubscribe_candle(symbol, interval="1d")
+                    except Exception as exc:  # noqa: BLE001 — teardown is best-effort
+                        self.log.warning("[%s] candle unsubscribe error: %s", symbol, exc)
+            for symbol, series in bars.items():
+                added = streamcache.backfill_summary(state.conn, symbol, series, today=today)
+                self.log.info(
+                    "[%s] daily history backfilled: %d candle(s) received, %d row(s) added",
+                    symbol,
+                    len(series),
+                    added,
+                )
+            for symbol in deficits:
+                if symbol not in bars:
+                    self.log.warning("[%s] daily-history backfill received no candles", symbol)
+        except Exception as exc:  # noqa: BLE001 — the backfill must never cost the stream
+            self.log.warning("daily-history backfill failed (non-fatal): %s", exc)
+
+    # -- per-symbol ATM/GEX window ---------------------------------------------------------------
+    async def _fetch_dte0_chain(self, underlying: str) -> dict:
+        from tastytrade.instruments import get_option_chain
+
+        session = self.session_factory()
+        chain = await get_option_chain(session, underlying)
+        if not chain:
+            return {}
+        nearest = min(chain.keys(), key=lambda e: abs((e - date.today()).days))
+        return {o.streamer_symbol: o for o in chain[nearest] if getattr(o, "streamer_symbol", None)}
+
+    async def _fetch_dte0_chain_with_retry(self, symbol: str, state: _State) -> dict | None:
+        """Retry a failed chain fetch with the same doubling backoff `run_async` uses for
+        reconnects, instead of giving up after one attempt. A transient broker-side hiccup (an
+        HTML error page instead of JSON, a momentary auth blip) previously left a symbol's window
+        permanently disabled until the next full DXLink reconnect — which can be an hour or more
+        away — while every OTHER symbol kept ticking fine and masked it from the daemon's own
+        aggregate staleness check. `stream_symbol_health` is updated on every attempt (error set on
+        failure, cleared + `chain_loaded_at` stamped on success) so a caller reading the cache can
+        see this specific symbol's state even while the retry loop is still running."""
+        delay = _RECONNECT_BASE
+        for attempt in range(1, _CHAIN_FETCH_MAX_ATTEMPTS + 1):
+            self.log.info(
+                "[%s] Fetching 0DTE option chain… (attempt %d/%d)", symbol, attempt, _CHAIN_FETCH_MAX_ATTEMPTS
+            )
+            try:
+                chain = await self._fetch_dte0_chain(symbol)
+                self.log.info("[%s] 0DTE chain loaded: %d options", symbol, len(chain))
+                streamcache.write_chain(state.conn, chain)
+                streamcache.upsert_symbol_health(
+                    state.conn, symbol, chain_loaded_at=datetime.now(UTC).isoformat(), chain_fetch_error=None
+                )
+                return chain
+            except Exception as exc:
+                streamcache.upsert_symbol_health(state.conn, symbol, chain_fetch_error=str(exc))
+                if attempt == _CHAIN_FETCH_MAX_ATTEMPTS:
+                    self.log.error(
+                        "[%s] chain fetch failed %d/%d times, giving up: %s — window disabled",
+                        symbol,
+                        attempt,
+                        _CHAIN_FETCH_MAX_ATTEMPTS,
+                        exc,
+                    )
+                    return None
+                self.log.warning(
+                    "[%s] chain fetch attempt %d/%d failed: %s — retrying in %.0fs",
+                    symbol,
+                    attempt,
+                    _CHAIN_FETCH_MAX_ATTEMPTS,
+                    exc,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, _RECONNECT_MAX)
+        return None  # unreachable, but keeps type-checkers honest
+
+    async def _symbol_refresher(
+        self, streamer, state: _State, symbol: str, Quote, Greeks, Summary, Trade
+    ) -> None:
+        chain = await self._fetch_dte0_chain_with_retry(symbol, state)
+        if chain is None:
+            return
+        state.chains[symbol] = chain
+
+        state.window_syms.setdefault(symbol, [])
+        while not state.stop_event.is_set():
+            price = streamcache.current_underlying_price(state.conn, symbol)
+            if price is None:
+                await asyncio.sleep(1)
+                continue
+            strike_count = (
+                self._window_strike_count_for(symbol)
+                if self._window_strike_count_for
+                else self.window_strike_count
+            )
+            center = state.centers.get(symbol)
+            prev_strike_count = state.window_strike_counts.get(symbol)
+            # Recompute on a price move past the refresh threshold OR a changed strike count (e.g. a
+            # consumer module widening its window_hints mid-session in response to missing_leg_quotes)
+            # -- a widen-only request at an unchanged price must not sit unapplied until the next move.
+            if (
+                center is None
+                or abs(price - center) >= self.window_refresh_pts
+                or strike_count != prev_strike_count
+            ):
+                new_syms = streamcache.atm_window_syms(state.chains[symbol], price, strike_count)
+                state.window_strike_counts[symbol] = strike_count
+                current_syms = state.window_syms.get(symbol, [])
+                if new_syms != current_syms:
+                    old_set, new_set = set(current_syms), set(new_syms)
+                    add, remove = new_set - old_set, old_set - new_set
+                    try:
+                        if add:
+                            add_list = list(add)
+                            await self._send_subs(streamer, Quote, add_list)
+                            await self._send_subs(streamer, Greeks, add_list)
+                            await self._send_subs(streamer, Summary, add_list)
+                            await self._send_subs(streamer, Trade, add_list)
+                        if remove:
+                            # Protect the injected set AND any other live window's symbols — on a
+                            # 0DTE Friday an extra-expiration window can hold the same date this
+                            # nearest window serves, and a re-centre here must not tear it down.
+                            safe_remove = (
+                                remove - self._protected_symbols() - self._window_syms_except(state, symbol)
+                            )
+                            if safe_remove:
+                                srl = list(safe_remove)
+                                await self._send_subs(streamer, Quote, srl, remove=True)
+                                await self._send_subs(streamer, Greeks, srl, remove=True)
+                                await self._send_subs(streamer, Summary, srl, remove=True)
+                                await self._send_subs(streamer, Trade, srl, remove=True)
+                        state.window_syms[symbol] = new_syms
+                        streamcache.upsert_status(
+                            state.conn, subscribed_symbols=self._total_subscribed(state)
+                        )
+                        self.log.info(
+                            "[%s] window re-centered at %.2f (+%d/-%d symbols, total: %d)",
+                            symbol,
+                            price,
+                            len(add),
+                            len(remove),
+                            len(new_syms),
+                        )
+                    except Exception as exc:
+                        self.log.warning("[%s] window update error: %s", symbol, exc)
+                state.centers[symbol] = price
+            if self._expirations_for is not None:
+                try:
+                    await self._refresh_extra_windows(
+                        streamer, state, symbol, price, strike_count, Quote, Greeks, Summary, Trade
+                    )
+                except Exception as exc:
+                    self.log.warning("[%s] extra-expiration refresh error: %s", symbol, exc)
+            await asyncio.sleep(self.window_poll_s)
+
+    # -- extra requested expirations (beyond the nearest) ----------------------------------------
+    def _window_syms_except(self, state: _State, key: str) -> set[str]:
+        """Symbols any OTHER live window still wants — never unsubscribed on this window's behalf.
+        Extra-expiration windows share `window_syms` under composite `SYMBOL@date` keys, so one dict
+        answers for every window."""
+        out: set[str] = set()
+        for other_key, syms in state.window_syms.items():
+            if other_key != key:
+                out.update(syms)
+        return out
+
+    async def _fetch_full_chain(self, underlying: str) -> dict[str, dict]:
+        """The whole listed chain for an underlying, keyed by ISO expiration date. One attempt, no
+        backoff loop — the extra-expiration refresher calls this on a cooldown cadence, so the retry
+        IS the next cooldown lapse (unlike the nearest-window fetch, whose 2-minute backoff guards a
+        once-per-connection call)."""
+        from tastytrade.instruments import get_option_chain
+
+        session = self.session_factory()
+        chain = await get_option_chain(session, underlying)
+        out: dict[str, dict] = {}
+        for exp, options in (chain or {}).items():
+            slice_map = {o.streamer_symbol: o for o in options if getattr(o, "streamer_symbol", None)}
+            if slice_map:
+                out[exp.isoformat()] = slice_map
+        return out
+
+    def _wanted_extra_expirations(self, symbol: str) -> list[str]:
+        """Valid, still-current ISO dates the injected policy wants for this symbol. The callable is
+        consumer code reading registry files, so a bad read or a junk entry costs this pass, never
+        the task. A date is dropped only once it is past (ET) — an expiration is its own last valid
+        day."""
+        try:
+            raw = self._expirations_for(symbol) or []
+        except Exception as exc:
+            self.log.warning("[%s] expirations_for error: %s", symbol, exc)
+            return []
+        today = datetime.now(tz=_ET).date()
+        wanted: set[str] = set()
+        for value in raw:
+            try:
+                parsed = date.fromisoformat(str(value).strip())
+            except ValueError:
+                continue
+            if parsed >= today:
+                wanted.add(parsed.isoformat())
+        return sorted(wanted)
+
+    async def _refresh_extra_windows(
+        self,
+        streamer,
+        state: _State,
+        symbol: str,
+        price: float,
+        strike_count: int,
+        Quote,
+        Greeks,
+        Summary,
+        Trade,
+    ) -> None:
+        """Maintain an ATM window per extra requested expiration, beside the nearest-expiration one.
+
+        Called every window pass from `_symbol_refresher` (same task — one task per symbol
+        serializes every subscribe/unsubscribe for it, so windows can never race each other). Each
+        served date gets its chain slice written to `stream_chain`, a health row under the composite
+        `SYMBOL@date` key, and the same Quote/Greeks/Summary/Trade window the nearest expiration
+        gets, re-centred off the shared spot with the same strike count (window_hints apply). A
+        wanted date the broker does not list yet gets a health error and a re-check on the fetch
+        cooldown; a date that rolled past or left the request is unsubscribed, minus anything the
+        protected set or another window still wants."""
+        wanted = self._wanted_extra_expirations(symbol)
+        prefix = f"{symbol}@"
+
+        for key in [k for k in state.window_syms if k.startswith(prefix)]:
+            if key[len(prefix) :] not in wanted:
+                await self._retire_extra_window(streamer, state, key, Quote, Greeks, Summary, Trade)
+        if not wanted:
+            return
+
+        known = state.full_chains.get(symbol) or {}
+        missing = [d for d in wanted if d not in known]
+        now = time.time()
+        if missing and now - state.last_full_fetch.get(symbol, 0.0) >= _EXTRA_CHAIN_REFETCH_COOLDOWN_S:
+            state.last_full_fetch[symbol] = now
+            try:
+                known = await self._fetch_full_chain(symbol)
+                state.full_chains[symbol] = known
+            except Exception as exc:
+                for d in missing:
+                    streamcache.upsert_symbol_health(state.conn, f"{symbol}@{d}", chain_fetch_error=str(exc))
+                self.log.warning("[%s] full chain fetch failed: %s", symbol, exc)
+                return
+            for d in [d for d in wanted if d not in known]:
+                streamcache.upsert_symbol_health(
+                    state.conn, f"{symbol}@{d}", chain_fetch_error="expiration not listed"
+                )
+                self.log.warning("[%s] requested expiration %s not listed yet", symbol, d)
+
+        nearest_syms = set(state.chains.get(symbol) or {})
+        for d in wanted:
+            slice_map = known.get(d)
+            if not slice_map:
+                continue  # unlisted — health row above, re-checked on the cooldown
+            if set(slice_map) == nearest_syms:
+                continue  # the nearest-expiration window already serves this exact date (0DTE Friday)
+            key = f"{symbol}@{d}"
+            first_build = key not in state.window_syms
+            center = state.centers.get(key)
+            prev_strike_count = state.window_strike_counts.get(key)
+            if (
+                center is not None
+                and abs(price - center) < self.window_refresh_pts
+                and strike_count == prev_strike_count
+            ):
+                continue
+            new_syms = streamcache.atm_window_syms(slice_map, price, strike_count)
+            state.window_strike_counts[key] = strike_count
+            current_syms = state.window_syms.get(key, [])
+            if new_syms != current_syms:
+                old_set, new_set = set(current_syms), set(new_syms)
+                add, remove = new_set - old_set, old_set - new_set
+                try:
+                    if add:
+                        add_list = list(add)
+                        await self._send_subs(streamer, Quote, add_list)
+                        await self._send_subs(streamer, Greeks, add_list)
+                        await self._send_subs(streamer, Summary, add_list)
+                        await self._send_subs(streamer, Trade, add_list)
+                    if remove:
+                        safe_remove = (
+                            remove - self._protected_symbols() - self._window_syms_except(state, key)
+                        )
+                        if safe_remove:
+                            srl = list(safe_remove)
+                            await self._send_subs(streamer, Quote, srl, remove=True)
+                            await self._send_subs(streamer, Greeks, srl, remove=True)
+                            await self._send_subs(streamer, Summary, srl, remove=True)
+                            await self._send_subs(streamer, Trade, srl, remove=True)
+                    state.window_syms[key] = new_syms
+                    streamcache.upsert_status(state.conn, subscribed_symbols=self._total_subscribed(state))
+                    self.log.info(
+                        "[%s] extra window %s re-centered at %.2f (+%d/-%d symbols, total: %d)",
+                        symbol,
+                        d,
+                        price,
+                        len(add),
+                        len(remove),
+                        len(new_syms),
+                    )
+                except Exception as exc:
+                    self.log.warning("[%s] extra window %s update error: %s", symbol, d, exc)
+            if first_build and key in state.window_syms:
+                streamcache.write_chain(state.conn, slice_map)
+                streamcache.upsert_symbol_health(
+                    state.conn, key, chain_loaded_at=datetime.now(UTC).isoformat(), chain_fetch_error=None
+                )
+            state.centers[key] = price
+
+    async def _retire_extra_window(
+        self, streamer, state: _State, key: str, Quote, Greeks, Summary, Trade
+    ) -> None:
+        """Unsubscribe a departed extra-expiration window (its date rolled past, or the request
+        shrank), keeping anything the protected set or another live window still wants. Its
+        stream_chain rows stay — chain metadata is history, not a subscription."""
+        syms = set(state.window_syms.pop(key, []))
+        state.centers.pop(key, None)
+        state.window_strike_counts.pop(key, None)
+        safe_remove = syms - self._protected_symbols() - self._window_syms_except(state, key)
+        if safe_remove:
+            try:
+                srl = list(safe_remove)
+                await self._send_subs(streamer, Quote, srl, remove=True)
+                await self._send_subs(streamer, Greeks, srl, remove=True)
+                await self._send_subs(streamer, Summary, srl, remove=True)
+                await self._send_subs(streamer, Trade, srl, remove=True)
+            except Exception as exc:
+                self.log.warning("extra window %s retire error: %s", key, exc)
+        streamcache.upsert_status(state.conn, subscribed_symbols=self._total_subscribed(state))
+        self.log.info("extra window %s retired (-%d symbols)", key, len(safe_remove))
+
+    async def _flush_status(self, state: _State) -> None:
+        while not state.stop_event.is_set():
+            await asyncio.sleep(5)
+            if state.last_event_at:
+                try:
+                    streamcache.upsert_status(state.conn, last_event_at=state.last_event_at)
+                except Exception:
+                    pass
+
+    async def _checkpoint_wal(self, state: _State) -> None:
+        """Keep the cache's write-ahead log from growing without bound.
+
+        Nothing else ever resets it: SQLite's automatic checkpoint cannot truncate the file while a
+        reader still holds frames, and this cache is read continuously all session. Each attempt is
+        bounded (see streamcache.CHECKPOINT_BUSY_TIMEOUT_MS) and swallows everything, because this
+        coroutine shares the stream's task group — the 2026-08-17 outage was a housekeeping write
+        raising in here and taking the DXLink connection down with it."""
+        while not state.stop_event.is_set():
+            await asyncio.sleep(_WAL_CHECKPOINT_INTERVAL_S)
+            if state.stop_event.is_set():
+                return
+            try:
+                reset, reclaimed = streamcache.checkpoint(state.conn)
+                if reset and reclaimed:
+                    self.log.info("WAL checkpoint reclaimed %.1f MB", reclaimed / 1048576)
+            except Exception:
+                pass
+
+    async def _watch_stop(self, state: _State) -> None:
+        await state.stop_event.wait()
+        raise asyncio.CancelledError("stop requested")
+
+    # -- public entrypoints ----------------------------------------------------------------------
+    def stop(self) -> None:
+        if self.state is not None:
+            self.state.stop_event.set()
+
+    async def run_async(self) -> None:
+        """Connect and stream with reconnect/backoff until stopped."""
+        conn = streamcache.connect(self.db_path)
+        state = _State(conn, self.symbols)
+        self.state = state
+        self.log.info("Streaming symbols: %s (±%d strikes each)", self.symbols, self.window_strike_count)
+        delay = _RECONNECT_BASE
+        while not state.stop_event.is_set():
+            try:
+                await self._run_stream(state)
+                delay = _RECONNECT_BASE
+            except asyncio.CancelledError:
+                if state.stop_event.is_set():
+                    break
+                self.log.warning("Stream cancelled unexpectedly — will reconnect")
+            except Exception as exc:
+                if state.stop_event.is_set():
+                    break
+                # TaskGroup wraps failures in an ExceptionGroup whose str() hides detail — log each.
+                if isinstance(exc, BaseExceptionGroup):
+                    for i, sub in enumerate(exc.exceptions):
+                        self.log.warning(
+                            "Stream error sub-exception %d/%d: %s",
+                            i + 1,
+                            len(exc.exceptions),
+                            "".join(traceback.format_exception(type(sub), sub, sub.__traceback__)),
+                        )
+                self.log.warning("Stream error: %s — reconnecting in %.0fs", exc, delay)
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, _RECONNECT_MAX)
+                state.reconnect_count += 1
+        conn.close()
+        self.log.info("Streamer stopped.")
+
+    def run(self, install_signals: bool = True) -> None:
+        """Blocking run: set up SIGTERM/SIGINT (optional) and drive the async reconnect loop."""
+        if install_signals:
+
+            def _handle(sig, frame):
+                self.log.info("Signal %s received — stopping", sig)
+                self.stop()
+
+            try:
+                signal.signal(signal.SIGTERM, _handle)
+                signal.signal(signal.SIGINT, _handle)
+            except ValueError:
+                pass  # not on the main thread — caller drives stop() itself
+        asyncio.run(self.run_async())

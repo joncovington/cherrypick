@@ -1,0 +1,345 @@
+{
+  "source_header": "===== Source & Symbols =====",
+  "_comment": "cherrypick-flies: 0DTE net-credit butterflies. Paper-only. Copy to config.json and edit. The paper DB lives under the shared cherrypick home (~/.cherrypick/data/flies/paper_trades.db); override with FLIES_DB_PATH.",
+  "_source_note": "The suite's canonical shared stream cache. This module reads it READ-ONLY and runs no streamer of its own — the suite runs one streamer, not three. Omit to accept ~/.cherrypick/data/marketdata/stream_cache.db. Precondition: some producer must be streaming it — MEIC's streamer when MEIC is installed, otherwise the standalone packages/streamer daemon — subscribed to the symbols below, since open interest (and therefore GEX) exists only because the producer subscribes DXLink Summary.",
+  "source": {
+    "stream_cache_db": "~/.cherrypick/data/marketdata/stream_cache.db"
+  },
+  "live_header": "===== Live Gates (guarded) =====",
+  "_live_note": "THE LIVE LOOP (docs/live-trading-plan.md). 'enabled' must be true AND 'gate0_confirmed' must carry a human attestation; the loop additionally requires a designated account (cherrypick account --module flies), refuses while the suite halt flag (state/halt-live.flag) exists, and halts new entries when the day's settled LIVE net reaches -daily_loss_halt_dollars. Exactly ONE arm goes live (default gex). ARMING IS PER-DAY: /live-flies-start (a fresh YES every time) runs `live_loop.py --install-task`, registering a 1-min self-healing tick that SELF-DISARMS at disarm_time (and any tick finding a previous day's arm stamp disarms immediately) -- today's authorization can never carry into tomorrow; the orchestrator watchdog backstops by setting the halt flag if the task somehow survives. STREAMER BEFORE API (suite rule): all pricing reads the shared stream cache; cached quotes gate broker calls -- a resting entry order is only cancelled/replaced when the cached evaluation moved (center, or credit by >= one tick), and the burst fill-watcher (spawned per tick while orders are pending; polls every fill_watch_poll_seconds for fill_watch_seconds) only hits the broker's status endpoint when cached quotes touch the working limit or fill_heartbeat_seconds elapsed. ORDER ALERT STREAM (added 2026-07-31, use_order_alert_stream, default false): when on, the burst watcher ALSO blocks each cycle (up to fill_watch_poll_seconds) on tastytrade's own account-alert websocket for a PUSH notification of a fill/cancel/reject on any pending order -- a completely separate stream from the shared market-data cache above (this one carries order/balance/position pushes for the designated account, not quotes), used exclusively to learn about a fill sooner, never to decide anything. A push hit is treated exactly like a cache touch: still confirmed through the ordinary status-endpoint call, never a second write path. Fails closed on any websocket/auth error (falls straight back to the cache-gated poll above, byte-for-byte), so this is purely a latency optimization, never a dependency -- the poll-based fallback (and run_once's own once-a-minute re-poll) is what actually guarantees a fill is eventually confirmed. Left off by default until proven on real live sessions; flip on only after a manual read-only listen test against the real account. ORDER ALERT DAEMON (added 2026-07-31, use_order_alert_daemon, default false, supersedes use_order_alert_stream when both are on): instead of the watcher opening its own websocket per cycle, a small separate process (src/alert_daemon.py, started by /live-flies-start on arm and stopped on disarm, self-exiting at disarm_time) holds ONE account-alert connection open for the trading day and appends every alert to a dedicated WAL-mode inbox (data/flies/live_alerts.db). The watcher then reads that inbox -- a local query, no network, no handshake per cycle -- and treats a fresh row exactly like a cache touch. Deliberately a separate database from live_trades.db: the ledger's concurrency was tuned for exactly two short-burst writers (the tick and the watcher, each file-locked), and a third persistent writer would stack onto that; the inbox is the 1-writer/N-reader shape WAL exists for, so the ledger's writers are untouched. Same fail-closed posture as everything else here -- an unreadable/absent inbox, a dead daemon, or one that was never started just leaves the watcher on its ordinary cache-gated polling, and run_once's once-a-minute re-poll still confirms every fill regardless. The daemon never decides anything, never places or cancels an order, and never writes the ledger. FRESH-QUOTE CHECK (live-only, entry-only -- the one narrow exception to 'cached quotes gate broker calls', added 2026-07-30 after a live entry was rejected by the broker's real-time execution-quality check on a cached price its own preflight dry-run never flagged): immediately before submitting the opening credit-spread order, both legs' prices are re-fetched once via a plain REST market-data call (not the streamer) and the credit recomputed the same way the cached evaluation does; if either leg's fresh quote is unavailable the entry is skipped this tick (retried next tick), and if the fresh credit is worse than the cached one by more than fresh_quote_tolerance_dollars the entry is also skipped -- otherwise the order is submitted at the fresh (tick-floored) price, never the cached one. This fires only at the instant a live entry order is already about to be submitted, never on the per-tick decision path, and never in paper. COMPLETION: placed once, immediately after the entry fill confirms, resting at min(credit - fee_buffer, the min_floor_dollars-implied bound) so it can never fill at a price either gate would refuse; cancelled at completion_cutoff. SETTLEMENT: auto at settle_time from the last streamed trade marked 'last_trade_provisional'; confirm with `live_loop.py --settle --price <official print>` (marked 'official'). CONCURRENCY: at most one incomplete position at a time -- an open short vertical always blocks a new entry; a completed fly blocks only if its floor is negative (not risk-free) after fees; negative_floor_override names one exact position_id to waive. gate0_confirmed is a human attestation, not a code-enforced statistical check -- Gate 0's sample-size bar can be knowingly waived for a small pilot; if so, say so in the attestation string. max_structures_per_day (null = off) caps ESTABLISHED structures per day -- unlike the one-incomplete-at-a-time rule, a risk-free completion does NOT re-open this budget; set 1 for the plan doc's strict rung-1 one-structure-per-day posture.",
+  "live": {
+    "enabled": false,
+    "gate0_confirmed": "",
+    "arm": "gex",
+    "symbol": "SPX",
+    "daily_loss_halt_dollars": 200,
+    "account_deploy_limit_pct": 50,
+    "fresh_quote_tolerance_dollars": 0.05,
+    "negative_floor_override": "",
+    "completion_cutoff": "15:30",
+    "settle_time": "16:20",
+    "disarm_time": "17:00",
+    "fill_watch_seconds": 60,
+    "fill_watch_poll_seconds": 10,
+    "fill_heartbeat_seconds": 150,
+    "use_order_alert_stream": false,
+    "use_order_alert_daemon": false,
+    "max_structures_per_day": null
+  },
+  "symbols_header": "===== Trading Symbols =====",
+  "_symbols_note": "Traded symbol. SPX as of 2026-08-01 (XSP 2026-07-29..07-31, SPX through 07-28; every era's books remain in the ledger under their own symbol and widths, and analytics takes a `symbol` filter throughout so the eras never blend). The switch is a fee decision: on the 1-wide XSP book the median completed fly collected $12.00 against $4.97 of fees -- 41.4% drag -- while the 5-wide SPX book collected $63.12 against $6.89, or 10.9%. Credit scales with the structure; the $5-per-ITM-strike assignment fee does not. SPX and XSP are the only symbols this module should ever run -- both European cash-settled, so a short middle strike left open into expiration settles to cash and assignment is structurally impossible; a physically-settled symbol would need the assignment machinery MEIC carries.",
+  "symbols": [
+    "SPX"
+  ],
+  "defaults_header": "===== Entry & Sizing Defaults =====",
+  "defaults": {
+    "_wing_width": "Points per wing -- the width of the control/gex/time_window books. Scale with the symbol, and note the floor is set by the underlying's own strike spacing: SPX 0DTE strikes are 5 points apart (measured: 302 of 479 gaps), so 5 is the TIGHTEST structure SPX offers and the minimum per-contract risk is $500. XSP's 1-point strikes allowed 1 ($100). Moving to SPX on 2026-08-01 therefore raised per-contract risk 5x -- unavoidable, and accepted deliberately for the fee economics in _symbols_note. Credit scaled with it (12.6% of width on SPX vs 12.0% on XSP), so it is close to the same trade 5x larger rather than a different one. The width-N sweep arms (below, in 'arms') set 'wing_width_strikes' instead of this key -- N strike increments, resolved to points against strike_increment by engine.merged_params -- specifically so their meaning survives a symbol whose strikes are not 5 points apart; this key is a raw point value and only ever applies to the arm it is set on.",
+    "wing_width": 5,
+    "strike_increment": 5,
+    "quantity": 1,
+    "_max_positions": "Structures per (arm x symbol) book per session. Raised 4 -> 99 (effectively uncapped) 2026-07-29 for the paper width study: in paper the fee stack is modeled, not spent, so the cap's cost/risk rationale doesn't bind and it only throttled sample accrual — every structure is an independent sample, the MEIC width-study posture. Two things still bound entries: the one-structure-per-centre rule and each arm's entry windows. Keep this EQUAL across compared arms or net-P&L comparisons measure opportunity count, not the variable under test (this module's own history records that failure twice); time_window's per-window cap of 2 stays — window-spreading is that arm's machinery, so read it per-trade against control, not on net. Restore a real cap (and rethink it per symbol) before anything goes live.",
+    "max_positions": 99,
+    "_min_seconds_between_entries": "Minimum seconds between this arm's ENTRY FILLS. 360 (six minutes) as of 2026-08-11, when each arm became its own portfolio with unbounded capital and buying power -- so cadence and the entry rules are the only things pacing an arm, and this is the one that decides how many samples a session can hold. The clock runs from the last FILL, not the last attempt: an order that was placed and never filled did not use the slot, and charging it for one would make a quiet market read as a throttled arm. Set on the ARM if arms are to be paced differently, but keep it EQUAL across arms being compared on net P&L -- an unequal cadence makes the comparison measure opportunity count rather than the variable under test, the failure this module's history already records twice for max_positions. 0 disables the gate. Every refused attempt records the seconds it still had to wait (fly_entry_attempts.seconds_until_cadence_clear), which is the measured cost of this number and the only honest input to changing it. CHANGING THIS IS A MEASUREMENT BREAK: entry pacing decides how many structures a session accumulates and therefore what a per-session net means, so sessions either side of a change are not poolable -- journal it the way _note_cadence_change journals a tick-cadence change.",
+    "min_seconds_between_entries": 360,
+    "_no_entry_before": "Hard post-open blackout (ET). No arm may enter before this, regardless of its own entry_windows — the gate is checked before the window logic, so an arm asking for an earlier window is refused rather than obeyed. Set to 10:00 on 2026-07-27: on the first five sessions every dollar of loss sat in the first 30 minutes (23 positions entered 09:30-10:00 ET for -$1,948.32, against +$913.79 across the 32 entered later), concentrated in control and gex, both of which opened at 09:45. Expressed as a floor rather than by editing each arm's first window because four separate window lists are four chances to silently reopen the hole when an arm is added — MEIC is the worked example of that failure mode. The arm windows below were raised to match anyway, so the two agree; the floor is the backstop, not the primary statement.",
+    "no_entry_before": "10:00",
+    "_max_positions_per_window": "Structures any ONE entry window may take, on top of max_positions. null disables it (single-window arms need nothing here). A global cap alone does not make a multi-window arm test its windows: over 07-20..07-24 the time_window arm put 15 of its 16 legged entries in 10:30-11:00, 1 in 12:30-13:00 and 0 in 14:00-14:30 — the book was full before the later windows opened, so the timing hypothesis was never exercised and the per-window ranking the arm exists to produce had nothing to rank. Set it on the ARM, not here, and keep cap x windows >= max_positions or the book can never fill.",
+    "max_positions_per_window": null,
+    "_entry_modes": "legged = sell a credit spread, then buy the completing spread cheaper to end up holding a fly for a net credit. outright = buy a cheap fly with premium already taken in. Both were observed running side by side in the same real session, but outright is OFF as of 07-27 for two independent reasons. (1) It lost on every one of its four settled positions (-$171.31, avg -$42.83): it manufactures no floor, it spends one, so it only pays when the fly finishes in its wings, and 19 of 23 completed flies did not. (2) It was confounding the experiment — the gex arm was the only arm taking outright entries (5 of its 15), so gex vs control was no longer isolating the centring rule the way the arms are supposed to differ. Re-enable only as its own arm, never inside an existing one.",
+    "entry_modes": [
+      "legged"
+    ],
+    "_completion_modes": "How an open legged credit spread may be completed. 'debit' = buy the completing same-type debit spread (the original mechanism). 'iron' = sell the OPPOSITE-type credit spread instead, producing an iron butterfly -- payoff-equivalent to a fly shifted down by wing_width, so risk-free iff the two credits summed clear wing_width plus fees (NOT assumed; the same floor gate enforces it). When both are enabled and both clear their gates on the same iteration, the higher post-fee floor wins. Off by default (['debit'] only) -- enable ['debit','iron'] only on its own arm, per the entry_modes rule above.",
+    "completion_modes": [
+      "debit"
+    ],
+    "_min_credit_pct_of_width": "Opening credit floor as a fraction of wing width. Below this there is no room for the completing debit to come in cheaper AND clear two fee stacks.",
+    "min_credit_pct_of_width": 0.2,
+    "_max_intrinsic_pct_of_width": "Refuse a legged entry whose short strike is already this deep in the money, as a fraction of wing width. null (default) disables it; 1.0 means 'refuse when BOTH legs are ITM', i.e. the spread's expiry value is already pinned at maximum loss and only a reversal through the entire width recovers it. Set on the ARM, not here -- it is opt-in and currently carried by `gex-intrinsic` alone. THIS IS WHAT max_credit_pct_of_width IS NAMED FOR AND CANNOT DO: that gate reads the CREDIT as a proxy for moneyness, and at 0DTE the proxy fails, because with hours left a fully-ITM 5-wide prices near 2.5-3.0 rather than near 5.00 -- there is still real probability of moving back out. Measured over the SPX era, all 16 fully-ITM legged entries priced at 48-59.7% of width, every one UNDER the 0.60 ceiling, so the ceiling had never once caught the case it is named for. Intrinsic is computed directly from the short strike and spot (engine.intrinsic_at_entry), so it is exact and needs no per-symbol calibration. LEGGED ONLY: bwb and debit_first carry different geometry and their own populations are unmeasured.",
+    "max_intrinsic_pct_of_width": null,
+    "_max_credit_pct_of_width": "Opening credit CEILING. A vertical cannot be worth more than its width, so a credit near that width means the short leg is deep ITM and the premium is mostly intrinsic — a low-probability directional bet rather than a pin bet. Observed against real SPX quotes: a centre 67 points from spot produced a 77%-of-width credit with 67 points of intrinsic. The floor above cannot catch that, because a fatter intrinsic-heavy credit looks better to a floor.",
+    "max_credit_pct_of_width": 0.6,
+    "_min_debit_pct_of_width": "debit_first's mirror of min_credit_pct_of_width: below this the debit vertical bought first is too far OTM to be plausible — little room left to richen before the completing credit spread's own width ceiling caps it.",
+    "min_debit_pct_of_width": 0.2,
+    "_max_debit_pct_of_width": "debit_first's mirror of max_credit_pct_of_width: a debit approaching the width means the long leg bought first is already deep ITM, leaving little room for the completing sale to out-earn it.",
+    "max_debit_pct_of_width": 0.6,
+    "_fee_buffer": "Price points the completing debit must beat the original credit by. This is the gate that stops us 'completing' into a fly whose credit is real but smaller than the fees paid to build it.",
+    "fee_buffer": 0.1,
+    "_min_floor_dollars": "Reject a completion whose post-fee floor lands below this. Was 50.0 on the reasoning that a $5-27 guaranteed profit was 'not worth the position slot or the defined risk carried while waiting'. The first five sessions falsified the premise: refusing does NOT free the slot, it leaves the position as an uncompleted short vertical, and that branch realised an average of -$208.51 per position (17 of them, -$3,544 total) against +$110.47 for a completed fly. Turning down a guaranteed +$9.36 to keep a lottery ticket averaging -$208 is the losing side of that trade. Measured over 07-20..07-24, five completions were blocked by this gate alone at floors of $9.36-$39.36; converting them moves completion rate 57.5% -> 70%, past the ~65% break-even implied by those two averages. Scaled 10.0 -> 1.0 at the 2026-07-29 XSP move (premiums run ~1/10 of SPX; the same proportional bar). DERIVED, not scaled, on 2026-08-07: -10.0. The 1.0 was inert -- ZERO of 64 completions in the 08-01.. SPX era had a floor below it, so on the completion side the gate refused nothing it saw, and live_orders.max_safe_completion_debit's resting price was set by fee_buffer alone. It was also not restorable: 3cbf510 (2026-08-01, 'remove the pre-close ITM exit, reserve the assignment fee instead') redefined position_floor to reserve the worst-case assignment fee ON THE SAME DATE the symbol went back to SPX, so the quantity this gates on changed too and the old 10.0 no longer means what it meant (it would now refuse 42 of 64 completions, est -$10,457). The bar is therefore derived against the CURRENT floor definition and against the measured alternative, per CLAUDE.md rule 6: refusing does not free the slot, it leaves a short vertical realising -$195.05 on average (-$170.40 in control, -$240.06 in gex). A guaranteed small negative worst case is the better of two positions we already hold; BUT the range this gate can even reach is narrow, and that is the fact that actually sets the value: the PRICE gate caps the completing debit at credit - fee_buffer, so the worst floor a completion can carry while still passing it is fee_buffer*100 - fees - reserve = 10.00 - 6.89 - 15.00 = -$11.89 on 5-wide SPX -- independent of the credit. Anything at or below -11.89 is inert because the price gate refuses first, which is the same mistake 1.0 made from the other side. So the useful band is (-11.89, +inf), fee_buffer is what really bounds the downside, and -10.0 admits nearly everything the price gate permits while staying non-vacuous. Measured: the 7 completions this gate refused over 08-01..08-06 had would-be floors of -$2.50..+$7.50 and realised -$1,287.58, four of them in CONTROL -- the one arm clearing its own break-even (analytics.break_even) -- where admitting them is worth ~+$488 against its +$409. Rule 6's second limit applies: this is an argument from a MEASURED alternative, not standing permission. Re-derive per symbol whenever the stranded branch stops dominating, and re-derive again if position_floor changes. Note this value is SHARED with the bwb roll gate (engine.evaluate_roll) -- same reasoning holds there, the un-rolled alternative carries a real tail -- and it is symbol-scaled while stored as a bare scalar, so a `symbols` change is a change to this value too.",
+    "min_floor_dollars": -10.0,
+    "_max_fly_debit": "Outright flies are bought deliberately cheap ($10-50 observed in the reference books). Points, not dollars: 0.50 x 100 = $50.",
+    "max_fly_debit": 2.5,
+    "_fund_from_open_credit": "Whether an OPEN credit spread's premium may fund an outright fly. True matches the observed behavior (a live iron condor funded three flies), but that premium is not yet earned — which is why the book roll-up reports `unbounded_below` rather than calling such a book risk-free.",
+    "fund_from_open_credit": true,
+    "_max_center_distance_pct": "How far from spot the gex arm may centre a fly, as a fraction of spot. Tight on purpose: this is a 0DTE pin bet, and a centre far from spot needs a large move in the remaining hours just to reach the peak. 0.003 is about +/-22 points on a ~7500 index, roughly four strikes. Watch arm_divergence — if the gex arm agrees with control nearly always, this is the first value to revisit, because the arms can only be compared to the extent they disagree.",
+    "max_center_distance_pct": 0.003,
+    "_slippage_frac": "Fraction of each leg's bid-ask conceded from mid, per fill. Matches cherrypick.core.fees and MEIC's paper engine — one fill model across the suite.",
+    "slippage_frac": 0.125,
+    "_max_quote_age_seconds": "Legs quoted longer ago than this are dropped as stale, and a structure missing a leg is simply not offered. On 0DTE a few minutes is a different market, and pricing a fill off an old quote produces a paper result that looks real and isn't.",
+    "max_quote_age_seconds": 120,
+    "_max_gex_input_age_seconds": "The same staleness discipline as max_quote_age_seconds, applied to the GEX surface's own inputs (gamma from Greeks events, open interest from Summary events). Much longer than the quote limit because these move on a different clock -- OI is a once-a-day exchange snapshot and gamma updates far less often than a quote -- so 120s would reject a perfectly good surface. Until 2026-08-01 there was no limit at all: an hours-stale gamma produced a GEX number indistinguishable from a live one, on the path that picks the live butterfly's centre strike (select_center, and the live default arm is 'gex'). Measured against a dead feed, the whole surface is now correctly refused.",
+    "max_gex_input_age_seconds": 1800,
+    "_regime_labels_note": "Two thresholds that shape the REGIME LABEL stamped on every decision (up_from_open / flat / centre-offset bucket), not entry permission -- nothing is refused by them. Readable by the engine but documented nowhere outside engine.py until an audit on 2026-08-06, so they could only be discovered by reading Python. Values here are the shipped defaults; copying this file changes nothing. regime_trend_points (20.0) is the flat band: a day whose drift from the open stays inside it has not committed to a direction. It was 5 -- one SPX strike -- which docs/centre-lag.md records as reaching for a familiar number rather than a measured one. regime_center_offset_points buckets how far a chosen centre sat from spot, and is deliberately NOT listed as a key here: absence is meaningful, because it falls back to strike_increment (one strike, the resolution the centre is actually chosen at). Writing it as null would not mean 'default' -- params.get returns the null and the comparison against it raises. Set it only to a real number, and only to override the per-symbol strike increment.",
+    "regime_trend_points": 20.0,
+    "_min_gex_strikes": "Below this many contributing strikes the GEX surface is refused rather than reported. A handful of surviving strikes still yields a call_wall and a gamma_flip that look exactly as confident as a full surface's; a real SPX/XSP 0DTE chain carries 109-121. On refusal the gex arm degrades to ATM (center_reason 'atm_gex_unavailable') rather than skipping the session -- a lost signal, not a lost sample.",
+    "min_gex_strikes": 20,
+    "_book_scan_step": "Price step for the book-floor payoff scan. Keep it a fraction of strike_increment (0.2x, matching the SPX-era 1.0 against a 5-point grid) or the scan only samples the strikes themselves and a trough between them goes unmeasured.",
+    "book_scan_step": 1.0,
+    "_regime_tagging": "engine.classify_regime tags every entry and completion (not every tick) along four dimensions, purely descriptive -- nothing here gates a decision, it exists to give a future regime-conditioned mode selector real labelled outcomes to be built from instead of guessed at. Every threshold below is a placeholder pending recalibration once real sessions accumulate, same as every other gate in this module.",
+    "regime_vol_low_pct": 0.0015,
+    "regime_vol_high_pct": 0.0035,
+    "_regime_gex_window_pct": "GEX concentration is measured only within this fraction of spot -- the region where pinning could actually act. Before 2026-08-01 it was measured over the ENTIRE chain (flies computes GEX across the whole surface, 109-121 strikes on a real session), which made 'pinning' unreachable in practice: entry_gex_bucket came back 'thin' 60 times out of 60 while the sibling vol and skew tags varied normally. Gamma 300 points away has no bearing on whether price pins here.",
+    "regime_gex_window_pct": 0.02,
+    "_regime_gex_pinning_concentration": "Share of near-spot gamma held by the top 3 strikes, above which the regime is tagged 'pinning'. Top-3 rather than the single largest because pinning is a property of a cluster -- a doubled centre plus its neighbours -- and a single-strike measure splits that cluster's own mass and reads it as thin. CALIBRATED 2026-08-21 from the recorded shares (605 settled SPX entries, 15 sessions): the old 0.60 guess sat above the p95 of everything ever recorded, so 'thin' swallowed 97% of rows; the cuts are now the distribution's own terciles, rounded (p67=0.412 -> 0.42, with regime_gex_clustered_concentration at p33 -> 0.30), giving diffuse/clustered/pinning with completion falling monotonically 68/63/55% -- the mechanism (near-spot gamma suppresses the drift a legged fly needs), not a boundary flattering itself. Historical rows re-bucket at read time via analytics.by_regime bucket_edges.",
+    "regime_gex_pinning_concentration": 0.42,
+    "_regime_gex_clustered_concentration": "Lower cut of the three-way GEX tag: shares below it are 'diffuse', between the two cuts 'clustered'. Calibrated with the pinning cut above, 2026-08-21.",
+    "regime_gex_clustered_concentration": 0.3,
+    "regime_skew_threshold": 0.15,
+    "_regime_time_edges": "Boundaries of the open/midday/close tag. Were 10:00/15:30 and produced 'midday' on 60/60, then 97/97, rows -- degenerate BY CONSTRUCTION, since entries only ever occur inside them (measured range 10:00-14:42, median 11:19). Re-cut to 11:00/13:00 on 2026-08-06 against the recorded minute, which is exactly what that float is stored for; no session was re-run. The three buckets then split 43/35/19 with completion falling monotonically 72% -> 63% -> 58% through the day -- mechanically plausible rather than merely non-degenerate, since a legged entry completes only after spot drifts off the centre and a later entry has less session left to drift in. CHOSEN ON THE SAME 97 ROWS THAT MEASURE IT: a current best estimate, not a calibrated constant, the same standing as the trend band's 20 points. The dimension is NOT redundant with entry_window, which was the live alternative -- entry_window's dominant '10:00-14:30' window holds 74 of the 97 rows and splits 35/27/12 across these buckets, so it cannot see this variation at all.",
+    "regime_time_open_end": "11:00",
+    "regime_time_close_start": "13:00",
+    "_bwb_far_width_ratio": "bwb_roll's wide/risk-carrying wing, as a RATIO of wing_width (far_width = wing_width * ratio) -- not an absolute point value, since wing_width itself is manually rescaled per symbol and per width-sweep arm (control=1, width-2..width-5), and a fixed absolute far_width would need separately rescaling every time either changes. 2.0 matches the common near:far rule of thumb (roughly 1:2). The gap (far_width - wing_width) is the real tail this construction carries until rolled -- see fly.bwb_payoff, fly.position_floor's bwb branch. Placeholder pending recalibration once real sessions exist.",
+    "bwb_far_width_ratio": 2.0,
+    "_min_bwb_credit_pct_of_tail": "The entry credit is rent for the tail, so it is measured against the tail (far_width - wing_width), not against wing_width the way legged's credit gates are -- there is no width-bounded ceiling here since the structure's own worst case is already wing_width - far_width, not -wing_width.",
+    "min_bwb_credit_pct_of_tail": 0.15,
+    "_max_bwb_credit_pct_of_tail": "Ceiling, same intrinsic-heavy-credit logic as legged's own ceiling, measured against the tail instead of wing_width.",
+    "max_bwb_credit_pct_of_tail": 0.6,
+    "_max_bwb_tail_dollars": "Hard dollar cap on the tail risk a single bwb may carry (net of its own credit and open fee), independent of how the price-ratio gates above happen to price it. Placeholder pending recalibration.",
+    "max_bwb_tail_dollars": 750,
+    "entry_windows": []
+  },
+  "arms_header": "===== Arms =====",
+  "_arms_note": "Each arm differs from control in EXACTLY one thing, each with its own book. control is what makes every other arm falsifiable: gex vs control isolates centring, time_window vs control isolates timing, and the width-N arms vs control sweep wing width in STRIKE increments, not points (control at the default width is the sweep's 1-strike rung — a width-1 arm would duplicate its book under a second name). wide_wing was the single-point version of the width question; it stays for the SPX-era books' attribution but is disabled now the sweep covers it.",
+  "arms": {
+    "gex": {
+      "enabled": true,
+      "_note": "Centre on the strike with the greatest TOTAL per-strike gamma (|call| + |put|) within max_center_distance_pct of spot — the best available pin candidate. NOT net GEX: pinning comes from gamma concentration, which does not care which side the gamma sits on, and netting zeroes out exactly the strikes that pin hardest (see the rationale in engine.select_center). Degrades to ATM (and says so in center_reason) when the streamer has no open-interest cache yet.",
+      "_history_note": "This note said 'strongest positive per-strike net GEX' until 2026-08-04; the code has centred on total gamma since the net-GEX rule was found to have no candidate near spot at all. Corrected while writing docs/centre-lag.md.",
+      "_centre_lag_note": "OPEN FINDING 2026-08-04, nothing here gates on it yet — see docs/centre-lag.md. Total gamma concentrates where open interest is, i.e. where price HAS been, so on a trending day this centre LAGS spot: measured over 389 iterations in one session it sat below spot 78% of the time, median -9.1 points, while the index ran +115. That matters because centre-vs-spot silently picks the leg-in side (engine.choose_side: spot above centre sells CALLS, which then need spot to come back DOWN), so a lagging centre systematically legs this arm into the side the trend is against. Both of that session's non-completions were centres behind spot, costing -$444 against +$58 from the three that completed. Across all gex entries to date, centre below spot by >2pt: 4/7 completed, -$449; within 2pt: 16/20, +$130; above by >2pt: 6/7, -$69. A lag cap would have blocked both losers and kept all three winners. It is 34 trades, and the sample is mostly up-trending sessions, so this is a hypothesis to watch and NOT a reason to add a gate yet — the doc records what evidence would justify one (about 30 more entries including a clearly down-trending session). If a cap is ever added it must REFUSE rather than degrade to ATM, or the arm collapses onto control and the comparison it exists for dies.",
+      "_centre_lag_update_note": "2026-08-05 supplied the down-trending session the note above asked for, and the mechanism held in mirror: the session opened 7771.62 and settled 7723.55, and all three gex misses were up-completions with the centre ABOVE spot while both completions were down-completions. gex -$744 at 40% completion against control's +$862 at 100% -- the same shape as 08-04 in the opposite direction, so the effect's sign flips with the market rather than persisting, which is what separates a mechanism from an up-trending artefact. Still NOT gated. Two refinements the second session forced. (1) Lag alone is not the signal: an entry centred 22 points BELOW spot completed fine that day, because it lagged in the direction the market was going; what predicts a miss is the completing direction opposing the day's move, which is what the `trend` regime dimension measures. (2) A centre-offset cap alone would have caught only 1 of the 3 misses -- the other two sat INSIDE one strike (+2.5 and +1.3) -- so the two dimensions are complementary rather than redundant, and this note's 'a lag cap would have blocked both losers' claim does not generalize past 08-04. Also corrected: the breakeven completion rate quoted around this finding was ~92%, computed from one session; over all 137 SPX 5-wide legged entries it is ~76% (completions average +$59.87, misses -$185.21), and a miss is not automatically a loss -- 7 of 43 kept their full credit by settling on the right side.",
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "gex-intrinsic": {
+      "enabled": true,
+      "_note": "gex's twin, differing in EXACTLY ONE thing: `max_intrinsic_pct_of_width: 1.0`, which refuses an entry whose short strike is already so far in the money that BOTH legs are ITM. Added 2026-08-11. Paired against `gex` and nothing else -- the two share centring, windows, gates, and cadence, so a difference between their books is this rule.\n\nWHY A GEX TWIN AND NOT A CONTROL TWIN: all 16 fully-ITM legged entries in the SPX era were gex's. control, time_window and debit-first have none, so a control twin would almost never fire and would produce a near-duplicate book measuring nothing. This is the arm where the rule bites, which is where it has to be measured.\n\nWHAT IT REPLACES IN INTENT: `max_credit_pct_of_width` (0.60) is named for this job and structurally cannot do it. It uses the CREDIT as a proxy for moneyness, and at 0DTE the proxy fails -- with hours to expiry a fully-ITM 5-wide prices near 2.5-3.0, not near 5.00, because there is still real probability of moving back out. Measured: those 16 entries priced at 48-59.7% of width, every one UNDER the ceiling, so the gate had never once caught the thing it is named for. Intrinsic is exact and needs no calibration.\n\nTHE MEASURED ALTERNATIVE (8 sessions, gex only -- below this module's own 14-session bar, so treat the SIZE as directional; the mechanism argument does not depend on the sample): the 16 realized -$1,119.64, split 8 completions (+$630, +$21..+$202 each) against 8 strandings (-$1,750, about -$220 each). Refusing them forgoes the completions to avoid the strandings, net +$1,119.64. Note this is an ENTRY gate, so rule 6's stranded-branch argument explicitly does NOT apply -- refusing an entry manufactures no loss, it declines to open one.\n\nSCOPE: legged only. bwb and debit_first carry different geometry and their own populations are unmeasured; a gate extended to a structure it was never derived against is the mistake this module keeps a rule about.\n\nWHAT WOULD RETIRE IT: if gex-intrinsic's book is not better than gex's over a comparable number of sessions, the rule is not earning its refusals and the finding is that fully-ITM entries are survivable -- which is itself a result worth keeping (rule 6).",
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ],
+      "max_intrinsic_pct_of_width": 1.0
+    },
+    "time_window": {
+      "enabled": true,
+      "_note": "ATM-centred, entering only inside these windows. Deliberately skips the opening hour, which is the specific timing hypothesis worth testing: 0DTE extrinsic is richest early, but so is realized vol, so an early entry buys more premium and more risk of being run over before the completing spread cheapens. Windows are still NOT ranked against each other — every trade is tagged with the window it entered in, and that ranking comes out of our own sessions.",
+      "_history_note": "These were [09:45-10:15, 11:00-11:30, 13:00-13:30, 14:00-14:30] — a strict subset of the control arm's all-day window. A simulated session showed both arms exhausting max_positions inside the shared 09:45-10:15 overlap, so they took near-identical books and the timing restriction was never actually exercised. Starting after the open makes the contrast real.",
+      "_windows_note": "Rewritten 2026-07-27 to STRADDLE control's window instead of nesting inside it. The old set (10:30-11:00, 12:30-13:00, 14:00-14:30) sat entirely within control's window, and both arms centre ATM — so the two could only ever want the same strike, and they did: 100% centre agreement across 184 iterations. That is not a measurement, it is an identity; any two ATM arms agree on centre by construction. The contrast this arm exists to draw is TIMING, so its windows must include time control does not trade. 14:30-15:00 runs after control has stopped and is the disjoint contrast; 10:00-10:30 and 12:30-13:00 are deliberate controlled overlaps. Read this arm against control on entry timing and completion, NOT on centre divergence. (A pre-open 09:35-10:00 window was briefly set here the same day and removed within the hour when the post-open blackout went in — it sat entirely inside no_entry_before and would have been dead config.)",
+      "entry_windows": [
+        [
+          "10:00",
+          "10:30"
+        ],
+        [
+          "12:30",
+          "13:00"
+        ],
+        [
+          "14:30",
+          "15:00"
+        ]
+      ],
+      "_late_window_risk": "The 14:30-15:00 window is the one to watch. Median completion latency has run 46-67 minutes, so an entry at 15:00 has under an hour to the 16:00 close and may not complete — leaving an uncompleted short vertical, which is the module's losing branch. That is the hypothesis being tested rather than an oversight: if late entries systematically fail to complete, the per-window completion table will say so and the window should come back off.",
+      "_max_positions_per_window_note": "2 x 3 windows = 6 against a global max_positions of 4, so the global cap still binds overall but no single window can take more than half the book. Added 07-27 because 15 of 16 legged entries had been landing in the first window, leaving the other two untested.",
+      "max_positions_per_window": 2,
+      "_fee_drag_watch": "2026-07-29: fee drag ran 31.9% vs control's 23.8% on 6 vs 9 completed flies. Traced to opportunity exclusion, not worse execution -- control's two largest completions that day (net $45 at center 742, net $26.50 at center 734) fell in the 10:30-12:30/13:00-14:30 gap between this arm's windows, which it cannot trade by design. Direct evidence of the completion-timing mechanism too: both arms independently completed the SAME center (742) that day -- control entered 14:02, held 30 min, completed at a -0.025 debit (paid nothing); this arm couldn't enter until its 14:30 window opened, entered 14:41, and completed almost immediately (2 min) at a real 0.1625 debit, roughly half the net credit for the identical strike, because a window-delayed entry leaves less time for the spot drift that cheapens completions. Sample is small (6 completions) and dominated by a couple of control's outlier fills -- do not treat as settled. Revisit once this arm has accumulated ~14 trading sessions of completions: if the fee-drag gap versus control persists at that sample size, it is a real cost of the window restriction, not noise from one session's fills."
+    },
+    "control": {
+      "enabled": true,
+      "_note": "ATM, same window and position cap as the gex arm. The shared baseline for EVERY comparison: gex vs control isolates the CENTRING rule (identical windows), time_window vs control isolates the TIMING (identical centring), width-N vs control isolates the WINGS. It must therefore match gex on everything except where it centres — and it doubles as the width sweep's 1-increment rung, since it trades the default wing_width.",
+      "_history_note": "This was a single 12:00-12:15 window with max_positions 2, against gex's 09:45-14:30 and 4 — a 19x difference in entry opportunity. Per-trade metrics survive that, but net P&L per arm does not: the gex arm could have out-earned control purely by trading more often, and the headline comparison would have measured trade count rather than the GEX signal.",
+      "_occupancy_artefact_note": "READING CAVEAT 2026-08-04, no code change — see docs/centre-lag.md. An ATM arm plus center_already_occupied is not a neutral baseline on a trending day: control can only open a strike it does not already hold, so the first moment a new ATM strike frees up is the moment spot has just crossed into the LOWER half of that strike's zone. Measured 2026-08-04: all 20 control entries had centre above spot (one-in-a-million under ordinary ATM rounding), which via engine.choose_side put every one of them on the PUT side needing an UP move, on a session that only went up — 19 of 20 completed. The occupancy gate had quietly turned the baseline into a trend-follower. It mirrors on a down day and stalls on a chop day, so do NOT read a control win as evidence that ATM centring beats a signal; check the session's drift and the centre-vs-spot sign first. Compounding this on the same session, $521 of control's $613 came from two flies whose centres happened to sit on the settlement price.",
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "control-drift": {
+      "enabled": true,
+      "_note": "control's twin, differing in EXACTLY ONE thing: `refuse_completion_against_trend: true`, which refuses an entry whose completing direction opposes a COMMITTED session drift. Added 2026-08-11. Read against `control` and nothing else -- they share centring, windows, gates, cadence and wings, so a difference between their books is this rule.\n\nTHE MECHANISM: `choose_side` sells the side spot has already crossed, and `completing_side_direction` then makes a PUT spread complete on an UP move and a CALL spread on a DOWN one. So on a day that has committed to a direction, the arm systematically legs into the side that needs the day to turn around.\n\nTHE EVIDENCE, and it is the strongest this module has: entries whose completing direction opposed a committed drift completed 7% against 89% for the rest across the SPX era. It reproduced in MIRROR IMAGE -- 2026-08-04 was an up day whose two losing gex entries both legged into the side the +115 run was against; 2026-08-05 was a down day whose three misses were all up-completions; 2026-08-11 split 79% completion / +$1,376 with the drift against 23% / -$3,237 into it. The sign flips with the market rather than persisting, which is what separates a mechanism from an up-trending artefact.\n\nWHY AN ARM AND NOT A SHARED GATE: the band was fit on the same rows that measure it, and docs/centre-lag.md records this as a hypothesis awaiting out-of-sample confirmation. An arm is how that confirmation gets collected without betting every book on it. Same posture as `gex-intrinsic`.\n\nUSES THE SAME BAND AS THE TAG (`regime_trend_points`, 20), so the gate and the regime label can never disagree about what 'committed' means. Inside the band it does not fire: that dead zone is a known failure mode (2026-08-05 10:01 read 'flat' at +13.6 and the day reversed 48 points), and widening the gate past the tag to cover it would be fitting the number to the outcome. Fails OPEN on missing session coverage -- no opinion, not a refusal; coverage starts 2026-07-29.\n\nWHAT WOULD RETIRE IT: if control-drift's completion rate is not materially better than control's over a comparable number of sessions, the dimension does not survive out of sample and the 7%/89% split was in-sample fitting -- which is itself a result worth keeping.",
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ],
+      "refuse_completion_against_trend": true
+    },
+    "debit-first": {
+      "enabled": true,
+      "_note": "GEX arm's twin, isolating the LEGGING ORDER: buy the debit vertical first, complete by SELLING the credit spread second (entry_modes: [\"debit_first\"]) -- the exact reverse of legged's two trades. Completion drift direction is INVERTED from every other arm: legged needs spot to drift AWAY from the short strike; this arm needs spot to drift TOWARD the centre (reversion), so it and legged monetize opposite path regimes at the same centre. See docs/faq.md for the full construction.",
+      "_center_rule_note": "Changed 2026-08-03 from ATM to center_rule: gex. Paying a real debit up front only makes sense with some evidence spot is likely to move toward the strikes bought, not on pure chance -- the same directional-pull rationale the `gex` arm already uses to pick its centre. Reuses the `gex` arm's own centring code (engine.select_center) via this override rather than needing to be named 'gex' itself, and shares its max_center_distance_pct/degrade-to-ATM-when-GEX-unavailable behavior. This gives up the direct ATM-vs-ATM control comparison against `control` (that pairing already exists via `legged` GEX-centred entries); it isolates the SAME two variables `gex` isolates (centring) while ALSO isolating the legging order, so it should be read against both `control` (centring + legging both differ) and `gex` (legging order only differs) rather than treated as its own clean single-variable arm.",
+      "center_rule": "gex",
+      "entry_modes": [
+        "debit_first"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "_debit-first-atm": "debit-first's ATM twin, added 2026-08-07, for the identical reason as bwb-atm: debit-first overrides entry_modes AND center_rule, a confound this module's own notes already acknowledged carrying ('gives up a clean ATM-vs-ATM control pairing'). debit-first-atm vs control isolates the LEGGING ORDER; debit-first-atm vs debit-first isolates the centring. Fixing one arm's confound and not the other would leave the comparison table inconsistent about what it is measuring.",
+    "debit-first-atm": {
+      "enabled": true,
+      "center_rule": "atm",
+      "entry_modes": [
+        "debit_first"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "iron": {
+      "enabled": false,
+      "_note": "RETIRED 2026-08-03 before it ever traded, and left disabled deliberately -- do NOT re-enable without reading docs/iron-completion.md first. It was meant to isolate the COMPLETION CHOICE (complete a legged credit spread by buying the same-type debit spread, or by selling the opposite-type credit spread into an iron butterfly). It cannot isolate anything: both completions use the IDENTICAL strike pair, so put-call parity pins D + C2 = wing_width exactly, for any skew. The two gates are the same inequality, they fire on the same tick, and the completed positions have the same net at every settlement price. What is left is fees and execution, both against the iron: +$3.46/position in assignment fees measured over 143 real completions (an iron always has one side ITM; a same-type fly settles clean in exactly the drift regime this book gets), plus a wider crossing cost that slippage_frac's flat fraction cannot even see. This arm was never in the deployed config, so it produced zero ledger rows -- nothing was lost.",
+      "_revival_note": "book.py's dispatch picks the higher post-fee floor, which is WRONG across kinds: iron_fly reserves 2 ITM strikes and fly reserves 3 (fly.WORST_CASE_ITM_LEGS), evaluated at different worst-case prices, so iron's floor reads exactly $5.00 higher at every spot. Had this run it would have taken iron ~100% of the time on that artifact. Fix the tiebreak (score both at a COMMON settlement price) before any revival.",
+      "completion_modes": [
+        "debit",
+        "iron"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "bwb": {
+      "enabled": true,
+      "_note": "Isolates the ENTRY CONSTRUCTION: instead of legging in over two ticks, enter a broken-wing butterfly whole for a net credit (entry_modes: [\"bwb_roll\"]), then roll the far wide wing in to the near strike once the roll cheapens enough, converting to a symmetric fly. Until rolled this carries REAL tail risk (wing_width - far_width, negative) that fly.position_floor never reports as bounded -- this arm exists to measure whether the roll actually converts often enough, and cheaply enough, to be worth the tail carried while waiting. See docs/faq.md for the full construction and the researched trap (the roll cheapens under exactly the drift that makes the position profitable, and balloons past the credit precisely when the tail is threatened).",
+      "_center_rule_note": "GEX-centred from the start (2026-08-03), not ATM: the far wing is where this structure's real, uncapped-until-rolled tail risk sits, and center_rule also decides which side choose_side sells (spot above center -> calls, i.e. the tail risk sits above spot; spot below center -> puts, tail below spot). A centre GEX suggests price will be pulled toward, rather than a blind ATM strike, argues both for a richer entry credit and for reduced odds of spot running past the far wing into the tail before a roll is possible.",
+      "center_rule": "gex",
+      "entry_modes": [
+        "bwb_roll"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "_bwb-atm": "bwb's ATM twin, added 2026-08-07 -- the CONTROL the bwb arm never had. `bwb` overrides BOTH entry_modes and center_rule, so it differs from `control` in two things at once and cannot attribute a result to either, against this file's own one-variable rule above. This pins centring to ATM so the pair reads three ways: bwb-atm vs control isolates the CONSTRUCTION (bwb_roll vs legged), bwb-atm vs bwb isolates the CENTRING. Note ATM means the structure STRADDLES spot (the near wing lands ~1 strike the other side of it), which is not the fully-OTM placement -- but the roll span (centre +/- wing .. centre +/- far) is still OTM under choose_bwb_side either way, and a straddling structure clears min_bwb_credit_pct_of_tail MORE easily, since a bwb credit is capped by (C(K+w) - C(K+f)) and that gap collapses as the structure is pushed out. Keep max_positions equal to bwb's or the comparison measures opportunity count.",
+    "bwb-atm": {
+      "enabled": true,
+      "center_rule": "atm",
+      "entry_modes": [
+        "bwb_roll"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "wide_wing": {
+      "enabled": false,
+      "_note": "DISABLED 2026-07-29, superseded by the width-N sweep below (kept so the SPX-era books' attribution stays readable). It was the single-point width hypothesis: added 07-27 because completions arrive only after spot walks away from the centre (median drift 15.3-17.3 SPX points against a 5-point wing; 19 of 23 completed flies settled outside their wings), and a 20-point wing bracketed that drift. On XSP the scaled equivalent of that bracket (~2 points) is exactly the width-2 arm — the sweep answers the same question as a curve instead of one point.",
+      "wing_width": 20,
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "_width_arms_note": "The width sweep, DISABLED 2026-08-01 with the move to SPX: the arms pinned wing_width to a raw POINT value (2..5), which are not multiples of SPX's 5-point strike spacing and so could not be built there at all. RE-ENABLED 2026-08-15 on a different axis: wing_width_strikes pins the wing to N STRIKE INCREMENTS instead of N points (resolved to points by engine.merged_params against strike_increment), so the sweep means the same thing on any symbol's chain regardless of that symbol's own strike spacing -- 10/15/20/25/50 points on SPX today (control's default wing_width of 5 is the 1-strike rung, which is why there is still no width-1 arm: it would duplicate control's book under a second name). The XSP-era rows under these same arm names used the OLD point-value meaning and are not poolable with the SPX rows that follow; the console's era filter already separates them by symbol.",
+    "width-2": {
+      "enabled": true,
+      "wing_width_strikes": 2,
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "width-3": {
+      "enabled": true,
+      "wing_width_strikes": 3,
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "width-4": {
+      "enabled": true,
+      "wing_width_strikes": 4,
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "width-5": {
+      "enabled": true,
+      "wing_width_strikes": 5,
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "width-10": {
+      "enabled": true,
+      "wing_width_strikes": 10,
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "callwall": {
+      "enabled": true,
+      "center_rule": "call_wall",
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ],
+      "_note": "Shorts at the GEX call wall (added 2026-08-31; origin: the gex module's pin-study over 23 recorded sessions). A BOUND bet, not a pin bet -- the close finished at or below the morning wall 19-21/23 while the tent captured 2/23 -- so the entry is the OTM call credit spread at the wall and the completion manufactures the usual floor. Refuses the session outright when GEX is unavailable or the wall is not above spot (no ATM degrade: the wall IS the thesis). Window and caps are CONTROL'S OWN, because this arm differs from control in exactly one thing -- centring -- and the wall is read fresh at each entry, so a mid-afternoon entry measures the afternoon wall rather than a stale morning one. The open question this arm exists to answer is CREDIT: the study proved the geometry survives (floor+profit 19/23 at 5-pt wings) but could not price an entry, so min_credit_pct_of_width refusals here are the measurement, not noise."
+    }
+  },
+  "advice_header": "===== AI advisor (paper only) =====",
+  "_advice_note": "The loop side of the agentic layer: an out-of-band advisor (packages/advisor) proposes parameter values, and paper_loop.advice_decision re-validates them with cherrypick.core.advice against the 'bounds' manifest below before ANY of them reach a book. OFF by default, and off twice over -- the suite's own advisor.modules.flies switch must also be on. What it does when on: the admitted params run as a SYNTHETIC ARM, 'advised:<base_arm>', beside the un-advised base, so the comparison is paired on the same sessions and the same underlying and `control` never changes meaning mid-experiment. An advised arm is a NEW BOOK, not a measurement break in an existing one. Absent, stale, expired or invalid advice all mean baseline -- the loop reads once at session start (data/flies/advice_active.json pins the day's decision so it cannot change mid-session) and never waits for, retries, or alerts about advice. There is no management twin because this module has no exits: a book holds to settlement, and settlement covers any advised book that still has rows for the day whatever today's advice says. Only keys listed in 'bounds' can move, only inside their declared closed range, and ONE out-of-range value rejects the whole artifact. Entry-side geometry that changes WHICH structures open is a legitimate thing to test, but keep the bounds narrow: an advised book that differs from control on five axes measures nothing.",
+  "advice": {
+    "enabled": false,
+    "base_arm": "control",
+    "bounds": {
+      "max_forecast_range_points": {
+        "min": 30,
+        "max": 150,
+        "_note": "The containment gate (engine.evaluate_credit_spread_entry): the advised book skips a session whose trailing realized range (provider._trailing_range, prior 5 sessions) exceeds this many points. Declared 2026-09-02 for the advisor's band-containment experiment; the advisor sweeps the cap. Off on every other arm."
+      }
+    }
+  }
+}

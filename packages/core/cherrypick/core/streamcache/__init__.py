@@ -1,0 +1,875 @@
+"""cherrypick.core.streamcache — the shared stream-cache schema + SQLite helpers.
+
+The persistent option-chain cache a streamer daemon writes and readers (GEX, dashboards, a trading
+loop) read: latest Quote / Greeks / Trade(volume) / Summary(open-interest) per option symbol, the
+option-chain structure, a small daemon-status row, and per-(underlying, day) session OHLC rows
+(stream_summary) — the exchange-official day open/high/low/close + prior close off the underlying's
+Summary event, which accumulate into a daily series (intraday-range gates read today's row; a
+true-range ATR reads the last N completed days). Extracted from MEIC's streamer so any consumer —
+MEIC's own daemon, the standalone GEX module — writes and reads one identical schema instead of each
+carrying a private copy (plan Phase A of the streamer extraction).
+
+Pure SQLite + stdlib; no broker, no network, no tastytrade import. A streaming *engine*
+(`cherrypick.core.streamer`) fills this cache; a provider (`cherrypick-gex`) reads it read-only.
+"""
+
+from __future__ import annotations
+
+import datetime as _dt
+import json
+import re
+import sqlite3
+import time
+from pathlib import Path
+
+from cherrypick.core.db import connect_ro
+
+# The schema every consumer shares. orb_ranges/stream_rest_cache are used only by MEIC's daemon today
+# but are kept here so MEIC can adopt this DDL verbatim when it migrates onto the core engine.
+DDL = """
+CREATE TABLE IF NOT EXISTS stream_chain (
+    streamer_symbol   TEXT PRIMARY KEY,
+    expiration        TEXT NOT NULL,
+    underlying_symbol TEXT,
+    data_json         TEXT NOT NULL,
+    updated_at        REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chain_expiration ON stream_chain(expiration);
+CREATE TABLE IF NOT EXISTS stream_quotes (
+    symbol      TEXT PRIMARY KEY,
+    bid         REAL,
+    ask         REAL,
+    mid         REAL,
+    bid_size    REAL,
+    ask_size    REAL,
+    updated_at  REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS stream_greeks (
+    symbol      TEXT PRIMARY KEY,
+    delta       REAL,
+    gamma       REAL,
+    theta       REAL,
+    vega        REAL,
+    rho         REAL,
+    iv          REAL,
+    price       REAL,
+    updated_at  REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS stream_trades (
+    symbol      TEXT PRIMARY KEY,
+    last        REAL,
+    change      REAL,
+    volume      REAL,
+    updated_at  REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS stream_oi (
+    symbol        TEXT PRIMARY KEY,
+    open_interest INTEGER,
+    updated_at    REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS stream_rest_cache (
+    key         TEXT PRIMARY KEY,
+    data_json   TEXT NOT NULL,
+    updated_at  REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS stream_status (
+    id                  INTEGER PRIMARY KEY CHECK (id = 1),
+    pid                 INTEGER,
+    connected_since     TEXT,
+    last_event_at       TEXT,
+    subscribed_symbols  INTEGER DEFAULT 0,
+    reconnect_count     INTEGER DEFAULT 0
+);
+-- Per-symbol chain-fetch health. A daemon-wide staleness check (stream_status/the freshest-of-any-
+-- event age) can stay healthy while ONE symbol's 0DTE chain fetch keeps failing and its window sits
+-- permanently disabled -- other symbols' quotes mask it. This is that symbol's own signal: NULL
+-- chain_fetch_error means its chain is currently loaded fine.
+CREATE TABLE IF NOT EXISTS stream_symbol_health (
+    symbol            TEXT PRIMARY KEY,
+    chain_loaded_at   TEXT,
+    chain_fetch_error TEXT,
+    updated_at        REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS orb_ranges (
+    symbol      TEXT NOT NULL,
+    trade_date  TEXT NOT NULL,
+    orb_high    REAL,
+    orb_low     REAL,
+    captured_at REAL,
+    PRIMARY KEY (symbol, trade_date)
+);
+CREATE TABLE IF NOT EXISTS stream_summary (
+    symbol          TEXT NOT NULL,
+    trade_date      TEXT NOT NULL,
+    day_open        REAL,
+    day_high        REAL,
+    day_low         REAL,
+    day_close       REAL,
+    prev_day_close  REAL,
+    updated_at      REAL NOT NULL,
+    PRIMARY KEY (symbol, trade_date)
+);
+"""
+
+
+def to_float(value) -> float | None:
+    """NaN-safe float coercion for event fields (DXLink sends NaN for missing greeks/prices)."""
+    if value is None:
+        return None
+    try:
+        v = float(value)
+        return None if v != v else v  # NaN guard
+    except (TypeError, ValueError):
+        return None
+
+
+# How long a writer waits for a busy database before giving up. SQLite's default is ZERO: a
+# contended write raises `database is locked` on the spot rather than retrying, which is almost
+# never what a daemon wants and was not what this one wanted on 2026-08-17. A burst of history
+# backfill held the write lock long enough that the quote/trade/summary writers and the status
+# flusher all began failing instantly; the status write happens inside the stream's task group, so
+# its exception tore down the DXLink connection, and the producer spent the session reconnecting
+# every 60s while every module's quotes went stale.
+#
+# Five seconds is chosen against what the cache actually does: writes here are single-row upserts
+# and short batches, so a wait this long means something genuinely unusual is in progress (a large
+# backfill, a checkpoint) and waiting for it is strictly better than dropping the tick. A caller
+# that would rather fail fast than block should not be sharing a cache with a daemon.
+BUSY_TIMEOUT_MS = 5000
+
+# How large the WAL may stay after a checkpoint resets it. In WAL mode SQLite's automatic checkpoint
+# copies pages into the database but can only RESET the file when no reader still needs the frames it
+# holds — and this cache always has a reader (the console polls it every few seconds, every module
+# provider on its own tick). So the automatic path quietly degraded to copy-but-never-truncate and the
+# WAL reached 98MB against a 49MB database, which every reader then had to walk.
+#
+# The limit alone fixes nothing: it applies when a checkpoint resets the journal, so it needs
+# `checkpoint()` below to actually get one through. 16MB leaves room for the history-backfill burst to
+# run without thrashing the file size, while bounding the steady state well under the database.
+JOURNAL_SIZE_LIMIT_BYTES = 16 * 1024 * 1024
+
+# What a checkpoint attempt is allowed to wait for readers before giving up. Deliberately far below
+# BUSY_TIMEOUT_MS: the producer runs one event loop over one connection, so a checkpoint that blocks
+# is a checkpoint that stalls the DXLink listeners with it. A contended attempt should cost a
+# quarter-second and be retried on the next cadence, not hold the loop for five seconds.
+CHECKPOINT_BUSY_TIMEOUT_MS = 250
+
+
+def _wal_size(conn: sqlite3.Connection) -> int:
+    """Bytes currently held by this connection's write-ahead log (0 if absent/unreadable)."""
+    try:
+        for _seq, name, filename in conn.execute("PRAGMA database_list"):
+            if name == "main" and filename:
+                wal = Path(filename + "-wal")
+                return wal.stat().st_size if wal.exists() else 0
+    except Exception:
+        pass
+    return 0
+
+
+def checkpoint(conn: sqlite3.Connection) -> tuple[bool, int]:
+    """Best-effort `wal_checkpoint(TRUNCATE)`. Returns (reset, reclaimed_bytes).
+
+    Never raises and never blocks for long — see CHECKPOINT_BUSY_TIMEOUT_MS. A busy result is the
+    ordinary case while readers are active and means "try again next time", not a failure: one
+    success in a quiet stretch is enough to put the WAL back on the floor, which is why the caller
+    can run this on a slow cadence and ignore the result.
+
+    Reclaimed bytes are measured off the file rather than taken from the pragma's own counters: a
+    successful TRUNCATE reports zero pages checkpointed precisely BECAUSE it reset the log, so those
+    counters cannot tell a no-op apart from the case worth logging."""
+    before = _wal_size(conn)
+    try:
+        conn.execute(f"PRAGMA busy_timeout={CHECKPOINT_BUSY_TIMEOUT_MS}")
+        try:
+            row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        finally:
+            conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+    except Exception:
+        return (False, 0)
+    if not row:
+        return (False, 0)
+    reset = row[0] == 0
+    return (reset, max(0, before - _wal_size(conn)) if reset else 0)
+
+
+def connect(db_path: Path | str) -> sqlite3.Connection:
+    """Open (creating + migrating) the write-side cache. WAL + NORMAL for a daemon that commits often
+    while readers open the same file read-only. `check_same_thread=False`: MEIC's daemon touches the
+    connection from its DXLink loop and a status flusher — which is exactly why `busy_timeout` is
+    set here rather than left at SQLite's default of 0 (see BUSY_TIMEOUT_MS)."""
+    db_path = Path(db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+    conn.execute(f"PRAGMA journal_size_limit={JOURNAL_SIZE_LIMIT_BYTES}")
+    for stmt in DDL.split(";"):
+        s = stmt.strip()
+        if s:
+            conn.execute(s)
+    # Additive migration for caches created before underlying_symbol existed (XSP/SPX share 0DTE dates,
+    # so an expiration-only filter would blend chains — the column lets readers disambiguate).
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(stream_chain)")}
+    if "underlying_symbol" not in existing:
+        conn.execute("ALTER TABLE stream_chain ADD COLUMN underlying_symbol TEXT")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chain_underlying ON stream_chain(underlying_symbol, expiration)"
+    )
+    conn.commit()
+    return conn
+
+
+def upsert_status(conn: sqlite3.Connection, **kwargs) -> None:
+    """Upsert the single daemon-status row (id=1) with whatever fields are supplied."""
+    fields = dict(kwargs)
+    cols = ", ".join(fields)
+    vals = ", ".join("?" for _ in fields)
+    updates = ", ".join(f"{k} = excluded.{k}" for k in fields if k != "id")
+    conn.execute(
+        f"INSERT INTO stream_status (id, {cols}) VALUES (1, {vals}) ON CONFLICT(id) DO UPDATE SET {updates}",
+        list(fields.values()),
+    )
+    conn.commit()
+
+
+def upsert_symbol_health(conn: sqlite3.Connection, symbol: str, **kwargs) -> None:
+    """Upsert one symbol's chain-fetch health row with whatever fields are supplied — `updated_at`
+    is always refreshed, but an omitted field (e.g. a failure call that doesn't pass
+    `chain_loaded_at`) is left untouched rather than blanked, same convention as `upsert_status`."""
+    fields = {"symbol": symbol, "updated_at": time.time(), **kwargs}
+    cols = ", ".join(fields)
+    vals = ", ".join("?" for _ in fields)
+    updates = ", ".join(f"{k} = excluded.{k}" for k in fields if k != "symbol")
+    conn.execute(
+        f"INSERT INTO stream_symbol_health ({cols}) VALUES ({vals}) "
+        f"ON CONFLICT(symbol) DO UPDATE SET {updates}",
+        list(fields.values()),
+    )
+    conn.commit()
+
+
+def write_chain(conn: sqlite3.Connection, option_map: dict) -> int:
+    """Persist an option-chain structure ({streamer_symbol: option}). Tags each row with its
+    underlying_symbol so lookups can filter by underlying. Returns rows written."""
+    now = time.time()
+    rows = []
+    for sym, o in option_map.items():
+        dump = getattr(o, "model_dump", None)
+        data = dump(mode="json") if callable(dump) else {"streamer_symbol": sym}
+        rows.append(
+            (sym, str(data.get("expiration_date", "")), data.get("underlying_symbol"), json.dumps(data), now)
+        )
+    conn.executemany(
+        "INSERT INTO stream_chain (streamer_symbol, expiration, underlying_symbol, data_json, updated_at) "
+        "VALUES (?, ?, ?, ?, ?) ON CONFLICT(streamer_symbol) DO UPDATE SET "
+        "expiration=excluded.expiration, underlying_symbol=excluded.underlying_symbol, "
+        "data_json=excluded.data_json, updated_at=excluded.updated_at",
+        rows,
+    )
+    conn.commit()
+    return len(rows)
+
+
+# --------------------------------------------------------------------------- daily-history backfill
+#
+# `stream_summary` accumulates one OHLC row per (symbol, trade_date) from the live Summary event —
+# a series that starts EMPTY the day a symbol is first requested, which starves any consumer whose
+# math needs history (a 20-day ATR waits ~a month of sessions). DXLink daily Candle events carry the
+# same series back as far as asked, so the engine backfills a requested number of days once per
+# symbol. Two rules keep the two sources honest side by side:
+#
+# - **Backfill only ever fills ABSENT dates.** The live Summary event is the exchange-official
+#   session record and candles come off a different consolidation feed; the two can disagree
+#   slightly, so a row the live feed wrote (or a backfill already wrote) is never overwritten —
+#   INSERT ... DO NOTHING, enforced here rather than trusted to callers.
+# - **Today's date is never backfilled.** The current session's candle is partial; today's row
+#   belongs to the live Summary listener alone.
+
+
+def summary_backfill_rows(bars: list[dict], *, today: str) -> list[dict]:
+    """Normalise raw daily bars ({date, open, high, low, close}) into insertable rows: sorted,
+    deduped (last wins), dates before `today` only, `prev_day_close` chained from the prior bar's
+    close. Pure — the transform the backfill test pins.
+
+    A bar whose close is missing or non-positive is DROPPED, not stored as 0.0. Every symbol
+    backfilled before 2026-08-25 carries exactly one such row, always the first date of its window —
+    34 of them across the cache, the feed's leading partial bar written through as a price. Zero is
+    not a price, and it is the most dangerous wrong one available here: it survives every null check
+    downstream, sits below any real value in a percentile, and drags an SMA silently. The suite's
+    "null is not zero" rule is usually about not coercing a gap into a number; this is the same rule
+    at the door the numbers come in through.
+    """
+    by_date: dict[str, dict] = {}
+    for bar in bars:
+        day = str(bar.get("date") or "")
+        if not day or day >= str(today):
+            continue
+        close = to_float(bar.get("close"))
+        if close is None or close <= 0:
+            continue
+        by_date[day] = bar
+    out: list[dict] = []
+    prev_close = None
+    for day in sorted(by_date):
+        bar = by_date[day]
+        out.append(
+            {
+                "trade_date": day,
+                "day_open": to_float(bar.get("open")),
+                "day_high": to_float(bar.get("high")),
+                "day_low": to_float(bar.get("low")),
+                "day_close": to_float(bar.get("close")),
+                "prev_day_close": prev_close,
+            }
+        )
+        prev_close = to_float(bar.get("close"))
+    return out
+
+
+def backfill_summary(conn: sqlite3.Connection, symbol: str, bars: list[dict], *, today: str) -> int:
+    """Insert `bars` (see `summary_backfill_rows`) for dates `stream_summary` does not already hold.
+    Existing rows — live-written or previously backfilled — are never touched. Returns rows added."""
+    rows = summary_backfill_rows(bars, today=today)
+    now = time.time()
+    added = 0
+    for r in rows:
+        cur = conn.execute(
+            "INSERT INTO stream_summary (symbol, trade_date, day_open, day_high, day_low, "
+            "day_close, prev_day_close, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(symbol, trade_date) DO NOTHING",
+            (
+                symbol,
+                r["trade_date"],
+                r["day_open"],
+                r["day_high"],
+                r["day_low"],
+                r["day_close"],
+                r["prev_day_close"],
+                now,
+            ),
+        )
+        added += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+    conn.commit()
+    return added
+
+
+def purge_nonpositive_closes(conn: sqlite3.Connection) -> int:
+    """Delete `stream_summary` rows whose `day_close` is not a price. Returns rows removed.
+
+    A repair, run by the producer because the cache has exactly one writer by invariant and a
+    maintenance script would be a second. Idempotent and near-free after the first pass: the write
+    path stopped creating these on 2026-08-25, so this drains a fixed backlog and then matches
+    nothing forever.
+
+    The backlog is the feed's leading partial bar, written through as 0.0 — one row per symbol,
+    always the first date of its backfill window, 34 across the cache when this was found. Their
+    reach was checked rather than assumed and the assumption was wrong: most sit outside any read
+    window, but seven symbols hold fewer rows than a 252-session window is wide, so their zero was
+    inside the range a percentile or an SMA actually reads. Zero survives every null check
+    downstream and sits below any real value, which makes it the most dangerous wrong price
+    available here.
+    """
+    try:
+        cur = conn.execute("DELETE FROM stream_summary WHERE day_close IS NOT NULL AND day_close <= 0")
+        conn.commit()
+        return int(cur.rowcount or 0)
+    except sqlite3.Error:
+        return 0
+
+
+# How long a passed expiration's chain is kept, and how long an underlying nobody declares is kept.
+# Both generous on purpose: the cost of keeping a row is bytes, the cost of deleting one a reader
+# still wants is a session, and neither number needs to be tight to bound the growth this drains.
+EXPIRED_CHAIN_KEEP_DAYS = 5
+UNDECLARED_SYMBOL_KEEP_DAYS = 7
+
+
+def prune_cache(
+    conn: sqlite3.Connection,
+    *,
+    declared_underlyings,
+    today: str,
+    apply: bool = False,
+    expired_keep_days: int = EXPIRED_CHAIN_KEEP_DAYS,
+    undeclared_keep_days: int = UNDECLARED_SYMBOL_KEEP_DAYS,
+) -> dict:
+    """Drop chain rows no consumer can legitimately want, and the option rows orphaned with them.
+
+    A repair in `purge_nonpositive_closes`'s family, and run by the producer for the same reason:
+    the cache has exactly one writer by invariant, so a maintenance script would be a second.
+
+    The cache is SHARED -- every module writes its requests into it -- so it accumulates two kinds
+    of dead weight that no single module owns. Neither costs meaningful disk; what they cost is a
+    reader picking one up believing it is current. That is not hypothetical: on 2026-08-20 flies
+    ranked expirations by distance from the current instant, matched a six-day-old copy of the next
+    day's chain, refused every tick on stale quotes, and lost the session. The providers were fixed
+    to bound on `expiration >= today`, but the trap is still lying there for the next reader, and
+    deleting it is the only fix that does not depend on every future consumer being careful.
+
+    Two rules, both DERIVED rather than judged:
+
+    * an expiration that passed more than `expired_keep_days` ago -- no module can trade an expired
+      contract, and settlement reads `daily_closes`/`stocks.ohlcv`, never a chain. The tail exists
+      so a settlement audit run a few days late still finds its rows.
+    * an underlying absent from `declared_underlyings` whose newest row is older than
+      `undeclared_keep_days`. The caller supplies that set from the same stream-request union the
+      producer subscribes from, so this is what the suite DECLARES rather than what it happens to
+      hold. Both clauses are required: a symbol declared today keeps rows however old, and a symbol
+      dropped this morning keeps its rows until the window passes, so a module that re-declares one
+      loses nothing.
+
+    Cascades to `stream_quotes`/`greeks`/`oi`/`trades`, but ONLY for option symbols
+    (`is_option_symbol`), and only those no surviving chain row still references. The cash symbols
+    in those tables -- VIX, the sector ETFs, every underlying -- are never in `stream_chain` at all,
+    so a cascade that did not test this would delete the entire vol complex on its first run.
+
+    Read-only unless `apply`. Returns the counts either way, so the report is the same object a dry
+    run prints and a scheduled pass logs.
+    """
+    cutoff_expiry = (_dt.date.fromisoformat(today) - _dt.timedelta(days=expired_keep_days)).isoformat()
+    stale_before = time.time() - undeclared_keep_days * 86400
+    declared = {str(s).strip().upper() for s in (declared_underlyings or [])}
+    report: dict = {
+        "ok": True,
+        "applied": bool(apply),
+        "today": today,
+        "expired_before": cutoff_expiry,
+        "declared_underlyings": sorted(declared),
+    }
+    try:
+        expired = [
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT expiration FROM stream_chain WHERE expiration < ?", (cutoff_expiry,)
+            )
+        ]
+        held = [
+            r[0]
+            for r in conn.execute(
+                "SELECT underlying_symbol FROM stream_chain GROUP BY underlying_symbol"
+                " HAVING MAX(COALESCE(updated_at, 0)) < ?",
+                (stale_before,),
+            )
+        ]
+        undeclared = sorted(u for u in held if str(u).strip().upper() not in declared)
+        report["expired_expirations"] = sorted(expired)
+        report["undeclared_underlyings"] = undeclared
+
+        chain_sql = "FROM stream_chain WHERE expiration < ?"
+        params: list = [cutoff_expiry]
+        if undeclared:
+            chain_sql += f" OR underlying_symbol IN ({','.join('?' * len(undeclared))})"
+            params += undeclared
+        report["chain_rows"] = int(conn.execute(f"SELECT COUNT(*) {chain_sql}", params).fetchone()[0])
+
+        if not apply:
+            # Counting orphans before the delete would mean simulating it; the dry run reports what
+            # WILL be removed from stream_chain and names the cascade rather than guessing its size.
+            report["orphaned_option_rows"] = None
+            return report
+
+        conn.execute(f"DELETE {chain_sql}", params)
+        orphaned = 0
+        for table in ("stream_quotes", "stream_greeks", "stream_oi", "stream_trades"):
+            # `is_option_symbol` is the dot prefix, expressed here as SQL so the cash symbols are
+            # excluded by the same rule the Python helper applies.
+            cur = conn.execute(
+                f"DELETE FROM {table} WHERE symbol LIKE '.%'"  # noqa: S608 - table from a literal tuple
+                " AND symbol NOT IN (SELECT streamer_symbol FROM stream_chain)"
+            )
+            orphaned += int(cur.rowcount or 0)
+        conn.commit()
+        report["orphaned_option_rows"] = orphaned
+        return report
+    except sqlite3.Error as exc:
+        return {"ok": False, "error": str(exc), "applied": False}
+
+
+def latest_summary_date(conn: sqlite3.Connection, symbol: str, *, today: str) -> str | None:
+    """The most recent COMPLETED session this symbol holds a close for, or None.
+
+    The count alone cannot see a hole at the RECENT end, and that is the hole that matters: a
+    percentile or an SMA is computed over the tail. VIX carried 1,380 rows and nothing after
+    2026-08-14 -- the backfill's deficit check read "1380 >= 270, satisfied" every single connection
+    while the series it was protecting had stopped a week earlier. Depth is not currency.
+
+    **Both routes to a close count, exactly as `overview.facts._close_history` reads them.**
+    `day_close` dates its own row; `prev_day_close` dates the PRECEDING row, and it is the only route
+    for a session the live producer wrote, because that producer stops at the bell and never fills
+    `day_close`. Reading the first route alone makes every live-written underlying look permanently
+    stale -- SPX answered 2026-07-28 while holding a current row for every session since -- which
+    would have had the backfill refetching its candles on every connection, forever, and filling
+    nothing (those dates are present; the insert skips them).
+    """
+    try:
+        rows = conn.execute(
+            "SELECT MAX(covered) FROM ("
+            "  SELECT trade_date AS covered FROM stream_summary"
+            "   WHERE symbol = ? AND trade_date < ? AND day_close IS NOT NULL"
+            "  UNION ALL"
+            "  SELECT prior FROM ("
+            "    SELECT LAG(trade_date) OVER (ORDER BY trade_date) AS prior, prev_day_close"
+            "      FROM stream_summary WHERE symbol = ? AND trade_date <= ?"
+            "  ) WHERE prev_day_close IS NOT NULL AND prior IS NOT NULL"
+            ")",
+            (symbol, today, symbol, today),
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+    return str(rows[0]) if rows and rows[0] else None
+
+
+def completed_summary_days(conn: sqlite3.Connection, symbol: str, *, today: str) -> int:
+    """How many COMPLETED daily rows (close present, date before `today`) the cache holds for one
+    symbol — the backfill's deficit check."""
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM stream_summary WHERE symbol = ? AND trade_date < ? "
+            "AND day_close IS NOT NULL",
+            (symbol, today),
+        ).fetchone()
+        return int(row[0] or 0)
+    except sqlite3.Error:
+        return 0
+
+
+def current_underlying_price(conn: sqlite3.Connection, underlying: str) -> float | None:
+    """Latest last-trade price for an underlying from the cache (used to centre the ATM window)."""
+    try:
+        row = conn.execute("SELECT last FROM stream_trades WHERE symbol = ?", (underlying,)).fetchone()
+        return float(row["last"]) if row and row["last"] is not None else None
+    except sqlite3.Error:
+        return None
+
+
+def window_span(strike_count) -> tuple[int, int]:
+    """Normalize a window request to ``(below, above)`` strike counts around the centre.
+
+    A symmetric window is the wrong default for half this suite's declarations and it was expensive:
+    pmcc's deep-ITM long sits far BELOW spot and its short sits AT spot, so asking for depth downward
+    bought an identical count upward that no module could ever read — roughly half of the largest
+    window in the suite on 2026-08-24. A symmetric count is still the common case and still valid, so
+    an ``int`` is accepted unchanged; a module with a directional need declares
+    ``{"down": N, "up": M}`` instead of buying depth it does not want by inflating one number.
+
+    Accepts an int, a ``(below, above)`` pair, or a ``{"down", "up"}`` mapping (either key may be
+    omitted and falls back to the other, so a half-declared hint is a narrower window rather than a
+    zero one). Junk degrades to ``(0, 0)`` — the caller's own default then applies — for the same
+    reason the request readers drop junk entries rather than raising: one bad declaration must never
+    take down the producer every module is priced from.
+    """
+
+    def _n(value) -> int | None:
+        # bool is an int subclass and `{"down": True}` is a typo, never a request for one strike.
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            return None
+        return value
+
+    if isinstance(strike_count, dict):
+        down, up = _n(strike_count.get("down")), _n(strike_count.get("up"))
+        if down is None and up is None:
+            return (0, 0)
+        return (down if down is not None else up, up if up is not None else down)
+    if isinstance(strike_count, (tuple, list)) and len(strike_count) == 2:
+        down, up = _n(strike_count[0]), _n(strike_count[1])
+        return (down or 0, up or 0)
+    n = _n(strike_count)
+    return (n, n) if n is not None else (0, 0)
+
+
+def atm_window_syms(option_map: dict, center: float, strike_count) -> list[str]:
+    """Streamer symbols within `strike_count` strikes of `center`.
+
+    `strike_count` is anything `window_span` accepts: an int for the symmetric window (the common
+    case), or a directional request for a module whose structure sits to one side of spot.
+    """
+    below, above = window_span(strike_count)
+    strikes = sorted({float(o.strike_price) for o in option_map.values()})
+    if not strikes:
+        return []
+    nearest = min(range(len(strikes)), key=lambda i: abs(strikes[i] - center))
+    lo = max(0, nearest - below)
+    hi = min(len(strikes), nearest + above + 1)
+    keep = set(strikes[lo:hi])
+    return [sym for sym, o in option_map.items() if float(o.strike_price) in keep]
+
+
+# --------------------------------------------------------------------------- symbology
+# The cache is keyed by *streamer* symbol (".SPY260918P750"), but positions come back from the broker in
+# OCC 2010 form ("SPY   260918P00750000"). A reader that wants a mark for a position it already holds
+# therefore has to convert, and the conversion has exactly one correct answer — so it lives here rather
+# than being re-derived per consumer.
+#
+# This mirrors `tastytrade.instruments.Option.occ_to_streamer_symbol` deliberately, and a test pins it
+# to that method, because the streamer writes the keys the SDK produced: a converter disagreeing by one
+# trailing zero would miss every fractional strike and read as "no quote available" rather than as a
+# bug. Kept pure stdlib (no SDK import) so stream-cache readers stay credential-free and network-free.
+_OCC_RE = re.compile(r"(\d{6})([CP])(\d{5})(\d{3})")
+
+
+def occ_to_streamer_symbol(occ: str) -> str:
+    """Convert an OCC 2010 option symbol to the DXLink streamer symbol used as a cache key.
+
+    Returns "" when `occ` is not an option symbol, which is the useful answer for a mixed position
+    list: an equity holding ("SCHD") has no OCC form and is already its own streamer symbol, so callers
+    read "" as "not an option" rather than as a failure.
+    """
+    # The SDK indexes `occ[:6].split()[0]` unguarded, which raises on an empty or all-space root. A
+    # converter on a read path must fail closed instead: callers branch on "" already, and a traceback
+    # here would take down a whole report over one malformed symbol.
+    root = (occ[:6].split() or [""])[0]
+    match = _OCC_RE.match(occ[6:])
+    if not root or match is None:
+        return ""
+    exp, right, dollars, thousandths = match.groups()
+    out = f".{root}{exp}{right}{int(dollars)}"
+    if int(thousandths):
+        # 500 -> "0.5" -> ".5". The SDK slices the leading zero off rather than formatting, and the
+        # trailing-zero trim that falls out of float repr is part of the key the streamer wrote.
+        out += str(int(thousandths) / 1000.0)[1:]
+    return out
+
+
+# --------------------------------------------------------------- cash-leg event entitlements
+#
+# What a NON-option symbol can actually publish, so the producer stops paying for events that can
+# never arrive. Established by the 2026-08-24 entitlement probe during the subscription-rate
+# incident: SKEW, VIX9D, VIX and VIX1D all printed as Trade and NONE of them as Quote. An index is
+# a computed level, not an order book — there is no bid or ask to publish. Nothing cash-settled has
+# greeks at all, index or ETF or equity alike.
+#
+# Deliberately a DECLARED list rather than a pattern match on the symbol. "VIX-prefixed means index"
+# would be a guess that quietly costs a real symbol its quotes the first time a ticker breaks the
+# pattern, and the failure mode — a leg with no price at all — is the expensive one this suite has
+# already paid for twice (2026-08-14 Summary, 2026-08-17 Trade). An unlisted symbol therefore keeps
+# Quote: the default is to pay for a subscription that might be wasted, never to starve a reader.
+#
+# ETFs and single-name equities are NOT here and must not be added — they have a real order book and
+# modules price legs off it. This is indices only.
+QUOTELESS_INDEX_SYMBOLS = frozenset(
+    {"SKEW", "SPX", "VIX", "VIX1D", "VIX1Y", "VIX3M", "VIX6M", "VIX9D", "VVIX", "XSP"}
+)
+
+
+def is_option_symbol(symbol: str) -> bool:
+    """Whether a streamer symbol names an option contract (DXLink prefixes those with a dot)."""
+    return isinstance(symbol, str) and symbol.startswith(".")
+
+
+def publishes_quotes(symbol: str) -> bool:
+    """Whether subscribing `symbol` to Quote can ever deliver an event (see the note above)."""
+    if is_option_symbol(symbol):
+        return True
+    return str(symbol).strip().upper() not in QUOTELESS_INDEX_SYMBOLS
+
+
+def publishes_greeks(symbol: str) -> bool:
+    """Whether subscribing `symbol` to Greeks can ever deliver an event — options only."""
+    return is_option_symbol(symbol)
+
+
+# How old a cached quote may be before a caller pricing a position should refetch rather than trust it.
+# Matches MEIC's own live-path bound (`tt._CACHE_MAX_AGE`) so the two cannot disagree about what
+# "current" means: during market hours the producer refreshes a subscribed symbol far more often than
+# this, so anything older says the symbol stopped updating, not that the market went quiet.
+QUOTE_MAX_AGE_SECONDS = 10.0
+
+
+def quote_mids(
+    conn: sqlite3.Connection,
+    symbols: list[str],
+    *,
+    max_age_seconds: float | None = QUOTE_MAX_AGE_SECONDS,
+) -> dict[str, dict]:
+    """Cached bid/ask/mid per streamer symbol, for the subset the cache holds *currently*.
+
+    Only rows with a usable `mid` are returned: a row present but mid-less is not a mark, and a caller
+    that treated it as one would report a position as worthless. Rows older than `max_age_seconds` are
+    withheld for the same reason — a mark is a claim about now, and a caller that cannot tell a
+    ten-second-old quote from an hour-old one will happily print a stale number as a live one. Pass
+    `max_age_seconds=None` to accept any age (worth it only for symbols too illiquid to requote, and
+    then the caller owns saying so).
+
+    Absent symbols are simply missing from the result, so `set(symbols) - result.keys()` is the list
+    still needing a live fetch.
+    """
+    out: dict[str, dict] = {}
+    now = time.time()
+    for sym in symbols:
+        try:
+            row = conn.execute(
+                "SELECT bid, ask, mid, updated_at FROM stream_quotes WHERE symbol = ?", (sym,)
+            ).fetchone()
+        except sqlite3.Error:
+            continue
+        if row is None or row["mid"] is None:
+            continue
+        age = now - (to_float(row["updated_at"]) or 0.0)
+        if max_age_seconds is not None and age > max_age_seconds:
+            continue
+        out[sym] = {
+            "bid": to_float(row["bid"]),
+            "ask": to_float(row["ask"]),
+            "mid": to_float(row["mid"]),
+            "age_seconds": round(age, 1),
+            "source": "stream_cache",
+        }
+    return out
+
+
+def usable_quote(row, now_ts: float, max_age: float) -> dict | None:
+    """A quote worth pricing against, or None — the suite's one definition of a usable quote.
+
+    Rejects three things, and returning None rather than a degraded quote is the whole point:
+
+    * **stale** — older than `max_age`. A cached bid/ask from twenty minutes ago will happily price
+      a fill that could never have happened; on 0DTE a few minutes is a different market.
+    * **crossed** (`bid > ask`) — a torn read or a broken feed, not an opportunity.
+    * **non-positive ask** — nothing to buy.
+
+    A structure with a missing leg is skipped, which costs a sample. A structure priced off a bad
+    leg produces a result that looks real and isn't, which costs the experiment. Four modules had
+    written this identically; a copy that quietly stopped rejecting crossed quotes would keep
+    trading and look fine.
+
+    `now_ts` is passed in rather than read here, so a caller marks a whole tick against one instant
+    and the ages in a snapshot are consistent with each other.
+    """
+    bid, ask, updated = row["bid"], row["ask"], row["updated_at"]
+    if bid is None or ask is None or updated is None:
+        return None
+    if now_ts - float(updated) > max_age:
+        return None
+    bid, ask = float(bid), float(ask)
+    if ask <= 0 or bid < 0 or bid > ask:
+        return None
+    mid = row["mid"]
+    return {
+        "bid": bid,
+        "ask": ask,
+        "mid": float(mid) if mid is not None else (bid + ask) / 2.0,
+        "age_seconds": round(now_ts - float(updated), 1),
+    }
+
+
+def read_spot(db_path, symbol: str, *, max_age_seconds: float | None = None) -> float | None:
+    """Latest traded price for one underlying, read-only. None when absent, unset, or too old.
+
+    `max_age_seconds` is optional but is the reason this is shared. Settlement is the single most
+    consequential price read a module makes — it decides every expiring leg's P&L at once and cannot
+    be undone — so a stalled feed must refuse rather than settle a session against an old print. On
+    2026-07-20 the producer stalled twice and went 99 minutes silent half an hour before settle
+    time, which is the incident this gate exists for. Passing None keeps the old ungated behaviour
+    for callers that genuinely want the last known price whatever its age.
+    """
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return None
+    conn = connect_ro(db_path)
+    try:
+        row = conn.execute(
+            "SELECT last, updated_at FROM stream_trades WHERE symbol = ?", (symbol.strip().upper(),)
+        ).fetchone()
+        if not row or row["last"] is None:
+            return None
+        if max_age_seconds is not None:
+            updated = row["updated_at"]
+            if updated is None or (time.time() - float(updated)) > max_age_seconds:
+                return None
+        return float(row["last"])
+    finally:
+        conn.close()
+
+
+def occ_root(occ_symbol: str | None) -> str:
+    """The root of an OCC symbol (`"SPXW  260821P06400000"` -> `"SPXW"`, `"TNA   ..."` -> `"TNA"`).
+
+    The OCC format fixes the root in the first six characters, space-padded.
+    """
+    return (occ_symbol or "")[:6].strip().upper()
+
+
+def chain_for_expiration(conn, symbol: str, expiration: str, root: str) -> list[dict]:
+    """Cached chain entries for exactly this (underlying, expiration), filtered to one OCC root.
+
+    Both filters are correctness rules, and each was added for a different real hazard:
+
+    * `underlying_symbol` — SPX and XSP share expiration dates, so matching on the date alone blends
+      two chains whose strikes differ by 10x.
+    * `root` — one date can carry more than one product. It drops an AM-settled third-Friday monthly
+      that shares its date with the weekly (the calendars case), and a post-split adjusted root such
+      as `TNA1` that shares dates with the standard root (the pmcc case). Either substitution prices
+      a structure against contracts the module is not trading.
+
+    Rows that do not parse, or lack a streamer symbol, strike or OCC symbol, are skipped rather than
+    guessed at.
+    """
+    entries = []
+    for row in conn.execute(
+        "SELECT data_json FROM stream_chain WHERE expiration = ? AND underlying_symbol = ?",
+        (expiration, symbol),
+    ):
+        try:
+            opt = json.loads(row["data_json"])
+        except (ValueError, TypeError):
+            continue
+        sym, strike = opt.get("streamer_symbol"), opt.get("strike_price")
+        occ = opt.get("symbol")
+        if not sym or strike is None or not occ:
+            continue
+        if occ_root(occ) != root:
+            continue
+        otype = str(opt.get("option_type", "")).strip().lower()
+        entries.append(
+            {
+                "strike_price": float(strike),
+                "streamer_symbol": sym,
+                "occ_symbol": occ,
+                "option_type": "call" if otype.startswith("c") else "put",
+            }
+        )
+    return entries
+
+
+def greeks_for(conn, streamer_syms: list[str], *, now_ts: float, max_age_seconds: float) -> dict:
+    """delta/gamma/iv/vega per streamer symbol, age-bounded. Missing rows are simply absent.
+
+    The age limit is deliberately looser than a quote's: open interest is a once-a-day snapshot and
+    gamma updates far less often than a bid, so the quote limit would reject a perfectly good
+    surface. Absent greeks are never a gate — callers degrade (context omitted from a record, a
+    selection falling back to extrinsic-only) rather than refuse.
+
+    **`gamma` was missing from the SELECT until 2026-08-27**, while this docstring reasoned about
+    gamma's update rate — the column was discussed and not returned. Three of the four callers read
+    only delta/iv/vega and were unaffected; bwb feeds this straight into `core.gex.compute_gex`,
+    which skips every strike whose gamma is None, so its gamma-flip read failed on EVERY tick for
+    four sessions and reported `insufficient_gex_data` while the cache held gamma and open interest
+    for every symbol involved. Adding a key is additive — every caller reads with `.get()` — but the
+    lesson is that a reader silently narrower than its own contract fails somewhere far away and
+    blames the wrong input.
+
+    Chunked under SQLite's 999-variable cap.
+    """
+    out: dict[str, dict] = {}
+    if not streamer_syms:
+        return out
+    for i in range(0, len(streamer_syms), 900):
+        chunk = streamer_syms[i : i + 900]
+        placeholders = ", ".join("?" * len(chunk))
+        for r in conn.execute(
+            f"SELECT symbol, delta, gamma, iv, vega, updated_at FROM stream_greeks "
+            f"WHERE symbol IN ({placeholders})",
+            chunk,
+        ):
+            if r["updated_at"] is None or now_ts - float(r["updated_at"]) > max_age_seconds:
+                continue
+            out[r["symbol"]] = {
+                "delta": float(r["delta"]) if r["delta"] is not None else None,
+                "gamma": float(r["gamma"]) if r["gamma"] is not None else None,
+                "iv": float(r["iv"]) if r["iv"] is not None else None,
+                "vega": float(r["vega"]) if r["vega"] is not None else None,
+            }
+    return out

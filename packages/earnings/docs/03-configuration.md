@@ -1,0 +1,556 @@
+# Configuration Guide
+
+> _Part of the **cherrypick-earnings** package — [suite](../../../README.md) · [package README](../README.md) · [docs index](./README.md)._
+
+Everything here describes real keys in `config/config.example.json`. Copy it to
+`config/config.json` (gitignored) and edit that copy — the example stays in version control as
+the documented template, `config.json` is yours.
+
+```bash
+cp config/config.example.json config/config.json
+```
+
+The example file itself is heavily commented with `_..._note` fields explaining the reasoning
+behind each default — read those inline notes alongside this guide rather than treating this
+page as the only source. Where this guide and the example file ever disagree, trust the file;
+it's what the code actually reads.
+
+> **Where the config lives.** `cherrypick/earnings/paths.py` resolves the config **home-first**: the orchestrated
+> suite reads `~/.cherrypick/config/earnings.json` when it exists, falling back to the in-repo
+> `config/config.json` for a standalone checkout (or until `cherrypick migrate-home` moves it up).
+> The keys below are identical either way — edit whichever file `paths.config_path()` resolves to on
+> your machine.
+
+---
+
+## Top-Level Options
+
+| Key | Meaning |
+|---|---|
+| `enable_live_trading` | `false` = paper mode (default), `true` = live mode. See `CLAUDE.md`'s Loop Step 0 for the full paper/live split. Flip this only after you trust what paper mode has been finding. |
+| `available_capital_paper_mode` | Simulated NLV paper mode uses for `max_risk_per_trade_pct` sizing checks. Paper mode never looks at your real tastytrade balance — size this to whatever capital you'd actually intend to trade live, or every order will get sized off a number that has nothing to do with your real account. |
+| `available_capital_live_mode_source` | Always `"tastytrade"` — documents that live mode sources NLV/buying power from `tt.py get_account_info`, not this file. |
+| `max_contracts_per_leg` | Hard ceiling on contracts per leg, enforced in `cherrypick/earnings/sizing.py` regardless of what the risk budget would otherwise allow. A backstop against a sizing bug rather than a knob you'll usually touch. |
+| `max_concurrent_earnings_positions` | Account-wide cap on simultaneous overnight positions across every strategy. |
+| `earnings_calendar_source` | Currently only `"dolthub"` is implemented. |
+| `dolthub_host` / `dolthub_port` / `dolthub_user` / `dolthub_database` / `dolthub_options_database` / `dolthub_stocks_database` | Connection details for the local `dolt sql-server` from `docs/01-setup.md` Step 2. Defaults (`127.0.0.1:3306`, user `root`, databases `earnings`/`options`/`stocks`) match a stock local Dolt setup — only change these if you're serving the three datasets from somewhere else. |
+| `winrate_lookback_quarters` | How many past quarters `scanner.compute_winrate()` backtests over. Coverage in the Dolt datasets only reaches back to late 2024, so a large lookback on a less-liquid name can return a much smaller sample than you asked for — always check the `sample_size` field in `get_winrate`'s raw output before trusting a thin sample. |
+| `finnhub_api_key_env_var` | Name of the environment variable holding a Finnhub API key, if you're using it as a supplementary data source. Not required for the core scan/rank/order pipeline, which runs entirely on tastytrade + Dolt. |
+| `entry_window_start` / `entry_window_end` | The window before close where new positions get opened, e.g. `15:30`–`15:55` ET. These are ET times regardless of your local timezone. |
+| `close_window_start` | Next-morning time where Step 3's unconditional close-window backstop kicks in, e.g. `09:45` ET — chosen to be after the open's initial volatility has settled a bit. |
+| `correlation_block_list` | Sector/date groupings you don't want opened simultaneously (e.g. two banks reporting the same night). Empty by default — see the note in `CLAUDE.md`: correlation risk isn't fully guarded today, so treat this as a partial mitigation, not a complete one. |
+| `reprice_interval_s` / `reprice_step` | Live-mode only: how often (seconds) and by how much an unfilled limit order reprices toward the market while working an entry. |
+| `tastytrade_costs` | Fee model for paper-mode cost-adjusted P&L — see below. |
+| `symbol_screen` | Per-criterion strictness for the five soft screening criteria, plus the `move_tail` veto switch — see below. |
+| `move_tail_multiple` | How many multiples of a name's own mean historical earnings move counts as a "blowout" quarter for `scanner.compute_historical_move_stats()`'s `move_tail_veto` flag. Only rejects when `symbol_screen.move_tail` is `"veto"` (default `"off"`, record-only). `2.0` default. |
+| `strat_test_portfolio` | How the forced-sampling test buckets trades into books (`per_strategy` vs `combined`) — see below. |
+| `strategies` | Per-strategy parameter blocks — see below. |
+
+---
+
+## `tastytrade_costs`
+
+Models tastytrade's real commission schedule so paper-mode P&L reflects live trading costs
+instead of a frictionless fantasy fill. Consumed by `cherrypick/earnings/costs.py`, kept separate from the raw
+`pnl` column in the database (see `CLAUDE.md`'s Database section — `pnl` always stays gross,
+cost-adjusted expectancy is computed downstream in `strategy_metrics.py`).
+
+```json
+"tastytrade_costs": {
+  "commission_open_per_contract": 1.00,
+  "commission_close_per_contract": 0.00,
+  "commission_cap_per_leg": 10.00,
+  "clearing_fee_per_contract": 0.10,
+  "regulatory_fee_per_contract": 0.04,
+  "slippage_frac_of_spread": 0.125,
+  "slippage_cap_frac_of_mid": 0.15
+}
+```
+
+`commission_close_per_contract` is `0.00` by design — this mirrors tastytrade's actual
+open-only commission model, not a placeholder. `slippage_frac_of_spread` haircuts each leg's
+fill price by a fraction of its bid-ask width conceded from mid, rather than assuming a clean
+mid-price fill (0.125 = a quarter of the way from mid to the far touch; this was 0.25 before a
+2026 revision toward a more realistic worked-combo-limit assumption). `slippage_cap_frac_of_mid`
+caps a single leg's slippage at that fraction of its own mid price, so a deep-OTM, wide-spread
+wing leg can't dominate the modeled cost. These rates come from tastytrade's published pricing
+page and are checked periodically — re-verify against the current schedule if it's been a
+while, since exchange/regulatory pass-through fees do change.
+
+---
+
+## `symbol_screen`
+
+Sets how strictly each of the five **soft** screening criteria is applied. The hard filters
+(price, front-expiration window, open interest, term structure, ATM delta, expected move, weekly
+cadence, bid/ask spread) always apply and aren't listed here — only these five are configurable.
+See [Screening Criteria](./screening-criteria.md) for what each criterion checks.
+
+```json
+"symbol_screen": {
+  "avg_volume": "pass",
+  "winrate": "pass",
+  "iv_rv_ratio": "pass",
+  "market_cap": "pass",
+  "combined_option_volume": "pass",
+  "move_tail": "off"
+}
+```
+
+Each of the first five is independently set to one of:
+
+- `"pass"` (the default for all five) — the candidate must clear the strict `min_*` threshold in
+  `strategies.<name>` for that criterion.
+- `"near_miss"` — the candidate only needs to clear the looser `near_miss_min_*` threshold. This
+  is the configurable stand-in for what used to be a fixed near-miss band: it tolerates a
+  marginal name on that one dimension instead of rejecting it outright.
+- `"off"` — the criterion isn't screened at all.
+
+The per-strategy `min_*` / `near_miss_min_*` thresholds still live under `strategies.<name>`
+(see below); `symbol_screen` just decides which of the two — or neither — is enforced. Screening
+stays a single **accept/reject** decision regardless of these levels; loosening a criterion to
+`"near_miss"` or `"off"` only widens what counts as accepted.
+
+`move_tail` is a different shape — a two-level switch, not a min/near_miss threshold — for
+`scanner.apply_move_tail_gate()`: `"off"` (default) records `move_tail_veto` on every
+`entry_reviews` row without rejecting anything; `"veto"` rejects a symbol whose historical
+earnings moves (over `winrate_lookback_quarters`) include a quarter at or above `move_tail_multiple`
+times the mean, with reason `move_tail_veto`. Left off by default until the recorded data supports
+calibrating `move_tail_multiple` — see [Screening Criteria](./screening-criteria.md)'s "Recorded-only
+metrics" section for the full set of new metrics recorded alongside the existing screen (implied
+vs. historical move, bid-ask spread quality, IV rank/percentile), all visible per symbol — accepted
+or rejected — via `db.py`/`db_paper.py`'s `entry_reviews` table and scout's earnings page.
+
+---
+
+## `strat_test_portfolio`
+
+Controls how the forced-sampling strategy test (`strat_test_harness.py`, see
+`docs/strat-test-portfolios.md`) buckets its paper trades into books via the `profile` column.
+
+```json
+"strat_test_portfolio": "per_strategy"
+```
+
+- `"per_strategy"` (default) — each strategy's forced-sampling trades are tagged
+  `strat_test:<strategy>` (e.g. `strat_test:iron_fly`), giving every strategy its own book —
+  its own P&L and equity curve. A newly added strategy automatically gets its own stream.
+- `"combined"` — all forced-sampling trades share a single `strat_test` book (the original
+  behavior), one blended P&L across every strategy.
+
+Reporting (`strategy_report.py`, the console's Earnings page) and the orchestrator's
+`report`/`calibrate` group by that book tag; a `--profile strat_test` request matches the whole
+family (the combined book plus all `strat_test:<strategy>` sub-books). Sizing basis for the test
+is just `available_capital_paper_mode` — there's no per-book capital or risk multiplier.
+
+---
+
+## `strategies.<name>`
+
+Every one of the 6 strategies (`iron_fly`, `iron_condor`, `directional_credit_spread`,
+`broken_wing_butterfly`, `atm_calendar`, `double_calendar`) gets its own block
+under `strategies`, keyed by the exact module name in `src/strategies/`. This avoids threshold
+collisions — each strategy tunes its own liquidity/quality bars independently, even though many
+of them share the same starting values today.
+
+A handful of parameter names recur across most strategies (the shared liquidity gates live in
+`scanner.py`'s `apply_liquidity_gates`, called once per strategy with that strategy's own
+config block):
+
+| Key | Meaning |
+|---|---|
+| `min_price` | Underlying price floor. |
+| `max_bid_ask_spread_pct` | Max ATM bid-ask spread as a fraction of mid — the shared liquidity gate. `0.15` (15%) is generous enough to tolerate normal earnings-week widening while still catching genuinely illiquid chains. |
+| `min_market_cap` / `near_miss_min_market_cap` | Market-cap floor (strict) and a looser floor used when `market_cap` is set to `"near_miss"` in `symbol_screen`, via a live REST lookup. |
+| `min_combined_option_volume` / `near_miss_min_combined_option_volume` | Front-month, chain-wide daily contract volume floor. |
+| `min_combined_open_interest` | Front-month chain-wide open interest floor, sourced from on-demand DXLink `Summary` events. |
+| `require_weekly_options` | If `true`, hard-rejects names without a genuine weekly expiration cadence. Small/mid-cap names with only monthly options can legitimately fail here by construction — that's expected, not a bug. |
+| `min_avg_volume` / `near_miss_min_avg_volume` | Underlying shares-traded floor (distinct from *option* volume above). |
+| `min_iv_rv_ratio` / `near_miss_min_iv_rv_ratio` | Implied vs. realized move ratio — the core "are these options overpriced" signal, computed live from DoltHub data. |
+| `min_winrate` / `near_miss_min_winrate` | Historical backtest winrate floor over `winrate_lookback_quarters`. Always check `sample_size` in `get_winrate`'s raw output before trusting a thin sample. |
+| `min_term_structure` | Front-vs-back IV term-structure slope floor (calendars and iron_fly use this to confirm a genuine earnings IV bump exists). |
+| `max_front_expiration_days` | Ceiling on how far out the front/only expiration can be from earnings. |
+| `min_expected_move_pct` / `min_expected_move_dollars` | Floor on the options-implied expected move, in percent or dollar terms depending on the strategy. |
+| `max_risk_per_trade_pct` | Fraction of NLV this strategy's max loss is allowed to consume — feeds `sizing.compute_position_size`. |
+| `profit_target_pct` | Step 3c early-exit profit target, as a fraction of max profit (credit strategies) or max profit potential (debit strategies). |
+| `stop_loss_credit_multiple` (credit strategies) / `stop_loss_pct_of_debit` (debit strategies) | Step 3c early-exit stop-loss threshold. |
+
+Everything below that isn't in the shared table above is genuinely strategy-specific.
+
+### `iron_fly`
+
+Short ATM straddle + long OTM wings, sized as a multiple of the credit received.
+
+```json
+"iron_fly": {
+  "max_risk_per_trade_pct": 0.02,
+  "min_price": 10.00,
+  "max_front_expiration_days": 9,
+  "require_weekly_options": true,
+  "min_combined_open_interest": 2000,
+  "max_atm_delta_abs": 0.57,
+  "min_expected_move_dollars": 0.90,
+  "min_term_structure": -0.004,
+  "min_avg_volume": 1500000,
+  "near_miss_min_avg_volume": 1000000,
+  "min_iv_rv_ratio": 1.25,
+  "near_miss_min_iv_rv_ratio": 1.00,
+  "min_winrate": 0.50,
+  "near_miss_min_winrate": 0.40,
+  "wing_width_credit_multiple": 3.0,
+  "wing_width_multiple_low": 2.5,
+  "wing_width_multiple_mid": 3.0,
+  "wing_width_multiple_high": 3.5,
+  "wing_width_band_low_max": 1.25,
+  "wing_width_band_mid_max": 1.75,
+  "profit_target_pct": 0.50,
+  "stop_loss_credit_multiple": 1.5,
+  "max_bid_ask_spread_pct": 0.15,
+  "min_market_cap": 2000000000,
+  "near_miss_min_market_cap": 1000000000,
+  "min_combined_option_volume": 500,
+  "near_miss_min_combined_option_volume": 200
+}
+```
+
+`max_atm_delta_abs` caps how far the short straddle's strike can drift from true delta-neutral
+before the candidate is rejected — a sanity check on the ATM assumption. Wing width is normally
+picked from the `wing_width_multiple_low/mid/high` bands, scaled to *this candidate's own*
+IV/RV ratio (not broad market volatility — an earnings move is idiosyncratic to one name, so its
+own IV/RV is a more relevant regime signal than VIX); `wing_width_credit_multiple` is only the
+fallback if IV/RV can't be refetched at order-build time.
+
+### `iron_condor`
+
+Same credit-spread-plus-wings shape as `iron_fly`, but the short strikes sit at the
+expected-move boundary instead of ATM — wider profit zone, lower credit.
+
+```json
+"iron_condor": {
+  "min_price": 10.00,
+  "max_front_expiration_days": 9,
+  "min_term_structure": -0.004,
+  "min_expected_move_pct": 0.04,
+  "min_avg_volume": 1500000,
+  "near_miss_min_avg_volume": 1000000,
+  "min_iv_rv_ratio": 1.25,
+  "near_miss_min_iv_rv_ratio": 1.00,
+  "min_winrate": 0.50,
+  "near_miss_min_winrate": 0.40,
+  "wing_width_credit_multiple": 3.0,
+  "wing_width_multiple_low": 2.5,
+  "wing_width_multiple_mid": 3.0,
+  "wing_width_multiple_high": 3.5,
+  "wing_width_band_low_max": 1.25,
+  "wing_width_band_mid_max": 1.75,
+  "profit_target_pct": 0.50,
+  "stop_loss_credit_multiple": 1.5,
+  "require_weekly_options": true,
+  "min_combined_open_interest": 2000,
+  "max_bid_ask_spread_pct": 0.15,
+  "min_market_cap": 2000000000,
+  "near_miss_min_market_cap": 1000000000,
+  "min_combined_option_volume": 500,
+  "near_miss_min_combined_option_volume": 200
+}
+```
+
+### `directional_credit_spread`
+
+A single-sided vertical credit spread (put spread if bullish, call spread if bearish), sold on
+whichever side a 25-delta risk reversal shows richer.
+
+```json
+"directional_credit_spread": {
+  "min_price": 10.00,
+  "max_front_expiration_days": 9,
+  "min_term_structure": -0.004,
+  "min_expected_move_pct": 0.04,
+  "min_skew_abs": 0.02,
+  "skew_delta_target": 0.25,
+  "min_avg_volume": 1500000,
+  "near_miss_min_avg_volume": 1000000,
+  "min_iv_rv_ratio": 1.25,
+  "near_miss_min_iv_rv_ratio": 1.00,
+  "min_winrate": 0.50,
+  "near_miss_min_winrate": 0.40,
+  "wing_width_credit_multiple": 3.0,
+  "wing_width_multiple_low": 2.5,
+  "wing_width_multiple_mid": 3.0,
+  "wing_width_multiple_high": 3.5,
+  "wing_width_band_low_max": 1.25,
+  "wing_width_band_mid_max": 1.75,
+  "profit_target_pct": 0.50,
+  "stop_loss_credit_multiple": 1.5,
+  "require_weekly_options": true,
+  "min_combined_open_interest": 2000,
+  "max_bid_ask_spread_pct": 0.15,
+  "min_market_cap": 2000000000,
+  "near_miss_min_market_cap": 1000000000,
+  "min_combined_option_volume": 500,
+  "near_miss_min_combined_option_volume": 200
+}
+```
+
+`min_skew_abs` / `skew_delta_target` gate and measure the 25-delta risk reversal used to pick
+which side to sell. The short strike itself is chosen so that *breakeven* (short strike net of
+credit received) lands at the expected-move boundary, not the strike itself — a genuinely
+different strike-selection convention from `iron_condor`'s.
+
+## `advice` — the AI advisor's bounds manifest (paper only, off by default)
+
+The one block that decides what an out-of-band advisor may change about this module, and between
+which values. Two keys: `enabled` and `bounds`.
+
+**Param names are dotted, `"<strategy>.<param>"`.** This module reads exit thresholds from
+`strategies.<name>` at decision time, so a param has to say which strategy it belongs to.
+`cherrypick.core.advice` treats a param name as an opaque string, so the convention costs the shared
+contract nothing; `cherrypick/earnings/advice.py` splits on the first dot, and a dotted name naming a
+strategy nobody declared is refused like any other out-of-bounds param.
+
+```json
+"advice": {
+  "enabled": false,
+  "bounds": {
+    "iron_fly.profit_target_pct":         { "min": 0.15, "max": 0.50 },
+    "iron_fly.stop_loss_credit_multiple": { "min": 1.25, "max": 2.50 }
+  }
+}
+```
+
+Every range is **closed** and every value must fall inside it; one violation rejects the whole
+artifact, so a good proposal padded with a speculative one loses both. Ranges are re-read from this
+file every evening, so tightening one takes effect the next morning without touching whatever
+experiment is running inside it.
+
+**Keep it to management/exit params.** An advised entry runs as a *twin* of a real entry — identical
+legs, credit and quantity — so the only difference the comparison can attribute is how the position
+is managed. A param that changes which candidates open changes what the two books face, and the
+comparison stops meaning anything. Entry-side ideas are still worth having; they arrive as
+propose-only `creative` memos on the console's Advisor page.
+
+Draft manifests for every module, and the supervised sequence for turning this on, are in
+[docs/advisor-bounds-draft.md](../../../docs/advisor-bounds-draft.md).
+
+## `management` — the position lifecycle
+
+Common keys apply to every strategy; `management.<strategy>` overrides them for one. Full rules in
+[Exit Strategy Guide](./10-exits.md).
+
+| Key | Default | What it does |
+|---|---|---|
+| `hold_winners_max_days` | `3` | Session cap for the four overnight structures. **Trading** sessions, so a weekend cannot spend it. The calendars are exempt — they run their own front-expiration stop. |
+| `close_losers_first_morning` | `true` | The PEAD gate. A position at or below breakeven closes on the first check of a day; a winner may carry. |
+| `exec_window_start` | `"09:40"` | Before this, decisions are recorded and not acted on. Opening spreads can exceed the edge being managed. |
+| `max_leg_spread_pct` | `0.35` | Widest leg spread (of mid) still worth acting on. |
+| `pin_guard_dollars` | `1.00` | A short strike this close to spot, late on its expiration day, closes the position. |
+| `pin_guard_window_minutes` | `60` | How late "late" is. |
+| `max_executions_per_tick` | `3` | Bounds one tick; the rest are deferred a minute, not dropped. |
+| `quote_max_age_seconds` | `300` | Older cached leg quotes are refused. |
+| `spot_max_age_seconds` | `600` | Spot tolerates more age — it gates checks that move on the scale of a strike. |
+| `open_capital_warn` | `15000` | Advisory watermark on total open risk. Multi-day holds accumulate what the old book never carried; this warns rather than capping, since truncating carried winners would bias exactly the sample the hold policy exists to measure. |
+| `exit_after_announcement_minutes` | very large | The strategies' same-session backstop, deliberately set past any hold it could preempt. Lower it to re-enable a same-session forced close. |
+
+```json
+"management": {
+  "hold_winners_max_days": 3,
+  "close_losers_first_morning": true,
+  "exec_window_start": "09:40",
+  "iron_fly": { "hold_winners_max_days": 1 }
+}
+```
+
+### `broken_wing_butterfly`
+
+Body-anchored butterfly: two short contracts at the expected-move strike (side picked by skew),
+protected by a narrow long wing toward spot and a wide long wing away from it.
+
+```json
+"broken_wing_butterfly": {
+  "min_price": 10.00,
+  "min_expected_move_pct": 0.04,
+  "min_skew_abs": 0.02,
+  "skew_delta_target": 0.25,
+  "max_front_expiration_days": 9,
+  "wing_width_multiple_low": 1.0,
+  "wing_width_multiple_mid": 1.25,
+  "wing_width_multiple_high": 1.5,
+  "wing_width_band_low_max": 1.25,
+  "wing_width_band_mid_max": 1.75,
+  "wide_wing_multiple": 2.5,
+  "min_avg_volume": 1500000,
+  "near_miss_min_avg_volume": 1000000,
+  "min_iv_rv_ratio": 1.25,
+  "near_miss_min_iv_rv_ratio": 1.00,
+  "min_winrate": 0.50,
+  "near_miss_min_winrate": 0.40,
+  "profit_target_pct": 0.25,
+  "stop_loss_credit_multiple": 2.0,
+  "require_weekly_options": true,
+  "min_combined_open_interest": 2000,
+  "max_bid_ask_spread_pct": 0.15,
+  "min_market_cap": 2000000000,
+  "near_miss_min_market_cap": 1000000000,
+  "min_combined_option_volume": 500,
+  "near_miss_min_combined_option_volume": 200
+}
+```
+
+The near wing scales off the body leg's own premium via the IV/RV-banded
+`wing_width_multiple_low/mid/high` (deliberately smaller than `iron_fly`'s bands, since this
+prices a single leg, not a straddle); the far wing is `wide_wing_multiple` times the near wing.
+`get_order` hard-rejects any candidate that doesn't price out to a net credit or breakeven — if
+real premiums at these wing widths land as a net debit, the position didn't buy back enough
+premium to finance itself, so it's skipped rather than entered as a smaller-debit butterfly. If
+you see a lot of rejections for that specific reason, that's the knob to revisit
+(`wide_wing_multiple` or the `wing_width_multiple_*` bands), not the liquidity gates.
+
+### `atm_calendar`
+
+Sell a front-month ATM call, buy the same strike in a later monthly expiration — always the call
+side (config-fixed, not skew-selected; call and put ATM calendars perform virtually identically
+in practice). Closes as a single 2-leg unit, never leg-by-leg.
+
+```json
+"atm_calendar": {
+  "min_price": 10.00,
+  "min_term_structure": -0.004,
+  "min_combined_open_interest": 2000,
+  "back_month_min_days_after": 21,
+  "require_weekly_options": true,
+  "min_avg_volume": 1500000,
+  "near_miss_min_avg_volume": 1000000,
+  "min_iv_rv_ratio": 1.25,
+  "near_miss_min_iv_rv_ratio": 1.00,
+  "min_winrate": 0.50,
+  "near_miss_min_winrate": 0.40,
+  "profit_target_pct": 0.30,
+  "stop_loss_pct_of_debit": 1.0,
+  "exit_days_before_front_expiration": 5,
+  "max_bid_ask_spread_pct": 0.15,
+  "min_market_cap": 2000000000,
+  "near_miss_min_market_cap": 1000000000,
+  "min_combined_option_volume": 500,
+  "near_miss_min_combined_option_volume": 200
+}
+```
+
+`back_month_min_days_after` sets how far past the front expiration the back-month leg must
+land. `exit_days_before_front_expiration` is a hard time-stop: once the front leg gets within 5
+days of expiring, the position exits regardless of P&L, since gamma risk on a short ATM option
+overwhelms any remaining theta benefit inside that window. `stop_loss_pct_of_debit: 1.0` means
+the stop triggers once the position's value has round-tripped back to roughly the entry debit —
+looser than the credit strategies' stop, matching a calendar's slower-resolving decay profile.
+
+### `double_calendar`
+
+An ATM calendar run on both the call and put side simultaneously — the only strategy whose
+sides can close independently (`trade_legs` persistence, not just `legs_json`).
+
+```json
+"double_calendar": {
+  "min_price": 10.00,
+  "min_term_structure": -0.004,
+  "min_expected_move_pct": 0.05,
+  "min_combined_open_interest": 2000,
+  "back_month_min_days_after": 21,
+  "require_weekly_options": true,
+  "min_avg_volume": 3000000,
+  "near_miss_min_avg_volume": 1500000,
+  "min_iv_rv_ratio": 1.25,
+  "near_miss_min_iv_rv_ratio": 1.00,
+  "min_winrate": 0.50,
+  "near_miss_min_winrate": 0.40,
+  "max_realized_move_dispersion_pct": 0.15,
+  "profit_target_pct": 0.25,
+  "stop_loss_pct_of_debit": 1.0,
+  "leg_stop_delta_abs": 0.45,
+  "exit_days_before_front_expiration": 5,
+  "max_bid_ask_spread_pct": 0.15,
+  "min_market_cap": 2000000000,
+  "near_miss_min_market_cap": 1000000000,
+  "min_combined_option_volume": 500,
+  "near_miss_min_combined_option_volume": 200
+}
+```
+
+Liquidity/volume floors here run stricter than `iron_fly`'s — execution cost matters more
+across two expirations, and a tail-risk surprise hurts a debit trade worse than `iron_fly`'s
+width-defined max loss. `max_realized_move_dispersion_pct` gates on how *predictable* the
+underlying's historical earnings moves have been — high dispersion means the expected-move
+assumption this structure leans on is less trustworthy. `leg_stop_delta_abs` is checked
+per-side during Step 3b's intraday management (`evaluate_position()`); a side crossing this
+delta threshold gets closed independently of the other side, which is what `trade_legs` exists
+to support.
+
+---
+
+## Common Adjustments
+
+**Loosen or tighten a liquidity gate for one strategy:**
+
+```json
+{
+  "strategies": {
+    "iron_fly": {
+      "max_bid_ask_spread_pct": 0.20
+    }
+  }
+}
+```
+
+**Adjust a strategy's exit target/stop:**
+
+```json
+{
+  "strategies": {
+    "iron_condor": {
+      "profit_target_pct": 0.60,
+      "stop_loss_credit_multiple": 2.0
+    }
+  }
+}
+```
+
+**Change entry/close windows for your timezone workflow:**
+
+```json
+{
+  "entry_window_start": "15:30",
+  "entry_window_end": "15:55",
+  "close_window_start": "09:45"
+}
+```
+
+Remember these are always ET regardless of where you're running the agent from.
+
+If you're tempted to change several of these at once based on a single night's result — don't.
+See `docs/strategy-optimization.md`'s "do not blind-tune" protocol: change one parameter, run it
+through `strat_test_harness.py`'s paper program for a real sample, then compare cost-adjusted
+expectancy before and after.
+
+---
+
+## Validating a Config Change
+
+```bash
+# Confirm it's still valid JSON
+python -c "import json; json.load(open('config/config.json')); print('Config OK')"
+
+# Confirm all 6 strategies still register
+python -c "from src.rank_strategies import STRATEGY_REGISTRY; print(f'Found {len(STRATEGY_REGISTRY)} strategies')"
+
+# Run a dry-run scan to see the change reflected in candidate output
+python -m cherrypick.earnings.strategies.iron_fly get_candidates --date MM/DD/YYYY
+```
+
+To reset a strategy block back to its documented default, just re-copy that section from
+`config/config.example.json` — the example file is always kept current with the reasoned
+starting points described above.
+
+---
+
+## Navigation
+
+**← Previous:** [Quick Reference](./02-quick-reference.md)
+**Next →** [Entry Conditions Framework](./04-entry-conditions.md)

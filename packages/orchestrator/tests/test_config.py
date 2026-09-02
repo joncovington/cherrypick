@@ -1,0 +1,150 @@
+"""Module-location resolution: explicit `path` override vs. the managed ~/.cherrypick/modules home."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+import pytest
+
+from cherrypick.orchestrator import config as c
+
+MEIC_REPO = "https://github.com/joncovington/cherrypick-meic.git"
+
+
+def test_module_dirname_from_repo_strips_git():
+    assert c.module_dirname({"repo": MEIC_REPO}) == "cherrypick-meic"
+    assert c.module_dirname({"repo": "https://github.com/x/cherrypick-meic"}) == "cherrypick-meic"
+    assert c.module_dirname({"repo": "git@github.com:x/cherrypick-earnings.git"}) == "cherrypick-earnings"
+
+
+def test_module_dirname_falls_back_to_name_without_repo():
+    assert c.module_dirname({}, "meic") == "meic"
+
+
+def test_module_dirname_requires_repo_or_name():
+    with pytest.raises(ValueError):
+        c.module_dirname({})
+
+
+def test_module_root_explicit_relative_is_anchored_at_root():
+    assert c.module_root({"path": "../cherrypick-meic"}) == (c.ROOT / "../cherrypick-meic").resolve()
+
+
+def test_module_root_absolute_path_wins(tmp_path):
+    assert c.module_root({"path": str(tmp_path)}) == tmp_path.resolve()
+
+
+def test_module_root_path_overrides_repo(tmp_path):
+    # An explicit path is the dev checkout and must win over repo (which would resolve to modules home).
+    assert c.module_root({"repo": MEIC_REPO, "path": str(tmp_path)}, "meic") == tmp_path.resolve()
+
+
+def test_module_root_defaults_to_modules_home_by_repo(monkeypatch, tmp_path):
+    monkeypatch.setattr(c, "MODULES_HOME", tmp_path)
+    assert c.module_root({"repo": MEIC_REPO}, "meic") == (tmp_path / "cherrypick-meic").resolve()
+
+
+def test_module_root_defaults_to_modules_home_by_name(monkeypatch, tmp_path):
+    monkeypatch.setattr(c, "MODULES_HOME", tmp_path)
+    assert c.module_root({}, "earnings") == (tmp_path / "earnings").resolve()
+
+
+def test_source_root_honors_cherrypick_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    assert c._source_root() == tmp_path
+
+
+def test_source_root_uses_repo_root_in_source_checkout(monkeypatch):
+    # No env override, running from the source tree -> the repo root (has run.py + pyproject.toml).
+    # ROOT is the *source anchor* for relative module paths; runtime files live under the per-user home.
+    monkeypatch.delenv("CHERRYPICK_HOME", raising=False)
+    root = c._source_root()
+    assert (root / "run.py").exists() or (root / "pyproject.toml").exists()
+
+
+@pytest.mark.real_state  # this test asserts where the real paths land, so it opts out of the isolation
+def test_runtime_paths_resolve_under_home_not_repo():
+    # config.json, state/, and logs/ live under ~/.cherrypick — never inside the checkout. ROOT is only
+    # the source anchor for relative module paths now. (Skipped if a CHERRYPICK_HOME override was active
+    # when config was imported, since that relocates the whole tree.)
+    if os.environ.get("CHERRYPICK_HOME"):
+        pytest.skip("CHERRYPICK_HOME override in effect")
+    home = Path.home() / ".cherrypick"
+    assert c.CONFIG_PATH == home / "config.json"
+    assert c.STATE_DIR == home / "state"
+    assert c.LOGS_DIR == home / "logs"
+    # explicitly not under the source checkout
+    assert c.ROOT not in c.CONFIG_PATH.parents
+
+
+def test_resident_heartbeat_path_matches_the_shared_resolver():
+    """The writer (a module, or the console) and the watcher (this package) must agree on where a
+    resident job's liveness file lives, and they cannot import each other — so the convention lives
+    in `cherrypick.core.home` and this package mirrors it off its own patchable `STATE_DIR`. Pinned
+    here because a silent disagreement would mean the supervisor watching a file nobody writes,
+    which reads as a permanently healthy job."""
+    from cherrypick.core import home as _core_home
+
+    # The filename is the shared half and must match exactly; the directory is this package's own
+    # patchable STATE_DIR, which is why the whole path is not compared.
+    assert c.resident_heartbeat_path("calendars").name == _core_home.heartbeat_path("calendars").name
+    assert c.resident_heartbeat_path("calendars").parent == c.STATE_DIR
+    assert c.console_heartbeat_path() == c.resident_heartbeat_path("console")
+
+
+def test_reconcile_schedule_settings_off_by_default():
+    s = c.reconcile_schedule_settings({})
+    assert s == {"enabled": False, "task_name": "cherrypick-reconcile", "at": "16:30"}
+
+
+def test_reconcile_schedule_settings_overrides():
+    s = c.reconcile_schedule_settings(
+        {"reconcile": {"schedule": {"enabled": True, "at": "16:35", "task_name": "x"}}}
+    )
+    assert s == {"enabled": True, "task_name": "x", "at": "16:35"}
+
+
+def test_symbol_watch_settings_off_by_default():
+    s = c.symbol_watch_settings({})
+    assert s == {
+        "enabled": False,
+        "task_name": "cherrypick-earnings-symbol-watch",
+        "at": "06:30",
+        "days": 10,
+    }
+
+
+def test_symbol_watch_settings_overrides():
+    s = c.symbol_watch_settings(
+        {"symbol_watch": {"enabled": True, "at": "07:00", "task_name": "x", "days": 21}}
+    )
+    assert s == {"enabled": True, "task_name": "x", "at": "07:00", "days": 21}
+
+
+def test_broker_tool_defaults_to_tt_and_is_overridable():
+    # With no module name there is nothing to build a default from -> empty; the caller supplies argv.
+    assert c.broker_tool({}) == []
+    assert c.broker_tool({}, "meic") == ["-m", "cherrypick.meic.tt"]
+    assert c.broker_tool({"broker_tool": ["-m", "x"]}) == ["-m", "x"]
+
+
+def test_live_trading_enabled_top_level_convention():
+    """meic/earnings shape: a top-level bool."""
+    assert c.live_trading_enabled({"enable_live_trading": True}) is True
+    assert c.live_trading_enabled({"enable_live_trading": False}) is False
+    assert c.live_trading_enabled({}) is False
+
+
+def test_live_trading_enabled_nested_live_convention():
+    """flies' shape: nested under 'live'. Checking only the top-level key left every flies-specific
+    safety surface reading PAPER ONLY even while its live loop was armed — the bug this guards."""
+    assert c.live_trading_enabled({"live": {"enabled": True, "gate0_confirmed": "jon 2026-07-30"}}) is True
+    assert c.live_trading_enabled({"live": {"enabled": False}}) is False
+    assert c.live_trading_enabled({"live": {}}) is False
+    assert c.live_trading_enabled({"live": "not a dict"}) is False
+
+
+def test_live_trading_enabled_either_convention_wins():
+    assert c.live_trading_enabled({"enable_live_trading": True, "live": {"enabled": False}}) is True
+    assert c.live_trading_enabled({"enable_live_trading": False, "live": {"enabled": True}}) is True
