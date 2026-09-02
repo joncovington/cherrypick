@@ -191,6 +191,55 @@ def carried_advice_params(module: str) -> list[dict[str, Any]] | None:
     return _read(_paper_db(module), read)
 
 
+def closed_advice_params(module: str, session: str) -> list[dict[str, Any]] | None:
+    """The frozen advice params on advised positions this module CLOSED during `session`.
+
+    `carried_advice_params`'s sibling, for the morning that motivated it (2026-09-01): earnings
+    closed 13 advised iron condors at 09:45, all managed under the params their entry had frozen,
+    then held nothing — so the open-row read said "carries nothing" and the enactment check warned
+    hourly about an artifact that was in force for every decision the module actually made.
+
+    Same discovery, same three answers as the open read (None = cannot stamp; [] = stamps but
+    closed nothing advised this session; a list = the frozen params those exits ran under). The
+    close-date column is discovered from the schema too: `closed_session` where the table declares
+    one, else epoch `closed_at` read with 'localtime' (earnings' convention — a bare 'unixepoch'
+    is UTC and shifts evening closes into the wrong session). A table that dates its closes no way
+    at all returns [] — an undated close proves nothing about any particular session.
+    """
+
+    def read(conn):
+        table, columns = None, set()
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'"):
+            name = row[0]
+            cols = {c[1] for c in conn.execute(f"PRAGMA table_info({name})")}
+            if {"advice_params", "status"} <= cols:
+                table, columns = name, cols
+                break
+        if table is None:
+            return None
+        if "closed_session" in columns:
+            where = "closed_session = ?"
+        elif "closed_at" in columns:
+            where = "date(closed_at, 'unixepoch', 'localtime') = ?"
+        else:
+            return []
+        out: list[dict[str, Any]] = []
+        for row in conn.execute(
+            f"SELECT DISTINCT advice_params FROM {table}"  # noqa: S608 - name from sqlite_master
+            f" WHERE advice_params IS NOT NULL AND status = 'closed' AND {where}",
+            (session,),
+        ):
+            try:
+                params = json.loads(row[0]) if isinstance(row[0], str) else dict(row[0])
+            except (TypeError, ValueError):
+                continue  # an unreadable stamp proves nothing either way; it is not evidence
+            if isinstance(params, dict) and params not in out:
+                out.append(params)
+        return out
+
+    return _read(_paper_db(module), read)
+
+
 def _counts(rows: list[dict], key: str, value: str = "n") -> dict[str, Any]:
     return {str(r[key] or "unknown"): r[value] for r in rows}
 
