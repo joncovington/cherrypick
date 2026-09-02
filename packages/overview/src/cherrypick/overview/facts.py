@@ -103,14 +103,35 @@ def _rows(conn, sql: str, params: tuple = ()) -> list:
         return []
 
 
+def _column(row, name: str):
+    """A column an older cache may not have. Absent reads as None, never as a raise."""
+    try:
+        return row[name]
+    except (IndexError, KeyError):
+        return None
+
+
 def _live_quote(conn, symbol: str, now_ts: float) -> dict | None:
-    rows = _rows(conn, "SELECT last, updated_at FROM stream_trades WHERE symbol = ?", (symbol,))
+    """A quote counts as live only if the PRINT is fresh, not if the row is.
+
+    `updated_at` is when the producer received the event; `event_at` is when the exchange printed
+    it. Reading the former for age answered "how recently did we write this row", which a streamer
+    reconnect makes a very different question: resubscribing replays a snapshot of the last print,
+    so yesterday's close lands stamped seconds old and reads as live for the whole FRESH_QUOTE
+    window. curve settled two daily regime readings that way before this was understood.
+
+    A row with no `event_at` -- an older producer, or an event carrying no usable time -- is NOT
+    treated as live. That is this package's own contract rather than caution for its own sake:
+    missing data can never produce RED and always blocks GREEN, and an unmeasured print falls
+    through to the prior confirmed close, which is a basis this reader already has a name for.
+    """
+    rows = _rows(conn, "SELECT last, updated_at, event_at FROM stream_trades WHERE symbol = ?", (symbol,))
     if not rows or rows[0]["last"] is None:
         return None
-    updated = rows[0]["updated_at"]
-    if not isinstance(updated, (int, float)) or now_ts - float(updated) > FRESH_QUOTE_SECONDS:
+    printed = _column(rows[0], "event_at")
+    if not isinstance(printed, (int, float)) or now_ts - float(printed) > FRESH_QUOTE_SECONDS:
         return None
-    return {"value": float(rows[0]["last"]), "as_of": _iso(updated)}
+    return {"value": float(rows[0]["last"]), "as_of": _iso(printed)}
 
 
 def _summary_row(conn, symbol: str, trade_date: str):
@@ -148,10 +169,15 @@ def _prior_close_info(conn, symbol: str, session: str) -> dict | None:
             "change_pct": ((close - base) / base * 100.0) if base else None,
             "via": "summary",
         }
-    rows = _rows(conn, "SELECT last, updated_at FROM stream_trades WHERE symbol = ?", (symbol,))
-    if rows and rows[0]["last"] is not None and isinstance(rows[0]["updated_at"], (int, float)):
+    rows = _rows(conn, "SELECT last, updated_at, event_at FROM stream_trades WHERE symbol = ?", (symbol,))
+    stamp = _column(rows[0], "event_at") if rows else None
+    if stamp is None and rows:
+        # No print time recorded (older producer). The receive time is the only clock left, and the
+        # fallback below already survives it being wrong -- see the comment there.
+        stamp = rows[0]["updated_at"]
+    if rows and rows[0]["last"] is not None and isinstance(stamp, (int, float)):
         close = float(rows[0]["last"])
-        ts = float(rows[0]["updated_at"])
+        ts = float(stamp)
         trade_day = _et_date(ts)
         # The base is the close of the session BEFORE the one this print belongs to, and it is read
         # off that session's own summary row (`prev_day_close`). Pre-open — which is the only window
