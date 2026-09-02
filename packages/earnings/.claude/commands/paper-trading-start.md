@@ -1,0 +1,104 @@
+---
+description: One-shot scan of tonight's AMC / tomorrow's BMO earnings candidates, ranked by composite score with a concrete order built for each selection — analysis only, places nothing
+---
+
+# /paper-trading-start
+
+Runs the real earnings-candidate scan for tonight's/tomorrow-morning's entry window and ranks candidates by composite score.
+
+## Description
+
+Runs `cherrypick.earnings.late_day_earnings_ranked`, a thin CLI over `rank_strategies get_ranked_symbols` — the production cross-strategy ranking engine (see CLAUDE.md's Loop Step 4b): fetches today's real AMC + tomorrow's real BMO earnings calendar from DoltHub, evaluates every registered strategy against live tastytrade/DoltHub data per symbol, and picks each symbol's single best-ranked viable strategy. For each selected symbol, builds a concrete tradeable order via that strategy's own `get_order`.
+
+This is a **one-shot analysis**, not the trading loop — it does not check today's account status, does not submit orders, and does not schedule any wakeup. Use `/earnings-start` to start the actual continuous loop.
+
+## Usage
+
+```
+/paper-trading-start
+/paper-trading-start --count 2
+```
+
+Underneath, that runs:
+
+```bash
+python -m cherrypick.earnings.late_day_earnings_ranked [--count N]
+```
+
+Naming the module here is deliberate: it is the only thing that invokes it, so with the module
+unnamed this tool reads as orphaned to any grep or dead-code sweep, and a reader has nothing to run.
+
+## Options
+
+- `--count N` — Max number of candidates to build orders for (default: 3)
+- `--date MM/DD/YYYY` — Passed through for the report label only. **Does not change which calendar day is scanned** — `rank_strategies.py`'s calendar fetch always pulls today's AMC + tomorrow's BMO. For a different historical date, use `scanner.py get_calendar --date` directly.
+
+Symbol screening is a single accept/reject bar (no risk-profile flag) — `rank_strategies.py`'s `viable` list only ever contains accepted candidates. Tune screening strictness via the `symbol_screen` config block, not a command flag.
+
+## Output
+
+Displays real, live-scanned candidates, e.g.:
+```
+================================================================================
+PAPER TRADING ANALYSIS - 07/08/2026
+================================================================================
+
+ANALYSIS SUMMARY
+  Total candidates: 6
+  Selected for trading: 0
+  Rejected/waitlisted: 6
+
+REJECTED/WAITLISTED (6)
+  - PSMT: rejected_no_viable_strategy (iron_fly: atm_delta_abs_above_maximum; ...)
+  ...
+
+READY FOR 3:50 PM ENTRY WINDOW
+================================================================================
+```
+
+A quiet night with zero selections is expected and normal — small/mid-cap names failing liquidity gates (OI, spread, weekly-options requirement) or having too small an expected move are legitimate, common rejections, not bugs.
+
+If any are selected, each shows:
+- Symbol, earnings date/timing
+- Composite score (accepted candidate)
+- Winning strategy
+- Concrete order (credit/debit, strikes, legs) or the specific error if order-building failed
+
+## When to Use
+
+**Mid-afternoon ET on earnings days** — before the entry window (`entry_window_start`/`entry_window_end` in config.json, typically 15:30–15:55 ET)
+
+## Workflow
+
+1. Run command → see selected candidates (if any) with score and strategy
+2. Review the built order for each (credit, strikes, legs)
+3. Execute manually in your broker during the entry window, or let `/earnings-start`'s loop handle Step 4b automatically
+
+## Files Generated
+
+None — this is a read-only ranking scan that prints to the terminal and persists nothing. Real trade
+persistence (for the actual loop, not this standalone scan) goes through `db_paper.py save_trade` into
+the shared `paper_trades.db`, per CLAUDE.md's Step 4b. The end-of-day summary is written separately by
+the forced-sampling close pass; the session is reported by the suite review (`packages/review`).
+
+## Related Commands
+
+- `/paper-start` — Forced-sampling strategy test (opens the `strat_test` book; writes the daily EOD report)
+- `/earnings-start` — Starts the actual continuous trading loop (Steps 0-5, self-scheduling)
+
+## Common Issues
+
+**"Total candidates: 0"**
+- No earnings tonight/tomorrow morning per DoltHub's calendar — check `python -m cherrypick.earnings.scanner get_calendar --date MM/DD/YYYY` directly to confirm
+
+**"Selected for trading: 0" with all rejected**
+- Normal on a quiet night. Check the printed `reason` per symbol — usually a specific, real liquidity/signal hard-fail (see `docs/screening-criteria.md`), not a system error
+
+**"Order build FAILED"**
+- The candidate was accepted at scan time but a live chain/quote call failed when building the concrete order (e.g. no quote data for a strike). Check the printed `order_error`.
+
+## See Also
+
+- `docs/04-entry-conditions.md` — How scoring/screening works
+- `docs/05-strategies.md` — Each strategy explained
+- `docs/screening-criteria.md` — Hard-filter/screening source of truth

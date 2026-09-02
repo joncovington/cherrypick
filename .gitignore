@@ -1,7 +1,59 @@
+# Repo-root ignores. Each package under packages/* has its own .gitignore for its runtime files
+# (config.json, data/, logs/, state/, etc.).
+
+# .claude is local-only EXCEPT checked-in slash commands (.claude/commands/).
+# Use .claude/* (not .claude/) so the negation can re-include a subdirectory.
+.claude/*
+!.claude/commands/
+
+# Ignore vs code workspace files, which are local-only.
+.vscode/
+*.code-workspace
+
+# --------------------------------------------------------------------------------------------------
+# Everything below is repo-wide. gitignore rules never apply upward, so a package's .gitignore does
+# nothing for the root -- these were all uncovered at the root until now.
+
+# Python bytecode and build artifacts. tools/ and scripts/ hold real runnable code at the root.
 __pycache__/
-*.pyc
-*.egg-info/
+*.py[cod]
 build/
 dist/
+*.egg-info/
+
+# Virtualenvs. scripts/dev-install.{ps1,sh} is the documented install path and the docs tell you to
+# make one, so an accidentally committed .venv is a realistic (and enormous) mistake.
+.venv/
+venv/
+
+# Tool caches. ruff and pytest each write their own .gitignore inside these, which is what kept them
+# invisible before -- declare them so that stays true regardless of tool version or behavior.
 .pytest_cache/
+.ruff_cache/
+
+# Scratch work. Every package's CLAUDE.md states "scratch work goes in a gitignored .tmp/"; all seven
+# packages honored that and the root did not, so following the rule here used to commit the file.
 .tmp/
+
+# Secrets live in the OS keyring only -- never a file in the tree.
+.env
+.env.*
+
+# Local-only authoring artifacts (graphify is opt-in tooling, never a runtime dependency).
+graphify-out/
+
+# Runtime output, should anything ever write at the root rather than under ~/.cherrypick. `data/` at
+# the ROOT is not suite data -- no package writes there; it is the local agent-memory MCP store,
+# which picks the working directory when it is run from here. Suite data lives under ~/.cherrypick.
+data/
+logs/
+state/
+dashboard.html
+*.bak
+
+# OS junk
+.DS_Store
+Thumbs.db
+# MSYS/Git Bash writes one of these wherever a process segfaults. `git subtree split`
+# reliably segfaults in this environment, so a routine core check litters the repo root.
+*.stackdump

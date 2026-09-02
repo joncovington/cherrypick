@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cherrypick-gex"
+version = "0.1.0"
+description = "Live GEX (gamma exposure) dashboard — a simple self-hosted gexbot/SpotGamma/MenthorQ"
+requires-python = ">=3.11"
+# cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.
+# Not on PyPI (Private :: Do Not Upload) -- packages/core must be installed first, or resolution fails.
+dependencies = ["websockets>=13", "cherrypick-core"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths  = ["tests"]
+pythonpath = ["tests", "src"]
+
+[tool.ruff]
+# line-length + lint.select come from the suite-wide ../../ruff.toml.
+extend = "../../ruff.toml"
+target-version = "py311"
+
+[tool.ruff.lint]
+ignore = ["E501"]
+
+[tool.hatch.build.targets.wheel]
+# src-layout PEP 420 namespace: src/cherrypick/ has NO __init__.py, so cherrypick.gex composes with
+# cherrypick.core (and every other module) under one cherrypick.* root. `sources = ["src"]` maps the
+# src/ prefix away, so src/cherrypick/gex/... installs as cherrypick/gex/... .
+only-include = ["src/cherrypick"]
+sources = ["src"]

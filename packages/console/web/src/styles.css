@@ -1,0 +1,2319 @@
+/* Terminal luxe: density as luxury — hairlines, mono numerals, sharp corners,
+   one cherry accent reserved for brand, live-mode, and alert moments. */
+:root {
+  --bg: #0b0c0f;
+  --bg-raised: #0e1013;
+  --bg-card: #101216;
+  --border: #23262d;
+  --row-line: #1a1d23;
+  --row-hover: #15181e;
+  --text: #eceff3;
+  --text-muted: #a6adb8;
+  --accent: #d23f57;
+  --ok: #43b57a;
+  --warn: #d9a13b;
+  --err: #d95c4a;
+  --live: #43b57a;
+  --cached: #d9a13b;
+  --num-face: "Cascadia Code", "Consolas", ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+}
+
+/* The content pane scrolls, not the window. This is what makes `position: sticky` work at all:
+   .shell-content sets an overflow (for wide content), which makes it the sticky containing block —
+   so while the WINDOW was the thing that scrolled, a sticky page header had a scrollport that never
+   moved and could never stick. Bounding the shell to the viewport puts the scrolling where the
+   sticky elements already expect it, and keeps the nav and status header in view as a bonus. */
+.shell {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.nav {
+  width: 11rem;
+  flex-shrink: 0;
+  background: var(--bg-raised);
+  border-right: 1px solid var(--border);
+  padding: 0.75rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* The shell no longer scrolls, so a nav taller than a short window would be unreachable. */
+  overflow-y: auto;
+}
+
+.nav-brand {
+  font-weight: 650;
+  color: var(--accent);
+  padding: 0.5rem 1rem 1rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.95rem;
+}
+
+.nav-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 0.45rem 1rem;
+  border-left: 2px solid transparent;
+  transition: color 0.15s ease;
+}
+
+.nav-link:hover {
+  color: var(--text);
+}
+
+.nav-link.active {
+  color: var(--text);
+  border-left-color: var(--accent);
+  background: rgba(210, 63, 87, 0.06);
+}
+
+.shell-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  /* Without this a flex child refuses to shrink below its content, and the pane below never
+     scrolls — it just grows and pushes the shell past the viewport. */
+  min-height: 0;
+}
+
+.status-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1.25rem;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  min-height: 2.6rem;
+}
+
+.status-clock {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.status-items {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.chip {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.1rem 0.6rem;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.chip-ok {
+  color: var(--ok);
+  border-color: rgba(67, 181, 122, 0.4);
+}
+
+.chip-warn {
+  color: var(--warn);
+  border-color: rgba(217, 161, 59, 0.4);
+}
+
+.chip-live {
+  color: var(--live);
+  border-color: rgba(67, 181, 122, 0.4);
+}
+
+.chip-cached {
+  color: var(--cached);
+  border-color: rgba(217, 161, 59, 0.4);
+}
+
+.chip-disconnected,
+.chip-missing {
+  color: var(--err);
+  border-color: rgba(217, 92, 74, 0.4);
+}
+
+.shell-content {
+  padding: 1.25rem;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.page-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg);
+  padding: 0.25rem 0 0.5rem;
+  margin-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.7rem;
+}
+
+.card-head h2 {
+  margin: 0;
+}
+
+.card-asof {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-family: var(--num-face);
+  white-space: nowrap;
+  opacity: 0.75;
+}
+
+h1 {
+  font-size: 1.15rem;
+  margin: 0 0 1rem;
+  letter-spacing: 0.04em;
+}
+
+h2 {
+  font-size: 11px;
+  margin: 0 0 0.7rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* A sub-heading inside a card, for when one card holds two labelled blocks. Same treatment as h2
+   so the hierarchy reads as card title → block label, without a second real heading level. */
+.fine-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: 0.75rem;
+}
+
+.cards-wide {
+  /* A bare `1fr` track's minimum width is content-based (`auto`), not 0 -- one long unbroken line
+     (a log line, a JSON blob) blows the whole track out past the viewport instead of ever being
+     constrained by it, which is what let a wide card grow to 10500px+ wide in practice. `minmax(0,
+     1fr)` is the fix: it gives the track an explicit 0 floor so its content is actually squeezed to
+     the available width, which is what lets a child's own overflow:hidden/ellipsis do anything. */
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.85rem 0.95rem;
+}
+
+.card-stale {
+  opacity: 0.65;
+}
+
+.stale-note {
+  margin-top: 0.5rem;
+  color: var(--warn);
+  font-size: 12px;
+}
+
+.collector-banner {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+/* --- champions & challengers --- */
+
+.verdict {
+  font-size: 12.5px;
+  margin: 0 0 0.7rem;
+  padding: 0.45rem 0.6rem;
+  border-left: 2px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.verdict-promote {
+  border-left-color: var(--ok);
+  color: var(--ok);
+}
+
+.verdict-neutral {
+  color: var(--text-muted);
+}
+
+.rule-line {
+  font-size: 11.5px;
+  margin: 0.6rem 0 0;
+}
+
+.arm-card {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.55rem 0.7rem;
+}
+
+/* Cleared the rule — enough evidence to believe the number, whatever it says. */
+.arm-card-qualified {
+  border-color: rgba(67, 181, 122, 0.45);
+}
+
+.arm-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.arm-head strong {
+  font-size: 12.5px;
+}
+
+.arm-net {
+  margin-left: auto;
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.arm-foot {
+  font-size: 10.5px;
+  margin-top: 0.25rem;
+}
+
+.netbars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.netbar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.netbar-label {
+  width: 13rem;
+  flex-shrink: 0;
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* .signed-bar (components/Charts.tsx SignedBar) is the track itself; .netbar-row wraps it with a
+   label and a value column for a standalone row. Review's per-arm table uses just the bar, sized
+   via the .signed-bar-compact modifier, with no row/label/value wrapper of its own. */
+.netbar-track {
+  flex: 1;
+}
+
+.signed-bar {
+  position: relative;
+  display: block;
+  height: 12px;
+  background: var(--row-line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.signed-bar-compact {
+  height: 6px;
+  border-radius: 1px;
+}
+
+/* Shared zero line — the reason the bars can be read against each other. */
+.signed-bar-zero {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+
+.signed-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 2px;
+  opacity: 0.75;
+}
+
+.signed-bar-pos {
+  background: var(--ok);
+}
+
+.signed-bar-neg {
+  background: var(--err);
+}
+
+.netbar-value {
+  width: 6.5rem;
+  text-align: right;
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.1rem 0;
+}
+
+.check-label {
+  width: 4.5rem;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.check-track {
+  flex: 1;
+  height: 6px;
+  background: var(--row-line);
+  border-radius: 3px;
+}
+
+.check-fill {
+  height: 100%;
+  border-radius: 3px;
+}
+
+.check-value {
+  width: 5.5rem;
+  text-align: right;
+  font-size: 11px;
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+}
+
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--border);
+}
+
+/* A page turn in progress: rows dim rather than vanish, so the table keeps its
+   height and the pager stays where the pointer left it. */
+.table-busy {
+  opacity: 0.5;
+  transition: opacity 120ms ease;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.pager-btn {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+  padding: 0.28rem 0.45rem;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.pager-btn:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
+.pager-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pager-range {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  padding: 0 0.2rem;
+}
+
+.pager-size {
+  font-size: 11px;
+  padding: 0.2rem 0.3rem;
+}
+
+/* Inline affordance inside a note — reads as prose, acts as a control. */
+.link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.link-button:hover {
+  color: var(--fg);
+}
+
+/* A scope select holding something other than its default, so a narrowed or
+   widened view never looks like the plain one. */
+.scope-select-off-default {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table th {
+  text-align: left;
+  padding: 0.28rem 0.55rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 0.28rem 0.55rem;
+  border-bottom: 1px solid var(--row-line);
+  vertical-align: top;
+  font-size: 13px;
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  transition: background-color 0.15s ease;
+  /* Bucket labels and figures read on one line; a cell that genuinely needs
+     to wrap sets white-space itself. */
+  white-space: nowrap;
+}
+
+/* Breakdown tables. The bucket label is prose, not a figure: it takes whatever
+   width the numbers leave and wraps there, so a long label costs a second line
+   inside the card instead of pushing the figures out of it. Sizing the numeric
+   columns to their content keeps them from being squeezed in the trade. */
+.data-table-labelled th:first-child,
+.data-table-labelled td:first-child {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.data-table-labelled th:not(:first-child),
+.data-table-labelled td:not(:first-child) {
+  width: 1%;
+}
+
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tbody tr:hover td {
+  background: var(--row-hover);
+}
+
+/* Numbers read down a column: right-align from the first numeric column on. */
+.num-from-1 th:nth-child(n + 2),
+.num-from-1 td:nth-child(n + 2),
+.num-from-2 th:nth-child(n + 3),
+.num-from-2 td:nth-child(n + 3),
+.num-from-3 th:nth-child(n + 4),
+.num-from-3 td:nth-child(n + 4),
+.num-from-4 th:nth-child(n + 5),
+.num-from-4 td:nth-child(n + 5),
+.num-from-5 th:nth-child(n + 6),
+.num-from-5 td:nth-child(n + 6),
+.num-from-6 th:nth-child(n + 7),
+.num-from-6 td:nth-child(n + 7) {
+  text-align: right;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-ok {
+  background: var(--ok);
+}
+
+.status-warn {
+  background: var(--warn);
+}
+
+.status-err {
+  background: var(--err);
+}
+
+.status-off {
+  background: var(--border);
+}
+
+.pnl-pos {
+  color: var(--ok);
+}
+
+.pnl-neg {
+  color: var(--err);
+}
+
+.row-selected td {
+  background: rgba(67, 181, 122, 0.07);
+}
+
+.badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 0.08rem 0.45rem;
+  letter-spacing: 0.06em;
+}
+
+.badge-live {
+  background: rgba(210, 63, 87, 0.14);
+  color: var(--accent);
+  border: 1px solid rgba(210, 63, 87, 0.55);
+}
+
+.badge-paper {
+  background: rgba(67, 181, 122, 0.12);
+  color: var(--ok);
+  border: 1px solid rgba(67, 181, 122, 0.4);
+}
+
+.mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-left: auto;
+}
+
+.mode-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 0.25rem 0.9rem;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.35s ease, color 0.35s ease;
+}
+
+.mode-btn.active {
+  background: var(--row-hover);
+  color: var(--text);
+}
+
+.mode-btn-live.active {
+  color: var(--accent);
+}
+
+.mode-btn:focus-visible,
+.nav-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.btn {
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text);
+  background: var(--row-hover);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.28rem 0.8rem;
+  transition: border-color 0.15s ease;
+}
+
+.btn:hover {
+  border-color: var(--text-muted);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn-quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+
+.btn-quiet:hover {
+  color: var(--err);
+  border-color: transparent;
+}
+
+.btn:focus-visible,
+.text-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.text-input {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.28rem 0.6rem;
+  text-transform: uppercase;
+}
+
+.add-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.link {
+  color: var(--text-muted);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border);
+  transition: color 0.15s ease;
+}
+
+.link:hover {
+  color: var(--text);
+}
+
+.chart-host {
+  height: 26rem;
+  min-width: 0;
+}
+
+.panel-head-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.lbl {
+  font-size: 12px;
+}
+
+.num-input {
+  width: 6rem;
+  text-transform: none;
+}
+
+.stat-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.7rem;
+}
+
+select.text-input {
+  text-transform: none;
+}
+
+.chain-table th,
+.chain-table td {
+  text-align: right;
+}
+
+.chain-strike {
+  text-align: center !important;
+  color: var(--text);
+  font-weight: 600;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.chain-click {
+  cursor: pointer;
+}
+
+.chain-sell:hover {
+  background: rgba(217, 92, 74, 0.14);
+}
+
+.chain-buy:hover {
+  background: rgba(67, 181, 122, 0.14);
+}
+
+.chain-atm td {
+  background: var(--row-hover);
+}
+
+/* Selected strikes: red border = short (STO), green = long (BTO). */
+.chain-held-short td {
+  border-top: 1px solid rgba(217, 92, 74, 0.7);
+  border-bottom: 1px solid rgba(217, 92, 74, 0.7);
+}
+
+.chain-held-long td {
+  border-top: 1px solid rgba(67, 181, 122, 0.7);
+  border-bottom: 1px solid rgba(67, 181, 122, 0.7);
+}
+
+.chain-badge-cell {
+  width: 3.6rem;
+}
+
+.chain-badge {
+  display: inline-block;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  border-radius: 3px;
+  padding: 0.06rem 0.35rem;
+}
+
+.chain-badge-short {
+  color: var(--err);
+  background: rgba(217, 92, 74, 0.14);
+  border: 1px solid rgba(217, 92, 74, 0.5);
+}
+
+.chain-badge:not(.chain-badge-short):not(.chain-badge-long) {
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.chain-badge-long {
+  color: var(--ok);
+  background: rgba(67, 181, 122, 0.12);
+  border: 1px solid rgba(67, 181, 122, 0.45);
+}
+
+/* Expected-move band on the strike column. */
+.chain-em-band {
+  box-shadow: inset 3px 0 0 #a0703c;
+}
+
+.chip-em {
+  color: #c99a66;
+  border-color: rgba(160, 112, 60, 0.55);
+}
+
+.legs-table td {
+  vertical-align: middle;
+}
+
+.qty-input {
+  width: 3.6rem;
+}
+
+.leg-kind {
+  font-weight: 600;
+}
+
+.collapse-toggle {
+  padding: 0 0.3rem;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Chart left, metric panels stacked in a right rail — everything in one view. */
+.gex-layout {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.gex-chart-area {
+  flex: 1;
+  min-width: 0;
+}
+
+.gex-rail {
+  width: 15.5rem;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+@media (max-width: 900px) {
+  .gex-layout {
+    flex-direction: column;
+  }
+  .gex-rail {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+
+.gex-panel {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.6rem 0.8rem;
+}
+
+.gex-metric {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 12.5px;
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  padding: 0.1rem 0;
+  white-space: nowrap;
+}
+
+.gex-metric-value {
+  font-weight: 600;
+}
+
+.gex-metric-em {
+  font-size: 14.5px;
+}
+
+.gex-metric-em .gex-metric-value {
+  font-weight: 700;
+}
+
+.forest-legend {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.4rem;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.forest-legend i {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  border-radius: 1px;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+.forest-legend i.forest-dash {
+  width: 14px;
+  background-image: linear-gradient(90deg, currentColor 3px, transparent 3px);
+  background-size: 6px 3px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 0.6rem;
+}
+
+.stat-tile {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.5rem 0.7rem;
+}
+
+.stat-tile .stat-label {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  display: block;
+}
+
+.stat-tile .stat-value {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.05rem;
+}
+
+.log-line {
+  display: flex;
+  gap: 0.6rem;
+  font-size: 12px;
+  font-family: var(--num-face);
+  padding: 0.1rem 0;
+  border-bottom: 1px solid var(--row-line);
+}
+
+.log-level {
+  width: 4.5rem;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.log-source {
+  width: 5.5rem;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.log-text {
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lvl-CRITICAL, .lvl-ERROR { color: var(--err); }
+.lvl-WARN, .lvl-WARNING { color: var(--warn); }
+.lvl-OK { color: var(--ok); }
+.lvl-INFO, .lvl-DEBUG, .lvl-NOTIFY { color: var(--text-muted); }
+
+/* Skeletons: cards render at final size with ghost content — no spinners, no hidden cards. */
+.skeleton {
+  display: inline-block;
+  background: linear-gradient(90deg, var(--border) 25%, #343a47 50%, var(--border) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 3px;
+}
+
+.skeleton-text {
+  height: 0.85rem;
+  width: 60%;
+}
+
+.skeleton-chip {
+  height: 1.35rem;
+  width: 6.5rem;
+  border-radius: 3px;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Motion: motion means information. Tick flashes + number roll for live values (M3). */
+@keyframes flash-up {
+  0% {
+    background: rgba(67, 181, 122, 0.26);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+@keyframes flash-down {
+  0% {
+    background: rgba(217, 92, 74, 0.26);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+.flash-up {
+  animation: flash-up 0.5s ease-out;
+}
+
+.flash-down {
+  animation: flash-down 0.5s ease-out;
+}
+
+@keyframes roll-in {
+  0% {
+    transform: translateY(-0.35em);
+    opacity: 0.2;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.roll {
+  display: inline-block;
+  animation: roll-in 0.18s ease-out;
+}
+
+/* Route/tab body handoff: a brief fade so switching between MEIC/Flies/GEX (or a page's own tabs)
+   doesn't read as a flicker, without adding enough delay to cost perceived responsiveness. Applied
+   to a freshly-mounted view (keyed by route or tab), never to the switch control itself. */
+@keyframes view-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.view-fade {
+  animation: view-fade-in 150ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .flash-up,
+  .flash-down,
+  .roll,
+  .view-fade {
+    animation: none;
+  }
+}
+
+/* Rendered EOD markdown reports */
+.report-body {
+  margin-top: 0.7rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.7rem;
+  font-size: 12.5px;
+  max-height: 30rem;
+  overflow-y: auto;
+}
+
+.report-body h2,
+.report-body h3,
+.report-body h4,
+.report-body h5 {
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  margin: 0.7rem 0 0.35rem;
+}
+
+.report-body p {
+  margin: 0.25rem 0;
+  color: var(--text-muted);
+}
+
+.report-body ul {
+  margin: 0.25rem 0;
+  padding-left: 1.1rem;
+  color: var(--text-muted);
+}
+
+.report-body code {
+  font-family: var(--num-face);
+  background: var(--row-hover);
+  padding: 0 0.2rem;
+  border-radius: 2px;
+}
+
+/* ---------------------------------------------------------------- suite review
+   Composed from the existing primitives (card / stats-grid / data-table / chip / dot) rather than
+   a parallel look. Only what the page genuinely adds lives here, and it uses the same tokens:
+   the accent stays reserved for things that need attention, per the palette's own note. */
+
+/* The attention card leads the page, so it earns a left rule — cherry only when something is
+   actually flagged, green when the day is clear. A card that always looks urgent stops meaning
+   anything. */
+.review-attention {
+  border-left: 2px solid var(--ok);
+}
+
+.review-attention-flagged {
+  border-left-color: var(--accent);
+}
+
+.review-flags {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.review-flags li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  line-height: 1.5;
+}
+
+/* Tables whose PROSE IS THE LAST COLUMN — the inverse of what `data-table-labelled` assumes.
+   There the prose is the first column and the figures follow; in these the leading columns are
+   short identifiers that must read on one line and the prose trails: a proposal's rationale (the
+   model writes full sentences, several hundred characters), or the advisor's account of why an
+   artifact never reached a loop.
+
+   Under the labelled shape that prose kept the table's default `nowrap` and ran the card four
+   thousand pixels off the page, which in turn squeezed the leading column to a sliver where
+   `overflow-wrap: anywhere` broke it one character per line — "m e i c" down the left edge. So the
+   treatment goes where the prose actually is: every column but the last sizes to its content, and
+   the last takes what is left and wraps there.
+
+   Written as one rule over both tables rather than copied: they are the same shape with the same
+   failure, and the second one was authored by re-hitting the first one's bug in a browser. */
+.advisor-params th:not(:last-child),
+.advisor-params td:not(:last-child),
+.advisor-apply th:not(:last-child),
+.advisor-apply td:not(:last-child) {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.advisor-params th:last-child,
+.advisor-params td:last-child,
+.advisor-apply th:last-child,
+.advisor-apply td:last-child {
+  width: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+/* A spec the reader is meant to COPY, not read as prose: the advisor's creative proposals arrive
+   as ready-to-paste JSON, and a wrapped, proportional rendering of one is useless. Scrolls inside
+   its own box rather than widening the card. */
+.spec-block {
+  font-family: var(--num-face);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0.55rem 0 0;
+  padding: 0.6rem 0.7rem;
+  color: var(--text);
+  background: var(--row-hover);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow-x: auto;
+  white-space: pre;
+  user-select: text;
+}
+
+/* A caveat is prose the reader must not skip, but it is not a finding — muted, with the same dot
+   vocabulary the findings use so the severity reads the same way. */
+.review-caveat {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0.55rem 0 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+  max-width: 88ch;
+}
+
+.review-module .stats-grid {
+  margin-bottom: 0.9rem;
+}
+
+.review-subhead {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0.9rem 0 0.45rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--row-line);
+}
+
+/* The proportion bar behind an arm's net. Scaled to the largest ABSOLUTE net in the group, so a
+   loss and a win of equal size carry equal weight in opposite colours — scaling losses against
+   wins would make a bad arm look small, which is the opposite of the point. */
+.arm-bar-cell {
+  width: 6rem;
+  min-width: 6rem;
+}
+
+.review-expected {
+  margin-top: 0.9rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--row-line);
+}
+
+.review-expected-figures {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+}
+
+.review-session-select {
+  background: var(--bg-card);
+  color: var(--text);
+  font-family: var(--num-face);
+  cursor: pointer;
+}
+
+.review-note-line {
+  font-size: 12.5px;
+  max-width: 92ch;
+  margin: 0.6rem 0 0.9rem;
+}
+
+/* The narrative. Prose, not data — so it wraps and takes a readable measure, unlike the nowrap
+   tables above it. `overflow-wrap` catches the long unbroken tokens a model occasionally emits
+   (a path, a symbol list) that would otherwise put a horizontal scrollbar on the card. */
+/* Centered on a 10/80/10 split of the card, not the viewport — `width` is a percentage of the
+   card's own content box (inside its padding), so the gutter scales with however wide the card
+   itself ends up. `max-width` still clamps the line length on a very wide card, since 80% of a
+   wide window is still too long to read comfortably; margin: auto centers whichever bound binds. */
+.review-note .note {
+  width: 80%;
+  max-width: 76ch;
+  margin: 0 auto;
+  line-height: 1.6;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.review-note .note p {
+  margin: 0 0 0.85rem;
+}
+
+/* A standalone-bold paragraph ("**What happened**" alone on its line) is a section label, not
+   emphasis — the same divider the module cards use for "By arm", so the note reads as a sequence
+   of sections rather than one wall of prose. No border on the first one; it sits right under the
+   card head and a rule there would fight the card's own border. */
+.note-section {
+  margin: 1.1rem 0 0.6rem;
+}
+
+.note > .note-section:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* A bold span that IS a signed figure, or contains one, gets the console's own pnl vocabulary
+   rather than a new color — the same green/red the stat tiles and arm table already use. Only '+'
+   and the true minus sign (−) count as a sign, so "width-5" is never read as negative. A span that
+   is nothing BUT the figure also gets tabular numerals, so a bare "+$80,102" sits like a number;
+   a mixed span like "open +0.216" stays in running prose type, since monospacing "open" would look
+   like a typo, not data. */
+.note-figure {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+}
+
+.note-figure-pos {
+  color: var(--ok);
+}
+
+.note-figure-neg {
+  color: var(--err);
+}
+
+.note-list {
+  margin: 0 0 0.85rem;
+  padding-left: 1.1rem;
+}
+
+.note-list li {
+  margin-bottom: 0.5rem;
+  line-height: 1.55;
+}
+
+/* The Recommendations heading. A small warn-colored marker, not the brand accent — a
+   recommendation is "worth a look," not an alert, the same distinction the rest of the page
+   already draws between chip-warn and the accent reserved for genuine flags. */
+.note-recs-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1.3rem 0 0.7rem;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.note-recs-marker {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--warn);
+  flex-shrink: 0;
+}
+
+.note-recs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+/* Each recommendation as its own small card — a numbered index, a title, and the number that
+   argues for it below. A left rule in warn, matching the marker on the heading above, so the
+   card and the section it belongs to read as one idea rather than a bare list of assertions. */
+.note-rec {
+  display: flex;
+  gap: 0.65rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--warn);
+  border-radius: 3px;
+  padding: 0.55rem 0.75rem;
+}
+
+.note-rec-index {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding-top: 0.15rem;
+  flex-shrink: 0;
+}
+
+.note-rec-title {
+  font-weight: 650;
+  margin-bottom: 0.2rem;
+  line-height: 1.4;
+}
+
+.note-rec-body {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.note-rec-none {
+  margin: 0;
+}
+
+/* ---- Config page ------------------------------------------------------------------------- */
+/* The suite's one write surface. The cherry accent is reserved for brand, live, and alert
+   moments — the live lock is exactly the third of those, and the only place on this page it
+   appears. Everything else stays in the ordinary card vocabulary, so the one control that stops
+   live trading is the one thing that looks urgent. */
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-group + .nav-group {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.nav-group-label {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.65;
+  padding: 0.15rem 1rem 0.25rem;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.nav-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+  flex-shrink: 0;
+}
+
+.lock-hero {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ok);
+  background: var(--bg-card);
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 1rem;
+}
+
+.lock-hero.halted {
+  border-color: rgba(210, 63, 87, 0.55);
+  border-left-color: var(--accent);
+  background: linear-gradient(to right, rgba(210, 63, 87, 0.08), var(--bg-card) 40%);
+}
+
+.lock-hero-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.lock-hero-title {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+}
+
+.lock-hero.halted .lock-hero-title {
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+.lock-hero-sub {
+  margin: 0;
+  max-width: 62ch;
+  line-height: 1.5;
+}
+
+.lock-hero-path {
+  font-family: var(--num-face);
+  font-size: 11px;
+  opacity: 0.6;
+  margin-top: 0.35rem;
+}
+
+.lock-hero-action {
+  flex-shrink: 0;
+}
+
+/* One click, and it looks like what it does. The safe direction is never behind a dialog. */
+.lock-btn-halt {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.55rem 1.4rem;
+}
+
+.lock-btn-halt:hover {
+  filter: brightness(1.1);
+  border-color: var(--accent);
+}
+
+/* The resuming direction is deliberately quieter than the halting one. */
+.lock-btn-resume {
+  padding: 0.45rem 1rem;
+}
+
+.lock-confirm {
+  margin-top: 0.9rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(210, 63, 87, 0.35);
+  background: rgba(210, 63, 87, 0.05);
+}
+
+.lock-confirm p {
+  margin: 0 0 0.6rem;
+  max-width: 72ch;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.lock-confirm-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.lock-confirm-row .text-input {
+  width: 12rem;
+  font-family: var(--num-face);
+}
+
+.lock-error {
+  margin: 0.6rem 0 0;
+  color: var(--err);
+  font-size: 12px;
+}
+
+.lock-gates {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  margin-top: 0.9rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.lock-gate {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.lock-gate-name {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.cfg-section-blurb {
+  margin: 0 0 0.9rem;
+  line-height: 1.5;
+  max-width: 78ch;
+}
+
+.cfg-group + .cfg-group {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.cfg-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.cfg-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cfg-group-note {
+  font-size: 11px;
+  color: var(--warn);
+}
+
+.cfg-fields {
+  display: flex;
+  flex-direction: column;
+}
+
+.cfg-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--row-line);
+}
+
+.cfg-row:last-child {
+  border-bottom: none;
+}
+
+.cfg-row-dirty {
+  background: rgba(217, 161, 59, 0.05);
+  box-shadow: inset 2px 0 0 var(--warn);
+  padding-left: 0.5rem;
+}
+
+.cfg-row-locked {
+  opacity: 0.85;
+}
+
+.cfg-row-label label {
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.cfg-pointer {
+  display: block;
+  font-family: var(--num-face);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  opacity: 0.6;
+  margin-top: 0.1rem;
+}
+
+/* Inline, not a tooltip: what a field means is part of deciding what to type. */
+.cfg-help {
+  margin: 0.25rem 0 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  max-width: 68ch;
+}
+
+.cfg-dirty-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.cfg-row-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.cfg-row-control .text-input,
+.cfg-row-control .num-input {
+  min-width: 8rem;
+}
+
+.cfg-locked {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+  max-width: 26rem;
+}
+
+.cfg-locked .cfg-help {
+  text-align: right;
+}
+
+.cfg-revert {
+  font-size: 11px;
+}
+
+.cfg-savebar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid rgba(217, 161, 59, 0.4);
+  background: rgba(217, 161, 59, 0.06);
+}
+
+.cfg-savebar-changes strong {
+  font-size: 12px;
+}
+
+.cfg-savebar-changes ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.cfg-savebar-changes code {
+  font-family: var(--num-face);
+  font-size: 11px;
+}
+
+.cfg-savebar-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.cfg-save-error {
+  margin: 0.5rem 0 0;
+  color: var(--err);
+  font-size: 11.5px;
+  max-width: 70ch;
+}
+
+.cfg-saved-note {
+  margin: 0.5rem 0 0;
+  font-size: 11px;
+  font-family: var(--num-face);
+}
+
+.cfg-footnote {
+  margin-top: 1.25rem;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+  font-size: 11.5px;
+  line-height: 1.55;
+  max-width: 86ch;
+}
+
+/* ---- Flies arm guide (Help tab) -------------------------------------------------------- */
+/* Reference text, so it reads as prose at a comfortable measure rather than as table furniture —
+   these notes carry the reasoning behind each arm and are meant to be read, not scanned. */
+
+.arm-intro {
+  max-width: 88ch;
+  line-height: 1.6;
+  margin: 0 0 1rem;
+}
+
+.arm-section-head {
+  font-size: 0.95rem;
+  margin: 1.5rem 0 0.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.arm-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.arm-facts {
+  font-family: var(--num-face);
+  font-size: 11.5px;
+  margin-bottom: 0.6rem;
+}
+
+.arm-diff {
+  margin-bottom: 0.75rem;
+}
+
+.arm-diff-table {
+  margin-top: 0.3rem;
+}
+
+.arm-diff-table td {
+  vertical-align: top;
+  padding: 0.18rem 0.5rem 0.18rem 0;
+}
+
+.arm-diff-key {
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.arm-diff-value {
+  font-family: var(--num-face);
+  font-size: 11.5px;
+}
+
+.arm-diff-was {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.arm-diff-none {
+  margin: 0.3rem 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  max-width: 80ch;
+}
+
+.arm-lead {
+  margin: 0 0 0.7rem;
+  line-height: 1.6;
+  max-width: 86ch;
+}
+
+.arm-note {
+  margin-top: 0.7rem;
+  padding-left: 0.7rem;
+  border-left: 1px solid var(--border);
+}
+
+.arm-note p {
+  margin: 0.2rem 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  max-width: 86ch;
+}
+
+.arm-note-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+.arm-group-note {
+  margin-bottom: 0.9rem;
+  border-left-color: var(--warn);
+}
+
+.arm-diff-common {
+  margin: 0.45rem 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  max-width: 86ch;
+}
+
+.arm-diff-common code {
+  font-family: var(--num-face);
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.arm-centring {
+  margin: 0.35rem 0 0.1rem;
+  font-size: 12px;
+}
+
+.arm-common-details {
+  margin-top: 0.5rem;
+}
+
+.arm-common-details summary {
+  cursor: pointer;
+  font-size: 11px;
+  list-style: revert;
+}
+
+/* Dense tables — the console preference. Rows only: headers and card chrome keep their spacing, so
+   the page stays legible rather than merely smaller. */
+.shell.dense .data-table th,
+.shell.dense .data-table td {
+  padding: 0.13rem 0.45rem;
+}
+
+.shell.dense .data-table td {
+  font-size: 12px;
+}
+
+/* ===== PMCC-99 =====================================================================
+   The page's own vocabulary. Warnings are amber (--warn) throughout and never the cherry
+   accent: --accent is reserved for brand, live-mode and alert moments, and none of this
+   module's caveats are alerts. A cold start and a lapsing dividend table are honest states
+   the page is obliged to show, not faults it is raising. */
+
+.mono {
+  font-family: var(--num-face);
+  font-size: 12px;
+}
+
+
+
+
+
+
+/* The upper-bound banner. A left rule rather than a filled panel: it has to read as the
+   frame around the numbers below it, not as an error interrupting them. */
+
+
+.integrity-grid h3,
+.pmcc-chart-grid h3,
+.pmcc-compare h3 {
+  font-size: 12px;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin: 0 0 0.45rem;
+}
+
+
+
+/* The gate's own line, under a symbol card whose keltner book holds nothing. Sits in the
+   card footer because it explains an ABSENCE in the table above -- a row would have implied
+   a position. */
+.pmcc-gate-row {
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.pmcc-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 1.2rem;
+  margin-top: 0.6rem;
+}
+
+.pmcc-chart-grid h3 {
+  display: flex;
+  align-items: center;
+  font-family: var(--num-face);
+  color: var(--text);
+  font-size: 13px;
+  text-transform: none;
+}
+
+/* Time value against the threshold that closes the position. Two steps only -- near, and at
+   -- because a continuous gradient would imply a precision the mark cadence does not have. */
+.pmcc-tv-near {
+  color: var(--warn);
+}
+
+.pmcc-tv-at {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.pmcc-activity {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  gap: 1rem;
+}
+
+.pmcc-compare {
+  margin-bottom: 1.2rem;
+}
+
+.pmcc-compare:last-child {
+  margin-bottom: 0;
+}
+
+.pmcc-detail-row > td {
+  background: var(--bg-raised);
+}
+
+.pmcc-detail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 1.1rem;
+  padding: 0.7rem 0.4rem;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.pmcc-detail h4 {
+  font-size: 11.5px;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin: 0 0 0.3rem;
+}
+
+.pmcc-detail p {
+  margin: 0 0 0.3rem;
+}
+
+.pmcc-prose {
+  font-size: 13px;
+  line-height: 1.7;
+  max-width: 78ch;
+}
+
+.pmcc-prose p {
+  margin: 0 0 0.7rem;
+}
+
+.pmcc-defs {
+  margin: 0;
+}
+
+.pmcc-defs dt {
+  font-family: var(--num-face);
+  color: var(--text);
+  margin-top: 0.7rem;
+}
+
+.pmcc-defs dd {
+  margin: 0.15rem 0 0;
+  color: var(--text-muted);
+}
+
+.pmcc-rules {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--text-muted);
+}
+
+.pmcc-rules li {
+  margin-bottom: 0.55rem;
+}
+
+.pmcc-rules strong {
+  color: var(--text);
+}
+
+/* The ordinary close. `.chip-missing` is red and `.chip-warn` amber; a short that simply traded out
+   is neither -- it is the strategy working. Quiet by default so `assigned`, which hands over shares
+   and carries the weekend, is the only close kind that catches the eye. */
+
+/* The expanded cycle detail. `.data-table td` is nowrap by house rule ("a cell that genuinely needs
+   to wrap sets white-space itself") -- this one does: it holds prose, not figures, and without this
+   the explanation of the fee stack ran off the card instead of wrapping inside it. */
+.pmcc-detail-row > td {
+  white-space: normal;
+}
+
+/* ---------------------------------------------------------------- calendars (dc_week)
+   Deliberately the same restrained palette as the PMCC page: amber for the honest states this
+   module is obliged to show (a skipped ex-dividend week, a lapsing calendar, a thin feed), red
+   only where the derivation and the books actually disagree, and never the cherry accent — that
+   is reserved for brand, live-mode and alerts, and nothing on a paper experiment's page is one. */
+
+
+
+
+.cal-ok {
+  color: var(--ok);
+}
+
+
+
+
+/* The same sentence, inline inside a banner rather than under it — a refusal and its explanation
+   belong in one breath, not in a paragraph the eye can skip. */
+.cal-note-inline {
+  color: var(--text-muted);
+}
+
+
+
+/* .integrity-grid h3 is styled with the pmcc chart/compare group above. */
+
+
+
+/* The week's anchors. A row of labelled dates rather than a table: they are one fact in five
+   parts (entry, both expirations, the tag they imply), not five comparable rows. */
+.cal-plan-anchors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.6rem;
+}
+
+.cal-plan-label {
+  display: block;
+  font-size: 11px;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.cal-plan-value {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.cal-plan-when {
+  margin-left: 0.4rem;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* The entry verdict. Amber-ruled when the week went untraded, green when it entered: for a strategy
+   with one entry attempt a week, whether that attempt landed is the page's first fact. */
+.cal-entry-banner {
+  border-left: 2px solid var(--warn);
+  padding: 0.5rem 0 0.5rem 0.75rem;
+  margin-bottom: 0.7rem;
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.cal-entry-ok {
+  border-left-color: var(--ok);
+}
+
+.cal-feed {
+  font-size: 12.5px;
+  margin: 0 0 0.7rem;
+}
+
+.cal-feed .cal-plan-label {
+  display: inline-block;
+  min-width: 3.2rem;
+}
+
+.cal-attempts {
+  width: 100%;
+}
+
+/* The refusal glossary's affordance. A superscript question mark rather than a dotted underline:
+   the token beside it is monospace and an underline read as part of the identifier. */
+.cal-help {
+  margin-left: 0.3rem;
+  font-size: 10px;
+  vertical-align: super;
+  color: var(--text-muted);
+  cursor: help;
+}
+
+.cal-row-click {
+  cursor: pointer;
+}
+
+.cal-row-click:hover {
+  background: var(--row-hover, rgba(255, 255, 255, 0.03));
+}
+
+/* The expanded week. `.data-table td` is nowrap by house rule; this one holds prose and legs
+   rather than figures, so it wraps inside the card instead of running off it. */
+.cal-detail-row > td {
+  white-space: normal;
+}
+
+.cal-detail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 1.2rem;
+  padding: 0.6rem 0;
+}
+
+.cal-detail h4 {
+  font-size: 12.5px;
+  font-weight: 500;
+  margin: 0 0 0.4rem;
+}
+
+.cal-prose {
+  font-size: 13px;
+  line-height: 1.65;
+  max-width: 78ch;
+}
+
+.cal-prose p {
+  margin: 0 0 0.7rem;
+}
+
+.cal-defs {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1.2rem;
+  font-size: 12.5px;
+  margin: 0;
+}
+
+.cal-defs dt {
+  color: var(--text-muted);
+}
+
+.cal-defs dd {
+  margin: 0;
+  color: var(--text);
+}
+
+.cal-rules {
+  font-size: 13px;
+  line-height: 1.65;
+  margin: 0;
+  padding-left: 1.1rem;
+  max-width: 78ch;
+}
+
+.cal-rules li {
+  margin-bottom: 0.5rem;
+}
+
+/* The measurement-integrity strip, shared by Calendars and PMCC.
+ *
+ * These were two families, .cal-* and .pmcc-*, that rendered the same strip on two pages.
+ * Nine of the ten rules were byte-identical; the tenth differed by a 250px-vs-260px minmax
+ * floor, which is drift rather than a decision, so one value is kept.
+ */
+.integrity-sym {
+  font-family: var(--num-face);
+  color: var(--text);
+  min-width: 3.4rem;
+  display: inline-block;
+}
+.integrity-warn {
+  color: var(--warn);
+}
+.integrity-err {
+  color: var(--err);
+}
+.integrity-chip {
+  margin-left: 0.4rem;
+  font-size: 11px;
+}
+.integrity-chip-quiet {
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+.integrity-note {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin: 0.35rem 0 0;
+  line-height: 1.5;
+}
+.integrity-banner {
+  border-left: 2px solid var(--warn);
+  padding: 0.5rem 0 0.5rem 0.75rem;
+  margin-bottom: 0.9rem;
+  line-height: 1.6;
+  font-size: 13px;
+}
+.integrity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 1.1rem;
+}
+.integrity-alerts {
+  margin-top: 0.9rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.7rem;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.integrity-plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12.5px;
+  line-height: 1.85;
+}
+
+/* --------------------------------------------------------------- vol term structure (Morning) */
+/* A refused percentile has to look refused. It renders as words plus its sample count rather than
+   an empty bar, because an empty bar and a bar pinned at the bottom of the range are the same
+   picture and completely different facts. */
+.pct-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.pct-row {
+  display: grid;
+  grid-template-columns: 62px 72px 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.pct-bar {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2, #1d2129);
+  overflow: hidden;
+}
+
+.pct-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  /* Amber, not the brand red: red on a trading surface reads as loss, and this bar states a
+     neutral position-in-range that gates nothing. Matches the curve stroke above it. */
+  background: #d9a13b;
+}
+
+.pct-refusal {
+  font-size: 12px;
+  font-style: italic;
+}

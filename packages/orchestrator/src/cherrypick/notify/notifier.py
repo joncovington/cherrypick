@@ -1,0 +1,230 @@
+"""Notification dispatch: logging floor + best-effort push channels.
+
+Channels:
+  - "log"     : always on, the floor. Structured NOTIFY line to logs/notify.log.
+  - "desktop" : Windows tray balloon via a short-lived PowerShell process (best-effort).
+  - "slack"   : POST to an Incoming Webhook whose URL is stored in the OS keyring (see notify.secrets;
+                set via `cherrypick secrets-set --channel slack`). Never in config/files/env vars.
+  - "discord" : POST to a Discord Incoming Webhook whose URL is stored in the OS keyring
+                (`cherrypick secrets-set --channel discord`). Never in config/files/env vars.
+
+No push channel may raise; failures are swallowed after the floor has been written. This module
+uses only the stdlib + the OS shell — no MCP, no third-party client — so it is safe to call from
+the watchdog (which must have no network/AI failure mode on its own reliability path).
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+import os
+import subprocess
+import sys
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from . import secrets
+
+
+def _default_log_dir() -> Path:
+    """cherrypick's per-user logs home (~/.cherrypick/logs, or CHERRYPICK_HOME/logs). Kept in sync with
+    config.LOGS_DIR but computed independently so the notifier — which sits on the reliability path —
+    stays free of a config import. Previously this wrote notify.log *inside the source tree*, which both
+    leaked logs into the repo and put them where the dashboard (which reads config.LOGS_DIR) never
+    looked; anchoring both at the user home fixes that mismatch."""
+    env = os.environ.get("CHERRYPICK_HOME")
+    return (Path(env) if env else (Path.home() / ".cherrypick")) / "logs"
+
+
+_LOG = _default_log_dir() / "notify.log"
+
+
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+class Notifier:
+    def __init__(self, notify_cfg: dict[str, Any] | None = None):
+        cfg = notify_cfg or {}
+        self.channels = cfg.get("channels", ["log"])
+        self.app_name = cfg.get("desktop_app_name", "cherrypick")
+
+    # -- the floor -----------------------------------------------------------------
+    @staticmethod
+    def _rotate_if_large(path, max_bytes: int = 5_000_000, keep: int = 3) -> None:
+        # Same size-based rotation as orchestrator.util.rotate_if_large, inlined: this
+        # package is deliberately stdlib-only with no orchestrator import (it sits on the
+        # reliability path), and without rotation notify.log grew without bound —
+        # logrotate refuses active .log files by design. Best-effort.
+        try:
+            if not path.exists() or path.stat().st_size < max_bytes:
+                return
+            for i in range(keep - 1, 0, -1):
+                src = path.with_name(f"{path.name}.{i}")
+                if src.exists():
+                    os.replace(src, path.with_name(f"{path.name}.{i + 1}"))
+            os.replace(path, path.with_name(f"{path.name}.1"))
+        except OSError:
+            pass
+
+    def _write_log(self, level: str, key: str, title: str, message: str) -> None:
+        _LOG.parent.mkdir(parents=True, exist_ok=True)
+        self._rotate_if_large(_LOG)
+        line = json.dumps(
+            {
+                "ts": _utcnow(),
+                "kind": "NOTIFY",
+                "level": level,
+                "key": key,
+                "title": title,
+                "message": message,
+            }
+        )
+        with _LOG.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+
+    # -- push channels (best-effort) -----------------------------------------------
+    def _push_desktop(self, level: str, title: str, message: str) -> dict[str, Any]:
+        if os.name != "nt":
+            return {"ok": False, "skipped": "desktop notifications are Windows-only"}
+        icon = "Warning" if level in ("WARN", "CRITICAL") else "Info"
+        safe_title = f"{self.app_name}: {title}"
+        ps = (
+            "Add-Type -AssemblyName System.Windows.Forms;"
+            "Add-Type -AssemblyName System.Drawing;"
+            "$n = New-Object System.Windows.Forms.NotifyIcon;"
+            "$n.Icon = [System.Drawing.SystemIcons]::Information;"
+            "$n.Visible = $true;"
+            f"$n.ShowBalloonTip(8000, {json.dumps(safe_title)}, {json.dumps(message)}, "
+            f"[System.Windows.Forms.ToolTipIcon]::{icon});"
+            "Start-Sleep -Seconds 9; $n.Dispose();"
+        )
+        encoded = base64.b64encode(ps.encode("utf-16-le")).decode("ascii")
+        try:
+            subprocess.Popen(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-WindowStyle",
+                    "Hidden",
+                    "-EncodedCommand",
+                    encoded,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                # -WindowStyle Hidden alone still creates the console before hiding it — a visible
+                # flash on every toast when the parent (pythonw watchdog/trade-notify) has no console.
+                # Defined inline: this module deliberately imports nothing from cherrypick.orchestrator.
+                creationflags=0x08000000 if os.name == "nt" else 0,  # CREATE_NO_WINDOW
+            )
+            return {"ok": True}
+        except Exception as exc:  # never let a push failure escape
+            return {"ok": False, "error": str(exc)}
+
+    @staticmethod
+    def _post_json(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = json.dumps(payload).encode("utf-8")
+        # Discord (behind Cloudflare) rejects the default "Python-urllib" User-Agent with 403, so send
+        # an explicit one. Harmless for Slack.
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "cherrypick-notifier/1.0 (+https://github.com/cherrypick)",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                return {"ok": 200 <= resp.status < 300, "status": resp.status}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def _push_slack(self, level: str, title: str, message: str) -> dict[str, Any]:
+        url = secrets.get_webhook("slack")
+        if not url:
+            return {
+                "ok": False,
+                "skipped": "slack webhook not set (run: cherrypick secrets-set --channel slack)",
+            }
+        return self._post_json(url, {"text": f"[{level}] {self.app_name} — {title}\n{message}"})
+
+    def _push_discord(
+        self,
+        level: str,
+        title: str,
+        message: str,
+        embed: dict | None = None,
+    ) -> dict[str, Any]:
+        url = secrets.get_webhook("discord")
+        if not url:
+            return {
+                "ok": False,
+                "skipped": "discord webhook not set (run: cherrypick secrets-set --channel discord)",
+            }
+        payload: dict[str, Any]
+        if embed:
+            # An embed carries its own author/title/fields, so it needs no text alongside it. The
+            # `[LEVEL] app — title` prefix a plain message gets is dropped here — in a channel
+            # dedicated to this kind of push it's the same characters on every message, saying
+            # nothing the card doesn't already say better.
+            payload = {"embeds": [embed]}
+        else:
+            # Discord caps `content` at 2000 chars; keep well under with a margin for the prefix.
+            payload = {"content": f"**[{level}] {self.app_name} — {title}**\n{message}"[:1900]}
+        return self._post_json(url, payload)
+
+    # -- public --------------------------------------------------------------------
+    def notify(
+        self,
+        level: str,
+        key: str,
+        title: str,
+        message: str,
+        embed: dict | None = None,
+    ) -> dict[str, Any]:
+        """Emit a notification. Always writes the log floor first, then any push channels.
+
+        `embed` is a Discord-only enrichment (a colored card), ignored everywhere else. `message`
+        stays the canonical text: it is what the log floor records and what every non-Discord
+        channel receives, so a channel that can't render a card loses nothing but layout.
+        """
+        level = level.upper()
+        self._write_log(level, key, title, message)  # the guarantee
+        results: dict[str, Any] = {"log": {"ok": True}}
+        for ch in self.channels:
+            if ch == "log":
+                continue
+            try:  # a push channel must never break the caller (the watchdog runs on this path)
+                if ch == "desktop":
+                    results["desktop"] = self._push_desktop(level, title, message)
+                elif ch == "slack":
+                    results["slack"] = self._push_slack(level, title, message)
+                elif ch == "discord":
+                    results["discord"] = self._push_discord(level, title, message, embed=embed)
+                else:
+                    results[ch] = {"ok": False, "skipped": f"unknown channel '{ch}'"}
+            except Exception as exc:
+                results[ch] = {"ok": False, "error": str(exc)}
+        return results
+
+
+def notify(
+    notify_cfg: dict[str, Any] | None,
+    level: str,
+    key: str,
+    title: str,
+    message: str,
+    embed: dict | None = None,
+) -> dict[str, Any]:
+    """Module-level convenience: construct a Notifier and emit one notification."""
+    return Notifier(notify_cfg).notify(level, key, title, message, embed=embed)
+
+
+if __name__ == "__main__":  # `python notify/notifier.py "message"` fires a test notification
+    msg = sys.argv[1] if len(sys.argv) > 1 else "cherrypick notification test"
+    res = Notifier({"channels": ["log", "desktop"]}).notify("INFO", "test", "Test", msg)
+    print(json.dumps(res, indent=2))

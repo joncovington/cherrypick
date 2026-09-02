@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cherrypick-desk"
+version = "0.1.0"
+description = "Manual trading desk — human-initiated discretionary orders, gated independently of every module's automated live flag"
+requires-python = ">=3.11"
+# cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.
+# keyring: the confirmation PIN lives in the OS credential store, never in a file (suite-wide rule).
+# tastytrade: only the submit path imports it (deferred), so the pure policy/ticket layers unit-test
+# without the broker SDK or a network — the same split core.broker uses.
+dependencies = ["keyring>=24", "cherrypick-core", "tastytrade>=12.4.3"]
+
+[project.scripts]
+cherrypick-desk = "cherrypick.desk.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+testpaths  = ["tests"]
+pythonpath = ["tests", "src"]
+markers = [
+    "unit: pure, offline (the default lane)",
+    "live: touches the broker; never run in CI",
+]
+addopts = "-m 'not live' -q"
+
+[tool.ruff]
+# line-length + lint.select come from the suite-wide ../../ruff.toml.
+extend = "../../ruff.toml"
+target-version = "py311"
+
+[tool.hatch.build.targets.wheel]
+# src-layout PEP 420 namespace: src/cherrypick/ has NO __init__.py, so cherrypick.desk composes with
+# cherrypick.core (and every other module) under one cherrypick.* root.
+only-include = ["src/cherrypick"]
+sources = ["src"]

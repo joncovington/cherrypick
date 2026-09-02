@@ -1,0 +1,580 @@
+{
+  "identity_header": "x",
+  "_comment": "cherrypick orchestration config. Copy to config.json and adjust. A module is located by 'path' (relative to this file's directory — in the monorepo every module ships in the same checkout) or, for an out-of-tree module, a 'repo' URL cloned by `cherrypick install` into ~/.cherrypick/modules/<repo-name>. Never hardcode absolute machine paths.",
+  "_home_note": "Runtime home (this config.json, logs/, state/, dashboard.html) = CHERRYPICK_HOME if set, else the repo root in a source checkout, else ~/.cherrypick for a pip-installed copy. An installed copy thus reads ~/.cherrypick/config.json.",
+  "_modules_home_note": "Managed module checkouts live under CHERRYPICK_MODULES_HOME, else CHERRYPICK_HOME/modules, else ~/.cherrypick/modules. `install` clones a module only when its checkout is absent and never touches an existing one; `uninstall` leaves checkouts in place.",
+  "timezone": "America/New_York",
+  "modules": {
+    "meic": {
+      "enabled": true,
+      "_path_note": "Locate the module by 'path' (absolute or relative to this file). In the monorepo every module ships in the same checkout, so the relative path is the way; a 'repo' clone URL is still honored for an out-of-tree module, but the pre-monorepo split-repo URLs were removed 2026-07-29 so a path miss can never clone retired code.",
+      "path": "../meic",
+      "_keyring_note": "The module's OS-keyring service name, used by `cherrypick account`/`connect` to read/select the module's live-trading account (ACCOUNT_NUMBER) via the shared CredentialStore. Optional 'keyring_legacy_services' lists read-only fallbacks (MEIC keeps 'tastytrade-mcp' for pre-rename creds). Omit to disable account selection for this module.",
+      "keyring_service": "meicagent",
+      "keyring_legacy_services": [
+        "tastytrade-mcp"
+      ],
+      "_live_db_note": "Phase-5 seam: the module's LIVE-trades ledger, read ONLY by the explicitly live-tagged surfaces (`cherrypick report --live`). Deliberately a separate key from paper.paper_db — calibrate and every promotion reading go through the paper path and can never see this file. Same resolution rules as paper_db (absolute / ~-expanded / module-root relative).",
+      "live_db": "~/.cherrypick/data/meic/meic_trades.db",
+      "paper": {
+        "kind": "self_healing",
+        "task_name": "cherrypick-meic-paper-loop",
+        "_tick_interval_note": "Supervisor cadence for the paper tick: the daemon spawns tick_argv (default: once_argv minus --force) every N seconds. 60 halves the old hardcoded 2-minute schtasks cadence (2026-08-09 supervisor cutover) for tighter exit management on open condors. At >= 60 this is a short-lived tick job; BELOW 60 the shape changes -- see the flies block's resident_start/resident_end note. `task_name` is the only legacy-schtasks key still read (tasks.legacy_task_names deletes the pre-cutover task by that name); the module's own --install-task remains for standalone use but the orchestrator never invokes it, which is why there is no install_argv/uninstall_argv here.",
+        "tick_interval_seconds": 60,
+        "_tick_argv_note": "OPTIONAL. The exact argv the supervisor spawns each tick. Omit it and the orchestrator derives one from once_argv by dropping --force, which is what every module here relies on; set it only when a module's tick must differ from its manual one-shot.",
+        "status_argv": [
+          "-m",
+          "cherrypick.meic.paper_loop",
+          "--status"
+        ],
+        "_settlement_check_note": "Enabled 2026-08-26, last of the paper modules. It was off because the check reads session_settled/positions_today from a module's own --status and meic's reported neither, so turning it on alone would have been a check that could not fire. It matters more now that paper.evaluate_open_trade REFUSES to settle a position with no underlying price rather than booking it at zero intrinsic: the right failure, but a silent one, since the position simply stays open.",
+        "settlement_check": true,
+        "settlement_grace_minutes": 45,
+        "once_argv": [
+          "-m",
+          "cherrypick.meic.paper_loop",
+          "--once",
+          "--force"
+        ],
+        "_paper_db_note": "Path to the module's paper-trades SQLite DB — MUST point at the file the module actually WRITES (a mismatch silently blinds the orchestrator's report/reconcile/dashboard and the watchdog freshness check). Relative resolves against the module checkout; a leading '~' or env var expands (use e.g. '~/.cherrypick/data/meic/paper_trades.db' when the module keeps its data in the managed home); an absolute path is used as-is.",
+        "paper_db": "data/paper_trades.db",
+        "notify_trades": true,
+        "trade_schema": "meic_ic",
+        "log": "paper_loop.log",
+        "freshness_minutes": 20
+      },
+      "streamer": {
+        "_note": "MEIC's own in-module streamer — DISABLED since the 2026-07-21 producer cutover: the standalone streamer (top-level `streamer` block below) is the suite's sole producer, and exactly ONE producer ever runs. Kept only as the rollback path: to revert, set enabled=true here AND streamer.enabled=false below.",
+        "enabled": false,
+        "status_argv": [
+          "-m",
+          "cherrypick.meic.streamer",
+          "--status"
+        ],
+        "start_argv": [
+          "-m",
+          "cherrypick.meic.streamer"
+        ],
+        "_stop_argv_note": "Optional. Used to stop a STALLED streamer before relaunching it — the daemon is single-instance guarded, so relaunching without stopping is a silent no-op. Defaults to the status command with --stop.",
+        "stop_argv": [
+          "-m",
+          "cherrypick.meic.streamer",
+          "--stop"
+        ],
+        "auto_restart": true,
+        "_stale_restart_note": "Restart the streamer when it is CONNECTED but has received no market events for this many seconds during RTH. A process check cannot see this: observed 2026-07-20, the streamer reconnected then went silent for 8 minutes while still reporting running=true and its own stale_warning=false (that flag only trips at 600s), so nothing restarted it — MEIC degraded to REST and the flies module refused every iteration on stale quotes. 240s is well inside the 600s self-report and well outside a normal quiet tick. Restarts are skipped while a connection is younger than this, so a just-restarted streamer is not judged before it has resubscribed.",
+        "stale_restart_seconds": 240
+      },
+      "calibration": {
+        "_comment": "Optional. `cherrypick calibrate` reads paper P&L per profile and advises whether a qualified challenger should replace the live 'champion' (advisory only; never switches live risk). 'champion' names the currently-live profile -- every other tag observed is a challenger compared against it on return_on_capital (falling back to net_pnl). Omit 'champion' entirely to get per-tag qualification readings with NO champion/challenger comparison (for a module whose tags are parallel experiments rather than a risk sequence -- see flies below). 'deliberate_only' tags are never auto-recommended even if they qualify and beat the champion; 'rule' overrides the default {min_days:14, min_win_rate:0.6, min_sample:20} and may add 'margin' (default 0.0 -- any positive edge counts as beating the champion).",
+        "_arms_cutover_note": "Updated 2026-08-07 for the arms cutover (config.risk.json's _arms_cutover_note): champion is now `control` (today's deployed policy, formerly `conservative` -- same values, new name). The retired ladder/GEX tags (conservative/moderate/aggressive/very-aggressive/gex-open/gex-blocked) never write a new row again, so they simply stop appearing as challengers going forward; their historical rows stay under their own tag and never blend into `control`'s reading, since the tag NAME itself is what segregates the eras here -- no data_epoch needed (that key is suite-wide and would also truncate flies/earnings' unrelated history). `open` is deliberate_only: it runs with per_side_stop_management OFF (held to settlement/force-close, no per-side stop at all), a materially different risk posture from control's canonical MEIC+ stop, not just a quality-gate relaxation -- qualifying on paper should not auto-promote a no-stop policy without a human decision, the same reasoning very-aggressive's deliberate_only carried.",
+        "_retired_2026_08_20": "The champion/challenger comparison this block drove is RETIRED. Judging arms belongs to packages/advisor's experiments now -- one mechanism rather than two answering the same question on different evidence and different thresholds. `cherrypick calibrate` still reports the per-tag READING and its qualification checks. 'champion', 'deliberate_only' and rule.'margin' are now read without error and have NO effect; left here so an existing config keeps loading, and safe to delete.",
+        "champion": "control",
+        "rule": {
+          "min_days": 14,
+          "min_win_rate": 0.6,
+          "min_sample": 20
+        }
+      }
+    },
+    "flies": {
+      "_comment": "cherrypick-flies: 0DTE net-credit butterflies ('profit forest'), paper only, XSP (SPX through 2026-07-28). Reads the shared stream cache READ-ONLY and runs no streamer of its own, so it REQUIRES the suite's streamer to be running and subscribed to its symbol. ENABLED, but it has still never completed a live session — watch the first one, in particular the quote_stats line in the log (which separates 'the streamer gave us nothing' from 'the strategy found nothing') and the arm_divergence figure (if the arms agree nearly always, the comparison cannot answer anything and max_center_distance_pct is the first thing to revisit).",
+      "enabled": true,
+      "path": "../flies",
+      "_broker_note": "Live-scaffold onboarding (docs/live-trading-plan.md in the module): flies has no tt.py, so its config-declared broker/credential CLI is broker_cli.py; `cherrypick connect/account --module flies` drive it exactly like MEIC's tt.py. keyring service fliesagent; live_db is the SEPARATE live ledger read only by `report --live` (never by calibrate/promotion).",
+      "keyring_service": "fliesagent",
+      "broker_tool": [
+        "-m",
+        "cherrypick.flies.broker_cli"
+      ],
+      "live_db": "~/.cherrypick/data/flies/live_trades.db",
+      "_live_note": "Watchdog + notification wiring for the module's LIVE loop (the module itself owns arming/trading; this block only tells the orchestrator how to WATCH it). task_name is the module's self-registered live task; the loop self-disarms at the module's live.disarm_time (arming is per-day) and disarm_time/disarm_grace_minutes here are the watchdog's BACKSTOP window — past it, a still-registered live task means self-disarm failed, so the watchdog sets the suite halt flag (risk-reducing only; it never touches the task) and raises CRITICAL. notify_trades pushes live entries/completions/settlements from live_db with a hard-to-miss LIVE prefix + desktop toast, from the notifier path (never the trading loop).",
+      "live": {
+        "task_name": "cherrypick-flies-live-loop",
+        "status_argv": [
+          "-m",
+          "cherrypick.flies.live_loop",
+          "--status"
+        ],
+        "_tick_argv_note": "OPTIONAL. The argv the supervisor's <module>-live job spawns each tick while the module is armed. Omitted here because the orchestrator derives it the same way it does for paper; set it only if the live tick must differ.",
+        "log": "flies_live.log",
+        "freshness_minutes": 5,
+        "notify_trades": true,
+        "disarm_time": "17:00",
+        "disarm_grace_minutes": 30,
+        "settlement_grace_minutes": 30
+      },
+      "paper": {
+        "_kind_note": "self_healing, NOT cherrypick_scheduled. This was cherrypick_scheduled, which registers one entry task at entry_time and one exit task at exit_time — a shape that fits Earnings (one entry, one exit per day) and is wrong for a legged 0DTE strategy. A single daily entry would open a credit spread at noon and never look at it again, so the completing spread could never be bought and the completion rate — the module's headline measurement — would read 0% every day for reasons that have nothing to do with the market. cherrypick_scheduled also hardcodes the earnings launcher verbs, so this module's own entry_argv would have been ignored entirely.",
+        "kind": "self_healing",
+        "task_name": "cherrypick-flies-paper-loop",
+        "_timing_note": "tick_interval_seconds is the supervisor cadence. Sub-minute (<60) runs the module's own resident `--interval N` loop IN-SESSION (the resident_start/resident_end window below, supervised: restarted on death and on silence_seconds of log silence) plus a 60s `--once` spawn job OUTSIDE that window, so settlement at 16:20, retry-until-settled, and the hourly idle heartbeat keep exactly the shape the 1-minute task gave them. 15s (2026-08-09 supervisor cutover, was 60 -- the OS scheduler's floor) samples transient completion-debit dips ~4x finer; the completion rate is NOT comparable across that date (any discrete poll understates what a resting limit order would catch, so faster polling measures a truer, higher rate). The change is journaled in the module's decision journal and its CLAUDE.md. `task_name` is the only legacy-schtasks key still read, for deleting the pre-cutover task by name.",
+        "tick_interval_seconds": 15,
+        "silence_seconds": 120,
+        "_resident_window_note": "OPTIONAL, and only meaningful when tick_interval_seconds < 60: the ET window inside which the resident loop runs, on trading days. Defaults 09:30/16:00. These gate the ENTIRE resident job -- widen them and the loop runs longer, narrow them and it simply will not run outside -- so they are worth stating explicitly rather than inheriting silently. Outside the window the 60s `--once` job takes over (that is what settles at 16:20).",
+        "resident_start": "09:30",
+        "resident_end": "16:00",
+        "status_argv": [
+          "-m",
+          "cherrypick.flies.paper_loop",
+          "--status"
+        ],
+        "_once_note": "No --force. --force bypasses the RTH gate AND the trading-day gate, the second of which exists to stop a Saturday tick from 'settling' a session that never happened and emitting a paper-eod-<saturday>.md the suite digest would ingest as real. The module's own --install-task registers plain `--once`, so --force here would also mean the orchestrator drives the loop differently from its own scheduled task.",
+        "once_argv": [
+          "-m",
+          "cherrypick.flies.paper_loop",
+          "--once"
+        ],
+        "paper_db": "~/.cherrypick/data/flies/paper_trades.db",
+        "notify_trades": true,
+        "trade_schema": "fly_book",
+        "log": "flies_paper.log",
+        "freshness_minutes": 20,
+        "_settlement_check_note": "Opt in the watchdog's settlement-overdue alert: past the settle time + retry buffer on a trading day it reads this module's --status and WARNs if session_settled is false with positions_today > 0 (a settle stuck on a stale feed, which the freshness check misses because the loop is still running). Only set for a module whose --status reports session_settled/positions_today (flies does). settlement_grace_minutes is minutes AFTER the 16:00 close before 'overdue' applies -- it must cover the module's own settle time (flies settles at 16:20) plus a few retries, or it false-alarms every day in the 16:00-settle window. Default 30 (fires at 16:30).",
+        "settlement_check": true,
+        "settlement_grace_minutes": 30
+      },
+      "calibration": {
+        "_comment": "These tags are parallel experiment arms (control/gex/time_window/width-N), not a risk sequence -- there is no currently-live 'champion' among them, so no 'champion' key is set: cherrypick calibrate produces per-arm qualification readings with NO champion/challenger recommendation. width-2..width-5 and width-10 are the wing-width sweep, pinned in STRIKE increments via wing_width_strikes (control at the default width is its 1-strike rung); wide_wing is the retired SPX-era single-point width arm, listed so its historical books stay readable.",
+        "_rule_note": "All three hardened checks enabled 2026-08-15 (advisor creative proposal #4). min_net_pnl = 0.0 states the thing the base three structurally cannot see: on 2026-08-14 control, gex and time_window all read qualified=true while lifetime-negative (-1,698.61 / -1,697.94 / -87.69), because a butterfly book wins often and loses big and a win-rate gate is blind to exactly that shape. min_return_on_capital = 0.0 and require_slippage_survival are NOT second profitability bars -- both are un-satisfiable while a reading carries no capital or no recorded slippage, and every flies arm today carries neither (capital_at_risk is null module-wide, slippage_coverage is 0 on every arm). Enabling them therefore states 'no flies arm may qualify until it is instrumented', deliberately: an arm certified on one real number and two absent ones is the failure this closes. Expect flies to qualify NOTHING until fly_positions records capital at risk and per-fill slippage -- that is the intended reading, not a regression.",
+        "rule": {
+          "min_days": 14,
+          "min_win_rate": 0.6,
+          "min_sample": 20,
+          "min_net_pnl": 0.0,
+          "min_return_on_capital": 0.0,
+          "require_slippage_survival": true
+        }
+      }
+    },
+    "calendars": {
+      "_comment": "Weekly SPX double-calendar paper module (packages/calendars): enters Mondays, holds through the week, so its loop runs Mon-Fri like everything else and self-gates entry to the entry day. Paper-only and credential-free -- no keyring_service, no broker_tool, no live block; its market data comes entirely from the shared stream cache via the streamer's `expirations` request field.",
+      "enabled": true,
+      "path": "../calendars",
+      "paper": {
+        "kind": "self_healing",
+        "_tick_note": "30s resident: the per-tick mark path is the exit study's substrate, and its resolution bounds how precisely the read-side derivation can replay a trigger. Changing this cadence is a journaled measurement break in the module's own ledger.",
+        "tick_interval_seconds": 30,
+        "silence_seconds": 120,
+        "resident_start": "09:30",
+        "resident_end": "16:00",
+        "status_argv": [
+          "-m",
+          "cherrypick.calendars.paper_loop",
+          "--status"
+        ],
+        "once_argv": [
+          "-m",
+          "cherrypick.calendars.paper_loop",
+          "--once"
+        ],
+        "paper_db": "~/.cherrypick/data/calendars/paper_trades.db",
+        "notify_trades": true,
+        "trade_schema": "dc_week",
+        "log": "calendars_paper.log",
+        "freshness_minutes": 10,
+        "_settlement_note": "session_settled is today-scoped: it only reports false on a day this module has open legs expiring (the Friday shorts, the Monday longs), so the settlement check stays quiet the rest of the week. Grace 45: the module settles at 16:20 off a staleness-gated spot read and may retry for a while on a stale feed.",
+        "settlement_check": true,
+        "settlement_grace_minutes": 45
+      }
+    },
+    "pmcc": {
+      "_comment": "PMCC-99 deep-ITM covered-call paper module (packages/pmcc): buys an 85-90-delta ~21DTE call, sells the ATM ~7DTE call nearest spot, on TQQQ; enters any day the (symbol, book) slot is free and holds to the short's own expiration (~1-2 weeks). Paper-only and credential-free -- no keyring_service, no broker_tool, no live block; market data comes entirely from the shared stream cache via the streamer's `expirations` and `window_hints` request fields.",
+      "enabled": true,
+      "path": "../pmcc",
+      "paper": {
+        "kind": "self_healing",
+        "_tick_note": "60s resident: the mark path feeds the tv-exhaustion trigger and the assignment-exposure telemetry, not a replay derivation, so it needs no calendars-grade resolution. Changing this cadence is a journaled measurement break in the module's own ledger.",
+        "tick_interval_seconds": 60,
+        "silence_seconds": 240,
+        "resident_start": "09:30",
+        "resident_end": "16:00",
+        "status_argv": [
+          "-m",
+          "cherrypick.pmcc.paper_loop",
+          "--status"
+        ],
+        "once_argv": [
+          "-m",
+          "cherrypick.pmcc.paper_loop",
+          "--once"
+        ],
+        "paper_db": "~/.cherrypick/data/pmcc/paper_trades.db",
+        "notify_trades": true,
+        "trade_schema": "pmcc_99",
+        "log": "pmcc_paper.log",
+        "freshness_minutes": 10,
+        "_settlement_note": "session_settled is today-scoped: it only reports false on a day this module has open legs expiring (a short's Friday, or the long's own expiry backstop). Grace 45: the module settles at 16:20 off a staleness-gated spot read and may retry for a while on a stale feed.",
+        "settlement_check": true,
+        "settlement_grace_minutes": 45
+      }
+    },
+    "curve": {
+      "_comment": "curve: VXX call credit spreads harvesting the VIX term-structure roll yield, gated by a daily VIX/VIX3M regime read (packages/curve). Paper-only and credential-free in the calendars/pmcc posture -- no keyring_service, no broker_tool, no live block; market data comes entirely from the shared stream cache. Note VXX is a real UNDERLYING here (a chain window plus its target expiration, ~700 subscriptions), unlike a quote-only leg: a new underlying needs a producer restart to pick up and trips the watchdog's subscription-growth recycle, so add it outside market hours and watch reconnect_count while it lands.",
+      "enabled": true,
+      "path": "../curve",
+      "paper": {
+        "kind": "self_healing",
+        "tick_interval_seconds": 60,
+        "silence_seconds": 240,
+        "resident_start": "09:30",
+        "resident_end": "16:00",
+        "status_argv": [
+          "-m",
+          "cherrypick.curve.paper_loop",
+          "--status"
+        ],
+        "once_argv": [
+          "-m",
+          "cherrypick.curve.paper_loop",
+          "--once"
+        ],
+        "paper_db": "~/.cherrypick/data/curve/paper_trades.db",
+        "notify_trades": true,
+        "trade_schema": "curve_vx",
+        "log": "curve_paper.log",
+        "freshness_minutes": 10,
+        "settlement_check": true,
+        "settlement_grace_minutes": 45
+      }
+    },
+    "bwb": {
+      "_comment": "SPX daily-laddered put broken-wing-butterfly paper module (packages/bwb): enters one BWB per enabled book every session at the expected move, ~7DTE, PM-settled; the books differ only in whether/when a reversal-triggered put credit spread add-on turns the fly into a 1-3-2. Paper-only and credential-free -- no keyring_service, no broker_tool, no live block; market data comes entirely from the shared stream cache via the streamer's `expirations`/`window_hints` request fields.",
+      "enabled": true,
+      "path": "../bwb",
+      "paper": {
+        "kind": "self_healing",
+        "_tick_note": "60s resident: triggers are defined on the sampled series, not the continuous path, so this cadence is part of the measurement instrument -- changing it is a journaled measurement break, the flies 60s->15s precedent.",
+        "tick_interval_seconds": 60,
+        "silence_seconds": 240,
+        "resident_start": "09:30",
+        "resident_end": "16:00",
+        "status_argv": [
+          "-m",
+          "cherrypick.bwb.paper_loop",
+          "--status"
+        ],
+        "once_argv": [
+          "-m",
+          "cherrypick.bwb.paper_loop",
+          "--once"
+        ],
+        "paper_db": "~/.cherrypick/data/bwb/paper_trades.db",
+        "notify_trades": true,
+        "trade_schema": "bwb_132",
+        "log": "bwb_paper.log",
+        "freshness_minutes": 10,
+        "_settlement_note": "session_settled is today-scoped: it only reports false on a day this module has open legs expiring (~7DTE PM-settled). Grace 45: the module settles at 16:20 off a staleness-gated spot read and may retry for a while on a stale feed.",
+        "settlement_check": true,
+        "settlement_grace_minutes": 45
+      }
+    },
+    "earnings": {
+      "enabled": true,
+      "path": "../earnings",
+      "keyring_service": "earningsagent",
+      "paper": {
+        "_kind_note": "self_healing since the 2026-08-12 lifecycle cutover, was cherrypick_scheduled. That kind registers exactly two daily jobs, an entry at entry_time and an exit at exit_time, which is the right shape for 'open one afternoon, close the next morning' and the wrong one for a position that is now MANAGED: a winner may be carried up to three sessions, a loser closes on the first reliable marks, and both need the book looked at every minute rather than twice a day. tick_interval_seconds is 60, so jobspec produces a single spawn-per-tick INTERVAL job (no resident process, MEIC's shape) -- the loop derives its own phase from the clock and no-ops outside the session, which is why it needs no window here. entry_time and entry_sla_grace_minutes are still read: the loop writes the same SLA heartbeats the scheduled verbs used to, so the watchdog's entry check and the dashboard cards are unchanged.",
+        "kind": "self_healing",
+        "tick_argv": [
+          "-m",
+          "cherrypick.earnings.paper_loop",
+          "once"
+        ],
+        "tick_interval_seconds": 60,
+        "entry_task_name": "cherrypick-earnings-paper-entry",
+        "exit_task_name": "cherrypick-earnings-paper-exit",
+        "entry_time": "15:45",
+        "exit_time": "09:45",
+        "_entry_sla_note": "OPTIONAL (default 35). Minutes past entry_time before the watchdog treats a missing entry heartbeat as CRITICAL. It is a grace, not a schedule: the entry scan starts inside the entry window, may run up to twenty-five minutes, and the heartbeat is only written when it RETURNS -- so comparing against entry_time alone raised CRITICAL for a run that was merely still in progress. Raise it if this module's entry scan legitimately runs longer.",
+        "entry_sla_grace_minutes": 35,
+        "log": "earnings_paper.log",
+        "paper_db": "~/.cherrypick/data/earnings/paper_trades.db",
+        "notify_trades": true,
+        "trade_schema": "earnings",
+        "requires_dolt": true,
+        "dolt_host": "127.0.0.1",
+        "dolt_port": 3306,
+        "dolt_user": "root",
+        "_dolt_databases_note": "Databases the runner needs served on dolt_host:dolt_port. doctor verifies each is present (not just that the port answers) when a MySQL client is available, catching a Dolt server rooted at the wrong data dir. Omit to check port reachability only.",
+        "dolt_databases": [
+          "earnings",
+          "options",
+          "stocks"
+        ],
+        "_dolt_service_note": "Optional cherrypick-managed keep-alive. `install` registers a MINUTE task that runs `ensure-dolt` (starts `dolt sql-server` from data_dir only when nothing is on the port); `uninstall` removes it; `status`/`doctor` surface it. data_dir is portable: `~` expands, a relative path resolves against the cherrypick runtime ROOT. Omit this block to manage Dolt yourself.",
+        "dolt_service": {
+          "task_name": "cherrypick-earnings-dolt",
+          "data_dir": "~/.cherrypick/data/earnings",
+          "interval_minutes": 5
+        }
+      },
+      "_calibration_note": "Earnings retired its conservative/balanced/aggressive risk-profile ladder; the strat_test paper book is now split per strategy (profile tag strat_test:<strategy>). With an empty ladder, calibrate reports per-book readings only (no promotion recommendation) -- strategies don't graduate rungs the way a risk ladder does.",
+      "calibration": {}
+    }
+  },
+  "watchdog_header": "x",
+  "watchdog": {
+    "task_name": "cherrypick-watchdog",
+    "interval_minutes": 10,
+    "renotify_minutes": 60,
+    "_streamer_health_note": "The dedicated STREAMER-ONLY liveness job: every interval_seconds across the whole session (start-end, ET, trading days), as its own supervisor job so the full 10-minute tick above never has to speed up to protect the streamer. Successor to the retired cherrypick-preopen windowed task (whose reasons all survive: a producer dead overnight must be caught before the unrecoverable 09:30-09:35 opening range, and a restart still needs the 240s settling window) with strictly broader coverage -- silence is now caught within ~5 min all session, not just pre-open. ON by default for the same reason preopen was.",
+    "streamer_health": {
+      "enabled": true,
+      "interval_seconds": 60,
+      "start": "09:00",
+      "end": "16:00"
+    },
+    "_preopen_note": "RETIRED (2026-08-09, supervisor cutover) -- replaced by streamer_health above. The block remains only so install/uninstall can delete the legacy cherrypick-preopen task by its resolved name; remove it once every machine has cut over.",
+    "preopen": {
+      "enabled": true,
+      "task_name": "cherrypick-preopen",
+      "interval_minutes": 2,
+      "start": "09:00",
+      "end": "09:35"
+    },
+    "_drawdown_note": "Optional paper-P&L drift alert (net-of-cost). Add a 'drawdown' block to enable: {\"suite_floor\": -1000, \"module_floors\": {\"meic\": -750, \"earnings\": -750}, \"critical_multiplier\": 2}. net<=floor -> WARN; net<=floor*critical_multiplier -> CRITICAL. Paper only; never trades. Omit to disable."
+  },
+  "_eval_activity_note": "Eval-activity health for the continuous-loop modules (meic/flies): during RTH the watchdog + doctor read the module's eval log (MEIC loop_log, flies fly_snapshots) and confirm it is actually EVALUATING candidates and deciding sensibly, not just writing a file (freshness). Rejecting every candidate is HEALTHY (a legit gate, e.g. regime_gex_negative), so it WARNs only when: no evaluation for stale_minutes (stopped mid-session), iterating but evaluating nothing, >= error_fraction of evaluations erroring (e.g. a symbol with no price), or 0 entries for a reason that isn't a known gate. window_minutes is the lookback. Read-only; earnings is event-driven and covered by its entry-SLA check instead.",
+  "eval_activity": {
+    "window_minutes": 30,
+    "stale_minutes": 10,
+    "error_fraction": 0.5
+  },
+  "console_header": "x",
+  "console": {
+    "_comment": "The console (packages/console) is the suite's ONE read surface — every module's read models plus the scout research surfaces, on 127.0.0.1:5070. The supervisor keeps it up as an always-on RESIDENT job: no clock window and no trading-day gate, deliberately, since a read surface you can only open during RTH cannot be used to read the session that just ended. Its listen port lives in ~/.cherrypick/config/console.json ('serve.port'), not here. 'path' resolves like a module's (absolute, or relative to the orchestrator checkout); an unbuilt checkout reports the job disabled-with-a-reason rather than crash-looping — fix it with 'pnpm install && pnpm build' in packages/console.",
+    "enabled": true,
+    "path": "../console",
+    "_silence_comment": "Liveness is a heartbeat FILE (state/console.heartbeat), rewritten by the server every ~15s, not an HTTP probe: a Node event loop can wedge while the process stays alive and answering nothing, and the supervisor's reliability path stays free of network calls. Restart if the file goes untouched this long. Several heartbeats wide, so one slow pass is never read as a wedge.",
+    "silence_seconds": 60,
+    "_dev_backoff_comment": "Unset by default -- crashes back off up to the supervisor's normal 10-minute cap, same as every other job. Set dev_backoff_seconds (e.g. 20) only while actively iterating on packages/console, so a crash or a manual 'cherrypick restart-console' comes back in seconds instead of minutes. Remove it again once the checkout is stable.",
+    "dev_backoff_seconds": null,
+    "_reclaim_comment": "ON by default. After 8 consecutive failed spawns (EADDRINUSE from something else holding the console's port), the supervisor checks who actually holds it; if that PID is not one it spawned or adopted, it kills that process tree and retries immediately instead of backing off forever. Recovers the 2026-08-23 incident automatically (an orphaned console child held :5070 for 9 hours / ~1600 failed restarts). Set false only if you deliberately want a manually-started console (e.g. 'pnpm dev:server') left alone indefinitely instead of reclaimed after ~3-4 minutes.",
+    "reclaim_stuck_port": true
+  },
+  "settings_header": "x",
+  "settings": {
+    "_comment": "`cherrypick settings` — the local web editor for the suite's config files and keyring secrets. The suite's ONE mutating HTTP surface: loopback-only + per-session-token gated, run on demand in the foreground, never started by the watchdog or a scheduled task, and live-trading gate fields are read-only on it. Port 8804 is a fixed loopback slot, held over from the retired 88xx dashboard-embed range (those per-module dashboards were deleted at the 2026-08-12 console cutover; the console serves 5070).",
+    "serve": {
+      "host": "127.0.0.1",
+      "port": 8804
+    }
+  },
+  "streamer_header": "x",
+  "streamer": {
+    "_comment": "The suite's standalone market-data producer (packages/streamer) — the single streamer that writes the shared cache ~/.cherrypick/data/marketdata/stream_cache.db, which every module reads. THE sole producer since the 2026-07-21 cutover (modules.meic.streamer is the disabled rollback path; exactly ONE producer runs at a time). Session-gated and silence-restarted by the watchdog. Located by 'path' (relative to this file). Modules declare which symbols they need via ~/.cherrypick/state/stream_requests/<module>.json — every module regenerates its own file on each run — and the streamer streams the union.",
+    "enabled": true,
+    "path": "../streamer",
+    "status_argv": [
+      "run.py",
+      "--status"
+    ],
+    "start_argv": [
+      "run.py"
+    ],
+    "stop_argv": [
+      "run.py",
+      "--stop"
+    ],
+    "auto_restart": true,
+    "stale_restart_seconds": 240
+  },
+  "services": [
+    {
+      "_comment": "Long-running background daemons the orchestrator keeps alive: started at `install`, restarted by the watchdog if down (single-instance guarded), stopped at `uninstall`. Located by 'path' (relative to this file) or 'repo'. status_argv must print {\"running\": bool}. A running service whose config changed since launch is recycled (stop then start) so it re-reads -- the orchestrator stamps a hash of this entry plus the service's own config file at launch and compares each tick; requires auto_restart, and set 'config_name' if that config file is named for neither the checkout directory nor the id. The gex spot-trail recorder samples every symbol's spot continuously so the GEX dashboard's spot trail has no gaps and builds all session, independent of whether the dashboard is open. Disabled by default.",
+      "id": "gex-recorder",
+      "enabled": false,
+      "path": "../gex",
+      "status_argv": [
+        "run.py",
+        "record",
+        "--status"
+      ],
+      "start_argv": [
+        "run.py",
+        "record"
+      ],
+      "stop_argv": [
+        "run.py",
+        "record",
+        "--stop"
+      ],
+      "auto_restart": true
+    },
+    {
+      "_comment": "MEIC's post-cutover sidecar: the REST account poller + the 127.0.0.1:7699 HTTP API ONLY, no DXLink streaming (the standalone `streamer` above is the market-data producer). It serves the shared cache read-only and caches account/positions/market-overview into MEIC's own rest_cache.db, so MEIC's interactive loop keeps its REST/quote fast-path without a second writer on the shared cache. Optional and OFF by default — MEIC works without it (quotes read the cache directly; account calls just go live). Enable it if you run MEIC's live/interactive loop and want the cached fast-path back.",
+      "id": "meic-sidecar",
+      "enabled": false,
+      "path": "../meic",
+      "status_argv": [
+        "-m",
+        "cherrypick.meic.streamer",
+        "--sidecar",
+        "--status"
+      ],
+      "start_argv": [
+        "-m",
+        "cherrypick.meic.streamer",
+        "--sidecar"
+      ],
+      "stop_argv": [
+        "-m",
+        "cherrypick.meic.streamer",
+        "--sidecar",
+        "--stop"
+      ],
+      "auto_restart": true
+    }
+  ],
+  "notify_header": "x",
+  "trade_notify": {
+    "_comment": "Dedicated low-latency supervisor job that pushes new paper entries/exits to trade_channels. Runs far more often than the watchdog so fills reach you within ~30s instead of a full watchdog cycle. interval_seconds is the supervisor cadence (sub-minute became possible when the OS scheduler's 1-minute floor went away, 2026-08-09); a legacy interval_minutes is still honored if set explicitly. task_name is retained only so install/uninstall can delete the pre-supervisor task by name.",
+    "task_name": "cherrypick-trade-notify",
+    "interval_seconds": 30
+  },
+  "desk_notify": {
+    "_comment": "Discord cards for MANUAL TRADING DESK orders (packages/desk), plus a fill watch. Posts a card when the desk submits an order and a second card when that order fills, cancels, is rejected, or expires. Reads the desk's append-only audit journal as a FILE and never imports cherrypick.desk - observing desk orders must never make the submit path reachable from scheduled code. It both calls the broker (read-only order status) and pushes a webhook, so it is its own scheduled job and is never called from the watchdog tick. OFF by default; set enabled=true, store the webhook (cherrypick secrets-set --channel discord), then re-run `install`.",
+    "_watch_note": "Fill detection is poll-first: the broker's order status is authoritative. The first pass after enabling SEEDS silently from the existing journal rather than backfilling a card for every order ever placed.",
+    "enabled": false,
+    "task_name": "cherrypick-desk-notify",
+    "interval_minutes": 1,
+    "channels": [
+      "log",
+      "discord"
+    ],
+    "journal_path": null,
+    "_journal_path_note": "Override the desk journal location. null uses the desk's own default, ~/.cherrypick/state/desk/journal.jsonl.",
+    "broker_keyring_service": "meicagent",
+    "account_number": null,
+    "_account_number_note": "Which account to resolve for order-status lookups. null uses the default account for those credentials."
+  },
+  "status_digest": {
+    "_comment": "Hourly suite-status card to Discord: one field per module (closes, net, entry attempts, open risk, loop liveness) plus a header with the morning phase, watchdog verdict and the live halt flag. Composes existing artifacts only - it refreshes the provisional review fact set (the same idempotent build the 16:30 job runs) and reads it, watchdog.last.json and the morning pack; it never opens a module ledger itself. Pushes a webhook, so it is its own supervisor job and is never called from the watchdog tick. Two rendering rules are load-bearing: an unmeasured figure shows as an em dash (never $0), and no suite-wide net is ever printed (per-module nets only - see the review package's concentration rationale). OFF by default; set enabled=true, store the webhook (cherrypick secrets-set --channel discord), and the supervisor derives the job on its next pass.",
+    "enabled": false,
+    "interval_minutes": 60,
+    "start": "10:00",
+    "end": "16:10",
+    "_window_note": "ET wall-clock, trading days only. 10:00 gives the first card a half-session to describe; 16:10 lets the ~16:00 fire land after the 0DTE modules settle.",
+    "close_at": "16:35",
+    "_close_note": "The one daily CLOSE card (status-digest-close job): same composition, posted after the 0DTE books settle and the official 16:30 review-provisional build, with deltas against the last hourly post.",
+    "channels": [
+      "log",
+      "discord"
+    ]
+  },
+  "notify": {
+    "_channels_note": "push channels: 'log' (always on, the floor), 'desktop', 'slack', 'discord'. Slack/Discord webhook URLs live in the OS keyring (cherrypick secrets-set --channel slack|discord), never in this file or env vars.",
+    "channels": [
+      "log",
+      "desktop"
+    ],
+    "trade_channels": [
+      "log",
+      "discord"
+    ],
+    "desktop_app_name": "cherrypick",
+    "trade_summary": {
+      "_mode_note": "How MEIC trade events reach you: 'per-trade' (default) pushes each entry/stop/exit individually, with profile_prefixes below routing matching study arms to the digest; 'summary' routes EVERY MEIC trade to the periodic digest (one per-symbol roll-up every interval_minutes) and ignores profile_prefixes. Either way the digest is intraday-only: it pushes 09:15-17:00 ET on trading days (the tail covers the closing exits), and a flush due outside that window is held for the next in-window tick rather than dropped.",
+      "mode": "per-trade",
+      "_comment": "MEIC risk_profile prefixes routed to a periodic per-symbol digest instead of a per-trade push (an uncapped sampling stream's 100+ trades/day would otherwise spam every entry/exit individually; built for the wing-width study, retired 2026-08-05, kept for every arm family since). Rows whose risk_profile starts with one of these prefixes are excluded from the normal per-trade lines. Updated 2026-08-07 for the arms cutover: `open`/`width-5`/`width-10` are the uncapped-sampling streams this exists for; `control` runs at book-like volume (overlap_scope 'shorts', capped concurrency) but is included for consistency, same as the old ladder names were. The retired ladder/GEX prefixes (conservative/moderate/aggressive/very-aggressive/gex-) are kept too — they still match any historical row from before the cutover.",
+      "profile_prefixes": [
+        "control",
+        "open",
+        "width-",
+        "gex-",
+        "conservative",
+        "moderate",
+        "aggressive",
+        "very-aggressive"
+      ],
+      "interval_minutes": 15
+    }
+  },
+  "review_header": "x",
+  "review": {
+    "_comment": "Cross-module end-of-day review (packages/review, `python -m cherrypick.review`) - the suite's one EOD answer since 2026-08-13, replacing the per-module EOD reports and the suite digest. Two scheduled passes per trading day because the modules do not all finish together: 'provisional_at' (ET, box-local clock) runs after the 0DTE modules settle - MEIC and flies complete, earnings shown as carried overnight risk - and 'final_at' the next morning finalises the PRIOR session once earnings' 09:45 close window has run. Each pass writes one versioned fact set (data/review/eod-<day>.json) plus its render; read-only over every module's ledger, writes only into review's own home, so a failed pass costs a report, never a trade. ON by default; opt out with enabled=false then re-run `install`. 'narrative' (OFF by default) schedules the agent-written note at 'narrative_at', after the final pass so it only ever sees a finalised session - it shells out to Claude Code (`claude` on PATH), a dependency the suite does not otherwise have, and the note is written BESIDE the facts, never inside them, so a failed note cannot damage the record. 'file_issues' additionally lets that narrative run file its recommendations as tracked GitHub issues (needs `gh`; deduped and capped per run).",
+    "enabled": true,
+    "provisional_at": "16:30",
+    "final_at": "10:15",
+    "narrative": false,
+    "narrative_at": "10:45",
+    "file_issues": false
+  },
+  "morning_header": "x",
+  "morning": {
+    "_comment": "Pre-open market overview (packages/overview, `python -m cherrypick.overview`) - the morning sibling of the review. One scheduled pass per trading day at 'factpack_at' (ET, box-local clock) builds a deterministic fact pack (data/overview/morning-<day>.json) plus its render: index/vol/sector readings from the shared stream cache (prior-session values labeled prior, live pre-open quotes labeled live), gamma flip and walls from the suite's own GEX history, and a mechanical GREEN/YELLOW/RED phase computed from five declared gates - missing data can never produce RED and always blocks GREEN. Pure stream-cache + GEX consumer: no credential, no network, writes only into overview's own home, so a failed pass costs a report, never a trade. The pack's breadth symbols (VIX/VIX3M/VVIX, sector ETFs, USO/GLD proxies) are declared via state/stream_requests/overview.json; the FIRST build registers them, and the streamer picks them up on its next producer recycle. ON by default; opt out with enabled=false then re-run `install`. 'narrative' (OFF by default) schedules the agent-written morning note at 'narrative_at' via scripts/morning_narrative.py - it shells out to Claude Code (`claude` on PATH) and, unlike the EOD narrative, is allowed web lookups for the macro calendar; market numbers still come only from the pack, and the note is written BESIDE the facts, never inside them.",
+    "enabled": true,
+    "factpack_at": "08:30",
+    "narrative": false,
+    "narrative_at": "09:00"
+  },
+  "data_header": "x",
+  "data_epoch": {
+    "_comment": "Optional restatement marker. Declare when a correctness fix RESTATES what recorded paper history means (e.g. the phase-0 leg-ratio / fee-count / win-definition fixes): set 'date' to the first session traded on fixed code. `report` stays descriptive (totals still cover all history, plus a pre_epoch_trades count per module); `calibrate` ENFORCES it - promotion readings use only sessions on/after the date, so a rung can never graduate on numbers produced by retired code. Remove or leave date null when no restatement is in effect.",
+    "date": null,
+    "note": null
+  },
+  "log_archive": {
+    "_comment": "End-of-month log/report rotation (`cherrypick archive`). A monthly scheduled task zips each FINISHED month's dated reports (paper-eod / eod-analysis / eod-digest / live eod) and rotated log backups (*.log.N) into logs/archive/<YYYY-MM>/<scope>.zip - one zip per scope (the suite logs root + each module dir) - then removes the originals once the zip verifies. Idempotent and safe: it never touches the current month or an active .log, and re-runs converge. ON by default and registered by `install`; OPT OUT with enabled=false then re-run `install`/`uninstall`. 'day' is the day of month it fires (1..28), 'at' the box's local clock. Files only; off the watchdog reliability path. Run on demand any time with `cherrypick archive` (add --dry-run to preview, --month YYYY-MM to scope to one month).",
+    "enabled": true,
+    "task_name": "cherrypick-log-archive",
+    "day": 1,
+    "at": "03:30"
+  },
+  "advisor_header": "x",
+  "advisor": {
+    "_comment": "The AI advisor (packages/advisor + scripts/advisor_checkpoint.py) - agent advises, loop decides. Eight scheduled slots per trading day: seven light intraday checkpoints ('checkpoints', ET) on 'light_model' that observe and draft, and one deep post-close run ('deep_at', after review-provisional at 16:30) on 'deep_model' that designs experiments, passes verdicts, and issues the NEXT session's advice. Each run builds a deterministic fact pack in-package, pipes it to Claude headless on stdin with ALL acting tools denied, and hands the reply back to the package to validate - the AI never gets a file handle, a database, or a tool. Admitted proposals run as paper A/B experiments: a synthetic 'advised:<base>' book beside its un-advised control, scored by the same qualification gate everything else uses. The artifact is state/advice/<module>-<session>.json, validated by cherrypick.core.advice and re-validated by the loop at session start; absent/stale/invalid means baseline, and one out-of-bounds value rejects the whole set (rejections are still written, for audit). OFF by default TWICE: 'enabled' here AND the module's OWN 'advice' block (in ~/.cherrypick/config/<module>.json), which is where the bounds manifest now lives - the module declares what it will accept advice about, not this file. Kill switch: flip either flag, delete the advice file, or `python -m cherrypick.advisor kill <experiment_id>`. Paper only: nothing here can reach a live account, and the deep slot's enact step runs even when the AI call fails so an outage cannot truncate an active A/B sample. 'max_experiments_per_module' is 1 by construction (each consumer builds exactly one advised book); over-cap specs queue and activate FIFO. 'experiment_sessions' defaults to 15 so an expiring experiment can satisfy the promotion gate (14 days, 20 trades) instead of expiring underpowered.",
+    "enabled": false,
+    "_checkpoints_note": "Light intraday checkpoints. EMPTY since 2026-08-26: the schedule is the deep post-close run and nothing else. Seven light slots ran from 08-14, were cut to one on 08-21 and to none on 08-26, on the advisor's own record rather than on preference - across 36 light checkpoints they produced four 'creative' proposals (the kind no code path acts on), zero experiment_spec/tune/verdict, and one critical flag that the same evening's deep slot re-derived more precisely from settled numbers. 'midday', the last one standing, produced zero proposals in its entire history. They also cannot ISSUE anything: the only loop-facing output is the artifact the deep slot's enact step writes for the next session. And they cost the deep slot ~43KB, about 10% of the pack it has to read. What they were nominally for - a dropped advice artifact visible at 10am rather than in the evening verdict - is deterministic and is now the watchdog's advisor.enactment check, which invokes 'python -m cherrypick.advisor enactment' by subprocess between 10:30 and 16:30. Light slots remain fully supported: populate this to bring them back, as a LIST of times (named positionally from ADVISOR_LIGHT_SLOTS) or a DICT of {slot_name: time} when you want fewer than seven and legible names.",
+    "checkpoints": {},
+    "deep_at": "17:00",
+    "light_model": "sonnet",
+    "deep_model": "opus",
+    "timeout_seconds": 600,
+    "max_experiments_per_module": 1,
+    "experiment_sessions": 15,
+    "experiment_sessions_min": 5,
+    "experiment_sessions_max": 30,
+    "modules": {
+      "meic": {
+        "enabled": true
+      },
+      "flies": {
+        "enabled": false
+      },
+      "earnings": {
+        "enabled": true
+      },
+      "calendars": {
+        "enabled": false
+      },
+      "pmcc": {
+        "enabled": false
+      },
+      "bwb": {
+        "enabled": false
+      },
+      "curve": {
+        "enabled": false
+      }
+    }
+  },
+  "reconcile": {
+    "_comment": "`cherrypick reconcile` (and the serve-only /api/reconcile dashboard card): a paper<->live isolation guard. It enumerates EVERY account on the login (list_accounts - tastytrade returns multiple per user) and checks each (read-only get_positions/get_account_info), flagging any open positions/BP a paper-only suite shouldn't have. On-demand and off the watchdog reliability path; never trades; account numbers masked. Optional 'broker_module' forces which module's tt.py to query; omit to auto-discover the first positions-capable one.",
+    "broker_module": null,
+    "schedule": {
+      "_comment": "Phase-5 posture: once any module trades live, reconcile stops being on-demand-only and runs daily as its own scheduled task ('at' in market-timezone HH:MM, after the close). The task runs `reconcile --scheduled`, which pushes a notification on any non-FLAT verdict (DRIFT -> CRITICAL, UNKNOWN -> WARNING) and stays quiet when flat. Its own task, deliberately OFF the watchdog tick - the broker call never rides the reliability path. Off by default; enable then re-run `install`.",
+      "enabled": false,
+      "task_name": "cherrypick-reconcile",
+      "at": "16:30"
+    }
+  },
+  "symbol_watch": {
+    "_comment": "SUPERSEDED 2026-08-12 and must stay OFF. The earnings module now runs this scan itself, as the `forward_scan` phase of its own 60-second loop (`symbol_watch.enabled`/`at`/`days` in the EARNINGS config), because it feeds that module's entry pre-filter as well as the console's Upcoming surface -- and a scan whose output gates an entry belongs on the same clock as the entry. Enabling this block would run the same scan a second time: harmless to the data (the snapshot is rewritten wholesale) but a wasted multi-minute broker walk. Kept derivable only so an existing install that had it enabled keeps working until its config is updated.",
+    "enabled": false,
+    "task_name": "cherrypick-earnings-symbol-watch",
+    "at": "06:30",
+    "days": 10
+  }
+}

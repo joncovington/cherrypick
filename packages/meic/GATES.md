@@ -1,0 +1,416 @@
+# MEIC Entry Gates & Constraints
+
+**What this covers:** every checkpoint a potential trade has to pass before MEIC will actually
+enter it — the full list, in the order they're checked. Part of the [MEIC module](README.md) in
+the cherrypick suite.
+
+Complete reference of all gates, blocks, and constraints that control IC and ORB entry decisions in the
+cherrypick **MEIC** engine. See also [docs/](docs/README.md) for the strategy and operating guides, and
+the suite-wide [documentation index](../../docs/README.md).
+
+## Sequential Gate Flow
+
+Each gate runs in order; an entry is rejected immediately upon hitting the first gate that blocks it.
+
+---
+
+## Time-Based Gates
+
+### 1. Time Window Gate (Global)
+- **Trigger**: Before 09:30 ET or after 15:55 ET, on weekends, or on NYSE holidays
+- **Effect**: Skip Steps 3–7 entirely; jump to Step 8 (next wakeup scheduling)
+- **Config**: None (hard-coded trading hours)
+- **IC Impact**: Blocks all entries
+- **ORB Impact**: Blocks all entries
+
+### 2. Force-Close Gate (Global)
+- **Trigger**: At or after `force_close_time` (15:45 ET by default)
+- **Effect**: Close all 0DTE positions immediately (BTC full IC)
+- **Config**: `force_close_time` (15:45 ET)
+- **Escalation**: For physically-settled symbols not in `cash_settled_symbols`, log at CRITICAL if close fails; for cash-settled, routine retry
+- **IC Impact**: Forces close, does not allow entries
+- **ORB Impact**: Forces close
+
+### 3. Entry Window Gate (IC only)
+- **Trigger**: Outside `entry_window_start` (10:00 ET) to `entry_window_end` (14:30 ET)
+- **Effect**: Reject IC entries
+- **Config**: `entry_window_start`, `entry_window_end`
+- **IC Impact**: Blocks entries (hard stop)
+- **ORB Impact**: Not blocked; ORB has its own window
+
+---
+
+## Regime Gates (Pause IC, Allow ORB)
+
+### 4. VIX Regime Gate (Global, Account-Wide)
+- **Trigger**: VIX > `regime_vix_pause_threshold` (25)
+- **Effect**: Pause IC entries for ALL symbols this iteration
+- **Config**: `regime_vix_pause_threshold` (25)
+- **Rationale**: High VIX = elevated skew, tail-risk hedging, unfavorable for short premium
+- **IC Impact**: Blocks all IC entries
+- **ORB Impact**: NOT blocked (ORB profits from directional environment)
+
+### 5. VIX1D Ratio Gate (Global, Account-Wide)
+- **Trigger**: VIX1D/VIX > `regime_vix1d_ratio_pause_threshold` (1.30)
+- **Effect**: Pause IC entries for ALL symbols
+- **Config**: `regime_vix1d_ratio_pause_threshold` (1.30)
+- **Rationale**: Event day signal (Fed, CPI, etc.); same-day vol > 30-day vol by 30%+ = structural uncertainty
+- **Status**: Documented trader convention, not independently backtested for this strategy
+- **IC Impact**: Blocks all IC entries
+- **ORB Impact**: NOT blocked
+
+### 6. ATR Regime Gate (Symbol-Specific)
+- **Trigger**: 5-day true-range ATR as a fraction of spot > `regime_atr_pause_threshold_pct` (0.015)
+- **Effect**: Pause IC entries for THIS symbol only
+- **Config**: `regime_atr_pause_threshold_pct` (0.015), `regime_atr_lookback_days` (5)
+- **Data**: `atr_5day` comes from the streamer's per-day `stream_summary` session-OHLC rows (`tt.py get_atr`); until the cache holds a full lookback of completed sessions the value is absent and the gate stays inactive (fail-open, never a fabricated reading)
+- **Rationale**: Elevated realized volatility = trending environment, unfavorable for static IC width. Percentage-based so one threshold means the same thing from IWM to SPX — the old fixed-points form silently over-blocked SPX and never fired for QQQ/IWM
+- **IC Impact**: Blocks this symbol's IC entries (other symbols unaffected)
+- **ORB Impact**: NOT blocked
+
+### 7. GEX Negative Gate (Symbol-Specific)
+- **Trigger**: Net GEX < 0 (price below gamma flip); dealers short gamma
+- **Effect**: Pause IC entries for THIS symbol
+- **Config**: `regime_gex_block_negative` (default `true` — the gate is on unless a profile turns it off)
+- **Rationale**: Negative gamma = dealer amplification of moves, unstable for short premium
+- **IC Impact**: Blocks this symbol's IC entries
+- **ORB Impact**: NOT blocked
+- **Fallback**: If GEX data unavailable, proceed without GEX (do not block on missing data)
+  - **Seeing when that happens:** `python -m cherrypick.meic.gate_health` reports which regime gates are armed right now and which have silently stood down, with the reason. Failing open is deliberate and unchanged — the report exists because it was previously invisible, and the ATR gate in particular stays disarmed for a further N sessions after an outage ends.
+- **Unproven** (noted 2026-08-01): this gate refuses roughly 40% of samples — SPX net-GEX sign runs
+  ~61% positive and swings hard by day (2.3% positive on 2026-07-29, 98.3% on 2026-07-31) — and
+  nothing yet establishes that the trades it cuts would have been worse than the ones it keeps.
+- **Superseded 2026-08-07**: the dedicated `gex-open`/`gex-blocked` control-treatment pair
+  (below) is retired — the two arms went byte-identical over their one session of data because
+  `gex_positive_at_entry` never took the value 0 among 78 tagged rows (73% of rows untagged
+  entirely, not a gate that never fired). The question is now answered **read-side, from one
+  stream's own rows**: the `open` arm runs with `regime_gex_block_negative: false` and records
+  `entry_gex_bucket`/`entry_gex_value` (see `regime.py`) on every entry, so
+  `analytics.by_regime(conn, "gex", arm="open")` reconstructs what this gate — and both stricter
+  variants below — would have blocked, from real recorded floats, without needing a second
+  byte-identical book. `analytics.regime_coverage` reports the untagged share alongside the
+  bucket split so a coverage gap is never misread as a settled question. See
+  [docs/paper-experiments.md](docs/paper-experiments.md) for the full design and the
+  byte-identical finding.
+
+#### 7b. The two stricter GEX variants (opt-in, both OFF by default)
+
+Readable by the engine since they were written, but documented in no config file until an audit on
+2026-08-06 — so they could only be found by reading `paper.py`. Both now appear in
+`config.example.json` at their shipped defaults, which changes nothing.
+
+- **`regime_gex_require_positive`** (default `false`) — refuses entry unless GEX is *confirmed
+  positive*, so it also blocks when GEX is unknown or unavailable. That is the meaningful difference
+  from gate 7: because the gates **fail open**, "unknown" currently means "allowed", and this is the
+  switch that makes it mean "wait". See `python -m cherrypick.meic.gate_health` for when unknown is
+  actually the state you are in.
+- **`regime_gex_min_flip_distance_pct`** (default `null` = off) — requires positive GEX *and* spot at
+  least this fraction away from the gamma-flip strike. Gate 7 only refuses below the flip; this
+  refuses the fragile zone just above it, where the regime can invert intraday.
+
+Both are per-profile, so a shadow arm could still carry one without touching the live ladder if a
+dedicated arm were ever warranted — but per 7b's update above, both are now readable read-side from
+`open`'s own recorded `entry_gex_bucket`/`entry_gex_value`, the same way gate 7's block_negative
+question is. The gate stays on by default; treat it as untested rather than validated until the
+regime-coverage read has enough tagged, non-degenerate sessions to say more.
+
+### 8. Zero-Gamma Threat (Symbol-Specific, Non-Blocking)
+- **Trigger**: Price within 0.3% of gamma flip level; close to regime boundary
+- **Effect**: Do NOT block; instead tighten `stop_trigger_current` toward 0.85 for any open ICs on this symbol
+- **Config**: None (threshold 0.3% hard-coded)
+- **Rationale**: Imminent regime flip = stop management risk
+- **IC Impact**: Does not block, but tightens stops
+- **ORB Impact**: Not applicable
+
+---
+
+## Expiration & Cycle Gates
+
+### 9. 0DTE Expiration Gate (Hard Stop)
+- **Trigger**: `dte != 0` (expiration is not today)
+- **Effect**: Reject entry immediately
+- **Config**: None (hard-coded requirement)
+- **Rationale**: Strategy assumes same-day theta/gamma; multi-day spreads break stop management, force-close timing, credit floors
+- **IC Impact**: Blocks entry with reason `no_0dte_expiration`
+- **ORB Impact**: Blocks entry
+
+### 10. Quarterly Expiry Gate
+- **Trigger**: On OPEX (quarterly expiration) day: (a) session is `open_volatile`; or (b) the session's intraday range (high − low) as a fraction of price exceeds `quarterly_expiry_max_intraday_range_pct` (0.005) — entries halt for the rest of the session (`quarterly_intraday_range_exceeded`); allowed entries apply the tighter `quarterly_expiry_min_call_otm_pct` (0.67%)
+- **Config**: `quarterly_expiry_skip_open_volatile`, `quarterly_expiry_min_call_otm_pct` (0.67%), `quarterly_expiry_max_intraday_range_pct` (0.005)
+- **Data**: the range clause reads `intraday_range_pct` off the streamer's `stream_summary` day row (`tt.py get_intraday_range`); while the feed is absent the clause stays inactive (fail-open). The FOMC post-blackout check uses the same feed with its own keys (`fomc_post_blackout_min_iv_rank` 0.40, `fomc_post_blackout_max_intraday_range_pct` 0.005)
+- **Rationale**: OPEX = extreme gamma concentration, pinning risk, wide spreads, low liquidity; quarterly dates come from `cherrypick.core.calendar` rules, not a per-year config list
+- **IC Impact**: Blocks or restricts entries on OPEX
+- **ORB Impact**: Not explicitly blocked, but liquidity may be poor
+
+---
+
+## Capacity & Resource Gates
+
+### 11. Buying Power Gate (Global, Hard Stop)
+- **Trigger**: Insufficient cash to collateralize new IC
+- **Effect**: Reject entry
+- **Config**: None (checked against account in real-time)
+- **Rationale**: Binding account constraint; cannot be overridden
+- **IC Impact**: Hard block
+- **ORB Impact**: Hard block
+
+### 12. Max Concurrent ICs Gate (Global, Hard Stop)
+- **Trigger**: Already have `max_concurrent_ics` open ICs
+- **Config**: `max_concurrent_ics` — **99 on every profile since 2026-08-01** (was 4/4/3/2 down the
+  ladder). Independent sampling removed the concurrency cap as a risk offset; see
+  `docs/risk-profiles.md`'s top-of-file note and `docs/paper-experiments.md`'s "Independent sampling"
+  section. Structurally never binds at 99 — kept as a config key, not a live constraint, unless a
+  profile is deliberately given a lower value back for a specific experiment.
+- **Effect**: Reject new IC entries
+- **Rationale**: Risk management; limits simultaneous directional exposure and stop management load
+- **IC Impact**: Hard block (in practice, never — see above)
+- **ORB Impact**: May also block if position count includes ORB
+
+### 13. Daily IC Trade Target (Guidance, Soft)
+- **Trigger**: Approaching `daily_ic_trade_target`
+- **Config**: `daily_ic_trade_target` — **200 on every profile since 2026-08-01** (was 2). A
+  never-binding backstop now, not a target — a book-sized value of 2 has no meaning once there is no
+  book (see gate 12's note).
+- **Effect**: Do NOT hard-block; instead require higher conviction for additional entries
+- **Rationale**: Heuristic guidance on daily activity; buying power is the binding constraint
+- **IC Impact**: Soft guidance (higher selectivity, not a hard stop)
+- **ORB Impact**: Not applicable
+
+---
+
+## Strike Quality & Risk Gates
+
+### 14. Delta Gate (Call, Hard Stop)
+- **Trigger**: Proposed call delta > `max_call_delta_entry` / `_open_volatile` / `_late`
+  - Normal session: `max_call_delta_entry` (0.20 delta)
+  - Volatile open: `max_call_delta_entry_open_volatile` (0.19)
+  - Late session (after `late_entry_bias_start_time`): `max_call_delta_entry_late` (0.19)
+- **Effect**: Reject entry
+- **Config**: `max_call_delta_entry`, `max_call_delta_entry_open_volatile`, `max_call_delta_entry_late`
+- **Rationale**: Higher delta = further ITM, tighter stops, higher early-close risk
+- **IC Impact**: Hard block
+- **ORB Impact**: Not applicable (ORB uses different delta logic)
+
+### 15. OTM Distance Gates (Hard Stop)
+- **Call OTM Gate**: Call strike < `min_call_otm_pct` (0.35%) above spot
+- **Put OTM Gate**: Put strike < `min_put_otm_pct` (0.30%) below spot
+- **Effect**: Reject entry
+- **Config**: `min_call_otm_pct`, `min_put_otm_pct`
+- **Rationale**: Too-close strikes = immediate stop risk or assignment risk
+- **Quarterly OPEX Override**: On OPEX day, apply `quarterly_expiry_min_call_otm_pct` (0.67%) if `quarterly_expiry_skip_open_volatile` is true
+- **IC Impact**: Hard block
+- **ORB Impact**: Not applicable
+
+### 16. Strike Overlap Gate (Hard Stop, profile-tunable since the 2026-08-07 arms cutover)
+- **Trigger**: Proposed IC legs overlap with this profile's own already-open positions on this
+  symbol, per `overlap_scope`:
+  - `"all"` (strictest): any leg strike shared with any open position blocks the entry
+  - `"shorts"`: blocks only an exact repeat of the SAME short put/call pair — the profit zone,
+    the same one-structure-per-centre rule flies enforces
+  - `"none"`: no overlap check at all — every tick is an independent draw, treating each entry
+    as its own sample rather than a position in a shared book. Only valid for the forced-sampling
+    forward-test streams (`open`/`width-5`/`width-10`), which run uncapped
+    (`max_concurrent_ics: 999`) and are not meant to model a real book — see gate 12's note and
+    [docs/paper-experiments.md](docs/paper-experiments.md)
+- **Effect**: Reject entry (unless `overlap_scope: "none"`)
+- **Config**: `overlap_scope` (`"all"` / `"shorts"` / `"none"`; default `"all"` if unset,
+  `"shorts"` on `control` and the disabled ladder tiers, `"none"` on the forward-test streams).
+  **Live trading never sees a paper stream's `"none"`**: `live_loop.py` builds its params as an
+  empty profile overlay over `config.json`, so no `config.risk.json` profile key — including a
+  study arm's `overlap_scope` — can reach it; live is bound to `config.json`'s own top-level
+  `overlap_scope` (currently `"shorts"`) regardless of which paper stream is running. Pinned by
+  `test_live_ignores_a_paper_profile_overlap_scope_and_still_refuses_overlap`.
+- **Rationale**: Prevents accidental double-stacking, simplifies stop management. `"none"` trades
+  that protection away deliberately, in paper only, for independent sampling
+- **IC Impact**: Hard block (`"all"`/`"shorts"`) or no-op (`"none"`)
+- **ORB Impact**: Checked against existing ORB position, unaffected by `overlap_scope`
+
+---
+
+## Credit & Fee Gates
+
+### 17. IV Rank Floor Gate (Hard Stop)
+- **Trigger**: IV rank < `min_iv_rank` (0.30)
+- **Effect**: Reject entry
+- **Config**: `min_iv_rank` (0.30)
+- **Rationale**: Low IV = poor credit relative to risk; entry edge is weak
+- **IC Impact**: Hard block
+- **ORB Impact**: Not explicitly checked
+
+### 18. Gross Credit Floor Gate (Pct-of-Width, Hard Stop)
+- **Trigger**: `ic_credit < min_credit_pct_of_width (0.15) × wing_width`
+- **Effect**: Reject entry
+- **Config**: `min_credit_pct_of_width` (0.15 or 10% in low-IV mode)
+- **Rationale**: Insufficient credit relative to risk width
+- **Low-IV Override**: relief for days where a fixed pct-of-width floor would lock the tier out entirely. Both halves are **relative to the active profile**, so they scale with the ladder:
+  - Ceiling — relief applies while IV rank ≤ `min_iv_rank + low_iv_credit_floor_iv_rank_offset` (0.05) → 0.35 / 0.27 / 0.25 / 0.20 down the ladder
+  - Floor — the relaxed floor is `min_credit_pct_of_width × low_iv_credit_relief_multiple` (0.85), so it always sits strictly below that tier's own floor
+  - Previously both were absolutes shared by every tier (0.35 / 0.10 — conservative's own values, never rescaled). That flattened the ladder: whenever IV rank sat under 0.35 all four tiers used the same 0.10 floor (measured: 100% of SPX and XSP entries), and for aggressive/very-aggressive the "relief" equalled their normal floor, so it did nothing at all. The absolute keys are still honored if a profile sets them.
+- **IC Impact**: Hard block
+- **ORB Impact**: Not applicable
+
+### 19. Fee-Adjusted Credit Floor Gate (Hard Stop)
+- **Trigger**: `(ic_credit × dollar_multiplier) − est_fee_per_contract < applicable_floor`
+- **Effect**: Reject entry
+- **Config**: `fee_estimate_lookback_trades`, `fee_estimate_min_sample_size`, `fee_estimate_fallback_per_contract`
+- **Rationale**: Credit must clear estimated trading costs (opening); closing fees are typically waived on 0DTE expiration
+- **Estimation Logic**: 
+  - Call `python -m cherrypick.meic.db get_fee_estimate --symbol <sym>` to retrieve historical average fee
+  - If `sample_size < fee_estimate_min_sample_size`, fall back to `fee_estimate_fallback_per_contract[symbol]`
+- **Example**: SPX: $0.45–$0.75 net credit (after fees) qualifies under this gate
+- **IC Impact**: Hard block (separate from gross floor check; entry must clear both)
+- **ORB Impact**: Not applicable
+
+### 20. Spread Width Gate (Soft)
+- **Trigger**: Avg per-leg bid-ask spread > `mid_spread_gate` (0.10 pts)
+- **Effect**: Skip mid-price strategy; fall back to natural bid entry
+- **Config**: `mid_spread_gate` (0.10)
+- **Rationale**: Too-wide spreads = unfillable at streaming mid
+- **IC Impact**: Soft gate; changes entry strategy rather than blocking
+- **ORB Impact**: Not applicable
+
+---
+
+## IV & Bias Gates
+
+### 21. Late-Entry Bias Gate (Soft, Time-Based)
+- **Trigger**: 
+  - `late_entry_bias_enabled` is true
+  - IV rank ≤ `min_iv_rank + late_entry_bias_iv_rank_offset` (0.15) — i.e. 0.45 / 0.37 / 0.35 / 0.30 down the ladder
+  - Current time < `late_entry_bias_start_time` (12:00 ET)
+- **Effect**: Skip IC entries until noon; ORB unaffected
+- **Config**: `late_entry_bias_enabled`, `late_entry_bias_iv_rank_offset`, `late_entry_bias_start_time` (the absolute `late_entry_bias_iv_rank_max` is still honored if a profile sets it)
+- **Rationale**: Morning entries at borderline IV carry 3+ hours of directional exposure; afternoon entries capture theta acceleration (2–5× morning rate)
+- **High-IV Bypass**: If IV rank is above that ceiling, do NOT skip; enter anytime. The ceiling is profile-relative because a flat 0.45 put very-aggressive (floor 0.15) under the bias across nearly its whole range while barely touching conservative.
+- **IC Impact**: Soft block (skips until noon; not a hard rejection)
+- **ORB Impact**: Not blocked
+
+---
+
+## ORB-Specific Gates (ORB-Only)
+
+### 22. ORB Enabled Gate
+- **Trigger**: `orb_enabled` is false
+- **Effect**: Skip ORB evaluation entirely
+- **Config**: `orb_enabled` (true/false)
+- **IC Impact**: Not applicable
+- **ORB Impact**: Blocks all ORB entries
+
+### 23. ORB Entry Window Gate
+- **Trigger**: After `orb_entry_window_end` (12:00 ET)
+- **Effect**: Reject ORB entries
+- **Config**: `orb_entry_window_end` (12:00 ET)
+- **Rationale**: ORB must be caught early; late-day setups lack the full 3+ hour trend window
+- **IC Impact**: Not applicable
+- **ORB Impact**: Hard block
+
+### 24. ORB Breakout Detection Gate
+- **Trigger**: Price move from 5-min open range < `orb_breakout_threshold_pct` (0.5%)
+- **Effect**: No breakout detected; skip entry
+- **Config**: `orb_range_minutes` (5), `orb_breakout_threshold_pct` (0.5%)
+- **IC Impact**: Not applicable
+- **ORB Impact**: Soft gate (no signal to trade)
+
+### 25. ORB Already Open Gate
+- **Trigger**: ORB position already filled this session
+- **Effect**: Skip new ORB entries; log `action: "orb_already_open"`
+- **Config**: None (state-based check)
+- **IC Impact**: Not applicable
+- **ORB Impact**: Soft block (one ORB per day max)
+
+### 26. ORB Direction Exhausted Gate
+- **Trigger**: ORB profit target already hit (`pnl ≥ orb_profit_target_pct` × wing_width)
+- **Effect**: Close ORB position; skip re-entries until next day
+- **Config**: `orb_profit_target_pct` (1.00 = 100%)
+- **IC Impact**: Not applicable
+- **ORB Impact**: Soft block (closes at target, no re-entries)
+
+---
+
+## Data Availability Gates
+
+### 27. Quotes Unavailable Gate (Hard Stop)
+- **Trigger**: Missing real-time chain snapshot, greeks, or live quotes for this symbol
+- **Effect**: Reject IC entry for this symbol; log reason
+- **Config**: None (data availability check)
+- **IC Impact**: Hard block
+- **ORB Impact**: Hard block (cannot assess risk without quotes)
+
+### 28. GEX Data Unavailable Gate (Soft)
+- **Trigger**: `get_gex` returns `ok=false` (OI not yet cached for this symbol)
+- **Effect**: Do NOT block; proceed without GEX; log warning
+- **Config**: None (streamer data availability)
+- **Rationale**: GEX is useful but not required; entry proceeds blind to regime if streamer lags
+- **IC Impact**: Soft gate (warning logged, entry allowed)
+- **ORB Impact**: Not checked for ORB
+
+### 29. VIX1D Unavailable Gate (Soft)
+- **Trigger**: `get_vix1d` fails or returns no price
+- **Effect**: Skip VIX1D ratio check; proceed with VIX/ATR/GEX only
+- **Config**: None (data availability)
+- **Rationale**: VIX1D is a secondary signal
+- **IC Impact**: Soft gate (proceeds without it)
+- **ORB Impact**: Not checked for ORB
+
+---
+
+## Summary: Gate Priorities
+
+### Hard Blocks (Absolute, Cannot be Overridden)
+1. Time window (before 09:30, after 15:55, weekends, holidays)
+2. Buying power insufficient
+3. 0DTE expiration gate
+4. Quotes unavailable
+5. Delta too high
+6. OTM distance insufficient
+7. Strike overlap
+8. Both credit floors (gross + fee-adjusted)
+
+### Regime/Soft Blocks (Block Entries, Allow Other Activity)
+- VIX pause (all symbols)
+- VIX1D pause (all symbols)
+- ATR pause (symbol-specific)
+- GEX negative (symbol-specific)
+
+### Soft Guidance (Do Not Block; Adjust Behavior)
+- Daily IC trade target (increases selectivity)
+- Late-entry bias (skips until noon, not a hard rejection)
+- Zero-gamma threat (tightens stops, not a block)
+- IV rank floor (rejects but is philosophy-based, not mechanical)
+
+### ORB-Specific (Bypass Regime Gates, Subject to Own Rules)
+- ORB enabled
+- ORB entry window
+- ORB already open
+- ORB direction exhausted
+
+---
+
+## Config Reference
+
+| Gate | Config Key(s) | Default | Notes |
+|------|---------------|---------|-------|
+| Time window | Hard-coded | 09:30–15:55 ET | No config |
+| Force close | `force_close_time` | 15:45 ET | All 0DTE closed |
+| Entry window (IC) | `entry_window_start`, `entry_window_end` | 10:00–14:30 ET | — |
+| VIX pause | `regime_vix_pause_threshold` | 25 | Account-wide |
+| VIX1D ratio | `regime_vix1d_ratio_pause_threshold` | 1.30 | Account-wide |
+| ATR pause | `regime_atr_pause_threshold_pct`, `regime_atr_lookback_days` | 0.015 (1.5% of spot), 5 days | Symbol-specific |
+| OPEX range halt | `quarterly_expiry_max_intraday_range_pct` | 0.005 (0.5% of price) | Symbol-specific, OPEX only |
+| FOMC post-blackout | `fomc_post_blackout_min_iv_rank`, `fomc_post_blackout_max_intraday_range_pct` | 0.40, 0.005 | Account-wide, FOMC only |
+| Max concurrent ICs | `max_concurrent_ics` | 99 (was 4; see gate 12) | Hard stop, never binds |
+| Daily IC target | `daily_ic_trade_target` | 200 (was 2; see gate 13) | Soft guidance, never binds |
+| Strike overlap | `overlap_scope` | `"all"`/`"shorts"`/`"none"` — see gate 16 | Hard stop unless `"none"`; live never sees `"none"` |
+| Delta (call) | `max_call_delta_entry`, `_open_volatile`, `_late` | 0.20, 0.19, 0.19 | Hard stop |
+| OTM (call, put) | `min_call_otm_pct`, `min_put_otm_pct` | 0.35%, 0.30% | Hard stop |
+| OPEX OTM override | `quarterly_expiry_min_call_otm_pct`, `quarterly_expiry_skip_open_volatile` | 0.67%, true | Tighter on OPEX |
+| IV rank floor | `min_iv_rank` | 0.30 | Hard stop |
+| Credit floor (gross) | `min_credit_pct_of_width`, `low_iv_credit_relief_multiple`, `low_iv_credit_floor_iv_rank_offset` | 0.15, 0.85, +0.05 (relief ceiling/floor are profile-relative) | Hard stop |
+| Fee floor | `fee_estimate_lookback_trades`, `fee_estimate_min_sample_size`, `fee_estimate_fallback_per_contract` | 20 trades, 5 min, symbol-specific | Hard stop |
+| Spread width (soft) | `mid_spread_gate` | 0.10 | Changes strategy |
+| Late-entry bias | `late_entry_bias_enabled`, `late_entry_bias_iv_rank_offset`, `late_entry_bias_start_time` | true, +0.15 (profile-relative), 12:00 ET | Soft block |
+| ORB enabled | `orb_enabled` | true | Entire feature |
+| ORB window | `orb_entry_window_end` | 12:00 ET | Hard stop |
+| ORB range | `orb_range_minutes`, `orb_breakout_threshold_pct` | 5 min, 0.5% | Soft gate |
+| ORB profit target | `orb_profit_target_pct` | 1.00 (100%) | Close at target |
+

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cherrypick-review"
+version = "0.1.0"
+description = "Cross-module end-of-day fact set and review — read-only over every module's ledger"
+requires-python = ">=3.11"
+# cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.
+# Not on PyPI (Private :: Do Not Upload) -- packages/core must be installed first, or resolution fails.
+dependencies = ["cherrypick-core"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+testpaths  = ["tests"]
+pythonpath = ["tests", "src"]
+
+[tool.ruff]
+# line-length + lint.select come from the suite-wide ../../ruff.toml.
+extend = "../../ruff.toml"
+target-version = "py311"
+
+[tool.hatch.build.targets.wheel]
+# src-layout PEP 420 namespace: src/cherrypick/ has NO __init__.py, so cherrypick.review composes
+# with cherrypick.core (and every other module) under one cherrypick.* root. `sources = ["src"]` maps
+# the src/ prefix away, so src/cherrypick/review/... installs as cherrypick/review/... .
+only-include = ["src/cherrypick"]
+sources = ["src"]

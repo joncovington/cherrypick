@@ -1,0 +1,10 @@
+packages:
+  - shared
+  - server
+  - web
+  - desktop
+allowBuilds:
+  better-sqlite3: true
+  # Electron's postinstall fetches its prebuilt binary; without this there is no runtime to launch.
+  electron: true
+  esbuild: true

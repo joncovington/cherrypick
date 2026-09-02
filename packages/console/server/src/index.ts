@@ -1,0 +1,117 @@
+import path from "node:path";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
+import Fastify from "fastify";
+import fastifyStatic from "@fastify/static";
+import fastifyWebsocket from "@fastify/websocket";
+import { listReaderFailures, setReaderFailureLogger } from "./readers/db.js";
+import { loadConfig, BIND_HOST } from "./config.js";
+import { registerStatusRoutes } from "./routes/status.js";
+import { registerOverviewRoutes } from "./routes/overview.js";
+import { registerReviewRoutes } from "./routes/review.js";
+import { registerMorningRoutes } from "./routes/morning.js";
+import { registerAdvisorRoutes } from "./routes/advisor.js";
+import { registerAdvisorOpsRoutes } from "./routes/advisorOps.js";
+import { registerModuleRoutes } from "./routes/modules.js";
+import { MarketDataService } from "./market/marketData.js";
+import { registerWsHub } from "./ws/hub.js";
+import { registerSecurity } from "./security.js";
+import { registerConfigRoutes } from "./routes/configOps.js";
+import { startHeartbeat } from "./services/heartbeat.js";
+import { createLogStream } from "./logging.js";
+
+const config = loadConfig();
+const app = Fastify({
+  logger: { level: "info", stream: createLogStream() },
+  // The SPA polls several endpoints every 15s all day, so per-request logging would bury the lines
+  // that matter (startup, credential scope, DXLink reconnects) under thousands of 200s and churn the
+  // rotation. Routes that need to say something log it themselves.
+  disableRequestLogging: true,
+});
+const market = new MarketDataService(config);
+
+registerSecurity(app);
+await app.register(fastifyWebsocket);
+registerWsHub(app, market);
+registerStatusRoutes(app, config, market);
+registerOverviewRoutes(app, config);
+registerReviewRoutes(app, config);
+registerMorningRoutes(app, config);
+registerAdvisorRoutes(app, config);
+registerAdvisorOpsRoutes(app, config);
+registerModuleRoutes(app, config);
+registerConfigRoutes(app, config);
+// `ok` still means "the server is up", unchanged — a watchdog reading it must not start failing
+// because one module's ledger has a bad column. `readers` is the addition: a store whose reads are
+// throwing is served as an empty result by `withReadOnlyDb`, and until this it left no trace on the
+// wire, on the page, or in the log. An empty list is the healthy case.
+app.get("/api/health", async () => ({ ok: true, readers: listReaderFailures() }));
+
+// Swallowed reader failures get a log line. `db.ts` has no request context and 65 call sites do not
+// pass a logger, so it is injected once here rather than threaded through.
+setReaderFailureLogger((message) => app.log.warn(message));
+
+// RTH watchdog for the silently-dying DXLink websocket.
+market.startHeartbeat((msg) => app.log.info(msg));
+
+// Serve the built SPA when present (prod); in dev, Vite serves the frontend.
+const here = path.dirname(fileURLToPath(import.meta.url));
+const webDist = path.resolve(here, "..", "..", "web", "dist");
+if (fs.existsSync(webDist)) {
+  await app.register(fastifyStatic, { root: webDist });
+  app.setNotFoundHandler((req, reply) => {
+    if (req.raw.url?.startsWith("/api/")) {
+      void reply.code(404).send({ error: "not found" });
+    } else {
+      void reply.sendFile("index.html");
+    }
+  });
+}
+
+try {
+  await app.listen({ port: config.port, host: BIND_HOST });
+  app.log.info(`console serving on http://${BIND_HOST}:${config.port}/`);
+} catch (err) {
+  // The supervisor owns this process, so a port already taken means a second console is running —
+  // usually one started by hand. Say that plainly: the supervisor will otherwise just back off and
+  // retry against a message that reads like a crash.
+  if ((err as NodeJS.ErrnoException).code === "EADDRINUSE") {
+    app.log.error(
+      `port ${config.port} is already in use — another console is running. ` +
+        `The supervisor keeps one running; stop the other, or change serve.port in console.json.`,
+    );
+  } else {
+    app.log.error(err);
+  }
+  process.exit(1);
+}
+
+// Liveness for the supervisor, started only once we are actually listening — a heartbeat written
+// before a failed bind would report a console that never came up.
+startHeartbeat(config.paths.cherrypick, config.port, (msg) => app.log.warn(msg));
+
+// Scope detection at boot: the suite credential is probed once per process
+// (never persisted, so a rotated refresh token can't carry a stale scope).
+// A read-only result disables write-oriented functions everywhere.
+void (async () => {
+  const { loadCredentials, setScope } = await import("./auth/credentials.js");
+  const creds = loadCredentials();
+  if (creds === null) {
+    app.log.warn("no suite broker credential found — market data and dry-run validation unavailable");
+    return;
+  }
+  try {
+    const { probeCredentials } = await import("./auth/probe.js");
+    const probe = await probeCredentials(creds);
+    if (probe.ok && probe.scope !== undefined) {
+      setScope(probe.scope);
+      app.log.info(
+        `suite credential (${creds.source}) scope: ${probe.scope}${probe.scope === "read" ? " — write-oriented functions disabled" : ""}`,
+      );
+    } else {
+      app.log.warn(`credential probe failed: ${probe.error ?? "unknown"}`);
+    }
+  } catch (err) {
+    app.log.warn(`credential scope probe failed: ${(err as Error).message}`);
+  }
+})();
