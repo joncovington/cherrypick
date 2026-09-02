@@ -104,6 +104,18 @@ Two properties worth not breaking:
   on evidence that post-dates them. A past session that cannot be proved keeps the conservative
   verdict and stays out of the count, erring the same direction `recount`'s `unknown` bucket does.
 
+**Exits of pinned positions carry too (2026-09-01).** earnings closed 13 advised condors at 09:45 —
+every one managed under the frozen params the artifact admitted — then held nothing open, so the
+open-row read alone raised the WARN hourly from 10:31 until the 15:35 entry pass recorded a
+decision. A session whose only advised activity so far is closing positions dated to THIS session,
+each stamped with params covering the artifact's, is `carried`: the advice governed every decision
+the module actually made. The close date is discovered from the schema (`closed_session`, else
+epoch `closed_at` read with 'localtime'); an undated close proves nothing and does not carry. This
+cannot weaken the 2026-08-25 case — a module reaches an exit-only morning with no decision only
+when no entry pass has run, and the moment a recorded decision disagrees, the params comparison
+wins. Exit carry stays current-session-only like open carry, deliberately: for counting the
+distinction is moot (neither `carried` nor `not_enacted` advances the counter).
+
 The live read this rests on is `factpack.carried_advice_params` — in `factpack.py` because every
 live read of another package's ledger is fenced there by contract. `enactment` forms the verdict;
 factpack only reports what the rows say.

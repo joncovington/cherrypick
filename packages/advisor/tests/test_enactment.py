@@ -279,7 +279,10 @@ def test_changed_advice_is_not_carried_by_the_old_stamp(home):
     assert enactment.reconcile("calendars", SESSION)["status"] == enactment.NOT_ENACTED
 
 
-def test_a_closed_position_carries_nothing(home):
+def test_an_undated_closed_position_carries_nothing(home):
+    """This ledger dates its closes no way at all (no closed_session, no closed_at), so a closed
+    row proves nothing about any particular session — exit-carry needs the close dated to the
+    session under scrutiny (see the 2026-09-01 section below)."""
     _cal_artifact(SESSION, {"time_exit": "fri_noon"})
     _calendars_ledger(
         home,
@@ -368,3 +371,116 @@ def test_carry_is_never_claimed_for_a_past_session(home):
     outcome = enactment.reconcile("calendars", past)
     assert outcome["status"] == enactment.NOT_ENACTED
     assert "cannot be proved after the fact" in outcome["detail"]
+
+
+# --------------------------------------------------------- exit-carry (2026-09-01)
+#
+# earnings closed 13 advised iron condors at 09:45 — every one managed under the params its entry
+# had frozen, the same params the artifact admitted — then held nothing open. The open-row read
+# said "carries nothing", and the enactment check raised the WARN hourly from 10:31 until the
+# 15:35 entry pass finally recorded a decision. Exits of pinned positions are the advice
+# governing, not the advice dropped.
+
+DATED_DDL = """
+CREATE TABLE dc_positions (
+    position_id TEXT PRIMARY KEY, book TEXT, status TEXT, advice_params TEXT, closed_session TEXT
+);
+"""
+
+EPOCH_DDL = """
+CREATE TABLE trades (
+    order_id TEXT PRIMARY KEY, profile TEXT, status TEXT, advice_params TEXT, closed_at REAL
+);
+"""
+
+
+def _dated_ledger(home, ddl, table, rows):
+    path = fakes.make_db(home / "data" / "calendars" / "paper_trades.db", ddl)
+    fakes.insert(path, table, rows)
+    return path
+
+
+def _closed_row(session, params, **over):
+    row = {
+        "position_id": "p1",
+        "book": "advised:control",
+        "status": "closed",
+        "advice_params": json.dumps(params),
+        "closed_session": session,
+    }
+    row.update(over)
+    return row
+
+
+def test_exits_of_pinned_positions_this_session_are_carried(home):
+    """The 2026-09-01 morning, in miniature."""
+    _cal_artifact(SESSION, {"iron_condor.profit_target_pct": 0.35})
+    _dated_ledger(home, DATED_DDL, "dc_positions", [_closed_row(SESSION, {"profit_target_pct": 0.35})])
+    outcome = enactment.reconcile("calendars", SESSION)
+    assert outcome["status"] == enactment.CARRIED
+    assert outcome["carried_params"] == [{"profit_target_pct": 0.35}]
+    assert "closing positions opened earlier" in outcome["detail"]
+
+
+def test_an_epoch_dated_close_is_carried_too(home):
+    """earnings dates closes as epoch seconds (closed_at), read with 'localtime' — the same
+    convention its own session filters use. The column is discovered, not listed."""
+    from datetime import datetime
+
+    epoch = datetime.fromisoformat(f"{SESSION} 09:45").timestamp()
+    _cal_artifact(SESSION, {"iron_condor.profit_target_pct": 0.35})
+    _dated_ledger(
+        home,
+        EPOCH_DDL,
+        "trades",
+        [
+            {
+                "order_id": "t1",
+                "profile": "advised:strat_test:iron_condor",
+                "status": "closed",
+                "advice_params": json.dumps({"profit_target_pct": 0.35}),
+                "closed_at": epoch,
+            }
+        ],
+    )
+    assert enactment.reconcile("calendars", SESSION)["status"] == enactment.CARRIED
+
+
+def test_a_close_dated_to_another_session_is_not_carried(home):
+    """Yesterday's exits prove nothing about today's artifact."""
+    _cal_artifact(SESSION, {"iron_condor.profit_target_pct": 0.35})
+    _dated_ledger(home, DATED_DDL, "dc_positions", [_closed_row("2000-01-01", {"profit_target_pct": 0.35})])
+    assert enactment.reconcile("calendars", SESSION)["status"] == enactment.NOT_ENACTED
+
+
+def test_exits_under_different_params_are_not_carried(home):
+    """The advisor changing its proposal overnight is a genuine miss until the next entry — the
+    old frozen value on this morning's exits must never satisfy the new artifact."""
+    _cal_artifact(SESSION, {"iron_condor.profit_target_pct": 0.45})
+    _dated_ledger(home, DATED_DDL, "dc_positions", [_closed_row(SESSION, {"profit_target_pct": 0.35})])
+    assert enactment.reconcile("calendars", SESSION)["status"] == enactment.NOT_ENACTED
+
+
+def test_exit_carry_is_never_claimed_for_a_past_session(home):
+    """Symmetric with open-carry on purpose: for counting the distinction is moot (neither carried
+    nor not_enacted advances the counter), so the conservative label keeps recount's direction."""
+    past = "2026-01-05"
+    _cal_artifact(past, {"iron_condor.profit_target_pct": 0.35})
+    _dated_ledger(home, DATED_DDL, "dc_positions", [_closed_row(past, {"profit_target_pct": 0.35})])
+    assert enactment.reconcile("calendars", past)["status"] == enactment.NOT_ENACTED
+
+
+def test_a_recorded_but_mismatched_decision_still_beats_exit_carry(home):
+    """The 2026-08-25 case keeps its full force: the moment a decision IS recorded and disagrees,
+    the params comparison reports not_enacted — this morning's pinned exits cannot paper over a
+    dropped artifact once the loop has spoken."""
+    _cal_artifact(SESSION, {"iron_condor.profit_target_pct": 0.35})
+    _dated_ledger(home, DATED_DDL, "dc_positions", [_closed_row(SESSION, {"profit_target_pct": 0.35})])
+    path = paths.module_data_dir("calendars") / "advice_active.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"day": SESSION, "params": None, "reason": "advice_disabled"}), encoding="utf-8"
+    )
+    outcome = enactment.reconcile("calendars", SESSION)
+    assert outcome["status"] == enactment.NOT_ENACTED
+    assert "advice_disabled" in outcome["detail"]

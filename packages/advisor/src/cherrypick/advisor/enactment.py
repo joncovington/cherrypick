@@ -22,7 +22,10 @@ So enactment is a first-class recorded outcome here, with three states rather th
   The session bought no evidence and must not be counted against the experiment's length.
 * ``carried`` -- an artifact was issued, the loop recorded no NEW decision, and the advice it
   admitted is nonetheless in force: frozen onto positions this module opened on an earlier session
-  and still holding. Reported silently, like ``no_artifact``.
+  and either still holding or closed THIS session (2026-09-01: earnings closed 13 advised condors
+  at 09:45, every one managed under the frozen params the artifact admitted, then held nothing --
+  and the open-row read alone warned hourly until the 15:35 entry pass). Reported silently, like
+  ``no_artifact``.
 * ``no_artifact`` -- nothing was issued for that module and session; there is nothing to reconcile.
 
 ``carried`` exists because the original three states assumed every module decides every session,
@@ -144,12 +147,45 @@ def carried_by(module: str, artifact_params: dict[str, Any]) -> list[dict[str, A
     if not carried:
         return None
     wanted = {_leaf(k): v for k, v in artifact_params.items()}
+    if _covers(carried, wanted):
+        return carried
+    return None
+
+
+def _covers(frozen_rows: list[dict[str, Any]], wanted: dict[str, Any]) -> bool:
+    """Do the frozen stamps cover EVERY admitted param, by leaf name and value?"""
     stamped: dict[str, Any] = {}
-    for frozen in carried:
+    for frozen in frozen_rows:
         for key, value in frozen.items():
             stamped.setdefault(_leaf(key), value)
-    if all(stamped.get(k) == v for k, v in wanted.items()):
-        return carried
+    return all(stamped.get(k) == v for k, v in wanted.items())
+
+
+def exit_carried_by(
+    module: str, artifact_params: dict[str, Any], session: str
+) -> list[dict[str, Any]] | None:
+    """The frozen params on advised positions CLOSED this session, if they carry `artifact_params`.
+
+    The open-row read alone produced 2026-09-01's false alarm: earnings closed 13 advised condors
+    at 09:45 — every one managed under the params its entry had frozen, the same params the
+    artifact admitted — then held nothing, so `carried_by` found no open row and the check warned
+    hourly until the 15:35 entry pass. Exits of pinned positions are the advice GOVERNING, not the
+    advice dropped.
+
+    This cannot hide the 2026-08-25 case it must never weaken: a module only reaches an exit-heavy
+    morning with no decision when no entry pass has run — an entry pass derives and records the
+    decision by construction — and the moment one records a decision that disagrees, `reconcile`'s
+    params comparison takes over and reports `not_enacted`. Same all-params rule and same
+    reject-all refusal as `carried_by`, for the same reasons.
+    """
+    if not artifact_params:
+        return None  # a reject-all artifact implies a baseline decision the loop must still record
+    closed = _factpack.closed_advice_params(module, session)
+    if not closed:
+        return None
+    wanted = {_leaf(k): v for k, v in artifact_params.items()}
+    if _covers(closed, wanted):
+        return closed
     return None
 
 
@@ -189,17 +225,30 @@ def reconcile(module: str, session: str) -> dict[str, Any]:
         # the conservative verdict below and stays out of the count, which is the same direction
         # `recount`'s `unknown` bucket already errs in: never shorten or lengthen an experiment on
         # evidence that is not actually about the session being scored.
-        carried = (
-            carried_by(module, out["artifact_params"] or {}) if session == _clock.session_today() else None
-        )
-        if carried is not None:
-            out["status"] = CARRIED
-            out["carried_params"] = carried
-            out["detail"] = (
-                "no new decision this session, and the admitted params are frozen on positions "
-                "this module opened earlier and still holds"
-            )
-            return out
+        if session == _clock.session_today():
+            carried = carried_by(module, out["artifact_params"] or {})
+            if carried is not None:
+                out["status"] = CARRIED
+                out["carried_params"] = carried
+                out["detail"] = (
+                    "no new decision this session, and the admitted params are frozen on positions "
+                    "this module opened earlier and still holds"
+                )
+                return out
+            # Closed rows are dated, so exit-carry COULD be proved for a past session — it stays
+            # current-session-only anyway, symmetric with the open read, because for counting the
+            # distinction is moot (neither carried nor not_enacted advances the counter) and the
+            # conservative label is the one recount already errs toward.
+            exits = exit_carried_by(module, out["artifact_params"] or {}, session)
+            if exits is not None:
+                out["status"] = CARRIED
+                out["carried_params"] = exits
+                out["detail"] = (
+                    "no new decision this session; the module's only advised activity so far was "
+                    "closing positions opened earlier, each managed under the frozen params the "
+                    "artifact admits"
+                )
+                return out
         out["status"] = NOT_ENACTED
         out["detail"] = (
             "the loop recorded no decision for this session"
