@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import datetime
 
 from cherrypick.streamer import config as _config
 from cherrypick.streamer import credentials as _credentials
@@ -39,6 +40,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--secrets-status", action="store_true", help="print which shared OAuth secrets are present and exit"
     )
+    parser.add_argument(
+        "--prune",
+        action="store_true",
+        help="report the dead chain rows in the shared cache (passed expirations, retired "
+        "underlyings) and exit. DRY unless --apply.",
+    )
+    parser.add_argument("--apply", action="store_true", help="with --prune: actually delete what it reports")
     args = parser.parse_args(argv)
 
     cfg = _config.load()
@@ -51,6 +59,28 @@ def main(argv: list[str] | None = None) -> int:
         written = _credentials.set_secrets()
         print(json.dumps({"ok": True, "set": written}))
         return 0
+
+    # Maintenance, run against the cache this process owns -- there is exactly one writer by
+    # invariant, so a standalone prune script would be a second. Dry by default: it deletes rows
+    # every module reads, and the suite's convention for that (settle-expired, migrate-home) is
+    # that a human sees the plan before it runs.
+    if args.prune:
+        from cherrypick.core import streamcache as _sc
+        from cherrypick.core import streamrequests as _sr
+        from cherrypick.core.clock import ET as _ET
+
+        conn = _sc.connect(_config.cache_path(cfg))
+        try:
+            report = _sc.prune_cache(
+                conn,
+                declared_underlyings=_sr.union_symbols(cfg.get("symbols")),
+                today=datetime.now(tz=_ET).date().isoformat(),
+                apply=args.apply,
+            )
+        finally:
+            conn.close()
+        print(json.dumps(report, indent=2, default=str))
+        return 0 if report.get("ok") else 1
 
     # --status / --stop emit pure JSON on stdout (no logging setup) so the watchdog can parse it cleanly.
     if args.status:

@@ -15,6 +15,7 @@ Pure SQLite + stdlib; no broker, no network, no tastytrade import. A streaming *
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import re
 import sqlite3
@@ -377,6 +378,114 @@ def purge_nonpositive_closes(conn: sqlite3.Connection) -> int:
         return int(cur.rowcount or 0)
     except sqlite3.Error:
         return 0
+
+
+# How long a passed expiration's chain is kept, and how long an underlying nobody declares is kept.
+# Both generous on purpose: the cost of keeping a row is bytes, the cost of deleting one a reader
+# still wants is a session, and neither number needs to be tight to bound the growth this drains.
+EXPIRED_CHAIN_KEEP_DAYS = 5
+UNDECLARED_SYMBOL_KEEP_DAYS = 7
+
+
+def prune_cache(
+    conn: sqlite3.Connection,
+    *,
+    declared_underlyings,
+    today: str,
+    apply: bool = False,
+    expired_keep_days: int = EXPIRED_CHAIN_KEEP_DAYS,
+    undeclared_keep_days: int = UNDECLARED_SYMBOL_KEEP_DAYS,
+) -> dict:
+    """Drop chain rows no consumer can legitimately want, and the option rows orphaned with them.
+
+    A repair in `purge_nonpositive_closes`'s family, and run by the producer for the same reason:
+    the cache has exactly one writer by invariant, so a maintenance script would be a second.
+
+    The cache is SHARED -- every module writes its requests into it -- so it accumulates two kinds
+    of dead weight that no single module owns. Neither costs meaningful disk; what they cost is a
+    reader picking one up believing it is current. That is not hypothetical: on 2026-08-20 flies
+    ranked expirations by distance from the current instant, matched a six-day-old copy of the next
+    day's chain, refused every tick on stale quotes, and lost the session. The providers were fixed
+    to bound on `expiration >= today`, but the trap is still lying there for the next reader, and
+    deleting it is the only fix that does not depend on every future consumer being careful.
+
+    Two rules, both DERIVED rather than judged:
+
+    * an expiration that passed more than `expired_keep_days` ago -- no module can trade an expired
+      contract, and settlement reads `daily_closes`/`stocks.ohlcv`, never a chain. The tail exists
+      so a settlement audit run a few days late still finds its rows.
+    * an underlying absent from `declared_underlyings` whose newest row is older than
+      `undeclared_keep_days`. The caller supplies that set from the same stream-request union the
+      producer subscribes from, so this is what the suite DECLARES rather than what it happens to
+      hold. Both clauses are required: a symbol declared today keeps rows however old, and a symbol
+      dropped this morning keeps its rows until the window passes, so a module that re-declares one
+      loses nothing.
+
+    Cascades to `stream_quotes`/`greeks`/`oi`/`trades`, but ONLY for option symbols
+    (`is_option_symbol`), and only those no surviving chain row still references. The cash symbols
+    in those tables -- VIX, the sector ETFs, every underlying -- are never in `stream_chain` at all,
+    so a cascade that did not test this would delete the entire vol complex on its first run.
+
+    Read-only unless `apply`. Returns the counts either way, so the report is the same object a dry
+    run prints and a scheduled pass logs.
+    """
+    cutoff_expiry = (_dt.date.fromisoformat(today) - _dt.timedelta(days=expired_keep_days)).isoformat()
+    stale_before = time.time() - undeclared_keep_days * 86400
+    declared = {str(s).strip().upper() for s in (declared_underlyings or [])}
+    report: dict = {
+        "ok": True,
+        "applied": bool(apply),
+        "today": today,
+        "expired_before": cutoff_expiry,
+        "declared_underlyings": sorted(declared),
+    }
+    try:
+        expired = [
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT expiration FROM stream_chain WHERE expiration < ?", (cutoff_expiry,)
+            )
+        ]
+        held = [
+            r[0]
+            for r in conn.execute(
+                "SELECT underlying_symbol FROM stream_chain GROUP BY underlying_symbol"
+                " HAVING MAX(COALESCE(updated_at, 0)) < ?",
+                (stale_before,),
+            )
+        ]
+        undeclared = sorted(u for u in held if str(u).strip().upper() not in declared)
+        report["expired_expirations"] = sorted(expired)
+        report["undeclared_underlyings"] = undeclared
+
+        chain_sql = "FROM stream_chain WHERE expiration < ?"
+        params: list = [cutoff_expiry]
+        if undeclared:
+            chain_sql += f" OR underlying_symbol IN ({','.join('?' * len(undeclared))})"
+            params += undeclared
+        report["chain_rows"] = int(conn.execute(f"SELECT COUNT(*) {chain_sql}", params).fetchone()[0])
+
+        if not apply:
+            # Counting orphans before the delete would mean simulating it; the dry run reports what
+            # WILL be removed from stream_chain and names the cascade rather than guessing its size.
+            report["orphaned_option_rows"] = None
+            return report
+
+        conn.execute(f"DELETE {chain_sql}", params)
+        orphaned = 0
+        for table in ("stream_quotes", "stream_greeks", "stream_oi", "stream_trades"):
+            # `is_option_symbol` is the dot prefix, expressed here as SQL so the cash symbols are
+            # excluded by the same rule the Python helper applies.
+            cur = conn.execute(
+                f"DELETE FROM {table} WHERE symbol LIKE '.%'"  # noqa: S608 - table from a literal tuple
+                " AND symbol NOT IN (SELECT streamer_symbol FROM stream_chain)"
+            )
+            orphaned += int(cur.rowcount or 0)
+        conn.commit()
+        report["orphaned_option_rows"] = orphaned
+        return report
+    except sqlite3.Error as exc:
+        return {"ok": False, "error": str(exc), "applied": False}
 
 
 def latest_summary_date(conn: sqlite3.Connection, symbol: str, *, today: str) -> str | None:
