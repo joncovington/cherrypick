@@ -123,6 +123,30 @@ const TABS: Array<[GexTab, string]> = [
   ["history", "History"],
 ];
 
+const ET = "America/New_York";
+
+function etDay(d: Date): string {
+  return d.toLocaleDateString("en-US", { timeZone: ET });
+}
+
+export function asOfIsToday(epochSeconds: number): boolean {
+  return etDay(new Date(epochSeconds * 1000)) === etDay(new Date());
+}
+
+/**
+ * The cached spot's timestamp, DATED whenever it is not from today.
+ *
+ * A bare time reads as "now". The shared stream cache retains chains for symbols the suite
+ * retired weeks ago, and a profile built from one rendered "as of 20:14 ET" -- indistinguishable
+ * from tonight. The rule this page inherits is that a stale reading must announce itself: an old
+ * row does not, it just reads as live (the lesson `positions.py` records for its own marks).
+ */
+export function formatAsOf(epochSeconds: number): string {
+  const d = new Date(epochSeconds * 1000);
+  const time = d.toLocaleTimeString("en-US", { timeZone: ET, hour12: false });
+  return asOfIsToday(epochSeconds) ? time : `${etDay(d)} ${time}`;
+}
+
 export function GexPage() {
   const [symbol, setSymbol] = useState("SPX");
   const [view, setView] = useState<GexView>("oivol");
@@ -156,8 +180,11 @@ export function GexPage() {
           </span>
         )}
         {p?.ok && p.spotUpdatedAt != null && (
-          <span className="chip muted" title="when the underlying's cached spot last updated -- the age of everything on this tab">
-            as of {new Date(p.spotUpdatedAt * 1000).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour12: false })} ET
+          <span
+            className={asOfIsToday(p.spotUpdatedAt) ? "chip muted" : "chip chip-warn"}
+            title="when the underlying's cached spot last updated -- the age of everything on this tab"
+          >
+            as of {formatAsOf(p.spotUpdatedAt)} ET
           </span>
         )}
         <TabStrip

@@ -308,9 +308,18 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/earnings/live", async () => readEarningsLive(config));
   app.get("/api/gex", async (req) => readGex(config, parsePage(req.query)));
   app.get("/api/gex/symbols", async () => ({ symbols: gexSymbols(config) }));
-  app.get("/api/gex/profile/:symbol", async (req) => {
+  app.get("/api/gex/profile/:symbol", async (req, reply) => {
     const { symbol } = req.params as { symbol: string };
-    return buildGexProfile(config, symbol.toUpperCase());
+    const wanted = symbol.toUpperCase();
+    // Only symbols the recorder is still writing -- the same allow-list shape /api/eod/report uses
+    // below, and for a sharper reason. `buildGexProfile` deliberately falls back to the most recent
+    // PAST expiration so a weekend still shows Friday's profile; for a symbol the suite retired
+    // weeks ago that fallback computes a gamma profile off a dead chain and returns it as a claim
+    // about now. The shared stream cache still holds 34 such underlyings from other modules.
+    if (!gexSymbols(config).includes(wanted)) {
+      return reply.code(404).send({ error: `no recorded GEX for ${wanted}` });
+    }
+    return buildGexProfile(config, wanted);
   });
   app.get("/api/report", async () => buildSuiteReport(config));
   app.get("/api/logs", async () => ({ lines: readLogTail(config) }));
