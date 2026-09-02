@@ -351,6 +351,24 @@ def _dolt_reachable(host: str, port: int) -> bool:
         return False
 
 
+def _streamer_identity(status: dict[str, Any]) -> str:
+    """`pid=… since=…` for the off-hours finding, or "" when the status cannot say.
+
+    Off-session the watchdog deliberately checks liveness only, and liveness was a bare boolean —
+    so a producer replaced overnight and a producer that never moved wrote the identical line. The
+    two are different facts about the box, and only one of them means somebody or something is
+    restarting the sole market-data producer at 2am.
+    """
+    pid = status.get("pid")
+    since = status.get("connected_since")
+    bits = []
+    if pid is not None:
+        bits.append(f"pid={pid}")
+    if since:
+        bits.append(f"since={since}")
+    return f" [{' '.join(bits)}]" if bits else ""
+
+
 def _streamer_stale_age(status: dict[str, Any]) -> float | None:
     """Seconds since the streamer last received ANY market event, or None if it can't be read.
 
@@ -882,16 +900,24 @@ def _check_producer(cfg: dict[str, Any], in_session: bool) -> list[Finding]:
         return [Finding("streamer", WARN, "streamer checkout missing", msg)]
     if not in_session:
         running = None
+        status: dict[str, Any] = {}
         try:
             r = _run_module(root, spec["status_argv"], timeout=15)
             if r.returncode == 0:
-                running = bool((first_json(r.stdout) or {}).get("running"))
+                status = first_json(r.stdout) or {}
+                running = bool(status.get("running"))
         except Exception:
             running = None
         if running is None:
             msg = "off-hours; status unreadable — will be checked at the next in-session tick"
         elif running:
-            msg = "running (off-hours; staleness not checked)"
+            # WHICH producer, not merely that one exists. The boolean alone cannot see a process
+            # swap: on 2026-09-02 this line read "running" at 06:32 and again at 06:42 UTC with a
+            # different process in between, started at 06:37:34 by something still unidentified —
+            # and that restart's reconnect snapshot poisoned curve's regime basis for the session.
+            # `--status` already returns both fields; carrying them makes the swap self-evident in
+            # the log rather than something to reconstruct afterwards.
+            msg = f"running (off-hours; staleness not checked){_streamer_identity(status)}"
         else:
             msg = "not running (off-hours; auto-start at the first in-session tick, 9:15 ET)"
         return [Finding("streamer", OK, "Streamer", msg)]

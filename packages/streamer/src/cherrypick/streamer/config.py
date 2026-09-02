@@ -77,3 +77,16 @@ def pid_path(cfg: dict) -> Path:
     """PID file for the single-instance guard, colocated with the cache it manages — one canonical
     producer means one PID file next to one cache."""
     return cache_path(cfg).parent / "streamer.pid"
+
+
+def stop_path(cfg: dict) -> Path:
+    """Stop-request file, beside the PID file for the same reason.
+
+    A signal cannot carry a reason and, on Windows, cannot even be delivered: `os.kill(pid, SIGTERM)`
+    there is `TerminateProcess`, which runs no handler and no `finally`. So `run_daemon`'s own
+    "cherrypick-streamer stopped." line had never once been written in 39k lines of log, and every
+    restart on this platform was recorded only by the NEXT process's startup banner.
+
+    A file the engine polls fixes both halves: the shutting-down process logs its own exit, and the
+    request can say who asked and why."""
+    return cache_path(cfg).parent / "streamer.stop"

@@ -16,12 +16,14 @@ that already has the suite's tastytrade OAuth stored — under any of the three 
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import signal
 import sqlite3
 import sys
 import time
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 
 from cherrypick.core import looplock, streamcache
@@ -94,6 +96,7 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
     seed = symbols or _config.symbols(cfg)
     reg_symbols = _registry.union_symbols(seed_symbols=seed)
     scfg = cfg.get("streamer", {}) or {}
+    stop_file = _config.stop_path(cfg)
 
     def _extra_subscriptions(underlyings: list[str]) -> dict[str, list[str]]:
         # Base underlying subscriptions (matching the engine's own default) PLUS the registered legs on
@@ -164,6 +167,7 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
         session_factory=make_session_factory(),
         db_path=_config.cache_path(cfg),
         symbols=reg_symbols,
+        stop_file=stop_file,
         extra_subscriptions=_extra_subscriptions,
         protected_symbols=_protected_symbols,
         trade_hook=_orb.OpeningRangeTracker(),  # capture each symbol's 9:30-9:35 ET opening range
@@ -313,14 +317,53 @@ def status(cfg: dict) -> dict:
     return info
 
 
-def stop(cfg: dict) -> dict:
-    """SIGTERM a running daemon (the engine's signal handler drives a clean shutdown)."""
+_STOP_WAIT_S = 20.0
+
+
+def stop(cfg: dict, *, reason: str | None = None, wait_s: float = _STOP_WAIT_S) -> dict:
+    """Ask a running daemon to exit, and leave a record of having asked.
+
+    SIGTERM used to be the whole mechanism, and on this platform it records nothing: win32
+    `os.kill(pid, SIGTERM)` is `TerminateProcess`, so the engine's handler never runs, `run_daemon`'s
+    `finally` never runs, and its "cherrypick-streamer stopped." line had not been written once in
+    39,000 lines of log. Every restart was visible only as the NEXT process's startup banner, which
+    is why an unexplained 02:37 restart on 2026-09-02 -- the one that poisoned a downstream regime
+    reading -- could not be attributed afterwards.
+
+    So write the request to a file the engine polls and let the process log its own exit. The hard
+    kill stays as the fallback for a daemon too wedged to notice, and the result says which path
+    ended it, because "asked and it complied" and "asked and had to kill it" are different facts
+    about the producer's health.
+    """
     pid = running_pid(cfg)
     if pid is None:
         return {"ok": False, "error": "Streamer not running"}
+    stop_file = _config.stop_path(cfg)
+    note = json.dumps(
+        {
+            "requested_at": datetime.now(UTC).isoformat(),
+            "by_pid": os.getpid(),
+            "reason": reason or "cherrypick-streamer --stop",
+        }
+    )
+    try:
+        stop_file.parent.mkdir(parents=True, exist_ok=True)
+        stop_file.write_text(note, encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001 - fall through to the signal path
+        logger.warning("Could not write stop file %s: %s", stop_file, exc)
+    else:
+        deadline = time.time() + max(0.0, wait_s)
+        while time.time() < deadline:
+            if running_pid(cfg) is None:
+                return {"ok": True, "how": "stop_file", "pid": pid, "stop_file": str(stop_file)}
+            time.sleep(0.5)
+        logger.warning("Streamer pid %d did not exit %ss after the stop request", pid, wait_s)
+    # Wedged, or the file could not be written. Kill it, and clear the request so the NEXT process
+    # does not start up and immediately read a stale stop file as its own instruction.
+    stop_file.unlink(missing_ok=True)
     try:
         os.kill(pid, signal.SIGTERM)
-        return {"ok": True, "signal": "SIGTERM", "pid": pid}
+        return {"ok": True, "how": "signal", "signal": "SIGTERM", "pid": pid}
     except Exception as exc:  # noqa: BLE001 - report any OS error back as JSON
         return {"ok": False, "error": str(exc)}
 
@@ -335,6 +378,9 @@ def run_daemon(cfg: dict, symbols: list[str] | None = None) -> int:
     pid_file = _config.pid_path(cfg)
     pid_file.parent.mkdir(parents=True, exist_ok=True)
     pid_file.write_text(str(os.getpid()))
+    # A request left behind by a previous stop -- one that fell back to the kill, or a crash between
+    # write and exit -- must not be read by THIS process as its own instruction to shut down.
+    _config.stop_path(cfg).unlink(missing_ok=True)
     logger.info("cherrypick-streamer PID %d written to %s", os.getpid(), pid_file)
     logger.info(
         "Streaming %s (registry union) -> %s (±%d strikes each)",
@@ -347,5 +393,6 @@ def run_daemon(cfg: dict, symbols: list[str] | None = None) -> int:
         streamer.run()  # blocks with reconnect/backoff until SIGTERM/SIGINT
     finally:
         pid_file.unlink(missing_ok=True)
+        _config.stop_path(cfg).unlink(missing_ok=True)
         logger.info("cherrypick-streamer stopped.")
     return 0
