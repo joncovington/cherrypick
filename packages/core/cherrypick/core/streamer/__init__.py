@@ -558,6 +558,29 @@ class ChainStreamer:
             purged = streamcache.purge_nonpositive_closes(state.conn)
             if purged:
                 self.log.info("Purged %d stored close(s) that were not prices", purged)
+            # Drop chain rows no consumer can legitimately want -- passed expirations, and
+            # underlyings this producer no longer streams. Here rather than on a tick because it is
+            # a backlog drain, not a per-event concern, and once per connection is the same cadence
+            # the close purge above already runs at. `self.symbols` is the set this process actually
+            # BOUND, so a symbol being streamed can never be pruned out from under itself.
+            #
+            # Telemetry-class like everything else in this method: wrapped, and a failure costs the
+            # prune rather than the stream.
+            try:
+                pruned = streamcache.prune_cache(
+                    state.conn, declared_underlyings=self.symbols, today=today, apply=True
+                )
+                if pruned.get("chain_rows") or pruned.get("orphaned_option_rows"):
+                    self.log.info(
+                        "Pruned %s dead chain row(s) and %s orphaned option row(s) "
+                        "(expirations before %s; retired underlyings: %s)",
+                        pruned.get("chain_rows"),
+                        pruned.get("orphaned_option_rows"),
+                        pruned.get("expired_before"),
+                        ", ".join(pruned.get("undeclared_underlyings") or []) or "none",
+                    )
+            except Exception as exc:  # noqa: BLE001 -- a failed prune must never cost the stream
+                self.log.warning("Cache prune failed: %s", exc)
             deficits: dict[str, int] = {}
             # Whatever we actually maintain Summary rows for -- not `self.symbols`. The two differ
             # whenever a consumer declares an instrument as a LEG, which is the normal way to ask for
