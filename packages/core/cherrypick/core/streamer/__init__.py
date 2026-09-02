@@ -376,18 +376,28 @@ class ChainStreamer:
             if state.stop_event.is_set():
                 break
             ts = time.time()
+            # Two clocks, deliberately kept apart. `ts` is when WE received the event and answers
+            # "is the feed alive"; `event_at` is when the EXCHANGE printed the trade and answers
+            # "how old is this price". A reconnect resubscribes every symbol and DXLink replays a
+            # snapshot of the last print, so on that tick `ts` is now and `event_at` is hours old —
+            # and a consumer that asked `ts` how old the price was got "seconds". curve settled two
+            # daily VIX/VIX3M regime readings on that answer, both from the prior session's close.
+            # dxfeed stamps `time` in milliseconds; None when the event carries no usable time.
+            event_ms = streamcache.to_float(getattr(event, "time", None))
+            event_at = event_ms / 1000.0 if event_ms else None
             try:
                 conn.execute(
-                    "INSERT INTO stream_trades (symbol, last, change, volume, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?) ON CONFLICT(symbol) DO UPDATE SET "
+                    "INSERT INTO stream_trades (symbol, last, change, volume, updated_at, event_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(symbol) DO UPDATE SET "
                     "last=excluded.last, change=excluded.change, volume=excluded.volume, "
-                    "updated_at=excluded.updated_at",
+                    "updated_at=excluded.updated_at, event_at=excluded.event_at",
                     (
                         event.event_symbol,
                         streamcache.to_float(event.price),
                         streamcache.to_float(event.change),
                         streamcache.to_float(event.day_volume),
                         ts,
+                        event_at,
                     ),
                 )
                 self._maybe_commit(state)

@@ -26,6 +26,13 @@ from cherrypick.core.db import connect_ro
 
 # The schema every consumer shares. orb_ranges/stream_rest_cache are used only by MEIC's daemon today
 # but are kept here so MEIC can adopt this DDL verbatim when it migrates onto the core engine.
+# `stream_trades` carries two clocks and they are not interchangeable. `updated_at` is when this
+# process RECEIVED the event; `event_at` is when the EXCHANGE printed the trade (nullable — an event
+# without a usable time records nothing rather than borrowing the other). They agree on a live tape
+# and come apart on a reconnect, which replays a snapshot of the last print: `updated_at` then says
+# "seconds ago" about a price that is hours old. Ask `event_at` how old a PRICE is; ask `updated_at`
+# whether the feed is alive. Keep this out of the SQL itself — SQLite stores the CREATE TABLE text
+# verbatim and re-parses it on ALTER, where a trailing `--` comment swallows the rest of the line.
 DDL = """
 CREATE TABLE IF NOT EXISTS stream_chain (
     streamer_symbol   TEXT PRIMARY KEY,
@@ -60,7 +67,8 @@ CREATE TABLE IF NOT EXISTS stream_trades (
     last        REAL,
     change      REAL,
     volume      REAL,
-    updated_at  REAL NOT NULL
+    updated_at  REAL NOT NULL,
+    event_at    REAL
 );
 CREATE TABLE IF NOT EXISTS stream_oi (
     symbol        TEXT PRIMARY KEY,
@@ -215,6 +223,12 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
     existing = {row[1] for row in conn.execute("PRAGMA table_info(stream_chain)")}
     if "underlying_symbol" not in existing:
         conn.execute("ALTER TABLE stream_chain ADD COLUMN underlying_symbol TEXT")
+    # Additive migration for caches created before event_at existed. Rows written by an older
+    # producer keep it NULL, which reads as "this print's own time was never recorded" — the honest
+    # answer, and the one a caller must handle anyway for an event that carries no usable time.
+    trade_cols = {row[1] for row in conn.execute("PRAGMA table_info(stream_trades)")}
+    if "event_at" not in trade_cols:
+        conn.execute("ALTER TABLE stream_trades ADD COLUMN event_at REAL")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_chain_underlying ON stream_chain(underlying_symbol, expiration)"
     )
