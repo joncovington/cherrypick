@@ -351,6 +351,10 @@ def _close_history(conn, symbols, session: str, days: int) -> dict[str, list[dic
 # The curve, front to back. `dte` is nominal and is what the slope is quoted against; the symbol is
 # provenance. VIX6M/VIX1Y were admitted 2026-08-25 after an entitlement probe (docs/regime-recorder-plan.md).
 _TERM_POINTS = (
+    # VIX1D admitted 2026-09-02 at the advisor's request (flies band-containment, proposal #110):
+    # the one-day implied range is the front-most point the curve can carry, and the recorder has
+    # streamed it since 08-24.
+    ("vix1d", "VIX1D", 1),
     ("vix9d", "VIX9D", 9),
     ("vix", "VIX", 30),
     ("vix3m", "VIX3M", 91),
@@ -361,7 +365,7 @@ _TERM_POINTS = (
 # Readings whose position in their own trailing range is worth recording beside the level. A level
 # alone does not say whether it is unusual, and "VIX 15.7" means something different in a year that
 # never left 12-18 than in one that touched 60.
-_VOL_HISTORY_SYMBOLS = frozenset({"VIX9D", "VIX6M", "VIX1Y", "VVIX", "SKEW"})
+_VOL_HISTORY_SYMBOLS = frozenset({"VIX1D", "VIX9D", "VIX6M", "VIX1Y", "VVIX", "SKEW"})
 
 # Readings whose LIVE quote the feed serves but whose DAILY series it does not. Declared, not
 # inferred: nothing in the data can distinguish "no history yet" from "no history ever", and the
@@ -373,6 +377,7 @@ _VOL_HISTORY_SYMBOLS = frozenset({"VIX9D", "VIX6M", "VIX1Y", "VVIX", "SKEW"})
 _NO_DAILY_SERIES = frozenset({"skew"})
 
 _PERCENTILE_READINGS = (
+    ("vix1d", "VIX1D"),
     ("vix9d", "VIX9D"),
     ("vix", "VIX"),
     ("vix3m", "VIX3M"),
@@ -561,6 +566,7 @@ def build(session: str | None = None, now: datetime | None = None) -> dict:
             "vix3m": _symbol_reading(cache, "VIX3M", session, now_ts, label="VIX3M"),
             # The rest of the term structure, plus the tail reading. Added 2026-08-25 for the
             # vol-regime block; additive to the pack and read by no gate.
+            "vix1d": _symbol_reading(cache, "VIX1D", session, now_ts, label="VIX1D (1-day implied)"),
             "vix9d": _symbol_reading(cache, "VIX9D", session, now_ts, label="VIX9D"),
             "vix6m": _symbol_reading(cache, "VIX6M", session, now_ts, label="VIX6M"),
             "vix1y": _symbol_reading(cache, "VIX1Y", session, now_ts, label="VIX1Y"),
