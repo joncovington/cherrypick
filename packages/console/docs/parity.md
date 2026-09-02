@@ -19,12 +19,22 @@ the dashboard had it. Those were **struck rather than deferred**, each with the 
 list nobody intends to act on stops being a backlog and starts being noise. What survives below is
 what someone would actually build.
 
+**Re-audited again 2026-09-02, and it had drifted the same way once more.** One row was stale in
+the direction that makes a backlog read as longer than it is: "Live ops" still listed the halt flag
+as missing while the row directly above it recorded the same flag as done. Nothing was struck this
+pass and nothing new was added — the drift was entirely a done thing still being carried. The other
+two rows below were re-checked against the running console and remain accurate.
+
 The gaps accepted knowingly at deletion time were:
 
-- **Live ops** (halt flag, per-module live gates, reconcile panel) — the only surface with *no*
-  console equivalent at all. Deliberately never ported because it is broker-touching, and it belongs
-  with the settings editor in a later phase that revisits console's "read-only, never writes
-  credentials" guardrail. `liveops.py` and `reconcile.py` both survive; only their card is gone.
+- **Live ops** (halt flag, per-module live gates, reconcile panel) — at deletion time the only
+  surface with *no* console equivalent at all. Deliberately never ported because it is
+  broker-touching, and it belongs with the settings editor in a later phase that revisits console's
+  "read-only, never writes credentials" guardrail. `liveops.py` and `reconcile.py` both survive;
+  only their card is gone. **The halt flag has since arrived** by exactly the route that paragraph
+  anticipated — the Config page applies it through the orchestrator's own config editor rather than
+  writing anything itself, so the guardrail held. The per-module live gates and the reconcile panel
+  are what remain, and they are the parts that would actually test it.
 - Active-alerts callout and notify-channels line; equity 2x-slippage restatement, best/worst-day
   metrics, VIX overlay, data-epoch marker; the live-logs sub-block.
 - MEIC per-leg badges, stop-adjustment columns, AI reasoning, explicit date-range inputs, the arm
@@ -72,7 +82,7 @@ Console's `readers/logs.ts` is a separate implementation and does not inherit th
 | Suite equity — cumulative net P&L + module lines | done. 2x-slippage restatement, best/worst-day metrics and the VIX overlay **struck 2026-08-26** (see above). Still wanted: the data-epoch marker, so a curve says where its measurement breaks are |
 | Champions & challengers (calibrate) | **REMOVED 2026-08-20** — the page, the `/api/calibration` route, the champion column on the System card and `core.profiles.recommend_champion` all went together. Judging whether an arm earned anything belongs to `packages/advisor`'s experiments now, so the suite has one mechanism rather than two answering that on different evidence and thresholds. `cherrypick calibrate` still reports the per-tag reading |
 | System: modules, services, config summary, halt flag | done (live doctor checks and OS task registry not ported — they need the orchestrator's own subprocess) |
-| Live ops: halt flag, per-module live gates, reconcile panel | **missing** — broker-touching; port deliberately |
+| Live ops: per-module live gates, reconcile panel | **missing** — broker-touching; port deliberately. **Narrowed 2026-09-02:** the halt flag left this row and is done — `configOps.ts` applies it through the orchestrator's own config editor, with a typed confirmation checked server-side, which is the bounded read-only exception the package CLAUDE.md describes. The row above already said "halt flag \| done", so this one had been contradicting its own neighbour |
 | End-of-day card + md report links/rendering | done (in-page markdown rendering, allowlisted files) |
 | Recent logs (merged tail, level filters) | done; live-logs sub-block **struck 2026-08-26** — a filter over a filterable log |
 
