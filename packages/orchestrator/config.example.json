@@ -456,6 +456,8 @@
     "start": "10:00",
     "end": "16:10",
     "_window_note": "ET wall-clock, trading days only. 10:00 gives the first card a half-session to describe; 16:10 lets the ~16:00 fire land after the 0DTE modules settle.",
+    "close_at": "16:35",
+    "_close_note": "The one daily CLOSE card (status-digest-close job): same composition, posted after the 0DTE books settle and the official 16:30 review-provisional build, with deltas against the last hourly post.",
     "channels": [
       "log",
       "discord"

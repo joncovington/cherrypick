@@ -48,6 +48,10 @@ def build(facts_doc=None, watchdog=None, morning=None, halted=False, prev=None):
     return status_digest.build_digest("2026-09-01", "13:00", facts_doc, watchdog, morning, halted, prev)
 
 
+def build_close():
+    return status_digest.build_digest("2026-09-01", "16:35", facts(), None, None, False, None, close=True)
+
+
 def all_text(embed: dict, message: str) -> str:
     return message + " ".join(f["name"] + " " + f["value"] for f in embed["fields"])
 
@@ -260,6 +264,26 @@ def test_status_digest_job_derives_windowed_hourly_on_trading_days():
     assert job.argv == ("pythonw", "run.py", "notify-status")
 
 
+def test_the_close_card_is_its_own_daily_job_after_settlement():
+    """One CLOSE card per session, after the 0DTE books settle (~16:15) and the official 16:30
+    review-provisional build — the day's final intraday word."""
+    cfg = {"status_digest": {"enabled": True}}
+    job = next(j for j in _derive(cfg)[0] if j.id == "status-digest-close")
+    assert job.enabled
+    assert job.kind == jobspec.KIND_DAILY and job.at_et == "16:35"
+    assert job.trading_days_only
+    assert job.argv == ("pythonw", "run.py", "notify-status", "--close")
+
+    off = next(j for j in _derive({})[0] if j.id == "status-digest-close")
+    assert not off.enabled and "status_digest" in off.enabled_reason
+
+
+def test_the_close_card_says_close():
+    _, message, embed, _ = build_close()
+    assert embed["title"].startswith("CLOSE · SUITE")
+    assert message.startswith("Suite close")
+
+
 def test_settings_reader_defaults():
     sd = cfgmod.status_digest_settings({})
     assert sd == {
@@ -267,5 +291,6 @@ def test_settings_reader_defaults():
         "interval_minutes": 60,
         "start": "10:00",
         "end": "16:10",
+        "close_at": "16:35",
         "channels": ["log", "discord"],
     }

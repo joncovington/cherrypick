@@ -55,8 +55,8 @@ Subcommands:
   notify-test          Fire a test notification through all configured channels.
   notify-trades        Push new paper entries/exits to the trade channels (also runs on each watchdog tick).
   notify-desk          Card manual-desk orders and watch them to fill (own task, broker + network call).
-  notify-status        Post the hourly suite-status digest card (own job, webhook push). --force posts
-                       on a non-trading day too.
+  notify-status        Post the hourly suite-status digest card (own job, webhook push). --close posts
+                       the day's CLOSE card (the daily 16:35 job); --force posts on a non-trading day too.
   secrets-set          Store a webhook URL in the keyring (--channel; --url or prompt).
   secrets-status       Show which push-channel secrets are configured (secret-free).
   secrets-delete       Remove a stored secret (--channel).
@@ -1094,8 +1094,8 @@ def cmd_notify_desk(cfg) -> None:
     _emit(desk_notifier.run(cfg))
 
 
-def cmd_notify_status(cfg, force: bool = False) -> None:
-    _emit(status_digest.run(cfg, force=force))
+def cmd_notify_status(cfg, force: bool = False, close: bool = False) -> None:
+    _emit(status_digest.run(cfg, force=force, close=close))
 
 
 def _resolve_session(args) -> str | None:
@@ -1359,6 +1359,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="For supervise: ask the running supervisor daemon to exit (via its stop file)",
     )
+    parser.add_argument(
+        "--close",
+        action="store_true",
+        help="For notify-status: post the day's CLOSE card (what the daily status-digest-close job passes)",
+    )
     return parser
 
 
@@ -1401,7 +1406,7 @@ def main() -> None:
         "calibrate": lambda: cmd_calibrate(cfg),
         "notify-trades": lambda: cmd_notify_trades(cfg),
         "notify-desk": lambda: cmd_notify_desk(cfg),
-        "notify-status": lambda: cmd_notify_status(cfg, force=args.force),
+        "notify-status": lambda: cmd_notify_status(cfg, force=args.force, close=args.close),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),
         "run-earnings-exit": lambda: _run_earnings(cfg, "exit"),
         "run-earnings-symbol-watch": lambda: _run_earnings_symbol_watch(cfg),
