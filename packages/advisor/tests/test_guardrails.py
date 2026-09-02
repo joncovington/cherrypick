@@ -185,3 +185,27 @@ def test_the_package_declares_only_core_as_a_dependency():
     declared = body.split("dependencies = ")[1].split("]")[0]
     assert "cherrypick-core" in declared
     assert declared.count('"') == 2, f"only cherrypick-core may be a runtime dependency: {declared}"
+
+
+def test_the_orchestrator_example_lists_every_advisable_module():
+    """The suite config is what GRANTS the advisor a module, and its example is the only place a
+    fresh install learns which modules can be granted. That list is hand-kept, so it drifts: bwb
+    and curve were advisable from 2026-08-26 and absent from it until 2026-09-02, the same shape
+    as the three module lists that already disagreed inside this package.
+
+    Listed, not enabled -- the example ships every module off except the two that default on, and
+    what matters is that a reader can see the module exists as an option at all.
+    """
+    import json
+    from pathlib import Path
+
+    from cherrypick.advisor import bounds
+
+    example = Path(__file__).resolve().parents[2] / "orchestrator" / "config.example.json"
+    assert example.exists(), f"orchestrator example config not found at {example}"
+    listed = set(json.loads(example.read_text(encoding="utf-8"))["advisor"]["modules"])
+    missing = [m for m in bounds.MODULES if m not in listed]
+    assert not missing, (
+        f"advisable modules absent from the orchestrator's config.example.json advisor.modules: "
+        f"{missing} -- a fresh install cannot discover them"
+    )
