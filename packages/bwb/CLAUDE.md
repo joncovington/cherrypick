@@ -254,6 +254,6 @@ at all" were the same silence. An armed-but-unpriceable add-on is now written as
 says what stopped it. `addon_not_credit` was always meant to be recorded; the path that reached it
 was simply never taken.
 
-Not yet wired into the orchestrator's supervisor job registry (a tracked fast-follow, not an
-oversight); `packages/console` mirrors the integrity reading but has no dedicated page yet
-(deferred until first real positions exist, the pmcc/curve sequencing).
+Both of this section's former fast-follows have landed (verified 2026-09-02): the module runs as
+the supervisor's `bwb-paper` job on a 60s interval, and `packages/console` serves a dedicated
+`/bwb` page beside the integrity reading it already mirrored.

@@ -228,5 +228,7 @@ can't touch it.
 
 Built 2026-08-22, no paper data yet. First paper session begins with the first scheduled run; the
 regime series accumulates value immediately regardless of whether any book has traded. The module
-appears in the generic Review page from day one via the `curve_vx` schema registration; a
-dedicated `/curve` console page is deferred until first real positions exist (the pmcc sequencing).
+appears in the generic Review page from day one via the `curve_vx` schema registration, and the
+dedicated `/curve` console page has since landed (verified 2026-09-02) — its "deferred until first
+real positions exist" condition was met by the 2026-09-02 session, which opened and closed one
+VXX spread in `control` and `noflip`.
