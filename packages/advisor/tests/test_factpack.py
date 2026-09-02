@@ -642,8 +642,9 @@ def test_flies_band_containment_separates_breach_from_containment(tmp_home):
         "n": 1,
         "_basis": out["forecasts"]["gex_walls"]["_basis"],
     }
-    # vix1d is omitted with a stated reason, never approximated.
-    assert "_omitted" in out["forecasts"]["vix1d_implied"]
+    # No VIX1D reading or prior close seeded: the forecast reports n=0 and a null rate, never a guess.
+    assert out["forecasts"]["vix1d_implied"]["n"] == 0
+    assert out["forecasts"]["vix1d_implied"]["hit_rate"] is None
 
 
 def test_a_book_with_no_recorded_range_is_unmatched_not_guessed(tmp_home):
