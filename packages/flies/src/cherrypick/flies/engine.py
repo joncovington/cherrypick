@@ -800,6 +800,37 @@ def portfolio_gates(
     return None, {}
 
 
+def containment_refusal(snapshot: dict, params: dict, gate_detail: dict | None = None) -> str | None:
+    """The containment gate (opt-in per arm via `max_forecast_range_points`; off when unset).
+
+    The advisor's band-containment derivation (2026-09-01/02): whether a book's floor held has
+    been decided by whether the session's realized range stayed inside the book's band -- on 144
+    recorded books, breached bands held 9% of the time and a 10+ point margin held 100%. A book
+    cannot move the realized range, so the lever is to skip sessions whose FORECAST range is wider
+    than a book can be expected to contain. The forecast is the trailing realized range
+    (`provider._trailing_range`); the cap is what the advisor sweeps.
+
+    Day-level and mode-agnostic: every entry evaluator asks it BEFORE strike selection, so the
+    attempts ledger attributes the refusal to the session, not to the strike, and an arm carrying
+    the cap behaves identically whichever entry mode it runs. Refuses when the forecast is
+    unmeasured -- a gate that cannot read its input must say so rather than wave the entry
+    through, or the arm's book on a no-history day reads as the gate's own choice.
+
+    Returns the refusal reason, or None to proceed.
+    """
+    forecast_cap = params.get("max_forecast_range_points")
+    if forecast_cap is None:
+        return None
+    forecast = (snapshot.get("session") or {}).get("trailing_range_points")
+    if forecast is None:
+        return "forecast_range_unavailable"
+    if gate_detail is not None:
+        gate_detail["forecast_range_points"] = round(float(forecast), 2)
+    if float(forecast) > float(forecast_cap):
+        return "forecast_range_exceeds_cap"
+    return None
+
+
 # --------------------------------------------------------------------------- legged entry (step 1)
 def evaluate_credit_spread_entry(
     snapshot: dict,
@@ -829,6 +860,10 @@ def evaluate_credit_spread_entry(
 
     if _window_cap_reached(params, open_positions, window):
         return False, "max_positions_this_window_reached", None
+
+    refusal = containment_refusal(snapshot, params, gate_detail)
+    if refusal:
+        return False, refusal, None
 
     center, center_reason = select_center(snapshot, params)
     if center is None:
@@ -1086,6 +1121,10 @@ def evaluate_debit_vertical_entry(
 
     if _window_cap_reached(params, open_positions, window):
         return False, "max_positions_this_window_reached", None
+
+    refusal = containment_refusal(snapshot, params, gate_detail)
+    if refusal:
+        return False, refusal, None
 
     center, center_reason = select_center(snapshot, params)
     if center is None:
@@ -1345,6 +1384,10 @@ def evaluate_bwb_entry(
     if _window_cap_reached(params, open_positions, window):
         return False, "max_positions_this_window_reached", None
 
+    refusal = containment_refusal(snapshot, params, gate_detail)
+    if refusal:
+        return False, refusal, None
+
     center, center_reason = select_center(snapshot, params)
     if center is None:
         return False, center_reason, None
@@ -1545,6 +1588,10 @@ def evaluate_outright_entry(
 
     if _window_cap_reached(params, open_positions, window):
         return False, "max_positions_this_window_reached", None
+
+    refusal = containment_refusal(snapshot, params, None)
+    if refusal:
+        return False, refusal, None
 
     center, center_reason = select_center(snapshot, params)
     if center is None:

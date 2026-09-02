@@ -1717,3 +1717,47 @@ def test_callwall_sells_the_call_spread_not_the_side_heuristic():
     assert plan["center"] == 6005.0
     # Long wing above the shorts: 6005/6010 call credit spread, completing strike below.
     assert plan["completing_strike"] == 6000.0
+
+
+# --------------------------------------------------------------------------- the containment gate
+def _forecast_snapshot(trailing):
+    snap = snapshot()
+    snap["session"] = {"day_open": 6000.0, "trailing_range_points": trailing}
+    return snap
+
+
+def test_the_containment_gate_refuses_a_session_whose_forecast_range_exceeds_the_cap():
+    """The advisor's finding on 144 books: floors hold when the realized range stays inside the
+    band. A book cannot move the range, so the lever skips sessions forecast wider than a book
+    contains. Day-level, before strike selection, so the refusal is attributed to the session."""
+    gated = {**params(), "max_forecast_range_points": 60}
+    enter, reason, _ = engine.evaluate_credit_spread_entry(_forecast_snapshot(80.0), gated, [])
+    assert not enter and reason == "forecast_range_exceeds_cap"
+
+
+def test_the_containment_gate_admits_a_session_inside_the_cap():
+    gated = {**params(), "max_forecast_range_points": 60}
+    _, reason, _ = engine.evaluate_credit_spread_entry(_forecast_snapshot(45.0), gated, [])
+    assert reason not in ("forecast_range_exceeds_cap", "forecast_range_unavailable")
+
+
+def test_the_containment_gate_refuses_rather_than_guesses_without_a_forecast():
+    """A gate that cannot read its input must say so, or a no-history day's book reads as the
+    gate's own choice."""
+    gated = {**params(), "max_forecast_range_points": 60}
+    enter, reason, _ = engine.evaluate_credit_spread_entry(_forecast_snapshot(None), gated, [])
+    assert not enter and reason == "forecast_range_unavailable"
+
+
+def test_the_containment_gate_is_off_when_unset():
+    """control and every existing arm are untouched -- opt-in, carried only by the advised book."""
+    _, reason, _ = engine.evaluate_credit_spread_entry(_forecast_snapshot(500.0), params(), [])
+    assert reason not in ("forecast_range_exceeds_cap", "forecast_range_unavailable")
+
+
+def test_the_containment_gate_reports_the_forecast_it_judged():
+    detail: dict = {}
+    engine.evaluate_credit_spread_entry(
+        _forecast_snapshot(80.0), {**params(), "max_forecast_range_points": 60}, [], None, detail
+    )
+    assert detail["forecast_range_points"] == 80.0
