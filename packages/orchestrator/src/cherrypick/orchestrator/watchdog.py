@@ -89,25 +89,43 @@ def _check_supervisor(cfg: dict[str, Any]) -> list[Finding]:
         return []
     anchor_exists = tasks.exists(supersnap.ANCHOR_TASK)
     findings: list[Finding] = []
-    if supersnap.supervisor_alive():
+    hb = util.read_json(supervisor.heartbeat_path())
+    if supersnap.supervisor_alive(hb):
         findings.append(
             Finding(
                 "supervisor.alive",
                 OK,
                 "Supervisor",
-                f"running (heartbeat {supersnap.heartbeat_age_seconds():.0f}s old)",
+                f"running (heartbeat {supersnap.heartbeat_age_seconds(hb):.0f}s old)",
             )
         )
     else:
-        age = supersnap.heartbeat_age_seconds()
+        # supervisor_alive is heartbeat-freshness AND pid-liveness, so say WHICH half failed: the
+        # 2026-09-01 alert read "Heartbeat is 2s old (limit 90s). Not running." — self-contradictory
+        # on its face, when what it had actually caught was the check's most interesting case, a
+        # daemon dead seconds after its last heartbeat.
+        age = supersnap.heartbeat_age_seconds(hb)
+        pid = (hb or {}).get("pid")
+        if age is None:
+            what = "No supervisor heartbeat found."
+        elif age > supervisor.HEARTBEAT_FRESH_SECONDS:
+            what = (
+                f"Heartbeat is {age:.0f}s stale (limit {supervisor.HEARTBEAT_FRESH_SECONDS}s) — "
+                f"pid {pid} is wedged or long gone."
+            )
+        else:
+            what = (
+                f"Heartbeat is fresh ({age:.0f}s old) but pid {pid} is dead — the daemon just "
+                "crashed or was killed. Its death breadcrumbs are in logs/supervisor.log and "
+                "logs/supervisor-fault.log."
+            )
         findings.append(
             Finding(
                 "supervisor.alive",
                 CRITICAL,
                 "Supervisor is not running",
-                (f"Heartbeat is {age:.0f}s old" if age is not None else "No supervisor heartbeat found")
-                + f" (limit {supervisor.HEARTBEAT_FRESH_SECONDS}s). Scheduled jobs are not being "
-                "fired. ensure-supervisor should restart it within ~2 min; check logs/supervisor.log.",
+                what + " Scheduled jobs are not being fired. ensure-supervisor should restart it "
+                "within ~2 min; check logs/supervisor.log.",
             )
         )
     if anchor_exists:
