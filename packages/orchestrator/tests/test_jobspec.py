@@ -283,6 +283,7 @@ def test_derive_full_suite_job_table():
         "streamer-health",
         "trade-notify",
         "desk-notify",
+        "status-digest",
         "console",
         "meic-paper",
         "flies-paper",

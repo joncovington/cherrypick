@@ -416,6 +416,23 @@ def derive_jobs(
         ),
     )
 
+    # --- status-digest (webhook push → its own job, never on the watchdog tick, like desk-notify)
+    sd = cfgmod.status_digest_settings(cfg)
+    add(
+        "status-digest",
+        lambda: JobSpec(
+            id="status-digest",
+            argv=_run_py(pythonw, launcher, "notify-status"),
+            kind=KIND_INTERVAL,
+            interval_seconds=int(sd["interval_minutes"]) * 60,
+            window_start=sd["start"],
+            window_end=sd["end"],
+            trading_days_only=True,
+            enabled=sd["enabled"],
+            enabled_reason="" if sd["enabled"] else "disabled in config (status_digest)",
+        ),
+    )
+
     # --- console (the suite's read surface): the one job with no window at all
     con = cfgmod.console_settings(cfg)
     if not con["enabled"]:
