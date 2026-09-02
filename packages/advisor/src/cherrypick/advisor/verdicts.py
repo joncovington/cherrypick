@@ -35,6 +35,13 @@ SCHEMAS = {
     "earnings": "earnings",
     "calendars": "dc_week",
     "pmcc": "pmcc_99",
+    # bwb and curve joined `bounds.MODULES` on 2026-08-26 but not this map, so bwb reached an
+    # active experiment (exp-2026-08-27-bwb-1, three sessions in) with arm_readings.bwb an empty
+    # object: `closed_records` found no reader and there was nothing to score it against. The
+    # review package had the identical miss on the same date. `test_every_advisable_module_has_a_
+    # scoreable_ledger_schema` now fails the moment a module can be advised and not scored.
+    "bwb": "bwb_132",
+    "curve": "curve_vx",
 }
 
 

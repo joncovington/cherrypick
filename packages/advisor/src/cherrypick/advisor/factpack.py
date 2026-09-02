@@ -1249,8 +1249,10 @@ def _flies_band_containment() -> dict[str, Any]:
     entry, so a containment rule could actually be implemented — for the two candidates the
     suite's own stores can answer: the trailing realized range and the morning GEX walls, each
     scored on whether its band contained the session's realized range. The proposal's third
-    candidate (vix1d_implied) is omitted because no VIX1D series is recorded anywhere in the
-    suite's stores — stated rather than approximated.
+    candidate (vix1d_implied) reads the gex recorder's own `market_regime_history` (the first
+    usable VIX1D reading of the session) against the prior SPX close from `daily_closes` — the
+    first cut of this derivation said no VIX1D series existed, which was wrong: the recorder has
+    carried it since 2026-08-24.
     """
 
     def books(conn):
@@ -1276,9 +1278,24 @@ def _flies_band_containment() -> dict[str, Any]:
             "  WHERE symbol = 'SPX' AND trade_date = g.trade_date)",
         )
 
+    def vix1d(conn):
+        return _store.rows(
+            conn,
+            "SELECT m.trade_date, m.value FROM market_regime_history m"
+            " WHERE m.reading = 'vix1d' AND m.usable = 1 AND m.ts = (SELECT MIN(ts) FROM"
+            "  market_regime_history WHERE reading = 'vix1d' AND usable = 1 AND trade_date = m.trade_date)",
+        )
+
+    def closes(conn):
+        return _store.rows(
+            conn, "SELECT trade_date, close FROM daily_closes WHERE symbol = 'SPX' ORDER BY trade_date"
+        )
+
     rows = _read(_paper_db("flies"), books) or []
     day = {r["trade_date"]: r for r in (_read(_gex_history(), ranges) or [])}
     first = {r["trade_date"]: r for r in (_read(_gex_history(), walls) or [])}
+    vix1d_open = {r["trade_date"]: float(r["value"]) for r in (_read(_gex_history(), vix1d) or [])}
+    close_by_date = {r["trade_date"]: float(r["close"]) for r in (_read(_gex_history(), closes) or [])}
     if not rows:
         return {"_absent": "no flies books recorded"}
 
@@ -1334,6 +1351,7 @@ def _flies_band_containment() -> dict[str, Any]:
     trailing_n = 5
     trailing_hits, trailing_scored = 0, 0
     wall_hits, wall_scored = 0, 0
+    vix_hits, vix_scored = 0, 0
     for i, s in enumerate(sessions):
         rng = day[s]
         realized = float(rng["hi"]) - float(rng["lo"])
@@ -1353,6 +1371,15 @@ def _flies_band_containment() -> dict[str, Any]:
             wall_scored += 1
             if float(f["put_wall"]) <= float(rng["lo"]) and float(f["call_wall"]) >= float(rng["hi"]):
                 wall_hits += 1
+        # vix1d_implied: prev_close * vix1d/100 / sqrt(252) as a symmetric band around the open.
+        v = vix1d_open.get(s)
+        prev_close = close_by_date.get(max((d for d in close_by_date if d < s), default=""))
+        center = float(f["open_spot"]) if f and f.get("open_spot") is not None else None
+        if v is not None and prev_close and center is not None:
+            half = prev_close * v / 100.0 / (252**0.5)
+            vix_scored += 1
+            if center - half <= float(rng["lo"]) and center + half >= float(rng["hi"]):
+                vix_hits += 1
         _ = realized
 
     return {
@@ -1378,14 +1405,21 @@ def _flies_band_containment() -> dict[str, Any]:
             "trailing_realized_5": {
                 "hit_rate": round(trailing_hits / trailing_scored, 4) if trailing_scored else None,
                 "n": trailing_scored,
-                "_basis": "band = first recorded spot ± half the mean of the prior 5 realized ranges",
+                "_basis": "band = first recorded spot +/- half the mean of the prior 5 realized ranges",
             },
             "gex_walls": {
                 "hit_rate": round(wall_hits / wall_scored, 4) if wall_scored else None,
                 "n": wall_scored,
                 "_basis": "band = the session's first recorded put_wall..call_wall",
             },
-            "vix1d_implied": {"_omitted": "no VIX1D series is recorded in the suite's stores"},
+            "vix1d_implied": {
+                "hit_rate": round(vix_hits / vix_scored, 4) if vix_scored else None,
+                "n": vix_scored,
+                "_basis": (
+                    "band = first recorded spot +/- prev_close x (first usable VIX1D of the session)"
+                    "/100/sqrt(252)"
+                ),
+            },
         },
     }
 
