@@ -506,3 +506,168 @@ def test_the_deep_ceiling_stays_below_the_pack_it_is_meant_to_constrain():
     itself drift upward with the artifact.
     """
     assert factpack.DEEP_MAX_BYTES < 400_000
+
+
+# ------------------------------------------------- the 2026-09-01 declarations (proposals #101-#103)
+
+
+def test_earnings_pack_declares_the_advised_twin_pairing(tmp_home):
+    """The pack flagged twin pairs as 'double-tagging' twice (#94, #103) because nothing in it said
+    the pairing is the design. Now it is measured: `paired` is the by-design case, and only an
+    advised row with no control under the stripped order_id is a defect."""
+    earnings = fakes.make_db(paths.module_data_dir("earnings") / "paper_trades.db", fakes.EARNINGS_DDL)
+    fakes.insert(
+        earnings,
+        "trades",
+        [
+            {
+                "order_id": "st-ic-DELL-1",
+                "symbol": "DELL",
+                "expiration": "2026-08-15",
+                "profile": "strat_test:iron_condor",
+                "entry_credit": 12.8,
+                "opened_at": 1.0,
+            },
+            {
+                "order_id": "advised-st-ic-DELL-1",
+                "symbol": "DELL",
+                "expiration": "2026-08-15",
+                "profile": "advised:strat_test:iron_condor",
+                "entry_credit": 12.8,
+                "opened_at": 1.0,
+            },
+            {
+                "order_id": "advised-orphan-1",
+                "symbol": "PANW",
+                "expiration": "2026-08-15",
+                "profile": "advised:strat_test:iron_condor",
+                "entry_credit": 8.9,
+                "opened_at": 1.0,
+            },
+        ],
+    )
+    out = factpack._earnings(SESSION)
+    twins = out["advised_twins"]
+    assert twins["advised_rows"] == 2
+    assert twins["paired"] == 1
+    assert twins["unpaired_advised"] == 1
+    assert "PAIRED-TWIN DESIGN" in out["_twin_note"]
+
+
+def test_bwb_pack_carves_non_base_books_out_of_the_contrast(tmp_home):
+    """The 'wall' book (opt-in, 2026-08-31) trades a different structure by its own config
+    declaration, but the pack's note still said 'four identical books' — so the model read wall's
+    rows as the contrast silently breaking (#101). The carve-out is derived from the rows."""
+    bwb = fakes.make_db(
+        paths.module_data_dir("bwb") / "paper_trades.db",
+        "CREATE TABLE bwb_positions (position_id TEXT, book TEXT, symbol TEXT, entry_session TEXT,"
+        " body_strike REAL, near_strike REAL, far_strike REAL, expiration TEXT, status TEXT,"
+        " entry_credit REAL, armed_at TEXT, addon_fired_at TEXT, gross_pnl REAL, fees REAL,"
+        " exit_reason TEXT);",
+    )
+    fakes.insert(
+        bwb,
+        "bwb_positions",
+        [
+            {"position_id": "p1", "book": "control", "symbol": "SPX", "status": "open"},
+            {"position_id": "p2", "book": "advised:control", "symbol": "SPX", "status": "open"},
+            {"position_id": "p3", "book": "wall", "symbol": "SPX", "status": "open"},
+        ],
+    )
+    out = factpack._bwb(SESSION)
+    assert out["non_base_books"] == ["wall"]
+    assert "SEPARATE structure" in out["_note"]
+
+
+def test_flies_band_containment_separates_breach_from_containment(tmp_home):
+    """The derivation proposal #102 asked for: floor_holds classified by whether the session's
+    realized range stayed inside the book's band. One contained book (holds), one breached at the
+    lower edge (fails) — the separation block is the headline."""
+    flies = fakes.make_db(paths.module_data_dir("flies") / "paper_trades.db", fakes.FLIES_DDL)
+    fakes.insert(
+        flies,
+        "fly_books",
+        [
+            {
+                "book_id": "c",
+                "trade_date": SESSION,
+                "arm": "control",
+                "symbol": "SPX",
+                "band_low": 5500.0,
+                "band_high": 5700.0,
+                "worst": 120.0,
+                "floor_holds": 1,
+            },
+            {
+                "book_id": "a",
+                "trade_date": SESSION,
+                "arm": "advised:control",
+                "symbol": "SPX",
+                "band_low": 5560.0,
+                "band_high": 5700.0,
+                "worst": -900.0,
+                "floor_holds": 0,
+            },
+        ],
+    )
+    gex = fakes.make_db(paths.module_data_dir("gex") / "gex_history.db", fakes.GEX_DDL)
+    fakes.insert(
+        gex,
+        "gex_regime_history",
+        [
+            {
+                "symbol": "SPX",
+                "trade_date": SESSION,
+                "ts": 1.0,
+                "spot": 5555.0,
+                "put_wall": 5500.0,
+                "call_wall": 5700.0,
+            },
+            {"symbol": "SPX", "trade_date": SESSION, "ts": 2.0, "spot": 5540.0},
+            {"symbol": "SPX", "trade_date": SESSION, "ts": 3.0, "spot": 5610.0},
+        ],
+    )
+    out = factpack._flies_band_containment()
+    assert out["books_scored"] == 2 and out["books_unmatched"] == 0
+    # control: lower margin 5540-5500=+40, upper 5700-5610=+90 -> contained, binding on the lower edge
+    # advised: lower margin 5540-5560=-20 -> breached at the lower edge
+    assert out["separation"]["contained"]["n"] == 1
+    assert out["separation"]["contained"]["floor_holds_rate"] == 1.0
+    assert out["separation"]["breached"]["n"] == 1
+    assert out["separation"]["breached"]["floor_holds_rate"] == 0.0
+    assert out["by_edge"]["lower"]["n"] == 2
+    # The morning walls (5500..5700) contained the realized range (5540..5610).
+    assert out["forecasts"]["gex_walls"] == {
+        "hit_rate": 1.0,
+        "n": 1,
+        "_basis": out["forecasts"]["gex_walls"]["_basis"],
+    }
+    # vix1d is omitted with a stated reason, never approximated.
+    assert "_omitted" in out["forecasts"]["vix1d_implied"]
+
+
+def test_a_book_with_no_recorded_range_is_unmatched_not_guessed(tmp_home):
+    flies = fakes.make_db(paths.module_data_dir("flies") / "paper_trades.db", fakes.FLIES_DDL)
+    fakes.insert(
+        flies,
+        "fly_books",
+        [
+            {
+                "book_id": "c",
+                "trade_date": "1999-01-01",
+                "arm": "control",
+                "symbol": "SPX",
+                "band_low": 1.0,
+                "band_high": 2.0,
+                "worst": 1.0,
+                "floor_holds": 1,
+            }
+        ],
+    )
+    out = factpack._flies_band_containment()
+    assert out["books_scored"] == 0 and out["books_unmatched"] == 1
+
+
+def test_the_band_containment_section_rides_the_deep_pack_only(tmp_home):
+    assert "flies_band_containment" not in factpack.build(SESSION, "midday")
+    assert "flies_band_containment" in factpack.build(SESSION, "deep")
