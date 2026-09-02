@@ -910,6 +910,8 @@ def cmd_run_entries(args) -> dict:
     # not the close pass's file-exists guard -- the whole point is to update the existing file. The
     # closed-trades sections are recomputed from the same DB rows, so they come out identical.
     # Best-effort: a report failure must never fail the entry result the scheduled task depends on.
+    _log_empty_scan(scan_date, calendar, prefiltered, scanned)
+
     portfolio_mode = config.get("strat_test_portfolio", "per_strategy")
     return {
         "ok": True,
@@ -918,6 +920,43 @@ def cmd_run_entries(args) -> dict:
         "opened": opened,
         "skipped": skipped,
     }
+
+
+def _log_empty_scan(scan_date: str, calendar, prefiltered, scanned) -> None:
+    """Record that the scan RAN on a session where it reached no symbol.
+
+    Every other row in `scan_log` is written per (symbol, strategy), so a session whose calendar was
+    empty -- or whose every name was prefiltered away -- produced no row at all. That is the one
+    outcome the table cannot express, and the absence is unreadable: "the scan ran and found
+    nothing" and "the scan never ran" look identical, and the second is a real failure mode this
+    module has had (the 2026-08-17..24 block). Reading it wrong costs real time; it already has,
+    once, from a person reading this same table.
+
+    `curve_regime` settled this question for the suite: a refusal is a ROW, with its reason, not a
+    gap. Same shape here, at session scope -- `stage='session'`, and a reason that says which of the
+    three ways to reach zero actually happened, because they point at different code.
+
+    Best-effort like every other write in this file: telemetry never fails a scan.
+    """
+    if scanned:
+        return  # symbols were reached; their own rows are the record
+    if calendar:
+        reason = f"every candidate prefiltered ({len(prefiltered)} symbol(s))"
+    elif prefiltered:
+        reason = f"calendar empty after prefilter ({len(prefiltered)} symbol(s) dropped)"
+    else:
+        reason = "no earnings candidates on the calendar for this session"
+    _log_scan_row(
+        scan_date,
+        # The row is about the session, not a symbol, but `symbol` is NOT NULL. A sentinel that
+        # cannot collide with a ticker says so without inventing one.
+        "-",
+        "-",
+        "session",
+        stage="session",
+        outcome="no_candidates",
+        reason=reason,
+    )
 
 
 def _log_close_decision(trade: dict, outcome: str, reason: str | None) -> None:
