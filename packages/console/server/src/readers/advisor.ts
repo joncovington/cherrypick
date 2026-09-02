@@ -33,7 +33,14 @@ import { hasTable, readJson, str, withReadOnlyDb } from "./db.js";
 /** The advisor's own slot order — chronological, not alphabetical. Mirrors
  * packages/advisor/src/cherrypick/advisor/factpack.py's LIGHT_SLOTS + DEEP_SLOT. */
 const SLOT_ORDER = ["open", "am1", "am2", "midday", "pm1", "pm2", "close", "deep"];
-const MODULES = ["meic", "flies", "earnings", "calendars", "pmcc"];
+/**
+ * The advisor's declared reach, in the order the suite's own configs are usually read.
+ *
+ * Only an ORDERING hint. Which modules the apply banner covers is discovered, not listed here —
+ * see `adviceModules`. A module named here that declares nothing is not shown; one absent from
+ * here that declares an advice block is, sorted after the names it does know.
+ */
+const MODULE_ORDER = ["meic", "flies", "earnings", "calendars", "pmcc", "bwb", "curve"];
 const HISTORY_LIMIT = 40;
 
 function parse<T>(raw: unknown, fallback: T): T {
@@ -43,6 +50,26 @@ function parse<T>(raw: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+/**
+ * A stored verdict, with every field the type promises actually present.
+ *
+ * `verdict_json` is whatever `packages/advisor` wrote at the time, and older rows predate fields
+ * the current shape declares — one 08-26 row carries no `recommendation` key at all. Casting the
+ * parse to `AdvisorVerdict` made that a lie the compiler could not see, and the console read
+ * `verdict.recommendation.value` past a `!== null` check that `undefined` walks straight through,
+ * blanking the advisor page's experiments tab. Normalize here, once, rather than defending against
+ * the same absence at every read site.
+ */
+function verdict(raw: unknown): AdvisorVerdict | null {
+  const v = parse<Partial<AdvisorVerdict> | null>(raw, null);
+  if (v === null || typeof v !== "object") return null;
+  return {
+    pairs: Array.isArray(v.pairs) ? v.pairs : [],
+    underpowered: v.underpowered === true,
+    recommendation: v.recommendation ?? null,
+  };
 }
 
 function dbPath(config: ConsoleConfig): string {
@@ -74,6 +101,60 @@ function shapeCheckpoint(row: CheckpointRow): AdvisorCheckpoint {
 }
 
 /**
+ * Which modules the apply banner covers — read from what the suite itself declares.
+ *
+ * This was a hand-kept list of five, and it was wrong: bwb declares `advice.enabled` with bounds,
+ * runs an active experiment, and has enacted its artifact every session since 2026-08-28 — none of
+ * which reached this page, because bwb was never added to the constant. curve was invisible the
+ * same way. That is the failure mode the suite's own working rules name: a list maintained beside
+ * the thing it describes drifts the moment a module is added, and the drift reads as "this module
+ * takes no advice" rather than as a missing entry.
+ *
+ * So discover it. A module is covered when its deployed config declares an `advice` block at all —
+ * `enabled: false` and empty bounds are still coverage, because "declared and switched off" is a
+ * fact worth showing and `disabledReason` already says which. Modules the advisor has ALREADY
+ * scored are unioned in, so pulling a config hides the module's history rather than only its
+ * config. Nothing declaring nothing is listed: on a fresh machine the banner is empty, which is
+ * the honest reading.
+ */
+function adviceModules(config: ConsoleConfig, nextSession: string | null, scored: Iterable<string>): string[] {
+  const found = new Set<string>(scored);
+  // An artifact written for a module that declares nothing is exactly the drift worth seeing, so
+  // the artifact counts as a declaration too — `disabledReason` then says the config is missing.
+  if (nextSession !== null) {
+    try {
+      for (const entry of fs.readdirSync(config.paths.adviceDir)) {
+        const suffix = `-${nextSession}.json`;
+        if (entry.endsWith(suffix)) found.add(entry.slice(0, -suffix.length));
+      }
+    } catch {
+      /* no advice directory yet */
+    }
+  }
+  const dir = path.join(config.paths.cherrypick, "config");
+  let entries: string[] = [];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    entries = [];
+  }
+  for (const entry of entries) {
+    // Exactly `<module>.json`. The config directory is full of dated backups — `meic.json.pre-era`,
+    // `pmcc.json.bak-20260824` — and each would otherwise become a module of its own.
+    if (!entry.endsWith(".json")) continue;
+    const module = entry.slice(0, -".json".length);
+    if (module === "") continue;
+    if (readJson(path.join(dir, entry))?.["advice"] !== undefined) found.add(module);
+  }
+  return [...found].sort((a, b) => {
+    const ia = MODULE_ORDER.indexOf(a);
+    const ib = MODULE_ORDER.indexOf(b);
+    if (ia !== ib) return (ia === -1 ? MODULE_ORDER.length : ia) - (ib === -1 ? MODULE_ORDER.length : ib);
+    return a.localeCompare(b);
+  });
+}
+
+/**
  * What reached the loops for the next session, per module.
  *
  * Two facts, kept separate on purpose: the advisor WROTE an artifact, and the module's loop APPLIED
@@ -86,7 +167,7 @@ function readApplyStatus(
   nextSession: string | null,
   enactment: Map<string, AdvisorEnactment>,
 ): AdvisorApplyStatus[] {
-  return MODULES.map((module) => {
+  return adviceModules(config, nextSession, enactment.keys()).map((module) => {
     const artifact =
       nextSession === null ? null : readJson(path.join(config.paths.adviceDir, `${module}-${nextSession}.json`));
     const decision = readJson(path.join(config.paths.cherrypick, "data", module, "advice_active.json"));
@@ -233,7 +314,7 @@ export function readAdvisor(config: ConsoleConfig, session?: string): AdvisorPay
           createdSession: String(r["created_session"]),
           sessionsRun: Number(r["sessions_run"] ?? 0),
           expiresAfter: Number(r["expires_after_sessions"] ?? 0),
-          verdict: parse<AdvisorVerdict | null>(r["verdict_json"], null),
+          verdict: verdict(r["verdict_json"]),
           journal,
         };
       });
