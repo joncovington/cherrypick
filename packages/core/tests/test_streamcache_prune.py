@@ -127,3 +127,22 @@ def test_it_is_idempotent(conn):
     prune(conn, apply=True)
     again = prune(conn, apply=True)
     assert again["chain_rows"] == 0 and again["orphaned_option_rows"] == 0
+
+
+def test_the_producer_prunes_with_the_symbols_it_actually_bound():
+    """Wired into `_backfill_history`, beside the close purge, at the same once-per-connection
+    cadence -- a backlog drain, not a per-event concern.
+
+    It passes `self.symbols`, the set this process actually SUBSCRIBED, rather than re-reading the
+    request union: a symbol being streamed can then never be pruned out from under itself, even if
+    a module rewrites its request file mid-session. Wrapped, because a failed prune must cost the
+    prune and never the stream.
+    """
+    import inspect
+
+    from cherrypick.core import streamer as _streamer
+
+    src = inspect.getsource(_streamer.ChainStreamer._backfill_history)
+    assert "prune_cache(" in src, "the producer no longer prunes the cache it owns"
+    assert "declared_underlyings=self.symbols" in src, "prune must use the bound subscription set"
+    assert "except Exception" in src, "a failed prune must not take the stream down"
