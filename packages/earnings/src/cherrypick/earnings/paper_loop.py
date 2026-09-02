@@ -589,6 +589,10 @@ def _record_event(trade, action, reason, now, phase, *, executed, gate=None, det
                     "gate": gate,
                     "detail": detail or {},
                     "mark_id": mark_id,
+                    # The book the verdict is for -- an advised twin runs different exit params
+                    # than its control, and this stamp is what makes "did the advised target
+                    # fire" answerable from the table (advisor spec, 2026-09-01).
+                    "profile": trade.get("profile"),
                 }
             )
         )

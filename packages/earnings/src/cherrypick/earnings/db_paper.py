@@ -189,7 +189,12 @@ CREATE TABLE IF NOT EXISTS management_events (
     executed     INTEGER NOT NULL DEFAULT 0,
     gate         TEXT,
     detail_json  TEXT,
-    mark_id      INTEGER
+    mark_id      INTEGER,
+    -- Which book the verdict was FOR (added 2026-09-01, advisor spec earnings_comparison_integrity).
+    -- An advised twin runs different exit params than its control, and without this stamp "did the
+    -- advised target ever fire" was unanswerable from this table -- the order_id encodes it, but a
+    -- reader should never have to parse identifiers to learn a fact the writer knew.
+    profile      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_management_events_order ON management_events(order_id, occurred_at);
 CREATE INDEX IF NOT EXISTS idx_management_events_session ON management_events(session_date);
@@ -390,6 +395,9 @@ _MIGRATIONS = [
     ("trades", "hold_days", "ALTER TABLE trades ADD COLUMN hold_days INTEGER"),
     ("trades", "max_unrealized_pnl", "ALTER TABLE trades ADD COLUMN max_unrealized_pnl REAL"),
     ("trades", "min_unrealized_pnl", "ALTER TABLE trades ADD COLUMN min_unrealized_pnl REAL"),
+    # NULL on historical rows deliberately (never backfilled from order_id parsing): a NULL says
+    # "recorded before the stamp existed", where a parsed guess would assert provenance it lacks.
+    ("management_events", "profile", "ALTER TABLE management_events ADD COLUMN profile TEXT"),
 ]
 
 # Backfills that run once, when their column is first added. Keyed by "table.column" so a fresh
@@ -738,7 +746,8 @@ def cmd_record_management_event(args) -> dict:
     try:
         cur = conn.execute(
             "INSERT INTO management_events (order_id, occurred_at, session_date, phase, action, "
-            " reason, executed, gate, detail_json, mark_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " reason, executed, gate, detail_json, mark_id, profile)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 order_id,
                 occurred_at,
@@ -750,6 +759,7 @@ def cmd_record_management_event(args) -> dict:
                 spec.get("gate"),
                 json.dumps(detail) if detail is not None else None,
                 spec.get("mark_id"),
+                spec.get("profile"),
             ),
         )
         conn.commit()
