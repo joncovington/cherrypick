@@ -92,23 +92,55 @@ def _release_loop_lock() -> None:
 
 
 # --------------------------------------------------------------------------- the regime tick
-def _record_regime(config: dict, conn, *, cache_path: str, day: str) -> dict:
+def _record_regime(
+    config: dict, conn, *, cache_path: str, day: str, now_min: int, force: bool = False
+) -> dict:
     """Read today's VIX/VIX3M reading and write `curve_regime` — traded or not (rule 7).
 
     **A refusal does not settle the day; only a measurement does.** This tick runs every 60s from
-    midnight, so the first one of the session always lands hours before the open, always refuses
-    (there is no fresh quote outside RTH, and refusing is correct — an overnight-frozen VIX must
-    never masquerade as a measured reading), and until 2026-08-26 that refusal was then treated as
-    "already recorded" and blocked every RTH tick behind it. The module's declared second product
+    midnight, so the first one of the session always lands hours before the open and always refuses
+    (`outside_rth` — an overnight-frozen VIX must never masquerade as a measured reading), and until
+    2026-08-26 that refusal was then treated as "already recorded" and blocked every RTH tick
+    behind it. The module's declared second product
     was therefore never measured once: three sessions on file, all stamped 00:00 with a null ratio.
 
     So a stored REFUSAL is retried and overwritten by the first usable reading — `save_regime`
     upserts on `trade_date` — while a stored MEASUREMENT is final, which keeps the day's basis
     stable at the first moment the feed could actually serve one instead of drifting with each tick.
+
+    **The RTH gate is a clock check, not an inference from quote age.** The paragraph above used to
+    rest on "there is no fresh quote outside RTH", and that is an assumption about the feed rather
+    than a property of the day. It does not hold: `stream_trades.updated_at` is when the row was
+    WRITTEN, not when the exchange printed, so a streamer reconnect — which resubscribes everything
+    and takes DXLink's snapshot of the last trade — restamps yesterday's close as seconds old. Two
+    sessions were measured that way before this gate existed (2026-08-31 at 01:21 ET and 2026-09-02
+    at 02:38 ET, each within a minute of a reconnect, each carrying the prior close to the cent),
+    and 09-02 traded on it. Outside RTH we now refuse on the clock and never look at a quote at all,
+    so the freshness proxy is no longer load-bearing. See issue #10 for the cache-level half.
     """
     existing = db.regime_for(conn, day)
     if existing is not None and existing.get("usable"):
         return existing
+    if not force and not in_session(now_min):
+        # Still a row, per rule 7 — a day is recorded whether or not it could be measured, and this
+        # refusal is retried by every later tick like any other.
+        now = clock.now_iso()
+        row = {
+            "trade_date": day,
+            "tick": now,
+            "recorded_at": now,
+            "usable": 0,
+            "refusal": "outside_rth",
+            "ratio": None,
+            "regime": None,
+            "hook": 0,
+            "vix": None,
+            "vix3m": None,
+            "vix_age_s": None,
+            "vix3m_age_s": None,
+        }
+        db.save_regime(conn, row)
+        return row
     defaults = config.get("defaults") or {}
     quotes = provider.read_regime_quotes(
         cache_path, max_quote_age_seconds=defaults.get("max_quote_age_seconds", 300)
@@ -175,7 +207,9 @@ def run_once(
     if not force and not _cal.is_trading_day(today):
         return {"ok": True, "skipped": "not_a_trading_day", "date": day}
 
-    _record_regime(config, conn, cache_path=cache_path, day=day)
+    _record_regime(
+        config, conn, cache_path=cache_path, day=day, now_min=now_min, force=force
+    )
 
     overdue = _overdue_legs(conn, day)
     if overdue and now_min % 60 < 2:
