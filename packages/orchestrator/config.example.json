@@ -551,6 +551,12 @@
       },
       "pmcc": {
         "enabled": false
+      },
+      "bwb": {
+        "enabled": false
+      },
+      "curve": {
+        "enabled": false
       }
     }
   },
