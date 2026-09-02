@@ -28,11 +28,14 @@ Reliability rules carried over:
 
 from __future__ import annotations
 
+import atexit
+import faulthandler
 import json
 import os
 import subprocess
 import sys
 import time
+import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -120,6 +123,85 @@ def _log(msg: str) -> None:
         with path.open("a", encoding="utf-8") as fh:
             fh.write(f"{datetime.now().isoformat(timespec='seconds')} {msg}\n")
     except OSError:
+        pass
+
+
+# ------------------------------------------------------------------ death breadcrumbs
+# Four supervisor deaths between 2026-08-25 and 2026-09-01 left NOTHING behind: no shutdown line, no
+# traceback, no Windows error event — just a fresh heartbeat beside a dead pid. Under pythonw both
+# stdout and stderr are the null device, so an exception escaping the loop, a fatal interpreter
+# fault, and an external TerminateProcess all look identical from outside. These breadcrumbs exist
+# to make the three cases distinguishable after the fact:
+#   FATAL line in supervisor.log        → an exception escaped the loop (full traceback follows)
+#   trace in supervisor-fault.log       → the interpreter itself faulted (faulthandler)
+#   "process exiting" line, nothing else → some code path exited without raising
+#   none of the above                   → the process was killed from outside (TerminateProcess
+#                                          bypasses atexit and faulthandler both)
+# Armed only for a REAL daemon (run() without max_passes): a test run must not leave "exiting"
+# lines in the live log at interpreter exit — noise in exactly the trail this exists to create.
+
+_ALIVE_LOG_SECONDS = 3600  # cadence of the periodic "alive" line (module constant so tests can shrink it)
+_fault_log_handle = None  # keeps the faulthandler file object alive; GC closing it would break the trap
+
+
+def _rss_mb() -> float | None:
+    """This process's resident set in MB — stdlib only (ctypes/psapi on Windows), per the daemon's
+    no-third-party invariant. The last value rides the heartbeat, so a memory-driven death leaves
+    its final reading behind. None when the platform call fails; never raises."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+
+            class _PMC(ctypes.Structure):
+                _fields_ = [
+                    ("cb", wintypes.DWORD),
+                    ("PageFaultCount", wintypes.DWORD),
+                    ("PeakWorkingSetSize", ctypes.c_size_t),
+                    ("WorkingSetSize", ctypes.c_size_t),
+                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                    ("PagefileUsage", ctypes.c_size_t),
+                    ("PeakPagefileUsage", ctypes.c_size_t),
+                ]
+
+            # Explicit argtypes/restype, not ctypes.windll defaults: the default c_int return of
+            # GetCurrentProcess truncates the pseudo-handle on 64-bit and the call fails with 0.
+            k32 = ctypes.WinDLL("kernel32")
+            psapi = ctypes.WinDLL("psapi")
+            k32.GetCurrentProcess.restype = wintypes.HANDLE
+            psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(_PMC), wintypes.DWORD]
+            psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+            pmc = _PMC()
+            pmc.cb = ctypes.sizeof(_PMC)
+            if psapi.GetProcessMemoryInfo(k32.GetCurrentProcess(), ctypes.byref(pmc), pmc.cb):
+                return round(pmc.WorkingSetSize / (1024 * 1024), 1)
+        else:
+            import resource
+
+            return round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1)
+    except Exception:
+        pass
+    return None
+
+
+def _arm_death_breadcrumbs() -> None:
+    """faulthandler into its own log (interpreter faults), atexit marker (non-raising exits).
+    Best-effort twice over: a breadcrumb that could fail the daemon would invert its purpose."""
+    global _fault_log_handle
+    try:
+        fh = cfgmod.log_file("supervisor-fault.log").open("a", encoding="utf-8")
+        fh.write(f"--- armed {datetime.now().isoformat(timespec='seconds')} pid {os.getpid()}\n")
+        fh.flush()
+        faulthandler.enable(file=fh)
+        _fault_log_handle = fh
+    except OSError:
+        pass
+    try:
+        atexit.register(lambda: _log(f"process exiting (atexit, pid {os.getpid()})"))
+    except Exception:
         pass
 
 
@@ -609,6 +691,9 @@ class Supervisor:
                     for s in self._state.values()
                     if s.get("kind") == jobspec.KIND_RESIDENT and s.get("running_pid")
                 ),
+                # The daemon's own memory, refreshed with every write — so a silent death leaves
+                # its final reading in this file (the breadcrumbs note above _rss_mb).
+                "rss_mb": _rss_mb(),
             },
         )
 
@@ -652,18 +737,35 @@ def run(cfg: dict[str, Any] | None = None, *, max_passes: int | None = None) -> 
         stop_path().unlink(missing_ok=True)
         sup = Supervisor(cfg)
         sup.adopt_prior_state()
+        if max_passes is None:  # a real daemon, not a test's bounded run — see _arm_death_breadcrumbs
+            _arm_death_breadcrumbs()
         _log(f"supervisor started (pid {os.getpid()})")
         passes = 0
-        while True:
-            if stop_path().exists():
-                _log("stop file seen — shutting down")
-                stop_path().unlink(missing_ok=True)
-                break
-            sup.pass_once()
-            passes += 1
-            if max_passes is not None and passes >= max_passes:
-                break
-            time.sleep(1)
+        last_alive_log = time.time()
+        try:
+            while True:
+                if stop_path().exists():
+                    _log("stop file seen — shutting down")
+                    stop_path().unlink(missing_ok=True)
+                    break
+                sup.pass_once()
+                passes += 1
+                if time.time() - last_alive_log >= _ALIVE_LOG_SECONDS:
+                    _log(f"alive (pid {os.getpid()}, loop_seq {sup._loop_seq}, rss {_rss_mb() or '?'} MB)")
+                    last_alive_log = time.time()
+                if max_passes is not None and passes >= max_passes:
+                    break
+                time.sleep(1)
+        except BaseException as exc:
+            # Under pythonw an escaping exception dies into the null device — this line and the
+            # traceback below are the only record the death was code, not a kill. Re-raised, not
+            # swallowed: the anchor's restart is the remedy, and surviving here could hot-loop a
+            # fault every pass forever.
+            _log(
+                f"FATAL: unhandled {type(exc).__name__} escaped the loop (pid {os.getpid()}) — daemon exiting"
+            )
+            _log(traceback.format_exc().rstrip())
+            raise
         return {"ok": True, "passes": passes}
     finally:
         if not os.environ.get("CHERRYPICK_SUPERVISOR_NO_LOCK"):
