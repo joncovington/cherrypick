@@ -177,6 +177,8 @@ class ChainStreamer:
         subscription_poll_s: float = 30.0,
         subscribe_chunk: int = SUBSCRIBE_CHUNK,
         subscribe_pace_s: float = SUBSCRIBE_PACE_S,
+        stop_file: Path | str | None = None,
+        stop_poll_s: float = 1.0,
         logger: logging.Logger | None = None,
     ) -> None:
         self.session_factory = session_factory
@@ -195,6 +197,8 @@ class ChainStreamer:
         self.subscribe_chunk = max(1, int(subscribe_chunk))
         self.subscribe_pace_s = max(0.0, float(subscribe_pace_s))
         self._last_subscribe_at = 0.0
+        self.stop_file = Path(stop_file) if stop_file else None
+        self.stop_poll_s = max(0.1, float(stop_poll_s))
         self._stale_resub_at: dict[str, float] = {}
         self.log = logger or logging.getLogger("cherrypick.core.streamer")
         self.state: _State | None = None
@@ -257,6 +261,8 @@ class ChainStreamer:
                 tg.create_task(self._flush_status(state))
                 tg.create_task(self._checkpoint_wal(state))
                 tg.create_task(self._watch_stop(state))
+                if self.stop_file is not None:
+                    tg.create_task(self._watch_stop_file(state))
                 if self._history_days_for is not None:
                     tg.create_task(self._backfill_history(streamer, state, Candle))
                 for sym in self.symbols:
@@ -1027,6 +1033,33 @@ class ChainStreamer:
     async def _watch_stop(self, state: _State) -> None:
         await state.stop_event.wait()
         raise asyncio.CancelledError("stop requested")
+
+    async def _watch_stop_file(self, state: _State) -> None:
+        """Shut down when a stop-request file appears, and say who asked.
+
+        A signal is the obvious mechanism and it does not work here. On Windows
+        `os.kill(pid, SIGTERM)` is `TerminateProcess`: no handler runs, no `finally` runs, and the
+        process vanishes mid-write. `run_daemon`'s own "cherrypick-streamer stopped." line had
+        therefore never been written once in 39,000 lines of log, so a restart was recorded only by
+        the NEXT process's startup banner -- and an unexplained 02:37 restart on 2026-09-02, which
+        poisoned a downstream regime reading, could not be attributed afterwards at all.
+
+        A file the process polls fixes both halves of that. The shutting-down process logs its own
+        exit, and the request carries a reason, so the log answers "who stopped this" rather than
+        only "something started at 00:37".
+        """
+        while not state.stop_event.is_set():
+            try:
+                if self.stop_file.exists():
+                    detail = self.stop_file.read_text(encoding="utf-8").strip()[:400]
+                    self.log.info(
+                        "Stop requested via %s%s", self.stop_file, f" -- {detail}" if detail else ""
+                    )
+                    state.stop_event.set()
+                    return
+            except Exception as exc:  # noqa: BLE001 -- a stop check must never kill the stream
+                self.log.warning("Stop-file check failed: %s", exc)
+            await asyncio.sleep(self.stop_poll_s)
 
     # -- public entrypoints ----------------------------------------------------------------------
     def stop(self) -> None:

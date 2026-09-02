@@ -354,3 +354,50 @@ def test_churn_rebaselines_when_the_counter_resets(monkeypatch, tmp_path):
 def test_churn_ignores_a_status_without_the_counter(monkeypatch, tmp_path):
     label = _churn(monkeypatch, tmp_path)
     assert wd._streamer_churn_finding(label, {"running": True}) is None
+
+
+# --------------------------------------------------------------------------- off-session identity
+def _producer_cfg(root):
+    return {"streamer": {"enabled": True, "path": str(root), **_spec()}}
+
+
+def test_off_session_says_WHICH_producer_is_running(monkeypatch, tmp_path):
+    """A bare boolean cannot see a process swap.
+
+    On 2026-09-02 this finding read "running" at 06:32 UTC and again at 06:42 with a DIFFERENT
+    process in between, started at 06:37:34 by something still unidentified — and that restart's
+    reconnect snapshot poisoned curve's regime basis for the session. `--status` already returns
+    both fields; carrying them makes the swap self-evident in the log.
+    """
+    _status(monkeypatch, {"running": True, "pid": 75492, "connected_since": "2026-09-02T06:37:37+00:00"})
+    monkeypatch.setattr(wd.cfgmod, "module_root", lambda spec, name=None: tmp_path)
+
+    findings = wd._check_producer(_producer_cfg(tmp_path), in_session=False)
+
+    assert len(findings) == 1 and findings[0].status == wd.OK
+    assert "pid=75492" in findings[0].message
+    assert "since=2026-09-02T06:37:37+00:00" in findings[0].message
+
+
+def test_off_session_identity_degrades_when_the_status_cannot_say(monkeypatch, tmp_path):
+    """An older streamer, or a truncated status, must still produce the liveness line rather than a
+    finding decorated with "pid=None"."""
+    _status(monkeypatch, {"running": True})
+    monkeypatch.setattr(wd.cfgmod, "module_root", lambda spec, name=None: tmp_path)
+
+    findings = wd._check_producer(_producer_cfg(tmp_path), in_session=False)
+
+    assert findings[0].status == wd.OK
+    assert "running (off-hours" in findings[0].message
+    assert "pid=" not in findings[0].message and "None" not in findings[0].message
+
+
+def test_off_session_down_is_unchanged(monkeypatch, tmp_path):
+    """Identity is only meaningful for a process that exists; the down message must not grow one."""
+    _status(monkeypatch, {"running": False})
+    monkeypatch.setattr(wd.cfgmod, "module_root", lambda spec, name=None: tmp_path)
+
+    findings = wd._check_producer(_producer_cfg(tmp_path), in_session=False)
+
+    assert findings[0].status == wd.OK
+    assert "not running (off-hours" in findings[0].message and "pid=" not in findings[0].message
