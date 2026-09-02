@@ -2,6 +2,7 @@ import path from "node:path";
 import type { GexPayload, GexRegimeRow, Paged } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, num, str } from "./db.js";
+import { CURRENT_GEX_SYMBOLS_SQL } from "../services/gexProfile.js";
 import { emptyPage, FIRST_PAGE, pagedQuery, type PageRequest } from "./paging.js";
 
 function isoTs(v: unknown): string {
@@ -81,10 +82,7 @@ export function readGex(config: ConsoleConfig, recentPage: PageRequest = FIRST_P
       // together, which is the alarm worth having.
       const current = new Set(
         db
-          .prepare<[], Record<string, unknown>>(
-            `SELECT DISTINCT symbol FROM gex_regime_history
-             WHERE trade_date = (SELECT MAX(trade_date) FROM gex_regime_history)`,
-          )
+          .prepare<[], Record<string, unknown>>(CURRENT_GEX_SYMBOLS_SQL)
           .all()
           .map((r) => String(r["symbol"] ?? "")),
       );
