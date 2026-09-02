@@ -151,15 +151,31 @@ describe("the advisor reader", () => {
     expect(payload.storePresent).toBe(false);
     expect(payload.sessions).toEqual([]);
     expect(payload.experiments).toEqual([]);
-    // The apply banner still lists every module, saying why each is not accepting advice.
-    expect(payload.applyStatus.map((s) => s.module)).toEqual([
-      "meic",
-      "flies",
-      "earnings",
-      "calendars",
-      "pmcc",
-    ]);
-    expect(payload.applyStatus[0]?.disabledReason).toContain("no deployed config");
+    // Nothing has declared an advice block, so the banner covers nothing. An empty apply banner and
+    // a banner listing five modules that do not exist are different claims, and only one is true.
+    expect(payload.applyStatus).toEqual([]);
+  });
+
+  it("covers a module the moment its config declares an advice block", () => {
+    // bwb had been enacting its artifact every session since 2026-08-28 and appeared nowhere on this
+    // page, because the module list was a hand-kept constant of five. Discovery is the fix: declare
+    // the block, and the module is covered — no second place to remember.
+    const dir = path.join(tmp, "config");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "bwb.json"),
+      JSON.stringify({ advice: { enabled: true, bounds: { flip_buffer: { min: 1.0001, max: 1.05 } } } }),
+    );
+    // Declared and switched off is still coverage — `disabledReason` is what says which.
+    fs.writeFileSync(path.join(dir, "curve.json"), JSON.stringify({ advice: { enabled: false, bounds: {} } }));
+    // No advice block at all, and a backup that must not become a module of its own.
+    fs.writeFileSync(path.join(dir, "gex.json"), JSON.stringify({ symbols: ["SPX"] }));
+    fs.writeFileSync(path.join(dir, "bwb.json.bak-20260823"), JSON.stringify({ advice: { enabled: true } }));
+
+    const status = readAdvisor(config).applyStatus;
+    expect(status.map((s) => s.module)).toEqual(["bwb", "curve"]);
+    expect(status.find((s) => s.module === "bwb")?.disabledReason).toBeNull();
+    expect(status.find((s) => s.module === "curve")?.disabledReason).toContain("advice.enabled is false");
   });
 
   it("reads checkpoints, proposals and experiments once there is a store", () => {
@@ -244,8 +260,29 @@ describe("the advisor reader", () => {
     expect(meic?.enactment).toMatchObject({ status: "not_enacted", decisionReason: "advice_disabled" });
     expect(meic?.enactment?.detail).toContain("stop_trigger_ratio");
     expect(status.find((s) => s.module === "flies")?.enactment?.status).toBe("enacted");
-    // A module the advisor never scored is not a failure and must not borrow one.
-    expect(status.find((s) => s.module === "pmcc")?.enactment).toBeNull();
+    // A module the advisor never scored is not a failure and must not borrow one. Declared, so it
+    // is genuinely on the banner — an absent module would pass this by not being there at all.
+    fs.mkdirSync(path.join(tmp, "config"), { recursive: true });
+    fs.writeFileSync(path.join(tmp, "config", "pmcc.json"), JSON.stringify({ advice: { enabled: true } }));
+    const pmcc = readAdvisor(config).applyStatus.find((s) => s.module === "pmcc");
+    expect(pmcc).toBeDefined();
+    expect(pmcc?.enactment).toBeNull();
+  });
+
+  it("fills in a verdict field an older row never wrote", () => {
+    // A real 08-26 experiment row carries a verdict with no `recommendation` key at all. The reader
+    // used to cast the parse straight to AdvisorVerdict, and the page's `!== null` check let the
+    // resulting `undefined` through into `.value` — which blanked the whole experiments tab.
+    const store = new Database(path.join(tmp, "advisor", "advisor.db"));
+    store.prepare(
+      "INSERT INTO experiments (id, module, base_profile, name, params_json, status," +
+        " created_session, expires_after_sessions, sessions_run, verdict_json, created_at, updated_at)" +
+        " VALUES ('exp-old', 'flies', 'control', 'narrow wing', '{}', 'killed', ?, 10, 4, ?, ?, ?)",
+    ).run(SESSION, JSON.stringify({ pairs: [], underpowered: true }), SESSION, SESSION);
+    store.close();
+    const old = readAdvisor(config).experiments.find((e) => e.id === "exp-old");
+    expect(old?.verdict?.recommendation).toBeNull();
+    expect(old?.verdict?.pairs).toEqual([]);
   });
 
   it("survives a corrupt artifact rather than taking the page down", () => {
