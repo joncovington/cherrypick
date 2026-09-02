@@ -413,3 +413,35 @@ def _eod(tmp_path, monkeypatch, day):
     monkeypatch.setattr(metrics, "DB_PATH", db_paper.DB_PATH)
     monkeypatch.setattr(harness, "_eod_report_path", lambda d: tmp_path / f"paper-eod-{d}.md")
     return harness._write_eod_report(day).read_text(encoding="utf-8")
+
+
+def test_a_management_event_carries_the_profile_it_judged(tmp_path):
+    """The advisor's earnings_comparison_integrity spec (2026-09-01): an advised twin runs
+    different exit params than its control, and without a profile stamp "did the advised target
+    ever fire" was unanswerable from this table. NULL on rows predating the stamp, never
+    backfilled from order_id parsing."""
+    db_paper.cmd_record_management_event(
+        _ns(
+            data=json.dumps(
+                {
+                    "order_id": "advised-st-ic-X-1",
+                    "action": "close_all",
+                    "reason": "profit_target",
+                    "executed": True,
+                    "profile": "advised:strat_test:iron_condor",
+                }
+            )
+        )
+    )
+    event = db_paper.cmd_get_management_events(
+        _ns(order_id="advised-st-ic-X-1", session_date=None, limit=None)
+    )["events"][0]
+    assert event["profile"] == "advised:strat_test:iron_condor"
+    # An event recorded without one stays NULL -- "recorded before the stamp existed" is a fact.
+    db_paper.cmd_record_management_event(
+        _ns(data=json.dumps({"order_id": "legacy-1", "action": "hold", "reason": "target_not_hit"}))
+    )
+    legacy = db_paper.cmd_get_management_events(_ns(order_id="legacy-1", session_date=None, limit=None))[
+        "events"
+    ][0]
+    assert legacy["profile"] is None
