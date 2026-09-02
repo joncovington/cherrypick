@@ -769,6 +769,45 @@ def cmd_record_management_event(args) -> dict:
     return {"ok": True, "order_id": order_id, "event_id": event_id}
 
 
+def cmd_backfill_hold_days(args) -> dict:
+    """Derive `hold_days` for closed rows that predate the column. Dry by default; `--apply` writes.
+
+    The 64 NULLs on file are all `legacy_next_morning` closes from before the 2026-08-12 managed
+    lifecycle, and both timestamps they need are recorded -- so unlike slippage, where a NULL
+    means "never measured" and a backfill would invent a number, this is arithmetic over two
+    facts the row already holds, through the same `session_span` rule every live close uses. The
+    advisor named it the last thing standing between earnings and a scoreable experiment
+    (proposal #112, 2026-09-02). A row whose timestamps `session_span` cannot read stays NULL and
+    is reported, never guessed.
+    """
+    apply = bool(getattr(args, "apply", False))
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            "SELECT order_id, opened_at, closed_at FROM trades"
+            " WHERE closed_at IS NOT NULL AND hold_days IS NULL"
+        ).fetchall()
+        derived, unreadable = [], []
+        for order_id, opened_at, closed_at in rows:
+            span = session_span(opened_at, closed_at)
+            if span is None:
+                unreadable.append(order_id)
+                continue
+            derived.append((span, order_id))
+        if apply and derived:
+            conn.executemany("UPDATE trades SET hold_days = ? WHERE order_id = ?", derived)
+            conn.commit()
+    finally:
+        conn.close()
+    return {
+        "ok": True,
+        "applied": apply,
+        "derived": len(derived),
+        "unreadable": unreadable,
+        "by_span": {str(k): sum(1 for s, _ in derived if s == k) for k in sorted({s for s, _ in derived})},
+    }
+
+
 def cmd_record_iteration(args) -> dict:
     """One loop tick's own vital signs. Lets a reader tell a live-but-quiet loop from a dead one
     without parsing logs, which is the whole reason flies records the equivalent per tick."""

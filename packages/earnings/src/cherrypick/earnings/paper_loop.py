@@ -875,6 +875,11 @@ def main() -> None:
     p_settle = sub.add_parser("settle-expired")
     p_settle.add_argument("--apply", action="store_true", help="write the closes (default is a dry run)")
 
+    p_hold = sub.add_parser("backfill-hold-days")
+    p_hold.add_argument(
+        "--apply", action="store_true", help="write the derived hold_days (default is a dry run)"
+    )
+
     parser.add_argument("--once", action="store_true", help="run one tick (the default)")
     args = parser.parse_args()
 
@@ -883,6 +888,7 @@ def main() -> None:
         "status": cmd_status,
         "record-break": cmd_record_break,
         "settle-expired": cmd_settle_expired,
+        "backfill-hold-days": db_paper.cmd_backfill_hold_days,
     }
     result = dispatch.get(args.command or "once", cmd_once)(args)
     if sys.stdout is not None:

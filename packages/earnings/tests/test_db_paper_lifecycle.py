@@ -445,3 +445,38 @@ def test_a_management_event_carries_the_profile_it_judged(tmp_path):
         "events"
     ][0]
     assert legacy["profile"] is None
+
+
+def test_hold_days_backfill_derives_only_what_two_recorded_timestamps_prove(tmp_path):
+    """Dry by default; --apply writes; a row session_span cannot read stays NULL and is named."""
+    from datetime import datetime
+
+    def epoch(s):
+        return datetime.fromisoformat(s).timestamp()
+
+    conn = db_paper._conn()
+    conn.execute(
+        "INSERT INTO trades (order_id, strategy, symbol, expiration, opened_at, closed_at, status)"
+        " VALUES ('L1', 'iron_fly', 'X', '2026-07-24', ?, ?, 'closed')",
+        (epoch("2026-07-23 15:50"), epoch("2026-07-24 09:45")),
+    )
+    conn.execute(
+        "INSERT INTO trades (order_id, strategy, symbol, expiration, opened_at, closed_at, status)"
+        " VALUES ('L2', 'iron_fly', 'Y', '2026-07-24', NULL, ?, 'closed')",
+        (epoch("2026-07-24 09:45"),),
+    )
+    conn.commit()
+    conn.close()
+
+    dry = db_paper.cmd_backfill_hold_days(_ns(apply=False))
+    assert dry["derived"] == 1 and dry["unreadable"] == ["L2"] and dry["applied"] is False
+    conn = db_paper._conn()
+    assert conn.execute("SELECT hold_days FROM trades WHERE order_id='L1'").fetchone()[0] is None
+    conn.close()
+
+    applied = db_paper.cmd_backfill_hold_days(_ns(apply=True))
+    assert applied["applied"] is True and applied["by_span"] == {"1": 1}
+    conn = db_paper._conn()
+    assert conn.execute("SELECT hold_days FROM trades WHERE order_id='L1'").fetchone()[0] == 1
+    assert conn.execute("SELECT hold_days FROM trades WHERE order_id='L2'").fetchone()[0] is None
+    conn.close()
