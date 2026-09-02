@@ -25,12 +25,12 @@ def conn(tmp_path):
     c = streamcache.connect(tmp_path / "cache.db")
     rows = [
         # symbol, expiration, underlying, updated_at
-        (".SPX260904C7900", "2026-09-04", "SPX", FRESH),   # declared, future  -> keep
-        (".SPX260818C7700", "2026-08-18", "SPX", FRESH),   # declared, LONG expired -> drop
-        (".SPX260901C7700", "2026-09-01", "SPX", FRESH),   # declared, just expired -> keep (tail)
-        (".NDX260731C24000", "2026-07-31", "NDX", OLD),    # retired + expired -> drop
-        (".TQQQ261218C90", "2026-12-18", "TQQQ", OLD),     # RETIRED but far-future expiry -> drop
-        (".VXX261016C25", "2026-10-16", "VXX", FRESH),     # declared, future -> keep
+        (".SPX260904C7900", "2026-09-04", "SPX", FRESH),  # declared, future  -> keep
+        (".SPX260818C7700", "2026-08-18", "SPX", FRESH),  # declared, LONG expired -> drop
+        (".SPX260901C7700", "2026-09-01", "SPX", FRESH),  # declared, just expired -> keep (tail)
+        (".NDX260731C24000", "2026-07-31", "NDX", OLD),  # retired + expired -> drop
+        (".TQQQ261218C90", "2026-12-18", "TQQQ", OLD),  # RETIRED but far-future expiry -> drop
+        (".VXX261016C25", "2026-10-16", "VXX", FRESH),  # declared, future -> keep
     ]
     for sym, exp, und, ts in rows:
         c.execute(
