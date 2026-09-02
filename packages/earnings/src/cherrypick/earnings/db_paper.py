@@ -189,7 +189,12 @@ CREATE TABLE IF NOT EXISTS management_events (
     executed     INTEGER NOT NULL DEFAULT 0,
     gate         TEXT,
     detail_json  TEXT,
-    mark_id      INTEGER
+    mark_id      INTEGER,
+    -- Which book the verdict was FOR (added 2026-09-01, advisor spec earnings_comparison_integrity).
+    -- An advised twin runs different exit params than its control, and without this stamp "did the
+    -- advised target ever fire" was unanswerable from this table -- the order_id encodes it, but a
+    -- reader should never have to parse identifiers to learn a fact the writer knew.
+    profile      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_management_events_order ON management_events(order_id, occurred_at);
 CREATE INDEX IF NOT EXISTS idx_management_events_session ON management_events(session_date);
@@ -390,6 +395,9 @@ _MIGRATIONS = [
     ("trades", "hold_days", "ALTER TABLE trades ADD COLUMN hold_days INTEGER"),
     ("trades", "max_unrealized_pnl", "ALTER TABLE trades ADD COLUMN max_unrealized_pnl REAL"),
     ("trades", "min_unrealized_pnl", "ALTER TABLE trades ADD COLUMN min_unrealized_pnl REAL"),
+    # NULL on historical rows deliberately (never backfilled from order_id parsing): a NULL says
+    # "recorded before the stamp existed", where a parsed guess would assert provenance it lacks.
+    ("management_events", "profile", "ALTER TABLE management_events ADD COLUMN profile TEXT"),
 ]
 
 # Backfills that run once, when their column is first added. Keyed by "table.column" so a fresh
@@ -738,7 +746,8 @@ def cmd_record_management_event(args) -> dict:
     try:
         cur = conn.execute(
             "INSERT INTO management_events (order_id, occurred_at, session_date, phase, action, "
-            " reason, executed, gate, detail_json, mark_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " reason, executed, gate, detail_json, mark_id, profile)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 order_id,
                 occurred_at,
@@ -750,6 +759,7 @@ def cmd_record_management_event(args) -> dict:
                 spec.get("gate"),
                 json.dumps(detail) if detail is not None else None,
                 spec.get("mark_id"),
+                spec.get("profile"),
             ),
         )
         conn.commit()
@@ -757,6 +767,45 @@ def cmd_record_management_event(args) -> dict:
     finally:
         conn.close()
     return {"ok": True, "order_id": order_id, "event_id": event_id}
+
+
+def cmd_backfill_hold_days(args) -> dict:
+    """Derive `hold_days` for closed rows that predate the column. Dry by default; `--apply` writes.
+
+    The 64 NULLs on file are all `legacy_next_morning` closes from before the 2026-08-12 managed
+    lifecycle, and both timestamps they need are recorded -- so unlike slippage, where a NULL
+    means "never measured" and a backfill would invent a number, this is arithmetic over two
+    facts the row already holds, through the same `session_span` rule every live close uses. The
+    advisor named it the last thing standing between earnings and a scoreable experiment
+    (proposal #112, 2026-09-02). A row whose timestamps `session_span` cannot read stays NULL and
+    is reported, never guessed.
+    """
+    apply = bool(getattr(args, "apply", False))
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            "SELECT order_id, opened_at, closed_at FROM trades"
+            " WHERE closed_at IS NOT NULL AND hold_days IS NULL"
+        ).fetchall()
+        derived, unreadable = [], []
+        for order_id, opened_at, closed_at in rows:
+            span = session_span(opened_at, closed_at)
+            if span is None:
+                unreadable.append(order_id)
+                continue
+            derived.append((span, order_id))
+        if apply and derived:
+            conn.executemany("UPDATE trades SET hold_days = ? WHERE order_id = ?", derived)
+            conn.commit()
+    finally:
+        conn.close()
+    return {
+        "ok": True,
+        "applied": apply,
+        "derived": len(derived),
+        "unreadable": unreadable,
+        "by_span": {str(k): sum(1 for s, _ in derived if s == k) for k in sorted({s for s, _ in derived})},
+    }
 
 
 def cmd_record_iteration(args) -> dict:

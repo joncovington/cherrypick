@@ -134,6 +134,90 @@ def test_effective_sample_separates_distinct_symbols_and_days():
     assert facts._sample(records) == {"n": 4, "effective_n": 3}
 
 
+# --------------------------------------------------------------------------- health.entries
+def test_health_entries_count_positions_opened_this_session_not_closed_in_it(tmp_path):
+    """`results.closed` answers the settled half; for a multi-day module the two populations are
+    different, and the digest asked for the opened half. opened_at is epoch seconds, read with the
+    same 'localtime' modifier _earnings_expected already uses."""
+    db = tmp_path / "paper_trades.db"
+    _earnings_db(
+        db,
+        [
+            # opened today, still open
+            (
+                "NVDA",
+                "p",
+                "iron_fly",
+                None,
+                5.0,
+                None,
+                None,
+                _epoch("2026-08-12 15:50"),
+                1000.0,
+                None,
+                None,
+                None,
+            ),
+            # opened a week ago, closed today — an entry for THAT session, not this one
+            (
+                "AMAT",
+                "p",
+                "iron_fly",
+                50.0,
+                5.0,
+                5.0,
+                _epoch("2026-08-12 09:45"),
+                _epoch("2026-08-05 15:50"),
+                1000.0,
+                None,
+                None,
+                None,
+            ),
+        ],
+    )
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    health = facts._earnings_health(conn, "2026-08-12")
+    conn.close()
+    assert health["entries"] == 1
+
+
+def test_health_entries_are_null_when_the_table_is_absent_and_zero_when_it_is_empty(tmp_path):
+    """The null-is-not-zero rule applied to entries: None claims the ledger cannot answer, 0 claims
+    it answered 'none yet' — and a broken input must not render as a quiet day."""
+    db = tmp_path / "empty.db"
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    assert facts._meic_health(conn, "2026-08-12")["entries"] is None
+    conn.execute("CREATE TABLE ic_trades (trade_date TEXT)")
+    assert facts._meic_health(conn, "2026-08-12")["entries"] == 0
+    conn.close()
+
+
+def test_flies_health_splits_entries_from_completions_and_skips_voids(tmp_path):
+    """Entered vs completed is flies' own lifecycle split: a position is one leg of a two-stage
+    structure until it completes into a fly (kind='fly', the trade notifier's completion rule).
+    Voided rows are neither."""
+    db = tmp_path / "flies.db"
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    conn.execute("CREATE TABLE fly_positions (trade_date TEXT, kind TEXT, void_reason TEXT)")
+    conn.executemany(
+        "INSERT INTO fly_positions VALUES (?,?,?)",
+        [
+            ("2026-08-12", "spread", None),  # entered, awaiting completion
+            ("2026-08-12", "fly", None),  # entered and completed
+            ("2026-08-12", "fly", None),
+            ("2026-08-12", "fly", "stale quotes"),  # voided — neither
+            ("2026-08-11", "fly", None),  # yesterday's
+        ],
+    )
+    health = facts._flies_health(conn, "2026-08-12")
+    conn.close()
+    assert health["entries"] == 3
+    assert health["completions"] == 2
+
+
 # --------------------------------------------------------------------------- measurement breaks
 
 

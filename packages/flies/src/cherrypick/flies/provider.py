@@ -310,10 +310,41 @@ def _session_bounds(conn, symbol: str, trade_date: str) -> dict:
     ).fetchone()
     if row is None:
         return {}
-    return {
+    out = {
         key: (float(row[key]) if row[key] is not None else None)
         for key in ("day_open", "day_high", "day_low", "prev_day_close")
     }
+    out["trailing_range_points"] = _trailing_range(conn, symbol, trade_date)
+    return out
+
+
+# Sessions the trailing realized range averages over, and the fewest it will answer from. A
+# forecast from one or two sessions is a coin toss wearing a number; below the floor the field is
+# None and the containment gate refuses rather than guesses.
+TRAILING_RANGE_SESSIONS = 5
+TRAILING_RANGE_MIN_SESSIONS = 3
+
+
+def _trailing_range(conn, symbol: str, trade_date: str) -> float | None:
+    """Mean realized range (day_high - day_low) over the prior TRAILING_RANGE_SESSIONS sessions.
+
+    The range forecast the containment gate reads (`engine.evaluate_credit_spread_entry`,
+    `max_forecast_range_points`). Read from the stream cache's own daily summary rows -- history
+    the streamer already keeps, so this stays a plain read of rows that exist rather than
+    cross-tick state. Strictly PRIOR sessions: today's own row would leak the answer into the
+    forecast. Advisor proposals #102/#110 (2026-09-01): band placement against the realized range
+    classified floor_holds on six consecutive sessions, and the question that followed was whether
+    the range is forecastable at entry.
+    """
+    rows = conn.execute(
+        "SELECT day_high, day_low FROM stream_summary WHERE symbol = ? AND trade_date < ?"
+        " AND day_high IS NOT NULL AND day_low IS NOT NULL ORDER BY trade_date DESC LIMIT ?",
+        (symbol, trade_date, TRAILING_RANGE_SESSIONS),
+    ).fetchall()
+    widths = [float(r["day_high"]) - float(r["day_low"]) for r in rows]
+    if len(widths) < TRAILING_RANGE_MIN_SESSIONS:
+        return None
+    return round(sum(widths) / len(widths), 2)
 
 
 def _greeks_and_oi(

@@ -94,3 +94,19 @@ def test_no_created_session_degrades_to_unwindowed(tmp_home):
     pair = verdicts.for_experiment(experiment)["pairs"][0]
     # Every base row — the pre-fix behavior, kept for callers that have no window to apply.
     assert pair["base"]["sample"] == 21
+
+
+def test_every_advisable_module_has_a_scoreable_ledger_schema():
+    """bwb reached an active experiment (exp-2026-08-27-bwb-1, three sessions in) while
+    arm_readings.bwb stayed an empty object: `verdicts.SCHEMAS` — a hand-kept map — lacked it, so
+    `closed_records` found no reader and the experiment had nothing to be scored against. The same
+    failure shape the review package had on 08-26. Driven off the advisor's own module list and
+    core's reader registry, so a module is covered the moment it can be advised."""
+    from cherrypick.core import ledgers as _ledgers
+
+    from cherrypick.advisor import bounds, verdicts
+
+    missing = [m for m in bounds.MODULES if m not in verdicts.SCHEMAS]
+    assert not missing, f"advisable modules with no ledger schema in verdicts.SCHEMAS: {missing}"
+    unreadable = [m for m, s in verdicts.SCHEMAS.items() if s not in _ledgers.READERS]
+    assert not unreadable, f"schemas with no core.ledgers reader: {unreadable}"

@@ -65,6 +65,9 @@ CATCHUP_MINUTES = {
     # different: it issues the next session's advice, so it stays worth firing until late evening.
     "advisor-light": 45,
     "advisor-deep": 300,
+    # A close card caught up mid-evening still describes the settled day correctly; past that the
+    # next morning's cards take over.
+    "status-digest-close": 90,
 }
 
 # Mirrors packages/advisor/src/cherrypick/advisor/factpack.py's LIGHT_SLOTS. Not imported -- this
@@ -413,6 +416,36 @@ def derive_jobs(
             interval_seconds=int(dn["interval_minutes"]) * 60,
             enabled=dn["enabled"],
             enabled_reason="" if dn["enabled"] else "disabled in config (desk_notify)",
+        ),
+    )
+
+    # --- status-digest (webhook push → its own job, never on the watchdog tick, like desk-notify)
+    sd = cfgmod.status_digest_settings(cfg)
+    add(
+        "status-digest",
+        lambda: JobSpec(
+            id="status-digest",
+            argv=_run_py(pythonw, launcher, "notify-status"),
+            kind=KIND_INTERVAL,
+            interval_seconds=int(sd["interval_minutes"]) * 60,
+            window_start=sd["start"],
+            window_end=sd["end"],
+            trading_days_only=True,
+            enabled=sd["enabled"],
+            enabled_reason="" if sd["enabled"] else "disabled in config (status_digest)",
+        ),
+    )
+    add(
+        "status-digest-close",
+        lambda: JobSpec(
+            id="status-digest-close",
+            argv=_run_py(pythonw, launcher, "notify-status", "--close"),
+            kind=KIND_DAILY,
+            at_et=sd["close_at"],
+            catchup_minutes=CATCHUP_MINUTES["status-digest-close"],
+            trading_days_only=True,
+            enabled=sd["enabled"],
+            enabled_reason="" if sd["enabled"] else "disabled in config (status_digest)",
         ),
     )
 

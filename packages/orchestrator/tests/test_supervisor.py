@@ -546,6 +546,54 @@ def test_run_honors_stop_file_and_lock(spawned, monkeypatch):
     assert not res["ok"] and "already running" in res["detail"]
 
 
+# ------------------------------------------------- death breadcrumbs (added 2026-09-01)
+def test_an_exception_escaping_the_loop_is_logged_before_the_daemon_dies(spawned, monkeypatch):
+    """Four supervisor deaths between 08-25 and 09-01 left no trace at all: under pythonw an
+    escaping exception dies into the null device. The FATAL line + traceback are the only record
+    that a death was code rather than an external kill."""
+    monkeypatch.setattr(supervisor.time, "sleep", lambda s: None)
+
+    def boom(self, now=None):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(supervisor.Supervisor, "pass_once", boom)
+    with pytest.raises(RuntimeError):
+        supervisor.run(base_cfg(), max_passes=5)
+    log = cfgmod.log_file("supervisor.log").read_text(encoding="utf-8")
+    assert "FATAL: unhandled RuntimeError" in log
+    assert "Traceback" in log and "boom" in log
+
+
+def test_the_periodic_alive_line_carries_pid_and_rss(spawned, monkeypatch):
+    """The hourly trend line: with only a final heartbeat to go on, a slow leak and a sudden kill
+    look identical. Interval shrunk to 0 so a bounded run crosses it."""
+    monkeypatch.setattr(supervisor.time, "sleep", lambda s: None)
+    monkeypatch.setattr(supervisor, "_ALIVE_LOG_SECONDS", 0)
+    supervisor.run(base_cfg(), max_passes=2)
+    log = cfgmod.log_file("supervisor.log").read_text(encoding="utf-8")
+    assert "alive (pid" in log and "rss" in log
+
+
+def test_heartbeat_carries_the_daemons_own_memory(spawned):
+    """The heartbeat survives a silent death, so rss rides it — a memory-driven kill leaves its
+    final reading behind in the file rather than dying with the process."""
+    sup = supervisor.Supervisor(base_cfg())
+    sup.pass_once(now=MONDAY_NOON)
+    hb = json.loads(supervisor.heartbeat_path().read_text(encoding="utf-8"))
+    assert isinstance(hb["rss_mb"], (int, float)) and hb["rss_mb"] > 0
+
+
+def test_breadcrumbs_are_not_armed_for_a_bounded_test_run(spawned, monkeypatch):
+    """A bounded (test) run must never register the atexit marker: at interpreter exit it would
+    write 'process exiting' into the LIVE supervisor.log — noise in exactly the diagnostic trail
+    the breadcrumbs exist to create."""
+    armed = []
+    monkeypatch.setattr(supervisor, "_arm_death_breadcrumbs", lambda: armed.append(True))
+    monkeypatch.setattr(supervisor.time, "sleep", lambda s: None)
+    supervisor.run(base_cfg(), max_passes=1)
+    assert not armed
+
+
 def test_snapshot_reflects_daemon_state(spawned):
     sup = supervisor.Supervisor(base_cfg())
     sup.pass_once(now=MONDAY_NOON)

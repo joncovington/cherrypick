@@ -458,6 +458,28 @@ def desk_notify_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def status_digest_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved hourly suite-status digest config (status_digest.py -> Discord). OFF by default.
+    Its own supervisor job, never a watchdog-tick call: it pushes to a webhook, and the reliability
+    path stays free of network calls (the desk-notify rule). Everything it reads is a file another
+    job already writes; the one subprocess is an extra provisional review build, which is the same
+    idempotent operation the 16:30 review-provisional job performs."""
+    sd = cfg.get("status_digest", {}) or {}
+    return {
+        "enabled": sd.get("enabled", False),
+        "interval_minutes": int(sd.get("interval_minutes", 60)),
+        # ET wall-clock like every schedule here. 10:00 gives the first card a half-session of
+        # entries to describe; 16:10 lets the ~16:00 fire land after the 0DTE modules settle.
+        "start": sd.get("start", "10:00"),
+        "end": sd.get("end", "16:10"),
+        # The one daily CLOSE card, after the 0DTE modules settle (~16:15) and after the official
+        # review-provisional build (16:30) — the day's final intraday word, deltas against the
+        # last hourly post.
+        "close_at": sd.get("close_at", "16:35"),
+        "channels": sd.get("channels") or ["log", "discord"],
+    }
+
+
 def symbol_watch_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved earnings forward-preview scan config -- packages/earnings' own
     `cherrypick.earnings.symbol_watch`, the source of scout's read-only Earnings page "Upcoming"

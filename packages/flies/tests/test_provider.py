@@ -341,3 +341,30 @@ def test_non_zero_dte_is_labelled_so_the_engine_can_refuse(cache):
     assert snap["dte"] > 0
     enter, reason, _ = engine.evaluate_credit_spread_entry(snap, {"arm": "control"}, [])
     assert not enter and reason == "no_0dte_expiration"
+
+
+def test_session_carries_the_trailing_realized_range_from_prior_sessions_only(cache):
+    """The containment gate's forecast: mean (day_high - day_low) over the prior five sessions,
+    never including today's own row, which would leak the answer into the forecast."""
+    seed(cache)
+    seed_session(cache, day_open=5950.0, day_high=6100.0, day_low=5900.0)  # today: 200 wide, excluded
+    for i, width in enumerate((40.0, 50.0, 60.0, 50.0, 50.0), start=1):
+        seed_session(
+            cache,
+            trade_date=f"2020-01-{10 - i:02d}",
+            day_open=5000.0,
+            day_high=5000.0 + width,
+            day_low=5000.0,
+        )
+    snap = provider.build_snapshot(cache, "SPX")
+    assert snap["session"]["trailing_range_points"] == 50.0
+
+
+def test_trailing_range_is_none_below_the_session_floor(cache):
+    """Two sessions is a coin toss wearing a number; the gate refuses on None rather than guessing."""
+    seed(cache)
+    seed_session(cache, day_open=5950.0)
+    seed_session(cache, trade_date="2020-01-05", day_open=5000.0, day_high=5050.0, day_low=5000.0)
+    seed_session(cache, trade_date="2020-01-06", day_open=5000.0, day_high=5060.0, day_low=5000.0)
+    snap = provider.build_snapshot(cache, "SPX")
+    assert snap["session"]["trailing_range_points"] is None
