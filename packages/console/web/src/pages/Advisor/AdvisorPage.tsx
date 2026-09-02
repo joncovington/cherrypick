@@ -643,7 +643,7 @@ export function ExperimentCard({
             <span className="muted"> · same sessions, same underlying — a paired comparison</span>
           </div>
           <PairTable pairs={e.verdict.pairs} />
-          {e.verdict.recommendation !== null && (
+          {e.verdict.recommendation != null && (
             <p className="review-caveat">
               <span className="dot" /> the model recommends{" "}
               <strong>{e.verdict.recommendation.value}</strong> — {e.verdict.recommendation.rationale}
