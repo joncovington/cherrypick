@@ -30,7 +30,7 @@ def _make_cache(rows_summary=(), rows_trades=()):
     conn = sqlite3.connect(path)
     conn.executescript(
         "CREATE TABLE stream_trades (symbol TEXT PRIMARY KEY, last REAL, change REAL, "
-        "volume REAL, updated_at REAL NOT NULL);"
+        "volume REAL, updated_at REAL NOT NULL, event_at REAL);"
         "CREATE TABLE stream_summary (symbol TEXT NOT NULL, trade_date TEXT NOT NULL, "
         "day_open REAL, day_high REAL, day_low REAL, day_close REAL, prev_day_close REAL, "
         "updated_at REAL NOT NULL, PRIMARY KEY (symbol, trade_date));"
@@ -39,7 +39,13 @@ def _make_cache(rows_summary=(), rows_trades=()):
         "INSERT INTO stream_summary (symbol, trade_date, prev_day_close, updated_at) VALUES (?, ?, ?, ?)",
         rows_summary,
     )
-    conn.executemany("INSERT INTO stream_trades (symbol, last, updated_at) VALUES (?, ?, ?)", rows_trades)
+    # A row is (symbol, last, when) or (symbol, last, received_at, printed_at). The three-item form
+    # is a normal tick, where the producer received the print as it happened; the four-item form
+    # separates the clocks, which is what a reconnect snapshot does.
+    conn.executemany(
+        "INSERT INTO stream_trades (symbol, last, updated_at, event_at) VALUES (?, ?, ?, ?)",
+        [(r[0], r[1], r[2], r[3] if len(r) > 3 else r[2]) for r in rows_trades],
+    )
     conn.commit()
     conn.close()
 
@@ -260,3 +266,35 @@ def test_write_then_read_roundtrip():
     assert again is not None
     assert again["session"] == SESSION
     assert again["fact_version"] == facts.FACT_VERSION
+
+
+def test_a_reconnect_snapshot_is_not_a_live_quote():
+    """The 2026-09-02 defect, from this package's side of it.
+
+    A streamer reconnect resubscribes every symbol and DXLink replays a snapshot of the last print,
+    which the producer stamps with the time it RECEIVED that replay. So `updated_at` is seconds old
+    while the price is the previous session's close. Reading the receive time for freshness made an
+    overnight row look live for the whole FRESH_QUOTE window -- and this package runs pre-open,
+    which is exactly when such a row is the only one on file.
+    """
+    _make_cache(
+        rows_summary=[("SPX", PRIOR, 7744.90, NOW_TS - 60000)],
+        # received 30 seconds ago, printed at the prior session's close nine hours back
+        rows_trades=[("SPX", 7798.99, NOW_TS - 30, NOW_TS - 9 * 3600)],
+    )
+
+    spx = facts.build(SESSION, now=NOW)["readings"]["spx"]
+
+    assert spx["basis"] != "live", "a nine-hour-old print is not live however new the row is"
+
+
+def test_a_row_without_a_print_time_is_not_live_either():
+    """An older producer wrote no `event_at`. Unmeasured freshness is not measured freshness.
+
+    Falling back to `updated_at` here would restore the defect exactly. This package's posture is
+    that missing data can never produce RED and always blocks GREEN, so an unstamped print falls
+    through rather than being promoted to live on a receive time.
+    """
+    _make_cache(rows_trades=[("SPX", 7801.25, NOW_TS - 300, None)])
+
+    assert facts.build(SESSION, now=NOW)["readings"]["spx"]["basis"] != "live"
