@@ -1,12 +1,16 @@
 import { Outlet, useLocation } from "react-router-dom";
 import { StatusHeader } from "./StatusHeader";
+import { ToastStack } from "./ToastStack";
 import { useBoolPref, usePrefsSync } from "../../lib/prefs";
+import { useTradeNotifications } from "../../lib/useTradeNotifications";
 
 export function Shell() {
   const location = useLocation();
   // Pull the server's copy once, then let every reader work off the synchronous mirror.
   usePrefsSync();
   const dense = useBoolPref("denseTables");
+  // Mounted once here (not per-page) so trade toasts fire regardless of which page is open.
+  useTradeNotifications();
   return (
     <div className={dense ? "shell dense" : "shell"}>
       <StatusHeader />
@@ -17,6 +21,7 @@ export function Shell() {
           <Outlet />
         </div>
       </main>
+      <ToastStack />
     </div>
   );
 }

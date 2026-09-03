@@ -5,6 +5,7 @@ import { FieldRow } from "./FieldRow";
 import { resolveSection, TARGET_TITLES, type SectionMeta } from "./fieldMeta";
 import { clearStaged, getStaged, sameValue, useStagedVersion } from "./stagedStore";
 import { ConfigError, useSaveSection } from "./useConfigModel";
+import { pushToast } from "../../lib/toast";
 
 /**
  * One group of settings, saved as a unit.
@@ -78,7 +79,12 @@ function SaveBar({
               {
                 onSuccess: (res) => {
                   clearStaged(changes.map((c) => ({ target, pointer: c.pointer })));
-                  setNote(res.backup !== null ? `Saved. Previous version backed up to ${res.backup}` : "Saved.");
+                  const noteText = res.backup !== null ? `Saved. Previous version backed up to ${res.backup}` : "Saved.";
+                  setNote(noteText);
+                  // The inline note above vanishes the instant this SaveBar unmounts (changes
+                  // drops to 0 right after a successful save), which can happen too fast to
+                  // register -- the toast is the durable confirmation.
+                  pushToast({ tone: "exit", title: `${TARGET_TITLES[target]} saved`, message: noteText });
                 },
               },
             );
