@@ -598,91 +598,26 @@ export function useGex(enabled = true, page: PageState = FIRST_PAGE) {
 
 // ---- shared module performance (server/src/readers/performance.ts) ----
 //
-// Not yet promoted to @console/shared -- server/src/readers/performance.ts::ModulePerformanceResult
-// is the source of truth this mirrors. Field names inside `reading` stay snake_case, matching
-// core.metrics' own calibration_reading JSON verbatim (readModuleMetrics's own convention, kept
-// through the bridge and the route) rather than a ~20-key hand mapping to camelCase.
+// Types live in @console/shared (types/performance.ts) -- server/src/readers/performance.ts's
+// readModulePerformance is the source of truth both sides import against. Field names inside
+// `reading` stay snake_case, matching core.metrics' own calibration_reading JSON verbatim
+// (readModuleMetrics's own convention, kept through the bridge and the route) rather than a
+// ~20-key hand mapping to camelCase.
 
-export type PerformanceModuleId = "meic" | "flies" | "earnings" | "calendars" | "pmcc" | "curve" | "bwb";
-
-export interface ModulePerformanceGroup {
-  tag: string;
-  reading: Record<string, unknown>;
-  sessionNets: Array<[string, number]>;
-  tradeNets: number[];
-}
-
-export interface ExitReasonRow {
-  tag: string;
-  reason: string;
-  n: number;
-  net: number | null;
-  avgNet: number | null;
-}
-
-export interface HeldBackRow {
-  tag: string;
-  action: string;
-  reason: string;
-  gate: string | null;
-  n: number;
-}
-
-export interface AdvisedPair {
-  advised: string;
-  base: string;
-  sessionsPaired: number;
-  experimentId: string | null;
-  underpowered: boolean | null;
-}
-
-export interface MeasurementBreak {
-  date: string;
-  key: string;
-  note: string | null;
-  scope: string | null;
-}
-
-export interface ExcursionPosition {
-  id: string;
-  tag: string;
-  symbol: string;
-  mae: number;
-  mfe: number;
-  n: number | null;
-}
-
-export interface ExcursionsDistribution {
-  median: number | null;
-  n: number;
-}
-
-export interface ExcursionsData {
-  positions: ExcursionPosition[];
-  maeDistribution: ExcursionsDistribution;
-  mfeDistribution: ExcursionsDistribution;
-}
-
-export interface ExcursionsResult {
-  ok: boolean;
-  data: ExcursionsData | null;
-  error: string | null;
-}
-
-export interface ModulePerformanceResult {
-  ok: boolean;
-  module: PerformanceModuleId;
-  schema: string;
-  era: { key: "current" | "ALL"; from: string | null; note: string | null };
-  nRecords: number;
-  groups: ModulePerformanceGroup[];
-  exitReasons: ExitReasonRow[] | { unavailable: string };
-  heldBack: HeldBackRow[];
-  pairs: AdvisedPair[];
-  breaks: MeasurementBreak[];
-  excursions: ExcursionsResult;
-  error: string | null;
-}
+export type {
+  PerformanceModuleId,
+  ModulePerformanceGroup,
+  ExitReasonRow,
+  HeldBackRow,
+  AdvisedPair,
+  MeasurementBreak,
+  ExcursionPosition,
+  ExcursionsDistribution,
+  ExcursionsData,
+  ExcursionsResult,
+  ModulePerformanceResult,
+} from "@console/shared";
+import type { ModulePerformanceResult, PerformanceModuleId } from "@console/shared";
 
 /** One module's calibration reading, exit reasons, advised pairs and measurement breaks in one
  * request (`GET /api/performance/:module`). `era="current"` (the default) bounds to the suite's own

@@ -1,12 +1,22 @@
 import path from "node:path";
-import type { MeasurementBreak } from "@console/shared";
+import {
+  PERFORMANCE_MODULE_SCHEMA,
+  type ExitReasonRow,
+  type HeldBackRow,
+  type AdvisedPair,
+  type MeasurementBreak,
+  type ExcursionsResult,
+  type ModulePerformanceGroup,
+  type ModulePerformanceResult,
+  type PerformanceModuleId,
+} from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { suiteEra, withReadOnlyDb } from "./db.js";
 import { readModuleMetrics, type ModuleMetricsGroup } from "../services/metricsBridge.js";
-import { readExitReasons, type ExitReasonRow, type HeldBackRow } from "./exitReasons.js";
-import { readAdvisedPairs, type AdvisedPair } from "./pairs.js";
+import { readExitReasons } from "./exitReasons.js";
+import { readAdvisedPairs } from "./pairs.js";
 import { readMeasurementBreaks } from "./integrity.js";
-import { readExcursions, type ExcursionsResult } from "../services/excursionsBridge.js";
+import { readExcursions } from "../services/excursionsBridge.js";
 
 /**
  * The shared performance read: one module's calibration reading, per profile, via
@@ -20,17 +30,9 @@ import { readExcursions, type ExcursionsResult } from "../services/excursionsBri
  * `paper_trades.db`.
  */
 
-export const MODULE_SCHEMA = {
-  meic: "meic_ic",
-  flies: "fly_book",
-  earnings: "earnings",
-  calendars: "dc_week",
-  pmcc: "pmcc_99",
-  curve: "curve_vx",
-  bwb: "bwb_132",
-} as const;
+export const MODULE_SCHEMA = PERFORMANCE_MODULE_SCHEMA;
 
-export type PerformanceModuleId = keyof typeof MODULE_SCHEMA;
+export type { PerformanceModuleId };
 
 const MODULE_DIR_KEY = {
   meic: "meicDir",
@@ -44,41 +46,6 @@ const MODULE_DIR_KEY = {
 
 export function performanceDbPath(config: ConsoleConfig, module: PerformanceModuleId): string {
   return path.join(config.paths[MODULE_DIR_KEY[module]], "paper_trades.db");
-}
-
-export interface ModulePerformanceGroup {
-  tag: string;
-  reading: Record<string, unknown>;
-  sessionNets: Array<[string, number]>;
-  tradeNets: number[];
-}
-
-export interface ModulePerformanceResult {
-  ok: boolean;
-  module: PerformanceModuleId;
-  schema: string;
-  era: { key: "current" | "ALL"; from: string | null; note: string | null };
-  nRecords: number;
-  groups: ModulePerformanceGroup[];
-  /** Realized exit reasons per tag, or `{unavailable}` for a module with no single exit-reason
-   * concept (flies) -- `readers/exitReasons.ts`, read directly (a query, not `metricsBridge`). */
-  exitReasons: ExitReasonRow[] | { unavailable: string };
-  /** What an execution gate held back before a verdict could act. Always an array, including
-   * empty -- a module with no management-events table (MEIC) has a real "nothing held back," not
-   * an unavailable read the way `exitReasons` can be. */
-  heldBack: HeldBackRow[];
-  /** Each `advised:<base>` twin paired to its control, with the experiment that produced it --
-   * `readers/pairs.ts`. Always an array; empty when the module runs no advised books right now. */
-  pairs: AdvisedPair[];
-  /** Dates results either side must never be pooled -- `readers/integrity.ts::readMeasurementBreaks`
-   * against this module's own `paper_trades.db`, the same table every module's own reader already
-   * surfaces (`readers/meic.ts`, ...). Empty when the ledger has none recorded, not unavailable --
-   * a module with a clean history is a real state. */
-  breaks: MeasurementBreak[];
-  /** MAE/MFE per closed position -- `services/excursionsBridge.ts`. `ok: false` for a module with
-   * no Python excursions support (meic/flies/bwb), never a fabricated empty result. */
-  excursions: ExcursionsResult;
-  error: string | null;
 }
 
 function readBreaks(dbPath: string): MeasurementBreak[] {
