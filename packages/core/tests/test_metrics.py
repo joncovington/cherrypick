@@ -17,6 +17,41 @@ def _rec(net, capital=None, session="2026-07-21", slippage=None, max_profit=None
     }
 
 
+# --- excursions (MAE/MFE) -------------------------------------------------------
+
+
+def test_excursions_reports_the_deepest_dip_and_the_best_run():
+    # A position that dipped to -30 before recovering, then peaked at +50 before closing at +10.
+    marks = [0.0, -10.0, -30.0, -5.0, 20.0, 50.0, 10.0]
+    out = metrics.excursions(marks, basis=0.0)
+    assert out == {"mae": -30.0, "mfe": 50.0, "n": 7}
+
+
+def test_excursions_mae_is_zero_when_never_underwater():
+    assert metrics.excursions([0.0, 10.0, 25.0], basis=0.0)["mae"] == 0.0
+
+
+def test_excursions_mfe_is_zero_when_never_ahead():
+    assert metrics.excursions([0.0, -5.0, -20.0], basis=0.0)["mfe"] == 0.0
+
+
+def test_excursions_is_relative_to_a_nonzero_basis():
+    # Raw levels (e.g. an entry price of 100), not pre-netted P&L.
+    out = metrics.excursions([100.0, 95.0, 108.0, 102.0], basis=100.0)
+    assert out == {"mae": -5.0, "mfe": 8.0, "n": 4}
+
+
+def test_excursions_skips_none_marks_rather_than_treating_them_as_zero():
+    # A stalled-feed tick (usable=0, passed through as None) must not read as "at basis."
+    out = metrics.excursions([0.0, None, -40.0, None, 15.0], basis=0.0)
+    assert out == {"mae": -40.0, "mfe": 15.0, "n": 3}
+
+
+def test_excursions_is_none_with_no_usable_marks():
+    assert metrics.excursions([None, None], basis=0.0) == {"mae": None, "mfe": None, "n": 0}
+    assert metrics.excursions([], basis=0.0) == {"mae": None, "mfe": None, "n": 0}
+
+
 # --- return on capital ---------------------------------------------------------
 
 
