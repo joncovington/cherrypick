@@ -1147,7 +1147,9 @@ select.text-input {
   .flash-up,
   .flash-down,
   .roll,
-  .view-fade {
+  .view-fade,
+  .lb-backdrop,
+  .lb-frame {
     animation: none;
   }
 }
@@ -2500,6 +2502,7 @@ select.text-input {
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
+  animation: lb-backdrop-in 160ms ease-out;
 }
 
 .lb-frame {
@@ -2514,6 +2517,31 @@ select.text-input {
   min-height: 0;
   outline: none;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  animation: lb-frame-in 160ms ease-out;
+}
+
+/* Lightbox open: the overlay-over-Overview reinforced with a brief fade+rise rather than a hard
+   cut. No exit animation -- the frame unmounts on close (a route change away from the module),
+   and animating an unmount would need to outlive the unmount itself, which is the kind of
+   complexity this app's plain-CSS motion system deliberately stays out of. */
+@keyframes lb-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes lb-frame-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .lb-head {
