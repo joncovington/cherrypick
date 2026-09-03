@@ -207,9 +207,7 @@ def run_once(
     if not force and not _cal.is_trading_day(today):
         return {"ok": True, "skipped": "not_a_trading_day", "date": day}
 
-    _record_regime(
-        config, conn, cache_path=cache_path, day=day, now_min=now_min, force=force
-    )
+    _record_regime(config, conn, cache_path=cache_path, day=day, now_min=now_min, force=force)
 
     overdue = _overdue_legs(conn, day)
     if overdue and now_min % 60 < 2:
@@ -372,15 +370,15 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
     )
 
     base_params = {**management.PARAM_DEFAULTS, **engine.merged_params(config, "control")}
-    planned = engine.plan_entry(snapshot, base_params)
+    planned = engine.plan_entry(snapshot, base_params, config)
     plans: dict[str, dict] = {}
     for b in wanting:
         base = b.split(":", 1)[1] if b.startswith("advised:") else b
         if b.startswith("advised:") and advice_params:
-            plans[b] = engine.plan_entry(snapshot, {**base_params, **advice_params})
+            plans[b] = engine.plan_entry(snapshot, {**base_params, **advice_params}, config)
         elif base == "hook":
             plans[b] = engine.plan_entry(
-                snapshot, {**management.PARAM_DEFAULTS, **engine.merged_params(config, "hook")}
+                snapshot, {**management.PARAM_DEFAULTS, **engine.merged_params(config, "hook")}, config
             )
         else:
             plans[b] = planned
