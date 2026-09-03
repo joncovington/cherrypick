@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { useParams } from "react-router-dom";
 import { OverviewPage } from "./OverviewPage";
 import { NotFoundPage } from "../NotFoundPage";
@@ -17,7 +18,12 @@ export function OverviewWithLightbox() {
   return (
     <>
       <OverviewPage />
-      <Lightbox slide={slide} />
+      {/* No spinner fallback -- the chunk itself renders LightboxFrame's backdrop/frame, so there
+          is nothing to show a loading state INSIDE until it arrives; Overview stays visible and
+          interactive underneath for the (typically sub-100ms, same-origin) gap. */}
+      <Suspense fallback={null}>
+        <Lightbox slide={slide} />
+      </Suspense>
     </>
   );
 }
