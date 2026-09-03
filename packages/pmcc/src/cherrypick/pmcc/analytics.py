@@ -10,6 +10,10 @@ an empty bucket is `None`, because "not recorded" and "was zero" are different f
 
 from __future__ import annotations
 
+import statistics
+
+from cherrypick.core.metrics import excursions as _mae_mfe
+
 # The era the module counts as evidence, MEIC's `CURRENT_ERA` convention adopted verbatim. `era` on
 # `pmcc_positions` is an ADDED column (2026-08-23) — every row from before it existed reads back
 # NULL, which never equals a literal era string, so old rows are excluded from `headline()` by
@@ -121,6 +125,76 @@ def exposure(conn) -> dict:
         )
     exposed_positions = sum(1 for p in positions if (p["exposed_ticks"] or 0) > 0)
     return {"positions": positions, "positions_with_exposure": exposed_positions}
+
+
+def excursions(conn, era: str | None = CURRENT_ERA) -> dict:
+    """MAE/MFE per CLOSED position, plus their distributions (docs/metrics-plan.md Phase 2).
+
+    `era=CURRENT_ERA` (the default) scopes to the module's current evidence window, same rule as
+    `headline`; `era="ALL"` disables the filter.
+
+    `core.metrics.excursions` owns the generic MAE/MFE computation; this is the module-specific
+    half -- pairing `pmcc_marks`' per-tick `long_call`/`short_call` leg mids (by `marked_at`, one
+    shared timestamp per tick per the schema's own comment: "legs reassemble by equality") into
+    `long_call.mid - short_call.mid`, the position's value if closed right then. This is exactly
+    `engine.worksheet_metrics`'s own `net_debit = long_mid - short_mid` -- the formula that
+    produced `net_debit` at entry -- so `value - net_debit` is what closing then would have
+    realized against the debit paid, and the series needs no separate basis
+    (`core.metrics.excursions` is called with `basis=0.0`).
+
+    Positions with no `net_debit` (pre-instrumentation row) or no tick where both legs were usable
+    are skipped from the per-position list rather than reported with a fabricated 0.0."""
+    where = "status = 'closed'"
+    params: list[str] = []
+    if era and era != "ALL":
+        where += " AND era = ?"
+        params.append(era)
+
+    positions = []
+    for p in conn.execute(
+        f"SELECT position_id, symbol, book, net_debit, quantity FROM pmcc_positions "
+        f"WHERE {where} ORDER BY symbol, book",
+        params,
+    ):
+        if p["net_debit"] is None:
+            continue
+        legs: dict[float, dict] = {}
+        for row in conn.execute(
+            "SELECT leg_role, marked_at, mid FROM pmcc_marks WHERE position_id = ? "
+            "AND leg_role IN ('long_call', 'short_call') AND usable = 1 AND mid IS NOT NULL "
+            "ORDER BY marked_at",
+            (p["position_id"],),
+        ):
+            legs.setdefault(row["marked_at"], {})[row["leg_role"]] = row["mid"]
+        mult = 100 * (p["quantity"] or 1)
+        pnl_series = [
+            round((tick["long_call"] - tick["short_call"] - p["net_debit"]) * mult, 2)
+            for tick in (legs[ts] for ts in sorted(legs))
+            if "long_call" in tick and "short_call" in tick
+        ]
+        mae_mfe = _mae_mfe(pnl_series, basis=0.0)
+        if mae_mfe["n"] == 0:
+            continue
+        positions.append(
+            {
+                "position_id": p["position_id"],
+                "symbol": p["symbol"],
+                "book": p["book"],
+                "mae": mae_mfe["mae"],
+                "mfe": mae_mfe["mfe"],
+                "n": mae_mfe["n"],
+            }
+        )
+
+    def _distribution(key: str) -> dict:
+        values = [p[key] for p in positions]
+        return {"median": round(statistics.median(values), 2) if values else None, "n": len(values)}
+
+    return {
+        "positions": positions,
+        "mae_distribution": _distribution("mae"),
+        "mfe_distribution": _distribution("mfe"),
+    }
 
 
 def mark_coverage(conn, session_date: str) -> dict:
