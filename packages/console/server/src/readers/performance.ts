@@ -6,6 +6,7 @@ import { readModuleMetrics, type ModuleMetricsGroup } from "../services/metricsB
 import { readExitReasons, type ExitReasonRow, type HeldBackRow } from "./exitReasons.js";
 import { readAdvisedPairs, type AdvisedPair } from "./pairs.js";
 import { readMeasurementBreaks } from "./integrity.js";
+import { readExcursions, type ExcursionsResult } from "../services/excursionsBridge.js";
 
 /**
  * The shared performance read: one module's calibration reading, per profile, via
@@ -74,6 +75,9 @@ export interface ModulePerformanceResult {
    * surfaces (`readers/meic.ts`, ...). Empty when the ledger has none recorded, not unavailable --
    * a module with a clean history is a real state. */
   breaks: MeasurementBreak[];
+  /** MAE/MFE per closed position -- `services/excursionsBridge.ts`. `ok: false` for a module with
+   * no Python excursions support (meic/flies/bwb), never a fabricated empty result. */
+  excursions: ExcursionsResult;
   error: string | null;
 }
 
@@ -105,6 +109,7 @@ export function readModulePerformance(
   // module whose ledger schema `core.metrics` doesn't yet know should still show its exit reasons.
   const exits = readExitReasons(config, module);
   const breaks = readBreaks(dbPath);
+  const excursions = readExcursions(module, dbPath);
 
   const res = readModuleMetrics(dbPath, schema, start, null);
   if (!res.ok || res.metrics === null) {
@@ -119,6 +124,7 @@ export function readModulePerformance(
       heldBack: exits.heldBack,
       pairs: [],
       breaks,
+      excursions,
       error: res.error,
     };
   }
@@ -139,6 +145,7 @@ export function readModulePerformance(
     heldBack: exits.heldBack,
     pairs: readAdvisedPairs(config, module, groups),
     breaks,
+    excursions,
     error: null,
   };
 }
