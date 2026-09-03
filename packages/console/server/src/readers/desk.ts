@@ -172,7 +172,12 @@ export function readDesk(config: ConsoleConfig): DeskPayload {
     {
       module: "flies",
       open: fliesAnalytics.today.open,
-      atRisk: fliesAnalytics.today.maxPossibleLoss,
+      // flies' own maxPossibleLoss is a signed P&L floor (negative = a real loss, zero = nothing
+      // open can still lose -- FliesLightbox's own "now" tab shows it that way, in red when
+      // negative). Every other row's atRisk is a positive magnitude (a debit paid, a max-loss
+      // sum), so this column takes the absolute value here rather than exposing flies as the one
+      // row where "at risk" reads negative under a header every other row treats as an amount.
+      atRisk: Math.abs(fliesAnalytics.today.maxPossibleLoss),
       atRiskLabel: "max possible loss",
       unrealisedNet: null,
       markAgeSeconds: fliesLoop.ageSeconds,
