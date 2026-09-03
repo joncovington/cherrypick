@@ -296,8 +296,8 @@ export function FliesLightbox({ slide }: { slide: string }) {
         </DataCard>
       ),
     },
-    { id: "performance", label: "performance", render: () => <PerformanceTab mode={mode} filter={multiDayFilter} /> },
-    { id: "calibration", label: "calibration", render: () => <PerformanceSlide module="flies" /> },
+    { id: "calibration", label: "calibration", render: () => <PerformanceTab mode={mode} filter={multiDayFilter} /> },
+    { id: "performance", label: "performance", render: () => <PerformanceSlide module="flies" /> },
     { id: "history", label: "history", render: () => <HistoryTab mode={mode} filter={multiDayFilter} onReplayDay={replayDay} /> },
     {
       id: "guide",
