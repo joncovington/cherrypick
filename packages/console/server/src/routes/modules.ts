@@ -33,7 +33,7 @@ import {
   ERAS,
   type FliesFilter,
 } from "../readers/flies.js";
-import { readPmcc, readPmccAssignments, readPmccHistory, readPmccMeta } from "../readers/pmcc.js";
+import { readPmcc, readPmccAssignments, readPmccHistory, readPmccMeta, resolvePmccSession } from "../readers/pmcc.js";
 import { readCurve, readCurveHistory, readCurveMeta } from "../readers/curve.js";
 import { readBwb, readBwbHistory, readBwbMeta } from "../readers/bwb.js";
 import { readCalendars, readCalendarsWeek, readCalendarsWeeks } from "../readers/calendars.js";
@@ -137,9 +137,14 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   });
   // pmcc is paper-only, so mode is fixed rather than parsed. calendars has no equivalent route:
   // its books share one entry plan, so there is no per-arm entry decision to show.
+  //
+  // Explicit-date requests (f.date) still win; only the no-date default falls back to pmcc's own
+  // resolved session rather than readEntryAttempts' own MAX(trade_date) -- see resolvePmccSession's
+  // own comment for the incident this fixes (the loop's last RUN vs. the attempts table's last ROW
+  // can differ for a module whose loop ticks a few times a day rather than continuously).
   app.get("/api/pmcc/attempts", async (req) => {
     const f = parseFliesFilter(req.query);
-    return readEntryAttempts(config, "pmcc", "paper", f.date);
+    return readEntryAttempts(config, "pmcc", "paper", f.date ?? resolvePmccSession(config));
   });
   app.get("/api/meic/loop", async (req) =>
     readMeicLoopStatus(config, parseMode(req.query), parseMeicScope(req.query)),
