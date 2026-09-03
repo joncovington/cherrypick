@@ -15,6 +15,7 @@ import { ArmRail, AttemptTimeline } from "../../components/Attempts";
 import { OccupancyMap } from "../../components/OccupancyMap";
 import { MeicForestCard } from "../../pages/Meic/MeicForestCard";
 import { MeicPerformanceTab } from "../../pages/Meic/MeicPerformanceTab";
+import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { LightboxFrame } from "../LightboxFrame";
 import type { SlideDef } from "../types";
 
@@ -268,6 +269,11 @@ export function MeicLightbox({ slide }: { slide: string }) {
       id: "performance",
       label: "performance",
       render: () => <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />,
+    },
+    {
+      id: "calibration",
+      label: "calibration",
+      render: () => <PerformanceSlide module="meic" />,
     },
     {
       id: "history",
