@@ -110,6 +110,19 @@ def test_session_nets_pool_by_session_in_order():
     assert metrics.session_nets(records) == [-8.0, 25.0]
 
 
+def test_session_nets_dated_matches_session_nets_values_and_order():
+    records = [
+        _rec(20.0, session="2026-07-22"),
+        _rec(-8.0, session="2026-07-21"),
+        _rec(5.0, session="2026-07-22"),
+        {"net_pnl": 99.0, "session": None},
+    ]
+    dated = metrics.session_nets_dated(records)
+    assert dated == [("2026-07-21", -8.0), ("2026-07-22", 25.0)]
+    # Never allowed to disagree with the plain series -- same pooling, same exclusion.
+    assert [v for _, v in dated] == metrics.session_nets(records)
+
+
 def test_worst_session_is_the_worst_day_not_the_worst_trade():
     records = [
         _rec(-50.0, session="2026-07-21"),

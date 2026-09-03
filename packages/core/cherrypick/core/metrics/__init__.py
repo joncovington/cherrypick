@@ -126,6 +126,20 @@ def session_nets(records: Sequence[Mapping]) -> list[float]:
     return [round(by_session[s], 2) for s in sorted(by_session)]
 
 
+def session_nets_dated(records: Sequence[Mapping]) -> list[tuple[str, float]]:
+    """`session_nets`, paired with the session it belongs to -- for a caller that needs the date
+    label (a chart x-axis), not just the ordered value series. Same pooling and exclusion rule,
+    so the two never disagree about which sessions exist or their order; kept as a second
+    function rather than a flag on `session_nets` so every existing tail-metric call site
+    (whose contract is a plain float series) is untouched."""
+    by_session: dict[str, float] = {}
+    for r in records:
+        s = r.get("session")
+        if s:
+            by_session[s] = by_session.get(s, 0.0) + r["net_pnl"]
+    return [(s, round(by_session[s], 2)) for s in sorted(by_session)]
+
+
 def worst_session(records: Sequence[Mapping]) -> dict | None:
     """The single worst session: {"session", "net"}. None when no record carries a session."""
     by_session: dict[str, float] = {}
