@@ -7,8 +7,14 @@ from cherrypick.core import metrics
 from cherrypick.core.profiles import qualify_readings
 
 
-def _rec(net, capital=None, session="2026-07-21", slippage=None):
-    return {"net_pnl": net, "capital": capital, "session": session, "slippage": slippage}
+def _rec(net, capital=None, session="2026-07-21", slippage=None, max_profit=None):
+    return {
+        "net_pnl": net,
+        "capital": capital,
+        "session": session,
+        "slippage": slippage,
+        "max_profit": max_profit,
+    }
 
 
 # --- return on capital ---------------------------------------------------------
@@ -177,6 +183,57 @@ def test_calibration_reading_carries_the_expansion_report_only():
     assert set(out["a"]["checks"]) == {"sample", "win_rate", "days"}
 
 
+# --- capture rate / max profit-loss pct ----------------------------------------
+
+
+def test_capture_rate_is_net_over_max_profit_with_full_coverage():
+    records = [_rec(60.0, max_profit=100.0), _rec(-20.0, max_profit=100.0)]
+    out = metrics.capture_rate(records)
+    assert out == {"value": pytest.approx(40.0 / 200.0), "n": 2}
+
+
+def test_capture_rate_is_none_with_no_coverage():
+    assert metrics.capture_rate([_rec(60.0), _rec(-20.0)]) == {"value": None, "n": 0}
+
+
+def test_capture_rate_reports_partial_coverage_as_n_not_as_the_whole_sample():
+    # Function-level: partial coverage still computes over what IS known -- the stricter
+    # full-coverage gate lives in calibration_reading, tested separately below.
+    records = [_rec(50.0, max_profit=100.0), _rec(10.0)]  # second carries no max_profit
+    out = metrics.capture_rate(records)
+    assert out == {"value": pytest.approx(0.5), "n": 1}
+
+
+def test_max_profit_pct_medians_only_winning_trades_with_coverage():
+    records = [
+        _rec(90.0, max_profit=100.0),  # 0.9
+        _rec(50.0, max_profit=100.0),  # 0.5
+        _rec(-30.0, max_profit=100.0),  # losing trade: excluded
+        _rec(20.0),  # no max_profit: excluded
+    ]
+    out = metrics.max_profit_pct(records)
+    assert out == {"median": 0.7, "n": 2}
+
+
+def test_max_profit_pct_is_none_with_no_winning_covered_trades():
+    assert metrics.max_profit_pct([_rec(-10.0, max_profit=100.0)]) == {"median": None, "n": 0}
+
+
+def test_max_loss_pct_medians_only_losing_trades_with_capital_coverage():
+    records = [
+        _rec(-80.0, capital=100.0),  # 0.8
+        _rec(-40.0, capital=100.0),  # 0.4
+        _rec(30.0, capital=100.0),  # winning trade: excluded
+        _rec(-5.0),  # no capital: excluded
+    ]
+    out = metrics.max_loss_pct(records)
+    assert out == {"median": 0.6, "n": 2}
+
+
+def test_max_loss_pct_is_none_with_no_losing_covered_trades():
+    assert metrics.max_loss_pct([_rec(10.0, capital=100.0)]) == {"median": None, "n": 0}
+
+
 # --- calibration_reading -------------------------------------------------------
 
 
@@ -196,6 +253,26 @@ def test_calibration_reading_bundles_the_promotion_evidence():
     assert r["capital_coverage"] == 3
     assert r["max_drawdown"] == 8.0
     assert r["sample_progress"]["next_target"] == 30
+    # No record here carries max_profit -- capture_rate must read as unmeasured, not zero.
+    assert r["capture_rate"] == {"value": None, "n": 0}
+    assert r["max_profit_coverage"] == 0
+    assert r["max_profit_pct"] == {"median": None, "n": 0}
+    assert r["max_loss_pct"]["n"] == 1  # the one losing trade, over capital coverage
+
+
+def test_calibration_reading_capture_rate_requires_full_max_profit_coverage():
+    """Mirrors return_on_capital's own full-coverage gate: a summed ratio over a smaller, unstated
+    sub-sample would silently disagree with the group's headline `sample`."""
+    full = [
+        _rec(60.0, max_profit=100.0, session="2026-07-21"),
+        _rec(-20.0, max_profit=100.0, session="2026-07-22"),
+    ]
+    assert metrics.calibration_reading(full)["capture_rate"]["value"] is not None
+
+    partial = full + [_rec(10.0, session="2026-07-23")]  # third trade has no max_profit
+    r = metrics.calibration_reading(partial)
+    assert r["capture_rate"] == {"value": None, "n": 2}
+    assert r["max_profit_coverage"] == 2
 
 
 def test_calibration_reading_orders_by_session_for_the_drawdown_path():

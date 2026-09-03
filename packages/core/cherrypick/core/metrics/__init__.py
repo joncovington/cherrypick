@@ -20,6 +20,7 @@ Pure functions; no I/O, no config.
 
 from __future__ import annotations
 
+import statistics
 from collections.abc import Mapping, Sequence
 
 
@@ -32,6 +33,40 @@ def return_on_capital(records: Sequence[Mapping]) -> float | None:
     nets = [r["net_pnl"] for r in records if r.get("capital")]
     total_capital = sum(capitals)
     return round(sum(nets) / total_capital, 4) if total_capital > 0 else None
+
+
+def capture_rate(records: Sequence[Mapping]) -> dict:
+    """{"value", "n"}: sum(net_pnl) / sum(max_profit) over the records that carry a positive
+    max_profit -- how much of the structures' own theoretical ceiling the group actually kept.
+    `value` is None when no record carries max_profit (a schema that never populates it, per
+    `ledgers`' own None-for-debit/geometry-dependent rule); `n` is the coverage count either way,
+    same shape as `return_on_capital`'s own "unknown is not free/zero" discipline."""
+    profits = [r["max_profit"] for r in records if r.get("max_profit")]
+    n = len(profits)
+    if n == 0:
+        return {"value": None, "n": 0}
+    nets = [r["net_pnl"] for r in records if r.get("max_profit")]
+    total = sum(profits)
+    return {"value": round(sum(nets) / total, 4) if total > 0 else None, "n": n}
+
+
+def max_profit_pct(records: Sequence[Mapping]) -> dict:
+    """{"median", "n"}: median of net_pnl / max_profit over WINNING trades (net_pnl > 0) that
+    carry max_profit -- how close a typical win came to the structure's own ceiling. A losing
+    trade is excluded on purpose: a negative ratio here would be a fact about capture_rate's
+    aggregate, not about how well a WIN was captured, and pooling the two would blur both."""
+    ratios = [r["net_pnl"] / r["max_profit"] for r in records if r.get("max_profit") and r["net_pnl"] > 0]
+    return {"median": round(statistics.median(ratios), 4) if ratios else None, "n": len(ratios)}
+
+
+def max_loss_pct(records: Sequence[Mapping]) -> dict:
+    """{"median", "n"}: median of |net_pnl| / capital over LOSING trades (net_pnl < 0) that carry
+    capital -- how close a typical loss came to the structure's own defined max loss. Mirrors
+    `max_profit_pct`'s split by sign, over `capital` (every schema's defined-risk bound) rather
+    than `max_profit` (only ever populated for a plain credit spread) since a loss is bounded by
+    capital at risk regardless of whether the structure's profit ceiling is known."""
+    ratios = [abs(r["net_pnl"]) / r["capital"] for r in records if r.get("capital") and r["net_pnl"] < 0]
+    return {"median": round(statistics.median(ratios), 4) if ratios else None, "n": len(ratios)}
 
 
 def sharpe(values: Sequence[float]) -> float | None:
@@ -233,6 +268,7 @@ def calibration_reading(records: Sequence[Mapping]) -> dict:
         stressed = None
     capital_coverage = sum(1 for r in ordered if r.get("capital"))
     roc = return_on_capital(ordered) if capital_coverage == n and n > 0 else None
+    max_profit_coverage = sum(1 for r in ordered if r.get("max_profit"))
     return {
         "sample": n,
         "win_rate": round(wins / n, 4) if n else None,
@@ -257,4 +293,19 @@ def calibration_reading(records: Sequence[Mapping]) -> dict:
         "cvar_quantile": CVAR_QUANTILE,
         "cvar_min_sessions": CVAR_MIN_SESSIONS,
         "drawdown_span": drawdown_span(session_nets(ordered)),
+        # 2026-09 expansion (docs/metrics-plan.md's own capture-rate idea, console Phase 3a):
+        # capture_rate needs FULL max_profit coverage across the sample before reporting a value,
+        # same discipline as return_on_capital above -- a partial-coverage ratio would silently
+        # compare a smaller, unstated sub-sample against the group's headline `n`. max_profit_pct/
+        # max_loss_pct are per-trade distributions (median), so they report over whatever coverage
+        # exists rather than requiring the whole sample -- a median is legitimately meaningful over
+        # a subset, unlike a summed ratio.
+        "capture_rate": (
+            capture_rate(ordered)
+            if max_profit_coverage == n and n > 0
+            else {"value": None, "n": max_profit_coverage}
+        ),
+        "max_profit_coverage": max_profit_coverage,
+        "max_profit_pct": max_profit_pct(ordered),
+        "max_loss_pct": max_loss_pct(ordered),
     }
