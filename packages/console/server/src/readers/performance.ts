@@ -1,9 +1,11 @@
 import path from "node:path";
+import type { MeasurementBreak } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { suiteEra } from "./db.js";
+import { suiteEra, withReadOnlyDb } from "./db.js";
 import { readModuleMetrics, type ModuleMetricsGroup } from "../services/metricsBridge.js";
 import { readExitReasons, type ExitReasonRow, type HeldBackRow } from "./exitReasons.js";
 import { readAdvisedPairs, type AdvisedPair } from "./pairs.js";
+import { readMeasurementBreaks } from "./integrity.js";
 
 /**
  * The shared performance read: one module's calibration reading, per profile, via
@@ -67,7 +69,16 @@ export interface ModulePerformanceResult {
   /** Each `advised:<base>` twin paired to its control, with the experiment that produced it --
    * `readers/pairs.ts`. Always an array; empty when the module runs no advised books right now. */
   pairs: AdvisedPair[];
+  /** Dates results either side must never be pooled -- `readers/integrity.ts::readMeasurementBreaks`
+   * against this module's own `paper_trades.db`, the same table every module's own reader already
+   * surfaces (`readers/meic.ts`, ...). Empty when the ledger has none recorded, not unavailable --
+   * a module with a clean history is a real state. */
+  breaks: MeasurementBreak[];
   error: string | null;
+}
+
+function readBreaks(dbPath: string): MeasurementBreak[] {
+  return withReadOnlyDb<MeasurementBreak[]>(dbPath, [], (db) => readMeasurementBreaks(db));
 }
 
 /**
@@ -93,6 +104,7 @@ export function readModulePerformance(
   // metricsBridge -- so it's read whether or not the calibration reading itself succeeds; a
   // module whose ledger schema `core.metrics` doesn't yet know should still show its exit reasons.
   const exits = readExitReasons(config, module);
+  const breaks = readBreaks(dbPath);
 
   const res = readModuleMetrics(dbPath, schema, start, null);
   if (!res.ok || res.metrics === null) {
@@ -106,6 +118,7 @@ export function readModulePerformance(
       exitReasons: exits.exitReasons,
       heldBack: exits.heldBack,
       pairs: [],
+      breaks,
       error: res.error,
     };
   }
@@ -125,6 +138,7 @@ export function readModulePerformance(
     exitReasons: exits.exitReasons,
     heldBack: exits.heldBack,
     pairs: readAdvisedPairs(config, module, groups),
+    breaks,
     error: null,
   };
 }
