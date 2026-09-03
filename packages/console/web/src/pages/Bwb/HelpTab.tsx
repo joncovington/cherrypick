@@ -9,7 +9,7 @@ import { Card } from "../../components/DataTable";
 export function HelpTab({ data: _data }: { data: BwbPayload | undefined }) {
   return (
     <div className="cards cards-wide">
-      <Card title="what bwb is" collapseKey="bwb-help-what" className="view-fade">
+      <Card title="what bwb is" collapseKey="bwb-help-what" defaultCollapsed className="view-fade">
         <div className="pmcc-prose">
           <p>
             A daily-laddered SPX put broken-wing butterfly, entered every session at the expected move,
@@ -24,7 +24,7 @@ export function HelpTab({ data: _data }: { data: BwbPayload | undefined }) {
         </div>
       </Card>
 
-      <Card title="the four books -- one variable each" collapseKey="bwb-help-books">
+      <Card title="the four books -- one variable each" collapseKey="bwb-help-books" defaultCollapsed>
         <div className="pmcc-prose">
           <dl className="pmcc-defs">
             <dt>control</dt>
@@ -47,7 +47,7 @@ export function HelpTab({ data: _data }: { data: BwbPayload | undefined }) {
         </div>
       </Card>
 
-      <Card title="the add-on" collapseKey="bwb-help-addon">
+      <Card title="the add-on" collapseKey="bwb-help-addon" defaultCollapsed>
         <div className="pmcc-prose">
           <p>
             Identical construction for all three arms: a put credit spread bracketing the far wing -- SELL
@@ -60,7 +60,7 @@ export function HelpTab({ data: _data }: { data: BwbPayload | undefined }) {
         </div>
       </Card>
 
-      <Card title="why the effective sample is fire count, not trade count" collapseKey="bwb-help-pairing">
+      <Card title="why the effective sample is fire count, not trade count" collapseKey="bwb-help-pairing" defaultCollapsed>
         <div className="pmcc-prose">
           <p>
             Until an arm's add-on actually fires, that arm's positions are byte-identical to control's --
@@ -78,7 +78,7 @@ export function HelpTab({ data: _data }: { data: BwbPayload | undefined }) {
         </div>
       </Card>
 
-      <Card title="the trigger tick path -- the module's second product" collapseKey="bwb-help-ticks">
+      <Card title="the trigger tick path -- the module's second product" collapseKey="bwb-help-ticks" defaultCollapsed>
         <div className="pmcc-prose">
           <p>
             Every loop tick, for every open cohort (entry_session x structure_signature), the near-wing
@@ -89,7 +89,7 @@ export function HelpTab({ data: _data }: { data: BwbPayload | undefined }) {
         </div>
       </Card>
 
-      <Card title="the honesty rules" collapseKey="bwb-help-honesty">
+      <Card title="the honesty rules" collapseKey="bwb-help-honesty" defaultCollapsed>
         <div className="pmcc-prose">
           <ol className="pmcc-rules">
             <li>

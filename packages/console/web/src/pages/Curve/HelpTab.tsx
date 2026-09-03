@@ -10,7 +10,7 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
   const p = data?.params;
   return (
     <div className="cards cards-wide">
-      <Card title="what curve is" collapseKey="curve-help-what" className="view-fade">
+      <Card title="what curve is" collapseKey="curve-help-what" defaultCollapsed className="view-fade">
         <div className="pmcc-prose">
           <p>
             Sell a VXX call credit spread -- short call ~30-delta, long wing a declared width higher, same
@@ -29,7 +29,7 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
         </div>
       </Card>
 
-      <Card title="the three books -- one variable each" collapseKey="curve-help-books">
+      <Card title="the three books -- one variable each" collapseKey="curve-help-books" defaultCollapsed>
         <div className="pmcc-prose">
           <dl className="pmcc-defs">
             <dt>control</dt>
@@ -64,7 +64,7 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
         </div>
       </Card>
 
-      <Card title="why the books are only partly comparable" collapseKey="curve-help-pairing">
+      <Card title="why the books are only partly comparable" collapseKey="curve-help-pairing" defaultCollapsed>
         <div className="pmcc-prose">
           <p>
             <strong>control and noflip are exactly paired.</strong> They enter from the same plan on the same
@@ -81,7 +81,7 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
         </div>
       </Card>
 
-      <Card title="the regime series -- the module's second product" collapseKey="curve-help-regime">
+      <Card title="the regime series -- the module's second product" collapseKey="curve-help-regime" defaultCollapsed>
         <div className="pmcc-prose">
           <p>
             The daily VIX/VIX3M ratio, its contango/backwardation classification, and the hook flag are written
@@ -93,7 +93,7 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
         </div>
       </Card>
 
-      <Card title="the honesty rules" collapseKey="curve-help-honesty">
+      <Card title="the honesty rules" collapseKey="curve-help-honesty" defaultCollapsed>
         <div className="pmcc-prose">
           <ol className="pmcc-rules">
             <li>

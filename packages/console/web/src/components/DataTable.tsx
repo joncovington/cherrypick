@@ -104,15 +104,24 @@ function readCollapsed(): Record<string, boolean> {
   }
 }
 
-/** Collapse state persisted per card title, like the old dashboards remembered layout. */
-export function useCollapsed(key: string): [boolean, () => void] {
-  const [collapsed, setCollapsed] = useState(() => readCollapsed()[key] === true);
+/**
+ * Collapse state persisted per card title, like the old dashboards remembered layout.
+ *
+ * `defaultCollapsed` only applies the FIRST time a key is ever seen — once a viewer has toggled a
+ * card, that explicit choice (open or closed) is what persists, never the page's default. Both
+ * states are stored explicitly (not just `true`) so "I opened this on purpose" survives a reload
+ * even for a card whose page-level default is collapsed.
+ */
+export function useCollapsed(key: string, defaultCollapsed = false): [boolean, () => void] {
+  const [collapsed, setCollapsed] = useState(() => {
+    const stored = readCollapsed()[key];
+    return stored === undefined ? defaultCollapsed : stored;
+  });
   const toggle = () => {
     const next = !collapsed;
     setCollapsed(next);
     const all = readCollapsed();
-    if (next) all[key] = true;
-    else delete all[key];
+    all[key] = next;
     try {
       localStorage.setItem(COLLAPSE_KEY, JSON.stringify(all));
     } catch {
@@ -132,13 +141,16 @@ interface CardProps {
   controls?: ReactNode;
   /** Extra class on the outer section — e.g. "view-fade" for a tab body that should fade in. */
   className?: string;
+  /** Collapsed the first time this key is seen (e.g. the guide/help slide, read once then
+   *  skimmed) -- an explicit later toggle always wins over this. */
+  defaultCollapsed?: boolean;
   children: ReactNode;
 }
 
 /** Card shell with the house header: collapse caret, title, controls, freshness stamp. */
-export function Card({ title, collapseKey, updatedAt, isError = false, controls, className, children }: CardProps) {
+export function Card({ title, collapseKey, updatedAt, isError = false, controls, className, defaultCollapsed, children }: CardProps) {
   const key = collapseKey ?? (typeof title === "string" ? title : "card");
-  const [collapsed, toggle] = useCollapsed(key);
+  const [collapsed, toggle] = useCollapsed(key, defaultCollapsed);
   const asOf = asOfLabel(updatedAt);
   return (
     <section className={`card ${className ?? ""} ${isError ? "card-stale" : ""}`}>

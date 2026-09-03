@@ -19,7 +19,7 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
   const cashSymbols = symbols.filter((s) => settlementStyle[s] === "cash");
   return (
     <div className="cards cards-wide">
-      <Card title="what PMCC-99 is" collapseKey="pmcc-help-what" className="view-fade">
+      <Card title="what PMCC-99 is" collapseKey="pmcc-help-what" defaultCollapsed className="view-fade">
         <div className="pmcc-prose">
           <p>
             Buy a call inside an 85-90-delta band
@@ -53,7 +53,7 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
         </div>
       </Card>
 
-      <Card title="one book, plus its advised twin" collapseKey="pmcc-help-books">
+      <Card title="one book, plus its advised twin" collapseKey="pmcc-help-books" defaultCollapsed>
         <div className="pmcc-prose">
           <dl className="pmcc-defs">
             <dt>control</dt>
@@ -79,7 +79,7 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
         </div>
       </Card>
 
-      <Card title="the honesty rules" collapseKey="pmcc-help-honesty">
+      <Card title="the honesty rules" collapseKey="pmcc-help-honesty" defaultCollapsed>
         <div className="pmcc-prose">
           <ol className="pmcc-rules">
             <li>
@@ -123,7 +123,7 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
         </div>
       </Card>
 
-      <Card title="settlement, by symbol" collapseKey="pmcc-help-settlement">
+      <Card title="settlement, by symbol" collapseKey="pmcc-help-settlement" defaultCollapsed>
         <div className="pmcc-prose">
           <p>
             TQQQ is American physical delivery. An ITM short call at expiry books its intrinsic <em>and</em> delivers

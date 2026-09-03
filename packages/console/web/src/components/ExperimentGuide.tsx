@@ -87,6 +87,7 @@ function EntryCard({ entry, unit }: { entry: ExperimentGuideEntry; unit: string 
         </span>
       }
       collapseKey={`guide-${unit}-${entry.name}`}
+      defaultCollapsed
     >
       <div className="arm-facts muted">
         {entry.positions > 0 ? (
@@ -189,27 +190,31 @@ export function ExperimentGuideView({ url, mode, intro }: { url: string; mode: T
       <p className="arm-intro muted">{intro}</p>
 
       {(data?.breaks ?? []).length > 0 && (
-        <Card title="Measurement breaks" collapseKey={`guide-breaks-${unit}`}>
-          <p className="muted arm-diff-none">
-            Sessions either side of these dates are not comparable. The module records them itself, so
-            a comparison spanning one is a known-bad reading rather than a surprise.
-          </p>
-          {(data?.breaks ?? []).map((b) => (
-            <div className="arm-note" key={`${b.date}-${b.kind}`}>
-              <span className="arm-note-label">
-                {b.date} · {b.kind}
-                {b.scope !== "*" && ` · ${b.scope}`}
-              </span>
-              <p>{b.reason}</p>
-            </div>
-          ))}
-        </Card>
+        <div className="cards cards-wide">
+          <Card title="Measurement breaks" collapseKey={`guide-breaks-${unit}`} defaultCollapsed>
+            <p className="muted arm-diff-none">
+              Sessions either side of these dates are not comparable. The module records them itself, so
+              a comparison spanning one is a known-bad reading rather than a surprise.
+            </p>
+            {(data?.breaks ?? []).map((b) => (
+              <div className="arm-note" key={`${b.date}-${b.kind}`}>
+                <span className="arm-note-label">
+                  {b.date} · {b.kind}
+                  {b.scope !== "*" && ` · ${b.scope}`}
+                </span>
+                <p>{b.reason}</p>
+              </div>
+            ))}
+          </Card>
+        </div>
       )}
 
       {(data?.groupNotes ?? []).length > 0 && (
-        <Card title={`About these ${unit}s`} collapseKey={`guide-about-${unit}`}>
-          <Notes notes={data?.groupNotes ?? []} />
-        </Card>
+        <div className="cards cards-wide">
+          <Card title={`About these ${unit}s`} collapseKey={`guide-about-${unit}`} defaultCollapsed>
+            <Notes notes={data?.groupNotes ?? []} />
+          </Card>
+        </div>
       )}
 
       <div className="cards cards-wide">
