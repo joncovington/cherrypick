@@ -187,6 +187,7 @@ export interface EarningsDetail {
     cells: Array<{ strategy: string; ivRv: string; dispersion: string; trades: number }>;
   };
   capitalAtRisk: number;
+  openCount: number;
 }
 
 function bucketIvRv(v: number | null): string {
@@ -219,6 +220,7 @@ export function readEarningsDetail(
     perStrategy: [],
     regimeHeat: { ivRvBuckets: [], dispersionBuckets: [], cells: [] },
     capitalAtRisk: 0,
+    openCount: 0,
   };
   return withReadOnlyDb<EarningsDetail>(dbPath, empty, (db) => {
     const closed = db
@@ -335,14 +337,14 @@ export function readEarningsDetail(
     // screen_report about which gate to move -- it pooled four incompatible reason vocabularies and
     // had no sole-blocker column, so it ranked gates that fire constantly but never alone. The
     // classified version now comes from the module itself, via /api/earnings/screen.
-    const capitalAtRisk =
-      num(
-        (db
-          .prepare<[], Record<string, unknown>>(
-            "SELECT COALESCE(SUM(capital_at_risk), 0) AS c FROM trades WHERE closed_at IS NULL",
-          )
-          .get() ?? {})["c"],
-      ) ?? 0;
+    const openRow =
+      db
+        .prepare<[], Record<string, unknown>>(
+          "SELECT COALESCE(SUM(capital_at_risk), 0) AS c, COUNT(*) AS n FROM trades WHERE closed_at IS NULL",
+        )
+        .get() ?? {};
+    const capitalAtRisk = num(openRow["c"]) ?? 0;
+    const openCount = Math.round(num(openRow["n"]) ?? 0);
 
     return {
       mode,
@@ -354,6 +356,7 @@ export function readEarningsDetail(
         cells,
       },
       capitalAtRisk,
+      openCount,
     };
   });
 }
