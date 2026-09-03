@@ -5,6 +5,7 @@ import type { StatusPayload, SourceFreshness } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { streamerFreshness } from "../readers/streamcache.js";
 import { getScope } from "../auth/credentials.js";
+import { readTradeNotifications } from "../readers/notify.js";
 
 function fileFreshness(key: string, label: string, p: string): SourceFreshness {
   try {
@@ -56,4 +57,13 @@ export function registerStatusRoutes(
   // The candle-warm and EOD-chain collectors went with the research section on 2026-08-31, and
   // they were everything this reported beyond the DXLink state. The socket already carries its own
   // status heartbeat, so nothing was left for a banner to say.
+
+  // Trade-event toasts (2026-09): `since` (an ISO timestamp) excludes backfill deliberately -- a
+  // browser tab that just opened polls with no `since` and gets nothing, not this morning's whole
+  // trade history. The client seeds its own watermark to "now" on first mount for the same reason
+  // trade_notifier.py seeds its own on first activation.
+  app.get<{ Querystring: { since?: string } }>("/api/notify/trades", async (req) => {
+    const since = typeof req.query.since === "string" && req.query.since !== "" ? req.query.since : null;
+    return { events: readTradeNotifications(config, since) };
+  });
 }

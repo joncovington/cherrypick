@@ -18,7 +18,7 @@ export interface LogLine {
   text: string;
 }
 
-function tailFile(p: string): string[] {
+export function tailFile(p: string): string[] {
   try {
     const stat = fs.statSync(p);
     const fd = fs.openSync(p, "r");

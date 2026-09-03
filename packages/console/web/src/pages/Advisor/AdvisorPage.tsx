@@ -11,6 +11,7 @@ import type {
 import { dismissAdvisorProposal, killAdvisorExperiment, useAdvisor } from "../../lib/api";
 import { otherFields, paramRows, scalar } from "./proposalPayload";
 import { TabStrip } from "../../components/ScopeBar";
+import { pushToast } from "../../lib/toast";
 
 /**
  * The AI advisor. Renders what it observed, proposed and ran — and judges none of it here.
@@ -679,12 +680,16 @@ export function AdvisorPage() {
   const queryClient = useQueryClient();
   const { data, isLoading, isError } = useAdvisor(session);
 
-  async function act(run: () => Promise<unknown>) {
+  async function act(run: () => Promise<unknown>, successTitle: string) {
     setBusy(true);
     setActionError(null);
     try {
       await run();
       await queryClient.invalidateQueries({ queryKey: ["advisor"] });
+      // These two buttons are this page's only write actions and previously gave no confirmation
+      // at all on success -- only the inline error banner existed, so a successful kill/dismiss
+      // was silent.
+      pushToast({ tone: "info", title: successTitle });
     } catch (err) {
       setActionError((err as Error).message);
     } finally {
@@ -773,7 +778,7 @@ export function AdvisorPage() {
               key={p.id}
               p={p}
               busy={busy}
-              onDismiss={(id) => void act(() => dismissAdvisorProposal(id))}
+              onDismiss={(id) => void act(() => dismissAdvisorProposal(id), "Proposal dismissed")}
             />
           ))
         ))}
@@ -786,11 +791,11 @@ export function AdvisorPage() {
             </section>
           )}
           {active.map((e) => (
-            <ExperimentCard key={e.id} e={e} busy={busy} onKill={(id) => void act(() => killAdvisorExperiment(id))} />
+            <ExperimentCard key={e.id} e={e} busy={busy} onKill={(id) => void act(() => killAdvisorExperiment(id), "Experiment killed")} />
           ))}
           {concluded.length > 0 && <div className="review-subhead">Concluded</div>}
           {concluded.map((e) => (
-            <ExperimentCard key={e.id} e={e} busy={busy} onKill={(id) => void act(() => killAdvisorExperiment(id))} />
+            <ExperimentCard key={e.id} e={e} busy={busy} onKill={(id) => void act(() => killAdvisorExperiment(id), "Experiment killed")} />
           ))}
         </>
       )}
