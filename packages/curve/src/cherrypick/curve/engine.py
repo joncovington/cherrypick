@@ -165,9 +165,14 @@ def _wing_spread_blocks(quote: dict, max_pct: float, max_abs: float) -> float | 
     return pct
 
 
-def plan_entry(snapshot: dict, params: dict) -> dict:
+def plan_entry(snapshot: dict, params: dict, config: dict | None = None) -> dict:
     """The spread off one snapshot: `{"ok": True, "plan": ...}` or a refusal naming the one thing
-    that blocked, so the attempts table can tell a feed problem from a market problem."""
+    that blocked, so the attempts table can tell a feed problem from a market problem.
+
+    `config` feeds the fee-adjusted credit floor below and is optional -- omitting it (every
+    existing caller before this floor existed, and every test that only exercises an earlier
+    refusal) still applies the check, priced off `cherrypick.core.fees.DEFAULT_COSTS` rather than
+    skipping it. There is no config shape under which this gate goes quiet."""
     spot = snapshot["spot"]
     quotes = snapshot["quotes"]
     greeks = snapshot.get("greeks") or {}
@@ -208,6 +213,38 @@ def plan_entry(snapshot: dict, params: dict) -> dict:
             "ok": False,
             "reason": "credit_below_floor",
             "detail": {"credit_pct_of_width": metrics["credit_pct_of_width"], "floor": min_pct},
+        }
+
+    # Fee-adjusted floor. The percentage check above passes on GROSS mid credit, which is not what
+    # the book keeps -- a real 2026-09-02 entry cleared it at 0.18 on a 1.00-wide spread (18%, floor
+    # 15%) and then paid $2.24 open commission plus $4.25 open slippage against $18.00 of credit,
+    # leaving $11.51 before the position had even been marked once. Unlike MEIC's equivalent gate,
+    # this nets SLIPPAGE as well as commission: MEIC's `_open_credit` already haircuts slippage out
+    # of the credit it screens, so its fee-adjusted floor only has commission left to add back, but
+    # `worksheet_metrics`'s credit here is pure mid with no haircut, and on that same 09-02 entry
+    # slippage was 72% of the total modeled cost ($6.50 of $8.98) -- a commission-only floor would
+    # not have refused it. Only the ENTRY-side cost is netted, not the eventual exit's: entry cost is
+    # sunk the moment the order fills regardless of how the position later closes, while an exit's
+    # cost depends on a close path (active vs. settlement) not yet decided at entry time, and this
+    # gate refuses on what is already known rather than on a guess about what is not.
+    quantity = int(((config or {}).get("defaults") or {}).get("quantity", 1))
+    leg_quotes = [short_pick["entry"]["quote"], long_pick["entry"]["quote"]]
+    entry_costs = entry_cost(snapshot["symbol"], leg_quotes, quantity, config or {})
+    multiplier = 100 * quantity
+    gross_credit_dollars = round(metrics["credit"] * multiplier, 2)
+    net_credit_dollars = round(gross_credit_dollars - entry_costs["total"], 2)
+    floor_dollars = round(min_pct * metrics["width"] * multiplier, 2)
+    if net_credit_dollars < floor_dollars:
+        return {
+            "ok": False,
+            "reason": "credit_below_fee_adjusted_floor",
+            "detail": {
+                "gross_credit_dollars": gross_credit_dollars,
+                "entry_fee": entry_costs["fee"],
+                "entry_slippage": entry_costs["slippage"],
+                "net_credit_dollars": net_credit_dollars,
+                "floor_dollars": floor_dollars,
+            },
         }
 
     short_greeks = greeks.get(short_pick["entry"]["streamer_symbol"]) or {}
