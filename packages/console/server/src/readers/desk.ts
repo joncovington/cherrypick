@@ -4,12 +4,13 @@ import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, readJson } from "./db.js";
 import { streamerFreshness } from "./streamcache.js";
 import { readMeicLoopStatus } from "./meic.js";
-import { readFliesLoopStatus } from "./flies.js";
+import { readFliesLoopStatus, readFliesAnalytics } from "./flies.js";
 import { readEntryAttempts } from "./attempts.js";
 import { readPmcc } from "./pmcc.js";
 import { readCurve } from "./curve.js";
 import { readBwb } from "./bwb.js";
 import { readCalendars } from "./calendars.js";
+import { readEarningsDetail } from "./earnings.js";
 import { buildSuiteReport, readFactSet } from "../services/report.js";
 
 /**
@@ -130,6 +131,11 @@ export function readDesk(config: ConsoleConfig): DeskPayload {
   const curve = readCurve(config);
   const bwb = readBwb(config);
   const calendars = readCalendars(config);
+  // "today" scope: no arm/date/symbol filter, current era -- the same shape every other module's
+  // exposure row already reads, and the same aggregate FliesLightbox's own "now" tab already shows
+  // as "max possible loss" / EarningsLightbox's "overview" tab shows as "capital at risk (open)".
+  const fliesAnalytics = readFliesAnalytics(config, "paper", { arm: null, date: null, symbol: null, era: null });
+  const earningsDetail = readEarningsDetail(config, "paper", null);
 
   const livenessRows: DeskLiveness[] = [
     liveness("streamer", "streamer", "streamer", streamer.ageSeconds, null),
@@ -158,27 +164,30 @@ export function readDesk(config: ConsoleConfig): DeskPayload {
       unrealisedNet: null,
       markAgeSeconds: null,
       available: false,
-      note: "not exposed by /api/meic yet",
+      // Unlike flies/earnings below, there is no canonical max-loss figure anywhere in
+      // packages/meic to mirror -- computing one fresh here would be exactly the kind of
+      // derivation (not a query) this suite's console keeps out of TypeScript.
+      note: "no max-loss figure exists yet to mirror (see packages/meic)",
     },
     {
       module: "flies",
-      open: null,
-      atRisk: null,
-      atRiskLabel: "at risk",
+      open: fliesAnalytics.today.open,
+      atRisk: fliesAnalytics.today.maxPossibleLoss,
+      atRiskLabel: "max possible loss",
       unrealisedNet: null,
-      markAgeSeconds: null,
-      available: false,
-      note: "not exposed by /api/flies yet",
+      markAgeSeconds: fliesLoop.ageSeconds,
+      available: true,
+      note: null,
     },
     {
       module: "earnings",
-      open: null,
-      atRisk: null,
-      atRiskLabel: "at risk",
+      open: earningsDetail.openCount,
+      atRisk: earningsDetail.capitalAtRisk,
+      atRiskLabel: "capital at risk",
       unrealisedNet: null,
-      markAgeSeconds: null,
-      available: false,
-      note: "not exposed by /api/earnings yet",
+      markAgeSeconds: earningsLoop.ageSeconds,
+      available: true,
+      note: null,
     },
     {
       module: "calendars",
