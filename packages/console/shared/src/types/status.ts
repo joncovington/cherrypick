@@ -16,6 +16,11 @@ export interface StatusPayload {
   /** Eastern-time wall clock string the market clock renders from. */
   nowEt: string;
   marketData: MarketDataState;
+  /** The console's OWN DXLink websocket state -- separate from `marketData`, which also folds in
+   *  the shared stream cache's freshness. "disconnected" here is the normal idle state when no
+   *  browser client is subscribed to live quotes (the console connects lazily, ref-counted), not
+   *  necessarily a fault -- see `LivenessChips`' own "streamer" chip for the shared cache's health. */
+  dxlink: "disconnected" | "connecting" | "connected" | "error";
   /** The suite credential's detected scope; null = no credential or never probed. */
   credentialScope: "read" | "trade" | null;
   sources: SourceFreshness[];

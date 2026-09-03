@@ -47,6 +47,7 @@ export function registerStatusRoutes(
       now: now.toISOString(),
       nowEt: now.toLocaleString("en-US", { timeZone: "America/New_York" }),
       marketData,
+      dxlink: (market?.dxState as "disconnected" | "connecting" | "connected" | "error" | undefined) ?? "disconnected",
       credentialScope: getScope().scope,
       sources,
     };
