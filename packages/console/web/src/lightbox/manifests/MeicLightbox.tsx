@@ -207,16 +207,22 @@ export function MeicLightbox({ slide }: { slide: string }) {
     },
     { id: "forest", label: "forest", render: () => <MeicForestCard mode={mode} date={day} /> },
     {
+      // Attempts and occupancy merged (2026-09): both are bounded snapshots regardless of session
+      // activity -- AttemptTimeline's SVG height depends only on arm count (marks position by time
+      // on a fixed-width axis, not by attempt index), and OccupancyMap shows only CURRENTLY open
+      // legs (a snapshot table, not a growing log of every leg touched today) -- so combining them
+      // does not risk outgrowing the lightbox body on a busy session the way the journal/timeline
+      // tabs' genuinely unbounded per-event content would.
       id: "attempts",
       label: "attempts",
       render: () => (
         <div className="cards cards-wide">
           <ArmRail module="meic" mode={mode} date={day} />
           <AttemptTimeline module="meic" mode={mode} date={day} />
+          <OccupancyMap module="meic" mode={mode} date={day} />
         </div>
       ),
     },
-    { id: "occupancy", label: "occupancy", render: () => <OccupancyMap module="meic" mode={mode} date={day} /> },
     {
       id: "exits",
       label: "exits",
