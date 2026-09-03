@@ -6,6 +6,7 @@ import { fliesQuery, type FliesFilter } from "../../lib/api";
 import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
 import { niceTicks } from "../../components/chart/scales";
 import { minuteOf, hhmm } from "../../components/chart/time";
+import { HoverReadout } from "../../components/chart/Tooltip";
 
 interface Tick {
   ts: string;
@@ -360,17 +361,10 @@ export function TimelineCard({ mode, filter, arm }: { mode: TradingMode; filter:
                 `${a}  centre ${t.centers[a] !== undefined ? t.centers[a]!.toFixed(0) : "–"}  ${t.settleNow[a] !== undefined ? fmtMoney(t.settleNow[a]!) : "–"}`,
             ),
           ];
-          const bw = Math.max(...lines.map((l) => l.length)) * 5.8 + 12;
-          const bx = Math.min(Math.max(x + 12, 4), width - bw - 4);
           return (
             <>
               <line x1={x} y1={pad.t} x2={x} y2={height - pad.b} stroke="#3d4653" />
-              <rect x={bx} y={8} width={bw} height={lines.length * 12 + 8} rx={5} fill="#101216f0" stroke="#2a2f3a" />
-              {lines.map((l, i) => (
-                <text key={i} x={bx + 6} y={20 + i * 12} fontSize={9.5} fill={i === 0 ? "#eceff3" : colorOf(shown[i - 1]!)} fontFamily="Consolas, monospace">
-                  {l}
-                </text>
-              ))}
+              <HoverReadout x={x} width={width} lines={lines} lineColor={(i) => (i === 0 ? "#eceff3" : colorOf(shown[i - 1]!))} />
             </>
           );
         })()}

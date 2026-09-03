@@ -4,6 +4,7 @@ import type { TradingMode } from "@console/shared";
 import { fliesQuery, type FliesFilter } from "../../lib/api";
 import { timeTicks } from "../../components/chart/scales";
 import { minuteOf, hhmm } from "../../components/chart/time";
+import { HoverReadout } from "../../components/chart/Tooltip";
 
 interface JournalRow {
   arm: string;
@@ -108,18 +109,7 @@ export function JournalCard({ mode, filter }: { mode: TradingMode; filter: Flies
             `${r.accepted ? "✓ " : ""}${r.reason}`,
             `${r.firstSeen!.slice(11, 16)}–${r.lastSeen!.slice(11, 16)} · ${r.occurrences}× seen`,
           ];
-          const bw = Math.max(...lines.map((l) => l.length)) * 5.8 + 12;
-          const bx = Math.min(Math.max(hovered.x0 + 12, 4), width - bw - 4);
-          return (
-            <>
-              <rect x={bx} y={4} width={bw} height={lines.length * 12 + 8} rx={5} fill="#101216f0" stroke="#2a2f3a" />
-              {lines.map((l, i) => (
-                <text key={i} x={bx + 6} y={16 + i * 12} fontSize={9.5} fill="#eceff3" fontFamily="Consolas, monospace">
-                  {l}
-                </text>
-              ))}
-            </>
-          );
+          return <HoverReadout x={hovered.x0} width={width} lines={lines} lineColor={() => "#eceff3"} boxTop={4} />;
         })()}
       </svg>
     );
