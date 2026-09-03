@@ -400,6 +400,33 @@ export function useBwbMeta() {
   });
 }
 
+// ---- collapsed decision journal (curve/pmcc/bwb; readers/decisions.ts) ----
+
+export type DecisionsModule = "curve" | "pmcc" | "bwb";
+
+export interface DecisionRow {
+  book: string;
+  symbol: string;
+  reason: string;
+  accepted: boolean;
+  occurrences: number;
+  detail: string | null;
+}
+
+export interface DecisionsPayload {
+  module: DecisionsModule;
+  tradeDate: string | null;
+  rows: DecisionRow[];
+}
+
+export function useDecisions(module: DecisionsModule) {
+  return useQuery<DecisionsPayload>({
+    queryKey: ["decisions", module],
+    queryFn: () => getJson<DecisionsPayload>(`/api/${module}/decisions`),
+    refetchInterval: 30_000,
+  });
+}
+
 export interface PmccAssignmentRow extends PmccAssignment {
   positionId: string;
   symbol: string;

@@ -4,6 +4,7 @@ import { Card } from "../../components/DataTable";
 import { LoopPill } from "../../components/ScopeBar";
 import { IntegrityStrip } from "../../pages/Curve/IntegrityStrip";
 import { BookComparison, RegimeCard, OpenTradesCard } from "../../pages/Curve/CurrentStateCards";
+import { DecisionsCard } from "../../components/DecisionsCard";
 import { HistoryTab } from "../../pages/Curve/HistoryTab";
 import { HelpTab } from "../../pages/Curve/HelpTab";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
@@ -36,6 +37,7 @@ export function CurveLightbox({ slide }: { slide: string }) {
           <div className="cards cards-wide">
             <RegimeCard series={data?.regimeSeries ?? []} today={todayRegime} updatedAt={dataUpdatedAt} />
             {isLoading ? null : <OpenTradesCard data={data} updatedAt={dataUpdatedAt} />}
+            <DecisionsCard module="curve" />
             <BookComparison data={data} flipDivergence={data?.flipDivergence} updatedAt={dataUpdatedAt} />
           </div>
         ),
