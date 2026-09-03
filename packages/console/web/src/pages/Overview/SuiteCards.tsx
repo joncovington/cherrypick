@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { Card, fmtMoney, fmtPct } from "../../components/DataTable";
 import { CalendarHeatmap } from "../../components/CalendarHeatmap";
 import { useReview } from "../../lib/api";
+import { isModuleId } from "../../lightbox/moduleOrder";
 
 interface SystemPanel {
   timezone: string | null;
@@ -61,7 +63,7 @@ export function SystemCard() {
               <tbody>
                 {data?.modules.map((m) => (
                   <tr key={m.id}>
-                    <td>{m.id}</td>
+                    <td>{isModuleId(m.id) ? <Link to={`/${m.id}`} className="module-link">{m.id}</Link> : m.id}</td>
                     <td>{m.enabled ? "yes" : "no"}</td>
                     <td className="muted">{m.kind ?? "—"}</td>
                     <td className="muted">{m.streamer === null ? "—" : m.streamer ? "on" : "off"}</td>
@@ -212,7 +214,7 @@ export function EodCard() {
             <tbody>
               {data?.byModule.map((m) => (
                 <tr key={m.module}>
-                  <td>{m.module}</td>
+                  <td>{isModuleId(m.module) ? <Link to={`/${m.module}`} className="module-link">{m.module}</Link> : m.module}</td>
                   <td className={m.net >= 0 ? "pnl-pos" : "pnl-neg"}>{fmtMoney(m.net)}</td>
                 </tr>
               ))}

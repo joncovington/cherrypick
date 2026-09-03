@@ -167,6 +167,19 @@ body {
   white-space: nowrap;
 }
 
+/* A chip rendered as a link (e.g. LivenessChips' per-module rows) keeps its chip look rather than
+   the browser's visited-purple/underline default -- the tone class (chip-ok/chip-missing) still
+   carries the state; the link only adds the click target. */
+a.chip,
+a.chip:visited {
+  text-decoration: none;
+  display: inline-block;
+}
+
+a.chip:hover {
+  border-color: var(--accent);
+}
+
 .chip-ok {
   color: var(--ok);
   border-color: rgba(67, 181, 122, 0.4);

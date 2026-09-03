@@ -3,6 +3,7 @@ import type { DeskEntriesRow, DeskEvidenceRow, DeskExposureRow } from "@console/
 import { Card, SkeletonRows } from "../../components/DataTable";
 import { fmtMoney, ageLabel } from "../../lib/format";
 import { useDesk } from "../../lib/api";
+import { isModuleId } from "../../lightbox/moduleOrder";
 
 export function ExposureCard() {
   const { data, isLoading, dataUpdatedAt } = useDesk();
@@ -144,15 +145,23 @@ export function EvidenceClockRow() {
           no era data yet
         </span>
       ) : (
-        rows.map((r: DeskEvidenceRow) => (
-          <span
-            key={r.module}
-            className="chip"
-            title={r.lastBreakDate !== null ? `last break ${r.lastBreakDate}: ${r.lastBreakReason ?? ""}` : "no measurement break recorded"}
-          >
-            {r.module} {r.sessionsSince ?? "—"} {r.lastBreakDate !== null ? `since ${r.lastBreakDate}` : "· no break"}
-          </span>
-        ))
+        rows.map((r: DeskEvidenceRow) => {
+          const title = r.lastBreakDate !== null ? `last break ${r.lastBreakDate}: ${r.lastBreakReason ?? ""}` : "no measurement break recorded";
+          const body = (
+            <>
+              {r.module} {r.sessionsSince ?? "—"} {r.lastBreakDate !== null ? `since ${r.lastBreakDate}` : "· no break"}
+            </>
+          );
+          return isModuleId(r.module) ? (
+            <Link key={r.module} to={`/${r.module}`} className="chip" title={title}>
+              {body}
+            </Link>
+          ) : (
+            <span key={r.module} className="chip" title={title}>
+              {body}
+            </span>
+          );
+        })
       )}
       <span className="muted evidence-note">
         sessions since the last measurement break · hover for the break · results either side are never pooled

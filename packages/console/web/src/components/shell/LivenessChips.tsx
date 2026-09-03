@@ -1,5 +1,7 @@
+import { Link } from "react-router-dom";
 import { useDesk } from "../../lib/api";
 import { ageLabel } from "../../lib/format";
+import { isModuleId } from "../../lightbox/moduleOrder";
 
 /**
  * The header's per-producer liveness strip: age of the last event/iteration against each
@@ -29,10 +31,19 @@ export function LivenessChips() {
           p.cadenceSeconds !== null
             ? `${p.kind} · cadence ${String(p.cadenceSeconds)}s${over ? ` · ${ageLabel(p.overBy)} over` : ""}`
             : `${p.kind} · cadence unknown`;
-        return (
-          <span key={p.id} className={`chip ${cls}`} title={title}>
+        const body = (
+          <>
             {p.label} {ageLabel(p.ageSeconds)}
             {over && " ⚠"}
+          </>
+        );
+        return isModuleId(p.id) ? (
+          <Link key={p.id} to={`/${p.id}`} className={`chip ${cls}`} title={title}>
+            {body}
+          </Link>
+        ) : (
+          <span key={p.id} className={`chip ${cls}`} title={title}>
+            {body}
           </span>
         );
       })}
