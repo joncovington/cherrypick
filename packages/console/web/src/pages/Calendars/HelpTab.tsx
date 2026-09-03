@@ -14,7 +14,7 @@ export function HelpTab({ data }: { data: CalendarsPayload | undefined }) {
   const p = data?.params;
   return (
     <div className="cards cards-wide">
-      <Card title="what this module is" collapseKey="cal-help-what" className="view-fade">
+      <Card title="what this module is" collapseKey="cal-help-what" defaultCollapsed className="view-fade">
         <div className="cal-prose">
           <p>
             Every Monday — Tuesday after a Monday holiday — at the entry window: one put calendar at the
@@ -40,7 +40,7 @@ export function HelpTab({ data }: { data: CalendarsPayload | undefined }) {
         </div>
       </Card>
 
-      <Card title="reading the numbers" collapseKey="cal-help-reading" className="view-fade">
+      <Card title="reading the numbers" collapseKey="cal-help-reading" defaultCollapsed className="view-fade">
         <ul className="cal-rules">
           <li>
             <strong>Every figure is net of the modeled cost stack.</strong> Exchange fees, the per-ITM-symbol
@@ -74,7 +74,7 @@ export function HelpTab({ data }: { data: CalendarsPayload | undefined }) {
         </ul>
       </Card>
 
-      <Card title="the settings it runs on" collapseKey="cal-help-params" className="view-fade">
+      <Card title="the settings it runs on" collapseKey="cal-help-params" defaultCollapsed className="view-fade">
         {p === undefined ? (
           <p className="muted">config not readable</p>
         ) : (
@@ -121,7 +121,7 @@ export function HelpTab({ data }: { data: CalendarsPayload | undefined }) {
         </p>
       </Card>
 
-      <Card title="where the data comes from" collapseKey="cal-help-data" className="view-fade">
+      <Card title="where the data comes from" collapseKey="cal-help-data" defaultCollapsed className="view-fade">
         <div className="cal-prose">
           <p>
             The module holds <strong>no broker credentials at all</strong> and runs no streamer. It is a pure
