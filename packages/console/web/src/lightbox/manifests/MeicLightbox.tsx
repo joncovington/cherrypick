@@ -266,13 +266,13 @@ export function MeicLightbox({ slide }: { slide: string }) {
       ),
     },
     {
-      id: "performance",
-      label: "performance",
+      id: "calibration",
+      label: "calibration",
       render: () => <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />,
     },
     {
-      id: "calibration",
-      label: "calibration",
+      id: "performance",
+      label: "performance",
       render: () => <PerformanceSlide module="meic" />,
     },
     {
