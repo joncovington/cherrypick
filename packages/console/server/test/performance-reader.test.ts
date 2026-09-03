@@ -163,6 +163,12 @@ describe("readModulePerformance", () => {
     db.prepare(
       "INSERT INTO curve_positions VALUES ('p1','control','closed','profit_take',40.0,2.0)",
     ).run();
+    db.exec("CREATE TABLE measurement_breaks (id INTEGER PRIMARY KEY, break_date TEXT, key TEXT, note TEXT)");
+    db.prepare("INSERT INTO measurement_breaks (break_date, key, note) VALUES (?,?,?)").run(
+      "2026-08-27",
+      "spread_width",
+      "5.0 -> 1.0, re-scaled to VXX",
+    );
     db.close();
 
     setMetricsCaller(() => ({ ok: false, metrics: null, error: "unavailable" }));
@@ -172,5 +178,8 @@ describe("readModulePerformance", () => {
       { tag: "control", reason: "profit_take", n: 1, net: 38.0, avgNet: 38.0 },
     ]);
     expect(out.heldBack).toEqual([]);
+    // breaks also comes through even though the metrics half failed -- same independence as
+    // exitReasons, a fresh read against the module's own ledger.
+    expect(out.breaks).toEqual([{ date: "2026-08-27", key: "spread_width", note: "5.0 -> 1.0, re-scaled to VXX", scope: null }]);
   });
 });
