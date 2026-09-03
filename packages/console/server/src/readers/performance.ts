@@ -3,6 +3,7 @@ import type { ConsoleConfig } from "../config.js";
 import { suiteEra } from "./db.js";
 import { readModuleMetrics, type ModuleMetricsGroup } from "../services/metricsBridge.js";
 import { readExitReasons, type ExitReasonRow, type HeldBackRow } from "./exitReasons.js";
+import { readAdvisedPairs, type AdvisedPair } from "./pairs.js";
 
 /**
  * The shared performance read: one module's calibration reading, per profile, via
@@ -63,6 +64,9 @@ export interface ModulePerformanceResult {
    * empty -- a module with no management-events table (MEIC) has a real "nothing held back," not
    * an unavailable read the way `exitReasons` can be. */
   heldBack: HeldBackRow[];
+  /** Each `advised:<base>` twin paired to its control, with the experiment that produced it --
+   * `readers/pairs.ts`. Always an array; empty when the module runs no advised books right now. */
+  pairs: AdvisedPair[];
   error: string | null;
 }
 
@@ -101,6 +105,7 @@ export function readModulePerformance(
       groups: [],
       exitReasons: exits.exitReasons,
       heldBack: exits.heldBack,
+      pairs: [],
       error: res.error,
     };
   }
@@ -119,6 +124,7 @@ export function readModulePerformance(
     groups,
     exitReasons: exits.exitReasons,
     heldBack: exits.heldBack,
+    pairs: readAdvisedPairs(config, module, groups),
     error: null,
   };
 }
