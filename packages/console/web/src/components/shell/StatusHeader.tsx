@@ -1,12 +1,7 @@
 import { useStatus } from "../../lib/api";
 import { useWsState } from "../../lib/useQuote";
-
-function ageLabel(ageSeconds: number | null): string {
-  if (ageSeconds === null) return "—";
-  if (ageSeconds < 90) return `${Math.round(ageSeconds)}s`;
-  if (ageSeconds < 5400) return `${Math.round(ageSeconds / 60)}m`;
-  return `${(ageSeconds / 3600).toFixed(1)}h`;
-}
+import { HeaderMenu } from "./HeaderMenu";
+import { LivenessChips } from "./LivenessChips";
 
 export function StatusHeader() {
   const { data, isError } = useStatus();
@@ -16,6 +11,7 @@ export function StatusHeader() {
 
   return (
     <header className="status-header">
+      <HeaderMenu />
       <div className="status-clock">
         {data ? (
           <span title="Eastern time">{data.nowEt} ET</span>
@@ -34,15 +30,7 @@ export function StatusHeader() {
                 read-only credential
               </span>
             )}
-            {data.sources.map((s) => (
-              <span
-                key={s.key}
-                className={`chip ${s.present ? "chip-ok" : "chip-missing"}`}
-                title={s.present ? `last write ${ageLabel(s.ageSeconds)} ago` : "not found"}
-              >
-                {s.label} {ageLabel(s.ageSeconds)}
-              </span>
-            ))}
+            <LivenessChips />
           </>
         ) : isError ? (
           <span className="chip chip-missing">console API unreachable</span>

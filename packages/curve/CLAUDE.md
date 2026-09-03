@@ -232,3 +232,15 @@ appears in the generic Review page from day one via the `curve_vx` schema regist
 dedicated `/curve` console page has since landed (verified 2026-09-02) — its "deferred until first
 real positions exist" condition was met by the 2026-09-02 session, which opened and closed one
 VXX spread in `control` and `noflip`.
+
+**The entry gate carries a fee-adjusted credit floor as of 2026-09-02.** That first trade cleared
+`min_credit_pct_of_width` at 0.18 on a 1.00-wide spread (18% against a 15% floor) and then paid
+$2.24 open commission plus $4.25 open slippage against $18.00 of gross credit — $11.51 before the
+position had been marked once. The percentage floor is a ratio of two mid prices; it cannot see
+what opening the trade costs, and slippage was 72% of that trade's total modeled cost, not
+commission — unlike MEIC's own fee-adjusted floor, which nets only commission because its credit
+metric already has slippage haircut out of it. `engine.plan_entry` now nets modeled entry
+commission AND slippage against the same dollar floor and refuses
+`credit_below_fee_adjusted_floor` if the net falls short, applying whether or not a config is
+passed. Only the entry side is netted — the exit's cost depends on a close path not yet decided
+at entry time.
