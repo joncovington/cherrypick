@@ -1,7 +1,7 @@
 import path from "node:path";
+import type { ExitReasonRow, HeldBackRow, PerformanceModuleId } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, hasTable, hasColumn, str, numLoose } from "./db.js";
-import type { PerformanceModuleId } from "./performance.js";
 
 /**
  * Realized exit reasons per profile/book, plus what an execution gate held back before a verdict
@@ -27,22 +27,6 @@ import type { PerformanceModuleId } from "./performance.js";
  */
 
 export type ExitReasonsModule = PerformanceModuleId;
-
-export interface ExitReasonRow {
-  tag: string;
-  reason: string;
-  n: number;
-  net: number | null;
-  avgNet: number | null;
-}
-
-export interface HeldBackRow {
-  tag: string;
-  action: string;
-  reason: string;
-  gate: string | null;
-  n: number;
-}
 
 export interface ExitReasonsResult {
   exitReasons: ExitReasonRow[] | { unavailable: string };

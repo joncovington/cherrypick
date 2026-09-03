@@ -1,7 +1,7 @@
 import path from "node:path";
+import type { AdvisedPair, ModulePerformanceGroup, PerformanceModuleId } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, hasTable, str } from "./db.js";
-import type { ModulePerformanceGroup, PerformanceModuleId } from "./performance.js";
 
 /**
  * The `advised:<base>` twin beside each control -- paired by session, with the experiment id and
@@ -16,20 +16,6 @@ import type { ModulePerformanceGroup, PerformanceModuleId } from "./performance.
  * alone (before any `:strategy` suffix), matching `verdicts.py`'s own `base_profile`/`strategy`
  * split.
  */
-
-export interface AdvisedPair {
-  advised: string;
-  base: string;
-  /** Sessions BOTH books actually recorded a net for, in this read's window -- not the advised
-   * book's trade count and not the experiment's `sessions_run` (which counts a loop APPLYING the
-   * artifact, not a session with paired data to compare). */
-  sessionsPaired: number;
-  experimentId: string | null;
-  /** `null` when no experiment row was found to ask (a pair can exist without a live experiment --
-   * config-authored `advised:` books are not unheard of); `true`/`false` is the stored verdict's
-   * own answer once one has been computed. */
-  underpowered: boolean | null;
-}
 
 const ADVISED_PREFIX = "advised:";
 
