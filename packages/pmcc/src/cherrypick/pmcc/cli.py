@@ -5,6 +5,7 @@ Subcommands (all read-only over the module's own ledger):
     headline   per-book, per-symbol results through the analytics layer
     worksheet  the live per-position worksheet (the user's spreadsheet, from the ledger)
     exposure   the early-assignment-exposure telemetry
+    excursions per-closed-position MAE/MFE (docs/metrics-plan.md Phase 2) plus distributions
     ladder     the ITM call ladder as a selector would see it (the calibration read)
 
 The paper loop's own argv (`python -m cherrypick.pmcc.paper_loop --once|--interval|--settle|
@@ -66,6 +67,21 @@ def cmd_worksheet(args) -> int:
 
     conn = db.connect(args.db)
     print(json.dumps({"ok": True, "worksheet": analytics.worksheet(conn)}, indent=2, default=str))
+    return 0
+
+
+def cmd_excursions(args) -> int:
+    from cherrypick.pmcc import analytics, db
+
+    conn = db.connect(args.db)
+    era = getattr(args, "era", None) or analytics.CURRENT_ERA
+    print(
+        json.dumps(
+            {"ok": True, "era": era, "excursions": analytics.excursions(conn, era=era)},
+            indent=2,
+            default=str,
+        )
+    )
     return 0
 
 
@@ -249,6 +265,13 @@ def main(argv=None) -> int:
     p_headline.set_defaults(func=cmd_headline)
     sub.add_parser("worksheet", help="the live per-position worksheet").set_defaults(func=cmd_worksheet)
     sub.add_parser("exposure", help="early-assignment-exposure telemetry").set_defaults(func=cmd_exposure)
+    p_exc = sub.add_parser("excursions", help="per-closed-position MAE/MFE plus distributions")
+    p_exc.add_argument(
+        "--era",
+        default=None,
+        help="scope to one era; 'ALL' pools every era. Defaults to the module's current era.",
+    )
+    p_exc.set_defaults(func=cmd_excursions)
     p_ladder = sub.add_parser("ladder", help="the ITM call ladder as a selector sees it")
     p_ladder.add_argument("--symbol", help="one symbol (default: every configured symbol)")
     p_ladder.add_argument("--expiration", help="one date (default: the plan's short and long)")
