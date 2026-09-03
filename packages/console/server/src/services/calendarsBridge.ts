@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawnModuleCli } from "./moduleCli.js";
 
 /**
  * The two calendars answers this package must not compute for itself.
@@ -37,26 +37,7 @@ interface Spawned {
 }
 
 function spawnCli(verb: string): Spawned {
-  let out;
-  try {
-    out = spawnSync("python", ["-m", "cherrypick.calendars.cli", verb], {
-      encoding: "utf-8",
-      timeout: 30_000,
-      windowsHide: true,
-    });
-  } catch (err) {
-    return { ok: false, json: null, error: `${UNAVAILABLE} (${(err as Error).message})` };
-  }
-  if (out.error !== undefined) return { ok: false, json: null, error: `${UNAVAILABLE} (${out.error.message})` };
-  if (out.status !== 0) {
-    const detail = (out.stderr ?? "").trim().split(/\r?\n/).pop() ?? `exit ${String(out.status)}`;
-    return { ok: false, json: null, error: `${UNAVAILABLE} — ${detail}` };
-  }
-  try {
-    return { ok: true, json: JSON.parse(out.stdout.trim()) as Record<string, unknown>, error: null };
-  } catch {
-    return { ok: false, json: null, error: `${UNAVAILABLE} — unparseable response` };
-  }
+  return spawnModuleCli(["-m", "cherrypick.calendars.cli", verb], UNAVAILABLE);
 }
 
 let caller = spawnCli;
