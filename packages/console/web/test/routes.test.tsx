@@ -93,10 +93,11 @@ describe("the module routes", () => {
   });
 });
 
-describe("the reports/gex/advisor routes", () => {
-  // Reports, GEX and Advisor are suite-level surfaces given the same lightbox carousel treatment
-  // as the trading modules (2026-09) -- they resolve through the same `OverviewWithLightbox` and
-  // hit the same SSR-can't-render-a-portal wall the module routes describe block already covers.
+describe("the reports/gex/advisor/config routes", () => {
+  // Reports, GEX, Advisor and Config are suite-level surfaces given the same lightbox carousel
+  // treatment as the trading modules (2026-09) -- they resolve through the same
+  // `OverviewWithLightbox` and hit the same SSR-can't-render-a-portal wall the module routes
+  // describe block already covers.
   it("/reports resolves to the reports lightbox, not the catch-all", () => {
     const html = render("/reports");
     expect(html).toContain("Reports");
@@ -112,6 +113,12 @@ describe("the reports/gex/advisor routes", () => {
   it("/advisor resolves to the advisor lightbox, not the catch-all", () => {
     const html = render("/advisor");
     expect(html).toContain("Advisor");
+    expect(html).not.toContain("Page not found");
+  });
+
+  it("/config resolves to the config lightbox, not the catch-all", () => {
+    const html = render("/config");
+    expect(html).toContain("Config");
     expect(html).not.toContain("Page not found");
   });
 

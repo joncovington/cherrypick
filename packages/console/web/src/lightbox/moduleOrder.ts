@@ -13,7 +13,7 @@ export type TradingModuleId = (typeof TRADING_MODULE_ORDER)[number];
  * standalone-page style. They sit after the trading modules in the carousel ring, so stepping past
  * Earnings reaches GEX rather than wrapping straight back to MEIC.
  */
-export const SUITE_ORDER = ["gex", "reports", "advisor"] as const;
+export const SUITE_ORDER = ["gex", "reports", "advisor", "config"] as const;
 
 export type SuiteId = (typeof SUITE_ORDER)[number];
 
@@ -41,4 +41,5 @@ export const MODULE_LABEL: Record<ModuleId, string> = {
   gex: "GEX",
   reports: "Reports",
   advisor: "Advisor",
+  config: "Config",
 };

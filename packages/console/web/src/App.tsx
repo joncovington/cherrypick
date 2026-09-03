@@ -2,7 +2,6 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { Shell } from "./components/shell/Shell";
 import { OverviewPage } from "./pages/Overview/OverviewPage";
 import { OverviewWithLightbox } from "./pages/Overview/OverviewWithLightbox";
-import { ConfigPage } from "./pages/Config/ConfigPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 
 export default function App() {
@@ -20,10 +19,9 @@ export default function App() {
             generic 404, which tells the reader their build is stale and to reload: true for a
             missing route, actively misleading for a deliberately removed one. */}
         <Route path="champions" element={<Navigate to="/advisor" replace />} />
-        <Route path="config" element={<ConfigPage />} />
-        {/* Every trading module AND the suite-level surfaces (GEX, Reports, Advisor -- 2026-09)
-            open as a carousel over the Overview (`OverviewWithLightbox`); an unknown name still
-            404s via `isModuleId`'s guard inside it. */}
+        {/* Every trading module AND the suite-level surfaces (GEX, Reports, Advisor, Config --
+            2026-09) open as a carousel over the Overview (`OverviewWithLightbox`); an unknown
+            name still 404s via `isModuleId`'s guard inside it. */}
         <Route path=":module" element={<OverviewWithLightbox />} />
         <Route path=":module/:slide" element={<OverviewWithLightbox />} />
         {/* Catch-all. Without it an unmatched path renders NOTHING — a blank screen that reads as
