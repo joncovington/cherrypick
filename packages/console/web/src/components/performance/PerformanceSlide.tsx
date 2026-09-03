@@ -1,6 +1,7 @@
 import { Card } from "../DataTable";
 import { useModulePerformance, type PerformanceModuleId } from "../../lib/api";
 import { MetricTiles } from "./MetricTiles";
+import { ExcursionsCard } from "./ExcursionsCard";
 
 /**
  * The suite-wide performance slide: one calibration reading per profile, via
@@ -93,6 +94,7 @@ export function PerformanceSlide({ module }: { module: PerformanceModuleId }) {
           </table>
         </Card>
       )}
+      {data.excursions.ok && <ExcursionsCard excursions={data.excursions} />}
       {data.breaks.length > 0 && (
         <Card title="measurement breaks" collapseKey={`performance-${module}-breaks`} defaultCollapsed>
           {data.breaks.map((b, i) => (

@@ -643,6 +643,32 @@ export interface MeasurementBreak {
   scope: string | null;
 }
 
+export interface ExcursionPosition {
+  id: string;
+  tag: string;
+  symbol: string;
+  mae: number;
+  mfe: number;
+  n: number | null;
+}
+
+export interface ExcursionsDistribution {
+  median: number | null;
+  n: number;
+}
+
+export interface ExcursionsData {
+  positions: ExcursionPosition[];
+  maeDistribution: ExcursionsDistribution;
+  mfeDistribution: ExcursionsDistribution;
+}
+
+export interface ExcursionsResult {
+  ok: boolean;
+  data: ExcursionsData | null;
+  error: string | null;
+}
+
 export interface ModulePerformanceResult {
   ok: boolean;
   module: PerformanceModuleId;
@@ -654,6 +680,7 @@ export interface ModulePerformanceResult {
   heldBack: HeldBackRow[];
   pairs: AdvisedPair[];
   breaks: MeasurementBreak[];
+  excursions: ExcursionsResult;
   error: string | null;
 }
 
