@@ -2,6 +2,7 @@ import { Card } from "../DataTable";
 import { useModulePerformance, type PerformanceModuleId } from "../../lib/api";
 import { MetricTiles } from "./MetricTiles";
 import { ExcursionsCard } from "./ExcursionsCard";
+import { CumulativeCard } from "./CumulativeCard";
 
 /**
  * The suite-wide performance slide: one calibration reading per profile, via
@@ -51,22 +52,27 @@ export function PerformanceSlide({ module }: { module: PerformanceModuleId }) {
           <p className="muted">no closed trades in this window yet</p>
         </Card>
       ) : (
-        data.groups.map((g) => (
-          <Card
-            key={g.tag}
-            title={g.tag}
-            collapseKey={`performance-${module}-${g.tag}`}
-            updatedAt={dataUpdatedAt}
-          >
-            <MetricTiles reading={g.reading} />
-            {underpoweredByBase.get(g.tag) === true && (
-              <p className="muted" style={{ fontSize: 11, marginTop: "0.4rem" }}>
-                <span className="chip chip-warn">underpowered</span> the paired advised experiment
-                has not yet reached the promotion gate's sample/day thresholds
-              </p>
-            )}
+        <>
+          <Card title="cumulative net P&L" collapseKey={`performance-${module}-cumulative`} updatedAt={dataUpdatedAt}>
+            <CumulativeCard groups={data.groups} breaks={data.breaks} />
           </Card>
-        ))
+          {data.groups.map((g) => (
+            <Card
+              key={g.tag}
+              title={g.tag}
+              collapseKey={`performance-${module}-${g.tag}`}
+              updatedAt={dataUpdatedAt}
+            >
+              <MetricTiles reading={g.reading} />
+              {underpoweredByBase.get(g.tag) === true && (
+                <p className="muted" style={{ fontSize: 11, marginTop: "0.4rem" }}>
+                  <span className="chip chip-warn">underpowered</span> the paired advised experiment
+                  has not yet reached the promotion gate's sample/day thresholds
+                </p>
+              )}
+            </Card>
+          ))}
+        </>
       )}
       {Array.isArray(data.exitReasons) && data.exitReasons.length > 0 && (
         <Card title="exit reasons" collapseKey={`performance-${module}-exits`} defaultCollapsed>
