@@ -8,6 +8,7 @@ import { IntegrityStrip } from "../../pages/Pmcc/IntegrityStrip";
 import { BookComparison, OpenTradesCard } from "../../pages/Pmcc/CurrentStateCards";
 import { HistoryTab } from "../../pages/Pmcc/HistoryTab";
 import { HelpTab } from "../../pages/Pmcc/HelpTab";
+import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { LightboxFrame } from "../LightboxFrame";
 import type { SlideDef } from "../types";
 
@@ -121,6 +122,7 @@ export function PmccLightbox({ slide }: { slide: string }) {
         ),
     },
     { id: "history", label: "history", render: () => <HistoryTab /> },
+    { id: "performance", label: "performance", render: () => <PerformanceSlide module="pmcc" /> },
     { id: "guide", label: "help", render: () => <HelpTab data={data} /> },
   ];
 
