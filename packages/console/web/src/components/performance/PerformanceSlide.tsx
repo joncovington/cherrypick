@@ -3,6 +3,7 @@ import { useModulePerformance, type PerformanceModuleId } from "../../lib/api";
 import { MetricTiles } from "./MetricTiles";
 import { ExcursionsCard } from "./ExcursionsCard";
 import { CumulativeCard } from "./CumulativeCard";
+import { PairedABCard } from "./PairedABCard";
 
 /**
  * The suite-wide performance slide: one calibration reading per profile, via
@@ -39,6 +40,7 @@ export function PerformanceSlide({ module }: { module: PerformanceModuleId }) {
   }
 
   const underpoweredByBase = new Map(data.pairs.map((p) => [p.base, p.underpowered]));
+  const groupByTag = new Map(data.groups.map((g) => [g.tag, g]));
 
   return (
     <div className="cards cards-wide">
@@ -100,6 +102,15 @@ export function PerformanceSlide({ module }: { module: PerformanceModuleId }) {
           </table>
         </Card>
       )}
+      {data.pairs.map((p) => {
+        const advisedGroup = groupByTag.get(p.advised);
+        const baseGroup = groupByTag.get(p.base);
+        // Both sides must actually be present as performance groups in THIS window -- a pair the
+        // reader found (advisor.db still remembers the experiment) but whose books have no data
+        // in the current era is not something a cumulative chart can show.
+        if (advisedGroup === undefined || baseGroup === undefined) return null;
+        return <PairedABCard key={p.advised} pair={p} advisedGroup={advisedGroup} baseGroup={baseGroup} />;
+      })}
       {data.excursions.ok && <ExcursionsCard excursions={data.excursions} />}
       {data.breaks.length > 0 && (
         <Card title="measurement breaks" collapseKey={`performance-${module}-breaks`} defaultCollapsed>
