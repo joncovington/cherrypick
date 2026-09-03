@@ -3,6 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { fmtMoney } from "../../components/DataTable";
 import { fliesQuery, type FliesFilter } from "../../lib/api";
+import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
+import { niceTicks } from "../../components/chart/scales";
+import { minuteOf, hhmm } from "../../components/chart/time";
 
 interface Tick {
   ts: string;
@@ -32,27 +35,6 @@ function useTimeline(mode: TradingMode, filter: FliesFilter) {
     },
     refetchInterval: 30_000,
   });
-}
-
-// No brand accent (#d23f57) here -- reserved for brand/live/alert moments, not "just the first arm".
-const ARM_COLORS = ["#7aa2ff", "#43b57a", "#d9a13b", "#a06bd9", "#4fc3d9", "#e88a5c", "#8a9c4a", "#c9628a", "#6bd9c4"];
-const SPOT_COLOR = "#d9a13b";
-
-const minuteOf = (ts: string): number => {
-  const hm = ts.slice(11, 16);
-  return Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3, 5));
-};
-const hhmm = (m: number): string =>
-  `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(Math.round(m % 60)).padStart(2, "0")}`;
-
-function ticksFor(min: number, max: number, target: number): number[] {
-  const span = max - min || 1;
-  const raw = span / target;
-  const mag = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1e-9))));
-  const step = [1, 2, 5, 10].map((k) => k * mag).find((s) => span / s <= target + 1) ?? 10 * mag;
-  const out: number[] = [];
-  for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) out.push(v);
-  return out;
 }
 
 /**
@@ -263,19 +245,19 @@ export function TimelineCard({ mode, filter, arm }: { mode: TradingMode; filter:
         onMouseLeave={() => setHover(null)}
       >
         {/* grids */}
-        {ticksFor(pMin, pMax, 4).map((v) => (
+        {niceTicks(pMin, pMax, 4).map((v) => (
           <g key={`p${v}`}>
             <line x1={pad.l} y1={PY(v)} x2={width - pad.r} y2={PY(v)} stroke="#15181e" />
             <text x={4} y={PY(v) + 3} fontSize={9} fill="#82878f" fontFamily="Consolas, monospace">{v.toFixed(0)}</text>
           </g>
         ))}
-        {ticksFor(vMin, vMax, 3).map((v) => (
+        {niceTicks(vMin, vMax, 3).map((v) => (
           <g key={`v${v}`}>
             <line x1={pad.l} y1={VY(v)} x2={width - pad.r} y2={VY(v)} stroke={Math.abs(v) < 1e-9 ? "#3d4653" : "#15181e"} />
             <text x={4} y={VY(v) + 3} fontSize={9} fill="#82878f" fontFamily="Consolas, monospace">{fmtMoney(v)}</text>
           </g>
         ))}
-        {ticksFor(tMin, tMax, 7).map((m) => (
+        {niceTicks(tMin, tMax, 7).map((m) => (
           <g key={`t${m}`}>
             <line x1={X(m)} y1={pad.t} x2={X(m)} y2={height - pad.b} stroke="#15181e" />
             <text x={X(m)} y={height - 7} fontSize={9} fill="#82878f" textAnchor="middle" fontFamily="Consolas, monospace">{hhmm(m)}</text>

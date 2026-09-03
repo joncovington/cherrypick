@@ -8,6 +8,7 @@ import { AXIS_MUTED } from "./Charts";
 // The two ledgers stamp their attempts differently and both mean ET — see etTime.ts for why
 // reading them with one rule silently slides a whole session sideways.
 import { etClock, etMinuteOfDay, parseSuiteTs } from "../lib/etTime";
+import { OUTCOMES } from "./chart/tokens";
 
 /**
  * The entry-attempts surfaces: the arm rail and the attempt timeline.
@@ -66,25 +67,9 @@ export interface AttemptsPayload {
   blockedByStrike: Record<string, number>;
 }
 
-/**
- * Outcome vocabulary, in the order a refusal is most worth knowing about.
- *
- * `no_fill` is deliberately its own entry and its own colour. Under a
- * fill-based cadence clock an entry that cleared every gate and simply did not
- * fill neither spent the arm's slot nor was refused by a rule — rendering it as
- * a gate refusal would make the gates look stricter than they are.
- */
-const OUTCOMES = [
-  { key: "filled", label: "filled", color: "#43b57a" },
-  { key: "cadence_blocked", label: "cadence", color: "#7aa2ff" },
-  { key: "sign_rule_blocked", label: "sign rule", color: "#a06bd9" },
-  { key: "duplicate_blocked", label: "duplicate", color: "#c9628a" },
-  { key: "gate_blocked", label: "gate", color: "#e88a5c" },
-  { key: "window_blocked", label: "window", color: "#8a9c4a" },
-  { key: "no_candidate", label: "no candidate", color: "#6c7480" },
-  { key: "no_fill", label: "no fill", color: "#d9a13b" },
-] as const;
-
+// Outcome vocabulary (key/label/colour), in the order a refusal is most worth knowing about --
+// moved to components/chart/tokens.ts (2026-09) so OccupancyMap and any future consumer share the
+// one list rather than each keeping its own copy.
 const COLOR_OF: Record<string, string> = Object.fromEntries(OUTCOMES.map((o) => [o.key, o.color]));
 const LABEL_OF: Record<string, string> = Object.fromEntries(OUTCOMES.map((o) => [o.key, o.label]));
 

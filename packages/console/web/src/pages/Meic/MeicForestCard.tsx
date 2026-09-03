@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { fmtMoney } from "../../components/DataTable";
 import { AXIS_MUTED } from "../../components/Charts";
+import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
+import { niceTicks } from "../../components/chart/scales";
 
 /**
  * MEIC's profit forest: expiry payoff for each arm's open book.
@@ -52,12 +54,6 @@ interface MeicForest {
   lastSpot: number | null;
 }
 
-// No brand accent (#d23f57) here -- reserved for brand/live/alert moments, not "just the first arm".
-const ARM_COLORS = ["#7aa2ff", "#43b57a", "#d9a13b", "#a06bd9", "#4fc3d9", "#e88a5c", "#8a9c4a"];
-
-// Matches the flies forest's spot/settlement marker (ForestCard.tsx) — same amber line + outlined tag.
-const SPOT_COLOR = "#d9a13b";
-
 function useMeicForest(mode: TradingMode, date: string | null) {
   return useQuery<MeicForest>({
     queryKey: ["meic-forest", mode, date],
@@ -70,16 +66,6 @@ function useMeicForest(mode: TradingMode, date: string | null) {
     },
     refetchInterval: 30_000,
   });
-}
-
-function ticksFor(min: number, max: number, target: number): number[] {
-  const span = max - min || 1;
-  const raw = span / target;
-  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-  const step = [1, 2, 5, 10].map((k) => k * mag).find((s) => span / s <= target + 1) ?? 10 * mag;
-  const out: number[] = [];
-  for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) out.push(v);
-  return out;
 }
 
 function path(prices: number[], pnl: number[], X: (v: number) => number, Y: (v: number) => number): string {
@@ -170,7 +156,7 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
             </text>
           </g>
         )}
-        {ticksFor(yMin, yMax, 5).map((v) => (
+        {niceTicks(yMin, yMax, 5).map((v) => (
           <g key={`y${v}`}>
             <line x1={pad.l} x2={width - pad.r} y1={Y(v)} y2={Y(v)} stroke={v === 0 ? "#3a424e" : "#1e232b"} />
             <text x={pad.l - 6} y={Y(v) + 3} fontSize={10} fill={AXIS_MUTED} textAnchor="end">
@@ -178,7 +164,7 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
             </text>
           </g>
         ))}
-        {ticksFor(xMin, xMax, 8).map((v) => (
+        {niceTicks(xMin, xMax, 8).map((v) => (
           <text key={`x${v}`} x={X(v)} y={height - pad.b + 14} fontSize={10} fill={AXIS_MUTED} textAnchor="middle">
             {v.toFixed(0)}
           </text>
