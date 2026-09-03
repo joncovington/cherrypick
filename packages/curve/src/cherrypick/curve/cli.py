@@ -5,6 +5,7 @@ Subcommands (all read-only):
     regime          the regime series (curve_regime) plus the module's own read of it
     worksheet       the live per-position worksheet
     exposure        the early-assignment-exposure telemetry
+    excursions      per-closed-position MAE/MFE (docs/metrics-plan.md Phase 2) plus distributions
     regime-history  the VIX/VIX3M regime replay over stored history — a SEPARATION BENCHMARK for
                     the signal, never suite P&L; see `regime_history.py`.
 
@@ -72,6 +73,14 @@ def cmd_exposure(args) -> int:
     return 0
 
 
+def cmd_excursions(args) -> int:
+    from cherrypick.curve import analytics, db
+
+    conn = db.connect(args.db)
+    print(json.dumps({"ok": True, "excursions": analytics.excursions(conn)}, indent=2, default=str))
+    return 0
+
+
 def cmd_headline(args) -> int:
     from cherrypick.curve import analytics, db
 
@@ -105,6 +114,9 @@ def main(argv=None) -> int:
     p_regime.set_defaults(func=cmd_regime)
     sub.add_parser("worksheet", help="the live per-position worksheet").set_defaults(func=cmd_worksheet)
     sub.add_parser("exposure", help="early-assignment-exposure telemetry").set_defaults(func=cmd_exposure)
+    sub.add_parser(
+        "excursions", help="per-closed-position MAE/MFE plus distributions"
+    ).set_defaults(func=cmd_excursions)
     sub.add_parser("headline", help="per-book results through the analytics layer").set_defaults(
         func=cmd_headline
     )

@@ -6,6 +6,10 @@ empty bucket is `None`.
 
 from __future__ import annotations
 
+import statistics
+
+from cherrypick.core.metrics import excursions as _mae_mfe
+
 
 def headline(conn) -> dict:
     """Per-book, per-symbol results over CLOSED positions, plus what is still open."""
@@ -117,6 +121,59 @@ def regime_series(conn, *, limit: int = 60) -> list[dict]:
     second product."""
     rows = conn.execute("SELECT * FROM curve_regime ORDER BY trade_date DESC LIMIT ?", (limit,)).fetchall()
     return [dict(r) for r in reversed(rows)]
+
+
+def excursions(conn) -> dict:
+    """MAE/MFE per CLOSED position (docs/metrics-plan.md Phase 2), plus their distributions.
+
+    `core.metrics.excursions` owns the generic MAE/MFE computation; this function is the module-
+    specific half the plan calls for -- pairing `curve_marks`' per-tick `close_cost` (the spread's
+    modeled cost to close right then, stored once per tick on the short leg's row per
+    `paper_loop.py`) to one position and turning it into an ordered P&L-relative-to-entry series.
+    At each usable mark, `entry_credit - close_cost` is exactly what closing then would have
+    realized against the credit received at entry, so the series already starts near zero and
+    needs no separate basis (unlike a raw price series would) -- `core.metrics.excursions` is
+    called with `basis=0.0`.
+
+    Positions with no `entry_credit` (pre-instrumentation row) or no usable marks are skipped from
+    the per-position list rather than reported with a fabricated 0.0."""
+    positions = []
+    for p in conn.execute(
+        "SELECT position_id, symbol, book, entry_credit, quantity FROM curve_positions "
+        "WHERE status = 'closed' ORDER BY symbol, book"
+    ):
+        if p["entry_credit"] is None:
+            continue
+        marks = conn.execute(
+            "SELECT close_cost FROM curve_marks WHERE position_id = ? AND close_cost IS NOT NULL "
+            "AND usable = 1 ORDER BY marked_at",
+            (p["position_id"],),
+        ).fetchall()
+        mult = 100 * (p["quantity"] or 1)
+        pnl_series = [round((p["entry_credit"] - m["close_cost"]) * mult, 2) for m in marks]
+        mae_mfe = _mae_mfe(pnl_series, basis=0.0)
+        if mae_mfe["n"] == 0:
+            continue
+        positions.append(
+            {
+                "position_id": p["position_id"],
+                "symbol": p["symbol"],
+                "book": p["book"],
+                "mae": mae_mfe["mae"],
+                "mfe": mae_mfe["mfe"],
+                "n": mae_mfe["n"],
+            }
+        )
+
+    def _distribution(key: str) -> dict:
+        values = [p[key] for p in positions]
+        return {"median": round(statistics.median(values), 2) if values else None, "n": len(values)}
+
+    return {
+        "positions": positions,
+        "mae_distribution": _distribution("mae"),
+        "mfe_distribution": _distribution("mfe"),
+    }
 
 
 def mark_coverage(conn, session_date: str) -> dict:
