@@ -60,20 +60,35 @@ describe("no path renders a blank page", () => {
 });
 
 describe("the module routes", () => {
-  it("/pmcc renders its own page, not the catch-all", () => {
-    // Server-rendered with no query data, so what is asserted is the shell the page paints before
-    // anything loads. The module is paper-only by construction — there is no live store to toggle
-    // to — so the badge is fixed rather than driven by a mode preference.
+  // Each module now opens as a lightbox carousel over the Overview (`OverviewWithLightbox`),
+  // portalled via `createPortal(..., document.body)` -- there is no `document` in this
+  // server-render pass, so `LightboxFrame` deliberately renders null here (see its own comment)
+  // rather than throwing. What IS verifiable without a browser: the route resolves to a real
+  // module (not the 404 catch-all) and the header menu names it. The carousel's own content is a
+  // `pnpm ui-check` concern, covered per-module there.
+  it("/pmcc resolves to the pmcc module, not the catch-all", () => {
     const html = render("/pmcc");
-    expect(html).toContain("PMCC-99");
+    expect(html).toContain("PMCC");
     expect(html).not.toContain("Page not found");
   });
 
-  it("/calendars renders its own page, not the catch-all", () => {
-    // Paper-only by construction for the same structural reason as PMCC: no live loop, no live
-    // store, so nothing a mode toggle could reach and a fixed badge rather than a preference.
+  it("/calendars resolves to the calendars module, not the catch-all", () => {
     const html = render("/calendars");
     expect(html).toContain("Calendars");
+    expect(html).not.toContain("Page not found");
+  });
+
+  it("an unknown module name still 404s, rather than opening an empty carousel", () => {
+    const html = render("/not-a-real-module");
+    expect(html).toContain("Page not found");
+  });
+
+  it("a deep-linked slide resolves the same as the bare module route", () => {
+    // Both land on OverviewWithLightbox; the slide segment is read by the module's own manifest
+    // once mounted (a `document`-dependent concern this pass can't see), but routing itself must
+    // not treat the extra segment as unknown.
+    const html = render("/flies/forest");
+    expect(html).toContain("Flies");
     expect(html).not.toContain("Page not found");
   });
 });
