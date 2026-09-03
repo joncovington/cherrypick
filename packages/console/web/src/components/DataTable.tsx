@@ -157,12 +157,12 @@ export function Card({ title, collapseKey, updatedAt, isError = false, controls,
       <div className="card-head">
         <button
           type="button"
-          className="btn btn-quiet collapse-toggle"
+          className={`btn btn-quiet collapse-toggle ${collapsed ? "" : "collapse-toggle-open"}`}
           onClick={toggle}
           aria-expanded={!collapsed}
           aria-label={collapsed ? "expand" : "collapse"}
         >
-          {collapsed ? "▸" : "▾"}
+          ▸
         </button>
         <h2>{title}</h2>
         {controls}
@@ -172,7 +172,7 @@ export function Card({ title, collapseKey, updatedAt, isError = false, controls,
           </span>
         )}
       </div>
-      {!collapsed && children}
+      {!collapsed && <div className="view-fade">{children}</div>}
     </section>
   );
 }

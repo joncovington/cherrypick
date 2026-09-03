@@ -908,6 +908,12 @@ select.text-input {
   padding: 0 0.3rem;
   font-size: 13px;
   color: var(--text-muted);
+  display: inline-flex;
+  transition: transform 120ms ease-out;
+}
+
+.collapse-toggle-open {
+  transform: rotate(90deg);
 }
 
 /* Chart left, metric panels stacked in a right rail — everything in one view. */
@@ -1151,6 +1157,10 @@ select.text-input {
   .lb-backdrop,
   .lb-frame {
     animation: none;
+  }
+
+  .collapse-toggle {
+    transition: none;
   }
 }
 
@@ -2618,6 +2628,7 @@ select.text-input {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .lb-rail-chip:hover {
