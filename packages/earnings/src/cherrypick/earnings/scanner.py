@@ -136,15 +136,33 @@ def fetch_entry_window_calendar(
     day. Requiring an exact timing string therefore stopped meaning "this reports
     tonight" and started meaning "this row happens to be annotated".
 
-    So a row on the scan date whose `when` is missing is admitted and READ AS AMC,
-    but only if its symbol is in `assume_amc_for` -- the callers pass the set of
-    symbols this morning's forward scan actually measured (`symbol_watch.
-    covered_symbols`), which is already narrowed to tastytrade's liquid-symbol
-    universe. That bound matters: today's raw calendar carries ~250 rows, and at
-    the entry scan's measured ~8s per symbol, admitting all of them would run
-    ~33 minutes and finish long past the entry window. Without the set (no
-    snapshot, or a stale one) this degrades to the old exact-timing behavior
-    rather than to an unbounded scan.
+    So every row on the scan date whose `when` is missing is admitted and READ AS
+    AMC (see below for why AMC is the safe guess). This used to be gated on
+    membership in `assume_amc_for` -- the forward scan's measured universe -- and
+    that gate produced its own five-session outage on 2026-08-17..24: the
+    snapshot came back empty, the gate read that as "admit nothing", and every
+    unannotated row -- which was 44% of the calendar even on an ordinary night --
+    silently vanished with it. The bound was also asymmetric in a way that had
+    no defense: an ANNOTATED row (`when` populated) was never gated by the
+    universe at all, so two rows for the same company got different
+    admissibility purely on whether a decaying third-party dataset happened to
+    annotate one of them, and the stricter rule fell on the class the suite has
+    LESS information about.
+
+    The cost the gate was built to control is already controlled: `cmd_run_entries`
+    runs the scan through `_parallel_scan`, which enforces `entry_scan_budget_seconds`
+    (1500s default) regardless of how many rows are in `calendar` -- an exhausted
+    budget degrades every unfinished symbol to `entry_scan_budget_exceeded` rather
+    than running past the entry window. A raw calendar's worst case (~250 rows) at
+    the measured ~8s/symbol across the deployed 4 workers is minutes, not the
+    ~33-minute serial estimate that justified the original gate.
+
+    `assume_amc_for` now orders rather than admits: it still receives the forward
+    scan's measured universe, and this function uses it only to put those rows
+    first in the returned list, so that if the budget ever DOES bind, the names
+    already known to be liquid-enough-to-trade are the ones that finish. An
+    empty or stale set degrades to "no reordering", never to "admit nothing" --
+    the failure mode this replaces.
 
     Reading a missing value as AMC rather than BMO is the safe direction, twice
     over. A name that in fact reported BMO this morning is already post-event: its
@@ -170,20 +188,33 @@ def fetch_entry_window_calendar(
     today_rows = fetch_dolthub_calendar(str(today), config)
     next_rows = fetch_dolthub_calendar(str(next_session), config)
 
-    assumable = {str(s).upper() for s in (assume_amc_for or ())}
+    # Priority set for ORDERING only (see the docstring) -- membership no longer decides
+    # whether an unannotated row is admitted, only where it lands if the scan's budget binds.
+    priority = {str(s).upper() for s in (assume_amc_for or ())}
 
     merged = []
     for row in today_rows:
         timing = (row.get("timing") or "").strip()
         if timing == TIMING_AMC:
             merged.append({**row, "timing": TIMING_AMC, "timing_assumed": False})
-        elif not timing and str(row.get("symbol") or "").upper() in assumable:
+        elif not timing:
             merged.append({**row, "timing": TIMING_AMC, "timing_assumed": True})
     merged += [
         {**row, "timing": TIMING_BMO, "timing_assumed": False}
         for row in next_rows
         if (row.get("timing") or "").strip() == TIMING_BMO
     ]
+
+    def _band(row: dict) -> int:
+        if not row["timing_assumed"]:
+            return 0  # calendar-stated timing -- highest confidence, always first
+        if str(row.get("symbol") or "").upper() in priority:
+            return 1  # assumed AMC, but a name this suite would trade anyway
+        return 2  # assumed AMC, outside the priority set -- last to run if the budget binds
+
+    # Stable sort: rows within a band keep their original relative order, so this only ever
+    # reshuffles ACROSS bands (list.sort() is guaranteed stable), never within one.
+    merged.sort(key=_band)
     return merged
 
 
