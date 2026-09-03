@@ -21,6 +21,8 @@ export function LightboxFrame({
   session,
   headerControls,
   persistentTop,
+  integrity,
+  integrityAttention,
 }: {
   module: ModuleId;
   slide: string;
@@ -30,13 +32,20 @@ export function LightboxFrame({
   session?: string | null;
   headerControls?: ReactNode;
   /** Rendered once, between the rail and the active slide -- for content that must stay visible
-   *  across every slide (the module's measurement-integrity strip), rather than being repeated
-   *  inside each slide's own render(). */
+   *  across every slide without a footer click (a stale-era note, say), rather than being
+   *  repeated inside each slide's own render(). */
   persistentTop?: ReactNode;
+  /** The module's measurement-integrity strip -- present on every slide as a footer chip rather
+   *  than a persistent block, so it stays reachable without spending body height on it until
+   *  someone actually wants it. */
+  integrity?: ReactNode;
+  /** Chip tone: true when there is something to look at (a measurement break, schema drift). */
+  integrityAttention?: boolean;
 }) {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [autoAdvance, setAutoAdvance] = useState(false);
+  const [integrityOpen, setIntegrityOpen] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<Element | null>(null);
 
@@ -132,6 +141,12 @@ export function LightboxFrame({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoAdvance, module, activeId]);
 
+  // A drawer left open across a slide change would sit over content it no longer has anything to
+  // say about.
+  useEffect(() => {
+    setIntegrityOpen(false);
+  }, [activeId]);
+
   // No `document` outside a browser (server-render tests included) -- a portal has nowhere to
   // mount, and every effect above is a no-op there too. The module page underneath (rendered by
   // the caller) still carries real content for a route/SSR check to assert on.
@@ -200,6 +215,21 @@ export function LightboxFrame({
         <div className="lb-body" key={activeId}>
           {active?.render()}
         </div>
+        {integrity !== undefined && (
+          <>
+            {integrityOpen && <div className="lb-integrity-drawer">{integrity}</div>}
+            <div className="lb-footer">
+              <button
+                type="button"
+                className={`lb-footer-chip ${integrityAttention === true ? "chip-warn" : ""} ${integrityOpen ? "active" : ""}`}
+                aria-expanded={integrityOpen}
+                onClick={() => setIntegrityOpen((v) => !v)}
+              >
+                measurement integrity {integrityOpen ? "▾" : "▸"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>,
     document.body,

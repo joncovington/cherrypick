@@ -35,7 +35,6 @@ export function PmccLightbox({ slide }: { slide: string }) {
           </div>
         ) : (
           <div className="cards cards-wide">
-            <IntegrityStrip data={data} updatedAt={dataUpdatedAt} />
             {isLoading ? (
               <DataCard
                 title="open positions"
@@ -146,6 +145,8 @@ export function PmccLightbox({ slide }: { slide: string }) {
         />
       }
       session={data?.session ?? null}
+      integrity={<IntegrityStrip data={data} updatedAt={dataUpdatedAt} />}
+      integrityAttention={(data?.integrity.measurementBreaks.length ?? 0) > 0 || (data?.integrity.schemaDrift.length ?? 0) > 0}
     />
   );
 }

@@ -426,8 +426,8 @@ export function MeicLightbox({ slide }: { slide: string }) {
         </>
       }
       persistentTop={
-        <div className="lb-persistent">
-          {emptyEra && (
+        emptyEra ? (
+          <div className="lb-persistent">
             <p className="stale-note">
               No trades in era <strong>{activeEra}</strong> for this {mode} store — {otherEraCount} sit in
               earlier eras, which the module treats as shakedown data rather than evidence.{" "}
@@ -435,10 +435,11 @@ export function MeicLightbox({ slide }: { slide: string }) {
                 show every era
               </button>
             </p>
-          )}
-          <ModuleIntegrityStrip integrity={data?.integrity} collapseKey="meic-integrity" updatedAt={dataUpdatedAt} />
-        </div>
+          </div>
+        ) : undefined
       }
+      integrity={<ModuleIntegrityStrip integrity={data?.integrity} collapseKey="meic-integrity" updatedAt={dataUpdatedAt} />}
+      integrityAttention={(data?.integrity?.measurementBreaks.length ?? 0) > 0 || (data?.integrity?.schemaDrift.length ?? 0) > 0}
     />
   );
 }
