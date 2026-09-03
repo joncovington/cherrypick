@@ -9,6 +9,7 @@ import {
   MODULE_SCHEMA,
 } from "../src/readers/performance.js";
 import { setMetricsCaller, resetMetricsCache } from "../src/services/metricsBridge.js";
+import { setExcursionsCaller, resetExcursionsCache } from "../src/services/excursionsBridge.js";
 import type { ConsoleConfig } from "../src/config.js";
 
 /**
@@ -59,6 +60,8 @@ function fakeConfig(dataEpochDate: string | null): ConsoleConfig {
 afterEach(() => {
   setMetricsCaller();
   resetMetricsCache();
+  setExcursionsCaller();
+  resetExcursionsCache();
 });
 
 const READING = {
@@ -181,5 +184,31 @@ describe("readModulePerformance", () => {
     // breaks also comes through even though the metrics half failed -- same independence as
     // exitReasons, a fresh read against the module's own ledger.
     expect(out.breaks).toEqual([{ date: "2026-08-27", key: "spread_width", note: "5.0 -> 1.0, re-scaled to VXX", scope: null }]);
+  });
+
+  it("carries excursions from the bridge, independent of the metrics reading", () => {
+    setExcursionsCaller(() => ({
+      ok: true,
+      error: null,
+      data: {
+        positions: [{ id: "p1", tag: "control", symbol: "VXX", mae: -20.0, mfe: 40.0, n: 4 }],
+        maeDistribution: { median: -20.0, n: 1 },
+        mfeDistribution: { median: 40.0, n: 1 },
+      },
+    }));
+    setMetricsCaller(() => ({ ok: false, metrics: null, error: "unavailable" }));
+    const out = readModulePerformance(fakeConfig(null), "curve", "ALL");
+    expect(out.ok).toBe(false); // the metrics half still failed
+    expect(out.excursions.ok).toBe(true);
+    expect(out.excursions.data?.positions).toEqual([
+      { id: "p1", tag: "control", symbol: "VXX", mae: -20.0, mfe: 40.0, n: 4 },
+    ]);
+  });
+
+  it("reports excursions as unavailable for a module with no Python excursions support, not a crash", () => {
+    setExcursionsCaller(() => ({ ok: false, data: null, error: "excursions unavailable" }));
+    setMetricsCaller(() => ({ ok: true, metrics: { schema: "meic_ic", n_records: 0, groups: {} }, error: null }));
+    const out = readModulePerformance(fakeConfig(null), "meic", "ALL");
+    expect(out.excursions).toEqual({ ok: false, data: null, error: "excursions unavailable" });
   });
 });
