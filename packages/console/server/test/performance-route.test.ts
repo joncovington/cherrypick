@@ -82,6 +82,11 @@ describe("the performance route", () => {
     expect(body.ok).toBe(true);
     expect(body.module).toBe("curve");
     expect(body.groups).toHaveLength(1);
+    // exitReasons/heldBack ride on the same payload (readExitReasons, independent of
+    // metricsBridge) -- present here even though this fixture has no curve ledger to read, which
+    // is exactly the honest "unavailable, not silently dropped" shape.
+    expect(body.exitReasons).toEqual({ unavailable: expect.any(String) });
+    expect(body.heldBack).toEqual([]);
   });
 
   it("passes ?era=ALL through to the reader, defaulting to 'current' otherwise", async () => {

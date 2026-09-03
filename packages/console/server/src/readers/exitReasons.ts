@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, hasTable, hasColumn, str, numLoose } from "./db.js";
+import type { PerformanceModuleId } from "./performance.js";
 
 /**
  * Realized exit reasons per profile/book, plus what an execution gate held back before a verdict
@@ -25,7 +26,7 @@ import { withReadOnlyDb, hasTable, hasColumn, str, numLoose } from "./db.js";
  * rather than a misleadingly empty table.
  */
 
-export type ExitReasonsModule = "meic" | "flies" | "earnings" | "calendars" | "pmcc" | "curve" | "bwb";
+export type ExitReasonsModule = PerformanceModuleId;
 
 export interface ExitReasonRow {
   tag: string;
@@ -112,12 +113,17 @@ const SPECS: Partial<Record<ExitReasonsModule, Spec>> = {
   },
 };
 
-const UNAVAILABLE = "flies has no exit_reason column and no management-events table — 0DTE legs settle or stop, with no single exit-reason concept a multi-day structure has";
+const NO_CONCEPT = "flies has no exit_reason column and no management-events table — 0DTE legs settle or stop, with no single exit-reason concept a multi-day structure has";
+const NO_LEDGER = (module: string) => `${module} exit reasons unavailable — its paper ledger has no readable position table yet`;
 
 export function readExitReasons(config: ConsoleConfig, module: ExitReasonsModule): ExitReasonsResult {
-  const empty: ExitReasonsResult = { exitReasons: { unavailable: UNAVAILABLE }, heldBack: [] };
   const spec = SPECS[module];
-  if (spec === undefined) return empty;
+  // Flies genuinely has no concept to read, not merely an absent/unreadable ledger -- a distinct
+  // message from the fallback below, so "this module doesn't have exit reasons" and "this
+  // module's ledger isn't there yet" don't look like the same finding.
+  if (spec === undefined) return { exitReasons: { unavailable: NO_CONCEPT }, heldBack: [] };
+
+  const empty: ExitReasonsResult = { exitReasons: { unavailable: NO_LEDGER(module) }, heldBack: [] };
   const dbPath = path.join(spec.dir(config), "paper_trades.db");
 
   return withReadOnlyDb<ExitReasonsResult>(dbPath, empty, (db) => {
