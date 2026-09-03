@@ -194,6 +194,10 @@ def _scan_record(tmp_path, monkeypatch, result):
 
     monkeypatch.setattr(_home, "logs_dir", lambda: tmp_path / "logs")
     monkeypatch.setattr(symbol_watch, "refresh_symbol_watch", lambda **kw: result)
+    # The once-a-day gate reads `loop_iterations`, so without this a second tick in the same test
+    # (or a test running after one that already scanned this session) lands in `off_hours` and logs
+    # nothing. That gate has its own test above; these are about the number it records.
+    monkeypatch.setattr(paper_loop, "forward_scan_already_ran", lambda _session: False)
     paper_loop.run_iteration(CONFIG, at("06:30"))
     lines = (tmp_path / "logs" / "earnings_paper.log").read_text(encoding="utf-8").strip().splitlines()
     return [r for r in (_json.loads(x) for x in lines) if r["phase"] == "forward_scan"][-1]
