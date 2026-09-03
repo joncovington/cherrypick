@@ -141,6 +141,75 @@ def test_plan_entry_refuses_below_credit_floor():
     assert result["reason"] in ("credit_below_floor", "no_wing_strike")
 
 
+# --------------------------------------- the fee-adjusted floor (2026-09-02, curve issue #12) -----
+#
+# A real 2026-09-02 entry cleared the plain percentage floor at 0.18 credit on a 1.00-wide spread
+# (18% against a 15% floor) and then paid $2.24 open commission plus $4.25 open slippage against
+# $18.00 of gross credit -- $11.51 net before the position had been marked even once. The percentage
+# floor alone cannot see that: it is a ratio of two mid prices and has no idea what opening the
+# trade costs. These pin the floor that does.
+
+_FEE_SNAPSHOT_KW = {"symbol": "VXX", "spot": 18.0, "expiration": "2026-09-18", "dte": 37}
+
+
+def _fee_snapshot():
+    chain, quotes, greeks = _chain_and_quotes()
+    return {**_FEE_SNAPSHOT_KW, "chain": chain, "quotes": quotes, "greeks": greeks}
+
+
+def test_plan_entry_refuses_when_the_percentage_floor_alone_would_have_passed():
+    """credit_pct_of_width here is 0.60 / 5.0 = 0.12 -- comfortably above an 0.11 floor, so the
+    OLD (percentage-only) gate would have opened this. Fees and slippage are what turn it down."""
+    params = {**PARAMS, "min_credit_pct_of_width": 0.11}
+    result = engine.plan_entry(_fee_snapshot(), params, {"defaults": {"quantity": 1}})
+    assert round(0.60 / 5.0, 4) >= params["min_credit_pct_of_width"], "the percentage floor clears"
+    assert result["ok"] is False
+    assert result["reason"] == "credit_below_fee_adjusted_floor"
+
+
+def test_plan_entry_fee_adjusted_floor_applies_even_without_a_config():
+    """No config is not an escape hatch. Every caller before this floor existed passes no third
+    argument, and every one of them must still get the check -- priced off DEFAULT_COSTS -- not a
+    silent pass-through."""
+    params = {**PARAMS, "min_credit_pct_of_width": 0.11}
+    with_config = engine.plan_entry(_fee_snapshot(), params, {"defaults": {"quantity": 1}})
+    without_config = engine.plan_entry(_fee_snapshot(), params)
+    assert with_config == without_config
+    assert without_config["ok"] is False
+
+
+def test_plan_entry_fee_adjusted_detail_reconciles_to_the_dollar():
+    """The refusal has to carry numbers a reader can check by hand, not just a verdict -- this is
+    what the review trail and the attempts table render."""
+    params = {**PARAMS, "min_credit_pct_of_width": 0.11}
+    result = engine.plan_entry(_fee_snapshot(), params, {"defaults": {"quantity": 1}})
+    detail = result["detail"]
+    assert detail["gross_credit_dollars"] == 60.0  # 0.60 credit x 100 x 1 contract
+    assert detail["floor_dollars"] == 55.0  # 0.11 x 5.0 width x 100
+    assert round(detail["gross_credit_dollars"] - detail["entry_fee"] - detail["entry_slippage"], 2) == round(
+        detail["net_credit_dollars"], 2
+    )
+    assert detail["net_credit_dollars"] < detail["floor_dollars"]
+
+
+def test_plan_entry_accepts_once_there_is_enough_headroom_for_costs():
+    """The same spread, the same modeled cost -- only the floor moves. Refusing at 0.11 and
+    accepting at 0.05 on identical fills is what proves this is a floor, not a fixed haircut."""
+    params = {**PARAMS, "min_credit_pct_of_width": 0.05}
+    result = engine.plan_entry(_fee_snapshot(), params, {"defaults": {"quantity": 1}})
+    assert result["ok"] is True
+
+
+def test_plan_entry_fee_adjusted_floor_reads_quantity_from_config_defaults_not_params():
+    """`book.py`'s `enter_position` sizes the REAL modeled cost off `config["defaults"]["quantity"]`,
+    never off `params` -- if this gate read quantity anywhere else, its dollar figures could
+    silently diverge from the cost the position is actually opened at. A `params["quantity"]` set
+    to something else must be ignored here exactly as it is at the real entry."""
+    params = {**PARAMS, "min_credit_pct_of_width": 0.11, "quantity": 5}  # must not be read
+    one_lot = engine.plan_entry(_fee_snapshot(), params, {"defaults": {"quantity": 1}})
+    assert one_lot["detail"]["gross_credit_dollars"] == 60.0  # 1 contract, not 5
+
+
 def test_spread_close_cost():
     assert engine.spread_close_cost({"mid": 0.50}, {"mid": 0.10}) == 0.40
     assert engine.spread_close_cost(None, {"mid": 0.10}) is None

@@ -37,58 +37,102 @@ body {
    sticky elements already expect it, and keeps the nav and status header in view as a bonus. */
 .shell {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   overflow: hidden;
 }
 
-.nav {
-  width: 11rem;
-  flex-shrink: 0;
-  background: var(--bg-raised);
-  border-right: 1px solid var(--border);
-  padding: 0.75rem 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  /* The shell no longer scrolls, so a nav taller than a short window would be unreachable. */
-  overflow-y: auto;
+/* The hamburger dropdown that replaced the fixed-width side nav (2026-09) — see
+   components/shell/HeaderMenu.tsx. Reuses .nav-dot (the Config unsaved-changes marker, defined
+   further down) from the old nav; everything else here is new. */
+.header-menu {
+  position: relative;
 }
 
-.nav-brand {
+.header-menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.3rem 0.6rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.header-menu-btn:hover {
+  border-color: var(--text-muted);
+}
+
+.header-menu-brand {
   font-weight: 650;
   color: var(--accent);
-  padding: 0.5rem 1rem 1rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
 }
 
-.nav-link {
+.header-menu-current {
+  font-size: 12px;
+}
+
+.header-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 15rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  padding: 0.4rem 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+}
+
+.header-menu-group + .header-menu-group {
+  margin-top: 0.3rem;
+  border-top: 1px solid var(--row-line);
+  padding-top: 0.3rem;
+}
+
+.header-menu-group-label {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.65;
+  padding: 0.2rem 1rem 0.15rem;
+}
+
+.header-menu-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   color: var(--text-muted);
   text-decoration: none;
-  padding: 0.45rem 1rem;
+  padding: 0.4rem 1rem;
   border-left: 2px solid transparent;
-  transition: color 0.15s ease;
 }
 
-.nav-link:hover {
+.header-menu-link:hover {
   color: var(--text);
 }
 
-.nav-link.active {
+.header-menu-link.active {
   color: var(--text);
   border-left-color: var(--accent);
   background: rgba(210, 63, 87, 0.06);
 }
 
-.shell-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  /* Without this a flex child refuses to shrink below its content, and the pane below never
-     scrolls — it just grows and pushes the shell past the viewport. */
-  min-height: 0;
+.header-menu-kbd {
+  margin-left: auto;
+  font-family: var(--num-face);
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.7;
 }
 
 .status-header {
@@ -664,7 +708,8 @@ h2 {
 }
 
 .mode-btn:focus-visible,
-.nav-link:focus-visible {
+.header-menu-link:focus-visible,
+.header-menu-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -1426,33 +1471,6 @@ select.text-input {
    moments — the live lock is exactly the third of those, and the only place on this page it
    appears. Everything else stays in the ordinary card vocabulary, so the one control that stops
    live trading is the one thing that looks urgent. */
-
-.nav-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.nav-group + .nav-group {
-  margin-top: 0.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--border);
-}
-
-.nav-group-label {
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  opacity: 0.65;
-  padding: 0.15rem 1rem 0.25rem;
-}
-
-.nav-link {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
 
 .nav-dot {
   width: 6px;
@@ -2316,4 +2334,158 @@ select.text-input {
 .pct-refusal {
   font-size: 12px;
   font-style: italic;
+}
+
+/* ---- Overview: no-scroll suite matrix (2026-09) ---------------------------------------------- */
+/* The whole page fits the desktop shell's default 1440×900 with no page scroll -- see
+   pages/Overview/OverviewPage.tsx. Every section below is a flex row/column with an explicit
+   min-height: 0, which is what lets a table scroll INSIDE its own card instead of the page
+   growing past the viewport (the same reason .shell-main needed it, one level down). */
+
+.overview-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: 0.5rem;
+}
+
+.overview-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 0.6rem;
+}
+
+.overview-left {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.6rem;
+}
+
+.overview-right {
+  min-height: 0;
+  display: flex;
+}
+
+.overview-right .card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.desk-card {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.desk-table-scroll {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Module-name links in the suite matrix (ExposureCard/EntriesCard) -- plain text until hovered,
+   not the visited-purple/underline a browser gives an unstyled <a>. */
+.module-link,
+.module-link:visited {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.module-link:hover {
+  color: var(--accent);
+}
+
+.equity-bottom-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1rem;
+  margin-top: 0.6rem;
+  align-items: start;
+}
+
+.equity-bottom-col .fine-label {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.evidence-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.evidence-note {
+  font-size: 11px;
+  margin-left: auto;
+}
+
+/* One line, always -- a status bar that wraps to a second row pushes the bottom of it below the
+   fold, defeating the whole point of the no-scroll redesign. It scrolls horizontally in its own
+   container instead, the same "wide content scrolls in its own box, the page never does" rule
+   every other overflow-prone table on this page already follows. */
+.statusbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 0.6rem;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-raised);
+  margin: 0.5rem -1.25rem -1.25rem;
+  padding: 0.35rem 1.25rem;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: var(--num-face);
+}
+
+.statusbar .chip {
+  padding: 0.05rem 0.5rem;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.statusbar-seg {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.statusbar-seg:hover {
+  color: var(--text);
+}
+
+.statusbar-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+}
+
+.statusbar-hint {
+  margin-left: auto;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.statusbar-drawer {
+  position: absolute;
+  left: 1.25rem;
+  right: 1.25rem;
+  bottom: 2.4rem;
+  max-height: min(60vh, 28rem);
+  overflow: auto;
+  z-index: 25;
+  box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.5);
 }
