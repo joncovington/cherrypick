@@ -1,19 +1,19 @@
-import type { ComponentType } from "react";
-import { MeicLightbox } from "./manifests/MeicLightbox";
-import { FliesLightbox } from "./manifests/FliesLightbox";
-import { PmccLightbox } from "./manifests/PmccLightbox";
-import { CurveLightbox } from "./manifests/CurveLightbox";
-import { BwbLightbox } from "./manifests/BwbLightbox";
-import { CalendarsLightbox } from "./manifests/CalendarsLightbox";
-import { EarningsLightbox } from "./manifests/EarningsLightbox";
+import { lazy, type ComponentType } from "react";
 import type { ModuleId } from "./moduleOrder";
 
+/**
+ * Lazy per module: a session only ever has one lightbox open at a time, so there is no reason for
+ * Overview's initial load to pay for all seven manifests (each pulling in its own analytics
+ * queries, chart cards and history tables) up front. `LightboxFrame`'s own portal/inert wiring and
+ * every shared component (Card, ScopeBar, the shared chart kit) stay in the main chunk since
+ * Overview and every lightbox use them; only the module-specific manifest code-splits.
+ */
 export const MODULE_LIGHTBOXES: Record<ModuleId, ComponentType<{ slide: string }>> = {
-  meic: MeicLightbox,
-  flies: FliesLightbox,
-  pmcc: PmccLightbox,
-  curve: CurveLightbox,
-  bwb: BwbLightbox,
-  calendars: CalendarsLightbox,
-  earnings: EarningsLightbox,
+  meic: lazy(() => import("./manifests/MeicLightbox").then((m) => ({ default: m.MeicLightbox }))),
+  flies: lazy(() => import("./manifests/FliesLightbox").then((m) => ({ default: m.FliesLightbox }))),
+  pmcc: lazy(() => import("./manifests/PmccLightbox").then((m) => ({ default: m.PmccLightbox }))),
+  curve: lazy(() => import("./manifests/CurveLightbox").then((m) => ({ default: m.CurveLightbox }))),
+  bwb: lazy(() => import("./manifests/BwbLightbox").then((m) => ({ default: m.BwbLightbox }))),
+  calendars: lazy(() => import("./manifests/CalendarsLightbox").then((m) => ({ default: m.CalendarsLightbox }))),
+  earnings: lazy(() => import("./manifests/EarningsLightbox").then((m) => ({ default: m.EarningsLightbox }))),
 };
