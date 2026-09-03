@@ -6,10 +6,10 @@ import { streamerFreshness } from "./streamcache.js";
 import { readMeicLoopStatus } from "./meic.js";
 import { readFliesLoopStatus, readFliesAnalytics } from "./flies.js";
 import { readEntryAttempts } from "./attempts.js";
-import { readPmcc } from "./pmcc.js";
-import { readCurve } from "./curve.js";
+import { readPmcc, resolvePmccSession } from "./pmcc.js";
+import { readCurve, resolveCurveSession } from "./curve.js";
 import { readBwb } from "./bwb.js";
-import { readCalendars } from "./calendars.js";
+import { readCalendars, readCalendarsEntryAttempts } from "./calendars.js";
 import { readEarningsDetail } from "./earnings.js";
 import { buildSuiteReport, readFactSet } from "../services/report.js";
 
@@ -233,10 +233,16 @@ export function readDesk(config: ConsoleConfig): DeskPayload {
 
   const meicAttempts = readEntryAttempts(config, "meic", "paper", null);
   const fliesAttempts = readEntryAttempts(config, "flies", "paper", null);
-  const pmccAttempts = readEntryAttempts(config, "pmcc", "paper", null);
+  // Both resolve the module's own canonical session rather than readEntryAttempts' own
+  // MAX(trade_date) guess -- the same pmcc-attempts-timeline incident this reader must not
+  // reintroduce (a loop that ran and found nothing to evaluate vs. this table's own last row).
+  const pmccAttempts = readEntryAttempts(config, "pmcc", "paper", resolvePmccSession(config));
+  const curveAttempts = readEntryAttempts(config, "curve", "paper", resolveCurveSession(config));
   const meicCounts = countOutcomes(meicAttempts.timeline);
   const fliesCounts = countOutcomes(fliesAttempts.timeline);
   const pmccCounts = countOutcomes(pmccAttempts.timeline);
+  const curveCounts = countOutcomes(curveAttempts.timeline);
+  const calendarsCounts = countOutcomes(readCalendarsEntryAttempts(config, null).rows);
   const bwbCounts = countOutcomes(
     bwb.entryAttemptsToday.map((a: { outcome: string }) => ({ outcome: a.outcome, blockDetail: null })),
   );
@@ -254,27 +260,9 @@ export function readDesk(config: ConsoleConfig): DeskPayload {
       available: false,
       note: "not wired to the attempts reader yet",
     },
-    {
-      module: "calendars",
-      filled: 0,
-      refused: 0,
-      noFill: 0,
-      sessionNet: null,
-      topRefusal: null,
-      available: false,
-      note: "not wired to the attempts reader yet",
-    },
+    { module: "calendars", ...calendarsCounts, sessionNet: null, available: true, note: null },
     { module: "pmcc", ...pmccCounts, sessionNet: null, available: true, note: null },
-    {
-      module: "curve",
-      filled: 0,
-      refused: 0,
-      noFill: 0,
-      sessionNet: null,
-      topRefusal: null,
-      available: false,
-      note: "not wired to the attempts reader yet",
-    },
+    { module: "curve", ...curveCounts, sessionNet: null, available: true, note: null },
     { module: "bwb", ...bwbCounts, sessionNet: null, available: true, note: null },
   ];
 

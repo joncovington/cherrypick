@@ -35,7 +35,7 @@ import {
   type FliesFilter,
 } from "../readers/flies.js";
 import { readPmcc, readPmccAssignments, readPmccHistory, readPmccMeta, resolvePmccSession } from "../readers/pmcc.js";
-import { readCurve, readCurveHistory, readCurveMeta } from "../readers/curve.js";
+import { readCurve, readCurveHistory, readCurveMeta, resolveCurveSession } from "../readers/curve.js";
 import { readBwb, readBwbHistory, readBwbMeta } from "../readers/bwb.js";
 import { readCalendars, readCalendarsWeek, readCalendarsWeeks } from "../readers/calendars.js";
 import { readCalendarsPolicies } from "../services/calendarsBridge.js";
@@ -151,6 +151,12 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   // a console reader before this. No date param on purpose: each module's own persistentTop/"now"
   // card always means "this session", matching entry-attempts-today beside it.
   app.get("/api/curve/decisions", async () => readDecisions(config, "curve", null));
+  // Same paper-only, no-date-param-means-today shape as pmcc's own attempts route above, and the
+  // same resolveCurveSession fallback rather than readEntryAttempts' own MAX(trade_date) guess.
+  app.get("/api/curve/attempts", async (req) => {
+    const f = parseFliesFilter(req.query);
+    return readEntryAttempts(config, "curve", "paper", f.date ?? resolveCurveSession(config));
+  });
   app.get("/api/pmcc/decisions", async () => readDecisions(config, "pmcc", null));
   app.get("/api/bwb/decisions", async () => readDecisions(config, "bwb", null));
   app.get("/api/meic/loop", async (req) =>
