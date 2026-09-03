@@ -13,8 +13,8 @@ import type { SlideDef } from "../types";
  * lightbox's own slide-in-the-URL convention.
  */
 const slides: SlideDef[] = [
-  { id: "morning", label: "Morning", render: () => <MorningPage /> },
-  { id: "eod", label: "EOD", render: () => <ReviewPage /> },
+  { id: "morning", label: "morning", render: () => <MorningPage /> },
+  { id: "eod", label: "eod", render: () => <ReviewPage /> },
 ];
 
 export function ReportsLightbox({ slide }: { slide: string }) {

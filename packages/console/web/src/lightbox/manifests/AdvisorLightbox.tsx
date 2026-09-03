@@ -16,7 +16,7 @@ import type { SlideDef } from "../types";
  * a subtle regression in a control path the suite deliberately keeps narrow. AdvisorPage's own
  * internal TabStrip is untouched and still switches its four views inside this one lightbox slide.
  */
-const slides: SlideDef[] = [{ id: "advisor", label: "Advisor", render: () => <AdvisorPage /> }];
+const slides: SlideDef[] = [{ id: "advisor", label: "advisor", render: () => <AdvisorPage /> }];
 
 export function AdvisorLightbox({ slide }: { slide: string }) {
   return <LightboxFrame module="advisor" slide={slide} slides={slides} session={null} />;

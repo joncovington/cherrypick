@@ -382,7 +382,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
     },
     {
       id: "guide",
-      label: "guide",
+      label: "help",
       render: () => (
         <ExperimentGuideView
           url="/api/meic/profiles"
