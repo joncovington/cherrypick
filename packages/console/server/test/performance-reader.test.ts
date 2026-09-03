@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
+import Database from "better-sqlite3";
 import {
   readModulePerformance,
   performanceDbPath,
@@ -148,5 +149,28 @@ describe("readModulePerformance", () => {
     expect(out.ok).toBe(false);
     expect(out.groups).toEqual([]);
     expect(out.error).toBe("unknown schema");
+  });
+
+  it("carries exitReasons/heldBack from the ledger even when the metrics reading fails", () => {
+    // exitReasons reads straight off the ledger (readExitReasons), independent of metricsBridge --
+    // a module whose schema core.metrics doesn't yet recognise should still show its exit reasons.
+    const config = fakeConfig(null);
+    fs.mkdirSync(config.paths.curveDir, { recursive: true });
+    const db = new Database(path.join(config.paths.curveDir, "paper_trades.db"));
+    db.exec(
+      "CREATE TABLE curve_positions (position_id TEXT, book TEXT, status TEXT, exit_reason TEXT, gross_pnl REAL, fees REAL)",
+    );
+    db.prepare(
+      "INSERT INTO curve_positions VALUES ('p1','control','closed','profit_take',40.0,2.0)",
+    ).run();
+    db.close();
+
+    setMetricsCaller(() => ({ ok: false, metrics: null, error: "unavailable" }));
+    const out = readModulePerformance(config, "curve", "ALL");
+    expect(out.ok).toBe(false); // the metrics half still failed
+    expect(out.exitReasons).toEqual([
+      { tag: "control", reason: "profit_take", n: 1, net: 38.0, avgNet: 38.0 },
+    ]);
+    expect(out.heldBack).toEqual([]);
   });
 });

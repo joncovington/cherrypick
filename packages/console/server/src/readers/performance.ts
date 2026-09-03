@@ -2,6 +2,7 @@ import path from "node:path";
 import type { ConsoleConfig } from "../config.js";
 import { suiteEra } from "./db.js";
 import { readModuleMetrics, type ModuleMetricsGroup } from "../services/metricsBridge.js";
+import { readExitReasons, type ExitReasonRow, type HeldBackRow } from "./exitReasons.js";
 
 /**
  * The shared performance read: one module's calibration reading, per profile, via
@@ -55,6 +56,13 @@ export interface ModulePerformanceResult {
   era: { key: "current" | "ALL"; from: string | null; note: string | null };
   nRecords: number;
   groups: ModulePerformanceGroup[];
+  /** Realized exit reasons per tag, or `{unavailable}` for a module with no single exit-reason
+   * concept (flies) -- `readers/exitReasons.ts`, read directly (a query, not `metricsBridge`). */
+  exitReasons: ExitReasonRow[] | { unavailable: string };
+  /** What an execution gate held back before a verdict could act. Always an array, including
+   * empty -- a module with no management-events table (MEIC) has a real "nothing held back," not
+   * an unavailable read the way `exitReasons` can be. */
+  heldBack: HeldBackRow[];
   error: string | null;
 }
 
@@ -77,6 +85,11 @@ export function readModulePerformance(
   const suite = suiteEra(config.paths.orchestratorConfig);
   const start = era === "current" ? suite.from : null;
 
+  // Independent of the metrics reading -- a query straight off the ledger, not through
+  // metricsBridge -- so it's read whether or not the calibration reading itself succeeds; a
+  // module whose ledger schema `core.metrics` doesn't yet know should still show its exit reasons.
+  const exits = readExitReasons(config, module);
+
   const res = readModuleMetrics(dbPath, schema, start, null);
   if (!res.ok || res.metrics === null) {
     return {
@@ -86,6 +99,8 @@ export function readModulePerformance(
       era: { key: era, from: start, note: suite.note },
       nRecords: 0,
       groups: [],
+      exitReasons: exits.exitReasons,
+      heldBack: exits.heldBack,
       error: res.error,
     };
   }
@@ -102,6 +117,8 @@ export function readModulePerformance(
     era: { key: era, from: start, note: suite.note },
     nRecords: res.metrics.n_records,
     groups,
+    exitReasons: exits.exitReasons,
+    heldBack: exits.heldBack,
     error: null,
   };
 }
