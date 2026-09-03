@@ -2631,3 +2631,42 @@ body.lb-open {
   padding: 0.5rem 1.1rem 0;
   flex-shrink: 0;
 }
+
+.lb-footer {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-raised);
+  padding: 0.35rem 1.1rem;
+}
+
+.lb-footer-chip {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.15rem 0;
+}
+
+.lb-footer-chip:hover,
+.lb-footer-chip.active {
+  color: var(--text);
+}
+
+.lb-footer-chip.chip-warn {
+  color: var(--warn);
+}
+
+/* Opens UPWARD from the footer, over the slide body -- the same "drawer over content, page never
+   grows" idiom the Overview's status bar uses. */
+.lb-integrity-drawer {
+  max-height: min(55vh, 26rem);
+  overflow: auto;
+  padding: 0.75rem 1.1rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
+}

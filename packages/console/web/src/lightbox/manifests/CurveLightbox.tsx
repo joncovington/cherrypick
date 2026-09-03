@@ -33,7 +33,6 @@ export function CurveLightbox({ slide }: { slide: string }) {
           </div>
         ) : (
           <div className="cards cards-wide">
-            <IntegrityStrip data={data} updatedAt={dataUpdatedAt} />
             <RegimeCard series={data?.regimeSeries ?? []} today={todayRegime} updatedAt={dataUpdatedAt} />
             {isLoading ? null : <OpenTradesCard data={data} updatedAt={dataUpdatedAt} />}
             <BookComparison data={data} flipDivergence={data?.flipDivergence} updatedAt={dataUpdatedAt} />
@@ -62,6 +61,8 @@ export function CurveLightbox({ slide }: { slide: string }) {
         />
       }
       session={data?.session ?? null}
+      integrity={<IntegrityStrip data={data} updatedAt={dataUpdatedAt} />}
+      integrityAttention={(data?.integrity.measurementBreaks.length ?? 0) > 0 || (data?.integrity.schemaDrift.length ?? 0) > 0}
     />
   );
 }

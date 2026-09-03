@@ -340,11 +340,8 @@ export function EarningsLightbox({ slide }: { slide: string }) {
           <EraScope era={era} onChange={setEra} />
         </>
       }
-      persistentTop={
-        <div className="lb-persistent">
-          <IntegrityStrip data={data} updatedAt={dataUpdatedAt} />
-        </div>
-      }
+      integrity={<IntegrityStrip data={data} updatedAt={dataUpdatedAt} />}
+      integrityAttention={(data?.integrity.measurementBreaks.length ?? 0) > 0 || (data?.integrity.schemaDrift.length ?? 0) > 0}
     />
   );
 }

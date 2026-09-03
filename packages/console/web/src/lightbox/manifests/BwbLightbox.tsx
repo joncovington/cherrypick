@@ -32,7 +32,6 @@ export function BwbLightbox({ slide }: { slide: string }) {
           </div>
         ) : (
           <div className="cards cards-wide">
-            <IntegrityStrip data={data} updatedAt={dataUpdatedAt} />
             {isLoading ? null : <OpenTradesCard data={data} updatedAt={dataUpdatedAt} />}
             <FireCountsCard
               counts={data?.fireCounts ?? []}
@@ -68,6 +67,8 @@ export function BwbLightbox({ slide }: { slide: string }) {
         />
       }
       session={data?.session ?? null}
+      integrity={<IntegrityStrip data={data} updatedAt={dataUpdatedAt} />}
+      integrityAttention={(data?.integrity.measurementBreaks.length ?? 0) > 0 || (data?.integrity.schemaDrift.length ?? 0) > 0}
     />
   );
 }

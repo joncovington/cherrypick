@@ -358,11 +358,8 @@ export function FliesLightbox({ slide }: { slide: string }) {
           <ModeToggle mode={mode} onChange={setMode} />
         </>
       }
-      persistentTop={
-        <div className="lb-persistent">
-          <ModuleIntegrityStrip integrity={data?.integrity} collapseKey="flies-integrity" updatedAt={dataUpdatedAt} />
-        </div>
-      }
+      integrity={<ModuleIntegrityStrip integrity={data?.integrity} collapseKey="flies-integrity" updatedAt={dataUpdatedAt} />}
+      integrityAttention={(data?.integrity?.measurementBreaks.length ?? 0) > 0 || (data?.integrity?.schemaDrift.length ?? 0) > 0}
     />
   );
 }

@@ -47,7 +47,6 @@ export function CalendarsLightbox({ slide }: { slide: string }) {
           label: "now",
           render: () => (
             <div className="cards cards-wide">
-              <IntegrityStrip data={data} policies={policies} updatedAt={dataUpdatedAt} />
               <PlanCard data={data} updatedAt={dataUpdatedAt} />
               <EntryWindowCard data={data} updatedAt={dataUpdatedAt} />
               <PositionsCard
@@ -114,6 +113,8 @@ export function CalendarsLightbox({ slide }: { slide: string }) {
         />
       }
       session={data?.session ?? null}
+      integrity={absent ? undefined : <IntegrityStrip data={data} policies={policies} updatedAt={dataUpdatedAt} />}
+      integrityAttention={(data?.integrity.measurementBreaks.length ?? 0) > 0 || (data?.integrity.schemaDrift.length ?? 0) > 0}
     />
   );
 }
