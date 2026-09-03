@@ -81,7 +81,7 @@ function fliesNets(config: ConsoleConfig): TradeNet[] {
 }
 
 
-interface FactModule {
+export interface FactModule {
   net: number;
   closed: number;
   wins: number;
@@ -89,7 +89,7 @@ interface FactModule {
 }
 
 /** One session's per-module results, or null if the artifact is missing or unreadable. */
-function readFactSet(config: ConsoleConfig, session: string): Record<string, FactModule> | null {
+export function readFactSet(config: ConsoleConfig, session: string): Record<string, FactModule> | null {
   let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(
