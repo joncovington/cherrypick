@@ -956,3 +956,41 @@ def test_settlement_audit_bounds_how_much_the_answer_depends_on_the_price(conn):
     assert row["settle_price"] == 7500.0
     assert row["within_1pt"] == 0  # both shorts are 20 points away
     assert row["pnl_swing_1pt"] == 0.0  # ...so a point of error changes nothing here
+
+
+def test_headline_reports_open_capital_at_risk(conn):
+    """Same formula core.ledgers._meic_closed's _capital() uses for closed trades -- (wing width -
+    credit) x multiplier x quantity -- applied to still-open rows instead. Closed trades and
+    resolved-but-not-open statuses must not contribute; only 'open'/'partial' do."""
+    _insert(
+        conn,
+        ic_order_id="open-1",
+        status="open",
+        wing_width=10.0,
+        net_credit=2.0,
+        quantity=3,
+        exit_reason=None,
+    )
+    _insert(
+        conn,
+        ic_order_id="open-2",
+        status="partial",
+        wing_width=5.0,
+        net_credit=1.0,
+        quantity=1,
+        exit_reason=None,
+    )
+    # A closed trade with a much larger capital figure -- if this leaked in, the test would pass
+    # for the wrong reason (a huge number that happens to still be "at risk of being wrong").
+    _insert(conn, ic_order_id="closed-1", status="expired", wing_width=50.0, net_credit=1.0, quantity=10)
+
+    out = analytics.headline(conn)
+
+    # open-1: (10 - 2) * 100 * 3 = 2400.  open-2: (5 - 1) * 100 * 1 = 400.  Total 2800.
+    assert out["open_capital_at_risk"] == 2800.0
+
+
+def test_headline_open_capital_at_risk_is_zero_with_nothing_open(conn):
+    _insert(conn, ic_order_id="closed-1", status="expired")
+
+    assert analytics.headline(conn)["open_capital_at_risk"] == 0.0
