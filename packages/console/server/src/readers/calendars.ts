@@ -83,6 +83,40 @@ function dbPath(config: ConsoleConfig): string {
   return path.join(config.paths.calendarsDir, DB_FILE);
 }
 
+/** The same session `latestSession` resolves for every other card on this page, exposed for the
+ *  entry-attempts read below. */
+export function resolveCalendarsSession(config: ConsoleConfig): string | null {
+  return withReadOnlyDb<string | null>(dbPath(config), null, (db) => latestSession(db));
+}
+
+/**
+ * Filled/refused/no-fill counts for the one shared entry plan a week evaluates -- unlike meic/
+ * flies/pmcc/curve, calendars has no per-book arm column (`packages/console/server/src/routes/
+ * modules.ts`'s own comment: "its books share one entry plan, so there is no per-arm entry
+ * decision to show"), so this bypasses the shared `readers/attempts.ts` SPECS machinery (built
+ * around grouping by arm) rather than forcing a fake single-arm shape onto it.
+ */
+export function readCalendarsEntryAttempts(
+  config: ConsoleConfig,
+  date: string | null,
+): { tradeDate: string | null; rows: Array<{ outcome: string; blockDetail: string | null }> } {
+  const tradeDate = date ?? resolveCalendarsSession(config);
+  const empty: { tradeDate: string | null; rows: Array<{ outcome: string; blockDetail: string | null }> } = {
+    tradeDate,
+    rows: [],
+  };
+  if (tradeDate === null) return empty;
+  return withReadOnlyDb(dbPath(config), empty, (db) => ({
+    tradeDate,
+    rows: db
+      .prepare<[string], Record<string, unknown>>(
+        "SELECT outcome, block_detail FROM dc_entry_attempts WHERE trade_date = ?",
+      )
+      .all(tradeDate)
+      .map((r) => ({ outcome: str(r["outcome"]) ?? "", blockDetail: str(r["block_detail"]) })),
+  }));
+}
+
 interface CalendarsParams {
   symbols: string[];
   quantity: number | null;

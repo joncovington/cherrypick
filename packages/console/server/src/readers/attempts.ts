@@ -153,7 +153,7 @@ function downsampleTimeline(rows: AttemptRow[]): AttemptRow[] {
 }
 
 /** Modules with a per-arm entry decision. See SPECS for why calendars is not one. */
-export type AttemptsModule = "meic" | "flies" | "pmcc";
+export type AttemptsModule = "meic" | "flies" | "pmcc" | "curve";
 
 interface TableSpec {
   file: (mode: TradingMode) => string;
@@ -211,6 +211,16 @@ const SPECS: Record<AttemptsModule, TableSpec> = {
     centerColumn: "short_strike",
     spotColumn: "spot",
     // pmcc keeps neither: it has no same-strike blocking rule and no entry cadence gate.
+  },
+  curve: {
+    // Paper-only and credential-free, same as pmcc -- one ledger, no live/paper split to parse.
+    file: () => "paper_trades.db",
+    dir: (config) => config.paths.curveDir,
+    table: "curve_entry_attempts",
+    armColumn: "book",
+    centerColumn: "short_strike",
+    spotColumn: "spot",
+    // curve keeps neither: no same-strike blocking rule, no entry cadence gate.
   },
 };
 
