@@ -4,6 +4,7 @@ import { Card } from "../../components/DataTable";
 import { LoopPill } from "../../components/ScopeBar";
 import { IntegrityStrip } from "../../pages/Bwb/IntegrityStrip";
 import { BookComparison, FireCountsCard, OpenTradesCard } from "../../pages/Bwb/CurrentStateCards";
+import { DecisionsCard } from "../../components/DecisionsCard";
 import { HistoryTab } from "../../pages/Bwb/HistoryTab";
 import { HelpTab } from "../../pages/Bwb/HelpTab";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
@@ -42,6 +43,7 @@ export function BwbLightbox({ slide }: { slide: string }) {
               }
               updatedAt={dataUpdatedAt}
             />
+            <DecisionsCard module="bwb" />
             <BookComparison data={data} updatedAt={dataUpdatedAt} />
           </div>
         ),

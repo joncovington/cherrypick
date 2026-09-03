@@ -6,6 +6,7 @@ import { LoopPill, ScopeSelect } from "../../components/ScopeBar";
 import { ArmRail, AttemptTimeline } from "../../components/Attempts";
 import { IntegrityStrip } from "../../pages/Pmcc/IntegrityStrip";
 import { BookComparison, OpenTradesCard } from "../../pages/Pmcc/CurrentStateCards";
+import { DecisionsCard } from "../../components/DecisionsCard";
 import { HistoryTab } from "../../pages/Pmcc/HistoryTab";
 import { HelpTab } from "../../pages/Pmcc/HelpTab";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
@@ -117,6 +118,7 @@ export function PmccLightbox({ slide }: { slide: string }) {
                 );
               })()}
             </div>
+            <DecisionsCard module="pmcc" />
             <BookComparison data={data} updatedAt={dataUpdatedAt} symbol={symbol} />
           </div>
         ),

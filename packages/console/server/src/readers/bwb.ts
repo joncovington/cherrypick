@@ -77,6 +77,13 @@ function dbPath(config: ConsoleConfig): string {
   return path.join(config.paths.bwbDir, DB_FILE);
 }
 
+/** The same session `latestSession` resolves for every other card on this page, exposed for
+ *  readers outside this file (the decisions card) that need it without duplicating the fallback
+ *  chain -- see pmcc's `resolvePmccSession` for the incident this pattern exists to prevent. */
+export function resolveBwbSession(config: ConsoleConfig): string | null {
+  return withReadOnlyDb<string | null>(dbPath(config), null, (db) => latestSession(db));
+}
+
 /** The session every card on the page names -- the loop's own iterations first, the pmcc/curve
  * reasoning verbatim: the loop ticks on days that take no position at all. */
 function latestSession(db: DatabaseHandle): string | null {

@@ -3,6 +3,7 @@ import type { TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { readMeicForest } from "../readers/meic.js";
 import { readEntryAttempts } from "../readers/attempts.js";
+import { readDecisions } from "../readers/decisions.js";
 import { readFliesArmGuide, readMeicProfileGuide } from "../readers/experimentGuide.js";
 import { readOccupancy } from "../readers/occupancy.js";
 import {
@@ -146,6 +147,12 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const f = parseFliesFilter(req.query);
     return readEntryAttempts(config, "pmcc", "paper", f.date ?? resolvePmccSession(config));
   });
+  // The collapsed decision journal (readers/decisions.ts) -- curve/pmcc/bwb all write it, none had
+  // a console reader before this. No date param on purpose: each module's own persistentTop/"now"
+  // card always means "this session", matching entry-attempts-today beside it.
+  app.get("/api/curve/decisions", async () => readDecisions(config, "curve", null));
+  app.get("/api/pmcc/decisions", async () => readDecisions(config, "pmcc", null));
+  app.get("/api/bwb/decisions", async () => readDecisions(config, "bwb", null));
   app.get("/api/meic/loop", async (req) =>
     readMeicLoopStatus(config, parseMode(req.query), parseMeicScope(req.query)),
   );

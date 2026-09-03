@@ -82,6 +82,13 @@ function dbPath(config: ConsoleConfig): string {
   return path.join(config.paths.curveDir, DB_FILE);
 }
 
+/** The same session `latestSession` resolves for every other card on this page, exposed for
+ *  readers outside this file (the decisions card) that need it without duplicating the fallback
+ *  chain -- see pmcc's `resolvePmccSession` for the incident this pattern exists to prevent. */
+export function resolveCurveSession(config: ConsoleConfig): string | null {
+  return withReadOnlyDb<string | null>(dbPath(config), null, (db) => latestSession(db));
+}
+
 /** The module's declared knobs, resolved the way the module itself resolves them (deployed config
  * first, then the repo's, then the shipped example). Missing config degrades to null rather than
  * failing the page. */
