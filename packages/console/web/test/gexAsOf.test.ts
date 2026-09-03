@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { formatAsOf, asOfIsToday } from "../src/pages/Gex/GexPage";
+import { formatAsOf, asOfIsToday } from "../src/lightbox/manifests/GexLightbox";
 
 /**
  * A GEX profile's "as of" chip carried a bare time, which reads as "now".

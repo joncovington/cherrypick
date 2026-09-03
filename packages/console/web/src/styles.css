@@ -960,6 +960,15 @@ select.text-input {
   min-width: 0;
 }
 
+/* Bounds the by-strike chart's own height instead of letting it grow with the strike count (a
+   tight-strike symbol can have hundreds of rows within the +/-120 window) -- the SVG's viewBox
+   still reflects the true row count, so preserveAspectRatio scales the WHOLE chart down to fit
+   this box rather than cropping or forcing the lightbox body to scroll past it. */
+.gex-chart-fit {
+  height: min(56vh, 620px);
+  width: 100%;
+}
+
 .gex-rail {
   width: 15.5rem;
   flex-shrink: 0;

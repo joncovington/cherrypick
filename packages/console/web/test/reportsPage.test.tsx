@@ -17,6 +17,14 @@ import type { MorningPayload, ReviewPayload } from "@console/shared";
  * the loading state, and a crash in the loaded state (reading a field off an absent block) sailed
  * straight through a green suite into a blank page. A render test that never renders the data is
  * not a render test.
+ *
+ * **Renders `MorningPage`/`ReviewPage` directly, not through `ReportsLightbox`** (2026-09): the
+ * lightbox portals to `document.body` via `createPortal`, which has nowhere to mount under
+ * `renderToString` and deliberately renders null there (see `LightboxFrame`'s own comment) — a
+ * real render crash inside the report content would be invisible if this test went through that
+ * wrapper. `routes.test.tsx` covers that the `/reports` route itself resolves; this file covers
+ * that the actual report content survives every shape of missing data, which is the crash class
+ * this file exists for.
  */
 
 const PACK_BASE = {
@@ -63,47 +71,52 @@ vi.mock("../src/lib/api", () => ({
   useReview: () => ({ data: review, isLoading: false, isError: false }),
 }));
 
-const { ReportsPage } = await import("../src/pages/Reports/ReportsPage");
+const { MorningPage } = await import("../src/pages/Morning/MorningPage");
+const { ReviewPage } = await import("../src/pages/Review/ReviewPage");
 
 function setMorning(deployment: unknown): void {
   const current = deployment === "absent" ? { ...PACK_BASE } : { ...PACK_BASE, deployment };
   morning = { sessions: ["2026-08-17"], current, note: null } as unknown as MorningPayload;
 }
 
-function render(path: string): string {
+function renderMorning(): string {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return renderToString(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[path]}>
-        <ReportsPage />
+      <MemoryRouter initialEntries={["/reports"]}>
+        <MorningPage />
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
 
-describe("the Reports page renders", () => {
-  it("defaults to the morning report, with both tabs on screen", () => {
+function renderReview(): string {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return renderToString(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={["/reports"]}>
+        <ReviewPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+describe("the report pages render", () => {
+  it("MorningPage renders the morning report", () => {
     setMorning(DEPLOYMENT);
-    const html = render("/reports");
-    expect(html).toContain("Morning report");
-    expect(html).toContain("EOD");
+    expect(renderMorning()).toContain("Morning report");
   });
 
-  it("shows the EOD review when the tab says so", () => {
+  it("ReviewPage renders the suite review", () => {
     setMorning(DEPLOYMENT);
-    expect(render("/reports?tab=eod")).toContain("Suite review");
-  });
-
-  it("an unfamiliar tab falls back to morning rather than an empty page", () => {
-    setMorning(DEPLOYMENT);
-    expect(render("/reports?tab=nonsense")).toContain("Morning report");
+    expect(renderReview()).toContain("Suite review");
   });
 });
 
 describe("the deployment card survives every shape of missing block", () => {
   it("renders the score and its record-only framing when the block is there", () => {
     setMorning(DEPLOYMENT);
-    const html = render("/reports");
+    const html = renderMorning();
     expect(html).toContain("Deployment score");
     expect(html).toContain("71.3");
     expect(html).toContain("record-only");
@@ -112,14 +125,14 @@ describe("the deployment card survives every shape of missing block", () => {
 
   it("an unmeasured signal shows an em dash, never a zero contribution", () => {
     setMorning(DEPLOYMENT);
-    const html = render("/reports");
+    const html = renderMorning();
     expect(html).toContain("Credit proxy");
     expect(html).toContain("—");
   });
 
   it("a null block simply omits the card", () => {
     setMorning(null);
-    const html = render("/reports");
+    const html = renderMorning();
     expect(html).toContain("Morning report");
     expect(html).not.toContain("Deployment score");
   });
@@ -129,14 +142,13 @@ describe("the deployment card survives every shape of missing block", () => {
     // and omit it entirely. `deployment === null` sails past undefined; the first property read
     // then throws and React renders nothing at all.
     setMorning("absent");
-    const html = render("/reports");
+    const html = renderMorning();
     expect(html).toContain("Morning report");
     expect(html).not.toContain("Deployment score");
   });
 
   it("a scoreless block says why instead of showing a number", () => {
     setMorning({ ...DEPLOYMENT, score: null, zone: null, reason: "only 2 of 5 signals measured" });
-    const html = render("/reports");
-    expect(html).toContain("only 2 of 5 signals measured");
+    expect(renderMorning()).toContain("only 2 of 5 signals measured");
   });
 });
