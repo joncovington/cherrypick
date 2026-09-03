@@ -6,6 +6,7 @@ import { IntegrityStrip } from "../../pages/Curve/IntegrityStrip";
 import { BookComparison, RegimeCard, OpenTradesCard } from "../../pages/Curve/CurrentStateCards";
 import { HistoryTab } from "../../pages/Curve/HistoryTab";
 import { HelpTab } from "../../pages/Curve/HelpTab";
+import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { LightboxFrame } from "../LightboxFrame";
 import type { SlideDef } from "../types";
 
@@ -40,6 +41,7 @@ export function CurveLightbox({ slide }: { slide: string }) {
         ),
     },
     { id: "history", label: "history", render: () => <HistoryTab /> },
+    { id: "performance", label: "performance", render: () => <PerformanceSlide module="curve" /> },
     { id: "guide", label: "help", render: () => <HelpTab data={data} /> },
   ];
 
