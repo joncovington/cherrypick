@@ -301,7 +301,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
     { id: "history", label: "history", render: () => <HistoryTab mode={mode} filter={multiDayFilter} onReplayDay={replayDay} /> },
     {
       id: "guide",
-      label: "guide",
+      label: "help",
       render: () => (
         <ExperimentGuideView
           url="/api/flies/arms"

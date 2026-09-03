@@ -173,7 +173,7 @@ export function GexLightbox({ slide }: { slide: string }) {
   const slides: SlideDef[] = [
     {
       id: "gex",
-      label: "GEX",
+      label: "gex",
       render: () => (
         <div className="cards cards-wide">
           <section className="card view-fade">
@@ -227,7 +227,7 @@ export function GexLightbox({ slide }: { slide: string }) {
     },
     {
       id: "skew",
-      label: "IV Skew",
+      label: "iv skew",
       render: () => (
         <div className="cards cards-wide">
           <section className="card view-fade">
@@ -261,7 +261,7 @@ export function GexLightbox({ slide }: { slide: string }) {
     },
     {
       id: "volume",
-      label: "Volume",
+      label: "volume",
       render: () => (
         <div className="cards cards-wide">
           <section className="card view-fade">
@@ -284,7 +284,7 @@ export function GexLightbox({ slide }: { slide: string }) {
     },
     {
       id: "history",
-      label: "History",
+      label: "history",
       render: () => (
         <div className="cards cards-wide">
           <DataCard
