@@ -17,6 +17,7 @@ import { HistoryTab } from "../../pages/Flies/HistoryTab";
 import { JournalCard } from "../../pages/Flies/JournalCard";
 import { DivergenceCard } from "../../pages/Flies/DivergenceCard";
 import { PerformanceTab } from "../../pages/Flies/PerformanceTab";
+import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { ExperimentGuideView } from "../../components/ExperimentGuide";
 import { structureLabel } from "../../pages/Flies/structure";
 import { LightboxFrame } from "../LightboxFrame";
@@ -296,6 +297,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
       ),
     },
     { id: "performance", label: "performance", render: () => <PerformanceTab mode={mode} filter={multiDayFilter} /> },
+    { id: "calibration", label: "calibration", render: () => <PerformanceSlide module="flies" /> },
     { id: "history", label: "history", render: () => <HistoryTab mode={mode} filter={multiDayFilter} onReplayDay={replayDay} /> },
     {
       id: "guide",
