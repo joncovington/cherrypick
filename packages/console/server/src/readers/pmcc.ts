@@ -118,6 +118,22 @@ function dbPath(config: ConsoleConfig): string {
 }
 
 /**
+ * The same session every other card on the page names (`latestSession`'s own docstring), exposed
+ * for `/api/pmcc/attempts` -- that route calls the shared `readEntryAttempts` (also meic/flies'),
+ * which resolves its OWN date independently as `MAX(trade_date)` over the attempts table alone.
+ * For meic/flies that coincides with "the loop's last session" closely enough that it never showed;
+ * PMCC's loop ticks a few times a day rather than continuously, so a run that found nothing to
+ * evaluate advances the session with no new attempt row, and the attempts table's own MAX(trade_date)
+ * is left pointing at an OLDER date than the session every other pmcc card names -- the 2026-09
+ * incident: the timeline read "2026-08-27" while "today" (with genuinely nothing evaluated) read
+ * empty, both correctly labelled and irreconcilable, the exact failure this file's own
+ * `latestSession` was already written to prevent for its own cards.
+ */
+export function resolvePmccSession(config: ConsoleConfig): string | null {
+  return withReadOnlyDb<string | null>(dbPath(config), null, (db) => latestSession(db));
+}
+
+/**
  * The module's declared knobs, resolved the way the module itself resolves them: deployed config
  * first, then the repo's, then the shipped example. Missing config is not fatal — the thresholds
  * degrade to null and the cards that need them say so, rather than the page failing whole.
