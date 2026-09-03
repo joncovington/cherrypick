@@ -133,12 +133,13 @@ export function GexProfileChart({ series, view, spot, zeroGamma, callWall, putWa
   const hovered = hover !== null ? rows[hover.index] : undefined;
 
   return (
-    <div style={{ position: "relative" }}>
+    <div className="gex-chart-fit" style={{ position: "relative" }}>
     <svg
       viewBox={`0 0 ${width} ${height}`}
       role="img"
       aria-label="GEX by strike"
-      style={{ width: "100%", height: "auto", display: "block" }}
+      preserveAspectRatio="xMidYMid meet"
+      style={{ width: "100%", height: "100%", display: "block" }}
       onMouseLeave={() => setHover(null)}
     >
       {/* faint vertical gridlines, chart.js-style */}

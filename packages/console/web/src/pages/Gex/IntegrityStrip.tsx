@@ -27,6 +27,17 @@ function age(seconds: number | null): string {
  * any page would have shown it. Staleness is measured against the FRESHEST series rather than a
  * calendar, so it needs no holiday table to be right.
  */
+/** Whether this reading has anything the footer chip should flag -- same thresholds the strip
+ *  itself renders against, exported so the lightbox wrapping this in a footer drawer can tone its
+ *  chip without recomputing a second opinion of "stale". */
+export function gexHasAttention(data: GexPayload | undefined): boolean {
+  const i = data?.integrity;
+  if (i === undefined) return false;
+  const stale = i.latest.filter((r) => r.ageSeconds === null || r.ageSeconds > STALE_SECONDS);
+  const behind = i.closeSeries.filter((r) => r.daysBehind > STALE_DAYS);
+  return stale.length > 0 || behind.length > 0;
+}
+
 export function IntegrityStrip({ data, updatedAt }: { data: GexPayload | undefined; updatedAt?: number }) {
   const i = data?.integrity;
   if (i === undefined) return null;
