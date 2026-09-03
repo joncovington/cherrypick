@@ -2489,3 +2489,145 @@ select.text-input {
   z-index: 25;
   box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.5);
 }
+
+/* ---- Module lightbox carousel (2026-09) ------------------------------------------------------- */
+/* Each module opens as a full-screen carousel over the Overview (the backdrop stays mounted and
+   polling, inert while this is open) -- see web/src/lightbox/. */
+
+.lb-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 6, 8, 0.72);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.lb-frame {
+  width: min(1600px, 100%);
+  height: 100%;
+  max-height: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  outline: none;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+
+.lb-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.lb-head h1 {
+  font-size: 1.05rem;
+  margin: 0;
+  letter-spacing: 0.03em;
+}
+
+.lb-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.lb-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  padding: 0 0.3rem;
+}
+
+.lb-arrow {
+  width: 1.9rem;
+  height: 1.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-card);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.lb-arrow:hover {
+  border-color: var(--text-muted);
+}
+
+.lb-arrow.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.lb-rail {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  padding: 0.55rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+  flex-shrink: 0;
+}
+
+.lb-rail-chip {
+  font: inherit;
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+  padding: 0.25rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.lb-rail-chip:hover {
+  color: var(--text);
+}
+
+.lb-rail-chip.active {
+  color: var(--text);
+  background: rgba(210, 63, 87, 0.12);
+  border-color: var(--accent);
+}
+
+.lb-rail-chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.lb-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem 1.1rem 1.25rem;
+}
+
+/* The Overview stays mounted and polling behind the lightbox, but must not be reachable by tab
+   or by a stray click while a carousel dialog is open. */
+.shell[inert] {
+  pointer-events: none;
+}
+
+body.lb-open {
+  overflow: hidden;
+}
+
+.lb-persistent {
+  padding: 0.5rem 1.1rem 0;
+  flex-shrink: 0;
+}

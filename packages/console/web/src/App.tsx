@@ -3,13 +3,7 @@ import { ReportsPage } from "./pages/Reports/ReportsPage";
 import { AdvisorPage } from "./pages/Advisor/AdvisorPage";
 import { Shell } from "./components/shell/Shell";
 import { OverviewPage } from "./pages/Overview/OverviewPage";
-import { MeicPage } from "./pages/Meic/MeicPage";
-import { FliesPage } from "./pages/Flies/FliesPage";
-import { PmccPage } from "./pages/Pmcc/PmccPage";
-import { CurvePage } from "./pages/Curve/CurvePage";
-import { BwbPage } from "./pages/Bwb/BwbPage";
-import { CalendarsPage } from "./pages/Calendars/CalendarsPage";
-import { EarningsPage } from "./pages/Earnings/EarningsPage";
+import { OverviewWithLightbox } from "./pages/Overview/OverviewWithLightbox";
 import { GexPage } from "./pages/Gex/GexPage";
 import { ConfigPage } from "./pages/Config/ConfigPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
@@ -30,15 +24,13 @@ export default function App() {
             missing route, actively misleading for a deliberately removed one. */}
         <Route path="champions" element={<Navigate to="/advisor" replace />} />
         <Route path="advisor" element={<AdvisorPage />} />
-        <Route path="meic" element={<MeicPage />} />
-        <Route path="flies" element={<FliesPage />} />
-        <Route path="pmcc" element={<PmccPage />} />
-        <Route path="curve" element={<CurvePage />} />
-        <Route path="bwb" element={<BwbPage />} />
-        <Route path="calendars" element={<CalendarsPage />} />
-        <Route path="earnings" element={<EarningsPage />} />
+        {/* GEX and Advisor are suite-level surfaces, not module books -- they keep their own
+            tabbed pages. Every trading module below opens as a carousel over the Overview
+            (`OverviewWithLightbox`); an unknown module name still 404s. */}
         <Route path="gex" element={<GexPage />} />
         <Route path="config" element={<ConfigPage />} />
+        <Route path=":module" element={<OverviewWithLightbox />} />
+        <Route path=":module/:slide" element={<OverviewWithLightbox />} />
         {/* Catch-all. Without it an unmatched path renders NOTHING — a blank screen that reads as
             a crashed app, which is what a tab open across a rebuild sees when it asks the old
             bundle for a route only the new one has. */}
