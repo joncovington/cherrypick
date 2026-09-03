@@ -5,6 +5,8 @@ import { useQuote } from "../../lib/useQuote";
 import { fmtMoney } from "../../components/DataTable";
 import { fliesQuery, type FliesFilter } from "../../lib/api";
 import { AXIS_MUTED } from "../../components/Charts";
+import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
+import { niceTicks } from "../../components/chart/scales";
 
 interface PayoffCurve {
   empty: boolean;
@@ -43,10 +45,6 @@ function useForest(mode: TradingMode, filter: FliesFilter) {
   });
 }
 
-// No brand accent (#d23f57) here -- reserved for brand/live/alert moments, not "just the first arm".
-const ARM_COLORS = ["#7aa2ff", "#43b57a", "#d9a13b", "#a06bd9", "#4fc3d9", "#e88a5c", "#8a9c4a", "#c9628a", "#6bd9c4"];
-const SPOT_COLOR = "#d9a13b";
-
 /** A payoff is genuinely flat beyond its own scanned range — carry the floor to the window edges. */
 function extendFlat(xs: number[], ys: number[], xMin: number, xMax: number): { xs: number[]; ys: number[] } {
   const ex = [...xs];
@@ -77,16 +75,6 @@ function visibleYRange(xs: number[], ys: number[], xMin: number, xMax: number): 
     mn = mx = ext.ys[0]!;
   }
   return { min: mn, max: mx };
-}
-
-function ticksFor(min: number, max: number, target: number): number[] {
-  const span = max - min || 1;
-  const raw = span / target;
-  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-  const step = [1, 2, 5, 10].map((k) => k * mag).find((s) => span / s <= target + 1) ?? 10 * mag;
-  const out: number[] = [];
-  for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) out.push(v);
-  return out;
 }
 
 /** The old page's sentence shape: "gex — worst case -$224.13 at 7745, profitable between 7728 and 7733, and loses outside that band." */
@@ -201,7 +189,7 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
         onMouseLeave={() => setHover(null)}
       >
         {/* grid + ticks */}
-        {ticksFor(yMin, yMax, 5).map((v) => (
+        {niceTicks(yMin, yMax, 5).map((v) => (
           <g key={`y${v}`}>
             <line x1={pad.l} y1={Y(v)} x2={width - pad.r} y2={Y(v)} stroke={Math.abs(v) < 1e-9 ? "#3d4653" : "#15181e"} />
             <text x={4} y={Y(v) + 3} fontSize={9} fill={AXIS_MUTED} fontFamily="Consolas, monospace">
@@ -209,7 +197,7 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
             </text>
           </g>
         ))}
-        {ticksFor(xMin, xMax, 6).map((v) => (
+        {niceTicks(xMin, xMax, 6).map((v) => (
           <g key={`x${v}`}>
             <line x1={X(v)} y1={pad.t} x2={X(v)} y2={height - pad.b} stroke="#15181e" />
             <text x={X(v)} y={height - 8} fontSize={9} fill={AXIS_MUTED} textAnchor="middle" fontFamily="Consolas, monospace">

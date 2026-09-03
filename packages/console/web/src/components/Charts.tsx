@@ -1,4 +1,5 @@
 import { fmtMoney } from "./DataTable";
+import { niceTicks } from "./chart/scales";
 
 /** The one muted color every hand-rolled SVG chart's axis/legend text should use -- the real
     design token, not each file's own guess at a grey (previously #82878f/#6c7480/#9aa3ad/#5c626d
@@ -12,15 +13,9 @@ export const AXIS_FONT = { fontSize: 9, fill: AXIS_MUTED, fontFamily: "Consolas,
 // on "just the first series," shown constantly and neutrally.
 export const SERIES_COLORS = ["#7aa2ff", "#43b57a", "#d9a13b", "#a06bd9", "#4fc3d9", "#e88a5c", "#8a9c4a"];
 
-export function niceTicks(min: number, max: number, target: number): number[] {
-  const span = max - min || 1;
-  const raw = span / target;
-  const mag = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1e-9))));
-  const step = [1, 2, 5, 10].map((k) => k * mag).find((s) => span / s <= target + 1) ?? 10 * mag;
-  const out: number[] = [];
-  for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) out.push(v);
-  return out;
-}
+// Re-exported for the ~existing call sites that import niceTicks from here -- the one
+// implementation now lives in components/chart/scales.ts, alongside the rest of the kit.
+export { niceTicks };
 
 interface LineSeries {
   label: string;

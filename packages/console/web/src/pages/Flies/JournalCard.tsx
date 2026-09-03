@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { fliesQuery, type FliesFilter } from "../../lib/api";
+import { timeTicks } from "../../components/chart/scales";
+import { minuteOf, hhmm } from "../../components/chart/time";
 
 interface JournalRow {
   arm: string;
@@ -27,21 +29,6 @@ function useJournal(mode: TradingMode, filter: FliesFilter) {
   });
 }
 
-const minuteOf = (ts: string): number => {
-  const hm = ts.slice(11, 16);
-  return Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3, 5));
-};
-const hhmm = (m: number): string =>
-  `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(Math.round(m % 60)).padStart(2, "0")}`;
-
-function timeTicks(min: number, max: number, target: number): number[] {
-  const span = max - min || 1;
-  const steps = [5, 10, 15, 30, 60, 120];
-  const step = steps.find((s) => span / s <= target) ?? 120;
-  const out: number[] = [];
-  for (let v = Math.ceil(min / step) * step; v <= max; v += step) out.push(v);
-  return out;
-}
 
 /**
  * The decision journal: a Gantt strip of collapsed runs (one lane per
