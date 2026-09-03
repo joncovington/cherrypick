@@ -627,9 +627,17 @@ def test_fetch_entry_window_calendar_bmo_half_is_the_next_TRADING_day(monkeypatc
     assert [r["symbol"] for r in result] == ["FRI_AMC", "MON_BMO"]
 
 
-def test_fetch_entry_window_calendar_admits_blank_timing_only_for_covered_symbols(monkeypatch):
-    """A missing `when` on the scan date is read as AMC, but only for symbols this morning's
-    forward scan measured -- that set is what keeps the ~8s-per-symbol scan inside its window."""
+def test_fetch_entry_window_calendar_admits_every_blank_timing_on_the_scan_date(monkeypatch):
+    """A missing `when` on the scan date is read as AMC for EVERY symbol, not only ones a prior
+    snapshot happened to cover.
+
+    This used to be gated on membership in `assume_amc_for`, and the gate produced its own
+    2026-08-17..24 outage: the forward scan's snapshot came back empty, the gate read that as
+    "admit nothing", and every unannotated row -- 44% of an ordinary night's calendar --
+    vanished with it. The cost the gate was built to control (~250 rows at ~8s each) is bounded
+    by `entry_scan_budget_seconds` regardless of how many rows this function returns, so the
+    gate was redundant with a control that already existed.
+    """
     _timing_calendar(
         monkeypatch,
         {
@@ -643,11 +651,43 @@ def test_fetch_entry_window_calendar_admits_blank_timing_only_for_covered_symbol
     result = scanner.fetch_entry_window_calendar(
         {}, today=date(2026, 7, 7), assume_amc_for={"COVERED", "ALSO_COVERED"}
     )
-    assert [r["symbol"] for r in result] == ["COVERED", "ALSO_COVERED"]
+    assert {r["symbol"] for r in result} == {"COVERED", "ALSO_COVERED", "UNCOVERED"}
     # Normalized, not left blank: reaction_date/select_front_expiration branch on the exact string,
     # and a blank one would pick a front expiration that expires before the event's move.
     assert all(r["timing"] == scanner.TIMING_AMC for r in result)
     assert all(r["timing_assumed"] is True for r in result)
+
+
+def test_fetch_entry_window_calendar_without_a_priority_set_still_admits_blanks(monkeypatch):
+    """No snapshot (or a stale one) must degrade to "no reordering", never back to "admit
+    nothing" -- that reversion is the exact failure this function used to have."""
+    _timing_calendar(
+        monkeypatch,
+        {
+            "2026-07-07": [
+                {"symbol": "BLANK", "timing": None},
+                {"symbol": "ANNOTATED", "timing": "After market close"},
+            ],
+        },
+    )
+    result = scanner.fetch_entry_window_calendar({}, today=date(2026, 7, 7))
+    assert {r["symbol"] for r in result} == {"BLANK", "ANNOTATED"}
+
+
+def test_fetch_entry_window_calendar_annotated_rows_are_never_gated_by_the_priority_set(monkeypatch):
+    """The asymmetry the old gate had: an ANNOTATED row was always admitted regardless of the
+    priority set, while an unannotated row for the same kind of name needed to be in it. That
+    inconsistency is worth pinning directly, not just as a side effect of the blanks test above."""
+    _timing_calendar(
+        monkeypatch,
+        {
+            "2026-07-07": [{"symbol": "ANNOTATED_OUTSIDE_UNIVERSE", "timing": "After market close"}],
+        },
+    )
+    result = scanner.fetch_entry_window_calendar(
+        {}, today=date(2026, 7, 7), assume_amc_for={"SOME_OTHER_SYMBOL"}
+    )
+    assert [r["symbol"] for r in result] == ["ANNOTATED_OUTSIDE_UNIVERSE"]
 
 
 def test_fetch_entry_window_calendar_blank_timing_on_the_next_session_is_not_admitted(monkeypatch):
@@ -665,20 +705,42 @@ def test_fetch_entry_window_calendar_blank_timing_on_the_next_session_is_not_adm
     assert result == []
 
 
-def test_fetch_entry_window_calendar_without_a_covered_set_falls_back_to_exact_timing(monkeypatch):
-    """No snapshot (or a stale one) degrades to the old exact-timing behavior -- never to an
-    unbounded scan of every unannotated row on the calendar."""
+def test_fetch_entry_window_calendar_orders_annotated_before_priority_before_the_rest(monkeypatch):
+    """`assume_amc_for` no longer decides admission, only where a row lands. If the scan's budget
+    ever binds, the names already known to be liquid-enough-to-trade should be the ones that
+    finish -- so they have to come out ahead of an arbitrary unannotated name, and a row with a
+    calendar-stated timing (the highest-confidence class) ahead of both."""
     _timing_calendar(
         monkeypatch,
         {
             "2026-07-07": [
-                {"symbol": "BLANK", "timing": None},
+                {"symbol": "BLANK_OUTSIDE", "timing": None},
                 {"symbol": "ANNOTATED", "timing": "After market close"},
+                {"symbol": "BLANK_PRIORITY", "timing": None},
+            ],
+        },
+    )
+    result = scanner.fetch_entry_window_calendar(
+        {}, today=date(2026, 7, 7), assume_amc_for={"BLANK_PRIORITY"}
+    )
+    assert [r["symbol"] for r in result] == ["ANNOTATED", "BLANK_PRIORITY", "BLANK_OUTSIDE"]
+
+
+def test_fetch_entry_window_calendar_ordering_is_stable_within_a_band(monkeypatch):
+    """The sort only ever reshuffles ACROSS bands. Two unannotated, non-priority rows must keep
+    their original relative order, or a symptom-free reshuffle would be silently changing which
+    names get dropped under budget pressure for no reason tied to priority at all."""
+    _timing_calendar(
+        monkeypatch,
+        {
+            "2026-07-07": [
+                {"symbol": "BLANK_FIRST", "timing": None},
+                {"symbol": "BLANK_SECOND", "timing": None},
             ],
         },
     )
     result = scanner.fetch_entry_window_calendar({}, today=date(2026, 7, 7))
-    assert [r["symbol"] for r in result] == ["ANNOTATED"]
+    assert [r["symbol"] for r in result] == ["BLANK_FIRST", "BLANK_SECOND"]
 
 
 # --- compute_historical_move_stats (mocked DB layer, via compute_winrate) --------
