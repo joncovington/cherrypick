@@ -24,6 +24,8 @@ Commands:
   log_scan --data '{"scan_date": "YYYY-MM-DD", "symbol": "...", "strategy": "iron_fly",
       "tier": "...", "outcome": "...", "reason": "...", "profile": "balanced"}'
   get_pnl_summary [--strategy X] [--profile X]
+  get_excursions [--strategy X] [--profile X]  -- MAE/MFE per closed trade, mirrored from the
+      already-tracked max_unrealized_pnl/min_unrealized_pnl excursion columns
   record_mark / record_management_event / record_iteration --data '{...}'
   set_open_legs --data '{"order_id": "...", "streamer_symbols": [...]}' / clear_open_legs --order_id X
   record_measurement_break --data '{...}' / get_measurement_breaks
@@ -61,6 +63,7 @@ spread at all, so a slice on `bid_ask_spread_pct` sees nothing before that date.
 import argparse
 import json
 import sqlite3
+import statistics
 import sys
 import time
 from datetime import date as _date
@@ -1237,6 +1240,63 @@ def cmd_get_pnl_summary(args) -> dict:
     }
 
 
+def cmd_get_excursions(args) -> dict:
+    """MAE/MFE per closed trade (docs/metrics-plan.md Phase 2), mirrored from columns this module
+    already tracks live rather than derived from a raw mark path -- `max_unrealized_pnl`/
+    `min_unrealized_pnl` are updated on every mark (see the UPDATE in `record_mark`), so the
+    running best/worst are already computed by the time a trade closes. `core.metrics.excursions`
+    exists for a module that must derive MAE/MFE from an ordered tick series; this module already
+    HAS the two extremes and only needs to expose them in the same {"positions", "mae_distribution",
+    "mfe_distribution"} shape the other modules use, clamped the same way (mae<=0, mfe>=0, so a
+    trade that was never underwater/never ahead reads 0.0, never a fabricated adverse/favorable
+    number). A trade with neither column populated (pre-instrumentation, or never marked) is
+    skipped from the per-trade list rather than reported with a fabricated 0.0 -- the two columns
+    are always written together (`record_mark`'s single UPDATE), so either one present implies
+    both are."""
+    strategy = getattr(args, "strategy", None)
+    profile = getattr(args, "profile", None)
+    conn = _conn()
+    try:
+        query = "SELECT order_id, strategy, symbol, max_unrealized_pnl, min_unrealized_pnl FROM trades WHERE closed_at IS NOT NULL"
+        params: list = []
+        if strategy:
+            query += " AND strategy = ?"
+            params.append(strategy)
+        if profile:
+            query += " AND profile = ?"
+            params.append(profile)
+        rows = conn.execute(query, params).fetchall()
+    finally:
+        conn.close()
+
+    positions = []
+    for r in rows:
+        if r["max_unrealized_pnl"] is None and r["min_unrealized_pnl"] is None:
+            continue
+        positions.append(
+            {
+                "order_id": r["order_id"],
+                "strategy": r["strategy"],
+                "symbol": r["symbol"],
+                "mae": round(min(r["min_unrealized_pnl"] or 0.0, 0.0), 2),
+                "mfe": round(max(r["max_unrealized_pnl"] or 0.0, 0.0), 2),
+            }
+        )
+
+    def _distribution(key: str) -> dict:
+        values = [p[key] for p in positions]
+        return {"median": round(statistics.median(values), 2) if values else None, "n": len(values)}
+
+    return {
+        "ok": True,
+        "strategy_filter": strategy,
+        "profile_filter": profile,
+        "positions": positions,
+        "mae_distribution": _distribution("mae"),
+        "mfe_distribution": _distribution("mfe"),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1247,6 +1307,10 @@ def main() -> None:
     p_pnl = sub.add_parser("get_pnl_summary")
     p_pnl.add_argument("--strategy", default=None)
     p_pnl.add_argument("--profile", default=None)
+
+    p_exc = sub.add_parser("get_excursions")
+    p_exc.add_argument("--strategy", default=None)
+    p_exc.add_argument("--profile", default=None)
 
     p_save_trade = sub.add_parser("save_trade")
     p_save_trade.add_argument("--data", required=True)
@@ -1314,6 +1378,7 @@ def main() -> None:
         "save_entry_review": cmd_save_entry_review,
         "get_entry_reviews": cmd_get_entry_reviews,
         "get_pnl_summary": cmd_get_pnl_summary,
+        "get_excursions": cmd_get_excursions,
         "record_mark": cmd_record_mark,
         "record_management_event": cmd_record_management_event,
         "record_iteration": cmd_record_iteration,
