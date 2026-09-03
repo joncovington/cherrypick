@@ -642,8 +642,20 @@ def run_iteration(config: dict | None = None, now: datetime | None = None) -> di
         # narrow its candidate list, and the console's Upcoming surface reads the same snapshot.
         _, _, days = _forward_scan_settings(config)
         result = symbol_watch.refresh_symbol_watch(days=days, config=config)
-        found = len(result.get("entries") or result.get("symbols") or [])
-        record["forward_scan"] = {"days": days, "symbols": found, "ok": result.get("ok", True)}
+        # `refresh_symbol_watch` returns {"ok", "total", "done", "skipped"}. It has never returned
+        # `entries` or `symbols`, so the old `len(result.get("entries") or result.get("symbols")
+        # or [])` read 0 on EVERY session from the day this counter was added -- including sessions
+        # that went on to screen 198 candidates. The comment below says the count exists to separate
+        # "the scan found nothing" from "the scan is broken"; hardcoded to zero it did the opposite,
+        # and it made the 2026-08-17..24 block look like a dead scanner when the snapshot was fine.
+        found = int(result.get("done") or 0)
+        record["forward_scan"] = {
+            "days": days,
+            "symbols": found,
+            "total": int(result.get("total") or 0),
+            "skipped": result.get("skipped"),
+            "ok": result.get("ok", True),
+        }
         record["ok"] = bool(result.get("ok", True))
         # The run trail gets this phase too, which it did not until 2026-08-25.
         #
@@ -655,11 +667,17 @@ def run_iteration(config: dict | None = None, now: datetime | None = None) -> di
         #
         # `symbols: 0` beside a healthy calendar means something else entirely (the liquid-universe
         # filter, or the watchlist fetch), so recording the count is what separates the two.
+        #
+        # `total` and `skipped` ride along for the same reason one level down: a pass that measured
+        # 18 of 22 names reads exactly like one that measured all 22 if only the completed count is
+        # kept, and `refresh_symbol_watch` already goes to the trouble of naming that difference.
         hb = {
             "date": session,
             "phase": PHASE_FORWARD_SCAN,
             "ok": record["ok"],
             "symbols": found,
+            "total": record["forward_scan"]["total"],
+            "skipped": record["forward_scan"]["skipped"],
             "days": days,
         }
         append_run_log({"ts": datetime.now(timezone.utc).isoformat(), **hb})
