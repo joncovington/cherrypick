@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { createChart, LineSeries, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 import { fmtMoney } from "../../components/DataTable";
@@ -29,8 +29,11 @@ const MODULE_COLORS: Record<string, string> = {
   earnings: "#a06bd9",
 };
 
-/** Suite equity — cumulative net P&L (paper) with per-module lines, the suite dashboard's core card. */
-export function EquityCard() {
+/** Suite equity — cumulative net P&L (paper) with per-module lines, the suite dashboard's core
+ *  card. `children`, when given, render below the chart -- the no-scroll Overview (2026-09) uses
+ *  this to fold the session heatmap and a compact end-of-day table into the same card instead of
+ *  three separate ones stacked down the page. */
+export function EquityCard({ children }: { children?: ReactNode }) {
   const { data } = useSuiteReport();
   const hostRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -140,6 +143,7 @@ export function EquityCard() {
         {data === undefined && <span className="skeleton skeleton-text" style={{ width: "40%" }} />}
         {data !== undefined && data.daily.length === 0 && <p className="muted">no closed paper sessions yet</p>}
       </div>
+      {children}
     </section>
   );
 }

@@ -28,6 +28,7 @@ import type {
   CalendarsPoliciesPayload,
   CalendarsPosition,
   CalendarsWeekRow,
+  DeskPayload,
 } from "@console/shared";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -71,6 +72,16 @@ export function useOverview() {
   return useQuery<OverviewPayload>({
     queryKey: ["overview"],
     queryFn: () => getJson<OverviewPayload>("/api/overview"),
+    refetchInterval: 15_000,
+  });
+}
+
+/** The Overview's suite matrix (liveness, exposure, entries, evidence clock, EOD) -- same cadence
+ *  as the per-module dashboards, since it composes their own readers. */
+export function useDesk() {
+  return useQuery<DeskPayload>({
+    queryKey: ["desk"],
+    queryFn: () => getJson<DeskPayload>("/api/desk"),
     refetchInterval: 15_000,
   });
 }

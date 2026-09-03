@@ -30,3 +30,12 @@ export function fmtPctSigned(v: number | null, digits = 2): string {
   if (v === null) return "—";
   return `${v >= 0 ? "+" : ""}${v.toFixed(digits)}%`;
 }
+
+/** "12s", "4m 12s", "—" — an age in seconds, rendered compactly. */
+export function ageLabel(seconds: number | null): string {
+  if (seconds === null) return "—";
+  if (seconds < 90) return `${Math.round(seconds)}s`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return `${String(m)}m ${String(s)}s`;
+}
