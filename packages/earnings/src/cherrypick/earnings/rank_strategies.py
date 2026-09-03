@@ -532,9 +532,10 @@ def cmd_get_ranked_symbols(args) -> dict:
 
     config = scanner._load_config()
     paper_mode = not config.get("enable_live_trading", False)
-    # This morning's forward scan bounds which unannotated calendar rows are admissible as AMC --
-    # the earnings calendar's `when` column is mostly NULL now, and requiring it dropped liquid
-    # names on their own earnings day (see scanner.fetch_entry_window_calendar).
+    # This morning's forward scan no longer bounds which unannotated calendar rows are
+    # admissible as AMC -- every unannotated row is admitted (see
+    # scanner.fetch_entry_window_calendar). It still orders the scan, so a budget that binds
+    # finishes the names this suite would trade anyway first.
     calendar = scanner.fetch_entry_window_calendar(config, assume_amc_for=symbol_watch.covered_symbols())
     timing_assumed_by_symbol = {e["symbol"]: e.get("timing_assumed") for e in calendar}
 

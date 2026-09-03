@@ -678,9 +678,10 @@ def cmd_run_entries(args) -> dict:
 
     scan_date = str(_date.today())
     calendar_timeout = config.get("dolt_calendar_timeout_seconds", 30)
-    # This morning's forward scan also bounds which UNANNOTATED calendar rows are admissible as AMC:
-    # the earnings calendar's `when` column is mostly NULL now, and requiring it dropped liquid names
-    # on their own earnings day (see scanner.fetch_entry_window_calendar).
+    # This morning's forward scan no longer GATES which unannotated calendar rows are admissible
+    # as AMC -- every unannotated row is admitted now (see scanner.fetch_entry_window_calendar for
+    # why an empty snapshot used to silently drop them all). It still ORDERS the scan, so a budget
+    # that binds finishes the names this suite would trade anyway first.
     assume_amc_for = symbol_watch.covered_symbols(session=scan_date)
     try:
         calendar = _run_bounded(

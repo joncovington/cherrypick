@@ -224,18 +224,18 @@ def fresh_snapshot(session: str | None = None) -> dict | None:
 
 
 def covered_symbols(session: str | None = None) -> set[str]:
-    """Every symbol this morning's forward scan actually measured — the bound the entry scan
-    uses when the earnings calendar leaves a row's `when` blank (see
-    `scanner.fetch_entry_window_calendar`'s `assume_amc_for`).
+    """Every symbol this morning's forward scan actually measured — the PRIORITY set the entry
+    scan passes to `scanner.fetch_entry_window_calendar`'s `assume_amc_for` when the earnings
+    calendar leaves a row's `when` blank.
 
     This set is the pass's own universe: the symbols reporting inside the forward window that
-    survived `symbol_watch.liquid_only`'s tastytrade watchlist union. Using it as the bound keeps
-    an unannotated calendar row admissible only if it is a name this suite would trade anyway,
-    which is what keeps the entry scan's ~8s-per-symbol cost inside the entry window.
+    survived `symbol_watch.liquid_only`'s tastytrade watchlist union. It used to be the BOUND on
+    which unannotated rows were admissible at all, and an empty or stale snapshot made that bound
+    silently admit nothing -- the 2026-08-17..24 outage. It now only orders the scan (these names
+    first), so an empty set degrades to "no reordering", never to "admit nothing".
 
     Rows whose own scan errored are deliberately kept: they are still in the liquid universe, and
-    the entry scan re-screens every survivor on live data regardless. An empty set (no snapshot,
-    or a stale one) degrades the caller to exact-timing-only, never to an unbounded scan.
+    the entry scan re-screens every survivor on live data regardless.
     """
     snapshot = fresh_snapshot(session)
     if not snapshot:
