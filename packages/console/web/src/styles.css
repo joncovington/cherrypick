@@ -1844,13 +1844,11 @@ select.text-input {
   margin: 0.3rem 0 0;
   font-size: 12px;
   line-height: 1.55;
-  max-width: 80ch;
 }
 
 .arm-lead {
   margin: 0 0 0.7rem;
   line-height: 1.6;
-  max-width: 86ch;
 }
 
 .arm-note {
@@ -1864,7 +1862,6 @@ select.text-input {
   font-size: 12.5px;
   line-height: 1.6;
   color: var(--text-muted);
-  max-width: 86ch;
 }
 
 .arm-note-label {
