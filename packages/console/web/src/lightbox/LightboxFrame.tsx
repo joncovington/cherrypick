@@ -212,7 +212,7 @@ export function LightboxFrame({
           ))}
         </div>
         {persistentTop}
-        <div className="lb-body" key={activeId}>
+        <div className="lb-body view-fade" key={activeId}>
           {active?.render()}
         </div>
         {integrity !== undefined && (
