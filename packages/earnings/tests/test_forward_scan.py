@@ -183,3 +183,50 @@ def test_the_forward_scan_leaves_a_run_trail(tmp_path, monkeypatch):
     scans = [r for r in (_json.loads(x) for x in lines) if r["phase"] == "forward_scan"]
     assert scans, "a forward scan that logs nothing is a starved session nobody can see"
     assert scans[-1]["symbols"] == 0, "the count is the whole point -- 0 must be recorded, not omitted"
+
+
+# --------------------------------------------------------------------------- the count itself
+def _scan_record(tmp_path, monkeypatch, result):
+    """Drive one forward-scan tick and return what it wrote to the run trail."""
+    import json as _json
+
+    from cherrypick.core import home as _home
+
+    monkeypatch.setattr(_home, "logs_dir", lambda: tmp_path / "logs")
+    monkeypatch.setattr(symbol_watch, "refresh_symbol_watch", lambda **kw: result)
+    paper_loop.run_iteration(CONFIG, at("06:30"))
+    lines = (tmp_path / "logs" / "earnings_paper.log").read_text(encoding="utf-8").strip().splitlines()
+    return [r for r in (_json.loads(x) for x in lines) if r["phase"] == "forward_scan"][-1]
+
+
+def test_the_count_is_what_the_scan_actually_measured(tmp_path, monkeypatch):
+    """The counter read `result["entries"]` or `result["symbols"]`; `refresh_symbol_watch` returns
+    neither -- it returns `{"ok", "total", "done", "skipped"}`.
+
+    So it reported 0 on EVERY session from the day it was added, including 2026-09-02, which went on
+    to screen 198 candidates and open 19 positions. A number that can only ever take its own alarm
+    value is worse than no number: it made the 2026-08-17..24 block read as a dead scanner when the
+    snapshot was in fact fine, which is the exact confusion the count exists to prevent.
+    """
+    rec = _scan_record(tmp_path, monkeypatch, {"ok": True, "total": 22, "done": 18, "skipped": ["AAA"]})
+
+    assert rec["symbols"] == 18, "the completed count, not zero"
+    assert rec["total"] == 22
+
+
+def test_a_partial_pass_is_distinguishable_from_a_complete_one(tmp_path, monkeypatch):
+    """`refresh_symbol_watch` names this difference deliberately -- a pass that measured 18 of 22
+    reads exactly like one that measured all 22 if only the completed count survives the hop."""
+    partial = _scan_record(tmp_path, monkeypatch, {"ok": True, "total": 22, "done": 18, "skipped": ["AAA"]})
+    complete = _scan_record(tmp_path, monkeypatch, {"ok": True, "total": 18, "done": 18, "skipped": []})
+
+    assert partial["symbols"] == complete["symbols"] == 18
+    assert partial["total"] != complete["total"], "only `total` can tell the two apart"
+    assert partial["skipped"] == ["AAA"] and complete["skipped"] == []
+
+
+def test_a_result_without_counts_degrades_to_zero(tmp_path, monkeypatch):
+    """Telemetry never fails the tick: an older or truncated result must not take the loop down."""
+    rec = _scan_record(tmp_path, monkeypatch, {"ok": True})
+
+    assert rec["symbols"] == 0 and rec["total"] == 0
