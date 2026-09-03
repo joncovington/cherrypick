@@ -4,6 +4,7 @@ import { ScreenRejections } from "./ScreenRejections";
 import type { TradingMode } from "@console/shared";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { LineChart, SeriesLegend } from "../../components/Charts";
+import { TimeLineChart } from "../../components/chart/TimeLineChart";
 import { TabStrip } from "../../components/ScopeBar";
 
 interface StrategyDetail {
@@ -95,7 +96,7 @@ export function EarningsDetailCards({ mode, era }: { mode: TradingMode; era: str
           <span className="skeleton skeleton-text" style={{ width: "40%" }} />
         ) : (
           <>
-            <LineChart
+            <TimeLineChart
               series={[
                 {
                   label: "cum net P&L",

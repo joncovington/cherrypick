@@ -2,7 +2,9 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
-import { LineChart, BarChart, SeriesLegend, SERIES_COLORS } from "../../components/Charts";
+import { SeriesLegend, SERIES_COLORS } from "../../components/Charts";
+import { TimeLineChart } from "../../components/chart/TimeLineChart";
+import { TimeBarChart } from "../../components/chart/TimeBarChart";
 import { TabStrip } from "../../components/ScopeBar";
 import { powerNote, WithheldNote } from "../../lib/power";
 
@@ -157,11 +159,10 @@ export function MeicPerformanceTab({
           <span className="skeleton skeleton-text" style={{ width: "40%" }} />
         ) : (
           <>
-            <LineChart
+            <TimeLineChart
               series={[{ label: "equity", color: "#43b57a", points: equity.map((e) => ({ x: e.date, y: e.equity })) }]}
-              zeroLine={false}
             />
-            <LineChart
+            <TimeLineChart
               height={120}
               series={[
                 {
@@ -186,7 +187,7 @@ export function MeicPerformanceTab({
           <span className="skeleton skeleton-text" style={{ width: "40%" }} />
         ) : (
           <>
-            <BarChart
+            <TimeBarChart
               bars={(data?.periods ?? []).map((p) => ({ x: p.period, y: p.netPnl }))}
               overlay={(data?.periods ?? []).map((p) => ({ x: p.period, y: p.cumulative }))}
             />
@@ -194,23 +195,22 @@ export function MeicPerformanceTab({
             <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(23rem, 1fr))", marginTop: "0.8rem" }}>
               <div>
                 <h2>win rate trend</h2>
-                <LineChart
+                <TimeLineChart
                   height={130}
-                  zeroLine={false}
                   yFormat={(v) => `${v.toFixed(0)}%`}
                   series={[{ label: "win %", color: "#43b57a", points: (data?.periods ?? []).filter((p) => p.winRatePct !== null).map((p) => ({ x: p.period, y: p.winRatePct! })) }]}
                 />
               </div>
               <div>
                 <h2>expectancy per trade</h2>
-                <LineChart
+                <TimeLineChart
                   height={130}
                   series={[{ label: "expectancy", color: "#d9a13b", points: (data?.periods ?? []).filter((p) => p.expectancy !== null).map((p) => ({ x: p.period, y: p.expectancy! })) }]}
                 />
               </div>
               <div>
                 <h2>avg win vs avg loss</h2>
-                <LineChart
+                <TimeLineChart
                   height={130}
                   series={[
                     { label: "avg win", color: "#43b57a", points: (data?.periods ?? []).filter((p) => p.avgWin !== null).map((p) => ({ x: p.period, y: p.avgWin! })) },
@@ -220,7 +220,7 @@ export function MeicPerformanceTab({
               </div>
               <div>
                 <h2>trade count</h2>
-                <BarChart height={130} yFormat={(v) => v.toFixed(0)} bars={(data?.periods ?? []).map((p) => ({ x: p.period, y: p.trades }))} />
+                <TimeBarChart height={130} yFormat={(v) => v.toFixed(0)} bars={(data?.periods ?? []).map((p) => ({ x: p.period, y: p.trades }))} />
               </div>
             </div>
           </>
@@ -234,7 +234,7 @@ export function MeicPerformanceTab({
           <p className="muted">no profile-tagged history</p>
         ) : (
           <>
-            <LineChart
+            <TimeLineChart
               series={(data?.studyArms ?? []).map((a, i) => ({
                 label: a.arm,
                 color: SERIES_COLORS[i % SERIES_COLORS.length],
