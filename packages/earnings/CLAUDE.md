@@ -60,13 +60,18 @@ You are the cherrypick **Earnings** agent, an autonomous options trading agent f
   criteria only (winrate, average volume, market cap), against the loosest floor, so no morning
   reading ever decides an entry. The entry scan costs ~35s + ~8s per symbol, so a heavy night at the
   old 15:45 start risked finishing past the 15:55 window; it starts at 15:35 now (`entry_scan_at`).
-  **The same snapshot also bounds the entry universe** (`symbol_watch.covered_symbols` →
-  `scanner.fetch_entry_window_calendar`'s `assume_amc_for`): Dolt's `earnings_calendar.when` column is
-  now ~0.4% populated, so a blank report time on the scan date is read as after-the-close for
-  symbols that snapshot measured, and the row is flagged `timing_assumed`. Requiring an exact timing
-  string had collapsed the nightly universe to one or two names and dropped liquid ones on their own
-  earnings day. Rules and why AMC (never BMO) is the safe assumption: `docs/screening-criteria.md`'s
-  Layer 0.
+  **The same snapshot orders the entry universe rather than bounding it**
+  (`symbol_watch.covered_symbols` → `scanner.fetch_entry_window_calendar`'s `assume_amc_for`):
+  Dolt's `earnings_calendar.when` column is now ~47% NULL, so every blank report time on the scan
+  date is read as after-the-close, and the row is flagged `timing_assumed`. The set only decides
+  which of those rows the parallel scan finishes FIRST if `entry_scan_budget_seconds` binds — it
+  used to also GATE admission (a blank row needed to be in the set to be scanned at all), and
+  that gate produced its own 2026-08-17..24 five-session outage when the snapshot came back empty
+  and the gate read that as "admit nothing" (measurement break
+  `entry_calendar_admissibility_gate_removed`, 2026-09-02). Requiring an exact timing string with
+  no fallback at all had earlier collapsed the nightly universe to one or two names and dropped
+  liquid ones on their own earnings day. Rules and why AMC (never BMO) is the safe assumption:
+  `docs/screening-criteria.md`'s Layer 0.
   **This module drives that scan itself — the orchestrator's `symbol-watch` job is superseded and
   must stay disabled**, or it runs twice. `run_entries` / `run_closes` survive as manual and
   backfill verbs. Rules, thresholds and provenance: `docs/10-exits.md`.
