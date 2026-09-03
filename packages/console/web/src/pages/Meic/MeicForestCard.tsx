@@ -6,6 +6,7 @@ import { AXIS_MUTED } from "../../components/Charts";
 import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
 import { niceTicks } from "../../components/chart/scales";
 import { SpotMarker } from "../../components/chart/Tooltip";
+import { useHoverX } from "../../components/chart/useHoverX";
 
 /**
  * MEIC's profit forest: expiry payoff for each arm's open book.
@@ -83,13 +84,13 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
   // side came off before expiry, and its realized P&L is not this curve.
   const live = (data?.arms.length ?? 0) > 0;
   const arms = live ? (data?.arms ?? []) : (data?.asEntered ?? []);
-  const [hover, setHover] = useState<{ price: number } | null>(null);
 
   const shown = arms.filter((a) => a.positions.length > 0 && a.prices.length > 0);
 
   const width = 1150;
   const height = 320;
   const pad = { l: 66, r: 12, t: 20, b: 26 };
+  const { fx: hoverX, onMouseMove: onHoverMove, onMouseLeave: onHoverLeave } = useHoverX(width, pad.l, pad.r);
 
   // Realised across the arms actually drawn, so the reference line and the legend cannot disagree.
   const realisedNet = shown.length > 0 ? shown.reduce((sum, a) => sum + (a.outcome?.realisedNet ?? 0), 0) : null;
@@ -97,6 +98,7 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
   const expired = shown.reduce((n, a) => n + (a.outcome?.expired ?? 0), 0);
 
   let body = null;
+  let hoverPrice: number | null = null;
   if (shown.length > 0) {
     const prices = shown[0]!.prices;
     const xMin = Math.min(...shown.map((a) => a.prices[0] ?? 0));
@@ -118,9 +120,11 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
     const colorOf = (profile: string) =>
       ARM_COLORS[arms.findIndex((a) => a.profile === profile) % ARM_COLORS.length]!;
 
+    const thisHoverPrice = hoverX !== null ? xMin + ((hoverX - pad.l) / (width - pad.l - pad.r)) * (xMax - xMin) : null;
+    hoverPrice = thisHoverPrice;
     const hoverIdx =
-      hover !== null
-        ? prices.reduce((best, p, i) => (Math.abs(p - hover.price) < Math.abs((prices[best] ?? 0) - hover.price) ? i : best), 0)
+      thisHoverPrice !== null
+        ? prices.reduce((best, p, i) => (Math.abs(p - thisHoverPrice) < Math.abs((prices[best] ?? 0) - thisHoverPrice) ? i : best), 0)
         : null;
 
     body = (
@@ -129,14 +133,8 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
         role="img"
         aria-label="MEIC profit forest"
         style={{ width: "100%", height: "auto", display: "block" }}
-        onMouseMove={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const fx = ((e.clientX - rect.left) / rect.width) * width;
-          if (fx >= pad.l && fx <= width - pad.r) {
-            setHover({ price: xMin + ((fx - pad.l) / (width - pad.l - pad.r)) * (xMax - xMin) });
-          } else setHover(null);
-        }}
-        onMouseLeave={() => setHover(null)}
+        onMouseMove={onHoverMove}
+        onMouseLeave={onHoverLeave}
       >
         {/* What the book ACTUALLY made, against what the curve says it would have made held to
             expiry. Flat because these trades are closed: their outcome no longer depends on where
@@ -221,8 +219,8 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
           />
         )}
 
-        {hoverIdx !== null && hover !== null && (
-          <line x1={X(hover.price)} x2={X(hover.price)} y1={pad.t} y2={height - pad.b} stroke="#3a424e" strokeDasharray="3 3" />
+        {hoverIdx !== null && hoverPrice !== null && (
+          <line x1={X(hoverPrice)} x2={X(hoverPrice)} y1={pad.t} y2={height - pad.b} stroke="#3a424e" strokeDasharray="3 3" />
         )}
       </svg>
     );
@@ -273,11 +271,11 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
                     {" "}· made {fmtMoney(a.outcome.realisedNet)}
                   </span>
                 )}
-                {hover !== null &&
+                {hoverPrice !== null &&
                   ` · ${fmtMoney(
                     a.pnl[
                       a.prices.reduce(
-                        (best, p, idx) => (Math.abs(p - hover.price) < Math.abs((a.prices[best] ?? 0) - hover.price) ? idx : best),
+                        (best, p, idx) => (Math.abs(p - hoverPrice!) < Math.abs((a.prices[best] ?? 0) - hoverPrice!) ? idx : best),
                         0,
                       )
                     ] ?? 0,

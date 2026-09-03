@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { fmtMoney } from "../../components/DataTable";
@@ -7,6 +6,7 @@ import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
 import { niceTicks } from "../../components/chart/scales";
 import { minuteOf, hhmm } from "../../components/chart/time";
 import { HoverReadout } from "../../components/chart/Tooltip";
+import { useHoverX } from "../../components/chart/useHoverX";
 
 interface Tick {
   ts: string;
@@ -49,7 +49,6 @@ function useTimeline(mode: TradingMode, filter: FliesFilter) {
  */
 export function TimelineCard({ mode, filter, arm }: { mode: TradingMode; filter: FliesFilter; arm: string | null }) {
   const { data, isLoading } = useTimeline(mode, filter);
-  const [hover, setHover] = useState<number | null>(null);
 
   const arms = data?.arms ?? [];
   const shown = arm !== null ? arms.filter((a) => a === arm) : arms;
@@ -58,6 +57,7 @@ export function TimelineCard({ mode, filter, arm }: { mode: TradingMode; filter:
   const width = 1150;
   const height = 430;
   const pad = { l: 62, r: 12, t: 12, b: 24 };
+  const { fx: hover, onMouseMove: onHoverMove, onMouseLeave: onHoverLeave } = useHoverX(width, pad.l, pad.r);
   const splitGap = 26;
   const priceBot = pad.t + (height - pad.t - pad.b - splitGap) * 0.62;
   const pnlTop = priceBot + splitGap;
@@ -238,12 +238,8 @@ export function TimelineCard({ mode, filter, arm }: { mode: TradingMode; filter:
         role="img"
         aria-label="session timeline"
         style={{ width: "100%", height: "auto", display: "block" }}
-        onMouseMove={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const fx = ((e.clientX - rect.left) / rect.width) * width;
-          setHover(fx >= pad.l && fx <= width - pad.r ? fx : null);
-        }}
-        onMouseLeave={() => setHover(null)}
+        onMouseMove={onHoverMove}
+        onMouseLeave={onHoverLeave}
       >
         {/* grids */}
         {niceTicks(pMin, pMax, 4).map((v) => (
