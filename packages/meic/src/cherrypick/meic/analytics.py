@@ -137,11 +137,20 @@ def headline(conn, start=None, end=None, symbol=None, era=CURRENT_ERA) -> dict:
     open_row = conn.execute(
         "SELECT COUNT(*) AS n FROM ic_trades WHERE status IN ('open', 'partial')"
     ).fetchone()
+    # Same formula core.ledgers._meic_closed's _capital() already uses for CLOSED trades (an IC's
+    # capital at risk = (wing width - credit received) x multiplier x quantity), applied to the
+    # still-open rows instead. Not a new risk convention -- the same one, a different WHERE clause.
+    cap_row = conn.execute(
+        "SELECT COALESCE(SUM((wing_width - COALESCE(net_credit, 0.0))"
+        " * COALESCE(dollar_multiplier, 100.0) * COALESCE(quantity, 1)), 0.0) AS cap"
+        " FROM ic_trades WHERE status IN ('open', 'partial') AND wing_width IS NOT NULL"
+    ).fetchone()
     arms = by_arm(conn, start=start, end=end, symbol=symbol, era=era)
     return {
         "era": era,
         "arms": {row["arm"]: {k: v for k, v in row.items() if k != "arm"} for row in arms},
         "open_positions": open_row["n"],
+        "open_capital_at_risk": round(cap_row["cap"], 2),
     }
 
 
