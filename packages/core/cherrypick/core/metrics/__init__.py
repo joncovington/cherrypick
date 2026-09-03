@@ -69,6 +69,35 @@ def max_loss_pct(records: Sequence[Mapping]) -> dict:
     return {"median": round(statistics.median(ratios), 4) if ratios else None, "n": len(ratios)}
 
 
+def excursions(marks: Sequence[float | None], basis: float = 0.0) -> dict:
+    """MAE (max adverse excursion) and MFE (max favorable excursion) over one position's ORDERED
+    mark series, relative to `basis` -- the module's own entry reference (0.0 when `marks` is
+    already a P&L-relative-to-entry series each tick, the common case; a raw entry price/value
+    when the caller has not yet netted). {"mae", "mfe", "n"}: `mae` is the deepest NEGATIVE
+    deviation seen (<=0, 0.0 if the position was never underwater), `mfe` the best POSITIVE
+    deviation (>=0, 0.0 if it was never ahead); `n` is how many marks were usable.
+
+    `None` entries are skipped, never treated as zero -- the metrics-plan's own rule for this data
+    ("refusal-aware... usable=0 rows are excluded from excursions, never read as zero"): a module's
+    analytics layer is expected to have already dropped its own usable=0 refusal rows before
+    calling this, but a caller that instead passes them through as None is still handled honestly
+    rather than having a stalled-feed tick misread as "the position was exactly at its basis."
+
+    This is the ONE generic function core.metrics owns for this (metrics-plan.md Phase 2); pairing
+    a module's own multi-leg marks to one position and producing the ordered P&L series is that
+    module's own analytics layer's job, not this one's -- same split as `session_nets` (pure
+    aggregation) versus each reader's own SQL (module-specific pairing)."""
+    usable = [m for m in marks if m is not None]
+    if not usable:
+        return {"mae": None, "mfe": None, "n": 0}
+    deviations = [m - basis for m in usable]
+    return {
+        "mae": round(min(min(deviations), 0.0), 2),
+        "mfe": round(max(max(deviations), 0.0), 2),
+        "n": len(usable),
+    }
+
+
 def sharpe(values: Sequence[float]) -> float | None:
     """Per-trade Sharpe (mean/stdev of the per-trade net P&L series), un-annualized.
     None below 2 samples or on a zero-variance series — not a fabricated 0."""
