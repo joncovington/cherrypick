@@ -336,6 +336,35 @@ export function readMeicLoopStatus(config: ConsoleConfig, mode: TradingMode, sco
   });
 }
 
+/**
+ * An IC's capital at risk = (wing width - credit received) x 100 x quantity, applied to still-open
+ * positions -- the SAME formula `core.ledgers._meic_closed`'s `_capital()` already uses for CLOSED
+ * trades (validated there, feeding calibration/capture-rate metrics), and the same one
+ * `analytics.headline`'s new `open_capital_at_risk` field computes in Python. Mirrored here rather
+ * than bridged because meic.ts already mirrors `ic_trades` directly for every other read this
+ * package does (this file's own docstring: "the largest mirror in this package") -- a subprocess
+ * for one aggregate would be a second read strategy for the one module already committed to the
+ * first. `meic-mirror.test.ts` checks this against `python run.py headline`'s own field. The
+ * multiplier is hardcoded 100 to match every other gross/net query already in this file (line
+ * ~910/965) rather than reading `dollar_multiplier`, which nothing else here reads either.
+ */
+export function readMeicOpenExposure(config: ConsoleConfig, mode: TradingMode): { open: number; capitalAtRisk: number } {
+  const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
+  const dbPath = path.join(config.paths.meicDir, file);
+  const empty = { open: 0, capitalAtRisk: 0 };
+  return withReadOnlyDb(dbPath, empty, (db) => {
+    const r = db
+      .prepare<[], { n: number; cap: number | null }>(
+        `SELECT COUNT(*) AS n,
+                COALESCE(SUM((wing_width - COALESCE(net_credit, 0.0)) * 100 * COALESCE(quantity, 1)), 0.0) AS cap
+           FROM ic_trades WHERE status IN ('open', 'partial')`,
+      )
+      .get();
+    if (r === undefined) return empty;
+    return { open: r.n, capitalAtRisk: Math.round((r.cap ?? 0) * 100) / 100 };
+  });
+}
+
 export interface MeicPerformance {
   mode: TradingMode;
   /** Every profile side by side — the variance-test payoff; symbol-scoped, profile-unscoped. */

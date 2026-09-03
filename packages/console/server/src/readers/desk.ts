@@ -3,7 +3,7 @@ import type { DeskPayload, DeskLiveness, DeskExposureRow, DeskEntriesRow, DeskEv
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, readJson } from "./db.js";
 import { streamerFreshness } from "./streamcache.js";
-import { readMeicLoopStatus } from "./meic.js";
+import { readMeicLoopStatus, readMeicOpenExposure } from "./meic.js";
 import { readFliesLoopStatus, readFliesAnalytics } from "./flies.js";
 import { readEntryAttempts } from "./attempts.js";
 import { readPmcc, resolvePmccSession } from "./pmcc.js";
@@ -135,6 +135,7 @@ export function readDesk(config: ConsoleConfig): DeskPayload {
   // exposure row already reads, and the same aggregate FliesLightbox's own "now" tab already shows
   // as "max possible loss" / EarningsLightbox's "overview" tab shows as "capital at risk (open)".
   const fliesAnalytics = readFliesAnalytics(config, "paper", { arm: null, date: null, symbol: null, era: null });
+  const meicExposure = readMeicOpenExposure(config, "paper");
   const earningsDetail = readEarningsDetail(config, "paper", null);
 
   const livenessRows: DeskLiveness[] = [
@@ -158,16 +159,16 @@ export function readDesk(config: ConsoleConfig): DeskPayload {
   const exposure: DeskExposureRow[] = [
     {
       module: "meic",
-      open: null,
-      atRisk: null,
-      atRiskLabel: "at risk",
+      // Same formula core.ledgers._meic_closed's _capital() already validates for closed trades,
+      // now also computed in Python (analytics.headline's open_capital_at_risk) and mirrored here
+      // -- meic-mirror.test.ts checks the two agree.
+      open: meicExposure.open,
+      atRisk: meicExposure.capitalAtRisk,
+      atRiskLabel: "capital at risk",
       unrealisedNet: null,
-      markAgeSeconds: null,
-      available: false,
-      // Unlike flies/earnings below, there is no canonical max-loss figure anywhere in
-      // packages/meic to mirror -- computing one fresh here would be exactly the kind of
-      // derivation (not a query) this suite's console keeps out of TypeScript.
-      note: "no max-loss figure exists yet to mirror (see packages/meic)",
+      markAgeSeconds: meicLoop.ageSeconds,
+      available: true,
+      note: null,
     },
     {
       module: "flies",

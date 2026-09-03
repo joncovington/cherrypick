@@ -24,7 +24,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { loadConfig } from "../src/config.js";
-import { readMeicPerformance } from "../src/readers/meic.js";
+import { readMeicPerformance, readMeicOpenExposure } from "../src/readers/meic.js";
 
 const REPO = path.resolve(__dirname, "..", "..", "..", "..");
 const MEIC_PKG = path.join(REPO, "packages", "meic");
@@ -35,6 +35,7 @@ interface Headline {
   headline: {
     era: string;
     open_positions: number;
+    open_capital_at_risk: number;
     arms: Record<
       string,
       { trades: number; sessions: number; gross_pnl: number | null; fees: number | null; net_pnl: number | null }
@@ -103,5 +104,14 @@ describe.skipIf(!available)("the console's MEIC mirror agrees with the module it
     for (const row of consoleProfiles()) {
       expect.soft(row.netPnl, `${row.profile}`).toBeCloseTo(row.grossPnl - row.fees, 2);
     }
+  });
+
+  it("reports the same open count and open capital at risk as the module's own headline", () => {
+    // Not era-scoped on either side -- headline's open_positions/open_capital_at_risk queries
+    // carry no era filter in analytics.py, and readMeicOpenExposure mirrors that.
+    const theirs = moduleHeadline()!.headline;
+    const mine = readMeicOpenExposure(loadConfig(), "paper");
+    expect(mine.open).toBe(theirs.open_positions);
+    expect(mine.capitalAtRisk).toBeCloseTo(theirs.open_capital_at_risk, 2);
   });
 });
