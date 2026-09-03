@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawnModuleCli } from "./moduleCli.js";
 
 /**
  * The earnings screening metrics, read from the module that owns them.
@@ -67,22 +67,9 @@ const UNAVAILABLE =
 function spawnCaller(mode: "paper" | "live", since: string | null): ScreenMetricsResult {
   const argv = ["-m", "cherrypick.earnings.screen_report", "--json", "--mode", mode, "--limit", "25"];
   if (since !== null) argv.push("--since", since);
-  let out;
-  try {
-    out = spawnSync("python", argv, { encoding: "utf-8", timeout: 30_000, windowsHide: true });
-  } catch (err) {
-    return { ok: false, metrics: null, error: `${UNAVAILABLE} (${(err as Error).message})` };
-  }
-  if (out.error !== undefined) return { ok: false, metrics: null, error: `${UNAVAILABLE} (${out.error.message})` };
-  if (out.status !== 0) {
-    const detail = (out.stderr ?? "").trim().split(/\r?\n/).pop() ?? `exit ${String(out.status)}`;
-    return { ok: false, metrics: null, error: `${UNAVAILABLE} — ${detail}` };
-  }
-  try {
-    return { ok: true, metrics: JSON.parse(out.stdout.trim()) as ScreenMetrics, error: null };
-  } catch {
-    return { ok: false, metrics: null, error: `${UNAVAILABLE} — unparseable response` };
-  }
+  const res = spawnModuleCli(argv, UNAVAILABLE);
+  if (!res.ok || res.json === null) return { ok: false, metrics: null, error: res.error };
+  return { ok: true, metrics: res.json as unknown as ScreenMetrics, error: null };
 }
 
 let caller = spawnCaller;

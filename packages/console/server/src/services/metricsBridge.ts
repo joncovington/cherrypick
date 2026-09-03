@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawnModuleCli } from "./moduleCli.js";
 
 /**
  * The shared calibration-reading bundle, read from the module that owns the math.
@@ -44,35 +44,21 @@ function spawnCaller(dbPath: string, schema: string, start: string | null, end: 
   const argv = ["-m", "cherrypick.core.metrics", "read", "--db", dbPath, "--schema", schema];
   if (start !== null) argv.push("--start", start);
   if (end !== null) argv.push("--end", end);
-  let out;
-  try {
-    out = spawnSync("python", argv, { encoding: "utf-8", timeout: 30_000, windowsHide: true });
-  } catch (err) {
-    return { ok: false, metrics: null, error: `${UNAVAILABLE} (${(err as Error).message})` };
-  }
-  if (out.error !== undefined) return { ok: false, metrics: null, error: `${UNAVAILABLE} (${out.error.message})` };
-  if (out.status !== 0) {
-    const detail = (out.stderr ?? "").trim().split(/\r?\n/).pop() ?? `exit ${String(out.status)}`;
-    return { ok: false, metrics: null, error: `${UNAVAILABLE} — ${detail}` };
-  }
-  let parsed: { ok: boolean; error?: string; schema?: string; n_records?: number; groups?: unknown };
-  try {
-    parsed = JSON.parse(out.stdout.trim()) as typeof parsed;
-  } catch {
-    return { ok: false, metrics: null, error: `${UNAVAILABLE} — unparseable response` };
-  }
+  const res = spawnModuleCli(argv, UNAVAILABLE);
+  if (!res.ok || res.json === null) return { ok: false, metrics: null, error: res.error };
   // The CLI itself reports {"ok": false, "error": ...} for an unknown schema or an unreadable db
   // (never a traceback across the subprocess boundary) -- surface that the same way a spawn
   // failure is surfaced, so the card head shows one error shape regardless of which layer refused.
-  if (!parsed.ok) {
-    return { ok: false, metrics: null, error: parsed.error ?? `${UNAVAILABLE} — refused` };
+  if (res.json["ok"] !== true) {
+    const err = res.json["error"];
+    return { ok: false, metrics: null, error: typeof err === "string" ? err : `${UNAVAILABLE} — refused` };
   }
   return {
     ok: true,
     metrics: {
-      schema: parsed.schema ?? schema,
-      n_records: parsed.n_records ?? 0,
-      groups: (parsed.groups ?? {}) as Record<string, ModuleMetricsGroup>,
+      schema: typeof res.json["schema"] === "string" ? (res.json["schema"] as string) : schema,
+      n_records: typeof res.json["n_records"] === "number" ? (res.json["n_records"] as number) : 0,
+      groups: (res.json["groups"] ?? {}) as Record<string, ModuleMetricsGroup>,
     },
     error: null,
   };
