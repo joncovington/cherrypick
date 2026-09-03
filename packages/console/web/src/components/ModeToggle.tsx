@@ -9,6 +9,7 @@ export function ModeToggle({
 }) {
   return (
     <div className="mode-toggle" role="group" aria-label="trading mode">
+      <span className={`mode-pill ${mode === "live" ? "mode-pill-live" : ""}`} aria-hidden="true" />
       <button
         type="button"
         className={mode === "paper" ? "mode-btn active" : "mode-btn"}
