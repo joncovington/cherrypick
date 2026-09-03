@@ -694,13 +694,33 @@ h2 {
 
 .mode-toggle {
   display: inline-flex;
+  position: relative;
   border: 1px solid var(--border);
   border-radius: 3px;
   overflow: hidden;
   margin-left: auto;
 }
 
+/* The paper/live pill: a sliding background rather than a per-button color swap, since this is
+   the single highest-stakes switch in the app and deserves more visual weight than the plain
+   fade every other button group here uses. Only ModeToggle.tsx renders a .mode-pill child, so
+   this never touches the other button groups that reuse the .mode-toggle/.mode-btn classes
+   (outcome filters, era selects). */
+.mode-pill {
+  position: absolute;
+  inset: 0;
+  width: 50%;
+  background: var(--row-hover);
+  transition: transform 0.22s ease;
+  pointer-events: none;
+}
+
+.mode-pill-live {
+  transform: translateX(100%);
+}
+
 .mode-btn {
+  position: relative;
   background: transparent;
   border: none;
   color: var(--text-muted);
@@ -708,11 +728,10 @@ h2 {
   font: inherit;
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.35s ease, color 0.35s ease;
+  transition: color 0.2s ease;
 }
 
 .mode-btn.active {
-  background: var(--row-hover);
   color: var(--text);
 }
 
@@ -1172,7 +1191,8 @@ select.text-input {
     animation: none;
   }
 
-  .collapse-toggle {
+  .collapse-toggle,
+  .mode-pill {
     transition: none;
   }
 }
