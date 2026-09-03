@@ -11,7 +11,15 @@ module is the single Python home; anything else derives from it or from the arti
 
 Every closed reader yields the same record shape, keyed by `paper.trade_schema`:
 
-    {profile, symbol, strategy, gross_pnl, cost, net_pnl, slippage, capital, session}
+    {profile, symbol, strategy, gross_pnl, cost, net_pnl, slippage, capital, max_profit, session}
+
+`max_profit` (added 2026-09, for `core.metrics.capture_rate`) is the structure's own defined
+ceiling at expiry -- only ever a number for a plain credit structure whose ceiling IS the credit
+received (meic_ic, curve_vx): `None` for a debit structure (dc_week, pmcc_99) whose profit depends
+on where the underlying settles, and `None` for a structure whose ceiling needs strike geometry
+this per-trade row does not carry (fly_book, bwb_132) or that mixes credit/debit shapes
+(earnings) -- see each reader's own comment for why. Deliberately not derived by guessing at a
+formula from `capital` alone.
 
   - "meic_ic"  : MEIC's `ic_trades`; closed = exit_time set; net = pnl - fees; tag = risk_profile.
                  Capital at risk is derived: (wing_width - net_credit) x multiplier x quantity.
@@ -116,6 +124,16 @@ def _meic_closed(conn, start: str | None = None, end: str | None = None) -> list
         cap = (float(r["wing_width"]) - float(r["net_credit"] or 0.0)) * mult * (r["quantity"] or 1)
         return round(cap, 2) if cap > 0 else None
 
+    def _max_profit(r):
+        # An IC's max profit AT EXPIRY is the credit received x multiplier x quantity -- the
+        # trade's own defined ceiling, same columns _capital already reads with the same
+        # confidence (both already selected for the capital computation above).
+        if not has_capital or r["net_credit"] is None:
+            return None
+        mult = r["dollar_multiplier"] if mult_col and r["dollar_multiplier"] else 100.0
+        mp = float(r["net_credit"]) * mult * (r["quantity"] or 1)
+        return round(mp, 2) if mp > 0 else None
+
     return [
         {
             "profile": r["risk_profile"] or MEIC_UNTAGGED,
@@ -127,6 +145,7 @@ def _meic_closed(conn, start: str | None = None, end: str | None = None) -> list
             "net_pnl": (r["pnl"] or 0.0) - (r["fees"] or 0.0),
             "slippage": (r["slippage_dollars"] if has_slip else None),
             "capital": _capital(r),
+            "max_profit": _max_profit(r),
             # Session date for calibration (distinct-days count); ISO date prefix of exit_time.
             "session": (r["exit_time"] or "")[:10],
         }
@@ -166,6 +185,10 @@ def _earnings_closed(conn, start: str | None = None, end: str | None = None) -> 
             "slippage": _slip(r),
             # sizing.compute_position_size's defined max loss, stored at entry.
             "capital": (r["capital_at_risk"] if has_capital else None),
+            # Earnings mixes credit and debit-shaped defined-risk strategies (module CLAUDE.md) --
+            # no single ceiling formula holds across `strategy`, so this stays unmeasured rather
+            # than guessed. Deferred, not abandoned: see docs/metrics-plan.md phase 2 (excursions).
+            "max_profit": None,
             "session": session_from_epoch(r["closed_at"]),
         }
         for r in rows
@@ -211,6 +234,10 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
             # and likewise capital: a legged book's risk depends on completion state.
             "slippage": None,
             "capital": None,
+            # A fly's max profit at expiry is a payoff-curve computation over the book's actual
+            # centres and wing structure, not a fixed formula this per-trade row can support --
+            # same reasoning as capital above (a legged book's shape depends on completion state).
+            "max_profit": None,
             "session": r["trade_date"] or "",
         }
         for r in rows
@@ -255,6 +282,11 @@ def _calendars_closed(conn, start: str | None = None, end: str | None = None) ->
             "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
             "slippage": _slip(r),
             "capital": _capital(r),
+            # A long calendar is a DEBIT structure: its max profit depends on where the underlying
+            # sits relative to the short leg's strike at ITS expiry, not a fixed value known at
+            # entry -- unlike a credit spread's ceiling (the credit received), there is no defined
+            # number to put here without re-deriving the payoff curve.
+            "max_profit": None,
             "session": r["closed_session"] or "",
         }
         for r in rows
@@ -300,6 +332,11 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
             "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
             "slippage": _slip(r),
             "capital": _capital(r),
+            # PMCC is a debit structure (deep-ITM long call as a stock substitute + a short call):
+            # its max profit depends on where spot sits relative to the short strike at ITS
+            # expiry, same reasoning as calendars' debit structure above -- no fixed ceiling known
+            # at entry.
+            "max_profit": None,
             "session": r["closed_session"] or "",
         }
         for r in rows
@@ -320,7 +357,8 @@ def _curve_closed(conn, start: str | None = None, end: str | None = None) -> lis
     where, params = _session_where("closed_session", start, end)
     rows = conn.execute(
         f"SELECT symbol, book, gross_pnl, fees, entry_slippage, exit_slippage, "
-        f"entry_max_loss, quantity, closed_session FROM curve_positions WHERE status = 'closed'{where}",
+        f"entry_max_loss, entry_credit, quantity, closed_session FROM curve_positions "
+        f"WHERE status = 'closed'{where}",
         params,
     ).fetchall()
 
@@ -334,6 +372,17 @@ def _curve_closed(conn, start: str | None = None, end: str | None = None) -> lis
             return None
         return round(float(r["entry_max_loss"]) * 100 * (r["quantity"] or 1), 2)
 
+    def _max_profit(r):
+        # A call-credit spread's max profit AT EXPIRY is the mid-priced credit received x
+        # 100 x quantity -- `entry_credit` is `worksheet_metrics`'s `short_mid - long_mid`
+        # (engine.py), the same per-contract, pre-multiplier gross credit `entry_max_loss`
+        # is itself derived from (`width - credit`), so this uses no new relationship, only
+        # the column `_capital` above already trusts.
+        if r["entry_credit"] is None:
+            return None
+        mp = float(r["entry_credit"]) * 100 * (r["quantity"] or 1)
+        return round(mp, 2) if mp > 0 else None
+
     return [
         {
             "profile": r["book"] or CURVE_UNTAGGED,
@@ -344,6 +393,7 @@ def _curve_closed(conn, start: str | None = None, end: str | None = None) -> lis
             "net_pnl": (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0),
             "slippage": _slip(r),
             "capital": _capital(r),
+            "max_profit": _max_profit(r),
             "session": r["closed_session"] or "",
         }
         for r in rows
@@ -410,6 +460,12 @@ def _bwb_closed(conn, start: str | None = None, end: str | None = None) -> list[
             # so this stays unknown rather than a misleading zero -- same posture as flies' capital.
             "slippage": None,
             "capital": _capital(r),
+            # A broken-wing fly's max profit depends on the strike geometry (which wing is
+            # narrower, where the short strikes sit), not on entry_credit alone the way a plain
+            # 2-leg credit spread's ceiling is (curve_vx, above) -- and a fired reversal add-on
+            # turns the structure into a 1-3-2 mid-life, changing that geometry again. Unmeasured
+            # rather than guessed; revisit alongside the module's own strike-level records.
+            "max_profit": None,
             "session": r["closed_session"] or "",
         }
         for r in rows
