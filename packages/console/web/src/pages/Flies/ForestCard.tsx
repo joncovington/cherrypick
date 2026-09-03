@@ -8,6 +8,7 @@ import { AXIS_MUTED } from "../../components/Charts";
 import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
 import { niceTicks } from "../../components/chart/scales";
 import { SpotMarker, HoverReadout } from "../../components/chart/Tooltip";
+import { useHoverX } from "../../components/chart/useHoverX";
 
 interface PayoffCurve {
   empty: boolean;
@@ -105,7 +106,10 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
   const { data, isLoading } = useForest(mode, filter);
   const [xwidth, setXwidth] = useState<(typeof X_WIDTHS)[number]>("auto");
   const [ywidth, setYwidth] = useState<(typeof Y_WIDTHS)[number]>("auto");
-  const [hover, setHover] = useState<{ px: number; frac: number } | null>(null);
+  const width = 1150;
+  const height = 320;
+  const pad = { l: 62, r: 12, t: 20, b: 26 };
+  const { fx: hoverX, onMouseMove: onHoverMove, onMouseLeave: onHoverLeave } = useHoverX(width, pad.l, pad.r);
   // Subscribe the day's actual underlying (SPX days must not show an XSP
   // quote); no symbol on file → no live spot line rather than a wrong-scale one.
   const symbol = data?.symbol ?? null;
@@ -120,10 +124,6 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
 
   const allArms = data?.arms ?? [];
   const shown = allArms.filter((a) => !a.curve.empty && a.curve.prices.length > 0);
-
-  const width = 1150;
-  const height = 320;
-  const pad = { l: 62, r: 12, t: 20, b: 26 };
 
   let body = null;
   let legendRow = null;
@@ -172,7 +172,7 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
     const zero = Y(0);
     const colorOf = (arm: string) => ARM_COLORS[allArms.findIndex((a) => a.arm === arm) % ARM_COLORS.length]!;
 
-    const hoverPrice = hover !== null ? xMin + hover.frac * (xMax - xMin) : null;
+    const hoverPrice = hoverX !== null ? xMin + ((hoverX - pad.l) / (width - pad.l - pad.r)) * (xMax - xMin) : null;
 
     body = (
       <svg
@@ -180,14 +180,8 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
         role="img"
         aria-label="profit forest"
         style={{ width: "100%", height: "auto", display: "block" }}
-        onMouseMove={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const fx = ((e.clientX - rect.left) / rect.width) * width;
-          if (fx >= pad.l && fx <= width - pad.r) {
-            setHover({ px: fx, frac: (fx - pad.l) / (width - pad.l - pad.r) });
-          } else setHover(null);
-        }}
-        onMouseLeave={() => setHover(null)}
+        onMouseMove={onHoverMove}
+        onMouseLeave={onHoverLeave}
       >
         {/* grid + ticks */}
         {niceTicks(yMin, yMax, 5).map((v) => (
@@ -269,11 +263,11 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
         )}
 
         {/* hover crosshair + readout */}
-        {hover !== null && hoverPrice !== null && (
+        {hoverX !== null && hoverPrice !== null && (
           <>
-            <line x1={hover.px} y1={pad.t} x2={hover.px} y2={height - pad.b} stroke="#3d4653" />
+            <line x1={hoverX} y1={pad.t} x2={hoverX} y2={height - pad.b} stroke="#3d4653" />
             <HoverReadout
-              x={hover.px}
+              x={hoverX}
               width={width}
               lines={[
                 `at ${hoverPrice.toFixed(0)}`,
