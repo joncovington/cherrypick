@@ -5,6 +5,7 @@ Subcommands (all read-only over the module's own ledger):
     headline   per-book, per-structure results through the analytics layer
     policies   the derived exit-policy comparison table — the module's whole point
     validate   the derivation checked against the control book's real recorded results
+    excursions per-closed-position MAE/MFE (docs/metrics-plan.md Phase 2) plus distributions
 
 The paper loop's own argv (`python -m cherrypick.calendars.paper_loop --once|--interval|--settle|
 --status`) is what the orchestrator drives; this CLI is the human read side.
@@ -51,6 +52,14 @@ def cmd_headline(args) -> int:
 
     conn = db.connect(args.db)
     print(json.dumps({"ok": True, "headline": analytics.headline(conn)}, indent=2, default=str))
+    return 0
+
+
+def cmd_excursions(args) -> int:
+    from cherrypick.calendars import analytics, db
+
+    conn = db.connect(args.db)
+    print(json.dumps({"ok": True, "excursions": analytics.excursions(conn)}, indent=2, default=str))
     return 0
 
 
@@ -111,6 +120,9 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="command", required=True)
 
     sub.add_parser("status", help="open positions and the current week plan").set_defaults(func=cmd_status)
+    sub.add_parser(
+        "excursions", help="per-closed-position MAE/MFE plus distributions"
+    ).set_defaults(func=cmd_excursions)
     sub.add_parser("headline", help="per-book results through the analytics layer").set_defaults(
         func=cmd_headline
     )
