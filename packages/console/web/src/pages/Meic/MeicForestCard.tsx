@@ -5,6 +5,7 @@ import { fmtMoney } from "../../components/DataTable";
 import { AXIS_MUTED } from "../../components/Charts";
 import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
 import { niceTicks } from "../../components/chart/scales";
+import { SpotMarker } from "../../components/chart/Tooltip";
 
 /**
  * MEIC's profit forest: expiry payoff for each arm's open book.
@@ -209,30 +210,15 @@ export function MeicForestCard({ mode, date = null }: { mode: TradingMode; date?
             a mark on the same axis. Same treatment as the flies forest's spot/settlement marker:
             solid amber line, outlined amber tag. */}
         {data?.lastSpot != null && data.lastSpot >= xMin && data.lastSpot <= xMax && (
-          <>
-            <line
-              x1={X(data.lastSpot)}
-              x2={X(data.lastSpot)}
-              y1={pad.t}
-              y2={height - pad.b}
-              stroke={SPOT_COLOR}
-              strokeWidth={2}
-              opacity={0.9}
-            />
-            {(() => {
-              const label = `spot ${data.lastSpot.toFixed(2)}`;
-              const lw = label.length * 5.6 + 12;
-              const lx = Math.min(Math.max(X(data.lastSpot) - lw / 2, pad.l), width - pad.r - lw);
-              return (
-                <>
-                  <rect x={lx} y={1} width={lw} height={15} rx={4} fill="#101216" stroke={SPOT_COLOR} strokeWidth={1} />
-                  <text x={lx + lw / 2} y={12} fontSize={9.5} fontWeight={700} fill={SPOT_COLOR} textAnchor="middle" fontFamily="Consolas, monospace">
-                    {label}
-                  </text>
-                </>
-              );
-            })()}
-          </>
+          <SpotMarker
+            x={X(data.lastSpot)}
+            label={`spot ${data.lastSpot.toFixed(2)}`}
+            top={pad.t}
+            bottom={height - pad.b}
+            left={pad.l}
+            right={pad.r}
+            width={width}
+          />
         )}
 
         {hoverIdx !== null && hover !== null && (

@@ -7,6 +7,7 @@ import { fliesQuery, type FliesFilter } from "../../lib/api";
 import { AXIS_MUTED } from "../../components/Charts";
 import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
 import { niceTicks } from "../../components/chart/scales";
+import { SpotMarker, HoverReadout } from "../../components/chart/Tooltip";
 
 interface PayoffCurve {
   empty: boolean;
@@ -264,30 +265,17 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
 
         {/* spot/settlement line: solid amber with an outlined amber tag at the top */}
         {spot !== null && spot >= xMin && spot <= xMax && (
-          <>
-            <line x1={X(spot)} y1={pad.t} x2={X(spot)} y2={height - pad.b} stroke={SPOT_COLOR} strokeWidth={2} opacity={0.9} />
-            {(() => {
-              const label = `${spotTag} ${spot.toFixed(2)}`;
-              const lw = label.length * 5.6 + 12;
-              const lx = Math.min(Math.max(X(spot) - lw / 2, pad.l), width - pad.r - lw);
-              return (
-                <>
-                  <rect x={lx} y={1} width={lw} height={15} rx={4} fill="#101216" stroke={SPOT_COLOR} strokeWidth={1} />
-                  <text x={lx + lw / 2} y={12} fontSize={9.5} fontWeight={700} fill={SPOT_COLOR} textAnchor="middle" fontFamily="Consolas, monospace">
-                    {label}
-                  </text>
-                </>
-              );
-            })()}
-          </>
+          <SpotMarker x={X(spot)} label={`${spotTag} ${spot.toFixed(2)}`} top={pad.t} bottom={height - pad.b} left={pad.l} right={pad.r} width={width} />
         )}
 
         {/* hover crosshair + readout */}
         {hover !== null && hoverPrice !== null && (
           <>
             <line x1={hover.px} y1={pad.t} x2={hover.px} y2={height - pad.b} stroke="#3d4653" />
-            {(() => {
-              const lines = [
+            <HoverReadout
+              x={hover.px}
+              width={width}
+              lines={[
                 `at ${hoverPrice.toFixed(0)}`,
                 ...shown.map((a) => {
                   let best = 0;
@@ -296,21 +284,9 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
                   });
                   return `${a.arm}  ${fmtMoney(a.curve.pnl[best]!)}`;
                 }),
-              ];
-              const bw = Math.max(...lines.map((l) => l.length)) * 5.8 + 12;
-              const bh = lines.length * 12 + 8;
-              const bx = Math.min(Math.max(hover.px + 12, 4), width - bw - 4);
-              return (
-                <>
-                  <rect x={bx} y={8} width={bw} height={bh} rx={5} fill="#101216f0" stroke="#2a2f3a" />
-                  {lines.map((l, i) => (
-                    <text key={i} x={bx + 6} y={20 + i * 12} fontSize={9.5} fill={i === 0 ? "#eceff3" : colorOf(shown[i - 1]!.arm)} fontFamily="Consolas, monospace">
-                      {l}
-                    </text>
-                  ))}
-                </>
-              );
-            })()}
+              ]}
+              lineColor={(i) => (i === 0 ? "#eceff3" : colorOf(shown[i - 1]!.arm))}
+            />
           </>
         )}
       </svg>
