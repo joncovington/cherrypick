@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { useFliesTradeLog, fliesQuery, type FliesFilter } from "../../lib/api";
-import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
+import { DataCard, PnlCell, SkeletonRows, fmtMoney, fmtNum } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
 import { structureLabel } from "./structure";
 
@@ -51,12 +51,28 @@ interface Summary {
   profitFactor: number | null;
 }
 
+interface CompletionSummary {
+  trades: number;
+  completed: number;
+  completionPct: number | null;
+  medianLatencyMin: number | null;
+  pinned: number;
+  pinnedPct: number | null;
+}
+
 interface History {
   byArm: Array<{ arm: string } & Summary>;
   byEntryMode: Array<{ entryMode: string } & Summary>;
-  byEntryWindow: Array<{ window: string } & Summary>;
+  byEntryHour: Array<{ hour: string } & Summary>;
+  byArmHour: Array<{ arm: string; hour: string } & CompletionSummary>;
   feeDrag: Array<{ arm: string } & Summary>;
   dailyPnl: Array<{ date: string; trades: number; netPnl: number }>;
+}
+
+/** "10:00-11:00" -> "10-11", so the hour matrix stays narrow enough to need no horizontal scroll. */
+function shortHour(hour: string): string {
+  const m = /^(\d{2}):00-(\d{2}):00$/.exec(hour);
+  return m ? `${m[1]}–${m[2]}` : hour;
 }
 
 function useHistory(mode: TradingMode, filter: FliesFilter) {
@@ -202,6 +218,24 @@ export function HistoryTab({
   // per-arm net over 40 trades from 3 sessions is a 3-sample reading wearing a 40-sample coat.
   const headers = ["", "trades", "sessions", "net", "win %", "avg", "PF"];
 
+  // Arm x hour completion matrix: rows by arm, columns by the hours that actually appear, sorted
+  // chronologically. A Map per arm keeps a missing (arm, hour) combination a real "no trades" dash
+  // rather than a zero, matching this module's own "None never means zero" rule.
+  const hourColumns = [...new Set((data?.byArmHour ?? []).map((r) => r.hour))].sort((a, b) => a.localeCompare(b));
+  const armRows: Array<[string, Map<string, CompletionSummary>]> = [];
+  {
+    const byArmMap = new Map<string, Map<string, CompletionSummary>>();
+    for (const r of data?.byArmHour ?? []) {
+      let hourMap = byArmMap.get(r.arm);
+      if (hourMap === undefined) {
+        hourMap = new Map<string, CompletionSummary>();
+        byArmMap.set(r.arm, hourMap);
+      }
+      hourMap.set(r.hour, r);
+    }
+    for (const [arm, hourMap] of byArmMap) armRows.push([arm, hourMap]);
+  }
+
   return (
     <div className="cards cards-wide">
       <section className="card">
@@ -209,15 +243,15 @@ export function HistoryTab({
         {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <FliesCalendar days={data?.dailyPnl ?? []} onPick={onReplayDay} />}
       </section>
 
-      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(20rem, 1fr))" }}>
+      <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(34rem, 1fr))" }}>
         <DataCard title="By arm (legged only, settled)" headers={headers} loading={isLoading} rowCount={data?.byArm.length ?? 0}>
           <SummaryRows rows={data?.byArm} label="arm" />
         </DataCard>
         <DataCard title="By entry mode" headers={headers} loading={isLoading} rowCount={data?.byEntryMode.length ?? 0}>
           <SummaryRows rows={data?.byEntryMode} label="entryMode" />
         </DataCard>
-        <DataCard title="By entry window (deliberately unranked)" headers={headers} loading={isLoading} rowCount={data?.byEntryWindow.length ?? 0}>
-          <SummaryRows rows={data?.byEntryWindow} label="window" />
+        <DataCard title="By entry hour (deliberately unranked)" headers={headers} loading={isLoading} rowCount={data?.byEntryHour.length ?? 0}>
+          <SummaryRows rows={data?.byEntryHour} label="hour" />
         </DataCard>
         <DataCard title="Fee drag by arm" headers={["arm", "gross", "fees", "net", "drag %"]} loading={isLoading} rowCount={data?.feeDrag.length ?? 0}>
           {data?.feeDrag.map((r) => (
@@ -233,6 +267,56 @@ export function HistoryTab({
           ))}
         </DataCard>
       </div>
+
+      <section className="card">
+        <h2>Completion &amp; pin rate — by arm &times; entry hour</h2>
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th></th>
+                {hourColumns.map((h) => (
+                  <th key={h}>{shortHour(h)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <SkeletonRows n={3} cols={hourColumns.length + 1} />
+              ) : armRows.length === 0 ? (
+                <tr>
+                  <td colSpan={hourColumns.length + 1} className="muted">no rows</td>
+                </tr>
+              ) : (
+                armRows.map(([arm, byHour]) => (
+                  <tr key={arm}>
+                    <td>{arm}</td>
+                    {hourColumns.map((h) => {
+                      const c = byHour.get(h);
+                      if (c === undefined || c.trades === 0) return <td key={h} className="muted">—</td>;
+                      const cls = c.completionPct === null ? undefined : c.completionPct >= 70 ? "pnl-pos" : c.completionPct < 55 ? "pnl-neg" : undefined;
+                      return (
+                        <td key={h} className={cls} title={`${c.trades} trades, ${c.completed} completed`}>
+                          {c.completionPct !== null ? `${c.completionPct.toFixed(0)}%` : "—"}
+                          {" · "}
+                          {c.medianLatencyMin !== null ? `${c.medianLatencyMin.toFixed(0)}m` : "—"}
+                          {" · "}
+                          {c.pinnedPct !== null ? `${c.pinnedPct.toFixed(0)}%` : "—"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        <p className="muted" style={{ fontSize: 11, marginTop: "0.5rem", marginBottom: 0 }}>
+          Each cell reads completion % · median minutes to complete · pinned %. Completion is whether
+          the second leg ever filled; pinned is a settlement inside the short strike's band. A dash
+          means no trades entered that arm in that hour.
+        </p>
+      </section>
 
       <section className="card">
         <div className="panel-head-row">
