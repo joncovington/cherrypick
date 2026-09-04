@@ -100,14 +100,20 @@ export function EntriesCard() {
                       <td className={r.sessionNet !== null ? (r.sessionNet >= 0 ? "pnl-pos" : "pnl-neg") : "muted"}>
                         {fmtMoney(r.sessionNet)}
                       </td>
-                      <td className="muted" style={{ textAlign: "left" }}>
+                      <td className="muted desk-top-refusal" style={{ textAlign: "left" }} title={r.topRefusal ?? undefined}>
                         {r.topRefusal ?? "—"}
                       </td>
                     </>
                   ) : (
-                    <td colSpan={5} className="muted">
-                      {r.note}
-                    </td>
+                    <>
+                      <td className="muted">—</td>
+                      <td className="muted">—</td>
+                      <td className="muted">—</td>
+                      <td className="muted">—</td>
+                      <td className="muted" style={{ textAlign: "left" }} title={r.note ?? undefined}>
+                        —
+                      </td>
+                    </>
                   )}
                 </tr>
               ))

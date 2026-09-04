@@ -2497,7 +2497,12 @@ select.text-input {
 .overview-left {
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  /* The implicit single column defaults to `auto` sizing without this -- a wide table (a long
+     topRefusal string, say) then grows the column past the viewport instead of being clipped/
+     scrolled by its own .table-scroll, the same minmax(0, 1fr) trap this file already names
+     elsewhere. grid-template-rows alone does not fix horizontal overflow. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 0.6rem;
 }
 
@@ -2522,6 +2527,16 @@ select.text-input {
 .desk-table-scroll {
   overflow-y: auto;
   min-height: 0;
+}
+
+/* The refusal reason is free text from whichever module wrote it -- curve's own block_detail can
+   be a raw JSON blob rather than a short phrase. Truncate rather than letting one long value set
+   the whole column's width; the full text is still one hover away via the cell's title. */
+.desk-top-refusal {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Module-name links in the suite matrix (ExposureCard/EntriesCard) -- plain text until hovered,

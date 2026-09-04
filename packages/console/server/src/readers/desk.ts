@@ -257,6 +257,13 @@ export function readDesk(config: ConsoleConfig): DeskPayload {
     { module: "meic", ...meicCounts, sessionNet: null, available: true, note: null },
     { module: "flies", ...fliesCounts, sessionNet: null, available: true, note: null },
     {
+      // Not wired, and not going to be: earnings has no per-tick entry-attempts concept the way
+      // meic/flies/pmcc/curve/calendars/bwb do. Its closest analog, entry_reviews, is the SAME
+      // screening decision the earnings screening funnel card already reads (selected/rejected per
+      // candidate SYMBOL, checked once per day) -- not "did an entry attempt fill or refuse" on an
+      // already-chosen structure. Forcing it into this shape would repeat the exact category
+      // mismatch already avoided for the funnel card. `note` stays null rather than a
+      // paragraph-length "not wired" message that overflowed this card's own column.
       module: "earnings",
       filled: 0,
       refused: 0,
@@ -264,7 +271,7 @@ export function readDesk(config: ConsoleConfig): DeskPayload {
       sessionNet: null,
       topRefusal: null,
       available: false,
-      note: "not wired to the attempts reader yet",
+      note: null,
     },
     { module: "calendars", ...calendarsCounts, sessionNet: null, available: true, note: null },
     { module: "pmcc", ...pmccCounts, sessionNet: null, available: true, note: null },
