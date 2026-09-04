@@ -83,6 +83,15 @@ POLICY_DEFAULTS = {
     # A short that has done its job quotes 0.00/0.01 -- a one-cent buyback and, as a ratio, a 200%
     # spread -- and that is the WIN case, not an illiquidity case. See `_spread_blocks`.
     "max_leg_spread_abs": 0.05,
+    # A SEPARATE, looser floor for a leg quoting an exact 0.00 bid -- nobody making a market on the
+    # buy side of a soon-worthless option, not a wide two-sided market. When bid is 0.00, ask-bid
+    # equals the ask itself, so max_leg_spread_abs was really asking "is the ask under a nickel?" --
+    # calibrated against a one-cent buyback, not the 0.08-0.10 asks a zero-bid leg commonly still
+    # carries into same-day expiration. Measured 2026-09-04: two DOCU strategies and both ZS iron
+    # condor books sat gated on exactly this shape (0.00/0.10 and 0.00/0.08) every tick for minutes
+    # on a comfortably-cleared profit target, which would otherwise have ridden to next-day
+    # settlement instead of taking the exit the position had already earned.
+    "max_leg_spread_abs_zero_bid": 0.20,
     # Pin risk: a short strike sitting on spot into the close of its expiration day.
     "pin_guard_dollars": 1.00,
     "pin_guard_window_minutes": 60,
@@ -333,11 +342,15 @@ def _spread_blocks(snapshot: dict, policy: dict) -> bool:
         widest = snapshot.get("max_spread_pct")
         return widest is not None and widest > max_pct
     max_abs = policy.get("max_leg_spread_abs", 0.05)
+    max_abs_zero_bid = policy.get("max_leg_spread_abs_zero_bid", max_abs)
     for q in quotes.values():
         bid, ask, mid = q.get("bid"), q.get("ask"), q.get("mid")
         if bid is None or ask is None or not mid or mid <= 0:
             continue
         pct = (ask - bid) / mid
-        if pct > max_pct and (ask - bid) > max_abs:
+        if pct <= max_pct:
+            continue
+        floor = max_abs_zero_bid if bid == 0.0 else max_abs
+        if (ask - bid) > floor:
             return True
     return False
