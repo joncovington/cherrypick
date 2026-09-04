@@ -476,6 +476,12 @@ def _stop_streamer(module_root: Path, streamer: dict[str, Any]) -> bool:
 
     Without this the restart is a no-op: the daemon is single-instance guarded, so the new process
     would see the old PID alive and refuse to start, leaving the stall in place.
+
+    timeout=30: the streamer's own `stop()` polls for its graceful exit up to its
+    `_STOP_WAIT_S` (20s) before falling back to a hard kill, so a subprocess timeout shorter than
+    that reports "stop failed" on a daemon that was behaving exactly as designed. Measured
+    2026-09-04: the prior 15s timeout produced repeated spurious "recycle failed" warnings across
+    ~10 minutes while the daemon's own graceful wait was still in progress.
     """
     stop_argv = streamer.get("stop_argv")
     if not stop_argv:
@@ -484,7 +490,7 @@ def _stop_streamer(module_root: Path, streamer: dict[str, Any]) -> bool:
     if not stop_argv:
         return False
     try:
-        _run_module(module_root, stop_argv, timeout=15)
+        _run_module(module_root, stop_argv, timeout=30)
         return True
     except Exception:
         return False
