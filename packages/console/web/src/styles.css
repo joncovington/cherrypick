@@ -2502,7 +2502,7 @@ select.text-input {
      scrolled by its own .table-scroll, the same minmax(0, 1fr) trap this file already names
      elsewhere. grid-template-rows alone does not fix horizontal overflow. */
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.6rem;
 }
 

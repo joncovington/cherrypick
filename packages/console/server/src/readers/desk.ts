@@ -12,6 +12,8 @@ import { readBwb } from "./bwb.js";
 import { readCalendars, readCalendarsEntryAttempts } from "./calendars.js";
 import { readEarningsDetail } from "./earnings.js";
 import { buildSuiteReport, readFactSet } from "../services/report.js";
+import { sessionDateEt } from "../services/liveLock.js";
+import { readScreenMetrics } from "../services/screenBridge.js";
 
 /**
  * The Overview's suite matrix, in one composed read.
@@ -252,25 +254,36 @@ export function readDesk(config: ConsoleConfig): DeskPayload {
   const bwbCounts = countOutcomes(
     bwb.entryAttemptsToday.map((a: { outcome: string }) => ({ outcome: a.outcome, blockDetail: null })),
   );
+  // earnings screens candidate SYMBOLS rather than evaluating entry ticks on an already-chosen
+  // structure, so "filled/refused/no fill" maps onto its own vocabulary rather than the shared
+  // attempts-timeline shape: filled = opened, refused = rejected (screened out), no fill = accepted
+  // but not (yet) opened -- the SAME funnel the (now-removed) screening-funnel card read, scoped to
+  // today alone via `since` = today's ET date rather than the era-wide window that card used.
+  const todayEt = sessionDateEt();
+  const earningsMetrics = readScreenMetrics("paper", todayEt).metrics;
+  const earningsFunnel = earningsMetrics?.funnel ?? null;
+  const earningsCounts = {
+    filled: earningsFunnel?.opened ?? 0,
+    refused: earningsFunnel?.rejected ?? 0,
+    noFill: earningsFunnel !== null ? Math.max(0, earningsFunnel.accepted - earningsFunnel.opened) : 0,
+    // screen_metrics' own ordering: sole-blocker count first, then total -- "the ones a threshold
+    // change actually rescues" per that module's own rule, not just the most frequent gate name.
+    topRefusal: earningsMetrics?.reasons[0]?.reason ?? null,
+  };
 
   const entries: DeskEntriesRow[] = [
     { module: "meic", ...meicCounts, sessionNet: null, available: true, note: null },
     { module: "flies", ...fliesCounts, sessionNet: null, available: true, note: null },
     {
-      // Not wired, and not going to be: earnings has no per-tick entry-attempts concept the way
-      // meic/flies/pmcc/curve/calendars/bwb do. Its closest analog, entry_reviews, is the SAME
-      // screening decision the earnings screening funnel card already reads (selected/rejected per
-      // candidate SYMBOL, checked once per day) -- not "did an entry attempt fill or refuse" on an
-      // already-chosen structure. Forcing it into this shape would repeat the exact category
-      // mismatch already avoided for the funnel card. `note` stays null rather than a
-      // paragraph-length "not wired" message that overflowed this card's own column.
+      // earnings has no per-tick entry-attempts concept the way meic/flies/pmcc/curve/calendars/
+      // bwb do -- it screens candidate SYMBOLS rather than evaluating entry ticks on an
+      // already-chosen structure. earningsCounts (above) maps this card's columns onto earnings'
+      // OWN vocabulary instead of forcing a fit onto the shared attempts-timeline shape: filled =
+      // opened, refused = rejected (screened out), no fill = accepted but not yet opened.
       module: "earnings",
-      filled: 0,
-      refused: 0,
-      noFill: 0,
+      ...earningsCounts,
       sessionNet: null,
-      topRefusal: null,
-      available: false,
+      available: true,
       note: null,
     },
     { module: "calendars", ...calendarsCounts, sessionNet: null, available: true, note: null },
