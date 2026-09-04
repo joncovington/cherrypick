@@ -3,7 +3,6 @@ import { EquityCard } from "./EquityCard";
 import { EquityBottomRow } from "./EquityBottomRow";
 import { useSystem } from "./SuiteCards";
 import { ExposureCard, EntriesCard, EvidenceClockRow } from "./DeskCards";
-import { EarningsScreenCard } from "./EarningsScreenCard";
 import { StatusBar } from "./StatusBar";
 
 /**
@@ -32,7 +31,6 @@ export function OverviewPage() {
         <div className="overview-left">
           <ExposureCard />
           <EntriesCard />
-          <EarningsScreenCard />
         </div>
         <div className="overview-right">
           <EquityCard>
