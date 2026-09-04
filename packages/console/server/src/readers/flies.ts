@@ -186,7 +186,7 @@ function latestTradeDateIn(db: DatabaseHandle): string | null {
  * irreconcilable, which is the failure this file already documents. Showing nothing is visibly
  * wrong; showing the whole era looks plausible.
  */
-const UNRESOLVABLE_DAY = " unresolved";
+const UNRESOLVABLE_DAY = "unresolved";
 
 function latestTradeDate(dbPath: string): string | null {
   const outcome = readOnlyDb<string | null>(dbPath, latestTradeDateIn);
@@ -759,6 +759,13 @@ interface PnlRow {
   day: string;
 }
 
+/** One row's completion facts, carried alongside `PnlRow` for the hour-bucketed views. */
+interface CompletionRow {
+  completed: boolean;
+  latencyMin: number | null;
+  pinned: boolean;
+}
+
 function summarize(rows: PnlRow[]): FliesSummary {
   const sessions = new Set(rows.map((r) => r.day).filter((d) => d !== "")).size;
   const gross = rows.reduce((s, r) => s + r.gross, 0);
@@ -787,7 +794,8 @@ function summarize(rows: PnlRow[]): FliesSummary {
 function pnlRows(db: import("better-sqlite3").Database, where: string, params: string[]): Array<Record<string, unknown>> {
   return db
     .prepare<string[], Record<string, unknown>>(
-      `SELECT trade_date, arm, entry_mode, entry_window, COALESCE(gross_pnl, 0) AS gross,
+      `SELECT trade_date, arm, entry_mode, entry_window, entry_time, completed_at,
+              completion_latency_min, pinned, COALESCE(gross_pnl, 0) AS gross,
               COALESCE(fees, 0) AS fees, COALESCE(pnl, 0) AS pnl
          FROM fly_positions WHERE ${where}`,
     )
@@ -800,6 +808,52 @@ const toPnl = (r: Record<string, unknown>): PnlRow => ({
   pnl: Number(r["pnl"]),
   day: String(r["trade_date"] ?? ""),
 });
+
+const toCompletion = (r: Record<string, unknown>): CompletionRow => ({
+  completed: r["completed_at"] !== null && r["completed_at"] !== undefined,
+  latencyMin: typeof r["completion_latency_min"] === "number" ? r["completion_latency_min"] : null,
+  pinned: r["pinned"] === 1,
+});
+
+/**
+ * Entry clock hour, read off the stored ISO string's own market offset — the same reason
+ * `HistoryTab.tsx`'s `clockTime` slices rather than parses through a `Date`: `entry_time` carries
+ * SPX's own UTC offset, and re-deriving the hour through a viewer-local `Date` would put a 13:xx ET
+ * entry in the 10:00 bucket for a viewer three time zones west. Missing/malformed timestamps bucket
+ * to "unknown" rather than being dropped, so a schema gap is visible instead of silently shrinking
+ * the count the hour buckets sum to.
+ */
+function entryHour(iso: unknown): string {
+  if (typeof iso !== "string" || iso.length < 16) return "unknown";
+  const hh = iso.slice(11, 13);
+  const hour = Number(hh);
+  if (!Number.isInteger(hour)) return "unknown";
+  const next = String(hour + 1).padStart(2, "0");
+  return `${hh}:00-${next}:00`;
+}
+
+export interface FliesCompletionSummary {
+  trades: number;
+  completed: number;
+  completionPct: number | null;
+  medianLatencyMin: number | null;
+  pinned: number;
+  pinnedPct: number | null;
+}
+
+function summarizeCompletion(rows: CompletionRow[]): FliesCompletionSummary {
+  const completed = rows.filter((r) => r.completed).length;
+  const pinned = rows.filter((r) => r.pinned).length;
+  const latencies = rows.map((r) => r.latencyMin).filter((v): v is number => v !== null);
+  return {
+    trades: rows.length,
+    completed,
+    completionPct: rows.length > 0 ? (completed / rows.length) * 100 : null,
+    medianLatencyMin: median(latencies),
+    pinned,
+    pinnedPct: rows.length > 0 ? (pinned / rows.length) * 100 : null,
+  };
+}
 
 function groupSummaries<T extends string>(rows: Array<Record<string, unknown>>, key: string, label: T): Array<Record<T, string> & FliesSummary> {
   const grouped = new Map<string, PnlRow[]>();
@@ -894,7 +948,22 @@ export interface FliesHistory {
   /** Legged-only, per the reference: the arms differ by centring/timing/width, never by entry mode. */
   byArm: Array<{ arm: string } & FliesSummary>;
   byEntryMode: Array<{ entryMode: string } & FliesSummary>;
-  byEntryWindow: Array<{ window: string } & FliesSummary>;
+  /**
+   * Replaces the old `byEntryWindow`: that grouped on the stored `entry_window` label, which the
+   * module writes as one fixed span ("10:00-14:30") per entry, so the card it fed was structurally a
+   * single row and could say nothing about where in the session the edge concentrated. This groups
+   * the same settled rows by the CLOCK HOUR read off `entry_time` instead — sorted chronologically,
+   * not by name, since an hour ladder is already the useful order.
+   */
+  byEntryHour: Array<{ hour: string } & FliesSummary>;
+  /**
+   * Completion rate, median time-to-complete, and pin rate — by arm, by entry hour. `entry_window`'s
+   * retirement (above) means the console had no hourly view of completion/latency/pin behavior at
+   * all; this is the compact matrix the console's own hourly report artifact surfaced were worth
+   * keeping live rather than one-off. `null` cells (an arm with no entries in that hour) render as a
+   * dash, never as zero.
+   */
+  byArmHour: Array<{ arm: string; hour: string } & FliesCompletionSummary>;
   feeDrag: Array<{ arm: string } & FliesSummary>;
   dailyPnl: Array<{ date: string; trades: number; netPnl: number }>;
 }
@@ -1114,7 +1183,9 @@ export function readFliesHistory(
 ): FliesHistory {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
-  const empty: FliesHistory = { mode, byArm: [], byEntryMode: [], byEntryWindow: [], feeDrag: [], dailyPnl: [] };
+  const empty: FliesHistory = {
+    mode, byArm: [], byEntryMode: [], byEntryHour: [], byArmHour: [], feeDrag: [], dailyPnl: [],
+  };
   return withReadOnlyDb<FliesHistory>(dbPath, empty, (db) => {
     const sc = scopeClause(filter);
     const legged = pnlRows(db, `${SETTLED} AND entry_mode = 'legged'${sc.and}`, sc.params);
@@ -1122,8 +1193,8 @@ export function readFliesHistory(
     // Sorted by NAME, not by net. A leaderboard over 3-8 sessions manufactures a ranking out of
     // noise, and on 2026-08-11 it would have put a two-position arm on top -- the same mistake the
     // EOD debrief made that day. The arms are deliberately-different single-variable twins, so the
-    // useful reading is a pair against its baseline, not a league table. Flies already states this
-    // discipline on "By entry window (deliberately unranked)"; this is the same call.
+    // useful reading is a pair against its baseline, not a league table. The hourly views below keep
+    // the same discipline: sorted chronologically, never by net.
     const byArm = groupSummaries(legged, "arm", "arm").sort((a, b) => a.arm.localeCompare(b.arm));
 
     const dailyMap = new Map<string, PnlRow[]>();
@@ -1140,11 +1211,48 @@ export function readFliesHistory(
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([date, rs]) => ({ date, trades: rs.length, netPnl: rs.reduce((s, x) => s + x.pnl, 0) }));
 
+    const hourOf = (r: Record<string, unknown>) => entryHour(r["entry_time"]);
+    const byEntryHourMap = new Map<string, PnlRow[]>();
+    const byArmHourMap = new Map<string, Map<string, CompletionRow[]>>();
+    for (const r of all) {
+      const hour = hourOf(r);
+      let list = byEntryHourMap.get(hour);
+      if (list === undefined) {
+        list = [];
+        byEntryHourMap.set(hour, list);
+      }
+      list.push(toPnl(r));
+
+      const arm = String(r["arm"] ?? "unknown");
+      let hourMap = byArmHourMap.get(arm);
+      if (hourMap === undefined) {
+        hourMap = new Map<string, CompletionRow[]>();
+        byArmHourMap.set(arm, hourMap);
+      }
+      let armList = hourMap.get(hour);
+      if (armList === undefined) {
+        armList = [];
+        hourMap.set(hour, armList);
+      }
+      armList.push(toCompletion(r));
+    }
+    const byEntryHour = [...byEntryHourMap.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([hour, rs]) => ({ hour, ...summarize(rs) }));
+    const byArmHour = [...byArmHourMap.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .flatMap(([arm, hourMap]) =>
+        [...hourMap.entries()]
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([hour, rs]) => ({ arm, hour, ...summarizeCompletion(rs) })),
+      );
+
     return {
       mode,
       byArm,
       byEntryMode: groupSummaries(all, "entry_mode", "entryMode"),
-      byEntryWindow: groupSummaries(all, "entry_window", "window"),
+      byEntryHour,
+      byArmHour,
       feeDrag: byArm,
       dailyPnl,
     };
