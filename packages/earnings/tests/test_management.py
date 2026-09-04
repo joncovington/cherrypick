@@ -322,6 +322,27 @@ def test_the_two_readings_are_judged_per_leg():
     assert management.execution_gate(snap, CONFIG, "iron_fly", now=at("10:00")) is None
 
 
+def test_a_zero_bid_leg_gets_the_looser_absolute_floor():
+    """The 2026-09-04 case: nobody bidding a soon-worthless leg into same-day expiration, quoting
+    0.00/0.10 -- wider than max_leg_spread_abs (0.05) but well inside max_leg_spread_abs_zero_bid
+    (0.20). When bid is 0.00, ask-bid equals the ask itself, so the ordinary floor was really asking
+    'is the ask under a nickel' -- calibrated against a one-cent buyback, not this one. Four real
+    positions (two DOCU strategies, an iron_condor control and its advised twin) sat gated on exactly
+    this shape every tick despite having already cleared their profit target."""
+    snap = snapshot(0.10)
+    snap["quotes"][LEGS[0]["symbol"]] = {"bid": 0.0, "ask": 0.10, "mid": 0.05, "delta": None, "iv": None}
+    assert management.execution_gate(snap, CONFIG, "iron_fly", now=at("10:00")) is None
+
+
+def test_a_zero_bid_leg_past_the_looser_floor_still_gates():
+    """The looser floor is not unlimited: a genuinely large zero-bid ask (nobody bidding on real
+    money, not spare change) still refuses. Verified by restoring the ordinary max_leg_spread_abs for
+    a zero-bid leg and watching this admit-case gate instead."""
+    snap = snapshot(0.30)
+    snap["quotes"][LEGS[0]["symbol"]] = {"bid": 0.0, "ask": 0.30, "mid": 0.15, "delta": None, "iv": None}
+    assert management.execution_gate(snap, CONFIG, "iron_fly", now=at("10:00")) == "spread_too_wide"
+
+
 def test_a_snapshot_without_quotes_keeps_the_aggregate_percentage_test():
     """A mark that carries no per-leg quotes must not silently admit more than it used to."""
     bare = {"ok": True, "max_spread_pct": 2.0}
