@@ -418,6 +418,21 @@ def _streamer_chain_fetch_errors(status: dict[str, Any]) -> dict[str, str]:
     return errors if isinstance(errors, dict) else {}
 
 
+def _streamer_stale_chains(status: dict[str, Any]) -> dict[str, str]:
+    """Base windows whose loaded 0DTE chain is dated before the ET session date
+    (`stale_chains` from the producer's status), or `{}` if unreported/healthy.
+
+    The 2026-09-10 incident: the nightly DXLink drop reconnected in-process at 23:58 ET, the chain
+    fetch reloaded the already-expired 9th, and the process survived the night -- so the 09:00 ET
+    pass found it running, every aggregate age fresh (the SPX index ticked, a 1DTE extra window
+    ticked), no chain fetch error and no dead underlying, and left it alone. The flies module
+    refused all 4,662 entries as `no_0dte_expiration`. A chain for the wrong session is a stall the
+    aggregates cannot see, the same shape as a dead chain fetch. A producer that doesn't report
+    this field degrades cleanly."""
+    stale = status.get("stale_chains")
+    return stale if isinstance(stale, dict) else {}
+
+
 def _streamer_dead_underlyings(status: dict[str, Any]) -> dict[str, float]:
     """Union underlyings whose spot has been individually stale past the producer's dead limit
     during regular hours (`stream_trades` age per symbol), or `{}` if unreported/healthy.
@@ -439,11 +454,15 @@ def _streamer_stale_detail(
     limit: int,
     chain_errors: dict[str, str] | None = None,
     dead_underlyings: dict[str, float] | None = None,
+    stale_chains: dict[str, str] | None = None,
 ) -> str:
     """Name whichever feed(s) are stale, so the alert distinguishes a whole-stream silence from an
-    underlying-spot-only stall, a single symbol's dead chain fetch, or a single symbol's dead spot
-    subscription (all different causes)."""
+    underlying-spot-only stall, a single symbol's dead chain fetch, a single symbol's dead spot
+    subscription, or a chain dated before the session (all different causes)."""
     parts = []
+    if stale_chains:
+        named = ", ".join(f"{sym} chain dated {exp}" for sym, exp in stale_chains.items())
+        parts.append(f"serving yesterday's expiration: {named}")
     if global_age is not None and global_age > limit:
         parts.append(f"no events for {global_age:.0f}s")
     if underlying_age is not None and underlying_age > limit:
@@ -544,6 +563,7 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
     underlying_age = _streamer_underlying_stale_age(status)
     chain_errors = _streamer_chain_fetch_errors(status)
     dead_underlyings = _streamer_dead_underlyings(status)
+    stale_chains = _streamer_stale_chains(status)
     limit = spec.get("stale_restart_seconds", 240)
     # A stall is the whole stream going quiet, OR the underlying-spot feed dying while option quotes
     # keep the global age fresh (2026-07-22), OR a single symbol's chain fetch exhausting its in-process
@@ -552,10 +572,17 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
     # whichever signal fires.
     stale_candidates = [a for a in (stale_age, underlying_age) if a is not None]
     worst_stale = max(stale_candidates) if stale_candidates else None
+    # ...OR a base window serving a chain dated before the session (2026-09-10) while every one of
+    # the above stays healthy.
     is_stalled = (
-        (worst_stale is not None and worst_stale > limit) or bool(chain_errors) or bool(dead_underlyings)
+        (worst_stale is not None and worst_stale > limit)
+        or bool(chain_errors)
+        or bool(dead_underlyings)
+        or bool(stale_chains)
     )
-    detail = _streamer_stale_detail(stale_age, underlying_age, limit, chain_errors, dead_underlyings)
+    detail = _streamer_stale_detail(
+        stale_age, underlying_age, limit, chain_errors, dead_underlyings, stale_chains
+    )
     connection_age = _streamer_connection_age(status)
     # Don't count a connection that has not had time to populate yet — a restart takes a few seconds to
     # resubscribe, and without this the next tick would see stale data and restart again, forever.

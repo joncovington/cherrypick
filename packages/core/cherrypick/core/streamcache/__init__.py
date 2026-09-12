@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS stream_symbol_health (
     symbol            TEXT PRIMARY KEY,
     chain_loaded_at   TEXT,
     chain_fetch_error TEXT,
+    chain_expiration  TEXT,
     updated_at        REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS orb_ranges (
@@ -229,6 +230,12 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
     trade_cols = {row[1] for row in conn.execute("PRAGMA table_info(stream_trades)")}
     if "event_at" not in trade_cols:
         conn.execute("ALTER TABLE stream_trades ADD COLUMN event_at REAL")
+    # Additive migration: the expiration a symbol's loaded chain serves (2026-09-10 -- a base window
+    # served the previous day's chain all session and nothing could say so). NULL for rows written
+    # by an older producer, which the status reader treats as "unknown", never as "stale".
+    health_cols = {row[1] for row in conn.execute("PRAGMA table_info(stream_symbol_health)")}
+    if "chain_expiration" not in health_cols:
+        conn.execute("ALTER TABLE stream_symbol_health ADD COLUMN chain_expiration TEXT")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_chain_underlying ON stream_chain(underlying_symbol, expiration)"
     )

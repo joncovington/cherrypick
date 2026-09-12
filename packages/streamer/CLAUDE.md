@@ -127,6 +127,21 @@ absolute paths.
 - **`--status` prints one merged JSON object.** `running`/`pid` and the staleness/connection fields
   (`oldest_event_age_s`, `stale_age_s`, `connected_since`) go in the **same** object — the orchestrator's
   `util.first_json` parses the whole buffer, so a second JSON line would be dropped. Keep it one object.
+- **A base window's "0DTE" chain is the first expiration on or after the ET session date, and it
+  rolls with the date.** Never the expiration nearest the machine's local calendar date by absolute
+  distance, and never fetched only at start/reconnect. The 2026-09-10 incident: the nightly DXLink
+  drop reconnected in-process at 23:58 ET on the 9th, the fetch picked the 9th itself (nearest by
+  distance, expired eight hours earlier), the process survived the night, and the base SPX window
+  served that dead chain all session while every aggregate stayed fresh — the SPX index ticked, a
+  1DTE extra window ticked, no chain fetch error, no dead underlying. The flies module refused all
+  4,662 entries as `no_0dte_expiration`; MEIC traded normally because it fetches its own chain by
+  REST. Three things now hold this: `ChainStreamer._fetch_dte0_chain` selects by ET session date
+  (a chain with no expiration on or after it is a `chain_fetch_error`, never a silent stale load);
+  `_symbol_refresher` refetches when the session date moves past the date the chain was loaded on
+  and rebuilds the window onto it; and each health row records `chain_expiration`, from which
+  `--status` reports `stale_chains` (base windows only — `SYMBOL@date` rows are dated by
+  construction) so the watchdog restarts on it. `--status` must keep answering on a cache the
+  producer has not migrated yet: the watchdog reads status before it auto-starts the streamer.
 - **The streaming engine stays in `cherrypick.core`.** Do not fork `ChainStreamer` or the cache schema
   into this package — the whole point is one shared engine (the GEX math drifted ~75× once when copied).
 - **No trading policy here.** ORB, open-position leg subscriptions, REST polling, and any HTTP API belong
