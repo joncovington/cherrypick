@@ -69,10 +69,13 @@ export function positionPnl(p: FlyPosition, s: number): number {
   let payoff: number;
   if (p.kind === "fly") payoff = flyPayoff(p.center, w, s);
   else if (p.kind === "short_vertical") payoff = shortVerticalPayoff(p.side, p.center, w, s);
-  else if (p.kind === "long_vertical") payoff = -shortVerticalPayoff(p.side, p.center, w, s);
+  // A `long_vertical` row is debit_first's OPENING trade, priced against its own strikes
+  // (+1 (K-w)/-1 K call, or +1 (K+w)/-1 K put) -- exactly what fly.position_pnl does. It is NOT
+  // the mirror of a short vertical: that ramps from K outward, this ramps from the far strike INTO
+  // K, a full wing width apart. Pinned by test/flies-mirror.test.ts.
+  else if (p.kind === "long_vertical") payoff = debitVerticalPayoff(p.side, p.center, w, s);
   else if (p.kind === "iron_fly") payoff = ironFlyPayoff(p.center, w, s);
   else if (p.kind === "bwb") payoff = bwbPayoff(p.side, p.center, w, p.farWidth ?? w, s);
-  else if (p.kind === "debit_vertical") payoff = debitVerticalPayoff(p.side, p.center, w, s);
   else payoff = 0;
   const cash = p.net + payoff;
   let fees = p.fees;
@@ -172,52 +175,108 @@ export function stateAt(row: FlyRow, when: string): FlyPosition | null {
   return state;
 }
 
+/** One position's own payoff on the book's price grid, so a flat book sum can be read back into its parts. */
+export interface StructureCurve {
+  kind: string;
+  side: string;
+  center: number;
+  /** Not yet converted into a fly: a legged short vertical or a debit_first long vertical still waiting on its second leg. */
+  stranded: boolean;
+  pnl: number[];
+}
+
+export interface BookFloor {
+  worst: number;
+  /**
+   * Where the worst case sits. On a flat tail this is the INNER end of the flat run (the last
+   * price before the book climbs), with `worstTail` saying which way the run extends, so the
+   * sentence can say "at or below 7655" instead of naming an arbitrary grid point.
+   */
+  worstAt: number | null;
+  worstTail: "below" | "above" | null;
+  floorHolds: boolean;
+  /** The book cannot move: worst equals best at every price. A distinct state worth naming. */
+  locked: boolean;
+  band: [number, number] | null;
+  /** Whether `band` runs off the scan grid on that side -- an open side, not a boundary. */
+  bandOpen: { below: boolean; above: boolean };
+  /** Every contiguous non-negative zone, low to high (the forest's zones). */
+  bands: Array<[number, number]>;
+  unboundedBelow: boolean;
+}
+
 export interface PayoffCurve {
   empty: boolean;
   positions: number;
   prices: number[];
   pnl: number[];
+  structures: StructureCurve[];
   centers: number[];
-  floor: {
-    worst: number;
-    worstAt: number | null;
-    floorHolds: boolean;
-    band: [number, number] | null;
-    unboundedBelow: boolean;
-  };
+  /** The widest wing in the book (a bwb's far wing counts), so a renderer can pad by a wing. */
+  wing: number;
+  floor: BookFloor;
 }
 
-/** Book P&L across a price grid plus the floor and the band it holds over. */
-export function payoffCurve(positions: FlyPosition[], step = 1, points = 120): PayoffCurve {
-  if (positions.length === 0) {
-    return {
-      empty: true,
-      positions: 0,
-      prices: [],
-      pnl: [],
-      centers: [],
-      floor: { worst: 0, worstAt: null, floorHolds: true, band: null, unboundedBelow: false },
-    };
+const EMPTY_FLOOR: BookFloor = {
+  worst: 0,
+  worstAt: null,
+  worstTail: null,
+  floorHolds: true,
+  locked: false,
+  band: null,
+  bandOpen: { below: false, above: false },
+  bands: [],
+  unboundedBelow: false,
+};
+
+/**
+ * Port of fly._scan_prices: a grid spanning every strike, padded a full strike span (at least four
+ * steps) beyond the outermost, plus a point one cent EITHER side of every strike. The payoff is
+ * piecewise-linear with kinks only at strikes, but the assignment fee is a step function that
+ * jumps the instant a leg crosses its strike, so the true worst dollar point sits just past a
+ * strike, not on it -- a bare display grid lands the "worst" reading on the wrong side of every
+ * jump. Never used for drawing; only for the floor.
+ */
+export function scanPrices(positions: FlyPosition[], step: number): number[] {
+  const eps = 0.01;
+  const strikes: number[] = [];
+  for (const p of positions) {
+    const w = p.wingWidth;
+    if (p.kind === "fly" || p.kind === "short_vertical" || p.kind === "long_vertical" || p.kind === "iron_fly") {
+      strikes.push(p.center - w, p.center, p.center + w);
+    } else if (p.kind === "bwb") {
+      const f = p.farWidth ?? w;
+      if (p.side === "put") strikes.push(p.center + w, p.center, p.center - f);
+      else strikes.push(p.center - w, p.center, p.center + f);
+    }
   }
-  const centers = positions.map((p) => p.center);
-  // A bwb's negative tail sits beyond the far wing — never clip it.
-  const width = Math.max(...positions.map((p) => p.farWidth ?? p.wingWidth));
-  const lo = Math.min(...centers) - 3 * width;
-  const hi = Math.max(...centers) + 3 * width;
-  const span = hi - lo;
-  const gridStep = span > 0 ? Math.max(step, span / points) : step;
-
-  const prices: number[] = [];
-  const pnls: number[] = [];
-  for (let x = lo; x <= hi + 1e-9; x += gridStep) {
-    prices.push(Math.round(x * 100) / 100);
-    pnls.push(Math.round(bookPnl(positions, x) * 100) / 100);
+  if (strikes.length === 0) return [];
+  const lo = Math.min(...strikes);
+  const hi = Math.max(...strikes);
+  const pad = Math.max(hi - lo, step * 4);
+  const out = new Set<number>();
+  for (let x = lo - pad; x <= hi + pad + 1e-9; x += step) out.add(Math.round(x * 1e4) / 1e4);
+  for (const s of strikes) {
+    out.add(Math.round((s - eps) * 1e4) / 1e4);
+    out.add(Math.round((s + eps) * 1e4) / 1e4);
   }
+  return [...out].sort((a, b) => a - b);
+}
 
-  const worst = Math.min(...pnls);
-  const worstAt = prices[pnls.indexOf(worst)] ?? null;
+/**
+ * Port of fly.book_floor over the scan grid above: the book's worst case and the contiguous
+ * non-negative zones, with `band` the zone containing the payoff maximum (a single honest range
+ * that can understate coverage, never overstate it). Pinned against the module itself by
+ * test/flies-mirror.test.ts.
+ */
+export function bookFloor(positions: FlyPosition[], step = 1): BookFloor {
+  const prices = scanPrices(positions, step);
+  if (prices.length === 0) return EMPTY_FLOOR;
+  const pnls = prices.map((x) => bookPnl(positions, x));
+  const worstRaw = Math.min(...pnls);
+  const bestRaw = Math.max(...pnls);
+  const near = (v: number, w: number) => Math.abs(v - w) < 0.005;
 
-  // Contiguous non-negative zones; band = the zone containing the payoff max.
   const zones: Array<[number, number]> = [];
   let runStart: number | null = null;
   let runEnd: number | null = null;
@@ -231,21 +290,79 @@ export function payoffCurve(positions: FlyPosition[], step = 1, points = 120): P
     }
   }
   if (runStart !== null) zones.push([runStart, runEnd!]);
-  const bestAt = prices[pnls.indexOf(Math.max(...pnls))]!;
+  const bestAt = prices[pnls.indexOf(bestRaw)]!;
   const band = zones.find((z) => z[0] <= bestAt && bestAt <= z[1]) ?? null;
+
+  // A flat tail: report the inner end of the run and which way it extends.
+  let worstAt = prices[pnls.indexOf(worstRaw)]!;
+  let worstTail: BookFloor["worstTail"] = null;
+  if (near(pnls[0]!, worstRaw)) {
+    let i = 0;
+    while (i + 1 < pnls.length && near(pnls[i + 1]!, worstRaw)) i++;
+    worstAt = prices[i]!;
+    worstTail = "below";
+  } else if (near(pnls[pnls.length - 1]!, worstRaw)) {
+    let i = pnls.length - 1;
+    while (i > 0 && near(pnls[i - 1]!, worstRaw)) i--;
+    worstAt = prices[i]!;
+    worstTail = "above";
+  }
+
+  return {
+    worst: Math.round(worstRaw * 100) / 100,
+    worstAt,
+    worstTail,
+    floorHolds: worstRaw >= 0,
+    locked: near(worstRaw, bestRaw),
+    band,
+    bandOpen: {
+      below: band !== null && band[0] === prices[0],
+      above: band !== null && band[1] === prices[prices.length - 1],
+    },
+    bands: zones,
+    unboundedBelow: pnls[0]! < 0 || pnls[pnls.length - 1]! < 0,
+  };
+}
+
+/**
+ * Port of analytics.payoff_curve: book P&L across a DISPLAY grid, plus the floor computed on the
+ * module's own strike-anchored scan (see bookFloor) rather than on the display grid.
+ */
+export function payoffCurve(positions: FlyPosition[], step = 1, points = 120): PayoffCurve {
+  if (positions.length === 0) {
+    return { empty: true, positions: 0, prices: [], pnl: [], structures: [], centers: [], wing: 0, floor: EMPTY_FLOOR };
+  }
+  const centers = positions.map((p) => p.center);
+  // A bwb's negative tail sits beyond the far wing — never clip it.
+  const width = Math.max(...positions.map((p) => p.farWidth ?? p.wingWidth));
+  const lo = Math.min(...centers) - 3 * width;
+  const hi = Math.max(...centers) + 3 * width;
+  const span = hi - lo;
+  const gridStep = span > 0 ? Math.max(step, span / points) : step;
+
+  const prices: number[] = [];
+  const pnls: number[] = [];
+  const structures: StructureCurve[] = positions.map((p) => ({
+    kind: p.kind,
+    side: p.side,
+    center: p.center,
+    stranded: p.kind === "short_vertical" || p.kind === "long_vertical",
+    pnl: [],
+  }));
+  for (let x = lo; x <= hi + 1e-9; x += gridStep) {
+    prices.push(Math.round(x * 100) / 100);
+    pnls.push(Math.round(bookPnl(positions, x) * 100) / 100);
+    positions.forEach((p, i) => structures[i]!.pnl.push(Math.round(positionPnl(p, x) * 100) / 100));
+  }
 
   return {
     empty: false,
     positions: positions.length,
     prices,
     pnl: pnls,
+    structures,
     centers: [...new Set(centers)].sort((a, b) => a - b),
-    floor: {
-      worst,
-      worstAt,
-      floorHolds: pnls.every((v) => v >= 0),
-      band,
-      unboundedBelow: pnls[0]! < 0 || pnls[pnls.length - 1]! < 0,
-    },
+    wing: width,
+    floor: bookFloor(positions, gridStep),
   };
 }
