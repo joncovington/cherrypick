@@ -126,6 +126,10 @@ class _State:
         self.conn = conn
         self.symbols = list(symbols)
         self.chains: dict[str, dict] = {}  # symbol -> {streamer_symbol: option}
+        # The ET session date each symbol's nearest chain was loaded on. `_symbol_refresher`
+        # refetches when the session date moves past it, so a process that survives the nightly
+        # reconnect (2026-09-10) still rolls onto the new day's expiration.
+        self.chain_dates: dict[str, str] = {}
         # Window tracking is keyed by the underlying symbol for the default nearest-expiration
         # window, and by "SYMBOL@YYYY-MM-DD" for each extra requested expiration — one key space, so
         # _total_subscribed and _apply_subscriptions' window-union protection cover both unchanged.
@@ -688,15 +692,45 @@ class ChainStreamer:
             self.log.warning("daily-history backfill failed (non-fatal): %s", exc)
 
     # -- per-symbol ATM/GEX window ---------------------------------------------------------------
+    @staticmethod
+    def _session_date() -> str:
+        """The ET calendar date -- the session a 0DTE chain has to serve. Never the machine's local
+        date: on a Mountain-time host 21:58 local is 23:58 ET, still yesterday's session, which is
+        exactly when the nightly DXLink drop reconnects."""
+        return datetime.now(tz=_ET).date().isoformat()
+
     async def _fetch_dte0_chain(self, underlying: str) -> dict:
+        """The chain for the FIRST expiration on or after the ET session date.
+
+        Not the expiration nearest the calendar date by absolute distance: at 23:58 ET on the 9th
+        that was the 9th itself, expired eight hours earlier, and the 2026-09-10 session ran on it
+        because the reconnect that reloaded it survived the night. A chain with no expiration on or
+        after the session date is an error (recorded as chain_fetch_error by the retry wrapper),
+        never a silent load of a dead expiration.
+        """
         from tastytrade.instruments import get_option_chain
 
         session = self.session_factory()
         chain = await get_option_chain(session, underlying)
         if not chain:
             return {}
-        nearest = min(chain.keys(), key=lambda e: abs((e - date.today()).days))
+        today = date.fromisoformat(self._session_date())
+        candidates = [e for e in chain if e >= today]
+        if not candidates:
+            latest = max(chain).isoformat()
+            raise ValueError(f"no expiration on or after {today.isoformat()} in chain (latest {latest})")
+        nearest = min(candidates)
         return {o.streamer_symbol: o for o in chain[nearest] if getattr(o, "streamer_symbol", None)}
+
+    @staticmethod
+    def _chain_expiration(chain: dict) -> str | None:
+        """The expiration a loaded chain serves, read off its options; None when they carry none."""
+        for o in chain.values():
+            exp = getattr(o, "expiration_date", None)
+            if exp is None:
+                continue
+            return exp.isoformat() if hasattr(exp, "isoformat") else str(exp)
+        return None
 
     async def _fetch_dte0_chain_with_retry(self, symbol: str, state: _State) -> dict | None:
         """Retry a failed chain fetch with the same doubling backoff `run_async` uses for
@@ -714,10 +748,17 @@ class ChainStreamer:
             )
             try:
                 chain = await self._fetch_dte0_chain(symbol)
-                self.log.info("[%s] 0DTE chain loaded: %d options", symbol, len(chain))
+                expiration = self._chain_expiration(chain)
+                self.log.info(
+                    "[%s] 0DTE chain loaded: %d options (expiration %s)", symbol, len(chain), expiration
+                )
                 streamcache.write_chain(state.conn, chain)
                 streamcache.upsert_symbol_health(
-                    state.conn, symbol, chain_loaded_at=datetime.now(UTC).isoformat(), chain_fetch_error=None
+                    state.conn,
+                    symbol,
+                    chain_loaded_at=datetime.now(UTC).isoformat(),
+                    chain_fetch_error=None,
+                    chain_expiration=expiration,
                 )
                 return chain
             except Exception as exc:
@@ -750,9 +791,23 @@ class ChainStreamer:
         if chain is None:
             return
         state.chains[symbol] = chain
+        state.chain_dates[symbol] = self._session_date()
 
         state.window_syms.setdefault(symbol, [])
         while not state.stop_event.is_set():
+            # Session-date roll: a chain loaded on one ET date is refetched the moment the date moves
+            # on, so a process that survives the nightly reconnect (2026-09-10) serves today's
+            # expiration and not yesterday's. The window is forced to recompute onto the new chain;
+            # the recompute's remove-set unsubscribes the expired symbols. A failed refetch keeps
+            # the old chain and its chain_fetch_error, which the watchdog restarts on.
+            today = self._session_date()
+            if state.chain_dates.get(symbol) != today:
+                self.log.info("[%s] session date rolled to %s — refetching the 0DTE chain", symbol, today)
+                fresh = await self._fetch_dte0_chain_with_retry(symbol, state)
+                if fresh is not None:
+                    state.chains[symbol] = fresh
+                    state.chain_dates[symbol] = today
+                    state.centers.pop(symbol, None)
             price = streamcache.current_underlying_price(state.conn, symbol)
             if price is None:
                 await asyncio.sleep(1)

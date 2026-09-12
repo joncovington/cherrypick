@@ -57,6 +57,11 @@ _STALE_WARN_S = 600
 _DEAD_UNDERLYING_S = 900.0
 
 
+def _session_date() -> str:
+    """The ET calendar date -- the session a base window's 0DTE chain has to serve."""
+    return ChainStreamer._session_date()
+
+
 def _in_rth_clock(now_utc: float) -> bool:
     """Weekday 09:35-15:55 ET, clock-only. Holidays are the CALLER'S problem by design: the
     watchdog asks through a holiday-aware session gate (`timeutil.is_session_window`), and this
@@ -282,12 +287,22 @@ def status(cfg: dict) -> dict:
             # ONE symbol's chain fetch silently failing (window disabled) is invisible whenever other
             # symbols keep ticking fine — this is that symbol's own signal (see
             # cherrypick.core.streamer's _fetch_dte0_chain_with_retry).
+            # `chain_expiration` arrived 2026-09-12 by additive migration, which only the PRODUCER's
+            # connect path runs. This reader opens the cache read-only and must keep answering on a
+            # cache the producer has not touched since (the weekend before its first start on the
+            # new code): the watchdog reads status BEFORE it auto-starts the streamer at 09:00 ET,
+            # and a crash here would read as "status unreadable" and skip that start.
+            health_cols = {r[1] for r in conn.execute("PRAGMA table_info(stream_symbol_health)")}
+            has_expiration = "chain_expiration" in health_cols
+            exp_col = "chain_expiration" if has_expiration else "NULL AS chain_expiration"
             for row in conn.execute(
-                "SELECT symbol, chain_loaded_at, chain_fetch_error, updated_at FROM stream_symbol_health"
+                f"SELECT symbol, chain_loaded_at, chain_fetch_error, {exp_col}, updated_at "
+                "FROM stream_symbol_health"
             ):
                 symbol_health[row["symbol"]] = {
                     "chain_loaded_at": row["chain_loaded_at"],
                     "chain_fetch_error": row["chain_fetch_error"],
+                    "chain_expiration": row["chain_expiration"],
                     "age_s": round(now - row["updated_at"], 1),
                 }
         finally:
@@ -308,6 +323,17 @@ def status(cfg: dict) -> dict:
         s: h["chain_fetch_error"] for s, h in symbol_health.items() if h["chain_fetch_error"]
     }
     info["dead_underlyings"] = dead_underlyings
+    # Base windows whose loaded chain is dated BEFORE the ET session date (2026-09-10: the nightly
+    # reconnect at 23:58 ET reloaded the 9th's chain and the process survived the night, so the
+    # base SPX window served an expired chain all session while every aggregate stayed fresh). The
+    # SYMBOL@date extra windows are dated by construction and excluded; a NULL expiration (a row
+    # from an older producer) is unknown, not stale.
+    session_date = _session_date()
+    info["stale_chains"] = {
+        s: h["chain_expiration"]
+        for s, h in symbol_health.items()
+        if "@" not in s and h.get("chain_expiration") and h["chain_expiration"] < session_date
+    }
     # What the registry union currently asks beyond each symbol's nearest expiration. The per-date
     # serving state is the `SYMBOL@date` rows already present in symbol_health above.
     try:

@@ -401,3 +401,31 @@ def test_off_session_down_is_unchanged(monkeypatch, tmp_path):
 
     assert findings[0].status == wd.OK
     assert "not running (off-hours" in findings[0].message and "pid=" not in findings[0].message
+
+
+def test_stale_chain_triggers_restart_even_with_healthy_aggregate_ages(monkeypatch, calls, tmp_path):
+    """The 2026-09-10 fault: the nightly reconnect at 23:58 ET reloaded the already-expired chain,
+    the process survived the night, and every aggregate stayed fresh all session (the SPX index
+    ticked, a 1DTE extra window ticked) while the base window served yesterday's expiration. A
+    chain dated before the session is a stall the same way a dead chain fetch is."""
+    _status(
+        monkeypatch,
+        {
+            "running": True,
+            "oldest_event_age_s": 3,
+            "underlyings_stale_age_s": 3,
+            "chain_fetch_errors": {},
+            "stale_chains": {"SPX": "2026-09-09"},
+        },
+    )
+    findings = wd._check_streamer_health("streamer", tmp_path, _spec())
+    assert calls["stop"] and calls["start"]
+    assert findings[0].status == wd.WARN
+    assert "SPX" in findings[0].message and "2026-09-09" in findings[0].message
+
+
+def test_stale_chains_absent_degrades_cleanly(monkeypatch, calls, tmp_path):
+    _status(monkeypatch, {"running": True, "oldest_event_age_s": 3, "chain_fetch_errors": {}})
+    findings = wd._check_streamer_health("streamer", tmp_path, _spec())
+    assert findings[0].status == wd.OK
+    assert calls["start"] == [] and calls["stop"] == []

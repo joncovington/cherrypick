@@ -406,7 +406,11 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
 - **The watchdog's only trading-adjacent action is benign, non-trading remediation** (restart a dead or
   silently-stalled **market-data streamer** — the standalone producer, a top-level `streamer` config
   block, session-gated and restarted on *silence* not just death, since the 34-hour stall was a live-but-
-  quiet socket — or a dead managed **service**: top-level `services`, background daemons like the gex
+  quiet socket; and since 2026-09-12 also on a base window **serving a chain dated before the
+  session** (`stale_chains` in the producer's status), because on 2026-09-10 a streamer that
+  survived the nightly reconnect ran all day on the 9th's expired SPX chain with every aggregate
+  age fresh, no chain fetch error and no dead underlying, and the 09:00 ET pass found nothing to
+  restart while flies refused every entry — or a dead managed **service**: top-level `services`, background daemons like the gex
   spot-trail recorder that `install` starts, the watchdog keeps alive via `status_argv`/`start_argv`,
   and `uninstall` stops; single-instance guarded, located by `path`/`repo` like modules but with no
   paper DB or schedule of their own). It never places, cancels, or closes an order. A service that is

@@ -233,3 +233,44 @@ def test_secrets_set_empty_input_skips(fake_keyring):
 
     assert _credentials.set_secrets(prompt_fn=lambda p: "") == []
     assert _credentials.status() == {"client_secret": False, "refresh_token": False}
+
+
+def test_status_names_a_base_window_whose_chain_is_dated_before_the_session(home, monkeypatch):
+    """2026-09-10: the base SPX window served the 9th's chain all session and nothing said so. The
+    per-symbol health row now carries the loaded chain's expiration, and status() lists every BASE
+    window (not the SYMBOL@date extra windows, which are dated by construction) whose chain is
+    dated before the ET session date."""
+    from cherrypick.core import streamcache
+
+    cache = _config.cache_path({})
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    conn = streamcache.connect(cache)
+    streamcache.upsert_symbol_health(conn, "SPX", chain_loaded_at="x", chain_fetch_error=None, chain_expiration="2026-09-09")
+    streamcache.upsert_symbol_health(conn, "XSP", chain_loaded_at="x", chain_fetch_error=None, chain_expiration="2026-09-10")
+    streamcache.upsert_symbol_health(conn, "SPX@2026-09-11", chain_loaded_at="x", chain_fetch_error=None, chain_expiration="2026-09-11")
+    conn.close()
+
+    monkeypatch.setattr(_daemon, "_session_date", lambda: "2026-09-10")
+    st = _daemon.status({"symbols": ["SPX", "XSP"]})
+    assert st["stale_chains"] == {"SPX": "2026-09-09"}
+    assert st["symbol_health"]["SPX"]["chain_expiration"] == "2026-09-09"
+
+
+def test_status_reads_a_cache_the_producer_has_not_migrated_yet(home):
+    """status() opens the cache read-only and must not depend on the producer's additive migration
+    having run: the watchdog reads status BEFORE it auto-starts the streamer at 09:00 ET, so a
+    reader that crashed on a pre-migration cache would skip that start. Simulated by dropping the
+    2026-09-12 column from a fresh cache."""
+    from cherrypick.core import streamcache
+
+    cache = _config.cache_path({})
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    conn = streamcache.connect(cache)
+    streamcache.upsert_symbol_health(conn, "SPX", chain_loaded_at="x", chain_fetch_error=None)
+    conn.execute("ALTER TABLE stream_symbol_health DROP COLUMN chain_expiration")
+    conn.commit()
+    conn.close()
+
+    st = _daemon.status({"symbols": ["SPX"]})
+    assert st["symbol_health"]["SPX"]["chain_expiration"] is None
+    assert st["stale_chains"] == {}
