@@ -10,19 +10,35 @@ import { niceTicks } from "../../components/chart/scales";
 import { SpotMarker, HoverReadout } from "../../components/chart/Tooltip";
 import { useHoverX } from "../../components/chart/useHoverX";
 
+interface StructureCurve {
+  kind: string;
+  side: string;
+  center: number;
+  stranded: boolean;
+  pnl: number[];
+}
+
+interface BookFloor {
+  worst: number;
+  worstAt: number | null;
+  worstTail: "below" | "above" | null;
+  floorHolds: boolean;
+  locked: boolean;
+  band: [number, number] | null;
+  bandOpen: { below: boolean; above: boolean };
+  bands: Array<[number, number]>;
+  unboundedBelow: boolean;
+}
+
 interface PayoffCurve {
   empty: boolean;
   positions: number;
   prices: number[];
   pnl: number[];
+  structures: StructureCurve[];
   centers: number[];
-  floor: {
-    worst: number;
-    worstAt: number | null;
-    floorHolds: boolean;
-    band: [number, number] | null;
-    unboundedBelow: boolean;
-  };
+  wing: number;
+  floor: BookFloor;
 }
 
 interface Forest {
@@ -79,21 +95,58 @@ function visibleYRange(xs: number[], ys: number[], xMin: number, xMax: number): 
   return { min: mn, max: mx };
 }
 
-/** The old page's sentence shape: "gex — worst case -$224.13 at 7745, profitable between 7728 and 7733, and loses outside that band." */
-function floorSentence(arm: string, c: PayoffCurve): string {
+/** Nearest grid index to a price. */
+function nearestIndex(prices: number[], price: number): number {
+  let best = 0;
+  prices.forEach((p, i) => {
+    if (Math.abs(p - price) < Math.abs(prices[best]! - price)) best = i;
+  });
+  return best;
+}
+
+/**
+ * The floor sentence, without the arm name (rendered beside it in the arm's own colour). It says
+ * only what the floor actually knows: a band that runs off the scan grid is open on that side,
+ * not bounded there; a flat worst case is "at or below" its inner end, not at an arbitrary grid
+ * point; and a book whose worst equals its best is locked — nothing price does can change it.
+ */
+function floorSentence(c: PayoffCurve): string {
   const f = c.floor;
-  if (c.empty) return `${arm} — no positions`;
-  if (f.floorHolds) return `${arm} — floor holds everywhere; worst case ${fmtMoney(f.worst)}`;
-  const worst = `worst case ${fmtMoney(f.worst)}${f.worstAt !== null ? ` at ${f.worstAt.toFixed(0)}` : ""}`;
-  if (f.band !== null) {
-    const outside = f.unboundedBelow ? "loses outside that band" : "bounded outside that band";
-    return `${arm} — ${worst}, profitable between ${f.band[0].toFixed(0)} and ${f.band[1].toFixed(0)}, and ${outside}.`;
+  if (c.empty) return "no positions";
+  if (f.locked) return `locked at ${fmtMoney(f.worst)} at every price — nothing price does can change this book`;
+  if (f.floorHolds) return `floor holds everywhere; worst case ${fmtMoney(f.worst)}`;
+  let worst = `worst case ${fmtMoney(f.worst)}`;
+  if (f.worstAt !== null) {
+    const at = f.worstAt.toFixed(0);
+    worst += f.worstTail === "below" ? ` at or below ${at}` : f.worstTail === "above" ? ` at or above ${at}` : ` at ${at}`;
   }
-  return `${arm} — ${worst}; negative everywhere.`;
+  if (f.band === null) return `${worst}; negative everywhere.`;
+  const [lo, hi] = f.band;
+  const where = f.bandOpen.above
+    ? `profitable from ${lo.toFixed(0)} upward`
+    : f.bandOpen.below
+      ? `profitable up to ${hi.toFixed(0)}`
+      : `profitable between ${lo.toFixed(0)} and ${hi.toFixed(0)}`;
+  const outside = f.unboundedBelow ? "loses outside that band" : "bounded outside that band";
+  return `${worst}, ${where}, and ${outside}.`;
 }
 
 const X_WIDTHS = ["auto", "50", "100", "500", "1000"] as const;
 const Y_WIDTHS = ["auto", "250", "500", "1000", "5000"] as const;
+
+const TENT_COLOR = "#43b57a";
+/** Orange, not red: red already means "the book loses here" in the fill. */
+const STRANDED_COLOR = "#f0883e";
+
+function structureLabel(s: StructureCurve): string {
+  const shape = s.stranded ? `stranded ${s.side} vertical` : s.kind === "fly" ? `${s.side} fly` : s.kind.replace("_", " ");
+  return `${shape} ${s.center.toFixed(0)}`;
+}
+
+/** Point-for-point equal curves: the advisor's synthetic twin before it diverges from its base. */
+function sameCurve(a: PayoffCurve, b: PayoffCurve): boolean {
+  return a.prices.length === b.prices.length && a.prices.every((p, i) => p === b.prices[i] && a.pnl[i] === b.pnl[i]);
+}
 
 /**
  * The profit forest, matching the flies dashboard's canvas rendering: x-window
@@ -106,6 +159,7 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
   const { data, isLoading } = useForest(mode, filter);
   const [xwidth, setXwidth] = useState<(typeof X_WIDTHS)[number]>("auto");
   const [ywidth, setYwidth] = useState<(typeof Y_WIDTHS)[number]>("auto");
+  const [showParts, setShowParts] = useState(true);
   const width = 1150;
   const height = 320;
   const pad = { l: 62, r: 12, t: 20, b: 26 };
@@ -124,38 +178,64 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
 
   const allArms = data?.arms ?? [];
   const shown = allArms.filter((a) => !a.curve.empty && a.curve.prices.length > 0);
+  const colorOf = (arm: string) => ARM_COLORS[allArms.findIndex((a) => a.arm === arm) % ARM_COLORS.length]!;
+  // An arm whose curve equals an earlier arm's point for point (the advisor's synthetic twin
+  // before it diverges) is drawn dashed and named as identical, so a line hidden under another
+  // line is never mistaken for a missing one — or for a divergence that has not happened.
+  // The synthetic arm is always the twin, never the base: `advised:control` is identical to
+  // `control`, not the other way round, whatever order the arms sort in.
+  const twinOf = new Map<string, string>();
+  const bases = [...shown].sort((a, b) => Number(a.arm.startsWith("advised:")) - Number(b.arm.startsWith("advised:")));
+  bases.forEach((a, i) => {
+    const base = bases.slice(0, i).find((b) => !twinOf.has(b.arm) && sameCurve(a.curve, b.curve));
+    if (base !== undefined) twinOf.set(a.arm, base.arm);
+  });
+  // Per-structure overlay only on a single arm: the point is to read one book's flat sum back
+  // into its tents and its stranded verticals, and several arms' parts on top of each other
+  // would say nothing.
+  const parts = shown.length === 1 && showParts ? shown[0]!.curve.structures : [];
 
   let body = null;
   let legendRow = null;
   if (shown.length > 0) {
-    // X window: the day's traded CENTRES, stretched to keep spot (or the
-    // settlement print) inside — a spot line the chart can't show is worse
-    // than a wider window when price walks away from the structures.
+    // X window: the day's traded CENTRES padded by at least the widest wing in view, so no
+    // tent is ever cut mid-slope, and stretched to keep spot (or the settlement print)
+    // inside — a spot line the chart can't show is worse than a wider window when price
+    // walks away from the structures.
     let cMin = Infinity;
     let cMax = -Infinity;
+    let maxWing = 0;
     for (const a of shown) {
       const anchors = a.curve.centers.length > 0 ? a.curve.centers : a.curve.prices;
       for (const k of anchors) {
         cMin = Math.min(cMin, k);
         cMax = Math.max(cMax, k);
       }
+      maxWing = Math.max(maxWing, a.curve.wing);
     }
     if (spot !== null) {
       cMin = Math.min(cMin, spot);
       cMax = Math.max(cMax, spot);
     }
-    const buffer = Math.max((cMax - cMin) * 0.08, 3);
+    const buffer = Math.max(maxWing, (cMax - cMin) * 0.08, 3);
     const mid = (cMin + cMax) / 2;
     const naturalHalf = (cMax - cMin) / 2 + buffer;
     const half = xwidth === "auto" ? naturalHalf : Math.max(Number(xwidth) / 2, naturalHalf);
     const xMin = mid - half;
     const xMax = mid + half;
 
-    // Y fits the visible range; a fixed tier is a per-side minimum.
+    // Y fits the visible range; a fixed tier is a per-side minimum. The structure overlay is
+    // part of that range when shown: a locked book is a flat line whose parts are the whole
+    // story, and fitting y to the line alone would clip every one of them to nothing.
     let yLo = 0;
     let yHi = 0;
     for (const a of shown) {
       const r = visibleYRange(a.curve.prices, a.curve.pnl, xMin, xMax);
+      yLo = Math.min(yLo, r.min);
+      yHi = Math.max(yHi, r.max);
+    }
+    for (const s of parts) {
+      const r = visibleYRange(shown[0]!.curve.prices, s.pnl, xMin, xMax);
       yLo = Math.min(yLo, r.min);
       yHi = Math.max(yHi, r.max);
     }
@@ -170,7 +250,8 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
     const X = (v: number) => pad.l + ((v - xMin) / (xMax - xMin || 1)) * (width - pad.l - pad.r);
     const Y = (v: number) => height - pad.b - ((v - yMin) / (yMax - yMin || 1)) * (height - pad.t - pad.b);
     const zero = Y(0);
-    const colorOf = (arm: string) => ARM_COLORS[allArms.findIndex((a) => a.arm === arm) % ARM_COLORS.length]!;
+    const plotTop = pad.t;
+    const plotBottom = height - pad.b;
 
     const hoverPrice = hoverX !== null ? xMin + ((hoverX - pad.l) / (width - pad.l - pad.r)) * (xMax - xMin) : null;
 
@@ -183,6 +264,11 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
         onMouseMove={onHoverMove}
         onMouseLeave={onHoverLeave}
       >
+        <defs>
+          <clipPath id="forest-plot">
+            <rect x={pad.l} y={plotTop} width={width - pad.l - pad.r} height={plotBottom - plotTop} />
+          </clipPath>
+        </defs>
         {/* grid + ticks */}
         {niceTicks(yMin, yMax, 5).map((v) => (
           <g key={`y${v}`}>
@@ -195,9 +281,12 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
         {niceTicks(xMin, xMax, 6).map((v) => (
           <g key={`x${v}`}>
             <line x1={X(v)} y1={pad.t} x2={X(v)} y2={height - pad.b} stroke="#15181e" />
-            <text x={X(v)} y={height - 8} fontSize={9} fill={AXIS_MUTED} textAnchor="middle" fontFamily="Consolas, monospace">
-              {v.toFixed(0)}
-            </text>
+            {/* a tick label under the axis title would collide with it — the gridline still shows */}
+            {X(v) < width - pad.r - 64 && (
+              <text x={X(v)} y={height - 8} fontSize={9} fill={AXIS_MUTED} textAnchor="middle" fontFamily="Consolas, monospace">
+                {v.toFixed(0)}
+              </text>
+            )}
           </g>
         ))}
         <text x={width - pad.r} y={height - 8} fontSize={9} fill={AXIS_MUTED} textAnchor="end">
@@ -235,6 +324,38 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
             );
           })()}
 
+        {/* per-structure overlay: each tent and each stranded vertical on its own, under the book
+            sum, clipped to the plot and labelled at its centre so a dashed line can be read back
+            to a position without guessing */}
+        {parts.length > 0 && (
+          <g clipPath="url(#forest-plot)">
+            {parts.map((s, i) => {
+              const prices = shown[0]!.curve.prices;
+              const { xs, ys } = extendFlat(prices, s.pnl, xMin, xMax);
+              const color = s.stranded ? STRANDED_COLOR : TENT_COLOR;
+              const atCenter = s.pnl[nearestIndex(prices, s.center)]!;
+              const labelY = Math.max(plotTop + 9, Math.min(plotBottom - 3, Y(atCenter) - 5));
+              return (
+                <g key={`part-${i}`}>
+                  <polyline
+                    points={xs.map((x, j) => `${X(x).toFixed(1)},${Y(ys[j]!).toFixed(1)}`).join(" ")}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={s.stranded ? 1.3 : 1}
+                    strokeDasharray="4 2"
+                    opacity={0.85}
+                  />
+                  {s.center >= xMin && s.center <= xMax && (
+                    <text x={X(s.center) + 3} y={labelY} fontSize={8.5} fill={color} opacity={0.9} fontFamily="Consolas, monospace">
+                      {structureLabel(s)}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        )}
+
         {/* centre dashlines + curves */}
         {shown.map((a) => (
           <g key={a.arm}>
@@ -245,12 +366,14 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
             )}
             {(() => {
               const { xs, ys } = extendFlat(a.curve.prices, a.curve.pnl, xMin, xMax);
+              const twin = twinOf.has(a.arm);
               return (
                 <polyline
                   points={xs.map((x, i) => `${X(x).toFixed(1)},${Y(ys[i]!).toFixed(1)}`).join(" ")}
                   fill="none"
                   stroke={colorOf(a.arm)}
                   strokeWidth={shown.length === 1 ? 1.8 : 1.4}
+                  strokeDasharray={twin ? "6 4" : undefined}
                 />
               );
             })()}
@@ -271,15 +394,14 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
               width={width}
               lines={[
                 `at ${hoverPrice.toFixed(0)}`,
-                ...shown.map((a) => {
-                  let best = 0;
-                  a.curve.prices.forEach((p, i) => {
-                    if (Math.abs(p - hoverPrice) < Math.abs(a.curve.prices[best]! - hoverPrice)) best = i;
-                  });
-                  return `${a.arm}  ${fmtMoney(a.curve.pnl[best]!)}`;
-                }),
+                ...shown.map((a) => `${a.arm}  ${fmtMoney(a.curve.pnl[nearestIndex(a.curve.prices, hoverPrice)]!)}`),
+                ...parts.map((s) => `  ${structureLabel(s)}  ${fmtMoney(s.pnl[nearestIndex(shown[0]!.curve.prices, hoverPrice)]!)}`),
               ]}
-              lineColor={(i) => (i === 0 ? "#eceff3" : colorOf(shown[i - 1]!.arm))}
+              lineColor={(i) => {
+                if (i === 0) return "#eceff3";
+                if (i <= shown.length) return colorOf(shown[i - 1]!.arm);
+                return parts[i - 1 - shown.length]!.stranded ? STRANDED_COLOR : TENT_COLOR;
+              }}
             />
           </>
         )}
@@ -288,11 +410,26 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
 
     legendRow = (
       <div className="forest-legend">
-        {shown.map((a) => (
-          <span key={a.arm}>
-            <i style={{ background: colorOf(a.arm) }} /> {a.arm}
-          </span>
-        ))}
+        {shown.map((a) => {
+          const twin = twinOf.get(a.arm);
+          return (
+            <span key={a.arm}>
+              <i className={twin !== undefined ? "forest-dash" : undefined} style={twin !== undefined ? { color: colorOf(a.arm) } : { background: colorOf(a.arm) }} />{" "}
+              {a.arm}
+              {twin !== undefined && <span className="muted"> (identical to {twin})</span>}
+            </span>
+          );
+        })}
+        {parts.length > 0 && (
+          <>
+            <span>
+              <i className="forest-dash" style={{ color: TENT_COLOR }} /> completed flies
+            </span>
+            <span>
+              <i className="forest-dash" style={{ color: STRANDED_COLOR }} /> stranded verticals
+            </span>
+          </>
+        )}
         <span>
           <i className="forest-dash" style={{ background: AXIS_MUTED }} /> centres
         </span>
@@ -323,6 +460,9 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
             ))}
           </select>
         </label>
+        <label className="muted lbl" title="each fly and each stranded vertical on its own, under the book sum (single arm only)">
+          <input type="checkbox" checked={showParts} onChange={(e) => setShowParts(e.target.checked)} /> structures
+        </label>
       </div>
       {isLoading ? (
         <span className="skeleton skeleton-text" style={{ width: "50%" }} />
@@ -335,12 +475,15 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
           <div style={{ marginTop: "0.5rem" }}>
             {shown.map((a) => (
               <p key={a.arm} className="muted" style={{ margin: "0.15rem 0", fontSize: 12 }}>
-                <span className={a.curve.floor.floorHolds ? "pnl-pos" : "pnl-neg"}>●</span> {floorSentence(a.arm, a.curve)}
+                <span className={a.curve.floor.floorHolds ? "pnl-pos" : "pnl-neg"}>●</span>{" "}
+                <span style={{ color: colorOf(a.arm) }}>{a.arm}</span>
+                {twinOf.has(a.arm) ? <span className="muted"> (identical to {twinOf.get(a.arm)})</span> : null} — {floorSentence(a.curve)}
               </p>
             ))}
             {settled !== null && (
               <p className="muted" style={{ margin: "0.15rem 0", fontSize: 12 }}>
-                Settled at <strong>{settled.price.toFixed(2)}</strong> ({settled.source ?? "unknown"})
+                Settled at <strong>{settled.price.toFixed(2)}</strong>
+                {settled.source !== null ? ` (${settled.source.replace(/_/g, " ")})` : ""}
                 {data?.lastTickSpot != null &&
                   ` — last intraday tick was ${data.lastTickSpot.toFixed(2)}, ${Math.abs(data.lastTickSpot - settled.price).toFixed(2)} ${data.lastTickSpot >= settled.price ? "above" : "below"} the close.`}
               </p>

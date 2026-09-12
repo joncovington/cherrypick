@@ -233,6 +233,37 @@ changes as safe, and it is the only check that sees past the fallback below.
   skipping cleanly (and visibly) where the ledger or Python is unavailable. Note it compares empty
   against empty until this module opens a position under the new design, so treat it as armed rather
   than as evidence.
+
+  **The flies profit forest is a mirrored derivation, and it went a month unchecked.**
+  `analytics/fliesPayoff.ts` is a port of `fly.py`'s payoff core (per-position P&L, the assignment
+  fee per ITM strike, the floor) rather than a query, and from the day it landed (2026-08-09) it
+  priced a `long_vertical` — debit_first's opening trade — as the mirror of a short vertical, a full
+  wing width away from where `fly.position_pnl` puts it. No test touched the port, so every stranded
+  debit-first vertical on the forest and every debit-first fly's pre-completion window on the
+  timeline was drawn wrong (27 stranded rows in the paper ledger on 2026-09-12; one real row off by
+  $250 at its own centre). Fixed 2026-09-12, and `server/test/flies-mirror.test.ts` now pins the port
+  two ways: `fly.py`'s own hand-computed fixtures run unconditionally (these fail on the old code —
+  the guard was shown to fail), and a ledger suite hands every `long_vertical` row plus the latest
+  session to `fly.position_pnl`/`position_floor` over a price grid and compares to the cent,
+  skipping visibly when the ledger or Python is absent. The floor was never wrong — both sides
+  bottom the kind at zero — which is why the max-possible-loss tile never gave it away.
+
+  The same check then found a second, smaller drift the same day: the port computed the FLOOR
+  (worst, band, holds) on its 120-point display grid, where the module computes it on a separate
+  strike-anchored scan (`fly._scan_prices`: a point one cent either side of every strike, padded a
+  strike span). On a display grid the assignment-fee step just past a strike is invisible (worst
+  understated by up to $5 per event on an unsettled day) and band edges land up to a grid step
+  off. `scanPrices`/`bookFloor` in `analytics/fliesPayoff.ts` now port the scan, the curve stays on
+  the display grid, and the mirror test compares worst, holds, tails and every zone against
+  `fly.book_floor` over the last 15 sessions. One thing is deliberately NOT equalised: which zone is
+  "the band" when two tents peak at the same net is an exact tie that float summation order
+  decides, and the module's pick is recorded on `fly_books.band_low/high` and read by a
+  classifier — so changing that rule is a declared-boundary change for the module, and the test
+  tolerates a different pick only when both zones' peaks agree to the cent. The forest sentence
+  now says what the floor knows and no more: a band that runs off the scan grid is "from 7659
+  upward", not "between 7659 and 7715"; a flat worst case is "at or below 7645"; and a book whose
+  worst equals its best is "locked" — 2026-09-11 control was one, two stranded verticals whose
+  loss four adjacent 5-wide flies cancel exactly at every price.
 - **The calendars page is the same question answered the other way, and the split is the point.**
   `readers/calendars.ts` reads that ledger directly like every other reader here, but two things it
   will not compute go out through `services/calendarsBridge.ts` as a subprocess: the exit-policy
