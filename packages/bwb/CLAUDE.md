@@ -28,10 +28,21 @@ doubly here because the credit gate has no floor to screen out an illusory openi
 - **Entry gate**: the whole structure must price as a net credit at mid. Any positive credit
   qualifies — a deliberate departure from the suite's `min_credit_pct_of_width` convention;
   `credit_floor` is a declared zero. Not a credit -> recorded refusal `no_credit`.
-- **Expiration**: ~7 DTE, PM-settled only. When the nearest date is the AM-settled third-Friday
-  monthly, the plan shifts to the nearest PM weekly, ties broken toward the LONGER date. Computed
-  from the calendar, asserted against the cache — never nearest-matched from the chain. A missing
-  ATM straddle quote refuses `no_expected_move`.
+- **Expiration**: the NEXT PM-settled weekly Friday strictly after today (root `occ_root`, SPXW):
+  Monday through Thursday enter for that week's Friday, Friday enters for the following one, so the
+  ladder runs 1-7 DTE. The third-Friday date is traded like any other, on its PM weekly; the
+  AM-settled SPX monthly that shares the date is kept out by the root filter, never by the
+  calendar. Computed from the calendar, asserted against the cache — never nearest-matched from
+  the chain. A missing ATM straddle quote refuses `no_expected_move`. This is the rule the ledger
+  has always recorded, and until 2026-09-12 it was not the rule the code described: the code said
+  "nearest `dte_target` (7), ties to the longer date", but a week-walk defect only ever offered the
+  very next Friday, so "nearest" never had a second candidate — and the third-Friday DATE was
+  excluded outright, which left Friday 2026-09-11 with no plan at all (`no_expiration_plan` on
+  every book). Both were corrected and the rule restated as it ran, so nothing either side of the
+  fix needs separating; the plan now flags `am_monthly_date` so monthly-date weeks, which begin
+  here, can be told apart. **Deferred (backlog, not ready as a break):** nearest-to-`dte_target`
+  selection with a minimum-DTE floor (the rule the old docstring described) as an experiment, once
+  the ladder has a comparable stretch behind it; `dte_target` stays in config, reserved and unused.
 - **Cadence**: daily ladder — a new BWB every session per enabled book, so ~5-7 positions ride
   concurrently per book at steady state. Position identity is `(symbol, book, entry_session)`.
 
