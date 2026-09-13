@@ -167,29 +167,42 @@ def carried_advice_params(module: str) -> list[dict[str, Any]] | None:
     """
 
     def read(conn):
-        table = None
-        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'"):
-            name = row[0]
-            columns = {c[1] for c in conn.execute(f"PRAGMA table_info({name})")}
-            if {"advice_params", "status"} <= columns:
-                table = name
-                break
+        table, _columns = _advice_stamp_table(conn)
         if table is None:
             return None
-        out: list[dict[str, Any]] = []
-        for row in conn.execute(
-            f"SELECT DISTINCT advice_params FROM {table}"  # noqa: S608 - name from sqlite_master
-            " WHERE advice_params IS NOT NULL AND status != 'closed'"
-        ):
-            try:
-                params = json.loads(row[0]) if isinstance(row[0], str) else dict(row[0])
-            except (TypeError, ValueError):
-                continue  # an unreadable stamp proves nothing either way; it is not evidence
-            if isinstance(params, dict) and params not in out:
-                out.append(params)
-        return out
+        return _distinct_stamps(conn, table, "status != 'closed'")
 
     return _read(_paper_db(module), read)
+
+
+def _advice_stamp_table(conn) -> tuple[str | None, set[str]]:
+    """The one table in this ledger that freezes advice on its rows, discovered from the schema
+    (the first, by name, declaring both `advice_params` and `status`), with its columns. Shared by
+    the open-row and the closed-row reads, which until 2026-09-12 each carried their own copy."""
+    for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"):
+        name = row[0]
+        columns = {c[1] for c in conn.execute(f"PRAGMA table_info({name})")}
+        if {"advice_params", "status"} <= columns:
+            return name, columns
+    return None, set()
+
+
+def _distinct_stamps(conn, table: str, where: str, params: tuple = ()) -> list[dict[str, Any]]:
+    """The distinct readable `advice_params` stamps matching `where`. An unreadable stamp proves
+    nothing either way and is skipped; it is not evidence."""
+    out: list[dict[str, Any]] = []
+    for row in conn.execute(
+        f"SELECT DISTINCT advice_params FROM {table}"  # noqa: S608 - name from sqlite_master
+        f" WHERE advice_params IS NOT NULL AND {where}",
+        params,
+    ):
+        try:
+            decoded = json.loads(row[0]) if isinstance(row[0], str) else dict(row[0])
+        except (TypeError, ValueError):
+            continue
+        if isinstance(decoded, dict) and decoded not in out:
+            out.append(decoded)
+    return out
 
 
 def closed_advice_params(module: str, session: str) -> list[dict[str, Any]] | None:
@@ -209,13 +222,7 @@ def closed_advice_params(module: str, session: str) -> list[dict[str, Any]] | No
     """
 
     def read(conn):
-        table, columns = None, set()
-        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'"):
-            name = row[0]
-            cols = {c[1] for c in conn.execute(f"PRAGMA table_info({name})")}
-            if {"advice_params", "status"} <= cols:
-                table, columns = name, cols
-                break
+        table, columns = _advice_stamp_table(conn)
         if table is None:
             return None
         if "closed_session" in columns:
@@ -224,25 +231,37 @@ def closed_advice_params(module: str, session: str) -> list[dict[str, Any]] | No
             where = "date(closed_at, 'unixepoch', 'localtime') = ?"
         else:
             return []
-        out: list[dict[str, Any]] = []
-        for row in conn.execute(
-            f"SELECT DISTINCT advice_params FROM {table}"  # noqa: S608 - name from sqlite_master
-            f" WHERE advice_params IS NOT NULL AND status = 'closed' AND {where}",
-            (session,),
-        ):
-            try:
-                params = json.loads(row[0]) if isinstance(row[0], str) else dict(row[0])
-            except (TypeError, ValueError):
-                continue  # an unreadable stamp proves nothing either way; it is not evidence
-            if isinstance(params, dict) and params not in out:
-                out.append(params)
-        return out
+        return _distinct_stamps(conn, table, f"status = 'closed' AND {where}", (session,))
 
     return _read(_paper_db(module), read)
 
 
 def _counts(rows: list[dict], key: str, value: str = "n") -> dict[str, Any]:
     return {str(r[key] or "unknown"): r[value] for r in rows}
+
+
+def _closed_by_exit_reason(conn, table: str, *, group: tuple[str, ...] = ("book",)) -> list[dict[str, Any]]:
+    """Closed rows by book and exit reason with their gross and fees -- the same statement the
+    calendars, bwb and curve sections each carried with only the table name swapped (2026-09-12).
+    pmcc keeps its own: it pools by era, which is the point of that section and is guarded by a
+    source-reading test."""
+    cols = ", ".join(group)
+    return _store.rows(
+        conn,
+        f"SELECT {cols}, exit_reason, COUNT(*) n, SUM(gross_pnl) gross, SUM(fees) fees"  # noqa: S608
+        f" FROM {table} WHERE status = 'closed' GROUP BY {cols}, exit_reason ORDER BY book",
+    )
+
+
+def _management_events(conn, table: str, session: str) -> list[dict[str, Any]]:
+    """The session's management events by action, reason, executed and gate -- one statement for
+    the three modules whose event tables share the shape (calendars, pmcc, bwb)."""
+    return _store.rows(
+        conn,
+        f"SELECT action, reason, executed, gate, COUNT(*) n FROM {table}"  # noqa: S608
+        " WHERE session_date = ? GROUP BY action, reason, executed, gate ORDER BY n DESC LIMIT ?",
+        (session, TOP_N),
+    )
 
 
 # --------------------------------------------------------------------------- market
@@ -625,24 +644,14 @@ def _calendars(session: str) -> dict[str, Any]:
             "   ORDER BY m.marked_at DESC LIMIT 1) last_spot"
             " FROM dc_positions p WHERE p.status != 'closed' ORDER BY p.book, p.side",
         )
-        closed = _store.rows(
-            conn,
-            "SELECT book, structure, exit_reason, COUNT(*) n, SUM(gross_pnl) gross, SUM(fees) fees"
-            " FROM dc_positions WHERE status = 'closed' GROUP BY book, structure, exit_reason"
-            " ORDER BY book",
-        )
+        closed = _closed_by_exit_reason(conn, "dc_positions", group=("book", "structure"))
         attempts = _store.rows(
             conn,
             "SELECT outcome, COUNT(*) n FROM dc_entry_attempts WHERE trade_date = ?"
             " GROUP BY outcome ORDER BY n DESC",
             (session,),
         )
-        events = _store.rows(
-            conn,
-            "SELECT action, reason, executed, gate, COUNT(*) n FROM dc_management_events"
-            " WHERE session_date = ? GROUP BY action, reason, executed, gate ORDER BY n DESC LIMIT ?",
-            (session, TOP_N),
-        )
+        events = _management_events(conn, "dc_management_events", session)
         marks = _mark_coverage(conn, "dc_marks", session)
         return {
             "open_positions": open_rows,
@@ -704,12 +713,7 @@ def _pmcc(session: str) -> dict[str, Any]:
             " GROUP BY book, outcome ORDER BY n DESC",
             (session,),
         )
-        events = _store.rows(
-            conn,
-            "SELECT action, reason, executed, gate, COUNT(*) n FROM pmcc_management_events"
-            " WHERE session_date = ? GROUP BY action, reason, executed, gate ORDER BY n DESC LIMIT ?",
-            (session, TOP_N),
-        )
+        events = _management_events(conn, "pmcc_management_events", session)
         exposure = _store.rows(
             conn,
             "SELECT position_id, COUNT(*) exposed_ticks FROM pmcc_marks"
@@ -756,23 +760,14 @@ def _bwb(session: str) -> dict[str, Any]:
             " armed_at, arm_reason, addon_fired_at, addon_credit, status"
             " FROM bwb_positions WHERE status != 'closed' ORDER BY book, entry_session",
         )
-        closed = _store.rows(
-            conn,
-            "SELECT book, exit_reason, COUNT(*) n, SUM(gross_pnl) gross, SUM(fees) fees"
-            " FROM bwb_positions WHERE status = 'closed' GROUP BY book, exit_reason ORDER BY book",
-        )
+        closed = _closed_by_exit_reason(conn, "bwb_positions")
         attempts = _store.rows(
             conn,
             "SELECT book, outcome, block_detail, COUNT(*) n FROM bwb_entry_attempts"
             " WHERE trade_date = ? GROUP BY book, outcome, block_detail ORDER BY n DESC LIMIT ?",
             (session, TOP_N),
         )
-        events = _store.rows(
-            conn,
-            "SELECT action, reason, executed, gate, COUNT(*) n FROM bwb_management_events"
-            " WHERE session_date = ? GROUP BY action, reason, executed, gate ORDER BY n DESC LIMIT ?",
-            (session, TOP_N),
-        )
+        events = _management_events(conn, "bwb_management_events", session)
         triggers = _store.rows(
             conn,
             "SELECT structure_signature, COUNT(*) ticks, MAX(peak_abs_delta) peak_abs_delta"
@@ -834,11 +829,7 @@ def _curve(session: str) -> dict[str, Any]:
             "SELECT position_id, book, symbol, entry_session, short_strike, long_strike,"
             " expiration, status FROM curve_positions WHERE status != 'closed' ORDER BY book",
         )
-        closed = _store.rows(
-            conn,
-            "SELECT book, exit_reason, COUNT(*) n, SUM(gross_pnl) gross, SUM(fees) fees"
-            " FROM curve_positions WHERE status = 'closed' GROUP BY book, exit_reason ORDER BY book",
-        )
+        closed = _closed_by_exit_reason(conn, "curve_positions")
         attempts = _store.rows(
             conn,
             "SELECT book, outcome, block_detail, COUNT(*) n FROM curve_entry_attempts"

@@ -59,6 +59,8 @@ import json
 import re
 from typing import Any
 
+from cherrypick.core import advice as _advice
+
 from cherrypick.advisor import bounds as _bounds
 from cherrypick.advisor import clock as _clock
 from cherrypick.advisor import factpack as _factpack
@@ -87,7 +89,7 @@ _PACK_SLOTS = ("deep", "close", "pm2", "pm1", "midday", "am2", "am1", "open", "a
 
 
 def _artifact_params(artifact: dict[str, Any]) -> dict[str, Any]:
-    return {p["param"]: p["value"] for p in artifact.get("proposals") or [] if isinstance(p, dict)}
+    return _advice.params_map(artifact.get("proposals"))
 
 
 def experiment_of(artifact: dict[str, Any] | None) -> str | None:

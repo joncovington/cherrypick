@@ -185,13 +185,9 @@ def _issue(conn, *, module: str, session: str, target: str) -> dict[str, Any]:
     deferred = [e["id"] for e in active[1:]]
 
     params = json.loads(experiment["params_json"] or "{}")
-    rationale = f"advisor experiment {experiment['id']}"
-    artifact = {
-        "module": module,
-        "session": target,
-        "expires_at": _clock.end_of_session_iso(target),
-        "proposals": [{"param": p, "value": v, "rationale": rationale} for p, v in params.items()],
-    }
+    artifact = _experiments.artifact_for(
+        module, target, params, rationale=f"advisor experiment {experiment['id']}"
+    )
     checked = _advice.validate(artifact, posture["bounds"], target)
 
     path = _advice.write(

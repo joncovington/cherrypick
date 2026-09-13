@@ -473,3 +473,25 @@ def test_a_cash_settled_week_never_grows_a_share_row(conn):
     assert conn.execute("SELECT COUNT(*) FROM dc_assignments").fetchone()[0] == 0
     put_pos = conn.execute("SELECT * FROM dc_positions WHERE side = 'put'").fetchone()
     assert put_pos["exit_cost"] == 5.00  # the ITM cash settlement still pays at settlement
+
+
+def test_frozen_params_govern_an_open_advised_position_after_the_artifact_expires():
+    """The exit-continuity rule, pinned (2026-09-12). calendars enters once a week and manages
+    all week: an expired artifact admits no new entry, but the params frozen on the open advised
+    row govern its exit every tick until it closes -- advice lapsing mid-week must never hand an
+    open position to rules nobody chose."""
+    import json
+
+    from cherrypick.core import advice as core_advice
+
+    bounds = {"time_exit": {"choices": ["fri_bell", "fri_noon"]}}
+    expired = {
+        "module": "calendars",
+        "session": "2026-09-08",
+        "expires_at": "2026-09-08T23:59:59-04:00",
+        "proposals": [{"param": "time_exit", "value": "fri_noon", "rationale": "r"}],
+    }
+    assert core_advice.validate(expired, bounds, "2026-09-08")["ok"] is False
+
+    position = _pos("advised:control", advice_params=json.dumps({"time_exit": "fri_noon"}))
+    assert management.effective_params(position, {})["time_exit"] == "fri_noon"
