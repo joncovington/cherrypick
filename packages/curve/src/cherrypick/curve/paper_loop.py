@@ -375,7 +375,12 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
     for b in wanting:
         base = b.split(":", 1)[1] if b.startswith("advised:") else b
         if b.startswith("advised:") and advice_params:
-            plans[b] = engine.plan_entry(snapshot, {**base_params, **advice_params}, config)
+            # Planned from the base book the tag names, never from control regardless.
+            plans[b] = engine.plan_entry(
+                snapshot,
+                {**management.PARAM_DEFAULTS, **engine.merged_params(config, base or "control"), **advice_params},
+                config,
+            )
         elif base == "hook":
             plans[b] = engine.plan_entry(
                 snapshot, {**management.PARAM_DEFAULTS, **engine.merged_params(config, "hook")}, config

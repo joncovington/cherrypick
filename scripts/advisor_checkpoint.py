@@ -56,9 +56,17 @@ STORE = Path(
     or Path(os.environ.get("CHERRYPICK_HOME") or (Path.home() / ".cherrypick")) / "data" / "advisor"
 )
 
-# The agent gets no tools that can act. It reads what is on stdin and returns text; the script --
-# never the agent -- puts anything on disk.
-DISALLOWED = ["Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Task"]
+# The agent gets NO tools. It reads what is on stdin and returns text; the script -- never the
+# agent -- puts anything on disk. `--tools ""` removes every built-in tool; `--strict-mcp-config`
+# with an empty server list removes every MCP server the user's own settings would otherwise
+# attach; `--disable-slash-commands` removes skills. See `_claude_argv`.
+TOOL_FENCE = [
+    "--strict-mcp-config", "--mcp-config", '{"mcpServers": {}}',
+    "--disable-slash-commands",
+    # Last on purpose: an empty argument is the one a Windows .cmd shim could mangle, and at the
+    # end of argv a dropped value cannot swallow the flag after it.
+    "--tools", "",
+]
 TIMEOUT_SECONDS = 600
 LIGHT_SLOTS = ("open", "am1", "am2", "midday", "pm1", "pm2", "close")
 DEEP_SLOT = "deep"
@@ -221,16 +229,51 @@ def _advisor(*argv: str, timeout: int = 300) -> tuple[dict | None, str | None]:
         return None, f"advisor {argv[0]} returned no JSON: {detail}"
 
 
-def _run_claude(prompt: str, payload: str, model: str | None, timeout: int) -> tuple[str | None, str | None]:
-    exe = shutil.which("claude")
-    if not exe:
-        return None, "claude not on PATH"
+def _claude_argv(exe: str, prompt: str, model: str | None) -> list[str]:
+    """The fenced invocation. The model gets the pack on stdin and NOTHING else: no built-in
+    tools at all (`--tools ""`), no MCP servers from any config (`--strict-mcp-config` with an
+    empty server list), no skills. Until 2026-09-12 this was a deny-list of seven tools, which
+    left Read/Glob/Grep and every configured MCP server available -- the prompt said "the fact
+    pack is everything you have" and nothing enforced it. `--output-format json` is what lets
+    the script record which model actually answered (see `_run_claude`)."""
     argv = [exe, "-p", prompt]
     if model:
         # The model name lives in config and travels on argv. No model id is hardcoded anywhere in
         # this suite: changing which model runs a slot must never require a code change.
         argv += ["--model", model]
-    argv += ["--disallowed-tools", *DISALLOWED]
+    argv += ["--output-format", "json"]
+    argv += TOOL_FENCE
+    return argv
+
+
+def _parse_claude_output(stdout: str) -> tuple[str | None, str | None]:
+    """(reply text, resolved model id). `--output-format json` wraps the reply in one object whose
+    `result` is the text and whose `modelUsage` is keyed by the exact model id; an older CLI, or a
+    shim, may still print bare text, which is accepted as the reply with no id."""
+    text = (stdout or "").strip()
+    if not text:
+        return None, None
+    try:
+        obj = json.loads(text)
+    except ValueError:
+        return text, None
+    if not isinstance(obj, dict) or "result" not in obj:
+        return text, None
+    reply = obj.get("result")
+    reply = reply.strip() if isinstance(reply, str) else None
+    usage = obj.get("modelUsage")
+    model_id = ",".join(sorted(usage)) if isinstance(usage, dict) and usage else None
+    return (reply or None), model_id
+
+
+def _run_claude(
+    prompt: str, payload: str, model: str | None, timeout: int
+) -> tuple[str | None, str | None, str | None]:
+    """(reply, resolved model id, error). Exactly one of reply / error is set."""
+    exe = shutil.which("claude")
+    if not exe:
+        return None, None, "claude not on PATH"
+    argv = _claude_argv(exe, prompt, model)
     try:
         proc = subprocess.run(
             argv, input=payload, capture_output=True, text=True,
@@ -239,13 +282,15 @@ def _run_claude(prompt: str, payload: str, model: str | None, timeout: int) -> t
             encoding="utf-8", errors="replace", timeout=timeout, creationflags=CREATE_NO_WINDOW,
         )
     except subprocess.TimeoutExpired:
-        return None, f"claude timed out after {timeout}s"
+        return None, None, f"claude timed out after {timeout}s"
     except Exception as exc:  # noqa: BLE001 -- advice is never worth raising over
-        return None, f"{type(exc).__name__}: {exc}"
+        return None, None, f"{type(exc).__name__}: {exc}"
     if proc.returncode != 0:
-        return None, (proc.stderr or "")[:500] or f"claude exited {proc.returncode}"
-    text = (proc.stdout or "").strip()
-    return (text, None) if text else (None, "claude returned nothing")
+        return None, None, (proc.stderr or "")[:500] or f"claude exited {proc.returncode}"
+    reply, model_id = _parse_claude_output(proc.stdout)
+    if reply is None:
+        return None, model_id, "claude returned nothing"
+    return reply, model_id, None
 
 
 def _warn(session: str, slot: str, error: str) -> None:
@@ -313,7 +358,12 @@ def main() -> int:
         return _envelope({**result, "ok": False, "error": error})
 
     pack_path = Path(built["pack"])
-    payload = pack_path.read_text(encoding="utf-8")
+    try:
+        payload = pack_path.read_text(encoding="utf-8")
+    except OSError as exc:  # the envelope-and-exit-0 contract covers this path too (2026-09-12)
+        error = f"pack unreadable: {type(exc).__name__}: {exc}"
+        _warn(session, slot, error)
+        return _envelope({**result, "ok": False, "error": error})
 
     if args.dry_run:
         print(f"--- prompt ({slot}) ---\n{prompt}\n--- pack ({built['bytes']} bytes) ---\n{payload}")
@@ -322,18 +372,34 @@ def main() -> int:
     # 4-6. The fenced call, then the package validates whatever came back. Wrapped so that step 7
     #      runs even when this whole stretch fails.
     try:
-        reply, error = _run_claude(prompt, payload, args.model, args.timeout)
+        reply, model_id, error = _run_claude(prompt, payload, args.model, args.timeout)
+        if model_id:
+            result["model_id"] = model_id
         if reply is None:
-            _warn(session, slot, error or "claude produced nothing")
+            error = error or "claude produced nothing"
+            _warn(session, slot, error)
             result.update({"ok": False, "error": error})
+            # A slot that never got a reply is a FAILED checkpoint, not a slot that never ran:
+            # record it so the ok-rate and the console see it. The slot stays re-runnable.
+            failed_argv = ["checkpoint-failed", "--slot", slot, "--session", session, "--error", error]
+            if args.model:
+                failed_argv += ["--model", args.model]
+            _advisor(*failed_argv)
         else:
             raw_path = STORE / "checkpoints" / f"{session}-{slot}.raw.txt"
-            raw_path.parent.mkdir(parents=True, exist_ok=True)
-            raw_path.write_text(reply, encoding="utf-8")
+            try:
+                raw_path.parent.mkdir(parents=True, exist_ok=True)
+                raw_path.write_text(reply, encoding="utf-8")
+            except OSError as exc:
+                raise RuntimeError(f"raw reply unwritable: {type(exc).__name__}: {exc}") from exc
 
             admit_argv = ["admit", "--slot", slot, "--session", session, "--raw", str(raw_path)]
             if args.model:
                 admit_argv += ["--model", args.model]
+            if model_id:
+                admit_argv += ["--model-id", model_id]
+            if args.force:
+                admit_argv += ["--force"]
             admitted, error = _advisor(*admit_argv)
             if error or not (admitted or {}).get("ok"):
                 error = error or (admitted or {}).get("error") or "admit failed"
@@ -346,6 +412,10 @@ def main() -> int:
                     "admitted": len(admitted.get("admitted") or []),
                     "rejected": len(admitted.get("rejected") or []),
                 })
+    except Exception as exc:  # noqa: BLE001 -- every failure path is an envelope, never a traceback
+        error = f"{type(exc).__name__}: {exc}"
+        _warn(session, slot, error)
+        result.update({"ok": False, "error": error})
     finally:
         # 7. Deep slot enacts UNCONDITIONALLY. An AI outage must not truncate an active A/B sample:
         #    the experiment is the measurement, and a hole in the middle of one is worse than a day

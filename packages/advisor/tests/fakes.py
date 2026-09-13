@@ -47,6 +47,9 @@ CREATE TABLE ic_trades (
     symbol TEXT NOT NULL, wing_width REAL, net_credit REAL, quantity INTEGER DEFAULT 1,
     risk_profile TEXT, pnl REAL, fees REAL, status TEXT, exit_time TEXT,
     put_max_cost REAL, call_max_cost REAL, slippage_dollars REAL DEFAULT 0,
+    -- the settlement-integrity columns the deep pack queries; absent from this fixture until
+    -- 2026-09-12, which made "settled with no price" read 0 by way of a refused query
+    settle_underlying REAL, exit_reason TEXT, put_stop_cost REAL, call_stop_cost REAL,
     ic_order_id TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL
 );
 CREATE TABLE market_context (

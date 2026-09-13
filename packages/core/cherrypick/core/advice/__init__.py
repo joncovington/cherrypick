@@ -63,6 +63,11 @@ def _check_proposal(p: Any, bounds: dict[str, Any]) -> str | None:
     rule = bounds.get(param)
     if rule is None:
         return f"param {param!r} not in advice_bounds"
+    if not isinstance(rule, dict):
+        # A rule that is a bare number or a list is a config mistake, and it must read as one --
+        # not raise out of the validator and, on the producer side, abort every other module's
+        # issuance for the night (2026-09-12).
+        return f"{param!r} bounds rule is malformed (expected {{min, max}} or {{choices}})"
     value = p.get("value")
     if "choices" in rule:
         if value not in rule["choices"]:

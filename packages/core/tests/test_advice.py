@@ -291,3 +291,25 @@ def test_session_decision_ignores_an_unreadable_record(tmp_path):
     path.write_text("{ not json")
     d = advice.session_decision(tmp_path / "state", "pmcc", "2026-08-20", _cfg(), path)
     assert d["day"] == "2026-08-20"
+
+
+# --------------------------------------------------------------------------- 2026-09-12 review fixes
+
+
+def test_a_malformed_bounds_rule_rejects_instead_of_raising():
+    """A rule that is a bare number is a config mistake; it must read as a rejection with a reason,
+    not raise out of the validator (2026-09-12: on the producer side that raise aborted every other
+    module's nightly issuance)."""
+    from datetime import datetime, timedelta, timezone
+
+    from cherrypick.core import advice as _advice
+
+    artifact = {
+        "module": "meic",
+        "session": "2026-09-14",
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+        "proposals": [{"param": "stop_trigger_ratio", "value": 0.9, "rationale": "r"}],
+    }
+    out = _advice.validate(artifact, {"stop_trigger_ratio": 0.9}, "2026-09-14")
+    assert out["ok"] is False and out["proposals"] == []
+    assert "malformed" in out["rejected"][0]["reason"]

@@ -68,7 +68,15 @@ def run(
                 }
             )
             continue
-        issued.append(_issue(conn, module=module, session=session, target=target))
+        # One module's failure (a malformed bounds rule in ITS config, a ledger it cannot read)
+        # must not truncate every other module's active A/B sample -- the pass "runs
+        # unconditionally" for exactly that reason. Reported, never raised past this loop.
+        try:
+            issued.append(_issue(conn, module=module, session=session, target=target))
+        except Exception as exc:  # noqa: BLE001 -- isolation is the point
+            issued.append(
+                {"module": module, "written": False, "reason": f"issue_error: {type(exc).__name__}: {exc}"}
+            )
 
     return {
         "ok": True,
@@ -111,8 +119,14 @@ def _count_enacted(conn, session: str, modules: tuple[str, ...] | list[str]) -> 
             continue
 
         enacted = outcome["status"] == _enactment.ENACTED
+        # The counter and the `counted` row that makes it idempotent land in ONE transaction. Until
+        # 2026-09-12 the counter committed first, so a crash between the two left an advanced
+        # counter with no guard, and the next run advanced it again -- the overcount
+        # `has_journal_event` was written to remove, back from the other direction.
         if enacted:
-            _store.update_experiment(conn, experiment_id, sessions_run=experiment["sessions_run"] + 1)
+            _store.update_experiment(
+                conn, experiment_id, sessions_run=experiment["sessions_run"] + 1, commit=False
+            )
         _store.journal(
             conn,
             experiment_id,
@@ -127,7 +141,9 @@ def _count_enacted(conn, session: str, modules: tuple[str, ...] | list[str]) -> 
                 "decision_reason": outcome["decision_reason"],
                 "sessions_run": experiment["sessions_run"] + (1 if enacted else 0),
             },
+            commit=False,
         )
+        conn.commit()
         scored.append(
             {
                 "module": module,

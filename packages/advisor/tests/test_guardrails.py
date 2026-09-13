@@ -29,6 +29,11 @@ FORBIDDEN_IMPORTS = {
     "keyring",
     "cherrypick.core.auth",
     "cherrypick.core.broker",
+    # the first-party doors to the same socket and SDK (2026-09-12): each reaches DXLink or the
+    # broker session, and none was in the set
+    "cherrypick.core.dxfeed",
+    "cherrypick.core.streamer",
+    "cherrypick.core.streamrequests",
     # network
     "requests",
     "httpx",
@@ -174,7 +179,11 @@ def test_every_enact_output_path_is_a_paper_advice_artifact():
     for path in written:
         rel = Path(path).relative_to(paths.state_dir())
         assert rel.parts[0] == "advice"
-        assert rel.name.split("-")[0] in ("meic", "flies", "earnings")
+        from cherrypick.advisor import bounds
+
+        # Derived, not a literal: the three-module tuple this used to be passed only because the
+        # fixture enables meic alone, and would have gone red on the first calendars artifact.
+        assert rel.name.split("-")[0] in bounds.MODULES
         assert json.loads(Path(path).read_text(encoding="utf-8"))["module"] in ("meic", "flies", "earnings")
 
 

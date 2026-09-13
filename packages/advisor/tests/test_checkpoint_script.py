@@ -60,8 +60,18 @@ def _shim(directory: Path, behavior: str) -> Path:
     `claude`, with no extension of its own on POSIX and a PATHEXT-visible one on Windows.
     """
     directory.mkdir(parents=True, exist_ok=True)
+    # Every behaviour records the argv it was invoked with beside itself, so a test can assert
+    # the fence the script claims to put around the model (2026-09-12).
+    record = (
+        "import sys, json, pathlib; "
+        "pathlib.Path(sys.argv[0]).with_name('argv.json').write_text(json.dumps(sys.argv[1:])); "
+    )
+    envelope = json.dumps(
+        {"type": "result", "result": json.dumps(GOOD_REPLY), "modelUsage": {"claude-test-1": {}}}
+    )
     body = {
         "good": f"import sys; sys.stdin.read(); print({json.dumps(json.dumps(GOOD_REPLY))})",
+        "json": f"import sys; sys.stdin.read(); print({json.dumps(envelope)})",
         "prose": (
             "import sys; sys.stdin.read(); "
             f"print('Here is what I found:'); print({json.dumps(json.dumps(GOOD_REPLY))})"
@@ -71,7 +81,7 @@ def _shim(directory: Path, behavior: str) -> Path:
         "angry": "import sys; sys.stdin.read(); sys.stderr.write('rate limited'); sys.exit(1)",
     }[behavior]
     payload = directory / "claude_impl.py"
-    payload.write_text(body, encoding="utf-8")
+    payload.write_text(record + body, encoding="utf-8")
 
     if sys.platform == "win32":
         launcher = directory / "claude.bat"
@@ -203,3 +213,104 @@ def test_the_light_and_deep_prompts_differ_in_what_they_ask_for(home, tmp_path):
     for prompt in (light, deep):
         assert "`null` means NOT RECORDED" in prompt
         assert "Nothing you propose can reach a live account" in prompt
+
+
+# --------------------------------------------------------------------------- 2026-09-12 review fixes
+
+
+def _argv_seen(tmp_path: Path) -> list[str]:
+    return json.loads((tmp_path / "bin" / "argv.json").read_text(encoding="utf-8"))
+
+
+def _script_module():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("advisor_checkpoint", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_model_gets_no_tools_no_mcp_servers_and_no_skills(tmp_path):
+    """The prompt says the fact pack is everything the model has. Until 2026-09-12 the invocation
+    was a deny-list of seven tools, which left Read/Glob/Grep and every configured MCP server
+    reachable -- every module's ledger included. The fence has to be on the argv, and asserted.
+
+    Asserted on the argv the script BUILDS rather than on what a shim received: a multi-line
+    prompt does not survive a Windows .bat launcher's `%*` intact, so the shim's record is
+    truncated at the prompt's first newline on that platform."""
+    argv = _script_module()._claude_argv("claude", "prompt", "opus")
+    assert argv[argv.index("--tools") + 1] == "", "every built-in tool must be disabled"
+    assert "--strict-mcp-config" in argv
+    assert argv[argv.index("--mcp-config") + 1] == '{"mcpServers": {}}'
+    assert "--disable-slash-commands" in argv
+    assert argv[argv.index("--output-format") + 1] == "json"
+    assert argv[argv.index("--model") + 1] == "opus"
+    assert "--disallowed-tools" not in argv
+    assert argv[-2:] == ["--tools", ""], "the empty argument stays last so nothing can be swallowed"
+
+
+def test_the_resolved_model_id_is_recorded_beside_the_alias(home, tmp_path):
+    from cherrypick.advisor import store
+
+    result = _run("--slot", "open", "--session", SESSION, "--model", "opus", shim="json", tmp_path=tmp_path)
+    assert result["ok"] is True and result["admitted"] == 1
+    assert result["model_id"] == "claude-test-1"
+    conn = store.connect()
+    row = conn.execute(
+        "SELECT model, model_id FROM checkpoints WHERE session = ? AND slot = 'open'", (SESSION,)
+    ).fetchone()
+    conn.close()
+    assert (row["model"], row["model_id"]) == ("opus", "claude-test-1")
+
+
+@pytest.mark.parametrize(
+    "shim,expected",
+    [("silent", "returned nothing"), ("angry", "rate limited"), (None, "not on PATH")],
+)
+def test_a_claude_level_failure_leaves_a_failed_checkpoint_row_and_no_freeze(home, tmp_path, shim, expected):
+    """Only a reply that failed to PARSE used to leave a row; the more common failure -- no reply
+    at all -- read as a slot that never ran. It is a failed checkpoint, and the slot stays
+    re-runnable because no summary file is written."""
+    from cherrypick.advisor import paths, store
+
+    result = _run("--slot", "open", "--session", SESSION, shim=shim, tmp_path=tmp_path)
+    assert result["ok"] is False
+    conn = store.connect()
+    row = conn.execute(
+        "SELECT ok, error FROM checkpoints WHERE session = ? AND slot = 'open'", (SESSION,)
+    ).fetchone()
+    conn.close()
+    assert row is not None and row["ok"] == 0 and expected in row["error"]
+    assert not paths.checkpoint_path(SESSION, "open").exists()
+    again = _run("--slot", "open", "--session", SESSION, tmp_path=tmp_path)
+    assert again["ok"] is True, "a failed slot must not be frozen"
+
+
+def test_a_forced_rerun_does_not_duplicate_the_experiment(home, tmp_path):
+    from cherrypick.advisor import store
+
+    first = _run("--slot", "deep", "--session", SESSION, tmp_path=tmp_path)
+    forced = _run("--slot", "deep", "--session", SESSION, "--force", tmp_path=tmp_path)
+    assert first["ok"] and forced["ok"]
+    conn = store.connect()
+    rows = store.experiments(conn, module="meic")
+    conn.close()
+    assert len(rows) == 1, "the same reply admitted twice is one experiment"
+
+
+def test_the_cli_admit_verb_is_frozen_too(home, tmp_path):
+    """The console reaches `admit` directly; the freeze cannot live only in the script."""
+    from cherrypick.advisor import paths
+
+    first = _run("--slot", "open", "--session", SESSION, tmp_path=tmp_path)
+    assert first["ok"] is True
+    proc = subprocess.run(
+        [
+            sys.executable, "-m", "cherrypick.advisor", "admit",
+            "--slot", "open", "--session", SESSION, "--raw", str(paths.raw_path(SESSION, "open")),
+        ],
+        capture_output=True, text=True, encoding="utf-8", env=os.environ,
+    )
+    out = json.loads(proc.stdout)
+    assert out["ok"] is False and "frozen" in out["skipped"]

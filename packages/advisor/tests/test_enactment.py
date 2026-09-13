@@ -233,9 +233,14 @@ def _cal_artifact(session, params, *, experiment_id="exp-cal-1"):
     )
 
 
-def test_advice_frozen_on_an_open_position_is_carried_not_dropped(home):
+def test_advice_frozen_on_an_open_position_is_carried_not_dropped(home, monkeypatch):
     """calendars' Tuesday: Monday's entry stamped the params, and `effective_params` reads that
-    stamp back every tick. Nothing was ignored; there was simply nothing new to decide."""
+    stamp back every tick. Nothing was ignored; there was simply nothing new to decide.
+
+    Carry is claimed for the CURRENT session only, so the clock is pinned to the anchor session:
+    on a weekend the anchor is Friday and `session_today()` is not, and this test went red for
+    that reason alone (2026-09-12)."""
+    monkeypatch.setattr(enactment._clock, "session_today", lambda: SESSION)
     _cal_artifact(SESSION, {"time_exit": "fri_noon"})
     _calendars_ledger(
         home,
@@ -298,7 +303,8 @@ def test_an_undated_closed_position_carries_nothing(home):
     assert enactment.reconcile("calendars", SESSION)["status"] == enactment.NOT_ENACTED
 
 
-def test_a_namespaced_artifact_param_matches_the_leaf_it_is_stamped_as(home):
+def test_a_namespaced_artifact_param_matches_the_leaf_it_is_stamped_as(home, monkeypatch):
+    monkeypatch.setattr(enactment._clock, "session_today", lambda: SESSION)  # carry is current-session-only
     """earnings admits `iron_condor.profit_target_pct` and stamps `profit_target_pct` on the trade
     row of the strategy it applies to -- the same fact at two scopes."""
     _cal_artifact(SESSION, {"iron_condor.profit_target_pct": 0.35})
@@ -412,7 +418,8 @@ def _closed_row(session, params, **over):
     return row
 
 
-def test_exits_of_pinned_positions_this_session_are_carried(home):
+def test_exits_of_pinned_positions_this_session_are_carried(home, monkeypatch):
+    monkeypatch.setattr(enactment._clock, "session_today", lambda: SESSION)  # carry is current-session-only
     """The 2026-09-01 morning, in miniature."""
     _cal_artifact(SESSION, {"iron_condor.profit_target_pct": 0.35})
     _dated_ledger(home, DATED_DDL, "dc_positions", [_closed_row(SESSION, {"profit_target_pct": 0.35})])
@@ -422,7 +429,8 @@ def test_exits_of_pinned_positions_this_session_are_carried(home):
     assert "closing positions opened earlier" in outcome["detail"]
 
 
-def test_an_epoch_dated_close_is_carried_too(home):
+def test_an_epoch_dated_close_is_carried_too(home, monkeypatch):
+    monkeypatch.setattr(enactment._clock, "session_today", lambda: SESSION)  # carry is current-session-only
     """earnings dates closes as epoch seconds (closed_at), read with 'localtime' — the same
     convention its own session filters use. The column is discovered, not listed."""
     from datetime import datetime

@@ -279,7 +279,13 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                 snapshot, {**base_params, **engine.merged_params(config, "wall")}, wall
             )
         elif b.startswith("advised:") and advice_params:
-            plans[b] = engine.plan_entry(snapshot, {**base_params, **advice_params})
+            # The twin is planned from the base book its tag names, not from control regardless
+            # -- otherwise the row claims one base and the economics come from another.
+            advised_base = b.split(":", 1)[1] or "control"
+            plans[b] = engine.plan_entry(
+                snapshot,
+                {**management.PARAM_DEFAULTS, **engine.merged_params(config, advised_base), **advice_params},
+            )
         else:
             plans[b] = planned
 
