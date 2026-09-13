@@ -25,6 +25,7 @@ it — and because enactment is structurally paper-only, showing it costs nothin
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -329,7 +330,12 @@ def _regime_now(session: str, *, fallback) -> dict[str, Any]:
     `source`, rather than presenting a hole as a calm market.
     """
     try:
-        out = _regime.regime_at(_clock.now_et().timestamp())
+        # AT THE SESSION, not at wall-clock now: every other query in the market block takes the
+        # session, and a pack rebuilt for a past date (`--session D`) must describe that day's
+        # regime, not today's. For the current session this is "now" (the end of session is still
+        # ahead); for a past one it is that session's close.
+        end_of_session = datetime.fromisoformat(_clock.end_of_session_iso(session)).timestamp()
+        out = _regime.regime_at(min(_clock.now_et().timestamp(), end_of_session))
         market = out.get("market") or {}
     except Exception:  # noqa: BLE001 — a fact pack must never fail on a telemetry read
         market = {"status": "unmeasured", "reason": "regime_read_failed"}
@@ -401,12 +407,14 @@ def _meic(session: str) -> dict[str, Any]:
         # session has no same-session baseline under it. Stated as its own flag rather than left to
         # be inferred from book_by_profile's absent row: an absent row reads as "nothing to report"
         # far more easily than as "the control was gated out", which is the whole finding.
-        fills = _store.rows(
+        # `rows_or_none`: `fired: false` is the finding "the control was gated out", so a query
+        # this reader could not run must read as unmeasured (None), never as that finding.
+        fills = _store.rows_or_none(
             conn,
             "SELECT risk_profile, COUNT(*) n FROM ic_trades WHERE trade_date = ? GROUP BY risk_profile",
             (session,),
         )
-        by_profile = _counts(fills, "risk_profile")
+        by_profile = _counts(fills or [], "risk_profile")
         return {
             "entry_attempts": [
                 {"profile": r["risk_profile"], "outcome": r["outcome"], "n": r["n"]} for r in attempts
@@ -425,7 +433,7 @@ def _meic(session: str) -> dict[str, Any]:
             "depth allows, not a reason for parallel experiments now.",
             "closed_with_stop_instrumentation": _counts(stops, "risk_profile"),
             "control_fired": {
-                "fired": by_profile.get("control", 0) > 0,
+                "fired": None if fills is None else by_profile.get("control", 0) > 0,
                 "fills_by_profile": by_profile,
                 "_note": "bucket width comparisons on this; never drop a session because it is false",
             },
@@ -888,9 +896,22 @@ def _live(session: str) -> dict[str, Any]:
     """
     state = _paths.state_dir()
     posture: dict[str, Any] = {}
+    # A module config this reader cannot open is UNKNOWN, never "live trading off": the wrong
+    # answer here is a safety statement to the model. The two modules with a guarded live flag are
+    # the two with a live ledger in `_live_db`; flies arms per day and is read separately below.
     for module in ("meic", "earnings"):
-        cfg = _store.read_json(_paths.module_config_path(module), default={}) or {}
-        posture[module] = {"enable_live_trading": bool(cfg.get("enable_live_trading"))}
+        cfg = _store.read_json(_paths.module_config_path(module), default=None)
+        if isinstance(cfg, dict):
+            posture[module] = {
+                "enable_live_trading": bool(cfg.get("enable_live_trading")),
+                "config_read": True,
+            }
+        else:
+            posture[module] = {
+                "enable_live_trading": None,
+                "config_read": False,
+                "_note": "config unreadable",
+            }
     flies_cfg = (_store.read_json(_paths.module_config_path("flies"), default={}) or {}).get("live") or {}
     arm = _store.read_json(state / "flies-live-arm.json", default=None)
     posture["flies"] = {
@@ -969,7 +990,10 @@ def _experiments_running(conn) -> list[dict[str, Any]]:
     out = []
     for exp in _store.experiments(conn, status="active"):
         params = json.loads(exp["params_json"] or "{}")
-        pairs = _verdicts.for_experiment(exp)["pairs"]
+        # The module's own rule, the same gate arm_readings, kill and expiry use. Bare
+        # `for_experiment` applied the library default here -- the 2026-08-14 two-gate
+        # disagreement, back in a section added after it was fixed elsewhere (2026-09-12).
+        pairs = _verdicts.for_experiment(exp, rule=_settings.calibration_rule(exp["module"]) or None)["pairs"]
         out.append(
             {
                 "id": exp["id"],
@@ -987,6 +1011,100 @@ def _experiments_running(conn) -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+HYPOTHESIS_STUB = 240
+
+
+def _stub(text: Any) -> str:
+    text = str(text or "")
+    return text[:HYPOTHESIS_STUB] + ("…" if len(text) > HYPOTHESIS_STUB else "")
+
+
+_VERDICT_KEEP = (
+    "experiment_id", "sessions_run", "underpowered", "computed_by", "stalled", "killed_reason", "error"
+)
+
+
+def _qualified_flags(q: Any) -> dict[str, Any] | None:
+    if not isinstance(q, dict):
+        return None
+    return {tag: (info.get("qualified") if isinstance(info, dict) else None) for tag, info in q.items()}
+
+
+def _compact_verdict(verdict: Any) -> Any:
+    """A verdict body as the brief carries it: the conclusion, the deltas, and which side
+    qualified -- not the full advised and base readings, which `arm_readings.<module>` already
+    carries for every arm with every qualification check. Those were ~85% of each brief."""
+    if not isinstance(verdict, dict):
+        return verdict
+    out: dict[str, Any] = {
+        k: verdict[k]
+        for k in _VERDICT_KEEP
+        if k in verdict
+    }
+    rec = verdict.get("recommendation")
+    if isinstance(rec, dict):
+        out["recommendation"] = {
+            "value": rec.get("value"),
+            "session": rec.get("session"),
+            "rationale": _stub(rec.get("rationale")),
+        }
+    pairs = []
+    for p in verdict.get("pairs") or []:
+        if not isinstance(p, dict):
+            continue
+        q = p.get("qualification")
+        pairs.append(
+            {
+                "advised_tag": p.get("advised_tag"),
+                "base_tag": p.get("base_tag"),
+                "delta": p.get("delta"),
+                "underpowered": p.get("underpowered"),
+                "qualified": _qualified_flags(q),
+            }
+        )
+    out["pairs"] = pairs
+    out["_readings"] = "full advised/base readings and qualification checks: arm_readings.<module>"
+    return out
+
+
+def _experiment_brief(exp: dict[str, Any], *, fresh: bool) -> dict[str, Any]:
+    """One experiment as the deep pack carries it: identity, the overlay, and ONE verdict.
+
+    Measurement break for the advisor, 2026-09-14 (declared 2026-09-12): until then this section
+    dumped raw store rows -- every past verdict body, the bounds snapshot, the model's own
+    hypothesis and success-metric prose in full -- at 110KB of a 439KB pack, the largest section,
+    and the `verdict_json` it carried for an active experiment was frozen at the first session it
+    was attached. Now: an active experiment's verdict is computed fresh against the module's own
+    rule; a concluded one's is the stored, final body; the prose is a stub (the journal keeps the
+    recent ones in full, and the model wrote them). Same ledgers, smaller input -- read proposals
+    either side of the boundary with that in mind, as with 2026-08-26.
+    """
+    if fresh:
+        try:
+            rule = _settings.calibration_rule(exp["module"]) or None
+            verdict: Any = _verdicts.for_experiment(exp, rule=rule)
+        except Exception as exc:  # noqa: BLE001 -- a verdict that cannot be computed is a fact, not a crash
+            verdict = {"error": f"{type(exc).__name__}: {exc}"}
+    else:
+        verdict = _store.read_json_text(exp.get("verdict_json"))
+    verdict = _compact_verdict(verdict)
+    return {
+        "id": exp["id"],
+        "module": exp["module"],
+        "base_profile": exp["base_profile"],
+        "name": exp.get("name"),
+        "status": exp["status"],
+        "created_session": exp["created_session"],
+        "sessions_run": exp["sessions_run"],
+        "expires_after_sessions": exp["expires_after_sessions"],
+        "params": _store.read_json_text(exp.get("params_json")) or {},
+        "hypothesis": _stub(exp.get("hypothesis")),
+        "success_metric": _stub(exp.get("success_metric")),
+        "origin_proposal_id": exp.get("origin_proposal_id"),
+        "verdict": verdict,
+    }
 
 
 def _pending_proposals(conn, session: str) -> list[dict[str, Any]]:
@@ -1205,7 +1323,9 @@ def _settlement_integrity(session: str) -> dict[str, Any]:
             " WHERE trade_date = ? AND settle_underlying IS NOT NULL GROUP BY symbol",
             (session,),
         )
-        unpriced = _store.rows(
+        # `rows_or_none`: a zero here is the claim "the settlement guard held", so a query this
+        # reader could not run must read as unmeasured (None), never as the guard passing.
+        unpriced = _store.rows_or_none(
             conn,
             "SELECT COUNT(*) n FROM ic_trades WHERE trade_date = ?"
             " AND settle_underlying IS NULL AND exit_reason LIKE '%expired_settlement%'"
@@ -1214,7 +1334,9 @@ def _settlement_integrity(session: str) -> dict[str, Any]:
         )
         return {
             "settlement_prices_today": {r["symbol"]: r["n"] for r in prices},
-            "settled_with_no_price_today": (unpriced[0]["n"] if unpriced else 0),
+            "settled_with_no_price_today": (
+                None if unpriced is None else (unpriced[0]["n"] if unpriced else 0)
+            ),
             "_note": (
                 "prices per symbol must be 1 and no-price settlements must be 0; the full audit "
                 "was run 2026-08-26 and lives in meic.analytics.settlement_audit"
@@ -1488,11 +1610,13 @@ def _advice_audit(session: str) -> dict[str, Any]:
 
 
 def build(session: str, slot: str, modules: tuple[str, ...] | list[str] | None = None) -> dict[str, Any]:
-    """Assemble one pack. Pure read + aggregate; writes nothing."""
+    """Assemble one pack. Reads every other package; writes nothing outside the advisor's own
+    store (opening that store creates or migrates `advisor.db`, which is the one write here)."""
     if slot not in SLOTS:
         raise ValueError(f"unknown slot {slot!r}; expected one of {SLOTS}")
     selected = tuple(modules or MODULES)
 
+    _store.QUERY_ERRORS.clear()
     conn = _store.connect()
     try:
         pack: dict[str, Any] = {
@@ -1548,18 +1672,28 @@ def build(session: str, slot: str, modules: tuple[str, ...] | list[str] | None =
                 pack["flies_band_containment"] = _flies_band_containment()
             pack["bounds"] = _bounds.all_modules(selected)
             pack["experiments_full"] = {
-                "active": _store.experiments(conn, status="active"),
-                "queued": _store.experiments(conn, status="queued"),
-                "concluded": _store.rows(
-                    conn,
-                    "SELECT * FROM experiments WHERE status IN ('expired', 'killed')"
-                    " ORDER BY updated_at DESC LIMIT ?",
-                    (CONCLUDED_SHOWN,),
-                ),
+                "active": [
+                    _experiment_brief(e, fresh=True) for e in _store.experiments(conn, status="active")
+                ],
+                "queued": [
+                    _experiment_brief(e, fresh=False) for e in _store.experiments(conn, status="queued")
+                ],
+                "concluded": [
+                    _experiment_brief(e, fresh=False)
+                    for e in _store.rows(
+                        conn,
+                        "SELECT * FROM experiments WHERE status IN ('expired', 'killed')"
+                        " ORDER BY updated_at DESC LIMIT ?",
+                        (CONCLUDED_SHOWN,),
+                    )
+                ],
             }
             pack["advice_audit"] = _advice_audit(session)
             pack["advisor_journal"] = _advisor_journal(conn, session)
 
+        # Every query a tolerant read refused while this pack was built. An empty section above
+        # with an entry here is "could not measure", not "measured nothing".
+        pack["query_errors"] = list(_store.QUERY_ERRORS)
         return pack
     finally:
         conn.close()

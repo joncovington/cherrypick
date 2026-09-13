@@ -280,6 +280,67 @@ section: without one the pack can reconcile its enactment while carrying no fact
 model would be asked to design an experiment for a module it cannot see. `tests/test_factpack.py`
 pins both directions.
 
+## The 2026-09-12 review, and the 2026-09-14 pack boundary
+
+A read-only review of this package on 2026-09-12 (its store, its packs and its code) found a
+set of defects at the margins of the fence, none of which the fence itself had let through. Each
+fix landed with a guard shown to fail first. What changed, and why a reader of the record should
+know:
+
+- **The model now gets no tools at all.** `scripts/advisor_checkpoint.py` passed a deny-list of
+  seven tools, which left Read/Glob/Grep and every configured MCP server available — the prompt
+  said "the fact pack is everything you have" and nothing enforced it. The invocation is now
+  `--tools ""`, `--strict-mcp-config` with an empty server list, and no skills, and the test shim
+  records the argv so the fence is asserted, not assumed.
+- **The exact model id is recorded beside the alias.** `--output-format json` returns which model
+  answered; `checkpoints.model_id` (additive migration) keeps it. The alias in config still floats
+  by design; a change under a fixed config is now visible in the record.
+- **A slot whose model call produced no reply is a failed checkpoint row**, via the new
+  `checkpoint-failed` verb — it used to leave no row at all, so the ok-rate could not see the
+  more common failure. The slot stays re-runnable. And the `admit` verb carries the freeze itself
+  (`--force` to override), because the console reaches it directly; re-admitting the same reply
+  resolves to the same experiment rather than queuing a duplicate.
+- **Stored verdicts are recomputed every time a recommendation is attached.** They were reused
+  once stored, so every nightly recommendation sat on the first night's numbers — the bwb
+  experiment at nine sessions still carried a session-one body with null pairs, and the pack
+  handed that body back to the model. The `experiments` section also applied the library default
+  qualification rule where every other surface applies the module's — the 2026-08-14 two-gate
+  disagreement, back in a section added later. Both now use the module rule.
+- **An active experiment has a calendar exit.** `sessions_run` only advances on enacted sessions,
+  so a module whose loop stopped recording decisions held its slot forever and starved the queue.
+  After twice its length in calendar sessions an experiment concludes as `stalled`, verdict
+  computed and `underpowered` on its face, and the queued one activates.
+- **One module's issue failure no longer truncates the others'.** A malformed bounds rule raised
+  out of the shared validator and out of `enact.run` before the remaining modules were reached.
+  The validator now rejects a malformed rule with a reason, and `enact` isolates each module.
+  The enactment counter and its `counted` journal row commit together; `kill` writes verdict and
+  status in one statement.
+- **"Could not measure" is no longer rendered as zero.** `store.rows` records every refused query
+  and the pack lists them as `query_errors`; the two facts whose zero is a claim —
+  `settled_with_no_price_today` (the settlement guard held) and `control_fired` (the control was
+  gated out) — read `null` when their query was refused. An unreadable module config in the live
+  posture block reads `null` with `config_read: false`, never "live trading off". The regime block
+  is read at the session's close rather than at wall-clock now, so a pack rebuilt for a past date
+  describes that date.
+- **`settings.DEFAULTS["modules"]` derives from `bounds.MODULES`** — it was the fourth hand-kept
+  copy the 2026-08-26 note said had been eliminated, and it was missing bwb and curve. bwb and
+  curve now plan their advised twin from the base book its tag names rather than from control
+  regardless. The guardrail set adds `core.dxfeed`, `core.streamer` and `core.streamrequests`.
+
+**Measurement break for the advisor, 2026-09-14 — the first deep pack on the new
+`experiments_full`.** That section dumped raw store rows: every past verdict body, the bounds
+snapshot, and the model's own hypothesis and success-metric prose in full, at 110KB of a 439KB
+pack, the largest section, beside an 11KB `experiments` section carrying the same experiments with
+fresh readings. It now carries identity, the overlay, a 240-character stub of the prose, and ONE
+verdict per experiment: computed fresh for an active one, the stored final body for a concluded
+one, compacted to its conclusion, deltas and which side qualified — the full advised and base
+readings were ~85% of each brief and `arm_readings.<module>` already carries every arm's reading
+with every qualification check. Measured on the real 2026-09-11 pack: **439KB → 369KB deep,
+`experiments_full` 110KB → 31KB.** Still 1.8x the ceiling, recorded rather than papered over; the
+next largest sections are `arm_readings` (101KB, deliberately kept) and the journal (67KB). Same
+ledgers, smaller and truer input; read proposals either side of 2026-09-14 with that in mind, as
+with 2026-08-26.
+
 ## The cap is one per module, by construction
 
 Each module's consumer builds exactly **one** `advised:<base>` book from the day's artifact, so one

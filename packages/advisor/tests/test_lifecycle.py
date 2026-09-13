@@ -167,9 +167,11 @@ def test_creative_proposals_are_recorded_and_never_run(home, conn):
 
 
 def test_over_the_cap_a_good_spec_queues_rather_than_being_refused(home, conn):
-    for _ in range(2):
+    # Two DIFFERENT overlays: the same overlay admitted twice on one session resolves to the same
+    # experiment by design (2026-09-12), so identical specs would not exercise the queue.
+    for value in (0.9, 0.88):
         experiments.admit_reply(
-            conn, session=SESSION, slot="deep", reply=_reply(_adjustment({"stop_trigger_ratio": 0.9}))
+            conn, session=SESSION, slot="deep", reply=_reply(_adjustment({"stop_trigger_ratio": value}))
         )
     statuses = [e["status"] for e in store.experiments(conn, module="meic")]
     assert statuses == ["active", "queued"]
@@ -537,3 +539,117 @@ def test_killing_an_already_concluded_experiment_does_not_rewrite_its_verdict(ho
 
     assert again["reason"] == "already concluded"
     assert json.loads(store.experiment(conn, eid)["verdict_json"]) == first
+
+
+# --------------------------------------------------------------------------- 2026-09-12 review fixes
+
+
+def test_a_verdict_recommendation_sits_on_a_fresh_computation_every_time(home, conn):
+    """Until 2026-09-12 a stored verdict body was reused, so every nightly recommendation sat on
+    the numbers from the first night one was attached -- a nine-session experiment still carried
+    a session-one body. The stored body must follow the experiment."""
+    admitted = experiments.admit_spec(
+        conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}
+    )
+    eid = admitted["experiment_id"]
+    experiments.record_verdict_recommendation(
+        conn, session=SESSION, experiment_id=eid, recommendation="keep"
+    )
+    first = json.loads(store.experiment(conn, eid)["verdict_json"])
+    assert first["sessions_run"] == 0
+
+    store.update_experiment(conn, eid, sessions_run=7)
+    experiments.record_verdict_recommendation(conn, session=FRIDAY, experiment_id=eid, recommendation="kill")
+    second = json.loads(store.experiment(conn, eid)["verdict_json"])
+    assert second["sessions_run"] == 7, "the body under the recommendation was not recomputed"
+    assert second["recommendation"]["value"] == "kill"
+    assert second["computed_by"] == "cherrypick.advisor.verdicts"
+
+
+def test_the_same_reply_admitted_twice_is_one_experiment(home, conn):
+    """A `--force` re-run, or the CLI reached twice for one slot, must not queue a duplicate that
+    later takes the module's only advised slot."""
+    spec = _adjustment({"stop_trigger_ratio": 0.9})
+    first = experiments.admit_reply(conn, session=SESSION, slot="deep", reply=_reply(spec))
+    second = experiments.admit_reply(conn, session=SESSION, slot="deep", reply=_reply(spec))
+    a = first["admitted"][0]["experiment_id"]
+    assert second["admitted"][0]["experiment_id"] == a
+    assert second["admitted"][0].get("already_admitted") is True
+    assert len(store.experiments(conn, module="meic")) == 1
+    # A DIFFERENT overlay on the same session is a different experiment (queued behind the cap).
+    third = experiments.admit_reply(
+        conn, session=SESSION, slot="deep", reply=_reply(_adjustment({"stop_trigger_ratio": 0.88}))
+    )
+    assert third["admitted"][0]["experiment_id"] != a and third["admitted"][0]["status"] == "queued"
+    # A direct call keeps the plain behaviour: two admissions are two experiments, cap permitting.
+    direct = experiments.admit_spec(
+        conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}
+    )
+    assert direct["experiment_id"] != a
+
+
+def test_an_experiment_that_never_advances_is_concluded_as_stalled(home, conn):
+    """`sessions_run` only moves on enacted sessions, so a module whose loop stopped recording
+    decisions used to hold its experiment active forever and starve the queue. After twice its
+    length in calendar sessions it concludes, labelled stalled and underpowered, and the queued
+    one takes the slot."""
+    active = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9})
+    queued = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.88})
+    assert queued["status"] == "queued"
+    length = store.experiment(conn, active["experiment_id"])["expires_after_sessions"]
+    long_ago = clock.previous_sessions(SESSION, 2 * length + 2)[0]
+    store.update_experiment(conn, active["experiment_id"], created_session=long_ago)
+
+    concluded = experiments.expire_due(conn, SESSION)
+    assert [c["experiment_id"] for c in concluded] == [active["experiment_id"]]
+    assert concluded[0]["stalled"] is True
+    row = store.experiment(conn, active["experiment_id"])
+    assert row["status"] == "expired"
+    body = json.loads(row["verdict_json"])
+    assert body["underpowered"] is True and body["stalled"]["sessions_run"] == 0
+    assert store.experiment(conn, queued["experiment_id"])["status"] == "active"
+
+
+def test_an_experiment_within_its_calendar_budget_is_left_alone(home, conn):
+    active = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9})
+    length = store.experiment(conn, active["experiment_id"])["expires_after_sessions"]
+    recent = clock.previous_sessions(SESSION, length)[0]
+    store.update_experiment(conn, active["experiment_id"], created_session=recent)
+    assert experiments.expire_due(conn, SESSION) == []
+    assert store.experiment(conn, active["experiment_id"])["status"] == "active"
+
+
+def test_one_modules_issue_failure_does_not_truncate_the_others(home, conn, monkeypatch, tmp_home):
+    """The nightly pass runs unconditionally so an outage cannot put a hole in an A/B sample. One
+    module's bad config (a malformed bounds rule) used to raise out of the loop after the first
+    modules had been handled and before the rest were -- the exact truncation the rule forbids."""
+    fakes.write_config(tmp_home, "flies", fakes.advice_block({"wing_width_strikes": {"min": 1, "max": 5}}))
+    fakes.write_suite_config(
+        tmp_home,
+        {"enabled": True, "modules": {"meic": {"enabled": True}, "flies": {"enabled": True}}},
+    )
+    experiments.admit_spec(conn, session=SESSION, module="flies", params={"wing_width_strikes": 2})
+    experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9})
+
+    real_issue = enact._issue
+
+    def broken_for_flies(conn_, *, module, session, target):
+        if module == "flies":
+            raise TypeError("argument of type 'float' is not iterable")
+        return real_issue(conn_, module=module, session=session, target=target)
+
+    monkeypatch.setattr(enact, "_issue", broken_for_flies)
+    result = enact.run(conn, SESSION)
+    by_module = {m["module"]: m for m in result["enacted"]}
+    assert by_module["flies"]["written"] is False and "issue_error" in by_module["flies"]["reason"]
+    assert by_module["meic"]["written"] is True, "meic's artifact must still be issued"
+    assert paths.advice_path("meic", FRIDAY).exists()
+
+
+def test_a_malformed_bounds_rule_is_a_rejection_not_a_crash(home, conn, tmp_home):
+    """`{"stop_trigger_ratio": 0.9}` in a module's bounds is a config mistake. It must read as one
+    at admission (reject-all with the reason) rather than raise out of the validator."""
+    fakes.write_config(tmp_home, "meic", fakes.advice_block({"stop_trigger_ratio": 0.9}))
+    out = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9})
+    assert out["ok"] is False
+    assert "malformed" in json.dumps(out)

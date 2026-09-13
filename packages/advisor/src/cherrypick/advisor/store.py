@@ -129,7 +129,11 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 # Columns added after the first release; see cherrypick.core.db.apply_additive_migrations. Empty
 # today -- the entry exists so the first schema change adds a line here instead of editing _SCHEMA
 # (CREATE TABLE IF NOT EXISTS silently does nothing on an existing database).
-_MIGRATIONS: tuple[tuple[str, str, str], ...] = ()
+_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
+    # 2026-09-12: the exact model id the CLI resolved an alias to, beside the alias in `model`.
+    # The alias floats by design; this is how a change under a fixed config stays visible.
+    ("checkpoints", "model_id", "ALTER TABLE checkpoints ADD COLUMN model_id TEXT"),
+)
 
 
 def now_iso() -> str:
@@ -160,17 +164,38 @@ def ro(path: Path | str) -> sqlite3.Connection:
     return _db.connect_ro(path)
 
 
+#: Every query `rows` refused since the collector was last cleared. The fact pack clears it at the
+#: top of a build and attaches what accumulated as `query_errors`, so a renamed column or a corrupt
+#: page is visible in the pack rather than rendered as an empty section -- "not recorded" must
+#: never read as "was zero", and before 2026-09-12 a refused query read as exactly that.
+QUERY_ERRORS: list[dict[str, str]] = []
+
+
 def rows(conn: sqlite3.Connection, sql: str, params: Iterable[Any] = ()) -> list[dict[str, Any]]:
     """Query tolerantly: a missing table or column yields no rows, not an exception.
 
     Fact packs read a dozen tables across five packages, several of which legitimately do not exist
     yet on a given machine (a module that has never run, a column added last week). A pack that
     fails wholesale because one optional table is absent would take the whole checkpoint down.
+    The refusal is recorded in `QUERY_ERRORS` so the pack can say which queries it could not run.
     """
     try:
         return [dict(r) for r in conn.execute(sql, tuple(params)).fetchall()]
-    except sqlite3.Error:
+    except sqlite3.Error as exc:
+        QUERY_ERRORS.append({"sql": " ".join(sql.split())[:200], "error": f"{type(exc).__name__}: {exc}"})
         return []
+
+
+def rows_or_none(
+    conn: sqlite3.Connection, sql: str, params: Iterable[Any] = ()
+) -> list[dict[str, Any]] | None:
+    """Like `rows`, but a refused query is `None`, not `[]` -- for the facts whose zero is a claim
+    (a settlement guard held, a control arm was gated out) rather than an absence."""
+    try:
+        return [dict(r) for r in conn.execute(sql, tuple(params)).fetchall()]
+    except sqlite3.Error as exc:
+        QUERY_ERRORS.append({"sql": " ".join(sql.split())[:200], "error": f"{type(exc).__name__}: {exc}"})
+        return None
 
 
 def write_json(path: Path | str, payload: Any) -> Path:
@@ -182,6 +207,17 @@ def write_json(path: Path | str, payload: Any) -> Path:
     tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
     tmp.replace(path)
     return path
+
+
+def read_json_text(text: Any, default: Any = None) -> Any:
+    """Decode one of this store's own JSON columns tolerantly: a NULL, a truncated write or a
+    non-string come back as `default` rather than taking a pack down."""
+    if not isinstance(text, str) or not text:
+        return default
+    try:
+        return json.loads(text)
+    except ValueError:
+        return default
 
 
 def read_json(path: Path | str, default: Any = None) -> Any:
@@ -208,14 +244,16 @@ def record_checkpoint(
     raw_path: str | None = None,
     observations: list | None = None,
     flags: list | None = None,
+    model_id: str | None = None,
 ) -> int:
     """Upsert one slot's checkpoint and return its id. Re-running a slot (`--force`) replaces the
     row rather than accumulating duplicates; the proposals from the previous attempt keep their own
     rows and their own fates."""
     conn.execute(
-        "INSERT INTO checkpoints (session, slot, model, ok, error, pack_path, raw_path,"
-        " observations_json, flags_json, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)"
-        " ON CONFLICT(session, slot) DO UPDATE SET model=excluded.model, ok=excluded.ok,"
+        "INSERT INTO checkpoints (session, slot, model, model_id, ok, error, pack_path, raw_path,"
+        " observations_json, flags_json, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+        " ON CONFLICT(session, slot) DO UPDATE SET model=excluded.model, model_id=excluded.model_id,"
+        " ok=excluded.ok,"
         " error=excluded.error, pack_path=excluded.pack_path, raw_path=excluded.raw_path,"
         " observations_json=excluded.observations_json, flags_json=excluded.flags_json,"
         " created_at=excluded.created_at",
@@ -223,6 +261,7 @@ def record_checkpoint(
             session,
             slot,
             model,
+            model_id,
             1 if ok else 0,
             error,
             pack_path,
@@ -315,7 +354,11 @@ def insert_experiment(conn: sqlite3.Connection, record: dict[str, Any]) -> str:
     return str(record["id"])
 
 
-def update_experiment(conn: sqlite3.Connection, experiment_id: str, **fields: Any) -> bool:
+def update_experiment(
+    conn: sqlite3.Connection, experiment_id: str, *, commit: bool = True, **fields: Any
+) -> bool:
+    """`commit=False` lets a caller land this together with a journal row in ONE transaction --
+    the enactment counter and the row that makes it idempotent must not be separable by a crash."""
     if not fields:
         return False
     fields["updated_at"] = now_iso()
@@ -323,7 +366,8 @@ def update_experiment(conn: sqlite3.Connection, experiment_id: str, **fields: An
     cur = conn.execute(
         f"UPDATE experiments SET {assignments} WHERE id = :id", {**fields, "id": experiment_id}
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return cur.rowcount > 0
 
 
@@ -357,6 +401,7 @@ def journal(
     *,
     session: str | None = None,
     detail: Any = None,
+    commit: bool = True,
 ) -> None:
     conn.execute(
         "INSERT INTO experiment_events (experiment_id, session, event, detail_json, created_at)"
@@ -369,7 +414,8 @@ def journal(
             now_iso(),
         ),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 def has_journal_event(conn: sqlite3.Connection, experiment_id: str, event: str, *, session: str) -> bool:

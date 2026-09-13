@@ -46,6 +46,24 @@ def previous_sessions(session: str, n: int) -> list[str]:
     return [d.isoformat() for d in reversed(out)]
 
 
+def sessions_between(start: str, end: str, *, cap: int) -> int:
+    """Trading sessions strictly after `start` up to and including `end`, counting no further
+    than `cap` -- how long an experiment has been on the calendar, as opposed to how many sessions
+    it was actually enacted for."""
+    try:
+        cursor = date.fromisoformat(start)
+        last = date.fromisoformat(end)
+    except (TypeError, ValueError):
+        return 0
+    n = 0
+    while n < cap:
+        cursor = _calendar.next_trading_day(cursor)
+        if cursor > last:
+            break
+        n += 1
+    return n
+
+
 def end_of_session_iso(session: str) -> str:
     """23:59:59 ET on the target session — an advice artifact's `expires_at`.
 

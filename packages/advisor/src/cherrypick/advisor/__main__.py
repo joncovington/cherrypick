@@ -84,6 +84,16 @@ def cmd_admit(args) -> dict[str, Any]:
     written with the error so the ok rate stays honest, and the raw text is already on disk.
     """
     session = _session(args)
+    # The freeze lives HERE, not only in the checkpoint script (2026-09-12): the console and any
+    # operator re-run reach this verb directly, and a second admission of the same slot used to
+    # re-record every proposal and queue a duplicate experiment behind the first.
+    if _paths.checkpoint_path(session, args.slot).exists() and not getattr(args, "force", False):
+        return {
+            "ok": False,
+            "session": session,
+            "slot": args.slot,
+            "skipped": "slot already recorded (frozen); pass --force",
+        }
     raw = Path(args.raw).read_text(encoding="utf-8", errors="replace")
     conn = _store.connect()
     try:
@@ -95,6 +105,7 @@ def cmd_admit(args) -> dict[str, Any]:
                 session=session,
                 slot=args.slot,
                 model=args.model,
+                model_id=getattr(args, "model_id", None),
                 ok=False,
                 error=str(exc),
                 raw_path=args.raw,
@@ -107,9 +118,39 @@ def cmd_admit(args) -> dict[str, Any]:
             slot=args.slot,
             reply=reply,
             model=args.model,
+            model_id=getattr(args, "model_id", None),
             pack_path=str(_paths.pack_path(session, args.slot)),
             raw_path=args.raw,
         )
+    finally:
+        conn.close()
+
+
+def cmd_checkpoint_failed(args) -> dict[str, Any]:
+    """Record a slot whose model call never produced a reply (timeout, non-zero exit, no `claude`
+    on PATH, nothing on stdout). Until 2026-09-12 only a reply that failed to PARSE left a row, so
+    the more common failure read as a slot that never ran -- and `status`'s ok-rate could not see
+    it. The slot stays re-runnable: no summary file is written, so the freeze does not engage."""
+    session = _session(args)
+    conn = _store.connect()
+    try:
+        checkpoint_id = _store.record_checkpoint(
+            conn,
+            session=session,
+            slot=args.slot,
+            model=args.model,
+            model_id=getattr(args, "model_id", None),
+            ok=False,
+            error=args.error,
+            pack_path=str(_paths.pack_path(session, args.slot)),
+        )
+        return {
+            "ok": True,
+            "session": session,
+            "slot": args.slot,
+            "checkpoint_id": checkpoint_id,
+            "error": args.error,
+        }
     finally:
         conn.close()
 
@@ -225,7 +266,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_admit.add_argument("--session", help="ISO date; defaults to today (ET)")
     p_admit.add_argument("--raw", required=True, help="path to the raw reply text")
     p_admit.add_argument("--model", help="which model produced it (recorded, never used to decide)")
+    p_admit.add_argument(
+        "--model-id", dest="model_id", help="the exact model id the CLI resolved the alias to"
+    )
+    p_admit.add_argument("--force", action="store_true", help="re-admit a slot that is already recorded")
     p_admit.set_defaults(func=cmd_admit)
+
+    p_failed = sub.add_parser("checkpoint-failed", help="record a slot whose model call produced no reply")
+    p_failed.add_argument("--slot", required=True, choices=list(_factpack.SLOTS))
+    p_failed.add_argument("--session", help="ISO date; defaults to today (ET)")
+    p_failed.add_argument("--error", required=True, help="what failed, verbatim")
+    p_failed.add_argument("--model", help="the alias the slot was configured with")
+    p_failed.add_argument("--model-id", dest="model_id", help="the exact model id, when known")
+    p_failed.set_defaults(func=cmd_checkpoint_failed)
 
     p_enact = sub.add_parser("enact", help="issue the next session's advice for active experiments")
     p_enact.add_argument("--session", help="ISO date; defaults to today (ET)")

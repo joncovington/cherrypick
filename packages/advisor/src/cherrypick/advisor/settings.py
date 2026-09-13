@@ -19,6 +19,7 @@ from typing import Any
 
 from cherrypick.core import home as _home
 
+from cherrypick.advisor import bounds as _bounds
 from cherrypick.advisor import store as _store
 
 DEFAULTS: dict[str, Any] = {
@@ -33,14 +34,12 @@ DEFAULTS: dict[str, Any] = {
     "experiment_sessions": 15,
     "experiment_sessions_min": 5,
     "experiment_sessions_max": 30,
-    "modules": {
-        "meic": {"enabled": True},
-        "flies": {"enabled": False},
-        "earnings": {"enabled": True},
-        # Off until the module's own advice block is turned on too — the two switches must agree.
-        "calendars": {"enabled": False},
-        "pmcc": {"enabled": False},
-    },
+    # Derived from `bounds.MODULES`, the one module list (2026-09-12: this was the fourth hand-kept
+    # copy, and it was missing bwb and curve -- so with no deployed `advisor.modules` entry, enact
+    # silently skipped two modules that declare bounds and read for advice). Every module the
+    # advisor can act on has an entry; only meic and earnings default on. Off until the module's
+    # own advice block is turned on too -- the two switches must agree.
+    "modules": {m: {"enabled": m in ("meic", "earnings")} for m in _bounds.MODULES},
 }
 
 

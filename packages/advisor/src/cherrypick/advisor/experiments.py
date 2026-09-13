@@ -82,8 +82,13 @@ def admit_spec(
     sessions: Any = None,
     rationales: dict | None = None,
     cfg: dict | None = None,
+    dedup: bool = False,
 ) -> dict[str, Any]:
-    """Admit one proposal as an experiment. Returns `{"ok", "experiment_id"|None, "reason", ...}`."""
+    """Admit one proposal as an experiment. Returns `{"ok", "experiment_id"|None, "reason", ...}`.
+
+    `dedup=True` (the reply-admission path) resolves the same overlay admitted on the same session
+    to the experiment that already holds it, so a re-run of one slot cannot queue a duplicate. A
+    direct call keeps the plain behaviour: two admissions are two experiments, cap permitting."""
     resolved = _settings.load(cfg)
     if not _settings.module_enabled(module, resolved):
         return {"ok": False, "reason": f"module_advice_disabled: advisor.modules.{module} is off"}
@@ -98,6 +103,24 @@ def admit_spec(
     status = STATUS_QUEUED if over_cap else STATUS_ACTIVE
     length = _settings.clamp_sessions(sessions, resolved)
 
+    # Re-admitting the same reply (a `--force` re-run, or the CLI reached twice for one slot) must
+    # not create a second experiment that later takes the module's only advised slot. The same
+    # params admitted on the same session for the same module IS the same experiment.
+    params_json = json.dumps({p["param"]: p["value"] for p in checked["proposals"]})
+    for existing in _store.experiments(conn, module=module) if dedup else ():
+        if (
+            existing["created_session"] == session
+            and existing["params_json"] == params_json
+            and existing["status"] in (STATUS_ACTIVE, STATUS_QUEUED)
+        ):
+            return {
+                "ok": True,
+                "experiment_id": existing["id"],
+                "status": existing["status"],
+                "sessions": existing["expires_after_sessions"],
+                "already_admitted": True,
+            }
+
     experiment_id = _store.next_experiment_id(conn, session, module)
     _store.insert_experiment(
         conn,
@@ -108,7 +131,7 @@ def admit_spec(
             "name": name,
             "hypothesis": hypothesis,
             "success_metric": success_metric,
-            "params_json": json.dumps({p["param"]: p["value"] for p in checked["proposals"]}),
+            "params_json": params_json,
             # What the bounds were when this was admitted. A later human tightening that starts
             # rejecting the overlay then reads as a change, not a mystery.
             "bounds_snapshot_json": json.dumps(checked["posture"]["bounds"]),
@@ -192,13 +215,11 @@ def record_verdict_recommendation(
     if experiment is None:
         return {"ok": False, "reason": f"not_an_advisor_experiment: {experiment_id!r}"}
 
-    stored = experiment["verdict_json"]
-    if stored:
-        body = json.loads(stored)
-    else:
-        # Same per-module rule the fact pack shows the model — never the library default.
-        module_rule = _settings.calibration_rule(experiment["module"]) or None
-        body = _verdicts.for_experiment(experiment, rule=module_rule)
+    # Recomputed EVERY time, against the module's own rule. Until 2026-09-12 a stored body was
+    # reused, so the numbers under each night's recommendation were the ones from the first night
+    # a verdict was attached -- a nine-session experiment still carried a session-one body with
+    # null pairs, and the pack handed that body back to the model as its "computed verdict".
+    body = verdict_for(experiment)
     body["recommendation"] = {
         "value": recommendation,
         "rationale": rationale,
@@ -263,9 +284,9 @@ def kill(
 
     body = verdict_for(experiment, cfg=cfg)
     body["killed_reason"] = reason
-    _store.update_experiment(conn, experiment_id, verdict_json=json.dumps(body))
-
-    _store.update_experiment(conn, experiment_id, status=STATUS_KILLED)
+    # One statement: a crash between "verdict written" and "status killed" used to leave a
+    # still-active experiment carrying a kill verdict that `expire_due` would later overwrite.
+    _store.update_experiment(conn, experiment_id, status=STATUS_KILLED, verdict_json=json.dumps(body))
     _store.journal(conn, experiment_id, "killed", session=session, detail={"reason": reason})
     promoted = activate_queued(conn, experiment["module"], session=session)
     return {"ok": True, "experiment_id": experiment_id, "status": STATUS_KILLED, "activated": promoted}
@@ -308,22 +329,40 @@ def expire_due(
     """
     concluded = []
     for experiment in _store.experiments(conn, status=STATUS_ACTIVE):
-        if experiment["sessions_run"] < experiment["expires_after_sessions"]:
+        length = int(experiment["expires_after_sessions"])
+        ran_its_course = experiment["sessions_run"] >= length
+        # The calendar exit (2026-09-12). `sessions_run` only advances on sessions a loop actually
+        # applied, so a module whose loop stopped recording decisions left its experiment active
+        # forever and every queued experiment behind it queued forever -- the cap is one. After
+        # twice its length in calendar sessions an experiment that has not run its course is
+        # concluded as stalled: verdict computed like any other, `underpowered` on its face, and
+        # the queue moves up.
+        elapsed = _clock.sessions_between(experiment["created_session"], session, cap=2 * length + 1)
+        stalled = not ran_its_course and elapsed > 2 * length
+        if not ran_its_course and not stalled:
             continue
         body = verdict_for(experiment, rule=rule, cfg=cfg)
+        if stalled:
+            body["stalled"] = {"sessions_run": experiment["sessions_run"], "calendar_sessions": elapsed}
         _store.update_experiment(conn, experiment["id"], status=STATUS_EXPIRED, verdict_json=json.dumps(body))
         _store.journal(
             conn,
             experiment["id"],
             "expired",
             session=session,
-            detail={"sessions_run": experiment["sessions_run"], "underpowered": body["underpowered"]},
+            detail={
+                "sessions_run": experiment["sessions_run"],
+                "underpowered": body["underpowered"],
+                "stalled": stalled,
+                "calendar_sessions": elapsed,
+            },
         )
         concluded.append(
             {
                 "experiment_id": experiment["id"],
                 "module": experiment["module"],
                 "underpowered": body["underpowered"],
+                "stalled": stalled,
             }
         )
         activate_queued(conn, experiment["module"], session=session)
@@ -343,6 +382,7 @@ def admit_reply(
     pack_path: str | None = None,
     raw_path: str | None = None,
     cfg: dict | None = None,
+    model_id: str | None = None,
 ) -> dict[str, Any]:
     """Record one checkpoint and everything the model proposed in it.
 
@@ -356,6 +396,7 @@ def admit_reply(
         session=session,
         slot=slot,
         model=model,
+        model_id=model_id,
         ok=True,
         pack_path=pack_path,
         raw_path=raw_path,
@@ -458,6 +499,7 @@ def _apply(
             module=proposal["module"],
             params=proposal["params"],
             proposal_id=proposal_id,
+            dedup=True,
             name=proposal.get("name") or f"{slot}-{kind}",
             hypothesis=proposal.get("hypothesis", ""),
             success_metric=proposal.get("success_metric", ""),

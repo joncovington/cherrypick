@@ -672,3 +672,92 @@ def test_a_book_with_no_recorded_range_is_unmatched_not_guessed(tmp_home):
 def test_the_band_containment_section_rides_the_deep_pack_only(tmp_home):
     assert "flies_band_containment" not in factpack.build(SESSION, "midday")
     assert "flies_band_containment" in factpack.build(SESSION, "deep")
+
+
+# --------------------------------------------------------------------------- 2026-09-12 review fixes
+
+
+def test_the_regime_block_is_read_at_the_session_not_at_wall_clock_now(seeded, monkeypatch):
+    """Every other query in the market block takes the session; the regime read took `now`, so a
+    pack rebuilt for a past date described today's regime under that date's heading."""
+    from datetime import datetime
+
+    from cherrypick.advisor import clock
+
+    seen: list[float] = []
+
+    def fake_regime_at(ts, **_kw):
+        seen.append(ts)
+        return {"market": {"status": "unmeasured", "reason": "test"}}
+
+    monkeypatch.setattr(factpack._regime, "regime_at", fake_regime_at)
+    factpack.build(SESSION, "open")
+    end_of_session = datetime.fromisoformat(clock.end_of_session_iso(SESSION)).timestamp()
+    assert seen and seen[0] == end_of_session, "a past session must be read at its own close"
+
+
+def test_an_unreadable_module_config_is_unknown_not_live_trading_off(tmp_home):
+    """The wrong answer in the live-posture block is a safety statement to the model."""
+    pack = factpack.build(SESSION, "open")
+    posture = pack["live"]["posture"]
+    assert posture["meic"]["enable_live_trading"] is None
+    assert posture["meic"]["config_read"] is False
+
+
+def test_a_read_module_config_reports_the_flag_as_written(seeded):
+    fakes.write_config(seeded, "meic", {"enable_live_trading": False})
+    posture = factpack.build(SESSION, "open")["live"]["posture"]
+    assert posture["meic"] == {"enable_live_trading": False, "config_read": True}
+
+
+def test_a_refused_query_is_named_and_never_reads_as_zero(seeded):
+    """A renamed column used to make `settled_with_no_price_today` read 0 -- which the docstring
+    beside it says means the settlement guard held -- and `control_fired` read False, the finding
+    that the control was gated out. Both are now None, and the pack says which query it could not
+    run."""
+    import sqlite3
+
+    db = paths.module_data_dir("meic") / "paper_trades.db"
+    conn = sqlite3.connect(db)
+    conn.execute("ALTER TABLE ic_trades RENAME COLUMN risk_profile TO profile")
+    conn.commit()
+    conn.close()
+
+    pack = factpack.build(SESSION, "deep")
+    assert pack["paper"]["meic"]["control_fired"]["fired"] is None
+    assert pack["query_errors"], "the refused queries must be listed"
+    assert any("risk_profile" in e["sql"] for e in pack["query_errors"])
+
+
+def test_a_clean_build_lists_no_query_errors(seeded):
+    assert factpack.build(SESSION, "open")["query_errors"] == []
+
+
+def test_experiments_full_carries_one_fresh_verdict_per_experiment_not_raw_rows(seeded):
+    """Measurement break 2026-09-14: the section used to dump raw store rows (every past verdict
+    body, the bounds snapshot, the prose in full) at 110KB of a 439KB pack, and the verdict it
+    carried for an active experiment was frozen at the first session one was attached."""
+    from cherrypick.advisor import experiments, store
+
+    fakes.write_config(seeded, "meic", fakes.advice_block({"stop_trigger_ratio": {"min": 0.85, "max": 0.95}}))
+    fakes.write_suite_config(seeded, {"enabled": True, "modules": {"meic": {"enabled": True}}})
+    conn = store.connect()
+    # Admitted on a CURRENT session: advice is single-session and the fixture's SESSION is past.
+    today = fakes.anchor_session()
+    admitted = experiments.admit_spec(
+        conn, session=today, module="meic", params={"stop_trigger_ratio": 0.9}
+    )
+    assert admitted["ok"], admitted
+    # A stale stored body: what the old section would have handed the model verbatim.
+    store.update_experiment(
+        conn, admitted["experiment_id"], sessions_run=4, verdict_json=json.dumps({"stale": True})
+    )
+    conn.close()
+
+    active = factpack.build(SESSION, "deep")["experiments_full"]["active"]
+    assert [e["id"] for e in active] == [admitted["experiment_id"]]
+    brief = active[0]
+    assert "verdict_json" not in brief and "bounds_snapshot_json" not in brief
+    assert brief["verdict"]["computed_by"] == "cherrypick.advisor.verdicts"
+    assert brief["verdict"]["sessions_run"] == 4, "fresh, not the stale stored body"
+    assert brief["params"] == {"stop_trigger_ratio": 0.9}
