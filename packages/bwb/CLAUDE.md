@@ -42,7 +42,9 @@ doubly here because the credit gate has no floor to screen out an illusory openi
   fix needs separating; the plan now flags `am_monthly_date` so monthly-date weeks, which begin
   here, can be told apart. **Deferred (backlog, not ready as a break):** nearest-to-`dte_target`
   selection with a minimum-DTE floor (the rule the old docstring described) as an experiment, once
-  the ladder has a comparable stretch behind it; `dte_target` stays in config, reserved and unused.
+  the ladder has a comparable stretch behind it; `dte_target` stays in `defaults`, reserved and
+  unused, and is NOT in the advisable bounds — it was, and an advised value would have done
+  nothing (removed from the example and the deployed config 2026-09-12).
 - **Cadence**: daily ladder — a new BWB every session per enabled book, so ~5-7 positions ride
   concurrently per book at steady state. Position identity is `(symbol, book, entry_session)`.
 

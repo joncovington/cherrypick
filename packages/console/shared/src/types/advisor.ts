@@ -17,7 +17,10 @@ export interface AdvisorFlag {
 export interface AdvisorCheckpoint {
   session: string;
   slot: string;
+  /** The alias the slot was configured with (e.g. "opus"), which floats by design. */
   model: string | null;
+  /** The exact model id the CLI resolved that alias to, recorded since 2026-09-12; null before. */
+  modelId: string | null;
   ok: boolean;
   error: string | null;
   observations: string[];
@@ -57,6 +60,12 @@ export interface AdvisorVerdict {
   underpowered: boolean;
   /** The model's keep/kill/promote, stored beside the numbers — never instead of them. */
   recommendation: { value: string; rationale: string; by: string; session: string } | null;
+  /**
+   * Set when the experiment was concluded by the calendar exit (2026-09-12): it had not run its
+   * course after twice its length in calendar sessions, because its module's loop stopped
+   * recording decisions. `sessionsRun` is how many sessions it actually got.
+   */
+  stalled: { sessionsRun: number; calendarSessions: number } | null;
 }
 
 export interface AdvisorEvent {
