@@ -8,6 +8,7 @@ import { PoliciesTab } from "../../pages/Calendars/PoliciesTab";
 import { WeeksTab } from "../../pages/Calendars/WeeksTab";
 import { HelpTab } from "../../pages/Calendars/HelpTab";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
+import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { LightboxFrame } from "../LightboxFrame";
 import type { SlideDef } from "../types";
 
@@ -93,6 +94,7 @@ export function CalendarsLightbox({ slide }: { slide: string }) {
         },
         { id: "policies", label: "policies", render: () => <PoliciesTab /> },
         { id: "weeks", label: "weeks", render: () => <WeeksTab data={data} /> },
+        { id: "advisor", label: "advisor", render: () => <AdvisorSlide module="calendars" /> },
         { id: "performance", label: "performance", render: () => <PerformanceSlide module="calendars" /> },
         { id: "guide", label: "help", render: () => <HelpTab data={data} /> },
       ];

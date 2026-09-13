@@ -12,6 +12,7 @@ import { dismissAdvisorProposal, killAdvisorExperiment, useAdvisor } from "../..
 import { otherFields, paramRows, scalar } from "./proposalPayload";
 import { TabStrip } from "../../components/ScopeBar";
 import { pushToast } from "../../lib/toast";
+import { gateDistance, lastCounted } from "../../components/advisor/experimentStats";
 
 /**
  * The AI advisor. Renders what it observed, proposed and ran — and judges none of it here.
@@ -495,7 +496,7 @@ function ProposalCard({
 
 // --------------------------------------------------------------------------- experiments
 
-function PairTable({ pairs }: { pairs: AdvisorPair[] }) {
+export function PairTable({ pairs }: { pairs: AdvisorPair[] }) {
   return (
     <div className="table-scroll">
       <table className="data-table data-table-labelled">
@@ -690,6 +691,77 @@ export function ExperimentCard({
 
 // --------------------------------------------------------------------------- page
 
+/**
+ * Every running and queued experiment in one table (2026-09-12): the at-a-glance answer the
+ * cards below give only when expanded — how far each has got, what its last scored session did,
+ * where it stands against control, and how far the sample is from the gate. Each module's own
+ * lightbox carries the full picture on its "advisor" slide; this is the cross-module roll-up.
+ */
+export function ExperimentRollup({ experiments }: { experiments: AdvisorExperiment[] }) {
+  return (
+    <section className="card">
+      <h2>At a glance</h2>
+      <div className="table-scroll">
+        <table className="data-table data-table-labelled advisor-rollup">
+          <thead>
+            <tr>
+              <th>Module</th>
+              <th>Experiment</th>
+              <th>Status</th>
+              <th>Progress</th>
+              <th>Last session</th>
+              <th>Net delta</th>
+              <th>Gate</th>
+            </tr>
+          </thead>
+          <tbody>
+            {experiments.map((e) => {
+              const last = lastCounted(e);
+              const delta = e.verdict?.pairs[0]?.delta["net_pnl"] ?? null;
+              const pctDone = e.expiresAfter > 0 ? Math.min(100, (100 * e.sessionsRun) / e.expiresAfter) : 0;
+              return (
+                <tr key={e.id}>
+                  <td>{e.module}</td>
+                  <td>{e.name ?? e.id}</td>
+                  <td>
+                    <span className={`chip ${e.status === "active" ? "" : "chip-missing"}`}>{e.status}</span>
+                  </td>
+                  <td className="advisor-rollup-bar" title={`${e.sessionsRun} of ${e.expiresAfter} sessions enacted`}>
+                    <div className="advisor-bar">
+                      <div className="advisor-bar-fill" style={{ width: `${pctDone}%` }} />
+                    </div>
+                    <span className="muted">
+                      {e.sessionsRun} / {e.expiresAfter}
+                    </span>
+                  </td>
+                  <td>
+                    {last === null ? (
+                      <span className="muted">not scored yet</span>
+                    ) : (
+                      <span
+                        className={`chip ${last.status === "not_enacted" ? "chip-warn" : last.status === "enacted" ? "" : "chip-missing"}`}
+                        title={last.session ?? undefined}
+                      >
+                        {last.status === "enacted" ? "applied" : last.status === "not_enacted" ? "not applied" : last.status.replace("_", " ")}
+                      </span>
+                    )}
+                  </td>
+                  <td className={pnlClass(delta)}>{money(delta)}</td>
+                  <td className="muted">{gateDistance(e) ?? "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted">
+        Comparisons are as of the last evening pass. Each module's lightbox has an <em>advisor</em> slide with the
+        session-by-session strip, tomorrow's artifact and the queue.
+      </p>
+    </section>
+  );
+}
+
 export function AdvisorPage() {
   const [tab, setTab] = useState<Tab>("today");
   const [session, setSession] = useState<string | undefined>(undefined);
@@ -808,6 +880,7 @@ export function AdvisorPage() {
               <p className="muted">nothing running</p>
             </section>
           )}
+          {active.length > 0 && <ExperimentRollup experiments={active} />}
           {active.map((e) => (
             <ExperimentCard key={e.id} e={e} busy={busy} onKill={(id) => void act(() => killAdvisorExperiment(id), "Experiment killed")} />
           ))}
