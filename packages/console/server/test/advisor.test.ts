@@ -189,6 +189,41 @@ describe("the advisor reader", () => {
     expect(payload.experiments[0]?.journal[0]?.event).toBe("enacted");
   });
 
+  it("reads a store that predates the model_id column, and the id once the producer has added it", () => {
+    // The store seeded by the test above persists for the rest of this describe (one home per file).
+    expect(readAdvisor(config).latest[0]).toMatchObject({ model: "opus", modelId: null });
+
+    const db = new Database(path.join(tmp, "advisor", "advisor.db"));
+    db.exec("ALTER TABLE checkpoints ADD COLUMN model_id TEXT");
+    db.prepare("UPDATE checkpoints SET model_id = ? WHERE id = 1").run("claude-opus-5");
+    db.close();
+    expect(readAdvisor(config).latest[0]).toMatchObject({ model: "opus", modelId: "claude-opus-5" });
+  });
+
+  it("surfaces a stalled conclusion, and reads null where an older verdict never wrote one", () => {
+    const db = new Database(path.join(tmp, "advisor", "advisor.db"));
+    db.prepare(
+      "INSERT INTO experiments (id, module, base_profile, params_json, status, created_session," +
+        " expires_after_sessions, sessions_run, verdict_json, created_at, updated_at)" +
+        " VALUES ('exp-stalled', 'meic', 'control', '{}', 'expired', ?, 15, 2, ?, ?, ?)",
+    ).run(
+      SESSION,
+      JSON.stringify({ pairs: [], underpowered: true, stalled: { sessions_run: 2, calendar_sessions: 31 } }),
+      `${SESSION}T21:05:00+00:00`,
+      `${SESSION}T21:05:00+00:00`,
+    );
+    db.close();
+    const payload = readAdvisor(config);
+    const stalled = payload.experiments.find((e) => e.id === "exp-stalled");
+    expect(stalled?.verdict?.stalled).toEqual({ sessionsRun: 2, calendarSessions: 31 });
+    const other = payload.experiments.find((e) => e.id !== "exp-stalled" && e.verdict !== null);
+    expect(other?.verdict?.stalled ?? null).toBeNull();
+    // Leave the seeded store as the tests below expect it.
+    const cleanup = new Database(path.join(tmp, "advisor", "advisor.db"));
+    cleanup.prepare("DELETE FROM experiments WHERE id = 'exp-stalled'").run();
+    cleanup.close();
+  });
+
   it("keeps a rejection's reason, because one nobody sees gets re-proposed forever", () => {
     const proposal = readAdvisor(config).proposals[0];
     expect(proposal).toMatchObject({ id: 7, status: "rejected" });

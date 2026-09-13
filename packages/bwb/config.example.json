@@ -59,11 +59,8 @@
   "advice": {
     "enabled": false,
     "base_book": "control",
+    "_dte_target_note": "dte_target is NOT in bounds (2026-09-12): the module ignores it -- the target expiration is the next weekly Friday, and dte_target is reserved for the backlog nearest-with-floor experiment. Declaring it advisable let the model propose a value that did nothing.",
     "bounds": {
-      "dte_target": {
-        "min": 1,
-        "max": 21
-      },
       "quantity": {
         "min": 1,
         "max": 5

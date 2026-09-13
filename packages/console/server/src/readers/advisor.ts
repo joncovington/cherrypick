@@ -65,10 +65,20 @@ function parse<T>(raw: unknown, fallback: T): T {
 function verdict(raw: unknown): AdvisorVerdict | null {
   const v = parse<Partial<AdvisorVerdict> | null>(raw, null);
   if (v === null || typeof v !== "object") return null;
+  const body = v as Record<string, unknown>;
+  const stalledRaw = body["stalled"];
+  const stalled =
+    stalledRaw !== null && typeof stalledRaw === "object"
+      ? {
+          sessionsRun: Number((stalledRaw as Record<string, unknown>)["sessions_run"] ?? 0),
+          calendarSessions: Number((stalledRaw as Record<string, unknown>)["calendar_sessions"] ?? 0),
+        }
+      : null;
   return {
     pairs: Array.isArray(v.pairs) ? v.pairs : [],
     underpowered: v.underpowered === true,
     recommendation: v.recommendation ?? null,
+    stalled,
   };
 }
 
@@ -80,6 +90,7 @@ interface CheckpointRow {
   session: string;
   slot: string;
   model: string | null;
+  model_id: string | null;
   ok: number;
   error: string | null;
   observations_json: string | null;
@@ -92,6 +103,7 @@ function shapeCheckpoint(row: CheckpointRow): AdvisorCheckpoint {
     session: row.session,
     slot: row.slot,
     model: row.model,
+    modelId: row.model_id ?? null,
     ok: row.ok === 1,
     error: row.error,
     observations: parse<string[]>(row.observations_json, []),
@@ -247,9 +259,15 @@ export function readAdvisor(config: ConsoleConfig, session?: string): AdvisorPay
       .map((r) => r.session);
     const chosen = session !== undefined && sessions.includes(session) ? session : sessions[sessions.length - 1];
 
+    // `model_id` arrived 2026-09-12 by the producer's additive migration; a store the advisor has
+    // not opened since predates it, and this reader must keep answering on that store.
+    const checkpointCols = new Set(
+      db.prepare<[], { name: string }>("PRAGMA table_info(checkpoints)").all().map((c) => c.name),
+    );
+    const modelIdCol = checkpointCols.has("model_id") ? "model_id" : "NULL AS model_id";
     const history = db
       .prepare<[number], CheckpointRow>(
-        "SELECT session, slot, model, ok, error, observations_json, flags_json, created_at" +
+        `SELECT session, slot, model, ${modelIdCol}, ok, error, observations_json, flags_json, created_at` +
           " FROM checkpoints ORDER BY session DESC, created_at DESC LIMIT ?",
       )
       .all(HISTORY_LIMIT)

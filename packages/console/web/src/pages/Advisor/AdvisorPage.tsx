@@ -327,7 +327,10 @@ function CheckpointCard({ c }: { c: AdvisorCheckpoint }) {
         <>
           <h2>{c.slot}</h2>
           {c.ok ? <span className="chip">ok</span> : <span className="chip chip-warn">failed</span>}
-          <span className="card-asof">{c.model ?? "model not recorded"}</span>
+          <span className="card-asof" title={c.modelId ?? "exact model id not recorded (before 2026-09-12)"}>
+            {c.model ?? "model not recorded"}
+            {c.modelId !== null && <span className="muted"> · {c.modelId}</span>}
+          </span>
         </>
       }
     >
@@ -604,6 +607,14 @@ export function ExperimentCard({
             underpowered
           </span>
         )}
+        {e.verdict?.stalled != null && (
+          <span
+            className="chip chip-warn"
+            title={`Concluded by the calendar exit: ${e.verdict.stalled.sessionsRun} enacted session(s) in ${e.verdict.stalled.calendarSessions} calendar sessions — its module's loop stopped recording decisions`}
+          >
+            stalled
+          </span>
+        )}
         <span className="card-asof">
           {e.sessionsRun} / {e.expiresAfter} sessions
         </span>
@@ -644,6 +655,13 @@ export function ExperimentCard({
             <span className="muted"> · same sessions, same underlying — a paired comparison</span>
           </div>
           <PairTable pairs={e.verdict.pairs} />
+          {e.verdict.stalled != null && (
+            <p className="review-caveat">
+              <span className="dot" /> stalled — only {e.verdict.stalled.sessionsRun} of{" "}
+              {e.expiresAfter} sessions were ever enacted across {e.verdict.stalled.calendarSessions}{" "}
+              calendar sessions; the module's loop stopped recording decisions and the slot was released.
+            </p>
+          )}
           {e.verdict.recommendation != null && (
             <p className="review-caveat">
               <span className="dot" /> the model recommends{" "}
@@ -827,7 +845,10 @@ export function AdvisorPage() {
                   <tr key={`${c.session}-${c.slot}`}>
                     <td>{c.session}</td>
                     <td>{c.slot}</td>
-                    <td className="muted">{c.model ?? "—"}</td>
+                    <td className="muted" title={c.modelId ?? undefined}>
+                      {c.model ?? "—"}
+                      {c.modelId !== null && <span className="muted"> · {c.modelId}</span>}
+                    </td>
                     <td className={c.ok ? "" : "pnl-neg"}>{c.ok ? "ok" : (c.error ?? "failed")}</td>
                     <td>{count(c.observations.length)}</td>
                   </tr>
