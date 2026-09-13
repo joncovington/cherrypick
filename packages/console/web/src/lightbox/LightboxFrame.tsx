@@ -48,8 +48,13 @@ export function LightboxFrame({
   const [integrityOpen, setIntegrityOpen] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<Element | null>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   const activeId = slides.some((s) => s.id === slide) ? slide : (firstSlideId(slides) ?? slide);
+  // A new slide starts at the top, as it did when the body remounted per slide.
+  useEffect(() => {
+    if (bodyRef.current !== null) bodyRef.current.scrollTop = 0;
+  }, [activeId]);
   const idx = slides.findIndex((s) => s.id === activeId);
   const active = slides[idx];
 
@@ -212,8 +217,15 @@ export function LightboxFrame({
           ))}
         </div>
         {persistentTop}
-        <div className="lb-body view-fade" key={activeId}>
-          {active?.render()}
+        {/* The body stays mounted across slides; only the slide's own subtree changes, with a
+            short handoff that never drops to blank. Keying the body on the slide (until
+            2026-09-12) remounted the whole scroll container and replayed the route fade from
+            opacity 0, so every tab change read as the module vanishing and fading back. Scroll
+            resets explicitly instead, which the remount used to do for free. */}
+        <div className="lb-body" ref={bodyRef}>
+          <div className="lb-slide" key={activeId}>
+            {active?.render()}
+          </div>
         </div>
         {integrity !== undefined && (
           <>

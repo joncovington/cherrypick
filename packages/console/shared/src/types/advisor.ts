@@ -135,6 +135,41 @@ export interface AdvisorApplyStatus {
   enactment: AdvisorEnactment | null;
 }
 
+/** One scored session for a module, oldest first in `AdvisorModulePayload.sessions`. */
+export interface AdvisorSessionCell {
+  session: string;
+  /** enacted | carried | not_enacted | no_artifact */
+  status: string;
+  experimentId: string | null;
+  detail: string | null;
+}
+
+/**
+ * One module's view of the advisor: the experiment running on it, how far it has got, what
+ * happened session by session, what is queued behind it, and what tomorrow's artifact says.
+ * Read-only, module-scoped, and rendered as an "advisor" slide inside the module's own lightbox
+ * (2026-09-12) — a reader looking at a module asks "is my A/B working", which the cross-module
+ * advisor page did not answer at a glance.
+ */
+export interface AdvisorModulePayload {
+  module: string;
+  storePresent: boolean;
+  active: AdvisorExperiment | null;
+  queued: AdvisorExperiment[];
+  /** The most recently concluded experiments on this module, newest first. */
+  concluded: AdvisorExperiment[];
+  /** The last scored sessions for this module, oldest first — the session strip. */
+  sessions: AdvisorSessionCell[];
+  /** Sessions the advisor has scored for this module since the active experiment was created —
+   *  its calendar age as the advisor counts it. Null without an active experiment. */
+  calendarSessions: number | null;
+  /** The calendar exit fires past this many sessions: twice the experiment's length. */
+  stallBudget: number | null;
+  /** Tomorrow's artifact and whether the module accepts advice — the same apply status the
+   *  advisor page shows, for this module alone. */
+  tomorrow: AdvisorApplyStatus | null;
+}
+
 export interface AdvisorPayload {
   /** Sessions with at least one checkpoint, oldest first. */
   sessions: string[];

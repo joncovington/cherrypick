@@ -16,6 +16,7 @@ import { OccupancyMap } from "../../components/OccupancyMap";
 import { MeicForestCard } from "../../pages/Meic/MeicForestCard";
 import { MeicPerformanceTab } from "../../pages/Meic/MeicPerformanceTab";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
+import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { LightboxFrame } from "../LightboxFrame";
 import type { SlideDef } from "../types";
 
@@ -276,6 +277,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
       label: "calibration",
       render: () => <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />,
     },
+    { id: "advisor", label: "advisor", render: () => <AdvisorSlide module="meic" /> },
     {
       id: "performance",
       label: "performance",

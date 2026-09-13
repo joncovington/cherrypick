@@ -10,6 +10,7 @@ import { DecisionsCard } from "../../components/DecisionsCard";
 import { HistoryTab } from "../../pages/Pmcc/HistoryTab";
 import { HelpTab } from "../../pages/Pmcc/HelpTab";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
+import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { LightboxFrame } from "../LightboxFrame";
 import type { SlideDef } from "../types";
 
@@ -124,6 +125,7 @@ export function PmccLightbox({ slide }: { slide: string }) {
         ),
     },
     { id: "history", label: "history", render: () => <HistoryTab /> },
+    { id: "advisor", label: "advisor", render: () => <AdvisorSlide module="pmcc" /> },
     { id: "performance", label: "performance", render: () => <PerformanceSlide module="pmcc" /> },
     { id: "guide", label: "help", render: () => <HelpTab data={data} /> },
   ];

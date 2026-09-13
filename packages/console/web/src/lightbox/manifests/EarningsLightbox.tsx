@@ -12,6 +12,7 @@ import { BarChart } from "../../components/Charts";
 import { EarningsDetailCards } from "../../pages/Earnings/EarningsDetail";
 import { EarningsLiveCard, EarningsManagementLog } from "../../pages/Earnings/EarningsLive";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
+import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { LightboxFrame } from "../LightboxFrame";
 import type { SlideDef } from "../types";
 
@@ -215,6 +216,7 @@ export function EarningsLightbox({ slide }: { slide: string }) {
     { id: "detail", label: "strategy detail", render: () => <EarningsDetailCards mode={mode} era={era} /> },
     // Always reads the paper ledger regardless of the page's own mode toggle -- calibrate's own
     // "paper only" rule for promotion evidence, same as every other module's performance slide.
+    { id: "advisor", label: "advisor", render: () => <AdvisorSlide module="earnings" /> },
     { id: "performance", label: "performance", render: () => <PerformanceSlide module="earnings" /> },
     {
       id: "trades",

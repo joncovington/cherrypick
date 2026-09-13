@@ -6,7 +6,7 @@ import Database from "better-sqlite3";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { ConsoleConfig } from "../src/config.js";
 import { registerSecurity, CSRF_TOKEN } from "../src/security.js";
-import { readAdvisor } from "../src/readers/advisor.js";
+import { readAdvisor, readAdvisorModule } from "../src/readers/advisor.js";
 import { registerAdvisorRoutes } from "../src/routes/advisor.js";
 import { registerAdvisorOpsRoutes } from "../src/routes/advisorOps.js";
 import { setAdvisorCaller, type AdvisorOp } from "../src/services/advisorBridge.js";
@@ -222,6 +222,58 @@ describe("the advisor reader", () => {
     const cleanup = new Database(path.join(tmp, "advisor", "advisor.db"));
     cleanup.prepare("DELETE FROM experiments WHERE id = 'exp-stalled'").run();
     cleanup.close();
+  });
+
+  it("gives a module its own view: the active experiment, its strip, its queue and tomorrow", () => {
+    const db = new Database(path.join(tmp, "advisor", "advisor.db"));
+    db.exec(
+      "CREATE TABLE IF NOT EXISTS enactment (session TEXT, module TEXT, status TEXT, detail TEXT," +
+        " experiment_id TEXT, artifact_params TEXT, decision_params TEXT, decision_reason TEXT, scored_at TEXT," +
+        " PRIMARY KEY (session, module))",
+    );
+    const put = db.prepare(
+      "INSERT OR REPLACE INTO enactment (session, module, status, detail, experiment_id) VALUES (?, 'meic', ?, ?, 'exp-1')",
+    );
+    put.run("2026-08-11", "enacted", "matched");
+    put.run("2026-08-12", "carried", "frozen on open rows");
+    put.run(SESSION, "not_enacted", "the loop recorded no decision");
+    db.prepare(
+      "INSERT INTO experiments (id, module, base_profile, params_json, status, created_session," +
+        " expires_after_sessions, sessions_run, created_at, updated_at)" +
+        " VALUES ('exp-q', 'meic', 'control', '{\"a\": 1}', 'queued', ?, 15, 0, ?, ?)",
+    ).run(SESSION, `${SESSION}T21:06:00+00:00`, `${SESSION}T21:06:00+00:00`);
+    db.close();
+
+    const view = readAdvisorModule(config, "meic");
+    expect(view.storePresent).toBe(true);
+    expect(view.active?.id).toBe("exp-1");
+    expect(view.queued.map((q) => q.id)).toEqual(["exp-q"]);
+    expect(view.sessions.map((s) => [s.session, s.status])).toEqual([
+      ["2026-08-11", "enacted"],
+      ["2026-08-12", "carried"],
+      [SESSION, "not_enacted"],
+    ]);
+    expect(view.stallBudget).toBe(2 * (view.active?.expiresAfter ?? 0));
+    expect(view.tomorrow?.module).toBe("meic");
+
+    // A module the advisor has never touched is an honest empty view, not an error.
+    const none = readAdvisorModule(config, "curve");
+    expect(none.active).toBeNull();
+    expect(none.sessions).toEqual([]);
+    expect(none.calendarSessions).toBeNull();
+
+    // Leave the seeded store as the tests below expect it: no queued row, and no enactment table
+    // (one of them asserts the reader degrades on a store that predates it).
+    const cleanup = new Database(path.join(tmp, "advisor", "advisor.db"));
+    cleanup.prepare("DELETE FROM experiments WHERE id = 'exp-q'").run();
+    cleanup.exec("DROP TABLE enactment");
+    cleanup.close();
+  });
+
+  it("serves a module's view on its own route", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/advisor/module/meic" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().module).toBe("meic");
   });
 
   it("keeps a rejection's reason, because one nobody sees gets re-proposed forever", () => {

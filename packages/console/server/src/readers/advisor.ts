@@ -22,8 +22,10 @@ import type {
   AdvisorEvent,
   AdvisorExperiment,
   AdvisorFlag,
+  AdvisorModulePayload,
   AdvisorPayload,
   AdvisorProposal,
+  AdvisorSessionCell,
   AdvisorVerdict,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
@@ -240,6 +242,124 @@ function readEnactment(db: Database.Database, session: string | null): Map<strin
   return out;
 }
 
+/** One experiment row with its journal — the shape both the page and the module slide read. */
+function shapeExperiment(db: Database.Database, r: Record<string, unknown>): AdvisorExperiment {
+  const id = String(r["id"]);
+  const journal: AdvisorEvent[] = db
+    .prepare<[string], Record<string, unknown>>(
+      "SELECT session, event, detail_json, created_at FROM experiment_events" +
+        " WHERE experiment_id = ? ORDER BY id",
+    )
+    .all(id)
+    .map((e) => ({
+      session: str(e["session"]),
+      event: String(e["event"]),
+      detail: parse<Record<string, unknown> | null>(e["detail_json"], null),
+      createdAt: str(e["created_at"]),
+    }));
+  return {
+    id,
+    module: String(r["module"]),
+    baseProfile: String(r["base_profile"]),
+    name: str(r["name"]),
+    hypothesis: str(r["hypothesis"]),
+    successMetric: str(r["success_metric"]),
+    params: parse<Record<string, unknown>>(r["params_json"], {}),
+    status: String(r["status"]),
+    createdSession: String(r["created_session"]),
+    sessionsRun: Number(r["sessions_run"] ?? 0),
+    expiresAfter: Number(r["expires_after_sessions"] ?? 0),
+    verdict: verdict(r["verdict_json"]),
+    journal,
+  };
+}
+
+const SESSION_STRIP = 15;
+const CONCLUDED_SHOWN = 3;
+
+/**
+ * One module's view of the advisor (2026-09-12): the experiment running on it, its session strip,
+ * what is queued behind it, and tomorrow's artifact. Read from the same store as the page; every
+ * judgement in it (enactment status, verdict) is the advisor's own, never re-derived here.
+ */
+export function readAdvisorModule(config: ConsoleConfig, module: string): AdvisorModulePayload {
+  const empty: AdvisorModulePayload = {
+    module,
+    storePresent: false,
+    active: null,
+    queued: [],
+    concluded: [],
+    sessions: [],
+    calendarSessions: null,
+    stallBudget: null,
+    tomorrow: null,
+  };
+  return withReadOnlyDb(dbPath(config), empty, (db): AdvisorModulePayload => {
+    const rows = db
+      .prepare<[string], Record<string, unknown>>(
+        "SELECT * FROM experiments WHERE module = ? ORDER BY created_at, id",
+      )
+      .all(module)
+      .map((r) => shapeExperiment(db, r));
+    const active = rows.find((e) => e.status === "active") ?? null;
+    const queued = rows.filter((e) => e.status === "queued");
+    const concluded = rows
+      .filter((e) => e.status === "expired" || e.status === "killed")
+      .reverse()
+      .slice(0, CONCLUDED_SHOWN);
+
+    // The strip and the calendar age both come from the enactment table, which the evening pass
+    // writes once per module per scored session — so "calendar sessions" here means sessions the
+    // advisor scored, the same count its own stall exit uses.
+    let sessions: AdvisorSessionCell[] = [];
+    let calendarSessions: number | null = null;
+    if (hasTable(db, "enactment")) {
+      sessions = db
+        .prepare<[string, number], Record<string, unknown>>(
+          "SELECT session, status, experiment_id, detail FROM enactment WHERE module = ?" +
+            " ORDER BY session DESC LIMIT ?",
+        )
+        .all(module, SESSION_STRIP)
+        .reverse()
+        .map((r) => ({
+          session: String(r["session"]),
+          status: String(r["status"]),
+          experimentId: str(r["experiment_id"]),
+          detail: str(r["detail"]),
+        }));
+      if (active !== null) {
+        const row = db
+          .prepare<[string, string], { n: number }>(
+            "SELECT COUNT(DISTINCT session) AS n FROM enactment WHERE module = ? AND session > ?",
+          )
+          .get(module, active.createdSession);
+        calendarSessions = Number(row?.n ?? 0);
+      }
+    }
+
+    const scoredSessions = db
+      .prepare<[], { session: string }>("SELECT DISTINCT session FROM checkpoints ORDER BY session")
+      .all()
+      .map((r) => r.session);
+    const chosen = scoredSessions[scoredSessions.length - 1] ?? null;
+    const nextSession = latestAdviceSession(config, chosen);
+    const tomorrow =
+      readApplyStatus(config, nextSession, readEnactment(db, chosen)).find((s) => s.module === module) ?? null;
+
+    return {
+      module,
+      storePresent: true,
+      active,
+      queued,
+      concluded,
+      sessions,
+      calendarSessions,
+      stallBudget: active === null ? null : 2 * active.expiresAfter,
+      tomorrow,
+    };
+  });
+}
+
 export function readAdvisor(config: ConsoleConfig, session?: string): AdvisorPayload {
   const empty: AdvisorPayload = {
     sessions: [],
@@ -306,36 +426,7 @@ export function readAdvisor(config: ConsoleConfig, session?: string): AdvisorPay
           " ELSE 2 END, updated_at DESC",
       )
       .all()
-      .map((r) => {
-        const id = String(r["id"]);
-        const journal: AdvisorEvent[] = db
-          .prepare<[string], Record<string, unknown>>(
-            "SELECT session, event, detail_json, created_at FROM experiment_events" +
-              " WHERE experiment_id = ? ORDER BY id",
-          )
-          .all(id)
-          .map((e) => ({
-            session: str(e["session"]),
-            event: String(e["event"]),
-            detail: parse<Record<string, unknown> | null>(e["detail_json"], null),
-            createdAt: str(e["created_at"]),
-          }));
-        return {
-          id,
-          module: String(r["module"]),
-          baseProfile: String(r["base_profile"]),
-          name: str(r["name"]),
-          hypothesis: str(r["hypothesis"]),
-          successMetric: str(r["success_metric"]),
-          params: parse<Record<string, unknown>>(r["params_json"], {}),
-          status: String(r["status"]),
-          createdSession: String(r["created_session"]),
-          sessionsRun: Number(r["sessions_run"] ?? 0),
-          expiresAfter: Number(r["expires_after_sessions"] ?? 0),
-          verdict: verdict(r["verdict_json"]),
-          journal,
-        };
-      });
+      .map((r) => shapeExperiment(db, r));
 
     // The artifact the deep slot wrote is for the NEXT trading session, so that is the one to read
     // back. Rather than reimplementing the NYSE calendar here, take the session named by whatever

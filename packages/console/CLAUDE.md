@@ -264,6 +264,24 @@ changes as safe, and it is the only check that sees past the fallback below.
   upward", not "between 7659 and 7715"; a flat worst case is "at or below 7645"; and a book whose
   worst equals its best is "locked" — 2026-09-11 control was one, two stranded verticals whose
   loss four adjacent 5-wide flies cancel exactly at every price.
+- **Each module's lightbox carries an `advisor` slide; the advisor page is the cross-module
+  roll-up (2026-09-12).** A reader looking at a module asks "is my A/B working", and the advisor
+  page answered that only after expanding one collapsed card per experiment — its at-a-glance
+  signals were a status chip, an `underpowered` chip every active experiment carries, and a
+  session count. `readers/advisor.ts`'s `readAdvisorModule` serves one module's view on
+  `/api/advisor/module/:module`: the active experiment with its progress against both its length
+  and the stall budget, the session-by-session strip from the advisor's own `enactment` table
+  (applied / carried / not applied / nothing issued — read, never re-derived), the paired
+  comparison as of the last evening pass with the gate distance in words, tomorrow's artifact, the
+  queue in activation order, and the last concluded. `components/advisor/AdvisorSlide.tsx` renders
+  it in all seven module manifests; the page's experiments tab opens with a roll-up table of the
+  same numbers across modules. The two write actions (kill, dismiss) stay on the advisor page and
+  only there; the module slides are read-only like every other module slide.
+- **A lightbox slide change is a handoff, not a remount.** `LightboxFrame` used to key the whole
+  scroll body on the slide id with the route fade on it, so every tab change unmounted the module's
+  content and replayed a fade from opacity 0 — the module vanished and faded back. The body now
+  stays mounted, the slide's own subtree is keyed with a 120ms settle from mostly-visible, and the
+  scroll position resets explicitly (the remount used to do that for free).
 - **The calendars page is the same question answered the other way, and the split is the point.**
   `readers/calendars.ts` reads that ledger directly like every other reader here, but two things it
   will not compute go out through `services/calendarsBridge.ts` as a subprocess: the exit-policy
