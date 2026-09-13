@@ -34,6 +34,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from cherrypick.core import advice as _advice
+
 from cherrypick.advisor import paths as _paths
 from cherrypick.advisor import store as _store
 
@@ -80,15 +82,18 @@ def resolve(module: str) -> dict[str, Any]:
         return _off(module, default_base, "module_advice_disabled: module config not found")
 
     block = config.get("advice")
-    if not isinstance(block, dict):
-        return _off(module, default_base, "module_advice_disabled: no advice block in config")
-
-    base = str(block.get(key) or default_base)
+    base = str(block.get(key) or default_base) if isinstance(block, dict) else default_base
+    # ONE answer to "does this config accept advice", the loop's own: `core.advice.disabled_reason`
+    # is what the consumer records, and this side must give the same reason in the same words for
+    # the same config. Until 2026-09-12 this was a second copy that checked the same conditions in
+    # a different order, so a config both disabled and bounds-empty was diagnosed one way by the
+    # advisor and the other by the loop -- the mismatch the core docstring says must stay visible.
+    reason = _advice.disabled_reason(config)
+    if reason is not None:
+        return _off(module, base, f"module_{reason}")
     manifest = block.get("bounds")
-    if not isinstance(manifest, dict) or not manifest:
-        return _off(module, base, "module_advice_disabled: advice.bounds is empty")
-    if not block.get("enabled"):
-        return _off(module, base, "module_advice_disabled: advice.enabled is false")
+    if not isinstance(manifest, dict):
+        return _off(module, base, "module_advice_disabled: advice.bounds is not an object")
 
     return {
         "module": module,

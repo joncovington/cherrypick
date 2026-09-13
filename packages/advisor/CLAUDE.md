@@ -325,7 +325,23 @@ know:
 - **`settings.DEFAULTS["modules"]` derives from `bounds.MODULES`** — it was the fourth hand-kept
   copy the 2026-08-26 note said had been eliminated, and it was missing bwb and curve. bwb and
   curve now plan their advised twin from the base book its tag names rather than from control
-  regardless. The guardrail set adds `core.dxfeed`, `core.streamer` and `core.streamrequests`.
+  regardless. The guardrail set adds `core.dxfeed`, `core.streamer` and `core.streamrequests`,
+  and `packages/core/tests/test_no_model_client_in_packages.py` now scans EVERY package's source
+  and declared dependencies for an AI client — this package's own scan covered the package least
+  likely to need it.
+- **Measured duplications folded.** The advice-stamp table discovery and stamp decoding (two
+  byte-identical copies), the closed-by-exit-reason query (calendars, bwb, curve; pmcc keeps its
+  era pooling on purpose), the management-events query (three copies), the artifact literal
+  (`check_params` and `enact._issue` now build it through one `artifact_for`), and the
+  proposals-to-map fold (`core.advice.params_map`). `bounds.resolve` takes its disabled reason
+  from `core.advice.disabled_reason` — the two sides had checked the same conditions in different
+  orders. Left as they are, because the difference is the point: the dotted-param split
+  (`bounds` takes the first dot for earnings' strategy prefix, `enactment` the last for the
+  stamped leaf) and the two atomic-write helpers in two packages.
+- **The frozen-params rule is pinned per module.** bwb, curve, pmcc, calendars and earnings each
+  keep applying admitted params to an OPEN advised row after the artifact expires, by design —
+  exit continuity — and nothing asserted that intent. One test per module now does, beside the
+  validator's refusal of the same artifact for a new entry.
 
 **Measurement break for the advisor, 2026-09-14 — the first deep pack on the new
 `experiments_full`.** That section dumped raw store rows: every past verdict body, the bounds

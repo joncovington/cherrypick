@@ -297,3 +297,25 @@ def test_the_migration_adds_the_column_without_losing_rows(tmp_path, monkeypatch
     assert migrated.execute("SELECT pnl FROM trades").fetchone()[0] == 42.0
     assert migrated.execute("SELECT advice_params FROM trades").fetchone()[0] is None
     migrated.close()
+
+
+def test_frozen_params_govern_an_open_advised_trade_after_the_artifact_expires():
+    """The exit-continuity rule, pinned (2026-09-12): an expired artifact admits no twins, but a
+    twin opened earlier carries its params on the row and `effective_config` restates them at
+    every later tick, so it is managed under its own terms until it closes."""
+    import json
+
+    from cherrypick.earnings import management
+
+    expired = {
+        "module": "earnings",
+        "session": DAY,
+        "expires_at": "2026-01-01T00:00:00+00:00",
+        "proposals": [{"param": "iron_fly.profit_target_pct", "value": 0.3, "rationale": "r"}],
+    }
+    assert core_advice.validate(expired, BOUNDS, DAY)["ok"] is False
+
+    trade = {"strategy": "iron_fly", "advice_params": json.dumps({"profit_target_pct": 0.3})}
+    effective = management.effective_config(trade, config())
+    assert effective["strategies"]["iron_fly"]["profit_target_pct"] == 0.3
+    assert effective["strategies"]["iron_condor"]["profit_target_pct"] == 0.5, "the control is untouched"

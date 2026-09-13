@@ -84,6 +84,12 @@ def _check_proposal(p: Any, bounds: dict[str, Any]) -> str | None:
     return None
 
 
+def params_map(proposals: Any) -> dict[str, Any]:
+    """`{param: value}` for a proposals list, skipping anything that is not a proposal object --
+    the one place this shape is turned into a map (it was four; 2026-09-12)."""
+    return {p["param"]: p["value"] for p in proposals or [] if isinstance(p, dict) and "param" in p}
+
+
 def validate(
     artifact: Any, bounds: dict[str, Any], session: str, now: datetime | None = None
 ) -> dict[str, Any]:

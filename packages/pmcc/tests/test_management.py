@@ -123,3 +123,21 @@ def test_the_two_readings_are_judged_per_leg_not_as_separate_maxima():
         ],
     }
     assert management.execution_gate(snap, _params(), now=NOW) is None
+
+
+def test_frozen_params_govern_an_open_advised_position_after_the_artifact_expires(config):
+    """The exit-continuity rule, pinned (2026-09-12): an expired artifact admits no new entry,
+    but the params frozen on an open advised row govern its exits until it closes."""
+    from cherrypick.core import advice as core_advice
+
+    bounds = {"tv_managed_exit": {"choices": [True, False]}}
+    expired = {
+        "module": "pmcc",
+        "session": "2026-09-11",
+        "expires_at": "2026-09-11T23:59:59-04:00",
+        "proposals": [{"param": "tv_managed_exit", "value": True, "rationale": "r"}],
+    }
+    assert core_advice.validate(expired, bounds, "2026-09-11")["ok"] is False
+
+    advised = {**POSITION, "book": "advised:control", "advice_params": '{"tv_managed_exit": true}'}
+    assert management.effective_params(advised, config)["tv_managed_exit"] is True

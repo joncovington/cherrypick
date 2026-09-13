@@ -194,3 +194,24 @@ def test_a_snapshot_without_leg_detail_keeps_the_percentage_test():
         )
         == "spread_too_wide"
     )
+
+
+def test_frozen_params_govern_an_open_advised_position_after_the_artifact_expires():
+    """The exit-continuity rule, pinned (2026-09-12): an expired artifact admits no new entry,
+    but the params frozen on an open advised row govern its exits until it closes."""
+    import json
+
+    from cherrypick.core import advice as core_advice
+
+    bounds = {"profit_take_pct": {"min": 0.2, "max": 0.9}}
+    expired = {
+        "module": "curve",
+        "session": "2026-09-11",
+        "expires_at": "2026-09-11T23:59:59-04:00",
+        "proposals": [{"param": "profit_take_pct", "value": 0.35, "rationale": "r"}],
+    }
+    assert core_advice.validate(expired, bounds, "2026-09-11")["ok"] is False
+
+    position = {"book": "advised:control", "advice_params": json.dumps({"profit_take_pct": 0.35})}
+    config = {"defaults": {"profit_take_pct": 0.50}, "books": {"control": {}}}
+    assert management.effective_params(position, config)["profit_take_pct"] == 0.35

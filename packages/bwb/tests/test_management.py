@@ -131,3 +131,26 @@ def test_execution_gate_spread_too_wide():
 def test_execution_gate_clear():
     snap = {"ok": True, "max_spread_pct": 0.1}
     assert management.execution_gate(snap, {**PARAMS, "max_leg_spread_pct": 0.25}, now=None) is None
+
+
+def test_frozen_params_govern_an_open_advised_position_after_the_artifact_expires():
+    """The exit-continuity rule, pinned (2026-09-12). Advice is single-session and expiring for
+    ENTRIES: an expired artifact admits nothing. But a position an earlier session opened under
+    admitted params carries them frozen on its row, and `effective_params` reads that stamp back
+    every tick -- advice lapsing mid-hold must never hand an open position to rules nobody chose."""
+    import json
+
+    from cherrypick.core import advice as core_advice
+
+    bounds = {"delta_trigger": {"min": 0.2, "max": 0.6}}
+    expired = {
+        "module": "bwb",
+        "session": "2026-09-11",
+        "expires_at": "2026-09-11T23:59:59-04:00",
+        "proposals": [{"param": "delta_trigger", "value": 0.35, "rationale": "r"}],
+    }
+    assert core_advice.validate(expired, bounds, "2026-09-11")["ok"] is False, "no new entries on it"
+
+    position = {"book": "advised:control", "advice_params": json.dumps({"delta_trigger": 0.35})}
+    config = {"defaults": {"delta_trigger": 0.50}, "books": {"control": {}}}
+    assert management.effective_params(position, config)["delta_trigger"] == 0.35

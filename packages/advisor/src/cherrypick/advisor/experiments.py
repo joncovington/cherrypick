@@ -53,16 +53,34 @@ def check_params(
     if not posture["enabled"]:
         return {"ok": False, "reason": posture["reason"], "proposals": [], "rejected": [], "posture": posture}
 
-    artifact = {
+    artifact = artifact_for(module, target_session, params, rationales=rationales)
+    result = _advice.validate(artifact, posture["bounds"], target_session)
+    return {**result, "posture": posture}
+
+
+def artifact_for(
+    module: str,
+    target_session: str,
+    params: dict[str, Any],
+    *,
+    rationales: dict | None = None,
+    rationale: str | None = None,
+) -> dict[str, Any]:
+    """The artifact body for an overlay, built ONE way. `check_params` is "the dry run of what
+    `enact` will write", and that claim rested on two literals staying identical (2026-09-12)."""
+    return {
         "module": module,
         "session": target_session,
         "expires_at": _clock.end_of_session_iso(target_session),
         "proposals": [
-            {"param": p, "value": v, "rationale": (rationales or {}).get(p, "")} for p, v in params.items()
+            {
+                "param": p,
+                "value": v,
+                "rationale": rationale if rationale is not None else (rationales or {}).get(p, ""),
+            }
+            for p, v in params.items()
         ],
     }
-    result = _advice.validate(artifact, posture["bounds"], target_session)
-    return {**result, "posture": posture}
 
 
 def _active_count(conn, module: str) -> int:
