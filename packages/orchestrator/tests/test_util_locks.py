@@ -12,6 +12,8 @@ import json
 import os
 import time
 
+from cherrypick.core import looplock
+
 from cherrypick.orchestrator import util
 
 
@@ -26,10 +28,24 @@ def test_acquire_writes_own_pid(tmp_path):
 def test_live_holder_is_never_stolen_regardless_of_age(tmp_path):
     lock = tmp_path / "x.lock"
     lock.write_text(str(os.getpid()))  # a live process (this one) holds it
-    old = time.time() - 10_000
-    os.utime(lock, (old, old))  # far past any staleness window
+    # Far past the staleness window, but after this process started -- an mtime older than the
+    # holder itself is the recycled-PID case, covered next.
+    written = looplock.process_start_time(os.getpid()) + 0.5
+    os.utime(lock, (written, written))
+    time.sleep(1.5)
     assert not util.acquire_pid_lock(lock, stale_seconds=1)
     assert int(lock.read_text()) == os.getpid()  # untouched
+
+
+def test_recycled_pid_holder_is_reclaimed(tmp_path):
+    """A live PID whose process started after the lock was written is not the holder (2026-09-13:
+    the supervisor's lock PID came back as NordVPN after a reboot and blocked every restart)."""
+    lock = tmp_path / "x.lock"
+    lock.write_text(str(os.getpid()))
+    before_this_process = looplock.process_start_time(os.getpid()) - 3_600
+    os.utime(lock, (before_this_process, before_this_process))
+    assert util.acquire_pid_lock(lock, stale_seconds=86_400)
+    assert int(lock.read_text()) == os.getpid()
 
 
 def test_dead_holder_is_reclaimed(tmp_path):

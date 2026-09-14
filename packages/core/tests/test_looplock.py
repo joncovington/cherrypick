@@ -79,14 +79,54 @@ def test_a_live_holder_is_never_stolen_however_old(lock_path, live_pid):
 
     A slow-but-healthy holder keeps its lock regardless of age. The weak mtime-only design steals
     here, which puts two writers on one ledger -- the P&L-corruption failure MEIC recorded.
+
+    The lock is aged well past `stale_seconds` but NOT past the holder's own creation: a file older
+    than the process that wrote it is physically impossible for a real holder, and is the recycled-
+    PID case tested separately below.
     """
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     lock_path.write_text(str(live_pid))
-    ancient = time.time() - 86_400
-    os.utime(lock_path, (ancient, ancient))
+    started = looplock.process_start_time(live_pid)
+    assert started is not None
+    written = started + 0.5
+    os.utime(lock_path, (written, written))
+    time.sleep(1.5)  # now older than stale_seconds=1, still younger than the holder
 
     assert looplock.acquire(lock_path, stale_seconds=1) is False
     assert lock_path.read_text().strip() == str(live_pid)
+
+
+def test_a_recycled_pid_is_not_the_holder(lock_path, live_pid):
+    """The 2026-09-13 wedge: after a reboot the supervisor's lock PID came back as an unrelated
+    process, `pid_alive` said True, and every restart was refused for the rest of the evening.
+
+    A holder whose process was created AFTER the lock was written cannot have written it. The lock
+    is fresh by mtime-age standards (well inside stale_seconds), so only the creation-time check
+    can free it -- which is what makes this test fail without that check.
+    """
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_text(str(live_pid))
+    before_the_holder_existed = looplock.process_start_time(live_pid) - 3_600
+    os.utime(lock_path, (before_the_holder_existed, before_the_holder_existed))
+
+    assert looplock.pid_reused(live_pid, before_the_holder_existed) is True
+    assert looplock.acquire(lock_path, stale_seconds=86_400) is True
+    assert lock_path.read_text().strip() == str(os.getpid())
+
+
+def test_process_start_time_answers_for_live_and_not_for_dead(live_pid, dead_pid):
+    started = looplock.process_start_time(live_pid)
+    assert started is not None
+    assert time.time() - 60 < started <= time.time() + 1  # spawned by this test, moments ago
+    assert looplock.process_start_time(dead_pid) is None
+    assert looplock.process_start_time(0) is None
+    assert looplock.process_start_time(None) is None
+
+
+def test_an_unknown_creation_time_is_never_grounds_to_steal(monkeypatch):
+    """The probe returning None must read as "cannot tell", which keeps the strong never-steal rule."""
+    monkeypatch.setattr(looplock, "process_start_time", lambda pid: None)
+    assert looplock.pid_reused(os.getpid(), 0.0) is False
 
 
 def test_a_dead_holder_is_stolen_immediately_not_after_the_timeout(lock_path, dead_pid):

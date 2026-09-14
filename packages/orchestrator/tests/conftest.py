@@ -46,6 +46,12 @@ def isolated_state(request, tmp_path, monkeypatch):
     Autouse, because the hazard is the tests that DON'T know they write state; a test that wants a
     specific state dir still overrides these itself. `@pytest.mark.real_state` opts out — for the one
     test that asserts where the real paths resolve to, which is the thing this fixture moves.
+
+    Logs are moved for the same reason. Until 2026-09-13 only state was isolated, and every run of
+    the supervisor tests appended three lines to the developer's live `logs/supervisor.log` — a
+    config reload with a tmp_path mtime and a "registry row dropped" for a fixture job — which,
+    interleaved with the real daemon's lines, read as the daemon reloading a config nobody had
+    edited and cost a diagnosis on the night it mattered.
     """
     from cherrypick.orchestrator import config as cfgmod
 
@@ -56,4 +62,8 @@ def isolated_state(request, tmp_path, monkeypatch):
     state.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(cfgmod, "STATE_DIR", state, raising=False)
     monkeypatch.setattr(cfgmod, "state_file", lambda name: state / name)
+    logs = tmp_path / "cherrypick-logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(cfgmod, "LOGS_DIR", logs, raising=False)
+    monkeypatch.setattr(cfgmod, "log_file", lambda name: logs / name)
     return state
