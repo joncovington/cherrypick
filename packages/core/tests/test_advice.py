@@ -313,3 +313,61 @@ def test_a_malformed_bounds_rule_rejects_instead_of_raising():
     out = _advice.validate(artifact, {"stop_trigger_ratio": 0.9}, "2026-09-14")
     assert out["ok"] is False and out["proposals"] == []
     assert "malformed" in out["rejected"][0]["reason"]
+
+
+# --------------------------------------------------------------------------- experiment identity
+
+
+def test_the_artifact_carries_its_experiment_and_load_passes_it_through(tmp_path):
+    state = tmp_path / "state"
+    advice.write(
+        advice.advice_path(state, "meic", "2026-08-20"),
+        "meic",
+        "2026-08-20",
+        [{"param": "stop", "value": 1.0}],
+        advisor="cherrypick.advisor/enact-v1 (exp-2026-08-19-meic-1)",
+        expires_at=(datetime.now(timezone.utc) + timedelta(hours=8)).isoformat(),
+        experiment_id="exp-2026-08-19-meic-1",
+    )
+    out = advice.load(state, "meic", "2026-08-20", {"stop": {"min": 0.5, "max": 1.5}})
+    assert out["ok"] is True and out["experiment_id"] == "exp-2026-08-19-meic-1"
+    # A rejected artifact still names whose session it cost.
+    out = advice.load(state, "meic", "2026-08-20", {"stop": {"min": 2.0, "max": 3.0}})
+    assert out["ok"] is False and out["experiment_id"] == "exp-2026-08-19-meic-1"
+
+
+def test_an_artifact_written_before_the_field_attributes_from_its_stamp():
+    """Every artifact the advisor ever wrote ends `advisor` with the experiment in parentheses."""
+    stamped = {"advisor": "cherrypick.advisor/enact-v1 (exp-2026-09-09-meic-1)"}
+    assert advice.artifact_experiment_id(stamped) == "exp-2026-09-09-meic-1"
+    assert advice.artifact_experiment_id({"advisor": "claude -p / eod-advise-v1"}) is None
+    assert advice.artifact_experiment_id({"advisor": "x (exp-a)", "experiment_id": "exp-b"}) == "exp-b"
+    assert advice.artifact_experiment_id("not a dict") is None
+
+
+def test_the_session_decision_records_the_experiment(tmp_path):
+    state, path = tmp_path / "state", tmp_path / "advice_active.json"
+    advice.write(
+        advice.advice_path(state, "flies", "2026-08-20"),
+        "flies",
+        "2026-08-20",
+        [{"param": "stop", "value": 1.0}],
+        advisor="cherrypick.advisor/enact-v1 (exp-2026-08-19-flies-1)",
+        expires_at=(datetime.now(timezone.utc) + timedelta(hours=8)).isoformat(),
+    )
+    cfg = _cfg(enabled=True, bounds={"stop": {"min": 0.5, "max": 1.5}})
+    d = advice.session_decision(state, "flies", "2026-08-20", cfg, path, base_key="base_arm")
+    assert d["experiment_id"] == "exp-2026-08-19-flies-1"
+    assert json.loads(path.read_text())["experiment_id"] == "exp-2026-08-19-flies-1"
+    off = advice.session_decision(
+        state, "flies", "2026-08-20", _cfg(enabled=False), tmp_path / "off.json", base_key="base_arm"
+    )
+    assert off["experiment_id"] is None
+
+
+def test_only_an_advised_book_carries_the_experiment_stamp():
+    assert advice.stamp_for("advised:control", "exp-1") == "exp-1"
+    assert advice.stamp_for("advised:strat_test:iron_fly", "exp-1") == "exp-1"
+    assert advice.stamp_for("control", "exp-1") is None
+    assert advice.stamp_for("advised:control", None) is None
+    assert advice.stamp_for(None, "exp-1") is None

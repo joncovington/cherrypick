@@ -46,6 +46,8 @@ You are an autonomous quantitative options trading agent. Your objective is to m
 - **Advised shadow book (paper only, off by default).** When config's `advice.enabled` is true, the paper loop looks ONCE at session start for the artifact `state/advice/meic-<session>.json` (whose producer is **`packages/advisor`** — the retired `cherrypick advise` was replaced 2026-08-14 by a package that issues the same artifact through the same `cherrypick.core.advice` contract, so **this consumer needed no change at all**; with no producer scheduled the book simply runs baseline, which is the documented degrade rather than a failure mode), re-validates it with `cherrypick.core.advice` against this module's own `advice.bounds` manifest (closed legal ranges — the same code the orchestrator ran, so the two sides cannot disagree), and runs a synthetic `advised:<base_profile>` book beside the un-advised base (the control). Absent/stale/invalid advice ⇒ baseline; one out-of-bounds proposal rejects the whole set; the session's decision is persisted (`advice_active.json` in the data home) so advice can never start, stop, or change mid-session across the every-2-min `--once` processes. Open advised positions always keep a management-only twin (entries capped to zero) so their exits run even when today's advice is off. Never touches the live loop.
 - **Suite-dashboard card.** `python -m cherrypick.meic.section --json` emits the compact `cherrypick.core.viz` section payload the orchestrator's dashboard renders as this module's live card (`dashboard.sections`, same pattern as gex/flies/earnings; paper book by default, `--symbol`/`--profile` filters). It reads through `dashboard.py`'s own query helpers so the card can never disagree with the full dashboard; wins are the module-wide definition (resolved trade, `pnl − fees > 0`) and the headline dollars subtract fees.
 
+**Every advised row also carries `experiment_id` (2026-09-16)** — the advisor experiment the day's artifact named, read from the session decision and stamped through the one shared rule (`cherrypick.core.advice.stamp_for`: advised books only, never the control). The `advised:<base>` tag names a book, and every experiment on that base reuses it in turn; the stamp is what lets the ledger, the advisor's verdicts and the console's paired cards tell one experiment's rows from the next's without inferring it from dates. Rows written before the column existed read `NULL` and are treated as unstamped history, never rewritten.
+
 ---
 CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 ---
@@ -371,6 +373,20 @@ six market dimensions — `skew` and `center_offset` describe the structure we c
 tick they would read `unknown` 100% of the time, a column degenerate by construction. Tagged with the
 **base config's** thresholds, never an arm's overlay, or each stream would get its own denominator and
 the streams would stop being comparable. Nothing in the loop reads this table.
+
+**The gex tag is sign-first, and carries the sign beside it (2026-09-16).** `regime._classify_gex`
+bucketed on distance from the gamma flip alone, and the flip is interpolated from a zero crossing
+of cumulative net GEX — a window that is net negative end to end has no crossing, so every such
+tick tagged `unknown`: 492 of 492 entries on 09-15, at an average net of −21B, on a day the gate
+itself (which keys on `gex_positive`) read correctly. The tag now follows the sign flag the gate
+uses — `negative` when net is negative, `deep_positive`/`near_flip` when positive, `unknown` only
+when GEX was not measured — and every `iteration_regime` row records `gex_positive` beside the
+bucket (added on demand by `save_iteration_regime`, since that command creates the table). Rows
+tagged before this date are **re-derived at read time, never rewritten**: `analytics._bucket_expr`
+maps an `unknown` with a recorded `gex_positive_at_entry` to the bucket the classifier would tag
+today, and the advisor's pack does the same over `iteration_regime` — which, lacking the flag
+before this date, still reads `unknown` for those sessions. A label correction, not a measurement
+break: no gate, fill or P&L changed.
 
 **The settlement convention was audited 2026-08-26, and the answer is a settled question.** The
 advisor asked for this five times (08-17 through 08-21), escalating to "upstream of the era's

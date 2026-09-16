@@ -134,3 +134,27 @@ def test_nth_trading_day_spans_weekend_and_labor_day_holiday():
 
 def test_nth_trading_day_negative_n_treated_as_zero():
     assert cal.nth_trading_day(date(2026, 9, 4), -5) == date(2026, 9, 4)
+
+
+# --------------------------------------------------------------------------- early closes
+
+
+def test_early_closes_are_the_three_half_days_when_they_trade():
+    # 2025: July 3 is a Thursday, Thanksgiving is Nov 27, Christmas Eve a Wednesday -- all trade.
+    assert cal.nyse_early_closes(2025) == {date(2025, 7, 3), date(2025, 11, 28), date(2025, 12, 24)}
+
+
+def test_early_close_drops_out_when_the_day_is_the_observed_holiday():
+    # 2026: July 4 is a Saturday, so July 3 IS the holiday and cannot also be a half day.
+    assert date(2026, 7, 3) not in cal.nyse_early_closes(2026)
+    assert cal.is_holiday(date(2026, 7, 3))
+    # 2027: Christmas is a Saturday, so Dec 24 is the observed holiday, not a half day.
+    assert date(2027, 12, 24) not in cal.nyse_early_closes(2027)
+    assert date(2027, 11, 26) in cal.nyse_early_closes(2027)
+
+
+def test_session_close_hhmm_is_thirteen_on_a_half_day_and_sixteen_otherwise():
+    assert cal.session_close_hhmm(date(2025, 11, 28)) == "13:00"
+    assert cal.session_close_hhmm(date(2026, 9, 15)) == "16:00"
+    # A weekend answers the regular close rather than raising: the caller gates trading days.
+    assert cal.session_close_hhmm(date(2026, 9, 13)) == "16:00"

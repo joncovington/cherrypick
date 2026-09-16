@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import json
 
+from cherrypick.core import advice as _core_advice
+
 from cherrypick.calendars import clock, db, engine
 
 
@@ -24,7 +26,14 @@ def position_id(week_of: str, book: str, side: str) -> str:
 
 
 def enter_week(
-    conn, plan: dict, config: dict, books: list[str], *, week: dict, advice_params: dict | None
+    conn,
+    plan: dict,
+    config: dict,
+    books: list[str],
+    *,
+    week: dict,
+    advice_params: dict | None,
+    experiment_id: str | None = None,
 ) -> list[dict]:
     """Open the week's put and call calendars in every session book. Idempotent per (book, side):
     a book that already holds the position is skipped, so a tick retry cannot double-enter."""
@@ -68,6 +77,7 @@ def enter_week(
                     "entry_term_structure": plan["term_structure"],
                     "entry_context": json.dumps({"target": side_plan["target"]}),
                     "advice_params": params_json,
+                    "experiment_id": _core_advice.stamp_for(book, experiment_id),
                     "status": "open",
                     "fees": cost["total"],
                 },

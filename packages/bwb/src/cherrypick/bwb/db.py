@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS bwb_positions (
     entry_cost          REAL,
     entry_slippage      REAL,
     advice_params       TEXT,
+    experiment_id       TEXT,
     -- persisted trigger latches
     peak_abs_delta      REAL,
     below_flip_seen     INTEGER NOT NULL DEFAULT 0,
@@ -248,7 +249,9 @@ CREATE TABLE IF NOT EXISTS measurement_breaks (
 
 # Columns added after the first release, per table. Empty at birth.
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
-    "bwb_positions": {},
+    # The advisor experiment an advised row was entered under (2026-09-16), beside the params
+    # it froze -- `advised:<base>` names a book, and every experiment on that base reuses it.
+    "bwb_positions": {"experiment_id": "TEXT"},
     "bwb_legs": {},
     "bwb_marks": {},
     # `measured` ANDs two independent inputs, so a tick that had spot but no gamma flip was

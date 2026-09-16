@@ -40,7 +40,7 @@ def homes(tmp_path, monkeypatch):
     return tmp_path
 
 
-def _write_artifact(home: Path, proposals, session=DAY):
+def _write_artifact(home: Path, proposals, session=DAY, experiment_id=None):
     state = home / "home" / "state"
     expires = (datetime.now(UTC) + timedelta(hours=12)).isoformat()
     core_advice.write(
@@ -50,21 +50,50 @@ def _write_artifact(home: Path, proposals, session=DAY):
         proposals,
         advisor="test",
         expires_at=expires,
+        experiment_id=experiment_id,
     )
 
 
 def test_valid_advice_builds_the_advised_book(homes):
-    _write_artifact(homes, [{"param": "stop_trigger_ratio", "value": 0.9, "rationale": "r"}])
+    _write_artifact(
+        homes,
+        [{"param": "stop_trigger_ratio", "value": 0.9, "rationale": "r"}],
+        experiment_id="exp-2026-09-09-meic-1",
+    )
     profiles, reason = paper_loop._advice_profiles(CFG, DAY)
     assert "advised:control" in profiles
     adv = profiles["advised:control"]
     assert adv["stop_trigger_ratio"] == 0.9
+    # The experiment rides on the synthetic def (not a trading parameter -- the fill row copies it).
+    assert adv["experiment_id"] == "exp-2026-09-09-meic-1"
     # The rest of the def is the base profile's — the advised twin differs in exactly the advice.
     base = paper.load_profiles()["control"]
-    assert {k: v for k, v in adv.items() if k != "stop_trigger_ratio"} == {
+    assert {k: v for k, v in adv.items() if k not in ("stop_trigger_ratio", "experiment_id")} == {
         k: v for k, v in base.items() if k != "stop_trigger_ratio"
     }
+    assert "experiment_id" not in base
     assert reason is None
+
+
+def test_the_fill_row_copies_the_experiment_from_its_profile():
+    leg = {"strike": 6000.0, "streamer_symbol": ".X", "bid": 1.0, "ask": 1.2, "delta": -0.1}
+    chosen = {
+        "short_put": leg,
+        "long_put": {**leg, "strike": 5990.0},
+        "short_call": {**leg, "strike": 6010.0},
+        "long_call": {**leg, "strike": 6020.0},
+        "wing_width": 10,
+        "put_credit": 0.5,
+        "call_credit": 0.5,
+        "net_credit": 1.0,
+        "open_fee": 6.0,
+    }
+    snapshot = {"symbol": "SPX", "date": DAY, "now_et": "13:00", "underlying_price": 6005.0}
+    params = {"stop_trigger_ratio": 0.9, "experiment_id": "exp-2026-09-09-meic-1"}
+    row = paper.synthetic_entry_fill(snapshot, "advised:control", chosen, params, "paper")
+    assert row["experiment_id"] == "exp-2026-09-09-meic-1"
+    control = paper.synthetic_entry_fill(snapshot, "control", chosen, {"stop_trigger_ratio": 0.9}, "paper")
+    assert control["experiment_id"] is None
 
 
 def test_absent_advice_is_baseline(homes):

@@ -45,7 +45,9 @@ def test_the_light_pack_carries_each_modules_day(seeded):
         "regime_gex_negative",
         "cadence_not_clear",
     }
-    assert meic["latest_regime"]["loop_time"] == "15:05:00"
+    assert meic["regime_session"]["ticks"] == 1
+    assert meic["regime_session"]["gex_bucket"] == {"positive": 1}
+    assert meic["regime_session"]["last_in_hours"]["loop_time"] == "15:05:00"
 
     flies = pack["paper"]["flies"]
     assert flies["books"][0]["arm"] == "control"
@@ -54,6 +56,63 @@ def test_the_light_pack_carries_each_modules_day(seeded):
     earnings = pack["paper"]["earnings"]
     assert earnings["open_positions"][0]["order_id"] == "e-1"
     assert earnings["open_positions"][0]["last_mark"] == 42.0  # the usable mark, not the refused one
+
+
+def test_meic_regime_is_a_distribution_over_in_hours_ticks(seeded):
+    """2026-09-15's shape: the tag read one way all session and the opposite way for the eight
+    ticks after the bell, and the pack reported the eight. Post-close ticks are counted, never
+    tallied; a stored `unknown` with a recorded negative sign reads `negative`."""
+    meic_db = seeded / "data" / "meic" / "paper_trades.db"
+
+    def tick(hhmmss, bucket, sign, price=5600.0):
+        return {
+            "loop_date": SESSION,
+            "loop_time": f"{SESSION} {hhmmss}.000000-04:00",
+            "symbol": "SPX",
+            "underlying_price": price,
+            "gex_bucket": bucket,
+            "gex_positive": sign,
+            "created_at": f"{SESSION}T{hhmmss}",
+        }
+
+    fakes.insert(
+        meic_db,
+        "iteration_regime",
+        [
+            tick("10:01:00", "unknown", 0),
+            tick("10:02:00", "unknown", 0),
+            tick("10:03:00", "unknown", 0),
+            tick("11:00:00", "unknown", None),
+            tick("16:03:00", "deep_positive", 1, price=5601.0),
+        ],
+    )
+    meic = factpack.build(SESSION, "deep")["paper"]["meic"]
+    block = meic["regime_session"]
+    assert block["window"] == "09:30-16:00 ET"
+    assert block["ticks"] == 5 and block["post_close_ticks"] == 1
+    assert block["gex_bucket"] == {"negative": 3, "positive": 1, "unknown": 1}
+    assert block["last_in_hours"]["loop_time"] == "15:05:00"  # not the 16:03 row
+    assert "latest_regime" not in meic
+
+
+def test_regime_read_is_clamped_to_the_sessions_close(monkeypatch):
+    """The recorder's last sample lands seconds before the bell and the deep slot runs at 17:00:
+    a read clamped to end-of-day was an hour stale every night by construction."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    seen = []
+
+    def capture(ts, **_k):
+        seen.append(ts)
+        return _measured()
+
+    monkeypatch.setattr(factpack._regime, "regime_at", capture)
+    et = ZoneInfo("America/New_York")
+    factpack._regime_now("2026-09-15", fallback=lambda: {})
+    factpack._regime_now("2025-11-28", fallback=lambda: {})  # the day after Thanksgiving: a half day
+    assert datetime.fromtimestamp(seen[0], et).strftime("%H:%M") == "16:00"
+    assert datetime.fromtimestamp(seen[1], et).strftime("%H:%M") == "13:00"
 
 
 def test_gex_counts_are_rth_only(seeded):
@@ -692,8 +751,8 @@ def test_the_regime_block_is_read_at_the_session_not_at_wall_clock_now(seeded, m
 
     monkeypatch.setattr(factpack._regime, "regime_at", fake_regime_at)
     factpack.build(SESSION, "open")
-    end_of_session = datetime.fromisoformat(clock.end_of_session_iso(SESSION)).timestamp()
-    assert seen and seen[0] == end_of_session, "a past session must be read at its own close"
+    rth_close = datetime.fromisoformat(clock.rth_close_iso(SESSION)).timestamp()
+    assert seen and seen[0] == rth_close, "a past session must be read at its own close"
 
 
 def test_an_unreadable_module_config_is_unknown_not_live_trading_off(tmp_home):
@@ -744,9 +803,7 @@ def test_experiments_full_carries_one_fresh_verdict_per_experiment_not_raw_rows(
     conn = store.connect()
     # Admitted on a CURRENT session: advice is single-session and the fixture's SESSION is past.
     today = fakes.anchor_session()
-    admitted = experiments.admit_spec(
-        conn, session=today, module="meic", params={"stop_trigger_ratio": 0.9}
-    )
+    admitted = experiments.admit_spec(conn, session=today, module="meic", params={"stop_trigger_ratio": 0.9})
     assert admitted["ok"], admitted
     # A stale stored body: what the old section would have handed the model verbatim.
     store.update_experiment(

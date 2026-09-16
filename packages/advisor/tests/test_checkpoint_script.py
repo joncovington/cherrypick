@@ -307,10 +307,21 @@ def test_the_cli_admit_verb_is_frozen_too(home, tmp_path):
     assert first["ok"] is True
     proc = subprocess.run(
         [
-            sys.executable, "-m", "cherrypick.advisor", "admit",
-            "--slot", "open", "--session", SESSION, "--raw", str(paths.raw_path(SESSION, "open")),
+            sys.executable,
+            "-m",
+            "cherrypick.advisor",
+            "admit",
+            "--slot",
+            "open",
+            "--session",
+            SESSION,
+            "--raw",
+            str(paths.raw_path(SESSION, "open")),
         ],
-        capture_output=True, text=True, encoding="utf-8", env=os.environ,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=os.environ,
     )
     out = json.loads(proc.stdout)
     assert out["ok"] is False and "frozen" in out["skipped"]

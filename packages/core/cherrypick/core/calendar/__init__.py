@@ -118,6 +118,35 @@ def is_trading_day(d: date) -> bool:
     return d.weekday() < SAT and not is_holiday(d)
 
 
+# --------------------------------------------------------------------------- early closes
+REGULAR_CLOSE_HHMM = "16:00"
+EARLY_CLOSE_HHMM = "13:00"
+
+
+def nyse_early_closes(year: int) -> set[date]:
+    """The 1:00 PM ET closes within ``year``: July 3, the day after Thanksgiving, and Christmas Eve,
+    each only when it is itself a trading day. July 3 is the observed Independence Day holiday
+    when July 4 falls on a Saturday, and Christmas Eve the observed Christmas when the 25th does,
+    so both drop out of the set in those years by the same rule that put them in the holiday one."""
+    candidates = (
+        date(year, 7, 3),
+        nth_weekday(year, 11, THU, 4) + timedelta(days=1),
+        date(year, 12, 24),
+    )
+    return {d for d in candidates if is_trading_day(d)}
+
+
+def is_early_close(d: date) -> bool:
+    return d in nyse_early_closes(d.year)
+
+
+def session_close_hhmm(d: date) -> str:
+    """The regular-hours close for ``d`` as ``HH:MM`` ET: 13:00 on an early-close day, 16:00
+    otherwise. A non-trading day answers 16:00 rather than raising, so a caller clamping a read
+    to "the close" gets a time, not an exception, and can apply its own trading-day gate."""
+    return EARLY_CLOSE_HHMM if is_early_close(d) else REGULAR_CLOSE_HHMM
+
+
 def next_trading_day(d: date) -> date:
     nxt = d + timedelta(days=1)
     while not is_trading_day(nxt):

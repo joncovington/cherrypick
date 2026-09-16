@@ -31,6 +31,8 @@ construction and any divergence between books is exit policy and nothing else.
   each row at entry and restated through one choke point (`management.effective_params`) at every
   later tick — the earnings advised-twin pattern, required here because this module has exits.
 
+**Every advised row also carries `experiment_id` (2026-09-16)** — the advisor experiment the day's artifact named, read from the session decision and stamped through the one shared rule (`cherrypick.core.advice.stamp_for`: advised books only, never the control). The `advised:<base>` tag names a book, and every experiment on that base reuses it in turn; the stamp is what lets the ledger, the advisor's verdicts and the console's paired cards tell one experiment's rows from the next's without inferring it from dates. Rows written before the column existed read `NULL` and are treated as unstamped history, never rewritten.
+
 **The exit grid is derived read-side, not run as books.** `exit_policies.py` replays profit targets
 (10/20/30% of debit), stops (25/50/100%), the short-strike-touch side close, exit-timing variants
 (Thursday close, Friday noon, Friday close) and both long dispositions over the path book's recorded

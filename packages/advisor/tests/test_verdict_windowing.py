@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cherrypick.advisor import clock, verdicts
+from cherrypick.advisor import clock, store, verdicts
 from tests.fakes import MEIC_DDL, insert, make_db
 
 OLD_SESSION = "2026-07-01"  # pre-experiment history that must NOT reach the pair
@@ -110,3 +110,93 @@ def test_every_advisable_module_has_a_scoreable_ledger_schema():
     assert not missing, f"advisable modules with no ledger schema in verdicts.SCHEMAS: {missing}"
     unreadable = [m for m, s in verdicts.SCHEMAS.items() if s not in _ledgers.READERS]
     assert not unreadable, f"schemas with no core.ledgers reader: {unreadable}"
+
+
+# --------------------------------------------------------------------------- the far end
+
+
+def _row(tag, session, pnl, oid, experiment_id=None):
+    return {
+        "trade_date": session,
+        "symbol": "SPX",
+        "risk_profile": tag,
+        "net_credit": 2.4,
+        "wing_width": 20,
+        "quantity": 1,
+        "pnl": pnl,
+        "fees": 6.0,
+        "status": "closed",
+        "exit_time": f"{session}T20:10:00",
+        "ic_order_id": oid,
+        "created_at": f"{session}T14:31:00",
+        "experiment_id": experiment_id,
+    }
+
+
+def test_a_concluded_experiment_is_windowed_to_its_last_session(tmp_home):
+    """A verdict is recomputed whenever a recommendation is attached, and the window had no far
+    end -- a closing verdict on an expired experiment, attached after its successor had started,
+    pooled the successor's rows into the old experiment's book. The concluding session (from the
+    journal) closes it, inclusive: rows entered on the kill day are still the killed one's."""
+    meic = make_db(tmp_home / "data" / "meic" / "paper_trades.db", MEIC_DDL)
+    after = clock.next_session(WINDOW_START)
+    insert(
+        meic,
+        "ic_trades",
+        [
+            _row("control", WINDOW_START, -50.0, "b1"),
+            _row("advised:control", WINDOW_START, 25.0, "a1"),
+            _row("control", after, 999.0, "b2"),  # the successor's session
+            _row("advised:control", after, 999.0, "a2"),
+        ],
+    )
+    experiment = {
+        "id": "exp-x",
+        "module": "meic",
+        "base_profile": "control",
+        "params_json": '{"stop_trigger_ratio": 1.1}',
+        "created_session": SESSION,
+        "status": "expired",
+        "sessions_run": 1,
+    }
+    conn = store.connect()
+    store.insert_experiment(conn, {**experiment, "expires_after_sessions": 1})
+    store.journal(conn, "exp-x", "expired", session=WINDOW_START)
+    conn.close()
+    assert verdicts.concluded_session(experiment) == WINDOW_START
+    pair = verdicts.for_experiment(experiment)["pairs"][0]
+    assert pair["advised"]["sample"] == 1 and pair["base"]["sample"] == 1
+    assert pair["advised"]["net_pnl"] == 19.0  # 25 - 6, never the 999 after the end
+    # Still running: the far end stays open.
+    assert verdicts.concluded_session({**experiment, "status": "active"}) is None
+    assert verdicts.for_experiment({**experiment, "status": "active"})["pairs"][0]["base"]["sample"] == 2
+
+
+def test_the_advised_side_keeps_only_this_experiments_rows_or_unstamped_ones(tmp_home):
+    """One `advised:<base>` tag serves every experiment on that base in turn (2026-09-16): inside
+    a shared window the stamp tells them apart. Unstamped rows (before the stamp) still count; a
+    row stamped with another experiment never does. The base side is untouched by the filter."""
+    meic = make_db(tmp_home / "data" / "meic" / "paper_trades.db", MEIC_DDL)
+    insert(
+        meic,
+        "ic_trades",
+        [
+            _row("control", WINDOW_START, -50.0, "b1"),
+            _row("advised:control", WINDOW_START, 25.0, "mine", experiment_id="exp-x"),
+            _row("advised:control", WINDOW_START, 10.0, "unstamped"),
+            _row("advised:control", WINDOW_START, 500.0, "theirs", experiment_id="exp-other"),
+        ],
+    )
+    experiment = {
+        "id": "exp-x",
+        "module": "meic",
+        "base_profile": "control",
+        "params_json": '{"stop_trigger_ratio": 1.1}',
+        "created_session": SESSION,
+        "status": "active",
+        "sessions_run": 1,
+    }
+    pair = verdicts.for_experiment(experiment)["pairs"][0]
+    assert pair["advised"]["sample"] == 2
+    assert pair["advised"]["net_pnl"] == (25.0 - 6.0) + (10.0 - 6.0)
+    assert pair["base"]["sample"] == 1

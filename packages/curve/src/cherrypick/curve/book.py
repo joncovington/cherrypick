@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import json
 
+from cherrypick.core import advice as _core_advice
+
 from cherrypick.curve import clock, db, engine
 
 
@@ -31,6 +33,7 @@ def enter_position(
     entry_session: str,
     advice_params: dict | None,
     regime: dict | None,
+    experiment_id: str | None = None,
 ) -> dict | None:
     """Open one book's position from a plan. Idempotent per position_id."""
     pid = position_id(plan["symbol"], book, entry_session)
@@ -72,6 +75,7 @@ def enter_position(
             "advice_params": (
                 json.dumps(advice_params) if (advice_params and book.startswith("advised:")) else None
             ),
+            "experiment_id": _core_advice.stamp_for(book, experiment_id),
             "status": "open",
             "fees": cost["total"],
         },

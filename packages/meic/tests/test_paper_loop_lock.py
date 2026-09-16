@@ -26,6 +26,13 @@ def test_live_holder_never_stolen_even_when_old(tmp_path, monkeypatch):
     lock = tmp_path / "paper_loop.once.lock"
     monkeypatch.setattr(paper_loop, "_LOCK_FILE", lock)
     _write_lock(lock, os.getpid(), age_seconds=999)  # our own PID: always alive, far past 180s
+    # A holder that wrote the lock 999s ago must have STARTED before then. This test process did
+    # not (it is seconds old), and since 2026-09-14 a live pid whose process started after the
+    # lock was written is a recycled number, not the holder -- so make our own start time honest
+    # for the scenario rather than let the recycled-pid rule fire on the test's own shortcut.
+    from cherrypick.core import looplock
+
+    monkeypatch.setattr(looplock, "process_start_time", lambda pid: time.time() - 2_000)
 
     assert paper_loop._acquire_once_lock() is False
     assert lock.read_text() == str(os.getpid())  # untouched

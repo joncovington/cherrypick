@@ -155,6 +155,21 @@ def test_regime_coverage_separates_untagged_from_degenerate(conn):
     assert gex["degenerate"] is True  # only ever 'deep_positive' among the tagged rows
 
 
+def test_gex_unknown_with_a_recorded_negative_sign_reads_negative(conn):
+    """A month of rows tagged `unknown` because the classifier had no flip to measure from, while
+    the sign flag on the same row read negative. Re-derived at read time, never rewritten."""
+    _insert(conn, ic_order_id="neg", entry_gex_bucket="unknown", gex_positive_at_entry=0, pnl=-50.0)
+    _insert(conn, ic_order_id="pos", entry_gex_bucket="unknown", gex_positive_at_entry=1, pnl=80.0)
+    _insert(conn, ic_order_id="none", entry_gex_bucket="unknown", gex_positive_at_entry=None, pnl=1.0)
+    _insert(conn, ic_order_id="deep", entry_gex_bucket="deep_positive", entry_gex_value=0.01)
+    cov = analytics.regime_coverage(conn)["dimensions"]["gex"]
+    assert cov["buckets"] == {"deep_positive": 2, "negative": 1, "unknown": 1}
+    by = {r["bucket"]: r["trades"] for r in analytics.by_regime(conn, "gex")}
+    assert by == {"deep_positive": 2, "negative": 1, "unknown": 1}
+    # Other dimensions read their stored column untouched.
+    assert "gex_positive_at_entry" not in analytics._bucket_expr("vol_implied")
+
+
 def test_regime_coverage_not_degenerate_with_two_buckets(conn):
     _insert(conn, ic_order_id="1", entry_gex_bucket="deep_positive", entry_gex_value=0.01)
     _insert(conn, ic_order_id="2", entry_gex_bucket="negative", entry_gex_value=-0.01)

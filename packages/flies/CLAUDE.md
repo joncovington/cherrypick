@@ -583,6 +583,8 @@ that keeps this compatible with everything above: `control` never changes meanin
 its history stays poolable, and `fly_books`/`fly_positions` key on the arm *string*, so
 `advised:control` needs no `engine.ARMS` entry and attribution comes free from the stored tag.
 
+**Every advised row also carries `experiment_id` (2026-09-16)** — the advisor experiment the day's artifact named, read from the session decision and stamped through the one shared rule (`cherrypick.core.advice.stamp_for`: advised books only, never the control). The `advised:<base>` tag names a book, and every experiment on that base reuses it in turn; the stamp is what lets the ledger, the advisor's verdicts and the console's paired cards tell one experiment's rows from the next's without inferring it from dates. Rows written before the column existed read `NULL` and are treated as unstamped history, never rewritten.
+
 **There is no management twin, because this module has no exits.** MEIC needs one — an advised
 position there still has stops to run when advice lapses. A fly is held to settlement, so an advised
 book that stops receiving advice has nothing left to decide; it only has to close. That is why the

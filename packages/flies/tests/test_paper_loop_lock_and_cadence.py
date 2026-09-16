@@ -12,12 +12,18 @@ from cherrypick.flies import db as dbmod
 from cherrypick.flies import paper_loop as pl
 
 
-def test_loop_lock_never_steals_from_a_live_pid(managed_home):
+def test_loop_lock_never_steals_from_a_live_pid(managed_home, monkeypatch):
     assert pl._acquire_loop_lock()
     assert int(open(pl._loop_lock_path(), encoding="utf-8").read()) == os.getpid()
     # a second acquire in the same (alive) process must refuse, regardless of age
     old = time.time() - 10_000
     os.utime(pl._loop_lock_path(), (old, old))
+    # A holder that wrote the lock 10,000s ago started before then; this test process did not, and
+    # since 2026-09-14 a live pid that started AFTER the lock was written is a recycled number, not
+    # the holder. Make our own start time honest for the scenario instead of tripping that rule.
+    from cherrypick.core import looplock
+
+    monkeypatch.setattr(looplock, "process_start_time", lambda pid: old - 100)
     assert not pl._acquire_loop_lock(stale_seconds=1)
     pl._release_loop_lock()
     assert not os.path.exists(pl._loop_lock_path())

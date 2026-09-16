@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS pmcc_positions (
     keltner_bounce_atr             REAL,
     keltner_prev_close_gap         REAL,
     advice_params                  TEXT,
+    experiment_id                  TEXT,
     roll_count                     INTEGER NOT NULL DEFAULT 0,
     exposure_ticks                 INTEGER,
     status                         TEXT NOT NULL DEFAULT 'open',
@@ -325,7 +326,9 @@ CREATE TABLE IF NOT EXISTS measurement_breaks (
 # schema so the first addition is an entry here, never a bare edit to _SCHEMA (which CREATE TABLE
 # IF NOT EXISTS would silently ignore on an existing file).
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
-    "pmcc_positions": {"era": "TEXT"},
+    # The advisor experiment an advised row was entered under (2026-09-16), beside the params
+    # it froze -- `advised:<base>` names a book, and every experiment on that base reuses it.
+    "pmcc_positions": {"era": "TEXT", "experiment_id": "TEXT"},
     "pmcc_legs": {},
     "pmcc_marks": {},
     "pmcc_assignments": {},

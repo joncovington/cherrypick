@@ -323,6 +323,8 @@ _MIGRATIONS = [
     # params on the row, `management.effective_config` can restate them at every later tick, and an
     # advised position keeps being managed under its own terms until it closes.
     ("trades", "advice_params", "ALTER TABLE trades ADD COLUMN advice_params TEXT"),
+    # 2026-09-16: the advisor experiment an advised twin was entered under, beside its params.
+    ("trades", "experiment_id", "ALTER TABLE trades ADD COLUMN experiment_id TEXT"),
     ("scan_log", "profile", "ALTER TABLE scan_log ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
     # A candidate's life has two stages and only the first was ever recorded: one that cleared the
     # screen and then died in order building, sizing, the risk cap or a missing quote left no trace.
@@ -502,8 +504,8 @@ def cmd_save_trade(args) -> dict:
             "(order_id, strategy, symbol, expiration, short_strike, long_call_strike, "
             " long_put_strike, legs_json, entry_credit, opened_at, profile, quantity, "
             " capital_at_risk, entry_cost, entry_slippage, entry_context, entry_iv, "
-            " advice_params, status) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')",
+            " advice_params, experiment_id, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')",
             (
                 spec["order_id"],
                 spec.get("strategy", "iron_fly"),
@@ -524,6 +526,7 @@ def cmd_save_trade(args) -> dict:
                 spec.get("entry_iv"),
                 # Already a JSON string when the caller froze an advised overlay onto this row.
                 spec.get("advice_params"),
+                spec.get("experiment_id"),
             ),
         )
         for leg in spec.get("legs", []):

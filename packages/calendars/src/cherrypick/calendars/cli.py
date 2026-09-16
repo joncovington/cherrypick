@@ -120,9 +120,9 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="command", required=True)
 
     sub.add_parser("status", help="open positions and the current week plan").set_defaults(func=cmd_status)
-    sub.add_parser(
-        "excursions", help="per-closed-position MAE/MFE plus distributions"
-    ).set_defaults(func=cmd_excursions)
+    sub.add_parser("excursions", help="per-closed-position MAE/MFE plus distributions").set_defaults(
+        func=cmd_excursions
+    )
     sub.add_parser("headline", help="per-book results through the analytics layer").set_defaults(
         func=cmd_headline
     )

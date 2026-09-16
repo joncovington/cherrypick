@@ -27,16 +27,12 @@ def test_an_overnight_refusal_does_not_settle_the_session(tmp_path, cache):
     conn = db.connect(str(tmp_path / "paper_trades.db"))
 
     # 00:00 — hours before the open, so the reading refuses and is recorded as such.
-    first = paper_loop._record_regime(
-        _config(), conn, cache_path=cache.path, day=DAY, now_min=MIDNIGHT
-    )
+    first = paper_loop._record_regime(_config(), conn, cache_path=cache.path, day=DAY, now_min=MIDNIGHT)
     assert first["usable"] == 0 and first["ratio"] is None
 
     # 09:31 — the feed is live. The stored refusal must not block this.
     cache.spot("VIX", 15.5).spot("VIX3M", 18.3)
-    second = paper_loop._record_regime(
-        _config(), conn, cache_path=cache.path, day=DAY, now_min=OPEN_TICK
-    )
+    second = paper_loop._record_regime(_config(), conn, cache_path=cache.path, day=DAY, now_min=OPEN_TICK)
 
     assert second["usable"] == 1, "a refusal must be retried, never treated as the day's answer"
     assert second["regime"] == "contango"
@@ -50,15 +46,11 @@ def test_a_measurement_is_final_for_the_session(tmp_path, cache):
     """
     conn = db.connect(str(tmp_path / "paper_trades.db"))
     cache.spot("VIX", 15.5).spot("VIX3M", 18.3)
-    first = paper_loop._record_regime(
-        _config(), conn, cache_path=cache.path, day=DAY, now_min=OPEN_TICK
-    )
+    first = paper_loop._record_regime(_config(), conn, cache_path=cache.path, day=DAY, now_min=OPEN_TICK)
     assert first["usable"] == 1
 
     cache.spot("VIX", 25.0).spot("VIX3M", 20.0)  # a later, very different tape
-    again = paper_loop._record_regime(
-        _config(), conn, cache_path=cache.path, day=DAY, now_min=OPEN_TICK + 60
-    )
+    again = paper_loop._record_regime(_config(), conn, cache_path=cache.path, day=DAY, now_min=OPEN_TICK + 60)
 
     assert again["ratio"] == first["ratio"], "the session's basis does not drift once established"
     assert db.regime_for(conn, DAY)["regime"] == "contango"
@@ -77,9 +69,7 @@ def test_a_premarket_quote_is_refused_on_the_clock(tmp_path, cache):
     conn = db.connect(str(tmp_path / "paper_trades.db"))
     cache.spot("VIX", 16.34).spot("VIX3M", 18.33)  # yesterday's closes, restamped by a reconnect
 
-    row = paper_loop._record_regime(
-        _config(), conn, cache_path=cache.path, day=DAY, now_min=PREMARKET
-    )
+    row = paper_loop._record_regime(_config(), conn, cache_path=cache.path, day=DAY, now_min=PREMARKET)
 
     assert row["usable"] == 0, "a quote outside RTH is refused however fresh the cache claims it is"
     assert row["refusal"] == "outside_rth"
@@ -107,9 +97,7 @@ def test_the_clock_gate_never_blocks_an_rth_measurement(tmp_path, cache):
     paper_loop._record_regime(_config(), conn, cache_path=cache.path, day=DAY, now_min=PREMARKET)
 
     cache.spot("VIX", 15.20).spot("VIX3M", 17.73)  # the real open, a different tape
-    measured = paper_loop._record_regime(
-        _config(), conn, cache_path=cache.path, day=DAY, now_min=OPEN_TICK
-    )
+    measured = paper_loop._record_regime(_config(), conn, cache_path=cache.path, day=DAY, now_min=OPEN_TICK)
 
     assert measured["usable"] == 1 and measured["regime"] == "contango"
     assert measured["vix"] == 15.20, "the session's basis is the RTH reading, not the premarket one"

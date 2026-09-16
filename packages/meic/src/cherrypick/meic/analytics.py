@@ -170,6 +170,24 @@ REGIME_DIMENSIONS = {
 }
 
 
+def _bucket_expr(dimension: str) -> str:
+    """The SQL expression that yields a dimension's bucket -- the stored column, except for `gex`.
+
+    Until 2026-09-16 regime._classify_gex tagged every measured-negative tick `unknown` (no flip
+    to measure from, see that docstring), while the sign flag recorded beside it on the same row
+    read correctly. Rather than rewrite a month of rows, the read side re-derives: an `unknown`
+    with a recorded sign becomes the bucket the classifier would tag today. Rows with no sign flag
+    are left `unknown` -- GEX genuinely was not measured for them."""
+    bucket_col, _ = REGIME_DIMENSIONS[dimension]
+    if dimension != "gex":
+        return bucket_col
+    return (
+        f"CASE WHEN {bucket_col} = 'unknown' AND gex_positive_at_entry = 0 THEN 'negative'"
+        f" WHEN {bucket_col} = 'unknown' AND gex_positive_at_entry = 1 THEN 'deep_positive'"
+        f" ELSE {bucket_col} END"
+    )
+
+
 # The session count below which a dimension cannot support a threshold re-cut. Deliberately the SAME
 # number as experiment.MIN_SESSIONS_FOR_INTERVAL (14) rather than a second one invented here: both
 # answer "how many sessions before this book may draw a conclusion", and two constants for one
@@ -266,7 +284,7 @@ def by_regime(
     """
     if dimension not in REGIME_DIMENSIONS:
         raise ValueError(f"by_regime: unknown dimension {dimension!r} (have {sorted(REGIME_DIMENSIONS)})")
-    bucket_col, value_col = REGIME_DIMENSIONS[dimension]
+    bucket_col, value_col = _bucket_expr(dimension), REGIME_DIMENSIONS[dimension][1]
 
     where, params = _period_clause(start, end, arm, symbol, era)
     rows = conn.execute(
@@ -323,7 +341,8 @@ def regime_coverage(conn, start=None, end=None, symbol=None, era=CURRENT_ERA, ar
     where, params = _period_clause(start, end, arm, symbol, era)
     total = conn.execute(f"SELECT COUNT(*) FROM ic_trades WHERE {where}", params).fetchone()[0]
     out = {"resolved_trades": total, "dimensions": {}}
-    for dim, (bucket_col, value_col) in REGIME_DIMENSIONS.items():
+    for dim, (_stored_col, value_col) in REGIME_DIMENSIONS.items():
+        bucket_col = _bucket_expr(dim)
         rows = conn.execute(
             f"SELECT {bucket_col} AS bucket, COUNT(*) AS n FROM ic_trades WHERE {where} "
             f"AND {bucket_col} IS NOT NULL GROUP BY 1",

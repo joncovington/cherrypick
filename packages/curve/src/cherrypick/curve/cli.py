@@ -114,9 +114,9 @@ def main(argv=None) -> int:
     p_regime.set_defaults(func=cmd_regime)
     sub.add_parser("worksheet", help="the live per-position worksheet").set_defaults(func=cmd_worksheet)
     sub.add_parser("exposure", help="early-assignment-exposure telemetry").set_defaults(func=cmd_exposure)
-    sub.add_parser(
-        "excursions", help="per-closed-position MAE/MFE plus distributions"
-    ).set_defaults(func=cmd_excursions)
+    sub.add_parser("excursions", help="per-closed-position MAE/MFE plus distributions").set_defaults(
+        func=cmd_excursions
+    )
     sub.add_parser("headline", help="per-book results through the analytics layer").set_defaults(
         func=cmd_headline
     )

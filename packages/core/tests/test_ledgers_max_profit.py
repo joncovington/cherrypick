@@ -39,9 +39,7 @@ def _meic_conn(rows):
 
 
 def test_meic_max_profit_is_net_credit_times_multiplier_times_quantity():
-    conn = _meic_conn(
-        [("SPX", "control", 120.0, 5.0, "2026-08-20T15:45:00", None, 10.0, 3.0, 2, 100.0)]
-    )
+    conn = _meic_conn([("SPX", "control", 120.0, 5.0, "2026-08-20T15:45:00", None, 10.0, 3.0, 2, 100.0)])
     out = ledgers.READERS["meic_ic"](conn)
     assert out[0]["max_profit"] == 3.0 * 100.0 * 2  # 600.0
     # capital and max_profit come from the same wing_width/net_credit/quantity/multiplier row,

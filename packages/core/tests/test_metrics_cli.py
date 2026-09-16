@@ -90,3 +90,41 @@ def test_unreadable_db_fails_cleanly_not_a_traceback(tmp_path):
     out = cli.cmd_read(_args(db=str(missing), schema="meic_ic"))
     assert out["ok"] is False
     assert "cannot read" in out["error"]
+
+
+def test_stamped_advised_rows_group_per_experiment_and_unstamped_stay_on_the_tag(tmp_path):
+    """Three experiments ran on `advised:control` in turn; the tag pools them, the stamp splits
+    them. Rows from before the stamp existed stay on the bare tag -- never inferred by date."""
+    path = tmp_path / "meic_paper.db"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE ic_trades (symbol TEXT, risk_profile TEXT, pnl REAL, fees REAL, exit_time TEXT, "
+        "experiment_id TEXT)"
+    )
+    conn.executemany(
+        "INSERT INTO ic_trades VALUES (?,?,?,?,?,?)",
+        [
+            ("SPX", "control", 10.0, 1.0, "2026-09-01T15:45:00", None),
+            ("SPX", "advised:control", 20.0, 1.0, "2026-09-01T15:45:00", None),  # pre-stamp
+            ("SPX", "advised:control", 30.0, 1.0, "2026-09-10T15:45:00", "exp-2026-09-09-meic-1"),
+            ("SPX", "advised:control", -5.0, 1.0, "2026-09-11T15:45:00", "exp-2026-09-09-meic-1"),
+            ("SPX", "advised:control", 7.0, 1.0, "2026-09-15T15:45:00", "exp-2026-09-14-meic-1"),
+        ],
+    )
+    conn.commit()
+    conn.close()
+    out = cli.cmd_read(_args(db=str(path), schema="meic_ic"))
+    assert out["ok"]
+    assert set(out["groups"]) == {
+        "control",
+        "advised:control",
+        "advised:control@exp-2026-09-09-meic-1",
+        "advised:control@exp-2026-09-14-meic-1",
+    }
+    assert out["groups"]["advised:control@exp-2026-09-09-meic-1"]["trade_nets"] == [29.0, -6.0]
+    assert out["groups"]["advised:control"]["trade_nets"] == [19.0]
+
+
+def test_a_ledger_without_the_column_reads_with_no_experiment(meic_db):
+    out = cli.cmd_read(_args(db=meic_db, schema="meic_ic"))
+    assert out["ok"] and "@" not in "".join(out["groups"])

@@ -65,7 +65,7 @@ module is the real reference; this is the index that tells you which one to open
 | `home` | The one resolver for the per-user cherrypick home. Everything else derives paths from it. |
 | `db` | SQLite connection mechanics + additive migrations, including the shared read-only opener. |
 | `logs` | One line format for every module log in the suite. |
-| `calendar` | The shared market calendar. The suite's single source of trading days and holidays. |
+| `calendar` | The shared market calendar. The suite's single source of trading days, holidays and early closes (`session_close_hhmm`: 13:00 on July 3, the day after Thanksgiving and Christmas Eve when each trades, 16:00 otherwise). |
 | `fees` | The tastytrade cost model — one home for the fee schedule. Every "net" figure in the suite goes through it. |
 | `auth` | Keyring credentials + a lazy OAuth session, parameterized per consumer. |
 | `broker` | Shared tastytrade primitives: account resolution, option-chain helpers, and the live write path with its governor. |
@@ -78,9 +78,9 @@ module is the real reference; this is the index that tells you which one to open
 | `dxfeed` | On-demand DXLink event collectors, for callers that want a snapshot rather than a stream. |
 | `gex` | The GEX engine: a pure function over an option-chain snapshot. Copying this once let the math drift ~75×. |
 | `profiles` | The named risk-profile registry and merge engine — how a partial override becomes an effective config. |
-| `metrics` | The shared calibration metric bundle: one vocabulary for promotion evidence. |
-| `advice` | Bounded, expiring, deterministically-validated parameter advice. Both the orchestrator and the module loop validate through this same code. `session_decision` is the read-once rule all seven consuming modules share; a **baseline** decision is deliberately never persisted, so a process reaching it with an advice-less config cannot fix the day for the loop that comes after it (2026-08-25: meic and earnings each lost their most informative session to exactly that). |
-| `ledgers` | Per-schema readers for every module's ledger — the one home for the net, cost, capital and session rules. `concentration` answers, over those normalised records, how much of a module net rests on a single arm and whether removing it flips the sign; a total that changes sign without its largest contributor is a measurement of that arm, not of the module. |
+| `metrics` | The shared calibration metric bundle: one vocabulary for promotion evidence. Its CLI (`python -m cherrypick.core.metrics read`) groups a stamped advised row under `<tag>@<experiment_id>` and an unstamped one under the bare tag (2026-09-16) — display grouping only; `profile` on the record is untouched. |
+| `advice` | Bounded, expiring, deterministically-validated parameter advice. Both the orchestrator and the module loop validate through this same code. `session_decision` is the read-once rule all seven consuming modules share; a **baseline** decision is deliberately never persisted, so a process reaching it with an advice-less config cannot fix the day for the loop that comes after it (2026-08-25: meic and earnings each lost their most informative session to exactly that). Since 2026-09-16 the artifact carries `experiment_id` (with a fallback parse of the advisor stamp for older files), the decision record carries it, and `stamp_for` is the ONE rule every module uses to put it on an advised row and never on a control's. |
+| `ledgers` | Per-schema readers for every module's ledger — the one home for the net, cost, capital and session rules. `concentration` answers, over those normalised records, how much of a module net rests on a single arm and whether removing it flips the sign; a total that changes sign without its largest contributor is a measurement of that arm, not of the module. Every closed record carries `experiment_id` (2026-09-16; sniffed, so an older ledger reads None) — the advisor experiment an advised row was entered under, the key that splits one `advised:<base>` tag back into the experiments that used it. |
 | `regime` | The one at-or-before, staleness-bounded join against the recorded market-regime series (gex's history DB). Derived ratios/dispersion are computed here at read time, never stored. |
 | `viz` | A declarative dashboard-section contract plus one generic renderer. |
 

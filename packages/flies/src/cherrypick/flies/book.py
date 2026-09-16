@@ -213,7 +213,9 @@ def _to_position(row: dict) -> dict:
     }
 
 
-def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
+def process_snapshot(
+    snapshot: dict, config: dict, conn, arm: str, *, experiment_id: str | None = None
+) -> dict:
     """Run one iteration of one arm against one snapshot. Returns a summary of what it did.
 
     Order matters: completions are evaluated BEFORE new entries. A credit spread that can be squared
@@ -630,6 +632,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "book_id": book_id,
                     "trade_date": trade_date,
                     "arm": arm,
+                    "experiment_id": experiment_id,
                     "entry_mode": "legged",
                     "symbol": symbol,
                     "kind": "short_vertical",
@@ -712,6 +715,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "book_id": book_id,
                     "trade_date": trade_date,
                     "arm": arm,
+                    "experiment_id": experiment_id,
                     "entry_mode": "debit_first",
                     "symbol": symbol,
                     "kind": "long_vertical",
@@ -796,6 +800,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "book_id": book_id,
                     "trade_date": trade_date,
                     "arm": arm,
+                    "experiment_id": experiment_id,
                     "entry_mode": "bwb_roll",
                     "symbol": symbol,
                     "kind": "bwb",
@@ -885,6 +890,7 @@ def process_snapshot(snapshot: dict, config: dict, conn, arm: str) -> dict:
                     "book_id": book_id,
                     "trade_date": trade_date,
                     "arm": arm,
+                    "experiment_id": experiment_id,
                     "entry_mode": "outright",
                     "symbol": symbol,
                     "kind": "fly",

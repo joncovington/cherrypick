@@ -69,6 +69,8 @@ Three books, one variable each, plus the advisor's synthetic twin:
 - **`advised:<base>`** (paper, off by default) — the admitted params frozen on each row at entry
   and restated through one choke point (`management.effective_params`) every tick.
 
+**Every advised row also carries `experiment_id` (2026-09-16)** — the advisor experiment the day's artifact named, read from the session decision and stamped through the one shared rule (`cherrypick.core.advice.stamp_for`: advised books only, never the control). The `advised:<base>` tag names a book, and every experiment on that base reuses it in turn; the stamp is what lets the ledger, the advisor's verdicts and the console's paired cards tell one experiment's rows from the next's without inferring it from dates. Rows written before the column existed read `NULL` and are treated as unstamped history, never rewritten.
+
 **curve is a structurally slow advisor target, stated honestly in config.** One position per book
 at ~30-45 DTE with 50% takes closes maybe 2-4 trades a month; a 15-session advised experiment is
 `underpowered` by construction against the promotion gate's min-14-days/min-sample-20 floor. The

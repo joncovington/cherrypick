@@ -173,10 +173,22 @@ def _classify_vol_intraday(snapshot: dict, params: dict) -> tuple[str, float | N
 
 
 def _classify_gex(snapshot: dict, params: dict) -> tuple[str, float | None]:
-    """Signed distance from the gamma flip, as a fraction of spot: positive means spot sits ABOVE
-    the flip (net-GEX-positive territory, where dealer hedging tends to dampen moves); negative
-    means below it. 'unknown' whenever GEX is unavailable, mirroring the entry gate's own
-    fail-open convention — never guessed.
+    """Sign first, then distance. `negative` whenever the window's net GEX is negative -- the same
+    `gex_positive` flag the entry gate refuses on -- and `deep_positive`/`near_flip` when it is
+    positive, split on signed distance from the gamma flip as a fraction of spot. The float is
+    that signed distance, or None when the window holds no flip to measure from.
+
+    Until 2026-09-16 this read the flip alone, and the flip is interpolated from a zero crossing of
+    cumulative net GEX: a window that is net negative end to end has no crossing, so every such
+    tick tagged `unknown` -- 492 of 492 entries on 2026-09-15, at an average net of -21B, on a day
+    the gate itself read correctly. `unknown` now means what the docstring always promised: GEX was
+    not measured. A measured-positive window with no crossing is deep inside positive territory by
+    any threshold (at least the whole ±20-strike window from a flip), so it tags `deep_positive`
+    with a None distance rather than `unknown` for the mirror-image reason.
+
+    Rows tagged before this date are re-derived at read time from the sign flag recorded beside
+    them (analytics._bucket_expr for ic_trades, the advisor's pack for iteration_regime); the
+    stored tags are left as written.
 
     Reuses regime_gex_min_flip_distance_pct (the existing opt-in magnitude-gate threshold, `or`
     rather than a plain default since config ships it explicitly `null` when the gate is off) as
@@ -185,15 +197,31 @@ def _classify_gex(snapshot: dict, params: dict) -> tuple[str, float | None]:
     if not gex.get("ok"):
         return "unknown", None
     flip, spot = gex.get("gamma_flip"), gex.get("spot") or snapshot.get("underlying_price")
-    if flip is None or not spot:
-        return "unknown", None
-    dist = (spot - flip) / spot
+    dist = (spot - flip) / spot if flip is not None and spot else None
     threshold = params.get("regime_gex_min_flip_distance_pct") or 0.005
-    if dist >= threshold:
-        return "deep_positive", dist
-    if dist <= -threshold:
-        return "negative", dist
-    return "near_flip", dist
+    positive = gex.get("gex_positive")
+    if positive is None:
+        # A snapshot with no sign flag (pre-2026-09-16 fixtures, a foreign GEX payload): the
+        # original distance-only read, `unknown` without a flip.
+        if dist is None:
+            return "unknown", None
+        if dist >= threshold:
+            return "deep_positive", dist
+        if dist <= -threshold:
+            return "negative", dist
+        return "near_flip", dist
+    if dist is not None and abs(dist) < threshold:
+        return "near_flip", dist
+    return ("deep_positive" if positive else "negative"), dist
+
+
+def gex_sign_flag(snapshot: dict) -> int | None:
+    """The gate's own `gex_positive` as 1/0, None when GEX was not measured. Recorded beside the
+    bucket on every iteration_regime row so a tag can be re-derived later without re-running."""
+    gex = snapshot.get("gex") or {}
+    if not gex.get("ok") or gex.get("gex_positive") is None:
+        return None
+    return int(bool(gex.get("gex_positive")))
 
 
 def _classify_skew(
@@ -308,7 +336,11 @@ def market_regime_columns(snapshot: dict, params: dict) -> dict:
     """
     regime = classify_regime(snapshot, params)
     keys = [f"{d}_bucket" for d in MARKET_DIMENSIONS] + [f"{d}_value" for d in MARKET_DIMENSIONS]
-    return {k: regime[k] for k in keys}
+    out = {k: regime[k] for k in keys}
+    # The sign flag beside the bucket (2026-09-16): the one input the gex tag was missing for a
+    # month, stored so the tag can be re-derived from history rather than re-run.
+    out["gex_positive"] = gex_sign_flag(snapshot)
+    return out
 
 
 # ---------------------------------------------------------------------------

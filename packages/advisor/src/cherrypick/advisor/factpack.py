@@ -25,6 +25,7 @@ it — and because enactment is structurally paper-only, showing it costs nothin
 from __future__ import annotations
 
 import json
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -374,14 +375,21 @@ def _regime_now(session: str, *, fallback) -> dict[str, Any]:
     chasing for six sessions. When the series is unmeasured — a recorder outage, or a checkpoint
     outside RTH when nothing is sampled — this falls back to the old reading and SAYS SO in
     `source`, rather than presenting a hole as a calm market.
+
+    Read AT THE CLOSE, never later (2026-09-16). This used to clamp to end-of-day (23:59:59), and
+    the recorder's last sample lands seconds before the bell while the deep slot runs at 17:00 --
+    so every nightly read was an hour past the 15-minute staleness window and every deep pack
+    carried the VIX-only fallback, which the model reported as a recurring outage. Clamping to the
+    calendar's RTH close (13:00 on a half day) makes the read seconds old at 17:00 and identical
+    for a pack rebuilt for that session later.
     """
     try:
         # AT THE SESSION, not at wall-clock now: every other query in the market block takes the
         # session, and a pack rebuilt for a past date (`--session D`) must describe that day's
-        # regime, not today's. For the current session this is "now" (the end of session is still
-        # ahead); for a past one it is that session's close.
-        end_of_session = datetime.fromisoformat(_clock.end_of_session_iso(session)).timestamp()
-        out = _regime.regime_at(min(_clock.now_et().timestamp(), end_of_session))
+        # regime, not today's. For a session still in progress this is "now"; once the bell has
+        # rung it is the close itself.
+        rth_close = datetime.fromisoformat(_clock.rth_close_iso(session)).timestamp()
+        out = _regime.regime_at(min(_clock.now_et().timestamp(), rth_close))
         market = out.get("market") or {}
     except Exception:  # noqa: BLE001 — a fact pack must never fail on a telemetry read
         market = {"status": "unmeasured", "reason": "regime_read_failed"}
@@ -412,6 +420,71 @@ def _regime_now(session: str, *, fallback) -> dict[str, Any]:
 # --------------------------------------------------------------------------- per-module paper
 
 
+_REGIME_TICK_BUCKETS = (
+    "vol_implied_bucket",
+    "vol_event_bucket",
+    "vol_realized_bucket",
+    "gex_bucket",
+    "trend_bucket",
+)
+_RTH_OPEN = "09:30:00"
+
+
+def _meic_regime_session(conn, session: str) -> dict[str, Any] | None:
+    """MEIC's iteration_regime for the session as bucket counts over regular-hours ticks.
+
+    In-hours only: 09:30 ET through the calendar's close for the session. The loop keeps ticking
+    for a few minutes after the bell, and on a 0DTE chain those ticks are the least representative
+    of the day (the expiring chain's last prints, then the next expiration) -- they are counted
+    under `post_close_ticks` and excluded from every distribution.
+
+    The gex bucket is re-derived from the sign flag recorded beside it where the stored tag reads
+    `unknown` -- the month of rows regime._classify_gex tagged before 2026-09-16, when a
+    measured-negative window had no flip to measure from. Rows with no flag stay `unknown`.
+    """
+    cols = {r.get("name") for r in _store.rows(conn, "PRAGMA table_info(iteration_regime)")}
+    if "gex_bucket" not in cols:
+        return None
+    sign = "gex_positive" if "gex_positive" in cols else "NULL AS gex_positive"
+    # loop_time is a full ET timestamp from the loop ("YYYY-MM-DD HH:MM:SS.ffffff-04:00") and a
+    # bare HH:MM:SS in older rows and fixtures; take the time-of-day either way.
+    tod = (
+        "CASE WHEN instr(loop_time, ' ') > 0 THEN substr(loop_time, instr(loop_time, ' ') + 1, 8)"
+        " ELSE substr(loop_time, 1, 8) END"
+    )
+    ticks = _store.rows(
+        conn,
+        f"SELECT loop_time, {tod} AS tod, underlying_price, {', '.join(_REGIME_TICK_BUCKETS)}, {sign}"
+        " FROM iteration_regime WHERE loop_date = ? ORDER BY loop_time",
+        (session,),
+    )
+    if not ticks:
+        return None
+    close = _clock.rth_close_hhmm(session) + ":00"
+    in_hours = sorted(
+        (t for t in ticks if _RTH_OPEN <= (t.get("tod") or "") <= close), key=lambda t: t["tod"]
+    )
+    for t in in_hours:
+        if t.get("gex_bucket") == "unknown" and t.get("gex_positive") in (0, 1):
+            t["gex_bucket"] = "negative" if t["gex_positive"] == 0 else "deep_positive"
+    distributions = {
+        col: dict(sorted(Counter(t.get(col) or "untagged" for t in in_hours).items()))
+        for col in _REGIME_TICK_BUCKETS
+    }
+    last = in_hours[-1] if in_hours else None
+    return {
+        "window": f"{_RTH_OPEN[:5]}-{close[:5]} ET",
+        "ticks": len(in_hours),
+        "post_close_ticks": len(ticks) - len(in_hours),
+        **distributions,
+        "last_in_hours": (
+            {k: last[k] for k in ("loop_time", "underlying_price", *_REGIME_TICK_BUCKETS)} if last else None
+        ),
+        "basis": "entry-gate snapshot: net GEX sign and gamma flip vs spot on the nearest "
+        "expiration, the same basis regime_gex_block_negative reads; NOT the market.gex series",
+    }
+
+
 def _meic(session: str) -> dict[str, Any]:
     def read(conn):
         attempts = _store.rows(
@@ -433,13 +506,7 @@ def _meic(session: str) -> dict[str, Any]:
             " SUM(fees) fees FROM ic_trades WHERE trade_date = ? GROUP BY risk_profile, status",
             (session,),
         )
-        regime = _store.rows(
-            conn,
-            "SELECT symbol, loop_time, underlying_price, vol_implied_bucket, vol_event_bucket,"
-            " vol_realized_bucket, gex_bucket, trend_bucket FROM iteration_regime"
-            " WHERE loop_date = ? ORDER BY loop_time DESC LIMIT 1",
-            (session,),
-        )
+        regime_session = _meic_regime_session(conn, session)
         stops = _store.rows(
             conn,
             "SELECT risk_profile, COUNT(*) n FROM ic_trades WHERE trade_date = ?"
@@ -467,18 +534,13 @@ def _meic(session: str) -> dict[str, Any]:
             ],
             "top_block_details": blocks,
             "book_by_profile": book,
-            # `basis` names where the gex_bucket comes from (2026-09-15): the model compared this
-            # bucket to the engine's market.gex series nightly and flagged a "wiring gap" that is
-            # the documented basis difference in _gex_gate_series_note below.
-            "latest_regime": (
-                {
-                    **regime[0],
-                    "basis": "entry-gate snapshot: gamma flip vs spot on the nearest expiration, "
-                    "the same basis regime_gex_block_negative reads; NOT the market.gex series",
-                }
-                if regime
-                else None
-            ),
+            # The session's regime as a DISTRIBUTION over in-hours ticks, not the last row
+            # (2026-09-16). `latest_regime` used to hand the model the final iteration_regime row,
+            # and for a 0DTE module the final row is the one tick after the bell where the expiring
+            # chain finally shows a flip: on 2026-09-15 the tag read one way for 376 of 384 ticks
+            # and the opposite way for the last 8, and the pack reported the 8. The "wiring gap"
+            # the model flagged nightly was that row.
+            "regime_session": regime_session,
             "_gex_gate_series_note": "MEIC's regime_gex_block_negative gate reads NONE of the "
             "market.gex series above. It recomputes GEX fresh on every entry tick from the stream "
             "cache (cherrypick.meic.tt cmd_get_gex): nearest expiration only (0DTE intraday), "
@@ -1051,7 +1113,13 @@ def _stub(text: Any) -> str:
 
 
 _VERDICT_KEEP = (
-    "experiment_id", "sessions_run", "underpowered", "computed_by", "stalled", "killed_reason", "error"
+    "experiment_id",
+    "sessions_run",
+    "underpowered",
+    "computed_by",
+    "stalled",
+    "killed_reason",
+    "error",
 )
 
 
@@ -1067,11 +1135,7 @@ def _compact_verdict(verdict: Any) -> Any:
     carries for every arm with every qualification check. Those were ~85% of each brief."""
     if not isinstance(verdict, dict):
         return verdict
-    out: dict[str, Any] = {
-        k: verdict[k]
-        for k in _VERDICT_KEEP
-        if k in verdict
-    }
+    out: dict[str, Any] = {k: verdict[k] for k in _VERDICT_KEEP if k in verdict}
     rec = verdict.get("recommendation")
     if isinstance(rec, dict):
         out["recommendation"] = {

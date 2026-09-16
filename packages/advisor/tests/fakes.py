@@ -50,7 +50,7 @@ CREATE TABLE ic_trades (
     -- the settlement-integrity columns the deep pack queries; absent from this fixture until
     -- 2026-09-12, which made "settled with no price" read 0 by way of a refused query
     settle_underlying REAL, exit_reason TEXT, put_stop_cost REAL, call_stop_cost REAL,
-    ic_order_id TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL
+    ic_order_id TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL, experiment_id TEXT
 );
 CREATE TABLE market_context (
     context_date TEXT PRIMARY KEY, vix REAL, vix1d REAL, vix1d_ratio REAL,
@@ -60,7 +60,8 @@ CREATE TABLE iteration_regime (
     id INTEGER PRIMARY KEY AUTOINCREMENT, loop_date TEXT NOT NULL, loop_time TEXT NOT NULL,
     symbol TEXT NOT NULL, underlying_price REAL, entries_n INTEGER DEFAULT 0,
     blocked_n INTEGER DEFAULT 0, vol_implied_bucket TEXT, vol_event_bucket TEXT,
-    vol_realized_bucket TEXT, gex_bucket TEXT, trend_bucket TEXT, created_at TEXT NOT NULL
+    vol_realized_bucket TEXT, gex_bucket TEXT, gex_positive INTEGER, trend_bucket TEXT,
+    created_at TEXT NOT NULL
 );
 CREATE TABLE entry_attempts (
     id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, trade_date TEXT NOT NULL,

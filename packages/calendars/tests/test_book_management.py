@@ -91,15 +91,19 @@ def test_enter_week_writes_every_book_with_shared_fills(conn):
         ["control", "path", "advised:control"],
         week=WEEK,
         advice_params={"profit_target_pct": 0.2},
+        experiment_id="exp-2026-09-14-calendars-1",
     )
     assert len(opened) == 6  # 3 books x 2 sides
     rows = conn.execute(
-        "SELECT book, side, entry_debit, advice_params FROM dc_positions ORDER BY book, side"
+        "SELECT book, side, entry_debit, advice_params, experiment_id FROM dc_positions ORDER BY book, side"
     ).fetchall()
     assert {r["entry_debit"] for r in rows} == {5.0}  # identical fills across books
     frozen = {r["book"]: r["advice_params"] for r in rows}
     assert frozen["control"] is None and frozen["path"] is None
     assert json.loads(frozen["advised:control"]) == {"profit_target_pct": 0.2}
+    # The experiment rides only on the advised book's rows -- the control is nobody's experiment.
+    stamped = {r["book"]: r["experiment_id"] for r in rows}
+    assert stamped == {"control": None, "path": None, "advised:control": "exp-2026-09-14-calendars-1"}
     assert conn.execute("SELECT COUNT(*) FROM dc_legs").fetchone()[0] == 12
 
 
