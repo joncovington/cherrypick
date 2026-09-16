@@ -221,17 +221,66 @@ def tune(
 
 
 def record_verdict_recommendation(
-    conn, *, session: str, experiment_id: str, recommendation: str, rationale: str = ""
+    conn,
+    *,
+    session: str,
+    experiment_id: str,
+    recommendation: str,
+    rationale: str = "",
+    cfg: dict | None = None,
 ) -> dict[str, Any]:
     """Attach the model's keep/kill/promote to an experiment's computed verdict.
 
     Stored *beside* the numbers `verdicts.py` computed, never instead of them. If the experiment has
     no computed verdict yet, one is computed now — the recommendation must always sit on top of
     something measured.
+
+    **A `kill` is actioned, not just filed (2026-09-15, `kill_on_verdict`).** Until then the model's
+    kill was a recommendation for a human to act on, and nobody did: three kill verdicts (bwb,
+    flies, calendars) sat admitted for up to four sessions, the dead experiments' artifacts were
+    enacted every morning, and four queued successors starved at zero sessions. The model reaffirmed
+    each kill nightly and finally flagged it critical. The numbers under the kill are still computed
+    here, never by the model; what changed is that its reading of them stops the experiment tonight
+    and lets the queue move up, the same path a human `kill` takes.
     """
     experiment = _store.experiment(conn, experiment_id)
     if experiment is None:
         return {"ok": False, "reason": f"not_an_advisor_experiment: {experiment_id!r}"}
+
+    if (
+        recommendation == "kill"
+        and experiment["status"] == STATUS_ACTIVE
+        and bool(_settings.load(cfg).get("kill_on_verdict"))
+    ):
+        _store.journal(
+            conn,
+            experiment_id,
+            "verdict",
+            session=session,
+            detail={"recommendation": recommendation, "rationale": rationale, "actioned": True},
+        )
+        killed = kill(
+            conn,
+            experiment_id,
+            session=session,
+            reason=f"model verdict: {rationale}" if rationale else "model verdict",
+            recommendation={
+                "value": recommendation,
+                "rationale": rationale,
+                "by": "model",
+                "session": session,
+            },
+            cfg=cfg,
+        )
+        return {
+            "ok": True,
+            "experiment_id": experiment_id,
+            "recommendation": recommendation,
+            "actioned": True,
+            "status": killed.get("status"),
+            "activated": killed.get("activated"),
+            "reissued": killed.get("reissued"),
+        }
 
     # Recomputed EVERY time, against the module's own rule. Until 2026-09-12 a stored body was
     # reused, so the numbers under each night's recommendation were the ones from the first night
@@ -275,8 +324,16 @@ def kill(
     session: str | None = None,
     reason: str = "killed by user",
     cfg: dict | None = None,
+    recommendation: dict | None = None,
 ) -> dict[str, Any]:
     """Stop an experiment now. No artifact is issued for it tonight; a queued one takes its slot.
+
+    **The next session's artifact is re-issued on the spot (2026-09-15).** A kill after the nightly
+    pass — a human at 22:00, or the deep slot's own admit step, which runs before enact — used to
+    leave the dead experiment's artifact on disk for the morning, where the loop applied it. Now the
+    successor's artifact replaces it, or, with nothing queued, it is retracted so the loop runs
+    baseline. `recommendation` carries a model verdict's block onto the stored body when the kill
+    is the verdict's own doing.
 
     **The verdict is computed here too, for the same reason `expire_due` computes one.** An
     experiment's result is a fact about the ledger, and stopping it is a decision to spend no MORE
@@ -302,12 +359,25 @@ def kill(
 
     body = verdict_for(experiment, cfg=cfg)
     body["killed_reason"] = reason
+    if recommendation:
+        body["recommendation"] = recommendation
     # One statement: a crash between "verdict written" and "status killed" used to leave a
     # still-active experiment carrying a kill verdict that `expire_due` would later overwrite.
     _store.update_experiment(conn, experiment_id, status=STATUS_KILLED, verdict_json=json.dumps(body))
     _store.journal(conn, experiment_id, "killed", session=session, detail={"reason": reason})
     promoted = activate_queued(conn, experiment["module"], session=session)
-    return {"ok": True, "experiment_id": experiment_id, "status": STATUS_KILLED, "activated": promoted}
+
+    # Local import: enact imports this module. The artifact step is enact's, and it stays there.
+    from cherrypick.advisor import enact as _enact
+
+    reissued = _enact.reissue(conn, experiment["module"], session or _clock.session_today(), cfg=cfg)
+    return {
+        "ok": True,
+        "experiment_id": experiment_id,
+        "status": STATUS_KILLED,
+        "activated": promoted,
+        "reissued": reissued,
+    }
 
 
 def dismiss(conn, proposal_id: int) -> dict[str, Any]:
@@ -506,6 +576,7 @@ def _apply(
             experiment_id=proposal["experiment_id"],
             recommendation=proposal["recommendation"],
             rationale=proposal.get("rationale", ""),
+            cfg=cfg,
         )
 
     if kind in ("bounded_adjustment", "experiment_spec"):

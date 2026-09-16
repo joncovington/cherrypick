@@ -653,3 +653,110 @@ def test_a_malformed_bounds_rule_is_a_rejection_not_a_crash(home, conn, tmp_home
     out = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9})
     assert out["ok"] is False
     assert "malformed" in json.dumps(out)
+
+
+# --------------------------------------------------------------------------- 2026-09-15: a kill is actioned
+
+
+def _verdict(experiment_id, recommendation, rationale="rule fired"):
+    return {
+        "kind": "verdict",
+        "experiment_id": experiment_id,
+        "recommendation": recommendation,
+        "rationale": rationale,
+        "raw": {"kind": "verdict"},
+    }
+
+
+def _stamped_experiment(home, module, session):
+    return json.loads(paths.advice_path(module, session).read_text(encoding="utf-8"))["advisor"]
+
+
+def test_a_model_kill_verdict_stops_the_experiment_and_the_queue_moves_up(home, conn):
+    """Three kill verdicts sat admitted for up to four sessions in September 2026 while the dead
+    experiments' artifacts were enacted every morning and their successors starved at zero
+    sessions. A kill the model recommends now takes the same path a human `kill` takes."""
+    first = experiments.admit_reply(
+        conn, session=SESSION, slot="deep", reply=_reply(_adjustment({"stop_trigger_ratio": 0.9}))
+    )["admitted"][0]["experiment_id"]
+    second = experiments.admit_reply(
+        conn, session=SESSION, slot="deep", reply=_reply(_adjustment({"stop_trigger_ratio": 0.88}))
+    )["admitted"][0]["experiment_id"]
+    enact.run(conn, SESSION)
+    assert first in _stamped_experiment(home, "meic", FRIDAY)
+
+    out = experiments.admit_reply(conn, session=SESSION, slot="deep", reply=_reply(_verdict(first, "kill")))
+
+    admitted = out["admitted"][0]
+    assert admitted["actioned"] is True and admitted["activated"] == [second]
+    assert store.experiment(conn, first)["status"] == "killed"
+    assert store.experiment(conn, second)["status"] == "active"
+    # The dead experiment's artifact for tomorrow is gone; the successor's stands in its place.
+    assert second in _stamped_experiment(home, "meic", FRIDAY)
+    verdict = json.loads(store.experiment(conn, first)["verdict_json"])
+    assert verdict["recommendation"]["value"] == "kill" and verdict["recommendation"]["by"] == "model"
+    assert verdict["killed_reason"].startswith("model verdict")
+
+
+def test_keep_and_promote_verdicts_are_recorded_only(home, conn):
+    eid = experiments.admit_reply(
+        conn, session=SESSION, slot="deep", reply=_reply(_adjustment({"stop_trigger_ratio": 0.9}))
+    )["admitted"][0]["experiment_id"]
+    for rec in ("keep", "promote"):
+        out = experiments.admit_reply(conn, session=SESSION, slot="deep", reply=_reply(_verdict(eid, rec)))
+        assert "actioned" not in out["admitted"][0]
+        assert store.experiment(conn, eid)["status"] == "active"
+
+
+def test_a_kill_with_nothing_queued_retracts_tomorrows_artifact(home, conn):
+    """With no successor the loop must run baseline tomorrow, not the dead experiment's params."""
+    eid = experiments.admit_reply(
+        conn, session=SESSION, slot="deep", reply=_reply(_adjustment({"stop_trigger_ratio": 0.9}))
+    )["admitted"][0]["experiment_id"]
+    enact.run(conn, SESSION)
+    path = paths.advice_path("meic", FRIDAY)
+    assert path.exists()
+
+    killed = experiments.kill(conn, eid, session=SESSION)
+
+    assert not path.exists()
+    assert killed["reissued"]["retracted"] == str(path)
+    assert store.has_journal_event(conn, eid, "retracted", session=SESSION)
+    assert core_advice.load(paths.state_dir(), "meic", FRIDAY, MEIC_BOUNDS)["reason"] == "absent"
+
+
+def test_retraction_leaves_an_artifact_this_advisor_did_not_write_alone(home, conn):
+    eid = experiments.admit_reply(
+        conn, session=SESSION, slot="deep", reply=_reply(_adjustment({"stop_trigger_ratio": 0.9}))
+    )["admitted"][0]["experiment_id"]
+    path = paths.advice_path("meic", FRIDAY)
+    core_advice.write(
+        path,
+        module="meic",
+        session=FRIDAY,
+        proposals=[{"param": "stop_trigger_ratio", "value": 0.86, "rationale": "by hand"}],
+        advisor="a human, by hand",
+        expires_at=clock.end_of_session_iso(FRIDAY),
+    )
+
+    experiments.kill(conn, eid, session=SESSION)
+
+    assert path.exists()
+    assert _stamped_experiment(home, "meic", FRIDAY) == "a human, by hand"
+
+
+def test_kill_on_verdict_can_be_switched_off(home, conn, tmp_home):
+    """Off restores the record-only behaviour: the recommendation is filed, the experiment runs on."""
+    fakes.write_suite_config(
+        tmp_home,
+        {"enabled": True, "kill_on_verdict": False, "modules": {"meic": {"enabled": True}}},
+    )
+    eid = experiments.admit_reply(
+        conn, session=SESSION, slot="deep", reply=_reply(_adjustment({"stop_trigger_ratio": 0.9}))
+    )["admitted"][0]["experiment_id"]
+
+    out = experiments.admit_reply(conn, session=SESSION, slot="deep", reply=_reply(_verdict(eid, "kill")))
+
+    assert "actioned" not in out["admitted"][0]
+    assert store.experiment(conn, eid)["status"] == "active"
+    assert json.loads(store.experiment(conn, eid)["verdict_json"])["recommendation"]["value"] == "kill"

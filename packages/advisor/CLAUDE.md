@@ -137,6 +137,21 @@ shorten an experiment on the strength of missing evidence, the same error in the
 stored beside them, never instead of them. A verdict that fires below the qualification thresholds
 is labeled `underpowered` — never silently passed or failed.
 
+**A `kill` recommendation is actioned; `keep` and `promote` are recorded (2026-09-15,
+`advisor.kill_on_verdict`, on by default).** Until then a model kill waited for a human to run
+`kill`, and nobody did: three kill verdicts (bwb, flies, calendars) sat admitted for up to four
+sessions, the dead experiments' artifacts were enacted every morning, four queued successors
+starved at zero sessions, and the model reaffirmed each kill nightly until it flagged the situation
+critical. Now admitting a kill verdict takes the same path a human `kill` takes: status `killed`,
+verdict computed and stored with the model's block on it, the queue moves up, and the next
+session's artifact is **re-issued on the spot** for the successor — or **retracted** when nothing
+succeeds it, so the loop runs baseline rather than a concluded experiment's params. The
+retraction touches only an artifact stamped with this advisor's tag. `kill` from the CLI or the
+console re-issues the same way, which closes the other gap: a kill after the 17:00 pass used to
+leave that pass's artifact on disk for the morning. The numbers under a kill are still computed
+here; what the model decides is only whether its own experiment continues. Off, the knob restores
+record-only verdicts.
+
 ## The advisor tunes only its own experiments
 
 Structurally: the only thing it can emit is an `advised:*` overlay. A `tune` proposal naming a
@@ -396,7 +411,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.advisor recount [--apply]` | Re-derive `sessions_run` for every active experiment from what the loops actually recorded. Read-only without `--apply`: it rewrites the denominator every verdict is judged against. |
 | `python -m cherrypick.advisor verdicts [--session D]` | Compute deterministic verdicts for expiring experiments. |
 | `python -m cherrypick.advisor status [--session D]` | What the advisor thinks is true right now: checkpoints, experiments, apply status per module. |
-| `python -m cherrypick.advisor kill <experiment_id>` | Stop an experiment tonight. Journaled; a queued experiment activates in its place. |
+| `python -m cherrypick.advisor kill <experiment_id>` | Stop an experiment now. Journaled; a queued experiment activates in its place and the next session's artifact is re-issued for it (retracted when nothing is queued). A model `kill` verdict runs this same path on admission. |
 | `python -m cherrypick.advisor dismiss <proposal_id>` | Mark a proposal dismissed by the user. Fed back to the model so it stops re-proposing it. |
 
 The console's two write actions (kill, dismiss) invoke exactly these verbs as a subprocess — the

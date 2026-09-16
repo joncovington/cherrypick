@@ -533,6 +533,7 @@
     "deep_model": "opus",
     "timeout_seconds": 600,
     "max_experiments_per_module": 1,
+    "kill_on_verdict": true,
     "experiment_sessions": 15,
     "experiment_sessions_min": 5,
     "experiment_sessions_max": 30,
