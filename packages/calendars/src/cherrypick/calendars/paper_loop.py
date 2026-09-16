@@ -491,6 +491,18 @@ def _try_entry(
     # point, and the reason it survives the arrival of the second model: bookkeeping that is wrong
     # at its first Friday is wrong quietly.
     style = engine.settlement_style(config, symbol)
+    # The session's advice decision is derived and RECORDED here, ahead of every refusal below
+    # (2026-09-15). It used to be derived only on the way into the entry itself, so a week refused
+    # at this gate -- an ex-dividend week, a lapsed dividend calendar -- recorded no decision at
+    # all, and the advisor scored a live, valid artifact as `not_enacted`: "the loop recorded no
+    # decision". Two such weeks in a row were read as a process failure. The advice was read and
+    # would have governed; the week had nothing to govern. Recording that is what lets the
+    # advisor tell "refused with the advice in hand" from "the artifact never reached the loop".
+    advice_params: dict | None = None
+    if books is None:
+        books, advice_params = session_books(config, day)
+    else:
+        advice_params = None  # no advised twin for a non-default regime (see the arm's doc)
     if style is None:
         db.record_entry_attempt(
             conn, trade_date=day, week_of=week["week_of"], symbol=symbol, outcome="unknown_settlement"
@@ -523,10 +535,6 @@ def _try_entry(
                 block_detail=f"ex-date {hit}",
             )
             return 0
-    if books is None:
-        books, advice_params = session_books(config, day)
-    else:
-        advice_params = None  # no advised twin for a non-default regime (see the arm's doc)
     already = {(p["book"], p["side"]) for p in db.positions_for_week(conn, week["week_of"])}
     if all((b, s) in already for b in books for s in ("put", "call")):
         return 0

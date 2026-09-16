@@ -145,6 +145,33 @@ def _read(path: Path, fn):
         conn.close()
 
 
+def candidates_accepted(module: str, session: str) -> int | None:
+    """How many names the module's scan ACCEPTED for `session`, or None when the module keeps no
+    scan ledger and the question does not apply.
+
+    Lives here because it is a live read of another package's ledger. `enactment` uses it to tell
+    an earnings session the advice governed from one it could not have: a session where the scan
+    accepted nothing gave the admitted params nothing to decide, and until 2026-09-16 it still
+    cost the experiment a session -- the condor experiment spent fifteen sessions to reach six
+    paired events through the mid-September lull. Discovered from the schema (a `scan_log` table
+    with an `outcome` column), not from a module list, so a module that starts recording a scan
+    is covered when it declares the table.
+    """
+
+    def read(conn):
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        if "scan_log" not in tables:
+            return None
+        if "outcome" not in {c[1] for c in conn.execute("PRAGMA table_info(scan_log)")}:
+            return None
+        row = conn.execute(
+            "SELECT COUNT(*) FROM scan_log WHERE scan_date = ? AND outcome = 'accepted'", (session,)
+        ).fetchone()
+        return int(row[0]) if row else 0
+
+    return _read(_paper_db(module), read)
+
+
 def carried_advice_params(module: str) -> list[dict[str, Any]] | None:
     """The frozen advice params on the module's currently-OPEN advised positions.
 
@@ -440,7 +467,18 @@ def _meic(session: str) -> dict[str, Any]:
             ],
             "top_block_details": blocks,
             "book_by_profile": book,
-            "latest_regime": regime[0] if regime else None,
+            # `basis` names where the gex_bucket comes from (2026-09-15): the model compared this
+            # bucket to the engine's market.gex series nightly and flagged a "wiring gap" that is
+            # the documented basis difference in _gex_gate_series_note below.
+            "latest_regime": (
+                {
+                    **regime[0],
+                    "basis": "entry-gate snapshot: gamma flip vs spot on the nearest expiration, "
+                    "the same basis regime_gex_block_negative reads; NOT the market.gex series",
+                }
+                if regime
+                else None
+            ),
             "_gex_gate_series_note": "MEIC's regime_gex_block_negative gate reads NONE of the "
             "market.gex series above. It recomputes GEX fresh on every entry tick from the stream "
             "cache (cherrypick.meic.tt cmd_get_gex): nearest expiration only (0DTE intraday), "

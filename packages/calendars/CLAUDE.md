@@ -88,7 +88,10 @@ position makes an expiry policy `derivable: False` rather than scoring it at zer
 really assigned at the close *before* the ex-date — a session before this module books anything —
 and every 2026 SPY ex-date (09-18, 12-18, potential excise 12-31) lands exactly on the module's
 short-expiry Friday. Rather than approximate that (user decision 2026-08-15: this is a paper
-experiment testing exit rules, and an ex-div week is a different trade), entry **refuses the whole
+experiment testing exit rules, and an ex-div week is a different trade; the session's advice
+decision is derived and recorded BEFORE this gate since 2026-09-15, so the advisor scores a
+refused week as advice that governed nothing rather than as an artifact that never reached the
+loop), entry **refuses the whole
 week** when a declared ex-date falls inside `[entry_session, back_expiration]` — the full span,
 because Friday-delivered shares ride the weekend. The dates live in the config's `dividends` block,
 declared from the issuer's own distribution schedule and **refreshed annually by hand**: they

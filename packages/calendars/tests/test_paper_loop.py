@@ -222,6 +222,49 @@ def test_a_physical_week_containing_an_ex_date_is_skipped_and_journaled(tmp_path
     assert "2026-08-21" in attempt["block_detail"]
 
 
+def test_a_refused_week_still_records_the_advice_decision(tmp_path, managed_home):
+    """The advisor scores a session by the decision file. A week refused at the ex-dividend gate
+    used to record none, so a live artifact read as dropped (2026-09-14/15: two 'process
+    failures' that were one skipped week). The advice is derived, logged and recorded BEFORE the
+    gate, so the refusal is scored as the advice governing a week with nothing to govern."""
+    session = "2026-08-17"
+    advice_dir = managed_home / "state" / "advice"
+    advice_dir.mkdir(parents=True)
+    (advice_dir / f"calendars-{session}.json").write_text(
+        json.dumps(
+            {
+                "module": "calendars",
+                "session": session,
+                "advisor": "test",
+                # The loop validates expiry against the wall clock, not the replayed session.
+                "expires_at": "2099-01-01T00:00:00-04:00",
+                "proposals": [{"param": "time_exit", "value": "fri_noon", "rationale": "t"}],
+                "rejected": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    cache = _seed_cache(tmp_path, spot=780.0, symbol="SPY", root="SPY")
+    conn = db.connect(str(tmp_path / "paper.db"))
+    config = {
+        "symbols": ["SPY"],
+        **SPY_DIVS,
+        "advice": {
+            "enabled": True,
+            "base_book": "control",
+            "bounds": {"time_exit": {"choices": ["fri_noon"]}},
+        },
+    }
+    paper_loop.run_once(config, conn, cache_path=cache, when=_at(session, "10:05"))
+
+    attempt = conn.execute("SELECT outcome FROM dc_entry_attempts ORDER BY id DESC LIMIT 1").fetchone()
+    assert attempt["outcome"] == "ex_dividend_week"
+    decision = json.loads(
+        (managed_home / "data" / "calendars" / "advice_active.json").read_text(encoding="utf-8")
+    )
+    assert decision["day"] == session and decision["params"] == {"time_exit": "fri_noon"}
+
+
 def test_a_physical_week_past_the_declared_horizon_is_refused_not_assumed_dividend_free(tmp_path):
     cache = _seed_cache(tmp_path, spot=780.0, symbol="SPY", root="SPY")
     conn = db.connect(str(tmp_path / "paper.db"))
