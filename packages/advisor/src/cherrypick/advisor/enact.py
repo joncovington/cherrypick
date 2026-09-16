@@ -156,11 +156,59 @@ def _count_enacted(conn, session: str, modules: tuple[str, ...] | list[str]) -> 
     return scored
 
 
+def reissue(conn, module: str, session: str, *, cfg: dict | None = None) -> dict[str, Any]:
+    """Re-issue ONE module's next-session artifact from whatever is active now — the step a kill
+    takes after the nightly pass has already written the dead experiment's artifact.
+
+    Deliberately not `run`: that pass also scores the session that just ended, and scoring a
+    module mid-day (before its loop has decided) would journal a `counted` row the idempotency
+    guard then refuses to correct in the evening. This touches only the artifact.
+    """
+    if not _settings.module_enabled(module, _settings.load(cfg)):
+        return {
+            "module": module,
+            "written": False,
+            "reason": f"module_advice_disabled: advisor.modules.{module} is off",
+        }
+    return _issue(conn, module=module, session=session, target=_clock.next_session(session))
+
+
+def _retract_stale(conn, *, module: str, session: str, target: str) -> str | None:
+    """Remove an artifact this advisor wrote for `target` when the module no longer has an active
+    experiment — otherwise the loop applies a concluded experiment's params tomorrow morning.
+
+    Only an artifact stamped with this advisor's tag is touched; anything else at that path was
+    written by a hand or a tool this package does not own. Returns the retracted path, or None.
+    """
+    path = _paths.advice_path(module, target)
+    if not path.exists():
+        return None
+    try:
+        stamp = str((json.loads(path.read_text(encoding="utf-8")) or {}).get("advisor") or "")
+    except (OSError, ValueError):
+        return None
+    if not stamp.startswith(ADVISOR_TAG):
+        return None
+    path.unlink()
+    # "tag (exp-id)": journal against the experiment whose artifact this was, when it still exists.
+    experiment_id = stamp[len(ADVISOR_TAG) :].strip(" ()")
+    if experiment_id and _store.experiment(conn, experiment_id) is not None:
+        _store.journal(
+            conn,
+            experiment_id,
+            "retracted",
+            session=session,
+            detail={"target": target, "path": str(path), "reason": "experiment no longer active"},
+        )
+    return str(path)
+
+
 def _issue(conn, *, module: str, session: str, target: str) -> dict[str, Any]:
     """One module's artifact for `target`, from its (at most one) active experiment."""
     active = _store.experiments(conn, module=module, status=_experiments.STATUS_ACTIVE)
     if not active:
-        return {"module": module, "written": False, "reason": "no active experiment"}
+        retracted = _retract_stale(conn, module=module, session=session, target=target)
+        return {"module": module, "written": False, "reason": "no active experiment", "retracted": retracted}
 
     posture = _bounds.resolve(module)
     if not posture["enabled"]:

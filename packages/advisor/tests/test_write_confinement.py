@@ -82,13 +82,21 @@ def _cli(*argv: str) -> dict:
     return json.loads(proc.stdout)
 
 
-def _run_everything(raw: Path) -> None:
-    """The whole deterministic pipeline, through the CLI the script and console actually call."""
+def _run_everything(raw: Path) -> Path:
+    """The whole deterministic pipeline, through the CLI the script and console actually call.
+
+    Returns the advice artifact enact wrote, which the kill at the end RETRACTS (2026-09-15: with
+    nothing queued behind the killed experiment, tomorrow's artifact must not survive it) -- so the
+    artifact is asserted here, mid-walk, and its absence is asserted by the caller."""
     _cli("init-db")
     _cli("factpack", "--slot", "deep", "--session", SESSION)
     admitted = _cli("admit", "--slot", "deep", "--session", SESSION, "--raw", str(raw), "--model", "opus")
     assert admitted["admitted"], admitted
-    _cli("enact", "--session", SESSION)
+    enacted = _cli("enact", "--session", SESSION)
+    written = [m for m in enacted["enacted"] if m.get("written")]
+    assert written, "no advice artifact was issued -- the enact half of the walk did not happen"
+    artifact = Path(written[0]["path"])
+    assert artifact.exists()
     _cli("verdicts", "--session", SESSION)
     _cli("status", "--session", SESSION)
 
@@ -97,6 +105,7 @@ def _run_everything(raw: Path) -> None:
     conn.close()
     _cli("kill", experiment)
     _cli("dismiss", str(admitted["admitted"][-1]["proposal_id"]))
+    return artifact
 
 
 def _allowed(rel: str) -> bool:
@@ -110,7 +119,7 @@ def test_nothing_outside_the_advisors_own_two_places_is_touched(tmp_home):
     raw = _seed_home(tmp_home)
     before = _snapshot(tmp_home)
 
-    _run_everything(raw)
+    artifact = _run_everything(raw)
 
     after = _snapshot(tmp_home)
     changed = [rel for rel, stat in after.items() if before.get(rel) not in (None, stat)]
@@ -123,8 +132,9 @@ def test_nothing_outside_the_advisors_own_two_places_is_touched(tmp_home):
     assert any(rel.startswith(str(Path("data") / "advisor")) for rel in created), (
         "nothing was written at all — the snapshot would pass vacuously"
     )
-    assert any(rel.startswith(str(Path("state") / "advice")) for rel in created), (
-        "no advice artifact was issued — the enact half of the walk did not happen"
+    assert not artifact.exists(), (
+        "the kill with nothing queued must retract the dead experiment's artifact, or the loop "
+        "applies a concluded experiment's params in the morning"
     )
 
 

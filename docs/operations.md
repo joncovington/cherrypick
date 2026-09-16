@@ -72,7 +72,10 @@ tomorrow's advice artifact for every active experiment. That step runs **uncondi
 timeout, a parse failure or a missing `claude`: an AI outage must never truncate an active A/B
 sample. Failures are WARNING, never CRITICAL, and name the manual re-run command. Nothing here can
 reach a live account. The console's Advisor page is the read surface, and its two buttons (kill an
-experiment, dismiss a proposal) invoke `python -m cherrypick.advisor` as a subprocess.
+experiment, dismiss a proposal) invoke `python -m cherrypick.advisor` as a subprocess. Since
+2026-09-15 a model `kill` verdict is actioned on admission (`advisor.kill_on_verdict`): the
+experiment stops, its queued successor activates, and tomorrow's artifact is re-issued for the
+successor or retracted — the console button is for stopping one the model has not.
 
 **Rollback** (documented for one transition window): `git tag pre-supervisor` marks the last
 schtasks-driven commit. To roll back: `run.py uninstall` (new code), check out the tag, `run.py

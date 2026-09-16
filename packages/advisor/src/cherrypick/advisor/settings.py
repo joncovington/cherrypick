@@ -34,6 +34,13 @@ DEFAULTS: dict[str, Any] = {
     "experiment_sessions": 15,
     "experiment_sessions_min": 5,
     "experiment_sessions_max": 30,
+    # A model `kill` verdict is ACTIONED, not just recorded (2026-09-15): the experiment stops, the
+    # queued successor activates, and the next session's artifact is re-issued for the successor
+    # (or retracted when nothing succeeds it). Before this, three kill verdicts sat admitted for up
+    # to four sessions while the dead experiments' artifacts were enacted every morning and four
+    # successors starved at zero sessions behind them. Off restores the record-only behaviour,
+    # where only `kill` (CLI / console) stops an experiment.
+    "kill_on_verdict": True,
     # Derived from `bounds.MODULES`, the one module list (2026-09-12: this was the fourth hand-kept
     # copy, and it was missing bwb and curve -- so with no deployed `advisor.modules` entry, enact
     # silently skipped two modules that declare bounds and read for advice). Every module the

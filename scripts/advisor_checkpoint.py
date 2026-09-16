@@ -145,7 +145,10 @@ Proposal kinds:
    "rationale": "..."}
      Your reading of an experiment's numbers. Cite the specific checks in the pack's
      `qualification` / `arm_readings` — the numbers are computed for you, and a recommendation that
-     ignores them is worth nothing.
+     ignores them is worth nothing. A `kill` is ACTIONED the moment it is admitted: the experiment
+     stops, its queued successor (if any) activates, and tomorrow's artifact is issued for the
+     successor — so recommend it only when the experiment's own kill rule or the numbers call for
+     it, never as a nudge for a human. `keep` and `promote` are recorded only.
 
 If you have nothing worth proposing, return an empty `proposals` list. A quiet day honestly
 described is more useful than a proposal manufactured to fill the slot.
