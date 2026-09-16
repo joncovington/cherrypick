@@ -492,3 +492,54 @@ def test_a_recorded_but_mismatched_decision_still_beats_exit_carry(home):
     outcome = enactment.reconcile("calendars", SESSION)
     assert outcome["status"] == enactment.NOT_ENACTED
     assert "advice_disabled" in outcome["detail"]
+
+
+# --------------------------------------------------------------------------- 2026-09-16: empty scan carries
+
+
+def _earnings_artifact_and_decision(home, session, params, *, experiment_id="exp-earn-1"):
+    path = paths.advice_path("earnings", session)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "module": "earnings",
+                "session": session,
+                "advisor": f"cherrypick.advisor/enact-v1 ({experiment_id})",
+                "expires_at": f"{session}T23:59:59-04:00",
+                "proposals": [{"param": k, "value": v, "rationale": "r"} for k, v in params.items()],
+                "rejected": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    decision = home / "data" / "earnings" / "advice_active.json"
+    decision.write_text(json.dumps({"day": session, "params": params}), encoding="utf-8")
+
+
+def test_an_earnings_session_whose_scan_accepted_nothing_is_carried(home, monkeypatch):
+    """The seeded scan_log accepts AAPL on SESSION and nothing on NEXT. Through the mid-September
+    2026 lull the condor experiment spent fifteen sessions reaching six paired events, each empty
+    session counted as a test of the parameter. An applied artifact on a session the scan gave
+    nothing to is `carried`: the advice governed, and there was nothing to govern."""
+    from cherrypick.advisor import clock
+
+    params = {"iron_condor.profit_target_pct": 0.35}
+    monkeypatch.setattr(clock, "session_today", lambda: SESSION)
+    _earnings_artifact_and_decision(home, SESSION, params)
+    assert enactment.reconcile("earnings", SESSION)["status"] == enactment.ENACTED  # AAPL accepted
+
+    monkeypatch.setattr(clock, "session_today", lambda: NEXT)
+    _earnings_artifact_and_decision(home, NEXT, params)
+    out = enactment.reconcile("earnings", NEXT)
+    assert out["status"] == enactment.CARRIED
+    assert out["candidates_accepted"] == 0
+    assert "nothing to decide" in out["detail"]
+
+
+def test_a_module_without_a_scan_ledger_is_still_enacted(home):
+    """meic keeps no scan_log, so the zero-candidate rule cannot apply to it; a matching decision
+    stays `enacted` -- the rule is discovered from the schema, not from a module list."""
+    _artifact(SESSION, {"stop_trigger_ratio": 0.9})
+    _decision(home, SESSION, {"stop_trigger_ratio": 0.9})
+    assert enactment.reconcile("meic", SESSION)["status"] == enactment.ENACTED

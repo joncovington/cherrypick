@@ -13,6 +13,15 @@ module had refused entry on every attempt since it began evaluating — 62 `spre
 `no_hook_signal`, no position ever opened — for two independent reasons, both measured against the
 live 50-DTE chain:
 
+- **`quantity` 1 → 2 (2026-09-16, journaled on the ledger as `defaults.quantity`).** At one
+  contract the fixed round-trip cost (~$2.24 fee plus ~$2 modelled slippage a side) consumed the
+  whole ~$15–18 gross credit of a 1-wide spread, and the fee-adjusted floor refused every entry
+  after the single 09-02 fill. Two contracts amortise the fixed part; the floor itself is
+  unchanged, so it still refuses genuinely uneconomic entries. Width was deliberately NOT
+  changed with it: measured 2026-09-15 on the 2026-10-16 chain, credit-of-width FALLS as width
+  grows (13.0% at 1-wide, 11.75% at 2-wide, 9.3% at 3-wide) because the credit is capped by the
+  short's premium — the same ceiling argument as the 08-27 cut below. Sizing stays a human
+  decision outside the advice bounds. Books either side must never be pooled.
 - **`spread_width` 5.0 → 1.0.** A credit spread's credit can never exceed the short's own premium,
   so `credit / width` has a hard ceiling of `short_mid / width` that no wing price can lift. At the
   declared ~30-delta short (worth ~$0.88 on VXX near $18) a 5-wide spread ceilings at **17.6%**

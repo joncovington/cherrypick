@@ -81,6 +81,14 @@ before it issues the next one:
   evidence — but it is not a defect and is reported silently.
 * **not_enacted** — an artifact was issued and the loop's record disagrees with it or is absent.
   It costs the experiment nothing, because it bought it nothing.
+* **carried, the scanning case (2026-09-16, a declared break for the advisor's counter)** — the
+  loop applied the params, and its scan accepted no candidate that session, so the advice had
+  nothing to decide. Through the mid-September lull the earnings condor experiment spent fifteen
+  sessions reaching six paired events, every empty session counted as if the parameter had been
+  tested; its iron-fly successor activated 2026-09-15 into the same lull. The rule is discovered
+  from the schema — a `scan_log` table with an `outcome` column (`factpack.candidates_accepted`) —
+  so it reaches earnings and no module that keeps no scan. `sessions_run` either side of this date
+  must not be pooled for earnings experiments.
 * **no_artifact** — nothing was issued; nothing to reconcile.
 
 **`carried` exists because the first three states assumed every module decides every session, and

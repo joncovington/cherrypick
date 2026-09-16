@@ -14,7 +14,7 @@
   "_fallback_note": "allow_delta_computed_fallback (default true): when the feed's own delta is missing for a candidate short strike, the module computes one via Black-Scholes from spot/strike/DTE/IV rather than skipping the strike outright (recorded short_selected_by='delta_computed', and every occurrence logs a warning naming the symbol/book/strike). Set false to disable the fallback entirely \u2014 a missing feed delta then refuses the strike (no_delta_for_selection) instead of computing one, useful for isolating whether the fallback itself is shaping results, or while its accuracy against the feed's real deltas is still being validated.",
   "_management_note": "profit_take_pct: close both legs once the cost to close the spread has fallen to this fraction of the entry credit (0.50 = close at 50% of max profit). close_dte: nothing rides into VIX-complex-adjacent expiration week \u2014 this bounds the settlement path so physical delivery is the exception, not the plan. contango_max/hook_threshold live in regime_header below; entry_window bounds the ONE evaluation per session (position cap is one open position per book, no laddering in v1) \u2014 a plan taken later in the window still prices off that tick's own snapshot. exec_window_start gates management action until the open stabilizes; max_leg_spread_pct is the is-this-mark-actionable bar. assignment_exposure_tv: marks with the short's extrinsic under this are flagged assignment-exposed \u2014 pure telemetry, gates nothing.",
   "defaults": {
-    "quantity": 1,
+    "quantity": 2,
     "max_positions": 1,
     "dte_min": 25,
     "dte_max": 60,

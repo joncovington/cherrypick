@@ -26,6 +26,9 @@ So enactment is a first-class recorded outcome here, with three states rather th
   at 09:45, every one managed under the frozen params the artifact admitted, then held nothing --
   and the open-row read alone warned hourly until the 15:35 entry pass). Reported silently, like
   ``no_artifact``.
+* ``carried`` also covers a SCANNING module whose scan accepted nothing that session (2026-09-16):
+  the loop applied the params and had no candidate to apply them to. A declared break for the
+  counter -- see `candidates_accepted` in factpack and the package CLAUDE.md.
 * ``no_artifact`` -- nothing was issued for that module and session; there is nothing to reconcile.
 
 ``carried`` exists because the original three states assumed every module decides every session,
@@ -260,6 +263,23 @@ def reconcile(module: str, session: str) -> dict[str, Any]:
         )
         return out
     if out["decision_params"] == out["artifact_params"]:
+        # A scanning module that accepted no candidate had nothing for the advice to decide
+        # (2026-09-16, a declared break for the advisor's counter). earnings enters only when a
+        # name reports and passes its screen; through the mid-September lull the condor experiment
+        # spent fifteen sessions to reach six paired events, every empty session counted as if the
+        # parameter had been tested. Scored `carried`: the advice reached the loop and governed a
+        # session with nothing in it, which costs the experiment nothing. Modules with no scan
+        # ledger are untouched -- `candidates_accepted` answers None for them.
+        if out["artifact_params"]:
+            accepted = _factpack.candidates_accepted(module, session)
+            if accepted == 0:
+                out["status"] = CARRIED
+                out["candidates_accepted"] = 0
+                out["detail"] = (
+                    "the loop applied the artifact's admitted params, but its scan accepted no "
+                    "candidate this session -- the advice had nothing to decide"
+                )
+                return out
         out["status"] = ENACTED
         out["detail"] = (
             "reject-all artifact, and the loop recorded the baseline it implies"
