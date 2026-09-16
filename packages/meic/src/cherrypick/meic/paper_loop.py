@@ -791,7 +791,14 @@ def _advice_profiles(cfg, today, *, persist=True):
     dbase = decision.get("base_profile") or base
     base_def = registry.get(dbase)
     if decision.get("params") and isinstance(base_def, dict):
-        out[f"advised:{dbase}"] = {**base_def, **decision["params"]}
+        # `experiment_id` is not a trading parameter: it rides on the synthetic def so the fill
+        # row can copy it (paper.synthetic_entry_fill), the same way flies' arm overlay carries
+        # its `arm`. Registry profiles never have it, so a control row is stamped None.
+        out[f"advised:{dbase}"] = {
+            **base_def,
+            **decision["params"],
+            "experiment_id": decision.get("experiment_id"),
+        }
     for tag in _open_advised_tags():
         if tag in out:
             continue

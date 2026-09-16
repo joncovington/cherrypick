@@ -245,9 +245,15 @@ def test_status_names_a_base_window_whose_chain_is_dated_before_the_session(home
     cache = _config.cache_path({})
     cache.parent.mkdir(parents=True, exist_ok=True)
     conn = streamcache.connect(cache)
-    streamcache.upsert_symbol_health(conn, "SPX", chain_loaded_at="x", chain_fetch_error=None, chain_expiration="2026-09-09")
-    streamcache.upsert_symbol_health(conn, "XSP", chain_loaded_at="x", chain_fetch_error=None, chain_expiration="2026-09-10")
-    streamcache.upsert_symbol_health(conn, "SPX@2026-09-11", chain_loaded_at="x", chain_fetch_error=None, chain_expiration="2026-09-11")
+    streamcache.upsert_symbol_health(
+        conn, "SPX", chain_loaded_at="x", chain_fetch_error=None, chain_expiration="2026-09-09"
+    )
+    streamcache.upsert_symbol_health(
+        conn, "XSP", chain_loaded_at="x", chain_fetch_error=None, chain_expiration="2026-09-10"
+    )
+    streamcache.upsert_symbol_health(
+        conn, "SPX@2026-09-11", chain_loaded_at="x", chain_fetch_error=None, chain_expiration="2026-09-11"
+    )
     conn.close()
 
     monkeypatch.setattr(_daemon, "_session_date", lambda: "2026-09-10")

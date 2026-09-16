@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+import pytest
+
 from cherrypick.meic import regime  # noqa: E402
 
 BUCKET_KEYS = tuple(f"{d}_bucket" for d in regime.DIMENSIONS)
@@ -72,8 +74,53 @@ def test_vol_intraday_is_distinct_from_vol_realized():
     assert out["vol_intraday_bucket"] == "high"
 
 
-def _ok_gex(flip, spot):
-    return {"gex": {"ok": True, "gamma_flip": flip, "spot": spot}, "underlying_price": spot}
+def _ok_gex(flip, spot, positive=None):
+    gex = {"ok": True, "gamma_flip": flip, "spot": spot}
+    if positive is not None:
+        gex["gex_positive"] = positive
+    return {"gex": gex, "underlying_price": spot}
+
+
+def test_gex_negative_window_with_no_flip_tags_negative_not_unknown():
+    """The 2026-09-15 shape: net GEX negative end to end, so the cumulative sum never crosses zero
+    and there is no flip -- 492 of 492 entries tagged `unknown` while the gate read the sign
+    correctly. The sign flag decides; the missing flip only costs the distance."""
+    out = regime.classify_regime(
+        {"gex": {"ok": True, "gamma_flip": None, "spot": 7580.0, "gex_positive": False}}, {}
+    )
+    assert out["gex_bucket"] == "negative"
+    assert out["gex_value"] is None
+
+
+def test_gex_positive_window_with_no_flip_is_deep_positive():
+    out = regime.classify_regime(
+        {"gex": {"ok": True, "gamma_flip": None, "spot": 7580.0, "gex_positive": True}}, {}
+    )
+    assert out["gex_bucket"] == "deep_positive"
+    assert out["gex_value"] is None
+
+
+def test_gex_sign_flag_wins_over_flip_side_when_far_from_it():
+    # Net negative with spot ABOVE an interpolated crossing (a multi-crossing profile): the gate
+    # refuses this tick, so the tag must not call it positive territory.
+    out = regime.classify_regime(_ok_gex(7000.0, 7100.0, positive=False), {})
+    assert out["gex_bucket"] == "negative"
+    assert out["gex_value"] == pytest.approx((7100.0 - 7000.0) / 7100.0)
+    # ...and near the flip the magnitude read still applies on either side.
+    assert regime.classify_regime(_ok_gex(7098.0, 7100.0, positive=False), {})["gex_bucket"] == "near_flip"
+
+
+def test_market_regime_columns_carry_the_sign_flag():
+    cols = regime.market_regime_columns(
+        {
+            "gex": {"ok": True, "gamma_flip": None, "spot": 7580.0, "gex_positive": False},
+            "underlying_price": 7580.0,
+        },
+        {},
+    )
+    assert cols["gex_positive"] == 0
+    assert cols["gex_bucket"] == "negative"
+    assert regime.market_regime_columns({"gex": {"ok": False}}, {})["gex_positive"] is None
 
 
 def test_gex_deep_positive_near_flip_and_negative():

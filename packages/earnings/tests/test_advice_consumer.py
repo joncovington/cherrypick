@@ -154,10 +154,12 @@ def test_a_replay_does_not_fix_the_live_days_decision(homes):
 
 
 def test_the_twin_is_identical_in_everything_but_its_params():
-    twin = advice.twin_spec(SAVE_SPEC, {"profit_target_pct": 0.3})
+    twin = advice.twin_spec(SAVE_SPEC, {"profit_target_pct": 0.3}, experiment_id="exp-2026-08-31-earnings-1")
     assert twin["profile"] == "advised:strat_test:iron_fly"
     assert twin["order_id"].startswith("advised-")
     assert json.loads(twin["advice_params"]) == {"profit_target_pct": 0.3}
+    assert twin["experiment_id"] == "exp-2026-08-31-earnings-1"
+    assert "experiment_id" not in SAVE_SPEC  # the control row is nobody's experiment
     # Every fill field is the control's, byte for byte — the comparison isolates management.
     for field in (
         "legs_json",

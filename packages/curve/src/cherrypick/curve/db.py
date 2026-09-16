@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS curve_positions (
     entry_cost          REAL,
     entry_slippage      REAL,
     advice_params       TEXT,
+    experiment_id       TEXT,
     exposure_ticks      INTEGER,
     status              TEXT NOT NULL DEFAULT 'open',
     exit_reason         TEXT,
@@ -264,7 +265,9 @@ CREATE TABLE IF NOT EXISTS measurement_breaks (
 
 # Columns added after the first release, per table. Empty at birth.
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
-    "curve_positions": {},
+    # The advisor experiment an advised row was entered under (2026-09-16), beside the params
+    # it froze -- `advised:<base>` names a book, and every experiment on that base reuses it.
+    "curve_positions": {"experiment_id": "TEXT"},
     "curve_legs": {},
     "curve_marks": {},
     "curve_assignments": {},

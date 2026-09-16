@@ -276,6 +276,7 @@ def _unsettled_today(conn, day: str) -> bool:
 # --------------------------------------------------------------------------- entry
 def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: str) -> int:
     books, advice_params = session_books(config, day)
+    experiment_id = advice_decision(config, day).get("experiment_id") if advice_params else None
     defaults = config.get("defaults") or {}
     max_positions = int(defaults.get("max_positions", 1))
     symbol = _symbol(config)
@@ -378,7 +379,11 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             # Planned from the base book the tag names, never from control regardless.
             plans[b] = engine.plan_entry(
                 snapshot,
-                {**management.PARAM_DEFAULTS, **engine.merged_params(config, base or "control"), **advice_params},
+                {
+                    **management.PARAM_DEFAULTS,
+                    **engine.merged_params(config, base or "control"),
+                    **advice_params,
+                },
                 config,
             )
         elif base == "hook":
@@ -424,7 +429,14 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                 plan["short_strike"],
             )
         opened = bookmod.enter_position(
-            conn, plan, config, b, entry_session=day, advice_params=advice_params, regime=today_regime
+            conn,
+            plan,
+            config,
+            b,
+            entry_session=day,
+            advice_params=advice_params,
+            regime=today_regime,
+            experiment_id=experiment_id,
         )
         if opened is None:
             continue

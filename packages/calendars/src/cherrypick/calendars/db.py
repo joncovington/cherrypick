@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS dc_positions (
     entry_term_structure     REAL,
     entry_context            TEXT,
     advice_params            TEXT,
+    experiment_id            TEXT,
     status                   TEXT NOT NULL DEFAULT 'open',
     exit_reason              TEXT,
     closed_at                TEXT,
@@ -301,7 +302,9 @@ CREATE TABLE IF NOT EXISTS measurement_breaks (
 # schema so the first addition is an entry here, never a bare edit to _SCHEMA (which CREATE TABLE
 # IF NOT EXISTS would silently ignore on an existing file).
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
-    "dc_positions": {},
+    # The advisor experiment an advised row was entered under (2026-09-16), beside the params it
+    # froze -- `advised:<base>` names a book, and every experiment on that base reuses the tag.
+    "dc_positions": {"experiment_id": "TEXT"},
     "dc_legs": {},
     "dc_marks": {},
     # New table rather than new columns, so nothing to migrate — `CREATE TABLE IF NOT EXISTS` in

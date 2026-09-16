@@ -485,8 +485,12 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
             quotes_rejected=stats["rejected"],
             underlying_price=snapshot["underlying_price"],
         )
+        # The session's experiment, stamped on the advised arm's rows only (the shared rule).
+        experiment_id = advice_decision(config, day).get("experiment_id")
         for arm in arms:
-            outcome = bookmod.process_snapshot(snapshot, config, conn, arm)
+            outcome = bookmod.process_snapshot(
+                snapshot, config, conn, arm, experiment_id=_core_advice.stamp_for(arm, experiment_id)
+            )
             for action in outcome["actions"]:
                 if action["action"] not in ("entry_skipped", "completion_skipped"):
                     _log(f"  [{arm}] {action}")

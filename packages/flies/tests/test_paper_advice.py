@@ -71,7 +71,7 @@ def config(**advice):
     }
 
 
-def _write_artifact(home: Path, proposals, session=DAY, hours=12):
+def _write_artifact(home: Path, proposals, session=DAY, hours=12, experiment_id=None):
     core_advice.write(
         core_advice.advice_path(home / "state", "flies", session),
         "flies",
@@ -79,6 +79,7 @@ def _write_artifact(home: Path, proposals, session=DAY, hours=12):
         proposals,
         advisor="test",
         expires_at=(datetime.now(UTC) + timedelta(hours=hours)).isoformat(),
+        experiment_id=experiment_id,
     )
 
 
@@ -168,11 +169,14 @@ def test_a_new_day_re_derives_its_own_decision(managed_home, conn):
 
 
 def test_an_advised_book_is_entered_and_tagged_as_its_own_arm(managed_home, chain, conn):
-    _write_artifact(managed_home, _proposal(0.15))
+    _write_artifact(managed_home, _proposal(0.15), experiment_id="exp-2026-09-14-flies-1")
     paper_loop.run_once(config(), conn, cache_path=str(chain), when=at(12))
 
     arms = [r[0] for r in conn.execute("SELECT DISTINCT arm FROM fly_positions").fetchall()]
     assert sorted(arms) == ["advised:control", "control"]
+    # The experiment rides on the advised arm's rows and on nothing else (2026-09-16).
+    stamped = dict(conn.execute("SELECT DISTINCT arm, experiment_id FROM fly_positions").fetchall())
+    assert stamped == {"advised:control": "exp-2026-09-14-flies-1", "control": None}
     # An advised arm is a new book, not a measurement break in an existing one: control's own rows
     # are untouched and stay poolable with every session before this one.
     books = [r[0] for r in conn.execute("SELECT DISTINCT arm FROM fly_books").fetchall()]

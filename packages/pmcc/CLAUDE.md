@@ -54,6 +54,8 @@ One book, plus the advisor's synthetic twin — a deliberate simplification from
   one thing currently worth advising is `tv_managed_exit`/`tv_close_threshold` — flipping the exit
   rule back to the pre-redesign early-tv-exhaustion close, as a paper A/B against hold-to-expiry.
 
+**Every advised row also carries `experiment_id` (2026-09-16)** — the advisor experiment the day's artifact named, read from the session decision and stamped through the one shared rule (`cherrypick.core.advice.stamp_for`: advised books only, never the control). The `advised:<base>` tag names a book, and every experiment on that base reuses it in turn; the stamp is what lets the ledger, the advisor's verdicts and the console's paired cards tell one experiment's rows from the next's without inferring it from dates. Rows written before the column existed read `NULL` and are treated as unstamped history, never rewritten.
+
 There is no more multi-book fill pairing to reason about: with one book plus its advised twin, every
 `control` row is directly comparable to every other `control` row.
 

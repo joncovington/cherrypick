@@ -15,6 +15,8 @@ Output: {"ok": true, "schema": ..., "n_records": N,
          "groups": {tag: {"reading": <calibration_reading>,
                            "session_nets": [[session, net], ...],
                            "trade_nets": [net, ...]}}}
+where `tag` is the record's profile, or `<profile>@<experiment_id>` for an advised row stamped
+with the experiment it ran under (see cmd_read).
 An unknown schema or an unreadable db returns {"ok": false, "error": ...} rather than a traceback
 crossing the subprocess boundary -- the console renders `error` on the card head, per its own
 "never silent" data rule.
@@ -53,7 +55,17 @@ def cmd_read(args) -> dict:
             "trade_nets": [round(r["net_pnl"], 2) for r in group],
         }
 
-    groups = compare_profiles(records, tag_key="profile", summarize=summarize)
+    # One group per EXPERIMENT for stamped advised rows (2026-09-16): the `advised:<base>` tag
+    # names a book, and every experiment on that base reuses it in turn, so grouping by tag
+    # alone pooled three experiments' rows into one line. Rows carrying an experiment_id group
+    # under `<tag>@<experiment_id>`; rows written before the stamp existed (experiment_id None)
+    # stay under the bare tag, which the console labels as unstamped history rather than
+    # inferring their experiment from dates. Display grouping only: `profile` on the record is
+    # untouched, so calibrate/report/verdicts see exactly what they always did.
+    for r in records:
+        exp = r.get("experiment_id")
+        r["group_tag"] = f"{r['profile']}@{exp}" if exp else r["profile"]
+    groups = compare_profiles(records, tag_key="group_tag", summarize=summarize)
     return {"ok": True, "schema": args.schema, "n_records": len(records), "groups": groups}
 
 

@@ -345,6 +345,33 @@ know:
   posture block reads `null` with `config_read: false`, never "live trading off". The regime block
   is read at the session's close rather than at wall-clock now, so a pack rebuilt for a past date
   describes that date.
+- **The regime block is read AT THE CLOSE, and MEIC's regime is a distribution (2026-09-16).**
+  Two defects the model reported nightly as one "wiring gap". The canonical regime read clamped to
+  end-of-day (23:59:59) while the recorder's last sample lands seconds before the bell and the
+  deep slot runs at 17:00, so every nightly read was past the 15-minute staleness window and every
+  deep pack carried the VIX-only fallback — structural, not an outage. It now clamps to the
+  calendar's RTH close (`clock.rth_close_iso`, 13:00 on a half day), 25 seconds old at 17:00.
+  Separately, `latest_regime` handed the model MEIC's final `iteration_regime` row, and for a 0DTE
+  module that is the post-bell tick where the expiring chain finally shows a flip: on 09-15 the
+  gex tag read one way for 376 of 384 ticks and the opposite way for the last 8, and the pack
+  reported the 8. `regime_session` replaces it: bucket counts over 09:30–close ticks only,
+  `post_close_ticks` counted and excluded, the gex bucket re-derived from the sign flag beside it
+  where the stored tag reads `unknown` (see meic's CLAUDE.md for the month of rows that covers).
+- **An experiment's rows are stamped, and its verdict window has a far end (2026-09-16).** The
+  `advised:<base>` tag names a BOOK, and every experiment on that base reuses it in turn — three
+  meic experiments shared one `advised:control` line from 08-26 to 09-15, and every read surface
+  attributed the whole line to whichever was most recent. Two changes, neither to the tag (a new
+  tag per experiment would be a new arm, a measurement break, and would break the pairing every
+  consumer does on the bare tag): the artifact carries `experiment_id`, the session decision
+  carries it, and each module stamps it on the advised rows it writes (`core.advice.stamp_for`,
+  never a control row); and `verdicts.reading_pair` now takes `end` and `experiment_id` —
+  `for_experiment` passes the concluding session from the journal (inclusive: the successor's
+  first artifact targets the next session) and keeps on the advised side only rows stamped with
+  this experiment or unstamped, so a closing verdict attached after a successor has started can
+  no longer pool the successor's rows. The console's performance slide pairs each stamped
+  experiment separately (`core.metrics` groups them as `<tag>@<experiment_id>`) and shows
+  pre-stamp rows as one pair flagged unstamped, pointing at this page's stored verdicts for that
+  history rather than inferring experiments from dates in a second place.
 - **`settings.DEFAULTS["modules"]` derives from `bounds.MODULES`** — it was the fourth hand-kept
   copy the 2026-08-26 note said had been eliminated, and it was missing bwb and curve. bwb and
   curve now plan their advised twin from the base book its tag names rather than from control

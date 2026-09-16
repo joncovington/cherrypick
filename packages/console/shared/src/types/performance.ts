@@ -42,8 +42,15 @@ export interface HeldBackRow {
 }
 
 export interface AdvisedPair {
+  /** The performance group's tag: the bare `advised:<base>` for rows written before the
+   * experiment stamp existed (2026-09-16), or `advised:<base>@<experiment id>` for rows stamped
+   * with the experiment they ran under -- `core.metrics` groups stamped advised rows per
+   * experiment, so one twin tag becomes one pair per experiment here. */
   advised: string;
   base: string;
+  /** True for the pre-stamp group: its rows may span several experiments and the pair cannot
+   * say which -- the Advisor page's stored verdicts are the per-experiment read for that history. */
+  unstamped: boolean;
   /** Sessions BOTH books actually recorded a net for, in this read's window -- not the advised
    * book's trade count and not the experiment's `sessions_run` (which counts a loop APPLYING the
    * artifact, not a session with paired data to compare). */

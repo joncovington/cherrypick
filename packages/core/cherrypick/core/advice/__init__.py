@@ -41,6 +41,7 @@ Pure stdlib, no network, no broker.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -145,6 +146,43 @@ def validate(
     return {"ok": True, "reason": None, "proposals": admitted, "rejected": []}
 
 
+_STAMP_EXPERIMENT = re.compile(r"\((exp-[^)]+)\)\s*$")
+
+
+def artifact_experiment_id(artifact: Any) -> str | None:
+    """The experiment an artifact was issued for, or None for one that names none.
+
+    Read from the explicit `experiment_id` field (written since 2026-09-16), falling back to the
+    id the advisor has always stamped in parentheses at the end of `advisor` -- so an artifact
+    written before the field existed still attributes. This is the identity a module stamps on
+    the rows its advised book writes, which is what lets a ledger tell one experiment's rows from
+    the next's under the same `advised:<base>` tag."""
+    if not isinstance(artifact, dict):
+        return None
+    explicit = artifact.get("experiment_id")
+    if isinstance(explicit, str) and explicit:
+        return explicit
+    stamp = artifact.get("advisor")
+    if isinstance(stamp, str):
+        m = _STAMP_EXPERIMENT.search(stamp)
+        if m:
+            return m.group(1)
+    return None
+
+
+ADVISED_PREFIX = "advised:"
+
+
+def stamp_for(book: str | None, experiment_id: str | None) -> str | None:
+    """The experiment id a row should carry: the session's, when the row belongs to an advised
+    book, else None. One rule for every module rather than seven inline conditions -- a control
+    row stamped with an experiment would attribute the baseline to the thing it is the baseline
+    for."""
+    if experiment_id and isinstance(book, str) and book.startswith(ADVISED_PREFIX):
+        return experiment_id
+    return None
+
+
 def write(
     path: Path | str,
     module: str,
@@ -153,6 +191,7 @@ def write(
     advisor: str,
     expires_at: str,
     rejected: list[dict[str, Any]] | None = None,
+    experiment_id: str | None = None,
 ) -> Path:
     """Write the artifact atomically (tmp + replace) — a loop must never read a half-written file."""
     path = Path(path)
@@ -162,6 +201,7 @@ def write(
         "session": session,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "advisor": advisor,
+        "experiment_id": experiment_id,
         "expires_at": expires_at,
         "proposals": proposals,
         "rejected": rejected or [],
@@ -185,7 +225,11 @@ def load(
         artifact = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         return {"ok": False, "reason": f"unreadable: {exc}", "proposals": [], "rejected": []}
-    return validate(artifact, bounds, session, now=now)
+    out = validate(artifact, bounds, session, now=now)
+    # The experiment rides on the result whether or not the artifact was admitted: a rejected
+    # artifact still cost that experiment a session, and the decision record should say whose.
+    out["experiment_id"] = artifact_experiment_id(artifact)
+    return out
 
 
 def disabled_reason(config: dict[str, Any]) -> str | None:
@@ -282,6 +326,11 @@ def session_decision(
             "derived_at": datetime.now(timezone.utc).isoformat(),
             "proposals": result["proposals"],
             "rejected": result.get("rejected") or [],
+            # Which experiment the day ran under (2026-09-16). Stamped by the module on every row
+            # its advised book writes, so the ledger can attribute rows to an experiment directly
+            # rather than by date window -- a tag names a book, not an experiment, and the same
+            # `advised:<base>` tag serves every experiment on that base in turn.
+            "experiment_id": result.get("experiment_id"),
         }
         if log is not None:
             for proposal in result["proposals"]:
@@ -298,6 +347,7 @@ def session_decision(
             "params": None,
             "reason": off,
             "derived_at": datetime.now(timezone.utc).isoformat(),
+            "experiment_id": None,
         }
 
     # `off` decisions are deliberately not recorded: see the docstring. `derived_at` rides on the

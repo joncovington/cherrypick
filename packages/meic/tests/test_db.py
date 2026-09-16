@@ -528,6 +528,25 @@ def test_save_iteration_regime_records_a_tick_that_entered_nothing(db_path):
     assert row["gex_bucket"] is None
 
 
+def test_save_iteration_regime_adds_the_sign_column_to_an_older_table(db_path):
+    """A deployed table that predates gex_positive gets the column on the next save rather than
+    refusing the row -- the table is created on demand, so its additive migration lives there."""
+    conn = sqlite3.connect(db_path)
+    conn.execute("DROP TABLE iteration_regime")  # init_db built the current shape; rebuild the old one
+    old_ddl = " ".join(line for line in db._ITERATION_REGIME_DDL.splitlines() if "gex_positive" not in line)
+    conn.execute(old_ddl)
+    conn.commit()
+    conn.close()
+
+    _save_iteration(db_path, regime=json.dumps({"gex_bucket": "negative", "gex_positive": 0}))
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT gex_bucket, gex_positive FROM iteration_regime").fetchone()
+    conn.close()
+    assert row["gex_bucket"] == "negative" and row["gex_positive"] == 0
+
+
 def test_save_iteration_regime_is_append_only(db_path):
     """Two ticks in the same minute are two observations. Collapsing them would weight a
     slow-polling stretch the same as a fast one."""
@@ -596,7 +615,9 @@ def test_iteration_regime_fields_track_the_market_dimensions():
     from cherrypick.meic import regime
 
     expected = {f"{d}_{s}" for d in regime.MARKET_DIMENSIONS for s in ("bucket", "value")}
-    assert set(db._ITERATION_REGIME_FIELDS) == expected
+    # ...plus the columns added beside the dimensions, each of which must also be in the on-demand
+    # migration so an older table gets it.
+    assert set(db._ITERATION_REGIME_FIELDS) == expected | set(db._ITERATION_REGIME_ADDED_COLUMNS)
 
 
 def test_cmd_save_trade_stamps_the_current_era(db_path):

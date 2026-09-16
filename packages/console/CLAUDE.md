@@ -324,6 +324,19 @@ changes as safe, and it is the only check that sees past the fallback below.
   **This package contains no order-placement code paths** — staged tickets are dry-run records in the
   console's own store. It never touches any module's `enable_live_trading`.
 
+## Advised pairs are per experiment (2026-09-16)
+
+The performance slide's paired card (`readers/pairs.ts`, `PairedABCard`) used to pair the whole
+`advised:<base>` group against its control and label it with whichever experiment on that base
+was most recent — but the tag names a book, and every experiment on that base reuses it in turn,
+so three meic experiments read as one line under one id. `core.metrics` now groups an advised row
+stamped with its experiment under `advised:<base>@<experiment id>`, and each such group is its
+own pair, looked up in `advisor.db` by that id (the stamp stays the attribution even when the
+store has no row). Rows written before the stamp existed stay under the bare tag and pair once,
+flagged `unstamped` on the card; the Advisor page's stored verdicts are the per-experiment read
+for that history. Deliberately no date inference here — that would be a second attribution rule
+free to drift from the advisor's own.
+
 ## Suite guardrails (apply here too)
 
 Instruction files hold no code; account numbers masked to `****1234`; portable paths only

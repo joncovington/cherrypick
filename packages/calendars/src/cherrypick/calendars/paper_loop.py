@@ -499,8 +499,11 @@ def _try_entry(
     # would have governed; the week had nothing to govern. Recording that is what lets the
     # advisor tell "refused with the advice in hand" from "the artifact never reached the loop".
     advice_params: dict | None = None
+    experiment_id: str | None = None
     if books is None:
         books, advice_params = session_books(config, day)
+        if advice_params:
+            experiment_id = advice_decision(config, day).get("experiment_id")
     else:
         advice_params = None  # no advised twin for a non-default regime (see the arm's doc)
     if style is None:
@@ -608,7 +611,9 @@ def _try_entry(
         return 0
 
     plan = planned["plan"]
-    opened = bookmod.enter_week(conn, plan, config, books, week=week, advice_params=advice_params)
+    opened = bookmod.enter_week(
+        conn, plan, config, books, week=week, advice_params=advice_params, experiment_id=experiment_id
+    )
     if opened:
         db.record_entry_attempt(
             conn,

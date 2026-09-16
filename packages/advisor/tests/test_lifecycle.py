@@ -552,9 +552,7 @@ def test_a_verdict_recommendation_sits_on_a_fresh_computation_every_time(home, c
         conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}
     )
     eid = admitted["experiment_id"]
-    experiments.record_verdict_recommendation(
-        conn, session=SESSION, experiment_id=eid, recommendation="keep"
-    )
+    experiments.record_verdict_recommendation(conn, session=SESSION, experiment_id=eid, recommendation="keep")
     first = json.loads(store.experiment(conn, eid)["verdict_json"])
     assert first["sessions_run"] == 0
 
@@ -582,9 +580,7 @@ def test_the_same_reply_admitted_twice_is_one_experiment(home, conn):
     )
     assert third["admitted"][0]["experiment_id"] != a and third["admitted"][0]["status"] == "queued"
     # A direct call keeps the plain behaviour: two admissions are two experiments, cap permitting.
-    direct = experiments.admit_spec(
-        conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}
-    )
+    direct = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9})
     assert direct["experiment_id"] != a
 
 

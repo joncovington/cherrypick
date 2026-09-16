@@ -237,6 +237,7 @@ CREATE TABLE IF NOT EXISTS iteration_regime (
     vol_intraday_value   REAL,
     gex_bucket           TEXT,
     gex_value            REAL,
+    gex_positive         INTEGER,
     trend_bucket         TEXT,
     trend_value          REAL,
     created_at           TEXT NOT NULL
@@ -415,6 +416,10 @@ _ADDED_TRADE_COLUMNS = {
     # reason. Stamped 'book' on every pre-existing row the ONE time this column is added (see
     # _migrate below); the SQL default handles every row inserted after.
     "era": "TEXT DEFAULT 'sample'",
+    # The advisor experiment an advised profile's row was entered under (2026-09-16): the
+    # synthetic `advised:<base>` def carries it (paper_loop._advice_profiles) and the fill row
+    # copies it, so one twin tag can be split back into the experiments that used it in turn.
+    "experiment_id": "TEXT",
 }
 
 
@@ -1350,6 +1355,7 @@ CREATE TABLE IF NOT EXISTS iteration_regime (
     vol_intraday_value   REAL,
     gex_bucket           TEXT,
     gex_value            REAL,
+    gex_positive         INTEGER,
     trend_bucket         TEXT,
     trend_value          REAL,
     created_at           TEXT NOT NULL
@@ -1370,7 +1376,16 @@ def _regime_market_dimensions() -> tuple:
 # dimension there cannot leave this silently writing NULL for it.
 _ITERATION_REGIME_FIELDS = tuple(
     f"{dim}_{suffix}" for dim in _regime_market_dimensions() for suffix in ("bucket", "value")
-)
+) + ("gex_positive",)
+
+# Columns added to iteration_regime after tables already existed in deployed homes. The table is
+# created on demand by cmd_save_iteration_regime rather than by init_db's migration, so the
+# additive step lives there too: a checkout that never re-ran init_db still gets the column.
+_ITERATION_REGIME_ADDED_COLUMNS = {
+    # The gate's own sign flag beside the bucket (2026-09-16), so a tag can be re-derived from
+    # history -- see regime._classify_gex for the month of `unknown` this exists to end.
+    "gex_positive": "INTEGER",
+}
 
 
 def cmd_save_iteration_regime(args):
@@ -1415,6 +1430,10 @@ def cmd_save_iteration_regime(args):
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_iteration_regime_date ON iteration_regime (loop_date, symbol)"
     )
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(iteration_regime)")}
+    for column, sql_type in _ITERATION_REGIME_ADDED_COLUMNS.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE iteration_regime ADD COLUMN {column} {sql_type}")
     conn.execute(
         f"INSERT INTO iteration_regime ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",
         list(row.values()),

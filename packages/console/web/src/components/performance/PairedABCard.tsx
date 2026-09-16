@@ -117,6 +117,13 @@ export function PairedABCard({
       <p className="muted" style={{ fontSize: 11, marginBottom: "0.4rem" }}>
         {pair.sessionsPaired} session{pair.sessionsPaired === 1 ? "" : "s"} paired
         {pair.experimentId !== null && <> · {pair.experimentId}</>}
+        {pair.unstamped && (
+          <>
+            {" "}
+            · rows written before the experiment stamp (2026-09-16) — may span several experiments; the
+            Advisor page's verdicts are the per-experiment read for this history
+          </>
+        )}
       </p>
       {/* Always mounted, even at sessionsPaired=0 -- the chart mount effect runs once on mount
           (deps: []), so a host div that only appears once sessionsPaired later goes positive

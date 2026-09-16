@@ -90,6 +90,8 @@ def reading_pair(
     strategy: str | None = None,
     rule: dict | None = None,
     start: str | None = None,
+    end: str | None = None,
+    experiment_id: str | None = None,
 ) -> dict[str, Any]:
     """The advised book beside its control, with the qualification checks for both.
 
@@ -103,11 +105,27 @@ def reading_pair(
     experiment's sessions, while the base pooled its entire history — for flies that was 23 sessions
     reaching back into the XSP era. `for_experiment` passes the experiment's own first session, so
     the pair really does compare the same window.
+
+    `end` bounds both sides to sessions on/before it (2026-09-16). The window used to be open-ended,
+    and a verdict is recomputed whenever a recommendation is attached -- so a closing verdict on an
+    expired experiment, attached after its successor had started, would have pooled the successor's
+    rows into the old experiment's advised book. `for_experiment` passes the concluding session.
+
+    `experiment_id` keeps, on the ADVISED side only, rows stamped with this experiment or with no
+    stamp at all (rows written before the stamp existed, 2026-09-16). One `advised:<base>` tag serves
+    every experiment on that base in turn; the stamp is what tells them apart inside a shared window.
     """
     tag_advised = _bounds.advised_tag(module, base_profile, strategy)
     tag_base = f"{base_profile}:{strategy}" if (module == "earnings" and strategy) else base_profile
 
-    every = readings(module, start=start)
+    records = closed_records(module, start=start, end=end)
+    if experiment_id:
+        records = [
+            r
+            for r in records
+            if r.get("profile") != tag_advised or r.get("experiment_id") in (None, experiment_id)
+        ]
+    every = compare_profiles(records, tag_key="profile", summarize=calibration_reading)
     advised, base = every.get(tag_advised), every.get(tag_base)
     qualified = qualify_readings(
         {t: r for t, r in ((tag_advised, advised), (tag_base, base)) if r}, rule=rule
@@ -136,6 +154,30 @@ def _underpowered(reading: dict | None, thresholds: dict) -> bool:
     ]
 
 
+def concluded_session(experiment: dict) -> str | None:
+    """The last session an expired or killed experiment's advice could have governed, from its
+    journal; None while it is still running (the window stays open at the near end). Read from
+    the `experiment_events` row that concluded it rather than a column, so a store written before
+    this existed answers the same way. The concluding session itself is INCLUDED: the successor's
+    first artifact targets the next session, so rows entered on the kill day are still this one's."""
+    if experiment.get("status") not in ("expired", "killed"):
+        return None
+    try:
+        from cherrypick.advisor import store as _store
+
+        conn = _store.connect()
+        try:
+            events = _store.events(conn, experiment["id"])
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 — an unreadable journal degrades to the open-ended window
+        return None
+    for event in reversed(events):
+        if event.get("event") in ("expired", "killed") and event.get("session"):
+            return str(event["session"])
+    return None
+
+
 def for_experiment(experiment: dict[str, Any], *, rule: dict | None = None) -> dict[str, Any]:
     """The deterministic verdict body for one experiment row, ready to be stored on it.
 
@@ -156,8 +198,14 @@ def for_experiment(experiment: dict[str, Any], *, rule: dict | None = None) -> d
         start = _clock.next_session(created) if created else None
     except Exception:  # noqa: BLE001 — an unparseable date must degrade to unwindowed, not crash a verdict
         start = created
+    end = concluded_session(experiment)
     strategies = _bounds.strategies_in(module, params) or [None]
-    pairs = [reading_pair(module, base, strategy=s, rule=rule, start=start) for s in strategies]
+    pairs = [
+        reading_pair(
+            module, base, strategy=s, rule=rule, start=start, end=end, experiment_id=experiment.get("id")
+        )
+        for s in strategies
+    ]
 
     return {
         "experiment_id": experiment["id"],

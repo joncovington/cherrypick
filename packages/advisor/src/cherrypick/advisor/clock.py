@@ -64,6 +64,25 @@ def sessions_between(start: str, end: str, *, cap: int) -> int:
     return n
 
 
+def rth_close_hhmm(session: str) -> str:
+    """The session's regular-hours close as HH:MM ET, from the suite calendar: 13:00 on a declared
+    half day, 16:00 otherwise."""
+    return _calendar.session_close_hhmm(date.fromisoformat(session))
+
+
+def rth_close_iso(session: str) -> str:
+    """The session's regular-hours close as an ET timestamp -- the moment a read of "the market at
+    the close" should be taken at. Distinct from `end_of_session_iso` (23:59:59, an artifact's
+    expiry): the regime recorder's last sample lands seconds before the bell, so a read clamped to
+    end-of-day is hours stale by construction while one clamped here is seconds old."""
+    hh, mm = (int(x) for x in rth_close_hhmm(session).split(":"))
+    return (
+        datetime.combine(date.fromisoformat(session), datetime.min.time(), tzinfo=ET)
+        .replace(hour=hh, minute=mm)
+        .isoformat()
+    )
+
+
 def end_of_session_iso(session: str) -> str:
     """23:59:59 ET on the target session — an advice artifact's `expires_at`.
 

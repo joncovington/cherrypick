@@ -110,7 +110,9 @@ def test_monday_through_thursday_target_that_weeks_friday_and_friday_the_next():
     25th. `dte_target` does not enter into it -- it is reserved for the backlog experiment."""
     from datetime import date
 
-    picks = {d: clock.target_expiration(date(2026, 9, d), {"dte_target": 7})["expiration"] for d in range(14, 19)}
+    picks = {
+        d: clock.target_expiration(date(2026, 9, d), {"dte_target": 7})["expiration"] for d in range(14, 19)
+    }
     assert picks == {14: "2026-09-18", 15: "2026-09-18", 16: "2026-09-18", 17: "2026-09-18", 18: "2026-09-25"}
     # And the week before, matching what the ledger recorded for the 4th through the 10th.
     picks = {d: clock.target_expiration(date(2026, 9, d))["expiration"] for d in (4, 8, 9, 10)}

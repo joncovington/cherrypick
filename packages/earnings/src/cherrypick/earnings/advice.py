@@ -95,8 +95,10 @@ def advised_book(book: str) -> str:
     return f"{ADVISED_PREFIX}{book}"
 
 
-def twin_spec(save_spec: dict, params: dict[str, Any]) -> dict:
-    """The advised twin of a saved entry: identical fills, its own book, its params stamped on.
+def twin_spec(save_spec: dict, params: dict[str, Any], experiment_id: str | None = None) -> dict:
+    """The advised twin of a saved entry: identical fills, its own book, its params stamped on,
+    and the experiment it ran under (2026-09-16) so the ledger can split one twin tag back into
+    the experiments that used it in turn.
 
     `order_id` is prefixed rather than regenerated so the pair is obvious in the ledger and a twin
     can never collide with a real order id.
@@ -106,6 +108,7 @@ def twin_spec(save_spec: dict, params: dict[str, Any]) -> dict:
         "order_id": f"{ADVISED_PREFIX.rstrip(':')}-{save_spec['order_id']}",
         "profile": advised_book(save_spec["profile"]),
         "advice_params": json.dumps(params),
+        "experiment_id": experiment_id,
     }
 
 

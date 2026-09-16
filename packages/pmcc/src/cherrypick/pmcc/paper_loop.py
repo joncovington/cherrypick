@@ -290,6 +290,7 @@ def _entry_guards(config: dict, symbol: str, plan_dates: dict, day: str) -> str 
 
 def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: str) -> int:
     books, advice_params = session_books(config, day)
+    experiment_id = advice_decision(config, day).get("experiment_id") if advice_params else None
     defaults = config.get("defaults") or {}
     max_positions = int(defaults.get("max_positions", 3))
     opened_count = 0
@@ -458,6 +459,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                 b,
                 entry_session=day,
                 advice_params=advice_params,
+                experiment_id=experiment_id,
             )
             if opened is None:
                 continue

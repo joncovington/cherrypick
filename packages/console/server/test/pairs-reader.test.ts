@@ -94,7 +94,7 @@ describe("readAdvisedPairs", () => {
     expect(readAdvisedPairs(config, "curve", groups)).toEqual([]);
   });
 
-  it("looks up the experiment id and stored underpowered verdict from advisor.db", () => {
+  it("looks up the stored underpowered verdict for the experiment the rows are stamped with", () => {
     const { config, tmp } = tmpConfig();
     fs.mkdirSync(path.join(tmp, "advisor"), { recursive: true });
     const db = new Database(path.join(tmp, "advisor", "advisor.db"));
@@ -110,65 +110,63 @@ describe("readAdvisedPairs", () => {
     );
     db.close();
 
-    const groups = [group("control", []), group("advised:control", [])];
+    const groups = [group("control", []), group("advised:control@exp-1", [])];
     const out = readAdvisedPairs(config, "curve", groups);
     closePooledDbs();
-    expect(out[0]).toMatchObject({ experimentId: "exp-1", underpowered: true });
+    expect(out[0]).toMatchObject({ base: "control", experimentId: "exp-1", underpowered: true, unstamped: false });
   });
 
-  it("picks the MOST RECENT experiment when more than one exists for the same base", () => {
-    const { config, tmp } = tmpConfig();
-    fs.mkdirSync(path.join(tmp, "advisor"), { recursive: true });
-    const db = new Database(path.join(tmp, "advisor", "advisor.db"));
-    db.exec(
-      "CREATE TABLE experiments (id TEXT, module TEXT, base_profile TEXT, verdict_json TEXT, created_at TEXT)",
-    );
-    db.prepare("INSERT INTO experiments VALUES (?,?,?,?,?)").run(
-      "exp-old",
-      "curve",
-      "control",
-      JSON.stringify({ underpowered: false }),
-      "2026-08-01T00:00:00",
-    );
-    db.prepare("INSERT INTO experiments VALUES (?,?,?,?,?)").run(
-      "exp-new",
-      "curve",
-      "control",
-      JSON.stringify({ underpowered: true }),
-      "2026-08-20T00:00:00",
-    );
-    db.close();
-
-    const groups = [group("control", []), group("advised:control", [])];
-    const out = readAdvisedPairs(config, "curve", groups);
-    closePooledDbs();
-    expect(out[0]).toMatchObject({ experimentId: "exp-new", underpowered: true });
+  it("pairs each stamped experiment separately and leaves the pre-stamp rows as one unstamped pair", () => {
+    // Three experiments ran on advised:control in turn; before 2026-09-16 the pair carried the
+    // most recent experiment's id over all of their rows.
+    const { config } = tmpConfig();
+    const groups = [
+      group("control", ["2026-08-26", "2026-09-10", "2026-09-15"]),
+      group("advised:control", ["2026-08-26"]),
+      group("advised:control@exp-2026-09-09-meic-1", ["2026-09-10"]),
+      group("advised:control@exp-2026-09-14-meic-1", ["2026-09-15"]),
+    ];
+    const out = readAdvisedPairs(config, "meic", groups);
+    expect(out.map((p) => [p.advised, p.base, p.experimentId, p.unstamped, p.sessionsPaired])).toEqual([
+      ["advised:control", "control", null, true, 1],
+      ["advised:control@exp-2026-09-09-meic-1", "control", "exp-2026-09-09-meic-1", false, 1],
+      ["advised:control@exp-2026-09-14-meic-1", "control", "exp-2026-09-14-meic-1", false, 1],
+    ]);
   });
 
-  it("joins on base_profile before any :strategy suffix (earnings' advised:<base>:<strategy> shape)", () => {
-    const { config, tmp } = tmpConfig();
-    fs.mkdirSync(path.join(tmp, "advisor"), { recursive: true });
-    const db = new Database(path.join(tmp, "advisor", "advisor.db"));
-    db.exec(
-      "CREATE TABLE experiments (id TEXT, module TEXT, base_profile TEXT, verdict_json TEXT, created_at TEXT)",
-    );
-    db.prepare("INSERT INTO experiments VALUES (?,?,?,?,?)").run(
-      "exp-1",
-      "earnings",
-      "balanced",
-      JSON.stringify({ underpowered: false }),
-      "2026-08-20T00:00:00",
-    );
-    db.close();
+  it("keeps the stamp as the attribution when advisor.db has no row for it", () => {
+    const { config } = tmpConfig();
+    const out = readAdvisedPairs(config, "curve", [group("advised:control@exp-gone", [])]);
+    expect(out[0]).toMatchObject({ experimentId: "exp-gone", underpowered: null, unstamped: false });
+  });
 
+  it("splits earnings' strategy-suffixed tags without losing the strategy", () => {
+    const { config } = tmpConfig();
+    const groups = [
+      group("strat_test:iron_fly", ["2026-09-15"]),
+      group("advised:strat_test:iron_fly@exp-2026-08-31-earnings-1", ["2026-09-15"]),
+    ];
+    const out = readAdvisedPairs(config, "earnings", groups);
+    expect(out[0]).toMatchObject({
+      base: "strat_test:iron_fly",
+      experimentId: "exp-2026-08-31-earnings-1",
+      sessionsPaired: 1,
+    });
+  });
+
+  it("an unstamped earnings twin keeps its :strategy base and attributes no experiment", () => {
+    // Before 2026-09-16 this joined advisor.db on base_profile and handed the pair whichever
+    // experiment was most recent; the stamp on the rows is the attribution now, and rows without
+    // one are history the pair cannot assign.
+    const { config } = tmpConfig();
     const groups = [group("balanced:iron_fly", []), group("advised:balanced:iron_fly", [])];
     const out = readAdvisedPairs(config, "earnings", groups);
-    closePooledDbs();
     expect(out[0]).toMatchObject({
       advised: "advised:balanced:iron_fly",
       base: "balanced:iron_fly",
-      experimentId: "exp-1",
-      underpowered: false,
+      experimentId: null,
+      unstamped: true,
+      underpowered: null,
     });
   });
 

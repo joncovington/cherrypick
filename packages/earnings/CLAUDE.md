@@ -122,6 +122,8 @@ Three properties, each of which a simpler design gets wrong:
   and never got called. A change here is invisible from the advice path; the guard is
   `test_an_advised_twin_is_managed_beside_its_control`.
 
+**Every advised row also carries `experiment_id` (2026-09-16)** — the advisor experiment the day's artifact named, read from the session decision and stamped through the one shared rule (`cherrypick.core.advice.stamp_for`: advised books only, never the control). The `advised:<base>` tag names a book, and every experiment on that base reuses it in turn; the stamp is what lets the ledger, the advisor's verdicts and the console's paired cards tell one experiment's rows from the next's without inferring it from dates. Rows written before the column existed read `NULL` and are treated as unstamped history, never rewritten.
+
 **v1 bounds are management/exit params only.** Entry-side screens, tiering and sizing change *which*
 trades open, and a twin cannot express that — both books would have to face the same fills to be
 comparable. Those stay propose-only; a human reads them and decides.

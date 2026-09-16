@@ -851,7 +851,9 @@ def cmd_run_entries(args) -> dict:
                 # Best-effort: a twin that fails to save costs a comparison, never the real entry.
                 advised_params = advice.params_for(advice_decision, strategy_name)
                 if advised_params:
-                    twin = advice.twin_spec(save_spec, advised_params)
+                    twin = advice.twin_spec(
+                        save_spec, advised_params, experiment_id=advice_decision.get("experiment_id")
+                    )
                     twin_result = db_paper.cmd_save_trade(
                         argparse.Namespace(data=json.dumps(twin, default=str))
                     )

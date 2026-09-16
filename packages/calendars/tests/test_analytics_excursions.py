@@ -9,14 +9,27 @@ to compute entry_debit in the first place.
 from cherrypick.calendars import analytics, db
 
 
-def _position(conn, position_id, symbol="SPY", book="control", side="put", entry_debit=1.0, quantity=1, status="closed"):
+def _position(
+    conn, position_id, symbol="SPY", book="control", side="put", entry_debit=1.0, quantity=1, status="closed"
+):
     conn.execute(
         "INSERT INTO dc_positions (position_id, week_of, entry_session, book, side, symbol, "
         "structure, front_expiration, back_expiration, strike, quantity, entry_debit, status) "
         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
-            position_id, "2026-08-17", "2026-08-17", book, side, symbol,
-            "dc_4_7", "2026-08-21", "2026-08-24", 640.0, quantity, entry_debit, status,
+            position_id,
+            "2026-08-17",
+            "2026-08-17",
+            book,
+            side,
+            symbol,
+            "dc_4_7",
+            "2026-08-21",
+            "2026-08-24",
+            640.0,
+            quantity,
+            entry_debit,
+            status,
         ),
     )
 

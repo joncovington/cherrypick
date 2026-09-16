@@ -928,6 +928,7 @@ def synthetic_entry_fill(
         "fill_confirmed_at": now,
         "fees": chosen["open_fee"],
         "risk_profile": profile_name,
+        "experiment_id": params.get("experiment_id"),
         "execution_mode": execution_mode,
         "iv_rank_source": snapshot.get("iv_rank_source", "native"),
         "created_at": now,

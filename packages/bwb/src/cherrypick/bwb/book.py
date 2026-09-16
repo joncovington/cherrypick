@@ -9,6 +9,8 @@ from __future__ import annotations
 import hashlib
 import json
 
+from cherrypick.core import advice as _core_advice
+
 from cherrypick.bwb import clock, db, engine
 
 
@@ -26,7 +28,14 @@ def structure_signature(expiration: str, body: float, near: float, far: float) -
 
 
 def enter_position(
-    conn, plan: dict, config: dict, book: str, *, entry_session: str, advice_params: dict | None
+    conn,
+    plan: dict,
+    config: dict,
+    book: str,
+    *,
+    entry_session: str,
+    advice_params: dict | None,
+    experiment_id: str | None = None,
 ) -> dict | None:
     """Open one book's base BWB from a plan. Idempotent per position_id."""
     pid = position_id(plan["symbol"], book, entry_session)
@@ -69,6 +78,7 @@ def enter_position(
             "advice_params": (
                 json.dumps(advice_params) if (advice_params and book.startswith("advised:")) else None
             ),
+            "experiment_id": _core_advice.stamp_for(book, experiment_id),
             "peak_abs_delta": None,
             "below_flip_seen": 0,
             "status": "open",

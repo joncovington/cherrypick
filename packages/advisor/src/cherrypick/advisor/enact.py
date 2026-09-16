@@ -246,6 +246,7 @@ def _issue(conn, *, module: str, session: str, target: str) -> dict[str, Any]:
         advisor=f"{ADVISOR_TAG} ({experiment['id']})",
         expires_at=artifact["expires_at"],
         rejected=checked["rejected"],
+        experiment_id=experiment["id"],
     )
 
     # sessions_run is NOT incremented here. Issuing an artifact is not evidence that a loop applied
