@@ -145,7 +145,9 @@ SPY, or futures options on /ES or /MES, instead of SPX/XSP.
 
 Paper trading (above) is simulated — no real orders, no real money. **A small, tightly-bounded
 live pilot is now authorized** on top of it: real orders, real money, one specific strategy
-variant (`gex`), one contract at a time, at most one open position at a time. It exists to
+variant (`control` since 2026-09-17 — plain at-the-money centring, the arm every alternative was
+measured against; it began on `gex`), one contract at a time, at most one open position at a
+time, under a local buying-power cap. It exists to
 surface real trading-mechanics issues (order fills, timing, cancellations) before any larger
 commitment, not to prove the strategy works — the statistical bar for that is defined, and not
 yet cleared, in [docs/live-trading-plan.md](docs/live-trading-plan.md).
