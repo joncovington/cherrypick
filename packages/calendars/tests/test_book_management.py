@@ -107,6 +107,78 @@ def test_enter_week_writes_every_book_with_shared_fills(conn):
     assert conn.execute("SELECT COUNT(*) FROM dc_legs").fetchone()[0] == 12
 
 
+def test_enter_week_opens_one_book_per_experiment_with_its_own_overlay_and_stamp(conn):
+    """Two experiments on one session are two books (2026-09-17): each freezes ITS overlay and
+    carries ITS experiment id, resolved per tag through the decision -- never one id shared."""
+    decision = {
+        "day": WEEK["entry_session"],
+        "experiments": [
+            {
+                "experiment_id": "exp-a",
+                "tag": "advised:take-20",
+                "base": "control",
+                "params": {"profit_target_pct": 0.2},
+            },
+            {
+                "experiment_id": "exp-b",
+                "tag": "advised:noon-exit",
+                "base": "control",
+                "params": {"time_exit": "fri_noon"},
+            },
+        ],
+    }
+    opened = book.enter_week(
+        conn,
+        _plan(),
+        {},
+        ["control", "advised:take-20", "advised:noon-exit"],
+        week=WEEK,
+        advice_params=None,
+        advised={
+            "advised:take-20": {"profit_target_pct": 0.2},
+            "advised:noon-exit": {"time_exit": "fri_noon"},
+        },
+        experiment_id=decision,
+    )
+    assert len(opened) == 6
+    rows = conn.execute(
+        "SELECT book, advice_params, experiment_id FROM dc_positions WHERE side = 'put'"
+    ).fetchall()
+    frozen = {r["book"]: json.loads(r["advice_params"]) if r["advice_params"] else None for r in rows}
+    assert frozen == {
+        "control": None,
+        "advised:take-20": {"profit_target_pct": 0.2},
+        "advised:noon-exit": {"time_exit": "fri_noon"},
+    }
+    assert {r["book"]: r["experiment_id"] for r in rows} == {
+        "control": None,
+        "advised:take-20": "exp-a",
+        "advised:noon-exit": "exp-b",
+    }
+
+
+def test_enter_week_stamps_a_legacy_decision_onto_the_legacy_book(conn):
+    """A decision file recorded before `experiments` existed still opens `advised:control` and
+    stamps its single id -- old-shape history keeps working."""
+    decision = {
+        "day": WEEK["entry_session"],
+        "params": {"profit_target_pct": 0.2},
+        "experiment_id": "exp-old",
+    }
+    book.enter_week(
+        conn,
+        _plan(),
+        {},
+        ["control", "advised:control"],
+        week=WEEK,
+        advice_params=None,
+        advised={"advised:control": {"profit_target_pct": 0.2}},
+        experiment_id=decision,
+    )
+    row = conn.execute("SELECT experiment_id FROM dc_positions WHERE book = 'advised:control'").fetchone()
+    assert row["experiment_id"] == "exp-old"
+
+
 def test_enter_week_is_idempotent(conn):
     book.enter_week(conn, _plan(), {}, ["control"], week=WEEK, advice_params=None)
     again = book.enter_week(conn, _plan(), {}, ["control"], week=WEEK, advice_params=None)
@@ -260,6 +332,24 @@ def test_advised_profit_target_and_stop_read_the_combined_double():
         spot=6500.0,
     )
     assert friday.action == "hold"
+
+
+def test_effective_params_resolve_an_experiment_tag_to_the_configured_base():
+    """An `advised:<experiment>` row (2026-09-17) reads its base from `advice.base_book`, its
+    frozen overlay on top; the legacy `advised:control` row keeps reading its base off the tag."""
+    config = {
+        "defaults": {"exit_window_start": "15:40"},
+        "books": {"control": {"exit_window_start": "15:45"}, "path": {"exit_window_start": "15:50"}},
+        "advice": {"base_book": "control"},
+    }
+    row = _pos("advised:take-20", advice_params=json.dumps({"profit_target_pct": 0.2}))
+    params = management.effective_params(row, config)
+    assert params["base_book"] == "control"
+    assert params["exit_window_start"] == "15:45"
+    assert params["profit_target_pct"] == 0.2
+    assert params["book"] == "advised:take-20"
+    legacy = management.effective_params(_pos("advised:control", advice_params=json.dumps({})), config)
+    assert legacy["base_book"] == "control" and legacy["exit_window_start"] == "15:45"
 
 
 def test_advised_touch_fires_on_the_touched_side_only():

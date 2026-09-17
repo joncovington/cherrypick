@@ -106,7 +106,7 @@ def test_duplicate_params_reject():
 
 def test_load_absent_is_baseline(tmp_path):
     v = advice.load(tmp_path, "meic", SESSION, BOUNDS, now=NOW)
-    assert v == {"ok": False, "reason": "absent", "proposals": [], "rejected": []}
+    assert v == {"ok": False, "reason": "absent", "proposals": [], "rejected": [], "experiments": []}
 
 
 def test_write_then_load_round_trip(tmp_path):
@@ -371,3 +371,125 @@ def test_only_an_advised_book_carries_the_experiment_stamp():
     assert advice.stamp_for("control", "exp-1") is None
     assert advice.stamp_for("advised:control", None) is None
     assert advice.stamp_for(None, "exp-1") is None
+
+
+# --------------------------------------------------------------------------- many experiments, many books
+def _entries():
+    return [
+        {
+            "experiment_id": "exp-2026-09-14-flies-1",
+            "name": "forecast-range-gate-floor-probe",
+            "tag": "advised:forecast-range-gate-floor-probe",
+            "base": "control",
+            "proposals": [{"param": "stop_trigger_ratio", "value": 0.9, "rationale": "a"}],
+        },
+        {
+            "experiment_id": "exp-2026-09-17-flies-1",
+            "name": "trend-gate",
+            "tag": "advised:trend-gate",
+            "base": "control",
+            "proposals": [{"param": "entry_price_strategy", "value": "mid", "rationale": "b"}],
+        },
+    ]
+
+
+def test_each_experiment_is_validated_on_its_own():
+    """One experiment's out-of-bounds overlay is THAT experiment's baseline, never its neighbour's."""
+    art = _artifact([])
+    art["experiments"] = _entries()
+    art["experiments"][1]["proposals"] = [{"param": "stop_trigger_ratio", "value": 5.0}]
+    v = advice.validate(art, BOUNDS, SESSION, now=NOW)
+    assert [e["ok"] for e in v["experiments"]] == [True, False]
+    assert v["experiments"][1]["proposals"] == [] and v["experiments"][1]["rejected"]
+    # the top level mirrors the FIRST entry
+    assert v["ok"] is True and v["proposals"] == v["experiments"][0]["proposals"]
+    # artifact-level failures still reject everything
+    v = advice.validate(art, BOUNDS, "2026-01-01", now=NOW)
+    assert v["ok"] is False and v["experiments"] == []
+
+
+def test_a_legacy_artifact_reads_as_one_unnamed_entry():
+    v = advice.validate(_artifact([{"param": "stop_trigger_ratio", "value": 0.9}]), BOUNDS, SESSION, now=NOW)
+    assert len(v["experiments"]) == 1
+    e = v["experiments"][0]
+    assert e["name"] is None and e["tag"] is None and e["ok"] is True
+
+
+def test_write_carries_every_experiment_and_mirrors_the_first(tmp_path):
+    path = advice.advice_path(tmp_path, "flies", SESSION)
+    advice.write(
+        path,
+        "flies",
+        SESSION,
+        [],
+        advisor="x",
+        expires_at=(NOW + timedelta(hours=8)).isoformat(),
+        experiments=_entries(),
+    )
+    raw = json.loads(path.read_text())
+    assert [e["tag"] for e in raw["experiments"]] == [
+        "advised:forecast-range-gate-floor-probe",
+        "advised:trend-gate",
+    ]
+    assert raw["experiment_id"] == "exp-2026-09-14-flies-1"
+    assert raw["proposals"] == _entries()[0]["proposals"]
+    out = advice.load(tmp_path, "flies", SESSION, BOUNDS, now=NOW)
+    assert [e["ok"] for e in out["experiments"]] == [True, True]
+
+
+def test_session_decision_opens_one_book_per_experiment(tmp_path):
+    state, path = tmp_path / "state", tmp_path / "advice_active.json"
+    advice.write(
+        advice.advice_path(state, "flies", SESSION),
+        "flies",
+        SESSION,
+        [],
+        advisor="x",
+        expires_at=(datetime.now(timezone.utc) + timedelta(hours=8)).isoformat(),
+        experiments=_entries(),
+    )
+    cfg = _cfg(enabled=True, bounds=BOUNDS, base_arm="control")
+    d = advice.session_decision(state, "flies", SESSION, cfg, path, base_key="base_arm")
+    books = advice.advised_books(d)
+    assert [b["tag"] for b in books] == ["advised:forecast-range-gate-floor-probe", "advised:trend-gate"]
+    assert books[0]["params"] == {"stop_trigger_ratio": 0.9} and books[1]["params"] == {
+        "entry_price_strategy": "mid"
+    }
+    assert all(b["base"] == "control" for b in books)
+    # the stamp resolves per book from the decision itself
+    assert advice.stamp_for("advised:trend-gate", d) == "exp-2026-09-17-flies-1"
+    assert advice.stamp_for("advised:trend-gate:iron_fly", d) == "exp-2026-09-17-flies-1"
+    assert advice.stamp_for("control", d) is None
+    assert advice.stamp_for("advised:unknown", d) is None
+    # the legacy mirror still names the first experiment
+    assert d["experiment_id"] == "exp-2026-09-14-flies-1" and d["params"] == {"stop_trigger_ratio": 0.9}
+    # replayed from disk, the list survives
+    again = advice.session_decision(state, "flies", SESSION, cfg, path, base_key="base_arm")
+    assert [b["tag"] for b in advice.advised_books(again)] == [b["tag"] for b in books]
+
+
+def test_a_legacy_decision_record_is_one_book_on_the_base():
+    """A decision file written before `experiments` existed still opens its `advised:<base>` book."""
+    legacy = {"day": SESSION, "base_arm": "control", "params": {"x": 1}, "experiment_id": "exp-old"}
+    books = advice.advised_books(legacy)
+    assert books == [
+        {
+            "experiment_id": "exp-old",
+            "name": None,
+            "tag": "advised:control",
+            "base": "control",
+            "params": {"x": 1},
+        }
+    ]
+    assert advice.stamp_for("advised:control", legacy) == "exp-old"
+    assert advice.advised_books({"day": SESSION, "params": None}) == []
+    assert advice.advised_books(None) == []
+
+
+def test_advised_tag_is_one_rule_and_slug_safe():
+    assert advice.advised_tag("Forecast Range (floor probe)") == "advised:forecast-range-floor-probe"
+    assert (
+        advice.advised_tag("condor-take-earlier", "iron_condor") == "advised:condor-take-earlier:iron_condor"
+    )
+    assert advice.slug("  a:b  ") == "a-b"
+    assert advice.is_advised("advised:x") and not advice.is_advised("control") and not advice.is_advised(None)

@@ -9,7 +9,8 @@ import type {
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { readJson, str, withReadOnlyDb } from "./db.js";
-import { adviceDeclOf, type AdviceDecl } from "./adviceDecl.js";
+import { adviceDeclOf, advisedTagStatus, type AdviceDecl } from "./adviceDecl.js";
+import { readExperimentIndex, resolveAdvisedTag, type ExperimentRef } from "./experimentIndex.js";
 
 /**
  * What each experiment arm (flies) or risk profile (MEIC) is, what makes it different, and when it
@@ -158,36 +159,103 @@ function removedEntries(seen: Map<string, LedgerRow>, known: Set<string>): Exper
 }
 
 /**
- * The advisor's synthetic books (`advised:<base>`), which exist only in the ledger. They are not
- * config entries — the paper loop conjures each one at session start from the module config's
- * `advice` block, overlaying the admitted advice on the base arm/profile's own definition — so
- * without this they land in removedEntries and read "gone from config" while actively trading.
- * A book whose base the advice block no longer points at (or with advice off) is retired, which
- * is the honest reading: it stopped receiving advice, and only its open positions wind down.
+ * The experiment ids stamped on a ledger's advised rows, per tag -- only where the ledger has the
+ * column (every paper ledger since 2026-09-16). Unstamped rows count too, as `""`: a legacy
+ * `advised:<base>` tag whose rows are ALL stamped with one experiment is that experiment's book
+ * under its old name, and the guide can say so; a mix -- MEIC's advised:control on 2026-09-17
+ * held 2079 unstamped rows beside 421 stamped with one experiment -- is history the guide lists
+ * as such rather than handing every row to the one experiment that happened to be stamped.
  */
-function advisedEntries(seen: Map<string, LedgerRow>, decl: AdviceDecl | null, unit: string): ExperimentGuideEntry[] {
+function ledgerStamps(dbPath: string, table: string, column: string): Map<string, string[]> {
+  return withReadOnlyDb<Map<string, string[]>>(dbPath, new Map(), (db) => {
+    const cols = new Set(db.prepare<[], { name: string }>(`PRAGMA table_info(${table})`).all().map((c) => c.name));
+    const out = new Map<string, string[]>();
+    if (!cols.has("experiment_id")) return out;
+    for (const r of db
+      .prepare<[], Record<string, unknown>>(
+        `SELECT DISTINCT ${column} AS k, COALESCE(experiment_id, '') AS e FROM ${table}` +
+          ` WHERE ${column} LIKE 'advised:%' ORDER BY 1, 2`,
+      )
+      .all()) {
+      const k = String(r["k"]);
+      out.set(k, [...(out.get(k) ?? []), String(r["e"])]);
+    }
+    return out;
+  });
+}
+
+/**
+ * The advisor's synthetic books (`advised:*`), which exist only in the ledger. They are not config
+ * entries -- the paper loop conjures each one at session start from the module config's `advice`
+ * block, overlaying one experiment's admitted advice on the base arm/profile's own definition --
+ * so without this they land in removedEntries and read "gone from config" while actively trading.
+ *
+ * Since 2026-09-17 each experiment writes its own book, `advised:<experiment name>`, and a module
+ * can run several at once; which base a book shadows is the advisor's experiment row, resolved
+ * through `experimentIndex.ts`. A book whose experiment has concluded (or with advice off) is
+ * retired, which is the honest reading: it stopped receiving advice, and only its open positions
+ * wind down. A legacy `advised:<base>` book no experiment claims is history under the old naming.
+ */
+function advisedEntries(
+  seen: Map<string, LedgerRow>,
+  decl: AdviceDecl | null,
+  unit: string,
+  index: ExperimentRef[] | null,
+  stamps: Map<string, string[]>,
+): ExperimentGuideEntry[] {
   const out: ExperimentGuideEntry[] = [];
   for (const [name, row] of seen) {
     if (!name.startsWith("advised:")) continue;
-    const base = name.slice("advised:".length);
-    const active = decl !== null && decl.enabled && decl.base === base;
+    let resolved = resolveAdvisedTag(name, index);
+    const marks = stamps.get(name) ?? [];
+    const stamped = marks.filter((m) => m !== "");
+    if (resolved.experiment === null && stamped.length === 1 && stamped.length === marks.length) {
+      // The tag names no experiment but EVERY row is stamped with the same one: that is its book.
+      resolved = resolveAdvisedTag(`${name}@${stamped[0]}`, index);
+    }
+    const exp = resolved.experiment;
+    const base = resolved.base;
+    const active = advisedTagStatus(exp === null ? name : `${name}@${exp.id}`, decl, index) === "active";
+    const label = exp === null ? null : (exp.name ?? exp.id);
+    const notes = [
+      {
+        key: "note",
+        text:
+          (exp === null
+            ? `The advisor's synthetic book under the pre-2026-09-17 naming, advised:<base>: the ${base} ${unit}'s ` +
+              `own definition with whichever experiment's admitted advice was current overlaid, run beside the ` +
+              `un-advised ${base} as its control. ` +
+              (stamped.length > 0
+                ? `Its rows are stamped with ${stamped.length} experiment${stamped.length === 1 ? "" : "s"} ` +
+                  `(${stamped.join(", ")})${marks.includes("") ? " beside rows written before the stamp existed" : ""}; ` +
+                  `the Advisor page's stored verdicts are the per-experiment read. `
+                : `No experiment row claims it, so it is history rather than a running book. `)
+            : `The advisor's synthetic book for the experiment "${label}" (${exp.id}): the ${base} ${unit}'s own ` +
+              `definition with that experiment's admitted advice overlaid, run beside the un-advised ${base} as ` +
+              `its control. `) +
+          `Declared by the module config's advice block and the advisor's experiment row rather than the ` +
+          `${unit} registry, which is why it has no settings of its own to list here.`,
+      },
+    ];
     out.push({
       name,
       enabled: active,
       retired: !active,
       removed: false,
-      notes: [
+      notes,
+      overrides: [],
+      derived: [
         {
-          key: "note",
-          text:
-            `The advisor's synthetic book: the ${base} ${unit}'s own definition with the session's ` +
-            `admitted advice overlaid, run beside the un-advised ${base} as its control. Declared by ` +
-            `the module config's advice block rather than the ${unit} registry, which is why it has ` +
-            `no settings of its own to list here.`,
+          label: "advised twin of",
+          value: exp === null ? base : `${base}: ${label}`,
+          detail:
+            exp === null
+              ? "from the tag itself — legacy advised:<base>, no experiment row claims it"
+              : resolved.attribution === "stamp"
+                ? `from the experiment id stamped on its rows (${exp.id}, ${exp.status})`
+                : `from the advisor's experiment row (${exp.id}, ${exp.status})`,
         },
       ],
-      overrides: [],
-      derived: [{ label: "advised twin of", value: base, detail: "from the tag itself — advised:<base>" }],
       firstSession: row.first,
       lastSession: row.last,
       positions: row.n,
@@ -252,7 +320,13 @@ export function readFliesArmGuide(config: ConsoleConfig, mode: TradingMode): Exp
     };
   });
 
-  const advised = advisedEntries(seen, adviceDeclOf(doc, "base_arm"), "arm");
+  const advised = advisedEntries(
+    seen,
+    adviceDeclOf(doc, "base_arm"),
+    "arm",
+    readExperimentIndex(config, "flies"),
+    ledgerStamps(dbPath, "fly_positions", "arm"),
+  );
   return {
     ...base,
     configMissing: false,
@@ -315,7 +389,13 @@ export function readMeicProfileGuide(config: ConsoleConfig, mode: TradingMode): 
   // The notes describing the profile set live at the root here, not inside `profiles`.
   const groupNotes = [...collectNotes(doc), ...collectNotes(profiles)];
 
-  const advised = advisedEntries(seen, adviceDeclOf(moduleConfig, "base_profile"), "profile");
+  const advised = advisedEntries(
+    seen,
+    adviceDeclOf(moduleConfig, "base_profile"),
+    "profile",
+    readExperimentIndex(config, "meic"),
+    ledgerStamps(dbPath, "ic_trades", "risk_profile"),
+  );
   return {
     ...base,
     configMissing: false,

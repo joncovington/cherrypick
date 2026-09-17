@@ -1,4 +1,4 @@
-from cherrypick.bwb import management
+from cherrypick.bwb import engine, management
 
 PARAMS = {**management.PARAM_DEFAULTS, "book": "delta"}
 
@@ -154,3 +154,56 @@ def test_frozen_params_govern_an_open_advised_position_after_the_artifact_expire
     position = {"book": "advised:control", "advice_params": json.dumps({"delta_trigger": 0.35})}
     config = {"defaults": {"delta_trigger": 0.50}, "books": {"control": {}}}
     assert management.effective_params(position, config)["delta_trigger"] == 0.35
+
+
+# --------------------------- one advised book per experiment (2026-09-17)
+
+
+def test_base_book_resolves_an_experiment_tag_through_the_decision_then_the_config():
+    """Since 2026-09-17 an advised tag names the EXPERIMENT, not the base. The decision entry
+    answers first, the configured `advice.base_book` answers for a row whose decision is gone, and
+    the legacy `advised:<base>` tag still reads its base straight off the name."""
+    decision = {
+        "experiments": [
+            {"experiment_id": "exp-1", "tag": "advised:early-delta", "base": "delta", "params": {"a": 1}}
+        ]
+    }
+    assert engine.base_book("advised:early-delta", decision=decision) == "delta"
+    assert engine.base_book("advised:early-delta") == "control"
+    assert engine.base_book("advised:early-delta", config={"advice": {"base_book": "bounce"}}) == "bounce"
+    assert engine.base_book("advised:delta", config={"advice": {"base_book": "bounce"}}) == "delta"
+    assert engine.base_book("advised:wall", config={"books": {"wall": {"enabled": True}}}) == "wall"
+    assert engine.base_book("flip") == "flip"
+
+
+def test_effective_params_resolve_an_experiment_tag_to_the_configured_base():
+    config = {"defaults": {"delta_trigger": 0.50}, "books": {"control": {}, "delta": {"delta_trigger": 0.45}}}
+    row = {"book": "advised:early-delta", "advice_params": '{"delta_trigger": 0.35}'}
+    params = management.effective_params(row, config)
+    assert params["base_book"] == "control"
+    assert params["delta_trigger"] == 0.35
+    config["advice"] = {"base_book": "delta"}
+    params = management.effective_params({"book": "advised:early-delta", "advice_params": "{}"}, config)
+    assert params["base_book"] == "delta" and params["delta_trigger"] == 0.45
+
+
+def test_an_experiment_twin_arms_under_its_base_books_trigger_not_its_tags():
+    """`advised:early-delta` shadowing `delta` arms on a delta touch; the same tag shadowing
+    `control` never arms -- the verdict reads the resolved base, never the tag."""
+    tick = {"abs_delta": 0.99, "spot": 1.0, "gamma_flip": 1.0}
+    twin_of_delta = management.effective_params(
+        {"book": "advised:early-delta", "advice_params": "{}"},
+        {"defaults": management.PARAM_DEFAULTS, "books": {"delta": {}}, "advice": {"base_book": "delta"}},
+    )
+    decision, _ = management.evaluate(
+        _position(book="advised:early-delta"), twin_of_delta, trigger_state={}, tick=tick, addon_credit=None
+    )
+    assert decision.action != "hold" or decision.reason != "not_triggered"
+    twin_of_control = management.effective_params(
+        {"book": "advised:early-delta", "advice_params": "{}"},
+        {"defaults": management.PARAM_DEFAULTS, "books": {"control": {}}, "advice": {"base_book": "control"}},
+    )
+    decision, _ = management.evaluate(
+        _position(book="advised:early-delta"), twin_of_control, trigger_state={}, tick=tick, addon_credit=None
+    )
+    assert decision.action == "hold" and decision.reason == "not_triggered"

@@ -193,6 +193,24 @@ def test_an_advised_twin_is_managed_beside_its_control(priced):
     assert not db_paper.cmd_get_open_positions(_ns())["positions"], "both should have closed"
 
 
+def test_two_experiments_twins_are_both_managed_beside_their_control(priced):
+    """One twin per experiment (2026-09-17): `advised:<name>:<strategy>` is a shape `managed_book`
+    had never seen, and a twin the loop cannot see is the 2026-08-26 failure over again."""
+    control = open_trade("T1")
+    early = open_trade("T2", profile="advised:fly-target-early:iron_fly")
+    late = open_trade("T3", profile="advised:fly-target-late:iron_fly")
+    priced(quotes_pricing(3.00))
+    paper_loop.run_iteration(CONFIG, at("10:00"))
+
+    row = db_paper.cmd_get_iterations(_ns(session_date=None, limit=None))["iterations"][0]
+    assert row["open_positions"] == 3 and row["marks_written"] == 3
+    for order_id in (control, early, late):
+        events = db_paper.cmd_get_management_events(_ns(order_id=order_id, session_date=None, limit=None))[
+            "events"
+        ]
+        assert events, f"{order_id} was never evaluated"
+
+
 # --------------------------------------------------------------------------- marking and gating
 def test_the_open_window_marks_but_never_acts(priced):
     """The first ten minutes of an earnings name's options are not priceable. The target is seen,

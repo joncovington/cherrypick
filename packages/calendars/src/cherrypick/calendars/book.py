@@ -33,16 +33,24 @@ def enter_week(
     *,
     week: dict,
     advice_params: dict | None,
-    experiment_id: str | None = None,
+    experiment_id: str | dict | None = None,
+    advised: dict[str, dict] | None = None,
 ) -> list[dict]:
     """Open the week's put and call calendars in every session book. Idempotent per (book, side):
-    a book that already holds the position is skipped, so a tick retry cannot double-enter."""
+    a book that already holds the position is skipped, so a tick retry cannot double-enter.
+
+    `advised` is `{tag: params}` -- each advised book's own overlay, frozen on its rows (one book per
+    experiment since 2026-09-17); `advice_params` is the older single overlay, applied to every
+    advised book in `books` when `advised` is not given. `experiment_id` is the session decision
+    (each book's stamp resolved by its tag through `cherrypick.core.advice.stamp_for`) or, for a
+    caller that already resolved it, the id itself."""
     opened = []
     quantity = int((config.get("defaults") or {}).get("quantity", 1))
     symbol = plan["symbol"]
     now = clock.now_iso()
     for book in books:
-        params_json = json.dumps(advice_params) if (advice_params and book.startswith("advised:")) else None
+        overlay = advised.get(book) if advised is not None else advice_params
+        params_json = json.dumps(overlay) if (overlay and _core_advice.is_advised(book)) else None
         for side, side_plan in plan["sides"].items():
             pid = position_id(week["week_of"], book, side)
             if conn.execute("SELECT 1 FROM dc_positions WHERE position_id = ?", (pid,)).fetchone():

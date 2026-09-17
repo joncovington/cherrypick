@@ -29,7 +29,7 @@ produces worse advice about the paper books that shadow them. It cannot act on t
   other module in `src/` is proven free of them by a source scan.
 - The only loop-facing output this package can produce is a paper advice artifact at
   `state/advice/<module>-<session>.json`, and each module's consumer applies it to a **synthetic
-  `advised:<base>` book beside its control** — never to the control, never to a live loop.
+  `advised:<experiment name>` book beside its control** — never to the control, never to a live loop.
 - Nothing here writes a module config, `config.risk.json`, or any module's database. New-profile
   and new-strategy ideas come out as `creative` proposals with ready-to-paste specs; a human
   applies them or does not.
@@ -409,10 +409,19 @@ with 2026-08-26.
 
 ## The cap is one per module, by construction
 
-Each module's consumer builds exactly **one** `advised:<base>` book from the day's artifact, so one
-active experiment per module is what the consumers can express. Over-cap specs are admitted as
-`queued` and activate FIFO when a slot frees. More than one per module is a documented future
-consumer extension, not a config knob that silently does nothing.
+Each module's consumer builds **one book per experiment** (2026-09-17): the artifact carries an
+`experiments` entry for every active experiment, each validated on its own, each naming its own
+`advised:<experiment name>` book (the row's `tag`, fixed at admission and unique per module, `-2`
+suffixed on a duplicate name; a nameless experiment keeps the legacy `advised:<base>`). So any number
+run at once, each paired against the same control by its own tag, and `max_experiments_per_module`
+is **null = unlimited** by default. Set a number to cap a module's advised roster: over-cap specs
+are admitted as `queued` and activate FIFO when a slot frees, exactly as before. The `enactment`
+table is keyed `(session, module, experiment_id)` — one outcome per experiment, `''` for a
+module-session with no artifact — and `_count_enacted` scores each entry on its own.
+
+Before this date the cap was one by construction (one `advised:<base>` book per module), and every
+experiment on a base reused that tag in turn, told apart only by the `experiment_id` stamp; the
+retag on 2026-09-17 moved every historical advised row onto its experiment's own tag.
 
 ---
 CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE

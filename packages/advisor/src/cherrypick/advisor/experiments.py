@@ -11,6 +11,9 @@ Admission asks four questions, in this order, and records the answer to whicheve
 4. **Is there room?** Over the per-module cap, an otherwise-good spec is admitted as `queued` and
    activates FIFO when a slot frees. Queuing rather than rejecting matters: the idea was fine, the
    timing wasn't, and a rejected idea comes back as a fresh proposal that has lost its history.
+   The cap is OFF by default since 2026-09-17: every experiment gets its own advised book
+   (`advised:<name>`, the row's `tag`), so any number can run at once, each paired against the
+   same control. `max_experiments_per_module` restores a queue when set.
 
 Reject-all is inherited from `core.advice` and is the point: one out-of-bounds value invalidates the
 whole proposal. Partial admission would let an aggressive value ride in behind innocuous ones.
@@ -87,6 +90,20 @@ def _active_count(conn, module: str) -> int:
     return len(_store.experiments(conn, module=module, status=STATUS_ACTIVE))
 
 
+def _cap(resolved: dict[str, Any]) -> int | None:
+    """The per-module concurrency cap, or None for unlimited (the default since 2026-09-17)."""
+    raw = resolved.get("max_experiments_per_module")
+    try:
+        cap = int(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        cap = None
+    return cap if cap and cap > 0 else None
+
+
+def _over_cap(conn, module: str, cap: int | None) -> bool:
+    return cap is not None and _active_count(conn, module) >= cap
+
+
 def admit_spec(
     conn,
     *,
@@ -116,8 +133,8 @@ def admit_spec(
     if not checked["ok"]:
         return {"ok": False, "reason": checked["reason"], "rejected": checked["rejected"]}
 
-    cap = int(resolved["max_experiments_per_module"])
-    over_cap = _active_count(conn, module) >= cap
+    cap = _cap(resolved)
+    over_cap = _over_cap(conn, module, cap)
     status = STATUS_QUEUED if over_cap else STATUS_ACTIVE
     length = _settings.clamp_sessions(sessions, resolved)
 
@@ -140,6 +157,9 @@ def admit_spec(
             }
 
     experiment_id = _store.next_experiment_id(conn, session, module)
+    # The experiment's own book (2026-09-17): `advised:<name>`, unique per module, fixed at
+    # admission so a later rename can never re-key the rows already written under it.
+    tag = _store.unique_tag(conn, module, name, base_profile=checked["posture"]["base_profile"])
     _store.insert_experiment(
         conn,
         {
@@ -147,6 +167,7 @@ def admit_spec(
             "module": module,
             "base_profile": checked["posture"]["base_profile"],
             "name": name,
+            "tag": tag,
             "hypothesis": hypothesis,
             "success_metric": success_metric,
             "params_json": params_json,
@@ -168,6 +189,7 @@ def admit_spec(
             "params": params,
             "sessions": length,
             "status": status,
+            "tag": tag,
             "queued_because": f"{cap} active experiment(s) already" if over_cap else None,
         },
     )
@@ -177,6 +199,7 @@ def admit_spec(
     return {
         "ok": True,
         "experiment_id": experiment_id,
+        "tag": tag,
         "status": status,
         "sessions": length,
         "reason": None if not over_cap else "queued behind the per-module cap",
@@ -388,11 +411,12 @@ def dismiss(conn, proposal_id: int) -> dict[str, Any]:
 
 
 def activate_queued(conn, module: str, *, session: str | None = None, cfg: dict | None = None) -> list[str]:
-    """Fill free slots from the queue, oldest first. Returns the ids that became active."""
-    cap = int(_settings.load(cfg)["max_experiments_per_module"])
+    """Fill free slots from the queue, oldest first. Returns the ids that became active. With no
+    cap (the default) everything queued activates -- a queue only forms under a configured cap."""
+    cap = _cap(_settings.load(cfg))
     activated: list[str] = []
     for candidate in _store.experiments(conn, module=module, status=STATUS_QUEUED):
-        if _active_count(conn, module) >= cap:
+        if _over_cap(conn, module, cap):
             break
         _store.update_experiment(conn, candidate["id"], status=STATUS_ACTIVE)
         _store.journal(conn, candidate["id"], "activated", session=session, detail={"reason": "slot freed"})

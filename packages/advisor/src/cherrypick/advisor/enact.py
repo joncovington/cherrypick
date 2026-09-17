@@ -2,7 +2,9 @@
 
 This is the only thing in the suite that writes ``state/advice/<module>-<session>.json``, and it
 writes exactly one per module per session, for the **next NYSE trading day** — so Friday's run
-lands on Monday and nothing is ever issued for a holiday.
+lands on Monday and nothing is ever issued for a holiday. Since 2026-09-17 that one artifact
+carries an ``experiments`` entry for EVERY active experiment of the module, each validated on
+its own and each naming its own book (``advised:<name>``); the consumer opens one book per entry.
 
 Three properties are load-bearing:
 
@@ -93,7 +95,8 @@ def _count_enacted(conn, session: str, modules: tuple[str, ...] | list[str]) -> 
 
     Attribution is by the experiment id stamped on the artifact rather than by whichever experiment
     is active now, so a session issued under one experiment and scored after it was replaced still
-    lands on the one that paid for it.
+    lands on the one that paid for it. One outcome per experiment the artifact carried
+    (2026-09-17); a module with no artifact has none to score.
 
     Idempotent: the journal is the record, and a session already scored for an experiment is not
     scored again. The evening pass can be re-run -- it is, after a failed AI call -- and re-running
@@ -106,54 +109,60 @@ def _count_enacted(conn, session: str, modules: tuple[str, ...] | list[str]) -> 
 
     scored: list[dict[str, Any]] = []
     for module in modules:
-        outcome = recorded[module]
-        if outcome["status"] == _enactment.NO_ARTIFACT:
-            continue
-        experiment_id = outcome["experiment_id"]
-        if not experiment_id:
-            continue
-        experiment = _store.experiment(conn, experiment_id)
-        if experiment is None:
-            continue
-        if _store.has_journal_event(conn, experiment_id, "counted", session=session):
-            continue
-
-        enacted = outcome["status"] == _enactment.ENACTED
-        # The counter and the `counted` row that makes it idempotent land in ONE transaction. Until
-        # 2026-09-12 the counter committed first, so a crash between the two left an advanced
-        # counter with no guard, and the next run advanced it again -- the overcount
-        # `has_journal_event` was written to remove, back from the other direction.
-        if enacted:
-            _store.update_experiment(
-                conn, experiment_id, sessions_run=experiment["sessions_run"] + 1, commit=False
+        for outcome in recorded[module].get("experiments") or []:
+            if outcome["status"] == _enactment.NO_ARTIFACT:
+                continue
+            experiment_id = outcome.get("experiment_id")
+            if not experiment_id:
+                continue
+            experiment = _store.experiment(conn, experiment_id)
+            if experiment is None:
+                continue
+            if _store.has_journal_event(conn, experiment_id, "counted", session=session):
+                continue
+            scored.append(
+                _score_one(conn, session=session, module=module, experiment=experiment, outcome=outcome)
             )
-        _store.journal(
-            conn,
-            experiment_id,
-            "counted",
-            session=session,
-            detail={
-                "enacted": enacted,
-                "status": outcome["status"],
-                "detail": outcome["detail"],
-                "artifact_params": outcome["artifact_params"],
-                "decision_params": outcome["decision_params"],
-                "decision_reason": outcome["decision_reason"],
-                "sessions_run": experiment["sessions_run"] + (1 if enacted else 0),
-            },
-            commit=False,
-        )
-        conn.commit()
-        scored.append(
-            {
-                "module": module,
-                "experiment_id": experiment_id,
-                "session": session,
-                "enacted": enacted,
-                "detail": outcome["detail"],
-            }
-        )
     return scored
+
+
+def _score_one(
+    conn, *, session: str, module: str, experiment: dict[str, Any], outcome: dict[str, Any]
+) -> dict[str, Any]:
+    experiment_id = experiment["id"]
+    enacted = outcome["status"] == _enactment.ENACTED
+    # The counter and the `counted` row that makes it idempotent land in ONE transaction. Until
+    # 2026-09-12 the counter committed first, so a crash between the two left an advanced
+    # counter with no guard, and the next run advanced it again -- the overcount
+    # `has_journal_event` was written to remove, back from the other direction.
+    if enacted:
+        _store.update_experiment(
+            conn, experiment_id, sessions_run=experiment["sessions_run"] + 1, commit=False
+        )
+    _store.journal(
+        conn,
+        experiment_id,
+        "counted",
+        session=session,
+        detail={
+            "enacted": enacted,
+            "status": outcome["status"],
+            "detail": outcome["detail"],
+            "artifact_params": outcome.get("artifact_params"),
+            "decision_params": outcome.get("decision_params"),
+            "decision_reason": outcome.get("decision_reason"),
+            "sessions_run": experiment["sessions_run"] + (1 if enacted else 0),
+        },
+        commit=False,
+    )
+    conn.commit()
+    return {
+        "module": module,
+        "experiment_id": experiment_id,
+        "session": session,
+        "enacted": enacted,
+        "detail": outcome["detail"],
+    }
 
 
 def reissue(conn, module: str, session: str, *, cfg: dict | None = None) -> dict[str, Any]:
@@ -204,7 +213,7 @@ def _retract_stale(conn, *, module: str, session: str, target: str) -> str | Non
 
 
 def _issue(conn, *, module: str, session: str, target: str) -> dict[str, Any]:
-    """One module's artifact for `target`, from its (at most one) active experiment."""
+    """One module's artifact for `target`, carrying every active experiment as its own entry."""
     active = _store.experiments(conn, module=module, status=_experiments.STATUS_ACTIVE)
     if not active:
         retracted = _retract_stale(conn, module=module, session=session, target=target)
@@ -225,28 +234,37 @@ def _issue(conn, *, module: str, session: str, target: str) -> dict[str, Any]:
             )
         return {"module": module, "written": False, "reason": posture["reason"]}
 
-    # Structurally one per module: each consumer builds exactly one advised book from the artifact.
-    # If a cap change ever admits more, the first is enacted and the rest stay queued in effect —
-    # recorded here rather than silently merged, because merging two experiments' overlays would
-    # produce a book neither of them proposed.
-    experiment = active[0]
-    deferred = [e["id"] for e in active[1:]]
-
-    params = json.loads(experiment["params_json"] or "{}")
-    artifact = _experiments.artifact_for(
-        module, target, params, rationale=f"advisor experiment {experiment['id']}"
-    )
-    checked = _advice.validate(artifact, posture["bounds"], target)
+    # One entry per active experiment (2026-09-17), each re-validated on its own against the
+    # module's CURRENT bounds. Overlays are never merged: an entry is the unit a consumer turns
+    # into a book, so two experiments' params stay two books, exactly as each was proposed.
+    entries: list[dict[str, Any]] = []
+    for experiment in active:
+        params = json.loads(experiment["params_json"] or "{}")
+        artifact = _experiments.artifact_for(
+            module, target, params, rationale=f"advisor experiment {experiment['id']}"
+        )
+        checked = _advice.validate(artifact, posture["bounds"], target)
+        entries.append(
+            {
+                "experiment_id": experiment["id"],
+                "name": experiment.get("name"),
+                "tag": _bounds.experiment_tag(experiment),
+                "base": experiment.get("base_profile") or posture["base_profile"],
+                "proposals": checked["proposals"],
+                "rejected": checked["rejected"],
+                "reason": checked["reason"],
+                "expires_at": artifact["expires_at"],
+            }
+        )
 
     path = _advice.write(
         _paths.advice_path(module, target),
         module=module,
         session=target,
-        proposals=checked["proposals"],
-        advisor=f"{ADVISOR_TAG} ({experiment['id']})",
-        expires_at=artifact["expires_at"],
-        rejected=checked["rejected"],
-        experiment_id=experiment["id"],
+        proposals=[],
+        advisor=f"{ADVISOR_TAG} ({entries[0]['experiment_id']})",
+        expires_at=entries[0]["expires_at"],
+        experiments=entries,
     )
 
     # sessions_run is NOT incremented here. Issuing an artifact is not evidence that a loop applied
@@ -256,29 +274,42 @@ def _issue(conn, *, module: str, session: str, target: str) -> dict[str, Any]:
     # A rejection still costs a session: an artifact that reached the loop and was refused by the
     # bounds is a real outcome, and counting only admissions would let a bounds change silently
     # extend an experiment past the length a human agreed to.
-    _store.journal(
-        conn,
-        experiment["id"],
-        "enacted",
-        session=session,
-        detail={
-            "target": target,
-            "written": True,
-            "admitted": len(checked["proposals"]),
-            "rejected": checked["rejected"],
-            "reason": checked["reason"],
-            "path": str(path),
-        },
-    )
+    for entry in entries:
+        _store.journal(
+            conn,
+            entry["experiment_id"],
+            "enacted",
+            session=session,
+            detail={
+                "target": target,
+                "written": True,
+                "tag": entry["tag"],
+                "admitted": len(entry["proposals"]),
+                "rejected": entry["rejected"],
+                "reason": entry["reason"],
+                "path": str(path),
+            },
+        )
 
+    first = entries[0]
     return {
         "module": module,
         "written": True,
         "path": str(path),
-        "experiment_id": experiment["id"],
+        "experiment_id": first["experiment_id"],
         "target_session": target,
-        "admitted": len(checked["proposals"]),
-        "rejected": len(checked["rejected"]),
-        "reason": checked["reason"],
-        "deferred_experiments": deferred,
+        "admitted": len(first["proposals"]),
+        "rejected": len(first["rejected"]),
+        "reason": first["reason"],
+        "experiments": [
+            {
+                "experiment_id": e["experiment_id"],
+                "tag": e["tag"],
+                "admitted": len(e["proposals"]),
+                "rejected": len(e["rejected"]),
+                "reason": e["reason"],
+            }
+            for e in entries
+        ],
+        "deferred_experiments": [],
     }

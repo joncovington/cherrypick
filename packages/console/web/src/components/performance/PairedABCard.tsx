@@ -4,8 +4,9 @@ import type { AdvisedPair, ModulePerformanceGroup } from "../../lib/api";
 import { Card } from "../DataTable";
 
 /**
- * One `advised:<base>` twin against its control: both cumulative curves, plus their difference
- * (advised minus base, positive = the overlay is ahead) -- the paired-experiment counterpart to
+ * One experiment's advised book against the base it shadows: both cumulative curves, plus their
+ * difference (advised minus base, positive = the overlay is ahead) -- the paired-experiment
+ * counterpart to
  * `CumulativeCard.tsx`'s per-tag view. Same mount-once/update-via-setData pattern as
  * `Overview/EquityCard.tsx` and `CumulativeCard.tsx`.
  *
@@ -116,11 +117,13 @@ export function PairedABCard({
     >
       <p className="muted" style={{ fontSize: 11, marginBottom: "0.4rem" }}>
         {pair.sessionsPaired} session{pair.sessionsPaired === 1 ? "" : "s"} paired
+        {pair.experimentName !== null && <> · {pair.experimentName}</>}
         {pair.experimentId !== null && <> · {pair.experimentId}</>}
+        {pair.attribution === "stamp" && <> (from the stamp on its rows)</>}
         {pair.unstamped && (
           <>
             {" "}
-            · rows written before the experiment stamp (2026-09-16) — may span several experiments; the
+            · legacy advised:&lt;base&gt; rows no experiment claims — may span several experiments; the
             Advisor page's verdicts are the per-experiment read for this history
           </>
         )}

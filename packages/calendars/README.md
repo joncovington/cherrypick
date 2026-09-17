@@ -17,8 +17,9 @@ exits, so the module doesn't guess — it measures:
 - `exit_policies.py` replays profit targets, stops, short-strike touch, exit-timing variants and
   both long dispositions over that recorded path — exactly paired, priced through the same fee and
   slippage stack, and validated to the cent against the control book's real results on every run;
-- an optional `advised:control` book runs the AI advisor's admitted exit params (frozen per row at
-  entry) as a real book beside the control.
+- optional `advised:<experiment name>` books run the AI advisor's admitted exit params (frozen per
+  row at entry) as real books beside the control — one book per concurrent advisor experiment
+  since 2026-09-17 (`advised:control` before).
 
 Paper-only and credential-free: a pure read-only consumer of the suite's shared stream cache, whose
 4DTE/7DTE chains are served via the streamer's `expirations` request field. There is no live path.

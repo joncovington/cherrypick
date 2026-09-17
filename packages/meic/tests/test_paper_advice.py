@@ -40,7 +40,9 @@ def homes(tmp_path, monkeypatch):
     return tmp_path
 
 
-def _write_artifact(home: Path, proposals, session=DAY, experiment_id=None):
+def _write_artifact(home: Path, proposals, session=DAY, experiment_id=None, experiments=None):
+    """Legacy single-overlay shape by default (its one entry resolves to `advised:control`); with
+    `experiments`, one entry per concurrent experiment (2026-09-17)."""
     state = home / "home" / "state"
     expires = (datetime.now(UTC) + timedelta(hours=12)).isoformat()
     core_advice.write(
@@ -51,7 +53,111 @@ def _write_artifact(home: Path, proposals, session=DAY, experiment_id=None):
         advisor="test",
         expires_at=expires,
         experiment_id=experiment_id,
+        experiments=experiments,
     )
+
+
+def _experiment(name, value, experiment_id, base="control"):
+    return {
+        "experiment_id": experiment_id,
+        "name": name,
+        "tag": core_advice.advised_tag(name),
+        "base": base,
+        "proposals": [{"param": "stop_trigger_ratio", "value": value, "rationale": name}],
+        "rejected": [],
+    }
+
+
+def test_each_experiment_builds_its_own_book_named_for_it(homes):
+    """Many experiments per module (2026-09-17): two entries on control are two shadow books of
+    the same control, each carrying exactly its own overlay and its own experiment stamp."""
+    _write_artifact(
+        homes,
+        [],
+        experiments=[
+            _experiment("Stop Early (probe)", 0.88, "exp-2026-09-17-meic-1"),
+            _experiment("stop-late", 0.94, "exp-2026-09-17-meic-2"),
+        ],
+    )
+    profiles, reason = paper_loop._advice_profiles(CFG, DAY)
+    assert set(profiles) == {"advised:stop-early-probe", "advised:stop-late"}
+    assert profiles["advised:stop-early-probe"]["stop_trigger_ratio"] == 0.88
+    assert profiles["advised:stop-early-probe"]["experiment_id"] == "exp-2026-09-17-meic-1"
+    assert profiles["advised:stop-late"]["stop_trigger_ratio"] == 0.94
+    assert profiles["advised:stop-late"]["experiment_id"] == "exp-2026-09-17-meic-2"
+    base = paper.load_profiles()["control"]
+    for adv in profiles.values():
+        assert {k: v for k, v in adv.items() if k not in ("stop_trigger_ratio", "experiment_id")} == {
+            k: v for k, v in base.items() if k != "stop_trigger_ratio"
+        }
+    assert reason is None
+
+
+def test_one_experiments_rejection_is_its_baseline_day_alone(homes):
+    _write_artifact(
+        homes,
+        [],
+        experiments=[
+            _experiment("too-loose", 0.99, "exp-2026-09-17-meic-1"),
+            _experiment("in-bounds", 0.9, "exp-2026-09-17-meic-2"),
+        ],
+    )
+    profiles, reason = paper_loop._advice_profiles(CFG, DAY)
+    assert set(profiles) == {"advised:in-bounds"}
+    assert "reject-all" in reason  # the first entry's reason, mirrored at the top level
+
+
+def test_an_advised_book_shadows_the_base_its_entry_names(homes):
+    """The base is read from the entry, never split out of the tag."""
+    registry = paper.load_profiles()
+    other = next(name for name in registry if name != "control")
+    _write_artifact(homes, [], experiments=[_experiment("other-twin", 0.9, "exp-1", base=other)])
+    profiles, _ = paper_loop._advice_profiles(CFG, DAY)
+    adv = profiles["advised:other-twin"]
+    assert {k: v for k, v in adv.items() if k not in ("stop_trigger_ratio", "experiment_id")} == {
+        k: v for k, v in registry[other].items() if k != "stop_trigger_ratio"
+    }
+
+
+def test_a_legacy_decision_file_still_builds_advised_control(homes):
+    """A decision recorded before `experiments` existed resolves to the one `advised:<base>` book
+    its rows were always tagged with."""
+    path = paper_loop._paths.data_path("advice_active.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "day": DAY,
+                "base_profile": "control",
+                "params": {"stop_trigger_ratio": 0.9},
+                "reason": None,
+                "experiment_id": "exp-2026-09-09-meic-1",
+            }
+        ),
+        encoding="utf-8",
+    )
+    profiles, _ = paper_loop._advice_profiles(CFG, DAY)
+    assert set(profiles) == {"advised:control"}
+    assert profiles["advised:control"]["stop_trigger_ratio"] == 0.9
+    assert profiles["advised:control"]["experiment_id"] == "exp-2026-09-09-meic-1"
+
+
+def test_an_open_experiment_book_gets_a_management_twin_on_its_base(homes):
+    """`advised:<name>` holding rows with no decision naming it: the twin is built on the
+    configured base, because the tag no longer carries one to split out."""
+    conn = sqlite3.connect(paper_loop._PAPER_DB)
+    ts = f"{DAY}T13:00:00"
+    conn.execute(
+        "INSERT INTO ic_trades (ic_order_id, trade_date, symbol, risk_profile, status, "
+        "created_at, updated_at) VALUES ('A1', ?, 'SPX', 'advised:stop-early-probe', 'open', ?, ?)",
+        (DAY, ts, ts),
+    )
+    conn.commit()
+    conn.close()
+    profiles, _ = paper_loop._advice_profiles({"advice": {"enabled": False}}, DAY)
+    twin = profiles["advised:stop-early-probe"]
+    base = paper.load_profiles()["control"]
+    assert twin == {**base, "max_concurrent_ics": 0}
 
 
 def test_valid_advice_builds_the_advised_book(homes):

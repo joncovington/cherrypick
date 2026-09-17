@@ -414,8 +414,9 @@ _ADDED_POSITION_COLUMNS = {
     # exclude these by default (`analytics._period_clause`) and account for them explicitly
     # (`analytics.voided`), so the exclusion is stated rather than inferred from a gap in a total.
     "void_reason": "TEXT",
-    # The advisor experiment an advised arm's row was entered under (2026-09-16): `advised:<base>`
-    # names an arm, and every experiment on that base reuses the tag in turn.
+    # The advisor experiment an advised arm's row was entered under (2026-09-16). Through 09-16 the
+    # tag was `advised:<base>` and every experiment on that base reused it in turn, so this is the
+    # only thing that tells those rows apart; since 09-17 the tag names the experiment itself.
     "experiment_id": "TEXT",
 }
 

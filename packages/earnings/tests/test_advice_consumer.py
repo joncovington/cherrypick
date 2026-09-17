@@ -50,7 +50,9 @@ def config(**overrides):
     }
 
 
-def _write_artifact(homes: Path, proposals, session=DAY, hours=12):
+def _write_artifact(homes: Path, proposals, session=DAY, hours=12, experiments=None):
+    """Legacy single-overlay shape by default (its one entry resolves to the legacy twin tag);
+    with `experiments`, one entry per concurrent experiment (2026-09-17)."""
     core_advice.write(
         core_advice.advice_path(homes / "home" / "state", "earnings", session),
         "earnings",
@@ -58,7 +60,19 @@ def _write_artifact(homes: Path, proposals, session=DAY, hours=12):
         proposals,
         advisor="test",
         expires_at=(datetime.now(UTC) + timedelta(hours=hours)).isoformat(),
+        experiments=experiments,
     )
+
+
+def _experiment(name, experiment_id, *proposals):
+    return {
+        "experiment_id": experiment_id,
+        "name": name,
+        "tag": core_advice.advised_tag(name),
+        "base": "control",
+        "proposals": [{"param": p, "value": v, "rationale": name} for p, v in proposals],
+        "rejected": [],
+    }
 
 
 def _proposal(value=0.3, param="iron_fly.profit_target_pct"):
@@ -91,6 +105,90 @@ def test_dotted_params_resolve_to_the_strategy_they_name(homes):
     decided = advice.decision(config(), DAY)
     assert advice.params_for(decided, "iron_fly") == {"profit_target_pct": 0.3}
     assert advice.params_for(decided, "iron_condor") == {}
+
+
+def test_each_experiment_opens_its_own_twin_of_the_strategy_it_names(homes):
+    """Many experiments per module (2026-09-17): two entries touching iron_fly are two twins of the
+    same iron_fly control, each under `advised:<experiment name>:<strategy>` with its own params
+    and stamp; an entry that names only iron_condor opens nothing for iron_fly."""
+    _write_artifact(
+        homes,
+        [],
+        experiments=[
+            _experiment(
+                "Fly Target (early)", "exp-2026-09-17-earnings-1", ("iron_fly.profit_target_pct", 0.25)
+            ),
+            _experiment("fly-target-late", "exp-2026-09-17-earnings-2", ("iron_fly.profit_target_pct", 0.55)),
+            _experiment("condor-only", "exp-2026-09-17-earnings-3", ("iron_condor.profit_target_pct", 0.3)),
+        ],
+    )
+    decided = advice.decision(config(), DAY)
+    twins = advice.twins_for(decided, "iron_fly")
+    assert [(t["name"], t["experiment_id"], t["params"]) for t in twins] == [
+        ("Fly Target (early)", "exp-2026-09-17-earnings-1", {"profit_target_pct": 0.25}),
+        ("fly-target-late", "exp-2026-09-17-earnings-2", {"profit_target_pct": 0.55}),
+    ]
+    assert [t["name"] for t in advice.twins_for(decided, "iron_condor")] == ["condor-only"]
+
+    specs = [advice.twin_spec(SAVE_SPEC, t["params"], t["experiment_id"], name=t["name"]) for t in twins]
+    assert [t["profile"] for t in specs] == [
+        "advised:fly-target-early:iron_fly",
+        "advised:fly-target-late:iron_fly",
+    ]
+    assert [t["experiment_id"] for t in specs] == ["exp-2026-09-17-earnings-1", "exp-2026-09-17-earnings-2"]
+    # Two twins of one entry must not collide in the ledger: the order_id carries the slug.
+    assert len({t["order_id"] for t in specs}) == 2
+    assert all(t["order_id"].endswith(SAVE_SPEC["order_id"]) for t in specs)
+
+
+def test_one_experiments_rejection_is_its_baseline_day_alone(homes):
+    _write_artifact(
+        homes,
+        [],
+        experiments=[
+            _experiment("too-greedy", "exp-1", ("iron_fly.profit_target_pct", 0.95)),
+            _experiment("in-bounds", "exp-2", ("iron_fly.profit_target_pct", 0.3)),
+        ],
+    )
+    decided = advice.decision(config(), DAY)
+    assert [t["name"] for t in advice.twins_for(decided, "iron_fly")] == ["in-bounds"]
+    assert "reject-all" in decided["reason"]  # the first entry's, mirrored at the top level
+
+
+def test_a_legacy_decision_file_still_opens_the_legacy_twin_tag(homes):
+    """A decision recorded before `experiments` existed names no experiment, and its twin is
+    `advised:strat_test:<strategy>` -- what every row before 2026-09-17 was tagged."""
+    Path(advice.decision_path()).write_text(
+        json.dumps(
+            {
+                "day": DAY,
+                "params": {"iron_fly.profit_target_pct": 0.3},
+                "reason": None,
+                "experiment_id": "exp-2026-08-31-earnings-1",
+            }
+        ),
+        encoding="utf-8",
+    )
+    decided = advice.decision(config(), DAY)
+    twins = advice.twins_for(decided, "iron_fly")
+    assert len(twins) == 1 and twins[0]["name"] is None
+    twin = advice.twin_spec(SAVE_SPEC, twins[0]["params"], twins[0]["experiment_id"], name=twins[0]["name"])
+    assert twin["profile"] == "advised:strat_test:iron_fly"
+    assert twin["order_id"] == "advised-" + SAVE_SPEC["order_id"]
+    assert twin["experiment_id"] == "exp-2026-08-31-earnings-1"
+
+
+def test_the_loop_manages_a_twin_in_either_tag_shape():
+    from cherrypick.earnings import paper_loop
+
+    assert paper_loop.managed_book("advised:fly-target-early:iron_fly") is True
+    assert paper_loop.managed_book("advised:strat_test:iron_fly") is True
+    assert paper_loop.managed_book("strat_test:iron_fly") is True
+    assert paper_loop.managed_book("advised:control") is False  # names no strategy
+    assert paper_loop.managed_book("live:iron_fly") is False
+    assert advice.strategy_of("advised:fly-target-early:iron_fly") == "iron_fly"
+    assert advice.strategy_of("advised:strat_test:iron_fly") == "iron_fly"
+    assert advice.strategy_of("strat_test:iron_fly") is None
 
 
 def test_an_unknown_strategys_dotted_name_is_out_of_bounds(homes):
@@ -178,6 +276,10 @@ def test_the_twin_is_identical_in_everything_but_its_params():
 
 def test_the_twin_tag_is_what_the_verdict_groups_on():
     assert advice.advised_book("strat_test:iron_fly") == "advised:strat_test:iron_fly"
+    assert (
+        advice.advised_book("strat_test:iron_fly", "Fly Target (early)")
+        == "advised:fly-target-early:iron_fly"
+    )
     assert advice.is_advised("advised:strat_test:iron_fly") is True
     assert advice.is_advised("strat_test:iron_fly") is False
 

@@ -27,11 +27,14 @@ construction and any divergence between books is exit policy and nothing else.
   Friday settlement, longs ride the weekend and are sold on their own Monday expiration
   morning. Its job is the **recorded per-tick mark path** (`dc_marks`), the substrate everything
   else derives from.
-- **`advised:control`** (paper, off by default): the AI advisor's admitted exit params, frozen on
-  each row at entry and restated through one choke point (`management.effective_params`) at every
-  later tick — the earnings advised-twin pattern, required here because this module has exits.
+- **`advised:<experiment name>`** (paper, off by default; one book PER advisor experiment since
+  2026-09-17, `advised:control` before): the AI advisor's admitted exit params, frozen on each row
+  at entry and restated through one choke point (`management.effective_params`) at every later
+  tick — the earnings advised-twin pattern, required here because this module has exits.
 
-**Every advised row also carries `experiment_id` (2026-09-16)** — the advisor experiment the day's artifact named, read from the session decision and stamped through the one shared rule (`cherrypick.core.advice.stamp_for`: advised books only, never the control). The `advised:<base>` tag names a book, and every experiment on that base reuses it in turn; the stamp is what lets the ledger, the advisor's verdicts and the console's paired cards tell one experiment's rows from the next's without inferring it from dates. Rows written before the column existed read `NULL` and are treated as unstamped history, never rewritten.
+**Every advised row also carries `experiment_id` (2026-09-16)** — the advisor experiment the day's artifact named, read from the session decision and stamped through the one shared rule (`cherrypick.core.advice.stamp_for`: advised books only, never the control). The stamp is what lets the ledger, the advisor's verdicts and the console's paired cards tell one experiment's rows from the next's without inferring it from dates. Rows written before the column existed read `NULL` and are treated as unstamped history, never rewritten.
+
+**One advised book per experiment (2026-09-17).** Until then the day's artifact carried one overlay and the entry opened exactly one `advised:<base>` twin from it, so a second experiment on the same base had nowhere to run and queued behind the first. Now the decision's `experiments` list carries one entry per concurrent experiment, and `paper_loop.session_books` opens one book per entry that admitted params — `advised:<experiment name>` (slug-safe), planned from the SAME entry plan as every other book, frozen with THAT entry's overlay and stamped with THAT entry's id, resolved per tag through the decision (`stamp_for(book, decision)`). One entry's rejected overlay is that experiment's baseline day and opens nothing; the others still open. The tag no longer names the base: `engine.base_book` resolves an advised tag through the session decision's entry when one is in hand, else through the configured `advice.base_book` (default `control`), and still reads the legacy `advised:control` / `advised:friday:control` tags straight off the name so history keeps working. A decision file recorded before this date (no `experiments` key) still opens its single `advised:<base>`. The read-once rule is unchanged: books already open keep being marked, managed and settled whatever today's decision says, under the params frozen on their own rows.
 
 **The exit grid is derived read-side, not run as books.** `exit_policies.py` replays profit targets
 (10/20/30% of debit), stops (25/50/100%), the short-strike-touch side close, exit-timing variants

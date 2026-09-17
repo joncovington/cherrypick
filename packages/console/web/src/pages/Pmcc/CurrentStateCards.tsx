@@ -6,8 +6,9 @@ import { fmtStrike } from "../../lib/optionFormat";
 import { EntrySpreadCell } from "./EntrySpread";
 
 /**
- * The one book whose identity the page knows since the 2026-08-23 redesign. Anything else (the
- * `advised:control` synthetic twin) rides along generically.
+ * The one book whose identity the page knows since the 2026-08-23 redesign. Anything else (each
+ * advisor experiment's `advised:<name>` synthetic book -- any number since 2026-09-17) rides along
+ * generically.
  */
 const CORE_BOOKS = ["control"];
 
@@ -114,7 +115,7 @@ function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: Pmcc
  *
  * Was one card per symbol, titled with a bare ticker. Since the 2026-08-23 redesign the module
  * trades two symbols (TQQQ physical-settlement, XSP cash-settled) as separate populations in one
- * `control` book each plus the advised twin -- so the split put four rows across two cards to say
+ * `control` book each plus the advised books -- so the split put four rows across two cards to say
  * something the symbol column now says per row, and the page already carries a symbol filter for
  * anyone who wants one population alone.
  *
@@ -197,7 +198,7 @@ function totalsByBook(books: PmccBookCell[]): BookTotals[] {
     if (cell.winRate !== null) t.wins += cell.winRate * cell.positions;
     map.set(cell.book, t);
   }
-  // Core books first in their declared order, then anything else (advised twins) alphabetically.
+  // Core books first in their declared order, then anything else (advised books) alphabetically.
   return [...map.values()].sort((a, b) => {
     const ia = CORE_BOOKS.indexOf(a.book);
     const ib = CORE_BOOKS.indexOf(b.book);
@@ -210,10 +211,11 @@ function totalsByBook(books: PmccBookCell[]): BookTotals[] {
  * The book comparison.
  *
  * Since the 2026-08-23 redesign there is one book (`control`) plus the advisor's optional synthetic
- * `advised:control` twin — no more multi-book fill pairing to reason about (the old control/keltner/
- * roll grid, and the caveat that keltner and roll could not be read across the same seam, is
- * retired). Every `control` cycle is directly comparable to every other `control` cycle; the advised
- * twin is called out separately because its admitted params can differ position to position.
+ * books — one `advised:<experiment name>` per experiment since 2026-09-17 — and no more multi-book
+ * fill pairing to reason about (the old control/keltner/roll grid, and the caveat that keltner and
+ * roll could not be read across the same seam, is retired). Every `control` cycle is directly
+ * comparable to every other `control` cycle; the advised books are called out separately because
+ * their admitted params can differ position to position.
  */
 export function BookComparison({
   data,
@@ -248,8 +250,9 @@ export function BookComparison({
             <section className="pmcc-compare">
               <h3>advised books</h3>
               <p className="integrity-note">
-                The advisor's synthetic twin runs its admitted params beside a base book. It is excluded from the
-                pairing above — its entries are its own.
+                One synthetic book per advisor experiment (advised:&lt;experiment name&gt;), each running its own
+                admitted params beside the base book it shadows. Excluded from the pairing above — their entries
+                are their own.
               </p>
               <ul className="integrity-plain-list">
                 {others.map((t) => (

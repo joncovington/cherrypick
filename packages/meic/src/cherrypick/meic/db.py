@@ -417,8 +417,9 @@ _ADDED_TRADE_COLUMNS = {
     # _migrate below); the SQL default handles every row inserted after.
     "era": "TEXT DEFAULT 'sample'",
     # The advisor experiment an advised profile's row was entered under (2026-09-16): the
-    # synthetic `advised:<base>` def carries it (paper_loop._advice_profiles) and the fill row
-    # copies it, so one twin tag can be split back into the experiments that used it in turn.
+    # synthetic advised def carries it (paper_loop._advice_profiles) and the fill row copies it.
+    # Through 09-16 the tag was `advised:<base>` and every experiment on that base reused it, so
+    # this is what splits those rows apart; since 09-17 the tag names the experiment itself.
     "experiment_id": "TEXT",
 }
 

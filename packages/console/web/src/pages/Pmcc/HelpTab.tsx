@@ -6,7 +6,7 @@ import { Card, fmtMoney, fmtPct } from "../../components/DataTable";
  *
  * Deliberately not the shared ExperimentGuideView: that component reads a flies/meic-shaped config
  * block and derives each arm's differences from its siblings. PMCC's single book plus its advised
- * twin differ by one frozen overlay, not by a set of declared arms, so a derived diff would report
+ * books differ by one frozen overlay each, not by a set of declared arms, so a derived diff would report
  * almost nothing. The prose here is the config's own `_what_this_is`/`_selection_note`/
  * `_management_note`, kept in one place. Rewritten for the 2026-08-23 redesign — see
  * packages/pmcc/CLAUDE.md's measurement-break note for what changed and why.
@@ -35,8 +35,8 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
             re-enters — no more early close on time-value exhaustion by default. That earlier rule survives as{" "}
             <span className="mono">tv_managed_exit</span>
             {p?.tvCloseThreshold != null && <> (threshold ≈{fmtMoney(p.tvCloseThreshold)})</>}, a live,
-            advisor-tunable override read only through the <span className="mono">advised:control</span> book's
-            frozen params
+            advisor-tunable override read only through an experiment's{" "}
+            <span className="mono">advised:&lt;experiment name&gt;</span> book's frozen params
             {p?.tvManagedExit === true && (
               <span className="chip chip-warn integrity-chip" style={{ marginLeft: 6 }}>
                 on in this config's defaults
@@ -53,7 +53,7 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
         </div>
       </Card>
 
-      <Card title="one book, plus its advised twin" collapseKey="pmcc-help-books" defaultCollapsed>
+      <Card title="one book, plus its advised books" collapseKey="pmcc-help-books" defaultCollapsed>
         <div className="pmcc-prose">
           <dl className="pmcc-defs">
             <dt>control</dt>
@@ -62,17 +62,18 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
               with no yield floor, hold to the short's own expiration, then close both legs together. Never rolls —
               there is no more roll book.
             </dd>
-            <dt>advised:control</dt>
+            <dt>advised:&lt;experiment name&gt;</dt>
             <dd>
-              The AI advisor's admitted params, frozen on each row at entry and restated every tick through the
-              module's one choke point. The one thing currently worth advising is{" "}
+              One book per advisor experiment (any number at once since 2026-09-17), each carrying that
+              experiment's admitted params frozen on each row at entry and restated every tick through the
+              module's one choke point, measured against control. The one thing currently worth advising is{" "}
               <span className="mono">tv_managed_exit</span>/<span className="mono">tv_close_threshold</span> —
               flipping the exit rule back to early-tv-exhaustion, as a paper A/B against hold-to-expiry. Off by
               default.
             </dd>
           </dl>
           <p className="muted">
-            There is no more multi-book fill pairing to reason about: with one book plus its advised twin, every{" "}
+            There is no more multi-book fill pairing to reason about: with one book plus its advised books, every{" "}
             <span className="mono">control</span> cycle is directly comparable to every other{" "}
             <span className="mono">control</span> cycle.
           </p>

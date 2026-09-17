@@ -101,7 +101,8 @@ One workspace for the trading-tool suite. Work in the package for your area — 
   `scripts/eod_narrative.py`. Read-only over every other package (live data too, clearly labelled
   and only in `factpack.py`); the one thing it can emit toward a loop is a bounded, expiring paper
   advice artifact through `cherrypick.core.advice`, which each module applies to a synthetic
-  `advised:<base>` book beside its control. Off by default twice over: the suite must schedule it,
+  `advised:<experiment name>` book beside its control — one per experiment, any number at once
+  since 2026-09-17. Off by default twice over: the suite must schedule it,
   and each module must declare its own `advice` bounds.
 - **packages/desk** — ⚠️ **EXPERIMENTAL.** The **manual trading desk** and the suite's only
   *discretionary* live-order path (meic/earnings/flies each have a live loop behind their own

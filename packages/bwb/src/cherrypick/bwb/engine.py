@@ -14,6 +14,7 @@ plan). Books differ only in whether/when the add-on vertical fires; that logic l
 
 from __future__ import annotations
 
+from cherrypick.core import advice as _core_advice
 from cherrypick.core import fees as _fees
 from cherrypick.core import structures as _structures
 
@@ -24,6 +25,27 @@ BOOKS = ("control", "delta", "bounce", "flip")
 SETTLEMENT_STYLE = "cash"
 
 STRIKE_INCREMENT = 5.0
+
+
+def base_book(book: str, *, config: dict | None = None, decision: dict | None = None) -> str:
+    """The book whose rules an advised twin runs under. A base book is its own base.
+
+    **An advised tag no longer carries its base (2026-09-17).** Each advisor experiment gets its
+    own book, `advised:<experiment name>`, and the base it shadows is named by the session
+    decision's experiment entry rather than by the tag. Resolution, in order: the decision's entry
+    for this tag when one is given; the tag's last segment when it names a base book (the legacy
+    `advised:control` / `advised:delta` every row before this date carries -- `engine.BOOKS` plus
+    the config's opt-in `wall`); else the configured `advice.base_book` (default `control`)."""
+    if not _core_advice.is_advised(book):
+        return book
+    for entry in _core_advice.advised_books(decision):
+        tag = entry.get("tag")
+        if tag and (book == tag or book.startswith(tag + ":")) and entry.get("base"):
+            return str(entry["base"])
+    tail = book.split(":", 1)[1]
+    if tail in BOOKS or tail in ((config or {}).get("books") or {}):
+        return tail
+    return str(((config or {}).get("advice") or {}).get("base_book") or "control")
 
 
 def merged_params(config: dict, book: str) -> dict:

@@ -110,7 +110,7 @@ export function HelpTab({ data }: { data: CalendarsPayload | undefined }) {
                     </span>
                   ))}
             </dd>
-            <dt>advised book</dt>
+            <dt>advised books (one per advisor experiment)</dt>
             <dd>{p.adviceEnabled ? "enabled" : "off"}</dd>
           </dl>
         )}

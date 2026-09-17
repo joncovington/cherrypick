@@ -42,20 +42,27 @@ export interface HeldBackRow {
 }
 
 export interface AdvisedPair {
-  /** The performance group's tag: the bare `advised:<base>` for rows written before the
-   * experiment stamp existed (2026-09-16), or `advised:<base>@<experiment id>` for rows stamped
-   * with the experiment they ran under -- `core.metrics` groups stamped advised rows per
-   * experiment, so one twin tag becomes one pair per experiment here. */
+  /** The performance group's tag. Since 2026-09-17 each experiment writes its own book,
+   * `advised:<experiment name>` (earnings `advised:<name>:<strategy>`); `core.metrics` groups rows
+   * stamped with their experiment as `<tag>@<experiment id>`, and rows written before the change
+   * carry the legacy `advised:<base>`. Every shape resolves through `readers/experimentIndex.ts`. */
   advised: string;
+  /** The book this pair is measured against -- from the experiment's own row (`base_profile`),
+   * or for a legacy tag no experiment claims, the base the tag itself names. */
   base: string;
-  /** True for the pre-stamp group: its rows may span several experiments and the pair cannot
-   * say which -- the Advisor page's stored verdicts are the per-experiment read for that history. */
+  /** How the experiment was attributed: the stamp on the rows, the tag against the experiment's
+   * own, or not at all (a legacy group). */
+  attribution: "stamp" | "tag" | "none";
+  /** True when no experiment could be attributed at all: a legacy `advised:<base>` group whose
+   * rows may span several experiments -- the Advisor page's stored verdicts are the
+   * per-experiment read for that history. */
   unstamped: boolean;
   /** Sessions BOTH books actually recorded a net for, in this read's window -- not the advised
    * book's trade count and not the experiment's `sessions_run` (which counts a loop APPLYING the
    * artifact, not a session with paired data to compare). */
   sessionsPaired: number;
   experimentId: string | null;
+  experimentName: string | null;
   /** `null` when no experiment row was found to ask (a pair can exist without a live experiment --
    * config-authored `advised:` books are not unheard of); `true`/`false` is the stored verdict's
    * own answer once one has been computed. */
@@ -102,8 +109,9 @@ export interface ModulePerformanceResult {
    * empty -- a module with no management-events table (MEIC) has a real "nothing held back," not
    * an unavailable read the way `exitReasons` can be. */
   heldBack: HeldBackRow[];
-  /** Each `advised:<base>` twin paired to its control, with the experiment that produced it --
-   * `readers/pairs.ts`. Always an array; empty when the module runs no advised books right now. */
+  /** Each advised book paired to the base it shadows, one per experiment, with the experiment
+   * that produced it -- `readers/pairs.ts`. Always an array; empty when the module has no advised
+   * books in this window. */
   pairs: AdvisedPair[];
   /** Dates results either side must never be pooled -- `readers/integrity.ts::readMeasurementBreaks`
    * against this module's own `paper_trades.db`, the same table every module's own reader already

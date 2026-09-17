@@ -324,18 +324,51 @@ changes as safe, and it is the only check that sees past the fallback below.
   **This package contains no order-placement code paths** — staged tickets are dry-run records in the
   console's own store. It never touches any module's `enable_live_trading`.
 
-## Advised pairs are per experiment (2026-09-16)
+## Advised books are per experiment, and a module can run several (2026-09-17)
 
-The performance slide's paired card (`readers/pairs.ts`, `PairedABCard`) used to pair the whole
-`advised:<base>` group against its control and label it with whichever experiment on that base
-was most recent — but the tag names a book, and every experiment on that base reuses it in turn,
-so three meic experiments read as one line under one id. `core.metrics` now groups an advised row
-stamped with its experiment under `advised:<base>@<experiment id>`, and each such group is its
-own pair, looked up in `advisor.db` by that id (the stamp stays the attribution even when the
-store has no row). Rows written before the stamp existed stay under the bare tag and pair once,
-flagged `unstamped` on the card; the Advisor page's stored verdicts are the per-experiment read
-for that history. Deliberately no date inference here — that would be a second attribution rule
-free to drift from the advisor's own.
+Until 2026-09-17 each module ran ONE advisor experiment at a time and wrote ONE synthetic book,
+`advised:<base>`; experiments on the same base reused the tag in turn and were told apart only by
+the `experiment_id` stamped on rows (the 2026-09-16 fix, which made the paired card one pair per
+stamp). Now any number of experiments run per module at once and **each writes its own book,
+`advised:<experiment name>`** (earnings `advised:<name>:<strategy>`; the name is a slug, lowercase
+`[a-z0-9-]`). The tag no longer names the base: the base is on the advisor's `experiments` row
+(`base_profile`), beside a `tag` column the advisor stamps as it creates the row.
+
+Every surface here that meets an advised tag therefore resolves it through ONE place,
+`readers/experimentIndex.ts`, in one order: the experiment id stamped on the rows (`core.metrics`
+groups stamped rows as `<tag>@<experiment id>`), then the tag against the experiment's own `tag`
+(or `advised:` + slug(name) on a store whose table predates the column — `slugExperimentName`
+mirrors `cherrypick.core.advice.slug` exactly, and the advice-decl test pins it), then the legacy
+reading of `advised:<base>` for rows no experiment claims. The reason it is one place: prefix
+stripping was the rule in four files (`pairs.ts`, `adviceDecl.ts`, `experimentGuide.ts`, the flies
+forest) and each would have needed the same three-step lookup, which is four chances to disagree
+about which base a book shadows.
+
+What that means per surface:
+
+- **Paired card** (`readers/pairs.ts`, `PairedABCard`): one pair per experiment, two experiments
+  on one base being two pairs against the same control. A legacy tag with a stamp pairs to THAT
+  experiment's base (the row's, not the tag's); an unmatched legacy tag pairs against the base its
+  tag names, or the module's declared base when that book has no rows in the window, flagged
+  `unstamped` — the Advisor page's stored verdicts are the per-experiment read for that history.
+  Deliberately no date inference here — a second attribution rule free to drift from the advisor's.
+- **Active / retired** (`adviceDecl.ts::advisedTagStatus`): a tag is active while the experiment
+  it resolves to is `active` in advisor.db and the module's advice layer is on — so a module can
+  show several active advised tags. A legacy tag no experiment claims is history once a store
+  exists; without a store at all the pre-change rule (advice on, declared base) still applies, and
+  a nameless active row keeps its legacy book alive. The experiment guide labels each book
+  "advised twin of `<base>: <experiment name>`", and attributes a legacy tag to an experiment only
+  when EVERY row is stamped with the same one (MEIC's advised:control held 2079 unstamped rows
+  beside 421 stamped with one experiment on the day this landed — history, not that experiment's).
+- **Advisor reader** (`readers/advisor.ts`): `readAdvisorModule.active` is a list, each entry
+  carrying its own `calendarSessions` and `stallBudget`; the session strip returns every enactment
+  row over the last 15 scored sessions (the advisor's `enactment` table now keys on
+  `(session, module, experiment_id)`), and the slide draws one strip per experiment.
+  `AdvisorApplyStatus.enactments` is a list for the same reason, and the banner's "not applied"
+  count is per experiment. Artifacts and each module's `advice_active.json` carry an `experiments`
+  list whose first entry the legacy top-level fields mirror — the reader exposes the list
+  (`artifactExperiments`, `decisionExperiments`) and synthesises one entry from the legacy fields
+  when it is absent; reading both would count the first experiment twice.
 
 ## Suite guardrails (apply here too)
 

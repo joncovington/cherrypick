@@ -543,3 +543,151 @@ def test_a_module_without_a_scan_ledger_is_still_enacted(home):
     _artifact(SESSION, {"stop_trigger_ratio": 0.9})
     _decision(home, SESSION, {"stop_trigger_ratio": 0.9})
     assert enactment.reconcile("meic", SESSION)["status"] == enactment.ENACTED
+
+
+# ------------------------------------------------------------------- one outcome per experiment
+
+
+def _two_experiment_artifact(session):
+    path = paths.advice_path("meic", session)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    entries = [
+        {
+            "experiment_id": "exp-a",
+            "name": "a",
+            "tag": "advised:a",
+            "base": "control",
+            "proposals": [{"param": "stop_trigger_ratio", "value": 0.9, "rationale": "r"}],
+            "rejected": [],
+        },
+        {
+            "experiment_id": "exp-b",
+            "name": "b",
+            "tag": "advised:b",
+            "base": "control",
+            "proposals": [{"param": "stop_trigger_ratio", "value": 0.88, "rationale": "r"}],
+            "rejected": [],
+        },
+    ]
+    path.write_text(
+        json.dumps(
+            {
+                "module": "meic",
+                "session": session,
+                "advisor": "cherrypick.advisor/enact-v1 (exp-a)",
+                "experiment_id": "exp-a",
+                "expires_at": f"{session}T23:59:59-04:00",
+                "proposals": entries[0]["proposals"],
+                "rejected": [],
+                "experiments": entries,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _multi_decision(home, session, entries):
+    path = home / "data" / "meic" / "advice_active.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    first = entries[0] if entries else {}
+    path.write_text(
+        json.dumps(
+            {
+                "day": session,
+                "params": first.get("params"),
+                "experiment_id": first.get("experiment_id"),
+                "experiments": entries,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_each_experiment_is_scored_on_its_own_and_stored_as_its_own_row(home, conn):
+    """Two experiments in one artifact: the loop applied one and dropped the other. Each gets its
+    own outcome and its own enactment row; the module-level fields mirror the first."""
+    _two_experiment_artifact(SESSION)
+    _multi_decision(
+        home,
+        SESSION,
+        [
+            {
+                "experiment_id": "exp-a",
+                "tag": "advised:a",
+                "params": {"stop_trigger_ratio": 0.9},
+                "reason": None,
+            },
+            {
+                "experiment_id": "exp-b",
+                "tag": "advised:b",
+                "params": {"stop_trigger_ratio": 0.5},
+                "reason": None,
+            },
+        ],
+    )
+    out = enactment.reconcile("meic", SESSION)
+    assert [(e["experiment_id"], e["status"]) for e in out["experiments"]] == [
+        ("exp-a", enactment.ENACTED),
+        ("exp-b", enactment.NOT_ENACTED),
+    ]
+    assert out["status"] == enactment.ENACTED and out["experiment_id"] == "exp-a"
+    assert enactment.outcome_for("meic", SESSION, "exp-b")["status"] == enactment.NOT_ENACTED
+
+    enactment.record(conn, SESSION, ("meic",))
+    rows = store.rows(
+        conn, "SELECT experiment_id, status FROM enactment WHERE module = 'meic' ORDER BY experiment_id"
+    )
+    assert [(r["experiment_id"], r["status"]) for r in rows] == [
+        ("exp-a", "enacted"),
+        ("exp-b", "not_enacted"),
+    ]
+    # re-recording replaces rather than accumulates
+    enactment.record(conn, SESSION, ("meic",))
+    assert len(store.rows(conn, "SELECT * FROM enactment WHERE module = 'meic'")) == 2
+
+
+def test_a_decision_that_names_no_entry_for_an_experiment_is_not_enacted_for_it(home):
+    _two_experiment_artifact(SESSION)
+    _multi_decision(
+        home,
+        SESSION,
+        [
+            {
+                "experiment_id": "exp-a",
+                "tag": "advised:a",
+                "params": {"stop_trigger_ratio": 0.9},
+                "reason": None,
+            },
+        ],
+    )
+    out = enactment.reconcile("meic", SESSION)
+    assert {e["experiment_id"]: e["status"] for e in out["experiments"]} == {
+        "exp-a": enactment.ENACTED,
+        "exp-b": enactment.NOT_ENACTED,
+    }
+    assert "names no entry" in out["experiments"][1]["detail"]
+
+
+def test_a_legacy_decision_still_scores_a_legacy_artifact(home, conn):
+    """Old shapes on both sides: exactly the pre-change behaviour, one row with the experiment."""
+    _artifact(SESSION, {"stop_trigger_ratio": 0.9}, experiment_id="exp-old")
+    _decision(home, SESSION, {"stop_trigger_ratio": 0.9})
+    out = enactment.reconcile("meic", SESSION)
+    assert [(e["experiment_id"], e["status"]) for e in out["experiments"]] == [("exp-old", enactment.ENACTED)]
+    enactment.record(conn, SESSION, ("meic",))
+    rows = store.rows(conn, "SELECT experiment_id, status FROM enactment WHERE module = 'meic'")
+    assert [(r["experiment_id"], r["status"]) for r in rows] == [("exp-old", "enacted")]
+
+
+def test_no_artifact_is_one_empty_keyed_row(home, conn):
+    _decision(home, SESSION, None)
+    enactment.record(conn, SESSION, ("meic",))
+    rows = store.rows(conn, "SELECT experiment_id, status FROM enactment WHERE module = 'meic'")
+    assert [(r["experiment_id"], r["status"]) for r in rows] == [("", "no_artifact")]
+
+
+def test_sessions_of_reads_every_entry_of_an_artifact(home):
+    _two_experiment_artifact(SESSION)
+    assert enactment.sessions_of({"id": "exp-b", "module": "meic"}, through=SESSION) == [SESSION]
+    assert enactment.sessions_of({"id": "exp-a", "module": "meic"}, through=SESSION) == [SESSION]
+    assert enactment.sessions_of({"id": "exp-c", "module": "meic"}, through=SESSION) == []

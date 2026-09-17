@@ -13,8 +13,10 @@ import { PairedABCard } from "./PairedABCard";
  * module the way each module's OWN richer tab is.
  *
  * A module's `underpowered` verdict rides on its `pairs` entry (the experiment that produced the
- * `advised:` twin), not on the control group's own tile row -- a control was never an experiment
- * and has no verdict to carry.
+ * `advised:` book), not on the base group's own tile row -- a base was never an experiment and
+ * has no verdict to carry. Several pairs can share one base (2026-09-17: each experiment has its
+ * own book), so the base's chip says "every paired experiment" only when all of them are below
+ * the gate.
  */
 export function PerformanceSlide({ module }: { module: PerformanceModuleId }) {
   const { data, isLoading, dataUpdatedAt } = useModulePerformance(module, "current");
@@ -39,7 +41,12 @@ export function PerformanceSlide({ module }: { module: PerformanceModuleId }) {
     );
   }
 
-  const underpoweredByBase = new Map(data.pairs.map((p) => [p.base, p.underpowered]));
+  // Per base: true only when every experiment paired against it with a verdict is underpowered.
+  const underpoweredByBase = new Map<string, boolean>();
+  for (const p of data.pairs) {
+    if (p.underpowered === null) continue;
+    underpoweredByBase.set(p.base, (underpoweredByBase.get(p.base) ?? true) && p.underpowered);
+  }
   const groupByTag = new Map(data.groups.map((g) => [g.tag, g]));
 
   return (
@@ -68,8 +75,8 @@ export function PerformanceSlide({ module }: { module: PerformanceModuleId }) {
               <MetricTiles reading={g.reading} />
               {underpoweredByBase.get(g.tag) === true && (
                 <p className="muted" style={{ fontSize: 11, marginTop: "0.4rem" }}>
-                  <span className="chip chip-warn">underpowered</span> the paired advised experiment
-                  has not yet reached the promotion gate's sample/day thresholds
+                  <span className="chip chip-warn">underpowered</span> every experiment paired against this
+                  book is still below the promotion gate's sample/day thresholds
                 </p>
               )}
             </Card>

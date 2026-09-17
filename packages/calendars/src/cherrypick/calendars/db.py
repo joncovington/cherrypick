@@ -26,6 +26,8 @@ import sqlite3
 from cherrypick.core import db as _core_db
 from cherrypick.core import ledgerstore as _ledgerstore
 
+from cherrypick.calendars import engine
+
 _SCHEMA = """
 -- One row per calendar structure per book: a put-side or call-side calendar, two legs each.
 -- `position_id` = "<week_of>:<book>:<side>" so a Tuesday-entry week keys identically to a Monday
@@ -396,7 +398,7 @@ def pending_closing_exits(conn, expiration: str) -> list[dict]:
         "SELECT * FROM dc_positions WHERE front_expiration = ? AND status = 'open' ORDER BY book, side",
         (expiration,),
     )
-    return [dict(r) for r in rows if r["book"].rsplit(":", 1)[-1] != "path"]
+    return [dict(r) for r in rows if engine.base_book(r["book"]) != "path"]
 
 
 def positions_for_week(conn, week_of: str) -> list[dict]:

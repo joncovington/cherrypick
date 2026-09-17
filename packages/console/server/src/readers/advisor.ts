@@ -16,8 +16,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import type {
+  AdvisorActiveExperiment,
   AdvisorApplyStatus,
+  AdvisorArtifactExperiment,
   AdvisorCheckpoint,
+  AdvisorDecisionExperiment,
   AdvisorEnactment,
   AdvisorEvent,
   AdvisorExperiment,
@@ -31,6 +34,7 @@ import type {
 import type { ConsoleConfig } from "../config.js";
 import type Database from "better-sqlite3";
 import { hasTable, readJson, str, withReadOnlyDb } from "./db.js";
+import { tagOfRow } from "./experimentIndex.js";
 
 /** The advisor's own slot order — chronological, not alphabetical. Mirrors
  * packages/advisor/src/cherrypick/advisor/factpack.py's LIGHT_SLOTS + DEEP_SLOT. */
@@ -76,8 +80,21 @@ function verdict(raw: unknown): AdvisorVerdict | null {
           calendarSessions: Number((stalledRaw as Record<string, unknown>)["calendar_sessions"] ?? 0),
         }
       : null;
+  // `verdicts.py` writes the pair's tags as `advised_tag`/`base_tag`; the page reads them as
+  // `advisedTag`/`baseTag` and its "Book" column rendered blank on every real verdict (found
+  // 2026-09-17, when the column became the place each experiment's own book is named). Both
+  // spellings read; the rest of the pair -- readings, delta, qualification keyed by tag -- is
+  // passed through verbatim, as the reader's header promises.
+  const pairs = (Array.isArray(v.pairs) ? v.pairs : []).map((p) => {
+    const raw = p as unknown as Record<string, unknown>;
+    return {
+      ...p,
+      advisedTag: str(raw["advisedTag"]) ?? str(raw["advised_tag"]) ?? "",
+      baseTag: str(raw["baseTag"]) ?? str(raw["base_tag"]) ?? "",
+    };
+  });
   return {
-    pairs: Array.isArray(v.pairs) ? v.pairs : [],
+    pairs,
     underpowered: v.underpowered === true,
     recommendation: v.recommendation ?? null,
     stalled,
@@ -179,7 +196,7 @@ function adviceModules(config: ConsoleConfig, nextSession: string | null, scored
 function readApplyStatus(
   config: ConsoleConfig,
   nextSession: string | null,
-  enactment: Map<string, AdvisorEnactment>,
+  enactment: Map<string, AdvisorEnactment[]>,
 ): AdvisorApplyStatus[] {
   return adviceModules(config, nextSession, enactment.keys()).map((module) => {
     const artifact =
@@ -201,15 +218,72 @@ function readApplyStatus(
       artifactWritten: artifact !== null,
       artifactProposals: (artifact?.["proposals"] ?? []) as AdvisorApplyStatus["artifactProposals"],
       artifactRejected: (artifact?.["rejected"] ?? []) as AdvisorApplyStatus["artifactRejected"],
+      artifactExperiments: artifactExperiments(artifact),
       consumerDecision: decision,
+      decisionExperiments: decisionExperiments(decision),
       disabledReason,
-      enactment: enactment.get(module) ?? null,
+      enactments: enactment.get(module) ?? [],
     };
   });
 }
 
 /**
- * The advisor's stored enactment reconciliation for one session, keyed by module.
+ * The per-experiment entries of an artifact or a decision file (2026-09-17), or the one entry the
+ * legacy flat shape implies. Prefer the list; the top-level `proposals`/`params`/`experiment_id`
+ * are a mirror of its first entry kept for readers written against the old shape, and reading
+ * them beside the list would count the first experiment twice.
+ */
+function artifactExperiments(artifact: Record<string, unknown> | null): AdvisorArtifactExperiment[] {
+  if (artifact === null) return [];
+  const list = artifact["experiments"];
+  const entries = Array.isArray(list) && list.length > 0 ? list : [artifact];
+  return entries
+    .filter((e): e is Record<string, unknown> => typeof e === "object" && e !== null)
+    .map((e) => ({
+      experimentId: str(e["experiment_id"]),
+      name: str(e["name"]),
+      tag: str(e["tag"]),
+      base: str(e["base"]),
+      proposals: (Array.isArray(e["proposals"]) ? e["proposals"] : []) as AdvisorArtifactExperiment["proposals"],
+      rejected: (Array.isArray(e["rejected"]) ? e["rejected"] : []) as AdvisorArtifactExperiment["rejected"],
+    }));
+}
+
+function decisionExperiments(decision: Record<string, unknown> | null): AdvisorDecisionExperiment[] {
+  if (decision === null) return [];
+  const list = decision["experiments"];
+  if (Array.isArray(list)) {
+    return list
+      .filter((e): e is Record<string, unknown> => typeof e === "object" && e !== null)
+      .map((e) => ({
+        experimentId: str(e["experiment_id"]),
+        name: str(e["name"]),
+        tag: str(e["tag"]),
+        base: str(e["base"]),
+        params: (typeof e["params"] === "object" ? e["params"] : null) as Record<string, unknown> | null,
+        reason: str(e["reason"]),
+      }));
+  }
+  // The legacy single-experiment decision: params (or none) plus the id the loop stamped.
+  const legacyBase = ["base_arm", "base_profile", "base_book", "base_prefix"]
+    .map((k) => str(decision[k]))
+    .find((v) => v !== null && v !== "");
+  return [
+    {
+      experimentId: str(decision["experiment_id"]),
+      name: null,
+      tag: legacyBase === undefined ? null : `advised:${legacyBase}`,
+      base: legacyBase ?? null,
+      params: (typeof decision["params"] === "object" ? decision["params"] : null) as Record<string, unknown> | null,
+      reason: str(decision["reason"]),
+    },
+  ];
+}
+
+/**
+ * The advisor's stored enactment reconciliation for one session, keyed by module — every row
+ * the module has for the session, since the table keys on (session, module, experiment_id)
+ * (2026-09-17) and a module running two experiments gets two verdicts a session.
  *
  * Read, not computed. Whether a loop applied an artifact is decided once in `enactment.py` and
  * written to the `enactment` table; re-deriving it here from the artifact and the decision file
@@ -218,26 +292,30 @@ function readApplyStatus(
  * Absent before the advisor has run a slot for the session, which the page renders as "not scored
  * yet" rather than as a failure — an unscored session and a dropped artifact are different facts.
  */
-function readEnactment(db: Database.Database, session: string | null): Map<string, AdvisorEnactment> {
-  const out = new Map<string, AdvisorEnactment>();
+function readEnactment(db: Database.Database, session: string | null): Map<string, AdvisorEnactment[]> {
+  const out = new Map<string, AdvisorEnactment[]>();
   // An advisor.db predating the table is the ordinary state of a machine that has not run the
   // current build yet, not an error: the page must render without the column rather than 500.
   if (session === null || !hasTable(db, "enactment")) return out;
   const rows = db
     .prepare<[string], Record<string, unknown>>(
       "SELECT session, module, status, detail, experiment_id, decision_reason, scored_at" +
-        " FROM enactment WHERE session = ?",
+        " FROM enactment WHERE session = ? ORDER BY module, experiment_id",
     )
     .all(session);
   for (const r of rows) {
-    out.set(String(r["module"]), {
-      session: String(r["session"]),
-      status: String(r["status"]),
-      detail: str(r["detail"]),
-      experimentId: str(r["experiment_id"]),
-      decisionReason: str(r["decision_reason"]),
-      scoredAt: str(r["scored_at"]),
-    });
+    const module = String(r["module"]);
+    out.set(module, [
+      ...(out.get(module) ?? []),
+      {
+        session: String(r["session"]),
+        status: String(r["status"]),
+        detail: str(r["detail"]),
+        experimentId: str(r["experiment_id"]),
+        decisionReason: str(r["decision_reason"]),
+        scoredAt: str(r["scored_at"]),
+      },
+    ]);
   }
   return out;
 }
@@ -262,6 +340,7 @@ function shapeExperiment(db: Database.Database, r: Record<string, unknown>): Adv
     module: String(r["module"]),
     baseProfile: String(r["base_profile"]),
     name: str(r["name"]),
+    tag: tagOfRow(r),
     hypothesis: str(r["hypothesis"]),
     successMetric: str(r["success_metric"]),
     params: parse<Record<string, unknown>>(r["params_json"], {}),
@@ -278,20 +357,19 @@ const SESSION_STRIP = 15;
 const CONCLUDED_SHOWN = 3;
 
 /**
- * One module's view of the advisor (2026-09-12): the experiment running on it, its session strip,
- * what is queued behind it, and tomorrow's artifact. Read from the same store as the page; every
- * judgement in it (enactment status, verdict) is the advisor's own, never re-derived here.
+ * One module's view of the advisor (2026-09-12): the experiments running on it — several at once
+ * since 2026-09-17, each with its own progress and its own session strip — what is queued behind
+ * them, and tomorrow's artifact. Read from the same store as the page; every judgement in it
+ * (enactment status, verdict) is the advisor's own, never re-derived here.
  */
 export function readAdvisorModule(config: ConsoleConfig, module: string): AdvisorModulePayload {
   const empty: AdvisorModulePayload = {
     module,
     storePresent: false,
-    active: null,
+    active: [],
     queued: [],
     concluded: [],
     sessions: [],
-    calendarSessions: null,
-    stallBudget: null,
     tomorrow: null,
   };
   return withReadOnlyDb(dbPath(config), empty, (db): AdvisorModulePayload => {
@@ -301,41 +379,48 @@ export function readAdvisorModule(config: ConsoleConfig, module: string): Adviso
       )
       .all(module)
       .map((r) => shapeExperiment(db, r));
-    const active = rows.find((e) => e.status === "active") ?? null;
     const queued = rows.filter((e) => e.status === "queued");
     const concluded = rows
       .filter((e) => e.status === "expired" || e.status === "killed")
       .reverse()
       .slice(0, CONCLUDED_SHOWN);
 
-    // The strip and the calendar age both come from the enactment table, which the evening pass
-    // writes once per module per scored session — so "calendar sessions" here means sessions the
-    // advisor scored, the same count its own stall exit uses.
+    // The strip and each experiment's calendar age both come from the enactment table, which the
+    // evening pass writes once per experiment per scored session — so "calendar sessions" here
+    // means sessions the advisor scored, the same count its own stall exit uses. The strip takes
+    // every row over the last SESSION_STRIP scored sessions rather than the last SESSION_STRIP
+    // rows: two experiments would otherwise halve the strip's reach.
     let sessions: AdvisorSessionCell[] = [];
-    let calendarSessions: number | null = null;
-    if (hasTable(db, "enactment")) {
+    const hasEnactment = hasTable(db, "enactment");
+    if (hasEnactment) {
       sessions = db
-        .prepare<[string, number], Record<string, unknown>>(
-          "SELECT session, status, experiment_id, detail FROM enactment WHERE module = ?" +
-            " ORDER BY session DESC LIMIT ?",
+        .prepare<[string, string, number], Record<string, unknown>>(
+          "SELECT session, status, experiment_id, detail FROM enactment WHERE module = ? AND session IN" +
+            " (SELECT DISTINCT session FROM enactment WHERE module = ? ORDER BY session DESC LIMIT ?)" +
+            " ORDER BY session, experiment_id",
         )
-        .all(module, SESSION_STRIP)
-        .reverse()
+        .all(module, module, SESSION_STRIP)
         .map((r) => ({
           session: String(r["session"]),
           status: String(r["status"]),
           experimentId: str(r["experiment_id"]),
           detail: str(r["detail"]),
         }));
-      if (active !== null) {
-        const row = db
-          .prepare<[string, string], { n: number }>(
-            "SELECT COUNT(DISTINCT session) AS n FROM enactment WHERE module = ? AND session > ?",
-          )
-          .get(module, active.createdSession);
-        calendarSessions = Number(row?.n ?? 0);
-      }
     }
+    const active: AdvisorActiveExperiment[] = rows
+      .filter((e) => e.status === "active")
+      .map((e) => {
+        let calendarSessions: number | null = null;
+        if (hasEnactment) {
+          const row = db
+            .prepare<[string, string], { n: number }>(
+              "SELECT COUNT(DISTINCT session) AS n FROM enactment WHERE module = ? AND session > ?",
+            )
+            .get(module, e.createdSession);
+          calendarSessions = Number(row?.n ?? 0);
+        }
+        return { ...e, calendarSessions, stallBudget: 2 * e.expiresAfter };
+      });
 
     const scoredSessions = db
       .prepare<[], { session: string }>("SELECT DISTINCT session FROM checkpoints ORDER BY session")
@@ -353,8 +438,6 @@ export function readAdvisorModule(config: ConsoleConfig, module: string): Adviso
       queued,
       concluded,
       sessions,
-      calendarSessions,
-      stallBudget: active === null ? null : 2 * active.expiresAfter,
       tomorrow,
     };
   });

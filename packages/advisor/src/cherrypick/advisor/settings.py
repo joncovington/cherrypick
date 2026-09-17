@@ -24,10 +24,11 @@ from cherrypick.advisor import store as _store
 
 DEFAULTS: dict[str, Any] = {
     "enabled": False,
-    # One per module, and that is not arbitrary: each module's consumer builds exactly one
-    # `advised:<base>` book from the day's artifact, so a second concurrent experiment has nowhere
-    # to be measured. Over-cap specs queue and activate FIFO.
-    "max_experiments_per_module": 1,
+    # Unlimited by default (2026-09-17, was 1). Each module's consumer now builds ONE BOOK PER
+    # EXPERIMENT from the day's artifact (`advised:<experiment name>`), so concurrent experiments
+    # each have a place to be measured, side by side against the same control. Set a number to
+    # cap a module's advised roster; over-cap specs queue and activate FIFO as before. null/0 = off.
+    "max_experiments_per_module": None,
     # 15 sessions so an experiment that runs its course can actually satisfy the promotion gate
     # (min_days 14, min_sample 20). A model asking for fewer gets its request honored, clamped, and
     # a verdict labeled `underpowered` if the numbers land below the bar.

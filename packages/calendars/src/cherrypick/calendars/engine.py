@@ -13,6 +13,7 @@ leg independently was caught live producing calendars whose legs sat on differen
 
 from __future__ import annotations
 
+from cherrypick.core import advice as _core_advice
 from cherrypick.core import fees as _fees
 from cherrypick.core import settlement as _settlement
 from cherrypick.core import structures as _structures
@@ -26,16 +27,33 @@ BOOKS = ("control", "path")
 FRIDAY_PREFIX = "friday:"
 
 
-def base_book(book: str) -> str:
-    """The exit-policy identity behind a book name. `advised:control` is a control with overlaid
-    params and `friday:path` is a path entered a session earlier; both answer to their base book's
-    policy. Taking the LAST segment composes for any prefix stack without enumerating them —
-    `advised:friday:control` reads as `control`.
+def base_book(book: str, *, config: dict | None = None, decision: dict | None = None) -> str:
+    """The exit-policy identity behind a book name. `friday:path` is a path entered a session
+    earlier and `advised:control` is a control with overlaid params; both answer to their base
+    book's policy. Taking the LAST segment composes for any prefix stack without enumerating them
+    -- `advised:friday:control` reads as `control`.
 
     Every policy check must go through this rather than comparing the raw name. `management.decide`
-    compared `book == "path"` directly, which silently made `friday:path` a CLOSING book — the one
-    book whose entire job is never to close."""
-    return book.rsplit(":", 1)[-1]
+    compared `book == "path"` directly, which silently made `friday:path` a CLOSING book -- the one
+    book whose entire job is never to close.
+
+    **An advised tag no longer carries its base (2026-09-17).** Since that date each advisor
+    experiment gets its own book, `advised:<experiment name>`, and the base it shadows is named by
+    the session decision's experiment entry rather than by the tag. Resolution, in order: the
+    decision's entry for this tag when one is given; the last segment when it names a base book
+    (the legacy `advised:control` / `advised:friday:control` tags, which every row before this date
+    carries); else the module's configured `advice.base_book` (default `control`), which is the
+    base every experiment on this module has shadowed so far."""
+    if not book.startswith(_core_advice.ADVISED_PREFIX):
+        return book.rsplit(":", 1)[-1]
+    for entry in _core_advice.advised_books(decision):
+        tag = entry.get("tag")
+        if tag and (book == tag or book.startswith(tag + ":")) and entry.get("base"):
+            return str(entry["base"])
+    tail = book.rsplit(":", 1)[-1]
+    if tail in BOOKS:
+        return tail
+    return str(((config or {}).get("advice") or {}).get("base_book") or "control")
 
 
 # How an expiring leg settles, per underlying. The module models both styles and refuses a symbol it

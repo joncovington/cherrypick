@@ -123,3 +123,79 @@ def test_read_json_degrades_instead_of_raising(tmp_path):
     broken = tmp_path / "half-written.json"
     broken.write_text('{"module": "meic"', encoding="utf-8")
     assert store.read_json(broken, default={}) == {}
+
+
+# ------------------------------------------------------------------- tags and the re-keyed enactment table
+
+
+def test_every_experiment_gets_a_unique_book_tag():
+    conn = store.connect()
+    for n, name in enumerate(("Probe One", "probe-one", None), start=1):
+        store.insert_experiment(
+            conn,
+            {
+                "id": f"exp-2026-09-17-meic-{n}",
+                "module": "meic",
+                "base_profile": "control",
+                "name": name,
+                "params_json": "{}",
+                "status": "active",
+                "created_session": "2026-09-17",
+                "expires_after_sessions": 15,
+            },
+        )
+    tags = [e["tag"] for e in store.experiments(conn, module="meic")]
+    assert tags == ["advised:probe-one", "advised:probe-one-2", "advised:control"]
+    # another module may reuse the name: tags are unique PER MODULE
+    assert store.unique_tag(conn, "flies", "probe one") == "advised:probe-one"
+    conn.close()
+
+
+def test_tags_are_backfilled_for_experiments_admitted_before_the_column_existed():
+    conn = store.connect()
+    conn.execute(
+        "INSERT INTO experiments (id, module, base_profile, name, params_json, status, created_session,"
+        " expires_after_sessions, sessions_run, created_at, updated_at)"
+        " VALUES ('exp-old', 'flies', 'control', 'narrow wing', '{}', 'expired',"
+        " '2026-08-20', 10, 10, 'a', 'a')"
+    )
+    conn.commit()
+    assert store.backfill_tags(conn) == 1
+    assert store.experiment(conn, "exp-old")["tag"] == "advised:narrow-wing"
+    assert store.backfill_tags(conn) == 0
+    conn.close()
+
+
+def test_an_old_enactment_table_is_rekeyed_per_experiment_and_keeps_its_rows():
+    import sqlite3
+
+    path = paths.db_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    raw = sqlite3.connect(path)
+    raw.executescript(
+        """
+        CREATE TABLE enactment (
+            session TEXT NOT NULL, module TEXT NOT NULL, status TEXT NOT NULL, detail TEXT,
+            experiment_id TEXT, artifact_params TEXT, decision_params TEXT, decision_reason TEXT,
+            scored_at TEXT NOT NULL, PRIMARY KEY (session, module));
+        INSERT INTO enactment VALUES ('2026-09-16', 'meic', 'enacted', 'd', 'exp-1', '{}', '{}', NULL, 't');
+        INSERT INTO enactment VALUES ('2026-09-16', 'pmcc', 'no_artifact', 'd', NULL, NULL, NULL, NULL, 't');
+        """
+    )
+    raw.commit()
+    raw.close()
+    conn = store.connect()
+    rows = store.rows(conn, "SELECT session, module, experiment_id, status FROM enactment ORDER BY module")
+    assert [(r["module"], r["experiment_id"], r["status"]) for r in rows] == [
+        ("meic", "exp-1", "enacted"),
+        ("pmcc", "", "no_artifact"),
+    ]
+    conn.execute(
+        "INSERT INTO enactment (session, module, experiment_id, status, scored_at)"
+        " VALUES ('2026-09-16', 'meic', 'exp-2', 'enacted', 't')"
+    )
+    conn.commit()
+    assert len(store.rows(conn, "SELECT * FROM enactment WHERE module = 'meic'")) == 2, (
+        "two experiments, two rows"
+    )
+    conn.close()

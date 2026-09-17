@@ -1091,6 +1091,7 @@ def _experiments_running(conn) -> list[dict[str, Any]]:
                 "module": exp["module"],
                 "base_profile": exp["base_profile"],
                 "name": exp["name"],
+                "tag": exp.get("tag"),
                 "hypothesis": exp["hypothesis"],
                 "params": params,
                 "sessions_run": exp["sessions_run"],

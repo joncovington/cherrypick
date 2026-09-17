@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { normalizeAdvisorPayload } from "./advisorShape";
 import type {
   OverviewPayload,
   StatusPayload,
@@ -108,7 +109,9 @@ export function useMorningReport(session?: string) {
 export function useAdvisor(session?: string) {
   return useQuery<AdvisorPayload>({
     queryKey: ["advisor", session ?? "latest"],
-    queryFn: () => getJson<AdvisorPayload>(`/api/advisor${session ? `?session=${session}` : ""}`),
+    // Normalised at the boundary: a freshly built page can meet the previous build's API until
+    // the supervisor restarts the server (`lib/advisorShape.ts`).
+    queryFn: async () => normalizeAdvisorPayload(await getJson<unknown>(`/api/advisor${session ? `?session=${session}` : ""}`)),
     // Four checkpoints a day and one nightly enact — a minute is already far finer than the data.
     refetchInterval: 60_000,
   });

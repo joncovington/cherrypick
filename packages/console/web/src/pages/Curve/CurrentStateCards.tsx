@@ -4,7 +4,8 @@ import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 import { SignedBar } from "../../components/Charts";
 import { fmtStrike } from "../../lib/optionFormat";
 
-/** The three books whose identity the page knows. An `advised:*` twin rides along generically. */
+/** The three books whose identity the page knows. Each advisor experiment's `advised:<name>` book
+ *  rides along generically -- any number of them since 2026-09-17. */
 const CORE_BOOKS = ["control", "noflip", "hook"];
 
 function strikeAt(strike: number | null, expiration: string | null): string {
@@ -331,8 +332,9 @@ export function BookComparison({
             <section className="pmcc-compare">
               <h3>advised books</h3>
               <p className="integrity-note">
-                The advisor's synthetic twin runs its admitted params beside a base book. Excluded from the pairing
-                above -- its entries are its own.
+                One synthetic book per advisor experiment (advised:&lt;experiment name&gt;), each running its own
+                admitted params beside the base book it shadows. Excluded from the pairing above -- their entries
+                are their own.
               </p>
               <ul className="integrity-plain-list">
                 {others.map((t) => (

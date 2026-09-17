@@ -1,7 +1,8 @@
 """Wires engine decisions to the paper ledger: entries, traded closes, and settlement.
 
-Single book (`control`) plus its `advised:control` synthetic twin since the 2026-08-23 redesign to
-one `control` book — no more roll, no more keltner entry gate, no more multi-book fill pairing.
+Single book (`control`) since the 2026-08-23 redesign — no more roll, no more keltner entry gate,
+no more multi-book fill pairing — plus its `advised:<experiment>` synthetic twins (one per advisor
+experiment since 2026-09-17; a single `advised:control` before).
 Since 2026-08-23 the book runs two symbols (TQQQ, physical; XSP, cash) rather than one; the
 settlement-style branch below is what keeps their bookkeeping correctly diverging.
 
@@ -36,10 +37,14 @@ def enter_position(
     entry_session: str,
     advice_params: dict | None,
     keltner_measures: dict | None = None,
-    experiment_id: str | None = None,
+    experiment_id: str | dict | None = None,
 ) -> dict | None:
     """Open one book's position from a plan. Idempotent per position_id: a book that already holds
-    the day's position is skipped, so a tick retry cannot double-enter."""
+    the day's position is skipped, so a tick retry cannot double-enter.
+
+    `experiment_id` is the session decision (the row's stamp resolved by its tag through
+    `cherrypick.core.advice.stamp_for`, so each advised book carries its own experiment) or, for a
+    caller that already resolved it, the id itself."""
     pid = position_id(plan["symbol"], book, entry_session)
     if conn.execute("SELECT 1 FROM pmcc_positions WHERE position_id = ?", (pid,)).fetchone():
         return None

@@ -768,11 +768,19 @@ def _advice_profiles(cfg, today, *, persist=True):
     having made: meic's 08-25 artifact was lost to a 01:05 ET forced run that fixed the day's
     decision four hours before the market-open iteration that would have applied it.
 
-    The advised book is a synthetic profile `advised:<base>`: the base profile's registry def
-    with the admitted params overlaid, evaluated by process_symbol beside the un-advised base
-    (the control) -- the flies-arms pattern, and compare_profiles reads the tag for free.
+    Each advised book is a synthetic profile `advised:<experiment name>` -- ONE PER EXPERIMENT the
+    day's artifact carried (2026-09-17; before that, one `advised:<base>` book per module, so a
+    second experiment on control queued behind the first). Each is the registry def of the base
+    profile its entry names with that entry's admitted params overlaid, evaluated by
+    process_symbol beside the un-advised base (the control) -- the flies-arms pattern, and
+    compare_profiles reads the tag for free. The base comes from the entry, never from the tag,
+    which no longer carries one. A decision recorded before this date resolves to its single
+    legacy `advised:<base>` book (`cherrypick.core.advice.advised_books`), which is what its rows
+    were tagged.
+
     Open advised positions always keep a profile to run their exits: if advice is off today, a
-    management-only twin (entries capped to zero) stands in.
+    management-only twin (entries capped to zero) stands in, built on the base `_advised_base`
+    resolves for the tag.
     """
     base = (cfg.get("advice") or {}).get("base_profile", "control")
     decision = _core_advice.session_decision(
@@ -788,24 +796,40 @@ def _advice_profiles(cfg, today, *, persist=True):
 
     registry = paper.load_profiles()
     out = {}
-    dbase = decision.get("base_profile") or base
-    base_def = registry.get(dbase)
-    if decision.get("params") and isinstance(base_def, dict):
+    for entry in _core_advice.advised_books(decision):
+        base_def = registry.get(entry.get("base") or decision.get("base_profile") or base)
+        if not isinstance(base_def, dict):
+            logger.warning(
+                "advice [%s]: base profile %r is not in the registry; no book",
+                entry["tag"],
+                entry.get("base"),
+            )
+            continue
         # `experiment_id` is not a trading parameter: it rides on the synthetic def so the fill
         # row can copy it (paper.synthetic_entry_fill), the same way flies' arm overlay carries
         # its `arm`. Registry profiles never have it, so a control row is stamped None.
-        out[f"advised:{dbase}"] = {
-            **base_def,
-            **decision["params"],
-            "experiment_id": decision.get("experiment_id"),
-        }
+        out[entry["tag"]] = {**base_def, **entry["params"], "experiment_id": entry.get("experiment_id")}
     for tag in _open_advised_tags():
         if tag in out:
             continue
-        tag_base = registry.get(tag.split(":", 1)[1]) if ":" in tag else None
+        tag_base = registry.get(_advised_base(decision, tag, registry, base))
         if isinstance(tag_base, dict):
             out[tag] = {**tag_base, "max_concurrent_ics": 0}
     return out, decision.get("reason")
+
+
+def _advised_base(decision, tag, registry, default):
+    """The base profile an open advised tag shadows: the decision's entry for that tag when there
+    is one (a rejected entry still names its base), else the legacy `advised:<profile>` reading
+    when the suffix is a registry profile, else the configured base. Never a bare split of the tag
+    -- `advised:entry-window-truncate` names no profile called `entry-window-truncate`."""
+    for entry in decision.get("experiments") or []:
+        if isinstance(entry, dict) and entry.get("tag") == tag and entry.get("base"):
+            return str(entry["base"])
+    suffix = tag[len(_core_advice.ADVISED_PREFIX) :] if _core_advice.is_advised(tag) else tag
+    if suffix in registry:
+        return suffix
+    return default
 
 
 def _ensure_paper_schema() -> None:

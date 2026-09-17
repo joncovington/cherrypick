@@ -78,8 +78,13 @@ export interface AdvisorEvent {
 export interface AdvisorExperiment {
   id: string;
   module: string;
+  /** The book this experiment's advised twin is measured against. */
   baseProfile: string;
   name: string | null;
+  /** The book this experiment writes, `advised:<name>` (2026-09-17): the row's own `tag` column,
+   *  or derived from the name on a store that predates the column; null for a legacy row with
+   *  neither, whose book was `advised:<base>`. */
+  tag: string | null;
   hypothesis: string | null;
   successMetric: string | null;
   params: Record<string, unknown>;
@@ -110,6 +115,27 @@ export interface AdvisorEnactment {
   scoredAt: string | null;
 }
 
+/** One experiment's entry in an advice artifact or a module's frozen decision file -- since
+ *  2026-09-17 both carry an `experiments` list, one entry per concurrent experiment, and the
+ *  reader synthesises a single entry from the legacy top-level fields when the list is absent. */
+export interface AdvisorArtifactExperiment {
+  experimentId: string | null;
+  name: string | null;
+  tag: string | null;
+  base: string | null;
+  proposals: Array<{ param: string; value: unknown; rationale: string }>;
+  rejected: Array<{ param: string | null; value: unknown; reason: string }>;
+}
+
+export interface AdvisorDecisionExperiment {
+  experimentId: string | null;
+  name: string | null;
+  tag: string | null;
+  base: string | null;
+  params: Record<string, unknown> | null;
+  reason: string | null;
+}
+
 /**
  * What actually reached the loops, per module. Three separate facts, kept separate because they
  * come apart in ordinary operation and collapsing them is what hid the 2026-08-25 incident: the
@@ -125,14 +151,23 @@ export interface AdvisorApplyStatus {
   /** The session the QUEUED artifact is for — tomorrow, when the evening pass has run. */
   nextSession: string | null;
   artifactWritten: boolean;
+  /** Mirror of the first experiment's admitted/rejected lists, the pre-2026-09-17 shape. */
   artifactProposals: Array<{ param: string; value: unknown; rationale: string }>;
   artifactRejected: Array<{ param: string | null; value: unknown; reason: string }>;
+  /** One entry per experiment the artifact carries (a single synthesised entry for an artifact
+   *  written before the list existed). Empty when no artifact is written. */
+  artifactExperiments: AdvisorArtifactExperiment[];
   /** The module's frozen read-once decision for the session it names, verbatim. */
   consumerDecision: Record<string, unknown> | null;
+  /** The decision's `experiments` list, or its legacy `params`/`experiment_id` as one entry. */
+  decisionExperiments: AdvisorDecisionExperiment[];
   /** Why the module is not accepting advice, when it is not. */
   disabledReason: string | null;
-  /** Whether the artifact issued for the CHOSEN session reached this module's loop. */
-  enactment: AdvisorEnactment | null;
+  /** Whether the artifact issued for the CHOSEN session reached this module's loop -- one row per
+   *  experiment since the advisor's `enactment` table keyed on (session, module, experiment_id)
+   *  (2026-09-17); a row with a null experiment id is the module's own "nothing issued". Empty
+   *  when the advisor has not scored the session. */
+  enactments: AdvisorEnactment[];
 }
 
 /** One scored session for a module, oldest first in `AdvisorModulePayload.sessions`. */
@@ -151,20 +186,27 @@ export interface AdvisorSessionCell {
  * (2026-09-12) — a reader looking at a module asks "is my A/B working", which the cross-module
  * advisor page did not answer at a glance.
  */
+/** An active experiment with its own progress against the advisor's calendar exit. */
+export interface AdvisorActiveExperiment extends AdvisorExperiment {
+  /** Sessions the advisor has scored for this module since this experiment was created — its
+   *  calendar age as the advisor counts it. Null on a store without the enactment table. */
+  calendarSessions: number | null;
+  /** The calendar exit fires past this many sessions: twice the experiment's length. */
+  stallBudget: number;
+}
+
 export interface AdvisorModulePayload {
   module: string;
   storePresent: boolean;
-  active: AdvisorExperiment | null;
+  /** Every experiment running on this module, in activation order — several at once since
+   *  2026-09-17, each on its own advised book. */
+  active: AdvisorActiveExperiment[];
   queued: AdvisorExperiment[];
   /** The most recently concluded experiments on this module, newest first. */
   concluded: AdvisorExperiment[];
-  /** The last scored sessions for this module, oldest first — the session strip. */
+  /** Every enactment row over the last scored sessions for this module, oldest first — one per
+   *  experiment per session, so the strip is drawn per experiment (`experimentId`). */
   sessions: AdvisorSessionCell[];
-  /** Sessions the advisor has scored for this module since the active experiment was created —
-   *  its calendar age as the advisor counts it. Null without an active experiment. */
-  calendarSessions: number | null;
-  /** The calendar exit fires past this many sessions: twice the experiment's length. */
-  stallBudget: number | null;
   /** Tomorrow's artifact and whether the module accepts advice — the same apply status the
    *  advisor page shows, for this module alone. */
   tomorrow: AdvisorApplyStatus | null;

@@ -215,3 +215,58 @@ def test_frozen_params_govern_an_open_advised_position_after_the_artifact_expire
     position = {"book": "advised:control", "advice_params": json.dumps({"profit_take_pct": 0.35})}
     config = {"defaults": {"profit_take_pct": 0.50}, "books": {"control": {}}}
     assert management.effective_params(position, config)["profit_take_pct"] == 0.35
+
+
+# --------------------------- one advised book per experiment (2026-09-17)
+
+
+def test_base_book_resolves_an_experiment_tag_through_the_decision_then_the_config():
+    """Since 2026-09-17 an advised tag names the EXPERIMENT, not the base. The decision entry
+    answers first, the configured `advice.base_book` answers for a row whose decision is gone, and
+    the legacy `advised:<base>` tag still reads its base straight off the name."""
+    decision = {
+        "experiments": [
+            {"experiment_id": "exp-1", "tag": "advised:hook-take", "base": "hook", "params": {"a": 1}}
+        ]
+    }
+    assert engine.base_book("advised:hook-take", decision=decision) == "hook"
+    assert engine.base_book("advised:hook-take") == "control"
+    assert engine.base_book("advised:hook-take", config={"advice": {"base_book": "noflip"}}) == "noflip"
+    assert engine.base_book("advised:hook", config={"advice": {"base_book": "noflip"}}) == "hook"
+    assert engine.base_book("noflip") == "noflip"
+
+
+def test_effective_params_resolve_an_experiment_tag_to_the_configured_base():
+    config = {
+        "defaults": {"profit_take_pct": 0.5},
+        "books": {"control": {}, "noflip": {"profit_take_pct": 0.4}},
+    }
+    row = {"book": "advised:take-35", "advice_params": '{"profit_take_pct": 0.35}'}
+    params = management.effective_params(row, config)
+    assert params["base_book"] == "control" and params["profit_take_pct"] == 0.35
+    config["advice"] = {"base_book": "noflip"}
+    params = management.effective_params({"book": "advised:take-35", "advice_params": "{}"}, config)
+    assert params["base_book"] == "noflip" and params["profit_take_pct"] == 0.4
+
+
+def test_an_experiment_twin_of_noflip_never_flips_but_a_twin_of_control_does():
+    """The flip exit keys on the resolved base, never on the tag: the same `advised:<name>` tag
+    shadowing `noflip` holds through measured backwardation, shadowing `control` closes."""
+    backwardation = {"ok": True, "regime": "backwardation", "ratio": 1.05}
+    now = datetime(2026, 9, 1)
+    of_noflip = management.effective_params(
+        {"book": "advised:take-35", "advice_params": "{}"},
+        {"defaults": {}, "books": {"noflip": {}}, "advice": {"base_book": "noflip"}},
+    )
+    d = management.evaluate(
+        _position(book="advised:take-35"), of_noflip, now=now, close_cost=0.99, regime=backwardation
+    )
+    assert d.action == "hold" and d.reason == "working"
+    of_control = management.effective_params(
+        {"book": "advised:take-35", "advice_params": "{}"},
+        {"defaults": {}, "books": {"control": {}}, "advice": {"base_book": "control"}},
+    )
+    d = management.evaluate(
+        _position(book="advised:take-35"), of_control, now=now, close_cost=0.99, regime=backwardation
+    )
+    assert d.action == "close_all" and d.reason == "regime_flip"

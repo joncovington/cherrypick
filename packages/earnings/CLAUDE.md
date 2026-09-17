@@ -93,10 +93,22 @@ You are the cherrypick **Earnings** agent, an autonomous options trading agent f
 When config's `advice.enabled` is true, the entry scan looks ONCE for
 `state/advice/earnings-<session>.json` (written by `packages/advisor`), re-validates it with
 `cherrypick.core.advice` against this module's own `advice.bounds` manifest, and for each admitted
-strategy opens an **advised twin** beside the ordinary strat_test entry: identical legs, credit,
-quantity and modelled costs, tagged `advised:strat_test:<strategy>`. The twin exists so the
-comparison is paired — same fills, same session, same name — which makes the management params the
-only thing separating it from its control.
+experiment that names a strategy opens an **advised twin** beside that strategy's ordinary
+strat_test entry: identical legs, credit, quantity and modelled costs, tagged
+`advised:<experiment name>:<strategy>`. The twin exists so the comparison is paired — same fills,
+same session, same name — which makes the management params the only thing separating it from its
+control.
+
+**One twin per experiment per strategy (2026-09-17).** Until then the artifact carried one overlay
+and each strategy got exactly one twin, `advised:strat_test:<strategy>`, so a second experiment on
+iron_condor had nowhere to be measured and queued behind the first. Now `advice.twins_for` returns
+one entry per experiment whose params touch the strategy (via `cherrypick.core.advice.advised_books`),
+and the harness opens one twin each — its own tag from `advised_tag(name, strategy)`, its own
+`experiment_id`, and an `order_id` that carries the experiment's slug so two twins of one entry
+cannot collide. One experiment's out-of-bounds overlay is that experiment's baseline day and nobody
+else's. A decision file recorded before this date names no experiment and still opens the legacy
+`advised:strat_test:<strategy>` twin, which is what its rows were always tagged; `managed_book`
+accepts both shapes (the strategy is the tag's last segment either way, `advice.strategy_of`).
 
 Three properties, each of which a simpler design gets wrong:
 
@@ -122,7 +134,7 @@ Three properties, each of which a simpler design gets wrong:
   and never got called. A change here is invisible from the advice path; the guard is
   `test_an_advised_twin_is_managed_beside_its_control`.
 
-**Every advised row also carries `experiment_id` (2026-09-16)** — the advisor experiment the day's artifact named, read from the session decision and stamped through the one shared rule (`cherrypick.core.advice.stamp_for`: advised books only, never the control). The `advised:<base>` tag names a book, and every experiment on that base reuses it in turn; the stamp is what lets the ledger, the advisor's verdicts and the console's paired cards tell one experiment's rows from the next's without inferring it from dates. Rows written before the column existed read `NULL` and are treated as unstamped history, never rewritten.
+**Every advised row also carries `experiment_id` (2026-09-16)** — the advisor experiment the day's artifact named, read from the session decision and stamped through the one shared rule (`cherrypick.core.advice.stamp_for`: advised books only, never the control). Through 2026-09-16 the `advised:strat_test:<strategy>` tag named a book and every experiment on that strategy reused it in turn, so the stamp is what lets the ledger, the advisor's verdicts and the console's paired cards tell one experiment's rows from the next's without inferring it from dates; since 09-17 the tag names the experiment and the stamp is carried per twin from its own entry. Rows written before the column existed read `NULL` and are treated as unstamped history, never rewritten.
 
 **v1 bounds are management/exit params only.** Entry-side screens, tiering and sizing change *which*
 trades open, and a twin cannot express that — both books would have to face the same fills to be

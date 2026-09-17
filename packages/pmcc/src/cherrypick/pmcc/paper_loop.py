@@ -16,7 +16,7 @@ about when the day starts or ends):
   the orphan longs of short-settled positions — oldest obligation first, before this tick can enter
   anything new.
 - Inside the entry window, for each configured symbol (TQQQ, XSP) with no open position and
-  headroom under `max_positions`: plan and enter `control` (and `advised:control` when the advisor
+  headroom under `max_positions`: plan and enter `control` (and one `advised:<experiment>` per advisor experiment when the advisor
   has admitted params for today).
 - Past the settle time on any day legs expire: settle them off a staleness-gated spot read. A
   missed settlement day is NOT settled late against a later print — the cache keeps no history, so
@@ -163,17 +163,27 @@ def advice_decision(config: dict, today: str) -> dict:
     )
 
 
-def session_books(config: dict, today: str) -> tuple[list[str], dict | None]:
-    """(the books entry may open today, the admitted advice params or None). The roster only
+def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]:
+    """(the books entry may open today, `{advised tag: its experiment entry}`). The roster only
     matters at ENTRY — marking, management, disposition, and settlement all iterate open positions
     from the ledger whatever their book tag, so a book once opened can never be stranded by a later
-    roster change. Single book (`control`) since the 2026-08-23 redesign, plus its advised twin."""
+    roster change. Single book (`control`) since the 2026-08-23 redesign, plus its advised twins.
+
+    One advised book PER EXPERIMENT the day's decision admitted (2026-09-17): each entry names its
+    own tag (`advised:<experiment name>`), the base it shadows and the params it overlays; a
+    decision recorded before that date still yields its single `advised:<base>`. The map is empty
+    on a baseline day. Every tag here is on the roster the stream request subscribes for -- the
+    2026-08-27 lesson (`stream_window.entry_possible`) holds for every twin, not just the first."""
     books = [b for b in engine.BOOKS if (config.get("books") or {}).get(b, {}).get("enabled", True)]
-    decision = advice_decision(config, today)
-    params = decision.get("params")
-    if params:
-        books.append(f"advised:{decision.get('base_book') or 'control'}")
-    return books, params
+    advised = advised_entries(advice_decision(config, today))
+    books.extend(tag for tag in advised if tag not in books)
+    return books, advised
+
+
+def advised_entries(decision: dict | None) -> dict[str, dict]:
+    """`{tag: experiment entry}` for every experiment the decision opens a book for, in artifact
+    order -- keyed by tag because planning, freezing and stamping all look the book up by it."""
+    return {e["tag"]: e for e in _core_advice.advised_books(decision) if e.get("tag")}
 
 
 # --------------------------------------------------------------------------- the tick
@@ -289,8 +299,10 @@ def _entry_guards(config: dict, symbol: str, plan_dates: dict, day: str) -> str 
 
 
 def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: str) -> int:
-    books, advice_params = session_books(config, day)
-    experiment_id = advice_decision(config, day).get("experiment_id") if advice_params else None
+    books, advised = session_books(config, day)
+    # The decision itself is what each advised row is stamped from: `stamp_for(book, decision)`
+    # resolves the id per tag, so two experiments on one session carry two ids.
+    decision = advice_decision(config, day) if advised else None
     defaults = config.get("defaults") or {}
     max_positions = int(defaults.get("max_positions", 3))
     opened_count = 0
@@ -404,14 +416,21 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             spot=snapshot["spot"],
         )
 
-        # One plan for the base book; the advised book plans separately when its overlay touches
-        # entry.
+        # One plan for the base book; each advised book plans separately when its overlay touches
+        # entry, from the base its decision entry names (control, the only base this module has)
+        # with that entry's own params on top.
         base_params = {**management.PARAM_DEFAULTS, **engine.merged_params(config, "control")}
         planned = engine.plan_entry(snapshot, base_params)
         plans: dict[str, dict] = {}
         for b in wanting:
-            if b.startswith("advised:") and advice_params:
-                adv_params = {**base_params, **advice_params}
+            entry = advised.get(b)
+            if entry and entry.get("params"):
+                adv_base = engine.base_book(b, config=config, decision=decision)
+                adv_params = {
+                    **management.PARAM_DEFAULTS,
+                    **engine.merged_params(config, adv_base),
+                    **entry["params"],
+                }
                 plans[b] = engine.plan_entry(snapshot, adv_params)
             else:
                 plans[b] = planned
@@ -458,8 +477,8 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                 config,
                 b,
                 entry_session=day,
-                advice_params=advice_params,
-                experiment_id=experiment_id,
+                advice_params=(advised.get(b) or {}).get("params"),
+                experiment_id=decision,
             )
             if opened is None:
                 continue

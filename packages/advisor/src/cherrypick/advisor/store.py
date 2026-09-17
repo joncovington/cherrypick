@@ -107,17 +107,20 @@ CREATE INDEX IF NOT EXISTS idx_events_experiment ON experiment_events(experiment
 -- artifact no loop read. The reconciliation is computed in `enactment.py` and STORED here rather
 -- than recomputed by each reader: the console renders the advisor's judgements and derives none of
 -- its own, the same rule that keeps verdicts on the experiment row.
+-- One row PER EXPERIMENT per module-session (2026-09-17): experiments run concurrently now, each
+-- with its own book, so each has its own enactment outcome. `experiment_id` is '' (never NULL --
+-- NULL in a primary key does not collide in SQLite) for a module-session with no artifact.
 CREATE TABLE IF NOT EXISTS enactment (
     session         TEXT NOT NULL,
     module          TEXT NOT NULL,
+    experiment_id   TEXT NOT NULL DEFAULT '',
     status          TEXT NOT NULL,  -- enacted|carried|not_enacted|no_artifact
     detail          TEXT,
-    experiment_id   TEXT,
     artifact_params TEXT,
     decision_params TEXT,
     decision_reason TEXT,
     scored_at       TEXT NOT NULL,
-    PRIMARY KEY (session, module)
+    PRIMARY KEY (session, module, experiment_id)
 );
 
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -133,7 +136,78 @@ _MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     # 2026-09-12: the exact model id the CLI resolved an alias to, beside the alias in `model`.
     # The alias floats by design; this is how a change under a fixed config stays visible.
     ("checkpoints", "model_id", "ALTER TABLE checkpoints ADD COLUMN model_id TEXT"),
+    # 2026-09-17: the book an experiment writes to, `advised:<name>` (core.advice.advised_tag),
+    # unique per module. Stored rather than derived on every read because the ledgers, the
+    # verdicts and the console all key on it, and a name edit must never silently re-key history.
+    ("experiments", "tag", "ALTER TABLE experiments ADD COLUMN tag TEXT"),
 )
+
+
+def _migrate_enactment(conn: sqlite3.Connection) -> None:
+    """Re-key `enactment` from (session, module) to (session, module, experiment_id) (2026-09-17).
+    CREATE TABLE IF NOT EXISTS leaves an existing table alone, so a pre-change database keeps the
+    old key until this copies its rows across. Idempotent: a table already on the new key is left
+    as it is."""
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'enactment'").fetchone()
+    if row is None or "PRIMARY KEY (session, module, experiment_id)" in str(row[0]):
+        return
+    conn.executescript(
+        """
+        ALTER TABLE enactment RENAME TO enactment_v1;
+        CREATE TABLE enactment (
+            session         TEXT NOT NULL,
+            module          TEXT NOT NULL,
+            experiment_id   TEXT NOT NULL DEFAULT '',
+            status          TEXT NOT NULL,
+            detail          TEXT,
+            artifact_params TEXT,
+            decision_params TEXT,
+            decision_reason TEXT,
+            scored_at       TEXT NOT NULL,
+            PRIMARY KEY (session, module, experiment_id)
+        );
+        INSERT OR REPLACE INTO enactment (session, module, experiment_id, status, detail, artifact_params,
+                                          decision_params, decision_reason, scored_at)
+            SELECT session, module, COALESCE(experiment_id, ''), status, detail, artifact_params,
+                   decision_params, decision_reason, scored_at FROM enactment_v1;
+        DROP TABLE enactment_v1;
+        """
+    )
+    conn.commit()
+
+
+def unique_tag(conn: sqlite3.Connection, module: str, name: Any, *, base_profile: str | None = None) -> str:
+    """The book tag a new experiment will write to: `advised:<slug(name)>`, suffixed `-2`, `-3`...
+    when another experiment of this module already holds it. A NAMELESS experiment keeps the
+    legacy `advised:<base>` book -- the tag its rows were always written under."""
+    from cherrypick.core import advice as _advice
+
+    if not name:
+        return f"{_advice.ADVISED_PREFIX}{base_profile or 'control'}"
+    wanted = _advice.advised_tag(name)
+    taken = {
+        r[0]
+        for r in conn.execute("SELECT tag FROM experiments WHERE module = ? AND tag IS NOT NULL", (module,))
+    }
+    tag, n = wanted, 1
+    while tag in taken:
+        n += 1
+        tag = f"{wanted}-{n}"
+    return tag
+
+
+def backfill_tags(conn: sqlite3.Connection) -> int:
+    """Give every experiment admitted before the `tag` column existed its book tag, oldest first
+    so a later duplicate name gets the suffix. Returns how many rows were stamped."""
+    rows = conn.execute(
+        "SELECT id, module, name, base_profile FROM experiments WHERE tag IS NULL ORDER BY created_at, id"
+    ).fetchall()
+    for r in rows:
+        tag = unique_tag(conn, r["module"], r["name"], base_profile=r["base_profile"])
+        conn.execute("UPDATE experiments SET tag = ? WHERE id = ?", (tag, r["id"]))
+    if rows:
+        conn.commit()
+    return len(rows)
 
 
 def now_iso() -> str:
@@ -146,6 +220,8 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
     conn = _db.connect(path or _paths.db_path(), pragmas=("journal_mode=WAL", "foreign_keys=ON"))
     conn.executescript(_SCHEMA)
     _db.apply_additive_migrations(conn, _MIGRATIONS)
+    _migrate_enactment(conn)
+    backfill_tags(conn)
     conn.execute(
         "INSERT INTO schema_meta (key, value) VALUES ('schema_version', ?)"
         " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -331,14 +407,15 @@ def next_experiment_id(conn: sqlite3.Connection, session: str, module: str) -> s
 
 def insert_experiment(conn: sqlite3.Connection, record: dict[str, Any]) -> str:
     conn.execute(
-        "INSERT INTO experiments (id, module, base_profile, name, hypothesis, success_metric,"
+        "INSERT INTO experiments (id, module, base_profile, name, tag, hypothesis, success_metric,"
         " params_json, bounds_snapshot_json, status, created_session, expires_after_sessions,"
         " sessions_run, origin_proposal_id, verdict_json, created_at, updated_at)"
-        " VALUES (:id,:module,:base_profile,:name,:hypothesis,:success_metric,:params_json,"
+        " VALUES (:id,:module,:base_profile,:name,:tag,:hypothesis,:success_metric,:params_json,"
         " :bounds_snapshot_json,:status,:created_session,:expires_after_sessions,:sessions_run,"
         " :origin_proposal_id,:verdict_json,:created_at,:updated_at)",
         {
             "verdict_json": None,
+            "tag": None,
             "sessions_run": 0,
             "name": None,
             "hypothesis": None,
@@ -350,6 +427,17 @@ def insert_experiment(conn: sqlite3.Connection, record: dict[str, Any]) -> str:
             **record,
         },
     )
+    if record.get("tag") is None:
+        # A direct insert without a tag (tests, backfills) still gets its book.
+        conn.execute(
+            "UPDATE experiments SET tag = ? WHERE id = ?",
+            (
+                unique_tag(
+                    conn, record["module"], record.get("name"), base_profile=record.get("base_profile")
+                ),
+                record["id"],
+            ),
+        )
     conn.commit()
     return str(record["id"])
 

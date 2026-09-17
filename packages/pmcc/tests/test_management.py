@@ -141,3 +141,19 @@ def test_frozen_params_govern_an_open_advised_position_after_the_artifact_expire
 
     advised = {**POSITION, "book": "advised:control", "advice_params": '{"tv_managed_exit": true}'}
     assert management.effective_params(advised, config)["tv_managed_exit"] is True
+
+
+def test_effective_params_resolve_an_experiment_tag_to_the_configured_base(config):
+    """An `advised:<experiment>` row (2026-09-17) shadows `advice.base_book`, its frozen overlay on
+    top; the legacy `advised:control` row keeps reading its base off the tag."""
+    config["books"]["control"]["tv_close_threshold"] = 0.12
+    row = {**POSITION, "book": "advised:tv-exit", "advice_params": '{"tv_managed_exit": true}'}
+    params = management.effective_params(row, config)
+    assert params["base_book"] == "control"
+    assert params["tv_close_threshold"] == 0.12  # the base book's own block, not the defaults
+    assert params["tv_managed_exit"] is True
+    assert params["book"] == "advised:tv-exit"
+    # The retired pre-redesign tags still name their base through the config's books keys.
+    config["books"]["keltner"] = {"tv_close_threshold": 0.30}
+    old = management.effective_params({**POSITION, "book": "advised:keltner", "advice_params": "{}"}, config)
+    assert old["base_book"] == "keltner" and old["tv_close_threshold"] == 0.30

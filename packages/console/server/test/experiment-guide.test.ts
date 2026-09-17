@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { ConsoleConfig } from "../src/config.js";
+import { closePooledDbs } from "../src/readers/db.js";
 import { readFliesArmGuide, readMeicProfileGuide } from "../src/readers/experimentGuide.js";
 
 /**
@@ -160,9 +161,44 @@ describe("running versus finished", () => {
   it("the advice block's current book runs; a book it no longer produces is retired, not gone", () => {
     // advised:* books never appear in the arm registry — the paper loop synthesizes them from the
     // advice block — so registry absence must not read as "gone from config" while one is trading.
+    // No advisor store exists yet here, so the pre-2026-09-17 rule (advice on, declared base) applies.
     expect(armOf("advised:control")).toMatchObject({ enabled: true, retired: false, removed: false, positions: 1 });
     expect(armOf("advised:iron")).toMatchObject({ enabled: false, retired: true, removed: false });
     expect(armOf("advised:control").derived[0]).toMatchObject({ label: "advised twin of", value: "control" });
+  });
+
+  it("one entry per experiment's own book once the advisor's rows exist, each naming its base", () => {
+    // 2026-09-17: several experiments at once, each on `advised:<experiment name>`; the base is on
+    // the advisor's row. The legacy advised:control book is then history, not the running book.
+    fs.mkdirSync(config.paths.advisorDir, { recursive: true });
+    const adv = new Database(path.join(config.paths.advisorDir, "advisor.db"));
+    adv.exec("CREATE TABLE experiments (id TEXT, module TEXT, base_profile TEXT, name TEXT, status TEXT, verdict_json TEXT, created_at TEXT)");
+    const ins = adv.prepare("INSERT INTO experiments VALUES (?,?,?,?,?,?,?)");
+    ins.run("exp-f1", "flies", "control", "narrow-wing-vs-control", "active", null, "2026-09-10T00:00:00");
+    ins.run("exp-f2", "flies", "control", "forecast-range-gate-floor-probe", "active", null, "2026-09-14T00:00:00");
+    ins.run("exp-f0", "flies", "control", "floor-must-hold", "killed", null, "2026-08-13T00:00:00");
+    adv.close();
+    const led = new Database(path.join(config.paths.fliesDir, "paper_trades.db"));
+    const pos = led.prepare("INSERT INTO fly_positions (arm, trade_date) VALUES (?, ?)");
+    pos.run("advised:narrow-wing-vs-control", "2026-09-15");
+    pos.run("advised:forecast-range-gate-floor-probe", "2026-09-15");
+    pos.run("advised:floor-must-hold", "2026-08-14");
+    led.close();
+    closePooledDbs();
+
+    expect(armOf("advised:narrow-wing-vs-control")).toMatchObject({ enabled: true, retired: false, removed: false, positions: 1 });
+    expect(armOf("advised:forecast-range-gate-floor-probe")).toMatchObject({ enabled: true, retired: false, removed: false });
+    expect(armOf("advised:narrow-wing-vs-control").derived[0]).toMatchObject({
+      label: "advised twin of",
+      value: "control: narrow-wing-vs-control",
+    });
+    expect(armOf("advised:narrow-wing-vs-control").derived[0]!.detail).toContain("exp-f1");
+    expect(armOf("advised:narrow-wing-vs-control").notes[0]!.text).toContain("narrow-wing-vs-control");
+    // Concluded: its book is retired, and still never "gone from config".
+    expect(armOf("advised:floor-must-hold")).toMatchObject({ enabled: false, retired: true, removed: false });
+    // The legacy book no experiment claims is history now that there are rows to ask.
+    expect(armOf("advised:control")).toMatchObject({ enabled: false, retired: true, removed: false });
+    expect(armOf("advised:control").derived[0]!.detail).toContain("legacy");
   });
 
   it("surfaces the module's own measurement breaks", () => {
@@ -229,7 +265,12 @@ describe("MEIC risk profiles", () => {
     ins.run("advised:control", "2026-08-13");
     db.close();
 
-    meicConfig = { ...config, paths: { ...config.paths, meicDir: dir, cherrypick: tmp, meicRiskConfig: path.join(tmp, "config.risk.json") } };
+    // Its own advisor dir: the flies tests above create a store under theirs, and an absent store
+    // is the state these tests pin (the pre-2026-09-17 rule).
+    meicConfig = {
+      ...config,
+      paths: { ...config.paths, meicDir: dir, cherrypick: tmp, meicRiskConfig: path.join(tmp, "config.risk.json"), advisorDir: path.join(tmp, "advisor") },
+    };
   });
 
   const guide = () => readMeicProfileGuide(meicConfig, "paper");
@@ -273,5 +314,30 @@ describe("MEIC risk profiles", () => {
   it("takes the set-level notes from the config root", () => {
     expect(guide().groupNotes.map((n) => n.key)).toContain("description");
     expect(guide().unit).toBe("risk profile");
+  });
+
+  it("a legacy book whose rows are all stamped with one experiment is that experiment's book", () => {
+    // MEIC's real ledger on 2026-09-17: 421 advised:control rows stamped exp-2026-09-09-meic-1
+    // beside 2079 unstamped. A tag stamped with ONE experiment throughout is attributed; a mix
+    // is listed as the history it is.
+    fs.mkdirSync(meicConfig.paths.advisorDir, { recursive: true });
+    const adv = new Database(path.join(meicConfig.paths.advisorDir, "advisor.db"));
+    adv.exec("CREATE TABLE experiments (id TEXT, module TEXT, base_profile TEXT, name TEXT, status TEXT, verdict_json TEXT, created_at TEXT)");
+    adv.prepare("INSERT INTO experiments VALUES (?,?,?,?,?,?,?)").run("exp-m1", "meic", "open", "iv-floor", "active", null, "2026-09-10T00:00:00");
+    adv.close();
+    const led = new Database(path.join(meicConfig.paths.meicDir, "paper_trades.db"));
+    led.exec("ALTER TABLE ic_trades ADD COLUMN experiment_id TEXT");
+    led.prepare("UPDATE ic_trades SET experiment_id = 'exp-m1' WHERE risk_profile = 'advised:open'").run();
+    led.prepare("INSERT INTO ic_trades (risk_profile, trade_date, experiment_id) VALUES ('advised:control', '2026-09-10', 'exp-m1')").run();
+    led.close();
+    closePooledDbs();
+
+    const open = guide().entries.find((e) => e.name === "advised:open")!;
+    expect(open).toMatchObject({ enabled: true, retired: false });
+    expect(open.derived[0]).toMatchObject({ value: "open: iv-floor" });
+    expect(open.derived[0]!.detail).toContain("stamped");
+    // advised:control carries one stamped row and one unstamped: not attributed, history.
+    const control = guide().entries.find((e) => e.name === "advised:control")!;
+    expect(control).toMatchObject({ enabled: false, retired: true, removed: false });
   });
 });

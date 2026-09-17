@@ -589,18 +589,30 @@ and the per-window ranking had nothing to rank. `max_positions_per_window` (off 
 
 When config's `advice.enabled` is true, the paper loop looks ONCE at session start for
 `state/advice/flies-<session>.json` (written by `packages/advisor`), re-validates it with
-`cherrypick.core.advice` against this module's own `advice.bounds` manifest, and runs the admitted
-params as a **synthetic arm**, `advised:<base_arm>`, beside the un-advised base. Absent, stale,
-expired or invalid advice all mean baseline; one out-of-bounds value rejects the whole artifact; and
-the day's decision is pinned in `data/flies/advice_active.json` so advice can never start, stop or
-change mid-session across the resident loop's restarts and the off-session `--once` ticks.
+`cherrypick.core.advice` against this module's own `advice.bounds` manifest, and runs each admitted
+experiment as a **synthetic arm**, `advised:<experiment name>`, beside the un-advised base the
+entry names. Absent, stale, expired or invalid advice all mean baseline; one out-of-bounds value
+rejects that experiment's whole overlay (its baseline day, and nobody else's); and the day's decision
+is pinned in `data/flies/advice_active.json` so advice can never start, stop or change mid-session
+across the resident loop's restarts and the off-session `--once` ticks.
+
+**One arm per experiment (2026-09-17).** Until then the artifact carried one overlay and the loop
+built exactly one `advised:<base_arm>` arm from it, so a second experiment on control had nowhere
+to be measured and queued behind the first. Now `session_arms` builds one arm per entry
+`cherrypick.core.advice.advised_books` returns — the entry's base arm with the entry's params on
+top, under the entry's tag — so two experiments on control run side by side as two twins of the
+same control. The base is read from the entry, never split out of the tag (`advised:forecast-range`
+names no arm called `forecast-range`); an arm already holding rows whose entry is gone resolves its
+base through `_advised_base` (the decision's entry, else the legacy `advised:<arm>` reading, else
+`advice.base_arm`). A decision file recorded before this date still opens `advised:control`, which
+is what its rows were tagged, so history reads unchanged.
 
 **An advised arm is a new BOOK, not a measurement break in an existing one.** That is the convention
 that keeps this compatible with everything above: `control` never changes meaning mid-experiment, so
-its history stays poolable, and `fly_books`/`fly_positions` key on the arm *string*, so
-`advised:control` needs no `engine.ARMS` entry and attribution comes free from the stored tag.
+its history stays poolable, and `fly_books`/`fly_positions` key on the arm *string*, so an advised
+arm needs no `engine.ARMS` entry and attribution comes free from the stored tag.
 
-**Every advised row also carries `experiment_id` (2026-09-16)** — the advisor experiment the day's artifact named, read from the session decision and stamped through the one shared rule (`cherrypick.core.advice.stamp_for`: advised books only, never the control). The `advised:<base>` tag names a book, and every experiment on that base reuses it in turn; the stamp is what lets the ledger, the advisor's verdicts and the console's paired cards tell one experiment's rows from the next's without inferring it from dates. Rows written before the column existed read `NULL` and are treated as unstamped history, never rewritten.
+**Every advised row also carries `experiment_id` (2026-09-16)** — the advisor experiment the arm's entry named, resolved per arm from the session decision and stamped through the one shared rule (`cherrypick.core.advice.stamp_for(arm, decision)`: advised books only, never the control). Since 2026-09-17 the tag itself names the experiment, but the stamp stays: it is what lets the ledger, the advisor's verdicts and the console's paired cards tell one experiment's rows from the next's under the legacy `advised:control` tag, which every experiment before that date reused in turn. Rows written before the column existed read `NULL` and are treated as unstamped history, never rewritten.
 
 **There is no management twin, because this module has no exits.** MEIC needs one — an advised
 position there still has stops to run when advice lapses. A fly is held to settlement, so an advised
