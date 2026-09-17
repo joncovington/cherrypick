@@ -220,11 +220,28 @@ def disarm_min(config: dict) -> int:
 
 
 def _merged_live_params(config: dict, arm: str) -> dict:
-    """The arm's engine params, with the live block's own overrides (completion_cutoff) on top."""
+    """The arm's engine params, with the live block's own overrides on top: `completion_cutoff`,
+    and `no_entry_before` (2026-09-17) -- the live pilot's own start of day.
+
+    The start is a LIVE override rather than a change to the arm because the two loops differ in
+    exactly the way that makes the first entry matter. Paper control is unbounded, so a 10:00
+    entry costs nothing beyond its own outcome; live holds one incomplete position at a time, so
+    a 10:00 entry -- the day's weakest slot in the era, 36 entries netting +$61 with a median 81
+    minutes to complete -- sits on the slot through 10:15 and 10:30, the two slots that made the
+    money (34 entries, 88% completion, +$2,730). Replaying control's era entries under the live
+    rule: start 10:00 +$1,749 on 42 structures, 10:30 +$2,283 on 29 with half the losing days.
+    Paper keeps 10:00 as the comparison baseline. The engine's `before_open_gate` reads this key,
+    so the override is refused ahead of the arm's own windows like any other blackout floor; it
+    can only ever move the start LATER than the arm's (the later of the two wins).
+    """
     params = engine.merged_params(config, arm)
     live = _live_cfg(config)
     if live.get("completion_cutoff"):
         params["completion_cutoff"] = live["completion_cutoff"]
+    start = live.get("no_entry_before")
+    if start:
+        arm_start = params.get("no_entry_before")
+        params["no_entry_before"] = max(str(start), str(arm_start)) if arm_start else str(start)
     return params
 
 
