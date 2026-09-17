@@ -68,7 +68,7 @@ module is the real reference; this is the index that tells you which one to open
 | `calendar` | The shared market calendar. The suite's single source of trading days, holidays and early closes (`session_close_hhmm`: 13:00 on July 3, the day after Thanksgiving and Christmas Eve when each trades, 16:00 otherwise). |
 | `fees` | The tastytrade cost model — one home for the fee schedule. Every "net" figure in the suite goes through it. |
 | `auth` | Keyring credentials + a lazy OAuth session, parameterized per consumer. |
-| `broker` | Shared tastytrade primitives: account resolution, option-chain helpers, and the live write path with its governor. |
+| `broker` | Shared tastytrade primitives: account resolution, option-chain helpers, and the live write path with its governor. | Since 2026-09-17 `replace_order` sits beside `place_order` on the one shared `_preflight_then_submit` path (governor included) -- meic's adjust-order had been replacing through the SDK directly -- and `tests/test_broker.py` scans every package for a `dry_run=False` outside this module.
 | `risk` | Account-level risk primitives. Fail-closed and opt-in. |
 | `entry` | Entry-permission rules MEIC and flies must apply identically: cadence and the leg-sign rule. |
 | `structures` | Shared option-structure arithmetic — pure formulas (the straddle-based expected move) earnings and calendars must agree on. |

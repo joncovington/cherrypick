@@ -252,6 +252,10 @@ async def place_order(
     `cmd_execute_trade`; the CLI gating (how `--live`/`--dry_run` map to `live`), the
     live-trading-enabled check, and try/except shaping stay in the caller.
 
+    The body is `_preflight_then_submit` (shared with `replace_order` since 2026-09-17, when
+    meic's adjust-order path was found submitting a replace through the SDK directly with no
+    governor); this wrapper only names the SDK call.
+
     Safety invariant: a live order (`dry_run=False`) is placed on exactly one path — `live=True`
     with an error-free preflight **and** (when enabled) an allowing deploy governor.
 
@@ -269,9 +273,75 @@ async def place_order(
       - dry run:           {ok: True, dry_run: True,  account_number, buying_power, response[, governor]}
       - live:              {ok: True, dry_run: False, account_number, buying_power, response[, governor]}
     """
+
+    async def submit(dry_run: bool):
+        return await account.place_order(session, order, dry_run=dry_run)
+
+    return await _preflight_then_submit(
+        submit,
+        account,
+        session,
+        live=live,
+        serialize=serialize,
+        deploy_limit_pct=deploy_limit_pct,
+        get_balances=get_balances,
+    )
+
+
+async def replace_order(
+    account: Any,
+    session: Any,
+    order_id: Any,
+    order: Any,
+    *,
+    live: bool,
+    serialize: Callable[[Any], Any] | None = None,
+    deploy_limit_pct: float | None = None,
+    get_balances: Callable[..., Any] | None = None,
+) -> dict:
+    """Replace a working order: the same preflight-then-submit path as `place_order`, against the
+    SDK's `replace_order`, with the same governor and the same result shapes (plus `order_id`).
+
+    Added 2026-09-17. A replace is a live submission like any other -- it can widen a working
+    order's size or move its price -- and meic's adjust-order command had been making it through
+    `account.replace_order(dry_run=False)` directly, outside this module, with an inline preflight
+    and no deploy governor. The desk had refused to build a replace command for exactly that
+    reason. Every live submit now goes through `_preflight_then_submit`, and
+    `packages/core/tests/test_broker.py` scans every package for a `dry_run=False` outside here.
+    """
+
+    async def submit(dry_run: bool):
+        return await account.replace_order(session, order_id, order, dry_run=dry_run)
+
+    result = await _preflight_then_submit(
+        submit,
+        account,
+        session,
+        live=live,
+        serialize=serialize,
+        deploy_limit_pct=deploy_limit_pct,
+        get_balances=get_balances,
+    )
+    result["order_id"] = order_id
+    return result
+
+
+async def _preflight_then_submit(
+    submit: Callable[[bool], Any],
+    account: Any,
+    session: Any,
+    *,
+    live: bool,
+    serialize: Callable[[Any], Any] | None,
+    deploy_limit_pct: float | None,
+    get_balances: Callable[..., Any] | None,
+) -> dict:
+    """THE live submission path. `submit(dry_run)` is the one SDK call, awaited twice at most:
+    once with `dry_run=True` (unconditional), and once with `dry_run=False` only when `live` is
+    true, the preflight reported no errors, and the governor (when enabled) allowed it."""
     serialize = serialize or (lambda x: x)
 
-    preflight = await account.place_order(session, order, dry_run=True)
+    preflight = await submit(True)
     errors = [str(e) for e in (getattr(preflight, "errors", None) or [])]
     bp_summary = _buying_power_summary(preflight)
     if errors:
@@ -307,7 +377,7 @@ async def place_order(
             result["governor"] = governor_info
         return result
 
-    response = await account.place_order(session, order, dry_run=False)
+    response = await submit(False)
     result = {
         "ok": True,
         "dry_run": False,
