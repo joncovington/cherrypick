@@ -625,6 +625,12 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
         "SELECT * FROM fly_positions WHERE trade_date = ? AND arm = ? AND status = 'open'", (day, arm)
     ).fetchall()
     positions = [dict(r) for r in rows]
+    # Minute-of-day of each fill, the way paper's book._to_position stamps it (2026-09-17). The
+    # engine's cadence clock and the miss-stop gate both read `entry_time_min`, and a raw ledger
+    # row does not carry it -- so until now the live tick handed the engine rows with no fill
+    # minute and both gates silently never fired live. None for an unreadable stamp, never 0.
+    for p in positions:
+        p["entry_time_min"] = bookmod._minute_of_day(p.get("entry_time"))
 
     # --- 0. orphan sweep: broker truth vs ledger belief ---
     if live:

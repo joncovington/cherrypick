@@ -340,6 +340,19 @@
         "min": 30,
         "max": 150,
         "_note": "The containment gate (engine.evaluate_credit_spread_entry): the advised book skips a session whose trailing realized range (provider._trailing_range, prior 5 sessions) exceeds this many points. Declared 2026-09-02 for the advisor's band-containment experiment; the advisor sweeps the cap. Off on every other arm."
+      },
+      "miss_stop_minutes": {
+        "min": 10,
+        "max": 120,
+        "_note": "engine.miss_stop_refusal (2026-09-17): the advised book stops entering for the day once any of its spreads has sat uncompleted this many minutes. The era's losing sessions were runs of misses into the same tape; this is the live pilot's one-incomplete rule with a clock on it, for an arm with unbounded capital. Replay first: `python -m cherrypick.flies.cli replay-gates`."
+      },
+      "refuse_trend_bucket": {
+        "choices": [
+          "none",
+          "up_from_open",
+          "down_from_open"
+        ],
+        "_note": "engine.trend_bucket_refusal (2026-09-17): the advised book takes NO entry while the session's trend-from-open bucket (same band as the regime tag) is the named one. Distinct from control-drift's retired side-vs-drift rule: this reads the day, not the leg. Era evidence for control: up_from_open entries completed 66% for -$1,283 across 32; flat/down 77-87% and positive. Too small to act on, the right size to test."
       }
     }
   }
