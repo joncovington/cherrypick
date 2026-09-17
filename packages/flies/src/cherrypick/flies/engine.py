@@ -640,6 +640,53 @@ def early_close_gate(snapshot: dict) -> bool:
         return False
 
 
+def trend_bucket_refusal(snapshot: dict, params: dict) -> str | None:
+    """Refuse EVERY entry while the session's trend-from-open bucket is the one named by
+    `refuse_trend_bucket` ("none"/absent = off; "up_from_open" | "down_from_open").
+
+    Not the same rule as `refuse_completion_against_trend` (control-drift's, retired 08-21): that
+    one reads the SIDE the entry would leg into against the drift; this one reads the day. The
+    measurement behind it is the era's bucket split for control -- entries tagged up_from_open
+    completed 66% for -$1,283 across 32, flat and down 77-87% and positive -- which is too small to
+    act on and exactly the size to test, so it is a declared advice bound (2026-09-17) and not a
+    default. Same band as the regime tag (`regime_trend_points`), so the gate and the label can
+    never disagree about what 'committed' means. Fails OPEN on missing session coverage.
+    """
+    wanted = params.get("refuse_trend_bucket")
+    if not wanted or wanted == "none":
+        return None
+    bucket, _value = _classify_trend(snapshot, params)
+    return "trend_bucket_refused" if bucket == wanted else None
+
+
+def miss_stop_refusal(params: dict, day_book: list, now_min: int | None) -> str | None:
+    """Refuse a new entry once any of today's spreads has sat uncompleted for
+    `miss_stop_minutes` or longer (null/absent = off).
+
+    The era's losing sessions were the ones where misses came in RUNS -- 09-02's 10:00 and 10:06
+    entries both missed, 09-04's 10:00 and 10:12 pair did -- because once one spread has failed to
+    complete, the next entry is into the same tape. This is the paper-side form of the live
+    pilot's one-incomplete-position rule with a clock on it: an arm with unbounded capital keeps
+    entering past a miss unless something says the day has gone wrong, and an open short vertical
+    older than the bar is that signal. A completed fly, however slow, is not a miss and does not
+    count; a spread younger than the bar is still a completion in progress. Declared as an advice
+    bound (2026-09-17) for the advisor to sweep, not a default -- and the replay
+    (`replay_gates.py`) is the cheap first answer over the rows already recorded.
+    """
+    bar = params.get("miss_stop_minutes")
+    if not bar or now_min is None:
+        return None
+    for p in day_book:
+        if p.get("kind") != "short_vertical" or p.get("status") not in (None, "open"):
+            continue
+        t0 = p.get("entry_time_min")
+        if t0 is None:
+            continue
+        if now_min - t0 >= bar:
+            return "miss_stop"
+    return None
+
+
 def _window_cap_reached(params: dict, open_positions: list, window: str | None) -> bool:
     """Has this entry window already used up its own share of the position budget?
 
@@ -887,6 +934,17 @@ def evaluate_credit_spread_entry(
         return False, "max_positions_this_window_reached", None
 
     refusal = containment_refusal(snapshot, params, gate_detail)
+    if refusal:
+        return False, refusal, None
+
+    # Two more day-level refusals (2026-09-17), both off unless an arm or an advice artifact sets
+    # them, and both ahead of strike selection so the attempts ledger attributes them to the
+    # session rather than the strike: the regime the day is in, and whether the day has already
+    # produced a miss. Legged only -- it is the one mode the roster runs.
+    refusal = trend_bucket_refusal(snapshot, params)
+    if refusal:
+        return False, refusal, None
+    refusal = miss_stop_refusal(params, _day_book(open_positions, day_positions), snapshot.get("now_min"))
     if refusal:
         return False, refusal, None
 

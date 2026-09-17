@@ -241,6 +241,109 @@ def test_early_close_session_refuses_every_entry_mode():
     assert not enter and reason == "early_close_session"
 
 
+def test_trend_bucket_gate_refuses_only_the_named_bucket():
+    """Shown to fail both ways. Band is 20 points: +40 from the open is up_from_open, -40 is
+    down_from_open. Off when unset or "none"; fails open with no session coverage."""
+    p = params()
+    up = snapshot(underlying_price=6040.0)
+    up["session"] = {"day_open": 6000.0}
+    down = snapshot(underlying_price=5960.0)
+    down["session"] = {"day_open": 6000.0}
+    assert engine.trend_bucket_refusal(up, p) is None
+    assert engine.trend_bucket_refusal(up, {**p, "refuse_trend_bucket": "none"}) is None
+    gated = {**p, "refuse_trend_bucket": "up_from_open"}
+    assert engine.trend_bucket_refusal(up, gated) == "trend_bucket_refused"
+    assert engine.trend_bucket_refusal(down, gated) is None
+    enter, reason, _ = engine.evaluate_credit_spread_entry(up, gated, [])
+    assert not enter and reason == "trend_bucket_refused"
+    enter, reason, _ = engine.evaluate_credit_spread_entry(down, gated, [])
+    assert reason != "trend_bucket_refused"
+    no_session = snapshot(underlying_price=6040.0)
+    no_session.pop("session", None)
+    assert engine.trend_bucket_refusal(no_session, gated) is None
+
+
+def test_miss_stop_refuses_after_an_aged_uncompleted_spread():
+    """Shown to fail: an open short vertical 45 minutes old trips a 30-minute bar, not a
+    60-minute one; a completed fly of any age never counts; off when unset; a row with no fill
+    minute is skipped rather than read as minute 0."""
+    now = 11 * 60
+    aged_miss = {"kind": "short_vertical", "status": "open", "entry_time_min": now - 45}
+    slow_fly = {"kind": "fly", "status": "open", "entry_time_min": now - 200, "completed_at": "x"}
+    unstamped = {"kind": "short_vertical", "status": "open", "entry_time_min": None}
+    assert engine.miss_stop_refusal({"miss_stop_minutes": 30}, [aged_miss], now) == "miss_stop"
+    assert engine.miss_stop_refusal({"miss_stop_minutes": 60}, [aged_miss], now) is None
+    assert engine.miss_stop_refusal({"miss_stop_minutes": 30}, [slow_fly], now) is None
+    assert engine.miss_stop_refusal({"miss_stop_minutes": 30}, [unstamped], now) is None
+    assert engine.miss_stop_refusal({}, [aged_miss], now) is None
+    assert engine.miss_stop_refusal({"miss_stop_minutes": 30}, [aged_miss], None) is None
+    p = params(miss_stop_minutes=30)
+    snap = snapshot(now_min=now)
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snap, p, [], day_positions=[aged_miss])
+    assert not enter and reason == "miss_stop"
+    enter, reason, _ = engine.evaluate_credit_spread_entry(snap, p, [], day_positions=[slow_fly])
+    assert reason != "miss_stop"
+
+
+def test_replay_gates_drop_exactly_what_the_rules_refuse():
+    """The replay is the rule applied to history, so it must agree with the rule: with a
+    30-minute bar the 10:45 entry is dropped (the 10:00 miss is 45 minutes old and still open),
+    the 10:20 entry is kept (20 minutes), and the day after a completion is not blocked by it."""
+    from cherrypick.flies import replay_gates as rg
+
+    rows = [
+        {
+            "trade_date": "2026-09-02",
+            "kind": "short_vertical",
+            "entry_time": "2026-09-02T10:00:00-04:00",
+            "completed_at": None,
+            "pnl": -280.0,
+            "entry_trend_bucket": "up_from_open",
+        },
+        {
+            "trade_date": "2026-09-02",
+            "kind": "fly",
+            "entry_time": "2026-09-02T10:20:00-04:00",
+            "completed_at": "2026-09-02T10:30:00-04:00",
+            "pnl": 25.0,
+            "entry_trend_bucket": "flat",
+        },
+        {
+            "trade_date": "2026-09-02",
+            "kind": "short_vertical",
+            "entry_time": "2026-09-02T10:45:00-04:00",
+            "completed_at": None,
+            "pnl": -290.0,
+            "entry_trend_bucket": "up_from_open",
+        },
+        {
+            "trade_date": "2026-09-03",
+            "kind": "fly",
+            "entry_time": "2026-09-03T10:00:00-04:00",
+            "completed_at": "2026-09-03T10:05:00-04:00",
+            "pnl": 30.0,
+            "entry_trend_bucket": "flat",
+        },
+        {
+            "trade_date": "2026-09-03",
+            "kind": "fly",
+            "entry_time": "2026-09-03T11:00:00-04:00",
+            "completed_at": "2026-09-03T11:10:00-04:00",
+            "pnl": 40.0,
+            "entry_trend_bucket": "down_from_open",
+        },
+    ]
+    base = rg.summarize(rows, rows)
+    assert base["net_pnl"] == -475.0 and base["entries"] == 5
+    ms = rg.replay_miss_stop(rows, 30)
+    assert ms["kept"] == 4 and ms["net_pnl"] == -185.0 and ms["per_day"]["2026-09-02"] == -255.0
+    assert rg.replay_miss_stop(rows, 60)["kept"] == 5
+    tb = rg.replay_trend_bucket(rows, "up_from_open")
+    assert tb["kept"] == 3 and tb["net_pnl"] == 95.0 and tb["losing_days"] == 0
+    sw = rg.sweep(rows)
+    assert set(sw["miss_stop"]) == {str(m) for m in rg.MISS_STOP_SWEEP}
+
+
 def test_no_entry_before_also_gates_outright_entries():
     p = params(no_entry_before="10:00")
     enter, reason, _ = engine.evaluate_outright_entry(snapshot(now_min=9 * 60 + 45), p, [], 5000.0)

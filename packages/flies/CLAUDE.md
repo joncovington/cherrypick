@@ -509,6 +509,23 @@ by `max_gex_input_age_seconds` (1800, much longer than the quote limit because O
 snapshot) and `min_gex_strikes` (20); below that the surface is refused and `select_center` degrades
 to ATM. `snapshot["gex_stats"]` carries fresh/stale/coverage the way `quote_stats` always has.
 
+## Two declared-but-off entry gates, and their replay (2026-09-17)
+
+`engine.trend_bucket_refusal` (`refuse_trend_bucket`: none | up_from_open | down_from_open) refuses
+every entry while the session's trend-from-open bucket is the named one — the day, not the leg,
+which is what separates it from control-drift's retired side-vs-drift rule. `engine.miss_stop_refusal`
+(`miss_stop_minutes`) stops an arm entering for the day once any of its spreads has sat uncompleted
+that long: the era's losing sessions were RUNS of misses into one tape (09-02's 10:00/10:06, 09-04's
+10:00/10:12), and this is the live pilot's one-incomplete rule with a clock on it for an arm with
+unbounded capital. Both are off unless an arm or an advice artifact sets them; both are declared in
+`advice.bounds` so the advisor can propose them; both sit ahead of strike selection so a refusal is
+attributed to the session. Legged only — the one mode the roster runs. Because each reads only
+facts every row already carries, `replay_gates.py` (CLI: `replay-gates`) re-runs recorded sessions
+under either rule exactly, by dropping the entries it would have refused — the cheap first answer
+before the advised twin's forward A/B confirms it. The live tick now stamps `entry_time_min` on its
+rows the way paper's `_to_position` does; before this the cadence clock and this gate both read
+raw ledger rows with no fill minute and silently never fired live.
+
 ## Per-arm portfolios: cadence and the entry rules (2026-08-11)
 
 Each arm is an independent portfolio with **unbounded capital and buying power**. Nothing else paces

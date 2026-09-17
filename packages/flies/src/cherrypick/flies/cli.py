@@ -150,6 +150,25 @@ def cmd_bands(args) -> int:
     return 0
 
 
+def cmd_replay_gates(args) -> int:
+    """Replay the miss-stop and trend-bucket entry gates over recorded rows (read-only)."""
+    from cherrypick.flies import replay_gates
+
+    conn = dbmod.connect(args.db)
+    rows = replay_gates.load_rows(conn, start=args.start, end=args.end, arm=args.arm, symbol=args.symbol)
+    out = replay_gates.sweep(rows)
+    if not args.per_day:
+        for block in (out["base"], *out["miss_stop"].values(), *out["trend_bucket"].values()):
+            block.pop("per_day", None)
+    print(
+        json.dumps(
+            {"ok": True, "arm": args.arm, "symbol": args.symbol, "start": args.start, "end": args.end, **out},
+            indent=2,
+        )
+    )
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="flies", description="0DTE net-credit butterfly paper module")
     ap.add_argument("--config")
@@ -165,6 +184,21 @@ def main(argv=None) -> int:
     p_bands.add_argument("--symbol")
     p_bands.add_argument("--stream-cache", dest="stream_cache", help="override the shared cache path")
     p_bands.set_defaults(func=cmd_bands)
+
+    p_replay = sub.add_parser(
+        "replay-gates",
+        help="replay the miss-stop and trend-bucket entry gates over recorded rows (read-only)",
+    )
+    p_replay.add_argument(
+        "--start", default="2026-08-21", help="trade_date >= (default: the advisor-era cutover)"
+    )
+    p_replay.add_argument("--end")
+    p_replay.add_argument("--arm", default="control")
+    p_replay.add_argument("--symbol", default="SPX")
+    p_replay.add_argument(
+        "--per-day", dest="per_day", action="store_true", help="include per-day P&L for each rule"
+    )
+    p_replay.set_defaults(func=cmd_replay_gates)
 
     p_once = sub.add_parser("once", help="one iteration of every enabled arm")
     p_once.add_argument("--snapshot", help="snapshot JSON file (default: stdin)")
