@@ -187,6 +187,9 @@ describe("the advisor reader", () => {
     expect(payload.latest[0]?.flags[0]?.text).toBe("completion rate halved");
     expect(payload.experiments[0]).toMatchObject({ id: "exp-1", status: "active", sessionsRun: 3 });
     expect(payload.experiments[0]?.journal[0]?.event).toBe("enacted");
+    // No `tag` column on this store: the book name is derived from the experiment's name, the
+    // same slug rule cherrypick.core.advice.slug applies.
+    expect(payload.experiments[0]?.tag).toBe("advised:wider-stop");
   });
 
   it("reads a store that predates the model_id column, and the id once the producer has added it", () => {
@@ -224,19 +227,30 @@ describe("the advisor reader", () => {
     cleanup.close();
   });
 
-  it("gives a module its own view: the active experiment, its strip, its queue and tomorrow", () => {
+  it("gives a module its own view: the active experiments, their strips, its queue and tomorrow", () => {
     const db = new Database(path.join(tmp, "advisor", "advisor.db"));
+    // The 2026-09-17 key: one row per experiment per session.
     db.exec(
       "CREATE TABLE IF NOT EXISTS enactment (session TEXT, module TEXT, status TEXT, detail TEXT," +
         " experiment_id TEXT, artifact_params TEXT, decision_params TEXT, decision_reason TEXT, scored_at TEXT," +
-        " PRIMARY KEY (session, module))",
+        " PRIMARY KEY (session, module, experiment_id))",
     );
     const put = db.prepare(
-      "INSERT OR REPLACE INTO enactment (session, module, status, detail, experiment_id) VALUES (?, 'meic', ?, ?, 'exp-1')",
+      "INSERT OR REPLACE INTO enactment (session, module, status, detail, experiment_id) VALUES (?, 'meic', ?, ?, ?)",
     );
-    put.run("2026-08-11", "enacted", "matched");
-    put.run("2026-08-12", "carried", "frozen on open rows");
-    put.run(SESSION, "not_enacted", "the loop recorded no decision");
+    put.run("2026-08-11", "enacted", "matched", "exp-1");
+    put.run("2026-08-12", "carried", "frozen on open rows", "exp-1");
+    put.run(SESSION, "not_enacted", "the loop recorded no decision", "exp-1");
+    // A second active experiment on the same base, with its own tag column and its own rows.
+    db.exec("ALTER TABLE experiments ADD COLUMN tag TEXT");
+    db.prepare(
+      "INSERT INTO experiments (id, module, base_profile, name, tag, params_json, status, created_session," +
+        " expires_after_sessions, sessions_run, created_at, updated_at)" +
+        " VALUES ('exp-2', 'meic', 'control', 'later entry', 'advised:later-entry-v2', '{\"b\": 2}', 'active', '2026-08-12', 10, 1, ?, ?)",
+      // Activated after exp-1 (created_at is the activation order) though its created_session is
+      // earlier -- what the calendar-age count keys on.
+    ).run(`${SESSION}T21:07:00+00:00`, `${SESSION}T21:07:00+00:00`);
+    put.run(SESSION, "enacted", null, "exp-2");
     db.prepare(
       "INSERT INTO experiments (id, module, base_profile, params_json, status, created_session," +
         " expires_after_sessions, sessions_run, created_at, updated_at)" +
@@ -246,26 +260,36 @@ describe("the advisor reader", () => {
 
     const view = readAdvisorModule(config, "meic");
     expect(view.storePresent).toBe(true);
-    expect(view.active?.id).toBe("exp-1");
+    expect(view.active.map((e) => e.id)).toEqual(["exp-1", "exp-2"]);
+    // The stored tag column wins over the slug of the name.
+    expect(view.active[1]?.tag).toBe("advised:later-entry-v2");
     expect(view.queued.map((q) => q.id)).toEqual(["exp-q"]);
-    expect(view.sessions.map((s) => [s.session, s.status])).toEqual([
-      ["2026-08-11", "enacted"],
-      ["2026-08-12", "carried"],
-      [SESSION, "not_enacted"],
+    // Every row over the last scored sessions, so each experiment's strip can be drawn.
+    expect(view.sessions.map((s) => [s.session, s.experimentId, s.status])).toEqual([
+      ["2026-08-11", "exp-1", "enacted"],
+      ["2026-08-12", "exp-1", "carried"],
+      [SESSION, "exp-1", "not_enacted"],
+      [SESSION, "exp-2", "enacted"],
     ]);
-    expect(view.stallBudget).toBe(2 * (view.active?.expiresAfter ?? 0));
+    // Progress is per experiment: each against its own length and its own calendar age.
+    expect(view.active[0]).toMatchObject({ stallBudget: 30, calendarSessions: 0 });
+    expect(view.active[1]).toMatchObject({ stallBudget: 20, calendarSessions: 1 });
     expect(view.tomorrow?.module).toBe("meic");
+    // The chosen session's enactment comes back per experiment on the apply status too.
+    expect(view.tomorrow?.enactments.map((e) => [e.experimentId, e.status])).toEqual([
+      ["exp-1", "not_enacted"],
+      ["exp-2", "enacted"],
+    ]);
 
     // A module the advisor has never touched is an honest empty view, not an error.
     const none = readAdvisorModule(config, "curve");
-    expect(none.active).toBeNull();
+    expect(none.active).toEqual([]);
     expect(none.sessions).toEqual([]);
-    expect(none.calendarSessions).toBeNull();
 
-    // Leave the seeded store as the tests below expect it: no queued row, and no enactment table
-    // (one of them asserts the reader degrades on a store that predates it).
+    // Leave the seeded store as the tests below expect it: no queued or second row, and no
+    // enactment table (one of them asserts the reader degrades on a store that predates it).
     const cleanup = new Database(path.join(tmp, "advisor", "advisor.db"));
-    cleanup.prepare("DELETE FROM experiments WHERE id = 'exp-q'").run();
+    cleanup.prepare("DELETE FROM experiments WHERE id IN ('exp-q', 'exp-2')").run();
     cleanup.exec("DROP TABLE enactment");
     cleanup.close();
   });
@@ -310,9 +334,57 @@ describe("the advisor reader", () => {
       path.join(tmp, "data", "meic", "advice_active.json"),
       JSON.stringify({ day: NEXT, params: { stop_trigger_ratio: 0.9 }, reason: null }),
     );
-    expect(readAdvisor(config).applyStatus.find((s) => s.module === "meic")?.consumerDecision).toMatchObject({
-      day: NEXT,
-    });
+    const landed = readAdvisor(config).applyStatus.find((s) => s.module === "meic");
+    expect(landed?.consumerDecision).toMatchObject({ day: NEXT });
+    // A legacy flat decision reads as one experiment entry; a legacy artifact likewise.
+    expect(landed?.decisionExperiments).toEqual([
+      { experimentId: null, name: null, tag: null, base: null, params: { stop_trigger_ratio: 0.9 }, reason: null },
+    ]);
+    expect(landed?.artifactExperiments).toHaveLength(1);
+    expect(landed?.artifactExperiments[0]?.proposals[0]?.param).toBe("stop_trigger_ratio");
+  });
+
+  it("reads the per-experiment lists of an artifact and a decision, never the legacy mirror beside them", () => {
+    // 2026-09-17: `experiments` carries one entry per concurrent experiment and the top-level
+    // proposals/params mirror the FIRST. Reading both would count that experiment twice.
+    fs.writeFileSync(
+      path.join(config.paths.adviceDir, `meic-${NEXT}.json`),
+      JSON.stringify({
+        module: "meic",
+        session: NEXT,
+        experiment_id: "exp-1",
+        proposals: [{ param: "stop_trigger_ratio", value: 0.9, rationale: "wider" }],
+        rejected: [],
+        experiments: [
+          { experiment_id: "exp-1", name: "wider stop", tag: "advised:wider-stop", base: "control", proposals: [{ param: "stop_trigger_ratio", value: 0.9, rationale: "wider" }], rejected: [] },
+          { experiment_id: "exp-2", name: "later entry", tag: "advised:later-entry", base: "control", proposals: [], rejected: [{ param: "entry_window_end", value: "15:59", reason: "above max" }] },
+        ],
+      }),
+    );
+    fs.writeFileSync(
+      path.join(tmp, "data", "meic", "advice_active.json"),
+      JSON.stringify({
+        day: NEXT,
+        params: { stop_trigger_ratio: 0.9 },
+        experiment_id: "exp-1",
+        reason: null,
+        experiments: [
+          { experiment_id: "exp-1", name: "wider stop", tag: "advised:wider-stop", base: "control", params: { stop_trigger_ratio: 0.9 }, reason: null },
+          { experiment_id: "exp-2", name: "later entry", tag: "advised:later-entry", base: "control", params: {}, reason: "reject-all" },
+        ],
+      }),
+    );
+    const meic = readAdvisor(config).applyStatus.find((s) => s.module === "meic");
+    expect(meic?.artifactExperiments.map((e) => [e.experimentId, e.tag, e.proposals.length, e.rejected.length])).toEqual([
+      ["exp-1", "advised:wider-stop", 1, 0],
+      ["exp-2", "advised:later-entry", 0, 1],
+    ]);
+    expect(meic?.decisionExperiments.map((e) => [e.experimentId, e.base, e.reason])).toEqual([
+      ["exp-1", "control", null],
+      ["exp-2", "control", "reject-all"],
+    ]);
+    // The mirror fields still read as before for anything written against the old shape.
+    expect(meic?.artifactProposals[0]?.param).toBe("stop_trigger_ratio");
   });
 
   it("degrades when the store predates the enactment table", () => {
@@ -320,7 +392,7 @@ describe("the advisor reader", () => {
     // a machine that has not run the current advisor build is the ordinary case, and the page must
     // render without the column rather than 500.
     const meic = readAdvisor(config).applyStatus.find((s) => s.module === "meic");
-    expect(meic?.enactment).toBeNull();
+    expect(meic?.enactments).toEqual([]);
   });
 
   it("surfaces the advisor's verdict that an artifact never reached its loop", () => {
@@ -344,16 +416,17 @@ describe("the advisor reader", () => {
 
     const status = readAdvisor(config).applyStatus;
     const meic = status.find((s) => s.module === "meic");
-    expect(meic?.enactment).toMatchObject({ status: "not_enacted", decisionReason: "advice_disabled" });
-    expect(meic?.enactment?.detail).toContain("stop_trigger_ratio");
-    expect(status.find((s) => s.module === "flies")?.enactment?.status).toBe("enacted");
+    expect(meic?.enactments).toHaveLength(1);
+    expect(meic?.enactments[0]).toMatchObject({ status: "not_enacted", decisionReason: "advice_disabled" });
+    expect(meic?.enactments[0]?.detail).toContain("stop_trigger_ratio");
+    expect(status.find((s) => s.module === "flies")?.enactments[0]?.status).toBe("enacted");
     // A module the advisor never scored is not a failure and must not borrow one. Declared, so it
     // is genuinely on the banner — an absent module would pass this by not being there at all.
     fs.mkdirSync(path.join(tmp, "config"), { recursive: true });
     fs.writeFileSync(path.join(tmp, "config", "pmcc.json"), JSON.stringify({ advice: { enabled: true } }));
     const pmcc = readAdvisor(config).applyStatus.find((s) => s.module === "pmcc");
     expect(pmcc).toBeDefined();
-    expect(pmcc?.enactment).toBeNull();
+    expect(pmcc?.enactments).toEqual([]);
   });
 
   it("fills in a verdict field an older row never wrote", () => {
@@ -370,6 +443,46 @@ describe("the advisor reader", () => {
     const old = readAdvisor(config).experiments.find((e) => e.id === "exp-old");
     expect(old?.verdict?.recommendation).toBeNull();
     expect(old?.verdict?.pairs).toEqual([]);
+  });
+
+  it("reads the verdict pair's tags under the advisor's own snake_case spelling", () => {
+    // Every real verdict names its books as `advised_tag`/`base_tag`, and the page's Book column
+    // rendered blank against the camelCase the type promised. The seed above is camelCase and
+    // still reads; this row is the shape the advisor actually writes.
+    const store = new Database(path.join(tmp, "advisor", "advisor.db"));
+    store.prepare(
+      "INSERT INTO experiments (id, module, base_profile, name, params_json, status," +
+        " created_session, expires_after_sessions, sessions_run, verdict_json, created_at, updated_at)" +
+        " VALUES ('exp-snake', 'bwb', 'control', 'flip-buffer-near-control', '{}', 'active', ?, 15, 1, ?, ?, ?)",
+    ).run(
+      SESSION,
+      JSON.stringify({
+        pairs: [
+          {
+            module: "bwb",
+            advised_tag: "advised:flip-buffer-near-control",
+            base_tag: "control",
+            advised: { net_pnl: 1 },
+            base: { net_pnl: 2 },
+            delta: { net_pnl: -1 },
+            qualification: { "advised:flip-buffer-near-control": { qualified: false } },
+            underpowered: true,
+          },
+        ],
+        underpowered: true,
+      }),
+      SESSION,
+      SESSION,
+    );
+    store.close();
+    const payload = readAdvisor(config);
+    const snake = payload.experiments.find((e) => e.id === "exp-snake")?.verdict?.pairs[0];
+    expect(snake).toMatchObject({ advisedTag: "advised:flip-buffer-near-control", baseTag: "control" });
+    expect(snake?.qualification["advised:flip-buffer-near-control"]).toEqual({ qualified: false });
+    expect(payload.experiments.find((e) => e.id === "exp-1")?.verdict?.pairs[0]?.advisedTag).toBe("advised:control");
+    const cleanup = new Database(path.join(tmp, "advisor", "advisor.db"));
+    cleanup.prepare("DELETE FROM experiments WHERE id = 'exp-snake'").run();
+    cleanup.close();
   });
 
   it("survives a corrupt artifact rather than taking the page down", () => {

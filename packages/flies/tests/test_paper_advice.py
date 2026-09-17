@@ -71,7 +71,9 @@ def config(**advice):
     }
 
 
-def _write_artifact(home: Path, proposals, session=DAY, hours=12, experiment_id=None):
+def _write_artifact(home: Path, proposals, session=DAY, hours=12, experiment_id=None, experiments=None):
+    """An artifact in the legacy single-overlay shape by default (its one entry resolves to
+    `advised:control`), or -- with `experiments` -- one entry per concurrent experiment."""
     core_advice.write(
         core_advice.advice_path(home / "state", "flies", session),
         "flies",
@@ -80,7 +82,19 @@ def _write_artifact(home: Path, proposals, session=DAY, hours=12, experiment_id=
         advisor="test",
         expires_at=(datetime.now(UTC) + timedelta(hours=hours)).isoformat(),
         experiment_id=experiment_id,
+        experiments=experiments,
     )
+
+
+def _experiment(name, value, experiment_id, base="control", param="min_credit_pct_of_width"):
+    return {
+        "experiment_id": experiment_id,
+        "name": name,
+        "tag": core_advice.advised_tag(name),
+        "base": base,
+        "proposals": [{"param": param, "value": value, "rationale": name}],
+        "rejected": [],
+    }
 
 
 def _proposal(value=0.25):
@@ -105,6 +119,75 @@ def test_valid_advice_produces_an_advised_arm_beside_its_base(managed_home, conn
     assert {k: v for k, v in advised.items() if k not in ("arm", "min_credit_pct_of_width")} == {
         k: v for k, v in base.items() if k not in ("arm", "min_credit_pct_of_width")
     }
+
+
+def test_each_experiment_opens_its_own_arm_named_for_it(managed_home, conn):
+    """Many experiments per module (2026-09-17): two entries on the same base are two arms of the
+    same control, each carrying exactly its own overlay, tagged `advised:<experiment name>`."""
+    _write_artifact(
+        managed_home,
+        [],
+        experiments=[
+            _experiment("Credit Floor (probe)", 0.25, "exp-2026-09-17-flies-1"),
+            _experiment("credit-floor-wide", 0.30, "exp-2026-09-17-flies-2"),
+        ],
+    )
+    arms = paper_loop.session_arms(cfg := config(), conn, DAY)
+    assert arms == ["control", "advised:credit-floor-probe", "advised:credit-floor-wide"]
+
+    from cherrypick.flies import engine
+
+    assert engine.merged_params(cfg, "advised:credit-floor-probe")["min_credit_pct_of_width"] == 0.25
+    assert engine.merged_params(cfg, "advised:credit-floor-wide")["min_credit_pct_of_width"] == 0.30
+    # Each arm is stamped with ITS experiment, resolved from the decision by tag; control is nobody's.
+    decision = paper_loop.advice_decision(cfg, DAY)
+    assert core_advice.stamp_for("advised:credit-floor-probe", decision) == "exp-2026-09-17-flies-1"
+    assert core_advice.stamp_for("advised:credit-floor-wide", decision) == "exp-2026-09-17-flies-2"
+    assert core_advice.stamp_for("control", decision) is None
+
+
+def test_one_experiments_rejection_is_its_baseline_day_and_nobody_elses(managed_home, conn):
+    _write_artifact(
+        managed_home,
+        [],
+        experiments=[
+            _experiment("too-rich", 0.90, "exp-2026-09-17-flies-1"),
+            _experiment("in-bounds", 0.30, "exp-2026-09-17-flies-2"),
+        ],
+    )
+    assert paper_loop.session_arms(config(), conn, DAY) == ["control", "advised:in-bounds"]
+
+
+def test_an_advised_arm_shadows_the_base_its_entry_names(managed_home, conn):
+    """The base comes from the entry, not from the tag -- `advised:wide-twin` names no arm."""
+    cfg = config()
+    cfg["arms"]["wide"] = {"min_credit_pct_of_width": 0.2, "wing_width_strikes": 3}
+    _write_artifact(
+        managed_home, [], experiments=[_experiment("wide-twin", 0.25, "exp-2026-09-17-flies-1", base="wide")]
+    )
+    paper_loop.session_arms(cfg, conn, DAY)
+    assert cfg["arms"]["advised:wide-twin"] == {"min_credit_pct_of_width": 0.25, "wing_width_strikes": 3}
+
+
+def test_a_legacy_decision_file_still_opens_advised_control(managed_home, conn):
+    """A decision recorded before `experiments` existed (the shape on disk through 2026-09-16)
+    resolves to the one `advised:<base_arm>` arm its rows were always tagged with."""
+    legacy = {
+        "day": DAY,
+        "base_arm": "control",
+        "params": {"min_credit_pct_of_width": 0.25},
+        "reason": None,
+        "experiment_id": "exp-2026-09-14-flies-1",
+    }
+    path = Path(paper_loop._advice_decision_path())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(legacy), encoding="utf-8")
+    cfg = config()
+    assert paper_loop.session_arms(cfg, conn, DAY) == ["control", "advised:control"]
+    assert cfg["arms"]["advised:control"]["min_credit_pct_of_width"] == 0.25
+    assert core_advice.stamp_for("advised:control", paper_loop.advice_decision(cfg, DAY)) == (
+        "exp-2026-09-14-flies-1"
+    )
 
 
 def test_absent_advice_is_baseline(managed_home, conn):
@@ -181,6 +264,41 @@ def test_an_advised_book_is_entered_and_tagged_as_its_own_arm(managed_home, chai
     # are untouched and stay poolable with every session before this one.
     books = [r[0] for r in conn.execute("SELECT DISTINCT arm FROM fly_books").fetchall()]
     assert "advised:control" in books and "control" in books
+
+
+def test_two_experiments_enter_two_books_with_distinct_stamps(managed_home, chain, conn):
+    _write_artifact(
+        managed_home,
+        [],
+        experiments=[
+            _experiment("floor-15", 0.15, "exp-2026-09-17-flies-1"),
+            _experiment("floor-16", 0.16, "exp-2026-09-17-flies-2"),
+        ],
+    )
+    paper_loop.run_once(config(), conn, cache_path=str(chain), when=at(12))
+    stamped = dict(conn.execute("SELECT DISTINCT arm, experiment_id FROM fly_positions").fetchall())
+    assert stamped == {
+        "advised:floor-15": "exp-2026-09-17-flies-1",
+        "advised:floor-16": "exp-2026-09-17-flies-2",
+        "control": None,
+    }
+
+
+def test_an_open_experiment_arm_settles_under_its_base_after_advice_is_gone(managed_home, chain, conn):
+    """An `advised:<name>` arm holding rows must still resolve a base for settlement when the
+    decision that opened it is gone -- the tag no longer carries one to split out."""
+    _write_artifact(managed_home, [], experiments=[_experiment("floor-15", 0.15, "exp-2026-09-17-flies-1")])
+    paper_loop.run_once(config(), conn, cache_path=str(chain), when=at(12))
+    core_advice.advice_path(managed_home / "state", "flies", DAY).unlink()
+    Path(paper_loop._advice_decision_path()).unlink()
+
+    cfg = config(enabled=False)
+    assert paper_loop.session_arms(cfg, conn, DAY) == ["control", "advised:floor-15"]
+    assert cfg["arms"]["advised:floor-15"] == cfg["arms"]["control"]
+    paper_loop.run_settle(cfg, conn, cache_path=str(chain), when=at(16, 25), price=5000.0)
+    assert (
+        conn.execute("SELECT status FROM fly_books WHERE arm = 'advised:floor-15'").fetchone()[0] == "settled"
+    )
 
 
 def test_an_advised_book_settles_even_when_advice_has_gone_away(managed_home, chain, conn):

@@ -420,3 +420,88 @@ def test_a_session_with_every_slot_held_still_records_why(cache, config, tmp_pat
         "SELECT occurrences FROM pmcc_decisions WHERE reason = 'slot_held' LIMIT 1"
     ).fetchone()
     assert again["occurrences"] == 2
+
+
+def test_the_roster_carries_every_advised_book_of_a_multi_experiment_decision(config, monkeypatch):
+    """The 2026-08-27 lesson, extended to many twins (2026-09-17): every experiment's book has its
+    own slot and its own entry, so every one of them must be on the roster the window is kept
+    alive for -- not just the first."""
+    from cherrypick.pmcc import paper_loop
+
+    monkeypatch.setattr(
+        paper_loop,
+        "advice_decision",
+        lambda cfg, day: {
+            "day": day,
+            "experiments": [
+                {
+                    "experiment_id": "exp-a",
+                    "tag": "advised:tv-exit",
+                    "base": "control",
+                    "params": {"tv_managed_exit": 1},
+                },
+                {
+                    "experiment_id": "exp-b",
+                    "tag": "advised:tv-05",
+                    "base": "control",
+                    "params": {"tv_close_threshold": 0.05},
+                },
+            ],
+        },
+    )
+    books, advised = paper_loop.session_books(config, "2026-08-24")
+    assert books == ["control", "advised:tv-exit", "advised:tv-05"]
+    assert set(advised) == {"advised:tv-exit", "advised:tv-05"}
+
+
+def test_the_written_request_keeps_the_window_for_the_second_twins_free_slot(
+    cache, config, tmp_path, monkeypatch
+):
+    """Control AND the first twin hold TQQQ; the second twin does not. The window must survive."""
+    monkeypatch.setattr(stream_window, "needed_width", lambda *a, **k: 163)
+    db_path = str(tmp_path / "paper.db")
+    conn = db.connect(db_path)
+    _open_pos(conn, symbol="TQQQ", book="control", pid="HELD-C")
+    _open_pos(conn, symbol="TQQQ", book="advised:tv-exit", pid="HELD-A")
+    monkeypatch.setattr(
+        __import__("cherrypick.pmcc.paper_loop", fromlist=["x"]),
+        "advice_decision",
+        lambda cfg, day: {
+            "day": day,
+            "experiments": [
+                {
+                    "experiment_id": "exp-a",
+                    "tag": "advised:tv-exit",
+                    "base": "control",
+                    "params": {"tv_managed_exit": 1},
+                },
+                {
+                    "experiment_id": "exp-b",
+                    "tag": "advised:tv-05",
+                    "base": "control",
+                    "params": {"tv_close_threshold": 0.05},
+                },
+            ],
+        },
+    )
+    path = stream_request.write(config, conn, db_path, cache_path=cache.path, today=date(2026, 8, 24))
+    hints = json.loads(path.read_text(encoding="utf-8"))["window_hints"]
+    assert hints.get("TQQQ"), "the second twin can still enter, so the window stays"
+
+
+def test_a_legacy_decision_still_puts_the_single_advised_base_book_on_the_roster(config, monkeypatch):
+    from cherrypick.pmcc import paper_loop
+
+    monkeypatch.setattr(
+        paper_loop,
+        "advice_decision",
+        lambda cfg, day: {
+            "day": day,
+            "params": {"tv_managed_exit": 1},
+            "base_book": "control",
+            "experiment_id": "exp-old",
+        },
+    )
+    books, advised = paper_loop.session_books(config, "2026-08-24")
+    assert books == ["control", "advised:control"]
+    assert advised["advised:control"]["experiment_id"] == "exp-old"

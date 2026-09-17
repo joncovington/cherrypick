@@ -60,9 +60,13 @@ def effective_params(position: dict, config: dict) -> dict:
     from cherrypick.curve import engine
 
     book = position.get("book") or "control"
-    base = book.split(":", 1)[1] if book.startswith("advised:") else book
+    # A legacy `advised:<base>` row names its base in the tag; a 2026-09-17 `advised:<experiment>`
+    # row shadows the configured `advice.base_book`. One rule, in `engine.base_book`; the answer
+    # rides on the params as `base_book` so the flip-exit check never re-derives it from the tag.
+    base = engine.base_book(book, config=config)
     params = {**PARAM_DEFAULTS, **engine.merged_params(config, base)}
     params["book"] = book
+    params["base_book"] = base
     raw = position.get("advice_params")
     if book.startswith("advised:") and raw:
         try:
@@ -74,8 +78,13 @@ def effective_params(position: dict, config: dict) -> dict:
 
 
 def _base_book(params: dict) -> str:
-    book = params.get("book") or "control"
-    return book.split(":", 1)[1] if book.startswith("advised:") else book
+    """The base `effective_params` resolved, or -- for params built without it -- the tag's own
+    answer (a legacy `advised:<base>` name, else the control)."""
+    if params.get("base_book"):
+        return str(params["base_book"])
+    from cherrypick.curve import engine
+
+    return engine.base_book(params.get("book") or "control")
 
 
 def assignment_exposed(short_tv: float | None, params: dict) -> bool:

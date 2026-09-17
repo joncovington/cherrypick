@@ -298,8 +298,14 @@ def _note_entry_cadence_change(conn, config: dict) -> None:
 #
 # An advised arm is a NEW BOOK, not a change to an existing one. That convention is what keeps the
 # comparison honest: `control` never changes meaning mid-experiment, so its history stays poolable,
-# and `fly_books`/`fly_positions` key on the arm STRING, so `advised:control` needs no `engine.ARMS`
+# and `fly_books`/`fly_positions` key on the arm STRING, so an advised arm needs no `engine.ARMS`
 # entry and attribution comes free from the stored tag.
+#
+# One arm PER EXPERIMENT (2026-09-17). The day's artifact carries one entry per concurrent
+# experiment and each opens its own arm, `advised:<experiment name>`, shadowing the base the entry
+# names -- so two experiments on control run side by side as two twins of the same control rather
+# than queueing behind one `advised:control` slot. That legacy tag is still what a decision recorded
+# before this date resolves to (`cherrypick.core.advice.advised_books`), so history reads unchanged.
 #
 # There is deliberately no management twin (MEIC has one). Flies has no exits — a position is held
 # to settlement — so an advised book that stops receiving advice has nothing left to decide. It just
@@ -346,7 +352,7 @@ def _advised_arms_with_books(conn, trade_date: str) -> list[str]:
 
 
 def session_arms(config: dict, conn, trade_date: str) -> list[str]:
-    """The arms this session runs: the enabled roster, plus any advised arm.
+    """The arms this session runs: the enabled roster, plus one advised arm per experiment.
 
     ONE helper, called by both the tick and settlement, because those two call sites reading
     different rosters is precisely how an advised book gets entered and never settled. It mutates
@@ -356,13 +362,16 @@ def session_arms(config: dict, conn, trade_date: str) -> list[str]:
     """
     arms = climod.enabled_arms(config)
     decision = advice_decision(config, trade_date)
-    base = decision.get("base_arm") or "control"
-    overlay = decision.get("params")
+    arm_defs = config.setdefault("arms", {})
 
+    # One arm per experiment the decision admitted: the entry's base arm with the entry's overlay
+    # on top, under the entry's own tag. The base comes from the entry, never from the tag -- since
+    # 2026-09-17 the tag names the experiment, not the base.
     advised: list[str] = []
-    if overlay:
-        tag = f"advised:{base}"
-        config.setdefault("arms", {})[tag] = {**(config.get("arms", {}).get(base) or {}), **overlay}
+    for entry in _core_advice.advised_books(decision):
+        tag = entry["tag"]
+        base = entry.get("base") or decision.get("base_arm") or "control"
+        arm_defs[tag] = {**(arm_defs.get(base) or {}), **entry["params"]}
         advised.append(tag)
 
     for tag in _advised_arms_with_books(conn, trade_date):
@@ -370,11 +379,24 @@ def session_arms(config: dict, conn, trade_date: str) -> list[str]:
             continue
         # A book from an earlier decision today. Its positions carry their own recorded economics;
         # the base arm's params are the honest reconstruction of everything else about it.
-        tag_base = tag.split(":", 1)[1]
-        config.setdefault("arms", {}).setdefault(tag, dict(config.get("arms", {}).get(tag_base) or {}))
+        arm_defs.setdefault(tag, dict(arm_defs.get(_advised_base(decision, tag, arm_defs)) or {}))
         advised.append(tag)
 
     return arms + advised
+
+
+def _advised_base(decision: dict, tag: str, arm_defs: dict) -> str:
+    """The base arm an advised tag shadows: the decision's entry for that tag when there is one
+    (rejected entries still name their base), else the legacy `advised:<base>` reading when the
+    suffix is a real arm, else the configured base. Never a split of the tag alone -- the tag names
+    the experiment now, and `advised:forecast-range` names no arm called `forecast-range`."""
+    for entry in decision.get("experiments") or []:
+        if isinstance(entry, dict) and entry.get("tag") == tag and entry.get("base"):
+            return str(entry["base"])
+    suffix = tag[len(_core_advice.ADVISED_PREFIX) :] if _core_advice.is_advised(tag) else tag
+    if suffix in arm_defs:
+        return suffix
+    return decision.get("base_arm") or "control"
 
 
 def settle_time_min(config: dict) -> int:
@@ -485,11 +507,12 @@ def run_once(config: dict, conn, *, cache_path: str, when=None, force: bool = Fa
             quotes_rejected=stats["rejected"],
             underlying_price=snapshot["underlying_price"],
         )
-        # The session's experiment, stamped on the advised arm's rows only (the shared rule).
-        experiment_id = advice_decision(config, day).get("experiment_id")
+        # Each advised arm's OWN experiment, stamped on its rows only (the shared rule resolves
+        # the arm's tag against the decision; a control arm stamps None).
+        decision = advice_decision(config, day)
         for arm in arms:
             outcome = bookmod.process_snapshot(
-                snapshot, config, conn, arm, experiment_id=_core_advice.stamp_for(arm, experiment_id)
+                snapshot, config, conn, arm, experiment_id=_core_advice.stamp_for(arm, decision)
             )
             for action in outcome["actions"]:
                 if action["action"] not in ("entry_skipped", "completion_skipped"):

@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type {
   AdvisorApplyStatus,
   AdvisorCheckpoint,
+  AdvisorEnactment,
   AdvisorEvent,
   AdvisorExperiment,
   AdvisorPair,
@@ -156,16 +157,17 @@ function TabSummary({
     experiments: (
       <>
         <p>
-          Each card is a paper <strong>A/B</strong>: the admitted parameters running as an{" "}
-          <code>advised:</code> book beside the module's own control, entered from the same plan, so
-          the comparison is exactly paired and any difference is the parameters and nothing else.
+          Each card is a paper <strong>A/B</strong>: the admitted parameters running as the
+          experiment's own <code>advised:&lt;name&gt;</code> book beside the module's base, entered from
+          the same plan, so the comparison is exactly paired and any difference is the parameters and
+          nothing else. A module can run several at once, each on its own book.
         </p>
         <p className="muted">
           {activeExperiments} running, {concludedExperiments} concluded. Verdicts come from the
           suite's own promotion chain, not from the model — an{" "}
           <em>underpowered</em> chip means the sample has not reached the gate, which is neither a
-          pass nor a fail. Killing an experiment journals a reason and frees its slot; it never
-          touches the control book.
+          pass nor a fail. Killing an experiment journals a reason and stops its book being written
+          from the next session; it never touches the base book.
         </p>
       </>
     ),
@@ -197,13 +199,7 @@ function TabSummary({
 // --------------------------------------------------------------------------- apply-status banner
 
 /** One module's answer to "did the artifact issued for this session actually reach the loop?" */
-export function EnactmentCell({ status }: { status: AdvisorApplyStatus }) {
-  const e = status.enactment;
-  if (e === null) {
-    // No stored reconciliation: the advisor has not run a slot for this session. Not a failure —
-    // an unscored session and a dropped artifact are different facts and must not share a chip.
-    return <span className="muted">not scored yet</span>;
-  }
+function EnactmentRow({ e }: { e: AdvisorEnactment }) {
   if (e.status === "no_artifact") return <span className="muted">nothing issued</span>;
   if (e.status === "enacted") return <span className="chip">applied</span>;
   if (e.status === "carried") {
@@ -226,18 +222,46 @@ export function EnactmentCell({ status }: { status: AdvisorApplyStatus }) {
   );
 }
 
+/**
+ * One module's enactment for the chosen session — one row per experiment since the advisor keys
+ * its table on (session, module, experiment_id) (2026-09-17). A module running two experiments
+ * shows two verdicts, each labelled, and a single row keeps the plain cell it always had.
+ */
+export function EnactmentCell({ status }: { status: AdvisorApplyStatus }) {
+  const rows = status.enactments;
+  if (rows.length === 0) {
+    // No stored reconciliation: the advisor has not run a slot for this session. Not a failure —
+    // an unscored session and a dropped artifact are different facts and must not share a chip.
+    return <span className="muted">not scored yet</span>;
+  }
+  if (rows.length === 1) return <EnactmentRow e={rows[0]!} />;
+  return (
+    <div className="advisor-enactments">
+      {rows.map((e) => (
+        <div key={e.experimentId ?? ""}>
+          <span className="muted">{e.experimentId ?? "no experiment"} · </span>
+          <EnactmentRow e={e} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ApplyBanner({ status }: { status: AdvisorApplyStatus[] }) {
   // The card is collapsed by default, so the head is the only thing most readers ever see. A
   // dropped artifact has to be legible THERE: on 2026-08-25 meic and earnings both sat inside this
   // card reading "written" beside "advice_disabled", and nothing on the closed head said so.
-  const dropped = status.filter((s) => s.enactment?.status === "not_enacted");
+  // Counted per experiment: a module with one of two artifacts dropped is one not applied.
+  const dropped = status.flatMap((s) =>
+    s.enactments.filter((e) => e.status === "not_enacted").map((e) => `${s.module} ${e.experimentId ?? ""}`.trim()),
+  );
   return (
     <CollapsibleCard
       head={
         <>
           <h2>Advice: written, and whether it landed</h2>
           {dropped.length > 0 ? (
-            <span className="chip chip-warn" title={dropped.map((s) => s.module).join(", ")}>
+            <span className="chip chip-warn" title={dropped.join(", ")}>
               {dropped.length} not applied
             </span>
           ) : (
@@ -274,24 +298,36 @@ export function ApplyBanner({ status }: { status: AdvisorApplyStatus[] }) {
                   )}
                 </td>
                 <td>
-                  {s.artifactProposals.length === 0 ? (
+                  {/* One block per experiment the artifact carries (2026-09-17); the label is
+                      dropped when there is only one and it has no name, the legacy shape. */}
+                  {s.artifactExperiments.every((e) => e.proposals.length === 0) ? (
                     <span className="muted">—</span>
                   ) : (
-                    s.artifactProposals.map((p) => (
-                      <div key={p.param}>
-                        <code>{p.param}</code> = {String(p.value)}
+                    s.artifactExperiments.map((e, i) => (
+                      <div key={e.experimentId ?? i}>
+                        {(s.artifactExperiments.length > 1 || e.name !== null) && (
+                          <div className="muted">{e.name ?? e.experimentId}</div>
+                        )}
+                        {e.proposals.map((p) => (
+                          <div key={p.param}>
+                            <code>{p.param}</code> = {String(p.value)}
+                          </div>
+                        ))}
                       </div>
                     ))
                   )}
                 </td>
-                <td className={s.artifactRejected.length > 0 ? "pnl-neg" : "muted"}>
-                  {s.artifactRejected.length === 0
+                <td className={s.artifactExperiments.some((e) => e.rejected.length > 0) ? "pnl-neg" : "muted"}>
+                  {s.artifactExperiments.every((e) => e.rejected.length === 0)
                     ? "—"
-                    : s.artifactRejected.map((r) => (
-                        <div key={String(r.param)} title={r.reason}>
-                          {String(r.param)}
-                        </div>
-                      ))}
+                    : s.artifactExperiments.flatMap((e) =>
+                        e.rejected.map((r) => (
+                          <div key={`${e.experimentId ?? ""}:${String(r.param)}`} title={r.reason}>
+                            {s.artifactExperiments.length > 1 && <span className="muted">{e.name ?? e.experimentId} · </span>}
+                            {String(r.param)}
+                          </div>
+                        )),
+                      )}
                 </td>
                 <td>
                   {/* The advisor's own reconciliation of the CHOSEN session, not this reader's.
@@ -599,6 +635,11 @@ export function ExperimentCard({
         <h2>
           {e.module} <span className="muted">· {e.name ?? e.id}</span>
         </h2>
+        {e.tag !== null && (
+          <span className="muted" title={`this experiment's own advised book, against ${e.baseProfile}`}>
+            {e.tag}
+          </span>
+        )}
         <span className={`chip ${e.status === "active" ? "" : "chip-missing"}`}>{e.status}</span>
         {e.verdict?.underpowered === true && (
           <span

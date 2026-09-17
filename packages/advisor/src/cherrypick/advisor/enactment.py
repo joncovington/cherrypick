@@ -96,11 +96,55 @@ def _artifact_params(artifact: dict[str, Any]) -> dict[str, Any]:
 
 
 def experiment_of(artifact: dict[str, Any] | None) -> str | None:
-    """The experiment an artifact was issued for, read off the stamp `enact` wrote."""
+    """The FIRST experiment an artifact was issued for: the explicit field, else the stamp `enact`
+    wrote. Every artifact written before 2026-09-17 carried exactly one; see `experiments_of`."""
     if not isinstance(artifact, dict):
         return None
+    explicit = artifact.get("experiment_id")
+    if isinstance(explicit, str) and explicit:
+        return explicit
     match = _EXPERIMENT_IN_ADVISOR.search(str(artifact.get("advisor") or ""))
     return match.group(1) if match else None
+
+
+def artifact_entries(artifact: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """The artifact's per-experiment entries (2026-09-17), or the single legacy entry an old-shape
+    artifact implies: `[{experiment_id, tag, proposals, rejected}]`."""
+    if not isinstance(artifact, dict):
+        return []
+    entries = artifact.get("experiments")
+    if isinstance(entries, list) and entries:
+        return [e for e in entries if isinstance(e, dict)]
+    return [
+        {
+            "experiment_id": experiment_of(artifact),
+            "tag": None,
+            "proposals": artifact.get("proposals") or [],
+            "rejected": artifact.get("rejected") or [],
+        }
+    ]
+
+
+def experiments_of(artifact: dict[str, Any] | None) -> list[str]:
+    return [e["experiment_id"] for e in artifact_entries(artifact) if e.get("experiment_id")]
+
+
+def decision_entries(recorded: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """The loop's per-experiment decisions (2026-09-17), or the single legacy entry an old-shape
+    decision implies: `[{experiment_id, tag, params, reason}]`."""
+    if not isinstance(recorded, dict):
+        return []
+    entries = recorded.get("experiments")
+    if isinstance(entries, list):
+        return [e for e in entries if isinstance(e, dict)]
+    return [
+        {
+            "experiment_id": recorded.get("experiment_id"),
+            "tag": None,
+            "params": recorded.get("params") or {},
+            "reason": recorded.get("reason"),
+        }
+    ]
 
 
 def recorded_decision(module: str, session: str) -> dict[str, Any] | None:
@@ -195,12 +239,17 @@ def exit_carried_by(
 
 
 def reconcile(module: str, session: str) -> dict[str, Any]:
-    """One module's enactment outcome for one session.
+    """One module's enactment outcome for one session -- per experiment.
 
     The comparison is on the admitted params themselves rather than on a flag, because every way
     this has actually failed produces a decision file that exists and looks ordinary -- the loop
     recorded `advice_disabled` against a live artifact, or an out-of-session process fixed the day's
     decision before the artifact could be read. Only the params tell those apart from a working day.
+
+    Since 2026-09-17 an artifact carries one entry per active experiment and the loop records one
+    decision per entry, so the outcome is scored per experiment: `experiments` holds one outcome
+    each, matched by experiment id; the top-level fields mirror the first (or the module-level
+    `no_artifact`) for readers of the old shape.
     """
     artifact = _store.read_json(_paths.advice_path(module, session), default=None)
     recorded = recorded_decision(module, session)
@@ -210,19 +259,80 @@ def reconcile(module: str, session: str) -> dict[str, Any]:
         "session": session,
         "experiment_id": experiment_of(artifact),
         "artifact_written": artifact is not None,
-        "artifact_params": _artifact_params(artifact) if artifact else None,
-        "artifact_rejected": len(artifact.get("rejected") or []) if artifact else None,
         "decision_recorded": recorded is not None,
-        "decision_params": (recorded.get("params") or {}) if recorded else None,
         "decision_reason": recorded.get("reason") if recorded else None,
         "decision_derived_at": recorded.get("derived_at") if recorded else None,
+        "experiments": [],
     }
 
     if artifact is None:
-        out["status"] = NO_ARTIFACT
-        out["detail"] = "no artifact was issued for this module and session"
+        out.update(
+            {
+                "status": NO_ARTIFACT,
+                "detail": "no artifact was issued for this module and session",
+                "artifact_params": None,
+                "artifact_rejected": None,
+                "decision_params": (recorded.get("params") or {}) if recorded else None,
+            }
+        )
         return out
-    if recorded is None:
+
+    decided = {e.get("experiment_id"): e for e in decision_entries(recorded)}
+    for entry in artifact_entries(artifact):
+        experiment_id = entry.get("experiment_id")
+        decision = decided.get(experiment_id) if recorded is not None else None
+        if decision is None and recorded is not None and len(decided) == 1 and None in decided:
+            # A legacy decision names no experiment; it can only be the one the artifact named.
+            decision = decided[None]
+        out["experiments"].append(
+            _reconcile_entry(module, session, entry, decision, recorded_at_all=recorded is not None)
+        )
+
+    first = out["experiments"][0] if out["experiments"] else None
+    if first is None:
+        out.update(
+            {
+                "status": NOT_ENACTED,
+                "detail": "the artifact names no experiment",
+                "artifact_params": None,
+                "artifact_rejected": None,
+                "decision_params": None,
+            }
+        )
+        return out
+    for key in (
+        "status",
+        "detail",
+        "artifact_params",
+        "artifact_rejected",
+        "decision_params",
+        "carried_params",
+        "candidates_accepted",
+    ):
+        if key in first:
+            out[key] = first[key]
+    return out
+
+
+def _reconcile_entry(
+    module: str,
+    session: str,
+    entry: dict[str, Any],
+    decision: dict[str, Any] | None,
+    *,
+    recorded_at_all: bool,
+) -> dict[str, Any]:
+    """One experiment's outcome: its artifact entry against the loop's decision for it."""
+    artifact_params = _advice.params_map(entry.get("proposals"))
+    out: dict[str, Any] = {
+        "experiment_id": entry.get("experiment_id"),
+        "tag": entry.get("tag"),
+        "artifact_params": artifact_params,
+        "artifact_rejected": len(entry.get("rejected") or []),
+        "decision_params": (decision.get("params") or {}) if decision is not None else None,
+        "decision_reason": decision.get("reason") if decision is not None else None,
+    }
+    if decision is None:
         # Only for the CURRENT session. `carried_by` reads the ledger's OPEN rows, which describe
         # right now and prove nothing about a week ago — an artifact whose params happen to match
         # what is open today would otherwise be scored `carried` for every past session it was
@@ -231,7 +341,7 @@ def reconcile(module: str, session: str) -> dict[str, Any]:
         # `recount`'s `unknown` bucket already errs in: never shorten or lengthen an experiment on
         # evidence that is not actually about the session being scored.
         if session == _clock.session_today():
-            carried = carried_by(module, out["artifact_params"] or {})
+            carried = carried_by(module, artifact_params)
             if carried is not None:
                 out["status"] = CARRIED
                 out["carried_params"] = carried
@@ -244,7 +354,7 @@ def reconcile(module: str, session: str) -> dict[str, Any]:
             # current-session-only anyway, symmetric with the open read, because for counting the
             # distinction is moot (neither carried nor not_enacted advances the counter) and the
             # conservative label is the one recount already errs toward.
-            exits = exit_carried_by(module, out["artifact_params"] or {}, session)
+            exits = exit_carried_by(module, artifact_params, session)
             if exits is not None:
                 out["status"] = CARRIED
                 out["carried_params"] = exits
@@ -255,14 +365,19 @@ def reconcile(module: str, session: str) -> dict[str, Any]:
                 )
                 return out
         out["status"] = NOT_ENACTED
-        out["detail"] = (
-            "the loop recorded no decision for this session"
-            if session == _clock.session_today()
-            else "the loop recorded no decision for this session (whether its earlier advice was "
-            "still frozen on open positions cannot be proved after the fact)"
-        )
+        if recorded_at_all:
+            out["detail"] = (
+                "the loop recorded a decision for this session that names no entry for this experiment"
+            )
+        else:
+            out["detail"] = (
+                "the loop recorded no decision for this session"
+                if session == _clock.session_today()
+                else "the loop recorded no decision for this session (whether its earlier advice was "
+                "still frozen on open positions cannot be proved after the fact)"
+            )
         return out
-    if out["decision_params"] == out["artifact_params"]:
+    if out["decision_params"] == artifact_params:
         # A scanning module that accepted no candidate had nothing for the advice to decide
         # (2026-09-16, a declared break for the advisor's counter). earnings enters only when a
         # name reports and passes its screen; through the mid-September lull the condor experiment
@@ -270,7 +385,7 @@ def reconcile(module: str, session: str) -> dict[str, Any]:
         # parameter had been tested. Scored `carried`: the advice reached the loop and governed a
         # session with nothing in it, which costs the experiment nothing. Modules with no scan
         # ledger are untouched -- `candidates_accepted` answers None for them.
-        if out["artifact_params"]:
+        if artifact_params:
             accepted = _factpack.candidates_accepted(module, session)
             if accepted == 0:
                 out["status"] = CARRIED
@@ -283,7 +398,7 @@ def reconcile(module: str, session: str) -> dict[str, Any]:
         out["status"] = ENACTED
         out["detail"] = (
             "reject-all artifact, and the loop recorded the baseline it implies"
-            if not out["artifact_params"]
+            if not artifact_params
             else "the loop applied the artifact's admitted params"
         )
         return out
@@ -291,7 +406,7 @@ def reconcile(module: str, session: str) -> dict[str, Any]:
     out["status"] = NOT_ENACTED
     out["detail"] = (
         f"the loop recorded {out['decision_params']!r} "
-        f"against an artifact admitting {out['artifact_params']!r}"
+        f"against an artifact admitting {artifact_params!r}"
         + (f" (reason: {out['decision_reason']})" if out["decision_reason"] else "")
     )
     return out
@@ -310,34 +425,53 @@ def record(conn, session: str, modules: tuple[str, ...] | list[str] | None = Non
     free to drift from the first. "Did the loop apply this" is a judgement, so it is decided here
     once and stored, not compared again on the other side of the wire.
 
-    Upsert per (session, module): re-running a slot rewrites that session's row rather than
-    accumulating, and the row is refreshed on every pack write so the page is current DURING the
-    session rather than only after the evening pass has scored it.
+    One row per (session, module, experiment) since 2026-09-17, and a single '' experiment row
+    for a module-session with no artifact. Re-running a slot rewrites that module-session's rows
+    rather than accumulating, and they are refreshed on every pack write so the page is current
+    DURING the session rather than only after the evening pass has scored it.
     """
     outcomes = audit(session, modules)
     for module, outcome in outcomes.items():
-        conn.execute(
-            "INSERT INTO enactment (session, module, status, detail, experiment_id,"
-            " artifact_params, decision_params, decision_reason, scored_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?)"
-            " ON CONFLICT(session, module) DO UPDATE SET status=excluded.status,"
-            " detail=excluded.detail, experiment_id=excluded.experiment_id,"
-            " artifact_params=excluded.artifact_params, decision_params=excluded.decision_params,"
-            " decision_reason=excluded.decision_reason, scored_at=excluded.scored_at",
-            (
-                session,
-                module,
-                outcome["status"],
-                outcome["detail"],
-                outcome["experiment_id"],
-                json.dumps(outcome["artifact_params"]) if outcome["artifact_params"] is not None else None,
-                json.dumps(outcome["decision_params"]) if outcome["decision_params"] is not None else None,
-                outcome["decision_reason"],
-                _store.now_iso(),
-            ),
-        )
+        rows = outcome.get("experiments") or [
+            {
+                "experiment_id": "",
+                "status": outcome["status"],
+                "detail": outcome["detail"],
+                "artifact_params": outcome.get("artifact_params"),
+                "decision_params": outcome.get("decision_params"),
+                "decision_reason": outcome.get("decision_reason"),
+            }
+        ]
+        conn.execute("DELETE FROM enactment WHERE session = ? AND module = ?", (session, module))
+        for row in rows:
+            conn.execute(
+                "INSERT INTO enactment (session, module, experiment_id, status, detail,"
+                " artifact_params, decision_params, decision_reason, scored_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    session,
+                    module,
+                    row.get("experiment_id") or "",
+                    row["status"],
+                    row["detail"],
+                    json.dumps(row["artifact_params"]) if row.get("artifact_params") is not None else None,
+                    json.dumps(row["decision_params"]) if row.get("decision_params") is not None else None,
+                    row.get("decision_reason"),
+                    _store.now_iso(),
+                ),
+            )
     conn.commit()
     return outcomes
+
+
+def outcome_for(module: str, session: str, experiment_id: str) -> dict[str, Any]:
+    """One experiment's outcome for a session: its entry of `reconcile`, or the module-level
+    outcome when the artifact did not carry it (no artifact, or a legacy artifact)."""
+    whole = reconcile(module, session)
+    for entry in whole.get("experiments") or []:
+        if entry.get("experiment_id") == experiment_id:
+            return entry
+    return whole
 
 
 def sessions_of(experiment: dict[str, Any], *, through: str | None = None) -> list[str]:
@@ -359,7 +493,7 @@ def sessions_of(experiment: dict[str, Any], *, through: str | None = None) -> li
         if session > through:
             continue
         artifact = _store.read_json(path, default=None)
-        if experiment_of(artifact) == experiment["id"]:
+        if experiment["id"] in experiments_of(artifact):
             found.append(session)
     return found
 
@@ -394,7 +528,7 @@ def recount(conn, *, apply: bool = False) -> dict[str, Any]:
     for experiment in _store.experiments(conn, status=_experiments.STATUS_ACTIVE):
         rows = []
         for session in sessions_of(experiment):
-            outcome = reconcile(experiment["module"], session)
+            outcome = outcome_for(experiment["module"], session, experiment["id"])
             if outcome["status"] in (ENACTED, CARRIED):
                 status = outcome["status"]
             elif recorded_decision(experiment["module"], session) is None and not _has_pack(session):

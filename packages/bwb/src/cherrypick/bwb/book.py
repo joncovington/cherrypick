@@ -35,7 +35,7 @@ def enter_position(
     *,
     entry_session: str,
     advice_params: dict | None,
-    experiment_id: str | None = None,
+    experiment_id: str | dict | None = None,
 ) -> dict | None:
     """Open one book's base BWB from a plan. Idempotent per position_id."""
     pid = position_id(plan["symbol"], book, entry_session)

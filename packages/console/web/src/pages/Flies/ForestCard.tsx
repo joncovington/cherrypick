@@ -179,11 +179,13 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
   const allArms = data?.arms ?? [];
   const shown = allArms.filter((a) => !a.curve.empty && a.curve.prices.length > 0);
   const colorOf = (arm: string) => ARM_COLORS[allArms.findIndex((a) => a.arm === arm) % ARM_COLORS.length]!;
-  // An arm whose curve equals an earlier arm's point for point (the advisor's synthetic twin
-  // before it diverges) is drawn dashed and named as identical, so a line hidden under another
-  // line is never mistaken for a missing one — or for a divergence that has not happened.
-  // The synthetic arm is always the twin, never the base: `advised:control` is identical to
-  // `control`, not the other way round, whatever order the arms sort in.
+  // An arm whose curve equals an earlier arm's point for point (an advisor experiment's
+  // synthetic book before it diverges) is drawn dashed and named as identical, so a line hidden
+  // under another line is never mistaken for a missing one — or for a divergence that has not
+  // happened. A synthetic arm is always the twin, never the base: `advised:<experiment>` is
+  // identical to its base, not the other way round, whatever order the arms sort in — and with
+  // several experiments on one base (2026-09-17) each is named as the base's twin, never as
+  // each other's, because twins are only ever matched against arms that are not twins.
   const twinOf = new Map<string, string>();
   const bases = [...shown].sort((a, b) => Number(a.arm.startsWith("advised:")) - Number(b.arm.startsWith("advised:")));
   bases.forEach((a, i) => {

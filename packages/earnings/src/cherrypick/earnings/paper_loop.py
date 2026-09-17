@@ -256,11 +256,17 @@ def managed_book(profile: str | None) -> bool:
     really is the one choke point restating a twin's frozen params, and it really is called from
     `management.evaluate`. But `evaluate` only ever sees what this function returns, so a filter two
     steps upstream silently decided the advised experiment recorded nothing at all.
+
+    A twin is `advised:<experiment name>:<strategy>` since 2026-09-17 (one per experiment), or the
+    legacy `advised:strat_test:<strategy>` before it; both shadow a strat_test entry, and both are
+    this loop's to manage. The strategy is the tag's last segment either way (`advice.strategy_of`).
     """
     base = profile or ""
-    if base.startswith(advice.ADVISED_PREFIX):
-        base = base[len(advice.ADVISED_PREFIX) :]
-    return harness._is_strat_test_book(base)
+    if not base.startswith(advice.ADVISED_PREFIX):
+        return harness._is_strat_test_book(base)
+    # Every advised row this module writes is a twin of a strat_test entry (advice.twin_spec is
+    # the only writer), so an advised tag that names a strategy is ours to manage in either shape.
+    return advice.strategy_of(base) is not None
 
 
 def open_positions() -> list[dict]:

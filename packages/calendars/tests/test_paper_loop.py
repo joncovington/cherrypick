@@ -7,7 +7,7 @@ from datetime import datetime
 
 from cherrypick.core import streamcache, streamrequests
 
-from cherrypick.calendars import clock, db, paper_loop, stream_request
+from cherrypick.calendars import clock, db, management, paper_loop, stream_request
 
 FRONT = "2026-08-21"
 BACK = "2026-08-24"
@@ -313,3 +313,129 @@ def test_a_cash_symbol_needs_no_dividends_block(tmp_path):
     config = {"symbols": ["SPX"], "occ_roots": {"SPX": "SPXW"}}  # no dividends block anywhere
     paper_loop.run_once(config, conn, cache_path=cache, when=_at("2026-08-17", "10:05"))
     assert conn.execute("SELECT COUNT(*) FROM dc_positions").fetchone()[0] == 4
+
+
+# --------------------------- one advised book per experiment (2026-09-17)
+
+
+def _two_experiment_artifact(session):
+    return {
+        "module": "calendars",
+        "session": session,
+        "advisor": "test",
+        "expires_at": "2099-01-01T00:00:00-04:00",
+        "experiment_id": "exp-a",
+        "proposals": [{"param": "time_exit", "value": "fri_noon", "rationale": "t"}],
+        "rejected": [],
+        "experiments": [
+            {
+                "experiment_id": "exp-a",
+                "name": "noon exit",
+                "tag": "advised:noon-exit",
+                "base": "control",
+                "proposals": [{"param": "time_exit", "value": "fri_noon", "rationale": "t"}],
+                "rejected": [],
+            },
+            {
+                "experiment_id": "exp-b",
+                "name": "take 20",
+                "tag": "advised:take-20",
+                "base": "control",
+                "proposals": [{"param": "profit_target_pct", "value": 0.2, "rationale": "t"}],
+                "rejected": [],
+            },
+        ],
+    }
+
+
+def _advice_config():
+    return {
+        "symbols": ["SPX"],
+        "occ_roots": {"SPX": "SPXW"},
+        "advice": {
+            "enabled": True,
+            "base_book": "control",
+            "bounds": {"time_exit": {"choices": ["fri_noon"]}, "profit_target_pct": {"min": 0.1, "max": 0.5}},
+        },
+    }
+
+
+def test_session_books_open_one_advised_book_per_experiment(monkeypatch):
+    monkeypatch.setattr(
+        paper_loop,
+        "advice_decision",
+        lambda cfg, day: {
+            "day": day,
+            "experiments": [
+                {
+                    "experiment_id": "exp-a",
+                    "tag": "advised:noon-exit",
+                    "base": "control",
+                    "params": {"time_exit": "fri_noon"},
+                },
+                {
+                    "experiment_id": "exp-b",
+                    "tag": "advised:take-20",
+                    "base": "control",
+                    "params": {"profit_target_pct": 0.2},
+                },
+                {"experiment_id": "exp-c", "tag": "advised:rejected", "base": "control", "params": None},
+            ],
+        },
+    )
+    books, advised = paper_loop.session_books({}, "2026-08-17")
+    assert books == ["control", "path", "advised:noon-exit", "advised:take-20"]
+    assert advised["advised:take-20"]["experiment_id"] == "exp-b"
+    assert "advised:rejected" not in advised  # a rejected overlay is that experiment's baseline day
+
+
+def test_session_books_read_a_legacy_decision_as_the_single_advised_base_book(monkeypatch):
+    monkeypatch.setattr(
+        paper_loop,
+        "advice_decision",
+        lambda cfg, day: {
+            "day": day,
+            "params": {"time_exit": "fri_noon"},
+            "base_book": "control",
+            "experiment_id": "exp-old",
+        },
+    )
+    books, advised = paper_loop.session_books({}, "2026-08-17")
+    assert books == ["control", "path", "advised:control"]
+    assert advised["advised:control"]["experiment_id"] == "exp-old"
+    assert advised["advised:control"]["params"] == {"time_exit": "fri_noon"}
+
+
+def test_session_books_are_the_base_roster_on_a_baseline_day(monkeypatch):
+    monkeypatch.setattr(
+        paper_loop, "advice_decision", lambda cfg, day: {"day": day, "params": None, "experiments": []}
+    )
+    assert paper_loop.session_books({}, "2026-08-17") == (["control", "path"], {})
+
+
+def test_two_experiments_enter_as_two_books_with_their_own_params_and_stamps(tmp_path, managed_home):
+    """End to end through the artifact: the entry opens control, path and one advised book per
+    experiment, each frozen with ITS overlay and stamped with ITS id."""
+    session = "2026-08-17"
+    advice_dir = managed_home / "state" / "advice"
+    advice_dir.mkdir(parents=True)
+    (advice_dir / f"calendars-{session}.json").write_text(
+        json.dumps(_two_experiment_artifact(session)), encoding="utf-8"
+    )
+    cache = _seed_cache(tmp_path)
+    conn = db.connect(str(tmp_path / "paper.db"))
+    paper_loop.run_once(_advice_config(), conn, cache_path=cache, when=_at(session, "10:05"))
+
+    rows = conn.execute(
+        "SELECT book, advice_params, experiment_id FROM dc_positions WHERE side = 'put' ORDER BY book"
+    ).fetchall()
+    assert [r["book"] for r in rows] == ["advised:noon-exit", "advised:take-20", "control", "path"]
+    by_book = {r["book"]: r for r in rows}
+    assert json.loads(by_book["advised:noon-exit"]["advice_params"]) == {"time_exit": "fri_noon"}
+    assert json.loads(by_book["advised:take-20"]["advice_params"]) == {"profit_target_pct": 0.2}
+    assert by_book["advised:noon-exit"]["experiment_id"] == "exp-a"
+    assert by_book["advised:take-20"]["experiment_id"] == "exp-b"
+    assert by_book["control"]["experiment_id"] is None and by_book["control"]["advice_params"] is None
+    # And the frozen params govern each twin under its base's rules.
+    params = management.effective_params(dict(by_book["advised:noon-exit"]), _advice_config())
+    assert params["base_book"] == "control" and params["time_exit"] == "fri_noon"

@@ -17,7 +17,8 @@ Book semantics:
   settlement takes the shorts and Monday disposition the longs, with the blocked verdicts on file.
 - `path` — the permissive superset (MEIC's `open` arm precedent): never closes. Shorts run to cash
   settlement, longs to the Monday disposition. Its whole job is the recorded mark path.
-- `advised:<base>` — the frozen params decide: profit target / stop (as fractions of the entry
+- `advised:<experiment name>` (one book per advisor experiment since 2026-09-17; `advised:control`
+  before) — the frozen params decide: profit target / stop (as fractions of the entry
   debit, on the COMBINED double when both sides are open — see `evaluate`'s note), the
   short-strike-touch side close, the scheduled `time_exit`, and `long_disposition`. With
   `long_disposition: "mon_open"` there is no whole-structure scheduled exit — shorts settle Friday
@@ -71,9 +72,13 @@ def effective_params(position: dict, config: dict) -> dict:
     `advice_params` overlaid for an advised book. An unreadable stamp is the control's config,
     never a guess."""
     book = position.get("book") or "control"
-    base = engine.base_book(book)
+    # The base is resolved through `engine.base_book` with the config in hand: a legacy
+    # `advised:control` row names its base in the tag, a 2026-09-17 `advised:<experiment>` row
+    # shadows the configured `advice.base_book`.
+    base = engine.base_book(book, config=config)
     params = {**PARAM_DEFAULTS, **engine.merged_params(config, base)}
     params["book"] = book
+    params["base_book"] = base
     raw = position.get("advice_params")
     if book.startswith("advised:") and raw:
         try:

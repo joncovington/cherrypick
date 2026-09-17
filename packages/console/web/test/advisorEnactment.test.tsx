@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { AdvisorApplyStatus } from "@console/shared";
+import type { AdvisorApplyStatus, AdvisorEnactment } from "@console/shared";
 
 import { ApplyBanner, CountingCaveat, EnactmentCell } from "../src/pages/Advisor/AdvisorPage";
 
@@ -23,11 +23,27 @@ function applyStatus(over: Partial<AdvisorApplyStatus> = {}): AdvisorApplyStatus
     artifactWritten: true,
     artifactProposals: [{ param: "regime_gex_block_negative", value: true, rationale: "exp" }],
     artifactRejected: [],
+    artifactExperiments: [
+      {
+        experimentId: "exp-1",
+        name: null,
+        tag: null,
+        base: null,
+        proposals: [{ param: "regime_gex_block_negative", value: true, rationale: "exp" }],
+        rejected: [],
+      },
+    ],
     consumerDecision: { day: "2026-08-25", params: null, reason: "advice_disabled" },
+    decisionExperiments: [],
     disabledReason: null,
-    enactment: null,
+    enactments: [],
     ...over,
   };
+}
+
+/** A status with one enactment row — the pre-2026-09-17 one-experiment shape, as a list of one. */
+function enacted(e: AdvisorEnactment | null, over: Partial<AdvisorApplyStatus> = {}): AdvisorApplyStatus {
+  return applyStatus({ enactments: e === null ? [] : [e], ...over });
 }
 
 
@@ -39,8 +55,8 @@ describe("the apply banner", () => {
     const html = text(
       <ApplyBanner
         status={[
-          applyStatus({ enactment: { session: "2026-08-25", status: "not_enacted", detail: "the loop recorded {}", experimentId: "exp-1", decisionReason: "advice_disabled", scoredAt: null } }),
-          applyStatus({ module: "flies", enactment: { session: "2026-08-25", status: "enacted", detail: null, experimentId: "exp-2", decisionReason: null, scoredAt: null } }),
+          enacted({ session: "2026-08-25", status: "not_enacted", detail: "the loop recorded {}", experimentId: "exp-1", decisionReason: "advice_disabled", scoredAt: null }),
+          enacted({ session: "2026-08-25", status: "enacted", detail: null, experimentId: "exp-2", decisionReason: null, scoredAt: null }, { module: "flies" }),
         ]}
       />,
     );
@@ -51,7 +67,7 @@ describe("the apply banner", () => {
   it("says all applied when every artifact landed", () => {
     const html = text(
       <ApplyBanner
-        status={[applyStatus({ enactment: { session: "2026-08-25", status: "enacted", detail: null, experimentId: "exp-1", decisionReason: null, scoredAt: null } })]}
+        status={[enacted({ session: "2026-08-25", status: "enacted", detail: null, experimentId: "exp-1", decisionReason: null, scoredAt: null })]}
       />,
     );
     expect(html).toContain("all applied");
@@ -61,15 +77,34 @@ describe("the apply banner", () => {
   it("does not warn before the advisor has scored the session", () => {
     // An unscored session and a dropped artifact are different facts. Borrowing the warning chip
     // for the first would cry wolf every morning before the advisor's first slot runs.
-    const html = text(<ApplyBanner status={[applyStatus({ enactment: null })]} />);
+    const html = text(<ApplyBanner status={[enacted(null)]} />);
     expect(html).not.toContain("not applied");
     expect(html).not.toContain("chip-warn");
+  });
+
+  it("counts a dropped artifact per experiment, and labels each row when a module has several", () => {
+    // Since 2026-09-17 a module scores one enactment row per experiment. One of two dropped is
+    // "1 not applied" on the head, and the cell says which.
+    const status = applyStatus({
+      enactments: [
+        { session: "2026-08-25", status: "enacted", detail: null, experimentId: "exp-1", decisionReason: null, scoredAt: null },
+        { session: "2026-08-25", status: "not_enacted", detail: "the loop recorded {}", experimentId: "exp-3", decisionReason: "advice_disabled", scoredAt: null },
+      ],
+    });
+    const html = text(<ApplyBanner status={[status]} />);
+    expect(html).toContain("1 not applied");
+    expect(html).toContain("meic exp-3");
+    const cell = text(<EnactmentCell status={status} />);
+    expect(cell).toContain("exp-1");
+    expect(cell).toContain("exp-3");
+    expect(cell).toContain("applied");
+    expect(cell).toContain("not applied");
   });
 });
 
 describe("one module's enactment cell", () => {
   it("says 'not scored yet' rather than borrowing a failure", () => {
-    const html = text(<EnactmentCell status={applyStatus({ enactment: null })} />);
+    const html = text(<EnactmentCell status={enacted(null)} />);
     expect(html).toContain("not scored yet");
     expect(html).not.toContain("chip-warn");
   });
@@ -79,17 +114,15 @@ describe("one module's enactment cell", () => {
     // renders the advisor's sentence rather than assembling its own from the parts.
     const html = text(
       <EnactmentCell
-        status={applyStatus({
-          enactment: {
-            session: "2026-08-25",
-            status: "not_enacted",
-            detail:
-              "the loop recorded {} against an artifact admitting" +
-              " {'regime_gex_block_negative': True} (reason: advice_disabled)",
-            experimentId: "exp-1",
-            decisionReason: "advice_disabled",
-            scoredAt: null,
-          },
+        status={enacted({
+          session: "2026-08-25",
+          status: "not_enacted",
+          detail:
+            "the loop recorded {} against an artifact admitting" +
+            " {'regime_gex_block_negative': True} (reason: advice_disabled)",
+          experimentId: "exp-1",
+          decisionReason: "advice_disabled",
+          scoredAt: null,
         })}
       />,
     );
@@ -101,9 +134,7 @@ describe("one module's enactment cell", () => {
   it("is quiet when nothing was issued", () => {
     const html = text(
       <EnactmentCell
-        status={applyStatus({
-          enactment: { session: "2026-08-25", status: "no_artifact", detail: null, experimentId: null, decisionReason: null, scoredAt: null },
-        })}
+        status={enacted({ session: "2026-08-25", status: "no_artifact", detail: null, experimentId: null, decisionReason: null, scoredAt: null })}
       />,
     );
     expect(html).toContain("nothing issued");
@@ -170,9 +201,8 @@ describe("the carried state", () => {
   // CHECKPOINTED session yet (carry is only ever claimed for the current session, and today is
   // scored after its checkpoint runs), so the branch would otherwise ship unrendered.
   const carried = (detail: string) =>
-    applyStatus({
-      module: "calendars",
-      enactment: {
+    enacted(
+      {
         session: "2026-08-27",
         status: "carried",
         detail,
@@ -180,7 +210,8 @@ describe("the carried state", () => {
         decisionReason: null,
         scoredAt: null,
       },
-    });
+      { module: "calendars" },
+    );
 
   it("renders as its own chip, not as applied and not as a warning", () => {
     const html = text(<EnactmentCell status={carried("frozen on open positions")} />);
@@ -198,7 +229,7 @@ describe("the carried state", () => {
       <ApplyBanner
         status={[
           carried("frozen on open positions"),
-          applyStatus({ module: "flies", enactment: { session: "2026-08-27", status: "enacted", detail: null, experimentId: "exp-2", decisionReason: null, scoredAt: null } }),
+          enacted({ session: "2026-08-27", status: "enacted", detail: null, experimentId: "exp-2", decisionReason: null, scoredAt: null }, { module: "flies" }),
         ]}
       />,
     );
@@ -211,7 +242,7 @@ describe("the carried state", () => {
       <ApplyBanner
         status={[
           carried("frozen on open positions"),
-          applyStatus({ enactment: { session: "2026-08-27", status: "not_enacted", detail: "the loop recorded no decision", experimentId: "exp-1", decisionReason: null, scoredAt: null } }),
+          enacted({ session: "2026-08-27", status: "not_enacted", detail: "the loop recorded no decision", experimentId: "exp-1", decisionReason: null, scoredAt: null }),
         ]}
       />,
     );

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from cherrypick.core import advice as _advice
 from cherrypick.core import ledgers as _ledgers
 from cherrypick.core.metrics import calibration_reading
 from cherrypick.core.profiles import QUALIFICATION_RULE, compare_profiles, qualify_readings
@@ -92,8 +93,12 @@ def reading_pair(
     start: str | None = None,
     end: str | None = None,
     experiment_id: str | None = None,
+    tag: str | None = None,
 ) -> dict[str, Any]:
     """The advised book beside its control, with the qualification checks for both.
+
+    `tag` names the advised book directly (2026-09-17: an experiment's own `advised:<name>`);
+    without it the legacy `advised:<base>` book is read.
 
     This is the whole comparison, and it is deliberately paired: the two books ran the same sessions
     against the same underlying, so the difference between them is worth far more than either
@@ -115,7 +120,7 @@ def reading_pair(
     stamp at all (rows written before the stamp existed, 2026-09-16). One `advised:<base>` tag serves
     every experiment on that base in turn; the stamp is what tells them apart inside a shared window.
     """
-    tag_advised = _bounds.advised_tag(module, base_profile, strategy)
+    tag_advised = _bounds.advised_tag(module, base_profile, strategy, tag=tag)
     tag_base = f"{base_profile}:{strategy}" if (module == "earnings" and strategy) else base_profile
 
     records = closed_records(module, start=start, end=end)
@@ -200,9 +205,22 @@ def for_experiment(experiment: dict[str, Any], *, rule: dict | None = None) -> d
         start = created
     end = concluded_session(experiment)
     strategies = _bounds.strategies_in(module, params) or [None]
+    # The experiment's own book (2026-09-17). An experiment admitted before books were per
+    # experiment carries no tag/name and reads the legacy `advised:<base>` book, where the stamp
+    # still tells its rows from its neighbours'.
+    own_tag = experiment.get("tag") or (
+        _advice.advised_tag(experiment["name"]) if experiment.get("name") else None
+    )
     pairs = [
         reading_pair(
-            module, base, strategy=s, rule=rule, start=start, end=end, experiment_id=experiment.get("id")
+            module,
+            base,
+            strategy=s,
+            rule=rule,
+            start=start,
+            end=end,
+            experiment_id=experiment.get("id"),
+            tag=own_tag,
         )
         for s in strategies
     ]

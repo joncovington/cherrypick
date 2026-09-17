@@ -185,18 +185,28 @@ def advice_decision(config: dict, today: str) -> dict:
     )
 
 
-def session_books(config: dict, today: str) -> tuple[list[str], dict | None]:
-    """(the books the entry opens this week, the admitted advice params or None). The roster only
+def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]:
+    """(the books the entry opens this week, `{advised tag: its experiment entry}`). The roster only
     matters at ENTRY — marking, management, disposition, and settlement all iterate open positions
     from the ledger whatever their book tag, so a book once opened can never be stranded by a later
     roster change (the stranding class the flies advised-arm roster helper exists to prevent is
-    designed out here rather than handled)."""
+    designed out here rather than handled).
+
+    One advised book PER EXPERIMENT the day's decision admitted (2026-09-17): each entry names its
+    own tag (`advised:<experiment name>`), the base book it shadows and the params it overlays,
+    and a decision recorded before that date still yields its single `advised:<base>`. The map is
+    empty on a baseline day."""
     books = [b for b in engine.BOOKS if (config.get("books") or {}).get(b, {}).get("enabled", True)]
-    decision = advice_decision(config, today)
-    params = decision.get("params")
-    if params:
-        books.append(f"advised:{decision.get('base_book') or 'control'}")
-    return books, params
+    advised = advised_entries(advice_decision(config, today))
+    books.extend(tag for tag in advised if tag not in books)
+    return books, advised
+
+
+def advised_entries(decision: dict | None) -> dict[str, dict]:
+    """`{tag: experiment entry}` for every experiment the decision opens a book for, in artifact
+    order. Keyed by tag because the tag is what every later step (planning, freezing, stamping)
+    looks the book up by."""
+    return {e["tag"]: e for e in _core_advice.advised_books(decision) if e.get("tag")}
 
 
 # --------------------------------------------------------------------------- the tick
@@ -498,14 +508,16 @@ def _try_entry(
     # decision". Two such weeks in a row were read as a process failure. The advice was read and
     # would have governed; the week had nothing to govern. Recording that is what lets the
     # advisor tell "refused with the advice in hand" from "the artifact never reached the loop".
-    advice_params: dict | None = None
-    experiment_id: str | None = None
+    # `advised` maps each advised tag to its experiment entry (params + the id the row is stamped
+    # with, resolved per book through the decision itself -- two experiments on one session are
+    # two books with two stamps, never one id shared).
+    advised: dict[str, dict] = {}
+    decision: dict | None = None
     if books is None:
-        books, advice_params = session_books(config, day)
-        if advice_params:
-            experiment_id = advice_decision(config, day).get("experiment_id")
-    else:
-        advice_params = None  # no advised twin for a non-default regime (see the arm's doc)
+        books, advised = session_books(config, day)
+        if advised:
+            decision = advice_decision(config, day)
+    # else: no advised twin for a non-default regime (see the arm's doc)
     if style is None:
         db.record_entry_attempt(
             conn, trade_date=day, week_of=week["week_of"], symbol=symbol, outcome="unknown_settlement"
@@ -612,7 +624,14 @@ def _try_entry(
 
     plan = planned["plan"]
     opened = bookmod.enter_week(
-        conn, plan, config, books, week=week, advice_params=advice_params, experiment_id=experiment_id
+        conn,
+        plan,
+        config,
+        books,
+        week=week,
+        advice_params=None,
+        advised={tag: e.get("params") or {} for tag, e in advised.items()},
+        experiment_id=decision,
     )
     if opened:
         db.record_entry_attempt(

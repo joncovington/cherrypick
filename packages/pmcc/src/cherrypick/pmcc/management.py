@@ -22,7 +22,8 @@ symbols, TQQQ and XSP):
   behavior: when True, `evaluate` closes early once the short's time value decays to
   `tv_close_threshold` — settable only through an `advised:control` row's frozen `advice_params`
   overlay, so the suite can run hold-to-expiry vs. early-tv-exit as a paper A/B without a new book.
-- `advised:<base>` — the base book's rules with the admitted param overrides frozen at entry.
+- `advised:<experiment name>` (one book per advisor experiment since 2026-09-17; `advised:control`
+  before) — the base book's rules with the admitted param overrides frozen at entry.
 
 Assignment-exposure telemetry lives BESIDE the verdict, not in it: `assignment_exposed` flags a
 mark whose short extrinsic sits under `assignment_exposure_tv` — the region where a real short is
@@ -73,9 +74,12 @@ def effective_params(position: dict, config: dict) -> dict:
     `advice_params` overlaid for an advised book. An unreadable stamp is the base's config, never a
     guess."""
     book = position.get("book") or "control"
-    base = book.split(":", 1)[1] if book.startswith("advised:") else book
+    # A legacy `advised:control` row names its base in the tag; a 2026-09-17 `advised:<experiment>`
+    # row shadows the configured `advice.base_book`. One rule, in `engine.base_book`.
+    base = engine.base_book(book, config=config)
     params = {**PARAM_DEFAULTS, **engine.merged_params(config, base)}
     params["book"] = book
+    params["base_book"] = base
     raw = position.get("advice_params")
     if book.startswith("advised:") and raw:
         try:

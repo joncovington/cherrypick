@@ -373,7 +373,7 @@ export interface ExperimentGuide {
 // below is one the reader must leave null rather than defaulting.
 //
 // 2026-08-23 redesign (measurement break, see packages/pmcc/CLAUDE.md): TQQQ (American, physical
-// settlement), single-book (`control` + its synthetic `advised:control` twin), with XSP (Mini-SPX,
+// settlement), single-book (`control` + one synthetic `advised:<experiment>` book per advisor experiment), with XSP (Mini-SPX,
 // European, cash-settled) added the same day as a second symbol run as a separate population under
 // the identical rule set. The old `keltner`/`roll` books,
 // the Keltner-channel gate and the roll chain are RETIRED going forward — there is no more keltner
@@ -494,7 +494,7 @@ export interface PmccPayload {
     /**
      * Whether the pre-redesign early-tv-exhaustion exit is live. Config-level `defaults` reads
      * false/off by default; the only place it can be true in practice is a frozen
-     * `advised:control` row's `advice_params` overlay, since control itself always holds to
+     * `advised:<experiment>` row's `advice_params` overlay, since control itself always holds to
      * `short_expiration`. Rendered so the page can say WHICH exit rule a book is running under.
      */
     tvManagedExit: boolean | null;

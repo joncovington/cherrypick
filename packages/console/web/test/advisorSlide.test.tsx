@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { renderToString } from "react-dom/server";
-import type { AdvisorExperiment, AdvisorModulePayload } from "@console/shared";
+import type { AdvisorActiveExperiment, AdvisorExperiment, AdvisorModulePayload } from "@console/shared";
 
-import { AdvisorSlideBody, SessionStrip } from "../src/components/advisor/AdvisorSlide";
+import { AdvisorSlideBody, SessionStrip, SessionStrips } from "../src/components/advisor/AdvisorSlide";
 import { gateDistance, lastCounted } from "../src/components/advisor/experimentStats";
 
 const text = (node: React.ReactElement) => renderToString(node).replace(/<!--\s*-->/g, "");
@@ -13,6 +13,7 @@ function experiment(over: Partial<AdvisorExperiment> = {}): AdvisorExperiment {
     module: "bwb",
     baseProfile: "control",
     name: "flip-buffer-widen-vs-control",
+    tag: "advised:flip-buffer-widen-vs-control",
     hypothesis: "a wider buffer arms less often and keeps more of the add-on credit",
     successMetric: "net delta",
     params: { flip_buffer: 1.02 },
@@ -46,11 +47,15 @@ function experiment(over: Partial<AdvisorExperiment> = {}): AdvisorExperiment {
   };
 }
 
+function active(over: Partial<AdvisorActiveExperiment> = {}): AdvisorActiveExperiment {
+  return { ...experiment(), calendarSessions: 11, stallBudget: 30, ...over };
+}
+
 function payload(over: Partial<AdvisorModulePayload> = {}): AdvisorModulePayload {
   return {
     module: "bwb",
     storePresent: true,
-    active: experiment(),
+    active: [active()],
     queued: [experiment({ id: "exp-2026-09-11-bwb-1", name: "flip-buffer-near-control", status: "queued", sessionsRun: 0 })],
     concluded: [],
     sessions: [
@@ -58,17 +63,26 @@ function payload(over: Partial<AdvisorModulePayload> = {}): AdvisorModulePayload
       { session: "2026-09-10", status: "carried", experimentId: "exp-2026-08-27-bwb-1", detail: "frozen" },
       { session: "2026-09-11", status: "not_enacted", experimentId: "exp-2026-08-27-bwb-1", detail: null },
     ],
-    calendarSessions: 11,
-    stallBudget: 30,
     tomorrow: {
       module: "bwb",
       nextSession: "2026-09-14",
       artifactWritten: true,
       artifactProposals: [{ param: "flip_buffer", value: 1.02, rationale: "exp" }],
       artifactRejected: [],
+      artifactExperiments: [
+        {
+          experimentId: "exp-2026-08-27-bwb-1",
+          name: null,
+          tag: null,
+          base: null,
+          proposals: [{ param: "flip_buffer", value: 1.02, rationale: "exp" }],
+          rejected: [],
+        },
+      ],
       consumerDecision: null,
+      decisionExperiments: [],
       disabledReason: null,
-      enactment: null,
+      enactments: [],
     },
     ...over,
   };
@@ -97,9 +111,62 @@ describe("the module's advisor slide", () => {
   });
 
   it("renders an honest empty view when nothing runs on the module", () => {
-    const html = text(<AdvisorSlideBody data={payload({ active: null, queued: [], sessions: [], calendarSessions: null, stallBudget: null })} />);
+    const html = text(<AdvisorSlideBody data={payload({ active: [], queued: [], sessions: [] })} />);
     expect(html).toContain("no active experiment");
     expect(html).toContain("no scored sessions yet");
+  });
+
+  it("renders every active experiment on its own book, with its own progress and strip", () => {
+    // Two experiments on one base at once (2026-09-17): nothing on the slide may assume one.
+    const second = active({
+      id: "exp-2026-09-11-bwb-1",
+      name: "flip-buffer-near-control",
+      tag: "advised:flip-buffer-near-control",
+      sessionsRun: 2,
+      calendarSessions: 3,
+    });
+    const data = payload({
+      active: [active(), second],
+      queued: [],
+      sessions: [
+        ...payload().sessions,
+        { session: "2026-09-10", status: "enacted", experimentId: "exp-2026-09-11-bwb-1", detail: null },
+        { session: "2026-09-11", status: "enacted", experimentId: "exp-2026-09-11-bwb-1", detail: null },
+      ],
+      tomorrow: {
+        ...payload().tomorrow!,
+        artifactExperiments: [
+          { experimentId: "exp-2026-08-27-bwb-1", name: "flip-buffer-widen-vs-control", tag: "advised:flip-buffer-widen-vs-control", base: "control", proposals: [{ param: "flip_buffer", value: 1.02, rationale: "exp" }], rejected: [] },
+          { experimentId: "exp-2026-09-11-bwb-1", name: "flip-buffer-near-control", tag: "advised:flip-buffer-near-control", base: "control", proposals: [{ param: "flip_buffer", value: 1.001, rationale: "exp" }], rejected: [] },
+        ],
+      },
+    });
+    const html = text(<AdvisorSlideBody data={data} />);
+    expect(html).toContain("advised:flip-buffer-widen-vs-control");
+    expect(html).toContain("advised:flip-buffer-near-control");
+    expect(html).toContain("9 of 15 sessions enacted");
+    expect(html).toContain("2 of 15 sessions enacted");
+    expect(html).toContain("3 calendar sessions since it started, stalls at 30");
+    // Tomorrow's artifact lists both experiments' admitted params.
+    expect(html).toContain("flip_buffer = 1.02");
+    expect(html).toContain("flip_buffer = 1.001");
+    expect(html).toContain("2 experiments");
+    // One strip per experiment, labelled.
+    const strips = text(<SessionStrips cells={data.sessions} active={data.active} />);
+    expect(strips.split("advisor-strip-label").length - 1).toBe(2);
+    expect(strips).toContain("flip-buffer-near-control");
+  });
+
+  it("keeps a single experiment's strip unlabelled and lists the module's own unattributed cells once", () => {
+    const one = text(<SessionStrips cells={payload().sessions} active={payload().active} />);
+    expect(one).not.toContain("advisor-strip-label");
+    const withBare = text(
+      <SessionStrips
+        cells={[...payload().sessions, { session: "2026-09-12", status: "no_artifact", experimentId: null, detail: null }]}
+        active={payload().active}
+      />,
+    );
+    expect(withBare).toContain("no experiment");
   });
 
   it("reports the gate distance and the last scored session for the roll-up", () => {

@@ -1,5 +1,6 @@
 """End-to-end sessions against a fixture cache: entry, hold-to-expiry, settlement, disposal."""
 
+import json
 from datetime import datetime
 
 import pytest
@@ -292,3 +293,85 @@ def test_finalize_refuses_while_shares_open(cache, config, tmp_path):
         },
     )
     assert not bookmod.finalize_if_done(conn, pid, reason="test", session_date="2026-08-31")
+
+
+# --------------------------- one advised book per experiment (2026-09-17)
+
+
+def _two_experiment_artifact(session):
+    return {
+        "module": "pmcc",
+        "session": session,
+        "advisor": "test",
+        "expires_at": "2099-01-01T00:00:00-04:00",
+        "experiment_id": "exp-a",
+        "proposals": [{"param": "tv_managed_exit", "value": True, "rationale": "t"}],
+        "rejected": [],
+        "experiments": [
+            {
+                "experiment_id": "exp-a",
+                "name": "tv exit",
+                "tag": "advised:tv-exit",
+                "base": "control",
+                "proposals": [{"param": "tv_managed_exit", "value": True, "rationale": "t"}],
+                "rejected": [],
+            },
+            {
+                "experiment_id": "exp-b",
+                "name": "tv 05",
+                "tag": "advised:tv-05",
+                "base": "control",
+                "proposals": [{"param": "tv_close_threshold", "value": 0.05, "rationale": "t"}],
+                "rejected": [],
+            },
+            {
+                # Out of bounds: this experiment's baseline day, and nobody else's.
+                "experiment_id": "exp-c",
+                "name": "tv 99",
+                "tag": "advised:tv-99",
+                "base": "control",
+                "proposals": [{"param": "tv_close_threshold", "value": 0.99, "rationale": "t"}],
+                "rejected": [],
+            },
+        ],
+    }
+
+
+def test_two_experiments_enter_as_two_books_with_their_own_params_and_stamps(
+    cache, config, tmp_path, managed_home
+):
+    """End to end through the artifact: control plus one advised book per admitted experiment,
+    each frozen with ITS overlay and stamped with ITS id; the rejected third opens nothing."""
+    session = "2026-08-24"
+    advice_dir = managed_home / "state" / "advice"
+    advice_dir.mkdir(parents=True)
+    (advice_dir / f"pmcc-{session}.json").write_text(
+        json.dumps(_two_experiment_artifact(session)), encoding="utf-8"
+    )
+    config["advice"] = {
+        "enabled": True,
+        "base_book": "control",
+        "bounds": {
+            "tv_managed_exit": {"choices": [True, False]},
+            "tv_close_threshold": {"min": 0.02, "max": 0.2},
+        },
+    }
+    conn = db.connect(str(tmp_path / "paper.db"))
+    _fill_entry_chains(cache)
+    result = paper_loop.run_once(config, conn, cache_path=cache.path, when=datetime(2026, 8, 24, 11, 0))
+    assert result["ok"], result
+
+    rows = {p["book"]: p for p in db.open_positions(conn)}
+    assert set(rows) == {"control", "advised:tv-exit", "advised:tv-05"}
+    assert rows["control"]["advice_params"] is None and rows["control"]["experiment_id"] is None
+    assert json.loads(rows["advised:tv-exit"]["advice_params"]) == {"tv_managed_exit": True}
+    assert json.loads(rows["advised:tv-05"]["advice_params"]) == {"tv_close_threshold": 0.05}
+    assert rows["advised:tv-exit"]["experiment_id"] == "exp-a"
+    assert rows["advised:tv-05"]["experiment_id"] == "exp-b"
+    # Same entry plan across the books: the overlay here is exit-side only.
+    assert {p["net_debit"] for p in rows.values()} == {rows["control"]["net_debit"]}
+    # The frozen params govern each twin under the control's rules.
+    from cherrypick.pmcc import management
+
+    params = management.effective_params(dict(rows["advised:tv-05"]), config)
+    assert params["base_book"] == "control" and params["tv_close_threshold"] == 0.05

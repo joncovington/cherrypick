@@ -357,9 +357,13 @@ def advisor_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "light_model": av.get("light_model", "sonnet"),
         "deep_model": av.get("deep_model", "opus"),
         "timeout_seconds": int(av.get("timeout_seconds", 600)),
-        # One per module by construction: each consumer builds exactly one advised book from the
-        # day's artifact, so a second concurrent experiment would have nowhere to be measured.
-        "max_experiments_per_module": int(av.get("max_experiments_per_module", 1)),
+        # null = unlimited (2026-09-17, was 1): each consumer builds one advised book PER
+        # experiment (`advised:<name>`), so concurrent experiments each have a place to be measured.
+        # A number caps the module's advised roster; over-cap specs queue FIFO.
+        "max_experiments_per_module": (
+            None if av.get("max_experiments_per_module") in (None, 0, "")
+            else int(av["max_experiments_per_module"])
+        ),
         # 15 so an experiment that runs its course can satisfy the promotion gate (14 days, 20
         # trades) rather than expiring structurally underpowered.
         "experiment_sessions": int(av.get("experiment_sessions", 15)),

@@ -1,12 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
-import type { AdvisorExperiment, AdvisorModulePayload, AdvisorSessionCell } from "@console/shared";
+import type {
+  AdvisorActiveExperiment,
+  AdvisorApplyStatus,
+  AdvisorExperiment,
+  AdvisorModulePayload,
+  AdvisorSessionCell,
+} from "@console/shared";
 import { PairTable } from "../../pages/Advisor/AdvisorPage";
+import { normalizeModulePayload } from "../../lib/advisorShape";
 import { gateDistance } from "./experimentStats";
 
 /**
  * One module's view of the advisor, rendered as an "advisor" slide inside the module's own
  * lightbox (2026-09-12). A reader looking at a module asks "is my A/B working"; the cross-module
  * advisor page answered that only after expanding a card per experiment.
+ *
+ * Since 2026-09-17 a module can run several experiments at once, each on its own advised book
+ * (`advised:<experiment name>`), so nothing here assumes one: the running section, the session
+ * strip, the comparison and tomorrow's artifact are all drawn per experiment.
  *
  * Everything here is read from `packages/advisor`'s own store through the console's reader. No
  * judgement is formed on this side: enactment statuses, verdicts and the stall budget are the
@@ -19,7 +30,9 @@ function useAdvisorModule(module: string) {
     queryFn: async () => {
       const res = await fetch(`/api/advisor/module/${encodeURIComponent(module)}`);
       if (!res.ok) throw new Error(`advisor module: HTTP ${res.status}`);
-      return (await res.json()) as AdvisorModulePayload;
+      // Normalised at the boundary: a freshly built page can meet the previous build's API until
+      // the supervisor restarts the server (`lib/advisorShape.ts`).
+      return normalizeModulePayload(await res.json());
     },
     refetchInterval: 60_000,
   });
@@ -47,7 +60,7 @@ export function SessionStrip({ cells }: { cells: AdvisorSessionCell[] }) {
     <div className="advisor-strip" role="list" aria-label="scored sessions, oldest first">
       {cells.map((c) => (
         <span
-          key={c.session}
+          key={`${c.session}:${c.experimentId ?? ""}`}
           role="listitem"
           className={`advisor-cell advisor-cell-${c.status}`}
           title={`${c.session}: ${STATUS_LABEL[c.status] ?? c.status}${c.detail ? ` — ${c.detail}` : ""}`}
@@ -57,9 +70,39 @@ export function SessionStrip({ cells }: { cells: AdvisorSessionCell[] }) {
   );
 }
 
-function Progress({ e, calendar, budget }: { e: AdvisorExperiment; calendar: number | null; budget: number | null }) {
+/**
+ * The strip per experiment. A cell with no experiment id is the module's own row for a session
+ * nothing was issued for; it is shown once, under the module, rather than against every experiment.
+ */
+export function SessionStrips({ cells, active }: { cells: AdvisorSessionCell[]; active: AdvisorExperiment[] }) {
+  if (cells.length === 0) return <SessionStrip cells={cells} />;
+  const ids = new Set(cells.map((c) => c.experimentId).filter((id): id is string => id !== null));
+  const named = new Map(active.map((e) => [e.id, e.name ?? e.id]));
+  const rows: Array<{ key: string; label: string; cells: AdvisorSessionCell[] }> = [];
+  // Active experiments first in activation order, then any other id the strip still carries
+  // (an experiment concluded within the window), then the module's own unattributed cells.
+  for (const e of active) if (ids.has(e.id)) rows.push({ key: e.id, label: named.get(e.id)!, cells: cells.filter((c) => c.experimentId === e.id) });
+  for (const id of ids) if (!named.has(id)) rows.push({ key: id, label: id, cells: cells.filter((c) => c.experimentId === id) });
+  const bare = cells.filter((c) => c.experimentId === null);
+  if (bare.length > 0) rows.push({ key: "", label: "no experiment", cells: bare });
+  if (rows.length === 1) return <SessionStrip cells={rows[0]!.cells} />;
+  return (
+    <div className="advisor-strips">
+      {rows.map((r) => (
+        <div key={r.key} className="advisor-strip-row">
+          <span className="muted advisor-strip-label">{r.label}</span>
+          <SessionStrip cells={r.cells} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Progress({ e }: { e: AdvisorActiveExperiment }) {
+  const calendar = e.calendarSessions;
+  const budget = e.stallBudget;
   const pct = e.expiresAfter > 0 ? Math.min(100, (100 * e.sessionsRun) / e.expiresAfter) : 0;
-  const agePct = budget !== null && budget > 0 && calendar !== null ? Math.min(100, (100 * calendar) / budget) : 0;
+  const agePct = budget > 0 && calendar !== null ? Math.min(100, (100 * calendar) / budget) : 0;
   return (
     <div className="advisor-progress">
       <div className="advisor-bar" title="sessions the module actually applied the advice, over the experiment's length">
@@ -67,13 +110,13 @@ function Progress({ e, calendar, budget }: { e: AdvisorExperiment; calendar: num
       </div>
       <div className="muted">
         {e.sessionsRun} of {e.expiresAfter} sessions enacted
-        {calendar !== null && budget !== null && (
+        {calendar !== null && (
           <>
             {" "}· {calendar} calendar session{calendar === 1 ? "" : "s"} since it started, stalls at {budget}
           </>
         )}
       </div>
-      {calendar !== null && budget !== null && (
+      {calendar !== null && (
         <div className="advisor-bar advisor-bar-thin" title="calendar sessions against the stall budget (twice the length)">
           <div className={`advisor-bar-fill ${agePct >= 75 ? "advisor-bar-warn" : ""}`} style={{ width: `${agePct}%` }} />
         </div>
@@ -105,6 +148,49 @@ function ParamRows({ params }: { params: Record<string, unknown> }) {
   );
 }
 
+function ArtifactEntries({ t }: { t: AdvisorApplyStatus }) {
+  const entries = t.artifactExperiments;
+  const rejectedCount = entries.reduce((n, e) => n + e.rejected.length, 0);
+  return (
+    <>
+      <p>
+        <span className="chip">written</span> for {t.nextSession}
+        {entries.length > 1 && <span className="muted"> · {entries.length} experiments</span>}
+        {rejectedCount > 0 && (
+          <span
+            className="chip chip-warn"
+            title={entries.flatMap((e) => e.rejected.map((r) => `${r.param}: ${r.reason}`)).join("\n")}
+          >
+            {rejectedCount} rejected
+          </span>
+        )}
+      </p>
+      {entries.map((e, i) => (
+        <div key={e.experimentId ?? e.tag ?? i}>
+          {(entries.length > 1 || e.name !== null) && (
+            <div className="muted">
+              <strong>{e.name ?? e.experimentId ?? "experiment"}</strong>
+              {e.tag !== null && <> · {e.tag}</>}
+              {e.base !== null && <> against {e.base}</>}
+            </div>
+          )}
+          {e.proposals.length === 0 ? (
+            <p className="muted">nothing admitted — runs its baseline</p>
+          ) : (
+            <ul className="muted">
+              {e.proposals.map((p) => (
+                <li key={p.param}>
+                  {p.param} = {String(p.value)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
+    </>
+  );
+}
+
 function Tomorrow({ data }: { data: AdvisorModulePayload }) {
   const t = data.tomorrow;
   if (t === null) return <p className="muted">no apply status for this module yet</p>;
@@ -120,25 +206,7 @@ function Tomorrow({ data }: { data: AdvisorModulePayload }) {
         no artifact written for {t.nextSession ?? "the next session"} — the module runs its baseline
       </p>
     );
-  return (
-    <>
-      <p>
-        <span className="chip">written</span> for {t.nextSession}
-        {t.artifactRejected.length > 0 && (
-          <span className="chip chip-warn" title={t.artifactRejected.map((r) => `${r.param}: ${r.reason}`).join("\n")}>
-            {t.artifactRejected.length} rejected
-          </span>
-        )}
-      </p>
-      <ul className="muted">
-        {t.artifactProposals.map((p) => (
-          <li key={p.param}>
-            {p.param} = {String(p.value)}
-          </li>
-        ))}
-      </ul>
-    </>
-  );
+  return <ArtifactEntries t={t} />;
 }
 
 function ConcludedList({ items }: { items: AdvisorExperiment[] }) {
@@ -163,6 +231,23 @@ function ConcludedList({ items }: { items: AdvisorExperiment[] }) {
   );
 }
 
+function RunningExperiment({ e, module }: { e: AdvisorActiveExperiment; module: string }) {
+  return (
+    <section className="card">
+      <h2>
+        Running on {module}
+        <span className="muted"> · {e.name ?? e.id}</span>
+      </h2>
+      <p className="muted">
+        {e.tag ?? `advised:${e.baseProfile}`} against {e.baseProfile}
+      </p>
+      <p className="muted">{stub(e.hypothesis)}</p>
+      <ParamRows params={e.params} />
+      <Progress e={e} />
+    </section>
+  );
+}
+
 /** The slide's body, pure over its payload so it can be rendered and asserted without a client. */
 export function AdvisorSlideBody({ data }: { data: AdvisorModulePayload }) {
   if (!data.storePresent) {
@@ -173,30 +258,23 @@ export function AdvisorSlideBody({ data }: { data: AdvisorModulePayload }) {
       </section>
     );
   }
-  const e = data.active;
+  const active = data.active;
   return (
     <div className="cards cards-wide">
-      <section className="card">
-        <h2>
-          Running on {data.module}
-          {e !== null && <span className="muted"> · {e.name ?? e.id}</span>}
-        </h2>
-        {e === null ? (
+      {active.length === 0 ? (
+        <section className="card">
+          <h2>Running on {data.module}</h2>
           <p className="muted">
             no active experiment{data.queued.length > 0 ? ` — ${data.queued.length} queued, activates at the next evening pass` : ""}
           </p>
-        ) : (
-          <>
-            <p className="muted">{stub(e.hypothesis)}</p>
-            <ParamRows params={e.params} />
-            <Progress e={e} calendar={data.calendarSessions} budget={data.stallBudget} />
-          </>
-        )}
-      </section>
+        </section>
+      ) : (
+        active.map((e) => <RunningExperiment key={e.id} e={e} module={data.module} />)
+      )}
 
       <section className="card">
         <h2>Session by session</h2>
-        <SessionStrip cells={data.sessions} />
+        <SessionStrips cells={data.sessions} active={active} />
         <div className="advisor-legend muted">
           <span>
             <i className="advisor-cell advisor-cell-enacted" /> applied
@@ -214,29 +292,32 @@ export function AdvisorSlideBody({ data }: { data: AdvisorModulePayload }) {
         <p className="muted">
           Only an applied session advances the count. Carried means the params were already frozen on
           positions the module still held; nothing new was decided and nothing was charged.
+          {active.length > 1 && " One strip per experiment: each is scored on its own book."}
         </p>
       </section>
 
-      {e !== null && e.verdict !== null && (
-        <section className="card">
-          <h2>
-            Advised against {e.baseProfile}
-            <span className="muted"> · as of the last evening pass</span>
-          </h2>
-          <PairTable pairs={e.verdict.pairs} />
-          {(() => {
-            const d = e.verdict.pairs[0]?.delta;
-            const gate = gateDistance(e);
-            return (
-              <p className="muted">
-                {d !== undefined && <>net delta {money(d["net_pnl"])}</>}
-                {gate !== null && <> · gate: {gate}</>}
-                {e.verdict.underpowered && <> · below the gate, so not yet measured</>}
-              </p>
-            );
-          })()}
-        </section>
-      )}
+      {active
+        .filter((e) => e.verdict !== null)
+        .map((e) => (
+          <section className="card" key={`verdict-${e.id}`}>
+            <h2>
+              {e.name ?? e.id} against {e.baseProfile}
+              <span className="muted"> · as of the last evening pass</span>
+            </h2>
+            <PairTable pairs={e.verdict!.pairs} />
+            {(() => {
+              const d = e.verdict!.pairs[0]?.delta;
+              const gate = gateDistance(e);
+              return (
+                <p className="muted">
+                  {d !== undefined && <>net delta {money(d["net_pnl"])}</>}
+                  {gate !== null && <> · gate: {gate}</>}
+                  {e.verdict!.underpowered && <> · below the gate, so not yet measured</>}
+                </p>
+              );
+            })()}
+          </section>
+        ))}
 
       <section className="card">
         <h2>Tomorrow</h2>
@@ -256,7 +337,10 @@ export function AdvisorSlideBody({ data }: { data: AdvisorModulePayload }) {
             ))}
           </ol>
         )}
-        <p className="muted">One experiment per module at a time; the queue activates in order when the active one concludes.</p>
+        <p className="muted">
+          A queued experiment activates at an evening pass once the module has a free slot; with no cap declared,
+          every queued experiment activates and runs on its own advised book.
+        </p>
       </section>
 
       <section className="card">

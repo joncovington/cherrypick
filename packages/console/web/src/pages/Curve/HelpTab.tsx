@@ -53,9 +53,10 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
               backwardation spike that has started to mean-revert), exits by control's rules. Expected to be
               nearly always idle -- the idleness is the honest state, not a failure.
             </dd>
-            <dt>advised:&lt;base&gt;</dt>
+            <dt>advised:&lt;experiment name&gt;</dt>
             <dd>
-              The AI advisor's admitted parameters, frozen on each row at entry. Off by default. curve is a
+              One book per advisor experiment, each carrying that experiment's admitted parameters frozen on each
+              row at entry and measured against the base book its experiment names. Off by default. curve is a
               structurally slow advisor target -- one position per book at ~30-45 DTE with 50% takes closes maybe
               2-4 trades a month -- so an early "underpowered" verdict here means "not enough data yet", never a
               failure.

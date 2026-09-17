@@ -51,6 +51,23 @@ def conn():
     connection.close()
 
 
+def _cap(home, n):
+    """A configured per-module cap. The default is unlimited (2026-09-17); the queue tests below
+    pin the capped behaviour, which is what a cap setting still buys."""
+    fakes.write_suite_config(
+        home,
+        {
+            "enabled": True,
+            "max_experiments_per_module": n,
+            "modules": {
+                "meic": {"enabled": True},
+                "flies": {"enabled": False},
+                "earnings": {"enabled": False},
+            },
+        },
+    )
+
+
 def _reply(*props, observations=("noted",)):
     return {"observations": list(observations), "flags": [], "proposals": list(props), "malformed": []}
 
@@ -167,6 +184,7 @@ def test_creative_proposals_are_recorded_and_never_run(home, conn):
 
 
 def test_over_the_cap_a_good_spec_queues_rather_than_being_refused(home, conn):
+    _cap(home, 1)
     # Two DIFFERENT overlays: the same overlay admitted twice on one session resolves to the same
     # experiment by design (2026-09-12), so identical specs would not exercise the queue.
     for value in (0.9, 0.88):
@@ -178,6 +196,7 @@ def test_over_the_cap_a_good_spec_queues_rather_than_being_refused(home, conn):
 
 
 def test_killing_the_active_experiment_activates_the_queued_one(home, conn):
+    _cap(home, 1)
     first = experiments.admit_reply(
         conn, session=SESSION, slot="deep", reply=_reply(_adjustment({"stop_trigger_ratio": 0.9}))
     )["admitted"][0]["experiment_id"]
@@ -567,6 +586,7 @@ def test_a_verdict_recommendation_sits_on_a_fresh_computation_every_time(home, c
 def test_the_same_reply_admitted_twice_is_one_experiment(home, conn):
     """A `--force` re-run, or the CLI reached twice for one slot, must not queue a duplicate that
     later takes the module's only advised slot."""
+    _cap(home, 1)
     spec = _adjustment({"stop_trigger_ratio": 0.9})
     first = experiments.admit_reply(conn, session=SESSION, slot="deep", reply=_reply(spec))
     second = experiments.admit_reply(conn, session=SESSION, slot="deep", reply=_reply(spec))
@@ -589,6 +609,7 @@ def test_an_experiment_that_never_advances_is_concluded_as_stalled(home, conn):
     decisions used to hold its experiment active forever and starve the queue. After twice its
     length in calendar sessions it concludes, labelled stalled and underpowered, and the queued
     one takes the slot."""
+    _cap(home, 1)
     active = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9})
     queued = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.88})
     assert queued["status"] == "queued"
@@ -672,6 +693,7 @@ def test_a_model_kill_verdict_stops_the_experiment_and_the_queue_moves_up(home, 
     """Three kill verdicts sat admitted for up to four sessions in September 2026 while the dead
     experiments' artifacts were enacted every morning and their successors starved at zero
     sessions. A kill the model recommends now takes the same path a human `kill` takes."""
+    _cap(home, 1)
     first = experiments.admit_reply(
         conn, session=SESSION, slot="deep", reply=_reply(_adjustment({"stop_trigger_ratio": 0.9}))
     )["admitted"][0]["experiment_id"]
@@ -756,3 +778,93 @@ def test_kill_on_verdict_can_be_switched_off(home, conn, tmp_home):
     assert "actioned" not in out["admitted"][0]
     assert store.experiment(conn, eid)["status"] == "active"
     assert json.loads(store.experiment(conn, eid)["verdict_json"])["recommendation"]["value"] == "kill"
+
+
+# ------------------------------------------------------------------- many experiments at once
+
+
+def test_without_a_cap_every_admitted_experiment_is_active_with_its_own_book(home, conn):
+    """The default: no queue. Two experiments on the same base are two books, `advised:<name>`,
+    and the nightly artifact carries an entry for each."""
+    first = experiments.admit_reply(
+        conn,
+        session=SESSION,
+        slot="deep",
+        reply=_reply(_adjustment({"stop_trigger_ratio": 0.9}, name="Stop Later (probe)")),
+    )["admitted"][0]
+    second = experiments.admit_reply(
+        conn, session=SESSION, slot="deep", reply=_reply(_adjustment({"stop_trigger_ratio": 0.88}))
+    )["admitted"][0]
+    rows = {e["id"]: e for e in store.experiments(conn, module="meic")}
+    assert [e["status"] for e in rows.values()] == ["active", "active"]
+    assert rows[first["experiment_id"]]["tag"] == "advised:stop-later-probe"
+    assert rows[second["experiment_id"]]["tag"] == "advised:deep-bounded-adjustment"
+
+    out = enact.run(conn, SESSION)
+    issued = next(m for m in out["enacted"] if m["module"] == "meic")
+    assert [e["tag"] for e in issued["experiments"]] == [
+        "advised:stop-later-probe",
+        "advised:deep-bounded-adjustment",
+    ]
+    artifact = json.loads(paths.advice_path("meic", FRIDAY).read_text(encoding="utf-8"))
+    assert [e["experiment_id"] for e in artifact["experiments"]] == [
+        first["experiment_id"],
+        second["experiment_id"],
+    ]
+    assert artifact["experiments"][1]["proposals"][0]["value"] == 0.88
+    # the legacy mirror is the first entry
+    assert artifact["experiment_id"] == first["experiment_id"] and artifact["proposals"][0]["value"] == 0.9
+    # a loop reading it opens two books, each with its own stamp
+    decision = core_advice.session_decision(
+        paths.state_dir(),
+        "meic",
+        FRIDAY,
+        {"advice": {"enabled": True, "bounds": MEIC_BOUNDS}},
+        home / "meic-decision.json",
+        base_key="base_profile",
+    )
+    books = core_advice.advised_books(decision)
+    assert [(b["tag"], b["params"]) for b in books] == [
+        ("advised:stop-later-probe", {"stop_trigger_ratio": 0.9}),
+        ("advised:deep-bounded-adjustment", {"stop_trigger_ratio": 0.88}),
+    ]
+
+
+def test_a_duplicate_name_gets_a_suffix_so_books_never_collide(home, conn):
+    a = experiments.admit_spec(
+        conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}, name="probe"
+    )
+    b = experiments.admit_spec(
+        conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.88}, name="probe"
+    )
+    assert a["tag"] == "advised:probe" and b["tag"] == "advised:probe-2"
+    # a nameless experiment keeps the legacy book of its base
+    c = experiments.admit_spec(conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.87})
+    assert c["tag"] == "advised:control"
+
+
+def test_killing_one_of_two_leaves_the_others_entry_in_tomorrows_artifact(home, conn):
+    first = experiments.admit_spec(
+        conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}, name="a"
+    )
+    second = experiments.admit_spec(
+        conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.88}, name="b"
+    )
+    enact.run(conn, SESSION)
+    experiments.kill(conn, first["experiment_id"], session=SESSION)
+    artifact = json.loads(paths.advice_path("meic", FRIDAY).read_text(encoding="utf-8"))
+    assert [e["experiment_id"] for e in artifact["experiments"]] == [second["experiment_id"]]
+    assert artifact["experiment_id"] == second["experiment_id"]
+
+
+def test_a_named_experiments_verdict_reads_its_own_book(home, conn):
+    eid = experiments.admit_spec(
+        conn, session=SESSION, module="meic", params={"stop_trigger_ratio": 0.9}, name="probe"
+    )
+    body = experiments.verdict_for(store.experiment(conn, eid["experiment_id"]))
+    assert body["pairs"][0]["advised_tag"] == "advised:probe" and body["pairs"][0]["base_tag"] == "control"
+    assert bounds.advised_tag("meic", "control", name="Probe X") == "advised:probe-x"
+    assert (
+        bounds.advised_tag("earnings", "strat_test", "iron_fly", tag="advised:take")
+        == "advised:take:iron_fly"
+    )

@@ -44,6 +44,24 @@ def test_base_book_strips_any_prefix_stack():
     assert engine.base_book("advised:friday:control") == "control"
 
 
+def test_base_book_resolves_an_experiment_tag_through_the_decision_then_the_config():
+    """Since 2026-09-17 an advised tag names the EXPERIMENT, not the base: `advised:noon-exit` says
+    nothing about which book it shadows. The decision entry answers first, the configured
+    `advice.base_book` answers for a row whose decision is gone, and the legacy `advised:control`
+    tag still reads its base straight off the name."""
+    decision = {
+        "experiments": [
+            {"experiment_id": "exp-1", "tag": "advised:noon-exit", "base": "path", "params": {"a": 1}},
+        ]
+    }
+    assert engine.base_book("advised:noon-exit", decision=decision) == "path"
+    assert engine.base_book("advised:noon-exit") == "control"
+    assert engine.base_book("advised:noon-exit", config={"advice": {"base_book": "path"}}) == "path"
+    # A legacy tag names its base; the config cannot override it.
+    assert engine.base_book("advised:control", config={"advice": {"base_book": "path"}}) == "control"
+    assert engine.base_book("advised:friday:noon-exit") == "control"
+
+
 def test_friday_path_holds_like_path():
     """The break this guards: `management.decide` compared the raw name, so `friday:path` — the
     book whose whole job is never to close — was treated as a closing book."""

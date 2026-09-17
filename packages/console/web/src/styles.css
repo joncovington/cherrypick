@@ -2883,6 +2883,27 @@ body.lb-open {
 .advisor-cell-carried { background: #4f8fd6; }
 .advisor-cell-not_enacted { background: #d95c4a; }
 .advisor-cell-no_artifact { background: #3d4653; }
+/* One strip per experiment when a module runs several at once (2026-09-17). */
+.advisor-strips {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.advisor-strip-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.advisor-strip-label {
+  font-size: 11.5px;
+  min-width: 12rem;
+}
+.advisor-enactments {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
 .advisor-legend {
   display: flex;
   gap: 1rem;

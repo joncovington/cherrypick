@@ -129,7 +129,8 @@ def policy_for(strategy: str, config: dict) -> dict:
 def effective_config(trade: dict, config: dict) -> dict:
     """`config` with this trade's frozen advised params overlaid onto its own strategy block.
 
-    The advised book is a TWIN: an `advised:strat_test:<strategy>` row opened beside the control
+    The advised book is a TWIN: an `advised:<experiment name>:<strategy>` row (legacy
+    `advised:strat_test:<strategy>` before 2026-09-17) opened beside the control
     with identical fill economics, differing only in the management params stamped on it at entry.
     This is the single choke point where that difference is applied, so an advised position is
     managed under its own terms at every later tick and the control is never touched.

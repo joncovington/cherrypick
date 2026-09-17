@@ -41,8 +41,12 @@ export function HelpTab({ data: _data }: { data: BwbPayload | undefined }) {
               Spot has traded below gamma_flip at some point since entry AND reclaimed above it by the
               declared flip_buffer.
             </dd>
-            <dt>advised:&lt;base&gt;</dt>
-            <dd>The AI advisor's admitted parameters, frozen on each row at entry. Off by default, and deliberately unbounded.</dd>
+            <dt>advised:&lt;experiment name&gt;</dt>
+            <dd>
+              One book per advisor experiment, each carrying that experiment's admitted parameters frozen on each
+              row at entry and measured against the base book its experiment names. Several can run at once. Off
+              by default, and deliberately unbounded.
+            </dd>
           </dl>
         </div>
       </Card>

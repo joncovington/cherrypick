@@ -112,16 +112,44 @@ def all_modules(modules: tuple[str, ...] | list[str] | None = None) -> dict[str,
     return {m: resolve(m) for m in (modules or MODULES)}
 
 
-def advised_tag(module: str, base_profile: str, strategy: str | None = None) -> str:
+def advised_tag(
+    module: str,
+    base_profile: str,
+    strategy: str | None = None,
+    *,
+    tag: str | None = None,
+    name: str | None = None,
+) -> str:
     """The profile tag the module's consumer will write on the advised book's rows.
 
     One place, because three surfaces need to agree on it: the consumer that tags the rows, the
     verdict that groups by it, and the console that renders it beside its control.
+
+    Since 2026-09-17 an experiment's book is its OWN, `advised:<name>` (the experiment row's `tag`,
+    or derived from `name` through `core.advice.advised_tag`), so experiments on one base run side
+    by side. A nameless experiment keeps the legacy `advised:<base>` book. Earnings twins are
+    per-strategy either way: `advised:<name>:<strategy>` beside `strat_test:<strategy>`.
     """
-    if module == "earnings":
-        # Earnings twins are per-strategy: advised:strat_test:<strategy> beside strat_test:<strategy>.
-        return f"advised:{base_profile}:{strategy}" if strategy else f"advised:{base_profile}"
-    return f"advised:{base_profile}"
+    if tag:
+        base_tag = tag
+    elif name:
+        base_tag = _advice.advised_tag(name)
+    else:
+        base_tag = f"advised:{base_profile}"
+    if module == "earnings" and strategy:
+        return f"{base_tag}:{strategy}"
+    return base_tag
+
+
+def experiment_tag(experiment: dict[str, Any], strategy: str | None = None) -> str:
+    """The book an experiment row writes to, from the row itself."""
+    return advised_tag(
+        experiment["module"],
+        experiment.get("base_profile") or "control",
+        strategy,
+        tag=experiment.get("tag"),
+        name=experiment.get("name"),
+    )
 
 
 def split_param(module: str, param: str) -> tuple[str | None, str]:

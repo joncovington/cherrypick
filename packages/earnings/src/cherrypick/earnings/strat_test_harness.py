@@ -845,21 +845,25 @@ def cmd_run_entries(args) -> dict:
                     continue
                 _register_open_legs(order_id, scaled_legs)
 
-                # The advised twin, when today's admitted advice names this strategy. Identical
-                # fills by construction (the same save_spec), so the pair differs in exactly the
-                # management params stamped on the twin — see advice.py on why they ride the row.
-                # Best-effort: a twin that fails to save costs a comparison, never the real entry.
-                advised_params = advice.params_for(advice_decision, strategy_name)
-                if advised_params:
+                # One advised twin PER EXPERIMENT whose admitted advice names this strategy
+                # (2026-09-17). Identical fills by construction (the same save_spec), so each pair
+                # differs in exactly the management params stamped on the twin — see advice.py on
+                # why they ride the row. Best-effort: a twin that fails to save costs a comparison,
+                # never the real entry and never a sibling experiment's twin.
+                for experiment in advice.twins_for(advice_decision, strategy_name):
                     twin = advice.twin_spec(
-                        save_spec, advised_params, experiment_id=advice_decision.get("experiment_id")
+                        save_spec,
+                        experiment["params"],
+                        experiment_id=experiment.get("experiment_id"),
+                        name=experiment.get("name"),
                     )
                     twin_result = db_paper.cmd_save_trade(
                         argparse.Namespace(data=json.dumps(twin, default=str))
                     )
                     if not twin_result.get("ok"):
                         print(
-                            f"advised twin not saved for {symbol} {strategy_name}: {twin_result.get('error')}"
+                            f"advised twin {twin['profile']} not saved for {symbol} {strategy_name}: "
+                            f"{twin_result.get('error')}"
                         )
                     else:
                         # The twin holds the same legs under its own order_id, and the producer's

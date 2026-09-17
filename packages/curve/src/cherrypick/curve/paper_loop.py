@@ -179,13 +179,23 @@ def advice_decision(config: dict, today: str) -> dict:
     )
 
 
-def session_books(config: dict, today: str) -> tuple[list[str], dict | None]:
+def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]:
+    """(the books entry may open today, `{advised tag: its experiment entry}`). One advised book
+    PER EXPERIMENT the day's decision admitted (2026-09-17): each entry names its own tag
+    (`advised:<experiment name>`), the base it shadows and the params it overlays; a decision
+    recorded before that date still yields its single `advised:<base>`. Empty map on a baseline
+    day -- and every day while `advice.enabled` stays false, which it is by design here. The
+    roster only matters at entry; open rows are managed from the ledger whatever it says today."""
     books = [b for b in engine.BOOKS if (config.get("books") or {}).get(b, {}).get("enabled", True)]
-    decision = advice_decision(config, today)
-    params = decision.get("params")
-    if params:
-        books.append(f"advised:{decision.get('base_book') or 'control'}")
-    return books, params
+    advised = advised_entries(advice_decision(config, today))
+    books.extend(tag for tag in advised if tag not in books)
+    return books, advised
+
+
+def advised_entries(decision: dict | None) -> dict[str, dict]:
+    """`{tag: experiment entry}` for every experiment the decision opens a book for, in artifact
+    order -- keyed by tag because gating, planning, freezing and stamping all look it up by tag."""
+    return {e["tag"]: e for e in _core_advice.advised_books(decision) if e.get("tag")}
 
 
 # --------------------------------------------------------------------------- the tick
@@ -275,8 +285,11 @@ def _unsettled_today(conn, day: str) -> bool:
 
 # --------------------------------------------------------------------------- entry
 def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: str) -> int:
-    books, advice_params = session_books(config, day)
-    experiment_id = advice_decision(config, day).get("experiment_id") if advice_params else None
+    books, advised = session_books(config, day)
+    # The decision itself is what each advised row is stamped from: `stamp_for(book, decision)`
+    # resolves the id per tag, so two experiments on one session carry two ids. It is also what
+    # names each twin's base (the tag no longer does), for the hook gate and the plan below.
+    decision = advice_decision(config, day) if advised else None
     defaults = config.get("defaults") or {}
     max_positions = int(defaults.get("max_positions", 1))
     symbol = _symbol(config)
@@ -309,7 +322,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
     # regime read means no new entry, recorded as a refusal, never a guess).
     gated: list[str] = []
     for b in list(wanting):
-        if b == "hook" or (b.startswith("advised:") and b.split(":", 1)[1] == "hook"):
+        if engine.base_book(b, config=config, decision=decision) == "hook":
             reason = (
                 None
                 if today_regime.get("usable") and today_regime.get("hook")
@@ -374,15 +387,16 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
     planned = engine.plan_entry(snapshot, base_params, config)
     plans: dict[str, dict] = {}
     for b in wanting:
-        base = b.split(":", 1)[1] if b.startswith("advised:") else b
-        if b.startswith("advised:") and advice_params:
-            # Planned from the base book the tag names, never from control regardless.
+        base = engine.base_book(b, config=config, decision=decision)
+        if advised.get(b) and advised[b].get("params"):
+            # Planned from the base book the decision entry names, never from control regardless
+            # -- otherwise the row claims one base and the economics come from another.
             plans[b] = engine.plan_entry(
                 snapshot,
                 {
                     **management.PARAM_DEFAULTS,
-                    **engine.merged_params(config, base or "control"),
-                    **advice_params,
+                    **engine.merged_params(config, base),
+                    **advised[b]["params"],
                 },
                 config,
             )
@@ -434,9 +448,9 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             config,
             b,
             entry_session=day,
-            advice_params=advice_params,
+            advice_params=(advised.get(b) or {}).get("params"),
             regime=today_regime,
-            experiment_id=experiment_id,
+            experiment_id=decision,
         )
         if opened is None:
             continue
