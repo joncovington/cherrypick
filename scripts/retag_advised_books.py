@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import sqlite3
 import sys
@@ -292,7 +291,8 @@ def main(argv=None) -> int:
     missing = [e["id"] for e in experiments.values() if not e.get("tag")]
     if missing:
         print(
-            f"refusing: {len(missing)} experiment(s) carry no tag yet -- open advisor.db once (store.connect backfills)"
+            f"refusing: {len(missing)} experiment(s) carry no tag yet -- "
+            "open advisor.db once (store.connect backfills)"
         )
         return 2
 
@@ -317,7 +317,8 @@ def main(argv=None) -> int:
                 t["unresolved"] += 1
                 if args.verbose:
                     print(
-                        f"  unresolved {module}.{c['table']}#{c['key']} {c['old']} session={c['session']}: {c['why']}"
+                        f"  unresolved {module}.{c['table']}#{c['key']} {c['old']}"
+                        f" session={c['session']}: {c['why']}"
                     )
         applied = apply_module(module, changes, stamp) if args.apply else 0
         summary[module] = {"tables": dict(per_table), "moves": dict(by_target), "applied": applied}
