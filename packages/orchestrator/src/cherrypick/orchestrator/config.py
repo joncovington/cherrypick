@@ -361,7 +361,8 @@ def advisor_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # experiment (`advised:<name>`), so concurrent experiments each have a place to be measured.
         # A number caps the module's advised roster; over-cap specs queue FIFO.
         "max_experiments_per_module": (
-            None if av.get("max_experiments_per_module") in (None, 0, "")
+            None
+            if av.get("max_experiments_per_module") in (None, 0, "")
             else int(av["max_experiments_per_module"])
         ),
         # 15 so an experiment that runs its course can satisfy the promotion gate (14 days, 20
