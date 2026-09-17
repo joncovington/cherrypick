@@ -712,8 +712,10 @@ supervision. The log is now free to be exactly as talkative as a human reading i
 
 ## Guardrails (suite-wide)
 
-- Paper by default; live is a deliberately narrow, per-day-armed pilot (one arm, one symbol, one
-  incomplete position at a time — see `live_loop.py` and docs/live-trading-plan.md). SPX/XSP only —
+- Paper by default; live is a deliberately narrow, per-day-armed pilot (one arm — `control` since
+  2026-09-17, `gex` before — one symbol, one incomplete position at a time, under a local
+  buying-power cap `live.max_open_margin_dollars` read from the ledger and the plan, never a
+  balance call — see `live_loop.py` and docs/live-trading-plan.md). SPX/XSP only —
   both European cash-settled, so EARLY exercise is structurally impossible and there is no
   early-exercise machinery to get wrong. Cash exercise/assignment at expiry is NOT impossible,
   though, and is not free: tastytrade charges **$5 per ITM STRIKE** — one charge per distinct

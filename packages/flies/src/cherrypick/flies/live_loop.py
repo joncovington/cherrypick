@@ -44,7 +44,12 @@ Gates checked every live tick (`readiness()`): `live.enabled`, a non-empty `gate
 attestation, one configured arm, a designated account, halt flag absent — plus the daily-loss
 breaker on the live ledger. Live concurrency: at most one incomplete position at a time (an
 open short vertical always blocks; a completed fly blocks only while its floor is negative and
-`live.negative_floor_override` doesn't name it).
+`live.negative_floor_override` doesn't name it). Buying power is capped locally by
+`live.max_open_margin_dollars` (2026-09-17): the worst-case dollar exposure of every open live
+position plus the proposed spread's own must fit under it, computed from the ledger and the
+plan alone -- no balance read, so a transient broker failure can never block a legitimate
+entry the way the fail-closed account governor did (which is why `account_deploy_limit_pct`
+stays null for the pilot).
 
 Journaled every tick, live or dry-run (added 2026-07-30 — until then live wrote none of this, so
 the live dashboard's Session Timeline and Decision Journal cards read empty even on a session
@@ -277,6 +282,33 @@ def _is_blocking(pos: dict, override_position_id: str | None) -> bool:
 
 def _blocking_positions(positions: list[dict], override_position_id: str | None) -> list[dict]:
     return [p for p in positions if p.get("status") == "open" and _is_blocking(p, override_position_id)]
+
+
+def open_margin_dollars(positions: list[dict]) -> float:
+    """Worst-case dollar exposure of every OPEN position, summed -- the buying power the live
+    ledger says is committed right now, without asking the broker.
+
+    Each position contributes `max(0, -position_floor)`: for an uncompleted short vertical that
+    is width less credit, plus fees and the assignment reserve; a completed risk-free fly
+    contributes nothing (its floor is already non-negative, it cannot lose). This is the same
+    per-position worst case the console's "max possible loss" tile sums, applied to open rows."""
+    return float(sum(max(0.0, -fly.position_floor(p)) for p in positions if p.get("status") == "open"))
+
+
+def proposed_margin_dollars(plan: dict) -> float:
+    """The buying power a planned short vertical would commit: width less the credit it collects,
+    per contract. Fees and the assignment reserve are deliberately left out here -- the cap is
+    a sizing buffer, and the ledger side above already carries them once the row exists."""
+    return float(max(0.0, (plan["wing_width"] - plan["credit"]) * fly.CONTRACT_MULTIPLIER * plan.get("quantity", 1)))
+
+
+def margin_cap_exceeded(cap: float | None, positions: list[dict], plan: dict) -> tuple[bool, float]:
+    """Would opening `plan` push the ledger's open exposure past `live.max_open_margin_dollars`?
+    Returns (exceeded, would_be_total). Off when the cap is null or zero. Pure."""
+    if not cap:
+        return False, 0.0
+    total = open_margin_dollars(positions) + proposed_margin_dollars(plan)
+    return total > float(cap), total
 
 
 # --------------------------------------------------------------------------- fill confirmation
@@ -740,12 +772,35 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
             )
     else:
         enter, reason, plan = engine.evaluate_credit_spread_entry(snapshot, params, positions)
+        # Buying-power cap (live.max_open_margin_dollars, off when null): the ledger's open
+        # worst-case exposure plus this spread's own must fit under it. Checked AFTER the engine
+        # accepts, because the credit -- and so the margin -- is only known from the plan. Local
+        # and deterministic on purpose: the account governor (account_deploy_limit_pct) is
+        # fail-closed on a balance read, and a transient broker failure blocking a legitimate
+        # entry is the reason it was switched off for the pilot; this cap reads nothing remote.
+        margin_cap = live_cfg.get("max_open_margin_dollars")
+        if enter and margin_cap:
+            exceeded, would_be = margin_cap_exceeded(margin_cap, positions, plan)
+            if exceeded:
+                enter = False
+                reason = "max_open_margin_reached"
+                summary["skips"].append(
+                    {"entry": f"max_open_margin_reached (${would_be:.0f} would exceed ${float(margin_cap):.0f})"}
+                )
+                journal(
+                    "entry",
+                    reason,
+                    center=plan["center"],
+                    detail=f"open+proposed ${would_be:.2f} > cap ${float(margin_cap):.2f}",
+                )
+                plan = None
         if not enter:
-            summary["skips"].append({"entry": reason})
-            # plan is None on refusal, so there's no plan["center"] -- wanted_center (this arm's
-            # target strike, computed above for the iteration journal) is the one useful thing to
-            # carry, same choice book.py's own refusal-path journal call makes.
-            journal("entry", reason, center=wanted_center)
+            if reason != "max_open_margin_reached":
+                summary["skips"].append({"entry": reason})
+                # plan is None on refusal, so there's no plan["center"] -- wanted_center (this arm's
+                # target strike, computed above for the iteration journal) is the one useful thing to
+                # carry, same choice book.py's own refusal-path journal call makes.
+                journal("entry", reason, center=wanted_center)
         else:
             spec = live_orders.entry_spec(snapshot, plan)
             entry_price = plan["credit"]
