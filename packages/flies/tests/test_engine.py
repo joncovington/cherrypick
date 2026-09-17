@@ -219,6 +219,28 @@ def test_no_entry_before_outranks_an_arm_asking_for_an_earlier_window():
     assert enter, reason
 
 
+def test_early_close_session_refuses_every_entry_mode():
+    """Shown to fail both ways: the day after Thanksgiving 2026 (a declared 13:00 close) is
+    refused by the legged, outright, debit-first and bwb evaluators alike, and the Monday after
+    it is not. Reads the snapshot's date only -- a snapshot with no date is never an early close."""
+    early = snapshot(date="2026-11-27")
+    full = snapshot(date="2026-11-30")
+    assert engine.early_close_gate(early) is True
+    assert engine.early_close_gate(full) is False
+    assert engine.early_close_gate({"date": None}) is False
+    assert engine.early_close_gate({}) is False
+    p = params(no_entry_before="10:00")
+    enter, reason, _ = engine.evaluate_credit_spread_entry(early, p, [])
+    assert not enter and reason == "early_close_session"
+    enter, reason, _ = engine.evaluate_credit_spread_entry(full, p, [])
+    assert reason != "early_close_session"
+    for fn in (engine.evaluate_debit_vertical_entry, engine.evaluate_bwb_entry):
+        enter, reason, _ = fn(early, p, [])
+        assert not enter and reason == "early_close_session", fn.__name__
+    enter, reason, _ = engine.evaluate_outright_entry(early, p, [], 100.0)
+    assert not enter and reason == "early_close_session"
+
+
 def test_no_entry_before_also_gates_outright_entries():
     p = params(no_entry_before="10:00")
     enter, reason, _ = engine.evaluate_outright_entry(snapshot(now_min=9 * 60 + 45), p, [], 5000.0)

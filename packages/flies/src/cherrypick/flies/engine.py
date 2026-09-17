@@ -27,6 +27,7 @@ Three arms, differing only in WHERE and WHEN they centre a structure:
 
 from __future__ import annotations
 
+from cherrypick.core import calendar as _cal
 from cherrypick.core import entry as _entry
 
 from cherrypick.flies import fly
@@ -617,6 +618,28 @@ def before_open_gate(params: dict, now_min: int | None) -> bool:
     return now_min < time_to_minutes(floor)
 
 
+def early_close_gate(snapshot: dict) -> bool:
+    """Is this an NYSE early-close session (13:00 ET close: the day after Thanksgiving, Christmas
+    Eve)? No entry of any mode is taken on one (2026-09-17).
+
+    Every clock this module keeps is written against a 16:00 close -- the 10:00-14:30 entry
+    windows, the 15:30 completion cutoff, the 16:20 settlement -- and none of them consult the
+    session's real close. On a 13:00 day an entry at noon has one hour to complete instead of
+    three and a half, the cutoff never fires, and the resting completion order would sit in a
+    closed market. Rather than re-derive every time against `session_close_hhmm`, the gate
+    refuses the day outright, in paper and live alike (this function sits ahead of the windows
+    in every entry evaluator, the same place `before_open_gate` does), so the two ledgers stay
+    comparable and no early-close row can ever pool with a full-session one. Two days a year;
+    the dates are the declared calendar's, not a rule. A snapshot without a parseable date is
+    not an early close -- the gate refuses nothing it cannot read.
+    """
+    day = snapshot.get("date")
+    try:
+        return _cal.is_early_close(_cal.date.fromisoformat(str(day)))
+    except (TypeError, ValueError):
+        return False
+
+
 def _window_cap_reached(params: dict, open_positions: list, window: str | None) -> bool:
     """Has this entry window already used up its own share of the position budget?
 
@@ -850,6 +873,8 @@ def evaluate_credit_spread_entry(
     # Checked BEFORE the arm's own windows so an arm cannot configure its way past the blackout.
     if before_open_gate(params, snapshot.get("now_min")):
         return False, "before_open_gate", None
+    if early_close_gate(snapshot):
+        return False, "early_close_session", None
 
     ok_window, window = in_entry_window(snapshot.get("now_min"), params.get("entry_windows", []))
     if not ok_window:
@@ -1111,6 +1136,8 @@ def evaluate_debit_vertical_entry(
 
     if before_open_gate(params, snapshot.get("now_min")):
         return False, "before_open_gate", None
+    if early_close_gate(snapshot):
+        return False, "early_close_session", None
 
     ok_window, window = in_entry_window(snapshot.get("now_min"), params.get("entry_windows", []))
     if not ok_window:
@@ -1373,6 +1400,8 @@ def evaluate_bwb_entry(
 
     if before_open_gate(params, snapshot.get("now_min")):
         return False, "before_open_gate", None
+    if early_close_gate(snapshot):
+        return False, "early_close_session", None
 
     ok_window, window = in_entry_window(snapshot.get("now_min"), params.get("entry_windows", []))
     if not ok_window:
@@ -1578,6 +1607,8 @@ def evaluate_outright_entry(
     # Checked BEFORE the arm's own windows so an arm cannot configure its way past the blackout.
     if before_open_gate(params, snapshot.get("now_min")):
         return False, "before_open_gate", None
+    if early_close_gate(snapshot):
+        return False, "early_close_session", None
 
     ok_window, window = in_entry_window(snapshot.get("now_min"), params.get("entry_windows", []))
     if not ok_window:

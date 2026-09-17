@@ -715,7 +715,9 @@ supervision. The log is now free to be exactly as talkative as a human reading i
 - Paper by default; live is a deliberately narrow, per-day-armed pilot (one arm — `control` since
   2026-09-17, `gex` before — one symbol, one incomplete position at a time, under a local
   buying-power cap `live.max_open_margin_dollars` read from the ledger and the plan, never a
-  balance call — see `live_loop.py` and docs/live-trading-plan.md). SPX/XSP only —
+  balance call — see `live_loop.py` and docs/live-trading-plan.md). No entry of any mode on an
+  NYSE early-close session, paper or live (`engine.early_close_gate`, 2026-09-17): every clock
+  here assumes a 16:00 close, so a 13:00 day is refused outright rather than re-derived. SPX/XSP only —
   both European cash-settled, so EARLY exercise is structurally impossible and there is no
   early-exercise machinery to get wrong. Cash exercise/assignment at expiry is NOT impossible,
   though, and is not free: tastytrade charges **$5 per ITM STRIKE** — one charge per distinct
