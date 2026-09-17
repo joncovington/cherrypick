@@ -29,6 +29,7 @@ FORBIDDEN_IMPORTS = {
     "keyring",
     "cherrypick.core.auth",
     "cherrypick.core.broker",
+    "cherrypick.core.execution",  # the live adapter over broker (2026-09-17); the same fence
     # the first-party doors to the same socket and SDK (2026-09-12): each reaches DXLink or the
     # broker session, and none was in the set
     "cherrypick.core.dxfeed",
