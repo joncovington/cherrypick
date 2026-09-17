@@ -1936,6 +1936,22 @@ def test_max_open_margin_cap_refuses_an_entry_that_would_exceed_it(live_conn):
     )
 
 
+def test_live_tick_takes_no_entry_on_an_early_close_session(live_conn):
+    """The engine's early-close gate reaches the live tick unchanged: a snapshot dated the day
+    after Thanksgiving places nothing and journals the refusal; the next full session enters."""
+    broker = FakeBroker()
+    summary = live_loop.run_once(
+        _loop_cfg(), _snapshot(date="2026-11-27"), live_conn, broker, live=True, log=lambda *_: None
+    )
+    assert summary["entered"] == 0
+    assert broker.placed == []
+    assert any(s.get("entry") == "early_close_session" for s in summary["skips"])
+    summary = live_loop.run_once(
+        _loop_cfg(), _snapshot(date="2026-11-30"), live_conn, FakeBroker(), live=True, log=lambda *_: None
+    )
+    assert summary["entered"] == 1
+
+
 def test_open_margin_counts_only_positions_that_can_still_lose():
     sv = {
         "kind": "short_vertical",
