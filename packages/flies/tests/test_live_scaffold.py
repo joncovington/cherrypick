@@ -1918,19 +1918,47 @@ def test_max_open_margin_cap_refuses_an_entry_that_would_exceed_it(live_conn):
     assert row is not None, "the refusal must be journaled under its own reason"
 
     cfg["live"]["max_open_margin_dollars"] = None
-    assert live_loop.run_once(cfg, _snapshot(), live_conn, FakeBroker(), live=True, log=lambda *_: None)["entered"] == 1
+    assert (
+        live_loop.run_once(cfg, _snapshot(), live_conn, FakeBroker(), live=True, log=lambda *_: None)[
+            "entered"
+        ]
+        == 1
+    )
 
     live_conn.execute("DELETE FROM fly_positions")
     live_conn.commit()
     cfg["live"]["max_open_margin_dollars"] = 1000
-    assert live_loop.run_once(cfg, _snapshot(), live_conn, FakeBroker(), live=True, log=lambda *_: None)["entered"] == 1
+    assert (
+        live_loop.run_once(cfg, _snapshot(), live_conn, FakeBroker(), live=True, log=lambda *_: None)[
+            "entered"
+        ]
+        == 1
+    )
 
 
 def test_open_margin_counts_only_positions_that_can_still_lose():
-    sv = {"kind": "short_vertical", "side": PUT, "center": 7495.0, "wing_width": 5, "quantity": 1,
-          "net": 1.05, "credit": 1.05, "fees": 3.44, "status": "open"}
-    rf = {"kind": "fly", "side": PUT, "center": 7490.0, "wing_width": 5, "quantity": 1,
-          "net": 0.30, "fees": 3.44, "status": "open", "completed_at": "x"}
+    sv = {
+        "kind": "short_vertical",
+        "side": PUT,
+        "center": 7495.0,
+        "wing_width": 5,
+        "quantity": 1,
+        "net": 1.05,
+        "credit": 1.05,
+        "fees": 3.44,
+        "status": "open",
+    }
+    rf = {
+        "kind": "fly",
+        "side": PUT,
+        "center": 7490.0,
+        "wing_width": 5,
+        "quantity": 1,
+        "net": 0.30,
+        "fees": 3.44,
+        "status": "open",
+        "completed_at": "x",
+    }
     settled = dict(sv, status="settled")
     # (5 - 1.05) * 100 = 395 of width-less-credit, plus fees and the assignment reserve
     assert live_loop.open_margin_dollars([sv]) == pytest.approx(-fly.position_floor(sv))

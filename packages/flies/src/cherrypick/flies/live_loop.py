@@ -299,7 +299,9 @@ def proposed_margin_dollars(plan: dict) -> float:
     """The buying power a planned short vertical would commit: width less the credit it collects,
     per contract. Fees and the assignment reserve are deliberately left out here -- the cap is
     a sizing buffer, and the ledger side above already carries them once the row exists."""
-    return float(max(0.0, (plan["wing_width"] - plan["credit"]) * fly.CONTRACT_MULTIPLIER * plan.get("quantity", 1)))
+    return float(
+        max(0.0, (plan["wing_width"] - plan["credit"]) * fly.CONTRACT_MULTIPLIER * plan.get("quantity", 1))
+    )
 
 
 def margin_cap_exceeded(cap: float | None, positions: list[dict], plan: dict) -> tuple[bool, float]:
@@ -785,7 +787,9 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                 enter = False
                 reason = "max_open_margin_reached"
                 summary["skips"].append(
-                    {"entry": f"max_open_margin_reached (${would_be:.0f} would exceed ${float(margin_cap):.0f})"}
+                    {
+                        "entry": f"max_open_margin_reached (${would_be:.0f} would exceed ${float(margin_cap):.0f})"
+                    }
                 )
                 journal(
                     "entry",
