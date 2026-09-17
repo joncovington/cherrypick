@@ -12,6 +12,7 @@ that adds a live gate is covered the moment it declares one.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -83,3 +84,20 @@ def test_flies_keeps_its_extra_live_pointers_guarded():
 
 def test_meic_deploy_limit_is_guarded_with_its_switch():
     assert {"/enable_live_trading", "/account_deploy_limit_pct"} <= set(GUARDED["meic"])
+
+
+_ENV_ARMING = re.compile(r"environ\b[^\n]*LIVE", re.IGNORECASE)
+
+
+def test_no_module_arms_live_from_the_environment():
+    """The guarded table only means something if the config file is the ONLY arming surface.
+    Until 2026-09-17 meic and earnings both fell back to an ENABLE_LIVE_TRADING environment
+    variable when the config key was absent -- armable from a shell with no attestation and no
+    guard. Every package's source is scanned for an environment read whose key names LIVE;
+    verified to fail by putting the old fallback back."""
+    offenders = []
+    for src in sorted((REPO / "packages").glob("*/src/**/*.py")):
+        for lineno, line in enumerate(src.read_text(encoding="utf-8").splitlines(), start=1):
+            if _ENV_ARMING.search(line) and not line.lstrip().startswith("#"):
+                offenders.append(f"{src.relative_to(REPO)}:{lineno}: {line.strip()}")
+    assert not offenders, "live trading armed from the environment:\n" + "\n".join(offenders)

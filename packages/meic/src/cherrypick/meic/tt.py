@@ -130,10 +130,11 @@ def _try_streamer_http(command: str, args_dict: dict) -> dict | None:
 
 
 def _live_trading_enabled() -> bool:
-    cfg = _load_config()
-    if "enable_live_trading" in cfg:
-        return bool(cfg["enable_live_trading"])
-    return os.environ.get("ENABLE_LIVE_TRADING", "").lower() in ("1", "true", "yes")
+    """Live is armed by the config key and nothing else (2026-09-17). Until then an absent key fell
+    back to an ENABLE_LIVE_TRADING environment variable -- a live-arming path outside the guarded
+    config surface (orchestrator `configedit.GUARDED`, which refuses to write this key in either
+    direction) and outside any attestation. An absent key is off."""
+    return bool(_load_config().get("enable_live_trading", False))
 
 
 # ---------------------------------------------------------------------------
@@ -1061,17 +1062,17 @@ async def cmd_adjust_order(args) -> dict:
         session = get_session()
         order = _build_order(spec)
         dry_run = getattr(args, "dry_run", True)
-
-        preflight = await account.replace_order(session, args.order_id, order, dry_run=True)
-        errors = [str(e) for e in (getattr(preflight, "errors", None) or [])]
-        if errors:
-            return {"ok": False, "error": "pre-flight validation failed", "problems": errors}
-
-        if dry_run:
-            return {"ok": True, "dry_run": True, "order_id": args.order_id, "response": _serialize(preflight)}
-
-        response = await account.replace_order(session, args.order_id, order, dry_run=False)
-        return {"ok": True, "dry_run": False, "order_id": args.order_id, "response": _serialize(response)}
+        # Through the shared seam since 2026-09-17: the same preflight-then-submit path and the
+        # same deploy governor as execute_trade. This used to call the SDK's replace directly.
+        return await _broker.replace_order(
+            account,
+            session,
+            args.order_id,
+            order,
+            live=not dry_run,
+            serialize=_serialize,
+            deploy_limit_pct=_load_config().get("account_deploy_limit_pct") or None,
+        )
     except Exception as exc:
         return _error(exc)
 

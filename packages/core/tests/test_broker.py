@@ -247,6 +247,10 @@ class FakeSubmitAccount:
         self.calls.append(dry_run)
         return self._preflight if dry_run else self._live_response
 
+    async def replace_order(self, session, order_id, order, dry_run):
+        self.calls.append(("replace", order_id, dry_run))
+        return self._preflight if dry_run else self._live_response
+
     async def get_balances(self, session):
         if self._balances_raise:
             raise RuntimeError("balances endpoint down")
@@ -587,3 +591,54 @@ def test_wait_for_order_alerts_fails_closed_on_subscribe_error():
     )
     out = _run(broker.wait_for_order_alerts("sess", "acct", {"11"}, 1.0, streamer_cls=streamer_cls))
     assert out == []
+
+
+# --------------------------------------------------------------------------- replace_order (2026-09-17)
+def test_replace_order_dry_run_never_submits_live():
+    acct = FakeSubmitAccount(FakePreflight(bpe=FakeBPE("1000", "800", "-200")))
+    out = _run(broker.replace_order(acct, "sess", "OID-1", "order", live=False, serialize=lambda p: p.tag))
+    assert out["ok"] is True and out["dry_run"] is True and out["order_id"] == "OID-1"
+    assert out["response"] == "preflight"
+    assert acct.calls == [("replace", "OID-1", True)]
+
+
+def test_replace_order_preflight_errors_block_submission():
+    acct = FakeSubmitAccount(FakePreflight(errors=["price outside range"]))
+    out = _run(broker.replace_order(acct, "sess", "OID-1", "order", live=True))
+    assert out["ok"] is False and out["problems"] == ["price outside range"]
+    assert acct.calls == [("replace", "OID-1", True)]
+
+
+def test_replace_order_live_submits_after_clean_preflight():
+    acct = FakeSubmitAccount(FakePreflight(), live_response=FakePreflight(tag="live"))
+    out = _run(broker.replace_order(acct, "sess", "OID-1", "order", live=True, serialize=lambda p: p.tag))
+    assert out["ok"] is True and out["dry_run"] is False and out["response"] == "live"
+    assert acct.calls == [("replace", "OID-1", True), ("replace", "OID-1", False)]
+
+
+def test_replace_order_is_governed_like_a_placement():
+    """A replace can widen a working order; it is subject to the deploy cap like an entry."""
+    acct = _acct("-600", "0", "1000")
+    out = _run(broker.replace_order(acct, "sess", "OID-1", "order", live=True, deploy_limit_pct=50))
+    assert out["ok"] is False and "deploy limit" in out["error"]
+    assert acct.calls == [("replace", "OID-1", True)]
+
+
+def test_every_live_submit_in_the_suite_goes_through_core_broker():
+    """Shown to fail on the pre-2026-09-17 tree, where meic's adjust-order command called the
+    SDK's replace with dry_run=False itself. A `dry_run=False` anywhere in a package's source
+    other than this module is a live submission outside the preflight-then-submit path and
+    outside the governor."""
+    import re
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[3]
+    pattern = re.compile(r"dry_run\s*=\s*False")
+    offenders = []
+    for src in sorted((repo / "packages").glob("*/src/**/*.py")):
+        if "core/broker" in src.as_posix() or "core\\broker" in str(src):
+            continue
+        for lineno, line in enumerate(src.read_text(encoding="utf-8").splitlines(), start=1):
+            if pattern.search(line) and not line.lstrip().startswith("#"):
+                offenders.append(f"{src.relative_to(repo)}:{lineno}: {line.strip()}")
+    assert not offenders, "live submit outside core.broker:\n" + "\n".join(offenders)

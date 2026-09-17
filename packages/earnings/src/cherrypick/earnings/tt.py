@@ -57,10 +57,11 @@ def _load_config() -> dict:
 
 
 def _live_trading_enabled() -> bool:
-    cfg = _load_config()
-    if "enable_live_trading" in cfg:
-        return bool(cfg["enable_live_trading"])
-    return os.environ.get("ENABLE_LIVE_TRADING", "").lower() in ("1", "true", "yes")
+    """Live is armed by the config key and nothing else (2026-09-17). Until then an absent key fell
+    back to an ENABLE_LIVE_TRADING environment variable -- a live-arming path outside the guarded
+    config surface (orchestrator `configedit.GUARDED`, which refuses to write this key in either
+    direction) and outside any attestation. An absent key is off."""
+    return bool(_load_config().get("enable_live_trading", False))
 
 
 def _out(data: Any) -> None:

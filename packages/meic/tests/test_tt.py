@@ -176,11 +176,13 @@ def test_live_trading_enabled_reads_config(monkeypatch):
     assert tt._live_trading_enabled() is False
 
 
-def test_live_trading_enabled_falls_back_to_env(monkeypatch):
-    monkeypatch.setattr(tt, "_load_config", lambda: {})
+def test_live_trading_is_never_armed_from_the_environment(monkeypatch):
+    """Shown to fail on the pre-2026-09-17 code, where an absent config key deferred to
+    ENABLE_LIVE_TRADING: the environment is not a guarded surface and carries no attestation."""
     monkeypatch.setenv("ENABLE_LIVE_TRADING", "true")
-    assert tt._live_trading_enabled() is True
-    monkeypatch.delenv("ENABLE_LIVE_TRADING", raising=False)
+    monkeypatch.setattr(tt, "_load_config", lambda: {})
+    assert tt._live_trading_enabled() is False
+    monkeypatch.setattr(tt, "_load_config", lambda: {"enable_live_trading": False})
     assert tt._live_trading_enabled() is False
 
 
