@@ -1952,6 +1952,36 @@ def test_live_tick_takes_no_entry_on_an_early_close_session(live_conn):
     assert summary["entered"] == 1
 
 
+def test_live_start_overrides_the_arms_and_only_ever_later(live_conn):
+    """Shown to fail: a live start of 10:30 refuses a 10:20 tick that the arm's own window admits,
+    admits 10:31, never moves the start EARLIER than the arm's floor, and is off when unset."""
+    cfg = _loop_cfg()
+    cfg["defaults"]["no_entry_before"] = "10:00"
+    cfg["defaults"]["entry_windows"] = [["10:00", "14:30"]]
+    at_1020 = _snapshot(now_min=10 * 60 + 20)
+    assert (
+        live_loop.run_once(cfg, at_1020, live_conn, FakeBroker(), live=True, log=lambda *_: None)["entered"]
+        == 1
+    )
+    live_conn.execute("DELETE FROM fly_positions")
+    live_conn.commit()
+
+    cfg["live"]["no_entry_before"] = "10:30"
+    summary = live_loop.run_once(cfg, at_1020, live_conn, FakeBroker(), live=True, log=lambda *_: None)
+    assert summary["entered"] == 0
+    assert any(s.get("entry") == "before_open_gate" for s in summary["skips"])
+    at_1031 = _snapshot(now_min=10 * 60 + 31)
+    assert (
+        live_loop.run_once(cfg, at_1031, live_conn, FakeBroker(), live=True, log=lambda *_: None)["entered"]
+        == 1
+    )
+
+    cfg["live"]["no_entry_before"] = "09:45"  # earlier than the arm's floor: the floor wins
+    assert live_loop._merged_live_params(cfg, "gex")["no_entry_before"] == "10:00"
+    cfg["live"]["no_entry_before"] = None
+    assert live_loop._merged_live_params(cfg, "gex")["no_entry_before"] == "10:00"
+
+
 def test_open_margin_counts_only_positions_that_can_still_lose():
     sv = {
         "kind": "short_vertical",
