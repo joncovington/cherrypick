@@ -84,12 +84,7 @@ def halt_flag_path() -> str:
 
 
 def _designated_account() -> str | None:
-    from cherrypick.core.auth import ACCOUNT_NUMBER, CredentialError
-
-    try:
-        return _creds.store.get_secret(ACCOUNT_NUMBER)
-    except CredentialError:
-        return None
+    return _creds.store.designated_account()
 
 
 def readiness(config: dict, *, halt_present: bool, designated: str | None) -> list[str]:

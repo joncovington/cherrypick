@@ -137,3 +137,21 @@ def test_each_key_is_prompted_once_and_named():
     assert len(seen) == 2
     assert "client_secret" in seen[0] and "refresh_token" in seen[1]
     assert "blank to keep current" in seen[0], "the prompt must state what a blank entry does"
+
+
+def test_designated_account_is_none_when_unset_or_unreadable(monkeypatch):
+    """flies, meic's loop and meic's smoke each spelled this try/except; one method now. Unset and
+    unreadable both read as None -- a live loop's readiness list says which."""
+    from cherrypick.core.auth import credentials as c
+
+    store = c.CredentialStore("svc-test")
+    monkeypatch.setattr(store, "get_secret", lambda key: "5WX12345" if key == c.ACCOUNT_NUMBER else None)
+    assert store.designated_account() == "5WX12345"
+    monkeypatch.setattr(store, "get_secret", lambda key: None)
+    assert store.designated_account() is None
+
+    def boom(key):
+        raise c.CredentialError("No keyring backend available.")
+
+    monkeypatch.setattr(store, "get_secret", boom)
+    assert store.designated_account() is None
