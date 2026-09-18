@@ -334,13 +334,9 @@ def margin_cap_exceeded(cap: float | None, positions: list[dict], plan: dict) ->
 def _confirm_entry_fill(conn, pos: dict, broker, log) -> dict:
     """Poll a pending entry order; record the ACTUAL fill credit once confirmed. Returns the
     (possibly updated) position dict."""
-    status = broker.status(pos["entry_order_id"])
-    state = str(status.get("status") or "").strip().lower()
+    state, price = _execution.fill_state(broker.status(pos["entry_order_id"]), fallback_price=pos["net"])
     if state == "filled":
-        try:
-            actual_credit = abs(float(status.get("price")))
-        except (TypeError, ValueError):
-            actual_credit = pos["net"]  # can't parse a real price — keep the model rather than corrupt it
+        actual_credit = price  # the model only when the broker reported a fill without a parseable price
         conn.execute(
             "UPDATE fly_positions SET net = ?, credit = ?, entry_fill_status = 'filled' WHERE id = ?",
             (actual_credit, actual_credit, pos["id"]),
@@ -370,13 +366,11 @@ def _confirm_completion_fill(conn, pos: dict, broker, log, spot: float | None = 
     book.py always has. Regression (2026-07-30): live never recorded either, so every live
     Performance card's Completion panel (median latency, latency range, median spot move) read
     blank for a real session with real completions."""
-    status = broker.status(pos["completion_order_id"])
-    state = str(status.get("status") or "").strip().lower()
+    state, price = _execution.fill_state(
+        broker.status(pos["completion_order_id"]), fallback_price=pos.get("debit") or 0.0
+    )
     if state == "filled":
-        try:
-            actual_debit = abs(float(status.get("price")))
-        except (TypeError, ValueError):
-            actual_debit = pos.get("debit") or 0.0
+        actual_debit = price
         completion_fee = fly.vertical_open_fee(pos["symbol"], pos.get("quantity", 1))
         new_net = pos["net"] - actual_debit
         new_fees = (pos.get("fees") or 0.0) + completion_fee
