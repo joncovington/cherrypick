@@ -207,3 +207,27 @@ def test_an_experiment_twin_arms_under_its_base_books_trigger_not_its_tags():
         _position(book="advised:early-delta"), twin_of_control, trigger_state={}, tick=tick, addon_credit=None
     )
     assert decision.action == "hold" and decision.reason == "not_triggered"
+
+
+def test_a_row_stamped_with_its_base_is_managed_under_that_base_after_the_decision_is_gone():
+    """Shown to fail without the stamp: with the session decision gone and the config's default
+    base `control`, a twin that shadowed `delta` used to fall back to control's rules (and stop
+    arming). The row's own `advice_base` now wins over the config fallback (2026-09-17)."""
+    config = {
+        "defaults": management.PARAM_DEFAULTS,
+        "books": {"control": {}, "delta": {}},
+        "advice": {"base_book": "control"},
+    }
+    stamped = management.effective_params(
+        {"book": "advised:early-delta", "advice_params": "{}", "advice_base": "delta"}, config
+    )
+    assert stamped["base_book"] == "delta"
+    unstamped = management.effective_params(
+        {"book": "advised:early-delta", "advice_params": "{}", "advice_base": None}, config
+    )
+    assert unstamped["base_book"] == "control", "no stamp: the config fallback, as before"
+    tick = {"abs_delta": 0.99, "spot": 1.0, "gamma_flip": 1.0}
+    decision, _ = management.evaluate(
+        _position(book="advised:early-delta"), stamped, trigger_state={}, tick=tick, addon_credit=None
+    )
+    assert decision.action != "hold" or decision.reason != "not_triggered", "still a delta twin"

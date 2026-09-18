@@ -589,3 +589,18 @@ def test_frozen_params_govern_an_open_advised_position_after_the_artifact_expire
 
     position = _pos("advised:control", advice_params=json.dumps({"time_exit": "fri_noon"}))
     assert management.effective_params(position, {})["time_exit"] == "fri_noon"
+
+
+def test_a_row_stamped_with_its_base_wins_over_the_configured_fallback():
+    """Shown to fail without the stamp (2026-09-17): a twin of `path` managed after the session
+    used to read `control`'s exit window from the config fallback. The row's `advice_base` wins."""
+    config = {
+        "defaults": {"exit_window_start": "15:40"},
+        "books": {"control": {"exit_window_start": "15:45"}, "path": {"exit_window_start": "15:50"}},
+        "advice": {"base_book": "control"},
+    }
+    row = _pos("advised:take-20", advice_params=json.dumps({}))
+    stamped = management.effective_params({**row, "advice_base": "path"}, config)
+    assert stamped["base_book"] == "path" and stamped["exit_window_start"] == "15:50"
+    bare = management.effective_params({**row, "advice_base": None}, config)
+    assert bare["base_book"] == "control" and bare["exit_window_start"] == "15:45"

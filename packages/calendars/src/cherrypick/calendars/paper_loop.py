@@ -252,6 +252,19 @@ def run_once(
     marks_written = 0
     phase = "manage"
 
+    # The session's advice decision is read and RECORDED on every in-session tick, entry day or
+    # not (2026-09-17). Read-once: the first tick of the day derives it and every later one
+    # replays the file, so this is idempotent and can never change advice under an open book.
+    # Until now it was derived only on the entry path, so on the four sessions a week with no
+    # entry -- and on every day of a week refused at the gate -- the loop recorded no decision at
+    # all, and the advisor scored a live, valid artifact as "the loop recorded no decision" for
+    # three sessions running (2026-09-14..16, an ex-dividend week). The advice was read; the day
+    # had nothing to govern. Recording that is the difference between "refused with the advice in
+    # hand" and "the artifact never reached the loop", which is the one distinction the advisor's
+    # enactment check exists to make.
+    if not force:
+        advice_decision(config, day)
+
     # Phase: Monday long disposition — week N−1's surviving longs go first, before this tick can
     # enter week N, so the overlap day never contends.
     disposition_min = clock.hhmm_to_min(defaults.get("mon_disposition_time"), 9 * 60 + 45)

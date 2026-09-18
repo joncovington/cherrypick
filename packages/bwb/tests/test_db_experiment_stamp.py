@@ -123,9 +123,14 @@ def test_each_advised_book_is_entered_with_its_own_overlay_and_stamp(tmp_path):
             experiment_id=TWO,
         )
     rows = {
-        r["book"]: r for r in conn.execute("SELECT book, advice_params, experiment_id FROM bwb_positions")
+        r["book"]: r
+        for r in conn.execute("SELECT book, advice_params, experiment_id, advice_base FROM bwb_positions")
     }
     assert rows["delta"]["experiment_id"] is None and rows["delta"]["advice_params"] is None
+    # the base each twin shadows is stamped from the decision entry; a base book carries none
+    assert rows["delta"]["advice_base"] is None
+    assert rows["advised:early-delta"]["advice_base"] == "delta"
+    assert rows["advised:late-delta"]["advice_base"] == "delta"
     assert rows["advised:early-delta"]["experiment_id"] == "exp-a"
     assert rows["advised:late-delta"]["experiment_id"] == "exp-b"
     assert json.loads(rows["advised:early-delta"]["advice_params"]) == {"delta_trigger": 0.35}

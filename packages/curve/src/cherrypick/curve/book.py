@@ -76,6 +76,11 @@ def enter_position(
                 json.dumps(advice_params) if (advice_params and book.startswith("advised:")) else None
             ),
             "experiment_id": _core_advice.stamp_for(book, experiment_id),
+            "advice_base": (
+                engine.base_book(book, decision=experiment_id if isinstance(experiment_id, dict) else None)
+                if _core_advice.is_advised(book)
+                else None
+            ),
             "status": "open",
             "fees": cost["total"],
         },

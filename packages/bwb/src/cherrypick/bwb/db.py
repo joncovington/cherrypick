@@ -251,7 +251,10 @@ CREATE TABLE IF NOT EXISTS measurement_breaks (
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     # The advisor experiment an advised row was entered under (2026-09-16), beside the params
     # it froze -- `advised:<base>` names a book, and every experiment on that base reuses it.
-    "bwb_positions": {"experiment_id": "TEXT"},
+    "bwb_positions": {
+        "experiment_id": "TEXT",  # The base book an advised row shadows, stamped at entry from the session decision (2026-09-17): the tag no longer carries it, and after the session the decision file is gone. Management prefers this over the configured advice.base_book, so a twin of a non-default base keeps its rules.
+        "advice_base": "TEXT",
+    },
     "bwb_legs": {},
     "bwb_marks": {},
     # `measured` ANDs two independent inputs, so a tick that had spot but no gamma flip was

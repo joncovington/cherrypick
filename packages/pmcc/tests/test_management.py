@@ -157,3 +157,18 @@ def test_effective_params_resolve_an_experiment_tag_to_the_configured_base(confi
     config["books"]["keltner"] = {"tv_close_threshold": 0.30}
     old = management.effective_params({**POSITION, "book": "advised:keltner", "advice_params": "{}"}, config)
     assert old["base_book"] == "keltner" and old["tv_close_threshold"] == 0.30
+
+
+def test_a_row_stamped_with_its_base_wins_over_the_configured_fallback(config):
+    """Shown to fail without the stamp (2026-09-17): after the session's decision file is gone,
+    a twin of a non-default base fell back to `advice.base_book`. The row's `advice_base` wins."""
+    config["books"]["control"]["tv_close_threshold"] = 0.12
+    config["books"]["keltner"] = {"tv_close_threshold": 0.30}
+    config["advice"] = {"base_book": "control"}
+    row = {**POSITION, "book": "advised:tv-exit", "advice_params": "{}", "advice_base": "keltner"}
+    params = management.effective_params(row, config)
+    assert params["base_book"] == "keltner" and params["tv_close_threshold"] == 0.30
+    bare = management.effective_params(
+        {**POSITION, "book": "advised:tv-exit", "advice_params": "{}", "advice_base": None}, config
+    )
+    assert bare["base_book"] == "control", "no stamp: the config fallback, as before"

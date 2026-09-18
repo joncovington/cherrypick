@@ -86,6 +86,13 @@ def enter_week(
                     "entry_context": json.dumps({"target": side_plan["target"]}),
                     "advice_params": params_json,
                     "experiment_id": _core_advice.stamp_for(book, experiment_id),
+                    "advice_base": (
+                        engine.base_book(
+                            book, decision=experiment_id if isinstance(experiment_id, dict) else None
+                        )
+                        if _core_advice.is_advised(book)
+                        else None
+                    ),
                     "status": "open",
                     "fees": cost["total"],
                 },
