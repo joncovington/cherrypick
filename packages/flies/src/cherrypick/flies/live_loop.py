@@ -62,7 +62,6 @@ with a growing `occurrences`, not hundreds of identical ones).
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import logging
 import os
@@ -73,6 +72,7 @@ from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 
 from cherrypick.core import calendar as _cal  # noqa: E402
+from cherrypick.core import execution as _execution  # noqa: E402
 from cherrypick.core import home as _home  # noqa: E402
 
 from cherrypick.flies import (
@@ -92,7 +92,7 @@ from cherrypick.flies import paper_loop as _pl  # noqa: E402
 from cherrypick.flies.cli import load_config  # noqa: E402
 
 DEFAULT_ARM = "gex"
-_TERMINAL_UNFILLED = {"cancelled", "rejected", "expired"}
+_TERMINAL_UNFILLED = _execution.TERMINAL_UNFILLED  # one reading of a dead order, suite-wide
 
 _TASK_NAME = "cherrypick-flies-live-loop"
 _TASK_INTERVAL_MIN = 1
@@ -1366,101 +1366,47 @@ def _spawn_watcher(live: bool) -> None:
 
 
 # --------------------------------------------------------------------------- broker seam
-class BrokerAdapter:
-    """The real submission seam over core.broker, holding ONE session/account for its lifetime
-    (a per-call session build was ~1 OAuth handshake per broker op). All calls run on one
-    event loop so the SDK's async client stays bound to a single loop. On any broker
-    exception the session is dropped and rebuilt once on the next call.
+def _get_session():
+    from cherrypick.flies import credentials as creds
 
-    **The loop is process-wide (`_shared_loop`), not per-instance.** `creds.get_session()` is a
-    process-global cached SessionManager, so every adapter in a tick gets the SAME session object
-    — and a tastytrade session's asyncio primitives bind to whichever loop first drives them. A
-    per-instance loop therefore broke the moment a tick built a second adapter (`main` builds up
-    to three: the reconcile adapter, the settle adapter, and `run_once`'s): adapter #2 would drive
-    adapter #1's cached session on a different loop and the SDK raised
-    `RuntimeError: <asyncio.locks.Event ...> is bound to a different event loop`. One cached
-    session must mean one loop. Measured on 2026-08-04: this fired on EVERY live tick and, via
-    the half-built state `_ensure` used to leave behind, silently disabled live order placement
-    for most of the session — 8 entries the engine wanted were never submitted, in three bursts
-    (10:00-10:01, 10:16-10:17, 10:36-10:39 ET). Paper's `gex` arm took the first two centres at
-    10:01 and 10:16 while live's book stayed empty, so the two ledgers diverged for that session
-    through a defect rather than through anything the pilot was measuring."""
+    return creds.get_session()
 
-    _shared_loop = None
+
+def _designated_account():
+    from cherrypick.flies import credentials as creds
+
+    return creds.designated_account()
+
+
+class BrokerAdapter(_execution.Broker):
+    """This module's live seam: `cherrypick.core.execution.Broker` -- one session and account on
+    one process-wide loop, the session dropped and rebuilt on any broker error, fail-closed
+    result shapes -- with flies' own pieces injected: its keyring session, its designated
+    account, `broker_cli.live_gates` (re-checked on every live submit), its serializer and the
+    live block's deploy cap. Plus the two fetches only this module makes: a one-shot REST
+    re-quote before a live entry, and the official settlement print.
+
+    The adapter itself, with its three incident-driven behaviours (the process-wide loop from
+    2026-08-04, the atomic `_ensure`, the loud `working_orders`), moved to core on 2026-09-17 so
+    the next module to go live inherits them rather than re-learns them; the tests moved with
+    it (`packages/core/tests/test_execution.py`). What is left here is only what is flies'."""
 
     def __init__(self, config: dict):
         self._config = config
-        self._session = None
-        self._account = None
+        super().__init__(
+            get_session=_get_session,
+            designated_account=_designated_account,
+            live_gates=self._gates,
+            serialize=_serialize,
+            deploy_limit_pct=_live_cfg(config).get("account_deploy_limit_pct") or None,
+        )
 
-    def _run(self, coro):
-        cls = type(self)
-        if cls._shared_loop is None:
-            cls._shared_loop = asyncio.new_event_loop()
-        return cls._shared_loop.run_until_complete(coro)
-
-    def _ensure(self):
-        """Build session+account, or raise having changed nothing.
-
-        Atomic on purpose: the old form assigned `self._session` and then `self._account` on the
-        next line, so a raise in between left the adapter half-built — session set, account None.
-        Its guard was `if self._session is None`, so it then considered itself ready forever and
-        every later `place()` handed `None` to `core.broker.place_order`, which surfaced as
-        `AttributeError: 'NoneType' object has no attribute 'place_order'` rather than as the
-        broker error it really was. Locals first, `self` only once both succeed, and the guard
-        checks BOTH fields so a half-built adapter repairs itself on the next call."""
-        if self._session is not None and self._account is not None:
-            return
-        from cherrypick.core import broker as _broker
-
-        from cherrypick.flies import credentials as creds
-
-        try:
-            session = creds.get_session()
-            account = self._run(_broker.resolve_account(session, creds.designated_account()))
-        except Exception:
-            self._reset()
-            raise
-        self._session, self._account = session, account
-
-    def _reset(self):
-        self._session = None
-        self._account = None
-
-    def place(self, spec: dict, live: bool) -> dict:
-        from cherrypick.core import broker as _broker
-
+    def _gates(self) -> list[str]:
         from cherrypick.flies import broker_cli
 
-        if live:
-            unmet = broker_cli.live_gates(self._config)
-            if unmet:
-                return {"ok": False, "error": "live submission gated", "unmet_gates": unmet}
-        try:
-            self._ensure()
-            order = _broker.build_order(spec)
-            limit = _live_cfg(self._config).get("account_deploy_limit_pct") or None
-            result = self._run(
-                _broker.place_order(
-                    self._account,
-                    self._session,
-                    order,
-                    live=live,
-                    serialize=broker_cli._serialize,
-                    deploy_limit_pct=limit,
-                )
-            )
-        except Exception as exc:  # noqa: BLE001 — surfaced to the caller, session rebuilt next call
-            self._reset()
-            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-        rid = (
-            (result.get("response") or {}).get("order", {})
-            if isinstance(result.get("response"), dict)
-            else {}
-        )
-        if isinstance(rid, dict) and rid.get("id") is not None:
-            result["order_id"] = rid["id"]
-        return result
+        return broker_cli.live_gates(self._config)
+
+    _run = _execution.Broker.run  # the pre-2026-09-17 name, for any caller that still uses it
 
     def fresh_quotes(self, symbols: list[str]) -> dict:
         """A one-shot REST bid/ask snapshot for `symbols`, used only to reprice a live entry
@@ -1471,7 +1417,7 @@ class BrokerAdapter:
 
         try:
             self._ensure()
-            return self._run(broker_cli.fresh_option_quotes(self._session, symbols))
+            return self.run(broker_cli.fresh_option_quotes(self._session, symbols))
         except Exception:  # noqa: BLE001 — fail-closed, see docstring
             self._reset()
             return {}
@@ -1485,93 +1431,16 @@ class BrokerAdapter:
 
         try:
             self._ensure()
-            return self._run(broker_cli.official_settlement_price(self._session, symbol))
+            return self.run(broker_cli.official_settlement_price(self._session, symbol))
         except Exception:  # noqa: BLE001 — fail-closed, see docstring
             self._reset()
             return None, "fetch_failed"
 
-    def status(self, order_id: str) -> dict:
-        from cherrypick.core import broker as _broker
 
-        try:
-            self._ensure()
-            return self._run(_broker.order_status(self._account, self._session, order_id))
-        except Exception as exc:  # noqa: BLE001
-            self._reset()
-            return {"order_id": order_id, "status": None, "error": f"{type(exc).__name__}: {exc}"}
+def _serialize(obj):
+    from cherrypick.flies import broker_cli
 
-    def wait_for_order_alerts(self, order_ids: set, timeout_seconds: float) -> list[dict]:
-        """Block (up to `timeout_seconds`) for PUSHED fill/cancel/reject updates on `order_ids`
-        via tastytrade's account-alert websocket, instead of polling `.status()`. Same
-        {order_id, status, cancellable, price, filled} shape as `.status()`'s return, so
-        `_confirm_*_fill` needs no changes to consume either.
-
-        Fails closed to `[]` on any error (auth, subscribe, a dropped websocket, or a clean
-        timeout with nothing seen) -- exactly like every other method here. The caller's own
-        heartbeat poll is the safety net that makes this an optimization, not a dependency."""
-        from cherrypick.core import broker as _broker
-
-        try:
-            self._ensure()
-            return self._run(
-                _broker.wait_for_order_alerts(self._session, self._account, order_ids, timeout_seconds)
-            )
-        except Exception:  # noqa: BLE001
-            self._reset()
-            return []
-
-    def history(self, trade_date: str, symbol: str) -> tuple[list[dict] | None, str | None]:
-        """Real broker transactions for one session (fee_reconcile's source of truth). Fails
-        closed: any error returns `(None, reason)`, which the caller treats as "try again next
-        tick" — never a reason to reconcile from an empty or partial transaction list."""
-        from datetime import date
-
-        from cherrypick.core import broker as _broker
-
-        try:
-            self._ensure()
-            d = date.fromisoformat(trade_date)
-            transactions = self._run(
-                _broker.transaction_history(
-                    self._account, self._session, start_date=d, underlying_symbol=symbol
-                )
-            )
-            return transactions, None
-        except Exception as exc:  # noqa: BLE001 — fail-closed, see docstring
-            self._reset()
-            return None, f"{type(exc).__name__}: {exc}"
-
-    def cancel(self, order_id: str) -> dict:
-        from cherrypick.core import broker as _broker
-
-        try:
-            self._ensure()
-            return self._run(_broker.cancel_order(self._account, self._session, order_id))
-        except Exception as exc:  # noqa: BLE001
-            self._reset()
-            return {"ok": False, "order_id": order_id, "error": f"{type(exc).__name__}: {exc}"}
-
-    def working_orders(self) -> list[dict]:
-        """Drops the session on any error, then **re-raises** — deliberately not the `return []`
-        that every sibling here uses. This was the one method with no try/except at all, which
-        made it the leak that poisoned the adapter: the orphan sweep calls it first on every tick
-        and catches its own exceptions (`sweep_orphans`), so a raise here escaped without ever
-        running `_reset()`, and the half-built adapter it left behind is what broke `place()`
-        later in the SAME tick.
-
-        It re-raises rather than failing closed to `[]` because this caller's failure must stay
-        LOUD: `sweep_orphans` already logs `orphan sweep failed (...) — will retry next tick`, and
-        swallowing the error into an empty list would render that as a clean 'no orphans', which
-        is precisely the sweep reporting success on a check it never performed. `[]` is the one
-        return value this method must never invent."""
-        from cherrypick.core import broker as _broker
-
-        try:
-            self._ensure()
-            return self._run(_broker.working_orders(self._account, self._session))
-        except Exception:
-            self._reset()
-            raise
+    return broker_cli._serialize(obj)
 
 
 # --------------------------------------------------------------------------- scheduled task

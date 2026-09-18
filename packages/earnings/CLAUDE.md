@@ -244,7 +244,11 @@ All reads/writes via `cherrypick/earnings/db.py` (real) / `cherrypick/earnings/d
    underlyings — so a position a human opens with `execute_trade --live` is subscribed on the producer's
    next poll with no registration step to forget. The config key is the only arming surface (2026-09-17; the `ENABLE_LIVE_TRADING` environment fallback was removed as an unguarded, unattested path).
    - **Paper mode** (default): persistence via `db_paper.py`, order handling stops at `strategies/<name>.py get_order` — **never call `tt.py execute_trade`** (dry-run still performs real margin check). Entry `credit` is simulated fill price directly.
-   - **Live mode**: persistence via `db.py`, Step 4b's entry submission calls `tt.py execute_trade --live`.
+   - **Live mode**: persistence via `db.py`, Step 4b's entry submission calls `tt.py execute_trade --live`,
+     which since 2026-09-17 waits up to `--wait` seconds (default 30) for the broker's answer and reports it
+     as `fill: {state, price, polls}` -- record the `price` it gives, never the limit asked for. `state`
+     `working` means still resting: record it pending and ask again with `order_status`; a terminal state
+     (`cancelled` / `rejected` / `expired`) means nothing was established.
 
 1. **Load state** — open positions, tonight's entry count, account NLV. Skip new entries if `max_concurrent_earnings_positions` at cap. Fetch via `db_paper.py`/`db.py` per Step 0's mode. **Paper mode's NLV is config's `available_capital_paper_mode`** — a simulated capital basis, never the real connected broker account's balance (which would make paper mode's risk-cap check depend on whatever's actually sitting in that account, unrelated to the size you intend to trade live).
 

@@ -121,9 +121,7 @@ def write(symbols, db_path: Path | None = None, live_db_path: Path | None = None
     shapes `paper_loop.refresh_stream_request` simply stops applying to it.
     """
     underlyings = sorted({str(s).strip().upper() for s in symbols if str(s).strip()})
-    return _sr.write_request(
-        _MODULE, (), legs=underlyings, leg_sources=leg_sources(db_path, live_db_path)
-    )
+    return _sr.write_request(_MODULE, (), legs=underlyings, leg_sources=leg_sources(db_path, live_db_path))
 
 
 def register(symbols, db_path: Path | None = None, live_db_path: Path | None = None) -> None:

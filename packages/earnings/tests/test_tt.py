@@ -276,11 +276,102 @@ def test_cmd_execute_trade_live_submits_order(monkeypatch):
     monkeypatch.setattr(tt, "get_session", lambda: object())
     monkeypatch.setattr(tt, "_live_trading_enabled", lambda: True)
 
-    args = type("Args", (), {"live": True, "order": json.dumps(order_spec), "account_number": None})()
+    args = type(
+        "Args", (), {"live": True, "order": json.dumps(order_spec), "account_number": None, "wait": 0}
+    )()
     result = asyncio.run(tt.cmd_execute_trade(args))
     assert result["ok"] is True
     assert result["dry_run"] is False
     assert calls == [True, False]
+    assert "fill" not in result, "--wait 0 reports the placement only"
+
+
+def test_cmd_execute_trade_live_waits_for_and_reports_the_actual_fill(monkeypatch):
+    """Shown to fail on the pre-2026-09-17 command, which returned the placement and left the
+    human to record whatever price they typed. The fill block carries the ACTUAL price."""
+    order_spec = {
+        "price": 1.25,
+        "price_effect": "credit",
+        "legs": [
+            {"symbol": "AAPL_C", "instrument_type": "Equity Option", "action": "Sell to Open", "quantity": 1}
+        ],
+    }
+
+    class _Preflight:
+        errors = []
+        warnings = []
+        buying_power_effect = None
+
+    class _Response:
+        def model_dump(self, mode="json"):
+            return {"order": {"id": 4242}}
+
+    statuses = iter([{"status": "Live", "price": None}, {"status": "Filled", "price": "-1.31"}])
+    polled = []
+
+    class _FakeAccount:
+        account_number = "ACC1"
+
+        async def place_order(self, session_obj, order, dry_run):
+            return _Preflight() if dry_run else _Response()
+
+    async def _fake_get_account(account_number=None):
+        return _FakeAccount()
+
+    async def _fake_status(account, session, order_id):
+        polled.append(order_id)
+        return next(statuses)
+
+    monkeypatch.setattr(tt, "_get_account", _fake_get_account)
+    monkeypatch.setattr(tt, "get_session", lambda: object())
+    monkeypatch.setattr(tt, "_live_trading_enabled", lambda: True)
+    monkeypatch.setattr(tt._broker, "order_status", _fake_status)
+
+    async def _no_sleep(_s):
+        return None
+
+    monkeypatch.setattr(tt.asyncio, "sleep", _no_sleep)
+    args = type(
+        "Args", (), {"live": True, "order": json.dumps(order_spec), "account_number": None, "wait": 10}
+    )()
+    result = asyncio.run(tt.cmd_execute_trade(args))
+    assert result["order_id"] == "4242"
+    assert result["fill"] == {"state": "filled", "price": 1.31, "polls": 2, "order_id": "4242"}
+    assert polled == ["4242", "4242"]
+
+
+def test_a_failed_status_poll_never_reads_as_a_failed_order(monkeypatch):
+    class _Preflight:
+        errors = []
+        warnings = []
+        buying_power_effect = None
+
+    class _Response:
+        def model_dump(self, mode="json"):
+            return {"order": {"id": 7}}
+
+    class _FakeAccount:
+        account_number = "ACC1"
+
+        async def place_order(self, session_obj, order, dry_run):
+            return _Preflight() if dry_run else _Response()
+
+    async def _fake_get_account(account_number=None):
+        return _FakeAccount()
+
+    async def _boom(account, session, order_id):
+        raise RuntimeError("status endpoint down")
+
+    monkeypatch.setattr(tt, "_get_account", _fake_get_account)
+    monkeypatch.setattr(tt, "get_session", lambda: object())
+    monkeypatch.setattr(tt, "_live_trading_enabled", lambda: True)
+    monkeypatch.setattr(tt._broker, "order_status", _boom)
+    args = type(
+        "Args", (), {"live": True, "order": json.dumps({"legs": []}), "account_number": None, "wait": 0.01}
+    )()
+    result = asyncio.run(tt.cmd_execute_trade(args))
+    assert result["ok"] is True and result["fill"]["state"] == "working"
+    assert "status endpoint down" in result["fill"]["error"]
 
 
 def test_cmd_execute_trade_deploy_governor_blocks_live_over_cap(monkeypatch):

@@ -23,10 +23,25 @@ It will not place a live order today, by construction:
     breaker (`live.daily_loss_halt_dollars`) is tripped on the live ledger.
 
 Scaffold boundaries (deliberate, rung-1 only -- see docs/live-trading-plan.md once written):
-no ORB debit spreads, no multi-symbol (one pinned `live.symbol`), no fill-polling / working-
-order repricing (the submitted limit price is recorded as the exit/entry price -- the same
-accepted limitation flies' own rung 1 documents). Task registration (`--install-task`) is a
-manual step the user runs themselves; the orchestrator never installs or runs this loop.
+no ORB debit spreads, no multi-symbol (one pinned `live.symbol`), no working-order repricing.
+Task registration (`--install-task`) is a manual step the user runs themselves; the
+orchestrator never installs or runs this loop.
+
+Fill confirmation (2026-09-17). Until then every accepted placement was recorded as a fill at
+the submitted limit -- an entry became an OPEN row the moment the broker accepted the order,
+with the price asked for as its credit. Now an entry is saved `status='pending'` and the next
+tick (and every tick after) asks the broker; a confirmed fill flips it to `open` with the ACTUAL
+net credit and `fill_confirmed_at`, and an order that dies unfilled (cancelled / rejected /
+expired) becomes `cancelled` with no P&L and frees its slot. A pending row still counts toward
+`max_concurrent_ics` -- it is a position at risk -- and is not managed for exits until it fills.
+Stop orders are confirmed the same way into `{side}_stop_fill_status`; a stop that dies unfilled
+is logged CRITICAL because the ledger has that side closed while the broker holds it open.
+Reopening the leg in the ledger (and correcting the recorded exit to the actual fill) is the
+documented follow-up: the per-side exit accounting is shared with paper and needs its own verb.
+
+The submission seam is `cherrypick.core.execution.Broker` (2026-09-17): one session on one
+process-wide loop, the module's own gates re-checked on every live submit, the deploy governor
+applied. It replaced an adapter that shelled out to `tt.py execute_trade` and scraped stdout.
 """
 
 from __future__ import annotations
@@ -36,6 +51,8 @@ import json
 import os
 import sys
 from datetime import datetime
+
+from cherrypick.core import execution as _execution  # noqa: E402
 
 from cherrypick.meic import credentials as _creds  # noqa: E402
 from cherrypick.meic import (
@@ -112,16 +129,7 @@ def daily_loss_tripped(db_path: str, day: str, limit_dollars: float | None) -> b
 EXECUTION_MODE = "live"
 
 
-def _extract_order_id(result: dict) -> str | None:
-    """The broker's real order id from a `core.broker.place_order` response (the same
-    function both `tt.py` and flies' `broker_cli.py` submit through, so the response shape
-    -- {"response": {"order": {"id": ...}}} -- is identical)."""
-    response = result.get("response")
-    if isinstance(response, dict):
-        order = response.get("order")
-        if isinstance(order, dict) and order.get("id") is not None:
-            return str(order["id"])
-    return None
+_extract_order_id = _execution.order_id_of  # one reading of a placement result, suite-wide
 
 
 def _sides_to_close(decision: dict) -> list[str]:
@@ -156,6 +164,11 @@ def _manage_open_trades(
     leg_quotes = snapshot.get("leg_quotes", {})
 
     for trade in open_ics:
+        if trade.get("status") == "pending":
+            # Placed, not yet confirmed filled: nothing is held, so nothing can be closed.
+            # `_confirm_fills` resolves it; until then it only counts toward the concurrency cap.
+            counts["held"] += 1
+            continue
         decision = paper.evaluate_open_trade(
             trade,
             leg_quotes,
@@ -208,7 +221,10 @@ def _manage_open_trades(
         order_ids = {}
         for side, spec in specs.items():
             adjusted[f"{side}_exit_price"] = spec["price"]
-            order_ids[f"{side}_stop_order_id"] = _extract_order_id(results[side])
+            oid = _extract_order_id(results[side])
+            order_ids[f"{side}_stop_order_id"] = oid
+            if oid is not None and live:
+                order_ids[f"{side}_stop_fill_status"] = "pending"
 
         paper._apply_exit_decision(trade, adjusted, symbol, db_path)
         fields = {k: v for k, v in order_ids.items() if v is not None}
@@ -262,20 +278,82 @@ def _manage_entry(
     order_id = _extract_order_id(result)
     row = paper.synthetic_entry_fill(snapshot, EXECUTION_MODE, chosen, params, EXECUTION_MODE)
     if order_id is None:
-        log(f"WARNING: live fill had no extractable order id for {symbol}; keeping synthetic id")
+        log(f"WARNING: live placement had no extractable order id for {symbol}; keeping synthetic id")
     else:
         row["ic_order_id"] = f"LIVE-{symbol}-{order_id}"
-    # The single execution price actually asked for, not the modeled floating net_credit.
+    # The price asked for, until the broker says what filled (`_confirm_fills`). The row is
+    # PENDING, not open: it holds a slot (a working order is a position at risk) and nothing else.
     row["net_credit"] = spec["price"]
+    row["status"] = "pending"
+    row["fill_confirmed_at"] = None
     row["put_spread_entry_order_id"] = order_id
     row["call_spread_entry_order_id"] = order_id
     save_result = paper._save_trade(row, db_path)
     return {
-        "entry": "filled",
+        "entry": "placed",
         "ic_order_id": row["ic_order_id"],
         "net_credit": row["net_credit"],
+        "order_id": order_id,
         "save_result": save_result,
     }
+
+
+def _confirm_fills(symbol: str, snapshot: dict, db_path: str, broker, *, log) -> dict:
+    """Ask the broker about every order this ledger is still waiting on, and record the answer.
+
+    Entries: a `pending` row with an entry order id becomes `open` at the ACTUAL net credit once
+    filled (`fill_confirmed_at` stamped), or `cancelled` with zero P&L if the order died -- the
+    slot it held is freed either way. Stops: a side whose stop order is `pending` is recorded
+    `filled` or the terminal state; a terminal state is logged CRITICAL, because the ledger has
+    the side closed and the broker does not (see the module docstring for the follow-up)."""
+    counts = {"entries_confirmed": 0, "entries_cancelled": 0, "stops_confirmed": 0, "stops_dead": 0}
+    now = str(paper._now_et())
+    for trade in paper._get_open_trades(symbol, EXECUTION_MODE, snapshot["date"], db_path):
+        ic_order_id = trade["ic_order_id"]
+        entry_oid = trade.get("put_spread_entry_order_id")
+        if trade.get("status") == "pending" and entry_oid:
+            state, price = _execution.fill_state(
+                broker.status(entry_oid), fallback_price=trade.get("net_credit")
+            )
+            if state == "filled":
+                paper._update_trade(
+                    ic_order_id, {"status": "open", "net_credit": price, "fill_confirmed_at": now}, db_path
+                )
+                log(f"entry FILLED {ic_order_id}: asked {trade.get('net_credit')}, filled {price}")
+                counts["entries_confirmed"] += 1
+            elif state != "working":
+                paper._update_trade(
+                    ic_order_id,
+                    {
+                        "status": "cancelled",
+                        "exit_time": now,
+                        "exit_reason": f"entry_{state}",
+                        "pnl": 0,
+                        "fees": 0,
+                    },
+                    db_path,
+                )
+                log(f"entry {state.upper()} {ic_order_id} -- never established, slot freed")
+                counts["entries_cancelled"] += 1
+            continue
+        for side in ("put", "call"):
+            oid = trade.get(f"{side}_stop_order_id")
+            if not oid or trade.get(f"{side}_stop_fill_status") != "pending":
+                continue
+            state, price = _execution.fill_state(broker.status(oid))
+            if state == "working":
+                continue
+            paper._update_trade(ic_order_id, {f"{side}_stop_fill_status": state}, db_path)
+            if state == "filled":
+                log(f"{side} stop FILLED {ic_order_id} at {price}")
+                counts["stops_confirmed"] += 1
+            else:
+                log(
+                    f"CRITICAL: {side} stop {state.upper()} for {ic_order_id} -- the ledger has this side "
+                    f"closed and the broker still holds it OPEN; manage by hand"
+                )
+                counts["stops_dead"] += 1
+    return counts
 
 
 def run_once(config: dict, snapshot: dict, db_path: str, broker, *, live: bool, log=print) -> dict:
@@ -283,38 +361,30 @@ def run_once(config: dict, snapshot: dict, db_path: str, broker, *, live: bool, 
     seam -- an object with `place(spec, live) -> {ok, response?, error?}`."""
     symbol = (config.get("live") or {}).get("symbol")
     params = paper._merged_params(config, {})
+    # Broker truth first: what filled, what died. Only the live ledger has orders to confirm.
+    fills = _confirm_fills(symbol, snapshot, db_path, broker, log=log) if live else {}
     manage = _manage_open_trades(symbol, snapshot, params, db_path, broker, live=live, log=log)
     entry = _manage_entry(symbol, snapshot, params, db_path, broker, live=live, log=log)
-    return {"symbol": symbol, "live": live, **manage, "entry": entry}
+    return {"symbol": symbol, "live": live, **fills, **manage, "entry": entry}
 
 
-class BrokerAdapter:
-    """The real submission seam over `tt.py execute_trade` -- MEIC already has a full broker
-    CLI (unlike flies, which had to build one), so this just shells out to it."""
+def make_broker(config: dict, designated: str | None) -> _execution.Broker:
+    """The live submission seam: `cherrypick.core.execution.Broker` with this module's session,
+    designated account, readiness gates (re-checked on every live submit), serializer and deploy
+    cap injected. Replaced (2026-09-17) an adapter that shelled out to `tt.py execute_trade` and
+    scraped the last JSON line of its stdout."""
+    from cherrypick.meic import tt as _tt
+    from cherrypick.meic.session import get_session
 
-    def __init__(self, account_number: str | None):
-        self._account_number = account_number
-
-    def place(self, spec: dict, live: bool) -> dict:
-        import subprocess
-
-        cmd = [sys.executable, "-m", "cherrypick.meic.tt", "execute_trade", "--order", json.dumps(spec)]
-        if self._account_number:
-            cmd += ["--account_number", self._account_number]
-        if live:
-            cmd += ["--live"]
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        except subprocess.TimeoutExpired as exc:
-            return {"ok": False, "error": f"execute_trade timed out: {exc}"}
-        for line in reversed((r.stdout or "").strip().splitlines()):
-            line = line.strip()
-            if line.startswith("{"):
-                try:
-                    return json.loads(line)
-                except ValueError:
-                    continue
-        return {"ok": False, "error": (r.stderr or "no JSON output").strip()[:300]}
+    return _execution.Broker(
+        get_session=get_session,
+        designated_account=lambda: designated,
+        live_gates=lambda: readiness(
+            config, halt_present=os.path.exists(halt_flag_path()), designated=designated
+        ),
+        serialize=_tt._serialize,
+        deploy_limit_pct=config.get("account_deploy_limit_pct") or None,
+    )
 
 
 def _build_snapshot(cfg: dict, symbol: str):
@@ -414,7 +484,7 @@ def main() -> int:
         print(json.dumps({"ok": False, "error": "daily-loss breaker tripped -- no new entries"}))
         return 1
 
-    summary = run_once(cfg, snapshot, db_path, BrokerAdapter(designated), live=live)
+    summary = run_once(cfg, snapshot, db_path, make_broker(cfg, designated), live=live)
     print(
         json.dumps({"ok": True, "at": datetime.now().isoformat(timespec="seconds"), **summary}, default=str)
     )

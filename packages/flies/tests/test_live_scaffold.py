@@ -194,7 +194,7 @@ def test_broker_adapter_place_extracts_order_id_from_serialized_response(monkeyp
 
     result = adapter.place({"legs": []}, live=True)
     assert result["ok"] is True
-    assert result["order_id"] == 489184188
+    assert result["order_id"] == "489184188"  # core.execution.order_id_of reads it once, as text
     assert isinstance(result["response"], dict)  # never the raw SDK object
 
 
@@ -264,104 +264,19 @@ def test_broker_adapter_fresh_quotes_delegates_and_fails_closed(monkeypatch):
 
 
 # --------------------------------------------------------------------------- adapter session lifecycle
-# Regressions for the 2026-08-04 live incident: one cached session driven from several private
-# event loops raised "Event ... is bound to a different event loop" on 62/62 ticks, and the
-# half-built adapter that raise left behind silently disabled live placement for the whole
-# session (4 wanted entries, 0 orders submitted, `AttributeError: 'NoneType' object has no
-# attribute 'place_order'` in the journal).
-def test_every_adapter_in_a_process_shares_one_event_loop():
-    """One process-global cached session must mean exactly one loop, or the SDK's asyncio
-    primitives raise the moment a second adapter drives the session the first one built."""
-    live_loop.BrokerAdapter._shared_loop = None
-    try:
-        a, b = live_loop.BrokerAdapter(BASE_CFG), live_loop.BrokerAdapter(BASE_CFG)
+# The 2026-08-04 incident tests (one process-wide loop, atomic _ensure, loud working_orders)
+# moved to packages/core/tests/test_execution.py with the adapter on 2026-09-17. What stays here
+# is that flies' adapter IS that one, with this module's gates wired in.
+def test_the_adapter_is_the_shared_one_with_flies_gates(monkeypatch):
+    from cherrypick.core import execution
 
-        async def noop():
-            return "ran"
-
-        assert a._run(noop()) == "ran"
-        assert b._run(noop()) == "ran"
-        assert a._run(noop()) == "ran"
-        assert live_loop.BrokerAdapter._shared_loop is not None
-    finally:
-        if live_loop.BrokerAdapter._shared_loop is not None:
-            live_loop.BrokerAdapter._shared_loop.close()
-        live_loop.BrokerAdapter._shared_loop = None
-
-
-def test_ensure_leaves_nothing_behind_when_account_resolution_raises(monkeypatch):
-    """The bug: `_ensure` set `self._session`, then raised resolving the account, leaving
-    session-set/account-None — and its guard (`if self._session is None`) then considered the
-    adapter ready forever, so every later place() handed None to the broker."""
-    from cherrypick.core import broker as _broker
-
-    from cherrypick.flies import credentials as creds
-
-    monkeypatch.setattr(creds, "get_session", lambda: object())
-    monkeypatch.setattr(creds, "designated_account", lambda: "****0000")
-
-    async def resolve_raises(session, number):
-        raise RuntimeError("<asyncio.locks.Event ...> is bound to a different event loop")
-
-    monkeypatch.setattr(_broker, "resolve_account", resolve_raises)
     adapter = live_loop.BrokerAdapter(BASE_CFG)
-
-    with pytest.raises(RuntimeError):
-        adapter._ensure()
-    assert adapter._session is None, "a failed _ensure must not leave a session behind"
-    assert adapter._account is None
-
-    # ...and the adapter must repair itself once the transient cause clears.
-    sentinel = object()
-
-    async def resolve_ok(session, number):
-        return sentinel
-
-    monkeypatch.setattr(_broker, "resolve_account", resolve_ok)
-    adapter._ensure()
-    assert adapter._account is sentinel
-
-
-def test_ensure_rebuilds_a_half_built_adapter(monkeypatch):
-    """Guarding on `_session` alone is what made the broken state permanent — the guard must
-    check BOTH fields so an adapter carrying a session but no account resolves again."""
-    from cherrypick.core import broker as _broker
-
-    from cherrypick.flies import credentials as creds
-
-    sentinel = object()
-    monkeypatch.setattr(creds, "get_session", lambda: object())
-    monkeypatch.setattr(creds, "designated_account", lambda: "****0000")
-
-    async def resolve_ok(session, number):
-        return sentinel
-
-    monkeypatch.setattr(_broker, "resolve_account", resolve_ok)
-    adapter = live_loop.BrokerAdapter(BASE_CFG)
-    adapter._session, adapter._account = object(), None  # the poisoned shape
-
-    adapter._ensure()
-    assert adapter._account is sentinel, "_ensure must repair an adapter with no account"
-
-
-def test_working_orders_resets_the_session_and_stays_loud(monkeypatch):
-    """It must drop the session (so the tick's later place() rebuilds rather than seeing None)
-    but still raise, because `sweep_orphans` logs that failure — swallowing it into `[]` would
-    report a clean sweep for a check that never ran."""
-    from cherrypick.core import broker as _broker
-
-    async def working_raises(account, session):
-        raise RuntimeError("bound to a different event loop")
-
-    monkeypatch.setattr(_broker, "working_orders", working_raises)
-    adapter = live_loop.BrokerAdapter(BASE_CFG)
-    monkeypatch.setattr(adapter, "_ensure", lambda: None)
-    adapter._session, adapter._account = object(), object()
-
-    with pytest.raises(RuntimeError):
-        adapter.working_orders()
-    assert adapter._session is None, "must drop the session so the next call rebuilds"
-    assert adapter._account is None
+    assert isinstance(adapter, execution.Broker)
+    cfg = {**BASE_CFG, "live": {**BASE_CFG["live"], "enabled": False}}
+    gated = live_loop.BrokerAdapter(cfg).place({"legs": []}, live=True)
+    assert gated["error"] == "live submission gated" and any(
+        "live.enabled" in g for g in gated["unmet_gates"]
+    )
 
 
 # --------------------------------------------------------------------------- official settlement price
