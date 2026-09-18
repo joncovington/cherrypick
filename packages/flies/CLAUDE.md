@@ -810,6 +810,14 @@ supervision. The log is now free to be exactly as talkative as a human reading i
   nothing, places nothing, and never writes the ledger. This module's no-resident-daemon rule still
   holds where it matters: the daemon is an accelerator only — if it dies, stalls, or was never
   started, the heartbeat poll and `run_once`'s once-a-minute re-poll still confirm every fill.
+  **That fallback carried the whole load until 2026-09-18.** The daemon subscribes to the account
+  with an EMPTY order-id set (it has no ledger view; readers filter), and core.broker's
+  `wait_for_order_alerts` treated an empty set as "match nothing" — so the daemon recorded zero
+  alerts on every armed day from 2026-07-31 through 2026-09-18 (four fills and a cancel on the
+  last of those), the daemon test's fake broker ignored the ids and never noticed, and every fill
+  was confirmed by the poll within ~15s. The empty set now means every order on the account, and
+  `packages/core/tests/test_broker.py` pins it with a test that was shown to fail. The 2026-09-18
+  live day's fill latencies are poll latencies; days after it are the first with push latencies.
 - Credentials in the OS keyring only. Account numbers masked to `****1234`.
 - Portable paths only; scratch work in `.tmp/`. Human-voice docs and commits, no AI attribution.
 - Instruction files hold no code.

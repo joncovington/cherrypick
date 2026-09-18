@@ -712,3 +712,15 @@ def test_no_module_keeps_a_copy_of_what_core_owns():
                 if pattern.search(line) and not line.lstrip().startswith("#"):
                     offenders.append(f"{src.relative_to(repo)}:{lineno}: {line.strip()}  (owner: {owner})")
     assert not offenders, "module-local copy of something core owns:\n" + "\n".join(offenders)
+
+
+def test_wait_for_order_alerts_with_no_order_ids_reports_every_order_on_the_account():
+    """The flies alert daemon subscribes to the ACCOUNT -- it passes an empty id set on purpose,
+    because it has no ledger view and records whatever the account reports for the readers to
+    filter. Shown to fail: the filter treated an empty set as "match nothing", so the daemon
+    recorded zero alerts on every armed day from 2026-07-31 to 2026-09-18 while four fills and a
+    cancel went by, and every fill was confirmed by the poll fallback instead."""
+    orders = [FakePlacedAlertOrder(11, status="Filled"), FakePlacedAlertOrder(99, status="Cancelled")]
+    streamer_cls = lambda session: FakeAlertStreamer(session, orders=orders)  # noqa: E731
+    out = _run(broker.wait_for_order_alerts("sess", "acct", set(), 1.0, streamer_cls=streamer_cls))
+    assert [o["order_id"] for o in out] == [11, 99]

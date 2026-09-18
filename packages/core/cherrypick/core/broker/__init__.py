@@ -549,7 +549,9 @@ async def wait_for_order_alerts(
     `_serialize_placed_order` helper, so a caller's confirm logic needs no changes to consume
     either the push or the poll path.
 
-    Ignores alerts for orders not in `order_ids` — the account this streams from is not
+    An empty `order_ids` reports EVERY order on the account until the timeout (the daemon's
+    contract; see the loop body). A non-empty set ignores alerts for orders not in it — the
+    account this streams from is not
     exclusive to one caller's ledger (a shared account may carry unrelated manual trading; see
     the 2026-07-30 orphan-sweep incident, the same reason `working_orders` scopes itself).
 
@@ -571,6 +573,14 @@ async def wait_for_order_alerts(
             with anyio.move_on_after(timeout_seconds):
                 async for order in streamer.listen(PlacedOrder):
                     order_id = getattr(order, "id", None)
+                    # An EMPTY `order_ids` means every order on the account, for the whole
+                    # window (2026-09-18). The flies alert daemon subscribes that way on purpose --
+                    # it has no ledger view and records whatever the account reports -- and until
+                    # this line an empty set matched nothing: the daemon recorded zero alerts on
+                    # every armed day from 2026-07-31 on, and the poll fallback did all the work.
+                    if not order_ids:
+                        found.append(_serialize_placed_order(order_id, order))
+                        continue
                     if str(order_id) in order_ids:
                         found.append(_serialize_placed_order(order_id, order))
                         if len(found) >= len(order_ids):
