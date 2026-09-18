@@ -17,9 +17,9 @@ incident history behind them. If you extend the suite, preserve them.
 Paper and live books are strictly separated: separate SQLite files. Even a paper "dry-run" never calls
 `execute_trade` (a dry-run performs a real margin check).
 
-### The four live-order paths, and what actually gates each
+### The five live-order paths, and what actually gates each
 
-Know all four before opening any of them. **They do not share one gate**, and "gated behind
+Know all five before opening any of them. **They do not share one gate**, and "gated behind
 `enable_live_trading`" — which earlier versions of this page said — is true of only two:
 
 | Path | Code | What gates it |
@@ -27,18 +27,20 @@ Know all four before opening any of them. **They do not share one gate**, and "g
 | **MEIC** | `meic/live_loop.py`, `live_orders.py` | `enable_live_trading` in MEIC's config, plus its own daily-loss breaker and the suite halt flag. Inert by default and never installed by the orchestrator, but it is a full live loop. |
 | **Earnings** | `earnings/tt.py execute_trade --live` | `enable_live_trading` in the earnings config. |
 | **Flies** | `flies/live_loop.py`, `live_orders.py` | **Not** `enable_live_trading`. A separate `live.enabled` **and** `live.gate0_confirmed` attestation, **and** a per-day arm record written by `/live-flies-start`, **and** a designated account, **and** the halt flag. Self-disarms every evening. |
+| **BWB** | `bwb/live_loop.py`, `live_orders.py` | The flies posture (2026-09-18): `live.enabled` **and** `live.gate0_confirmed` **and** a per-day arm record written by `/live-bwb-start` **and** a designated account **and** the halt flag, plus `live.arm` naming one of the four base books. Self-disarms every evening. Trades the full daily ladder under a worst-case margin cap (with a firing arm's future add-on reserved), one structure per day, a cost-derived credit floor, and a mark-drawdown breaker that blocks entries only. No closing orders: SPX cash-settles, on an official print or not at all. |
 | **Desk** | `packages/desk` | **Never reads `enable_live_trading` at all** — deliberately. Its own config `enabled`, an account allowlist, a PIN, a per-order ticket you confirm, and its own `policy.py` gates. ⚠️ Experimental. |
 
-The first three are **loops**: once the gate is open they act on their own schedule without asking
+The first four are **loops**: once the gate is open they act on their own schedule without asking
 again. The desk is the only discretionary one — it acts because you typed a confirmation.
 
 **What "the orchestrator never places an order" does and doesn't mean.** The orchestrator process
 genuinely never calls a place-order path. But its supervisor derives a `<module>-live` job for *any*
 module that declares `live.task_name`, and spawns that module's live loop on an interval while it is
-armed — so it is the thing that launches the process that trades. Today only flies configures that key;
-the mechanism is not flies-specific.
+armed — so it is the thing that launches the process that trades. Flies and bwb configure that key;
+the mechanism is not module-specific, and what the arm record means lives in `cherrypick.core.live`
+(the filename, the two disarm reasons, the rule that under a supervisor arming is a record write).
 
-**The flies pilot is the most tightly bounded of the three loops** — one arm, one symbol, re-armed by
+**The flies pilot is the most tightly bounded of the four loops** — one arm, one symbol, re-armed by
 hand each trading day. Note the precise concurrency rule: at most one *incomplete* position at a time.
 An open short vertical always blocks a new entry; a **completed** fly blocks only while its floor is
 negative, so several completed flies can be open at once. See
@@ -46,7 +48,7 @@ negative, so several completed flies can be open at once. See
 complete rulebook.
 
 Every other guardrail on this page — masked accounts, keyring-only credentials, no AI/network on a
-decision path — applies to all four paths in full.
+decision path — applies to all five paths in full.
 
 ## The one live-config boundary: `connect` / `account`
 
@@ -67,11 +69,14 @@ Account writes are human-confirmed. `reconcile` honors the designation — a des
 `cherrypick settings` (loopback `:8804`) is the suite's second narrow live-config exception, and its
 only mutating HTTP surface — every dashboard here is GET-only. Two things make it safe to run:
 
-- **Guarded live-trading fields are read-only, both ways.** `enable_live_trading`, flies'
-  `live.enabled`/`live.gate0_confirmed`, and the live loss/deploy-limit fields are locked in the UI and
-  refused server-side on both write paths (a field-level edit and a raw-text save). This surface can
-  arm nothing and disarm nothing — the deliberate paths above (`/live-flies-start`, hand-editing a gate
-  with the plan doc open) stay the only way to touch them.
+- **Guarded live-trading fields are read-only, both ways.** `enable_live_trading`, flies' and bwb's
+  `live.enabled`/`live.gate0_confirmed`, bwb's `live.arm` and its live floor, caps and breakers, and
+  every live loss/deploy-limit field are locked in the UI and refused server-side on both write paths
+  (a field-level edit and a raw-text save). This surface can arm nothing and disarm nothing — the
+  deliberate paths above (`/live-flies-start`, `/live-bwb-start`, hand-editing a gate with the plan
+  doc open) stay the only way to touch them. The guard is checked against every package's own
+  `config.example.json`, discovered rather than listed, so a module that declares a live gate is
+  covered the moment it declares it.
 - **A secret transits the process once, then is gone.** Unlike `connect`, which never lets the
   orchestrator see a bearer secret at all, a settings POST body necessarily does pass through this
   process — the trade-off for a browser-based secrets UI. It goes straight to

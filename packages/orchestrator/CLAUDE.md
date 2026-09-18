@@ -240,7 +240,9 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   surface — each module's `enable_live_trading` kill switch (home config first, then in-repo), its
   designated live account (masked, via the module keyring), and the suite **halt flag**,
   `state/halt-live.flag` in the cherrypick home, whose *presence* is the signal
-  (`liveops.halt_flag_path()` defines the path; live loops poll the same file). It is files +
+  (`cherrypick.core.home.halt_flag_path()` defines the path since 2026-09-18, because the live loops
+  that poll it cannot import this package and two had drifted recomputing it; `liveops.halt_flag_path()`
+  mirrors it off this package's patchable state dir). It is files +
   keyring only, and it writes **exactly one thing: the halt flag**, via `set_halt` — create to
   halt, delete to clear. That is the one write by design, because a stop must be reachable from a
   surface a human is already looking at; the console's Config page routes its halt toggle through
@@ -291,11 +293,11 @@ this package's source, and none should be reintroduced — `doctor` fails loudly
   reach it at all). Config writes (`configedit.py`) go through byte-offset splicing so a field edit
   never disturbs the file's `_note`/`_header` documentation or key order, are backed up
   (`state/config-backups/`) before every write, and refuse any change — in either direction — to a
-  guarded live-trading pointer. **`configedit.GUARDED` is the list** — it covers all five modules
-  that have a live gate (meic and earnings' `enable_live_trading`, flies/calendars/pmcc's
-  `live.enabled`, plus flies' `gate0_confirmed` and the meic/flies loss and deploy limits), and
-  `tests/test_guarded_live_pointers.py` fails if a module ever declares a live gate the table does
-  not refuse. Do not re-enumerate it here or in a module's own file: this paragraph listed three of
+  guarded live-trading pointer. **`configedit.GUARDED` is the list** — it covers every module
+  that declares a live gate in its own `config.example.json` (`tests/test_guarded_live_pointers.py`
+  DISCOVERS those files rather than naming modules, since 2026-09-18: the hand-kept list before it
+  had missed two declared placeholders), and it fails if a module ever declares a live gate the table
+  does not refuse. Do not re-enumerate it here or in a module's own file: this paragraph listed three of
   the five until 2026-08-20, which is how a prose promise decays into a partial one. Those fields
   render read-only with a pointer to their real CLI path, so this surface can never arm or de-risk
   live trading. (`packages/desk` is deliberately outside all of this — it is the discretionary live

@@ -1,10 +1,12 @@
 # cherrypick-bwb
 
 bwb: a **daily-laddered SPX put broken-wing butterfly** entered at the expected move for a net
-credit, ~7 DTE, held to expiry — **paper-only and credential-free**, a pure stream-cache consumer
-in the calendars/pmcc/curve posture. Every book enters the IDENTICAL BWB from the same plan on the
-same tick; the books differ only in whether/when a reversal-triggered put credit spread add-on
-fires, turning the fly into a 1-3-2. Ledger schema: **`bwb_132`**.
+credit, ~7 DTE, held to expiry — **paper by default**, its paper loop credential-free, a pure
+stream-cache consumer in the calendars/pmcc/curve posture. Every book enters the IDENTICAL BWB
+from the same plan on the same tick; the books differ only in whether/when a reversal-triggered
+put credit spread add-on fires, turning the fly into a 1-3-2. Ledger schema: **`bwb_132`**. Since
+2026-09-18 there is also a narrow **live path** (the "Live" section below): one arm, armed per
+day, writing its own ledger, changing nothing about what the paper books measure.
 
 Lineage note: this module absorbs and supersedes the "1-3-2 put condor" idea briefly floated as a
 fourth book for `packages/ratios` (2026-08-22). The condor variant is retired; `ratios` stays jade
@@ -140,7 +142,9 @@ replayed, never vendor-imagined.
 1. **Net of the full modeled fee and slippage stack.** Entry is 4 legs/2 sells, the add-on 2
    legs/1 sell, and each distinct ITM leg at settlement pays the $5 cash-settlement event fee.
 2. **Settlement fidelity is a stated caveat, not a bias**: paper settles each leg at intrinsic
-   against the last cached tick, not the official closing/SET print — uniform across arms.
+   against the last cached tick, not the official closing/SET print — uniform across arms. The
+   live ledger settles on the official print only (a hand-supplied `--price`, or the broker
+   chain's posted close), and waits rather than guess.
 3. **A hole in the mark path is refused, never zero** (`usable = 0` with the refusal).
 4. **A trigger can only fire on a measured tick.** Missing/stale greeks for the near wing, or
    unavailable GEX inputs, mean the trigger cannot evaluate that tick — never a guess, never
@@ -170,7 +174,11 @@ next business day.
 | `paper_loop.py` | session driver: entry tick, 60s trigger/mark loop, expiry settle. |
 | `analytics.py` | the one query layer: per-book nets, fire counts, trigger-tick coverage. |
 | `replay.py` | the read-side threshold replay over `bwb_trigger_ticks` — a FAST-FOLLOW, not built in v1. |
-| `db.py`, `stream_request.py`, `cli.py` | the standard trio (`status` / `worksheet` / `fires` / `triggers` / `headline` / `replay`). |
+| `db.py`, `stream_request.py`, `cli.py` | the standard trio (`status` / `worksheet` / `fires` / `triggers` / `headline` / `replay`). `db.live_db_path()` is the live ledger; `stream_request.register(live=True)` writes `bwb-live`'s own request file. |
+| `live_loop.py` | The LIVE tick (2026-09-18): dead-man's switch, orphan sweep, fill confirmation, resting-order management (the bounded walk-down), official-print settlement, ONE gated entry attempt, then the paper trigger/mark/manage pass over the live ledger with the fire seam swapped for order placement. `--once` is the dry-run smoke; `--once --live` the real tick; `--status`; `--settle --price`; `--install-task`/`--uninstall-task` are what `/live-bwb-start` calls. |
+| `live_orders.py` | Pure: the order specs (the body sold once at double quantity), the cost-derived live floor, the walk-down's next limit, worst-case payoffs and the margin caps with the add-on reserve. |
+| `broker_cli.py`, `credentials.py` | The `connect`/`account`-facing seam (keyring service `bwbagent`, falling back to the shared login) and `live_gates`. Serializer, tick rounding, settlement price and the arm record are `cherrypick.core` imports, not copies. |
+| `fee_reconcile.py` | Replaces a settled live row's estimated costs with the broker's real cash flow; exact matching, modeled values snapshotted once, unmatched rows left alone. Run by the live tick for pending expirations, and by hand. |
 
 ## Commands
 
@@ -184,7 +192,14 @@ python run.py worksheet                           # the live per-position worksh
 python run.py fires                               # per-book add-on fire counts
 python -m pytest                                  # temp CHERRYPICK_HOME; no broker, no streamer needed
 ruff check . && ruff format .                     # line-length 110
+
+python -m cherrypick.bwb.live_loop --once         # LIVE dry-run smoke: preflights against the real account, places nothing
+python -m cherrypick.bwb.live_loop --status       # armed_for / pending orders / orphans / breaker / broker_held
+python -m cherrypick.bwb.live_loop --settle --price 6400.10 --date 2026-09-18   # the official print, by hand
+python -m cherrypick.bwb.fee_reconcile            # reconcile settled live rows against broker transactions
 ```
+
+Arming is `/live-bwb-start` (a fresh literal YES each day); never run `--install-task` outside it.
 
 Config: copy `config.example.json` -> `config.json` (git-ignored), or place
 `~/.cherrypick/config/bwb.json`. The example file is the design document — read its `_note` keys
@@ -192,9 +207,10 @@ before changing a value.
 
 ## Data source
 
-This module runs no streamer and holds **no broker credentials at all**. Its held expirations exist
-in the shared cache because `stream_request.py` declares them via the registry's `expirations`
-field every tick. `window_hints` is load-bearing: the body sits a full expected move below spot, at
+This module runs no streamer. Its **paper loop holds no broker credentials at all**; the live loop
+reads the `bwbagent` keyring service (falling back to the suite's shared login) and nothing else
+imports `credentials.py`. Its held expirations exist in the shared cache because
+`stream_request.py` declares them via the registry's `expirations` field every tick. `window_hints` is load-bearing: the body sits a full expected move below spot, at
 or beyond a default ATM window's edge, and the window must also cover the add-on bracket two
 increments below the far wing — escalated on recorded `no_strikes_in_window` refusals, the
 flies/pmcc pattern.
@@ -211,9 +227,59 @@ flies/pmcc pattern.
 4. **The `bounce`/`delta` distinction depends on `bounce_pullback` staying above zero** —
    config-lint guards this; at exactly zero the two arms are mathematically identical.
 
+## Live (2026-09-18) — one arm, per-day armed, every fill the broker's word
+
+The live path exists to find out whether the paper result survives contact with a fill, and is
+built so that question can be answered without disturbing the paper books:
+
+- **The structure is the paper structure.** `engine.plan_entry` plans it; `live_orders.entry_spec`
+  only collapses the body's two rows into one sell leg at double quantity and puts a limit on it
+  (mid minus `entry_concession`, floored to the nickel). What is live-only is sizing and admission,
+  and every one of those rules REFUSES rather than reshapes: the cost-derived floor (fees plus
+  `min_net_credit_dollars`, per contract, with the broker's own dry-run fee estimate replacing the
+  schedule when it gives one — modeled slippage is deliberately NOT in it, a limit fill IS the
+  credit); `max_structures_per_day` (1; a cancelled entry spends nothing); the total and
+  per-expiration worst-case caps, computed from the legs' expiry payoffs with an unfired position's
+  future add-on RESERVED whenever the arm can fire; the settled-net breaker (weekly latency on a
+  hold-to-expiry ladder) and the mark-drawdown breaker (blocks the NEXT entry only, never an exit).
+- **Every fill is the broker's word.** An entry row is born `pending` (not open: nothing marks or
+  manages it), the actual credit overwrites the modeled one on confirmation and the realized
+  slippage is measured against the mid at submission, a terminal order leaves a `cancelled` row.
+  The add-on is one step stricter: placing it records only a pending marker, and the legs are
+  written — through the paper writer, with the actual credit — only when the broker confirms. A
+  dead add-on clears the marker; the arm stays live and may re-fire with a new attempt suffix.
+  One add-on order per tick across the ladder (a flip reclaim can arm several positions in one
+  second).
+- **A resting order walks down, bounded.** One tick every `reprice_after_minutes` from the fresh
+  mid's limit, never under the row's live floor, lifting with a rising mid (only the step count is
+  monotonic), cancelled at `entry_cutoff`, at `entry_cancel_after_minutes`, or when the strikes
+  move. A refused cancel is left for the next poll — never a second order over one that could not
+  be cancelled.
+- **No closing orders.** SPX cash-settles; the live ledger settles on an official print or waits.
+  Costs are estimates until `fee_reconcile.py` replaces them with real transactions (the $5
+  settlement event fee per DISTINCT ITM symbol — the doubled body is one — is the number it
+  checks per symbol).
+- **Identity travels with the order.** The ledger key is the order's external identifier, so an
+  uncertain submission is recovered by it (`cherrypick.core.execution`); an outcome that could not
+  be read back HOLDS the adapter, and `--status` shows it as `broker_held`.
+- **The paper books are untouched.** `paper_loop._manage_positions` gained a `fire` seam whose
+  default is the old behaviour (a test pins it); nothing about tick cadence, entry pacing, gate
+  semantics or what a book's net means changed, so paper's evidence clock does not restart. The
+  live ledger is its own evidence, with the same correlated-ladder caveat: several open positions
+  settle on one Friday print. Switching `live.arm` is a live measurement break — journal it.
+- **Two recorded numbers were corrected the day this landed**, both found by the live work and
+  both landing immediately per the suite rule: `entry_max_loss` had overstated the worst case by the
+  narrow width on every row (`wide - narrow - credit` is the payoff; the 2026-09-04 settlement was
+  the proof), and settlement had charged the $5 event fee per ITM leg ROW, so the doubled body paid
+  twice. Rows before 2026-09-18 carry the old values; both are derivable and neither is rewritten.
+
 ## Guardrails (suite-wide)
 
-- **Paper only. There is no live path.** `live.enabled` in config is a documented placeholder only.
+- **Paper by default; the live path is narrow and separately gated.** `live.enabled`,
+  `live.gate0_confirmed`, a per-day arm record (`/live-bwb-start`, a literal YES), a designated
+  account, the absence of the suite halt flag, and `live.arm` naming a base book — every one
+  re-checked on every tick and on every submission, all guarded from the settings surface. The
+  live ledger is a separate file the paper surfaces never read. See "Live" below.
 - **The decision path is deterministic.** `clock.py`, `engine.py`, `triggers.py`, `management.py`
   are pure functions over pre-fetched data — no model, no MCP, no network in the decision itself.
 - Declared settlement only (SPX is always `cash`); a symbol this module is not built for is out of

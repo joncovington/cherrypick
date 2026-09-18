@@ -25,6 +25,7 @@ wholesale with **`$CHERRYPICK_HOME`**. Nothing runtime lands in a source checkou
   data/earnings/earnings_trades.db# Earnings live ledger
   data/flies/paper_trades.db      # Flies paper ledger (fly_positions / fly_books)
   data/flies/live_trades.db       # Flies live ledger (the live pilot writes here; armed per day)
+  data/bwb/live_trades.db         # BWB live ledger (same schema as its paper file; armed per day; never read by a paper surface)
   data/calendars/paper_trades.db  # Calendars paper ledger (dc_positions / dc_legs / dc_marks)
   data/pmcc/paper_trades.db       # PMCC-99 paper ledger (pmcc_positions / pmcc_legs / pmcc_marks)
   data/gex/gex_history.db         # GEX spot trail + regime history + the suite-level market-regime
@@ -137,10 +138,10 @@ are conservative by design:
   `state/config-backups/<target>.<timestamp>.json` before the new version replaces it (atomic
   tmp-then-`os.replace`, same idiom as the dashboard renderer).
 - **Guarded fields are read-only, in both directions.** `enable_live_trading` (meic/earnings),
-  flies' `live.enabled` and `live.gate0_confirmed` (a human attestation string), and the live
-  loss/deploy-limit fields cannot be changed from this surface — arming or de-risking live trading
-  stays on its existing deliberate path (`/live-flies-start`, hand-editing the live gates with the plan
-  doc open). The UI shows each locked field with a pointer to where it's actually changed; a direct API
+  flies' and bwb's `live.enabled` and `live.gate0_confirmed` (a human attestation string), bwb's
+  `live.arm`, floor, caps and breakers, and every live loss/deploy-limit field cannot be changed from
+  this surface — arming or de-risking live trading stays on its existing deliberate path
+  (`/live-flies-start`, `/live-bwb-start`, hand-editing the live gates with the plan doc open). The UI shows each locked field with a pointer to where it's actually changed; a direct API
   call to the same pointer is refused server-side too.
 - **`--organize [target] [--apply]`** reorders a live config's top-level keys to match its
   `config.example.json`'s section order — inserting the example's `*_header` markers, appending any
