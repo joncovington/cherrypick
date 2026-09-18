@@ -454,6 +454,56 @@ def is_risk_free(position: dict) -> bool:
     return position_floor(position) >= 0.0
 
 
+def _mid(quote: dict | None) -> float | None:
+    """A leg's mid from a quote row: its own `mid` when present, else the bid/ask midpoint, else
+    None. A one-sided or empty quote is None, never zero -- a zero mid would price a leg as
+    worthless and turn a missing quote into a phantom profit."""
+    if not quote:
+        return None
+    mid = quote.get("mid")
+    if isinstance(mid, (int, float)):
+        return float(mid)
+    bid, ask = quote.get("bid"), quote.get("ask")
+    if isinstance(bid, (int, float)) and isinstance(ask, (int, float)) and ask > 0:
+        return (float(bid) + float(ask)) / 2.0
+    return None
+
+
+def structure_mid(position: dict, quote_at) -> float | None:
+    """The per-contract MID value of the structure as held, priced off `quote_at(side, strike)`
+    (a quote row or None) -- the number `position_pnl`'s expiry payoff stands in for once the
+    session is over. Positive means the structure is worth money to us; a short vertical reads
+    negative (its cost to close). None when any leg is unquoted: a mark is a mid, and a mid with
+    a hole in it is not a mark.
+
+    Added 2026-09-17 for the live loop's per-tick mark record. Until then the only intraday
+    P&L curve the suite could draw for flies was the expiry payoff evaluated at live spot, which
+    is not what the position is worth now. A mid is not a fill either -- the live page labels
+    it so -- but it is the honest intraday number, and the one drawdown can be measured from.
+    Kinds live trades: `short_vertical` and `fly`; the rest return None rather than guess."""
+    kind, side, center, w = position["kind"], position["side"], position["center"], position["wing_width"]
+    if kind == "short_vertical":  # short centre, long wing at `w` on the protected side
+        wing = center - w if side == PUT else center + w
+        c, g = _mid(quote_at(side, center)), _mid(quote_at(side, wing))
+        return None if c is None or g is None else -(c - g)
+    if kind == "fly":  # +1 wing, -2 centre, +1 far: a long fly's value
+        wing = center - w if side == PUT else center + w
+        far = center + w if side == PUT else center - w
+        c, g, f = _mid(quote_at(side, center)), _mid(quote_at(side, wing)), _mid(quote_at(side, far))
+        return None if None in (c, g, f) else g - 2 * c + f
+    return None
+
+
+def mark_pnl(position: dict, quote_at) -> float | None:
+    """Dollar P&L of one open position marked at mid: `position_pnl` with `structure_mid` in
+    the payoff's place, net of recorded fees. No assignment reserve -- nothing has settled."""
+    value = structure_mid(position, quote_at)
+    if value is None:
+        return None
+    qty = position.get("quantity", 1)
+    return (position["net"] + value) * CONTRACT_MULTIPLIER * qty - (position.get("fees") or 0.0)
+
+
 # --------------------------------------------------------------------------- book accounting
 def book_pnl(positions: list[dict], underlying: float) -> float:
     return sum(position_pnl(p, underlying) for p in positions)

@@ -163,6 +163,28 @@ CREATE TABLE IF NOT EXISTS fly_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_fly_snapshots_date ON fly_snapshots(trade_date);
 
+-- The LIVE loop's per-tick mark of every open position (2026-09-17): what the structure is worth
+-- at mid right now, and the P&L that implies, plus the tick's open worst-case exposure (the figure
+-- the buying-power cap reads) and the resting completion limit if one is working. Live only: the
+-- paper loop marks nothing because its result is settled payoff by design, and a mid path would
+-- invite reading a paper book intraday. A mid is not a fill; the live page says so. Until this
+-- table the only intraday curve the suite could draw for live flies was the expiry payoff at live
+-- spot, and the pilot had no drawdown number at all.
+CREATE TABLE IF NOT EXISTS fly_live_marks (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    iteration_ts      TEXT,
+    trade_date        TEXT,
+    position_id       TEXT,
+    kind              TEXT,     -- the structure as held at this tick (short_vertical -> fly)
+    structure_mid     REAL,     -- per-contract mid value of the structure as held
+    mark_pnl          REAL,     -- (net + structure_mid) x 100 x qty - fees
+    spot              REAL,
+    open_margin       REAL,     -- the tick's open worst-case exposure, every open position summed
+    resting_limit     REAL,     -- the working completion order's limit debit, if one is resting
+    UNIQUE (iteration_ts, position_id)
+);
+CREATE INDEX IF NOT EXISTS idx_fly_live_marks_date ON fly_live_marks(trade_date);
+
 -- One row per EVALUATED ENTRY OPPORTUNITY per (iteration x arm): what was proposed and what
 -- happened to it. Uncollapsed, unlike fly_decisions.
 --
@@ -821,6 +843,39 @@ def record_snapshot(
         "INSERT OR REPLACE INTO fly_snapshots (iteration_ts, trade_date, symbol, status, "
         "quotes_fresh, quotes_rejected, underlying_price) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (iteration_ts or _now(), trade_date, symbol, status, quotes_fresh, quotes_rejected, underlying_price),
+    )
+    conn.commit()
+
+
+def record_live_mark(
+    conn,
+    *,
+    trade_date: str,
+    position_id: str,
+    kind: str,
+    structure_mid: float | None,
+    mark_pnl: float | None,
+    spot: float | None,
+    open_margin: float | None,
+    resting_limit: float | None = None,
+    iteration_ts: str | None = None,
+) -> None:
+    """One open position's mark for one live tick. Idempotent on (iteration_ts, position_id).
+    Pure telemetry: nothing reads it on the decision path."""
+    conn.execute(
+        "INSERT OR REPLACE INTO fly_live_marks (iteration_ts, trade_date, position_id, kind, structure_mid, "
+        "mark_pnl, spot, open_margin, resting_limit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            iteration_ts or _now(),
+            trade_date,
+            position_id,
+            kind,
+            structure_mid,
+            mark_pnl,
+            spot,
+            open_margin,
+            resting_limit,
+        ),
     )
     conn.commit()
 

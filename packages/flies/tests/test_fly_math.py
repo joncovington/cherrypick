@@ -681,3 +681,61 @@ def test_assignment_fee_matches_the_real_2026_07_30_broker_fills():
     position = {"kind": "fly", "side": "put", "center": 744.0, "wing_width": 1.0, "quantity": 1}
     assert fly.itm_legs_at_settlement(position, 743.76) == 2  # the 744 centre and the 745 wing
     assert fly.assignment_fee(position, 743.76) == 10.00
+
+
+# --------------------------------------------------------------------------- mid marks
+def _quotes(**by_strike):
+    def quote_at(side, strike):
+        q = by_strike.get(str(int(strike)))
+        return None if q is None else {"bid": q[0], "ask": q[1]}
+
+    return quote_at
+
+
+def test_structure_mid_prices_a_short_vertical_as_its_cost_to_close():
+    pos = {
+        "kind": "short_vertical",
+        "side": "put",
+        "center": 6000,
+        "wing_width": 5,
+        "net": 1.0,
+        "quantity": 1,
+        "fees": 3.44,
+    }
+    # centre mid 2.0, wing mid 0.8 -> the spread costs 1.2 to close
+    q = _quotes(**{"6000": (1.9, 2.1), "5995": (0.7, 0.9)})
+    assert fly.structure_mid(pos, q) == pytest.approx(-1.2)
+    # collected 1.0, worth -1.2 now: (1.0 - 1.2) * 100 - fees
+    assert fly.mark_pnl(pos, q) == pytest.approx(-20.0 - 3.44)
+
+
+def test_structure_mid_prices_a_fly_as_a_long_fly():
+    pos = {
+        "kind": "fly",
+        "side": "put",
+        "center": 6000,
+        "wing_width": 5,
+        "net": 0.3,
+        "quantity": 2,
+        "fees": 6.89,
+    }
+    q = _quotes(**{"5995": (0.7, 0.9), "6000": (1.9, 2.1), "6005": (3.9, 4.1)})
+    assert fly.structure_mid(pos, q) == pytest.approx(0.8 - 4.0 + 4.0)  # 0.8
+    assert fly.mark_pnl(pos, q) == pytest.approx((0.3 + 0.8) * 100 * 2 - 6.89)
+
+
+def test_a_missing_leg_quote_is_no_mark_not_a_zero():
+    pos = {
+        "kind": "fly",
+        "side": "put",
+        "center": 6000,
+        "wing_width": 5,
+        "net": 0.3,
+        "quantity": 1,
+        "fees": 0,
+    }
+    q = _quotes(**{"5995": (0.7, 0.9), "6000": (1.9, 2.1)})  # 6005 unquoted
+    assert fly.structure_mid(pos, q) is None and fly.mark_pnl(pos, q) is None
+    one_sided = _quotes(**{"5995": (0.7, 0.0), "6000": (1.9, 2.1), "6005": (3.9, 4.1)})
+    assert fly.structure_mid(pos, one_sided) is None
+    assert fly.structure_mid({**pos, "kind": "bwb"}, q) is None  # not a kind live trades

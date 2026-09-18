@@ -996,8 +996,47 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
             (day, arm),
         ).fetchone()[0]
         summary["pending_orders"] = int(pending)
+        summary["marks"] = _record_marks(conn, snapshot, day, [dict(r) for r in final_rows], params)
 
     return summary
+
+
+def _record_marks(conn, snapshot: dict, day: str, rows: list[dict], params: dict) -> int:
+    """Mark every OPEN live position at mid off this tick's cached quotes (2026-09-17). Pure
+    telemetry, after every decision has been made; a position with an unquoted leg gets no row
+    (a mid with a hole is not a mark). `open_margin` is the same open worst-case figure the
+    buying-power cap reads, so the page and the gate can never disagree about it."""
+    if not snapshot.get("ok"):
+        return 0
+    open_rows = [r for r in rows if r.get("status") == "open"]
+    if not open_rows:
+        return 0
+    margin = open_margin_dollars(open_rows)
+    spot = snapshot.get("underlying_price")
+    written = 0
+    for pos in open_rows:
+        value = fly.structure_mid(pos, lambda side, strike: engine.quote(snapshot, side, strike))
+        if value is None:
+            continue
+        resting = None
+        if pos.get("completion_fill_status") == "pending" and pos.get("kind") == "short_vertical":
+            resting = live_orders.max_safe_completion_debit(
+                pos, params.get("min_floor_dollars", 0.0), params.get("fee_buffer", 0.10)
+            )
+        dbmod.record_live_mark(
+            conn,
+            trade_date=day,
+            position_id=pos["position_id"],
+            kind=pos["kind"],
+            structure_mid=round(value, 4),
+            mark_pnl=round(fly.mark_pnl(pos, lambda side, strike: engine.quote(snapshot, side, strike)), 2),
+            spot=spot,
+            open_margin=round(margin, 2),
+            resting_limit=resting,
+            iteration_ts=snapshot.get("iteration_ts"),
+        )
+        written += 1
+    return written
 
 
 # --------------------------------------------------------------------------- settlement
