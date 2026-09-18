@@ -108,10 +108,10 @@ DEFAULT_HEARTBEAT_SECONDS = 150
 
 # --------------------------------------------------------------------------- paths and logging
 def halt_flag_path() -> str:
-    """The suite-wide live kill switch — the same path the orchestrator's Live Ops card reports
-    (`liveops.halt_flag_path()`); presence is the signal. Resolved through `cherrypick.core.home`
-    so `$CHERRYPICK_HOME` values with `~`/vars expand identically on both sides."""
-    return str(_home.state_dir() / "halt-live.flag")
+    """The suite-wide live kill switch; presence is the signal. One resolver for every live loop
+    and the orchestrator (`cherrypick.core.home.halt_flag_path`), kept here as a string for the
+    callers that already read it that way."""
+    return str(_home.halt_flag_path())
 
 
 def _data_dir() -> str:

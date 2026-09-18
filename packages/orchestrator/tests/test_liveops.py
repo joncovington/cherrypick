@@ -129,3 +129,15 @@ def test_set_halt_is_idempotent(env):
     liveops.set_halt(False)
     liveops.set_halt(False)  # deleting an already-absent flag doesn't error
     assert liveops.halt_flag_path().exists() is False
+
+
+def test_halt_flag_path_is_the_core_convention(monkeypatch, tmp_path):
+    """The live loops poll `cherrypick.core.home.halt_flag_path()`; this package's own resolver
+    exists only to ride the patchable STATE_DIR (the conftest patches `state_file` too), so the
+    invariant is: same filename, relative to the state dir, on both sides."""
+    from cherrypick.core import home as _home
+
+    assert liveops.HALT_FLAG_NAME == _home.HALT_FLAG_NAME
+    assert liveops.halt_flag_path() == cfgmod.state_file(liveops.HALT_FLAG_NAME)
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    assert _home.halt_flag_path() == _home.state_dir() / liveops.HALT_FLAG_NAME

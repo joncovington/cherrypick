@@ -106,6 +106,23 @@ def heartbeat_path(package: str) -> Path:
     return state_dir() / f"{package}.heartbeat"
 
 
+HALT_FLAG_NAME = "halt-live.flag"
+
+
+def halt_flag_path() -> Path:
+    """The suite-wide live kill switch (``home()/state/halt-live.flag``). Its *presence* is the
+    signal and its contents are ignored, so ``touch`` halts and ``del`` re-arms with no parser in
+    between.
+
+    Same reasoning as :func:`heartbeat_path`: the orchestrator writes and reports it, every live
+    loop polls it, and none of them can import each other. Until 2026-09-18 the name lived in the
+    orchestrator and each loop recomputed the path by hand -- one copy skipped ``$VAR`` expansion
+    and another ignored ``CHERRYPICK_HOME`` entirely, so the kill switch a human set could be a
+    file a loop never looked at. A shared resolver is what makes "halted" mean one thing.
+    """
+    return state_dir() / HALT_FLAG_NAME
+
+
 def modules_dir(*, env: str | None = "CHERRYPICK_MODULES_HOME") -> Path:
     """Installed module checkouts (``home()/modules``), or ``$CHERRYPICK_MODULES_HOME`` if set."""
     override = _env(env)

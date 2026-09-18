@@ -5,6 +5,7 @@ via asyncio.run() so no pytest-asyncio plugin is required.
 """
 
 import asyncio
+import re
 from datetime import date, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
@@ -659,3 +660,31 @@ def test_build_order_passes_the_external_identifier_through():
     order = broker.build_order({"legs": [_leg()], "external_identifier": "cp-abc"}, order_ns=ns)
     assert order.external_identifier == "cp-abc"
     assert not hasattr(broker.build_order({"legs": [_leg()]}, order_ns=ns), "external_identifier")
+
+
+# What a module may not carry its own copy of, now that core owns it. Each entry is a regex over a
+# source line and the core module that owns the thing; a match anywhere else in a package's `src/`
+# or in `scripts/` is a copy that will drift. Each entry was shown to fail by re-adding the copy it
+# retired on the day it landed.
+_RETIRED_COPIES = (
+    # 2026-09-18: meic recomputed the halt path without `$VAR` expansion; the smoke script ignored
+    # `CHERRYPICK_HOME`. A kill switch is only a kill switch if every loop looks at the same file.
+    (re.compile(r"""["']halt-live\.flag["']"""), "core/home.py"),
+)
+
+
+def test_no_module_keeps_a_copy_of_what_core_owns():
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[3]
+    files = sorted((repo / "packages").glob("*/src/**/*.py")) + sorted((repo / "scripts").glob("*.py"))
+    offenders = []
+    for src in files:
+        posix = src.as_posix()
+        for pattern, owner in _RETIRED_COPIES:
+            if posix.endswith(owner):
+                continue
+            for lineno, line in enumerate(src.read_text(encoding="utf-8").splitlines(), start=1):
+                if pattern.search(line) and not line.lstrip().startswith("#"):
+                    offenders.append(f"{src.relative_to(repo)}:{lineno}: {line.strip()}  (owner: {owner})")
+    assert not offenders, "module-local copy of something core owns:\n" + "\n".join(offenders)

@@ -45,16 +45,11 @@ from .order import OrderError, analyze
 
 
 def _halt_present() -> bool:
-    """The suite-wide kill switch. Path is defined by the orchestrator's `liveops`; imported
-    defensively so the desk still works (and still refuses correctly) in a checkout without it."""
-    try:
-        from cherrypick.orchestrator import liveops
+    """The suite-wide kill switch, resolved by `cherrypick.core.home.halt_flag_path` — the one
+    path every live loop and the orchestrator agree on, so no orchestrator import is needed."""
+    from cherrypick.core import home as _home
 
-        return liveops.halt_flag_path().exists()
-    except Exception:  # noqa: BLE001 — fall back to the documented path rather than failing open
-        from cherrypick.core import home as _home
-
-        return (_home.state_dir() / "halt-live.flag").exists()
+    return _home.halt_flag_path().exists()
 
 
 def _load_order(args) -> dict[str, Any]:
