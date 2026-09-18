@@ -39,6 +39,7 @@ import os
 
 # Allow running as `python src/tt.py` from any working directory.
 import time
+import uuid
 from datetime import date
 from typing import Any
 
@@ -447,8 +448,15 @@ async def cmd_execute_trade(args) -> dict:
             "ok": False,
             "error": "Live trading is disabled. Set enable_live_trading=true in config.json.",
         }
+    spec = json.loads(args.order)
+    # The submission's own identity (2026-09-17): tastytrade does not deduplicate retries, and this
+    # is a one-shot command a human re-runs on an error. Sent as the order's external identifier
+    # and reported back, so a timeout after the broker accepted is recovered below by reading
+    # today's orders for it -- never re-placed. A caller may supply its own.
+    ext = str(spec.get("external_identifier") or f"earnings-{uuid.uuid4().hex}")
+    spec["external_identifier"] = ext
+    account = None
     try:
-        spec = json.loads(args.order)
         account = await _get_account(getattr(args, "account_number", None))
         order = _build_order(spec)
         # cherrypick.core.broker owns the preflight-then-optionally-live submission core; it
@@ -463,6 +471,7 @@ async def cmd_execute_trade(args) -> dict:
             serialize=_serialize,
             deploy_limit_pct=_load_config().get("account_deploy_limit_pct") or None,
         )
+        result["external_identifier"] = ext
         oid = _execution.order_id_of(result)
         if oid is not None:
             result["order_id"] = oid
@@ -479,7 +488,35 @@ async def cmd_execute_trade(args) -> dict:
             result["fill"] = await _confirm_fill(account, oid, wait, fallback_price=spec.get("price"))
         return result
     except Exception as exc:
-        return _error(exc)
+        if live and account is not None:
+            found = await _recover_by_identifier(account, ext)
+            if found is not None:
+                return {
+                    "ok": True,
+                    "dry_run": False,
+                    "recovered": True,
+                    "order_id": str(found["order_id"]),
+                    "external_identifier": ext,
+                    "response": found,
+                    "error": (
+                        f"submit raised {type(exc).__name__}: {exc}; order found at the broker by its identifier"
+                    ),
+                }
+        out = _error(exc)
+        out["external_identifier"] = ext
+        return out
+
+
+async def _recover_by_identifier(account, external_identifier: str) -> dict | None:
+    """Today's order carrying `external_identifier`, terminal ones included, or None. A recovery
+    that fails reports None, so the caller sees the original error and never a phantom success."""
+    try:
+        for o in await _broker.orders_today(account, get_session()):
+            if o.get("external_identifier") == external_identifier and o.get("order_id") is not None:
+                return o
+    except Exception:  # noqa: BLE001
+        return None
+    return None
 
 
 async def _confirm_fill(

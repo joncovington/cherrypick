@@ -534,3 +534,47 @@ def test_cmd_get_watch_universe_degrades_on_exception(monkeypatch):
     monkeypatch.setattr(tt, "get_session", _boom)
     result = asyncio.run(tt.cmd_get_watch_universe(None))
     assert result["ok"] is False
+
+
+def test_a_live_submit_that_times_out_after_acceptance_is_recovered_not_reported_failed(monkeypatch):
+    """Shown to fail without recovery: the human re-running this one-shot command on a timeout
+    would place the order twice. The order carries our identifier; on the raise we find it."""
+    at_broker = []
+
+    class _Preflight:
+        errors = []
+        warnings = []
+        buying_power_effect = None
+
+    class _FakeAccount:
+        account_number = "ACC1"
+
+        async def place_order(self, session_obj, order, dry_run):
+            if dry_run:
+                return _Preflight()
+            at_broker.append(
+                {
+                    "order_id": 99,
+                    "status": "Filled",
+                    "external_identifier": order.external_identifier,
+                    "terminal": True,
+                }
+            )
+            raise TimeoutError("read timed out")
+
+    async def _fake_get_account(account_number=None):
+        return _FakeAccount()
+
+    async def _today(account, session):
+        return list(at_broker)
+
+    monkeypatch.setattr(tt, "_get_account", _fake_get_account)
+    monkeypatch.setattr(tt, "get_session", lambda: object())
+    monkeypatch.setattr(tt, "_live_trading_enabled", lambda: True)
+    monkeypatch.setattr(tt._broker, "orders_today", _today)
+    args = type(
+        "Args", (), {"live": True, "order": json.dumps({"legs": []}), "account_number": None, "wait": 0}
+    )()
+    result = asyncio.run(tt.cmd_execute_trade(args))
+    assert result["ok"] is True and result["recovered"] is True and result["order_id"] == "99"
+    assert result["external_identifier"].startswith("earnings-") and "timed out" in result["error"]

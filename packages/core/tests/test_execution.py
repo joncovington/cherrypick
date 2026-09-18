@@ -308,3 +308,97 @@ def test_watch_treats_a_failing_alert_source_as_an_accelerator_not_a_dependency(
         on_status=lambda oid, h, s: execution.fill_state(s)[0] != "working",
     )
     assert n == 1
+
+
+# --------------------------------------------------------------------------- idempotent submits (2026-09-17)
+def test_every_live_submit_carries_an_external_identifier_and_returns_it(monkeypatch):
+    seen = {}
+
+    async def fake_place(account, session, order, *, live, serialize, deploy_limit_pct, get_balances=None):
+        seen["order"] = order
+        return {"ok": True, "dry_run": not live, "response": {"order": {"id": 1}}}
+
+    monkeypatch.setattr(_broker, "place_order", fake_place)
+    monkeypatch.setattr(_broker, "build_order", lambda spec: dict(spec))
+    adapter = _adapter(monkeypatch)
+    out = adapter.place({"legs": []}, live=True)
+    assert (
+        out["external_identifier"].startswith("cp-")
+        and seen["order"]["external_identifier"] == out["external_identifier"]
+    )
+    # a module's own identity is kept verbatim
+    out = adapter.place({"legs": [], "external_identifier": "flies-live-7500-1"}, live=True)
+    assert out["external_identifier"] == "flies-live-7500-1" == seen["order"]["external_identifier"]
+    # two placements never share one
+    a = adapter.place({"legs": []}, live=True)["external_identifier"]
+    b = adapter.place({"legs": []}, live=True)["external_identifier"]
+    assert a != b
+
+
+def test_an_uncertain_submit_is_recovered_by_its_identifier_instead_of_reported_failed(monkeypatch):
+    """Shown to fail without recovery: the submit raises AFTER the broker accepted (a timeout),
+    the order is at the broker -- already filled, so `working_orders` would not list it -- and
+    the seam must hand back that order rather than a failure a caller would retry into a
+    duplicate."""
+    at_broker: list[dict] = []
+
+    async def timeout_after_accept(
+        account, session, order, *, live, serialize, deploy_limit_pct, get_balances=None
+    ):
+        at_broker.append(
+            {
+                "order_id": 4242,
+                "status": "Filled",
+                "external_identifier": order["external_identifier"],
+                "terminal": True,
+            }
+        )
+        raise TimeoutError("read timed out")
+
+    async def today(account, session):
+        return list(at_broker)
+
+    monkeypatch.setattr(_broker, "place_order", timeout_after_accept)
+    monkeypatch.setattr(_broker, "orders_today", today)
+    monkeypatch.setattr(_broker, "build_order", lambda spec: dict(spec))
+    adapter = _adapter(monkeypatch)
+    out = adapter.place({"legs": []}, live=True)
+    assert out["ok"] is True and out["recovered"] is True and out["order_id"] == "4242"
+    assert out["external_identifier"] == at_broker[0]["external_identifier"]
+    assert "timed out" in out["error"]
+
+
+def test_a_failed_submit_with_nothing_at_the_broker_is_still_a_failure(monkeypatch):
+    async def boom(*a, **k):
+        raise RuntimeError("connection refused")
+
+    async def today(account, session):
+        return [{"order_id": 1, "status": "Live", "external_identifier": "someone-elses", "terminal": False}]
+
+    monkeypatch.setattr(_broker, "place_order", boom)
+    monkeypatch.setattr(_broker, "orders_today", today)
+    monkeypatch.setattr(_broker, "build_order", lambda spec: dict(spec))
+    adapter = _adapter(monkeypatch)
+    out = adapter.place({"legs": []}, live=True)
+    assert (
+        out["ok"] is False
+        and "connection refused" in out["error"]
+        and out["external_identifier"].startswith("cp-")
+    )
+
+
+def test_a_dry_run_never_recovers(monkeypatch):
+    async def boom(*a, **k):
+        raise RuntimeError("preflight failed")
+
+    calls = []
+
+    async def today(account, session):
+        calls.append(1)
+        return []
+
+    monkeypatch.setattr(_broker, "place_order", boom)
+    monkeypatch.setattr(_broker, "orders_today", today)
+    monkeypatch.setattr(_broker, "build_order", lambda spec: dict(spec))
+    out = _adapter(monkeypatch).place({"legs": []}, live=False)
+    assert out["ok"] is False and calls == []

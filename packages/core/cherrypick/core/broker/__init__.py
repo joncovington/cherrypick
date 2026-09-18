@@ -183,6 +183,12 @@ def build_order(spec: dict, *, order_ns: Any = None) -> Any:
         kwargs["price"] = price
     if spec.get("stop_trigger") is not None:
         kwargs["stop_trigger"] = Decimal(str(spec["stop_trigger"]))
+    # The client's own identity for this submission (2026-09-17). tastytrade does not deduplicate
+    # retries and has no idempotency header; the server echoes this back on the placed order, so
+    # after an uncertain outcome a caller can find the order it already placed instead of placing
+    # it twice. `core.execution.Broker.place` sets one on every submission and recovers by it.
+    if spec.get("external_identifier"):
+        kwargs["external_identifier"] = str(spec["external_identifier"])
     return ns.NewOrder(**kwargs)
 
 
@@ -402,6 +408,7 @@ def _serialize_placed_order(order_id: Any, placed: Any) -> dict:
         "cancellable": bool(getattr(placed, "cancellable", False)),
         "price": str(getattr(placed, "price", None)),
         "filled": str(getattr(placed, "status", "")).strip().lower() == "filled",
+        "external_identifier": getattr(placed, "external_identifier", None),
     }
 
 
@@ -452,6 +459,25 @@ async def cancel_order(account: Any, session: Any, order_id: Any) -> dict:
         return {"ok": False, "order_id": order_id, "error": f"{type(exc).__name__}: {exc}"}
 
 
+async def orders_today(account: Any, session: Any) -> list[dict]:
+    """Every order placed today on the account, terminal ones INCLUDED, as
+    [{order_id, status, external_identifier, underlying_symbol, terminal}]. The recovery read
+    after an uncertain submit (2026-09-17): an order that filled in the seconds between the
+    submit and the timeout is no longer working, and `working_orders` would miss it -- and
+    missing it is exactly how a retry places the same order twice."""
+    orders = await account.get_live_orders(session)
+    return [
+        {
+            "order_id": getattr(o, "id", None),
+            "status": str(getattr(o, "status", None)),
+            "external_identifier": getattr(o, "external_identifier", None),
+            "underlying_symbol": getattr(o, "underlying_symbol", None),
+            "terminal": getattr(o, "terminal_at", None) is not None,
+        }
+        for o in orders
+    ]
+
+
 async def working_orders(account: Any, session: Any) -> list[dict]:
     """Every order still resting (unfilled, not cancelled/rejected/expired) on the account, as
     [{order_id, status, underlying_symbol}].
@@ -471,6 +497,7 @@ async def working_orders(account: Any, session: Any) -> list[dict]:
     return [
         {
             "order_id": getattr(o, "id", None),
+            "external_identifier": getattr(o, "external_identifier", None),
             "status": str(getattr(o, "status", None)),
             "underlying_symbol": getattr(o, "underlying_symbol", None),
         }
