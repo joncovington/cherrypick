@@ -146,24 +146,6 @@ def test_broker_cli_live_gates_are_the_same_posture():
     assert live_gates({"live": {"enabled": True, "gate0_confirmed": "jon"}}) == []
 
 
-def test_broker_cli_serialize_flattens_sdk_objects_and_leaves_plain_values_alone():
-    from cherrypick.flies.broker_cli import _serialize
-
-    class FakeSdkOrder:
-        def model_dump(self, mode="json"):
-            return {"id": 489184188, "status": "Received", "reject_reason": None}
-
-    assert _serialize(None) is None and _serialize(5) == 5 and _serialize("x") == "x"
-    assert _serialize([1, FakeSdkOrder()]) == [
-        1,
-        {"id": 489184188, "status": "Received", "reject_reason": None},
-    ]
-    assert _serialize({"order": FakeSdkOrder()}) == {
-        "order": {"id": 489184188, "status": "Received", "reject_reason": None}
-    }
-    assert _serialize(object()).startswith("<object")
-
-
 def test_broker_adapter_place_extracts_order_id_from_serialized_response(monkeypatch):
     """Regression for the 2026-07-30 incident: BrokerAdapter.place() must pass serialize= into
     core.broker.place_order(), or result["response"] stays the raw (non-dict) SDK response object
@@ -182,8 +164,10 @@ def test_broker_adapter_place_extracts_order_id_from_serialized_response(monkeyp
             }
 
     async def fake_place_order(account, session, order, *, live, serialize=None, deploy_limit_pct=None):
-        assert serialize is not None, "BrokerAdapter.place() must pass serialize="
-        return {"ok": True, "dry_run": not live, "response": serialize(FakeSdkResponse())}
+        # Since 2026-09-18 the seam's own default is the flattener, so the adapter no longer has
+        # to pass one; this fake applies the same default the real seam does.
+        ser = serialize or core_broker.serialize
+        return {"ok": True, "dry_run": not live, "response": ser(FakeSdkResponse())}
 
     monkeypatch.setattr(core_broker, "place_order", fake_place_order)
     monkeypatch.setattr(core_broker, "build_order", lambda spec: object())

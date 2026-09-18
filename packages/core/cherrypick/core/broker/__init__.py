@@ -273,7 +273,8 @@ async def place_order(
     the default `account.get_balances(session)`, for tests.
 
     Returns a JSON-safe dict (`serialize` shapes the raw tastytrade preflight/response objects;
-    defaults to identity). Includes a `governor` key whenever the governor ran:
+    defaults to this module's `serialize`, the SDK-object flattener every caller used to pass).
+    Includes a `governor` key whenever the governor ran:
       - preflight errors:  {ok: False, error: "pre-flight validation failed", problems, buying_power}
       - governor blocked:  {ok: False, error: "account deploy limit ...", governor, buying_power}
       - dry run:           {ok: True, dry_run: True,  account_number, buying_power, response[, governor]}
@@ -332,6 +333,27 @@ async def replace_order(
     return result
 
 
+def serialize(obj: Any) -> Any:
+    """A tastytrade SDK object (or a nested structure of them) as a JSON-safe plain value, and the
+    default shape of every `place_order`/`replace_order` result since 2026-09-18.
+
+    It was three byte-identical module copies before (meic, earnings, flies), each passed in by
+    hand -- and flies' docstring recorded why the default must not be identity: a caller that
+    forgot to pass it read `result["response"]["order"]["id"]` off a raw SDK object, found
+    nothing, and resubmitted the same entry every tick without ever recording it. The shape the
+    order id is read from is now the shape every caller gets unless it asks otherwise."""
+    if obj is None or isinstance(obj, (str, int, float, bool)):
+        return obj
+    if isinstance(obj, (list, tuple)):
+        return [serialize(item) for item in obj]
+    if isinstance(obj, dict):
+        return {k: serialize(v) for k, v in obj.items()}
+    dump = getattr(obj, "model_dump", None)
+    if callable(dump):
+        return dump(mode="json")
+    return str(obj)
+
+
 async def _preflight_then_submit(
     submit: Callable[[bool], Any],
     account: Any,
@@ -345,7 +367,7 @@ async def _preflight_then_submit(
     """THE live submission path. `submit(dry_run)` is the one SDK call, awaited twice at most:
     once with `dry_run=True` (unconditional), and once with `dry_run=False` only when `live` is
     true, the preflight reported no errors, and the governor (when enabled) allowed it."""
-    serialize = serialize or (lambda x: x)
+    serialize = serialize or globals()["serialize"]  # the module-level flattener, shadowed here
 
     preflight = await submit(True)
     errors = [str(e) for e in (getattr(preflight, "errors", None) or [])]

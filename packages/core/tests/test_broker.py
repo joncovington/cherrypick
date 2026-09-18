@@ -291,11 +291,31 @@ def test_place_order_live_submits_after_clean_preflight():
     assert acct.calls == [True, False]
 
 
-def test_place_order_default_serialize_is_identity():
+def test_place_order_default_serialize_is_the_shared_flattener():
+    """Identity until 2026-09-18. flies recorded the failure that default produced: a caller that
+    forgot to pass a serializer read the order id off a raw SDK object and found nothing."""
     pf = FakePreflight()
     acct = FakeSubmitAccount(pf)
     out = _run(broker.place_order(acct, "sess", "order", live=False))
-    assert out["response"] is pf  # raw object passed through when no serialize given
+    assert out["response"] == broker.serialize(pf)
+    assert not isinstance(out["response"], FakePreflight)
+
+
+def test_serialize_flattens_sdk_objects_and_leaves_plain_values_alone():
+    class FakeSdkOrder:
+        def model_dump(self, mode="json"):
+            return {"id": 489184188, "status": "Received", "reject_reason": None}
+
+    class Plain:
+        def __str__(self):
+            return "plain-repr"
+
+    assert broker.serialize(None) is None and broker.serialize(5) == 5 and broker.serialize("x") == "x"
+    assert broker.serialize(True) is True
+    assert broker.serialize({"k": [1, FakeSdkOrder()]}) == {
+        "k": [1, {"id": 489184188, "status": "Received", "reject_reason": None}]
+    }
+    assert broker.serialize(Plain()) == "plain-repr"
 
 
 # --------------------------------------------------------------------------- place_order + governor
@@ -670,6 +690,8 @@ _RETIRED_COPIES = (
     # 2026-09-18: meic recomputed the halt path without `$VAR` expansion; the smoke script ignored
     # `CHERRYPICK_HOME`. A kill switch is only a kill switch if every loop looks at the same file.
     (re.compile(r"""["']halt-live\.flag["']"""), "core/home.py"),
+    # 2026-09-18: three byte-identical SDK-object flatteners, each passed to the seam by hand.
+    (re.compile(r"^\s*def _serialize\("), "core/broker/__init__.py"),
 )
 
 

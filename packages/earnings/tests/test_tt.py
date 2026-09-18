@@ -27,34 +27,6 @@ def test_num_none_and_invalid_return_none():
     assert tt._num("not-a-number") is None
 
 
-def test_serialize_primitives_passthrough():
-    assert tt._serialize(None) is None
-    assert tt._serialize("x") == "x"
-    assert tt._serialize(5) == 5
-    assert tt._serialize(True) is True
-
-
-def test_serialize_list_and_dict_recurse():
-    assert tt._serialize([1, "a", None]) == [1, "a", None]
-    assert tt._serialize({"k": [1, 2]}) == {"k": [1, 2]}
-
-
-def test_serialize_model_dump_object():
-    class _Model:
-        def model_dump(self, mode="json"):
-            return {"a": 1}
-
-    assert tt._serialize(_Model()) == {"a": 1}
-
-
-def test_serialize_falls_back_to_str():
-    class _Plain:
-        def __str__(self):
-            return "plain-repr"
-
-    assert tt._serialize(_Plain()) == "plain-repr"
-
-
 def test_error_flags_retryable_for_5xx():
     exc = RuntimeError("upstream returned 503 ")
     result = tt._error(exc)
