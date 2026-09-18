@@ -209,12 +209,16 @@ def settle_expiring_legs(
                 "close_value": intrinsic,
             },
         )
-        entry = by_position.setdefault(leg["position_id"], {"itm": 0, "legs": 0})
+        entry = by_position.setdefault(leg["position_id"], {"itm_symbols": set(), "legs": 0})
         entry["legs"] += 1
         if itm:
-            entry["itm"] += 1
+            # DISTINCT symbols, never leg rows: the body is two rows of one contract, and the $5
+            # cash-settlement fee is per settlement EVENT (the flies 2026-07-31 finding). Until
+            # 2026-09-18 this counted rows, so every body-ITM settlement paid the fee twice.
+            entry["itm_symbols"].add(leg.get("occ_symbol") or f"{leg['strike']}:{leg.get('option_type')}")
 
     for pid, info in by_position.items():
+        info["itm"] = len(info["itm_symbols"])
         fee = engine.settlement_fee(info["itm"])
         _accumulate_fees(conn, pid, fee)
         prev_itm = conn.execute(
