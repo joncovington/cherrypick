@@ -523,3 +523,40 @@ def test_settlement_source_is_optional_so_a_backfill_never_lies(conn):
     result = bookmod.settle_book(conn, "2026-07-20", "control", "SPX", 5990.0, config)
     rows = dbmod.book_positions(conn, result["book_id"])
     assert rows[0]["settlement_source"] is None
+
+
+# --------------------------------------------------------------------------- leg symbols (2026-09-17)
+def _with_symbols(snap):
+    """The provider stamps every leg quote with the DXLink streamer symbol the cache is keyed by;
+    the bare test grid does not, which is exactly the shape a pre-change row was written from."""
+    for side, right in (("puts", "P"), ("calls", "C")):
+        for strike, quote in snap[side].items():
+            quote["streamer_symbol"] = f".SPXW260720{right}{int(strike)}"
+    return snap
+
+
+def test_paper_entry_and_completion_stamp_the_legs_they_hold(conn):
+    """Shown to fail without the stamp: the streamer's leg query reads these columns, and a row
+    that carries none is a position the producer cannot be told about. Entry stamps the centre
+    and the wing; completion stamps the strike it added; a quote with no symbol stamps nothing
+    rather than an empty string."""
+    config = one_arm_config(entry_modes=["legged"])
+    bookmod.process_snapshot(_with_symbols(snapshot(underlying_price=5998.0)), config, conn, "control")
+    row = conn.execute("SELECT * FROM fly_positions").fetchone()
+    assert row["kind"] == "short_vertical" and row["side"] == "put"
+    assert row["center_leg_symbol"] == f".SPXW260720P{int(row['center'])}"
+    assert row["wing_leg_symbol"] == f".SPXW260720P{int(row['center'] - row['wing_width'])}"
+    assert row["completing_leg_symbol"] is None and row["far_leg_symbol"] is None
+
+    later = _with_symbols(snapshot(underlying_price=6004.0, puts={6000: q(1.0, 1.2), 6005: q(2.4, 2.6)}))
+    bookmod.process_snapshot(later, config, conn, "control")
+    row = conn.execute("SELECT * FROM fly_positions").fetchone()
+    assert row["kind"] == "fly"
+    assert row["completing_leg_symbol"] == f".SPXW260720P{int(row['center'] + row['wing_width'])}"
+
+
+def test_a_quote_without_a_symbol_stamps_nothing(conn):
+    config = one_arm_config(entry_modes=["legged"])
+    bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
+    row = conn.execute("SELECT center_leg_symbol, wing_leg_symbol FROM fly_positions").fetchone()
+    assert tuple(row) == (None, None)

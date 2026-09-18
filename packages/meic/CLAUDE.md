@@ -127,6 +127,13 @@ deployed default (0.0035) and below the quarterly-expiry override (0.0067).
 
 ## Tastytrade Tool Reference
 
+**The live loop declares its own open legs to the streamer (2026-09-17).** `stream_request.py` writes
+`meic.json` from the paper loop and `meic-live.json` from the live loop's preamble (`register_live`,
+best-effort, dry-run included), each carrying the open-IC leg query against that loop's OWN ledger. Until
+then the file's docstring said the live loop did not exist; it did, never imported this file, and a live
+IC's legs survived only while they sat inside the ATM window. The leg columns hold DXLink streamer
+symbols, the form the producer subscribes verbatim.
+
 All tastytrade operations are called via `python -m cherrypick.meic.tt <command>`. Commands output JSON to stdout. Credentials are read from the OS keyring (set via `python -m cherrypick.meic.tt secrets_set`; check status with `python -m cherrypick.meic.tt secrets_status`). Live-order tools require `enable_live_trading: true` in `config.json`. That key is the ONLY arming surface (2026-09-17): the `ENABLE_LIVE_TRADING` environment fallback is gone, because an environment variable is outside the orchestrator's guarded config table and carries no attestation. `adjust_order` goes through `cherrypick.core.broker.replace_order` since the same date -- the same preflight-then-submit path and deploy governor as `execute_trade`; it used to call the SDK's replace directly, and a core test now scans every package for a `dry_run=False` outside the seam.
 
 `get_quote`, `get_option_chain`, and `get_strategies` check the canonical shared stream cache `~/.cherrypick/data/marketdata/stream_cache.db` first (data age < 10s) before opening a live DXLink connection. Start the streamer daemon for near-zero latency on these calls during active trading. (The cache moved out of `data/meic` to `data/marketdata` so it is owned by infrastructure and readable by any module even when MEIC isn't the producer — see `docs/history/streamer-package-plan.md`.)

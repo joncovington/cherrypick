@@ -59,6 +59,52 @@ def _record_best_debit(conn, position: dict, debit: float, when: str) -> None:
     )
 
 
+def entry_leg_strikes(kind: str, side: str, center: float, width: float, far_width=None) -> dict:
+    """The strikes a structure holds at ENTRY, by role, from the geometry every mode already uses:
+    `{"center", "wing"}` plus `"far"` for a bwb. One place, so the ledger's leg columns and the
+    engine's pricing can never name different contracts for the same row."""
+    if kind == "long_vertical":  # debit_first: engine.evaluate_debit_vertical_entry's long_strike
+        wing = center - width if side == fly.CALL else center + width
+    else:  # short_vertical (legged) and bwb: the protected wing at `width`
+        wing = center - width if side == fly.PUT else center + width
+    out = {"center": center, "wing": wing}
+    if kind == "bwb":
+        _near, _center, far = fly.bwb_strikes(side, center, width, far_width)
+        out["far"] = far
+    return out
+
+
+def completing_strike(kind: str, side: str, center: float, width: float) -> float:
+    """The strike ADDED at completion, by kind -- legged buys the far strike (the mirror of the
+    entry wing), debit_first sells the wing on the other side, a bwb buys the roll strike. Each is
+    the number the matching engine.evaluate_* plan carries (`long_strike` / `wing_strike` /
+    `roll_strike`); restated here from the row alone so the live loop, which places the completion
+    from the position row without an engine plan, names the same contract."""
+    if kind == "long_vertical":  # engine.evaluate_debit_completion's wing_strike
+        return center - width if side == fly.PUT else center + width
+    if kind == "bwb":  # engine.evaluate_roll's roll_strike
+        return center - width if side == fly.PUT else center + width
+    return center + width if side == fly.PUT else center - width  # engine.evaluate_completion
+
+
+def leg_symbol_columns(snapshot: dict, side: str, **strikes) -> dict:
+    """The `<role>_leg_symbol` columns for the given strikes (`center=`, `wing=`, `far=`,
+    `completing=`), read off the snapshot's own leg quotes -- the `streamer_symbol` the cache is
+    keyed by, the same quote the price came from. A strike with no quote in the snapshot is left
+    OUT rather than written as NULL, so a later stamp cannot erase an earlier one. See db.py's
+    column comment for why these exist (the streamer's leg subscription) and why the form is the
+    streamer symbol and never OCC."""
+    out: dict = {}
+    for role, strike in strikes.items():
+        if strike is None:
+            continue
+        q = engine.quote(snapshot, side, strike) or {}
+        sym = q.get("streamer_symbol")
+        if isinstance(sym, str) and sym.strip():
+            out[f"{role}_leg_symbol"] = sym.strip()
+    return out
+
+
 def regime_columns(prefix: str, snapshot: dict, params: dict, center: float | None = None) -> dict:
     """The regime columns for `prefix` ('entry' or 'completion') -- buckets AND the continuous
     measures behind them -- ready to fold straight into a `save_position` call. See
@@ -381,6 +427,16 @@ def process_snapshot(
                     "completion_latency_min": latency,
                     "spot_at_completion": snapshot.get("underlying_price"),
                     **regime_columns("completion", snapshot, params, center=pos.get("center")),
+                    # The iron's added legs are the OTHER type at the same strikes; the far one is the
+                    # only new strike (its centre leg is the mirror of one already recorded, and the
+                    # streamer's leg query has one completing column). Retired path; see above.
+                    **leg_symbol_columns(
+                        snapshot,
+                        fly.CALL if pos["side"] == fly.PUT else fly.PUT,
+                        completing=completing_strike(
+                            "short_vertical", pos["side"], pos["center"], pos["wing_width"]
+                        ),
+                    ),
                 },
             )
             journal(
@@ -423,6 +479,7 @@ def process_snapshot(
                 "completion_latency_min": latency,
                 "spot_at_completion": snapshot.get("underlying_price"),
                 **regime_columns("completion", snapshot, params, center=pos.get("center")),
+                **leg_symbol_columns(snapshot, pos["side"], completing=plan["long_strike"]),
             },
         )
         journal(
@@ -482,6 +539,7 @@ def process_snapshot(
                 "completion_latency_min": latency,
                 "spot_at_completion": snapshot.get("underlying_price"),
                 **regime_columns("completion", snapshot, params, center=pos.get("center")),
+                **leg_symbol_columns(snapshot, pos["side"], completing=plan["wing_strike"]),
             },
         )
         journal(
@@ -545,6 +603,7 @@ def process_snapshot(
                 "spot_at_completion": snapshot.get("underlying_price"),
                 "spot_at_roll": snapshot.get("underlying_price"),
                 **regime_columns("completion", snapshot, params, center=pos.get("center")),
+                **leg_symbol_columns(snapshot, pos["side"], completing=plan["roll_strike"]),
             },
         )
         journal(
@@ -649,6 +708,13 @@ def process_snapshot(
                     "completing_direction": plan["completing_direction"],
                     "underlying_at_entry": snapshot.get("underlying_price"),
                     **regime_columns("entry", snapshot, params, center=plan["center"]),
+                    **leg_symbol_columns(
+                        snapshot,
+                        plan["side"],
+                        **entry_leg_strikes(
+                            "short_vertical", plan["side"], plan["center"], plan["wing_width"]
+                        ),
+                    ),
                     # Full defined risk (-W) net of trading fees AND the worst-case exercise-
                     # assignment fee (both legs ITM) -- the uncompleted branch's honest worst case,
                     # not left blank until (if ever) it completes into a fly.
@@ -732,6 +798,13 @@ def process_snapshot(
                     "completing_direction": plan["completing_direction"],
                     "underlying_at_entry": snapshot.get("underlying_price"),
                     **regime_columns("entry", snapshot, params, center=plan["center"]),
+                    **leg_symbol_columns(
+                        snapshot,
+                        plan["side"],
+                        **entry_leg_strikes(
+                            "long_vertical", plan["side"], plan["center"], plan["wing_width"]
+                        ),
+                    ),
                     # Bounded at 0, never a -W tail (a long vertical can't lose more than its
                     # debit) -- but negative, since the debit paid is a real cost with no credit
                     # collected yet. See fly.position_floor's long_vertical branch for the
@@ -817,6 +890,13 @@ def process_snapshot(
                     "center_reason": plan["center_reason"],
                     "underlying_at_entry": snapshot.get("underlying_price"),
                     **regime_columns("entry", snapshot, params, center=plan["center"]),
+                    **leg_symbol_columns(
+                        snapshot,
+                        plan["side"],
+                        **entry_leg_strikes(
+                            "bwb", plan["side"], plan["center"], plan["wing_width"], plan["far_width"]
+                        ),
+                    ),
                     # The real, negative-capable tail -- (wing_width - far_width) -- net of fees
                     # and the full 4-contract assignment-fee reserve. Never reported as a fly's
                     # floor; see fly.position_floor's bwb branch.

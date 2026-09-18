@@ -225,3 +225,132 @@ def test_the_entry_quote_fetch_surfaces_the_streamer_symbol(monkeypatch):
     assert out[occ]["streamer_symbol"] == ".GE260717C360", (
         "discarding this here is what left 64 trades unmappable to the stream cache"
     )
+
+
+# --------------------------------------------------------------------------- the live ledger
+#
+# Earnings has no live loop. A live position is opened by hand (`tt.py execute_trade --live`, then
+# `db.py save_trade`), and until 2026-09-17 nothing on that path declared its legs -- or its spot --
+# to the producer. The paper loop's per-session write now carries the live ledger too, and the
+# producer re-runs every source each poll, so a hand-opened live trade is picked up with no restart.
+
+
+@pytest.fixture()
+def live_db(tmp_path, monkeypatch):
+    from cherrypick.earnings import db as live
+
+    path = tmp_path / "earnings_trades.db"
+    monkeypatch.setattr(live, "DB_PATH", path)
+    live.cmd_init_db(argparse.Namespace())
+    return path
+
+
+def _open_live_trade(order_id, symbol, legs):
+    from cherrypick.earnings import db as live
+
+    return live.cmd_save_trade(
+        _ns(
+            data=json.dumps(
+                {
+                    "order_id": order_id,
+                    "symbol": symbol,
+                    "strategy": "iron_fly",
+                    "expiration": "2026-09-19",
+                    "entry_credit": 2.0,
+                    "legs_json": json.dumps(legs),
+                }
+            )
+        )
+    )
+
+
+def _producer_view(sources):
+    out = []
+    for src in sources:
+        assert registry._is_single_select(src["query"]), "the producer only runs a single SELECT"
+        out.extend(registry._legs_from_source(src))
+    return sorted(out)
+
+
+def test_the_written_file_declares_both_ledgers(live_db):
+    stream_request.write(["AAPL"], db_path=db_paper.DB_PATH, live_db_path=live_db)
+    payload = json.loads((sr.requests_dir() / "earnings.json").read_text(encoding="utf-8"))
+    sources = payload["leg_sources"]
+    # The paper source is exactly what it was before 2026-09-17 -- first, and unchanged.
+    assert sources[0] == {"db": str(db_paper.DB_PATH), "query": stream_request.LEG_QUERY}
+    assert {s["db"] for s in sources[1:]} == {str(live_db)}
+    assert {s["query"] for s in sources[1:]} == {
+        stream_request.LEG_QUERY,
+        stream_request.LIVE_UNDERLYING_QUERY,
+    }
+
+
+def test_the_default_live_source_is_the_live_ledger():
+    from cherrypick.earnings import paths
+
+    live_sources = [s for s in stream_request.leg_sources(db_paper.DB_PATH) if s["db"] != str(db_paper.DB_PATH)]
+    assert live_sources and all(s["db"] == str(paths.live_db_path()) for s in live_sources)
+    assert str(paths.live_db_path()).endswith("earnings_trades.db")
+
+
+def test_the_producer_picks_up_a_hand_opened_live_position_and_its_spot(live_db):
+    """OCC order legs, as `execute_trade --live` returns them and a human passes them to save_trade:
+    no chain field copied along, so the streamer symbol comes from core's pinned converter."""
+    res = _open_live_trade(
+        "L1",
+        "AAPL",
+        [
+            {"symbol": "AAPL  260919C00190000", "action": "Sell to Open", "quantity": 1},
+            {"symbol": "AAPL  260919P00190000", "action": "Sell to Open", "quantity": 1},
+            {"symbol": "AAPL  260919C00200000", "action": "Buy to Open", "quantity": 1},
+            {"symbol": "AAPL  260919P00180000", "action": "Buy to Open", "quantity": 1},
+        ],
+    )
+    assert res["ok"]
+    stream_request.write([], db_path=db_paper.DB_PATH, live_db_path=live_db)
+    payload = json.loads((sr.requests_dir() / "earnings.json").read_text(encoding="utf-8"))
+
+    assert _producer_view(payload["leg_sources"]) == [
+        ".AAPL260919C190",
+        ".AAPL260919C200",
+        ".AAPL260919P180",
+        ".AAPL260919P190",
+        "AAPL",
+    ]
+
+
+def test_a_stamped_streamer_symbol_wins_over_the_conversion(live_db):
+    """When the chain's own symbol rode onto the leg (the paper harness's convention), it is the
+    one recorded -- the converter is the fallback for a bare order leg, not a second opinion."""
+    _open_live_trade(
+        "L1",
+        "MSFT",
+        [{"symbol": "MSFT  260919C00400000", "action": "Sell to Open", "quantity": 1, "streamer_symbol": ".MSFT260919C400"}],
+    )
+    view = _producer_view(stream_request.leg_sources(db_paper.DB_PATH, live_db))
+    assert view == [".MSFT260919C400", "MSFT"]
+
+
+def test_closing_a_live_position_drops_its_legs_and_its_spot(live_db):
+    from cherrypick.earnings import db as live
+
+    _open_live_trade("L1", "AAPL", [{"symbol": "AAPL  260919C00190000", "action": "Sell to Open", "quantity": 1}])
+    live.cmd_save_close(_ns(data=json.dumps({"order_id": "L1", "exit_debit": 1.0, "pnl": 100.0})))
+
+    assert _producer_view(stream_request.leg_sources(db_paper.DB_PATH, live_db)) == []
+    con = sqlite3.connect(live_db)
+    assert con.execute("SELECT COUNT(*) FROM open_leg_symbols").fetchone()[0] == 0
+
+
+def test_a_live_ledger_that_does_not_exist_yet_contributes_nothing(tmp_path):
+    """The paper loop writes the file every session whether or not a live trade was ever placed."""
+    missing = tmp_path / "never_created.db"
+    sources = stream_request.leg_sources(db_paper.DB_PATH, missing)
+    assert not missing.exists()
+    assert _producer_view(sources[1:]) == []
+
+
+def test_an_unconvertible_leg_never_blocks_the_trade(live_db):
+    res = _open_live_trade("L1", "AAPL", [{"symbol": "not-an-occ-symbol", "action": "Sell to Open", "quantity": 1}])
+    assert res["ok"]
+    assert _producer_view(stream_request.leg_sources(db_paper.DB_PATH, live_db)) == ["AAPL"]

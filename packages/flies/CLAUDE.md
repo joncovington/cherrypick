@@ -157,7 +157,16 @@ actually trading. The producer is the standalone `packages/streamer` daemon (the
 since the 2026-07-21 cutover; MEIC's in-module streamer is the disabled rollback path), subscribed to
 the union of every module's `state/stream_requests/` file — this module rewrites its own on every tick;
 open interest, and therefore GEX, exists only because the producer subscribes DXLink Summary for its
-ATM window.
+ATM window. **Each loop also declares its own open legs (2026-09-17).** Until then this module declared
+no legs on the grounds that its structures stay inside the ATM window — a hope, not a guarantee, and
+the sessions where spot leaves the window are exactly the ones where a short vertical needs its marks
+most. The ledger could not even name a position's contracts (symbol/centre/width/side only), so
+`fly_positions` gained four `*_leg_symbol` columns, stamped at entry and completion by both loops from
+the same leg quote the price came from (the DXLink streamer symbol, never OCC, since the producer
+subscribes leg cells verbatim); `stream_request.py` carries a `leg_sources` query over them, pointed at
+each loop's OWN ledger (`flies.json` → paper, `flies-live.json` → live), re-run by the producer every
+poll. A live position's completing leg is stamped when the resting order is PLACED, since it must stay
+quoted while the order works.
 
 The provider refuses rather than guesses. Stale quotes (older than `max_quote_age_seconds`), crossed
 quotes, a missing spot, an empty chain — each returns `{"ok": False, "reason": ...}`, which the loop

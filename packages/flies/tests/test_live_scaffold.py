@@ -640,6 +640,43 @@ def test_dry_run_places_nothing_live_but_records_nothing_either(live_conn):
     assert n == 0
 
 
+def _with_symbols(snap):
+    for side, right in (("puts", "P"), ("calls", "C")):
+        for strike, quote in snap[side].items():
+            quote["streamer_symbol"] = f".SPXW{DAY[2:].replace('-', '')}{right}{int(strike)}"
+    return snap
+
+
+def test_live_entry_and_resting_completion_stamp_the_legs_they_hold(live_conn):
+    """Shown to fail without the stamp. The live request file's leg query reads these columns,
+    so a live position with none is one the streamer cannot keep quoted after spot leaves the
+    ATM window. The completing leg is stamped when the RESTING order is placed, not on its fill:
+    the order works at the broker for the session and the leg it names must be quoted throughout."""
+    snap = _with_symbols(_snapshot())
+    tag = DAY[2:].replace("-", "")
+    assert (
+        live_loop.run_once(_loop_cfg(), snap, live_conn, FakeBroker(), live=True, log=lambda *_: None)[
+            "entered"
+        ]
+        == 1
+    )
+    row = live_conn.execute("SELECT * FROM fly_positions").fetchone()
+    assert row["center_leg_symbol"] == f".SPXW{tag}P{int(row['center'])}"
+    assert row["wing_leg_symbol"] == f".SPXW{tag}P{int(row['center'] - row['wing_width'])}"
+    assert row["completing_leg_symbol"] is None
+
+    # A confirmed entry gets its resting completion placed on the next tick -> stamped now.
+    live_conn.execute("DELETE FROM fly_positions")
+    live_conn.commit()
+    dbmod.save_position(live_conn, _open_entry_row(entry_fill_status="filled"))
+    broker = FakeBroker()
+    live_loop.run_once(_loop_cfg(), snap, live_conn, broker, live=True, log=lambda *_: None)
+    assert [p["spec"]["price_effect"] for p in broker.placed] == ["debit"]
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["completion_fill_status"] == "pending"
+    assert row["completing_leg_symbol"] == f".SPXW{tag}P{int(row['center'] + row['wing_width'])}"
+
+
 def test_live_mode_records_the_entry_with_its_order_id(live_conn):
     from cherrypick.flies import fly
 

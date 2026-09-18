@@ -751,7 +751,7 @@ def main(argv=None) -> int:
         hints = stream_window.hints_for_symbols(conn, symbols, today, base_width=base_width)
     except Exception:  # noqa: BLE001 — window escalation is advisory, never fatal to the loop
         hints = None
-    stream_request.register(config, window_hints=hints)
+    stream_request.register(config, window_hints=hints, db_path=args.db)
 
     if args.status:
         print(json.dumps(run_status(config, conn, cache_path=cache_path), indent=2, default=str))
