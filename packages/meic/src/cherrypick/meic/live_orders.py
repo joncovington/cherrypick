@@ -22,20 +22,9 @@ has no profit-target close" and the live-loop plan's rung-1 scope: no ORB, no mu
 
 from __future__ import annotations
 
-TICK = 0.05  # SPX/XSP/QQQ index-linked options tick in nickels at these price levels
+from cherrypick.core.structures import TICK, tick_ceil, tick_floor  # one rounding rule, suite-wide
 
-
-def tick_floor(price: float, tick: float = TICK) -> float:
-    """Round DOWN to the tick (asking for less credit — favors the fill, favors the house)."""
-    cents, t = int(round(price * 100)), int(round(tick * 100))
-    return (cents // t) * t / 100.0
-
-
-def tick_ceil(price: float, tick: float = TICK) -> float:
-    """Round UP to the tick (offering slightly more debit — keeps a cushioned close marketable;
-    flooring here would undo the whole point of `stop_limit_ratio`'s cushion)."""
-    cents, t = int(round(price * 100)), int(round(tick * 100))
-    return -(-cents // t) * t / 100.0
+__all__ = ["TICK", "tick_ceil", "tick_floor"]
 
 
 def _leg(rec: dict, action: str, quantity: int) -> dict:
