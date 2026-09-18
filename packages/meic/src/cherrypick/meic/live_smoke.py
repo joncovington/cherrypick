@@ -148,15 +148,10 @@ def evaluate(result: dict, expect_account: str | None) -> list[dict]:
 
 def _designated_account() -> str | None:
     try:
-        from cherrypick.core.auth import ACCOUNT_NUMBER, CredentialError
-
         from cherrypick.meic.credentials import store
 
-        try:
-            return store.get_secret(ACCOUNT_NUMBER)
-        except CredentialError:
-            return None
-    except Exception:
+        return store.designated_account()
+    except Exception:  # noqa: BLE001 -- a smoke test reports "none designated", never crashes here
         return None
 
 

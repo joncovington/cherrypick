@@ -54,6 +54,18 @@ class CredentialStore:
     def _entry(self, key: str) -> str:
         return f"{self.prefix}:{key}"
 
+    def designated_account(self) -> str | None:
+        """The account this consumer is designated to trade in when live (written by the
+        orchestrator's `cherrypick account --module <m> --set <last4>`), or None when nothing is
+        designated OR the keyring cannot be read. A live loop treats both as "not ready" and says
+        which in its readiness list, so the distinction is not lost -- it is just not this
+        function's to raise, which is why three modules had each spelled this try/except
+        themselves before 2026-09-18."""
+        try:
+            return self.get_secret(ACCOUNT_NUMBER)
+        except CredentialError:
+            return None
+
     def get_secret(self, key: str) -> str | None:
         try:
             value = keyring.get_password(self.service_name, self._entry(key))

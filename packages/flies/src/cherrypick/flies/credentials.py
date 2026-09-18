@@ -17,9 +17,7 @@ import json
 import sys
 
 from cherrypick.core.auth import (
-    ACCOUNT_NUMBER,
     SHARED_SERVICE,
-    CredentialError,
     CredentialStore,
     SessionManager,
     prompt_and_store,
@@ -41,10 +39,7 @@ def get_session():
 def designated_account() -> str | None:
     """The account this module is designated to trade in when live (set via
     `cherrypick account --module flies --set <last4>`), or None."""
-    try:
-        return store.get_secret(ACCOUNT_NUMBER)
-    except CredentialError:
-        return None
+    return store.designated_account()
 
 
 def main() -> None:
