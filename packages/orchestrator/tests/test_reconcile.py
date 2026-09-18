@@ -182,3 +182,24 @@ def test_query_broker_checks_every_account_and_masks(env, monkeypatch):
     assert accounts["****8569"]["open_count"] == 1
     # never leak a full account number anywhere in the returned structure
     assert "111114222" not in str(broker) and "222228569" not in str(broker)
+
+
+def test_balances_summary_matches_the_sdks_underscored_keys():
+    """Shown to fail on the hyphen-only filter: the SDK dumps `net_liquidating_value`, the wire
+    form is `net-liquidating-value`, and both must land in the summary."""
+    from cherrypick.orchestrator.reconcile import _balances_summary
+
+    sdk = {
+        "net_liquidating_value": "10.5",
+        "derivative_buying_power": "9",
+        "used_derivative_buying_power": "1",
+        "cash": "2",
+    }
+    assert _balances_summary(sdk) == {
+        "net_liquidating_value": "10.5",
+        "derivative_buying_power": "9",
+        "used_derivative_buying_power": "1",
+    }
+    wire = {"net-liquidating-value": "10.5", "buying-power": "9"}
+    assert _balances_summary(wire) == wire
+    assert _balances_summary(None) == {}
