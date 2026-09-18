@@ -98,3 +98,24 @@ def test_thread_local_builds_one_session_per_thread(store_with_secrets):
     # A distinct session per thread.
     assert factory.calls == 4
     assert len({id(v) for v in results.values()}) == 4
+
+
+# --------------------------------------------------------------------------- User-Agent (2026-09-17)
+def test_the_default_factory_brands_the_token_client_with_product_slash_version():
+    """tastytrade asks for `User-Agent: product/version` on the calls that mint tokens. Shown to
+    fail: with the stamp removed the client keeps httpx's own library string."""
+    from cherrypick.core.auth import session as session_mod
+
+    class _Client:
+        headers = {"User-Agent": "python-httpx/0.28.1", "Accept": "application/json"}
+
+    class _Session:
+        _client = _Client()
+
+    out = session_mod.brand_session(_Session())
+    ua = out._client.headers["User-Agent"]
+    product, _, version = ua.partition("/")
+    assert product == "cherrypick" and version and " " not in ua
+    assert out._client.headers["Accept"] == "application/json"  # nothing else touched
+    # a session with no HTTP client (a test double) is returned untouched, not rejected
+    assert session_mod.brand_session({"stub": True}) == {"stub": True}

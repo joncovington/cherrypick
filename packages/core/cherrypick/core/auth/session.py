@@ -27,10 +27,37 @@ from .credentials import CLIENT_SECRET, REFRESH_TOKEN, CredentialError, Credenti
 SessionFactory = Callable[[str, str, bool], Any]
 
 
+def user_agent() -> str:
+    """`product/version`, which tastytrade asks every client to send on the REST calls that mint
+    its tokens (developer.tastytrade.com/docs/concepts/streaming). The SDK sends none of its own,
+    so without this the broker sees `python-httpx/x.y` -- a library, not a product."""
+    try:
+        from importlib.metadata import version
+
+        return f"cherrypick/{version('cherrypick-core')}"
+    except Exception:  # noqa: BLE001 -- an uninstalled checkout still identifies itself
+        return "cherrypick/0"
+
+
+def brand_session(session: Any) -> Any:
+    """Stamp the suite's User-Agent on the session's HTTP client. Every token mint and refresh
+    goes through that one client (`Session.refresh` builds its /oauth/token request on it), so
+    stamping it once at construction covers them all; a session without such a client (a test
+    double) is returned untouched."""
+    client = getattr(session, "_client", None)
+    headers = getattr(client, "headers", None)
+    if headers is not None:
+        try:
+            headers["User-Agent"] = user_agent()
+        except Exception:  # noqa: BLE001 -- a header we cannot set must not cost the session
+            pass
+    return session
+
+
 def _default_session_factory(client_secret: str, refresh_token: str, is_test: bool) -> Any:
     from tastytrade import Session  # imported lazily so core imports without the broker SDK
 
-    return Session(client_secret, refresh_token, is_test=is_test)
+    return brand_session(Session(client_secret, refresh_token, is_test=is_test))
 
 
 class SessionManager:

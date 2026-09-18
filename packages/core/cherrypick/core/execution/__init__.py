@@ -129,6 +129,11 @@ class Broker:
         self._deploy_limit_pct = deploy_limit_pct
         self._session = None
         self._account = None
+        # Identities whose outcome is unknown (the submit raised AND the read-back failed), and
+        # identities the read-back later FOUND at the broker that no caller recorded. Either one
+        # refuses every further live submission from this adapter -- see `place`.
+        self._unresolved: dict[str, str] = {}
+        self._unrecorded: dict[str, dict] = {}
 
     # --- lifecycle -------------------------------------------------------------------------
     def run(self, coro):
@@ -190,11 +195,26 @@ class Broker:
         order may have filled in the meantime -- and, finding that identity, returns the placement
         as OK with the broker's order id and `recovered: True`. Only when nothing at the broker
         carries the identity is the raise reported as a failure. The identity rides on the result
-        as `external_identifier` so a ledger can store it beside the order id."""
+        as `external_identifier` so a ledger can store it beside the order id.
+
+        **An outcome that could not be read back holds the adapter (2026-09-17).** tastytrade's
+        retry protocol is: never resubmit until a read of today's orders has shown the identity
+        absent. When the submit raised and the read-back raised too, this adapter knows neither
+        whether the order exists nor that it does not, so it reports `{ok: False, uncertain:
+        True}` and REFUSES every later live submission until a read succeeds. If that read finds
+        the identity absent, the hold lifts and the new submission proceeds. If it finds the
+        order -- placed, and recorded nowhere, because the caller was told it failed -- the
+        adapter keeps refusing, naming the order, until `acknowledge()` is called for it: a live
+        order this process cannot account for is a human's call, and a loop that kept placing
+        beside it would be the duplicate the protocol exists to prevent. Dry runs are never
+        held; they place nothing."""
         if live:
             unmet = self._live_gates()
             if unmet:
                 return {"ok": False, "error": "live submission gated", "unmet_gates": list(unmet)}
+            held = self._resolve_held()
+            if held is not None:
+                return held
         ext = str(spec.get("external_identifier") or f"cp-{uuid.uuid4().hex}")
         spec = {**spec, "external_identifier": ext}
         try:
@@ -213,7 +233,7 @@ class Broker:
         except Exception as exc:  # noqa: BLE001 -- surfaced to the caller, session rebuilt next call
             self._reset()
             if live:
-                recovered = self._recover(ext)
+                recovered, read_ok = self._recover(ext)
                 if recovered is not None:
                     return {
                         "ok": True,
@@ -227,6 +247,18 @@ class Broker:
                             "order found at the broker by its identifier"
                         ),
                     }
+                if not read_ok:
+                    self._unresolved[ext] = f"{type(exc).__name__}: {exc}"
+                    return {
+                        "ok": False,
+                        "uncertain": True,
+                        "error": (
+                            f"{type(exc).__name__}: {exc}; and today's orders could not be read back, so "
+                            f"whether {ext} was placed is unknown -- held; no live submission until a read "
+                            "resolves it"
+                        ),
+                        "external_identifier": ext,
+                    }
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}", "external_identifier": ext}
         result["external_identifier"] = ext
         oid = order_id_of(result)
@@ -234,17 +266,69 @@ class Broker:
             result["order_id"] = oid
         return result
 
-    def _recover(self, external_identifier: str) -> dict | None:
-        """Today's order carrying `external_identifier`, or None. A recovery that itself fails
-        reports None -- the caller then sees the original failure, never a phantom success."""
+    def _recover(self, external_identifier: str) -> tuple[dict | None, bool]:
+        """`(today's order carrying the identity or None, whether the read succeeded)`. Absent
+        and unreadable are different answers -- only the first permits a resubmission -- so a
+        read that itself fails is `(None, False)`, never a phantom absence."""
         try:
             self._ensure()
-            for o in self.run(_broker.orders_today(self._account, self._session)):
-                if o.get("external_identifier") == external_identifier and o.get("order_id") is not None:
-                    return o
+            orders = self.run(_broker.orders_today(self._account, self._session))
         except Exception:  # noqa: BLE001
             self._reset()
+            return None, False
+        for o in orders:
+            if o.get("external_identifier") == external_identifier and o.get("order_id") is not None:
+                return o, True
+        return None, True
+
+    def _resolve_held(self) -> dict | None:
+        """Resolve every held identity against one read of today's orders. Returns the refusal
+        to hand back in place of a submission, or None when nothing holds the adapter."""
+        if self._unresolved:
+            try:
+                self._ensure()
+                orders = self.run(_broker.orders_today(self._account, self._session))
+            except Exception as exc:  # noqa: BLE001
+                self._reset()
+                return {
+                    "ok": False,
+                    "uncertain": True,
+                    "error": (
+                        f"prior submission(s) {sorted(self._unresolved)} unresolved and today's orders "
+                        f"still unreadable ({type(exc).__name__}: {exc}) -- refusing to submit"
+                    ),
+                    "unresolved": sorted(self._unresolved),
+                }
+            by_ext = {o.get("external_identifier"): o for o in orders if o.get("order_id") is not None}
+            for ext in list(self._unresolved):
+                found = by_ext.get(ext)
+                if found is not None:
+                    self._unrecorded[ext] = found
+                del self._unresolved[ext]
+        if self._unrecorded:
+            listing = ", ".join(f"{ext} -> order {o.get('order_id')}" for ext, o in self._unrecorded.items())
+            return {
+                "ok": False,
+                "unrecorded": {ext: str(o.get("order_id")) for ext, o in self._unrecorded.items()},
+                "error": (
+                    "prior submission(s) reported failed were FOUND at the broker, recorded nowhere: "
+                    f"{listing} -- refusing every live submission until acknowledged"
+                ),
+            }
         return None
+
+    def acknowledge(self, external_identifier: str) -> bool:
+        """Lift the hold on an unrecorded order a caller has now accounted for (recorded, or
+        cancelled at the broker by a human). True if it was held."""
+        return self._unrecorded.pop(external_identifier, None) is not None
+
+    @property
+    def held(self) -> dict:
+        """What currently refuses live submissions: `{unresolved: [...], unrecorded: {ext: order_id}}`."""
+        return {
+            "unresolved": sorted(self._unresolved),
+            "unrecorded": {ext: str(o.get("order_id")) for ext, o in self._unrecorded.items()},
+        }
 
     def orders_today(self) -> list[dict]:
         """Every order placed today, terminal ones included, each with its external identifier."""
