@@ -9,9 +9,10 @@ description = "SPX daily-laddered put broken-wing butterfly paper module with a 
 requires-python = ">=3.11"
 # cherrypick-core is a sibling in-repo package (packages/core), installed editable alongside this one.
 # Not on PyPI (Private :: Do Not Upload) -- packages/core must be installed first, or resolution fails.
-# Deliberately NO broker dependency: paper-only, credential-free, pure stream-cache consumer (the
-# calendars/pmcc/curve posture) -- no keyring, no tastytrade, no REST.
-dependencies = ["cherrypick-core"]
+# keyring + tastytrade exist for the LIVE loop only (live_loop.py / broker_cli.py / credentials.py,
+# 2026-09-18). The paper loop imports none of them and stays the credential-free, pure stream-cache
+# consumer it was (the calendars/pmcc/curve posture); a paper tick never touches a broker.
+dependencies = ["keyring>=24", "cherrypick-core", "tastytrade>=12.4.3"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]

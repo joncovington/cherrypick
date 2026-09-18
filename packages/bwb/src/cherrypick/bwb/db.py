@@ -254,6 +254,43 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     "bwb_positions": {
         "experiment_id": "TEXT",  # The base book an advised row shadows, stamped at entry from the session decision (2026-09-17): the tag no longer carries it, and after the session the decision file is gone. Management prefers this over the configured advice.base_book, so a twin of a non-default base keeps its rules.
         "advice_base": "TEXT",
+        # ---- LIVE scaffold (2026-09-18). Same schema on both ledgers; paper rows leave all of
+        # these NULL. The live ledger is `live_trades.db`, a separate file (`live_db_path`).
+        # Entry order: placed with a pending marker, confirmed by the broker (actual credit
+        # overwrites entry_credit), or terminal (status -> 'cancelled', never established).
+        "entry_order_id": "TEXT",
+        "entry_external_id": "TEXT",
+        "entry_fill_status": "TEXT",
+        "entry_limit": "REAL",
+        "entry_placed_at": "TEXT",
+        "entry_live_floor": "REAL",
+        "entry_reprice_count": "INTEGER",
+        "entry_mid_at_submit": "REAL",
+        # Add-on order: recorded on CONFIRMATION only (the meic rule). While pending, the plan it
+        # was placed for is stashed here; a fill writes the legs through book.fire_addon with the
+        # actual credit, a terminal clears the marker and the arm stays live.
+        "addon_order_id": "TEXT",
+        "addon_external_id": "TEXT",
+        "addon_fill_status": "TEXT",
+        "addon_placed_at": "TEXT",
+        "addon_live_floor": "REAL",
+        "addon_reprice_count": "INTEGER",
+        "addon_mid_at_submit": "REAL",
+        "addon_attempts": "INTEGER",
+        "pending_addon_json": "TEXT",
+        # Costs on a live row: the broker's own dry-run fee estimate when it gave one
+        # (`fees_source` = 'broker_estimate'), the schedule otherwise ('modeled'), and after the
+        # morning reconciliation against real transactions, 'reconciled' -- with the modeled
+        # values snapshotted once so nothing is lost.
+        "entry_fee_estimate": "REAL",
+        "addon_fee_estimate": "REAL",
+        "fees_source": "TEXT",
+        "modeled_fees": "REAL",
+        "modeled_gross_pnl": "REAL",
+        "reconciled_at": "TEXT",
+        # Which source the settlement print came from ('official' for a hand-supplied --price,
+        # else the core.settlement source tag). A live row never settles on a provisional one.
+        "settlement_source": "TEXT",
     },
     "bwb_legs": {},
     "bwb_marks": {},
@@ -271,6 +308,15 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
 def default_db_path() -> str:
     home = os.environ.get("CHERRYPICK_HOME") or os.path.join(os.path.expanduser("~"), ".cherrypick")
     return os.path.join(home, "data", "bwb", "paper_trades.db")
+
+
+def live_db_path() -> str:
+    """The LIVE ledger -- a separate file, same schema, never read by a paper surface (every
+    paper reader resolves `paper_trades.db` by name). Never resolved from `BWB_DB_PATH`: that
+    override points paper somewhere else, and a live loop that honoured it could be told to write
+    real fills into a paper file. The orchestrator's `live_db` key points here for `report --live`."""
+    home = os.environ.get("CHERRYPICK_HOME") or os.path.join(os.path.expanduser("~"), ".cherrypick")
+    return os.path.join(home, "data", "bwb", "live_trades.db")
 
 
 _store = _ledgerstore.LedgerStore("bwb_", _SCHEMA, _ADDED_COLUMNS)
@@ -356,3 +402,79 @@ def trigger_ticks_for_cohort(conn, entry_session: str, structure_signature: str)
             (entry_session, structure_signature),
         )
     ]
+
+
+# --------------------------------------------------------------------------- live-ledger readers
+def pending_entries(conn) -> list[dict]:
+    """Positions whose entry order is still working at the broker."""
+    return [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM bwb_positions WHERE entry_fill_status = 'pending' ORDER BY entry_placed_at"
+        )
+    ]
+
+
+def pending_addons(conn) -> list[dict]:
+    """Open positions whose add-on order is still working at the broker."""
+    return [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM bwb_positions WHERE addon_fill_status = 'pending' AND status = 'open' "
+            "ORDER BY addon_placed_at"
+        )
+    ]
+
+
+def known_order_ids(conn) -> list[str]:
+    """Every broker order id this ledger has ever recorded, entry or add-on -- the set the orphan
+    sweep compares the broker's working orders against."""
+    rows = conn.execute(
+        "SELECT entry_order_id, addon_order_id FROM bwb_positions "
+        "WHERE entry_order_id IS NOT NULL OR addon_order_id IS NOT NULL"
+    ).fetchall()
+    return [str(v) for r in rows for v in (r[0], r[1]) if v is not None]
+
+
+def established_today(conn, book: str, day: str) -> int:
+    """Structures counted against `max_structures_per_day`: today's rows for the book that were
+    NOT cancelled. A cancelled entry never established anything and does not spend the budget."""
+    return int(
+        conn.execute(
+            "SELECT COUNT(*) FROM bwb_positions WHERE book = ? AND entry_session = ? AND status != 'cancelled'",
+            (book, day),
+        ).fetchone()[0]
+    )
+
+
+def settled_net_for_session(conn, day: str) -> float:
+    """Net (gross minus fees) of every position CLOSED on `day` -- the settled-net breaker's input.
+    On a hold-to-expiry ladder this only moves on a settlement day."""
+    row = conn.execute(
+        "SELECT COALESCE(SUM(COALESCE(gross_pnl, 0) - COALESCE(fees, 0)), 0) FROM bwb_positions "
+        "WHERE closed_session = ? AND status = 'closed'",
+        (day,),
+    ).fetchone()
+    return float(row[0] or 0.0)
+
+
+def open_marked_loss(conn) -> float | None:
+    """The sum, over open positions, of each one's latest usable mark-to-market loss in dollars
+    (positive = losing), or None when any open position has no usable mark yet -- a breaker that
+    cannot read every position must not report a number that reads as 'fine'."""
+    total = 0.0
+    for pos in open_positions(conn):
+        # The latest tick's rows, one per leg, all carrying the position-level close_cost; any
+        # unusable leg row at that tick means the position could not be priced this tick.
+        r = conn.execute(
+            "SELECT MIN(usable) AS usable, MAX(close_cost) AS close_cost FROM bwb_marks "
+            "WHERE position_id = ? AND marked_at = "
+            "(SELECT MAX(marked_at) FROM bwb_marks WHERE position_id = ?)",
+            (pos["position_id"], pos["position_id"]),
+        ).fetchone()
+        if r is None or r["usable"] is None or not r["usable"] or r["close_cost"] is None:
+            return None
+        credit = float(pos.get("entry_credit") or 0.0) + float(pos.get("addon_credit") or 0.0)
+        qty = int(pos.get("quantity") or 1)
+        total += (float(r["close_cost"]) - credit) * 100.0 * qty
+    return total

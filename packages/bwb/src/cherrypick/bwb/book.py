@@ -36,9 +36,16 @@ def enter_position(
     entry_session: str,
     advice_params: dict | None,
     experiment_id: str | dict | None = None,
+    position_id_override: str | None = None,
+    extra: dict | None = None,
 ) -> dict | None:
-    """Open one book's base BWB from a plan. Idempotent per position_id."""
-    pid = position_id(plan["symbol"], book, entry_session)
+    """Open one book's base BWB from a plan. Idempotent per position_id.
+
+    `position_id_override` and `extra` exist for the live ledger (2026-09-18): a live row's id
+    carries an attempt suffix (a cancelled entry can be retried the same session) and travels to
+    the broker as the order's external identifier, and the row is born with its pending-order
+    marker. Both default to today's paper behaviour exactly."""
+    pid = position_id_override or position_id(plan["symbol"], book, entry_session)
     if conn.execute("SELECT 1 FROM bwb_positions WHERE position_id = ?", (pid,)).fetchone():
         return None
     quantity = int((config.get("defaults") or {}).get("quantity", 1))
@@ -88,6 +95,7 @@ def enter_position(
             "below_flip_seen": 0,
             "status": "open",
             "fees": cost["total"],
+            **(extra or {}),
         },
     )
     for leg in plan["legs"]:
