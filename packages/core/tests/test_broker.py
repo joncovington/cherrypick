@@ -409,6 +409,7 @@ def test_order_status_reports_filled():
         "cancellable": False,
         "price": "1.23",
         "filled": True,
+        "external_identifier": None,
     }
 
 
@@ -449,8 +450,8 @@ def test_working_orders_serializes_live_orders():
 
     out = _run(broker.working_orders(_Acct(), "sess"))
     assert out == [
-        {"order_id": 11, "status": "Live", "underlying_symbol": "XSP"},
-        {"order_id": 12, "status": "Received", "underlying_symbol": "XSP"},
+        {"order_id": 11, "status": "Live", "external_identifier": None, "underlying_symbol": "XSP"},
+        {"order_id": 12, "status": "Received", "external_identifier": None, "underlying_symbol": "XSP"},
     ]
 
 
@@ -477,7 +478,9 @@ def test_working_orders_drops_terminal_orders():
             ]
 
     out = _run(broker.working_orders(_Acct(), "sess"))
-    assert out == [{"order_id": 11, "status": "Live", "underlying_symbol": "XSP"}]
+    assert out == [
+        {"order_id": 11, "status": "Live", "external_identifier": None, "underlying_symbol": "XSP"}
+    ]
 
 
 # --------------------------------------------------------------------------- transaction_history
@@ -568,7 +571,14 @@ def test_wait_for_order_alerts_returns_only_matching_orders():
     streamer_cls = lambda session: FakeAlertStreamer(session, orders=orders)  # noqa: E731
     out = _run(broker.wait_for_order_alerts("sess", "acct", {"11"}, 1.0, streamer_cls=streamer_cls))
     assert out == [
-        {"order_id": 11, "status": "Filled", "cancellable": False, "price": "1.05", "filled": True}
+        {
+            "order_id": 11,
+            "status": "Filled",
+            "cancellable": False,
+            "price": "1.05",
+            "filled": True,
+            "external_identifier": None,
+        }
     ]
 
 
@@ -642,3 +652,10 @@ def test_every_live_submit_in_the_suite_goes_through_core_broker():
             if pattern.search(line) and not line.lstrip().startswith("#"):
                 offenders.append(f"{src.relative_to(repo)}:{lineno}: {line.strip()}")
     assert not offenders, "live submit outside core.broker:\n" + "\n".join(offenders)
+
+
+def test_build_order_passes_the_external_identifier_through():
+    ns = _fake_order_ns()
+    order = broker.build_order({"legs": [_leg()], "external_identifier": "cp-abc"}, order_ns=ns)
+    assert order.external_identifier == "cp-abc"
+    assert not hasattr(broker.build_order({"legs": [_leg()]}, order_ns=ns), "external_identifier")

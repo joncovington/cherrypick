@@ -632,6 +632,24 @@ def test_every_live_tick_marks_each_open_position_at_mid(live_conn):
     assert live_conn.execute("SELECT COUNT(*) FROM fly_live_marks").fetchone()[0] == before
 
 
+def test_live_orders_carry_the_ledger_key_as_their_external_identifier(live_conn):
+    """Shown to fail without it: the entry order's `external_identifier` is the row's position id
+    and the resting completion's is that id suffixed, so the broker's copy of each order names
+    the row that recorded it -- the seam recovers an uncertain submit by it, and an orphan the
+    sweep finds is matchable to its row rather than a mystery."""
+    broker = FakeBroker()
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    pid = live_conn.execute("SELECT position_id FROM fly_positions").fetchone()[0]
+    assert broker.placed[0]["spec"]["external_identifier"] == pid
+
+    live_conn.execute("DELETE FROM fly_positions")
+    live_conn.commit()
+    dbmod.save_position(live_conn, _open_entry_row(entry_fill_status="filled"))
+    broker = FakeBroker()
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    assert [p["spec"]["external_identifier"] for p in broker.placed] == ["E1-completion"]
+
+
 def test_live_mode_records_the_entry_with_its_order_id(live_conn):
     from cherrypick.flies import fly
 

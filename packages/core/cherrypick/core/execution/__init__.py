@@ -38,6 +38,7 @@ from importing it. This layer is for loops the desk exists to keep separate from
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections.abc import Callable, Iterable
 from datetime import date
 from typing import Any
@@ -177,11 +178,25 @@ class Broker:
     def place(self, spec: dict, live: bool) -> dict:
         """Build and submit `spec` (dry-run unless `live`). A live submit re-checks the module's
         gates first. The result is core.broker's, with `order_id` extracted when one came back.
-        Any broker exception is surfaced as `{ok: False, error}` and the session rebuilt next call."""
+        Any broker exception is surfaced as `{ok: False, error}` and the session rebuilt next call.
+
+        **Every live submission carries an `external_identifier`, and an uncertain outcome is
+        recovered by it (2026-09-17).** tastytrade does not deduplicate retries and has no
+        idempotency header: a timeout or a 5xx after the broker has accepted the order looks, from
+        here, exactly like a failure before it, and a caller that resubmits on that has placed the
+        same order twice. So the seam stamps its own identity on the order before submitting (the
+        spec's `external_identifier` if the module supplied one, else one minted here), and when
+        the live submit raises it reads back today's orders -- terminal ones included, since the
+        order may have filled in the meantime -- and, finding that identity, returns the placement
+        as OK with the broker's order id and `recovered: True`. Only when nothing at the broker
+        carries the identity is the raise reported as a failure. The identity rides on the result
+        as `external_identifier` so a ledger can store it beside the order id."""
         if live:
             unmet = self._live_gates()
             if unmet:
                 return {"ok": False, "error": "live submission gated", "unmet_gates": list(unmet)}
+        ext = str(spec.get("external_identifier") or f"cp-{uuid.uuid4().hex}")
+        spec = {**spec, "external_identifier": ext}
         try:
             self._ensure()
             order = _broker.build_order(spec)
@@ -197,11 +212,48 @@ class Broker:
             )
         except Exception as exc:  # noqa: BLE001 -- surfaced to the caller, session rebuilt next call
             self._reset()
-            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            if live:
+                recovered = self._recover(ext)
+                if recovered is not None:
+                    return {
+                        "ok": True,
+                        "dry_run": False,
+                        "recovered": True,
+                        "order_id": str(recovered["order_id"]),
+                        "external_identifier": ext,
+                        "response": recovered,
+                        "error": (
+                            f"submit raised {type(exc).__name__}: {exc}; "
+                            "order found at the broker by its identifier"
+                        ),
+                    }
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}", "external_identifier": ext}
+        result["external_identifier"] = ext
         oid = order_id_of(result)
         if oid is not None:
             result["order_id"] = oid
         return result
+
+    def _recover(self, external_identifier: str) -> dict | None:
+        """Today's order carrying `external_identifier`, or None. A recovery that itself fails
+        reports None -- the caller then sees the original failure, never a phantom success."""
+        try:
+            self._ensure()
+            for o in self.run(_broker.orders_today(self._account, self._session)):
+                if o.get("external_identifier") == external_identifier and o.get("order_id") is not None:
+                    return o
+        except Exception:  # noqa: BLE001
+            self._reset()
+        return None
+
+    def orders_today(self) -> list[dict]:
+        """Every order placed today, terminal ones included, each with its external identifier."""
+        try:
+            self._ensure()
+            return self.run(_broker.orders_today(self._account, self._session))
+        except Exception:
+            self._reset()
+            raise
 
     def replace(self, order_id: str, spec: dict, live: bool) -> dict:
         """Replace a working order with `spec`, on the same gated, governed path as `place`."""

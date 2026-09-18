@@ -466,6 +466,9 @@ def place_resting_completion(conn, pos: dict, snapshot: dict, params: dict, brok
         log(f"completion for {pos['position_id']} not placeable yet: {exc}")
         return pos
 
+    # The completion's identity is the position's own, suffixed, for the same reason the entry's is
+    # its position id: recovered by it in the seam, matchable by it in the orphan sweep.
+    spec["external_identifier"] = f"{pos['position_id']}-completion"
     res = broker.place(spec, live=live)
     log(f"completion order ({'LIVE' if live else 'dry-run'}): {json.dumps(res, default=str)[:200]}")
     if res.get("ok") and live and res.get("order_id"):
@@ -887,16 +890,22 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                     spec["price"] = new_price
                     entry_price = new_price
             if spec is not None:
+                # Per-attempt unique (paper's book.py convention: microsecond timestamp), not
+                # day+arm+center alone — a retry at the SAME centre after an earlier rejection
+                # used to collide on the same position_id, and the UPSERT silently overwrote
+                # the rejected attempt's row, erasing it from the ledger entirely (surfaced
+                # 2026-07-30: the orphan sweep kept re-flagging an order the ledger used to
+                # know about, because the row that recorded it no longer existed).
+                #
+                # Minted BEFORE the submit and sent as the order's `external_identifier`
+                # (2026-09-17): the broker's copy of the order then carries the ledger's own key,
+                # so an uncertain outcome is recovered by it in the seam rather than re-placed,
+                # and an orphan the sweep finds can be matched to the row that meant to record it.
+                pid = f"live-{arm}-{int(plan['center'])}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}"
+                spec["external_identifier"] = pid
                 res = broker.place(spec, live=live)
                 log(f"entry order ({'LIVE' if live else 'dry-run'}): {json.dumps(res, default=str)[:200]}")
                 if res.get("ok") and live and res.get("order_id"):
-                    # Per-attempt unique (paper's book.py convention: microsecond timestamp), not
-                    # day+arm+center alone — a retry at the SAME centre after an earlier rejection
-                    # used to collide on the same position_id, and the UPSERT silently overwrote
-                    # the rejected attempt's row, erasing it from the ledger entirely (surfaced
-                    # 2026-07-30: the orphan sweep kept re-flagging an order the ledger used to
-                    # know about, because the row that recorded it no longer existed).
-                    pid = f"live-{arm}-{int(plan['center'])}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}"
                     # Worst-case dollar outcome as of THIS OPEN credit spread — full defined risk
                     # (-W), net of trading fees AND the worst-case exercise-assignment fee (both
                     # legs ITM), so the dashboard's Floor column has a real number for an

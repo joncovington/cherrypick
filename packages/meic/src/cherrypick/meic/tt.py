@@ -29,6 +29,7 @@ import os
 import sqlite3
 import sys
 import time
+import uuid
 from datetime import date, datetime
 from typing import Any
 
@@ -1029,16 +1030,23 @@ async def cmd_execute_trade(args) -> dict:
             "ok": False,
             "error": "Live trading is disabled. Set enable_live_trading=true in config.json.",
         }
+    spec = json.loads(args.order)
+    # The submission's own identity (2026-09-17): tastytrade does not deduplicate retries, and a
+    # human re-runs this command on an error. Sent as the order's external identifier and reported
+    # back; a timeout after the broker accepted is recovered below by reading today's orders for
+    # it, never re-placed. (The live loop goes through core.execution.Broker, which does the same.)
+    ext = str(spec.get("external_identifier") or f"meic-{uuid.uuid4().hex}")
+    spec["external_identifier"] = ext
+    dry_run = getattr(args, "dry_run", True) or not _live_trading_enabled()
+    account = None
     try:
-        spec = json.loads(args.order)
         account = await _get_account(getattr(args, "account_number", None))
         order = _build_order(spec)
-        dry_run = getattr(args, "dry_run", True) or not _live_trading_enabled()
         # cherrypick.core.broker owns the preflight-then-optionally-live submission core; it
         # places a live order only when live=True, the dry-run preflight had no errors, and (when
         # configured) the account deploy-limit governor allows it. account_deploy_limit_pct defaults
         # to 0/off; a positive value caps deployed buying power at that % of account capacity.
-        return await _broker.place_order(
+        result = await _broker.place_order(
             account,
             get_session(),
             order,
@@ -1046,8 +1054,27 @@ async def cmd_execute_trade(args) -> dict:
             serialize=_serialize,
             deploy_limit_pct=_load_config().get("account_deploy_limit_pct") or None,
         )
+        result["external_identifier"] = ext
+        return result
     except Exception as exc:
-        return _error(exc)
+        if not dry_run and account is not None:
+            try:
+                for o in await _broker.orders_today(account, get_session()):
+                    if o.get("external_identifier") == ext and o.get("order_id") is not None:
+                        return {
+                            "ok": True,
+                            "dry_run": False,
+                            "recovered": True,
+                            "order_id": str(o["order_id"]),
+                            "external_identifier": ext,
+                            "response": o,
+                            "error": f"submit raised {type(exc).__name__}: {exc}; order found at the broker by its identifier",
+                        }
+            except Exception:  # noqa: BLE001 -- a failed recovery reports the original error
+                pass
+        out = _error(exc)
+        out["external_identifier"] = ext
+        return out
 
 
 async def cmd_adjust_order(args) -> dict:
