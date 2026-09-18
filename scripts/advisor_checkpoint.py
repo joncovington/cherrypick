@@ -146,9 +146,9 @@ Proposal kinds:
      Your reading of an experiment's numbers. Cite the specific checks in the pack's
      `qualification` / `arm_readings` — the numbers are computed for you, and a recommendation that
      ignores them is worth nothing. A `kill` is ACTIONED the moment it is admitted: the experiment
-     stops, its queued successor (if any) activates, and tomorrow's artifact is issued for the
-     successor — so recommend it only when the experiment's own kill rule or the numbers call for
-     it, never as a nudge for a human. `keep` and `promote` are recorded only.
+     stops and tomorrow's artifact is re-issued without it (experiments run concurrently, so
+     nothing is waiting behind it) — so recommend it only when the experiment's own kill rule or
+     the numbers call for it, never as a nudge for a human. `keep` and `promote` are recorded only.
 
 If you have nothing worth proposing, return an empty `proposals` list. A quiet day honestly
 described is more useful than a proposal manufactured to fill the slot.
@@ -183,8 +183,12 @@ Your job:
 2. Judge every ACTIVE experiment against its control, and issue a `verdict` for any that has
    accumulated enough evidence. Cite the qualification checks you were given. An experiment below
    the sample and day thresholds is UNDERPOWERED — say that rather than passing or failing it.
-3. Design at most one new experiment per module, strictly inside the provided `bounds`. State a
-   hypothesis and a success metric you could later be judged against.
+3. Design new experiments strictly inside the provided `bounds`, each with a hypothesis and a
+   success metric you could later be judged against. Experiments run CONCURRENTLY (since
+   2026-09-17): every one you admit gets its own `advised:<name>` book beside the same control,
+   so two ideas on one module need not wait for each other -- but each book is one lever, so keep
+   every experiment to the single parameter its hypothesis names, and do not propose an idea
+   twice under two names. Give each a short, distinct `name`: it becomes the book's tag.
 4. Where the interesting idea does not fit in bounds, say it as `creative`. Reach as far as you
    like there — a new arm, a new strategy family, a whole new module — with a ready-to-paste spec.
 {_DATA_LITERACY}
