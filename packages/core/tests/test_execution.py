@@ -402,3 +402,68 @@ def test_a_dry_run_never_recovers(monkeypatch):
     monkeypatch.setattr(_broker, "build_order", lambda spec: dict(spec))
     out = _adapter(monkeypatch).place({"legs": []}, live=False)
     assert out["ok"] is False and calls == []
+
+
+# ---------------------------------------------------------------- unreadable outcome holds (2026-09-17)
+async def _ok_place(account, session, order, *, live, serialize, deploy_limit_pct, get_balances=None):
+    return {"ok": True, "dry_run": not live, "response": {"order": {"id": 7}}}
+
+
+def _held_adapter(monkeypatch, at_broker: list[dict], read_ok: list[bool]):
+    """A broker whose submit always raises after (maybe) accepting, and whose orders read
+    succeeds or fails per `read_ok` (consumed left to right, last value repeats)."""
+    placed = []
+
+    async def submit(account, session, order, *, live, serialize, deploy_limit_pct, get_balances=None):
+        placed.append(order)
+        raise TimeoutError("read timed out")
+
+    async def today(account, session):
+        ok = read_ok.pop(0) if len(read_ok) > 1 else read_ok[0]
+        if not ok:
+            raise ConnectionError("broker unreachable")
+        return list(at_broker)
+
+    monkeypatch.setattr(_broker, "place_order", submit)
+    monkeypatch.setattr(_broker, "orders_today", today)
+    monkeypatch.setattr(_broker, "build_order", lambda spec: dict(spec))
+    return _adapter(monkeypatch), placed
+
+
+def test_an_outcome_that_cannot_be_read_back_is_uncertain_and_holds_every_later_live_submit(monkeypatch):
+    """Shown to fail: without the hold the second call submits a NEW order while the first one's
+    fate is unknown -- the exact blind resubmission tastytrade's retry protocol forbids."""
+    adapter, placed = _held_adapter(monkeypatch, at_broker=[], read_ok=[False, False, False])
+    first = adapter.place({"legs": [], "external_identifier": "ext-1"}, live=True)
+    assert first["ok"] is False and first["uncertain"] is True and "ext-1" in first["error"]
+    second = adapter.place({"legs": [], "external_identifier": "ext-2"}, live=True)
+    assert second["ok"] is False and second["uncertain"] is True and second["unresolved"] == ["ext-1"]
+    assert len(placed) == 1  # ext-2 was never sent
+    assert adapter.held == {"unresolved": ["ext-1"], "unrecorded": {}}
+    # a dry run is never held -- it places nothing
+    monkeypatch.setattr(_broker, "place_order", _ok_place)
+    assert adapter.place({"legs": []}, live=False)["ok"] is True
+
+
+def test_a_read_that_shows_the_identity_absent_lifts_the_hold_and_the_new_submit_proceeds(monkeypatch):
+    adapter, placed = _held_adapter(monkeypatch, at_broker=[], read_ok=[False, True])
+    adapter.place({"legs": [], "external_identifier": "ext-1"}, live=True)
+    monkeypatch.setattr(_broker, "place_order", _ok_place)
+    out = adapter.place({"legs": [], "external_identifier": "ext-2"}, live=True)
+    assert out["ok"] is True and out["order_id"] == "7" and out["external_identifier"] == "ext-2"
+    assert adapter.held == {"unresolved": [], "unrecorded": {}}
+
+
+def test_a_read_that_finds_the_prior_order_refuses_until_acknowledged(monkeypatch):
+    at_broker = [{"order_id": 99, "status": "Live", "external_identifier": "ext-1", "terminal": False}]
+    adapter, placed = _held_adapter(monkeypatch, at_broker=at_broker, read_ok=[False, True])
+    adapter.place({"legs": [], "external_identifier": "ext-1"}, live=True)
+    monkeypatch.setattr(_broker, "place_order", _ok_place)
+    out = adapter.place({"legs": [], "external_identifier": "ext-2"}, live=True)
+    assert out["ok"] is False and out["unrecorded"] == {"ext-1": "99"} and "order 99" in out["error"]
+    again = adapter.place({"legs": [], "external_identifier": "ext-3"}, live=True)
+    assert again["ok"] is False and again["unrecorded"] == {"ext-1": "99"}
+    assert len(placed) == 1
+    assert adapter.acknowledge("ext-1") is True and adapter.acknowledge("ext-1") is False
+    out = adapter.place({"legs": [], "external_identifier": "ext-4"}, live=True)
+    assert out["ok"] is True and out["order_id"] == "7"
