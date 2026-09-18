@@ -592,6 +592,46 @@ def test_live_entry_and_resting_completion_stamp_the_legs_they_hold(live_conn):
     assert row["completing_leg_symbol"] == f".SPXW{tag}P{int(row['center'] + row['wing_width'])}"
 
 
+def test_every_live_tick_marks_each_open_position_at_mid(live_conn):
+    """Shown to fail without the recorder: one row per open position per tick, marked at the
+    cached mids, carrying the tick's open worst-case exposure and the resting limit while a
+    completion works; nothing when nothing is open; nothing for a position with an unquoted leg."""
+    from cherrypick.flies import fly
+
+    snap = _snapshot()
+    assert (
+        live_loop.run_once(_loop_cfg(), snap, live_conn, FakeBroker(), live=True, log=lambda *_: None)[
+            "entered"
+        ]
+        == 1
+    )
+    rows = live_conn.execute("SELECT * FROM fly_live_marks").fetchall()
+    assert len(rows) == 1
+    pos = dict(live_conn.execute("SELECT * FROM fly_positions").fetchone())
+    expected = fly.mark_pnl(pos, lambda side, strike: engine.quote(snap, side, strike))
+    assert rows[0]["mark_pnl"] == pytest.approx(round(expected, 2))
+    assert rows[0]["open_margin"] == pytest.approx(round(live_loop.open_margin_dollars([pos]), 2))
+    assert rows[0]["kind"] == "short_vertical" and rows[0]["resting_limit"] is None
+
+    # a working completion carries its limit on the mark
+    live_conn.execute("DELETE FROM fly_positions")
+    live_conn.commit()
+    dbmod.save_position(live_conn, _open_entry_row(entry_fill_status="filled"))
+    live_loop.run_once(
+        _loop_cfg(), _snapshot(now_min=11 * 60 + 1), live_conn, FakeBroker(), live=True, log=lambda *_: None
+    )
+    latest = live_conn.execute("SELECT * FROM fly_live_marks ORDER BY id DESC LIMIT 1").fetchone()
+    assert latest["position_id"] == "E1"
+    assert latest["resting_limit"] is not None and latest["resting_limit"] > 0
+
+    # an unquoted leg -> no mark this tick, never a zero
+    thin = _snapshot(now_min=11 * 60 + 2)
+    thin["puts"].pop(7490.0)
+    before = live_conn.execute("SELECT COUNT(*) FROM fly_live_marks").fetchone()[0]
+    live_loop.run_once(_loop_cfg(), thin, live_conn, FakeBroker(), live=True, log=lambda *_: None)
+    assert live_conn.execute("SELECT COUNT(*) FROM fly_live_marks").fetchone()[0] == before
+
+
 def test_live_mode_records_the_entry_with_its_order_id(live_conn):
     from cherrypick.flies import fly
 
