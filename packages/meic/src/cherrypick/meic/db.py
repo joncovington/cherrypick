@@ -332,13 +332,17 @@ _ADDED_TRADE_COLUMNS = {
     "price_action_signal": "TEXT",
     "put_spread_entry_order_id": "TEXT",
     "call_spread_entry_order_id": "TEXT",
-    # Per-side stop-order fill status, written by the LIVE loop's fill confirmation (2026-09-17):
-    # 'pending' when the close order is placed, then 'filled' or the terminal state the broker
-    # reported ('cancelled' | 'rejected' | 'expired'). A terminal state is a side the ledger has
-    # recorded closed but the broker still holds OPEN -- the live loop logs it CRITICAL; reopening
-    # the leg in the ledger is the documented follow-up (docs/live-trading-plan.md).
+    # Per-side close-order fill status, written by the LIVE loop (2026-09-17): 'pending' while a
+    # close order is working, then 'filled' (the side's exit was applied at the actual price) or
+    # the terminal state the broker reported ('cancelled' | 'rejected' | 'expired'), after which
+    # the side is simply open again -- it was never recorded closed on submission.
     "put_stop_fill_status": "TEXT",
     "call_stop_fill_status": "TEXT",
+    # The exit decision a LIVE close order was submitted for, as JSON, held until the broker
+    # confirms the fill (2026-09-17). Exits are recorded on CONFIRMATION, not submission: the
+    # decision is applied through the same `paper._apply_exit_decision` paper uses, with the actual
+    # fill price in the modeled price's place, and only once the order filled. Cleared on apply.
+    "pending_exit_json": "TEXT",
     "dollar_multiplier": "REAL DEFAULT 100",
     "risk_profile": "TEXT",
     "execution_mode": "TEXT",
@@ -972,6 +976,7 @@ _UPDATABLE_TRADE_FIELDS = (
     "net_credit",
     "put_stop_fill_status",
     "call_stop_fill_status",
+    "pending_exit_json",
     "stop_trigger_current",
     "stop_limit_current",
     "pnl",

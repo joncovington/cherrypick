@@ -8,6 +8,7 @@ regression in the shared engine shows up here too.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -157,6 +158,7 @@ class FakeBroker:
     def __init__(self, statuses=None):
         self.placed = []
         self.polled = []
+        self.cancelled = []
         self._statuses = dict(statuses or {})
 
     def place(self, spec, live):
@@ -166,6 +168,10 @@ class FakeBroker:
     def status(self, order_id):
         self.polled.append(order_id)
         return self._statuses.get(order_id, {"order_id": order_id, "status": "Live", "price": None})
+
+    def cancel(self, order_id):
+        self.cancelled.append(order_id)
+        return {"ok": True, "order_id": order_id}
 
 
 def _config(tmp_path=None, **live_over):
@@ -314,9 +320,25 @@ def test_force_close_submits_a_real_close_order_and_records_its_id(tmp_path):
     # force-close regardless of credit/price math, unlike a per-side stop trigger.
     snap = _entry_snapshot(symbol="QQQ", now_et="15:31", candidates=[])
     summary = live_loop.run_once(_config(symbol="QQQ"), snap, db_path, broker, live=True, log=lambda *_: None)
-    assert summary["force_closed"] == 1
+    assert summary["closing"] == 1 and summary["force_closed"] == 0, (
+        "recorded on confirmation, not submission"
+    )
     assert any(p["live"] is True for p in broker.placed)
-    assert _open_trades(db_path, "QQQ") == []  # no longer open
+    row = _open_trades(db_path, "QQQ")[0]  # STILL open: the broker has not said it closed
+    assert row["put_stop_fill_status"] == "pending" and row["call_stop_fill_status"] == "pending"
+    assert row["put_stop_order_id"] and row["call_stop_order_id"]
+    # ...until it does: both sides fill, the stashed decision is applied at the actual prices.
+    broker._statuses = {
+        oid: {"status": "Filled", "price": "-0.70"}
+        for oid in (row["put_stop_order_id"], row["call_stop_order_id"])
+    }
+    summary = live_loop.run_once(_config(symbol="QQQ"), snap, db_path, broker, live=True, log=lambda *_: None)
+    assert summary["closes_filled"] == 2
+    assert _open_trades(db_path, "QQQ") == []
+    done = live_loop._trade_row("OPEN1", db_path)
+    assert done["status"] == "force_closed"
+    # put (0.55 - 0.70) x100 + call (0.52 - 0.70) x100 at the ACTUAL fills, not the limits asked
+    assert done["pnl"] == pytest.approx(-15.0 - 18.0)
 
 
 def test_readiness_blocks_live_before_run_once_would_even_be_reached():
@@ -372,16 +394,113 @@ def test_a_pending_entry_holds_its_slot_but_is_not_managed(tmp_path):
     assert summary["held"] == 1 and len(broker.placed) == 1, "no close order for a position not yet held"
 
 
-def test_a_dead_stop_is_flagged_loudly_not_swallowed(tmp_path):
+def _stopping_snapshot():
+    """A snapshot where the QQQ put side's cost-to-close has blown through the stop trigger."""
+    snap = _entry_snapshot(symbol="QQQ", now_et="11:00", candidates=[])
+    snap["leg_quotes"] = {
+        "SP": {"bid": 2.40, "ask": 2.50},  # short put: was 0.55 credit, now 2.5 to close
+        "LP": {"bid": 0.10, "ask": 0.15},
+        "SC": {"bid": 0.30, "ask": 0.35},
+        "LC": {"bid": 0.05, "ask": 0.08},
+    }
+    return snap
+
+
+def test_a_stop_is_recorded_only_when_the_broker_confirms_it_at_the_actual_price(tmp_path):
+    """Shown to fail on the pre-change loop, which recorded the side closed at submission at the
+    limit asked for. Now: submit -> side marked closing, ledger unchanged; fill -> the shared exit
+    accounting runs with the ACTUAL price; the IC reads partial with that side's stop cost."""
+    db_path = _init_db(tmp_path)
+    paper._save_trade(_open_trade_row("QQQ"), db_path)
+    broker = FakeBroker()
+    snap = _stopping_snapshot()
+    s1 = live_loop.run_once(_config(symbol="QQQ"), snap, db_path, broker, live=True, log=lambda *_: None)
+    assert s1["closing"] == 1 and s1["stopped"] == 0
+    row = live_loop._trade_row("OPEN1", db_path)
+    assert row["status"] == "open" and row["put_stop_cost"] is None, "not recorded closed on submit"
+    assert row["put_stop_fill_status"] == "pending" and row["call_stop_fill_status"] is None
+    asked = float(broker.placed[-1]["spec"]["price"])
+    stashed = json.loads(row["pending_exit_json"])
+    assert stashed["action"] == "stop_put" and stashed["decision"]["put_exit_price"] == asked
+
+    broker._statuses = {row["put_stop_order_id"]: {"status": "Filled", "price": "-2.61"}}
+    s2 = live_loop.run_once(_config(symbol="QQQ"), snap, db_path, broker, live=True, log=lambda *_: None)
+    assert s2["closes_filled"] == 1
+    row = live_loop._trade_row("OPEN1", db_path)
+    assert (
+        row["status"] == "partial"
+        and row["put_stop_cost"] == 2.61
+        and row["put_stop_fill_status"] == "filled"
+    )
+    assert row["put_stop_cost"] != asked
+
+
+def test_a_working_close_is_cancelled_and_replaced_at_fresh_quotes_each_tick(tmp_path):
+    db_path = _init_db(tmp_path)
+    paper._save_trade(_open_trade_row("QQQ"), db_path)
+    broker = FakeBroker()
+    snap = _stopping_snapshot()
+    live_loop.run_once(_config(symbol="QQQ"), snap, db_path, broker, live=True, log=lambda *_: None)
+    first = live_loop._trade_row("OPEN1", db_path)["put_stop_order_id"]
+    # next tick, still Live at the broker, quotes moved: cancel, replace at the new crossing price
+    snap["leg_quotes"]["SP"] = {"bid": 2.90, "ask": 3.00}
+    s2 = live_loop.run_once(_config(symbol="QQQ"), snap, db_path, broker, live=True, log=lambda *_: None)
+    assert s2["closes_repriced"] == 1 and broker.cancelled == [first]
+    row = live_loop._trade_row("OPEN1", db_path)
+    assert row["put_stop_order_id"] != first and row["put_stop_fill_status"] == "pending"
+    assert float(broker.placed[-1]["spec"]["price"]) > float(broker.placed[0]["spec"]["price"])
+    assert row["status"] == "open" and row["put_stop_cost"] is None
+    # and no second, duplicate stop was submitted by the entry/manage pass
+    assert len([p for p in broker.placed if p["spec"]["price_effect"] == "debit"]) == 2
+
+
+def test_a_dead_close_leaves_the_side_open_and_the_next_tick_resubmits(tmp_path):
+    """Nothing was recorded closed, so nothing is reopened: the marker clears and the same rule
+    fires again on the next evaluation -- the resubmission policy chosen 2026-09-17."""
+    db_path = _init_db(tmp_path)
+    paper._save_trade(_open_trade_row("QQQ"), db_path)
+    broker = FakeBroker()
+    snap = _stopping_snapshot()
+    live_loop.run_once(_config(symbol="QQQ"), snap, db_path, broker, live=True, log=lambda *_: None)
+    first = live_loop._trade_row("OPEN1", db_path)["put_stop_order_id"]
+    broker._statuses = {first: {"status": "Rejected", "price": None}}
+    logs = []
+    s2 = live_loop.run_once(_config(symbol="QQQ"), snap, db_path, broker, live=True, log=logs.append)
+    assert s2["closes_dead"] == 1
+    assert not any("CRITICAL" in line for line in logs), (
+        "a dead close is a normal event now, not a ledger defect"
+    )
+    row = live_loop._trade_row("OPEN1", db_path)
+    assert row["status"] == "open" and row["put_stop_cost"] is None
+    # the same tick's manage pass already re-submitted under the same rule
+    assert row["put_stop_order_id"] != first and row["put_stop_fill_status"] == "pending"
+    assert s2["closing"] == 1
+
+
+def test_settlement_cancels_a_working_close_and_falls_through_to_expiry(tmp_path):
+    """An unfilled end-of-day close on a cash-settled side is not chased: at settlement the
+    working order is cancelled and the side settles at intrinsic, recorded as expired -- the
+    path a held side takes (the EOD fallback chosen 2026-09-17)."""
     db_path = _init_db(tmp_path)
     row = _open_trade_row("XSP")
-    row.update(put_stop_order_id="STOP-P", put_stop_fill_status="pending")
+    row.update(
+        put_stop_order_id="W1",
+        put_stop_fill_status="pending",
+        pending_exit_json=json.dumps(
+            {"action": "stop_put", "decision": {"action": "stop_put", "put_exit_price": 2.5}}
+        ),
+    )
     paper._save_trade(row, db_path)
-    logs = []
-    broker = FakeBroker(statuses={"STOP-P": {"status": "Cancelled", "price": None, "filled": False}})
-    summary = live_loop.run_once(_config(), _entry_snapshot(), db_path, broker, live=True, log=logs.append)
-    assert summary["stops_dead"] == 1
-    assert any("CRITICAL" in line and "put stop CANCELLED" in line for line in logs)
+    snap = _entry_snapshot(symbol="XSP", now_et="16:01", candidates=[])
+    snap["underlying_price"] = 590.0  # between the strikes: both sides expire worthless
+    snap["leg_quotes"] = {}
+    broker = FakeBroker()  # W1 still Live at the broker
+    summary = live_loop.run_once(_config(symbol="XSP"), snap, db_path, broker, live=True, log=lambda *_: None)
+    assert summary["expired"] == 1
+    assert broker.cancelled == ["W1"], "the working close is cancelled, not chased into the bell"
+    done = live_loop._trade_row("OPEN1", db_path)
+    assert done["status"] == "expired" and done["put_stop_fill_status"] == "cancelled"
+    assert done["put_stop_cost"] is None, "never recorded as stopped"
 
 
 def test_the_live_seam_is_the_shared_adapter(monkeypatch):
