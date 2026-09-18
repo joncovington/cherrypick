@@ -31,27 +31,6 @@ from cherrypick.flies import credentials as creds  # noqa: E402
 from cherrypick.flies.cli import load_config  # noqa: E402
 
 
-def _serialize(obj):
-    """Turn a tastytrade SDK object (or a nested structure of them) into a JSON-safe plain value.
-    `core.broker.place_order`'s `response`/`preflight` fields are the raw SDK objects unless a
-    caller supplies this — every `place_order` call in this module MUST pass it, or the caller's
-    `result["response"]["order"]["id"]` lookup silently finds nothing (the bug that let the live
-    loop resubmit the same entry every tick without ever recording it: `place()` in live_loop.py
-    read the order id back out of this same shape and got `{}` every time). Same shape as MEIC's
-    `tt.py::_serialize` — kept local rather than shared so this module stays a thin, dependency-free
-    seam over core.broker, per its own docstring."""
-    if obj is None or isinstance(obj, (str, int, float, bool)):
-        return obj
-    if isinstance(obj, (list, tuple)):
-        return [_serialize(item) for item in obj]
-    if isinstance(obj, dict):
-        return {k: _serialize(v) for k, v in obj.items()}
-    dump = getattr(obj, "model_dump", None)
-    if callable(dump):
-        return dump(mode="json")
-    return str(obj)
-
-
 async def fresh_option_quotes(session, symbols: list[str]) -> dict[str, dict]:
     """One-shot REST market-data snapshot for OCC option symbols — a plain `GET
     /market-data/by-type` (batches every symbol into one call), no DXLink handshake, no
@@ -241,9 +220,7 @@ async def cmd_execute_trade(args) -> dict:
     account = await _account(session)
     order = _broker.build_order(spec)
     limit = (config.get("live") or {}).get("account_deploy_limit_pct") or None
-    return await _broker.place_order(
-        account, session, order, live=bool(args.live), serialize=_serialize, deploy_limit_pct=limit
-    )
+    return await _broker.place_order(account, session, order, live=bool(args.live), deploy_limit_pct=limit)
 
 
 async def cmd_order_status(args) -> dict:

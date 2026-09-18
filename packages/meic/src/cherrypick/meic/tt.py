@@ -385,17 +385,7 @@ def _error(exc: Exception) -> dict:
     return result
 
 
-def _serialize(obj: Any) -> Any:
-    if obj is None or isinstance(obj, (str, int, float, bool)):
-        return obj
-    if isinstance(obj, (list, tuple)):
-        return [_serialize(item) for item in obj]
-    if isinstance(obj, dict):
-        return {k: _serialize(v) for k, v in obj.items()}
-    dump = getattr(obj, "model_dump", None)
-    if callable(dump):
-        return dump(mode="json")
-    return str(obj)
+_serialize = _broker.serialize  # the suite's one SDK-object flattener (core.broker default)
 
 
 def _num(value: Any) -> float | None:

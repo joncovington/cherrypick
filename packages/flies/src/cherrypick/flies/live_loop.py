@@ -1445,7 +1445,6 @@ class BrokerAdapter(_execution.Broker):
             get_session=_get_session,
             designated_account=_designated_account,
             live_gates=self._gates,
-            serialize=_serialize,
             deploy_limit_pct=_live_cfg(config).get("account_deploy_limit_pct") or None,
         )
 
@@ -1483,12 +1482,6 @@ class BrokerAdapter(_execution.Broker):
         except Exception:  # noqa: BLE001 — fail-closed, see docstring
             self._reset()
             return None, "fetch_failed"
-
-
-def _serialize(obj):
-    from cherrypick.flies import broker_cli
-
-    return broker_cli._serialize(obj)
 
 
 # --------------------------------------------------------------------------- scheduled task
