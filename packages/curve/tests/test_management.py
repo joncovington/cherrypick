@@ -270,3 +270,21 @@ def test_an_experiment_twin_of_noflip_never_flips_but_a_twin_of_control_does():
         _position(book="advised:take-35"), of_control, now=now, close_cost=0.99, regime=backwardation
     )
     assert d.action == "close_all" and d.reason == "regime_flip"
+
+
+def test_a_row_stamped_with_its_base_wins_over_the_configured_fallback():
+    """Shown to fail without the stamp (2026-09-17): a twin of `noflip` managed after the session
+    used to read `control`'s rules from the config fallback. The row's `advice_base` wins."""
+    config = {
+        "defaults": {"profit_take_pct": 0.5},
+        "books": {"control": {}, "noflip": {"profit_take_pct": 0.4}},
+        "advice": {"base_book": "control"},
+    }
+    stamped = management.effective_params(
+        {"book": "advised:take-35", "advice_params": "{}", "advice_base": "noflip"}, config
+    )
+    assert stamped["base_book"] == "noflip" and stamped["profit_take_pct"] == 0.4
+    bare = management.effective_params(
+        {"book": "advised:take-35", "advice_params": "{}", "advice_base": None}, config
+    )
+    assert bare["base_book"] == "control" and bare["profit_take_pct"] == 0.5

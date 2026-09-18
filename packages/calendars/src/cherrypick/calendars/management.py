@@ -75,7 +75,10 @@ def effective_params(position: dict, config: dict) -> dict:
     # The base is resolved through `engine.base_book` with the config in hand: a legacy
     # `advised:control` row names its base in the tag, a 2026-09-17 `advised:<experiment>` row
     # shadows the configured `advice.base_book`.
-    base = engine.base_book(book, config=config)
+    # The row's own stamp first (2026-09-17): an advised twin of a non-default base is managed under
+    # THAT base after the session's decision file is gone, not under the configured default.
+    stamped = position.get("advice_base")
+    base = str(stamped) if stamped else engine.base_book(book, config=config)
     params = {**PARAM_DEFAULTS, **engine.merged_params(config, base)}
     params["book"] = book
     params["base_book"] = base

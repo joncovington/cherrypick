@@ -233,7 +233,13 @@ def run_once(
 
     if not force and not in_session(now_min):
         return {"ok": True, "skipped": "outside_rth", "now_min": now_min}
-
+    # The session's advice decision is read and RECORDED on every in-session tick, not only on
+    # the entry path (2026-09-17, the calendars finding applied suite-wide): read-once, so the first
+    # tick derives it and every later one replays the file. A session with nothing to enter still
+    # tells the advisor the artifact reached the loop -- "governed a day with nothing to govern" is
+    # a different fact from "never read", and the enactment check exists to tell them apart.
+    if not force:
+        advice_decision(config, day)
     defaults = config.get("defaults") or {}
     actions = 0
     marks_written = 0

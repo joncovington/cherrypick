@@ -375,3 +375,32 @@ def test_two_experiments_enter_as_two_books_with_their_own_params_and_stamps(
 
     params = management.effective_params(dict(rows["advised:tv-05"]), config)
     assert params["base_book"] == "control" and params["tv_close_threshold"] == 0.05
+
+
+def test_a_tick_that_holds_positions_and_enters_nothing_still_records_the_decision(
+    cache, config, tmp_path, managed_home
+):
+    """This module holds for weeks; until 2026-09-17 the decision was derived only on the entry
+    path, so every holding day recorded nothing and the advisor scored the artifact as unread."""
+    session = "2026-08-24"
+    advice_dir = managed_home / "state" / "advice"
+    advice_dir.mkdir(parents=True)
+    (advice_dir / f"pmcc-{session}.json").write_text(
+        json.dumps(_two_experiment_artifact(session)), encoding="utf-8"
+    )
+    config["advice"] = {
+        "enabled": True,
+        "base_book": "control",
+        "bounds": {
+            "tv_managed_exit": {"choices": [True, False]},
+            "tv_close_threshold": {"min": 0.02, "max": 0.2},
+        },
+    }
+    conn = db.connect(str(tmp_path / "paper.db"))
+    _fill_entry_chains(cache)
+    paper_loop.run_once(config, conn, cache_path=cache.path, when=datetime(2026, 8, 24, 11, 0))
+    assert db.open_positions(conn), "the first tick entered"
+    decision_file = managed_home / "data" / "pmcc" / "advice_active.json"
+    decision_file.unlink()  # forget the day; a holding tick must record it again on its own
+    paper_loop.run_once(config, conn, cache_path=cache.path, when=datetime(2026, 8, 24, 11, 5))
+    assert json.loads(decision_file.read_text(encoding="utf-8"))["day"] == session

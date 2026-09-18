@@ -265,6 +265,50 @@ def test_a_refused_week_still_records_the_advice_decision(tmp_path, managed_home
     assert decision["day"] == session and decision["params"] == {"time_exit": "fri_noon"}
 
 
+def test_every_in_session_tick_records_the_days_advice_decision_entry_day_or_not(tmp_path, managed_home):
+    """Shown to fail on the pre-2026-09-17 loop, which derived the decision only on the entry
+    path: a Wednesday tick (no entry, nothing refused, just marking) recorded no decision at
+    all, and the advisor scored the day's artifact as never having reached the loop. The 09-15
+    fix covered the refused entry day; this covers the other four days of every week."""
+    session = "2026-08-19"  # a Wednesday: not an entry session
+    advice_dir = managed_home / "state" / "advice"
+    advice_dir.mkdir(parents=True)
+    (advice_dir / f"calendars-{session}.json").write_text(
+        json.dumps(
+            {
+                "module": "calendars",
+                "session": session,
+                "advisor": "test",
+                "expires_at": "2099-01-01T00:00:00-04:00",
+                "proposals": [{"param": "time_exit", "value": "fri_noon", "rationale": "t"}],
+                "rejected": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    cache = _seed_cache(tmp_path, spot=780.0, symbol="SPY", root="SPY")
+    conn = db.connect(str(tmp_path / "paper.db"))
+    config = {
+        "symbols": ["SPY"],
+        **SPY_DIVS,
+        "advice": {
+            "enabled": True,
+            "base_book": "control",
+            "bounds": {"time_exit": {"choices": ["fri_noon"]}},
+        },
+    }
+    out = paper_loop.run_once(config, conn, cache_path=cache, when=_at(session, "11:00"))
+    assert out.get("skipped") is None and conn.execute("SELECT COUNT(*) FROM dc_positions").fetchone()[0] == 0
+    decision = json.loads(
+        (managed_home / "data" / "calendars" / "advice_active.json").read_text(encoding="utf-8")
+    )
+    assert decision["day"] == session and decision["params"] == {"time_exit": "fri_noon"}
+    # ...and an out-of-session tick records nothing: the read-once rule guards the day's file.
+    (managed_home / "data" / "calendars" / "advice_active.json").unlink()
+    paper_loop.run_once(config, conn, cache_path=cache, when=_at(session, "08:00"))
+    assert not (managed_home / "data" / "calendars" / "advice_active.json").exists()
+
+
 def test_a_physical_week_past_the_declared_horizon_is_refused_not_assumed_dividend_free(tmp_path):
     cache = _seed_cache(tmp_path, spot=780.0, symbol="SPY", root="SPY")
     conn = db.connect(str(tmp_path / "paper.db"))
