@@ -34,10 +34,16 @@ tick (and every tick after) asks the broker; a confirmed fill flips it to `open`
 net credit and `fill_confirmed_at`, and an order that dies unfilled (cancelled / rejected /
 expired) becomes `cancelled` with no P&L and frees its slot. A pending row still counts toward
 `max_concurrent_ics` -- it is a position at risk -- and is not managed for exits until it fills.
-Stop orders are confirmed the same way into `{side}_stop_fill_status`; a stop that dies unfilled
-is logged CRITICAL because the ledger has that side closed while the broker holds it open.
-Reopening the leg in the ledger (and correcting the recorded exit to the actual fill) is the
-documented follow-up: the per-side exit accounting is shared with paper and needs its own verb.
+Exits are recorded on confirmation too (2026-09-17, second pass). A close order's decision is
+stashed on the row (`pending_exit_json`) and the side marked `{side}_stop_fill_status='pending'`;
+the ledger's exit accounting (`paper._apply_exit_decision`, the same function paper runs) is
+applied only when the broker confirms the fill, with the ACTUAL price in the modeled price's
+place. A close still working on the next tick is cancelled and replaced at the stop rule off
+fresh quotes -- paper fills a stop instantly at the limit; live re-prices every minute, and the
+gap between the two is the pilot's measurement. A close that dies unfilled simply clears its
+marker: the side was never recorded closed, so the next tick re-evaluates it under the same rule.
+Nothing is reopened because nothing was closed early. An unfilled end-of-day force-close on a
+cash-settled side falls through to settlement, recorded as expired, the path a held side takes.
 
 The submission seam is `cherrypick.core.execution.Broker` (2026-09-17): one session on one
 process-wide loop, the module's own gates re-checked on every live submit, the deploy governor
@@ -132,6 +138,98 @@ EXECUTION_MODE = "live"
 _extract_order_id = _execution.order_id_of  # one reading of a placement result, suite-wide
 
 
+def _closing_sides(trade: dict) -> list[str]:
+    """Sides with a close order working at the broker: submitted, not yet confirmed either way."""
+    return [
+        s
+        for s in ("put", "call")
+        if trade.get(f"{s}_stop_fill_status") == "pending" and trade.get(f"{s}_stop_order_id")
+    ]
+
+
+def _trade_row(ic_order_id: str, db_path: str) -> dict | None:
+    """The row as it stands now, read directly -- the exit accounting must see the latest fees,
+    P&L and stop costs, not the copy the tick started with."""
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute("SELECT * FROM ic_trades WHERE ic_order_id = ?", (ic_order_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def _trades_with_working_orders(symbol: str, trade_date: str, db_path: str) -> list[dict]:
+    """Every row with an order the broker still owes an answer on -- a pending entry, or a close
+    working on either side -- whatever the row's status. Read directly rather than through
+    `get_open_trades`, whose status set would drop a row whose first side's close has already
+    been recorded."""
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT * FROM ic_trades WHERE symbol = ? AND trade_date = ? AND execution_mode = ? AND ("
+            "status = 'pending' OR put_stop_fill_status = 'pending' OR call_stop_fill_status = 'pending')",
+            (symbol, trade_date, EXECUTION_MODE),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def _exit_for_side(stashed: dict, side: str, price: float | None) -> dict:
+    """The per-side decision to apply once `side`'s close has filled at `price`: the stashed
+    decision with its action narrowed to this side and the actual price in the modeled one's
+    place. A stop becomes `stop_<side>`; a force-close stays `force_close` with only this side
+    open. The other side's modeled slippage is dropped so it is not charged on this side's fill."""
+    other = "call" if side == "put" else "put"
+    base = dict(stashed.get("decision") or {})
+    action = str(stashed.get("action") or base.get("action") or "")
+    out = {**base, f"{side}_exit_price": price, f"{other}_exit_slippage": None}
+    if action == "force_close":
+        out.update({"action": "force_close", "put_open": side == "put", "call_open": side == "call"})
+    else:
+        out["action"] = f"stop_{side}"
+    return out
+
+
+def _submit_close(
+    trade: dict, side: str, spec: dict, decision: dict, broker, *, live: bool, db_path: str, log
+) -> bool:
+    """Place one side's close and, live, mark the side closing with its decision stashed. Nothing
+    is recorded closed here -- `_confirm_fills` does that on the broker's word."""
+    result = broker.place(spec, live=live)
+    log(
+        f"close {side} ({'LIVE' if live else 'dry-run'}) for {trade['ic_order_id']}: {json.dumps(result, default=str)[:300]}"
+    )
+    if not result.get("ok"):
+        return False
+    if not live:
+        return True
+    oid = _extract_order_id(result)
+    if oid is None:
+        log(f"WARNING: close {side} for {trade['ic_order_id']} returned no order id; cannot track it")
+        return False
+    paper._update_trade(
+        trade["ic_order_id"],
+        {
+            f"{side}_stop_order_id": oid,
+            f"{side}_stop_fill_status": "pending",
+            # The stash carries the limit ASKED for this side, never the modeled price: it is the
+            # fallback if a fill comes back without a parseable price, and the model is not a fill.
+            "pending_exit_json": json.dumps(
+                {"action": decision["action"], "decision": {**decision, f"{side}_exit_price": spec["price"]}}
+            ),
+        },
+        db_path,
+    )
+    return True
+
+
 def _sides_to_close(decision: dict) -> list[str]:
     """Which side(s) an `evaluate_open_trade` decision requires closing -- force_close's
     `put_open`/`call_open` flags mean 'this side is still open', i.e. needs a close order."""
@@ -159,7 +257,7 @@ def _manage_open_trades(
     is_cash = paper._is_cash_settled(symbol, base_config)
     force_close, force_close_reason = paper.force_close_active(snapshot, base_config, is_cash)
     settle = paper.settlement_active(snapshot, base_config, is_cash)
-    counts = {"stopped": 0, "force_closed": 0, "expired": 0, "held": 0, "order_failed": 0}
+    counts = {"stopped": 0, "force_closed": 0, "expired": 0, "held": 0, "closing": 0, "order_failed": 0}
     stop_limit_ratio = params.get("stop_limit_ratio", 1.02)
     leg_quotes = snapshot.get("leg_quotes", {})
 
@@ -185,15 +283,34 @@ def _manage_open_trades(
             paper._apply_exit_decision(trade, decision, symbol, db_path)
             continue
         if action == "expire":
-            # Cash-settled left-to-expire: nothing to submit, settlement is automatic.
+            # Cash-settled left-to-expire: nothing to submit, settlement is automatic. A close
+            # still working is cancelled first -- settlement supersedes it (an unfilled end-of-day
+            # close on a cash-settled side falls through to expiry by design).
+            for side in _closing_sides(trade):
+                res = (
+                    broker.cancel(trade[f"{side}_stop_order_id"])
+                    if hasattr(broker, "cancel")
+                    else {"ok": True}
+                )
+                if res.get("ok"):
+                    paper._update_trade(
+                        trade["ic_order_id"], {f"{side}_stop_fill_status": "cancelled"}, db_path
+                    )
+                    log(f"cancelled working {side} close for {trade['ic_order_id']} -- settling instead")
             counts["expired"] += 1
             paper._apply_exit_decision(trade, decision, symbol, db_path)
             continue
 
         # Every close action (stop_call / stop_put / stop_both / force_close) reduces to one or
         # two independent per-side 2-leg close orders -- force_close is simply "close whichever
-        # side(s) are still open", not a distinct order shape.
-        sides = _sides_to_close(decision)
+        # side(s) are still open", not a distinct order shape. A side whose close is already
+        # working is skipped: `_confirm_fills` owns it (confirm, or cancel-and-replace) until the
+        # broker answers.
+        closing = _closing_sides(trade)
+        sides = [side for side in _sides_to_close(decision) if side not in closing]
+        if not sides:
+            counts["closing"] += 1
+            continue
         try:
             specs = {
                 side: live_orders.stop_close_spec(trade, side, leg_quotes, stop_limit_ratio) for side in sides
@@ -203,34 +320,20 @@ def _manage_open_trades(
             counts["order_failed"] += 1
             continue
 
-        results = {side: broker.place(spec, live=live) for side, spec in specs.items()}
-        log(
-            f"{action} order ({'LIVE' if live else 'dry-run'}) for {trade['ic_order_id']}: "
-            f"{json.dumps(results, default=str)[:300]}"
-        )
-        if not all(r.get("ok") for r in results.values()):
+        placed = {
+            side: _submit_close(trade, side, spec, decision, broker, live=live, db_path=db_path, log=log)
+            for side, spec in specs.items()
+        }
+        if not all(placed.values()):
             log(f"CRITICAL: close order failed for {trade['ic_order_id']} ({action}) -- position stays open")
             counts["order_failed"] += 1
             continue
-
-        # Honesty: the exit price recorded is what was SUBMITTED, not the modeled decision
-        # price -- fill polling / repricing is rung-2 work (same limitation flies' rung 1
-        # accepts). Order ids are stamped in a follow-up update, matching db.py's existing
-        # (already-present, previously-unused) live order-id columns.
-        adjusted = dict(decision)
-        order_ids = {}
-        for side, spec in specs.items():
-            adjusted[f"{side}_exit_price"] = spec["price"]
-            oid = _extract_order_id(results[side])
-            order_ids[f"{side}_stop_order_id"] = oid
-            if oid is not None and live:
-                order_ids[f"{side}_stop_fill_status"] = "pending"
-
-        paper._apply_exit_decision(trade, adjusted, symbol, db_path)
-        fields = {k: v for k, v in order_ids.items() if v is not None}
-        if fields:
-            paper._update_trade(trade["ic_order_id"], fields, db_path)
-        counts["force_closed" if action == "force_close" else "stopped"] += 1
+        if not live:
+            # A dry run placed nothing, so there is nothing to confirm; the ledger stays as it was.
+            counts["force_closed" if action == "force_close" else "stopped"] += 1
+            continue
+        # Live: recorded on CONFIRMATION (see the module docstring), never here.
+        counts["closing"] += 1
 
     return counts
 
@@ -298,17 +401,33 @@ def _manage_entry(
     }
 
 
-def _confirm_fills(symbol: str, snapshot: dict, db_path: str, broker, *, log) -> dict:
+def _confirm_fills(
+    symbol: str, snapshot: dict, db_path: str, broker, *, log, params: dict | None = None
+) -> dict:
     """Ask the broker about every order this ledger is still waiting on, and record the answer.
 
     Entries: a `pending` row with an entry order id becomes `open` at the ACTUAL net credit once
     filled (`fill_confirmed_at` stamped), or `cancelled` with zero P&L if the order died -- the
-    slot it held is freed either way. Stops: a side whose stop order is `pending` is recorded
-    `filled` or the terminal state; a terminal state is logged CRITICAL, because the ledger has
-    the side closed and the broker does not (see the module docstring for the follow-up)."""
-    counts = {"entries_confirmed": 0, "entries_cancelled": 0, "stops_confirmed": 0, "stops_dead": 0}
+    slot it held is freed either way.
+
+    Closes (2026-09-17): a side whose close order FILLED has its stashed exit decision applied
+    now, through `paper._apply_exit_decision`, with the actual fill price -- the first moment the
+    ledger records the side closed. A close that DIED (cancelled / rejected / expired) just clears
+    its marker: nothing was recorded, so the next `_manage_open_trades` re-evaluates the side
+    under the same rule. A close still WORKING is cancelled and replaced at the stop rule off
+    this tick's quotes -- live's minute-by-minute stand-in for paper's instant fill at the limit.
+    """
+    counts = {
+        "entries_confirmed": 0,
+        "entries_cancelled": 0,
+        "closes_filled": 0,
+        "closes_dead": 0,
+        "closes_repriced": 0,
+    }
     now = str(paper._now_et())
-    for trade in paper._get_open_trades(symbol, EXECUTION_MODE, snapshot["date"], db_path):
+    leg_quotes = snapshot.get("leg_quotes", {})
+    ratio = (params or {}).get("stop_limit_ratio", 1.02)
+    for trade in _trades_with_working_orders(symbol, snapshot["date"], db_path):
         ic_order_id = trade["ic_order_id"]
         entry_oid = trade.get("put_spread_entry_order_id")
         if trade.get("status") == "pending" and entry_oid:
@@ -336,23 +455,55 @@ def _confirm_fills(symbol: str, snapshot: dict, db_path: str, broker, *, log) ->
                 log(f"entry {state.upper()} {ic_order_id} -- never established, slot freed")
                 counts["entries_cancelled"] += 1
             continue
-        for side in ("put", "call"):
-            oid = trade.get(f"{side}_stop_order_id")
-            if not oid or trade.get(f"{side}_stop_fill_status") != "pending":
-                continue
-            state, price = _execution.fill_state(broker.status(oid))
-            if state == "working":
-                continue
-            paper._update_trade(ic_order_id, {f"{side}_stop_fill_status": state}, db_path)
+        for side in _closing_sides(trade):
+            oid = trade[f"{side}_stop_order_id"]
+            stashed = {}
+            try:
+                stashed = json.loads(trade.get("pending_exit_json") or "{}")
+            except ValueError:
+                stashed = {}
+            modeled = (stashed.get("decision") or {}).get(f"{side}_exit_price")
+            state, price = _execution.fill_state(broker.status(oid), fallback_price=modeled)
             if state == "filled":
-                log(f"{side} stop FILLED {ic_order_id} at {price}")
-                counts["stops_confirmed"] += 1
-            else:
+                fresh = _trade_row(ic_order_id, db_path) or trade
+                paper._apply_exit_decision(fresh, _exit_for_side(stashed, side, price), symbol, db_path)
+                paper._update_trade(ic_order_id, {f"{side}_stop_fill_status": "filled"}, db_path)
+                log(f"{side} close FILLED {ic_order_id} at {price} (modeled {modeled})")
+                counts["closes_filled"] += 1
+            elif state != "working":
+                # Never recorded closed, so nothing to reopen: clear the marker and let the next
+                # evaluation decide the side again under the same rule.
+                paper._update_trade(ic_order_id, {f"{side}_stop_fill_status": state}, db_path)
                 log(
-                    f"CRITICAL: {side} stop {state.upper()} for {ic_order_id} -- the ledger has this side "
-                    f"closed and the broker still holds it OPEN; manage by hand"
+                    f"{side} close {state.upper()} {ic_order_id} -- side is open again, re-evaluated next tick"
                 )
-                counts["stops_dead"] += 1
+                counts["closes_dead"] += 1
+            else:
+                # Still working: cancel and replace at the stop rule off THIS tick's quotes.
+                try:
+                    spec = live_orders.stop_close_spec(trade, side, leg_quotes, ratio)
+                except ValueError as exc:
+                    log(
+                        f"{side} close for {ic_order_id} still working; cannot re-price ({exc}) -- left resting"
+                    )
+                    continue
+                cancelled = broker.cancel(oid) if hasattr(broker, "cancel") else {"ok": False}
+                if not cancelled.get("ok"):
+                    # A cancel that fails is usually the fill racing it: the next tick's status
+                    # poll resolves it. Never place a second order on top of one we could not cancel.
+                    log(
+                        f"{side} close for {ic_order_id}: cancel refused ({cancelled.get('error')}) -- re-polling next tick"
+                    )
+                    continue
+                decision = stashed.get("decision") or {"action": f"stop_{side}"}
+                decision = {**decision, f"{side}_exit_price": spec["price"]}
+                if _submit_close(trade, side, spec, decision, broker, live=True, db_path=db_path, log=log):
+                    counts["closes_repriced"] += 1
+                else:
+                    paper._update_trade(ic_order_id, {f"{side}_stop_fill_status": "cancelled"}, db_path)
+                    log(
+                        f"CRITICAL: {side} close for {ic_order_id} cancelled but the replacement failed -- side open, re-evaluated next tick"
+                    )
     return counts
 
 
@@ -362,7 +513,7 @@ def run_once(config: dict, snapshot: dict, db_path: str, broker, *, live: bool, 
     symbol = (config.get("live") or {}).get("symbol")
     params = paper._merged_params(config, {})
     # Broker truth first: what filled, what died. Only the live ledger has orders to confirm.
-    fills = _confirm_fills(symbol, snapshot, db_path, broker, log=log) if live else {}
+    fills = _confirm_fills(symbol, snapshot, db_path, broker, log=log, params=params) if live else {}
     manage = _manage_open_trades(symbol, snapshot, params, db_path, broker, live=live, log=log)
     entry = _manage_entry(symbol, snapshot, params, db_path, broker, live=live, log=log)
     return {"symbol": symbol, "live": live, **fills, **manage, "entry": entry}

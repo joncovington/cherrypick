@@ -132,11 +132,18 @@ accepted placement was recorded as a fill at the submitted limit -- an entry bec
 moment the broker accepted the order. Now `live_loop.py` saves an entry `status='pending'`, and
 `_confirm_fills` at the top of every tick asks the broker: a confirmed fill flips it to `open` at the
 ACTUAL net credit (`fill_confirmed_at` stamped); an order that dies unfilled becomes `cancelled` with
-zero P&L and frees its slot; a pending row holds its slot but is not managed for exits. Stop orders are
-confirmed into `{side}_stop_fill_status`; a stop that dies unfilled is logged CRITICAL because the
-ledger has the side closed and the broker does not -- reopening that leg (and correcting the recorded
-exit to the actual fill) is the documented follow-up, since the per-side exit accounting is shared with
-paper and needs its own verb. The submission seam is `cherrypick.core.execution.Broker` (`make_broker`),
+zero P&L and frees its slot; a pending row holds its slot but is not managed for exits. Exits are recorded on
+confirmation too (same day, second pass): a close order's decision is stashed on the row
+(`pending_exit_json`) and the side marked `{side}_stop_fill_status='pending'`; the shared exit
+accounting (`paper._apply_exit_decision`) runs only when the broker confirms the fill, with the actual
+price in the modeled price's place. A close still working on the next tick is cancelled and replaced at
+the stop rule off fresh quotes -- paper fills a stop instantly at the limit, live re-prices every
+minute, and that gap is the pilot's measurement. A close that dies unfilled clears its marker and the
+side is re-evaluated under the same rule; nothing is reopened because nothing was closed early. An
+unfilled end-of-day close on a cash-settled side is cancelled at settlement and falls through to
+expiry, the path a held side takes. The three choices -- resubmit under the same rule rather than
+escalate, re-price every tick, settle rather than chase -- were made 2026-09-17 to keep live's rule
+byte-identical to paper's so the comparison stays clean. The submission seam is `cherrypick.core.execution.Broker` (`make_broker`),
 which re-checks `readiness` on every live submit and applies the deploy governor; it replaced an
 adapter that shelled out to `tt.py execute_trade` and scraped stdout.
 
