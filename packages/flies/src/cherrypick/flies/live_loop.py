@@ -68,12 +68,13 @@ import os
 import subprocess
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
 from cherrypick.core import calendar as _cal  # noqa: E402
 from cherrypick.core import execution as _execution
 from cherrypick.core import home as _home  # noqa: E402
+from cherrypick.core import live as _live  # noqa: E402
 from cherrypick.core import settlement as _settlement  # noqa: E402
 
 from cherrypick.flies import (
@@ -132,8 +133,9 @@ def arm_stamp_path() -> str:
     (self-disarm), the supervisor (job enablement), and the watchdog (dead-man's backstop) all read
     the one file. Under the supervisor, this record — not a schtasks registration — IS the armed
     signal: present-and-dated-today enables the `flies-live` job; deleting it disarms within one
-    supervisor pass. Only this module's human-confirmed arm command ever writes it."""
-    return str(_home.state_dir() / "flies-live-arm.json")
+    supervisor pass. Only this module's human-confirmed arm command ever writes it. The
+    convention is `cherrypick.core.live` (2026-09-18), so a second armed module cannot drift."""
+    return str(_live.arm_record_path("flies"))
 
 
 def _legacy_arm_stamp_path() -> str:
@@ -1516,18 +1518,9 @@ def _allow_on_battery() -> dict:
 
 
 def _supervisor_heartbeat_fresh(max_age_seconds: int = 90) -> bool:
-    """Is the orchestrator's supervisor daemon driving this box? A file read, never an import —
-    the module stays independent of orchestrator code. Fresh heartbeat → arming is a record write
-    (the supervisor fires the ticks); stale/absent → the legacy schtasks path still applies."""
-    try:
-        with open(_home.state_dir() / "supervisor.last.json", encoding="utf-8") as f:
-            ts = json.load(f).get("ts")
-        then = datetime.fromisoformat(str(ts))
-        if then.tzinfo is None:
-            then = then.replace(tzinfo=UTC)
-        return (datetime.now(UTC) - then).total_seconds() <= max_age_seconds
-    except (OSError, ValueError, TypeError):
-        return False
+    """Is the orchestrator's supervisor daemon driving this box? (`cherrypick.core.live`.) Fresh
+    heartbeat → arming is a record write; stale/absent → the legacy schtasks path still applies."""
+    return _live.supervisor_heartbeat_fresh(max_age_seconds)
 
 
 def _spawn_first_tick() -> None:
@@ -1558,15 +1551,16 @@ def install_task() -> dict:
     fire one immediate tick."""
     armed_for = provider.now_et().date().isoformat()
     if _supervisor_heartbeat_fresh():
-        _write_arm_stamp()
-        _spawn_first_tick()
-        return {
-            "ok": True,
-            "driver": "supervisor",
-            "cadence": "every 60s (supervisor job flies-live)",
-            "armed_for": armed_for,
-            "detail": f"arm record written: {arm_stamp_path()}",
-        }
+        out = _live.arm(
+            "flies",
+            date=armed_for,
+            at=clock.now_iso(),
+            armed_by="live-flies-start",
+            spawn_first_tick=_spawn_first_tick,
+            heartbeat_fresh=lambda: True,  # checked just above through this module's own seam
+        )
+        out["cadence"] = "every 60s (supervisor job flies-live)"
+        return out
     if os.name != "nt":
         return {"ok": False, "error": "no supervisor running, and scheduled-task install is Windows-only"}
     tr = f'"{_pl._pythonw()}" -m cherrypick.flies.live_loop --once --live'
@@ -1612,13 +1606,7 @@ def uninstall_task() -> dict:
     """Disarm: delete the arm record (which disables the supervisor's `flies-live` job within one
     pass), and remove the legacy scheduled task if one is registered. Record deletion is the
     authoritative act; the schtasks removal is transition-window hygiene."""
-    removed = False
-    for path in (arm_stamp_path(), _legacy_arm_stamp_path()):
-        try:
-            os.unlink(path)
-            removed = True
-        except OSError:
-            pass
+    removed = _live.disarm("flies", legacy_paths=[_legacy_arm_stamp_path()])["arm_record_removed"]
     task_result = None
     if os.name == "nt" and task_installed():
         subprocess.run(
@@ -1641,38 +1629,26 @@ def uninstall_task() -> dict:
 
 
 def _write_arm_stamp() -> None:
-    record = {
-        "date": provider.now_et().date().isoformat(),
-        "at": clock.now_iso(),
-        "armed_by": "live-flies-start",
-        "confirmation": "literal-YES",
-    }
-    path = arm_stamp_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(record, f)
+    _live.write_arm_record(
+        "flies", date=provider.now_et().date().isoformat(), at=clock.now_iso(), armed_by="live-flies-start"
+    )
 
 
 def arm_stamp_date() -> str | None:
-    for path in (arm_stamp_path(), _legacy_arm_stamp_path()):
-        try:
-            with open(path, encoding="utf-8") as f:
-                return json.load(f).get("date")
-        except (OSError, ValueError):
-            continue
-    return None
+    return _live.arm_record_date("flies", legacy_paths=[_legacy_arm_stamp_path()])
 
 
 def should_disarm(config: dict, now_min: int, today: str) -> str | None:
-    """The dead-man's switch, pure: a reason string when the live task must disarm itself.
-    Past `live.disarm_time` today, or armed on a previous day (machine slept through the
-    disarm window), or no arm stamp at all (arming didn't go through this command's path)."""
-    stamped = arm_stamp_date()
-    if stamped != today:
-        return f"arm stamp is {stamped!r}, today is {today} — arming is per-day"
-    if now_min >= disarm_min(config):
-        return f"past disarm time ({_live_cfg(config).get('disarm_time') or DEFAULT_DISARM})"
-    return None
+    """The dead-man's switch, pure (`cherrypick.core.live.should_disarm`): a reason string when
+    the live task must disarm itself -- past `live.disarm_time` today, or the arm record is not
+    today's (a previous day's arm, or no arm through this command's path at all)."""
+    return _live.should_disarm(
+        arm_stamp_date(),
+        today=today,
+        now_min=now_min,
+        disarm_min=disarm_min(config),
+        disarm_label=_live_cfg(config).get("disarm_time") or DEFAULT_DISARM,
+    )
 
 
 # --------------------------------------------------------------------------- status
