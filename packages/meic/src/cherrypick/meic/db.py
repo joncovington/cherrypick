@@ -332,6 +332,13 @@ _ADDED_TRADE_COLUMNS = {
     "price_action_signal": "TEXT",
     "put_spread_entry_order_id": "TEXT",
     "call_spread_entry_order_id": "TEXT",
+    # Per-side stop-order fill status, written by the LIVE loop's fill confirmation (2026-09-17):
+    # 'pending' when the close order is placed, then 'filled' or the terminal state the broker
+    # reported ('cancelled' | 'rejected' | 'expired'). A terminal state is a side the ledger has
+    # recorded closed but the broker still holds OPEN -- the live loop logs it CRITICAL; reopening
+    # the leg in the ledger is the documented follow-up (docs/live-trading-plan.md).
+    "put_stop_fill_status": "TEXT",
+    "call_stop_fill_status": "TEXT",
     "dollar_multiplier": "REAL DEFAULT 100",
     "risk_profile": "TEXT",
     "execution_mode": "TEXT",
@@ -960,6 +967,11 @@ _UPDATABLE_TRADE_FIELDS = (
     "call_stop_cost",
     "put_spread_entry_order_id",
     "call_spread_entry_order_id",
+    # Live fill confirmation (2026-09-17): the ACTUAL net credit once the broker confirms the
+    # entry, and the per-side stop-order fill status.
+    "net_credit",
+    "put_stop_fill_status",
+    "call_stop_fill_status",
     "stop_trigger_current",
     "stop_limit_current",
     "pnl",

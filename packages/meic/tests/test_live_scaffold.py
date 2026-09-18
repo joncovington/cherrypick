@@ -154,12 +154,18 @@ def test_live_ledger_is_a_separate_file():
 
 
 class FakeBroker:
-    def __init__(self):
+    def __init__(self, statuses=None):
         self.placed = []
+        self.polled = []
+        self._statuses = dict(statuses or {})
 
     def place(self, spec, live):
         self.placed.append({"spec": spec, "live": live})
         return {"ok": True, "response": {"order": {"id": f"ORD{len(self.placed)}"}}}
+
+    def status(self, order_id):
+        self.polled.append(order_id)
+        return self._statuses.get(order_id, {"order_id": order_id, "status": "Live", "price": None})
 
 
 def _config(tmp_path=None, **live_over):
@@ -241,8 +247,10 @@ def test_live_entry_records_the_real_order_id(tmp_path):
     summary = live_loop.run_once(
         _config(), _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None
     )
-    assert summary["entry"]["entry"] == "filled"
+    assert summary["entry"]["entry"] == "placed", "an accepted order is not a fill"
     assert summary["entry"]["ic_order_id"] == "LIVE-XSP-ORD1"
+    row = _open_trades(db_path, "XSP")[0]
+    assert row["status"] == "pending" and row["fill_confirmed_at"] is None
 
 
 def test_live_ignores_a_paper_profile_overlap_scope_and_still_refuses_overlap(tmp_path):
@@ -316,3 +324,72 @@ def test_readiness_blocks_live_before_run_once_would_even_be_reached():
     # passed. Exercised directly here since main() itself needs real credentials/config on disk.
     unmet = live_loop.readiness({"live": {"symbol": "XSP"}}, halt_present=False, designated=None)
     assert unmet  # gate0_confirmed and designated account are both still unmet
+
+
+# --------------------------------------------------------------------------- fill confirmation (2026-09-17)
+def _place_one(tmp_path, statuses=None):
+    db_path = _init_db(tmp_path)
+    broker = FakeBroker(statuses=statuses)
+    live_loop.run_once(_config(), _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None)
+    return db_path, broker
+
+
+def test_a_confirmed_entry_opens_at_the_actual_credit(tmp_path):
+    """Shown to fail on the pre-change loop, which recorded the limit as the fill and never asked."""
+    db_path, broker = _place_one(tmp_path, {"ORD1": {"status": "Filled", "price": "-1.37", "filled": True}})
+    asked = _open_trades(db_path, "XSP")[0]["net_credit"]
+    summary = live_loop.run_once(
+        _config(), _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None
+    )
+    assert summary["entries_confirmed"] == 1 and "ORD1" in broker.polled
+    row = [t for t in _open_trades(db_path, "XSP") if t["ic_order_id"] == "LIVE-XSP-ORD1"][0]
+    assert row["status"] == "open" and row["fill_confirmed_at"] is not None
+    assert row["net_credit"] == pytest.approx(1.37) and row["net_credit"] != asked
+
+
+def test_a_rejected_entry_is_cancelled_and_frees_its_slot(tmp_path):
+    db_path, broker = _place_one(tmp_path, {"ORD1": {"status": "Rejected", "price": None, "filled": False}})
+    summary = live_loop.run_once(
+        _config(), _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None
+    )
+    assert summary["entries_cancelled"] == 1
+    assert all(t["ic_order_id"] != "LIVE-XSP-ORD1" for t in _open_trades(db_path, "XSP")), "no longer open"
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    row = conn.execute(
+        "SELECT status, exit_reason, pnl FROM ic_trades WHERE ic_order_id = 'LIVE-XSP-ORD1'"
+    ).fetchone()
+    assert row == ("cancelled", "entry_rejected", 0)
+
+
+def test_a_pending_entry_holds_its_slot_but_is_not_managed(tmp_path):
+    cfg = _config()
+    cfg["max_concurrent_ics"] = 1
+    db_path, broker = _place_one(tmp_path)
+    summary = live_loop.run_once(cfg, _entry_snapshot(), db_path, broker, live=True, log=lambda *_: None)
+    assert summary["entry"] == {"entry": "skipped", "reason": "max_concurrent_ics_reached"}
+    assert summary["held"] == 1 and len(broker.placed) == 1, "no close order for a position not yet held"
+
+
+def test_a_dead_stop_is_flagged_loudly_not_swallowed(tmp_path):
+    db_path = _init_db(tmp_path)
+    row = _open_trade_row("XSP")
+    row.update(put_stop_order_id="STOP-P", put_stop_fill_status="pending")
+    paper._save_trade(row, db_path)
+    logs = []
+    broker = FakeBroker(statuses={"STOP-P": {"status": "Cancelled", "price": None, "filled": False}})
+    summary = live_loop.run_once(_config(), _entry_snapshot(), db_path, broker, live=True, log=logs.append)
+    assert summary["stops_dead"] == 1
+    assert any("CRITICAL" in line and "put stop CANCELLED" in line for line in logs)
+
+
+def test_the_live_seam_is_the_shared_adapter(monkeypatch):
+    from cherrypick.core import execution
+
+    broker = live_loop.make_broker(_config(), "1234")
+    assert isinstance(broker, execution.Broker)
+    # its gates are this module's readiness, re-checked per live submit
+    monkeypatch.setattr(live_loop.os.path, "exists", lambda p: True)  # halt flag present
+    out = broker.place({"legs": []}, live=True)
+    assert out["error"] == "live submission gated" and any("halt flag" in g for g in out["unmet_gates"])

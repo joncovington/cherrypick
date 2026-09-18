@@ -36,12 +36,15 @@ import argparse
 import asyncio
 import json
 import os
+
+# Allow running as `python src/tt.py` from any working directory.
+import time
 from datetime import date
 from typing import Any
 
-# Allow running as `python src/tt.py` from any working directory.
 from cherrypick.core import broker as _broker
 from cherrypick.core import dxfeed as _dx
+from cherrypick.core import execution as _execution
 
 from cherrypick.earnings import credentials as _creds
 from cherrypick.earnings import paths as _paths
@@ -452,7 +455,7 @@ async def cmd_execute_trade(args) -> dict:
         # places a live order only when live=True, the dry-run preflight had no errors, and (when
         # configured) the account deploy-limit governor allows it. account_deploy_limit_pct defaults
         # to 0/off; a positive value caps deployed buying power at that % of account capacity.
-        return await _broker.place_order(
+        result = await _broker.place_order(
             account,
             get_session(),
             order,
@@ -460,8 +463,45 @@ async def cmd_execute_trade(args) -> dict:
             serialize=_serialize,
             deploy_limit_pct=_load_config().get("account_deploy_limit_pct") or None,
         )
+        oid = _execution.order_id_of(result)
+        if oid is not None:
+            result["order_id"] = oid
+        # Fill confirmation (2026-09-17). This module has no live loop -- a live order is placed by
+        # a human running this command and then recorded with `db.py save_trade` -- so until now
+        # the price recorded was whatever the human typed, which in practice was the limit asked
+        # for. A live submit now waits up to `--wait` seconds for the broker's answer and reports
+        # it as `fill`: {state, price, polls}. `state` is 'filled' (with the ACTUAL price),
+        # 'working' (still resting when the wait ran out -- record it pending and ask again with
+        # `order_status`), or the terminal state the broker gave. Never a dependency: a status
+        # call that fails leaves `fill` as 'working' with the error, and the placement stands.
+        wait = float(getattr(args, "wait", 0) or 0)
+        if live and result.get("ok") and oid is not None and wait > 0:
+            result["fill"] = await _confirm_fill(account, oid, wait, fallback_price=spec.get("price"))
+        return result
     except Exception as exc:
         return _error(exc)
+
+
+async def _confirm_fill(
+    account, order_id: str, wait_seconds: float, *, fallback_price=None, poll=2.0
+) -> dict:
+    """Poll the order until it fills, dies, or `wait_seconds` elapses. Fail-open on the STATUS
+    call only: the order was already placed, so a failed poll must never read as a failed order."""
+    deadline = time.monotonic() + wait_seconds
+    polls, last_error = 0, None
+    while True:
+        polls += 1
+        try:
+            status = await _broker.order_status(account, get_session(), order_id)
+        except Exception as exc:  # noqa: BLE001 -- see docstring
+            status, last_error = None, f"{type(exc).__name__}: {exc}"
+        state, price = _execution.fill_state(status, fallback_price=fallback_price)
+        if state != "working" or time.monotonic() >= deadline:
+            out = {"state": state, "price": price, "polls": polls, "order_id": order_id}
+            if last_error:
+                out["error"] = last_error
+            return out
+        await asyncio.sleep(min(poll, max(0.0, deadline - time.monotonic())))
 
 
 def cmd_secrets_status(_args) -> dict:
@@ -554,6 +594,12 @@ def main() -> None:
     p_exec.add_argument("--order", required=True)
     p_exec.add_argument("--account_number", default=None)
     p_exec.add_argument("--live", action="store_true")
+    p_exec.add_argument(
+        "--wait",
+        type=float,
+        default=30.0,
+        help="live only: seconds to wait for the fill before reporting (0 = report the placement only)",
+    )
 
     args = parser.parse_args()
     dispatch = {

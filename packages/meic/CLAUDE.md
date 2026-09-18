@@ -127,6 +127,19 @@ deployed default (0.0035) and below the quarterly-expiry override (0.0067).
 
 ## Tastytrade Tool Reference
 
+**The live loop confirms fills and submits through the shared adapter (2026-09-17).** Until then an
+accepted placement was recorded as a fill at the submitted limit -- an entry became an open row the
+moment the broker accepted the order. Now `live_loop.py` saves an entry `status='pending'`, and
+`_confirm_fills` at the top of every tick asks the broker: a confirmed fill flips it to `open` at the
+ACTUAL net credit (`fill_confirmed_at` stamped); an order that dies unfilled becomes `cancelled` with
+zero P&L and frees its slot; a pending row holds its slot but is not managed for exits. Stop orders are
+confirmed into `{side}_stop_fill_status`; a stop that dies unfilled is logged CRITICAL because the
+ledger has the side closed and the broker does not -- reopening that leg (and correcting the recorded
+exit to the actual fill) is the documented follow-up, since the per-side exit accounting is shared with
+paper and needs its own verb. The submission seam is `cherrypick.core.execution.Broker` (`make_broker`),
+which re-checks `readiness` on every live submit and applies the deploy governor; it replaced an
+adapter that shelled out to `tt.py execute_trade` and scraped stdout.
+
 **The live loop declares its own open legs to the streamer (2026-09-17).** `stream_request.py` writes
 `meic.json` from the paper loop and `meic-live.json` from the live loop's preamble (`register_live`,
 best-effort, dry-run included), each carrying the open-IC leg query against that loop's OWN ledger. Until

@@ -288,7 +288,9 @@ def test_the_written_file_declares_both_ledgers(live_db):
 def test_the_default_live_source_is_the_live_ledger():
     from cherrypick.earnings import paths
 
-    live_sources = [s for s in stream_request.leg_sources(db_paper.DB_PATH) if s["db"] != str(db_paper.DB_PATH)]
+    live_sources = [
+        s for s in stream_request.leg_sources(db_paper.DB_PATH) if s["db"] != str(db_paper.DB_PATH)
+    ]
     assert live_sources and all(s["db"] == str(paths.live_db_path()) for s in live_sources)
     assert str(paths.live_db_path()).endswith("earnings_trades.db")
 
@@ -325,7 +327,14 @@ def test_a_stamped_streamer_symbol_wins_over_the_conversion(live_db):
     _open_live_trade(
         "L1",
         "MSFT",
-        [{"symbol": "MSFT  260919C00400000", "action": "Sell to Open", "quantity": 1, "streamer_symbol": ".MSFT260919C400"}],
+        [
+            {
+                "symbol": "MSFT  260919C00400000",
+                "action": "Sell to Open",
+                "quantity": 1,
+                "streamer_symbol": ".MSFT260919C400",
+            }
+        ],
     )
     view = _producer_view(stream_request.leg_sources(db_paper.DB_PATH, live_db))
     assert view == [".MSFT260919C400", "MSFT"]
@@ -334,7 +343,9 @@ def test_a_stamped_streamer_symbol_wins_over_the_conversion(live_db):
 def test_closing_a_live_position_drops_its_legs_and_its_spot(live_db):
     from cherrypick.earnings import db as live
 
-    _open_live_trade("L1", "AAPL", [{"symbol": "AAPL  260919C00190000", "action": "Sell to Open", "quantity": 1}])
+    _open_live_trade(
+        "L1", "AAPL", [{"symbol": "AAPL  260919C00190000", "action": "Sell to Open", "quantity": 1}]
+    )
     live.cmd_save_close(_ns(data=json.dumps({"order_id": "L1", "exit_debit": 1.0, "pnl": 100.0})))
 
     assert _producer_view(stream_request.leg_sources(db_paper.DB_PATH, live_db)) == []
@@ -351,6 +362,8 @@ def test_a_live_ledger_that_does_not_exist_yet_contributes_nothing(tmp_path):
 
 
 def test_an_unconvertible_leg_never_blocks_the_trade(live_db):
-    res = _open_live_trade("L1", "AAPL", [{"symbol": "not-an-occ-symbol", "action": "Sell to Open", "quantity": 1}])
+    res = _open_live_trade(
+        "L1", "AAPL", [{"symbol": "not-an-occ-symbol", "action": "Sell to Open", "quantity": 1}]
+    )
     assert res["ok"]
     assert _producer_view(stream_request.leg_sources(db_paper.DB_PATH, live_db)) == ["AAPL"]
