@@ -194,6 +194,8 @@ def settle_expiring_legs(
     for leg in db.expiring_open_legs(conn, day):
         if symbol is not None and leg["position_symbol"] != symbol:
             continue
+        if leg.get("position_status") == "pending":
+            continue  # a live entry never confirmed filled holds nothing to settle
         intrinsic = engine.settle_intrinsic(leg["strike"], spot, leg.get("option_type") or "put")
         itm = intrinsic > 0
         db.save_leg(

@@ -265,6 +265,7 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "entry_placed_at": "TEXT",
         "entry_live_floor": "REAL",
         "entry_reprice_count": "INTEGER",
+        "entry_repriced_at": "TEXT",
         "entry_mid_at_submit": "REAL",
         # Add-on order: recorded on CONFIRMATION only (the meic rule). While pending, the plan it
         # was placed for is stashed here; a fill writes the legs through book.fire_addon with the
@@ -275,6 +276,7 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "addon_placed_at": "TEXT",
         "addon_live_floor": "REAL",
         "addon_reprice_count": "INTEGER",
+        "addon_repriced_at": "TEXT",
         "addon_mid_at_submit": "REAL",
         "addon_attempts": "INTEGER",
         "pending_addon_json": "TEXT",
