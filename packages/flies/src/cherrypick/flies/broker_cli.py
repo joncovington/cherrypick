@@ -26,6 +26,7 @@ import json
 import sys
 
 from cherrypick.core import broker as _broker  # noqa: E402
+from cherrypick.core import settlement as _settlement  # noqa: E402
 
 from cherrypick.flies import credentials as creds  # noqa: E402
 from cherrypick.flies.cli import load_config  # noqa: E402
@@ -70,111 +71,9 @@ async def fresh_option_quotes(session, symbols: list[str]) -> dict[str, dict]:
     return out
 
 
-_HTTP_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; cherrypick-flies settlement fetch)"}
-_HTTP_TIMEOUT_SECONDS = 8
-
-
-async def _tastytrade_index_price(session, symbol: str) -> tuple[float | None, str | None]:
-    """The index's own close (once posted), falling back to last/mark if `close` hasn't populated
-    yet — tastytrade's `indices=[...]` market-data call, same REST endpoint `fresh_option_quotes`
-    uses for options. Never raises: any SDK/network error is treated as "this source came up
-    empty," letting the caller move to the next one.
-
-    Returns `(price, field)` — WHICH field answered, not just the number. Only `close` is a posted
-    settlement value; `last`/`mark` are intraday prints that merely happen to be the most recent
-    one. Callers must not label those "official" (2026-07-31: `close` was still None ~50 minutes
-    after the bell, so an unconditional "official" label was asserting more than was established).
-    """
-    from tastytrade.market_data import get_market_data_by_type
-
-    try:
-        rows = await get_market_data_by_type(session, indices=[symbol])
-    except Exception:  # noqa: BLE001 — one source of several; caller falls through on failure
-        return None, None
-    for row in rows:
-        for field in ("close", "last", "mark"):
-            candidate = getattr(row, field, None)
-            if candidate is not None and float(candidate) > 0:
-                return float(candidate), field
-    return None, None
-
-
-def _yahoo_index_price(symbol: str) -> float | None:
-    """Yahoo Finance's public chart JSON endpoint (not HTML scraping — a plain structured API
-    response), keyed by the `^`-prefixed index ticker. Blocking; called via `asyncio.to_thread`."""
-    import json
-    import urllib.request
-
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/%5E{symbol}?interval=1d&range=1d"
-    try:
-        req = urllib.request.Request(url, headers=_HTTP_HEADERS)
-        with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT_SECONDS) as resp:
-            data = json.load(resp)
-        meta = data["chart"]["result"][0]["meta"]
-        price = meta.get("regularMarketPrice")
-        return float(price) if price else None
-    except Exception:  # noqa: BLE001 — one source of several; caller falls through on failure
-        return None
-
-
-def _barchart_index_price(symbol: str) -> float | None:
-    """Barchart's quote page embeds its data as inline JSON (`"lastPrice":"..."`) rather than
-    requiring JS rendering — a plain regex pull, not a browser-driven scrape. Blocking; called via
-    `asyncio.to_thread`. Last resort: no structured API, most exposed to the page changing shape."""
-    import re
-    import urllib.request
-
-    url = f"https://www.barchart.com/stocks/quotes/${symbol}/performance"
-    try:
-        req = urllib.request.Request(url, headers=_HTTP_HEADERS)
-        with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT_SECONDS) as resp:
-            html = resp.read().decode("utf-8", errors="ignore")
-        match = re.search(r'"lastPrice":"([0-9.]+)"', html)
-        return float(match.group(1)) if match else None
-    except Exception:  # noqa: BLE001 — last source; caller reports "no_source_available"
-        return None
-
-
-async def official_settlement_price(session, symbol: str) -> tuple[float | None, str]:
-    """Best-effort fetch of the day's settlement/closing index level for `symbol` (XSP/SPX).
-    Returns `(price, source)`, where `source` names not just WHICH provider answered but whether
-    the value is authoritative:
-
-        tastytrade_close / yahoo / barchart   -> a posted CLOSING value; safe to call official
-        tastytrade_<field>_provisional        -> an intraday tick; caller MUST keep retrying
-        no_source_available                   -> nothing answered; caller must not guess
-
-    That distinction is the point (added 2026-07-31): this previously returned a bare "tastytrade"
-    for any of close/last/mark, and the caller stamped every one of them `settlement_source =
-    'official'` -- which also stopped the retry loop. On 2026-07-31 tastytrade's `close` was still
-    None ~50 minutes after the bell, so the session was marked official off an intraday `last`.
-    The caller must never guess a settlement price; that stays a hard refusal, same as a missing
-    fresh option quote.
-
-    Deliberately not gated behind a fixed post-close delay: the real settlement print isn't
-    guaranteed to exist the instant the market closes, so this is designed to be called on every
-    live tick until one succeeds (see `live_loop.run_settle_live`), not just once."""
-    # tastytrade's own posted CLOSE is the only genuinely-official reading available here, so it
-    # goes first. If it hasn't populated, prefer Yahoo/Barchart -- their post-close quote IS the
-    # closing print -- over tastytrade's intraday `last`/`mark`, which is merely the most recent
-    # tick and can sit well away from the settlement value (2026-07-31, a month-end Friday: the
-    # last streamed tick was 750.46 against a 748.97 close, a 15-SPX-point closing-auction move).
-    price, field = await _tastytrade_index_price(session, symbol)
-    if price is not None and field == "close":
-        return price, "tastytrade_close"
-
-    fallback = await asyncio.to_thread(_yahoo_index_price, symbol)
-    if fallback is not None:
-        return fallback, "yahoo"
-    fallback = await asyncio.to_thread(_barchart_index_price, symbol)
-    if fallback is not None:
-        return fallback, "barchart"
-
-    # Nothing authoritative answered. tastytrade's last/mark is better than no price at all, but
-    # the caller MUST treat it as provisional and keep retrying -- see `run_settle_live`.
-    if price is not None:
-        return price, f"tastytrade_{field}_provisional"
-    return None, "no_source_available"
+# The settlement-price chain moved to `cherrypick.core.settlement` on 2026-09-18 (bwb is its second
+# consumer). Kept as a module attribute here so the adapter and the tests keep one seam to patch.
+official_settlement_price = _settlement.official_index_close
 
 
 def live_gates(config: dict) -> list[str]:

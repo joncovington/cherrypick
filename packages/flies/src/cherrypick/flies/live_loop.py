@@ -72,8 +72,9 @@ from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 
 from cherrypick.core import calendar as _cal  # noqa: E402
-from cherrypick.core import execution as _execution  # noqa: E402
+from cherrypick.core import execution as _execution
 from cherrypick.core import home as _home  # noqa: E402
+from cherrypick.core import settlement as _settlement  # noqa: E402
 
 from cherrypick.flies import (
     alerts_db,  # noqa: E402
@@ -1055,7 +1056,7 @@ def session_already_settled(conn, day: str) -> bool:
 # Settlement-source values that represent a genuinely POSTED closing print (see
 # `broker_cli.official_settlement_price`). Anything else -- an intraday last/mark tick, or the
 # stream cache's last trade -- is provisional and must keep the retry alive.
-_OFFICIAL_SOURCES = {"official", "tastytrade_close", "yahoo", "barchart"}
+_OFFICIAL_SOURCES = _settlement.OFFICIAL_SOURCES  # one rule for what a cash-settled ledger may settle on
 
 
 def _is_official_source(source: str | None) -> bool:
