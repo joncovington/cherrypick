@@ -692,6 +692,8 @@ _RETIRED_COPIES = (
     (re.compile(r"""["']halt-live\.flag["']"""), "core/home.py"),
     # 2026-09-18: three byte-identical SDK-object flatteners, each passed to the seam by hand.
     (re.compile(r"^\s*def _serialize\("), "core/broker/__init__.py"),
+    # 2026-09-18: the nickel tick rounding, one copy in meic (floor + ceil) and one in flies.
+    (re.compile(r"^\s*def tick_(floor|ceil)\("), "core/structures/__init__.py"),
 )
 
 

@@ -23,15 +23,12 @@ reject the increment.
 
 from __future__ import annotations
 
+from cherrypick.core.structures import TICK, tick_floor  # one rounding rule, suite-wide
+
 from cherrypick.flies import fly
 from cherrypick.flies.engine import PUT
 
-TICK = 0.05  # SPX/XSP index options tick in nickels at these price levels
-
-
-def tick_floor(price: float, tick: float = TICK) -> float:
-    """Round DOWN to the tick (asking for less credit / offering less debit)."""
-    return int(round(price * 100)) // int(round(tick * 100)) * int(round(tick * 100)) / 100.0
+__all__ = ["TICK", "tick_floor"]
 
 
 def _leg_quote(snapshot: dict, side: str, strike: float) -> dict:
