@@ -29,6 +29,7 @@ from cherrypick.core import streamrequests as _sr
 from cherrypick.bwb import clock, db
 
 _MODULE = "bwb"
+_MODULE_LIVE = "bwb-live"  # the live loop's own request file: its legs live in a different ledger
 _BASE_WINDOW_STRIKES = 30  # generous default: ~1.5% of SPX at $5 spacing, plus the add-on bracket
 _log = logging.getLogger("bwb_paper_loop")
 
@@ -53,7 +54,9 @@ def window_strikes(conn) -> int:
     return _BASE_WINDOW_STRIKES + (10 * min(int(refusals or 0), 3))
 
 
-def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | None = None) -> Path:
+def write(
+    config: dict, conn, db_path: str, *, cache_path: str, today: date | None = None, live: bool = False
+) -> Path:
     symbol = (config.get("symbol") or "SPX").strip().upper()
     today = today or clock.now_et().date()
     defaults = config.get("defaults") or {}
@@ -65,7 +68,7 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
         )
     ]
     return _sr.write_request(
-        _MODULE,
+        _MODULE_LIVE if live else _MODULE,
         [symbol],
         leg_sources=leg_sources,
         expirations=wanted_expirations(conn, symbol, today, defaults),
@@ -73,6 +76,7 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
     )
 
 
-def register(config: dict, conn, db_path: str, *, cache_path: str) -> None:
+def register(config: dict, conn, db_path: str, *, cache_path: str, live: bool = False) -> None:
     """Best-effort: never raises into the caller."""
-    _sr.register_best_effort(write, config, conn, db_path, cache_path=cache_path, log=_log)
+    writer = (lambda *a, **k: write(*a, live=True, **k)) if live else write
+    _sr.register_best_effort(writer, config, conn, db_path, cache_path=cache_path, log=_log)
