@@ -1,3 +1,5 @@
+import pytest
+
 from cherrypick.bwb import engine
 
 PARAMS = {
@@ -104,9 +106,19 @@ def test_bwb_metrics_shape():
     assert m["credit"] == round(2 * 10.0 - 12.0 - 4.0, 4)
     assert m["narrow_width"] == 5.0
     assert m["wide_width"] == 10.0
-    assert m["max_loss_up"] == round(5.0 - m["credit"], 4)
-    assert m["max_loss_down"] == round(10.0 - m["credit"], 4)
+    # The far side is where the broken wing bites: wide minus narrow, net of credit. The near side
+    # keeps the credit. Pinned against the ledger's own evidence (2026-09-04: a 7675/7670x2/7660
+    # entered for 0.80 settled through the far wing for exactly $420, not $920).
+    assert m["max_loss_up"] == 0.0
+    assert m["max_loss_down"] == round(10.0 - 5.0 - m["credit"], 4)
     assert m["max_loss"] == max(m["max_loss_up"], m["max_loss_down"])
+    sept4 = engine.bwb_metrics(
+        body_mid=1.0, near_mid=1.4, far_mid=0.0, body_strike=7670, near_strike=7675, far_strike=7660
+    )
+    assert sept4["credit"] == pytest.approx(0.6)  # 2*1.0 - 1.4 - 0.0
+    assert sept4["max_loss"] * 100 == pytest.approx((10 - 5 - 0.6) * 100)
+    # a credit larger than the broken width makes the far side risk-free too
+    assert engine.bwb_max_losses(5.0, 10.0, 5.5) == (0.0, 0.0)
 
 
 def test_plan_entry_full_flow():
@@ -198,7 +210,11 @@ def test_plan_wall_entry_builds_the_call_side_mirror():
     assert all(leg["option_type"] == "call" for leg in inner["legs"])
     assert inner["credit"] > 0
     assert inner["narrow_width"] == 5.0 and inner["wide_width"] == 10.0
-    assert inner["max_loss_up"] == round(inner["wide_width"] - inner["credit"], 4)
+    # the far side (UP, for calls) loses wide - narrow - credit, floored at zero: this fixture's
+    # 6.0 credit exceeds the 5.0 broken width, so the structure is risk-free on both sides
+    expected_up = max(0.0, inner["wide_width"] - inner["narrow_width"] - inner["credit"])
+    assert inner["max_loss_up"] == round(expected_up, 4) == 0.0
+    assert inner["max_loss_down"] == 0.0
 
 
 def test_plan_wall_entry_refuses_without_a_wall_rather_than_borrowing_the_em():
