@@ -112,13 +112,19 @@ def _paper_open_positions(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
 # --------------------------------------------------------------------------- broker (real account)
 def _balances_summary(balances: Any) -> dict[str, Any]:
     """A small, robust view of the account balances — pull any buying-power / maintenance / net-liq
-    fields present (tastytrade uses hyphenated keys), tolerant of an absent or differently-shaped dict."""
+    fields present, tolerant of an absent or differently-shaped dict.
+
+    Matched with `-` and `_` treated alike (2026-09-17). The wire form is hyphenated
+    (`net-liquidating-value`) but the SDK's model dumps underscored (`net_liquidating_value`), and
+    the filter had matched only the hyphens -- so `reconcile` and `positions` both reported an empty
+    `balances` block on every real account since the SDK started dumping models, and nothing
+    downstream could tell that from an account with no balances."""
     if not isinstance(balances, dict):
         return {}
     wanted = ("buying-power", "maintenance-requirement", "net-liquidating-value", "derivative-buying-power")
     summary: dict[str, Any] = {}
     for key, val in balances.items():
-        k = str(key).lower()
+        k = str(key).lower().replace("_", "-")
         if any(w in k for w in wanted):
             summary[str(key)] = val
     return summary
