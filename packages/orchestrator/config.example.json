@@ -239,9 +239,32 @@
       }
     },
     "bwb": {
-      "_comment": "SPX daily-laddered put broken-wing-butterfly paper module (packages/bwb): enters one BWB per enabled book every session at the expected move, ~7DTE, PM-settled; the books differ only in whether/when a reversal-triggered put credit spread add-on turns the fly into a 1-3-2. Paper-only and credential-free -- no keyring_service, no broker_tool, no live block; market data comes entirely from the shared stream cache via the streamer's `expirations`/`window_hints` request fields.",
+      "_comment": "SPX daily-laddered put broken-wing-butterfly module (packages/bwb): enters one BWB per enabled book every session at the expected move, ~7DTE, PM-settled; the books differ only in whether/when a reversal-triggered put credit spread add-on turns the fly into a 1-3-2. Paper by default and the paper loop is credential-free; market data comes entirely from the shared stream cache via the streamer's `expirations`/`window_hints` request fields. Since 2026-09-18 it also has a narrow LIVE path (one arm, per-day armed via /live-bwb-start, the full daily ladder under a worst-case cap, no closing orders) -- the keyring_service/broker_tool/live_db/live keys below are that path's, and the paper loop touches none of them.",
       "enabled": true,
       "path": "../bwb",
+      "_broker_note": "Live onboarding: `cherrypick connect/account --module bwb` drive broker_cli.py exactly like flies'. keyring service bwbagent (falls back to the shared suite login, so a box with that login needs no new secret); live_db is the SEPARATE live ledger read only by `report --live` (never by calibrate/promotion).",
+      "keyring_service": "bwbagent",
+      "broker_tool": [
+        "-m",
+        "cherrypick.bwb.broker_cli"
+      ],
+      "live_db": "~/.cherrypick/data/bwb/live_trades.db",
+      "_live_note": "Watchdog + notification wiring for the module's LIVE loop (the module owns arming/trading; this block only tells the orchestrator how to WATCH it, and declaring task_name is what derives the bwb-live supervisor job from the arm record). The loop self-disarms at its own live.disarm_time; disarm_time/disarm_grace_minutes here are the watchdog's BACKSTOP window -- past it, a still-armed record means self-disarm failed, so the watchdog sets the suite halt flag and raises CRITICAL. notify_trades pushes live entries/add-ons/settlements from live_db with the LIVE prefix, from the notifier path (never the trading loop).",
+      "live": {
+        "task_name": "cherrypick-bwb-live-loop",
+        "status_argv": [
+          "-m",
+          "cherrypick.bwb.live_loop",
+          "--status"
+        ],
+        "log": "bwb_live.log",
+        "freshness_minutes": 5,
+        "tick_interval_seconds": 60,
+        "notify_trades": false,
+        "disarm_time": "17:00",
+        "disarm_grace_minutes": 30,
+        "settlement_grace_minutes": 45
+      },
       "paper": {
         "kind": "self_healing",
         "_tick_note": "60s resident: triggers are defined on the sampled series, not the continuous path, so this cadence is part of the measurement instrument -- changing it is a journaled measurement break, the flies 60s->15s precedent.",

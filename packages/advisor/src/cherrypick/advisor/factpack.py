@@ -118,6 +118,7 @@ def _live_db(module: str) -> Path:
             "meic": "meic_trades.db",
             "earnings": "earnings_trades.db",
             "flies": "live_trades.db",
+            "bwb": "live_trades.db",
         }[module]
     )
 
@@ -1003,17 +1004,21 @@ def _live(session: str) -> dict[str, Any]:
                 "config_read": False,
                 "_note": "config unreadable",
             }
-    flies_cfg = (_store.read_json(_paths.module_config_path("flies"), default={}) or {}).get("live") or {}
-    arm = _store.read_json(state / "flies-live-arm.json", default=None)
-    posture["flies"] = {
-        "enabled": bool(flies_cfg.get("enabled")),
-        # The same record the supervisor's job enablement reads. Presence and date only — arming
-        # authority is the module's human-confirmed command and nothing here can touch it.
-        "arm_record": {
-            "date": (arm or {}).get("date"),
-            "armed_today": bool(arm) and (arm or {}).get("date") == session,
-        },
-    }
+    # The per-day-armed modules (flies, and bwb since 2026-09-18): the same arm record the
+    # supervisor's job enablement reads. Presence and date only — arming authority is the
+    # module's human-confirmed command and nothing here can touch it.
+    for module in ("flies", "bwb"):
+        live_cfg = (_store.read_json(_paths.module_config_path(module), default={}) or {}).get("live") or {}
+        arm = _store.read_json(state / f"{module}-live-arm.json", default=None)
+        posture[module] = {
+            "enabled": bool(live_cfg.get("enabled")),
+            "arm_record": {
+                "date": (arm or {}).get("date"),
+                "armed_today": bool(arm) and (arm or {}).get("date") == session,
+            },
+        }
+        if module == "bwb":
+            posture[module]["arm"] = live_cfg.get("arm")
 
     def live_flies(conn):
         today = _store.rows(

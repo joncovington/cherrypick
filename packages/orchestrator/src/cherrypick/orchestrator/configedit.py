@@ -55,6 +55,22 @@ GUARDED: dict[str, dict[str, str]] = {
             "placeholder — no live loop exists yet; see the module CLAUDE.md's live-trading prerequisites"
         ),
     },
+    "curve": {
+        "/live/enabled": (
+            "placeholder — no live loop exists yet; see the module CLAUDE.md's live-trading prerequisites"
+        ),
+    },
+    "bwb": {
+        "/live/enabled": "bwb live is armed per-day via /live-bwb-start; this flag is a plan-rung step",
+        "/live/gate0_confirmed": "a human attestation string — write it by hand, with the plan doc open",
+        "/live/arm": "which book trades live — switching it is a journaled live measurement break, by hand",
+        "/live/min_net_credit_dollars": "the live credit floor's net component — hand-edit deliberately",
+        "/live/max_open_margin_dollars": "live worst-case cap — hand-edit deliberately, never from here",
+        "/live/max_open_margin_per_expiration_dollars": "live per-Friday cap — hand-edit deliberately",
+        "/live/mark_drawdown_halt_dollars": "live entry breaker — hand-edit deliberately, never from here",
+        "/live/daily_loss_halt_dollars": "live loss halt — hand-edit deliberately, not from this surface",
+        "/live/account_deploy_limit_pct": "live risk cap — hand-edit deliberately, not from this surface",
+    },
 }
 
 # Keys whose change breaks an orchestrator coupling if done silently (docs/configuration-and-storage.md):
@@ -63,13 +79,25 @@ GUARDED: dict[str, dict[str, str]] = {
 COUPLED: tuple[str, ...] = ("paper_db", "trade_schema", "keyring_service")
 
 # The module packages whose home config files this surface edits (~/.cherrypick/config/<pkg>.json).
-_MODULE_TARGETS: tuple[str, ...] = ("calendars", "earnings", "flies", "gex", "meic", "pmcc", "streamer")
+_MODULE_TARGETS: tuple[str, ...] = (
+    "bwb",
+    "calendars",
+    "curve",
+    "earnings",
+    "flies",
+    "gex",
+    "meic",
+    "pmcc",
+    "streamer",
+)
 
 # Each target's config.example.json, relative to the orchestrator checkout (cfgmod.ROOT). Used by
 # `organize` as the canonical section order. A module's configured `path` wins when present.
 _EXAMPLE_REL: dict[str, str] = {
     "orchestrator": "config.example.json",
+    "bwb": "../bwb/config.example.json",
     "calendars": "../calendars/config.example.json",
+    "curve": "../curve/config.example.json",
     "earnings": "../earnings/config/config.example.json",
     "flies": "../flies/config.example.json",
     "gex": "../gex/config.example.json",

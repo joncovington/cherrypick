@@ -148,6 +148,7 @@ def test_supervisor_arm_record_filename_is_the_core_convention():
     `supervisor.arm_record_path(name)` off its own patchable state dir. Same filename, or an armed
     module is a job the supervisor never enables."""
     from cherrypick.core import live as _live
+
     from cherrypick.orchestrator import supervisor
 
     assert supervisor.arm_record_path("bwb").name == _live.arm_record_path("bwb").name == "bwb-live-arm.json"
