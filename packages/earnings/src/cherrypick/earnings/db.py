@@ -30,6 +30,11 @@ strategies with independently-closeable legs (e.g. double_calendar's threatened-
 stays NULL until every one of its legs is closed via save_leg_close and save_close is called
 for the position as a whole.
 
+`open_leg_symbols` (added 2026-09-17) is the flat streamer-symbol set the market-data producer
+subscribes from, the same table `db_paper.py` keeps; `save_trade` fills it from the order's legs
+(see `leg_streamer_symbols`) and `save_close` clears it, so a hand-recorded live position is
+declared to the streamer by the act of recording it, with no extra step for the human to forget.
+
 `profile`/`quantity`/`capital_at_risk`/`entry_cost`/`exit_cost`/`entry_context`/`entry_iv`/
 `exit_iv` exist for schema parity with db_paper.py's paper-mode profile testing (see
 docs/strat-test-portfolios.md) -- live trading doesn't select a profile today, so these
@@ -46,6 +51,7 @@ import time
 # Make `import paths` resolve when this file is imported (not run as the __main__ script, which
 # gets its own directory on sys.path automatically) -- mirrors credentials.py's self-insert.
 from cherrypick.core import db as _db
+from cherrypick.core import streamcache as _streamcache
 
 from cherrypick.earnings import paths as _paths
 
@@ -89,6 +95,18 @@ CREATE TABLE IF NOT EXISTS trade_legs (
     close_price REAL,
     closed_at   REAL,
     UNIQUE(order_id, leg_role)
+);
+
+-- The streamer symbols of every open position's legs, flat -- the same table db_paper.py keeps, so
+-- stream_request.py's ONE leg query runs unchanged against either ledger. Added 2026-09-17: until
+-- then the live ledger had no such table, so a live position's wings and back months were never
+-- declared to the producer and priced off frozen quotes the moment spot left the ATM window.
+-- Written by save_trade from the order's legs, cleared by save_close; the query also joins on
+-- trades.closed_at, so a close that failed to clear its rows cannot pin a dead subscription.
+CREATE TABLE IF NOT EXISTS open_leg_symbols (
+    order_id        TEXT NOT NULL,
+    streamer_symbol TEXT NOT NULL,
+    PRIMARY KEY (order_id, streamer_symbol)
 );
 
 CREATE TABLE IF NOT EXISTS scan_log (
@@ -203,6 +221,37 @@ def cmd_get_open_positions(args) -> dict:
     return {"ok": True, "positions": [dict(r) for r in rows]}
 
 
+def leg_streamer_symbols(spec: dict) -> list[str]:
+    """The streamer symbols of a save_trade spec's legs, from ``legs_json`` and ``legs`` alike.
+
+    A leg that already carries ``streamer_symbol`` (the chain's own, as the paper harness stamps)
+    keeps it; one that carries only the OCC ``symbol`` the order was placed with is converted through
+    ``cherrypick.core.streamcache.occ_to_streamer_symbol``, which is pinned to the SDK's converter --
+    the live path is a human running ``tt.py execute_trade --live`` and then ``save_trade`` with the
+    order's legs verbatim, and asking that path to also copy a chain field by hand is how the paper
+    table sat empty for 64 trades. Unconvertible legs are dropped, never raised on: a subscription
+    record must not fail the trade that was already placed.
+    """
+    legs: list = []
+    for raw in (spec.get("legs_json"), spec.get("legs")):
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except ValueError:
+                raw = None
+        if isinstance(raw, list):
+            legs.extend(leg for leg in raw if isinstance(leg, dict))
+    out: set[str] = set()
+    for leg in legs:
+        sym = leg.get("streamer_symbol")
+        if not (isinstance(sym, str) and sym.strip()):
+            occ = leg.get("symbol")
+            sym = _streamcache.occ_to_streamer_symbol(occ) if isinstance(occ, str) else ""
+        if isinstance(sym, str) and sym.strip():
+            out.add(sym.strip())
+    return sorted(out)
+
+
 def cmd_save_trade(args) -> dict:
     spec = json.loads(args.data)
     required = ("order_id", "symbol", "expiration")
@@ -244,6 +293,13 @@ def cmd_save_trade(args) -> dict:
                 "VALUES (?, ?, ?, ?, ?)",
                 (spec["order_id"], leg["leg_role"], leg["symbol"], leg["action"], leg["quantity"]),
             )
+        # Declare the legs to the producer (stream_request.py's query reads this table). In the same
+        # transaction as the trade row, so the ledger can never hold a live position whose legs it
+        # forgot to declare -- the 2026-09-17 gap this table closes.
+        conn.executemany(
+            "INSERT OR IGNORE INTO open_leg_symbols (order_id, streamer_symbol) VALUES (?, ?)",
+            [(spec["order_id"], sym) for sym in leg_streamer_symbols(spec)],
+        )
         conn.commit()
     except sqlite3.IntegrityError as exc:
         return {"ok": False, "error": f"save_trade failed: {exc}"}
@@ -315,6 +371,9 @@ def cmd_save_close(args) -> dict:
                 order_id,
             ),
         )
+        # The join on trades.closed_at already drops these from the producer's view; clearing them
+        # too keeps the table an honest "open legs" set rather than a history.
+        conn.execute("DELETE FROM open_leg_symbols WHERE order_id = ?", (order_id,))
         conn.commit()
         if cur.rowcount == 0:
             return {"ok": False, "error": f"no open trade found for order_id {order_id}"}

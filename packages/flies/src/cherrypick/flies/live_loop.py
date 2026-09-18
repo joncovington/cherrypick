@@ -469,13 +469,25 @@ def place_resting_completion(conn, pos: dict, snapshot: dict, params: dict, brok
     res = broker.place(spec, live=live)
     log(f"completion order ({'LIVE' if live else 'dry-run'}): {json.dumps(res, default=str)[:200]}")
     if res.get("ok") and live and res.get("order_id"):
+        # The far strike is stamped at PLACEMENT, not fill: the order rests at the broker for the
+        # session, and the leg it names needs to stay quoted the whole time it is working -- a
+        # fill is confirmed by polling the order, never by pricing the leg, so a late stamp would
+        # buy nothing and lose the mark path for a resting order (see db.py's column comment).
+        completing = bookmod.leg_symbol_columns(
+            snapshot, pos["side"], completing=live_orders.completing_long_strike(pos)
+        ).get("completing_leg_symbol")
         conn.execute(
-            "UPDATE fly_positions SET completion_order_id = ?, completion_fill_status = 'pending' "
-            "WHERE id = ?",
-            (str(res["order_id"]), pos["id"]),
+            "UPDATE fly_positions SET completion_order_id = ?, completion_fill_status = 'pending', "
+            "completing_leg_symbol = COALESCE(?, completing_leg_symbol) WHERE id = ?",
+            (str(res["order_id"]), completing, pos["id"]),
         )
         conn.commit()
-        return {**pos, "completion_order_id": str(res["order_id"]), "completion_fill_status": "pending"}
+        return {
+            **pos,
+            "completion_order_id": str(res["order_id"]),
+            "completion_fill_status": "pending",
+            "completing_leg_symbol": completing or pos.get("completing_leg_symbol"),
+        }
     # dry-run, or placement refused: release the claim so a later tick can retry
     conn.execute("UPDATE fly_positions SET completion_order_id = NULL WHERE id = ?", (pos["id"],))
     conn.commit()
@@ -932,6 +944,17 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                             "completing_direction": plan.get("completing_direction"),
                             "underlying_at_entry": snapshot.get("underlying_price"),
                             **bookmod.regime_columns("entry", snapshot, params, center=plan.get("center")),
+                            # The two contracts just ordered, as streamer symbols, so the live
+                            # request file's leg query can keep them quoted once spot leaves the
+                            # ATM window (see stream_request.py). Same source as the OCC symbols on
+                            # the order: the snapshot quote at each strike carries both forms.
+                            **bookmod.leg_symbol_columns(
+                                snapshot,
+                                plan["side"],
+                                **bookmod.entry_leg_strikes(
+                                    "short_vertical", plan["side"], plan["center"], plan["wing_width"]
+                                ),
+                            ),
                             "entry_time": clock.now_iso(),
                             "entry_order_id": str(res["order_id"]),
                             "entry_fill_status": "pending",
@@ -1874,7 +1897,8 @@ def main() -> int:
 
     config = load_config(args.config)
     cache_path = args.stream_cache or _pl.stream_cache_path(config)
-    conn = dbmod.connect(args.db or dbmod.live_db_path())
+    db_path = args.db or dbmod.live_db_path()
+    conn = dbmod.connect(db_path)
     live = not args.dry_run
     try:
         if args.status:
@@ -1966,11 +1990,14 @@ def main() -> int:
                         f"unmatched={result['unmatched']}"
                     )
 
-            # Tell the streamer which underlying we need kept fresh (best-effort), and whether it
+            # Tell the streamer which underlying we need kept fresh (best-effort), whether it
             # needs a wider-than-default ATM window after repeated missing_leg_quotes refusals
-            # (stream_window.py) -- live_loop previously registered no request of its own at all,
-            # free-riding entirely on paper_loop's or another module's registration of the same
-            # symbol. This DB (live_trades.db) has its own escalation state, independent of paper's.
+            # (stream_window.py), and -- since 2026-09-17 -- which option legs this ledger's open
+            # positions hold, so they stay quoted after spot leaves the window (the request file
+            # carries a leg query the streamer re-runs against live_trades.db every poll).
+            # live_loop previously registered no request of its own at all, free-riding entirely
+            # on paper_loop's or another module's registration of the same symbol. This DB
+            # (live_trades.db) has its own escalation state, independent of paper's.
             if live:
                 symbol = _live_cfg(config).get("symbol", "XSP")
                 try:
@@ -1978,7 +2005,7 @@ def main() -> int:
                     hints = stream_window.hints_for_symbols(conn, [symbol], day, base_width=base_width)
                 except Exception:  # noqa: BLE001 — window escalation is advisory, never fatal
                     hints = None
-                stream_request.register({"symbols": [symbol]}, window_hints=hints, live=True)
+                stream_request.register({"symbols": [symbol]}, window_hints=hints, live=True, db_path=db_path)
 
             # Settlement before the session gate — the settle time is after the close. Gated on
             # OFFICIAL, not just settled: a provisional settlement keeps retrying the auto

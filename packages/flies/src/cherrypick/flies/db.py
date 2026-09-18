@@ -418,6 +418,28 @@ _ADDED_POSITION_COLUMNS = {
     # tag was `advised:<base>` and every experiment on that base reused it in turn, so this is the
     # only thing that tells those rows apart; since 09-17 the tag names the experiment itself.
     "experiment_id": "TEXT",
+    # The position's option contracts as DXLink STREAMER symbols (".XSP260917P650" -- the cache
+    # key, taken from the same leg quote the entry priced off, never derived from OCC), added
+    # 2026-09-17 so the streamer can be told which legs to keep subscribed once spot walks the ATM
+    # window away from them. Until then the ledger recorded a structure only as symbol/centre/
+    # width/side, which is enough to re-derive strikes but not to name a contract to a producer --
+    # and "flies stays inside the ATM window" was a hope, not a guarantee, after a large move.
+    # stream_request.py's leg query reads these four columns for every open row; the producer
+    # treats each non-null cell as a symbol, so NULL (every pre-2026-09-17 row, and columns a kind
+    # does not use) simply contributes nothing. Named by the strike's ROLE in the structure rather
+    # than by the entry action, since the same strike is sold in one mode and bought in another:
+    #   center_leg_symbol     the centre strike (every kind; doubled at completion -- same contract)
+    #   wing_leg_symbol       the entry's other strike (legged: the long wing; debit_first: the
+    #                         strike sold against the centre; bwb: the near wing)
+    #   far_leg_symbol        bwb only: the wide wing held from entry until the roll
+    #   completing_leg_symbol the strike ADDED at completion (legged: the far strike bought;
+    #                         debit_first: the wing sold; bwb: the roll strike bought), stamped
+    #                         when the completion is recorded -- live, when the resting completion
+    #                         order is placed, so the leg is quoted while the order is working.
+    "center_leg_symbol": "TEXT",
+    "wing_leg_symbol": "TEXT",
+    "far_leg_symbol": "TEXT",
+    "completing_leg_symbol": "TEXT",
 }
 
 # Rows whose decisions rest on a defect, stamped once when `void_reason` is first added. Keyed on

@@ -236,7 +236,13 @@ All reads/writes via `cherrypick/earnings/db.py` (real) / `cherrypick/earnings/d
 
 ## Loop Steps
 
-0. **Determine mode**: `paper_mode = not config.get("enable_live_trading", False)`. The config key is the only arming surface (2026-09-17; the `ENABLE_LIVE_TRADING` environment fallback was removed as an unguarded, unattested path).
+0. **Determine mode**: `paper_mode = not config.get("enable_live_trading", False)`. **Both ledgers'
+   open legs are declared to the streamer from the paper loop's one request file (2026-09-17)**: the live
+   ledger gained its own `open_leg_symbols` table, filled by `db.save_trade` from the order's legs (OCC
+   converted through core's pinned converter) and cleared by `save_close`, and `stream_request.leg_sources`
+   now carries the paper query, the same query against the live ledger, and the live ledger's open
+   underlyings — so a position a human opens with `execute_trade --live` is subscribed on the producer's
+   next poll with no registration step to forget. The config key is the only arming surface (2026-09-17; the `ENABLE_LIVE_TRADING` environment fallback was removed as an unguarded, unattested path).
    - **Paper mode** (default): persistence via `db_paper.py`, order handling stops at `strategies/<name>.py get_order` — **never call `tt.py execute_trade`** (dry-run still performs real margin check). Entry `credit` is simulated fill price directly.
    - **Live mode**: persistence via `db.py`, Step 4b's entry submission calls `tt.py execute_trade --live`.
 

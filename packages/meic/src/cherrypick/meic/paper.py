@@ -290,7 +290,8 @@ def ic_legs(trade: dict) -> list[tuple[str, str, float, int]]:
     sign)`` shape: short put, long put, short call, long call.
 
     **The long strikes are derived, not stored.** `put_strike`/`call_strike` are the SHORT strikes;
-    the longs exist in the ledger only inside `long_put_symbol`/`long_call_symbol`, as OCC strings.
+    the longs exist in the ledger only inside `long_put_symbol`/`long_call_symbol`, as DXLink
+    streamer symbols (`.XSP260917P650` -- the chain's `streamer_symbol`, never OCC).
     They are recoverable exactly -- an IC's wings sit `wing_width` outside its shorts by construction
     -- and deriving them in ONE place is the point of this function: the same arithmetic spread
     across the entry gate, the payoff read, and the console would be three chances to disagree about

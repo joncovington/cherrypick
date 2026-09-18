@@ -46,6 +46,7 @@ from cherrypick.meic import (
     paper_loop as _pl,  # noqa: E402  (market-data fetch helpers -- reused, not duplicated)
 )
 from cherrypick.meic import paths as _paths  # noqa: E402
+from cherrypick.meic import stream_request as _stream_request  # noqa: E402
 
 _TASK_NAME = "cherrypick-meic-live-loop"
 
@@ -395,6 +396,12 @@ def main() -> int:
     if not symbol:
         print(json.dumps({"ok": False, "error": "live.symbol is unset"}))
         return 1
+
+    # Declare the pinned symbol and the LIVE ledger's open legs to the streamer before anything
+    # is priced -- best-effort, never fatal (see stream_request.register_live). Dry-run included:
+    # the request file is what keeps an already-open live IC's legs quoted between ticks, and a
+    # dry-run tick that manages real positions needs them fresh exactly as much as a live one.
+    _stream_request.register_live(cfg)
 
     snapshot, err = _build_snapshot(cfg, symbol)
     if snapshot is None:
