@@ -55,17 +55,22 @@ One workspace for the trading-tool suite. Work in the package for your area — 
   classification over stored history as a signal-separation benchmark (never suite P&L); the
   credit-spread P&L itself has no synthetic backtest, per the advisor's own no-replay-engine
   contract — only a forward-recorded per-tick mark path, replayable later. There is no live path.
-- **packages/bwb** — a daily-laddered SPX put broken-wing butterfly module, **paper-only and
-  credential-free** in the calendars/pmcc/curve posture: a pure stream-cache consumer entering one
-  BWB every session at the expected move for a net credit (zero-floor by design), ~7 DTE, held to
-  expiry. Four books trade the IDENTICAL base structure and differ only in whether/when a
+- **packages/bwb** — a daily-laddered SPX put broken-wing butterfly module, **paper by default**
+  with its paper loop credential-free in the calendars/pmcc/curve posture: a pure stream-cache
+  consumer entering one BWB every session at the expected move for a net credit (zero-floor by
+  design), ~7 DTE, held to expiry. Four books trade the IDENTICAL base structure and differ only in whether/when a
   reversal-triggered put credit spread add-on fires, turning the fly into a 1-3-2: `control`
   (never), `delta` (raw delta touch), `bounce` (a confirmed pullback off a peak), `flip` (a
   gamma-flip reclaim, read fresh each tick from the same basis MEIC's own gate uses). Trigger
   latches persist on the position row so a supervisor restart can't amnesia a morning touch, and a
   cohort-keyed trigger-tick path — the module's second product — is recorded every session for a
   future read-side threshold replay. SPX is cash-settled and European-style, the cleanest
-  settlement model in the suite. There is no live path.
+  settlement model in the suite. **A narrow live path exists since 2026-09-18**, in the flies
+  posture: one configurable arm, armed per day by `/live-bwb-start`, the full daily ladder under a
+  worst-case margin cap (a firing arm's future add-on reserved), a cost-derived credit floor, a
+  mark-drawdown breaker that blocks entries only, and no closing orders — the live ledger is a
+  separate file, every fill is the broker's word, the add-on is recorded only on confirmation, and
+  settlement lands on an official print or not at all. The paper books are untouched by it.
 - **packages/overview** — the pre-open **morning market overview**: one deterministic fact pack per
   session (index/vol/sector readings from the stream cache, gamma flip and walls from the suite's
   own GEX history) with a mechanical GREEN/YELLOW/RED phase from five declared gates — missing data
@@ -105,7 +110,7 @@ One workspace for the trading-tool suite. Work in the package for your area — 
   since 2026-09-17. Off by default twice over: the suite must schedule it,
   and each module must declare its own `advice` bounds.
 - **packages/desk** — ⚠️ **EXPERIMENTAL.** The **manual trading desk** and the suite's only
-  *discretionary* live-order path (meic/earnings/flies each have a live loop behind their own
+  *discretionary* live-order path (meic/earnings/flies/bwb each have a live loop behind their own
   `enable_live_trading` gate; this has no loop): a foreground, human-initiated CLI for
   discretionary live orders, authorized entirely on its own (own config, own PIN kept as a salted
   verifier, per-order ticket, own policy gates) so it never touches a module's `enable_live_trading`.
