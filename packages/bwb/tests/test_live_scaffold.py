@@ -36,6 +36,34 @@ CREATE TABLE bwb_positions (
 """
 
 
+_LIVE_COLUMNS = (
+    "entry_order_id",
+    "entry_external_id",
+    "entry_fill_status",
+    "entry_limit",
+    "entry_placed_at",
+    "entry_live_floor",
+    "entry_reprice_count",
+    "entry_mid_at_submit",
+    "addon_order_id",
+    "addon_external_id",
+    "addon_fill_status",
+    "addon_placed_at",
+    "addon_live_floor",
+    "addon_reprice_count",
+    "addon_mid_at_submit",
+    "addon_attempts",
+    "pending_addon_json",
+    "entry_fee_estimate",
+    "addon_fee_estimate",
+    "fees_source",
+    "modeled_fees",
+    "modeled_gross_pnl",
+    "reconciled_at",
+    "settlement_source",
+)
+
+
 def test_live_columns_migrate_additively_onto_a_pre_live_ledger(managed_home):
     """A ledger created before the live scaffold gains every live column on connect, with the
     existing rows untouched and NULL in the new columns (the LedgerStore additive rule)."""
@@ -51,8 +79,10 @@ def test_live_columns_migrate_additively_onto_a_pre_live_ledger(managed_home):
     raw.close()
     conn = db.connect(str(path))
     cols = {r[1] for r in conn.execute("PRAGMA table_info(bwb_positions)")}
-    for name in db._ADDED_COLUMNS["bwb_positions"]:
+    # Named here rather than read off the map, so dropping a column from the map is caught.
+    for name in _LIVE_COLUMNS:
         assert name in cols, name
+        assert name in db._ADDED_COLUMNS["bwb_positions"], name
     row = conn.execute("SELECT * FROM bwb_positions").fetchone()
     assert row["entry_credit"] == 0.9 and row["entry_fill_status"] is None and row["addon_order_id"] is None
 
