@@ -59,6 +59,7 @@ import sys
 from datetime import datetime
 
 from cherrypick.core import execution as _execution  # noqa: E402
+from cherrypick.core import home as _home  # noqa: E402
 
 from cherrypick.meic import credentials as _creds  # noqa: E402
 from cherrypick.meic import (
@@ -75,11 +76,11 @@ _TASK_NAME = "cherrypick-meic-live-loop"
 
 
 def halt_flag_path() -> str:
-    """The suite-wide live kill switch -- the same path the orchestrator's Live Ops card
-    reports (`liveops.halt_flag_path()`); presence is the signal. Recomputed locally (no
-    cross-package import), mirroring flies' own `live_loop.halt_flag_path()`."""
-    home = os.environ.get("CHERRYPICK_HOME") or os.path.join(os.path.expanduser("~"), ".cherrypick")
-    return os.path.join(home, "state", "halt-live.flag")
+    """The suite-wide live kill switch; presence is the signal. Resolved through
+    `cherrypick.core.home.halt_flag_path` -- the hand-rolled copy this replaced skipped `$VAR`
+    expansion, so a `CHERRYPICK_HOME` the orchestrator understood could point this loop at a
+    file nobody ever touched."""
+    return str(_home.halt_flag_path())
 
 
 def _designated_account() -> str | None:

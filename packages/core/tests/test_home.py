@@ -161,3 +161,13 @@ def test_load_module_config_env_name_follows_the_module(tmp_path, monkeypatch):
     monkeypatch.setenv("PMCC_CONFIG", str(cfg))
     assert home.load_module_config("pmcc", pkg)["src"] == "env"
     assert home.load_module_config("flies", pkg)["src"] == "example"
+
+
+def test_halt_flag_path_lives_under_state_and_expands_the_home(monkeypatch, tmp_path, _clean_env):
+    """Every live loop and the orchestrator resolve the kill switch through this one function, so
+    an override written with `~`/`$VARS` must land on the same file from every caller."""
+    monkeypatch.setenv("CP_BASE", str(tmp_path))
+    monkeypatch.setenv("CHERRYPICK_HOME", "$CP_BASE/cp")
+    assert home.halt_flag_path() == tmp_path / "cp" / "state" / home.HALT_FLAG_NAME
+    assert home.halt_flag_path().parent == home.state_dir()
+    assert home.HALT_FLAG_NAME == "halt-live.flag"

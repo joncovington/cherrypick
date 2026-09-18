@@ -1063,7 +1063,7 @@ def _live(session: str) -> dict[str, Any]:
 
     return {
         "_note": _NOTE_LIVE,
-        "halt_flag_present": (state / "halt-live.flag").exists(),
+        "halt_flag_present": _home.halt_flag_path().exists(),
         "posture": posture,
         "flies_live": live_vs_paper,
         # Presence and count only. The desk is a human's discretionary path; what it did is not the

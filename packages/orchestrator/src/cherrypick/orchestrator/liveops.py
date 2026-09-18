@@ -8,9 +8,11 @@ polls every tick (present ⇒ halt new live entries). This module only *reads*; 
 orchestrator never flips live trading. The broker-truth side of live ops (the live book) is
 `reconcile`, which the Live Ops card composes alongside this.
 
-The halt flag's path is defined HERE (`state/halt-live.flag` in the cherrypick home) so the
-convention exists before any live loop does — phase 5's loops poll the same path this view
-reports, and the view showing "absent" is the day-one proof the wiring points somewhere real.
+The halt flag's path convention is `cherrypick.core.home.halt_flag_path` (`state/halt-live.flag`
+in the cherrypick home) since 2026-09-18 — it lived here first, but the live loops that poll it
+cannot import this package and two of them had drifted recomputing it by hand. This module keeps a
+resolver of its own only so tests can patch `config.STATE_DIR`, the `resident_heartbeat_path`
+pattern; a test pins the two to the same file.
 """
 
 from __future__ import annotations
@@ -26,12 +28,14 @@ from . import accounts
 from . import config as cfgmod
 from .util import mask_account
 
-HALT_FLAG_NAME = "halt-live.flag"
+HALT_FLAG_NAME = _home.HALT_FLAG_NAME
 
 
 def halt_flag_path() -> Path:
     """`~/.cherrypick/state/halt-live.flag` — the suite-wide live kill switch. Its *presence* is
-    the signal (contents ignored), so `touch` halts and `del` re-arms with no parser in between."""
+    the signal (contents ignored), so `touch` halts and `del` re-arms with no parser in between.
+    Same file as `cherrypick.core.home.halt_flag_path()`, resolved off this package's patchable
+    `STATE_DIR`."""
     return cfgmod.state_file(HALT_FLAG_NAME)
 
 
