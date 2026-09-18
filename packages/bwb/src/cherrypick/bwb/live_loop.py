@@ -48,7 +48,7 @@ from cherrypick.core import settlement as _settlement
 
 from cherrypick.bwb import book as bookmod
 from cherrypick.bwb import cli as climod
-from cherrypick.bwb import clock, db, engine, live_orders, management, provider, stream_request
+from cherrypick.bwb import clock, db, engine, fee_reconcile, live_orders, management, provider, stream_request
 from cherrypick.bwb import paper_loop as _pl
 
 DEFAULT_ARM = "control"
@@ -1040,6 +1040,20 @@ def run_once(
             )
         )
     summary["resting"] = verdicts
+
+    # 3b. the morning reconciliation of any settled expiration against real broker cash flow --
+    # cheap on every tick (one query finds nothing pending on most days), fail-closed on a failed
+    # fetch (the date stays pending and the next tick tries again).
+    if live and hasattr(broker, "history"):
+        summary["reconciled"] = []
+        for exp in fee_reconcile.pending_reconciliation(conn, symbol, today=day):
+            transactions, err = broker.history(exp, symbol)
+            if transactions is None:
+                log(f"fee reconcile: broker history fetch failed for {exp}: {err}")
+                continue
+            rec = fee_reconcile.reconcile_date(conn, exp, symbol, transactions, log=log)
+            counts = {k: len(v) for k, v in rec.items() if isinstance(v, list)}
+            summary["reconciled"].append({"expiration": exp, **counts})
 
     # 4. settlement, when due
     if now_min >= settle_min(config) and _unsettled_today(conn, day):

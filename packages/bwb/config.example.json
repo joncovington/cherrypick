@@ -117,9 +117,31 @@
       "min_net_pnl": 0.0
     }
   },
-  "live_header": "===== live gate (placeholder — see the module CLAUDE.md's Live-trading prerequisites) =====",
-  "_live_note": "This module has NO live loop, no order-placement code, and no live account designation. `enabled` exists only so the suite's config/console surfaces can read a real gate for this module instead of reporting an absent one as 'unknown' — flipping it to true does nothing until a live loop is built. Guarded the same as every other live gate: hand-edit only, never through the settings surface.",
+  "live_header": "===== live gates (guarded: hand-edit only, never through the settings surface) =====",
+  "_live_note": "The live path (2026-09-18) trades ONE arm (`arm`, one of control/delta/bounce/flip -- the wall book and every advised twin are paper experiments and are refused), armed PER DAY by a human through /live-bwb-start (a literal-YES confirmation writes state/bwb-live-arm.json; the loop self-disarms at `disarm_time` or on any record that is not today's). It enters the identical structure the paper books enter, as a three-leg limit at mid minus `entry_concession` floored to the nickel, walking down one tick every `reprice_after_minutes` and never under the live floor -- fees (the broker's own dry-run estimate when it gives one) plus `min_net_credit_dollars`, per contract -- until `entry_cancel_after_minutes` or `entry_cutoff` cancels it. `max_structures_per_day` is 1 (a cancelled entry spends nothing). The 1-3-2 add-on goes live on the arm's own trigger, one order per tick, and is recorded only when the broker confirms the fill. `max_open_margin_dollars` and the per-expiration cap are worst-case dollars at expiry over the live book, with an unfired position's future add-on RESERVED whenever the arm can fire. `mark_drawdown_halt_dollars` blocks the NEXT entry only (never an exit) once the open book's marked loss reaches it; `daily_loss_halt_dollars` is kept for parity but on a hold-to-expiry ladder it can only move on a Friday. There are no closing orders: SPX cash-settles, and the ledger settles on an OFFICIAL print (--settle --price, or the broker chain's posted close) or not at all. The live ledger is data/bwb/live_trades.db, a separate file; the paper books are untouched and their evidence clock does not restart. Switching `arm` is a live measurement break: journal it.",
   "live": {
-    "enabled": false
+    "enabled": false,
+    "gate0_confirmed": "",
+    "arm": "control",
+    "task_name": "cherrypick-bwb-live-loop",
+    "tick_interval_seconds": 60,
+    "max_open_margin_dollars": 2000,
+    "max_open_margin_per_expiration_dollars": null,
+    "max_structures_per_day": 1,
+    "min_net_credit_dollars": 15,
+    "entry_concession": 0.05,
+    "entry_cancel_after_minutes": 20,
+    "entry_cutoff": "11:00",
+    "addon_concession": 0.05,
+    "addon_cancel_after_minutes": null,
+    "reprice_after_minutes": 2,
+    "mark_drawdown_halt_dollars": null,
+    "daily_loss_halt_dollars": null,
+    "account_deploy_limit_pct": null,
+    "fill_watch_seconds": 30,
+    "fill_watch_poll_seconds": 10,
+    "settle_time": "16:20",
+    "disarm_time": "17:00",
+    "notify_trades": false
   }
 }
