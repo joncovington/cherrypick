@@ -370,6 +370,40 @@ What that means per surface:
   (`artifactExperiments`, `decisionExperiments`) and synthesises one entry from the legacy fields
   when it is absent; reading both would count the first experiment twice.
 
+## The Live page: the flies live pilot's day (2026-09-17)
+
+`/live` is a suite-level lightbox (`lightbox/manifests/LiveLightbox.tsx`, page `pages/Live/`) over
+one endpoint, `GET /api/live/flies` (`routes/live.ts` -> `readers/fliesLive.ts`). It composes
+readers that already existed -- the arming strip from `services/liveLock`, the loop pill from
+`readFliesLoopStatus`, the feed from `readFliesJournal`, the at-risk figure from
+`readFliesAnalytics` -- plus three reads that did not: settled net per period, the intraday
+series, and the broker account.
+
+Two honesty rules, stated on the page itself. **The period tiles are settled net only**: the
+core.ledgers flies rule (`gross_pnl - fees` over `status = 'settled'` rows, by `trade_date`)
+mirrored as a query and pinned by `server/test/flies-live-reader.test.ts` against fixture rows;
+flies settles at expiry, so today reads zero until the bell, and the paper control's same-period
+figure sits beside every tile for the pilot's comparison. **A mark is a mid, not a fill**: the
+intraday curve and the "now" tile are the live loop's own `fly_live_marks`, written off the
+cached leg mids every tick, summed per tick here with the peak-to-trough drawdown; a tick the
+loop refused to price is a named gap on the chart, never an interpolation.
+
+The market series come from other packages' stores, read-only: SPX from the gex recorder's
+`gex_spot_history` (baselined on the stream cache's `prev_day_close`, else the first tick, and
+the payload says which), VIX/VIX3M from its `market_regime_history` with only `usable` rows.
+Clipped to regular hours: the recorder also samples the frozen pre-open spot, which drew a flat
+line ramping into the open. Buying power is the loop's own gate -- the latest tick's open
+worst-case exposure against `live.max_open_margin_dollars` -- so the page and the gate can never
+disagree. The broker account rides on `services/brokerBridge`, a memoised subprocess over the
+orchestrator's `positions` verb (masking, mid-is-not-a-fill flags and unpriced accounting stay in
+Python), **non-blocking**: the payload returns what the memo holds and starts a refresh; a cold
+start says "fetching" once and the next poll has it. The first cut used a synchronous spawn and
+the first browser check found the whole page on skeletons for the broker's 10-20s round-trip.
+
+`readOnlyDb`, not `withReadOnlyDb`, for the live ledger: "no live ledger on this machine" and "the
+read threw" are different facts and the page shows which. There is no button here that touches an
+order, and `dry-run-only.test.ts` still scans this reader like every other file.
+
 ## Suite guardrails (apply here too)
 
 Instruction files hold no code; account numbers masked to `****1234`; portable paths only

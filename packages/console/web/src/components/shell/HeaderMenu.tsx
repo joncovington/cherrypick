@@ -18,6 +18,7 @@ const groups: Array<{ label: string | null; links: Array<{ to: string; label: st
       { to: "/", label: "Overview", end: true, key: "o" },
       { to: "/reports", label: "Reports", key: "r" },
       { to: "/advisor", label: "Advisor", key: "a" },
+      { to: "/live", label: "Live", key: "l" },
     ],
   },
   {
