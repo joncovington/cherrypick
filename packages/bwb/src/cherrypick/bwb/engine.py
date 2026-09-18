@@ -387,9 +387,10 @@ def plan_wall_entry(snapshot: dict, params: dict, call_wall: float | None) -> di
             "credit": round(credit, 4),
             "narrow_width": round(narrow_width, 4),
             "wide_width": round(wide_width, 4),
-            "max_loss_up": round(wide_width - credit, 4),
-            "max_loss_down": round(narrow_width - credit, 4),
-            "max_loss": round(max(wide_width, narrow_width) - credit, 4),
+            # The call-side mirror: the far wing is ABOVE, so the far-side loss is the UP side.
+            "max_loss_up": bwb_max_losses(narrow_width, wide_width, credit)[1],
+            "max_loss_down": 0.0,
+            "max_loss": bwb_max_losses(narrow_width, wide_width, credit)[1],
             "legs": legs,
         },
     }
@@ -399,6 +400,25 @@ def _spread_pct(quote: dict) -> float | None:
     if quote.get("mid") in (None, 0):
         return None
     return (quote["ask"] - quote["bid"]) / quote["mid"]
+
+
+def bwb_max_losses(narrow_width: float, wide_width: float, credit: float) -> tuple[float, float]:
+    """A broken-wing fly's worst case on each side, per share, net of the credit -- the expiry
+    payoff evaluated at the wings, not the widths themselves.
+
+    The near side (spot through the near wing, every leg worthless) can only KEEP the credit: its
+    loss is zero. The far side (spot through the far wing) is where the broken wing bites: the
+    near-body vertical pays its narrow width, the body-far vertical costs its wide width, so the
+    loss is `wide - narrow - credit`, floored at zero for a structure whose credit covers it.
+
+    Until 2026-09-18 this was `narrow - credit` / `wide - credit`, which overstated the worst case
+    by the narrow width on every row the module ever recorded -- a $5-wide near vertical it
+    forgot the structure is long. The ledger already held the proof: the 2026-09-04 control
+    position settled through its far wing for exactly (5 - 0.80) * 100 = $420, against a recorded
+    `entry_max_loss` of 9.20. Rows written before the fix carry the overstated value; it is
+    derivable (`wide - narrow - credit`) and was never rewritten."""
+    far_side = max(0.0, (wide_width - narrow_width) - credit)
+    return 0.0, round(far_side, 4)
 
 
 def bwb_metrics(
@@ -415,8 +435,7 @@ def bwb_metrics(
     credit = 2 * body_mid - near_mid - far_mid
     narrow_width = near_strike - body_strike
     wide_width = body_strike - far_strike
-    max_loss_up = round(narrow_width - credit, 4)  # spot rallies through near wing
-    max_loss_down = round(wide_width - credit, 4)  # spot crashes through far wing
+    max_loss_up, max_loss_down = bwb_max_losses(narrow_width, wide_width, credit)
     return {
         "body_strike": body_strike,
         "body_mid": round(body_mid, 4),
