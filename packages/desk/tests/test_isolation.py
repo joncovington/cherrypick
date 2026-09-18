@@ -22,7 +22,7 @@ DESK_SRC = Path(__file__).resolve().parents[1] / "src" / "cherrypick" / "desk"
 PACKAGES = Path(__file__).resolve().parents[2]
 
 # Every package whose code runs unattended (scheduled tasks, watchdog ticks, trading loops).
-AUTOMATED_PACKAGES = ("orchestrator", "meic", "earnings", "flies", "gex", "streamer", "core")
+AUTOMATED_PACKAGES = ("orchestrator", "meic", "earnings", "flies", "bwb", "gex", "streamer", "core")
 
 
 def _desk_sources():

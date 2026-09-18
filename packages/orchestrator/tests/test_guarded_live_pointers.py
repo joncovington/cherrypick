@@ -21,16 +21,27 @@ from cherrypick.orchestrator.configedit import GUARDED
 
 REPO = Path(__file__).resolve().parents[3]
 
-# desk is deliberately absent: it is the discretionary live path, authorized entirely on its own
+# Every package's config example, found rather than listed (2026-09-18): the hand-kept dict this
+# replaced named five modules while bwb and curve had each declared a `live.enabled` placeholder
+# that nothing guarded -- the exact gap a guard driven off what the system declares cannot have.
+# desk is deliberately excluded: it is the discretionary live path, authorized entirely on its own
 # (own config, own PIN kept as a salted verifier, per-order ticket) and never through this surface.
 # It has no `enable_live_trading` to guard -- borrowing credentials is not borrowing permissions.
-MODULE_CONFIGS = {
-    "meic": "packages/meic/config.example.json",
-    "earnings": "packages/earnings/config/config.example.json",
-    "flies": "packages/flies/config.example.json",
-    "calendars": "packages/calendars/config.example.json",
-    "pmcc": "packages/pmcc/config.example.json",
-}
+_EXCLUDED = {"desk", "orchestrator"}
+
+
+def _discover_module_configs() -> dict[str, str]:
+    found: dict[str, str] = {}
+    for rel in ("config.example.json", "config/config.example.json"):
+        for path in sorted((REPO / "packages").glob(f"*/{rel}")):
+            module = path.relative_to(REPO / "packages").parts[0]
+            if module in _EXCLUDED:
+                continue
+            found.setdefault(module, str(path.relative_to(REPO)).replace("\\", "/"))
+    return found
+
+
+MODULE_CONFIGS = _discover_module_configs()
 
 
 def _live_pointers(doc: dict) -> set[str]:
@@ -51,7 +62,8 @@ def test_every_declared_live_gate_is_guarded(module: str, rel: str):
     doc = json.loads(path.read_text(encoding="utf-8"))
 
     declared = _live_pointers(doc)
-    assert declared, f"{module} declares no live gate; drop it from MODULE_CONFIGS if that is intended"
+    if not declared:
+        pytest.skip(f"{module} declares no live gate")
 
     guarded = set(GUARDED.get(module, {}))
     missing = declared - guarded
@@ -84,6 +96,28 @@ def test_flies_keeps_its_extra_live_pointers_guarded():
 
 def test_meic_deploy_limit_is_guarded_with_its_switch():
     assert {"/enable_live_trading", "/account_deploy_limit_pct"} <= set(GUARDED["meic"])
+
+
+def test_bwb_keeps_every_live_sizing_and_admission_rule_guarded():
+    """bwb's live block carries the arm, the floor, both caps and both breakers beside the switch;
+    a surface that cannot arm the loop but can widen it once armed is the flies lesson again."""
+    assert {
+        "/live/enabled",
+        "/live/gate0_confirmed",
+        "/live/arm",
+        "/live/min_net_credit_dollars",
+        "/live/max_open_margin_dollars",
+        "/live/max_open_margin_per_expiration_dollars",
+        "/live/mark_drawdown_halt_dollars",
+        "/live/daily_loss_halt_dollars",
+        "/live/account_deploy_limit_pct",
+    } <= set(GUARDED["bwb"])
+
+
+def test_discovery_finds_every_module_with_a_live_gate():
+    """The discovery itself, pinned: the five the hand-kept list named plus the two it missed."""
+    assert {"meic", "earnings", "flies", "calendars", "pmcc", "bwb", "curve"} <= set(MODULE_CONFIGS)
+    assert "desk" not in MODULE_CONFIGS and "orchestrator" not in MODULE_CONFIGS
 
 
 _ENV_ARMING = re.compile(r"environ\b[^\n]*LIVE", re.IGNORECASE)
