@@ -640,6 +640,39 @@ def early_close_gate(snapshot: dict) -> bool:
         return False
 
 
+TRIPLE_WITCHING_LAST_ENTRY_MIN = 12 * 60 + 30
+
+
+def triple_witching_gate(snapshot: dict) -> bool:
+    """Past 12:30 ET on a triple-witching session (third Friday of March, June, September,
+    December)? No new entry of any mode is taken after that, paper and live alike (2026-09-18).
+
+    MEIC's rule, carried over verbatim: the 0DTE module that came first refuses new entries
+    after 12:30 on those four days and force-closes at 14:00, because the simultaneous expiry
+    of index options, index futures and stock options makes the afternoon tape a settlement
+    auction rather than a market -- flows that have nothing to do with where spot "should" pin.
+    Flies' own evidence is one session, and it says the same thing: on 2026-09-18 every
+    afternoon entry across the paper and live control books (12:23, 14:19 and 14:22 ET) was a
+    short vertical that never completed and settled through its short strike, -$286, -$303 and
+    -$296, while every morning entry completed. Rows before this gate's first binding session
+    (2026-12-18) and after it are not poolable for triple-witching days; the break is journaled.
+
+    Refuses nothing it cannot read: a snapshot without a parseable date, or without `now_min`,
+    is not gated -- the same convention as `early_close_gate`.
+    """
+    day = snapshot.get("date")
+    now_min = snapshot.get("now_min")
+    if now_min is None:
+        return False
+    try:
+        return (
+            _cal.is_triple_witching(_cal.date.fromisoformat(str(day)))
+            and now_min > TRIPLE_WITCHING_LAST_ENTRY_MIN
+        )
+    except (TypeError, ValueError):
+        return False
+
+
 def trend_bucket_refusal(snapshot: dict, params: dict) -> str | None:
     """Refuse EVERY entry while the session's trend-from-open bucket is the one named by
     `refuse_trend_bucket` ("none"/absent = off; "up_from_open" | "down_from_open").
@@ -922,6 +955,8 @@ def evaluate_credit_spread_entry(
         return False, "before_open_gate", None
     if early_close_gate(snapshot):
         return False, "early_close_session", None
+    if triple_witching_gate(snapshot):
+        return False, "triple_witching_no_new_entries", None
 
     ok_window, window = in_entry_window(snapshot.get("now_min"), params.get("entry_windows", []))
     if not ok_window:
@@ -1196,6 +1231,8 @@ def evaluate_debit_vertical_entry(
         return False, "before_open_gate", None
     if early_close_gate(snapshot):
         return False, "early_close_session", None
+    if triple_witching_gate(snapshot):
+        return False, "triple_witching_no_new_entries", None
 
     ok_window, window = in_entry_window(snapshot.get("now_min"), params.get("entry_windows", []))
     if not ok_window:
@@ -1460,6 +1497,8 @@ def evaluate_bwb_entry(
         return False, "before_open_gate", None
     if early_close_gate(snapshot):
         return False, "early_close_session", None
+    if triple_witching_gate(snapshot):
+        return False, "triple_witching_no_new_entries", None
 
     ok_window, window = in_entry_window(snapshot.get("now_min"), params.get("entry_windows", []))
     if not ok_window:
@@ -1667,6 +1706,8 @@ def evaluate_outright_entry(
         return False, "before_open_gate", None
     if early_close_gate(snapshot):
         return False, "early_close_session", None
+    if triple_witching_gate(snapshot):
+        return False, "triple_witching_no_new_entries", None
 
     ok_window, window = in_entry_window(snapshot.get("now_min"), params.get("entry_windows", []))
     if not ok_window:
