@@ -40,6 +40,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core import live as _live
+
 from . import config as cfgmod
 from . import jobspec, timeutil
 from .util import CREATE_NO_WINDOW, atomic_write_json, pid_alive, port_owner_pid, read_json, rotate_if_large
@@ -102,8 +104,9 @@ def stop_path() -> Path:
 def arm_record_path(module: str) -> Path:
     """The per-module live arm record (`state/<module>-live-arm.json`) — written only by the
     module's own human-confirmed arm command, read by the supervisor (job enablement) and the
-    watchdog (dead-man's backstop). One file, three readers, zero ambiguity about 'armed'."""
-    return cfgmod.STATE_DIR / f"{module}-live-arm.json"
+    watchdog (dead-man's backstop). One file, three readers, zero ambiguity about 'armed'. The
+    filename is `cherrypick.core.live`'s; only the state dir is this package's (patchable)."""
+    return cfgmod.STATE_DIR / _live.arm_record_name(module)
 
 
 def read_arm_records(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:

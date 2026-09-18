@@ -141,3 +141,13 @@ def test_halt_flag_path_is_the_core_convention(monkeypatch, tmp_path):
     assert liveops.halt_flag_path() == cfgmod.state_file(liveops.HALT_FLAG_NAME)
     monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
     assert _home.halt_flag_path() == _home.state_dir() / liveops.HALT_FLAG_NAME
+
+
+def test_supervisor_arm_record_filename_is_the_core_convention():
+    """A module arms by writing `cherrypick.core.live.arm_record_path(name)`; the supervisor reads
+    `supervisor.arm_record_path(name)` off its own patchable state dir. Same filename, or an armed
+    module is a job the supervisor never enables."""
+    from cherrypick.core import live as _live
+    from cherrypick.orchestrator import supervisor
+
+    assert supervisor.arm_record_path("bwb").name == _live.arm_record_path("bwb").name == "bwb-live-arm.json"
