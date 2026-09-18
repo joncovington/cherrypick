@@ -367,6 +367,9 @@ def test_a_confirmed_entry_opens_at_the_actual_credit(tmp_path):
     row = [t for t in _open_trades(db_path, "XSP") if t["ic_order_id"] == "LIVE-XSP-ORD1"][0]
     assert row["status"] == "open" and row["fill_confirmed_at"] is not None
     assert row["net_credit"] == pytest.approx(1.37) and row["net_credit"] != asked
+    # slippage_dollars is MEASURED on a live row (2026-09-18): mid at submission minus the fill.
+    assert row["entry_mid_at_submit"] is not None
+    assert row["slippage_dollars"] == pytest.approx((row["entry_mid_at_submit"] - 1.37) * 100.0)
 
 
 def test_a_rejected_entry_is_cancelled_and_frees_its_slot(tmp_path):

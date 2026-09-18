@@ -343,6 +343,12 @@ _ADDED_TRADE_COLUMNS = {
     # decision is applied through the same `paper._apply_exit_decision` paper uses, with the actual
     # fill price in the modeled price's place, and only once the order filled. Cleared on apply.
     "pending_exit_json": "TEXT",
+    # The IC's mid credit at LIVE submission (2026-09-18): the modeled credit plus the modeled
+    # haircut, i.e. what the four legs were worth at mid when the limit was asked. Lets the fill
+    # confirmation replace the row's modeled `slippage_dollars` with a MEASURED one (mid minus the
+    # actual fill), so the column means the same thing on a live row as on a paper row: dollars
+    # conceded to the spread on entry. Paper rows leave it NULL.
+    "entry_mid_at_submit": "REAL",
     "dollar_multiplier": "REAL DEFAULT 100",
     "risk_profile": "TEXT",
     "execution_mode": "TEXT",
@@ -977,6 +983,7 @@ _UPDATABLE_TRADE_FIELDS = (
     "put_stop_fill_status",
     "call_stop_fill_status",
     "pending_exit_json",
+    "entry_mid_at_submit",
     "stop_trigger_current",
     "stop_limit_current",
     "pnl",

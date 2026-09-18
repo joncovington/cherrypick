@@ -383,6 +383,11 @@ def _manage_entry(
     # The price asked for, until the broker says what filled (`_confirm_fills`). The row is
     # PENDING, not open: it holds a slot (a working order is a position at risk) and nothing else.
     row["net_credit"] = spec["price"]
+    # The mid the limit was asked against: the modeled credit is mid minus the haircut, and the
+    # row carries the haircut in dollars, so the mid is recoverable here and nowhere later.
+    row["entry_mid_at_submit"] = round(
+        float(chosen["net_credit"]) + float(row["slippage_dollars"]) / 100.0, 4
+    )
     row["status"] = "pending"
     row["fill_confirmed_at"] = None
     row["put_spread_entry_order_id"] = order_id
@@ -431,9 +436,15 @@ def _confirm_fills(
                 broker.status(entry_oid), fallback_price=trade.get("net_credit")
             )
             if state == "filled":
-                paper._update_trade(
-                    ic_order_id, {"status": "open", "net_credit": price, "fill_confirmed_at": now}, db_path
-                )
+                fields = {"status": "open", "net_credit": price, "fill_confirmed_at": now}
+                mid = trade.get("entry_mid_at_submit")
+                if mid is not None and price is not None:
+                    # Measured, not modeled: what the fill conceded to the spread against the mid
+                    # the limit was asked from. Negative is price improvement. Exit sides stay
+                    # modeled (their asked price is a crossing limit, not a mid) and say so.
+                    qty = int(trade.get("quantity") or 1)
+                    fields["slippage_dollars"] = round((float(mid) - float(price)) * 100.0 * qty, 4)
+                paper._update_trade(ic_order_id, fields, db_path)
                 log(f"entry FILLED {ic_order_id}: asked {trade.get('net_credit')}, filled {price}")
                 counts["entries_confirmed"] += 1
             elif state != "working":
