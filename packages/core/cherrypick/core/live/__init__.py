@@ -112,13 +112,14 @@ def arm(
     at: str,
     armed_by: str,
     spawn_first_tick: Callable[[], None] | None = None,
-    heartbeat_fresh: Callable[[], bool] = supervisor_heartbeat_fresh,
+    heartbeat_fresh: Callable[[], bool] | None = None,
 ) -> dict:
     """Arm ``module`` for ``date`` under a live supervisor: write the record, fire one immediate
     tick so arming does not wait a full interval, and say so. Refuses (``ok: False``) when no
     supervisor heartbeat is fresh -- the supervisor is what turns the record into ticks, so a
     record without one arms nothing and must not claim to."""
-    if not heartbeat_fresh():
+    fresh = heartbeat_fresh() if heartbeat_fresh is not None else supervisor_heartbeat_fresh()
+    if not fresh:
         return {
             "ok": False,
             "error": "no supervisor running -- the arm record only arms when the supervisor derives the job",

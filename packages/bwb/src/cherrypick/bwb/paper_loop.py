@@ -596,8 +596,24 @@ def _addon_snapshot(
     return snap
 
 
-def _manage_positions(config: dict, conn, values: dict, *, cache_path: str, when: datetime, day: str) -> int:
+def _manage_positions(
+    config: dict,
+    conn,
+    values: dict,
+    *,
+    cache_path: str,
+    when: datetime,
+    day: str,
+    fire=None,
+    log=None,
+) -> int:
+    """Per-position verdicts and their execution. `fire(conn, position, addon_plan, config) -> bool`
+    is the one seam the live loop replaces (2026-09-18): paper's default records the add-on's legs
+    the instant the credit is met; live places an order and records nothing until the broker
+    confirms the fill. Everything before that point -- latches, arming, the collapsed refusal
+    journal, the management event -- is identical on both ledgers by construction."""
     actions = 0
+    log = log or _log
     for pid, state in values.items():
         position = state["position"]
         if position["status"] != "open":
@@ -637,7 +653,7 @@ def _manage_positions(config: dict, conn, values: dict, *, cache_path: str, when
             bookmod.arm(conn, position, reason=decision.reason)
             executed = 1
             actions += 1
-            _log(f"[{position['book']}] {pid} armed — {decision.reason}")
+            log(f"[{position['book']}] {pid} armed — {decision.reason}")
         elif decision.action == "fire_addon" and gate is None:
             snap = _addon_snapshot(
                 cache_path,
@@ -650,12 +666,19 @@ def _manage_positions(config: dict, conn, values: dict, *, cache_path: str, when
             if snap.get("ok"):
                 addon_plan = engine.plan_addon(snap, position["far_strike"], params)
                 if addon_plan.get("ok"):
-                    bookmod.fire_addon(conn, position, addon_plan["plan"], config)
-                    executed = 1
-                    actions += 1
-                    _log(
-                        f"[{position['book']}] {pid} add-on fired — credit {addon_plan['plan']['credit']:.2f}"
-                    )
+                    if fire is None:
+                        bookmod.fire_addon(conn, position, addon_plan["plan"], config)
+                        fired = True
+                    else:
+                        fired = bool(fire(conn, position, addon_plan["plan"], config))
+                    if fired:
+                        executed = 1
+                        actions += 1
+                        log(
+                            f"[{position['book']}] {pid} add-on fired — credit {addon_plan['plan']['credit']:.2f}"
+                        )
+                    else:
+                        gate = "pending_fill"
                 else:
                     gate = addon_plan.get("reason")
             else:
