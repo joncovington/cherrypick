@@ -755,7 +755,13 @@ supervision. The log is now free to be exactly as talkative as a human reading i
   buying-power cap `live.max_open_margin_dollars` read from the ledger and the plan, never a
   balance call — see `live_loop.py` and docs/live-trading-plan.md). No entry of any mode on an
   NYSE early-close session, paper or live (`engine.early_close_gate`, 2026-09-17): every clock
-  here assumes a 16:00 close, so a 13:00 day is refused outright rather than re-derived. SPX/XSP only —
+  here assumes a 16:00 close, so a 13:00 day is refused outright rather than re-derived. No new entry of
+  any mode after 12:30 ET on a triple-witching session either (`engine.triple_witching_gate`,
+  2026-09-18, refusal `triple_witching_no_new_entries` — MEIC's rule and MEIC's reason string, carried
+  over verbatim so the two 0DTE ledgers read alike): the one such session in flies' own record,
+  2026-09-18, saw every afternoon entry across paper and live control (12:23, 14:19, 14:22 ET) settle
+  through its short strike uncompleted, -$286/-$303/-$296, while every morning entry completed. First
+  binding session 2026-12-18; journaled as a break on both ledgers. SPX/XSP only —
   both European cash-settled, so EARLY exercise is structurally impossible and there is no
   early-exercise machinery to get wrong. Cash exercise/assignment at expiry is NOT impossible,
   though, and is not free: tastytrade charges **$5 per ITM STRIKE** — one charge per distinct

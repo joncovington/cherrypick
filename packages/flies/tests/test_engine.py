@@ -219,6 +219,31 @@ def test_no_entry_before_outranks_an_arm_asking_for_an_earlier_window():
     assert enter, reason
 
 
+def test_triple_witching_afternoon_refuses_every_entry_mode():
+    """Shown to fail both ways: 2026-09-18 (third Friday of September) at 12:31 ET is refused by
+    the legged, outright, debit-first and bwb evaluators alike; the same day at 12:30, the
+    following Friday at 13:00, and a snapshot with no clock or no date are not. Same reason
+    string MEIC records, so the two 0DTE ledgers read alike."""
+    witching_pm = snapshot(date="2026-09-18", now_min=12 * 60 + 31)
+    witching_am = snapshot(date="2026-09-18", now_min=12 * 60 + 30)
+    plain_friday = snapshot(date="2026-09-25", now_min=13 * 60)
+    assert engine.triple_witching_gate(witching_pm) is True
+    assert engine.triple_witching_gate(witching_am) is False
+    assert engine.triple_witching_gate(plain_friday) is False
+    assert engine.triple_witching_gate({"date": "2026-09-18"}) is False
+    assert engine.triple_witching_gate({"date": None, "now_min": 800}) is False
+    p = params(no_entry_before="10:00")
+    enter, reason, _ = engine.evaluate_credit_spread_entry(witching_pm, p, [])
+    assert not enter and reason == "triple_witching_no_new_entries"
+    enter, reason, _ = engine.evaluate_credit_spread_entry(plain_friday, p, [])
+    assert reason != "triple_witching_no_new_entries"
+    for fn in (engine.evaluate_debit_vertical_entry, engine.evaluate_bwb_entry):
+        enter, reason, _ = fn(witching_pm, p, [])
+        assert not enter and reason == "triple_witching_no_new_entries", fn.__name__
+    enter, reason, _ = engine.evaluate_outright_entry(witching_pm, p, [], 100.0)
+    assert not enter and reason == "triple_witching_no_new_entries"
+
+
 def test_early_close_session_refuses_every_entry_mode():
     """Shown to fail both ways: the day after Thanksgiving 2026 (a declared 13:00 close) is
     refused by the legged, outright, debit-first and bwb evaluators alike, and the Monday after
