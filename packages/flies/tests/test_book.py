@@ -1,7 +1,7 @@
 """End-to-end tests for a session book: engine decisions landing in the paper database."""
 
 import pytest
-from test_engine import BASE_CONFIG, bwb_snapshot, cheap_fly_snapshot, delta_snapshot, q, snapshot
+from test_engine import BASE_CONFIG, bwb_snapshot, cheap_fly_snapshot, delta_snapshot, dq, q, snapshot
 
 from cherrypick.flies import analytics, engine, fly
 from cherrypick.flies import book as bookmod
@@ -576,4 +576,70 @@ def test_a_quote_without_a_symbol_stamps_nothing(conn):
     config = one_arm_config(entry_modes=["legged"])
     bookmod.process_snapshot(snapshot(underlying_price=5998.0), config, conn, "control")
     row = conn.execute("SELECT center_leg_symbol, wing_leg_symbol FROM fly_positions").fetchone()
+    assert tuple(row) == (None, None)
+
+
+# --------------------------------------------------------------------------- the hedge overlay (telemetry)
+def hedged_snapshot(spot=5998.0, far_put=(0.12, 0.2), **over):
+    """control's default put-spread entry (spot just below 6000 sells the 6000/5995 put spread)
+    plus two far puts carrying deltas, so the overlay has a ~5-delta candidate to record."""
+    puts = {**snapshot()["puts"], 5975: dq(0.25, 0.35, -0.09), 5970: dq(*far_put, -0.05)}
+    return snapshot(underlying_price=spot, puts=puts, **over)
+
+
+def test_a_legged_entry_records_its_hedge_and_tracks_the_best_sale_it_was_offered(conn):
+    """Telemetry only: the spread is entered exactly as before; the row additionally carries the
+    ~5-delta put's strike, delta, buy premium and fee at entry, and the running MAX of what selling
+    it would have fetched -- seeded at entry so 'never improved' reads as the entry level."""
+    config = one_arm_config(entry_modes=["legged"], hedge_delta=0.05)
+    first = bookmod.process_snapshot(hedged_snapshot(), config, conn, "control")
+    assert [a["action"] for a in first["actions"] if a["action"] == "credit_spread_opened"]
+    row = dbmod.book_positions(conn, first["book_id"])[0]
+    assert row["kind"] == "short_vertical" and row["side"] == "put"
+    assert row["hedge_strike"] == 5970.0 and row["hedge_delta"] == -0.05
+    assert row["hedge_premium"] == pytest.approx(0.16 + 0.125 * 0.08)
+    assert row["hedge_fee"] == pytest.approx(fly.single_leg_open_fee("SPX"))
+    assert row["hedge_best_mid"] == pytest.approx(0.16 - 0.125 * 0.08)
+    # The spread itself is untouched by the overlay.
+    assert row["net"] == pytest.approx(row["credit"]) and row["fees"] == pytest.approx(
+        fly.vertical_open_fee("SPX")
+    )
+
+    # Spot drops; the far put richens. The running max moves up...
+    bookmod.process_snapshot(hedged_snapshot(spot=5985.0, far_put=(0.5, 0.6)), config, conn, "control")
+    row = dbmod.book_positions(conn, first["book_id"])[0]
+    assert row["hedge_best_mid"] == pytest.approx(0.55 - 0.125 * 0.1)
+    # ...and a poorer later quote leaves it alone.
+    bookmod.process_snapshot(hedged_snapshot(spot=5992.0, far_put=(0.2, 0.3)), config, conn, "control")
+    row = dbmod.book_positions(conn, first["book_id"])[0]
+    assert row["hedge_best_mid"] == pytest.approx(0.55 - 0.125 * 0.1)
+
+
+def test_settlement_values_the_hedge_at_the_same_print_as_the_spread(conn):
+    config = one_arm_config(entry_modes=["legged"], hedge_delta=0.05)
+    bookmod.process_snapshot(hedged_snapshot(), config, conn, "control")
+    bookmod.settle_book(conn, "2026-07-20", "control", "SPX", 5950.0, config)
+    row = conn.execute("SELECT status, pnl, credit, fees, hedge_settle_value FROM fly_positions").fetchone()
+    assert row["status"] == "settled"
+    assert row["hedge_settle_value"] == 20.0  # 5970 put, 20 points ITM
+    # The spread's own P&L is exactly what it was without the overlay: the vertical's max loss,
+    # (credit - width) x 100 less its fees -- the 20-point hedge value is NOT folded into it.
+    assert row["pnl"] == pytest.approx((row["credit"] - 5.0) * 100 - row["fees"], abs=0.01)
+    assert row["pnl"] < 0
+
+
+def test_settlement_values_an_otm_hedge_at_zero_not_null(conn):
+    """Zero and NULL mean different things on the read side: NULL is 'no hedge was recorded',
+    zero is 'it expired worthless'. A stranded spread whose hedge expired worthless is the
+    common losing case and must be counted, not skipped."""
+    config = one_arm_config(entry_modes=["legged"], hedge_delta=0.05)
+    bookmod.process_snapshot(hedged_snapshot(), config, conn, "control")
+    bookmod.settle_book(conn, "2026-07-20", "control", "SPX", 5990.0, config)
+    assert conn.execute("SELECT hedge_settle_value FROM fly_positions").fetchone()[0] == 0.0
+
+
+def test_the_overlay_is_off_when_hedge_delta_is_null(conn):
+    config = one_arm_config(entry_modes=["legged"], hedge_delta=None)
+    bookmod.process_snapshot(hedged_snapshot(), config, conn, "control")
+    row = conn.execute("SELECT hedge_strike, hedge_best_mid FROM fly_positions").fetchone()
     assert tuple(row) == (None, None)

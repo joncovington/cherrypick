@@ -256,7 +256,27 @@ def _to_position(row: dict) -> dict:
         # legged fly in history/rewind without it).
         "far_width": row["far_width"],
         "best_roll_debit": row["best_roll_debit"],
+        # The hedge overlay's strike and running max, so the per-tick tracker survives a restart.
+        "hedge_strike": row["hedge_strike"],
+        "hedge_best_mid": row["hedge_best_mid"],
     }
+
+
+def _record_hedge_best(conn, position: dict, credit: float, when: str) -> None:
+    """Running MAXIMUM of what selling the overlay's hedge would have fetched -- the number a
+    sell-to-cover replay reads. Telemetry only; the hedge is never held, so nothing acts on it."""
+    best = position.get("hedge_best_mid")
+    if best is not None and credit <= best:
+        return
+    position["hedge_best_mid"] = credit
+    dbmod.save_position(
+        conn,
+        {
+            "position_id": position["position_id"],
+            "hedge_best_mid": round(credit, 4),
+            "hedge_best_mid_at": when,
+        },
+    )
 
 
 def process_snapshot(
@@ -647,6 +667,17 @@ def process_snapshot(
             if center_q is not None and wing_q is not None:
                 _record_post_best_credit(conn, pos, fly.vertical_credit(center_q, wing_q, slip), now)
 
+    # --- 1e. hedge overlay telemetry: for every open legged position that recorded a hedge
+    # candidate at entry, keep the running max of what selling it would fetch. Same posture as
+    # 1d -- records, never gates -- and it runs for the whole life of the position (open spread
+    # and completed fly alike), since the question is what the hedge did over the session.
+    for pos in positions:
+        if pos["status"] != "open" or pos.get("entry_mode") != "legged" or pos.get("hedge_strike") is None:
+            continue
+        hedge_q = engine.quote(snapshot, pos["side"], pos["hedge_strike"])
+        if hedge_q is not None:
+            _record_hedge_best(conn, pos, fly.leg_credit(hedge_q, slip), now)
+
     open_positions = [p for p in positions if p["status"] == "open"]
     # Filled in by the engine's portfolio gates on a refusal: the strike that collided, or the
     # seconds still to wait. Passed as an out-dict because `plan is None on refusal` is an
@@ -661,6 +692,22 @@ def process_snapshot(
         )
         if enter:
             position_id = f"FLY-{arm}-{symbol}-{clock.now_et().strftime('%Y%m%d%H%M%S%f')}"
+            hedge = engine.hedge_candidate(snapshot, plan["side"], plan["center"], plan["wing_width"], params)
+            hedge_columns = {}
+            if hedge is not None:
+                hedge_q = engine.quote(snapshot, plan["side"], hedge["strike"])
+                hedge_columns = {
+                    "hedge_strike": hedge["strike"],
+                    "hedge_delta": hedge["delta"],
+                    "hedge_premium": hedge["premium"],
+                    "hedge_fee": hedge["fee"],
+                    "hedge_leg_symbol": hedge.get("leg_symbol"),
+                    # Seeded at the entry-tick sale value so "never improved" reads as that level.
+                    "hedge_best_mid": round(
+                        fly.leg_credit(hedge_q, params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)), 4
+                    ),
+                    "hedge_best_mid_at": now,
+                }
             pos = {
                 "kind": "short_vertical",
                 "side": plan["side"],
@@ -672,6 +719,8 @@ def process_snapshot(
                 "entry_mode": "legged",
                 "status": "open",
                 "position_id": position_id,
+                "hedge_strike": hedge_columns.get("hedge_strike"),
+                "hedge_best_mid": hedge_columns.get("hedge_best_mid"),
                 # Same reason as in `_to_position`: this dict is appended to the live list the entry
                 # gates read, so it has to carry the window or the per-window cap misses it until the
                 # next iteration re-reads from the DB.
@@ -722,6 +771,7 @@ def process_snapshot(
                     "floor_dollars": fly.position_floor(pos),
                     "risk_free": 0,
                     "status": "open",
+                    **hedge_columns,
                 },
             )
             record_attempt("legged", "entered", accepted=True, plan=plan, position_id=position_id)
@@ -1080,21 +1130,23 @@ def settle_book(
     settled = engine.settle([p for p in positions if p["status"] == "open"], settlement_price)
     for p in settled:
         gross = (p["net"] + p["expiry_payoff"]) * fly.CONTRACT_MULTIPLIER * p["quantity"]
-        dbmod.save_position(
-            conn,
-            {
-                "position_id": p["position_id"],
-                "settlement_price": settlement_price,
-                "settlement_source": settlement_source,
-                "expiry_payoff": p["expiry_payoff"],
-                "gross_pnl": round(gross, 2),
-                "fees": p["fees"],
-                "pnl": p["pnl"],
-                "pinned": int(p["pinned"]),
-                "status": "settled",
-                "exit_time": _now(),
-            },
-        )
+        row = {
+            "position_id": p["position_id"],
+            "settlement_price": settlement_price,
+            "settlement_source": settlement_source,
+            "expiry_payoff": p["expiry_payoff"],
+            "gross_pnl": round(gross, 2),
+            "fees": p["fees"],
+            "pnl": p["pnl"],
+            "pinned": int(p["pinned"]),
+            "status": "settled",
+            "exit_time": _now(),
+        }
+        # The hedge overlay's leg, valued at the SAME print the spread settles at. Zero when it
+        # expired worthless; the column stays NULL only for rows that recorded no hedge.
+        if p.get("hedge_strike") is not None:
+            row["hedge_settle_value"] = fly.long_option_payoff(p["side"], p["hedge_strike"], settlement_price)
+        dbmod.save_position(conn, row)
 
     final = [_to_position(r) for r in dbmod.book_positions(conn, book_id)]
     for p in final:

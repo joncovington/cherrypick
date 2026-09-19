@@ -169,6 +169,23 @@ def vertical_debit(long_q: dict, short_q: dict, slippage_frac: float = DEFAULT_S
     return mid + slippage_frac * (_leg_spread(long_q) + _leg_spread(short_q))
 
 
+def leg_debit(q: dict, slippage_frac: float = DEFAULT_SLIPPAGE_FRAC) -> float:
+    """Debit paid BUYING one leg: mid plus the haircut on its own spread."""
+    return _leg_mid(q) + slippage_frac * _leg_spread(q)
+
+
+def leg_credit(q: dict, slippage_frac: float = DEFAULT_SLIPPAGE_FRAC) -> float:
+    """Credit received SELLING one leg: mid minus the haircut on its own spread."""
+    return _leg_mid(q) - slippage_frac * _leg_spread(q)
+
+
+def long_option_payoff(side: str, strike: float, underlying: float) -> float:
+    """Per-contract expiry value of one long option: its intrinsic at the settlement print."""
+    if side == PUT:
+        return max(0.0, strike - underlying)
+    return max(0.0, underlying - strike)
+
+
 def fly_debit(
     lower_q: dict, center_q: dict, upper_q: dict, slippage_frac: float = DEFAULT_SLIPPAGE_FRAC
 ) -> float:
@@ -187,6 +204,16 @@ def fly_debit(
 def vertical_open_fee(symbol: str, quantity: int = 1) -> float:
     """Open a 2-leg vertical (1 sell leg). ndigits=4 so fees stay linear in quantity (MEIC parity)."""
     return _fees.ic_open_fee(symbol, quantity, legs=2, sell_legs=1, ndigits=4)
+
+
+def single_leg_open_fee(symbol: str, quantity: int = 1) -> float:
+    """Buy one option outright (1 leg, no sell leg) -- the hedge overlay's entry cost."""
+    return _fees.ic_open_fee(symbol, quantity, legs=1, sell_legs=0, ndigits=4)
+
+
+def single_leg_close_fee(symbol: str, quantity: int = 1) -> float:
+    """Sell one held option to close (1 leg, 1 sell leg) -- what a sell-to-cover would pay."""
+    return _fees.ic_close_fee(symbol, quantity, legs=1, sell_legs=1, ndigits=4)
 
 
 def fly_open_fee(symbol: str, quantity: int = 1) -> float:

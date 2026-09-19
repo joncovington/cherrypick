@@ -57,7 +57,7 @@ _log = logging.getLogger("flies_paper_loop")
 # non-null cell as a streamer symbol, so an unused role (no `far` outside bwb, no `completing`
 # before completion) and every pre-2026-09-17 row simply contribute nothing.
 LEG_QUERY = (
-    "SELECT center_leg_symbol, wing_leg_symbol, far_leg_symbol, completing_leg_symbol "
+    "SELECT center_leg_symbol, wing_leg_symbol, far_leg_symbol, completing_leg_symbol, hedge_leg_symbol "
     "FROM fly_positions WHERE status = 'open'"
 )
 

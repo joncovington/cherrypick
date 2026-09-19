@@ -208,3 +208,27 @@ entry, a replay over the two books rather than a third arm. Watch `post_best_com
 day one: a move *through* the centre richens the completing spread toward `W`, and the first-tick
 completion rule will leave most of that on the table; whether a wait-for-better rule earns its place
 is [completion-timing.md](completion-timing.md)'s question, and this pair is where it has teeth.
+
+## 2026-09-19 — two overlays on the legged book: the hedge counterfactual and the reversal pairing
+
+Design record, no measurement yet. The proposal was "enter the ATM credit spread and buy a 5-delta put
+with it — sell it to cover if it rises, or sell 2 / buy 1 to complete a lower fly", with the stated
+aim of cutting drawdown and setting up for a reversal. Neither half needed an arm.
+
+**The hedge, as telemetry.** Every legged entry now stamps the ~5-delta option on its losing side —
+strike, delta, modeled buy premium, single-leg fee — without buying it (`hedge_*` columns), keeps the
+running max of what selling it would have fetched, and values it at the settlement print. `hedge-overlay`
+reprices every settled spread with and without it, split stranded/completed, with a sell-at-Nx replay
+over the running max. The prior it tests: the stranded branch's loss sits between K and K−W and a
+5-delta long sits far beyond K−W, so at settlement it should only pay in a crash and cost premium
+everywhere else. If the overlay shows that, it is a clean negative result and nothing intraday gets
+built on it; the replay is an upper bound (best-ever, not a fill) and says so.
+
+**The reversal set-up, as a pairing.** "Sell 2 / buy 1 to complete the lower fly" is `debit-first-down`'s
+completion with a single long as the first leg; the vertical version is already running. `reversal-book`
+pairs each control entry with the same-losing-side debit-first entry nearest in time in the same session,
+and reports the combined settled P&L by which of the two completed. That pairing *is* the two-fly book;
+a combined arm would add nothing and confound two variables.
+
+Both are new columns and read-side queries — no existing arm changes meaning, no measurement break.
+Rows before this date carry NULL hedge columns and are counted `untracked`, never as a free hedge.

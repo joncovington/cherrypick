@@ -739,3 +739,26 @@ def test_a_missing_leg_quote_is_no_mark_not_a_zero():
     one_sided = _quotes(**{"5995": (0.7, 0.0), "6000": (1.9, 2.1), "6005": (3.9, 4.1)})
     assert fly.structure_mid(pos, one_sided) is None
     assert fly.structure_mid({**pos, "kind": "bwb"}, q) is None  # not a kind live trades
+
+
+# --------------------------------------------------------------------------- the hedge overlay's primitives
+def test_long_option_payoff_is_intrinsic_at_expiry():
+    assert fly.long_option_payoff("put", 5950.0, 5940.0) == 10.0
+    assert fly.long_option_payoff("put", 5950.0, 5960.0) == 0.0
+    assert fly.long_option_payoff("call", 6050.0, 6060.0) == 10.0
+    assert fly.long_option_payoff("call", 6050.0, 6040.0) == 0.0
+
+
+def test_single_leg_fees_are_one_contract_of_the_schedule():
+    """A single long is one contract, no sell leg, on open; one sell leg on close. Both come from
+    core's schedule, never a local constant -- the hedge overlay's cost has to be as honest as the
+    spread's (rule 1)."""
+    assert fly.single_leg_open_fee("SPX") == pytest.approx(1.72, abs=0.01)
+    assert 0 < fly.single_leg_close_fee("SPX") < fly.single_leg_open_fee("SPX")
+    assert fly.single_leg_open_fee("SPX", 2) == pytest.approx(2 * fly.single_leg_open_fee("SPX"))
+
+
+def test_leg_debit_and_credit_straddle_the_mid():
+    q = {"bid": 0.40, "ask": 0.60}
+    assert fly.leg_debit(q, 0.125) == pytest.approx(0.525)
+    assert fly.leg_credit(q, 0.125) == pytest.approx(0.475)

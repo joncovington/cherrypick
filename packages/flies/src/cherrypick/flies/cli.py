@@ -169,11 +169,61 @@ def cmd_replay_gates(args) -> int:
     return 0
 
 
+def cmd_hedge_overlay(args) -> int:
+    """Settled legged positions repriced with and without the far-OTM hedge recorded at entry."""
+    from cherrypick.flies import analytics
+
+    conn = dbmod.connect(args.db)
+    out = analytics.hedge_overlay(conn, start=args.start, end=args.end, symbol=args.symbol, arm=args.arm)
+    print(json.dumps({"ok": True, **out}, indent=2))
+    return 0
+
+
+def cmd_reversal_book(args) -> int:
+    """control paired with the same-side debit-first entry nearest in time: the two-fly book."""
+    from cherrypick.flies import analytics
+
+    conn = dbmod.connect(args.db)
+    out = analytics.reversal_book(
+        conn,
+        start=args.start,
+        end=args.end,
+        symbol=args.symbol,
+        base_arm=args.arm,
+        window_minutes=args.window,
+    )
+    if not args.detail:
+        out.pop("pairs_detail", None)
+    print(json.dumps({"ok": True, **out}, indent=2))
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="flies", description="0DTE net-credit butterfly paper module")
     ap.add_argument("--config")
     ap.add_argument("--db")
     sub = ap.add_subparsers(dest="command", required=True)
+
+    p_hedge = sub.add_parser(
+        "hedge-overlay",
+        help="settled legged spreads repriced with and without the ~5-delta hedge recorded at entry",
+    )
+    p_hedge.add_argument("--start")
+    p_hedge.add_argument("--end")
+    p_hedge.add_argument("--arm", default="control")
+    p_hedge.add_argument("--symbol")
+    p_hedge.set_defaults(func=cmd_hedge_overlay)
+
+    p_rev = sub.add_parser(
+        "reversal-book", help="control paired with the same-side debit-first entry nearest in time"
+    )
+    p_rev.add_argument("--start")
+    p_rev.add_argument("--end")
+    p_rev.add_argument("--arm", default="control", help="the legged base arm")
+    p_rev.add_argument("--symbol")
+    p_rev.add_argument("--window", type=float, default=10.0, help="max minutes between the two entries")
+    p_rev.add_argument("--detail", action="store_true", help="include every pair")
+    p_rev.set_defaults(func=cmd_reversal_book)
 
     p_bands = sub.add_parser(
         "bands", help="band placement against the session's realized range, and whether it predicts the floor"

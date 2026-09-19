@@ -2076,3 +2076,40 @@ def test_no_fixed_offset_arm_still_holds_the_delta_rule_is_not_one():
     assert not [a for a in engine.ARMS if "offset" in a or "spot+" in a]
     up, _ = engine.select_center(delta_snapshot(), delta_params("up"))
     assert engine._classify_center_offset(delta_snapshot(), delta_params("up"), up) == ("above_spot", 20.0)
+
+
+# --------------------------------------------------------------------------- the hedge overlay candidate
+def test_hedge_candidate_is_the_target_delta_option_beyond_the_spreads_long_wing():
+    """A put credit spread loses on a drop, so its hedge is a put -- the ~5-delta one below the long
+    wing. A call spread mirrors it above. The candidate carries what the overlay stamps: strike,
+    delta, the modeled premium to BUY it, and the single-leg fee."""
+    snap = delta_snapshot()
+    put_hedge = engine.hedge_candidate(snap, "put", 6000.0, 5.0, params(hedge_delta=0.05))
+    assert put_hedge["strike"] == 5970.0 and put_hedge["delta"] == -0.05
+    assert put_hedge["premium"] == pytest.approx(0.16 + 0.125 * 0.08)
+    assert put_hedge["fee"] == pytest.approx(fly.single_leg_open_fee("SPX"))
+
+    call_hedge = engine.hedge_candidate(snap, "call", 6000.0, 5.0, params(hedge_delta=0.05))
+    assert call_hedge["strike"] == 6030.0 and call_hedge["delta"] == 0.05
+
+
+def test_hedge_candidate_is_none_when_it_cannot_be_priced_honestly():
+    """No delta on the chain, nothing within tolerance of the target, or the overlay switched off:
+    each records nothing rather than a guess, so an unhedged row and an unpriceable one stay
+    distinguishable on the ledger (hedge_strike NULL either way, but `hedge_delta` config says why)."""
+    assert engine.hedge_candidate(snapshot(), "put", 6000.0, 5.0, params(hedge_delta=0.05)) is None
+    assert engine.hedge_candidate(delta_snapshot(), "put", 6000.0, 5.0, params(hedge_delta=None)) is None
+    # Tolerance: a 5990-centred put spread's wing is 5985, so the candidates are 5980/5975/5970 at
+    # 0.14/0.09/0.05; a 0.30 target is 0.16 from the nearest of them and is refused.
+    p = params(hedge_delta=0.30, hedge_delta_tolerance=0.03)
+    assert engine.hedge_candidate(delta_snapshot(), "put", 5990.0, 5.0, p) is None
+
+
+def test_hedge_candidate_never_sits_on_or_inside_the_long_wing():
+    """The long wing already caps the spread; a 'hedge' at that strike would double the wing, not
+    insure past it. With the spread centred at 5980 the wing is 5975 (the 0.09 put), so a 0.09
+    target must skip it and refuse -- the next strike out, 5970, is 0.04 from target."""
+    p = params(hedge_delta=0.09, hedge_delta_tolerance=0.03)
+    assert engine.hedge_candidate(delta_snapshot(), "put", 5980.0, 5.0, p) is None
+    p = params(hedge_delta=0.09, hedge_delta_tolerance=0.05)
+    assert engine.hedge_candidate(delta_snapshot(), "put", 5980.0, 5.0, p)["strike"] == 5970.0

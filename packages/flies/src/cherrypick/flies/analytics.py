@@ -15,7 +15,7 @@ this into MEIC's leg-counting — it would be wrong for this instrument.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from cherrypick.flies import (
     clock,  # noqa: E402
@@ -861,6 +861,204 @@ def left_on_table(conn, start=None, end=None, symbol=None, arm=None, entry_mode=
         "untracked": untracked,
         **summarize(tracked),
         "by_gex_bucket": {bucket: summarize(pairs) for bucket, pairs in sorted(by_bucket.items())},
+    }
+
+
+def hedge_overlay(conn, start=None, end=None, symbol=None, arm="control", multiples=(1.5, 2.0, 3.0)) -> dict:
+    """Every settled legged position repriced with and without the far-OTM hedge the overlay
+    recorded at its entry (book.py, `hedge_*` columns) -- the exact, per-position answer to
+    "would a ~5-delta long on the losing side have cut the drawdown", summed.
+
+    Per row: `cost` is the modeled buy premium plus the single-leg open fee; `recovered` is the
+    hedge's intrinsic at the spread's own settlement print, less the assignment fee an ITM leg
+    triggers; `hedged_pnl = pnl + recovered - cost`. Split by branch (stranded short vertical vs
+    completed fly) because the hedge is meant for the stranded one and the completed one only ever
+    pays for it. `sell_at` is the sell-to-cover replay: for each multiple N, a hedge whose running
+    max sale (`hedge_best_mid`) reached N x premium is sold there (gain less both single-leg fees),
+    every other one rides to expiry. **The running max is best-ever telemetry, so this is an upper
+    bound on what a threshold rule could have done, not a fill** -- the same caveat as
+    `best_completing_debit`. A trailing rule needs a path this ledger does not keep.
+
+    Rows with no hedge recorded (pre-overlay, or a chain with no fresh delta that day) are counted
+    in `untracked`, never treated as a zero-cost hedge.
+    """
+    where, params = _period_clause(start, end, arm, symbol)
+    rows = conn.execute(
+        f"SELECT position_id, kind, pnl, quantity, symbol, hedge_premium, hedge_fee, hedge_best_mid, "
+        f"hedge_settle_value FROM fly_positions WHERE {where} AND entry_mode = 'legged'",
+        params,
+    ).fetchall()
+
+    tracked, untracked = [], 0
+    for r in rows:
+        if r["hedge_premium"] is None or r["hedge_settle_value"] is None:
+            untracked += 1
+            continue
+        qty = r["quantity"] or 1
+        scale = fly.CONTRACT_MULTIPLIER * qty
+        cost = r["hedge_premium"] * scale + (r["hedge_fee"] or 0.0)
+        recovered = r["hedge_settle_value"] * scale - (
+            fly.expire_fee(1) if r["hedge_settle_value"] > 0 else 0.0
+        )
+        close_fee = fly.single_leg_close_fee(r["symbol"] or "SPX", qty)
+        tracked.append(
+            {
+                "position_id": r["position_id"],
+                "branch": "completed" if r["kind"] in ("fly", "iron_fly") else "stranded",
+                "pnl": r["pnl"] or 0.0,
+                "cost": cost,
+                "recovered": recovered,
+                "hedged_pnl": (r["pnl"] or 0.0) + recovered - cost,
+                "premium": r["hedge_premium"],
+                "best_mid": r["hedge_best_mid"],
+                "scale": scale,
+                "open_fee": r["hedge_fee"] or 0.0,
+                "close_fee": close_fee,
+            }
+        )
+
+    def block(items):
+        return {
+            "n": len(items),
+            "unhedged_net": _round(sum(i["pnl"] for i in items)),
+            "hedged_net": _round(sum(i["hedged_pnl"] for i in items)),
+            "hedge_cost": _round(sum(i["cost"] for i in items)),
+            "hedge_recovered": _round(sum(i["recovered"] for i in items)),
+            "hedge_paid": sum(1 for i in items if i["recovered"] > i["cost"]),
+        }
+
+    sell_at = {}
+    for n in multiples:
+        sold, net = 0, 0.0
+        for i in tracked:
+            target = n * i["premium"]
+            if i["best_mid"] is not None and i["best_mid"] >= target:
+                sold += 1
+                net += i["pnl"] + (target - i["premium"]) * i["scale"] - i["open_fee"] - i["close_fee"]
+            else:
+                net += i["hedged_pnl"]
+        sell_at[str(float(n))] = {
+            "sold": sold,
+            "rode_to_expiry": len(tracked) - sold,
+            "hedged_net": _round(net),
+        }
+
+    return {
+        "arm": arm,
+        "untracked": untracked,
+        **block(tracked),
+        "by_branch": {
+            branch: block([i for i in tracked if i["branch"] == branch])
+            for branch in ("stranded", "completed")
+        },
+        "sell_at": sell_at,
+    }
+
+
+def _entry_minute(entry_time) -> float | None:
+    if not entry_time:
+        return None
+    try:
+        t = datetime.fromisoformat(str(entry_time))
+    except (TypeError, ValueError):
+        return None
+    return t.hour * 60 + t.minute + t.second / 60.0
+
+
+def reversal_book(
+    conn,
+    start=None,
+    end=None,
+    symbol=None,
+    base_arm="control",
+    partner_prefix="debit-first-",
+    window_minutes=10.0,
+) -> dict:
+    """The two-fly reversal book, read off rows already written: each settled `base_arm` legged
+    entry paired with the settled `debit_first` entry from the partner arm on the SAME losing
+    side -- a put spread (loses on a drop) with `<prefix>down`, a call spread with `<prefix>up` --
+    from the same session, nearest in entry time within `window_minutes`, each partner used once.
+
+    That pairing is what "sell the ATM spread and pre-position the lower structure" measures,
+    without a combined arm: the base fly completes on drift away, the partner on drift toward, so
+    the pair's settled P&L is the book that holds both, and `by_outcome` splits it by which of the
+    two completed. A base entry with no partner inside the window is `unmatched_base`, never paired
+    with a distant one -- the coupling under test is entry at (about) the same moment.
+    """
+    where, params = _period_clause(start, end, None, symbol)
+    rows = conn.execute(
+        f"SELECT position_id, trade_date, symbol, arm, entry_mode, side, kind, pnl, entry_time "
+        f"FROM fly_positions WHERE {where} AND arm IN (?, ?, ?)",
+        [*params, base_arm, f"{partner_prefix}up", f"{partner_prefix}down"],
+    ).fetchall()
+    base = [r for r in rows if r["arm"] == base_arm and r["entry_mode"] == "legged"]
+    partners = {}
+    for r in rows:
+        if r["arm"] != base_arm and r["entry_mode"] == "debit_first":
+            partners.setdefault((r["trade_date"], r["symbol"], r["arm"]), []).append(r)
+    used = set()
+    pairs, unmatched = [], 0
+    for b in sorted(base, key=lambda r: (r["trade_date"], r["entry_time"] or "")):
+        partner_arm = f"{partner_prefix}{'down' if b['side'] == fly.PUT else 'up'}"
+        b_min = _entry_minute(b["entry_time"])
+        best = None
+        for p in partners.get((b["trade_date"], b["symbol"], partner_arm), []):
+            if p["position_id"] in used or b_min is None:
+                continue
+            p_min = _entry_minute(p["entry_time"])
+            if p_min is None:
+                continue
+            gap = abs(p_min - b_min)
+            if gap <= window_minutes and (best is None or gap < best[0]):
+                best = (gap, p)
+        if best is None:
+            unmatched += 1
+            continue
+        gap, p = best
+        used.add(p["position_id"])
+        b_done, p_done = b["kind"] in ("fly", "iron_fly"), p["kind"] == "fly"
+        outcome = (
+            "both_completed"
+            if b_done and p_done
+            else "base_only"
+            if b_done
+            else "partner_only"
+            if p_done
+            else "neither"
+        )
+        pairs.append(
+            {
+                "trade_date": b["trade_date"],
+                "base": b["position_id"],
+                "partner": p["position_id"],
+                "partner_arm": partner_arm,
+                "gap_min": round(gap, 1),
+                "base_pnl": b["pnl"] or 0.0,
+                "partner_pnl": p["pnl"] or 0.0,
+                "combined_pnl": (b["pnl"] or 0.0) + (p["pnl"] or 0.0),
+                "outcome": outcome,
+            }
+        )
+
+    def block(items):
+        return {
+            "n": len(items),
+            "base_net": _round(sum(i["base_pnl"] for i in items)),
+            "partner_net": _round(sum(i["partner_pnl"] for i in items)),
+            "combined_net": _round(sum(i["combined_pnl"] for i in items)),
+        }
+
+    return {
+        "base_arm": base_arm,
+        "window_minutes": window_minutes,
+        "pairs": len(pairs),
+        "unmatched_base": unmatched,
+        **{k: v for k, v in block(pairs).items() if k != "n"},
+        "by_outcome": {
+            o: block([i for i in pairs if i["outcome"] == o])
+            for o in ("both_completed", "base_only", "partner_only", "neither")
+        },
+        "pairs_detail": pairs,
     }
 
 

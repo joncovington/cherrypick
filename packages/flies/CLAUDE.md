@@ -129,6 +129,32 @@ decision.
   arms vs `control` on wing width. Reading a structural identity as a finding is how the redundancy
   went unnoticed.
 
+**Two overlays on the legged book, added 2026-09-19, both tag-don't-gate.** They exist because the
+question "buy a far-OTM put with the ATM credit spread, to cut drawdown and set up for a reversal"
+decomposes into two measurable claims, neither of which needs a new arm:
+- **The hedge overlay** (`engine.hedge_candidate`, `book.py` step 1e, `analytics.hedge_overlay`,
+  `python run.py hedge-overlay`). At every legged entry the ~`hedge_delta` (0.05) option on the
+  spread's *losing* side — a put strictly below the long wing for a put spread, a call above for a
+  call spread — is priced and stamped on the row (`hedge_*` columns: strike, delta, buy premium,
+  single-leg fee) and **never bought**; each tick the running max of what selling it would fetch
+  is kept, and at settlement its intrinsic at the same print is recorded (0 when worthless, NULL
+  only when no hedge was recorded — the read side keeps those apart). The read side reprices every
+  settled spread with and without it, split stranded/completed, plus a sell-at-Nx replay over the
+  running max. **That replay is an upper bound, not a fill** — best-ever telemetry, the
+  `best_completing_debit` caveat — and a trailing rule needs a path this ledger does not keep. The
+  prior it tests against: the stranded branch's loss sits *between* K and K−W, and a 5-delta long
+  sits far beyond K−W, so at settlement it should pay only in a crash and cost premium on every
+  other entry. Paper book only; the spread's own decision and price are untouched.
+- **The reversal book** (`analytics.reversal_book`, `python run.py reversal-book`) pairs each
+  settled `control` legged entry with the settled `debit_first` entry from the partner arm on the
+  same losing side (`debit-first-down` for a put spread, `-up` for a call spread), same session,
+  nearest in entry time within a window, each partner used once. The pair's settled P&L *is* the
+  "ATM spread plus pre-positioned lower structure" book — the base fly completes on drift away, the
+  partner on drift toward — split by which of the two completed. A combined arm would measure
+  nothing this pairing does not, and would break the one-variable rule twice. An unmatched base
+  entry is reported, never paired with a distant partner: the coupling under test is entry at
+  about the same moment.
+
 **Everything past the completion rate lives on a time axis, so the console's flies page has one.** `analytics.session_timeline`
 assembles the day from rows already written — spot and every arm's wanted centre on each iteration,
 entries and completions, and each leg-in as a span running to its completion, so latency is a length

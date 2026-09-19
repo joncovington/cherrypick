@@ -280,6 +280,55 @@ def _delta_center(snapshot: dict, params: dict, spot: float) -> tuple[float | No
     return strike, "delta_target"
 
 
+def hedge_candidate(snapshot: dict, side: str, center: float, width: float, params: dict) -> dict | None:
+    """The hedge-overlay candidate for a legged credit spread: the option on the spread's LOSING
+    side whose delta is nearest `hedge_delta` (a magnitude; default 0.05), strictly beyond the
+    spread's long wing. Returns what the row stamps -- strike, delta, the modeled premium to BUY it
+    and the single-leg fee -- or None when `hedge_delta` is null, the chain carries no fresh delta
+    on that side, or nothing sits within `hedge_delta_tolerance` of the target.
+
+    Telemetry only, never a trade: this exists to answer, per position and after the fact, whether
+    a far-OTM long on the losing side would have cut the stranded branch's loss at settlement
+    (and, via the running max `book.py` keeps, whether selling it on the way down would have).
+    The spread's own decision and price are untouched by it. A put spread loses on a drop, so its
+    hedge is a put below the long wing; a call spread mirrors it above. Strictly BEYOND the wing:
+    a long at the wing itself would double the wing, not insure past it.
+    """
+    target = params.get("hedge_delta", 0.05)
+    if target is None:
+        return None
+    target = abs(float(target))
+    tolerance = float(params.get("hedge_delta_tolerance", 0.03))
+    spot = snapshot.get("underlying_price")
+    if spot is None:
+        return None
+    long_wing = center - width if side == PUT else center + width
+    book = snapshot.get("puts" if side == PUT else "calls") or {}
+
+    candidates = []
+    for key, leg in book.items():
+        delta = (leg or {}).get("delta")
+        if delta is None:
+            continue
+        strike = float(key)
+        if (side == PUT and strike >= long_wing) or (side == CALL and strike <= long_wing):
+            continue
+        candidates.append((abs(abs(float(delta)) - target), abs(strike - spot), strike, float(delta), leg))
+    if not candidates:
+        return None
+    error, _, strike, delta, leg = min(candidates, key=lambda c: c[:3])
+    if error > tolerance:
+        return None
+    slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
+    return {
+        "strike": strike,
+        "delta": delta,
+        "premium": round(fly.leg_debit(leg, slip), 4),
+        "fee": fly.single_leg_open_fee(snapshot.get("symbol", ""), params.get("quantity", 1)),
+        "leg_symbol": leg.get("streamer_symbol"),
+    }
+
+
 def center_delta(snapshot: dict, side: str, center: float) -> float | None:
     """The centre strike's delta on the entry side, or None when the feed carried none. Stamped on
     every entry plan so the row records the measure a delta target is read against -- for the

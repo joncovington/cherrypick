@@ -391,6 +391,24 @@ _ADDED_POSITION_COLUMNS = {
     # stale_writer_columns' shape match leaves it alone. Cannot be backfilled: the cache keeps no
     # greeks history.
     "entry_center_delta": "REAL",
+    # The hedge overlay (2026-09-19), legged entries only, paper book only: the ~hedge_delta option
+    # on the spread's LOSING side, priced at entry and never bought. Telemetry that answers, per
+    # position and after settlement, whether a far-OTM long would have cut the stranded branch's
+    # loss (hedge_settle_value: its intrinsic at the same print, 0 when it expired worthless, NULL
+    # when no hedge was recorded -- zero and NULL mean different things on the read side) and
+    # whether selling it on the way down would have paid (hedge_best_mid: the running MAX of what
+    # selling it would have fetched, seeded at entry; best-ever, so a sell-at-Nx replay over it is
+    # an upper bound, not a fill). Premium is the modeled BUY price in points; fee the single-leg
+    # open fee in dollars. hedge_leg_symbol keeps the strike quoted through the streamer's leg
+    # query so the running max can be tracked all session. Nothing gates on any of these.
+    "hedge_strike": "REAL",
+    "hedge_delta": "REAL",
+    "hedge_premium": "REAL",
+    "hedge_fee": "REAL",
+    "hedge_leg_symbol": "TEXT",
+    "hedge_best_mid": "REAL",
+    "hedge_best_mid_at": "TEXT",
+    "hedge_settle_value": "REAL",
     # Signed `spot - day_open` in points. Unlike the offset pair above this canNOT be backfilled:
     # nothing on the row records where the session opened, and the cache keeps one summary row per
     # (symbol, trade_date) rather than a history -- so these start empty and fill forward only.

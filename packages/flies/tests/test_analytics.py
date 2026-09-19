@@ -1395,3 +1395,137 @@ def test_the_classifier_reports_which_edge_bound(conn):
     ]
 
     assert counts == {"low": 1, "high": 1}
+
+
+# --------------------------------------------------------------------------- the hedge overlay, read side
+def _legged_row(
+    conn,
+    pid,
+    *,
+    day="2026-09-21",
+    arm="control",
+    side="put",
+    kind="fly",
+    pnl=60.0,
+    entry_time="12:00:00",
+    hedge=None,
+):
+    row = {
+        "position_id": pid,
+        "book_id": f"{day}:{arm}:SPX",
+        "trade_date": day,
+        "arm": arm,
+        "entry_mode": "legged",
+        "symbol": "SPX",
+        "kind": kind,
+        "side": side,
+        "center": 6000.0,
+        "wing_width": 5.0,
+        "quantity": 1,
+        "net": 0.6,
+        "credit": 0.6,
+        "fees": 6.89,
+        "gross_pnl": pnl + 6.89,
+        "pnl": pnl,
+        "status": "settled",
+        "entry_time": f"{day}T{entry_time}",
+    }
+    if hedge:
+        row.update({f"hedge_{k}": v for k, v in hedge.items()})
+    dbmod.save_position(conn, row)
+
+
+def test_hedge_overlay_reprices_each_settled_spread_with_and_without_its_hedge(conn):
+    """Exact arithmetic per position, then summed. P1 is the stranded case where the crash hedge
+    paid (20 points ITM, less the assignment fee it triggers); P2 is the common case -- a completed
+    fly whose hedge expired worthless and cost its premium plus fee. Rows with no hedge recorded
+    are counted as untracked, never as zero-cost."""
+    open_fee, close_fee, assign = (
+        fly.single_leg_open_fee("SPX"),
+        fly.single_leg_close_fee("SPX"),
+        fly.expire_fee(1),
+    )
+    _legged_row(
+        conn,
+        "P1",
+        kind="short_vertical",
+        pnl=-440.0,
+        hedge={
+            "strike": 5970.0,
+            "delta": -0.05,
+            "premium": 0.17,
+            "fee": open_fee,
+            "best_mid": 0.60,
+            "settle_value": 20.0,
+        },
+    )
+    _legged_row(
+        conn,
+        "P2",
+        pnl=60.0,
+        hedge={
+            "strike": 5970.0,
+            "delta": -0.05,
+            "premium": 0.17,
+            "fee": open_fee,
+            "best_mid": 0.20,
+            "settle_value": 0.0,
+        },
+    )
+    _legged_row(conn, "P3", pnl=55.0)  # pre-overlay row
+
+    out = analytics.hedge_overlay(conn, arm="control")
+    assert out["n"] == 2 and out["untracked"] == 1
+    cost = 0.17 * 100 + open_fee
+    p1_hedged = -440.0 + (20.0 * 100 - assign) - cost
+    p2_hedged = 60.0 + 0.0 - cost
+    assert out["unhedged_net"] == pytest.approx(-380.0)
+    assert out["hedged_net"] == pytest.approx(p1_hedged + p2_hedged, abs=0.01)
+    assert out["hedge_cost"] == pytest.approx(2 * cost, abs=0.01)
+    assert out["hedge_paid"] == 1
+    assert out["by_branch"]["stranded"]["n"] == 1 and out["by_branch"]["completed"]["n"] == 1
+    assert out["by_branch"]["completed"]["hedged_net"] == pytest.approx(p2_hedged, abs=0.01)
+
+    # Sell-at-Nx replay: P1's best sale (0.60) clears 3x the 0.17 premium, so it is sold there for
+    # (0.51 - 0.17) * 100 less both single-leg fees; P2 never reaches 1.5x and rides to expiry.
+    sold = (3 * 0.17 - 0.17) * 100 - open_fee - close_fee
+    assert out["sell_at"]["3.0"]["sold"] == 1
+    assert out["sell_at"]["3.0"]["hedged_net"] == pytest.approx(-440.0 + sold + p2_hedged, abs=0.01)
+    assert out["sell_at"]["1.5"]["sold"] == 1  # P1 clears 1.5x too; P2 (0.20 < 0.255) does not
+
+
+def test_hedge_overlay_respects_the_void_rule(conn):
+    _legged_row(
+        conn, "P1", pnl=60.0, hedge={"strike": 5970.0, "premium": 0.17, "fee": 1.72, "settle_value": 0.0}
+    )
+    conn.execute("UPDATE fly_positions SET void_reason = 'test' WHERE position_id = 'P1'")
+    conn.commit()
+    assert analytics.hedge_overlay(conn)["n"] == 0
+
+
+# --------------------------------------------------------------------------- the reversal book (control + same-side debit-first)
+def test_reversal_book_pairs_each_control_entry_with_the_same_side_debit_first_entry_nearest_in_time(conn):
+    """A put-side control spread (loses on a drop) pairs with debit-first-DOWN; a call-side one with
+    debit-first-UP. Nearest partner entry within the window, each partner used once; a control
+    entry with no partner in the window is reported unmatched, never paired with a distant one."""
+    _legged_row(conn, "C1", side="put", kind="fly", pnl=60.0, entry_time="12:00:00")
+    _legged_row(conn, "C2", side="call", kind="short_vertical", pnl=-440.0, entry_time="13:00:00")
+    _legged_row(conn, "C3", side="put", kind="short_vertical", pnl=-430.0, entry_time="14:00:00")
+    for pid, arm, kind, pnl, t in (
+        ("D1", "debit-first-down", "fly", 40.0, "12:03:00"),
+        ("D2", "debit-first-down", "long_vertical", -30.0, "12:04:00"),
+        ("U1", "debit-first-up", "fly", 35.0, "13:30:00"),  # 30 min from C2: outside the window
+        ("D3", "debit-first-down", "long_vertical", -25.0, "14:02:00"),
+    ):
+        _legged_row(conn, pid, arm=arm, kind=kind, pnl=pnl, entry_time=t)
+        conn.execute("UPDATE fly_positions SET entry_mode = 'debit_first' WHERE position_id = ?", (pid,))
+    conn.commit()
+
+    out = analytics.reversal_book(conn, window_minutes=10)
+    assert out["pairs"] == 2 and out["unmatched_base"] == 1
+    combos = out["by_outcome"]
+    assert combos["both_completed"]["n"] == 1 and combos["both_completed"]["combined_net"] == 100.0
+    assert combos["neither"]["n"] == 1 and combos["neither"]["combined_net"] == -455.0
+    assert out["base_net"] == -370.0 and out["partner_net"] == 15.0 and out["combined_net"] == -355.0
+    pair = next(p for p in out["pairs_detail"] if p["base"] == "C1")
+    assert pair["partner"] == "D1" and pair["gap_min"] == 3.0
