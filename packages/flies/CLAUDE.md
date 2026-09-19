@@ -7,7 +7,8 @@ a negative answer is a usable result rather than something to tune away.
 
 **Where things live.** The dated record of what each session measured is
 [docs/experiment-log.md](docs/experiment-log.md), append-only, and that is where a new FINDING goes.
-This file keeps the rules that constrain what the code may do — but note they are deliberately
+Work considered and deliberately set down — with the condition that reopens each item — is
+[docs/backlog.md](docs/backlog.md). This file keeps the rules that constrain what the code may do — but note they are deliberately
 written as *rule plus the measurement that produced it*, so a live parameter (the 20-point trend
 band, the stale-GEX limits, `min_floor_dollars`) sits next to the evidence for its value. That is
 not narrative to be tidied away: this module's history is largely of rules being "fixed" by someone
