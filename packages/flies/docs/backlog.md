@@ -37,11 +37,18 @@ sessions under one rule set.
   with `miss_stop_minutes` turned on live — the gate built for a second entry into a tape that
   already stranded the first.
 
-## `debit-first-atm` has still never run
+## `debit-first-atm` and `bwb-atm` -- deferral reversed 2026-09-19, both on the roster from 2026-09-21
 
-Designed 2026-08-07 as the single-variable control for legging order, lost to the arms-seam bug
-(experiment-log 08-21), now registered and configured but only worth its book if the delta-placed
-pair shows something the ATM comparison would help attribute. Leave enabled; do not read it as a
+Designed 2026-08-07 as the single-variable controls (legging order for debit-first, construction for
+bwb), lost to the arms-seam bug (experiment-log 08-21), and on merge of PR #136 deferred here as
+"only worth its book if the delta-placed pair shows something the ATM comparison would help
+attribute". Reversed the same day, for one reason: arms are read as paired comparisons on the SAME
+sessions, so a twin started after the pair shows something cannot be paired with the sessions that
+showed it. Without the twin, debit-first-up/down differ from control in two things at once (legging
+order AND centre placement), which this module's own one-variable rule forbids reading; with it,
+control vs debit-first-atm isolates legging order and debit-first-atm vs the pair isolates the 15-delta
+placement. Same for bwb-atm against bwb-up/down. Both journaled as arm_added breaks at 2026-09-21, the
+same boundary as the six delta arms, so the roster change is one break. Do not read either twin as a
 result on its own.
 
 ## Variants of the delta-placed debit-first pair, by config only
