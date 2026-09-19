@@ -208,3 +208,52 @@ def test_recent_miss_occurrences_ignores_other_reasons_and_symbols(conn):
     )
     conn.commit()
     assert stream_window.recent_miss_occurrences(conn, DAY, SYMBOL) == 0
+
+
+# --------------------------------------------------------------------------- 2026-09-19: floor + delta misses
+def test_request_base_width_sends_the_floor_at_rest(conn):
+    """Shown to fail: with nothing escalated the default convention sends no hint, so the streamer
+    subscribes its own global default and the module's base_width is a number nobody reads."""
+    assert stream_window.hints_for_symbols(conn, [SYMBOL], DAY, base_width=45) == {}
+    assert stream_window.hints_for_symbols(conn, [SYMBOL], DAY, base_width=45, request_base_width=True) == {
+        SYMBOL: 45
+    }
+    # an escalation still rides above the floor
+    _miss(conn, 3)
+    out = stream_window.hints_for_symbols(conn, [SYMBOL], DAY, base_width=45, request_base_width=True)
+    assert out == {SYMBOL: 45 + stream_window.DEFAULT_INCREMENT}
+
+
+def test_a_delta_rule_refusal_beyond_spot_counts_as_a_window_miss(conn):
+    """Shown to fail: the delta arms refuse before choosing legs, so they never write
+    missing_leg_quotes, and the escalator was blind to them."""
+    conn.execute(
+        "INSERT INTO fly_decisions (trade_date, arm, symbol, mode, reason, accepted, first_seen, "
+        "last_seen, occurrences) VALUES (?, 'debit-first-up', ?, 'entry', 'no_delta_quotes_beyond_spot', 0, '', '', 4)",
+        (DAY, SYMBOL),
+    )
+    conn.commit()
+    assert stream_window.recent_miss_occurrences(conn, DAY, SYMBOL) == 4
+
+
+def test_a_ledger_created_before_last_checked_occurrences_is_migrated_on_connect(tmp_path, monkeypatch):
+    """Shown to fail: the deployed ledgers were created before this column existed and nothing
+    added it, so evaluate() raised on every call and both loops swallowed it -- the escalator
+    never ran in production. Build the table in its original shape, reopen through db.connect,
+    and the column must be there and evaluate must work."""
+    import sqlite3
+
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    path = str(tmp_path / "old.db")
+    raw = sqlite3.connect(path)
+    raw.execute(
+        "CREATE TABLE fly_stream_window (symbol TEXT PRIMARY KEY, width INTEGER NOT NULL, "
+        "last_escalated_occurrences INTEGER NOT NULL DEFAULT 0, last_escalated_at TEXT, "
+        "last_miss_at TEXT, updated_at TEXT)"
+    )
+    raw.commit()
+    raw.close()
+    conn = dbmod.connect(path)
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(fly_stream_window)")}
+    assert "last_checked_occurrences" in cols
+    assert stream_window.evaluate(conn, SYMBOL, DAY, base_width=45, now="2026-07-31T10:00:00-04:00") == 45

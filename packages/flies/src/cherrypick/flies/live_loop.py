@@ -1883,8 +1883,14 @@ def main() -> int:
             if live:
                 symbol = _live_cfg(config).get("symbol", "XSP")
                 try:
-                    base_width = int(config.get("stream_window", {}).get("base_width", 60))
-                    hints = stream_window.hints_for_symbols(conn, [symbol], day, base_width=base_width)
+                    sw = config.get("stream_window") or {}
+                    hints = stream_window.hints_for_symbols(
+                        conn,
+                        [symbol],
+                        day,
+                        base_width=int(sw.get("base_width", 60)),
+                        request_base_width=bool(sw.get("request_base_width")),
+                    )
                 except Exception:  # noqa: BLE001 — window escalation is advisory, never fatal
                     hints = None
                 stream_request.register({"symbols": [symbol]}, window_hints=hints, live=True, db_path=db_path)

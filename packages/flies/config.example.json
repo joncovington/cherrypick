@@ -33,6 +33,11 @@
   "symbols": [
     "SPX"
   ],
+  "_stream_window": "The ATM-window width this module asks the streamer for, in strikes per side. base_width is the floor; stream_window.py escalates above it after repeated window-miss refusals (missing_leg_quotes, and since 2026-09-19 no_delta_quotes_beyond_spot) and decays back. request_base_width true sends the floor itself as a window hint, so the streamer subscribes it (it takes max(its own default, hint)); false keeps the older behaviour where only an escalated width is sent and the streamer's global default (30 a side since 2026-08-24, +/-150 SPX points) applies at rest. 45 a side is +/-225 SPX points: the 15-delta centre the delta arms place is ~40 points out at 10:30 on a quiet day and ~100 on a VIX-20 one, the 5-delta hedge candidate ~150 on that same morning, and the wide bwb far wing adds ~20. Cost: (2x45+1) x 2 rights x 4 events = 728 subscriptions per SPX window against 488 at the default, two windows.",
+  "stream_window": {
+    "base_width": 45,
+    "request_base_width": true
+  },
   "defaults_header": "===== Entry & Sizing Defaults =====",
   "defaults": {
     "_wing_width": "Points per wing -- the width of the control/gex/time_window books. Scale with the symbol, and note the floor is set by the underlying's own strike spacing: SPX 0DTE strikes are 5 points apart (measured: 302 of 479 gaps), so 5 is the TIGHTEST structure SPX offers and the minimum per-contract risk is $500. XSP's 1-point strikes allowed 1 ($100). Moving to SPX on 2026-08-01 therefore raised per-contract risk 5x -- unavoidable, and accepted deliberately for the fee economics in _symbols_note. Credit scaled with it (12.6% of width on SPX vs 12.0% on XSP), so it is close to the same trade 5x larger rather than a different one. The width-N sweep arms (below, in 'arms') set 'wing_width_strikes' instead of this key -- N strike increments, resolved to points against strike_increment by engine.merged_params -- specifically so their meaning survives a symbol whose strikes are not 5 points apart; this key is a raw point value and only ever applies to the arm it is set on.",

@@ -745,10 +745,13 @@ def main(argv=None) -> int:
     # refusals (stream_window.py; state lives in this DB, so paper's escalation is independent of
     # live's own).
     try:
-        base_width = int(config.get("stream_window", {}).get("base_width", 60))
+        sw = config.get("stream_window") or {}
+        base_width = int(sw.get("base_width", 60))
         symbols = config.get("symbols") or ["SPX"]
         today = provider.now_et().date().isoformat()
-        hints = stream_window.hints_for_symbols(conn, symbols, today, base_width=base_width)
+        hints = stream_window.hints_for_symbols(
+            conn, symbols, today, base_width=base_width, request_base_width=bool(sw.get("request_base_width"))
+        )
     except Exception:  # noqa: BLE001 — window escalation is advisory, never fatal to the loop
         hints = None
     stream_request.register(config, window_hints=hints, db_path=args.db)

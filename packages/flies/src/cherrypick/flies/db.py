@@ -518,12 +518,24 @@ _ADDED_BOOK_COLUMNS = {
 }
 
 
+# The escalator's bookkeeping column. The table was created on the deployed ledgers before this
+# column existed and no migration ever added it, so on this box every `stream_window.evaluate` call
+# raised on its INSERT and both loops swallowed it as "escalation is advisory" -- the auto-widening
+# never worked in production, and nothing said so (found 2026-09-19 while giving the delta arms a
+# window floor). A table in `CREATE TABLE IF NOT EXISTS` is only ever created once; every column
+# added to it afterwards needs an entry here or it exists only on fresh installs.
+_ADDED_STREAM_WINDOW_COLUMNS = {
+    "last_checked_occurrences": "INTEGER NOT NULL DEFAULT 0",
+}
+
+
 def _migrate(conn: sqlite3.Connection) -> list[str]:
     """Add any columns missing from an older paper DB. Returns what it added (for tests and logs)."""
     added = []
     for table, columns in (
         ("fly_positions", _ADDED_POSITION_COLUMNS),
         ("fly_books", _ADDED_BOOK_COLUMNS),
+        ("fly_stream_window", _ADDED_STREAM_WINDOW_COLUMNS),
     ):
         existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
         for column, sql_type in columns.items():
