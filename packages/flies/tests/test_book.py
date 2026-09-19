@@ -1,7 +1,7 @@
 """End-to-end tests for a session book: engine decisions landing in the paper database."""
 
 import pytest
-from test_engine import BASE_CONFIG, bwb_snapshot, cheap_fly_snapshot, q, snapshot
+from test_engine import BASE_CONFIG, bwb_snapshot, cheap_fly_snapshot, delta_snapshot, q, snapshot
 
 from cherrypick.flies import analytics, engine, fly
 from cherrypick.flies import book as bookmod
@@ -250,6 +250,23 @@ def test_freshly_opened_debit_vertical_records_its_worst_case_floor(conn):
     assert row["kind"] == "long_vertical"
     assert row["floor_dollars"] is not None
     assert row["floor_dollars"] < 0
+
+
+def test_a_delta_centred_debit_entry_records_the_delta_it_centred_on(conn):
+    """The measure behind the target, on the row: `entry_center_delta` is what lets the 0.15 be
+    re-cut later the way center_offset_value lets the offset be, and `center_reason` says the
+    strike came from the delta rule rather than ATM."""
+    config = one_arm_config(
+        entry_modes=["debit_first"], center_rule="delta", debit_direction="up", min_debit_pct_of_width=0.02
+    )
+    result = bookmod.process_snapshot(delta_snapshot(), config, conn, "control")
+    opened = next(a for a in result["actions"] if a["action"] == "debit_vertical_opened")
+    row = dbmod.book_positions(conn, result["book_id"])[0]
+    assert row["position_id"] == opened["position_id"]
+    assert row["center"] == 6020.0 and row["side"] == "call"
+    assert row["center_reason"] == "delta_target"
+    assert row["entry_center_delta"] == 0.14
+    assert row["entry_center_offset_value"] == 20.0
 
 
 # --------------------------------------------------------------------------- post-completion counterfactual (step 1d)

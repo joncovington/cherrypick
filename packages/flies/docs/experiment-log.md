@@ -179,3 +179,32 @@ it: a current best estimate, to be re-derived again when the advisor era has its
 Historical rows re-bucket at read time via `analytics.by_regime(..., bucket_edges=[0.30, 0.42])`
 (159/185/141 legged trades, +76 unknown); rows tagged before this date carry 'thin'/'pinning'
 labels from the old binary scheme and the stored float is the truth either way.
+
+## 2026-09-19 — the OTM debit-first pair: the trade debit-first never traded
+
+Design record, no measurement yet. Two new paper arms, `debit-first-up` and `debit-first-down`
+(`center_rule: delta`, target 0.15 as a magnitude, `debit_direction` the only difference between
+them): buy the cheap debit vertical whose centre sits at 15 delta away from spot, complete by selling
+the same-centre credit spread once spot has walked into it, and hold a risk-free fly peaked where spot
+now is. The uncompleted branch is bounded at the debit paid.
+
+**Why this is new rather than a revival.** The `debit-first` arm that ran 08-03..08-20 was GEX-centred,
+and `select_center` had no rule that could place a centre away from spot — so every debit vertical it
+bought was the near-ATM spread, a different trade from the one the construction was drawn for. The
+08-21 retirement line above ("void, not falsified") was about bwb; debit-first was retired without a
+verdict and its ATM twin never ran. Nothing in the ledger measures the OTM trade.
+
+**What was built.** Delta now rides on every leg quote in the snapshot (`provider._attach_deltas`,
+filtered at the quote age limit, not the GEX one — 0DTE delta moves with spot); a `delta` centre rule
+that refuses rather than degrading (no fresh delta, nothing within 0.05 of target, or a spread that
+would not sit wholly beyond spot); and `entry_center_delta` stamped on every arm's rows so the 0.15
+can be re-cut later instead of costing a pair per value. The arms override `min_debit_pct_of_width`
+to 0.02 — the shared 0.20 floor would refuse the very spread they exist to buy. New books, not a
+measurement break: no existing arm changes meaning.
+
+**What it will be read on.** 15–20 sessions against `control`: completion rate, net after fees, the
+drift-alignment split, and the direction question — up vs down on the `trend_bucket` already tagged at
+entry, a replay over the two books rather than a third arm. Watch `post_best_completing_credit` from
+day one: a move *through* the centre richens the completing spread toward `W`, and the first-tick
+completion rule will leave most of that on the table; whether a wait-for-better rule earns its place
+is [completion-timing.md](completion-timing.md)'s question, and this pair is where it has teeth.

@@ -60,6 +60,7 @@ def seed(
     gamma=0.001,
     bid_ask=(1.0, 1.2),
     quote_for=None,
+    delta_for=None,
 ):
     expiration = expiration or TODAY
     conn = sqlite3.connect(cache_path)
@@ -98,8 +99,8 @@ def seed(
                 (streamer_symbol, bid, ask, (bid + ask) / 2, now - quote_age),
             )
             conn.execute(
-                "INSERT OR REPLACE INTO stream_greeks (symbol, gamma, updated_at) VALUES (?, ?, ?)",
-                (streamer_symbol, gamma, now - greek_age),
+                "INSERT OR REPLACE INTO stream_greeks (symbol, delta, gamma, updated_at) VALUES (?, ?, ?, ?)",
+                (streamer_symbol, delta_for(strike, tag) if delta_for else None, gamma, now - greek_age),
             )
             conn.execute(
                 "INSERT OR REPLACE INTO stream_oi (symbol, open_interest, updated_at) VALUES (?, ?, ?)",
@@ -232,6 +233,52 @@ def test_stale_greeks_are_rejected_from_the_gex_surface(cache):
     assert ok["gex"]["ok"] is True
     assert ok["gex_stats"]["greeks_stale"] == 0
     assert ok["gex_stats"]["oldest_input_age_seconds"] >= 60
+
+
+# --------------------------------------------------------------------------- delta on the leg quote
+def linear_delta(spot):
+    """A monotone stand-in for delta: 0.5 at the money, falling 0.02 per point OTM for calls, the
+    negative mirror for puts. The shape is what the delta centre rule reads; the values are not a
+    model of anything."""
+
+    def build(strike, tag):
+        d = max(0.01, min(0.99, 0.5 - (strike - spot) * 0.02))
+        return d if tag == "C" else d - 1.0
+
+    return build
+
+
+def test_each_leg_quote_carries_a_fresh_delta(cache):
+    """Delta rides on the leg quote itself, so `engine.quote(snapshot, side, strike)["delta"]` is
+    the whole read -- no second lookup keyed on a streamer symbol the engine never sees."""
+    seed(cache, delta_for=linear_delta(6000.0))
+    snap = provider.build_snapshot(cache, "SPX")
+    assert snap["calls"][6010.0]["delta"] == pytest.approx(0.30)
+    assert snap["puts"][5990.0]["delta"] == pytest.approx(-0.30)
+    assert snap["quote_stats"]["deltas_fresh"] == len(snap["calls"]) + len(snap["puts"])
+
+
+def test_a_delta_older_than_the_quote_limit_is_dropped_while_the_quote_and_the_gex_surface_stay(cache):
+    """Delta is filtered at the QUOTE age, not the 30-minute GEX age. 0DTE delta moves with every
+    tick of spot; a ten-minute-old delta would put a '15-delta' centre where spot WAS. The same
+    ten-minute-old gamma is still a perfectly good GEX input, and the surface is untouched."""
+    wide = tuple(range(5900, 6101, 5))
+    seed(cache, strikes=wide, delta_for=linear_delta(6000.0), greek_age=600)
+    snap = provider.build_snapshot(cache, "SPX", max_quote_age_seconds=120)
+    assert snap["ok"] is True
+    assert snap["calls"][6010.0].get("delta") is None
+    assert snap["quote_stats"]["deltas_fresh"] == 0
+    assert snap["gex"]["ok"] is True
+
+
+def test_a_leg_with_no_delta_row_simply_has_none(cache):
+    """The feed publishes greeks separately from quotes and can be behind on either; a quote with
+    no delta is still a quote. Only the delta-centred arms care, and they refuse on None."""
+    seed(cache)
+    snap = provider.build_snapshot(cache, "SPX")
+    assert snap["ok"] is True
+    assert all(leg.get("delta") is None for leg in snap["calls"].values())
+    assert snap["quote_stats"]["deltas_fresh"] == 0
 
 
 # --------------------------------------------------------------------------- the refusal paths

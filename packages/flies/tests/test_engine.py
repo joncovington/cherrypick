@@ -1911,3 +1911,168 @@ def test_the_containment_gate_reports_the_forecast_it_judged():
         _forecast_snapshot(80.0), {**params(), "max_forecast_range_points": 60}, [], None, detail
     )
     assert detail["forecast_range_points"] == 80.0
+
+
+# --------------------------------------------------------------------------- the delta centre rule
+def dq(bid, ask, delta):
+    return {"bid": bid, "ask": ask, "delta": delta}
+
+
+def delta_snapshot(spot=6000.0, **over):
+    """Calls above spot and puts below it, each leg carrying a delta that falls one notch per strike
+    away from spot -- the shape a real 0DTE chain has, at values a test can read off. Quotes are
+    priced so any 5-wide debit spread out here is cheap but real (~0.2-0.6)."""
+    calls = {
+        6005: dq(2.6, 3.0, 0.42),
+        6010: dq(1.5, 1.8, 0.30),
+        6015: dq(0.8, 1.0, 0.20),
+        6020: dq(0.45, 0.6, 0.14),
+        6025: dq(0.25, 0.35, 0.09),
+        6030: dq(0.12, 0.2, 0.05),
+    }
+    puts = {
+        5995: dq(2.6, 3.0, -0.42),
+        5990: dq(1.5, 1.8, -0.30),
+        5985: dq(0.8, 1.0, -0.20),
+        5980: dq(0.45, 0.6, -0.14),
+        5975: dq(0.25, 0.35, -0.09),
+        5970: dq(0.12, 0.2, -0.05),
+    }
+    return snapshot(underlying_price=spot, calls=calls, puts=puts, **over)
+
+
+def delta_params(direction, **over):
+    return params(
+        **{
+            "center_rule": "delta",
+            "debit_direction": direction,
+            "entry_modes": ["debit_first"],
+            "min_debit_pct_of_width": 0.02,
+            **over,
+        }
+    )
+
+
+def test_delta_rule_centres_on_the_strike_nearest_the_target_in_the_named_direction():
+    """0.15 up is the 0.14 call at 6020; 0.15 down is the -0.14 put at 5980. The target is read as a
+    magnitude, so one number serves both directions and the put side needs no separate sign."""
+    assert engine.select_center(delta_snapshot(), delta_params("up")) == (6020.0, "delta_target")
+    assert engine.select_center(delta_snapshot(), delta_params("down")) == (5980.0, "delta_target")
+
+
+def test_delta_rule_breaks_a_tie_toward_spot():
+    """0.17 sits exactly between the 0.20 and 0.14 strikes; the nearer one wins, since the further
+    one is the same distance from target and needs a bigger move to complete."""
+    center, _ = engine.select_center(delta_snapshot(), delta_params("up", debit_delta_target=0.17))
+    assert center == 6015.0
+
+
+def test_delta_rule_only_considers_strikes_whose_debit_spread_sits_wholly_beyond_spot():
+    """With spot at 6002 the 0.42 strike at 6005 is the exact target -- but its debit spread would be
+    6000/6005, with the long leg already ITM. That is the near-ATM trade the ATM arm already runs,
+    not this one; the rule skips it and takes the next strike out."""
+    snap = delta_snapshot(spot=6002.0)
+    center, reason = engine.select_center(
+        snap, delta_params("up", debit_delta_target=0.42, debit_delta_tolerance=0.15)
+    )
+    assert (center, reason) == (6010.0, "delta_target")
+
+
+def test_delta_rule_refuses_rather_than_degrading_to_atm():
+    """Every refusal returns no centre. An ATM fallback would trade the ATM arm's trade under this
+    arm's name -- the same reason `call_wall` never degrades either."""
+    # No delta on any leg (the plain fixture): the rule has nothing to read.
+    assert engine.select_center(snapshot(), delta_params("up")) == (None, "no_delta_quotes_beyond_spot")
+    # Deltas present, but none within tolerance of the target.
+    assert engine.select_center(delta_snapshot(), delta_params("up", debit_delta_target=0.60)) == (
+        None,
+        "no_strike_near_delta_target",
+    )
+    # The rule is meaningless without a direction, and guessing one would bake in a bias.
+    p = delta_params("up")
+    del p["debit_direction"]
+    assert engine.select_center(delta_snapshot(), p) == (None, "delta_rule_needs_direction")
+
+
+def test_delta_centred_debit_entry_is_the_otm_debit_spread_that_completes_on_a_move_into_it():
+    """End to end through the existing debit_first entry: up buys the 6015/6020 call spread for a
+    small debit and completes on spot rising to 6020; down mirrors it below. The centre's delta rides
+    on the plan so the row can record the measure, not just the target."""
+    enter, reason, plan = engine.evaluate_debit_vertical_entry(delta_snapshot(), delta_params("up"), [])
+    assert enter, reason
+    assert plan["side"] == "call" and plan["center"] == 6020.0
+    assert plan["center_reason"] == "delta_target"
+    assert plan["center_delta"] == 0.14
+    assert 0.2 < plan["debit"] < 0.6
+    assert plan["completing_direction"] == "up"
+
+    enter, reason, plan = engine.evaluate_debit_vertical_entry(delta_snapshot(), delta_params("down"), [])
+    assert enter, reason
+    assert plan["side"] == "put" and plan["center"] == 5980.0
+    assert plan["center_delta"] == -0.14
+    assert plan["completing_direction"] == "down"
+
+
+def test_the_default_debit_floor_would_refuse_a_low_delta_spread():
+    """Why the arms carry their own `min_debit_pct_of_width`: the shared 0.20 floor (1.00 on a
+    5-wide) exists to keep the ATM debit arm out of implausibly thin spreads, and a 15-delta spread
+    is exactly that thin by design. Pinned so the override is understood as load-bearing."""
+    enter, reason, _ = engine.evaluate_debit_vertical_entry(
+        delta_snapshot(), delta_params("up", min_debit_pct_of_width=0.20), []
+    )
+    assert not enter and reason == "debit_below_floor_completion_implausible"
+
+
+def test_every_entry_plan_carries_the_centre_strikes_delta_when_the_quote_has_one():
+    """The measure is stamped on every arm's rows, not only the delta-centred ones -- an ATM entry's
+    delta is the free baseline the target is read against. None when the feed carried none."""
+    _, _, plan = engine.evaluate_credit_spread_entry(snapshot(underlying_price=6002.0), params(), [])
+    assert plan is not None and plan["center_delta"] is None
+
+    calls = {5995: q(8.6, 9.0), 6000: dq(5.0, 5.4, 0.52), 6005: q(2.6, 3.0), 6010: q(1.0, 1.4)}
+    _, _, plan = engine.evaluate_credit_spread_entry(
+        snapshot(underlying_price=6002.0, calls=calls), params(), []
+    )
+    assert plan["side"] == "call" and plan["center_delta"] == 0.52
+
+
+def _example_config():
+    import json
+    import re
+    from pathlib import Path
+
+    example = Path(__file__).resolve().parents[1] / "config.example.json"
+    return json.loads(re.sub(r"^\s*//.*$", "", example.read_text(encoding="utf-8"), flags=re.M))
+
+
+def test_the_delta_debit_arms_are_a_mirrored_pair_and_reach_the_roster():
+    """`debit-first-up` and `debit-first-down` differ in direction and nothing else, so a difference
+    between their books is the direction. Both must be in engine.ARMS AND the example config: the
+    ATM twins were designed, registered in ARMS, and never given a config entry, so `enabled_arms`
+    (registry ∩ config) silently excluded them from the day they were written."""
+    from cherrypick.flies import cli
+
+    example = _example_config()
+    arms = example["arms"]
+    up, down = arms["debit-first-up"], arms["debit-first-down"]
+    for arm, expected_direction in (("debit-first-up", "up"), ("debit-first-down", "down")):
+        assert arm in engine.ARMS
+        assert arm in cli.enabled_arms(example), f"{arm} is registered but not on the roster"
+        p = engine.merged_params(example, arm)
+        assert p["center_rule"] == "delta"
+        assert p["entry_modes"] == ["debit_first"]
+        assert p["debit_direction"] == expected_direction
+        assert p["debit_delta_target"] == 0.15
+    same = ("debit_delta_target", "debit_delta_tolerance", "entry_windows", "min_debit_pct_of_width")
+    assert {k: up.get(k) for k in same} == {k: down.get(k) for k in same}
+    assert {k for k in up if not k.startswith("_")} == {k for k in down if not k.startswith("_")}
+
+
+def test_no_fixed_offset_arm_still_holds_the_delta_rule_is_not_one():
+    """The delta rule places the centre by the chain's own probability read, not by a strike count,
+    so a 15-delta centre is 40 points out at 10:30 and 10 points out at 14:00 -- one trade all day
+    where `spot + N strikes` would be a different trade every hour. The offset the rule lands on is
+    still recorded (center_offset_value) so the two readings can be compared after the fact."""
+    assert not [a for a in engine.ARMS if "offset" in a or "spot+" in a]
+    up, _ = engine.select_center(delta_snapshot(), delta_params("up"))
+    assert engine._classify_center_offset(delta_snapshot(), delta_params("up"), up) == ("above_spot", 20.0)

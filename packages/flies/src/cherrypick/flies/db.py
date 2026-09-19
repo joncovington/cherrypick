@@ -382,6 +382,15 @@ _ADDED_POSITION_COLUMNS = {
     # version (which has no stored spot of its own to difference against) exists at all.
     "entry_center_offset_value": "REAL",
     "completion_center_offset_value": "REAL",
+    # The centre strike's delta on the entry side, as the feed had it at entry (2026-09-19; NULL
+    # before, and whenever the feed carried no fresh delta for that leg). The measure behind the
+    # delta-centred arms' 0.15 target, stored so the target can be re-cut later the way
+    # center_offset_value lets the offset be -- and stamped on every arm's rows, since an ATM
+    # entry's delta is the baseline the target is read against. Not a regime pair on purpose: it
+    # describes our own strike, not the market, and is not phase-suffixed `_value` so
+    # stale_writer_columns' shape match leaves it alone. Cannot be backfilled: the cache keeps no
+    # greeks history.
+    "entry_center_delta": "REAL",
     # Signed `spot - day_open` in points. Unlike the offset pair above this canNOT be backfilled:
     # nothing on the row records where the session opened, and the cache keeps one summary row per
     # (symbol, trade_date) rather than a history -- so these start empty and fill forward only.

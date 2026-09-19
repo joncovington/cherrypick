@@ -352,6 +352,42 @@ comparison measures one variable rather than a bundle of confounded changes.
   `center_offset` is kept signed and side-neutral rather than collapsed to a "lagging" boolean. Read
   the offset curve off the GEX arms first; build a placement arm only if it shows something, and make
   it drift-aware.
+- `debit-first-up`, `debit-first-down` — the OTM debit-first pair, added 2026-09-19
+  (`center_rule: "delta"`, `engine._delta_center`; delta rides on each leg quote from
+  `provider._attach_deltas`). **The trade `debit-first` was meant to be and never was.** Buy a cheap
+  debit vertical whose centre sits at a target delta away from spot — `debit_delta_target` 0.15, a
+  magnitude, so the 0.15 call going up and the −0.15 put going down — and complete by *selling* the
+  same-centre credit spread once spot has walked into it, when that spread is near the money and
+  worth several times the debit paid. The result is a risk-free fly peaked where spot *now* is; the
+  uncompleted branch is bounded at the debit, never legged's `-W` tail. The GEX-centred arm never
+  traded this: `select_center` had no rule that placed a centre away from spot, so its "debit
+  first" was always the near-ATM spread. Three choices worth keeping straight:
+  - **Delta, not a strike offset.** 15 delta is ~40 points out at 10:30 and ~10 at 14:00, so a
+    delta target is one trade all day where `spot + N strikes` is a different trade every hour.
+    This is *not* the offset arm the bullet above declines — the offset the rule lands on is still
+    recorded (`center_offset_value`), and the delta it chose on is stamped as `entry_center_delta`
+    on **every** arm's rows (an ATM entry's delta is the free baseline), so the 0.15 can be re-cut
+    rather than costing a second pair per value.
+  - **Two arms, one variable.** Up and down differ in `debit_direction` and nothing else (a test
+    pins the pair identical otherwise), so their difference *is* the direction. Both run every
+    session — paper capital is unbounded — and "should direction follow the day" is a re-cut of
+    their rows on the `trend_bucket` already tagged at entry, a replay rather than a third arm.
+  - **Refuse, never degrade.** No fresh delta on the chain, no strike within
+    `debit_delta_tolerance` (0.05) of the target, or a candidate whose debit spread would not sit
+    wholly beyond spot (that is the ATM arm's trade) each return no centre with its own reason —
+    the `call_wall` posture, for the same reason: an ATM fallback would trade the ATM arm's trade
+    under this arm's name. Delta is filtered at the **quote** age limit, not the 30-minute GEX one;
+    0DTE delta moves with every tick of spot.
+
+  The arms carry `min_debit_pct_of_width: 0.02` because the shared 0.20 floor (1.00 on a 5-wide)
+  exists to keep the ATM debit arm out of implausibly thin spreads and a 15-delta spread is that
+  thin by design; `debit_cannot_be_out_earned` still refuses one that cannot pay for itself. Paper
+  only: `live_orders.py` builds legged specs alone, and the pair reads against `control` over
+  15–20 sessions on completion rate, net after fees and the drift-alignment split before live is a
+  question. **The post-completion counterfactual bites hardest here** — on a move *through* the
+  centre the completing credit can approach `W`, and the engine still completes at the first tick
+  past break-even; `post_best_completing_credit` and `analytics.left_on_table` already measure what
+  that first-tick rule leaves, per [docs/completion-timing.md](docs/completion-timing.md).
 
 **Regime tagging (`engine.classify_regime`, added 2026-07-31).** Every entry and completion, across
 every arm, is tagged along six dimensions read purely from the snapshot in hand — `vol_bucket`

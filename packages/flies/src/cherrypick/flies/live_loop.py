@@ -947,6 +947,7 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                             # record of whether it centred on gamma or degraded to ATM. The plan
                             # has always carried it; only the live writer dropped it.
                             "center_reason": plan.get("center_reason"),
+                            "entry_center_delta": plan.get("center_delta"),
                             "completing_direction": plan.get("completing_direction"),
                             "underlying_at_entry": snapshot.get("underlying_price"),
                             **bookmod.regime_columns("entry", snapshot, params, center=plan.get("center")),
