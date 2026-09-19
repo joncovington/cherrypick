@@ -1945,7 +1945,7 @@ def delta_params(direction, **over):
     return params(
         **{
             "center_rule": "delta",
-            "debit_direction": direction,
+            "center_direction": direction,
             "entry_modes": ["debit_first"],
             "min_debit_pct_of_width": 0.02,
             **over,
@@ -1990,7 +1990,7 @@ def test_delta_rule_refuses_rather_than_degrading_to_atm():
     )
     # The rule is meaningless without a direction, and guessing one would bake in a bias.
     p = delta_params("up")
-    del p["debit_direction"]
+    del p["center_direction"]
     assert engine.select_center(delta_snapshot(), p) == (None, "delta_rule_needs_direction")
 
 
@@ -2061,7 +2061,7 @@ def test_the_delta_debit_arms_are_a_mirrored_pair_and_reach_the_roster():
         p = engine.merged_params(example, arm)
         assert p["center_rule"] == "delta"
         assert p["entry_modes"] == ["debit_first"]
-        assert p["debit_direction"] == expected_direction
+        assert p["center_direction"] == expected_direction
         assert p["debit_delta_target"] == 0.15
     same = ("debit_delta_target", "debit_delta_tolerance", "entry_windows", "min_debit_pct_of_width")
     assert {k: up.get(k) for k in same} == {k: down.get(k) for k in same}
@@ -2113,3 +2113,102 @@ def test_hedge_candidate_never_sits_on_or_inside_the_long_wing():
     assert engine.hedge_candidate(delta_snapshot(), "put", 5980.0, 5.0, p) is None
     p = params(hedge_delta=0.09, hedge_delta_tolerance=0.05)
     assert engine.hedge_candidate(delta_snapshot(), "put", 5980.0, 5.0, p)["strike"] == 5970.0
+
+
+# --------------------------------------------------------------------------- the delta-placed bwb pair
+def bwb_delta_snapshot(**over):
+    """Arbitrage-free calls above spot and puts below, deltas falling a notch per strike, shaped so
+    a 5/10 bwb at the 0.14 strike collects a SMALL positive credit: the far gap (6025->6030, 0.35)
+    beats the 6015/6020/6025 butterfly (0.10). Deliberately thin -- that is what an OTM bwb's
+    credit looks like, and the point of the pair is to find out whether it clears the gates."""
+    calls = {
+        6005: dq(2.6, 3.0, 0.42),
+        6010: dq(1.5, 1.8, 0.30),
+        6015: dq(0.7, 0.9, 0.20),
+        6020: dq(0.5, 0.6, 0.14),
+        6025: dq(0.35, 0.45, 0.09),
+        6030: dq(0.0, 0.1, 0.05),
+    }
+    puts = {
+        5995: dq(2.6, 3.0, -0.42),
+        5990: dq(1.5, 1.8, -0.30),
+        5985: dq(0.7, 0.9, -0.20),
+        5980: dq(0.5, 0.6, -0.14),
+        5975: dq(0.35, 0.45, -0.09),
+        5970: dq(0.0, 0.1, -0.05),
+    }
+    return snapshot(calls=calls, puts=puts, **over)
+
+
+def bwb_delta_params(direction, **over):
+    return params(
+        **{
+            "center_rule": "delta",
+            "center_direction": direction,
+            "entry_modes": ["bwb_roll"],
+            "min_bwb_credit_pct_of_tail": 0.0,
+            "max_bwb_tail_dollars": 1000.0,
+            **over,
+        }
+    )
+
+
+def test_delta_placed_bwb_sits_wholly_beyond_spot_with_its_tail_outward_and_records_both_deltas():
+    """up: near wing 6015 / centre 6020 / far 6030, calls, tail above; down mirrors it in puts.
+    The centre's delta AND the far wing's ride on the plan: the far wing's delta is the measured
+    probability of the tail, the number the flat credit-vs-tail gate can later be re-derived on."""
+    enter, reason, plan = engine.evaluate_bwb_entry(bwb_delta_snapshot(), bwb_delta_params("up"), [])
+    assert enter, reason
+    assert plan["side"] == "call" and plan["center"] == 6020.0 and plan["far_width"] == 10.0
+    assert plan["center_reason"] == "delta_target"
+    assert plan["center_delta"] == 0.14 and plan["far_wing_delta"] == 0.05
+    assert 0 < plan["credit"] < 0.5
+
+    enter, reason, plan = engine.evaluate_bwb_entry(bwb_delta_snapshot(), bwb_delta_params("down"), [])
+    assert enter, reason
+    assert plan["side"] == "put" and plan["center"] == 5980.0
+    assert plan["center_delta"] == -0.14 and plan["far_wing_delta"] == -0.05
+
+
+def test_an_otm_bwb_at_the_default_credit_floor_is_refused_and_that_is_the_measurement():
+    """0.15 of a 5-point tail is 0.75; a 15-delta 5/10 bwb collects a fraction of that. The pair is
+    expected to be refused by its own floor much of the time, and the refusal rows are the result --
+    the gate is left at its default on purpose, not loosened to make the arm trade."""
+    p = bwb_delta_params("up", min_bwb_credit_pct_of_tail=0.15)
+    enter, reason, _ = engine.evaluate_bwb_entry(bwb_delta_snapshot(), p, [])
+    assert not enter and reason == "bwb_credit_below_floor"
+
+
+def test_the_delta_rule_direction_key_is_center_direction_with_the_old_name_still_read():
+    p = delta_params("up")
+    p["debit_direction"] = p.pop("center_direction")
+    assert engine.select_center(delta_snapshot(), p) == (6020.0, "delta_target")
+
+
+def test_the_bwb_delta_arms_are_two_mirrored_pairs_at_two_widths():
+    example = _example_config()
+    for width_tag, strikes in (("", None), ("-w2", 2)):
+        up, down = example["arms"][f"bwb-up{width_tag}"], example["arms"][f"bwb-down{width_tag}"]
+        for arm, direction in ((up, "up"), (down, "down")):
+            assert arm["center_rule"] == "delta" and arm["entry_modes"] == ["bwb_roll"]
+            assert arm["center_direction"] == direction
+            assert arm.get("wing_width_strikes") == strikes
+            # The flat credit floor is NOT loosened for the pair; the tail cap is declared per width.
+            assert "min_bwb_credit_pct_of_tail" not in arm
+            assert arm["max_bwb_tail_dollars"] > 150
+        assert {k for k in up if not k.startswith("_")} == {k for k in down if not k.startswith("_")}
+        assert {k: v for k, v in up.items() if k not in ("center_direction",) and not k.startswith("_")} == {
+            k: v for k, v in down.items() if k not in ("center_direction",) and not k.startswith("_")
+        }
+
+
+def test_every_registered_arm_has_a_config_entry_and_vice_versa():
+    """The seam that lost the ATM twins for two weeks: `enabled_arms` is registry ∩ config, so an
+    arm in ARMS with no config entry is silently never run, and a config entry no ARMS name matches
+    is silently ignored. Retired arms keep a disabled entry rather than being dropped, so the two
+    sets are equal by construction and any new arm has to be added in both places or this fails."""
+    configured = {k for k in _example_config()["arms"] if not k.startswith("_")}
+    assert set(engine.ARMS) == configured, {
+        "registered_not_configured": sorted(set(engine.ARMS) - configured),
+        "configured_not_registered": sorted(configured - set(engine.ARMS)),
+    }

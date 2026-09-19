@@ -85,6 +85,17 @@ ARMS = (
     # NOT the offset arm the note above declines: the offset it lands on is still recorded per row.
     "debit-first-up",
     "debit-first-down",
+    # The delta-placed bwb pairs (2026-09-19), on the same rule and the same 0.15 target as the
+    # debit-first pair -- so at a given session and tick the two constructions sit on the SAME
+    # centre: a bwb is debit-first with the completion sold at entry for a wider wing, paid for by
+    # carrying the tail until the roll buys it back. Same strikes, one variable. Two widths,
+    # declared as separate arms because the tail is `far_width - wing_width` dollars and scales
+    # with it; the credit floor is NOT loosened for them, and the far wing's delta is stamped on
+    # every row so that floor can be re-derived against the measured tail probability later.
+    "bwb-up",
+    "bwb-down",
+    "bwb-up-w2",
+    "bwb-down-w2",
     # Centres the shorts at the GEX call wall (2026-08-31, from the gex module's pin study over 23
     # recorded sessions). NOT a pin bet -- the study killed that reading (the tent captured 2/23) --
     # but a bound bet: the close finished at or below the morning wall 19-21/23, so the entry is the
@@ -253,7 +264,9 @@ def _delta_center(snapshot: dict, params: dict, spot: float) -> tuple[float | No
     return no centre with its own reason, for the reason `call_wall` refuses too: an ATM fallback
     would trade the ATM arm's trade under this arm's name and the pair's comparison would die.
     """
-    direction = params.get("debit_direction")
+    # `center_direction` is the key; `debit_direction` was its first name, from when only the
+    # debit-first pair used the rule, and is still read so a config written that week keeps working.
+    direction = params.get("center_direction", params.get("debit_direction"))
     if direction not in ("up", "down"):
         return None, "delta_rule_needs_direction"
     target = abs(float(params.get("debit_delta_target", 0.15)))
@@ -1720,6 +1733,10 @@ def evaluate_bwb_entry(
             "side": side,
             "center": center,
             "center_reason": center_reason,
+            "center_delta": center_delta(snapshot, side, center),
+            # The far wing's delta is the chain's own read of the tail's probability -- the measure
+            # the flat credit-vs-tail floor can be re-derived against once rows carry it.
+            "far_wing_delta": center_delta(snapshot, side, far_wing),
             "wing_width": width,
             "far_width": far_width,
             "credit": round(credit, 4),

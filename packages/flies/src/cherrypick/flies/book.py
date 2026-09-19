@@ -940,6 +940,8 @@ def process_snapshot(
                     "entry_time": now,
                     "entry_window": plan["entry_window"],
                     "center_reason": plan["center_reason"],
+                    "entry_center_delta": plan.get("center_delta"),
+                    "entry_far_wing_delta": plan.get("far_wing_delta"),
                     "underlying_at_entry": snapshot.get("underlying_price"),
                     **regime_columns("entry", snapshot, params, center=plan["center"]),
                     **leg_symbol_columns(

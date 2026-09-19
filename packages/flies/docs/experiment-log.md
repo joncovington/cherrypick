@@ -232,3 +232,30 @@ a combined arm would add nothing and confound two variables.
 
 Both are new columns and read-side queries — no existing arm changes meaning, no measurement break.
 Rows before this date carry NULL hedge columns and are counted `untracked`, never as a free hedge.
+
+## 2026-09-19 — the bwb question, re-asked on the delta rule
+
+Design record, no measurement yet. Four paper arms: `bwb-up`/`bwb-down` at the default width and
+`bwb-up-w2`/`bwb-down-w2` at two strikes, all placed by the `delta` centre rule at the same 0.15 target
+the debit-first pair uses. The point is the pairing: at a given centre a bwb is debit-first with the
+completion sold at entry for a wider wing, paid for by carrying the tail until the roll buys it back,
+so the two constructions now sit on the same strikes in the same session and differ in exactly that.
+
+**Not a rerun.** The 08-21 line above says "void, not falsified", and that is the whole record: the
+25 rows before 08-07 rested on a roll priced 3x too wide, the corrected orientation accumulated no
+sample before the arm was retired, and `bwb-atm` never reached the roster. So there is nothing to
+respect and nothing to pool with. Three things are different this time: placement is by the chain's
+own probability rather than GEX or ATM; the far wing's delta is stamped on every row
+(`entry_far_wing_delta`), which is the measured tail probability the flat `min_bwb_credit_pct_of_tail`
+can be re-derived against; and the width is declared per arm, because the tail scales with it and
+the practitioner's 0DTE bwb is a wider structure than this module's default.
+
+**What is expected.** Refusals. The 08-07 correction note already says an OTM bwb's credit collapses
+as it is pushed out, and the floor is left at its default on purpose — the refusal count under a
+probability-placed centre is the measurement, and loosening the gate to make the arm trade would be
+the loosen-until-it-looks-better move rule 6 names. The reading, when rows exist: `best_roll_debit`
+(was the tail ever buyable back), unrolled vs rolled P&L, and the same-centre comparison against
+`debit-first-up/down` by outcome.
+
+The direction key is `center_direction` from today (`debit_direction` is still read); the arms-seam
+test now pins `engine.ARMS` equal to the example config's arm set.

@@ -391,6 +391,10 @@ _ADDED_POSITION_COLUMNS = {
     # stale_writer_columns' shape match leaves it alone. Cannot be backfilled: the cache keeps no
     # greeks history.
     "entry_center_delta": "REAL",
+    # bwb only (2026-09-19): the far wing's delta at entry -- the chain's own probability of the
+    # tail being reached, stored so `min_bwb_credit_pct_of_tail` can later be re-derived against
+    # P(tail) x tail rather than the tail alone. Same shape rule as entry_center_delta.
+    "entry_far_wing_delta": "REAL",
     # The hedge overlay (2026-09-19), legged entries only, paper book only: the ~hedge_delta option
     # on the spread's LOSING side, priced at entry and never bought. Telemetry that answers, per
     # position and after settlement, whether a far-OTM long would have cut the stranded branch's

@@ -257,7 +257,7 @@ def test_a_delta_centred_debit_entry_records_the_delta_it_centred_on(conn):
     re-cut later the way center_offset_value lets the offset be, and `center_reason` says the
     strike came from the delta rule rather than ATM."""
     config = one_arm_config(
-        entry_modes=["debit_first"], center_rule="delta", debit_direction="up", min_debit_pct_of_width=0.02
+        entry_modes=["debit_first"], center_rule="delta", center_direction="up", min_debit_pct_of_width=0.02
     )
     result = bookmod.process_snapshot(delta_snapshot(), config, conn, "control")
     opened = next(a for a in result["actions"] if a["action"] == "debit_vertical_opened")
@@ -643,3 +643,22 @@ def test_the_overlay_is_off_when_hedge_delta_is_null(conn):
     bookmod.process_snapshot(hedged_snapshot(), config, conn, "control")
     row = conn.execute("SELECT hedge_strike, hedge_best_mid FROM fly_positions").fetchone()
     assert tuple(row) == (None, None)
+
+
+def test_a_delta_placed_bwb_entry_records_the_centre_and_far_wing_deltas(conn):
+    from test_engine import bwb_delta_snapshot
+
+    config = one_arm_config(
+        entry_modes=["bwb_roll"],
+        center_rule="delta",
+        center_direction="down",
+        min_bwb_credit_pct_of_tail=0.0,
+        max_bwb_tail_dollars=1000.0,
+    )
+    result = bookmod.process_snapshot(bwb_delta_snapshot(), config, conn, "control")
+    assert [a for a in result["actions"] if a["action"] == "bwb_opened"], result["actions"]
+    row = dbmod.book_positions(conn, result["book_id"])[0]
+    assert row["kind"] == "bwb" and row["side"] == "put" and row["center"] == 5980.0
+    assert row["center_reason"] == "delta_target"
+    assert row["entry_center_delta"] == -0.14
+    assert row["entry_far_wing_delta"] == -0.05

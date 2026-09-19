@@ -394,7 +394,7 @@ comparison measures one variable rather than a bundle of confounded changes.
     recorded (`center_offset_value`), and the delta it chose on is stamped as `entry_center_delta`
     on **every** arm's rows (an ATM entry's delta is the free baseline), so the 0.15 can be re-cut
     rather than costing a second pair per value.
-  - **Two arms, one variable.** Up and down differ in `debit_direction` and nothing else (a test
+  - **Two arms, one variable.** Up and down differ in `center_direction` and nothing else (a test
     pins the pair identical otherwise), so their difference *is* the direction. Both run every
     session — paper capital is unbounded — and "should direction follow the day" is a re-cut of
     their rows on the `trend_bucket` already tagged at entry, a replay rather than a third arm.
@@ -414,6 +414,28 @@ comparison measures one variable rather than a bundle of confounded changes.
   centre the completing credit can approach `W`, and the engine still completes at the first tick
   past break-even; `post_best_completing_credit` and `analytics.left_on_table` already measure what
   that first-tick rule leaves, per [docs/completion-timing.md](docs/completion-timing.md).
+- `bwb-up`, `bwb-down`, `bwb-up-w2`, `bwb-down-w2` — the delta-placed bwb pairs, added 2026-09-19
+  on the same `delta` rule and the same 0.15 target as the debit-first pair. **Why the same rule:**
+  at a centre K and width w a put bwb is `+1 (K+w) / −2 K / +1 (K−f)`, and `debit-first-down` at
+  the same K buys `+1 (K+w) / −1 K` and later sells `−1 K / +1 (K−w)` — so a bwb *is* debit-first
+  with the completion sold at entry for a wider wing, paid for by carrying the tail until the roll
+  buys it back. Placed by one rule in one session the two constructions sit on the same strikes
+  and differ in one thing: credit now with a tail, or debit now with none and a conditional
+  completion. That is the regime-labelled, common-strike comparison the eventual selector needs.
+  **What August did not measure:** the bwb arm was never falsified — 25 rows voided by the
+  roll-pricing defect, the roll unreachable by construction until 08-07, retired 08-21 with no
+  sample after the fix and its ATM twin never run. **The credit floor is not loosened** for these
+  arms; the 08-07 note is blunt that pushing a bwb out of the money collapses its credit, so they
+  are expected to be refused by `min_bwb_credit_pct_of_tail` much of the time and the refusal rows
+  are the result. `entry_far_wing_delta` is stamped on every row — the chain's own P(tail) — so the
+  flat floor can later be re-derived against `P(tail) × tail`; store first, retune second. Two
+  widths declared as separate arms (5/10 and 10/20 on SPX) because the tail is `far − wing` dollars
+  and scales with it, each with its own `max_bwb_tail_dollars`; paper only, never a live candidate.
+  Read the roll as the result: `best_roll_debit` says whether the tail was ever buyable back, and
+  unrolled vs rolled P&L answers the trap in [docs/faq.md](docs/faq.md). No hedge overlay here — the
+  tail *is* the far wing and insuring it is the roll's job. The arms-seam test now pins
+  `engine.ARMS` equal to the example config's arm set, so the way the ATM twins were lost cannot
+  recur silently.
 
 **Regime tagging (`engine.classify_regime`, added 2026-07-31).** Every entry and completion, across
 every arm, is tagged along six dimensions read purely from the snapshot in hand — `vol_bucket`

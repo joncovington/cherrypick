@@ -216,11 +216,11 @@
         ]
       ]
     },
-    "_debit-first-delta-pair": "The OTM debit-first pair, added 2026-09-19. THE TRADE: buy a cheap debit vertical whose centre sits at a target delta away from spot (center_rule: delta, debit_delta_target 0.15 -- a magnitude, so it is the 0.15 call going up and the -0.15 put going down), then complete by SELLING the same-centre credit spread once spot has walked into it: at that point the completing spread is near the money and worth several times the debit paid, and the result is a risk-free fly peaked where spot NOW is. The uncompleted branch is bounded at the debit (a few tens of dollars on a 5-wide), never legged's -W tail. This is the trade debit-first was meant to be and never was: the GEX-centred arm always bought the near-ATM spread, because select_center had no rule that placed a centre away from spot. WHY DELTA AND NOT A STRIKE OFFSET: 15 delta is ~40 points out at 10:30 and ~10 at 14:00, so a delta target is one trade all day where spot + N strikes is a different trade every hour; the offset the rule lands on is still recorded per row (center_offset_value), and the delta it chose on is stamped as entry_center_delta, so the 0.15 can be re-cut later rather than needing a second pair per value. TWO ARMS, ONE VARIABLE: up and down differ in direction and nothing else, so the pair's difference IS the direction. Both run every session in paper (capital is unbounded), and 'should direction follow the day' is a re-cut of their rows on the trend_bucket already tagged at entry -- a replay, not a third arm. KEEP THEM IDENTICAL apart from debit_direction (a test pins this). min_debit_pct_of_width is overridden to 0.02 here because the shared 0.20 floor (1.00 on a 5-wide) exists to keep the ATM debit arm out of implausibly thin spreads, and a 15-delta spread is that thin by design; debit_cannot_be_out_earned still refuses a spread that cannot pay for itself. debit_delta_tolerance (0.05) is how far from target the nearest strike may sit before the tick is refused rather than centred on the wrong probability -- a refusal, never an ATM degrade, per the call_wall posture. Delta is read off the shared cache's stream_greeks at the QUOTE age limit, not the GEX one; a chain with no fresh delta refuses as no_delta_quotes_beyond_spot. What retires the pair: 15-20 sessions against control on completion rate, net after fees, and the drift-alignment split; if neither direction pays, the bounded strand is being realised too often to matter, which is the finding.",
+    "_debit-first-delta-pair": "The OTM debit-first pair, added 2026-09-19. THE TRADE: buy a cheap debit vertical whose centre sits at a target delta away from spot (center_rule: delta, debit_delta_target 0.15 -- a magnitude, so it is the 0.15 call going up and the -0.15 put going down), then complete by SELLING the same-centre credit spread once spot has walked into it: at that point the completing spread is near the money and worth several times the debit paid, and the result is a risk-free fly peaked where spot NOW is. The uncompleted branch is bounded at the debit (a few tens of dollars on a 5-wide), never legged's -W tail. This is the trade debit-first was meant to be and never was: the GEX-centred arm always bought the near-ATM spread, because select_center had no rule that placed a centre away from spot. WHY DELTA AND NOT A STRIKE OFFSET: 15 delta is ~40 points out at 10:30 and ~10 at 14:00, so a delta target is one trade all day where spot + N strikes is a different trade every hour; the offset the rule lands on is still recorded per row (center_offset_value), and the delta it chose on is stamped as entry_center_delta, so the 0.15 can be re-cut later rather than needing a second pair per value. TWO ARMS, ONE VARIABLE: up and down differ in direction and nothing else, so the pair's difference IS the direction. Both run every session in paper (capital is unbounded), and 'should direction follow the day' is a re-cut of their rows on the trend_bucket already tagged at entry -- a replay, not a third arm. KEEP THEM IDENTICAL apart from center_direction (a test pins this). min_debit_pct_of_width is overridden to 0.02 here because the shared 0.20 floor (1.00 on a 5-wide) exists to keep the ATM debit arm out of implausibly thin spreads, and a 15-delta spread is that thin by design; debit_cannot_be_out_earned still refuses a spread that cannot pay for itself. debit_delta_tolerance (0.05) is how far from target the nearest strike may sit before the tick is refused rather than centred on the wrong probability -- a refusal, never an ATM degrade, per the call_wall posture. Delta is read off the shared cache's stream_greeks at the QUOTE age limit, not the GEX one; a chain with no fresh delta refuses as no_delta_quotes_beyond_spot. What retires the pair: 15-20 sessions against control on completion rate, net after fees, and the drift-alignment split; if neither direction pays, the bounded strand is being realised too often to matter, which is the finding.",
     "debit-first-up": {
       "enabled": true,
       "center_rule": "delta",
-      "debit_direction": "up",
+      "center_direction": "up",
       "debit_delta_target": 0.15,
       "debit_delta_tolerance": 0.05,
       "min_debit_pct_of_width": 0.02,
@@ -237,12 +237,83 @@
     "debit-first-down": {
       "enabled": true,
       "center_rule": "delta",
-      "debit_direction": "down",
+      "center_direction": "down",
       "debit_delta_target": 0.15,
       "debit_delta_tolerance": 0.05,
       "min_debit_pct_of_width": 0.02,
       "entry_modes": [
         "debit_first"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "_bwb-delta-pairs": "The delta-placed bwb pairs, added 2026-09-19: bwb-up/bwb-down at the default width and bwb-up-w2/bwb-down-w2 at wing_width_strikes 2, all on center_rule delta at the SAME 0.15 target as debit-first-up/down. WHY THE SAME RULE: at a centre K and width w a put bwb is +1 (K+w) / -2 K / +1 (K-f), and debit-first-down at the same K buys +1 (K+w) / -1 K and later sells -1 K / +1 (K-w) -- so a bwb IS debit-first with the completion sold at entry for a wider (cheaper) wing, paid for by carrying the tail until the roll buys it back. Placed by the same rule in the same session the two constructions sit on the same strikes and differ in one thing: credit now with a tail, or debit now with none and a conditional completion. WHAT AUGUST DID NOT MEASURE: the bwb arm was never falsified -- 25 rows voided by the roll-pricing defect, the roll unreachable by the legged side rule until 08-07, retired 08-21 with no sample after the fix and its ATM twin never run (see docs/experiment-log.md). THE CREDIT FLOOR IS NOT LOOSENED: min_bwb_credit_pct_of_tail stays at the default, and the 08-07 note is blunt that pushing a bwb out of the money collapses its credit, so these arms are expected to be refused by their own floor much of the time -- the refusal count is a result, not a bug. entry_far_wing_delta is stamped on every row (the chain's own P(tail)) so that flat floor can be re-derived against P(tail) x tail once rows carry it. TWO WIDTHS, DECLARED: practitioners' 0DTE SPX bwbs run 20-50 wide and at 5/10 a 15-delta credit may be near zero, so the w2 pair (10/20) runs beside the default; the tail is far_width - wing_width dollars and scales with it, hence a per-width max_bwb_tail_dollars. Paper only, never a live candidate at that size. Read the roll as the result: best_roll_debit says whether the tail was ever buyable back, and unrolled vs rolled P&L is the answer to the researched trap in docs/faq.md. No hedge overlay here: the tail IS the far wing and insuring it is the roll's job. Direction vs the day is a re-cut on trend_bucket, the same replay as the debit-first pair.",
+    "bwb-up": {
+      "enabled": true,
+      "center_rule": "delta",
+      "center_direction": "up",
+      "debit_delta_target": 0.15,
+      "debit_delta_tolerance": 0.05,
+      "max_bwb_tail_dollars": 600,
+      "entry_modes": [
+        "bwb_roll"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "bwb-down": {
+      "enabled": true,
+      "center_rule": "delta",
+      "center_direction": "down",
+      "debit_delta_target": 0.15,
+      "debit_delta_tolerance": 0.05,
+      "max_bwb_tail_dollars": 600,
+      "entry_modes": [
+        "bwb_roll"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "bwb-up-w2": {
+      "enabled": true,
+      "center_rule": "delta",
+      "center_direction": "up",
+      "wing_width_strikes": 2,
+      "debit_delta_target": 0.15,
+      "debit_delta_tolerance": 0.05,
+      "max_bwb_tail_dollars": 1100,
+      "entry_modes": [
+        "bwb_roll"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "bwb-down-w2": {
+      "enabled": true,
+      "center_rule": "delta",
+      "center_direction": "down",
+      "wing_width_strikes": 2,
+      "debit_delta_target": 0.15,
+      "debit_delta_tolerance": 0.05,
+      "max_bwb_tail_dollars": 1100,
+      "entry_modes": [
+        "bwb_roll"
       ],
       "entry_windows": [
         [
