@@ -250,6 +250,40 @@ def select_center(snapshot: dict, params: dict) -> tuple[float | None, str]:
     return float(best["strike"]), "max_total_gamma"
 
 
+def _nearest_delta_strike(book: dict, spot: float, target: float, admit) -> tuple | None:
+    """Scan a snapshot's `puts` or `calls` dict for the admitted strike whose delta sits nearest
+    `target` (a magnitude), tied-broken toward spot. Returns `(strike, delta, leg, delta_error)`,
+    or None when no strike passing `admit` carried a fresh delta at all.
+
+    Pulled out of `_delta_center` and `hedge_candidate` after both were found doing this identical
+    scan/score/pick, in ways that had already drifted apart on the one line that matters: this
+    module's own scan (`_delta_center`'s predecessor) took a plain `min()` over 3-float tuples,
+    which only works because those tuples never carry a fourth element; the hedge overlay's scan
+    used `min(key=lambda c: c[:3])` specifically to avoid comparing an unorderable leg dict. One
+    caller was one added field away from a `TypeError` the other had already defended against --
+    that is the kind of duplication worth folding, not the surface shape alone.
+
+    Deliberately returns the raw error rather than checking it against a tolerance: the two callers
+    refuse differently when nothing qualifies (`_delta_center` distinguishes "no admitted candidate
+    at all" from "the nearest missed the tolerance band" as two separate reason strings a refused
+    row is recorded under; `hedge_candidate` collapses both to a bare None), so the tolerance check
+    stays with the caller that knows what a refusal there means.
+    """
+    candidates = []
+    for key, leg in book.items():
+        delta = (leg or {}).get("delta")
+        if delta is None:
+            continue
+        strike = float(key)
+        if not admit(strike):
+            continue
+        candidates.append((abs(abs(float(delta)) - target), abs(strike - spot), strike, float(delta), leg))
+    if not candidates:
+        return None
+    error, _, strike, delta, leg = min(candidates, key=lambda c: c[:2])
+    return strike, delta, leg, error
+
+
 def _delta_center(snapshot: dict, params: dict, spot: float) -> tuple[float | None, str]:
     """The `delta` centre rule: the strike in `debit_direction` whose delta is nearest
     `debit_delta_target` (a magnitude -- 0.15 means the 0.15 call going up, the -0.15 put going down).
@@ -275,19 +309,14 @@ def _delta_center(snapshot: dict, params: dict, spot: float) -> tuple[float | No
     side = CALL if direction == "up" else PUT
     book = snapshot.get("calls" if side == CALL else "puts") or {}
 
-    candidates = []
-    for key, leg in book.items():
-        delta = (leg or {}).get("delta")
-        if delta is None:
-            continue
-        strike = float(key)
+    def admit(strike):
         near_leg = strike - width if side == CALL else strike + width
-        if (side == CALL and near_leg <= spot) or (side == PUT and near_leg >= spot):
-            continue
-        candidates.append((abs(abs(float(delta)) - target), abs(strike - spot), strike))
-    if not candidates:
+        return not ((side == CALL and near_leg <= spot) or (side == PUT and near_leg >= spot))
+
+    found = _nearest_delta_strike(book, spot, target, admit)
+    if found is None:
         return None, "no_delta_quotes_beyond_spot"
-    error, _, strike = min(candidates)
+    strike, _delta, _leg, error = found
     if error > tolerance:
         return None, "no_strike_near_delta_target"
     return strike, "delta_target"
@@ -318,18 +347,13 @@ def hedge_candidate(snapshot: dict, side: str, center: float, width: float, para
     long_wing = center - width if side == PUT else center + width
     book = snapshot.get("puts" if side == PUT else "calls") or {}
 
-    candidates = []
-    for key, leg in book.items():
-        delta = (leg or {}).get("delta")
-        if delta is None:
-            continue
-        strike = float(key)
-        if (side == PUT and strike >= long_wing) or (side == CALL and strike <= long_wing):
-            continue
-        candidates.append((abs(abs(float(delta)) - target), abs(strike - spot), strike, float(delta), leg))
-    if not candidates:
+    def admit(strike):
+        return not ((side == PUT and strike >= long_wing) or (side == CALL and strike <= long_wing))
+
+    found = _nearest_delta_strike(book, spot, target, admit)
+    if found is None:
         return None
-    error, _, strike, delta, leg = min(candidates, key=lambda c: c[:3])
+    strike, delta, leg, error = found
     if error > tolerance:
         return None
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)

@@ -1918,26 +1918,37 @@ def dq(bid, ask, delta):
     return {"bid": bid, "ask": ask, "delta": delta}
 
 
-def delta_snapshot(spot=6000.0, **over):
-    """Calls above spot and puts below it, each leg carrying a delta that falls one notch per strike
-    away from spot -- the shape a real 0DTE chain has, at values a test can read off. Quotes are
-    priced so any 5-wide debit spread out here is cheap but real (~0.2-0.6)."""
+# The delta ladder shared by every delta-rule fixture below: one notch per strike out from 6000/5995,
+# 0.42/0.30/0.20/0.14/0.09/0.05 -- the shape a real 0DTE chain has, at values a test can read off.
+# Shared because the LADDER is arbitrary and copied verbatim; the PREMIUMS at each strike are not --
+# `delta_snapshot` prices a plausible ~0.2-0.6 debit spread, `bwb_delta_snapshot` prices a
+# deliberately thin bwb credit (its own docstring says why), and folding those together would erase
+# the one difference each fixture exists to have.
+_DELTA_LADDER = (6005, 6010, 6015, 6020, 6025, 6030)
+_DELTA_MAGNITUDES = (0.42, 0.30, 0.20, 0.14, 0.09, 0.05)
+
+
+def _delta_book(call_premiums, put_premiums, spot=6000.0):
+    """`(calls, puts)` dicts from the shared strike/delta ladder plus per-fixture (bid, ask) pairs,
+    one per rung, call side and put side. Puts mirror the call strikes around `spot` (5995..5970
+    for calls 6005..6030) with the negated delta -- not a flat offset, which is the bug the first
+    version of this fold shipped with and every test using the put side caught immediately."""
     calls = {
-        6005: dq(2.6, 3.0, 0.42),
-        6010: dq(1.5, 1.8, 0.30),
-        6015: dq(0.8, 1.0, 0.20),
-        6020: dq(0.45, 0.6, 0.14),
-        6025: dq(0.25, 0.35, 0.09),
-        6030: dq(0.12, 0.2, 0.05),
+        strike: dq(bid, ask, delta)
+        for strike, delta, (bid, ask) in zip(_DELTA_LADDER, _DELTA_MAGNITUDES, call_premiums, strict=True)
     }
     puts = {
-        5995: dq(2.6, 3.0, -0.42),
-        5990: dq(1.5, 1.8, -0.30),
-        5985: dq(0.8, 1.0, -0.20),
-        5980: dq(0.45, 0.6, -0.14),
-        5975: dq(0.25, 0.35, -0.09),
-        5970: dq(0.12, 0.2, -0.05),
+        2 * spot - strike: dq(bid, ask, -delta)
+        for strike, delta, (bid, ask) in zip(_DELTA_LADDER, _DELTA_MAGNITUDES, put_premiums, strict=True)
     }
+    return calls, puts
+
+
+def delta_snapshot(spot=6000.0, **over):
+    """Calls above spot and puts below it, each leg carrying a delta that falls one notch per strike
+    away from spot. Quotes are priced so any 5-wide debit spread out here is cheap but real (~0.2-0.6)."""
+    premiums = [(2.6, 3.0), (1.5, 1.8), (0.8, 1.0), (0.45, 0.6), (0.25, 0.35), (0.12, 0.2)]
+    calls, puts = _delta_book(premiums, premiums)
     return snapshot(underlying_price=spot, calls=calls, puts=puts, **over)
 
 
@@ -2117,26 +2128,13 @@ def test_hedge_candidate_never_sits_on_or_inside_the_long_wing():
 
 # --------------------------------------------------------------------------- the delta-placed bwb pair
 def bwb_delta_snapshot(**over):
-    """Arbitrage-free calls above spot and puts below, deltas falling a notch per strike, shaped so
-    a 5/10 bwb at the 0.14 strike collects a SMALL positive credit: the far gap (6025->6030, 0.35)
-    beats the 6015/6020/6025 butterfly (0.10). Deliberately thin -- that is what an OTM bwb's
-    credit looks like, and the point of the pair is to find out whether it clears the gates."""
-    calls = {
-        6005: dq(2.6, 3.0, 0.42),
-        6010: dq(1.5, 1.8, 0.30),
-        6015: dq(0.7, 0.9, 0.20),
-        6020: dq(0.5, 0.6, 0.14),
-        6025: dq(0.35, 0.45, 0.09),
-        6030: dq(0.0, 0.1, 0.05),
-    }
-    puts = {
-        5995: dq(2.6, 3.0, -0.42),
-        5990: dq(1.5, 1.8, -0.30),
-        5985: dq(0.7, 0.9, -0.20),
-        5980: dq(0.5, 0.6, -0.14),
-        5975: dq(0.35, 0.45, -0.09),
-        5970: dq(0.0, 0.1, -0.05),
-    }
+    """Arbitrage-free calls above spot and puts below, on the same delta ladder as `delta_snapshot`
+    but its own premiums: shaped so a 5/10 bwb at the 0.14 strike collects a SMALL positive credit --
+    the far gap (6025->6030, 0.35) beats the 6015/6020/6025 butterfly (0.10). Deliberately thin --
+    that is what an OTM bwb's credit looks like, and the point of the pair is to find out whether it
+    clears the gates."""
+    premiums = [(2.6, 3.0), (1.5, 1.8), (0.7, 0.9), (0.5, 0.6), (0.35, 0.45), (0.0, 0.1)]
+    calls, puts = _delta_book(premiums, premiums)
     return snapshot(calls=calls, puts=puts, **over)
 
 
