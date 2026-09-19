@@ -103,7 +103,9 @@ by trading only inside specific windows, and `width-2`..`width-5`/`width-10` swe
 strike spacing) — those
 change WHERE or WHEN a position is centred. `debit-first`, `iron`, and `bwb` instead change HOW the
 net credit is manufactured in the first place (buying the debit leg first, completing with an iron
-butterfly, or entering a broken-wing butterfly whole and rolling it in) — see
+butterfly, or entering a broken-wing butterfly whole and rolling it in), and the `debit-first-up` /
+`debit-first-down` pair takes the debit-first idea out of the money: a cheap 15-delta debit spread
+above or below spot that becomes a risk-free fly only if price walks into it — see
 [`CLAUDE.md`](CLAUDE.md)'s "The arms" section for the current, complete list and what each one is
 actually testing; it's the canonical source so this file doesn't drift out of sync with it.
 

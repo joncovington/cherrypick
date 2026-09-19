@@ -213,6 +213,41 @@
         ]
       ]
     },
+    "_debit-first-delta-pair": "The OTM debit-first pair, added 2026-09-19. THE TRADE: buy a cheap debit vertical whose centre sits at a target delta away from spot (center_rule: delta, debit_delta_target 0.15 -- a magnitude, so it is the 0.15 call going up and the -0.15 put going down), then complete by SELLING the same-centre credit spread once spot has walked into it: at that point the completing spread is near the money and worth several times the debit paid, and the result is a risk-free fly peaked where spot NOW is. The uncompleted branch is bounded at the debit (a few tens of dollars on a 5-wide), never legged's -W tail. This is the trade debit-first was meant to be and never was: the GEX-centred arm always bought the near-ATM spread, because select_center had no rule that placed a centre away from spot. WHY DELTA AND NOT A STRIKE OFFSET: 15 delta is ~40 points out at 10:30 and ~10 at 14:00, so a delta target is one trade all day where spot + N strikes is a different trade every hour; the offset the rule lands on is still recorded per row (center_offset_value), and the delta it chose on is stamped as entry_center_delta, so the 0.15 can be re-cut later rather than needing a second pair per value. TWO ARMS, ONE VARIABLE: up and down differ in direction and nothing else, so the pair's difference IS the direction. Both run every session in paper (capital is unbounded), and 'should direction follow the day' is a re-cut of their rows on the trend_bucket already tagged at entry -- a replay, not a third arm. KEEP THEM IDENTICAL apart from debit_direction (a test pins this). min_debit_pct_of_width is overridden to 0.02 here because the shared 0.20 floor (1.00 on a 5-wide) exists to keep the ATM debit arm out of implausibly thin spreads, and a 15-delta spread is that thin by design; debit_cannot_be_out_earned still refuses a spread that cannot pay for itself. debit_delta_tolerance (0.05) is how far from target the nearest strike may sit before the tick is refused rather than centred on the wrong probability -- a refusal, never an ATM degrade, per the call_wall posture. Delta is read off the shared cache's stream_greeks at the QUOTE age limit, not the GEX one; a chain with no fresh delta refuses as no_delta_quotes_beyond_spot. What retires the pair: 15-20 sessions against control on completion rate, net after fees, and the drift-alignment split; if neither direction pays, the bounded strand is being realised too often to matter, which is the finding.",
+    "debit-first-up": {
+      "enabled": true,
+      "center_rule": "delta",
+      "debit_direction": "up",
+      "debit_delta_target": 0.15,
+      "debit_delta_tolerance": 0.05,
+      "min_debit_pct_of_width": 0.02,
+      "entry_modes": [
+        "debit_first"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
+    "debit-first-down": {
+      "enabled": true,
+      "center_rule": "delta",
+      "debit_direction": "down",
+      "debit_delta_target": 0.15,
+      "debit_delta_tolerance": 0.05,
+      "min_debit_pct_of_width": 0.02,
+      "entry_modes": [
+        "debit_first"
+      ],
+      "entry_windows": [
+        [
+          "10:00",
+          "14:30"
+        ]
+      ]
+    },
     "iron": {
       "enabled": false,
       "_note": "RETIRED 2026-08-03 before it ever traded, and left disabled deliberately -- do NOT re-enable without reading docs/iron-completion.md first. It was meant to isolate the COMPLETION CHOICE (complete a legged credit spread by buying the same-type debit spread, or by selling the opposite-type credit spread into an iron butterfly). It cannot isolate anything: both completions use the IDENTICAL strike pair, so put-call parity pins D + C2 = wing_width exactly, for any skew. The two gates are the same inequality, they fire on the same tick, and the completed positions have the same net at every settlement price. What is left is fees and execution, both against the iron: +$3.46/position in assignment fees measured over 143 real completions (an iron always has one side ITM; a same-type fly settles clean in exactly the drift regime this book gets), plus a wider crossing cost that slippage_frac's flat fraction cannot even see. This arm was never in the deployed config, so it produced zero ledger rows -- nothing was lost.",

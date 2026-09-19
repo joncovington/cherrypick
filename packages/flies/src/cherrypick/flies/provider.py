@@ -190,6 +190,7 @@ def build_snapshot(
         placeholders = ", ".join("?" * len(by_symbol))
         puts: dict[float, dict] = {}
         calls: dict[float, dict] = {}
+        legs_by_symbol: dict[str, dict] = {}
         stale = 0
         for row in conn.execute(
             f"SELECT symbol, bid, ask, mid, updated_at FROM stream_quotes WHERE symbol IN ({placeholders})",
@@ -205,11 +206,14 @@ def build_snapshot(
             quote["instrument_type"] = entry.get("instrument_type")
             target = calls if "C" in entry["option_type"].upper() else puts
             target[entry["strike_price"]] = quote
+            legs_by_symbol[row["symbol"]] = quote
 
         if not puts and not calls:
             # Carry the rejected count out: this is the "the data was thin" refusal, and the number
             # of stale quotes behind it is exactly what tells a barren session from a broken feed.
             return _fail(symbol, "no_fresh_quotes", rejected=stale)
+
+        deltas_fresh = _attach_deltas(conn, legs_by_symbol, now_ts, max_quote_age_seconds)
 
         # GEX is computed over the FULL chain, not the near-spot window: walls and the gamma flip are
         # properties of the whole surface, and truncating it would move them.
@@ -274,6 +278,7 @@ def build_snapshot(
                 "fresh": len(puts) + len(calls),
                 "rejected": stale,
                 "max_age_seconds": max_quote_age_seconds,
+                "deltas_fresh": deltas_fresh,
             },
             # The same audit trail for the GEX surface. Without this, a session that centred every
             # butterfly on stale gamma is indistinguishable from one that centred on live gamma.
@@ -281,6 +286,34 @@ def build_snapshot(
         }
     finally:
         conn.close()
+
+
+def _attach_deltas(conn, legs_by_symbol: dict[str, dict], now_ts: float, max_age_seconds: float) -> int:
+    """Put each leg's delta on its quote dict. Returns how many legs got one.
+
+    Filtered at the QUOTE age limit, not the 30-minute GEX one, deliberately. Gamma and OI feed a
+    surface whose walls move slowly; delta is read per strike to place a centre, and on 0DTE it
+    moves with every tick of spot -- a ten-minute-old delta would put a "15-delta" centre where spot
+    was. A leg whose delta is missing or stale keeps its quote and simply has no `delta` key; the
+    only reader that needs one (`engine.select_center`'s delta rule) refuses on its absence.
+    """
+    if not legs_by_symbol:
+        return 0
+    fresh = 0
+    symbols = list(legs_by_symbol)
+    for i in range(0, len(symbols), 900):
+        chunk = symbols[i : i + 900]
+        placeholders = ", ".join("?" * len(chunk))
+        for r in conn.execute(
+            f"SELECT symbol, delta, updated_at FROM stream_greeks WHERE symbol IN ({placeholders})", chunk
+        ):
+            if r["delta"] is None or r["updated_at"] is None:
+                continue
+            if now_ts - float(r["updated_at"]) > max_age_seconds:
+                continue
+            legs_by_symbol[r["symbol"]]["delta"] = float(r["delta"])
+            fresh += 1
+    return fresh
 
 
 def _session_bounds(conn, symbol: str, trade_date: str) -> dict:

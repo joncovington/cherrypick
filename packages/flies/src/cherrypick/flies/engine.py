@@ -75,6 +75,16 @@ ARMS = (
     # offset curve is re-cut with `by_regime(bucket_edges=...)` rather than pinned by a new arm.
     "bwb-atm",
     "debit-first-atm",
+    # The OTM debit-first pair (2026-09-19): buy a cheap debit vertical whose centre sits at a
+    # target DELTA away from spot, complete by selling the same-centre credit spread once spot has
+    # walked into it. `center_rule: delta` with `debit_direction` up (calls above spot) or down
+    # (puts below); the two differ in direction and nothing else, so the pair's difference IS the
+    # direction, and a trend-following variant is a replay over their rows rather than a third arm.
+    # Delta rather than a strike offset because 15 delta is ~40 points out at 10:30 and ~10 at
+    # 14:00 -- one trade all day where `spot + N strikes` is a different trade every hour. This is
+    # NOT the offset arm the note above declines: the offset it lands on is still recorded per row.
+    "debit-first-up",
+    "debit-first-down",
     # Centres the shorts at the GEX call wall (2026-08-31, from the gex module's pin study over 23
     # recorded sessions). NOT a pin bet -- the study killed that reading (the tent captured 2/23) --
     # but a bound bet: the close finished at or below the morning wall 19-21/23, so the entry is the
@@ -183,6 +193,9 @@ def select_center(snapshot: dict, params: dict) -> tuple[float | None, str]:
             return None, "call_wall_not_above_spot"
         return float(wall), "call_wall"
 
+    if rule == "delta":
+        return _delta_center(snapshot, params, spot)
+
     if rule != "gex":
         return atm_strike(spot, increment), "atm"
 
@@ -224,6 +237,58 @@ def select_center(snapshot: dict, params: dict) -> tuple[float | None, str]:
         return atm_strike(spot, increment), "atm_no_gamma_near_spot"
     best = max(near, key=total_gamma)
     return float(best["strike"]), "max_total_gamma"
+
+
+def _delta_center(snapshot: dict, params: dict, spot: float) -> tuple[float | None, str]:
+    """The `delta` centre rule: the strike in `debit_direction` whose delta is nearest
+    `debit_delta_target` (a magnitude -- 0.15 means the 0.15 call going up, the -0.15 put going down).
+
+    Written for `debit_first`'s geometry. The entry buys the vertical between `centre -/+ wing_width`
+    and the centre, so a candidate is only admitted when that whole spread sits beyond spot: with the
+    near leg at or through the money the trade is the ATM arm's, not this one. Among candidates
+    within `debit_delta_tolerance` of the target the nearest delta wins, and a tie goes to the strike
+    nearer spot (the same distance from target, and a smaller move to complete).
+
+    Never degrades to ATM. No delta on the chain, no direction, or nothing near the target each
+    return no centre with its own reason, for the reason `call_wall` refuses too: an ATM fallback
+    would trade the ATM arm's trade under this arm's name and the pair's comparison would die.
+    """
+    direction = params.get("debit_direction")
+    if direction not in ("up", "down"):
+        return None, "delta_rule_needs_direction"
+    target = abs(float(params.get("debit_delta_target", 0.15)))
+    tolerance = float(params.get("debit_delta_tolerance", 0.05))
+    width = params.get("wing_width", 5)
+    side = CALL if direction == "up" else PUT
+    book = snapshot.get("calls" if side == CALL else "puts") or {}
+
+    candidates = []
+    for key, leg in book.items():
+        delta = (leg or {}).get("delta")
+        if delta is None:
+            continue
+        strike = float(key)
+        near_leg = strike - width if side == CALL else strike + width
+        if (side == CALL and near_leg <= spot) or (side == PUT and near_leg >= spot):
+            continue
+        candidates.append((abs(abs(float(delta)) - target), abs(strike - spot), strike))
+    if not candidates:
+        return None, "no_delta_quotes_beyond_spot"
+    error, _, strike = min(candidates)
+    if error > tolerance:
+        return None, "no_strike_near_delta_target"
+    return strike, "delta_target"
+
+
+def center_delta(snapshot: dict, side: str, center: float) -> float | None:
+    """The centre strike's delta on the entry side, or None when the feed carried none. Stamped on
+    every entry plan so the row records the measure a delta target is read against -- for the
+    delta-centred arms that is the number the rule chose on; for an ATM arm it is the free
+    baseline. Nothing gates on it."""
+    leg = quote(snapshot, side, center)
+    if not leg or leg.get("delta") is None:
+        return None
+    return float(leg["delta"])
 
 
 # --------------------------------------------------------------------------- regime tagging
@@ -1118,6 +1183,7 @@ def evaluate_credit_spread_entry(
             "side": side,
             "center": center,
             "center_reason": center_reason,
+            "center_delta": center_delta(snapshot, side, center),
             "wing_width": width,
             "credit": round(credit, 4),
             "quantity": qty,
@@ -1318,6 +1384,7 @@ def evaluate_debit_vertical_entry(
             "side": side,
             "center": center,
             "center_reason": center_reason,
+            "center_delta": center_delta(snapshot, side, center),
             "wing_width": width,
             "debit": round(debit, 4),
             "quantity": qty,
