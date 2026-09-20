@@ -18,7 +18,7 @@ be imported by a loop.
 |---|---|
 | **Can** | Read every module's paper data, and live data read-only for context |
 | **Can** | Issue a bounded, single-session, expiring advice artifact for the next paper session |
-| **Can** | Run one experiment per module as an `advised:<base>` book beside its control |
+| **Can** | Run any number of experiments per module concurrently (unlimited by default, capped via `max_experiments_per_module`), each its own `advised:<experiment-name>` book beside the shared control |
 | **Can** | Propose anything at all — new arms, new strategies, whole new modules — as propose-only memos |
 | **Cannot** | Touch a live account, in any way, ever |
 | **Cannot** | Write a module config, a risk profile, or a module's database |

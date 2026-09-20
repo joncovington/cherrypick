@@ -78,7 +78,7 @@ Then, inside Claude Code, pick a track:
 /paper-start
 ```
 
-Verifies/starts the shared market-data streamer and (on Windows) registers a self-healing scheduled task that evaluates every configured symbol every 2 minutes during market hours. On **macOS/Linux**, the scheduled task isn't available — instead keep the loop running in a terminal with `python -m cherrypick.meic.paper_loop`, or wire a cron job to `python -m cherrypick.meic.paper_loop --once` every 2 minutes.
+Verifies/starts the shared market-data streamer, then registers a self-healing job (the suite's one supervisor daemon, not a per-module scheduled task) that evaluates every configured symbol every 60 seconds during market hours. Without the supervisor running — a bare checkout — keep the loop going in a terminal with `python -m cherrypick.meic.paper_loop`, or wire a cron job to `python -m cherrypick.meic.paper_loop --once` every minute.
 
 **Live / dry-run trading** — the real agent loop (defaults to dry-run until `enable_live_trading: true`):
 
@@ -118,11 +118,11 @@ for the exact couplings.
 
 ## What's new
 
-- **Parallel-shadow paper trading** — every trading day, every enabled forward-test stream (`control`/`open`/`width-5`/`width-10`) is evaluated deterministically against the *same* live-quote snapshot per symbol, each with its own $100,000 virtual bankroll. No capital, no live orders, apples-to-apples stream comparison. Optional SPX historical-replay mode front-loads samples from past days that actually paid. See [docs/paper-trading.md](docs/paper-trading.md) and [docs/paper-experiments.md](docs/paper-experiments.md).
+- **Parallel-shadow paper trading** — every trading day, `control` and every active AI-advisor experiment (each its own `advised:<name>` book, any number running at once since 2026-09-17) are evaluated deterministically against the *same* live-quote snapshot per symbol, each with its own $100,000 virtual bankroll. No capital, no live orders, apples-to-apples stream comparison. Optional SPX historical-replay mode front-loads samples from past days that actually paid. See [docs/paper-trading.md](docs/paper-trading.md) and [docs/paper-experiments.md](docs/paper-experiments.md).
 - **Corrected MEIC exit rules** — iron condors have exactly three exits: a per-side software stop, a time-based force-close **before the bell for non-cash-settled symbols only** (QQQ/IWM/equities — avoids physical assignment), and **left-to-expire cash settlement for cash-settled symbols** (SPX/XSP). There is **no profit-target exit** — that was removed as it isn't part of MEIC. Event days (FOMC, triple-witching, quarterly) still force-close everything as risk overrides.
 - **One read surface, both books** — the console tags every row with the mode it came from, so paper and live can never be confused for one another.
 - **Realistic fee modeling** — the paper engine charges tastytrade's exact broad-based-index-options fee schedule per leg (commission, clearing, ORF, per-symbol exchange fee, TAF on sells), so simulated P&L reflects real cost drag.
-- **Unattended, self-healing daemon** — the paper loop runs as a Windows scheduled task firing a short-lived process every 2 minutes: headless, time-gated to market hours, and persistent across sessions. It writes a deterministic end-of-day report automatically at the settlement pass.
+- **Unattended, self-healing daemon** — the suite's supervisor fires a short-lived paper-loop process every 60 seconds during market hours (the OS scheduler holds one entry for the whole suite, not one per module): headless, time-gated, and persistent across sessions. It writes a deterministic end-of-day report automatically at the settlement pass.
 - **Automated end-of-day reporting** — the suite review (`packages/review`) covers this module alongside flies and earnings, split by arm, on two daily passes. `/eod-report` still produces the agent-synthesized LIVE write-up. Bounded log rotation keeps every log file from growing without limit.
 
 ---
@@ -184,7 +184,7 @@ python -m cherrypick.meic.paper_loop --status         # daemon/task status + ope
 python -m cherrypick.meic.paper_loop --uninstall-task # stop the unattended session
 ```
 
-Every 2 minutes during market hours, the engine takes one live-quote snapshot per symbol and runs every enabled arm against it deterministically — synthetic fills at natural bid, each arm on its own $100,000 virtual bankroll, tastytrade's exact fee schedule applied per leg. Writes go only to `paper_trades.db` in the data home; the live account and `meic_trades.db` are never touched, and no live order is ever submitted (paper mode is not gated by `enable_live_trading`).
+Every 60 seconds during market hours, the engine takes one live-quote snapshot per symbol and runs every enabled arm against it deterministically — synthetic fills at natural bid, each arm on its own $100,000 virtual bankroll, tastytrade's exact fee schedule applied per leg. Writes go only to `paper_trades.db` in the data home; the live account and `meic_trades.db` are never touched, and no live order is ever submitted (paper mode is not gated by `enable_live_trading`).
 
 A pre-registered **graduation gate** (≥30 filled ICs, positive expectancy, ≥65% win rate, profit factor 1.3–4.0, bounded drawdown and worst day) decides when a profile has earned live capital. See [docs/paper-trading.md](docs/paper-trading.md) for the full design, the SPX historical-replay accelerator, and the known limitations of a frictionless paper model.
 

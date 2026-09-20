@@ -26,9 +26,10 @@ profile trades the same live market snapshots in parallel as its own shadow book
 with the profile that opened it.
 
 Because each profile changes one lever against a shared control, you can measure the isolated effect of a
-single idea rather than confounding several at once. MEIC currently runs four such streams in parallel —
-a `control` baseline plus one arm each for entry selectivity and two wing widths — and the pattern
-answers questions like:
+single idea rather than confounding several at once. MEIC currently runs a `control` baseline plus the
+AI advisor's own concurrent experiment books beside it — any number at once since 2026-09-17, each
+proposed and judged against the same control, each isolating one parameter — and the pattern answers
+questions like:
 
 - whether a tighter stop protects the position or exits it prematurely (a hold-to-expiry profile vs. a stopped one);
 - whether further-OTM shorts justify their thinner credit on trending days (a delta sweep across 0.10 / 0.15 / 0.25);
@@ -100,7 +101,9 @@ suite once collected $4.00 of credit against $4.96 of fees.
 - **BWB** — a daily-laddered SPX put broken-wing butterfly entered at the expected move for a net
   credit, ~7 DTE, held to expiry. Four books trade the identical base structure and differ only in
   whether a reversal-triggered add-on fires (never / delta touch / confirmed bounce / gamma-flip
-  reclaim), plus an opt-in call-side book at the GEX call wall. See [packages/bwb](packages/bwb).
+  reclaim), plus an opt-in call-side book at the GEX call wall. A narrow, per-day-armed live path
+  (one arm, worst-case margin capped, no closing orders) exists alongside the paper books since
+  2026-09-18. See [packages/bwb](packages/bwb).
 - **Overview** — the pre-open morning market overview: one deterministic fact pack per session with a
   mechanical GREEN/YELLOW/RED phase from five declared gates; missing data can never produce RED and
   always blocks GREEN. See [packages/overview](packages/overview).
@@ -129,7 +132,7 @@ Every surface binds to loopback only.
   read-only safety check that flags anything a paper-only suite shouldn't be holding). Turning live
   trading *on* is always a deliberate, manual, per-module act — the orchestrator will never do it for you
   and never places an order itself. But note what that means: **once a module's live gate is open, that
-  module's own loop can place orders without asking again.** MEIC, earnings, and flies each have a live
+  module's own loop can place orders without asking again.** MEIC, earnings, flies, and bwb each have a live
   path behind their own `enable_live_trading` gate. Flies is the most tightly bounded of them — a pilot
   that must be re-armed by hand every trading day, one arm and one position at a time, self-disarming each
   evening ([the plan](packages/flies/docs/live-trading-plan.md)).
@@ -151,9 +154,9 @@ kept strictly separate.
 > been validated as profitable — the paper experiments exist precisely because the answer is not yet
 > known, and several of the suite's own recorded results are *negative*.
 >
-> **There are four ways real orders can be placed**, and it is worth knowing all of them before you open
-> any of them: **MEIC**, **earnings**, and **flies** each have a live path behind their own
-> `enable_live_trading` gate, and **desk** is the manual one. The first three are *loops* — once the gate
+> **There are five ways real orders can be placed**, and it is worth knowing all of them before you open
+> any of them: **MEIC**, **earnings**, **flies**, and **bwb** each have a live path behind their own
+> `enable_live_trading` gate, and **desk** is the manual one. The first four are *loops* — once the gate
 > is open, they act on their own schedule without asking again. The orchestrator itself never places an
 > order, but "the automation won't trade for you" stops being true the moment you open one of those gates.
 >
@@ -173,7 +176,7 @@ kept strictly separate.
 
 ## What's in the repo
 
-One workspace, eleven packages. The three strategy engines above plus the pieces that feed, drive, and
+One workspace, sixteen packages. The three strategy engines above plus the pieces that feed, drive, and
 read them:
 
 | Package | What it is |

@@ -46,13 +46,20 @@ python run.py once --snapshot snapshot.json
 # the profit forest, the session timeline and the decision journal. This module's own dashboard and
 # its suite-dashboard card were retired 2026-08-12; every read still goes through analytics.py.
 python run.py regime                         # results grouped by the market regime each trade entered into
+python run.py regime-cuts --write             # the same cut, per arm, written nightly for the console/advisor
 python -m cherrypick.review build --session <date>        # the suite review (all modules, one place)
 ```
 
 `regime` reports coverage first — how much of the book carries each tag, and whether a tag ever took
 more than one value — because a table split on a tag that never varied looks like a result and isn't.
-Pass `--dimension gex|vol|skew|time` for one dimension, or `--bucket-edges 0.4,0.6` to re-cut the
-recorded measurement at different thresholds without re-running any sessions.
+Pass `--dimension gex|vol|skew|time|center_offset|trend` for one dimension, or `--bucket-edges 0.4,0.6`
+to re-cut the recorded measurement at different thresholds without re-running any sessions.
+
+`regime-cuts` builds the same per-dimension cut but per ARM, era-scoped to what's comparable (a
+measurement break, or an arm added later, moves that arm's own start date), and writes it to
+`data/flies/regime_cuts.json` — what the console's "regime cuts" tab and the AI advisor's evening
+read actually consume. The supervisor runs it nightly; `--session YYYY-MM-DD` re-cuts a past day and
+`--backfill --since YYYY-MM-DD` fills a whole range.
 
 The paper-trading database lives at `~/.cherrypick/data/flies/paper_trades.db` (override with
 the `FLIES_DB_PATH` environment variable if you need a different location).
