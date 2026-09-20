@@ -11,8 +11,10 @@ Work considered and deliberately set down — with the condition that reopens ea
 [docs/backlog.md](docs/backlog.md). This file keeps the rules that constrain what the code may do — but note they are deliberately
 written as *rule plus the measurement that produced it*, so a live parameter (the 20-point trend
 band, the stale-GEX limits, `min_floor_dollars`) sits next to the evidence for its value. That is
-not narrative to be tidied away: this module's history is largely of rules being "fixed" by someone
-who did not know why they were set, and separating the two would make that easier, not harder.
+not narrative to be tidied away: **the working assumption (2026-08-20, not yet tested against an
+actual incident) is that separating the two would make it easier for someone to "fix" a rule
+without knowing why it was set** — a real risk, but an asserted one, not a measured one. If a rule
+is ever shown to survive fine without its evidence sitting next to it, revisit this.
 
 **The 2026-08-01 SPX switch, and what it cost.** XSP fees were eating the result: on the 1-wide XSP
 book the median completed fly collected **$12.00 against $4.97 of fees — 41.4% drag** — while the
