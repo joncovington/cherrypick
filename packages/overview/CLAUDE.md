@@ -138,16 +138,9 @@ market that already opened.
 CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 ---
 
-> ⚠️ This file is strictly for build commands, tech-stack reference, and project guidelines:
-> - **No code here** — no Python, no scripts, no logic, and no scratchpad content, changelogs, or task trackers.
-> - **Mask account numbers** to the last 4 digits (`****1234`) anywhere they surface.
-> - **Portable paths only** — never hardcode absolute paths, usernames, hostnames, or drive letters.
-> - **Human-voice docs & commits** — never add AI/co-author attribution to commit messages.
-> - **The fact pack is deterministic; the narrative is not, and is fenced accordingly.** Every
->   reading here is computed from stored data. The narrative is deliberately generated *outside*
->   this package by a scheduled agent reading the fact pack, so this package acquires no API key and
->   no network dependency, and a failed narrative can never damage a report. That containment is the
->   pattern the root file's preference points at.
+> ⚠️ Suite-wide guardrails apply — see root `CLAUDE.md` (no code in this file; masked accounts;
+> portable paths; human-voice docs/commits). The fact pack is deterministic; the narrative is not,
+> and is fenced accordingly — see "The narrative lives outside every package" above.
 
 ## Tool Reference
 

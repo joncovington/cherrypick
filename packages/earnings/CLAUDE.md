@@ -90,25 +90,21 @@ You are the cherrypick **Earnings** agent, an autonomous options trading agent f
 
 ## The advised twin (paper only, off by default)
 
-When config's `advice.enabled` is true, the entry scan looks ONCE for
-`state/advice/earnings-<session>.json` (written by `packages/advisor`), re-validates it with
-`cherrypick.core.advice` against this module's own `advice.bounds` manifest, and for each admitted
-experiment that names a strategy opens an **advised twin** beside that strategy's ordinary
-strat_test entry: identical legs, credit, quantity and modelled costs, tagged
-`advised:<experiment name>:<strategy>`. The twin exists so the comparison is paired — same fills,
-same session, same name — which makes the management params the only thing separating it from its
-control.
+The `advised:<experiment name>` mechanism is explained in `packages/core/CLAUDE.md`. This module's
+own shape: because earnings runs six strategies rather than one book, its twin tag carries the
+strategy too — `advised:<experiment name>:<strategy>` — opened beside that strategy's ordinary
+strat_test entry with identical legs, credit, quantity and modelled costs, so the comparison is
+paired: same fills, same session, same name, with the management params the only thing separating
+twin from control.
 
-**One twin per experiment per strategy (2026-09-17).** Until then the artifact carried one overlay
-and each strategy got exactly one twin, `advised:strat_test:<strategy>`, so a second experiment on
-iron_condor had nowhere to be measured and queued behind the first. Now `advice.twins_for` returns
-one entry per experiment whose params touch the strategy (via `cherrypick.core.advice.advised_books`),
-and the harness opens one twin each — its own tag from `advised_tag(name, strategy)`, its own
+**One twin per experiment per strategy (2026-09-17).** `advice.twins_for` returns one entry per
+experiment whose params touch a given strategy (via `cherrypick.core.advice.advised_books`), and the
+harness opens one twin each — its own tag from `advised_tag(name, strategy)`, its own
 `experiment_id`, and an `order_id` that carries the experiment's slug so two twins of one entry
-cannot collide. One experiment's out-of-bounds overlay is that experiment's baseline day and nobody
-else's. A decision file recorded before this date names no experiment and still opens the legacy
-`advised:strat_test:<strategy>` twin, which is what its rows were always tagged; `managed_book`
-accepts both shapes (the strategy is the tag's last segment either way, `advice.strategy_of`).
+cannot collide. Before this date each strategy got exactly one twin, the legacy
+`advised:strat_test:<strategy>` — still opened by a decision file that names no experiment, since
+that is what its rows were always tagged; `managed_book` accepts both shapes (the strategy is the
+tag's last segment either way, `advice.strategy_of`).
 
 Three properties, each of which a simpler design gets wrong:
 
@@ -134,7 +130,10 @@ Three properties, each of which a simpler design gets wrong:
   and never got called. A change here is invisible from the advice path; the guard is
   `test_an_advised_twin_is_managed_beside_its_control`.
 
-**Every advised row also carries `experiment_id` (2026-09-16)** — the advisor experiment the day's artifact named, read from the session decision and stamped through the one shared rule (`cherrypick.core.advice.stamp_for`: advised books only, never the control). Through 2026-09-16 the `advised:strat_test:<strategy>` tag named a book and every experiment on that strategy reused it in turn, so the stamp is what lets the ledger, the advisor's verdicts and the console's paired cards tell one experiment's rows from the next's without inferring it from dates; since 09-17 the tag names the experiment and the stamp is carried per twin from its own entry. Rows written before the column existed read `NULL` and are treated as unstamped history, never rewritten.
+**`experiment_id` stamping follows the shared `cherrypick.core.advice.stamp_for` rule** (see
+`packages/core/CLAUDE.md`). This module's own detail: through 2026-09-16 the
+`advised:strat_test:<strategy>` tag named a book and every experiment on that strategy reused it in
+turn; since 09-17 the tag names the experiment and the stamp is carried per twin from its own entry.
 
 **v1 bounds are management/exit params only.** Entry-side screens, tiering and sizing change *which*
 trades open, and a twin cannot express that — both books would have to face the same fills to be
@@ -158,11 +157,10 @@ comparable. Those stay propose-only; a human reads them and decides.
 CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 ---
 
-> ⚠️ This file is strictly for build commands, tech-stack reference, and project guidelines:
-> - **No code here** — no Python, no scripts, no logic, and no scratchpad content, changelogs, or task trackers. Scratch work goes in a `.tmp/` file you delete when done. A fenced block holding **build/run commands you'd type at a shell** (the Tool Reference below) is fine and is the point of this file; a fenced block holding *program logic* is not.
-> - **Mask account numbers** to the last 4 digits (`****1234`) anywhere they surface; never log or display a full one.
-> - **Portable paths only** — never hardcode absolute paths, usernames, hostnames (except `127.0.0.1`/`localhost`), or drive letters; derive from `Path(__file__)`, an env var, or config. Keep working files in `/src`, `/tests`, `/docs`, `/config`, not the repo root.
-> - **Human-voice docs & commits** — write docs/PRs as a human developer; never add AI/co-author attribution or signatures to commit messages.
+> ⚠️ Suite-wide guardrails apply — see root CLAUDE.md. (This file is strictly for build commands,
+> tech-stack reference, and project guidelines — no scratchpad content, changelogs, or task
+> trackers; a fenced block holding build/run commands like the Tool Reference below is fine, one
+> holding program logic is not.)
 
 ## Tool Reference
 
@@ -303,13 +301,3 @@ All reads/writes via `cherrypick/earnings/db.py` (real) / `cherrypick/earnings/d
 - Inside close window, ≥1 position open: **60s**. No positions: **end loop**.
 - `double_calendar` or `atm_calendar` open, regular session hours: **300s–600s** (Step 3b/3d). Market closed: **wake at next market open**.
 - Five overnight-hold strategies' positions open, between market open and `close_window_start`: **60s–120s** (Step 3c).
-
-## graphify
-
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships. **Optional tooling** — not installed by cloning this repo; `graphify-out/` and the hooks that call it are gitignored/local-only, so a fresh checkout on another machine has neither.
-
-- **Before using any `graphify` command, confirm it's available**: check that graphify-out/graph.json exists AND a `graphify` invocation succeeds (e.g. `graphify --help`). If either check fails — command not found, or no graph.json — skip straight to normal tools (Grep/Glob/Read) for this session and do not retry graphify commands later in the same session.
-- If available: for codebase questions, first run `graphify query "<question>"`. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost) — skip silently if graphify isn't available.

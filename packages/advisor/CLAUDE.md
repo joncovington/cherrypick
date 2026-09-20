@@ -427,11 +427,7 @@ retag on 2026-09-17 moved every historical advised row onto its experiment's own
 CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 ---
 
-> ⚠️ This file is strictly for build commands, tech-stack reference, and project guidelines:
-> - **No code here** — no Python, no scripts, no logic, and no scratchpad content, changelogs, or task trackers.
-> - **Mask account numbers** to the last 4 digits (`****1234`) anywhere they surface.
-> - **Portable paths only** — never hardcode absolute paths, usernames, hostnames, or drive letters.
-> - **Human-voice docs & commits** — never add AI/co-author attribution to commit messages.
+> ⚠️ Suite-wide guardrails apply — see root CLAUDE.md. On top of those:
 > - **No AI, no network, no broker.** No `tastytrade`, `keyring`, `requests`, `socket` or
 >   `cherrypick.core.auth`/`broker` import may appear in `src/` — enforced by a source scan
 >   (`tests/test_guardrails.py`), not by prose.

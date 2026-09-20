@@ -59,13 +59,16 @@ doubly here because the credit gate has no floor to screen out an illusory openi
 | `bounce` | peak \|delta\| since entry >= `delta_trigger` AND current <= `delta_trigger - bounce_pullback` (45Δ at defaults). No separate `bounce_peak` key: the qualifying bar is `delta_trigger` itself, so delta/bounce differ by exactly one condition by construction |
 | `flip` | spot has traded below `gamma_flip` at some point since entry AND reclaimed to >= `flip * flip_buffer` (1.001, the curve `contango_max` precedent) |
 
-Plus `advised:<experiment name>` (paper, off by default; one book PER advisor experiment since
-2026-09-17, `advised:<base>` before; this module is deliberately UNBOUNDED — see config's `advice`
-block).
+The `advised:<experiment name>` mechanism is explained in `packages/core/CLAUDE.md`. This module's
+own declarations:
 
-**Every advised row also carries `experiment_id` (2026-09-16)** — the advisor experiment the day's artifact named, read from the session decision and stamped through the one shared rule (`cherrypick.core.advice.stamp_for`: advised books only, never the control). The stamp is what lets the ledger, the advisor's verdicts and the console's paired cards tell one experiment's rows from the next's without inferring it from dates. Rows written before the column existed read `NULL` and are treated as unstamped history, never rewritten.
-
-**One advised book per experiment (2026-09-17).** Until then the day's artifact carried one overlay and the entry opened exactly one `advised:<base>` twin from it, so a second experiment queued behind the first. Now the decision's `experiments` list carries one entry per concurrent experiment and `paper_loop.session_books` opens one book per entry that admitted params — `advised:<experiment name>` (slug-safe), planned from the base book THAT entry names with THAT entry's overlay on top, frozen with that overlay and stamped with that entry's id, resolved per tag through the decision (`stamp_for(book, decision)`). One entry's rejected overlay is that experiment's baseline day and opens nothing; the others still open. The tag no longer names the base: `engine.base_book` resolves an advised tag through the decision's entry when one is in hand, else through the configured `advice.base_book` (default `control`), and still reads the legacy `advised:control` / `advised:delta` tags — and the opt-in `wall` — off the name, so `management.effective_params` keeps working for history; it carries the answer on the params as `base_book`, which is what the arm/fire verdict keys on. A decision file recorded before this date still opens its single `advised:<base>`. **The base is also stamped on the row (`advice_base`, same day, second pass)** from the decision entry at entry, and `management.effective_params` prefers it over the configured `advice.base_book`: after the session the decision file is gone, and a twin of a non-default base must keep its base's rules rather than fall back to the default. Rows written before the column read NULL and resolve as before. **The session's advice decision is also recorded on every in-session tick**, not only on the entry path (same day): a session with nothing to enter still tells the advisor the artifact reached the loop, which is the distinction its enactment check exists to make.
+- **Deliberately UNBOUNDED** — see config's `advice` block; unlike most modules here, bwb declares no
+  `advice.bounds` at all.
+- Legacy tags from before the 2026-09-17 one-book-per-experiment cutover: `advised:control` /
+  `advised:delta` — still resolved by name in `engine.base_book` and `management.effective_params`
+  for history, alongside the opt-in `wall` book (never an advised base itself).
+- `base_book`/`advice_base` resolution and the every-tick decision recording follow the shared rule
+  in core; nothing bwb-specific beyond the tags above.
 
 **The add-on** (identical construction for all three arms): a put credit spread bracketing the far
 wing — SELL one increment above it, BUY one increment below. Must itself price as a credit
@@ -275,6 +278,8 @@ built so that question can be answered without disturbing the paper books:
 
 ## Guardrails (suite-wide)
 
+Suite-wide guardrails apply — see root CLAUDE.md. On top of those:
+
 - **Paper by default; the live path is narrow and separately gated.** `live.enabled`,
   `live.gate0_confirmed`, a per-day arm record (`/live-bwb-start`, a literal YES), a designated
   account, the absence of the suite halt flag, and `live.arm` naming a base book — every one
@@ -284,9 +289,7 @@ built so that question can be answered without disturbing the paper books:
   are pure functions over pre-fetched data — no model, no MCP, no network in the decision itself.
 - Declared settlement only (SPX is always `cash`); a symbol this module is not built for is out of
   scope by construction (it trades exactly one underlying).
-- Credentials in the OS keyring only (this module holds none). Account numbers masked to
-  `****1234`. Portable paths only; scratch work in `.tmp/`. Human-voice docs and commits, no AI
-  attribution. Instruction files hold no code.
+- Credentials in the OS keyring only (this module holds none). Scratch work in `.tmp/`.
 - Tests isolate by an **autouse** temp-home fixture (`tests/conftest.py`), never opt-in — the
   flies 2026-07-20 lesson.
 

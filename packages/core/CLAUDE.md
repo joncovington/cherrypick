@@ -92,6 +92,43 @@ The reason to put something here is that **two packages would otherwise disagree
 what a trading day is, or what "net" means. That is the bar; a helper only one package uses belongs in
 that package.
 
+## The `advised:<experiment>` mechanism
+
+`cherrypick.core.advice` is the shared contract behind the AI advisor's one loop back into the
+trading modules. **`packages/advisor`** reads a module's own facts up to four times a trading day and,
+when it has a validated parameter proposal, writes a small **bounded, expiring paper-advice
+artifact** naming one or more experiments. Every module that wants to run one of these experiments
+opens a synthetic **`advised:<experiment name>` book** — a full paper position stream, planned from
+the same entry as its `control` book, that runs BESIDE `control` under the proposed parameters rather
+than replacing it. This is how the suite lets the advisor influence a paper result without ever
+letting it touch a control book, an order, or the live path.
+
+Load-bearing properties every module shares:
+
+- **Off by default, twice over.** The suite has to schedule the advisor (`scripts/advisor_checkpoint.py`,
+  outside every package) and the consuming module has to declare `advice.enabled` plus its own
+  `advice.bounds` — the closed parameter ranges the advisor's proposal is validated against. A bound
+  over a parameter the module doesn't read, or a range that can't move the book away from control, is
+  a spent experiment slot, not a safe default.
+- **One book per experiment (since 2026-09-17).** The artifact carries an `experiments` list, one
+  entry per concurrent experiment; each validated entry opens its own `advised:<experiment name>`
+  book (slug-safe tag). Before that date one overlay produced one `advised:<base>` twin, so a second
+  experiment on the same base queued behind the first — modules still read the old tag by name for
+  history.
+- **`experiment_id`/`stamp_for`/`advised_books()` are the shared plumbing.** `advised_books(decision)`
+  is what every consumer opens one book per; `stamp_for(book, decision)` is the one rule that puts the
+  day's `experiment_id` on an advised row and never on control's, so the ledger, the advisor's
+  verdicts and the console's paired cards can tell one experiment's rows from the next's without
+  guessing from dates.
+- **A baseline decision is never persisted.** A process reaching a day with no valid advice cannot
+  retroactively fix that day for the loop that runs after it — an unstamped, un-advised session stays
+  that way.
+- **Every module's `advice` block is its own**, declared in that module's own config, not inherited
+  from another module's bounds — an advisor experiment is scoped to the module that opted in.
+
+The module-specific detail — which experiment names a module has run, what its own `advice.bounds`
+declare, and what its book is actually called — lives in that module's own CLAUDE.md, not here.
+
 ## Commands
 
 ```bash
@@ -99,3 +136,10 @@ pip install -e ".[dev]"
 ruff check .
 pytest
 ```
+
+## Guardrails
+
+Suite-wide guardrails apply — see root `CLAUDE.md`. Worth restating here since `auth`/`broker` are
+the one place account numbers and credentials flow through: account numbers masked to `****1234`
+anywhere they surface (logs, docs, commit messages), and no AI attribution in commits — this module
+is imported by every package, so a slip here surfaces everywhere.

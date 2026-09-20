@@ -66,13 +66,16 @@ Three books, one variable each, plus the advisor's synthetic twin:
   its own variable; exits by control's rules. Expected to be **nearly always idle** — the pmcc
   keltner precedent: the idleness is the honest state, not a failure, and its read surface must
   say so.
-- **`advised:<experiment name>`** (paper, off by default; one book PER advisor experiment since
-  2026-09-17, `advised:<base>` before) — the admitted params frozen on each row at entry and
-  restated through one choke point (`management.effective_params`) every tick.
+- **`advised:<experiment name>`** (paper, off by default) — the admitted params frozen on each row
+  at entry and restated through one choke point (`management.effective_params`) every tick.
 
-**Every advised row also carries `experiment_id` (2026-09-16)** — the advisor experiment the day's artifact named, read from the session decision and stamped through the one shared rule (`cherrypick.core.advice.stamp_for`: advised books only, never the control). The stamp is what lets the ledger, the advisor's verdicts and the console's paired cards tell one experiment's rows from the next's without inferring it from dates. Rows written before the column existed read `NULL` and are treated as unstamped history, never rewritten.
-
-**One advised book per experiment (2026-09-17).** Until then the day's artifact carried one overlay and the entry opened exactly one `advised:<base>` twin from it, so a second experiment queued behind the first. Now the decision's `experiments` list carries one entry per concurrent experiment and `paper_loop.session_books` opens one book per entry that admitted params — `advised:<experiment name>` (slug-safe), gated and planned as the base book THAT entry names (a twin of `hook` waits for the hook signal; a twin of `control` for contango) with that entry's overlay on top, frozen with that overlay and stamped with that entry's id, resolved per tag through the decision (`stamp_for(book, decision)`). One entry's rejected overlay is that experiment's baseline day and opens nothing; the others still open. The tag no longer names the base: `engine.base_book` resolves an advised tag through the decision's entry when one is in hand, else through the configured `advice.base_book` (default `control`), and still reads the legacy `advised:control` / `advised:hook` tags off the name, so `management.effective_params` keeps working for history; it carries the answer on the params as `base_book`, which is what the regime-flip exit keys on (a twin of `noflip` never flips). A decision file recorded before this date still opens its single `advised:<base>`. `advice.enabled` stays false here by design; none of this changes that. **The base is also stamped on the row (`advice_base`, same day, second pass)** from the decision entry at entry, and `management.effective_params` prefers it over the configured `advice.base_book`: after the session the decision file is gone, and a twin of a non-default base must keep its base's rules rather than fall back to the default. Rows written before the column read NULL and resolve as before. **The session's advice decision is also recorded on every in-session tick**, not only on the entry path (same day): a session with nothing to enter still tells the advisor the artifact reached the loop, which is the distinction its enactment check exists to make.
+The `advised:<experiment name>` mechanism itself is explained in `packages/core/CLAUDE.md`. This
+module's own detail: a twin is gated and planned as the base book its experiment names — a twin of
+`hook` waits for the hook signal, a twin of `control` for contango — and the base carried on its
+params (`base_book`) is what the regime-flip exit keys on (a twin of `noflip` never flips). Legacy
+tags from before the 2026-09-17 one-book-per-experiment cutover read `advised:control` /
+`advised:hook`, still resolved by name for history. **`advice.enabled` stays false here by
+design**; none of this changes that.
 
 **curve is a structurally slow advisor target, stated honestly in config.** One position per book
 at ~30-45 DTE with 50% takes closes maybe 2-4 trades a month; a 15-session advised experiment is
@@ -212,14 +215,14 @@ can't touch it.
 
 ## Guardrails (suite-wide)
 
+Suite-wide guardrails apply — see root CLAUDE.md.
+
 - **Paper only. There is no live path.** `live.enabled` in config is a documented placeholder only.
 - **The decision path is deterministic.** `regime.py`, `engine.py`, `clock.py` and `management.py`
   are pure functions over pre-fetched data — no model, no MCP, no network in the decision itself.
 - Declared settlement only (VXX is always `physical`); a symbol this module is not built for is
   out of scope by construction (it trades exactly one underlying).
-- Credentials in the OS keyring only (this module holds none). Account numbers masked to
-  `****1234`. Portable paths only; scratch work in `.tmp/`. Human-voice docs and commits, no AI
-  attribution. Instruction files hold no code.
+- Credentials in the OS keyring only (this module holds none).
 - Tests isolate by an **autouse** temp-home fixture (`tests/conftest.py`), never opt-in — the
   flies 2026-07-20 lesson.
 

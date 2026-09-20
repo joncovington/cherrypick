@@ -118,11 +118,7 @@ Run it after any change to a collector, and after any module changes its schema.
 CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 ---
 
-> ⚠️ This file is strictly for build commands, tech-stack reference, and project guidelines:
-> - **No code here** — no Python, no scripts, no logic, and no scratchpad content, changelogs, or task trackers.
-> - **Mask account numbers** to the last 4 digits (`****1234`) anywhere they surface.
-> - **Portable paths only** — never hardcode absolute paths, usernames, hostnames, or drive letters.
-> - **Human-voice docs & commits** — never add AI/co-author attribution to commit messages.
+> Suite-wide guardrails apply — see root CLAUDE.md.
 > - **The fact set is deterministic; the narrative is not, and is fenced accordingly.** Every figure
 >   here is computed from closed rows. The narrative is deliberately generated *outside* this
 >   package by a scheduled agent reading the fact set, so this package acquires no API key and no

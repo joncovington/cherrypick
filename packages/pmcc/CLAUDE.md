@@ -49,15 +49,18 @@ One book, plus the advisor's synthetic twin — a deliberate simplification from
 - **`control`** — the strategy as taught: mechanical entry whenever the (symbol, book) slot is
   free, an 85-90-delta long, an ATM short with no yield floor, hold to the short's own expiration,
   then close both legs together. Never rolls (there is no roll book any more).
-- **`advised:<experiment name>`** (paper, off by default; one book PER advisor experiment since
-  2026-09-17, `advised:control` before) — the AI advisor's admitted params, frozen on each
-  row at entry and restated through one choke point (`management.effective_params`) every tick. The
-  one thing currently worth advising is `tv_managed_exit`/`tv_close_threshold` — flipping the exit
-  rule back to the pre-redesign early-tv-exhaustion close, as a paper A/B against hold-to-expiry.
+- **`advised:<experiment name>`** (paper, off by default) — the AI advisor's admitted params, frozen
+  on each row at entry and restated through one choke point (`management.effective_params`) every
+  tick. **The one thing currently worth advising is `tv_managed_exit`/`tv_close_threshold`** —
+  flipping the exit rule back to the pre-redesign early-tv-exhaustion close, as a paper A/B against
+  hold-to-expiry.
 
-**Every advised row also carries `experiment_id` (2026-09-16)** — the advisor experiment the day's artifact named, read from the session decision and stamped through the one shared rule (`cherrypick.core.advice.stamp_for`: advised books only, never the control). The stamp is what lets the ledger, the advisor's verdicts and the console's paired cards tell one experiment's rows from the next's without inferring it from dates. Rows written before the column existed read `NULL` and are treated as unstamped history, never rewritten.
-
-**One advised book per experiment (2026-09-17).** Until then the day's artifact carried one overlay and the entry opened exactly one `advised:control` twin from it, so a second experiment queued behind the first. Now the decision's `experiments` list carries one entry per concurrent experiment and `paper_loop.session_books` opens one book per entry that admitted params — `advised:<experiment name>` (slug-safe), planned from control's params with THAT entry's overlay on top (an overlay that touches entry re-plans; one that does not shares control's plan), frozen with THAT overlay and stamped with THAT entry's id, resolved per tag through the decision (`stamp_for(book, decision)`). One entry's rejected overlay is that experiment's baseline day and opens nothing; the others still open. The tag no longer names the base: `engine.base_book` resolves an advised tag through the decision's entry when one is in hand, else through the configured `advice.base_book` (`control`, the only base), and still reads the legacy `advised:control` — and the retired `advised:keltner`/`advised:roll` history, through the config's `books` keys — off the name. A decision file recorded before this date still opens its single `advised:control`. Every twin is on the roster the stream request subscribes for: the 2026-08-27 starvation below would recur per twin otherwise. **The base is also stamped on the row (`advice_base`, same day, second pass)** from the decision entry at entry, and `management.effective_params` prefers it over the configured `advice.base_book`: after the session the decision file is gone, and a twin of a non-default base must keep its base's rules rather than fall back to the default. Rows written before the column read NULL and resolve as before. **The session's advice decision is also recorded on every in-session tick**, not only on the entry path (same day): a session with nothing to enter still tells the advisor the artifact reached the loop, which is the distinction its enactment check exists to make.
+The `advised:<experiment name>` mechanism itself is explained in `packages/core/CLAUDE.md`. This
+module's own detail: `control` is the only base a twin can name (`advice.base_book`), and the legacy
+tag from before the 2026-09-17 one-book-per-experiment cutover is `advised:control` — still resolved
+by name for history, alongside the retired `advised:keltner`/`advised:roll` history reached through
+config's `books` keys. Every twin is on the roster the stream request subscribes for: the 2026-08-27
+starvation below would recur per twin otherwise.
 
 There is no more multi-book fill pairing to reason about: with one book plus its advised twin, every
 `control` row is directly comparable to every other `control` row.
@@ -238,14 +241,15 @@ loop reads the flag.
 
 ## Guardrails (suite-wide)
 
+Suite-wide guardrails apply — see root CLAUDE.md. Package-specific additions:
+
 - **Paper only. There is no live path** — no live loop, no order code. `live.enabled` in config is
   a documented placeholder only (see Live-trading prerequisites above); it is not a working gate.
-- **The decision path is deterministic.** `engine.py` and `management.py` are pure functions over
-  pre-fetched data — no model, no MCP, no network in the decision itself.
+- **The decision path is deterministic** (the root's deterministic-preferred principle, applied
+  here): `engine.py` and `management.py` are pure functions over pre-fetched data — no model, no
+  MCP, no network in the decision itself.
 - Declared settlement only (`settlement_style`); a symbol declared as neither style is refused.
-- Credentials in the OS keyring only (this module holds none). Account numbers masked to
-  `****1234`. Portable paths only; scratch work in `.tmp/`. Human-voice docs and commits, no AI
-  attribution. Instruction files hold no code.
+- Credentials in the OS keyring only — this module holds none.
 - Tests isolate by an **autouse** temp-home fixture (`tests/conftest.py`), never opt-in — the flies
   2026-07-20 lesson.
 

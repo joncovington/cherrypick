@@ -27,14 +27,18 @@ construction and any divergence between books is exit policy and nothing else.
   Friday settlement, longs ride the weekend and are sold on their own Monday expiration
   morning. Its job is the **recorded per-tick mark path** (`dc_marks`), the substrate everything
   else derives from.
-- **`advised:<experiment name>`** (paper, off by default; one book PER advisor experiment since
-  2026-09-17, `advised:control` before): the AI advisor's admitted exit params, frozen on each row
-  at entry and restated through one choke point (`management.effective_params`) at every later
-  tick — the earnings advised-twin pattern, required here because this module has exits.
+- **`advised:<experiment name>`** (paper, off by default): the AI advisor's admitted exit params,
+  frozen on each row at entry and restated through one choke point (`management.effective_params`)
+  at every later tick — required here, unlike most stream-cache-only modules, because this module
+  has exits at all.
 
-**Every advised row also carries `experiment_id` (2026-09-16)** — the advisor experiment the day's artifact named, read from the session decision and stamped through the one shared rule (`cherrypick.core.advice.stamp_for`: advised books only, never the control). The stamp is what lets the ledger, the advisor's verdicts and the console's paired cards tell one experiment's rows from the next's without inferring it from dates. Rows written before the column existed read `NULL` and are treated as unstamped history, never rewritten.
-
-**One advised book per experiment (2026-09-17).** Until then the day's artifact carried one overlay and the entry opened exactly one `advised:<base>` twin from it, so a second experiment on the same base had nowhere to run and queued behind the first. Now the decision's `experiments` list carries one entry per concurrent experiment, and `paper_loop.session_books` opens one book per entry that admitted params — `advised:<experiment name>` (slug-safe), planned from the SAME entry plan as every other book, frozen with THAT entry's overlay and stamped with THAT entry's id, resolved per tag through the decision (`stamp_for(book, decision)`). One entry's rejected overlay is that experiment's baseline day and opens nothing; the others still open. The tag no longer names the base: `engine.base_book` resolves an advised tag through the session decision's entry when one is in hand, else through the configured `advice.base_book` (default `control`), and still reads the legacy `advised:control` / `advised:friday:control` tags straight off the name so history keeps working. A decision file recorded before this date (no `experiments` key) still opens its single `advised:<base>`. The read-once rule is unchanged: books already open keep being marked, managed and settled whatever today's decision says, under the params frozen on their own rows. **The base is also stamped on the row (`advice_base`, same day, second pass)** from the decision entry at entry, and `management.effective_params` prefers it over the configured `advice.base_book`: after the session the decision file is gone, and a twin of a non-default base must keep its base's rules rather than fall back to the default. Rows written before the column read NULL and resolve as before. **The session's advice decision is also recorded on every in-session tick**, not only on the entry path (same day): a session with nothing to enter still tells the advisor the artifact reached the loop, which is the distinction its enactment check exists to make.
+The `advised:<experiment name>` mechanism itself — one book per experiment, off by default, the
+`experiment_id`/`stamp_for`/`advised_books()` plumbing — is explained in `packages/core/CLAUDE.md`.
+This module's own detail: legacy tags from before the 2026-09-17 one-book-per-experiment cutover
+read as `advised:control` / `advised:friday:control`, still resolved by name in `engine.base_book`
+and `management.effective_params` for history. The read-once rule is unchanged: books already open
+keep being marked, managed and settled whatever today's decision says, under the params frozen on
+their own rows.
 
 **The exit grid is derived read-side, not run as books.** `exit_policies.py` replays profit targets
 (10/20/30% of debit), stops (25/50/100%), the short-strike-touch side close, exit-timing variants
@@ -244,6 +248,8 @@ The log is free to stay quiet; that is now correct rather than fatal.
 
 ## Guardrails (suite-wide)
 
+Suite-wide guardrails apply — see root CLAUDE.md. On top of those:
+
 - **Paper only. There is no live path** — no live loop, no order code. `live.enabled` in config is
   a documented placeholder only (see Live-trading prerequisites above); it is not a working gate.
 - **The decision path is deterministic.** `engine.py` and `management.py` are pure functions over
@@ -255,9 +261,7 @@ The log is free to stay quiet; that is now correct rather than fatal.
 - **Two couplings the orchestrator depends on — don't change silently:** the paper DB path
   (`~/.cherrypick/data/calendars/paper_trades.db`, also load-bearing for review and the advisor
   fact pack) and its `dc_week` schema, read through `cherrypick.core.ledgers`.
-- Credentials in the OS keyring only (this module holds none). Account numbers masked to
-  `****1234`. Portable paths only; scratch work in `.tmp/`. Human-voice docs and commits, no AI
-  attribution. Instruction files hold no code.
+- Credentials in the OS keyring only (this module holds none). Scratch work in `.tmp/`.
 - Tests isolate by an **autouse** temp-home fixture (`tests/conftest.py`), never opt-in — the flies
   2026-07-20 lesson.
 

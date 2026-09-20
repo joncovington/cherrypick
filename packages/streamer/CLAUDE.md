@@ -146,8 +146,5 @@ absolute paths.
   into this package — the whole point is one shared engine (the GEX math drifted ~75× once when copied).
 - **No trading policy here.** ORB, open-position leg subscriptions, REST polling, and any HTTP API belong
   to a trading module's wrapper, not this infrastructure daemon.
-- **Instruction files hold no code and no logs.** This file is build commands + guidelines only. Scratch
-  work lives in a git-ignored `.tmp/`.
-- **Portable paths, masked accounts, human-voice docs/commits.** Never hardcode absolute paths, usernames
-  (except `127.0.0.1`/`localhost`), or drive letters; derive from `Path(__file__)`, an env var, or
-  config. Mask account numbers to `****1234`. No AI/co-author attribution in commits.
+
+Suite-wide guardrails apply — see root CLAUDE.md.

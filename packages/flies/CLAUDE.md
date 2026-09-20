@@ -687,9 +687,9 @@ gate and did not fill neither spent the slot nor was refused, and folding it int
 makes the gates look stricter than they are. Writes are wrapped so a telemetry failure can never cost
 a trade.
 
-**Changing the cadence is a measurement break**, the same class as the 60s→15s tick change: entry
-pacing decides how many structures a session holds and therefore what a per-session net means.
-Journal it and keep the eras apart.
+**Changing the cadence is a measurement break** (see "Never pool completion rates across
+2026-08-09" under Status): entry pacing decides how many structures a session holds and therefore
+what a per-session net means. Journal it and keep the eras apart.
 
 **A global position cap does not make a multi-window arm test its windows.** `max_positions` alone let
 the book fill in the first window: over 07-20…07-24 `time_window` put 15 of its 16 legged entries in
@@ -928,9 +928,7 @@ supervision. The log is now free to be exactly as talkative as a human reading i
   was confirmed by the poll within ~15s. The empty set now means every order on the account, and
   `packages/core/tests/test_broker.py` pins it with a test that was shown to fail. The 2026-09-18
   live day's fill latencies are poll latencies; days after it are the first with push latencies.
-- Credentials in the OS keyring only. Account numbers masked to `****1234`.
-- Portable paths only; scratch work in `.tmp/`. Human-voice docs and commits, no AI attribution.
-- Instruction files hold no code.
+- Suite-wide guardrails apply — see root `CLAUDE.md`. Package-specific: scratch work in `.tmp/`.
 
 ## Status
 
@@ -939,10 +937,9 @@ driver, CLI, and the orchestrator `fly_book` wiring across all four schema regis
 including a provider suite built against the real `cherrypick.core.streamcache` DDL so an upstream
 schema change fails here rather than silently producing empty snapshots. The package runs in CI.
 
-**The dated record of what each session actually measured — per-arm separation, drift alignment, the
-era inversion, and what each change came out of — is [docs/experiment-log.md](docs/experiment-log.md).**
-It is append-only, and it is where a finding goes; this file keeps only the rules that constrain what
-the code may do.
+Per-arm separation, drift alignment, the era inversion, and what each change came out of — the
+dated record of what each session actually measured — lives in
+[docs/experiment-log.md](docs/experiment-log.md) (see "Where things live" above).
 
 **Never pool completion rates across 2026-08-09.** The tick cadence went 60s to 15s at the supervisor
 cutover, and a faster poll catches transient completing-debit dips a slower one missed — so the headline
@@ -962,23 +959,24 @@ not the official settlement print. The difference is systematic rather than rand
 centred within a point of spot can settle on the wrong side of its centre because of it. Pass
 `--price` with the official print for any book whose result matters.
 
-## If this ever goes live
+## The live pilot
 
-The engine already returns decisions rather than performing fills, which is the same split MEIC uses,
-and `cherrypick.core.broker` carries the write path and governor. Two things must be resolved first,
-and neither is a detail:
+Live trading is running (see Guardrails above), not hypothetical — this section is the resolution
+record for the two technical questions moving from paper to live raised, not a pre-launch plan.
 
 - **Legging is where live diverges hardest from paper.** In paper the completion gate is a clean
-  inequality. Live, step 1 fills and step 2 is a working limit that may sit unfilled or fill worse — so
-  the completion rate measured here is an **upper bound** on the live rate, not an estimate of it.
-- **`fund_from_open_credit` needs a real buying-power check.** Funding an outright fly from a still-open
-  credit spread spends premium that has not been earned.
+  inequality. Live, step 1 fills and step 2 is a working limit that may sit unfilled or fill worse,
+  so the paper completion rate is a **ceiling** on the live rate, not a prediction of it. Resolved
+  for the pilot by measuring the real live completion rate directly at 1-lot size, with a built-in
+  abort: once 30+ live legged entries have happened, a live rate more than 15 points below the
+  paper rate over the same days halts the pilot automatically.
+- **`fund_from_open_credit` needs a real buying-power check** before an outright entry (funding a
+  fly from a still-open credit spread spends premium not yet earned). Moot for the pilot: outright
+  entries are off in live trading, so this only needs solving before outright entries could go live.
 
-The full plan — the quantitative Gate 0 the paper experiment must pass first, how both blockers
-resolve (a 1-lot measurement pilot with an abort rule for the first; legged-only live v1 mooting the
-second), the live-loop architecture, kill switches, the fee-math symbol decision, and the rung-by-rung
-rollout — is [docs/live-trading-plan.md](docs/live-trading-plan.md). Until Gate 0 passes, the only
-work it calls for is running the paper experiment honestly.
+The full plan — the quantitative Gate 0 the pilot had to clear first, the live-loop architecture,
+kill switches, the fee-math symbol decision, and the rung-by-rung rollout — is
+[docs/live-trading-plan.md](docs/live-trading-plan.md).
 
 
 ## Band placement (`python run.py bands`)

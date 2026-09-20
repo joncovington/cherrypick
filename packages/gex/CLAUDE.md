@@ -106,6 +106,8 @@ config file's directory — never hardcode absolute paths.
 - **Instruction files hold no code and no logs.** This file is build commands + guidelines only.
 - **Portable paths.** Never hardcode absolute paths, usernames, or drive letters; derive from
   `Path(__file__)` or config. Scratch work lives in a git-ignored `.tmp/`.
+- Suite-wide guardrails also apply here — see root `CLAUDE.md`: account numbers masked to
+  `****1234` anywhere they surface, and human-voice docs/commits with no AI attribution.
 
 
 ## The GEX horizon is forward-only (2026-08-26)
