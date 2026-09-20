@@ -17,6 +17,7 @@ import { MeicForestCard } from "../../pages/Meic/MeicForestCard";
 import { MeicPerformanceTab } from "../../pages/Meic/MeicPerformanceTab";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
+import { RegimeCutsTab } from "../../components/RegimeCutsTab";
 import { LightboxFrame } from "../LightboxFrame";
 import type { SlideDef } from "../types";
 
@@ -313,6 +314,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
         </div>
       ),
     },
+    { id: "regime", label: "regime cuts", render: () => <RegimeCutsTab module="meic" /> },
     {
       id: "trades",
       label: "trades",

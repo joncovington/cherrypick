@@ -88,6 +88,17 @@ compare against there was nothing to check it with. bwb, curve and pmcc had that
 not. **It caught a real divergence on its first run** — the console counted still-open positions in
 per-arm P&L, reporting each arm down by exactly the fees it had paid so far.
 
+**The regime-cuts artifact (2026-09-19)** is the one read product with a file behind it, and for
+that reason it is its own entry point, `python -m cherrypick.meic.regime_cuts --write`, not a verb
+here: every profile with resolved rows inside the era, cut by every regime dimension and by the
+declared gex x trend cross-tab, in the shape `cherrypick.core.regimecuts` defines (flies writes
+the same one), to `data/meic/regime_cuts-<session>.json` plus a latest copy. The ledger is still
+opened through `cli._connect`, read-only. `analytics.regime_cuts` builds it; the era comes from
+`db.measurement_breaks` (the reader the table never had) AND the `era` column, both recorded, so
+the two can be seen to agree rather than assumed to. Completion fields are null: a condor
+resolves, it does not complete. Nightly under the supervisor at `paper.regime_cuts_at`; the
+console's "regime cuts" slide and the advisor's deep pack read it without recomputing a cell.
+
 **Deliberately NOT here: anything that runs or writes**, and `tests/test_cli.py` pins that. The paper
 loop, the streamer, the ledger writer and the broker client keep their own argv: `paper_loop` shells
 out to `python -m cherrypick.meic.db` and `...meic.tt` on EVERY TICK, and the orchestrator's

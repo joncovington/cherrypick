@@ -36,6 +36,13 @@
           "--once",
           "--force"
         ],
+        "_regime_cuts_note": "Nightly regime-cuts artifact (2026-09-19): at regime_cuts_at (ET, trading days) the supervisor runs regime_cuts_argv, which writes data/<module>/regime_cuts-<session>.json plus the latest copy that the console's regime slide and the advisor's deep pack read. 16:40 sits after the module settles and after review-provisional (16:30) and before advisor deep_at (17:00); a deep_at earlier than this reads last night's artifact, which the pack labels stale. Remove both keys to drop the job.",
+        "regime_cuts_at": "16:40",
+        "regime_cuts_argv": [
+          "-m",
+          "cherrypick.meic.regime_cuts",
+          "--write"
+        ],
         "_paper_db_note": "Path to the module's paper-trades SQLite DB — MUST point at the file the module actually WRITES (a mismatch silently blinds the orchestrator's report/reconcile/dashboard and the watchdog freshness check). Relative resolves against the module checkout; a leading '~' or env var expands (use e.g. '~/.cherrypick/data/meic/paper_trades.db' when the module keeps its data in the managed home); an absolute path is used as-is.",
         "paper_db": "data/paper_trades.db",
         "notify_trades": true,
@@ -124,6 +131,14 @@
           "-m",
           "cherrypick.flies.paper_loop",
           "--once"
+        ],
+        "_regime_cuts_note": "Nightly regime-cuts artifact (2026-09-19): at regime_cuts_at (ET, trading days) the supervisor runs regime_cuts_argv, which writes data/<module>/regime_cuts-<session>.json plus the latest copy that the console's regime slide and the advisor's deep pack read. 16:40 sits after the module settles and after review-provisional (16:30) and before advisor deep_at (17:00); a deep_at earlier than this reads last night's artifact, which the pack labels stale. Remove both keys to drop the job.",
+        "regime_cuts_at": "16:40",
+        "regime_cuts_argv": [
+          "-m",
+          "cherrypick.flies.cli",
+          "regime-cuts",
+          "--write"
         ],
         "paper_db": "~/.cherrypick/data/flies/paper_trades.db",
         "notify_trades": true,

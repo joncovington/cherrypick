@@ -66,3 +66,21 @@ rule — the shape [completion-timing.md](completion-timing.md) argues is optima
 drift — needs a per-tick mark path this ledger does not keep. Record one only if `hedge-overlay`
 first shows the hedge recovering more than it costs on some branch; if it never does, the path
 would be measuring a rule for a position not worth holding.
+
+## Four atomic-JSON writers, measured and left
+
+`core.advice`, `core.streamrequests`, `advisor/store.write_json` and `review/facts.write` each
+carry the same three-line write-then-rename. Measured on 2026-09-19 when the regime-cuts artifact
+needed a fifth: the bodies differ only in tmp naming and whether they mkdir. The fifth is the
+first shared one (`core.home.write_json_atomic`, used by `core.regimecuts`); folding the four onto
+it is a change across four packages with four test files and was not worth carrying in the same
+landing. Reopens when any of the four is next touched.
+
+## Regime cuts: the sweep and the partial sessions
+
+v1 carries one declared cross-tab (gex x trend). A general N x N sweep would be a fishing surface
+at nineteen sessions -- nearly every twelve-cell cross is thin -- and is deferred until a second
+cross earns its place the way the first did. `partial_session` breaks are listed as caveats inside
+the era rather than excluded from it; excluding those dates would touch the shared
+`_period_clause`, and none falls inside the current era. Curve is the natural third writer (one
+dimension, `entry_regime`/`entry_ratio` already on the row) once its fee floor lets it enter.

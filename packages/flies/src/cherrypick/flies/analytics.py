@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
+from cherrypick.core import regimecuts as _rc
+
 from cherrypick.flies import (
     clock,  # noqa: E402
     fly,  # noqa: E402
@@ -402,9 +404,13 @@ def by_regime(
     symbol=None,
     bucket_edges: list[float] | None = None,
     phase: str = "entry",
+    arm=None,
 ) -> list[dict]:
     """Outcomes grouped by the regime the position was ENTERED into (or completed into, via
-    `phase`). Same stat bundle as `by_arm`, deliberately — a regime slice and an arm slice have to be
+    `phase`). `arm` scopes to one book (2026-09-19, for the regime-cuts artifact); None blends
+    every arm, which mixes populations with different centring rules and should be read as such.
+    Each row also carries `completed` / `completion_rate`: for this module completion is the
+    outcome that matters, and a bucket's win rate alone cannot show a strand. Same stat bundle as `by_arm`, deliberately — a regime slice and an arm slice have to be
     read against each other, and two different summary shapes would make that a translation exercise.
 
     `dimension` is one of REGIME_DIMENSIONS. By default it groups on the stored bucket string; pass
@@ -427,13 +433,13 @@ def by_regime(
         raise ValueError(f"by_regime: phase must be 'entry' or 'completion', got {phase!r}")
     bucket_col, value_col = (c.replace("entry_", f"{phase}_", 1) for c in REGIME_DIMENSIONS[dimension])
 
-    where, params = _period_clause(start, end, symbol=symbol)
+    where, params = _period_clause(start, end, arm=arm, symbol=symbol)
     if entry_modes:
         where += f" AND entry_mode IN ({','.join('?' * len(entry_modes))})"
         params = [*params, *entry_modes]
     rows = conn.execute(
-        f"SELECT {bucket_col} AS bucket, {value_col} AS value, gross_pnl, fees, pnl, trade_date "
-        f"FROM fly_positions WHERE {where}",
+        f"SELECT {bucket_col} AS bucket, {value_col} AS value, gross_pnl, fees, pnl, trade_date, "
+        f"completed_at FROM fly_positions WHERE {where}",
         params,
     ).fetchall()
 
@@ -458,12 +464,19 @@ def by_regime(
                 # it -- see regime_coverage's effective_n.
                 "sessions": len({r["trade_date"] for r in rs if r["trade_date"]}),
                 **_summarize(rs),
+                **_completion(rs),
             }
         )
     return sorted(out, key=lambda x: x["net_pnl"] or 0, reverse=True)
 
 
-def regime_coverage(conn, start=None, end=None, symbol=None) -> dict:
+def _completion(rows) -> dict:
+    """`completed` / `completion_rate` over rows that carry `completed_at`."""
+    done = sum(1 for r in rows if r["completed_at"])
+    return {"completed": done, "completion_rate": _rate(done, len(rows))}
+
+
+def regime_coverage(conn, start=None, end=None, symbol=None, arm=None) -> dict:
     """How much of the settled book is regime-tagged at all, per dimension, and whether any
     dimension is degenerate (every tagged row in one bucket).
 
@@ -482,7 +495,7 @@ def regime_coverage(conn, start=None, end=None, symbol=None) -> dict:
     was re-cut on 97 rows, and this is what makes the sessions behind such a decision visible before
     it is taken rather than after.
     """
-    where, params = _period_clause(start, end, symbol=symbol)
+    where, params = _period_clause(start, end, arm=arm, symbol=symbol)
     total = conn.execute(f"SELECT COUNT(*) FROM fly_positions WHERE {where}", params).fetchone()[0]
     out = {"settled_trades": total, "dimensions": {}}
     for dim, (bucket_col, value_col) in REGIME_DIMENSIONS.items():
@@ -514,6 +527,122 @@ def regime_coverage(conn, start=None, end=None, symbol=None) -> dict:
             "underpowered": tagged > 0 and sessions < MIN_EFFECTIVE_N,
         }
     return out
+
+
+# --------------------------------------------------------------------------- regime cuts (artifact)
+def _entry_mode_clause(where: str, params: list, entry_modes) -> tuple[str, list]:
+    if entry_modes:
+        where += f" AND entry_mode IN ({','.join('?' * len(entry_modes))})"
+        params = [*params, *entry_modes]
+    return where, params
+
+
+def _cross_tab(conn, dims: tuple[str, str], *, start, end, symbol, entry_modes, arm) -> list[dict]:
+    """One book's cells over two dimensions' stored buckets. Untagged on either side lands in
+    `untagged`; the cell carries the same bundle a single-dimension bucket does."""
+    (col_a, _), (col_b, _) = (REGIME_DIMENSIONS[d] for d in dims)
+    where, params = _period_clause(start, end, arm=arm, symbol=symbol)
+    where, params = _entry_mode_clause(where, params, entry_modes)
+    rows = conn.execute(
+        f"SELECT {col_a} AS a, {col_b} AS b, gross_pnl, fees, pnl, trade_date, completed_at "
+        f"FROM fly_positions WHERE {where}",
+        params,
+    ).fetchall()
+    grouped: dict[tuple[str, str], list] = {}
+    for r in rows:
+        grouped.setdefault((r["a"] or "untagged", r["b"] or "untagged"), []).append(r)
+    return [
+        {
+            "buckets": [a, b],
+            "sessions": len({r["trade_date"] for r in rs if r["trade_date"]}),
+            **_summarize(rs),
+            **_completion(rs),
+        }
+        for (a, b), rs in grouped.items()
+    ]
+
+
+def regime_cuts(
+    conn,
+    *,
+    session: str,
+    symbol: str = "SPX",
+    entry_modes=COMPARISON_ENTRY_MODES,
+    phase: str = "entry",
+    cross_tabs=_rc.DEFAULT_CROSS_TABS,
+    breaks: list[dict] | None = None,
+    generated_at: str | None = None,
+) -> dict:
+    """The regime-cuts artifact for `session`: every arm with settled rows inside the era, cut by
+    every regime dimension and by the declared cross-tabs, with the era scoped by this ledger's
+    `measurement_breaks` journal (see `cherrypick.core.regimecuts` for the rules and the reason).
+
+    Read-only over the ledger. `breaks` and `generated_at` are injectable so a test can pin the
+    document byte for byte; the CLI passes neither."""
+    from cherrypick.flies import db as dbmod
+
+    if breaks is None:
+        breaks = dbmod.measurement_breaks(conn)
+    era = _rc.era_bounds(breaks, session)
+    where, params = _period_clause(era["start"], session, symbol=symbol)
+    where, params = _entry_mode_clause(where, params, entry_modes)
+    arms = [
+        r[0] for r in conn.execute(f"SELECT DISTINCT arm FROM fly_positions WHERE {where}", params) if r[0]
+    ]
+
+    books = []
+    for arm in arms:
+        start, brk = _rc.book_start(era, arm)
+        w, p = _period_clause(start, session, arm=arm, symbol=symbol)
+        w, p = _entry_mode_clause(w, p, entry_modes)
+        rows = conn.execute(
+            f"SELECT gross_pnl, fees, pnl, trade_date, completed_at FROM fly_positions WHERE {w}", p
+        ).fetchall()
+        summary = {
+            "sessions": len({r["trade_date"] for r in rows if r["trade_date"]}),
+            **_summarize(rows),
+            **_completion(rows),
+        }
+        coverage = regime_coverage(conn, start, session, symbol=symbol, arm=arm)["dimensions"]
+        regimes = {
+            dim: by_regime(conn, dim, start, session, entry_modes, symbol, phase=phase, arm=arm)
+            for dim in REGIME_DIMENSIONS
+        }
+        books.append(
+            {
+                "book": arm,
+                "era_start": start,
+                "era_break": brk,
+                "summary": summary,
+                "coverage": coverage,
+                "regimes": regimes,
+            }
+        )
+
+    tabs = []
+    for dims in cross_tabs:
+        entries = []
+        for arm in arms:
+            start, _ = _rc.book_start(era, arm)
+            cells = _cross_tab(
+                conn, tuple(dims), start=start, end=session, symbol=symbol, entry_modes=entry_modes, arm=arm
+            )
+            entries.append({"book": arm, "cells": cells})
+        tabs.append({"dims": list(dims), "books": entries})
+
+    return _rc.assemble(
+        module="flies",
+        session=session,
+        symbol=symbol,
+        book_column="arm",
+        entry_modes=entry_modes,
+        phase=phase,
+        era=era,
+        books=books,
+        cross_tabs=tabs,
+        generated_at=generated_at or clock.now_iso(),
+        min_effective_n=MIN_EFFECTIVE_N,
+    )
 
 
 def by_entry_mode(conn, start=None, end=None, symbol=None) -> list[dict]:

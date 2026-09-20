@@ -443,6 +443,29 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 > - **Writes are confined** to `data/advisor/**` and `state/advice/*.json` — enforced by a
 >   file-tree snapshot test around a full factpack→admit→enact run.
 
+## `regime_cuts` in the deep pack (2026-09-19)
+
+A deep-only key carrying, per module that writes one (flies and MEIC), that module's own nightly
+regime-cuts artifact thinned: per-book outcomes by the regime each entry was tagged with, era-
+scoped by the module's `measurement_breaks` journal (`cherrypick.core.regimecuts` holds the
+rules). Read through `store.read_json` from `data/<module>/regime_cuts.json`; absent, or a
+`cut_version` this pack does not read, is `{"_absent": ...}` per module, and an artifact for
+another session carries `_stale`. The thinning is the point: books under three sessions collapse
+to `_thin_books`, dimensions under 50% coverage or degenerate are dropped and named under
+`_dropped`, cross-tab cells keep only the six largest non-thin ones, every cell is ONE string
+(`sessions=13 trades=70 completion=80% net=+861`; sessions first, deliberately), and **a thin cell
+reads `sessions=2 trades=4 thin` with no P&L at all** -- because on 2026-09-18 a two-dimension cut
+by hand made net-GEX sign look predictive of flies completion until the trend cross-tab showed the
+effect sat in one seven-session cell. The pack should not be able to make that mistake. Measured
+the day it landed: 23 KB for the real pair (four flies books, three MEIC), 0.12 of the ceiling;
+the dict form of the same cells was 48 KB, which is why they are strings. `test_factpack.py` pins
+a synthetic far case (twelve mature flies books x six dimensions plus three MEIC x eight) under
+64 KB. The deep pack itself measured 372 KB without this section against its 200 KB ceiling.
+
+**Measurement break for the advisor: proposals either side of 2026-09-22 (the first deep
+checkpoint that reads it) were made on different evidence.** Same rule as the 2026-08-26 budget
+break.
+
 ## Tool Reference
 
 | Command | Purpose |

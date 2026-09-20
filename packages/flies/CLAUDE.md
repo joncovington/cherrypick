@@ -60,7 +60,7 @@ Keeping those two straight is the module's main job. See "The honesty rules" bel
 | `cherrypick/flies/db.py` | `fly_positions` (ledger) and `fly_books` (roll-up with the floor's price band). |
 | `cherrypick/flies/analytics.py` | the one query layer every read surface goes through. Read-only. |
 | `cherrypick/flies/eod.py` | Report builders, retired 2026-08-13 — the module no longer writes `paper-eod`/`eod-analysis`; `packages/review` reports the session across every module. `logs_dir()` is still the loops' path helper. |
-| `cherrypick/flies/cli.py` | `once` / `settle` / `status` / `regime`. |
+| `cherrypick/flies/cli.py` | `once` / `settle` / `status` / `regime` / `bands` / `replay-gates` / `hedge-overlay` / `reversal-book` / `regime-cuts`. |
 | `cherrypick/flies/live_loop.py` | The LIVE loop: a 1-min `--once --live` tick fired by the orchestrator's supervisor while the arm record (`state/flies-live-arm.json`, written per-day via `/live-flies-start`) is valid; self-disarms at `live.disarm_time` by deleting the record. Burst fill-watchers (`--watch-fills`) unchanged. The arm record, the two disarm reasons, the supervisor-heartbeat read and the record-only arming rule are `cherrypick.core.live` since 2026-09-18 (thin wrappers here; the legacy schtasks fallback and pre-cutover record location stay flies-only); fill confirmation reads status rows through `cherrypick.core.execution.fill_state`. `--once` (dry-run default) is the rung-0 smoke; `--status`, `--settle --price` for the official print. Every live tick also marks each open position at mid into `fly_live_marks` (2026-09-17: `fly.structure_mid` / `fly.mark_pnl`, the tick's open worst-case exposure, and the resting completion limit while one works) -- pure telemetry after every decision; a position with an unquoted leg gets no row rather than a zero. A mid is not a fill. Live only: paper's result is settled payoff by design. |
 | `cherrypick/flies/broker_cli.py` | Thin broker seam on `cherrypick.core.broker` (preflight/governor); `--live` double-gated. The loop's adapter (`live_loop.BrokerAdapter`) is `cherrypick.core.execution.Broker` since 2026-09-17 with this module's session, account, `live_gates`, serializer and deploy cap injected -- the adapter's incident-driven behaviours and their tests moved to core so the next live module inherits them; only the REST re-quote remains here. The settlement-print chain moved to `cherrypick.core.settlement` on 2026-09-18 (bwb is its second consumer); `official_settlement_price` here is that function, kept as a module attribute so the adapter and tests patch one seam. |
 | `cherrypick/flies/live_orders.py` | Pure engine-decision → order-spec builders (OCC symbols from the provider). Tick rounding is `cherrypick.core.structures` since 2026-09-18. |
@@ -155,6 +155,25 @@ decomposes into two measurable claims, neither of which needs a new arm:
   nothing this pairing does not, and would break the one-variable rule twice. An unmatched base
   entry is reported, never paired with a distant partner: the coupling under test is entry at
   about the same moment.
+
+**The regime-cuts artifact (2026-09-19, `python run.py regime-cuts --write`).** Every arm with
+settled rows inside the era, cut by every regime dimension and by one declared cross-tab (gex x
+trend), written nightly at 16:40 ET by the supervisor (`paper.regime_cuts_at` / `regime_cuts_argv`
+in the suite config) to `data/flies/regime_cuts-<session>.json` plus a `regime_cuts.json` latest
+copy that only a newer session replaces, so `--session` re-cuts a past day beside the current one
+and `--backfill --since` fills a run of them. The contract lives in `cherrypick.core.regimecuts`
+and MEIC writes the same shape from its own `by_regime`; the console renders it as the "regime
+cuts" slide and the advisor's deep pack reads it thinned, and neither recomputes a cell. Two rules
+travel in the writer rather than in any reader. The era is scoped by this ledger's
+`measurement_breaks`: the latest book-wide break on or before the session starts it, an arm added
+later starts at its own `arm_added` break, a break dated ahead (the early-close and
+triple-witching gates, journaled at their first binding session) is listed as declared and ignored
+until it passes, and a `partial_session` break never bounds anything -- it is a caveat. And every
+cell carries `sessions` with `thin` stamped when there are fewer than three, because a cut by hand
+on 2026-09-18 made net-GEX sign look predictive of completion (84% against 75%) until the trend
+cross-tab showed the whole effect sat in one seven-session cell, positive gamma on up-from-open
+days. That cell is why the cross-tab exists. `by_regime` gained `arm=` and `completed` /
+`completion_rate` for this; `_summarize`'s shape is untouched.
 
 **Everything past the completion rate lives on a time axis, so the console's flies page has one.** `analytics.session_timeline`
 assembles the day from rows already written — spot and every arm's wanted centre on each iteration,

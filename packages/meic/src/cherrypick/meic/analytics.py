@@ -375,6 +375,109 @@ def regime_coverage(conn, start=None, end=None, symbol=None, era=CURRENT_ERA, ar
     return out
 
 
+# --------------------------------------------------------------------------- regime cuts (artifact)
+def _cross_tab(conn, dims, *, start, end, symbol, era, arm) -> list[dict]:
+    """One book's cells over two dimensions' buckets (gex re-derived the way `_bucket_expr` does).
+    Untagged on either side lands in `untagged`."""
+    expr_a, expr_b = (_bucket_expr(d) for d in dims)
+    where, params = _period_clause(start, end, arm, symbol, era)
+    rows = conn.execute(
+        f"SELECT {expr_a} AS a, {expr_b} AS b, pnl, fees, trade_date FROM ic_trades WHERE {where}",
+        params,
+    ).fetchall()
+    grouped: dict[tuple[str, str], list] = {}
+    for r in rows:
+        grouped.setdefault((r["a"] or "untagged", r["b"] or "untagged"), []).append(r)
+    return [{"buckets": [a, b], **_summarize(rs)} for (a, b), rs in grouped.items()]
+
+
+def regime_cuts(
+    conn,
+    *,
+    session: str,
+    symbol=None,
+    era=CURRENT_ERA,
+    cross_tabs=None,
+    breaks: list[dict] | None = None,
+    generated_at: str | None = None,
+) -> dict:
+    """The regime-cuts artifact for `session`: every profile with resolved rows inside the era, cut
+    by every regime dimension and by the declared cross-tabs, under the shared contract in
+    `cherrypick.core.regimecuts` (era from this ledger's `measurement_breaks`, `thin` stamped by
+    the writer, one document shape for every module).
+
+    Two era statements ride together on purpose: `era.start` comes from the breaks journal and the
+    `era` column filter (`CURRENT_ERA` by default) is applied as well and recorded as `era.key`.
+    Today they agree (2026-08-21); if they ever diverge the artifact shows both rather than
+    averaging them. Completion fields are null: a condor resolves, it does not complete.
+
+    Read-only over the ledger. `breaks` and `generated_at` are injectable for tests.
+    """
+    from cherrypick.core import clock as _clock
+    from cherrypick.core import regimecuts as _rc
+
+    from cherrypick.meic import db as _db
+
+    if cross_tabs is None:
+        cross_tabs = _rc.DEFAULT_CROSS_TABS
+    if breaks is None:
+        breaks = _db.measurement_breaks(conn)
+    bounds = _rc.era_bounds(breaks, session)
+    where, params = _period_clause(bounds["start"], session, None, symbol, era)
+    profiles = [
+        r[0]
+        for r in conn.execute(f"SELECT DISTINCT risk_profile FROM ic_trades WHERE {where}", params)
+        if r[0]
+    ]
+
+    books = []
+    for profile in profiles:
+        start, brk = _rc.book_start(bounds, profile)
+        w, p = _period_clause(start, session, profile, symbol, era)
+        rows = conn.execute(f"SELECT pnl, fees, trade_date FROM ic_trades WHERE {w}", p).fetchall()
+        coverage = regime_coverage(conn, start, session, symbol, era, arm=profile)["dimensions"]
+        regimes = {
+            dim: by_regime(conn, dim, start, session, symbol, era, arm=profile) for dim in REGIME_DIMENSIONS
+        }
+        books.append(
+            {
+                "book": profile,
+                "era_start": start,
+                "era_break": brk,
+                "summary": _summarize(rows),
+                "coverage": coverage,
+                "regimes": regimes,
+            }
+        )
+
+    tabs = []
+    for dims in cross_tabs:
+        entries = []
+        for profile in profiles:
+            start, _ = _rc.book_start(bounds, profile)
+            cells = _cross_tab(
+                conn, tuple(dims), start=start, end=session, symbol=symbol, era=era, arm=profile
+            )
+            entries.append({"book": profile, "cells": cells})
+        tabs.append({"dims": list(dims), "books": entries})
+
+    doc = _rc.assemble(
+        module="meic",
+        session=session,
+        symbol=symbol,
+        book_column="risk_profile",
+        entry_modes=None,
+        phase="entry",
+        era=bounds,
+        books=books,
+        cross_tabs=tabs,
+        generated_at=generated_at or _clock.now_iso(),
+        min_effective_n=MIN_EFFECTIVE_N,
+    )
+    doc["era"]["key"] = era
+    return doc
+
+
 # --------------------------------------------------------------------------- exit detail
 
 

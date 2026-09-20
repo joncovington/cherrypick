@@ -648,6 +648,7 @@ export type {
   ModulePerformanceResult,
 } from "@console/shared";
 import type { ModulePerformanceResult, PerformanceModuleId } from "@console/shared";
+import type { RegimeCutsModule, RegimeCutsPayload } from "@console/shared";
 
 /** One module's calibration reading, exit reasons, advised pairs and measurement breaks in one
  * request (`GET /api/performance/:module`). `era="current"` (the default) bounds to the suite's own
@@ -662,3 +663,16 @@ export function useModulePerformance(module: PerformanceModuleId, era: "current"
   });
 }
 
+
+/** The regime-cuts artifact for one module (`GET /api/<module>/regime-cuts[?session=]`): the
+ * module's own nightly per-book x per-regime cut, rendered without recomputation. `session`
+ * null = the latest artifact. Polled slowly: the file changes once a day. */
+export function useRegimeCuts(module: RegimeCutsModule, session: string | null = null) {
+  const qs = session === null ? "" : `?session=${encodeURIComponent(session)}`;
+  return useQuery<RegimeCutsPayload>({
+    queryKey: ["regime-cuts", module, session],
+    queryFn: () => getJson<RegimeCutsPayload>(`/api/${module}/regime-cuts${qs}`),
+    refetchInterval: 300_000,
+    placeholderData: (prev) => prev,
+  });
+}

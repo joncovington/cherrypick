@@ -38,6 +38,7 @@ import { readPmcc, readPmccAssignments, readPmccHistory, readPmccMeta, resolvePm
 import { readCurve, readCurveHistory, readCurveMeta, resolveCurveSession } from "../readers/curve.js";
 import { readBwb, readBwbHistory, readBwbMeta } from "../readers/bwb.js";
 import { readCalendars, readCalendarsWeek, readCalendarsWeeks } from "../readers/calendars.js";
+import { readRegimeCuts } from "../readers/regimeCuts.js";
 import { readCalendarsPolicies } from "../services/calendarsBridge.js";
 import { readEarnings, readSymbolWatch, readEarningsAnalytics, readEarningsDetail } from "../readers/earnings.js";
 import { readEarningsLive } from "../readers/earningsLive.js";
@@ -168,6 +169,14 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const scope = parseMeicScope(req.query);
     return readMeicPerformance(config, parseMode(req.query), gran, scope.symbol, scope.profile, scope.era);
   });
+  /** null = the latest artifact; a date = that session's dated file; false = malformed. */
+  function parseRegimeSession(query: unknown): string | null | false {
+    const q = (query ?? {}) as Record<string, unknown>;
+    const raw = q["session"];
+    if (raw === undefined || raw === "") return null;
+    return typeof raw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : false;
+  }
+
   const parseFliesFilter = (q: unknown): FliesFilter => {
     const query = (q ?? {}) as Record<string, unknown>;
     const date = typeof query["date"] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(query["date"]) ? query["date"] : null;
@@ -250,6 +259,18 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/flies/forest", async (req) => {
     const f = parseFliesFilter(req.query);
     return readFliesForest(config, parseMode(req.query), f.date, f.arm);
+  });
+  // The regime-cuts artifact (2026-09-19), paper-only by construction (the writer cuts the paper
+  // ledger), so no `mode`. `?session=` reads a dated artifact instead of the latest.
+  app.get("/api/flies/regime-cuts", async (req, reply) => {
+    const session = parseRegimeSession(req.query);
+    if (session === false) return reply.code(400).send({ error: "session must be YYYY-MM-DD" });
+    return readRegimeCuts(config, "flies", session);
+  });
+  app.get("/api/meic/regime-cuts", async (req, reply) => {
+    const session = parseRegimeSession(req.query);
+    if (session === false) return reply.code(400).send({ error: "session must be YYYY-MM-DD" });
+    return readRegimeCuts(config, "meic", session);
   });
   // PMCC-99. No `mode` on any of these: the module has no live loop and no live store, so a mode
   // parameter could only ever name a book that does not exist.

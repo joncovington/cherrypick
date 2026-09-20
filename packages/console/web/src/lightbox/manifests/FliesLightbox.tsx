@@ -21,6 +21,7 @@ import { PerformanceSlide } from "../../components/performance/PerformanceSlide"
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { ExperimentGuideView } from "../../components/ExperimentGuide";
 import { structureLabel } from "../../pages/Flies/structure";
+import { RegimeCutsTab } from "../../components/RegimeCutsTab";
 import { LightboxFrame } from "../LightboxFrame";
 import type { SlideDef } from "../types";
 
@@ -307,6 +308,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
     { id: "advisor", label: "advisor", render: () => <AdvisorSlide module="flies" /> },
     { id: "performance", label: "performance", render: () => <PerformanceSlide module="flies" /> },
     { id: "history", label: "history", render: () => <HistoryTab mode={mode} filter={multiDayFilter} onReplayDay={replayDay} /> },
+    { id: "regime", label: "regime cuts", render: () => <RegimeCutsTab module="flies" /> },
     {
       id: "guide",
       label: "help",

@@ -1451,6 +1451,140 @@ def _settlement_integrity(session: str) -> dict[str, Any]:
 _BAND_MARGIN_BUCKETS = ((float("-inf"), 0.0), (0.0, 10.0), (10.0, 25.0), (25.0, 50.0), (50.0, float("inf")))
 
 
+# --------------------------------------------------------------------------- regime cuts (deep)
+REGIME_CUTS_MODULES = ("flies", "meic")
+REGIME_CUTS_VERSION = 1
+REGIME_CUTS_MIN_COVERAGE_PCT = 50.0
+REGIME_CUTS_CROSS_CELLS = 6
+_REGIME_CELL_FORMAT = (
+    "one string per cell: sessions=S trades=N completion=P% (or win=P% where the module has no "
+    "completion concept) net=+D; a thin cell reads sessions=S trades=N thin and carries no P&L"
+)
+_REGIME_CUTS_NOTE = (
+    "Per-book outcomes by the regime each entry was tagged with, written nightly by the module "
+    "itself (data/<module>/regime_cuts.json; contract in cherrypick.core.regimecuts) and thinned "
+    "here. Era-scoped by the module's measurement_breaks journal: nothing pools across a journaled "
+    "break, and a book added later starts at its own arm_added break. A `thin` cell (fewer than "
+    "thin_below_sessions sessions) carries NO P&L on purpose -- a seven-session cell once made "
+    "net-GEX sign look predictive of flies completion until the trend cross-tab showed where the "
+    "effect sat. Read `sessions` before anything else; same-day entries share a regime. Dimensions "
+    "under 50% coverage or degenerate are dropped and named under _dropped. Cells are "
+    + _REGIME_CELL_FORMAT
+    + "."
+)
+
+
+def _cell_text(cell: dict[str, Any]) -> str:
+    """One line per cell. A cell is a contrast, not a ledger row, and the pack is an attention
+    budget: the dict form cost seven lines a cell and 48 KB for seven books."""
+    sessions, trades = cell.get("sessions"), cell.get("trades")
+    if cell.get("thin"):
+        return f"sessions={sessions} trades={trades} thin"
+    rate = cell.get("completion_rate")
+    label = "completion"
+    if rate is None:
+        rate, label = cell.get("win_rate"), "win"
+    pct = "?" if rate is None else f"{rate * 100:.0f}%"
+    net = cell.get("net_pnl")
+    net_s = "?" if net is None else f"{net:+.0f}"
+    return f"sessions={sessions} trades={trades} {label}={pct} net={net_s}"
+
+
+def _thin_regime_cuts(doc: dict[str, Any], session: str) -> dict[str, Any]:
+    """The model's slice of one module's artifact: contrast, not bookkeeping."""
+    era = doc.get("era") or {}
+    out: dict[str, Any] = {
+        "session": doc.get("session"),
+        "generated_at": doc.get("generated_at"),
+        "thin_below_sessions": doc.get("thin_below_sessions"),
+        "era": {
+            "start": era.get("start"),
+            "bounding_break": (era.get("bounding_break") or {}).get("kind"),
+            "key": era.get("key"),
+            "ignored_future": [b.get("break_date") for b in era.get("ignored_future") or []],
+            "caveats": [b.get("break_date") for b in era.get("caveats") or []],
+        },
+        "books": [],
+        "_thin_books": [],
+        "cross_tabs": [],
+    }
+    if doc.get("session") != session:
+        out["_stale"] = {"artifact_session": doc.get("session"), "pack_session": session}
+    thin_below = int(doc.get("thin_below_sessions") or 3)
+    for book in doc.get("books") or []:
+        if int(book.get("sessions") or 0) < thin_below:
+            out["_thin_books"].append(
+                {"book": book.get("book"), "sessions": book.get("sessions"), "trades": book.get("trades")}
+            )
+            continue
+        entry: dict[str, Any] = {
+            "book": book.get("book"),
+            "era_start": book.get("era_start"),
+            "sessions": book.get("sessions"),
+            "trades": book.get("trades"),
+            "win_rate": book.get("win_rate"),
+            "net_pnl": book.get("net_pnl"),
+            "dimensions": {},
+            "_dropped": {},
+        }
+        if book.get("completion_rate") is not None:
+            entry["completion_rate"] = book.get("completion_rate")
+        for dim, d in (book.get("dimensions") or {}).items():
+            cov = d.get("coverage_pct")
+            if d.get("degenerate"):
+                entry["_dropped"][dim] = "degenerate: every tagged row in one bucket"
+                continue
+            if cov is None or cov < REGIME_CUTS_MIN_COVERAGE_PCT:
+                entry["_dropped"][dim] = f"coverage {cov}% under {REGIME_CUTS_MIN_COVERAGE_PCT:g}%"
+                continue
+            entry["dimensions"][dim] = {
+                "sessions": d.get("sessions"),
+                "effective_n": d.get("effective_n"),
+                "underpowered": d.get("underpowered"),
+                "buckets": {str(c.get("bucket")): _cell_text(c) for c in d.get("buckets") or []},
+            }
+        out["books"].append(entry)
+    for tab in doc.get("cross_tabs") or []:
+        books = []
+        for b in tab.get("books") or []:
+            live = [c for c in b.get("cells") or [] if not c.get("thin")]
+            live.sort(key=lambda c: -int(c.get("trades") or 0))
+            cells = {
+                "/".join(map(str, c.get("buckets") or [])): _cell_text(c)
+                for c in live[:REGIME_CUTS_CROSS_CELLS]
+            }
+            item: dict[str, Any] = {"book": b.get("book"), "cells": cells}
+            if not cells:
+                item["_all_thin"] = True
+            books.append(item)
+        out["cross_tabs"].append({"dims": tab.get("dims"), "books": books})
+    return out
+
+
+def _regime_cuts(session: str, modules) -> dict[str, Any]:
+    """`{module: thinned artifact | {_absent}}` for every selected module that writes one."""
+    out: dict[str, Any] = {"_note": _REGIME_CUTS_NOTE}
+    for module in REGIME_CUTS_MODULES:
+        if module not in modules:
+            continue
+        doc = _store.read_json(_paths.module_data_dir(module) / "regime_cuts.json", default=None)
+        if not isinstance(doc, dict):
+            out[module] = {
+                "_absent": f"no {module} regime_cuts artifact ({module}-regime-cuts has not written one)"
+            }
+            continue
+        if doc.get("cut_version") != REGIME_CUTS_VERSION:
+            out[module] = {
+                "_absent": (
+                    f"{module} regime_cuts artifact is cut_version {doc.get('cut_version')!r}; "
+                    f"this pack reads {REGIME_CUTS_VERSION}"
+                )
+            }
+            continue
+        out[module] = _thin_regime_cuts(doc, session)
+    return out
+
+
 def _flies_band_containment() -> dict[str, Any]:
     """Band placement vs the session's realized range, over every flies book ever recorded.
 
@@ -1769,6 +1903,10 @@ def build(session: str, slot: str, modules: tuple[str, ...] | list[str] | None =
             # and the light slots have no verdict to inform with it.
             if "flies" in selected:
                 pack["flies_band_containment"] = _flies_band_containment()
+            # The nightly per-book x per-regime cut each module writes for itself (2026-09-19),
+            # thinned. Deep-only: it is era-wide evidence, and the light slots have no verdict to
+            # inform with it.
+            pack["regime_cuts"] = _regime_cuts(session, selected)
             pack["bounds"] = _bounds.all_modules(selected)
             pack["experiments_full"] = {
                 "active": [

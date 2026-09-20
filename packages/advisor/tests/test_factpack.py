@@ -818,3 +818,260 @@ def test_experiments_full_carries_one_fresh_verdict_per_experiment_not_raw_rows(
     assert brief["verdict"]["computed_by"] == "cherrypick.advisor.verdicts"
     assert brief["verdict"]["sessions_run"] == 4, "fresh, not the stale stored body"
     assert brief["params"] == {"stop_trigger_ratio": 0.9}
+
+
+# --------------------------------------------------------------------------- regime cuts (2026-09-19)
+def _regime_doc(module="flies", session=SESSION, **overrides):
+    doc = {
+        "cut_version": 1,
+        "module": module,
+        "generated_at": "t",
+        "session": session,
+        "thin_below_sessions": 3,
+        "era": {
+            "start": "2026-08-21",
+            "bounding_break": {"break_date": "2026-08-21", "scope": "*", "kind": "cutover"},
+            "ignored_future": [{"break_date": "2026-12-18", "scope": "*", "kind": "entry_rules"}],
+            "caveats": [],
+        },
+        "books": [
+            {
+                "book": "control",
+                "era_start": "2026-08-21",
+                "sessions": 19,
+                "trades": 128,
+                "win_rate": 0.8,
+                "net_pnl": 3306.0,
+                "completion_rate": 0.8,
+                "dimensions": {
+                    "gex": {
+                        "coverage_pct": 100.0,
+                        "degenerate": False,
+                        "sessions": 19,
+                        "effective_n": 19,
+                        "underpowered": False,
+                        "buckets": [
+                            {
+                                "bucket": "diffuse",
+                                "sessions": 13,
+                                "trades": 70,
+                                "net_pnl": 861.0,
+                                "avg_pnl": 12.3,
+                                "win_rate": 0.8,
+                                "completion_rate": 0.8,
+                                "avg_win": 40.0,
+                                "fee_drag_pct": 3.0,
+                                "thin": False,
+                            },
+                            {
+                                "bucket": "pinning",
+                                "sessions": 2,
+                                "trades": 4,
+                                "net_pnl": 500.0,
+                                "avg_pnl": 125.0,
+                                "win_rate": 1.0,
+                                "completion_rate": 1.0,
+                                "thin": True,
+                            },
+                        ],
+                    },
+                    "skew": {
+                        "coverage_pct": 20.0,
+                        "degenerate": False,
+                        "sessions": 4,
+                        "effective_n": 4,
+                        "underpowered": True,
+                        "buckets": [{"bucket": "x", "sessions": 4, "trades": 5, "thin": False}],
+                    },
+                    "center_offset": {
+                        "coverage_pct": 100.0,
+                        "degenerate": True,
+                        "sessions": 19,
+                        "effective_n": 19,
+                        "underpowered": False,
+                        "buckets": [{"bucket": "at_spot", "sessions": 19, "trades": 128, "thin": False}],
+                    },
+                },
+            },
+            {
+                "book": "advised:new",
+                "era_start": "2026-09-17",
+                "sessions": 2,
+                "trades": 9,
+                "win_rate": 1.0,
+                "net_pnl": 90.0,
+                "dimensions": {},
+            },
+        ],
+        "cross_tabs": [
+            {
+                "dims": ["gex", "trend"],
+                "books": [
+                    {
+                        "book": "control",
+                        "cells": [
+                            {
+                                "buckets": ["diffuse", "flat"],
+                                "sessions": 13,
+                                "trades": 39,
+                                "net_pnl": 1002.0,
+                                "avg_pnl": 25.0,
+                                "win_rate": 0.9,
+                                "thin": False,
+                            },
+                            {
+                                "buckets": ["pinning", "up"],
+                                "sessions": 2,
+                                "trades": 4,
+                                "net_pnl": -166.0,
+                                "avg_pnl": -41.0,
+                                "win_rate": 0.5,
+                                "thin": True,
+                            },
+                        ],
+                    },
+                    {
+                        "book": "advised:new",
+                        "cells": [
+                            {"buckets": ["a", "b"], "sessions": 1, "trades": 2, "net_pnl": 1.0, "thin": True}
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
+    doc.update(overrides)
+    return doc
+
+
+def _write_regime_doc(tmp_home, module, doc):
+    d = paths.module_data_dir(module)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "regime_cuts.json").write_text(json.dumps(doc), encoding="utf-8")
+
+
+def test_the_regime_cuts_section_rides_the_deep_pack_only(tmp_home):
+    assert "regime_cuts" not in factpack.build(SESSION, "midday")
+    deep = factpack.build(SESSION, "deep")
+    assert "regime_cuts" in deep and "_note" in deep["regime_cuts"]
+
+
+def test_regime_cuts_absent_artifact_reports_absent_per_module(tmp_home):
+    out = factpack._regime_cuts(SESSION, ("flies", "meic"))
+    assert out["flies"]["_absent"] and out["meic"]["_absent"]
+    assert set(out) == {"_note", "flies", "meic"}
+
+
+def test_regime_cuts_thin_cells_carry_no_pnl(tmp_home):
+    """Shown to fail by keeping net_pnl on a thin cell: a model reading a two-session cell's net
+    is the exact misread the artifact exists to prevent. Cells are one string each."""
+    _write_regime_doc(tmp_home, "flies", _regime_doc())
+    out = factpack._regime_cuts(SESSION, ("flies",))["flies"]
+    gex = out["books"][0]["dimensions"]["gex"]["buckets"]
+    assert gex["pinning"] == "sessions=2 trades=4 thin"
+    assert gex["diffuse"] == "sessions=13 trades=70 completion=80% net=+861"
+    # cross-tab: non-thin cells only, and a book left with none says so
+    ct = out["cross_tabs"][0]["books"]
+    assert ct[0]["cells"] == {"diffuse/flat": "sessions=13 trades=39 win=90% net=+1002"}
+    assert ct[1]["cells"] == {} and ct[1]["_all_thin"] is True
+
+
+def test_regime_cuts_drops_low_coverage_and_degenerate_dimensions_and_says_so(tmp_home):
+    _write_regime_doc(tmp_home, "flies", _regime_doc())
+    book = factpack._regime_cuts(SESSION, ("flies",))["flies"]["books"][0]
+    assert set(book["dimensions"]) == {"gex"}
+    assert "coverage 20.0%" in book["_dropped"]["skew"] and "degenerate" in book["_dropped"]["center_offset"]
+
+
+def test_regime_cuts_collapses_thin_books_and_labels_a_stale_artifact(tmp_home):
+    _write_regime_doc(tmp_home, "flies", _regime_doc(session="2026-08-12"))
+    out = factpack._regime_cuts(SESSION, ("flies",))["flies"]
+    assert out["_stale"] == {"artifact_session": "2026-08-12", "pack_session": SESSION}
+    assert out["_thin_books"] == [{"book": "advised:new", "sessions": 2, "trades": 9}]
+    assert [b["book"] for b in out["books"]] == ["control"]
+    assert out["era"]["ignored_future"] == ["2026-12-18"] and out["era"]["bounding_break"] == "cutover"
+
+
+def test_regime_cuts_unknown_cut_version_is_absent_not_misread(tmp_home):
+    _write_regime_doc(tmp_home, "meic", _regime_doc(module="meic", cut_version=2))
+    out = factpack._regime_cuts(SESSION, ("meic",))["meic"]
+    assert "cut_version 2" in out["_absent"]
+
+
+def test_regime_cuts_thinned_sections_fit_the_attention_budget(tmp_home):
+    """A synthetic worst case: flies 12 books x 6 dims x 4 buckets, meic 3 books x 8 dims x 4
+    buckets, every cell populated, plus a twelve-cell cross-tab per book. The two thinned sections
+    together must stay under 64 KB; twelve MATURE flies books is the far case."""
+
+    def big(module, n_books, dims):
+        books = []
+        for i in range(n_books):
+            book = {
+                "book": f"b{i}",
+                "era_start": "2026-08-21",
+                "sessions": 20,
+                "trades": 400,
+                "win_rate": 0.8,
+                "net_pnl": 1234.56,
+                "completion_rate": 0.77,
+                "dimensions": {},
+            }
+            for dim in dims:
+                book["dimensions"][dim] = {
+                    "coverage_pct": 100.0,
+                    "degenerate": False,
+                    "sessions": 20,
+                    "effective_n": 20,
+                    "underpowered": False,
+                    "buckets": [
+                        {
+                            "bucket": f"k{j}",
+                            "sessions": 20,
+                            "trades": 100,
+                            "net_pnl": 123.45,
+                            "avg_pnl": 1.23,
+                            "win_rate": 0.81,
+                            "completion_rate": 0.7,
+                            "value_min": 0.1,
+                            "value_max": 0.9,
+                            "wins": 80,
+                            "losses": 20,
+                            "gross_pnl": 200.0,
+                            "fees": 76.55,
+                            "avg_win": 3.0,
+                            "avg_loss": -4.0,
+                            "fee_drag_pct": 38.3,
+                            "profit_factor": 1.5,
+                            "thin": False,
+                        }
+                        for j in range(4)
+                    ],
+                }
+            books.append(book)
+        cells = [
+            {
+                "buckets": [f"g{j}", f"t{k}"],
+                "sessions": 20,
+                "trades": 50,
+                "net_pnl": 10.0,
+                "avg_pnl": 0.2,
+                "win_rate": 0.8,
+                "thin": False,
+            }
+            for j in range(4)
+            for k in range(3)
+        ]
+        return _regime_doc(
+            module=module,
+            books=books,
+            cross_tabs=[
+                {"dims": ["gex", "trend"], "books": [{"book": b["book"], "cells": cells} for b in books]}
+            ],
+        )
+
+    _write_regime_doc(
+        tmp_home, "flies", big("flies", 12, ["vol", "gex", "time", "skew", "center_offset", "trend"])
+    )
+    _write_regime_doc(tmp_home, "meic", big("meic", 3, [f"d{i}" for i in range(8)]))
+    out = factpack._regime_cuts(SESSION, ("flies", "meic"))
+    assert len(json.dumps(out, indent=2)) < 64_000

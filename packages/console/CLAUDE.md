@@ -404,6 +404,29 @@ the first browser check found the whole page on skeletons for the broker's 10-20
 read threw" are different facts and the page shows which. There is no button here that touches an
 order, and `dry-run-only.test.ts` still scans this reader like every other file.
 
+## The regime-cuts slide (flies and MEIC, 2026-09-19)
+
+One component, `components/RegimeCutsTab.tsx`, registered as the `regime` slide on both module
+pages, over `GET /api/<module>/regime-cuts[?session=YYYY-MM-DD]` (`routes/modules.ts` ->
+`readers/regimeCuts.ts`). The module writes the artifact nightly (`data/<module>/regime_cuts.json`,
+contract in `cherrypick.core.regimecuts`); this package renders it and computes nothing from it.
+The reader derives exactly one thing, the union of dimension keys across books, so the slide can
+lay out columns; every number, the era, and the `thin` flag come off the file. A reader that
+re-derived `sessions < 3` here would be a second implementation of the writer's threshold, and
+`server/test/regime-cuts.test.ts` pins that with a fixture cell whose `sessions` and `thin`
+disagree on purpose.
+
+Absent, failed and stale are three different facts and three different payloads: the file is not
+there (the nightly job has not run on this machine; the slide names the command), the file is
+malformed or a `cut_version` this console does not read (shown as a failure, not an empty day),
+and the ledger holds a session newer than the artifact's (an `ok` payload carrying `stale`, from
+one `readOnlyDb` `MAX(trade_date)` against a declared per-module table). The earnings JSON reader
+collapses the first two; this one does not. Dated artifacts are listed for a session picker.
+
+Verify in the browser after `pnpm --filter @console/shared build && pnpm build` and a console
+restart: `MSYS_NO_PATHCONV=1 pnpm ui-check --route /flies --click regime --expect "era since"`, and
+the same with `--route /meic`.
+
 ## Suite guardrails (apply here too)
 
 Instruction files hold no code; account numbers masked to `****1234`; portable paths only

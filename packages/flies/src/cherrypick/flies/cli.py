@@ -198,7 +198,51 @@ def cmd_reversal_book(args) -> int:
     return 0
 
 
+def regime_cuts_dir() -> str:
+    """Where the artifact lands: beside advice_active.json, resolved the way paper_loop resolves it."""
+    from cherrypick.flies import paper_loop
+
+    return paper_loop._paper_data_dir()
+
+
+def cmd_regime_cuts(args) -> int:
+    """Print (and with --write, persist) the regime-cuts artifact. `--backfill --since D` writes one
+    dated artifact per settled session from D; the latest copy is only replaced by a newer session
+    (see cherrypick.core.regimecuts.write_artifact)."""
+    from cherrypick.core import regimecuts as _rc
+
+    from cherrypick.flies import analytics, clock
+
+    conn = dbmod.connect(args.db)
+    if args.backfill:
+        if not args.write:
+            print(json.dumps({"ok": False, "error": "--backfill needs --write"}))
+            return 2
+        since = args.since or "0000-00-00"
+        sessions = [
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT trade_date FROM fly_positions WHERE status = 'settled' AND trade_date >= ? "
+                "ORDER BY trade_date",
+                (since,),
+            )
+        ]
+        written = []
+        for day in sessions:
+            doc = analytics.regime_cuts(conn, session=day, symbol=args.symbol)
+            written.append(_rc.write_artifact(regime_cuts_dir(), doc))
+        print(json.dumps({"ok": True, "sessions": sessions, "written": written}, indent=2))
+        return 0
+    session = args.session or clock.today_iso()
+    doc = analytics.regime_cuts(conn, session=session, symbol=args.symbol)
+    out = {"ok": True, "written": _rc.write_artifact(regime_cuts_dir(), doc) if args.write else None, **doc}
+    print(json.dumps(out, indent=2, default=str))
+    return 0
+
+
 def main(argv=None) -> int:
+    from cherrypick.flies import analytics as _analytics
+
     ap = argparse.ArgumentParser(prog="flies", description="0DTE net-credit butterfly paper module")
     ap.add_argument("--config")
     ap.add_argument("--db")
@@ -267,7 +311,7 @@ def main(argv=None) -> int:
     p_regime = sub.add_parser(
         "regime", help="outcomes grouped by the regime entered into, with a coverage guard"
     )
-    p_regime.add_argument("--dimension", choices=["vol", "gex", "time", "skew"], help="default: all")
+    p_regime.add_argument("--dimension", choices=sorted(_analytics.REGIME_DIMENSIONS), help="default: all")
     p_regime.add_argument("--start", help="trade_date >= (YYYY-MM-DD)")
     p_regime.add_argument("--end", help="trade_date <= (YYYY-MM-DD)")
     p_regime.add_argument("--symbol", help="narrow to one underlying")
@@ -279,6 +323,22 @@ def main(argv=None) -> int:
         "(e.g. 0.4,0.6,0.8) — re-derives a threshold from history without re-running sessions",
     )
     p_regime.set_defaults(func=cmd_regime)
+
+    p_cuts = sub.add_parser(
+        "regime-cuts",
+        help="the regime-cuts artifact: every arm x every regime dimension, era-scoped by the "
+        "measurement_breaks journal (cherrypick.core.regimecuts)",
+    )
+    p_cuts.add_argument("--session", help="trade date to cut as of (YYYY-MM-DD); default today (ET)")
+    p_cuts.add_argument("--symbol", default="SPX")
+    p_cuts.add_argument(
+        "--write", action="store_true", help="write data/flies/regime_cuts-<session>.json (+ latest)"
+    )
+    p_cuts.add_argument(
+        "--backfill", action="store_true", help="with --write: one artifact per settled session"
+    )
+    p_cuts.add_argument("--since", help="with --backfill: first session (YYYY-MM-DD)")
+    p_cuts.set_defaults(func=cmd_regime_cuts)
 
     args = ap.parse_args(argv)
     return args.func(args)

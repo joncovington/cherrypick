@@ -508,6 +508,25 @@ def _backfill_credit_richness(conn: sqlite3.Connection) -> None:
         conn.execute("UPDATE ic_trades SET credit_richness = ? WHERE ic_order_id = ?", (value, order_id))
 
 
+def measurement_breaks(conn: sqlite3.Connection, *, scope: str | None = None) -> list[dict]:
+    """Every recorded break, oldest first; `scope` narrows to one profile plus the book-wide rows.
+    The reader the table never had (the CLI only wrote it) -- added 2026-09-19 for the regime-cuts
+    artifact's era scoping. Works on a plain connection or one with row_factory=Row."""
+    if scope:
+        cur = conn.execute(
+            "SELECT break_date, scope, kind, reason, detail, created_at FROM measurement_breaks "
+            "WHERE scope IN (?, '*') ORDER BY break_date, scope, kind",
+            (scope,),
+        )
+    else:
+        cur = conn.execute(
+            "SELECT break_date, scope, kind, reason, detail, created_at FROM measurement_breaks "
+            "ORDER BY break_date, scope, kind"
+        )
+    cols = [c[0] for c in cur.description]
+    return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
+
+
 def stale_writer_columns(conn: sqlite3.Connection) -> list[str]:
     """Regime columns present in this DB file but not written by the running
     regime.classify_regime — a dimension renamed or removed in code but never migrated out of an

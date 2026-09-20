@@ -65,6 +65,10 @@ CATCHUP_MINUTES = {
     # different: it issues the next session's advice, so it stays worth firing until late evening.
     "advisor-light": 45,
     "advisor-deep": 300,
+    # The nightly regime-cuts artifact (flies, meic; 2026-09-19). The deep pack reads it at 17:00,
+    # but one caught up at 20:00 still serves the console and the next pack; past that the next
+    # session rewrites it.
+    "regime-cuts": 240,
     # A close card caught up mid-evening still describes the settled day correctly; past that the
     # next morning's cards take over.
     "status-digest-close": 90,
@@ -541,6 +545,28 @@ def derive_jobs(
                     enabled=armed,
                     enabled_reason=why,
                     tags=("live",),
+                ),
+            )
+
+        # The nightly regime-cuts artifact, for any module that declares it (2026-09-19). Driven off
+        # the module's own paper block -- `regime_cuts_at` and `regime_cuts_argv` -- so a third
+        # module is covered the moment it declares them, and a module that does not (calendars,
+        # pmcc, curve, bwb: no regime substrate) gets no job. Timing: after the module settles and
+        # after review-provisional (16:30), before advisor-deep (17:00 by default); a `deep_at`
+        # moved earlier than the cut reads last night's artifact, which the pack labels stale.
+        cuts_at = paper.get("regime_cuts_at")
+        cuts_argv = paper.get("regime_cuts_argv")
+        if cuts_at and cuts_argv:
+            add(
+                f"{name}-regime-cuts",
+                lambda name=name, root=root, cuts_at=cuts_at, cuts_argv=cuts_argv: JobSpec(
+                    id=f"{name}-regime-cuts",
+                    argv=(pythonw, *cuts_argv),
+                    kind=KIND_DAILY,
+                    cwd=root,
+                    at_et=str(cuts_at),
+                    catchup_minutes=CATCHUP_MINUTES["regime-cuts"],
+                    trading_days_only=True,
                 ),
             )
 

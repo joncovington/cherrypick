@@ -175,7 +175,10 @@ This pack additionally carries `review_today` (the cross-module fact set — PRO
 because the earnings module settles overnight; do not treat its earnings numbers as final),
 `review_trend`, `arm_readings` (every arm's reading and its qualification checks), `bounds` (exactly
 which parameters each module will accept advice about, and between which values), `experiments_full`,
-`advice_audit`, and `advisor_journal`.
+`advice_audit`, `advisor_journal`, `flies_band_containment` (band placement against each session's
+realised range), and `regime_cuts` (each module's own per-book outcomes by the regime its entries
+were tagged with, era-scoped by its measurement breaks -- a `thin` cell carries no P&L and may not be
+drawn on; read `sessions` before anything else).
 
 Your job:
 

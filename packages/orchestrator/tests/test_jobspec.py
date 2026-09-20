@@ -699,3 +699,40 @@ def test_the_dolt_pull_lands_before_the_forward_scan_reads_it():
         f"the pull runs at {pull.at_et} ET, at or after the 06:30 forward scan that reads it -- "
         "the scan would walk the previous day's calendar"
     )
+
+
+# --------------------------------------------------------------------------- regime cuts (2026-09-19)
+def _with_regime_cuts(cfg, module, at="16:40"):
+    cfg["modules"][module]["paper"]["regime_cuts_at"] = at
+    cfg["modules"][module]["paper"]["regime_cuts_argv"] = [
+        "-m",
+        f"cherrypick.{module}.regime_cuts",
+        "--write",
+    ]
+    return cfg
+
+
+def test_regime_cuts_job_is_derived_from_the_module_own_declaration():
+    """Shown to fail with the declaration removed from the fixture: the job exists only because the
+    module's paper block names a time and an argv, so a third module is covered the moment it
+    declares them and one without a regime substrate never grows a job."""
+    cfg = _with_regime_cuts(_with_regime_cuts(suite_cfg(), "flies"), "meic", at="16:45")
+    jobs, errors = derive(cfg)
+    assert errors == {}
+    by_id = {j.id: j for j in jobs}
+    flies = by_id["flies-regime-cuts"]
+    assert flies.argv == ("pythonw", "-m", "cherrypick.flies.regime_cuts", "--write")
+    assert flies.kind == jobspec.KIND_DAILY and flies.at_et == "16:40" and flies.trading_days_only
+    assert flies.catchup_minutes == jobspec.CATCHUP_MINUTES["regime-cuts"]
+    assert flies.cwd.endswith("flies")
+    assert by_id["meic-regime-cuts"].at_et == "16:45"
+
+
+def test_regime_cuts_job_is_absent_when_a_module_does_not_declare_it():
+    jobs, _ = derive(suite_cfg())
+    assert not [j.id for j in jobs if j.id.endswith("-regime-cuts")]
+    # a time without an argv is not a declaration either
+    cfg = suite_cfg()
+    cfg["modules"]["flies"]["paper"]["regime_cuts_at"] = "16:40"
+    jobs, _ = derive(cfg)
+    assert "flies-regime-cuts" not in {j.id for j in jobs}
