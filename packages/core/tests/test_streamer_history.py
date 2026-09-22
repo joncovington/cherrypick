@@ -268,6 +268,48 @@ def test_the_producer_drains_stored_closes_that_are_not_prices(tmp_path):
     assert streamcache.purge_nonpositive_closes(conn) == 0, "idempotent -- a fixed backlog, then nothing"
 
 
+def test_the_producer_fills_a_missing_close_from_the_next_sessions_prev_close(tmp_path):
+    """SPX's Summary never delivers `day_close_price`, so every session it wrote since 2026-07-29
+    held open/high/low and a null close while SPY and VIX stayed complete. The close is not lost —
+    the NEXT session's `prev_day_close` is the same exchange-official number — but a consumer
+    reading `day_close` alone saw the series stop at 2026-07-28, which is exactly the trap a
+    regime read walked into. Filling the hole is what makes the plain read correct.
+    """
+    conn = streamcache.connect(tmp_path / "cache.db")
+    rows = [
+        # SPX: Mon/Tue/Wed consecutive; the first two closes are recoverable from the next row.
+        ("SPX", "2026-09-14", None, None),
+        ("SPX", "2026-09-15", None, 7500.0),
+        ("SPX", "2026-09-16", None, 7550.0),
+        # a session is MISSING between these two, so 09-17's prev close belongs to 09-16, not 09-15
+        ("XSP", "2026-09-15", None, None),
+        ("XSP", "2026-09-17", None, 760.0),
+        # a real close is never overwritten
+        ("VIX", "2026-09-15", 22.0, None),
+        ("VIX", "2026-09-16", None, 99.0),
+    ]
+    for symbol, day, close, prev in rows:
+        conn.execute(
+            "INSERT INTO stream_summary (symbol, trade_date, day_close, prev_day_close, updated_at) "
+            "VALUES (?,?,?,?,?)",
+            (symbol, day, close, prev, time.time()),
+        )
+    conn.commit()
+
+    filled = streamcache.fill_closes_from_next_prev(conn)
+
+    got = {
+        (r[0], r[1]): r[2] for r in conn.execute("SELECT symbol, trade_date, day_close FROM stream_summary")
+    }
+    assert got[("SPX", "2026-09-14")] == 7500.0
+    assert got[("SPX", "2026-09-15")] == 7550.0
+    assert got[("SPX", "2026-09-16")] is None, "the newest session has no later row to carry it"
+    assert got[("XSP", "2026-09-15")] is None, "a gap in the series is not a close for the day before it"
+    assert got[("VIX", "2026-09-15")] == 22.0, "a confirmed close is never replaced"
+    assert filled == 2
+    assert streamcache.fill_closes_from_next_prev(conn) == 0, "idempotent -- a fixed backlog, then nothing"
+
+
 def test_recency_counts_a_close_carried_on_the_next_rows_prev_close(tmp_path):
     """Both routes to a close, exactly as overview's `_close_history` reads them.
 

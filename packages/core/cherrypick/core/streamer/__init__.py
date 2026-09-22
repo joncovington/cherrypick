@@ -578,6 +578,14 @@ class ChainStreamer:
             purged = streamcache.purge_nonpositive_closes(state.conn)
             if purged:
                 self.log.info("Purged %d stored close(s) that were not prices", purged)
+            # SPX's Summary carries open/high/low and prev_day_close but never a usable
+            # day_close_price, so its live-written sessions hold a null close a plain read sees as
+            # the series ending. The next session's prev_day_close is that close; fill from it
+            # before the deficit check, so a repaired hole counts as covered rather than sending
+            # the refetch after dates whose rows already exist.
+            carried = streamcache.fill_closes_from_next_prev(state.conn)
+            if carried:
+                self.log.info("Filled %d missing close(s) from the next session's prior close", carried)
             # Drop chain rows no consumer can legitimately want -- passed expirations, and
             # underlyings this producer no longer streams. Here rather than on a tick because it is
             # a backlog drain, not a per-event concern, and once per connection is the same cadence

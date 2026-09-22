@@ -22,6 +22,7 @@ import sqlite3
 import time
 from pathlib import Path
 
+from cherrypick.core import calendar as _cal
 from cherrypick.core.db import connect_ro
 
 # The schema every consumer shares. orb_ranges/stream_rest_cache are used only by MEIC's daemon today
@@ -375,6 +376,57 @@ def backfill_summary(conn: sqlite3.Connection, symbol: str, bars: list[dict], *,
         added += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
     conn.commit()
     return added
+
+
+def fill_closes_from_next_prev(conn: sqlite3.Connection) -> int:
+    """Fill a missing `day_close` from the NEXT session's `prev_day_close`. Returns rows filled.
+
+    A repair in `purge_nonpositive_closes`'s family, run by the producer for the same reason: the
+    cache has exactly one writer by invariant. Idempotent — it drains a fixed backlog and then
+    matches nothing until the next hole appears.
+
+    SPX is why. Its Summary events carry open/high/low and `prev_day_close` but never a usable
+    `day_close_price`, so every session the live producer wrote for it since 2026-07-29 held a null
+    close while SPY and VIX stayed complete — 39 sessions, the whole SPX era. `latest_summary_date`
+    already reads both routes so the backfill's recency check was never fooled, but a consumer
+    reading `day_close` alone sees the series stop dead at 2026-07-28, which is the trap a regime
+    read walked into on 2026-09-22. The number is not lost or derived: the next session's
+    `prev_day_close` IS that session's exchange-official close, already in this table.
+
+    **Only across consecutive trading days.** If a session is missing from the table, the next row's
+    `prev_day_close` belongs to that missing day, not to the hole being filled — writing it would
+    invent a price for the wrong date. The calendar decides, so a holiday or an early close is not
+    mistaken for a gap.
+    """
+    try:
+        holes = conn.execute(
+            "SELECT symbol, trade_date FROM stream_summary WHERE day_close IS NULL "
+            "ORDER BY symbol, trade_date"
+        ).fetchall()
+    except sqlite3.Error:
+        return 0
+    filled = 0
+    for symbol, day in holes:
+        try:
+            expected = _cal.next_trading_day(_dt.date.fromisoformat(str(day))).isoformat()
+        except (TypeError, ValueError):
+            continue
+        row = conn.execute(
+            "SELECT prev_day_close FROM stream_summary "
+            "WHERE symbol = ? AND trade_date = ? AND prev_day_close IS NOT NULL",
+            (symbol, expected),
+        ).fetchone()
+        close = to_float(row[0]) if row else None
+        if close is None or close <= 0:
+            continue
+        conn.execute(
+            "UPDATE stream_summary SET day_close = ? WHERE symbol = ? AND trade_date = ?",
+            (close, symbol, day),
+        )
+        filled += 1
+    if filled:
+        conn.commit()
+    return filled
 
 
 def purge_nonpositive_closes(conn: sqlite3.Connection) -> int:
