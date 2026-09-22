@@ -378,6 +378,71 @@ def backfill_summary(conn: sqlite3.Connection, symbol: str, bars: list[dict], *,
     return added
 
 
+def daily_bars(conn: sqlite3.Connection, symbol: str, *, through: str, limit: int = 5000) -> list[dict]:
+    """Completed daily OHLC bars for `symbol`, oldest first, ending before `through`.
+
+    The close comes from BOTH routes, for the reason `latest_summary_date` states: the backfill
+    writes `day_close` on the session it belongs to, while the live producer stops at the bell and
+    a live-written session's settle appears only as the NEXT row's `prev_day_close`. A reader that
+    takes one route sees SPX's series stop at 2026-07-28 while the cache holds a current row for
+    every session since. `day_close` wins wherever both exist.
+
+    `through` is READ but never returned -- its `prev_day_close` is precisely how the preceding
+    session's close arrives, and its own bar is partial.
+
+    A chained close is attributed only ACROSS CONSECUTIVE TRADING DAYS, which is stricter than
+    `overview.facts._close_history`'s row adjacency: if a session is missing from the table, that
+    `prev_day_close` belongs to the missing day, and dating it to the row before would shift a
+    price onto the wrong session. The two are twins to fold when either is next touched.
+
+    A row without a high or a low is dropped rather than returned with holes: it cannot produce a
+    true range, so it is not a bar.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT trade_date, day_open, day_high, day_low, day_close, prev_day_close "
+            "FROM stream_summary WHERE symbol = ? AND trade_date <= ? "
+            "ORDER BY trade_date DESC LIMIT ?",
+            (symbol, through, int(limit) + 1),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    ordered = list(reversed([dict(r) for r in rows]))
+    closes: dict[str, float] = {}
+    for index, row in enumerate(ordered):
+        chained = to_float(row.get("prev_day_close"))
+        if chained is None or chained <= 0 or index == 0:
+            continue
+        prior = ordered[index - 1]["trade_date"]
+        try:
+            adjacent = _cal.next_trading_day(_dt.date.fromisoformat(str(prior))).isoformat()
+        except (TypeError, ValueError):
+            continue
+        if adjacent == str(row["trade_date"]):
+            closes[str(prior)] = chained
+    for row in ordered:
+        own = to_float(row.get("day_close"))
+        if own is not None and own > 0:
+            closes[str(row["trade_date"])] = own
+    closes.pop(str(through), None)
+    bars = []
+    for row in ordered:
+        day = str(row["trade_date"])
+        high, low = to_float(row.get("day_high")), to_float(row.get("day_low"))
+        if day not in closes or high is None or low is None:
+            continue
+        bars.append(
+            {
+                "session": day,
+                "open": to_float(row.get("day_open")),
+                "high": high,
+                "low": low,
+                "close": closes[day],
+            }
+        )
+    return bars[-int(limit) :]
+
+
 def fill_closes_from_next_prev(conn: sqlite3.Connection) -> int:
     """Fill a missing `day_close` from the NEXT session's `prev_day_close`. Returns rows filled.
 

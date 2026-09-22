@@ -310,6 +310,71 @@ def test_the_producer_fills_a_missing_close_from_the_next_sessions_prev_close(tm
     assert streamcache.fill_closes_from_next_prev(conn) == 0, "idempotent -- a fixed backlog, then nothing"
 
 
+def _summary(conn, rows):
+    for symbol, day, o, h, lo, c, prev in rows:
+        conn.execute(
+            "INSERT INTO stream_summary (symbol, trade_date, day_open, day_high, day_low, "
+            "day_close, prev_day_close, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            (symbol, day, o, h, lo, c, prev, time.time()),
+        )
+    conn.commit()
+
+
+def test_daily_bars_resolves_a_close_the_live_producer_never_wrote(tmp_path):
+    """The live SPX shape: open/high/low and prev_day_close, never day_close. Reading `day_close`
+    alone yields no bars at all, which is how a regime read saw the series stop at 2026-07-28."""
+    conn = streamcache.connect(tmp_path / "cache.db")
+    _summary(
+        conn,
+        [
+            ("SPX", "2026-09-14", 100.0, 105.0, 99.0, None, None),
+            ("SPX", "2026-09-15", 101.0, 106.0, 100.0, None, 104.0),
+            ("SPX", "2026-09-16", 102.0, 107.0, 101.0, None, 105.5),
+            ("SPX", "2026-09-17", 103.0, 108.0, 102.0, None, 106.5),
+        ],
+    )
+    bars = streamcache.daily_bars(conn, "SPX", through="2026-09-17")
+    assert [(b["session"], b["close"]) for b in bars] == [
+        ("2026-09-14", 104.0),
+        ("2026-09-15", 105.5),
+        ("2026-09-16", 106.5),
+    ], "the through session is read for its prior close but is a partial bar, never returned"
+    assert bars[0]["high"] == 105.0 and bars[0]["low"] == 99.0
+
+
+def test_daily_bars_prefers_the_rows_own_close_and_skips_a_gap(tmp_path):
+    conn = streamcache.connect(tmp_path / "cache.db")
+    _summary(
+        conn,
+        [
+            # 09-15 carries its own close; the next row's prev must not override it
+            ("SPX", "2026-09-15", 101.0, 106.0, 100.0, 105.0, None),
+            ("SPX", "2026-09-16", 102.0, 107.0, 101.0, None, 999.0),
+            # 09-17 is missing, so 09-18's prev close belongs to 09-17, not to 09-16
+            ("SPX", "2026-09-18", 104.0, 109.0, 103.0, None, 108.0),
+            ("SPX", "2026-09-21", 105.0, 110.0, 104.0, None, 109.0),
+        ],
+    )
+    got = {b["session"]: b["close"] for b in streamcache.daily_bars(conn, "SPX", through="2026-09-21")}
+    assert got["2026-09-15"] == 105.0, "a confirmed close outranks the chained one"
+    assert "2026-09-16" not in got, "across a gap that prior close belongs to the missing session"
+    assert got["2026-09-18"] == 109.0
+
+
+def test_daily_bars_drops_a_row_that_cannot_make_a_true_range(tmp_path):
+    """A bar with no high or low cannot produce a true range, so it is not a bar."""
+    conn = streamcache.connect(tmp_path / "cache.db")
+    _summary(
+        conn,
+        [
+            ("SPX", "2026-09-15", 101.0, None, None, 105.0, None),
+            ("SPX", "2026-09-16", 102.0, 107.0, 101.0, 106.0, 105.0),
+            ("SPX", "2026-09-17", 103.0, 108.0, 102.0, None, 106.0),
+        ],
+    )
+    assert [b["session"] for b in streamcache.daily_bars(conn, "SPX", through="2026-09-17")] == ["2026-09-16"]
+
+
 def test_recency_counts_a_close_carried_on_the_next_rows_prev_close(tmp_path):
     """Both routes to a close, exactly as overview's `_close_history` reads them.
 
