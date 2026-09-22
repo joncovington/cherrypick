@@ -5,6 +5,7 @@ import { fliesQuery, type FliesFilter } from "../../lib/api";
 import { timeTicks } from "../../components/chart/scales";
 import { minuteOf, hhmm } from "../../components/chart/time";
 import { HoverReadout } from "../../components/chart/Tooltip";
+import { gateDescription } from "./gateGlossary";
 
 interface JournalRow {
   arm: string;
@@ -16,6 +17,23 @@ interface JournalRow {
   occurrences: number;
   centerLast: number | null;
   detail: string | null;
+}
+
+function wrapLine(text: string, maxChars: number): string[] {
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > maxChars && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = next;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
 }
 
 function useJournal(mode: TradingMode, filter: FliesFilter) {
@@ -104,10 +122,12 @@ export function JournalCard({ mode, filter }: { mode: TradingMode; filter: Flies
         ))}
         {hovered !== undefined && (() => {
           const r = hovered.r;
+          const description = gateDescription(r.reason);
           const lines = [
             `${r.arm} · ${r.mode}`,
             `${r.accepted ? "✓ " : ""}${r.reason}`,
             `${r.firstSeen!.slice(11, 16)}–${r.lastSeen!.slice(11, 16)} · ${r.occurrences}× seen`,
+            ...(description ? wrapLine(description, 60) : []),
           ];
           return <HoverReadout x={hovered.x0} width={width} lines={lines} lineColor={() => "#eceff3"} boxTop={4} />;
         })()}
@@ -142,7 +162,7 @@ export function JournalCard({ mode, filter }: { mode: TradingMode; filter: Flies
                   <tr key={i}>
                     <td>{r.arm}</td>
                     <td className="muted">{r.mode}</td>
-                    <td>
+                    <td title={gateDescription(r.reason)}>
                       {r.accepted ? <span className="chain-badge chain-badge-long">{r.reason}</span> : r.reason}
                     </td>
                     <td>{r.occurrences}</td>
