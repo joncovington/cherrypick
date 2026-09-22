@@ -98,6 +98,10 @@ function minimal(overrides: Record<string, unknown> = {}): Record<string, unknow
         dims: ["gex", "trend"],
         books: [{ book: "control", cells: [{ buckets: ["diffuse", "up_from_open"], sessions: 7, trades: 21, net_pnl: -898.79, thin: false }] }],
       },
+      {
+        dims: ["gex", "drift_alignment"],
+        books: [{ book: "control", cells: [{ buckets: ["diffuse", "against"], sessions: 6, trades: 14, net_pnl: -240.0, thin: false }] }],
+      },
     ],
     ...overrides,
   };
@@ -155,6 +159,19 @@ describe("readRegimeCuts", () => {
     expect(diffuse.sessions).toBe(1);
     expect(diffuse.thin).toBe(false);
     expect(out.cuts.crossTabs[0]!.books[0]!.cells[0]!.thin).toBe(false);
+  });
+
+  it("carries every declared cross-tab, in the writer's order", () => {
+    // A regression pin, not a red-first test: the reader already mapped them all, but the slide
+    // took [0] until 2026-09-22 and flies now declares two.
+    write("flies", "regime_cuts.json", minimal());
+    const out = readRegimeCuts(config, "flies");
+    expect(out.status).toBe("ok");
+    if (out.status !== "ok") return;
+    expect(out.cuts.crossTabs.map((t) => t.dims)).toEqual([
+      ["gex", "trend"],
+      ["gex", "drift_alignment"],
+    ]);
   });
 
   it("the dimension list is derived from the data in first-seen order", () => {

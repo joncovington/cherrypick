@@ -2113,6 +2113,48 @@ select.text-input {
   color: var(--text);
 }
 
+.regime-grid-books {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 1rem;
+  margin-top: 0.4rem;
+}
+
+.regime-grid-book h3 {
+  margin: 0 0 0.35rem;
+  font-family: var(--num-face);
+  color: var(--text);
+  font-size: 12px;
+  text-transform: none;
+}
+
+.regime-grid {
+  display: grid;
+  gap: 3px;
+  font-family: var(--num-face);
+  font-size: 11px;
+  overflow-x: auto;
+}
+
+.regime-grid-head {
+  color: var(--text-muted);
+  padding: 2px 4px;
+  align-self: end;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.regime-grid-cell {
+  min-height: 2.6rem;
+  padding: 3px 4px;
+  border-radius: 2px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  line-height: 1.25;
+}
+
 .pmcc-chart-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));

@@ -1,14 +1,15 @@
-import { useState } from "react";
-import type { RegimeBook, RegimeCell, RegimeCrossCell, RegimeCuts, RegimeCutsModule } from "@console/shared";
+import { Fragment, useState } from "react";
+import type { RegimeBook, RegimeCell, RegimeCrossCell, RegimeCrossTab, RegimeCuts, RegimeCutsModule } from "@console/shared";
 import { useRegimeCuts } from "../lib/api";
 import { Card, PnlCell, SkeletonRows, fmtMoney } from "./DataTable";
 
 /**
  * The regime-cuts slide (2026-09-19): the module's own nightly artifact, one table per regime
- * dimension (rows = books, columns = the buckets that occur) and one for the declared cross-tab,
- * rendered as written. This component derives nothing: `thin` is the writer's flag, the era and
- * every number come off the file, and the only layout decision made here is which columns to
- * draw, from the buckets present. Absent, failed and stale are shown as three different things.
+ * dimension (rows = books, columns = the buckets that occur) and one grid per declared cross-tab
+ * (one small multiple per book), rendered as written. This component derives nothing: `thin` is
+ * the writer's flag, the era and every number come off the file, and the only layout decision
+ * made here is which rows and columns to draw, from the buckets present. Absent, failed and
+ * stale are shown as three different things.
  */
 
 const WRITE_COMMAND: Record<RegimeCutsModule, string> = {
@@ -47,13 +48,100 @@ function ThinMark() {
   );
 }
 
+const lastBucket = (k: string): number => (k === "untagged" || k === "unknown" ? 1 : 0);
+
+function byTradesDesc(totals: Map<string, number>): string[] {
+  return [...totals.entries()]
+    .sort((a, b) => lastBucket(a[0]) - lastBucket(b[0]) || b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map((e) => e[0]);
+}
+
 function bucketColumns(books: RegimeBook[], dim: string): string[] {
   // Union of buckets across books, ordered by total trades desc, untagged/unknown last -- the one
   // layout decision this slide makes. The writer already orders each book's own buckets that way.
   const totals = new Map<string, number>();
   for (const b of books) for (const c of b.dimensions[dim]?.buckets ?? []) totals.set(c.bucket, (totals.get(c.bucket) ?? 0) + c.trades);
-  const last = (k: string): number => (k === "untagged" || k === "unknown" ? 1 : 0);
-  return [...totals.entries()].sort((a, b) => last(a[0]) - last(b[0]) || b[1] - a[1] || a[0].localeCompare(b[0])).map((e) => e[0]);
+  return byTradesDesc(totals);
+}
+
+/** One axis of a cross-tab: the buckets that occur at position `i` of every cell's pair. */
+function crossAxis(tab: RegimeCrossTab, i: number): string[] {
+  const totals = new Map<string, number>();
+  for (const b of tab.books) for (const c of b.cells) {
+    const k = c.buckets[i];
+    if (k !== undefined) totals.set(k, (totals.get(k) ?? 0) + c.trades);
+  }
+  return byTradesDesc(totals);
+}
+
+const cellRate = (c: RegimeCrossCell): number | null => c.completionRate ?? c.winRate;
+
+export function CrossTabGrid({ tab, thinBelowSessions }: { tab: RegimeCrossTab; thinBelowSessions: number }) {
+  const rows = crossAxis(tab, 0);
+  const cols = crossAxis(tab, 1);
+  const rateLabel = tab.books.some((b) => b.cells.some((c) => c.completionRate !== null)) ? "completion" : "win";
+  return (
+    <>
+      <div className="regime-grid-books">
+        {tab.books.map((b) => {
+          const byKey = new Map(b.cells.map((c) => [c.buckets.join("\u0000"), c] as const));
+          return (
+            <div className="regime-grid-book" key={b.book}>
+              <h3>{b.book}</h3>
+              <div
+                className="regime-grid"
+                style={{ gridTemplateColumns: `auto repeat(${cols.length}, minmax(3.2rem, 1fr))` }}
+              >
+                <div />
+                {cols.map((col) => (
+                  <div className="regime-grid-head" key={col}>
+                    {col}
+                  </div>
+                ))}
+                {rows.map((row) => (
+                  <Fragment key={row}>
+                    <div className="regime-grid-head">{row}</div>
+                    {cols.map((col) => {
+                      const c = byKey.get(`${row}\u0000${col}`);
+                      if (c === undefined || c.trades === 0)
+                        return (
+                          <div className="regime-grid-cell muted" key={col}>
+                            —
+                          </div>
+                        );
+                      const rate = cellRate(c);
+                      // The thin flag outranks the rate: a two-session cell reading 90% is the
+                      // misread the writer's flag exists to prevent, so it never gets a colour.
+                      const colour =
+                        c.thin || rate === null
+                          ? "var(--row-line)"
+                          : `rgba(67, 181, 122, ${(0.15 + 0.85 * rate).toFixed(3)})`;
+                      return (
+                        <div
+                          className={`regime-grid-cell${c.thin || rate === null ? " muted" : ""}`}
+                          key={col}
+                          style={{ background: colour }}
+                          title={cellTitle(c)}
+                        >
+                          <span>{c.sessions}s</span>
+                          {c.thin ? <ThinMark /> : rate !== null && <span>{pct(rate)}</span>}
+                        </div>
+                      );
+                    })}
+                  </Fragment>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="muted" style={{ fontSize: 11, marginTop: "0.5rem", marginBottom: 0 }}>
+        Colour is {rateLabel} rate (darker = higher); the cell prints sessions and {rateLabel} %. Rows are{" "}
+        {tab.dims[0]}, columns {tab.dims[1]}. A grey cell is one the writer flagged thin (fewer than{" "}
+        {thinBelowSessions} sessions); hover for trades, completed, win and avg.
+      </p>
+    </>
+  );
 }
 
 function DimensionCard({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
@@ -117,48 +205,12 @@ function DimensionCard({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
   );
 }
 
-function CrossTabCard({ cuts }: { cuts: RegimeCuts }) {
-  const tab = cuts.crossTabs[0];
-  if (tab === undefined) return null;
-  const totals = new Map<string, number>();
-  for (const b of tab.books) for (const c of b.cells) totals.set(c.buckets.join(" / "), (totals.get(c.buckets.join(" / ")) ?? 0) + c.trades);
-  const columns = [...totals.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map((e) => e[0]);
+function CrossTabCard({ cuts, tab }: { cuts: RegimeCuts; tab: RegimeCrossTab }) {
   return (
-    <Card title={`by ${tab.dims.join(" × ")}`} collapseKey={`regime-${cuts.module}-cross`}>
-      <div className="table-scroll">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th></th>
-              {columns.map((c) => (
-                <th key={c}>{c}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {tab.books.map((b) => {
-              const byKey = new Map(b.cells.map((c) => [c.buckets.join(" / "), c] as const));
-              return (
-                <tr key={b.book}>
-                  <td>{b.book}</td>
-                  {columns.map((col) => {
-                    const c = byKey.get(col);
-                    if (c === undefined || c.trades === 0) return <td key={col} className="muted">—</td>;
-                    return (
-                      <td key={col} style={c.thin ? { opacity: 0.55 } : undefined} title={cellTitle(c)}>
-                        {cellText(c)}
-                        {c.thin && <ThinMark />}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+    <Card title={`by ${tab.dims.join(" × ")}`} collapseKey={`regime-${cuts.module}-cross-${tab.dims.join("-")}`}>
+      <CrossTabGrid tab={tab} thinBelowSessions={cuts.thinBelowSessions} />
       <p className="muted" style={{ fontSize: 11, marginTop: "0.5rem", marginBottom: 0 }}>
-        The one declared cross-tab. It exists because a single-dimension cut once made net-GEX sign look predictive
+        A declared cross-tab. The first exists because a single-dimension cut once made net-GEX sign look predictive
         until the trend bucket showed the whole effect sat in one seven-session cell. Read sessions first.
       </p>
     </Card>
@@ -291,7 +343,9 @@ export function RegimeCutsTab({ module }: { module: RegimeCutsModule }) {
       {cuts.dimensions.map((dim) => (
         <DimensionCard key={dim} cuts={cuts} dim={dim} />
       ))}
-      <CrossTabCard cuts={cuts} />
+      {cuts.crossTabs.map((tab) => (
+        <CrossTabCard key={tab.dims.join("-")} cuts={cuts} tab={tab} />
+      ))}
     </div>
   );
 }
