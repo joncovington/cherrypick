@@ -259,3 +259,19 @@ the loosen-until-it-looks-better move rule 6 names. The reading, when rows exist
 
 The direction key is `center_direction` from today (`debit_direction` is still read); the arms-seam
 test now pins `engine.ARMS` equal to the example config's arm set.
+
+## 2026-09-22 — the opening range, declared as a holdout (no finding yet)
+
+An in-sample pass over 38 joinable sessions split control completion 68.5% (narrow 09:30–10:00
+range) vs 82.2% (wide) — the direction the mechanism predicts, since completion IS travel. Then
+conditioning on the volatility regime collapsed it: low-vol 78.2% vs 79.7%, gone; high-vol 65.2%
+vs 76.9%, surviving on 8–9 sessions a cell, under the floor.
+
+That is a lead, not a result, and it was chosen on the rows that measure it. So the feature
+definitions are frozen as of today and every session from here is out-of-sample. The contract —
+definitions, outcomes in causal order, the sign expected per module, the decision rule and what
+would retire it — is [openingrange.md](openingrange.md). Implementation is
+`cherrypick.core.openingrange`; it reports and gates nothing.
+
+Recorded here now so the declaration has a date in the log that the finding can later be read
+against. **No conclusion is claimed.**
