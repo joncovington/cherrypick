@@ -145,6 +145,33 @@ def test_a_position_without_matching_broker_data_is_marked_unmatched_and_left_al
     assert row["gross_pnl"] == pytest.approx(before["gross_pnl"]) and row["reconciled_at"] is None
 
 
+def test_an_unmatched_position_is_retried_rather_than_written_off(settled):
+    """`unmatched` was terminal in BOTH queries here, so a position the broker had not yet posted
+    -- or that failed to match for any reason -- was written off permanently and no later run could
+    ever reach it. That is worse than flies' version of this bug, which at least retried forever.
+    Only a successful reconcile is terminal."""
+    conn, pid, before = settled
+    first = fee_reconcile.reconcile_date(
+        conn, EXP, "SPX", [_txn("Trade", order_id="OTHER", value=1.0)], log=lambda *_: None
+    )
+    assert first["unmatched"] == [pid]
+    assert fee_reconcile.pending_reconciliation(conn, "SPX", today="2026-09-21") == [EXP], (
+        "an unmatched expiration must stay pending so the retry can reach it"
+    )
+
+    body = occ("SPXW", EXP, 7600.0)
+    txns = [
+        _txn("Trade", order_id="ORD1", symbol=body, value=90.0, fees=6.89),
+        _txn("Receive Deliver", symbol=body, value=-1000.0, fees=5.0),
+    ]
+    again = fee_reconcile.reconcile_date(conn, EXP, "SPX", txns, log=lambda *_: None)
+    assert again["reconciled"] == [pid], "an unmatched row must be re-examinable"
+
+    settled_again = fee_reconcile.reconcile_date(conn, EXP, "SPX", txns, log=lambda *_: None)
+    assert settled_again["reconciled"] == [] and settled_again["unmatched"] == []
+    assert fee_reconcile.pending_reconciliation(conn, "SPX", today="2026-09-21") == []
+
+
 def test_a_settlement_fee_that_differs_from_the_model_is_reported_per_symbol(settled):
     conn, pid, _ = settled
     body = occ("SPXW", EXP, 7600.0)

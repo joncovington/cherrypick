@@ -305,6 +305,14 @@
           "cherrypick.bwb.paper_loop",
           "--once"
         ],
+        "_fee_reconcile_note": "Broker-cash reconciliation of settled LIVE expirations (2026-09-22), the same job flies runs. UNCONDITIONAL ON ARMING, which is the point: it used to ride the live tick, which runs only under --live on a job the supervisor disables the moment the loop disarms, so an expiration that settled on Tuesday went unconfirmed forever if Wednesday was never armed. 09:20 is after the broker posts the prior session's settlement lines and before the entry window opens. Needs the module's broker credentials (GET-only). Remove both keys to drop the job.",
+        "fee_reconcile_at": "09:20",
+        "fee_reconcile_argv": [
+          "-m",
+          "cherrypick.bwb.fee_reconcile",
+          "--symbol",
+          "SPX"
+        ],
         "paper_db": "~/.cherrypick/data/bwb/paper_trades.db",
         "notify_trades": true,
         "trade_schema": "bwb_132",

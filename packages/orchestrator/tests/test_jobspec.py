@@ -766,6 +766,36 @@ def test_fee_reconcile_job_runs_whether_or_not_live_trading_is_armed():
     assert job.cwd.endswith("flies")
 
 
+def test_fee_reconcile_is_declared_per_module_not_hardcoded_for_flies():
+    """Config-driven rather than a flies special case, which is how bwb -- which carried the
+    identical defect -- gets the identical fix by declaring two keys and nothing else."""
+    cfg = _with_fee_reconcile(_with_fee_reconcile(suite_cfg()), "meic", at="09:20")
+    jobs, errors = derive(cfg)
+    assert errors == {}
+    by_id = {j.id: j for j in jobs}
+    assert by_id["meic-fee-reconcile"].at_et == "09:20"
+    assert by_id["meic-fee-reconcile"].argv[1:3] == ("-m", "cherrypick.meic.fee_reconcile")
+    assert by_id["flies-fee-reconcile"].at_et == "09:15"
+    assert all(by_id[k].enabled is True for k in ("meic-fee-reconcile", "flies-fee-reconcile"))
+
+
+def test_every_module_with_a_live_ledger_declares_the_reconcile_job():
+    """Driven off the shipped example rather than a hand-kept list. flies and bwb are the two
+    modules that place live orders, and reconciliation must not depend on either being armed --
+    a live path whose cash is never confirmed against the broker is the defect this guards."""
+    import json
+    from pathlib import Path
+
+    example = json.loads(
+        (Path(__file__).resolve().parents[1] / "config.example.json").read_text(encoding="utf-8")
+    )
+    for module in ("flies", "bwb"):
+        paper = example["modules"][module]["paper"]
+        assert paper.get("fee_reconcile_at"), f"{module} declares no fee_reconcile_at"
+        argv = paper.get("fee_reconcile_argv") or []
+        assert argv[:2] == ["-m", f"cherrypick.{module}.fee_reconcile"], argv
+
+
 def test_fee_reconcile_job_is_absent_when_a_module_does_not_declare_it():
     jobs, _ = derive(suite_cfg())
     assert not [j.id for j in jobs if j.id.endswith("-fee-reconcile")]

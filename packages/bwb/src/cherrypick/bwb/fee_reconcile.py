@@ -41,13 +41,19 @@ def _fee_total(txn: dict) -> float:
 
 def pending_reconciliation(conn, symbol: str, lookback_days: int = 7, today: str | None = None) -> list[str]:
     """Expiration dates with closed, unreconciled `symbol` positions, strictly before today
-    (settlement fees post the next business day) and within `lookback_days`."""
+    (settlement fees post the next business day) and within `lookback_days`.
+
+    `unmatched` does NOT close a date. It used to, in this query and in `reconcile_date` alike, so a
+    position the broker had not yet posted -- or that failed to match for any other reason -- was
+    written off permanently and no later run could reach it. Flies carried the mirror-image defect
+    (its two queries disagreed, so it retried forever and fixed nothing); this one agreed with
+    itself and gave up. Only `reconciled_at` is terminal.
+    """
     today = today or clock.now_et().date().isoformat()
     cutoff = (date.fromisoformat(today) - timedelta(days=lookback_days)).isoformat()
     rows = conn.execute(
         "SELECT DISTINCT expiration FROM bwb_positions WHERE symbol = ? AND status = 'closed' "
         "AND expiration < ? AND expiration >= ? AND reconciled_at IS NULL "
-        "AND (fees_source IS NULL OR fees_source NOT IN ('reconciled', 'unmatched')) "
         "AND entry_order_id IS NOT NULL",
         (symbol, today, cutoff),
     ).fetchall()
@@ -56,13 +62,15 @@ def pending_reconciliation(conn, symbol: str, lookback_days: int = 7, today: str
 
 def reconcile_date(conn, expiration: str, symbol: str, transactions: list[dict], *, log=print) -> dict:
     """Reconcile every closed, unreconciled live position expiring `expiration` against
-    already-fetched broker `transactions`. Idempotent: reconciled or unmatched rows are skipped."""
+    already-fetched broker `transactions`.
+
+    Idempotent in one direction only: a RECONCILED row is terminal and skipped, an `unmatched` one
+    is re-examined -- see `pending_reconciliation` for why writing it off was wrong."""
     positions = [
         dict(r)
         for r in conn.execute(
             "SELECT * FROM bwb_positions WHERE expiration = ? AND symbol = ? AND status = 'closed' "
-            "AND reconciled_at IS NULL AND (fees_source IS NULL OR fees_source NOT IN ('reconciled', 'unmatched')) "
-            "AND entry_order_id IS NOT NULL",
+            "AND reconciled_at IS NULL AND entry_order_id IS NOT NULL",
             (expiration, symbol),
         ).fetchall()
     ]
