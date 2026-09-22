@@ -306,6 +306,27 @@ def arm_comparison_exclusions(
 # side by side: the other four describe the MARKET we entered into, while this one describes OUR OWN
 # choice of centre relative to spot. A market regime is something to condition on; this is something
 # to change. See engine._classify_center_offset and docs/centre-lag.md.
+#
+# `drift_alignment` (2026-09-21) is derived at read time rather than stored: does the entry's
+# completing direction agree with the session's committed drift. `flat` is taken from the STORED
+# trend bucket, so its band is the arm's own `regime_trend_points` by construction and the cut can
+# never disagree with the trend tag about what "committed" means. The value is the signed drift in
+# the completing direction (positive = with), so `bucket_edges` can re-cut it. Both are SQL
+# expressions over `completing_direction` and the `entry_trend_*` pair, and every consumer of this
+# table already tolerates an expression where a column name is expected.
+_DRIFT_ALIGNMENT_BUCKET = (
+    "CASE WHEN completing_direction IS NULL OR completing_direction NOT IN ('up', 'down')"
+    " OR entry_trend_bucket IS NULL THEN NULL"
+    " WHEN entry_trend_bucket = 'flat' THEN 'flat'"
+    " WHEN entry_trend_value IS NULL THEN NULL"
+    " WHEN (completing_direction = 'up' AND entry_trend_value > 0)"
+    " OR (completing_direction = 'down' AND entry_trend_value < 0) THEN 'with'"
+    " ELSE 'against' END"
+)
+_DRIFT_ALIGNMENT_VALUE = (
+    "CASE completing_direction WHEN 'up' THEN entry_trend_value WHEN 'down' THEN -entry_trend_value END"
+)
+
 REGIME_DIMENSIONS = {
     "vol": ("entry_vol_bucket", "entry_vol_value"),
     "gex": ("entry_gex_bucket", "entry_gex_concentration"),
@@ -313,7 +334,16 @@ REGIME_DIMENSIONS = {
     "skew": ("entry_skew_bucket", "entry_skew_value"),
     "center_offset": ("entry_center_offset_bucket", "entry_center_offset_value"),
     "trend": ("entry_trend_bucket", "entry_trend_value"),
+    "drift_alignment": (_DRIFT_ALIGNMENT_BUCKET, _DRIFT_ALIGNMENT_VALUE),
 }
+
+
+def _regime_columns(dimension: str, phase: str = "entry") -> tuple[str, str]:
+    """The (bucket, value) SQL for a dimension at a phase. Every `entry_` is renamed, not just the
+    first: a derived dimension's expression names the trend pair twice, and renaming one of them
+    would silently read the entry tag under the completion phase."""
+    return tuple(c.replace("entry_", f"{phase}_") for c in REGIME_DIMENSIONS[dimension])
+
 
 # `trend` and `center_offset` describe the same event from opposite sides -- a centre left behind by
 # a moving market -- so a report showing both should say so rather than presenting them as two
@@ -337,6 +367,14 @@ REGIME_DIMENSIONS = {
 #
 # (SPX only, the 3 sessions with day_open coverage, n=76. Earlier versions of this table blended the
 # XSP era, which the module's own symbol rules say not to do.)
+#
+# `drift_alignment` and `by_drift_alignment` below ask the same question -- does the leg need the
+# day to reverse -- and can disagree only through the band: the dimension inherits the trend tag's
+# `regime_trend_points` so it pools per book in the artifact, while `by_drift_alignment` keeps the
+# spot-relative `DRIFT_BAND_PCT` the EOD report was measured with, and counts completion as
+# `kind == 'fly'` where the dimension uses `completed_at`. Neither is being folded onto the other:
+# the EOD numbers (82% / 7%) are a stated prior and re-deriving them under a new band would make
+# the prior move with the tool that reads it.
 
 
 # The session count below which a dimension cannot support a threshold re-cut. Matches MEIC's
@@ -431,7 +469,7 @@ def by_regime(
         raise ValueError(f"by_regime: unknown dimension {dimension!r} (have {sorted(REGIME_DIMENSIONS)})")
     if phase not in ("entry", "completion"):
         raise ValueError(f"by_regime: phase must be 'entry' or 'completion', got {phase!r}")
-    bucket_col, value_col = (c.replace("entry_", f"{phase}_", 1) for c in REGIME_DIMENSIONS[dimension])
+    bucket_col, value_col = _regime_columns(dimension, phase)
 
     where, params = _period_clause(start, end, arm=arm, symbol=symbol)
     if entry_modes:
@@ -474,6 +512,64 @@ def _completion(rows) -> dict:
     """`completed` / `completion_rate` over rows that carry `completed_at`."""
     done = sum(1 for r in rows if r["completed_at"])
     return {"completed": done, "completion_rate": _rate(done, len(rows))}
+
+
+def _quantiles(values: list[float], probs=(0.25, 0.5, 0.75)) -> list[float]:
+    """Linear interpolation on the sorted sample (`pos = p * (n - 1)`), so a four-row book reads
+    17.5 rather than nearest-rank's 20 and a single row answers rather than raising."""
+    ordered = sorted(values)
+    last = len(ordered) - 1
+    out = []
+    for p in probs:
+        pos = p * last
+        lo = int(pos)
+        hi = min(lo + 1, last)
+        out.append(ordered[lo] + (ordered[hi] - ordered[lo]) * (pos - lo))
+    return out
+
+
+def _outcome_distributions(rows) -> dict:
+    """The two outcome shapes an entry gate is tuned against and the artifact never showed:
+    how long completions took, and how close the misses came.
+
+    `miss_gap` is `credit - best_completing_debit` over uncompleted short verticals -- negative
+    means the completing debit never came within reach of the credit; the gate needs it under
+    `credit - fee_buffer`. A miss that sat at -0.11 and one at -0.55 call for different remedies,
+    and a single completion rate hides which population a book has."""
+    latencies = [
+        r["completion_latency_min"]
+        for r in rows
+        if r["completed_at"] and r["completion_latency_min"] is not None
+    ]
+    gaps = [
+        r["credit"] - r["best_completing_debit"]
+        for r in rows
+        if not r["completed_at"]
+        and r["kind"] == "short_vertical"
+        and r["credit"] is not None
+        and r["best_completing_debit"] is not None
+    ]
+    latency = None
+    if latencies:
+        p25, p50, p75 = _quantiles(latencies)
+        latency = {
+            "n": len(latencies),
+            "p25": _round(p25),
+            "p50": _round(p50),
+            "p75": _round(p75),
+            "max": _round(max(latencies)),
+        }
+    gap = None
+    if gaps:
+        p25, p50, p75 = _quantiles(gaps)
+        gap = {
+            "n": len(gaps),
+            "min": _round(min(gaps)),
+            "p25": _round(p25),
+            "p50": _round(p50),
+            "p75": _round(p75),
+        }
+    return {"completion_latency_min": latency, "miss_gap": gap}
 
 
 def regime_coverage(conn, start=None, end=None, symbol=None, arm=None) -> dict:
@@ -596,12 +692,15 @@ def regime_cuts(
         w, p = _period_clause(start, session, arm=arm, symbol=symbol)
         w, p = _entry_mode_clause(w, p, entry_modes)
         rows = conn.execute(
-            f"SELECT gross_pnl, fees, pnl, trade_date, completed_at FROM fly_positions WHERE {w}", p
+            f"SELECT gross_pnl, fees, pnl, trade_date, completed_at, kind, completion_latency_min,"
+            f" credit, best_completing_debit FROM fly_positions WHERE {w}",
+            p,
         ).fetchall()
         summary = {
             "sessions": len({r["trade_date"] for r in rows if r["trade_date"]}),
             **_summarize(rows),
             **_completion(rows),
+            **_outcome_distributions(rows),
         }
         coverage = regime_coverage(conn, start, session, symbol=symbol, arm=arm)["dimensions"]
         regimes = {

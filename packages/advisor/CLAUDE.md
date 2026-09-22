@@ -462,6 +462,18 @@ a synthetic far case (twelve mature flies books x six dimensions plus three MEIC
 checkpoint that reads it) were made on different evidence.** Same rule as the 2026-08-26 budget
 break.
 
+**Two additive book keys, flies only (2026-09-21):** `completion_latency_min` (p25/p50/p75/max
+minutes over the book's completed rows) and `miss_gap` (credit minus the best completing debit
+ever seen, over its uncompleted short verticals; negative = never within reach, and the gate needs
+it under credit minus `fee_buffer`). Copied by `_thin_regime_cuts` when the writer set them,
+absent for MEIC; `cut_version` stays 1 because every reader takes them with `.get`. The same
+landing added a `drift_alignment` dimension to flies' artifact (with / flat / against -- whether
+the leg needed the day to reverse), which arrives through the ordinary dimension path. The
+2026-09-22 deep pack is the first to carry all three, so the break above covers them: the pack
+now shows the split behind the `refuse_trend_bucket` bound and the distribution behind
+`miss_stop_minutes`, which no earlier proposal could have seen. No bound was added -- the
+leg-level `refuse_completion_against_trend` gate stays out of `advice.bounds` on purpose.
+
 ## Tool Reference
 
 | Command | Purpose |

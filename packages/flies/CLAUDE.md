@@ -177,6 +177,28 @@ cross-tab showed the whole effect sat in one seven-session cell, positive gamma 
 days. That cell is why the cross-tab exists. `by_regime` gained `arm=` and `completed` /
 `completion_rate` for this; `_summarize`'s shape is untouched.
 
+**A seventh dimension, `drift_alignment`, and two outcome distributions (2026-09-21).** The
+dimension is derived at read time, not stored: `with` / `flat` / `against` from
+`completing_direction` against the stored `entry_trend_*` pair, with `flat` taken from the trend
+tag itself so the band is the arm's own `regime_trend_points` by construction -- the cut and the
+`refuse_completion_against_trend` gate can never disagree about "committed". The value is the
+signed drift in the completing direction, so `bucket_edges` re-cuts it. It exists because on
+2026-09-21 every call-side entry across control, debit-first-atm and bwb-atm needed a pullback on
+a +55-point day that never gave one, and the advisor's pack showed the trend bucket but not which
+way each leg needed the day to go; `side` on its own is a coin flip on which 5-strike spot is
+nearest, and side x trend is the variable. `by_drift_alignment` stays as the EOD report's version
+under the spot-relative `DRIFT_BAND_PCT` -- the 82% / 7% era figures are a stated prior and are
+not re-derived under the new band. Each book's summary now also carries
+`completion_latency_min` (p25/p50/p75/max over completed rows) and `miss_gap` (`credit -
+best_completing_debit` over uncompleted short verticals: negative means the completion never came
+within reach, and the gate needs it under `credit - fee_buffer`), because `miss_stop_minutes` was
+being swept without the latency distribution it cuts through, and a book of -0.11 misses and a
+book of -0.55 misses call for different remedies. Both are copied through
+`cherrypick.core.regimecuts.assemble` only when present, so MEIC's books carry neither key.
+The phase rename in `by_regime` now replaces every `entry_` rather than the first -- the derived
+expression names the trend pair twice, and the count-1 form read the entry tag under the
+completion phase; `test_regime_cuts.py` pins that.
+
 **Everything past the completion rate lives on a time axis, so the console's flies page has one.** `analytics.session_timeline`
 assembles the day from rows already written — spot and every arm's wanted centre on each iteration,
 entries and completions, and each leg-in as a span running to its completion, so latency is a length

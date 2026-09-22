@@ -11,7 +11,21 @@ from cherrypick.flies import analytics, cli
 from cherrypick.flies import db as dbmod
 
 
-def position(conn, position_id, *, day, arm, kind="fly", pnl=98.11, gross=105.0, regime=None):
+def position(
+    conn,
+    position_id,
+    *,
+    day,
+    arm,
+    kind="fly",
+    pnl=98.11,
+    gross=105.0,
+    regime=None,
+    completion=None,
+    completing_direction=None,
+    latency=None,
+    best_debit=None,
+):
     """A settled legged row, the shape test_analytics.position() writes (tests dir is not a package)."""
     dbmod.save_position(
         conn,
@@ -36,7 +50,11 @@ def position(conn, position_id, *, day, arm, kind="fly", pnl=98.11, gross=105.0,
             "underlying_at_entry": 6000.0,
             "risk_free": 1,
             "entry_time": f"{day}T12:00:00",
+            "completing_direction": completing_direction,
+            "completion_latency_min": latency,
+            "best_completing_debit": best_debit,
             **{f"entry_{k}": v for k, v in (regime or {}).items()},
+            **{f"completion_{k}": v for k, v in (completion or {}).items()},
         },
     )
 
@@ -138,6 +156,81 @@ def test_cross_tab_cells_pair_the_two_buckets(conn):
         and cells[("diffuse", "up_from_open")]["thin"] is True
     )
     assert cells[("untagged", "untagged")]["trades"] == 1
+
+
+def _seed_drift(conn):
+    day = "2026-09-21"
+    rows = [
+        ("d-with-up", "up", {"trend_bucket": "up_from_open", "trend_value": 30.0}),
+        ("d-with-down", "down", {"trend_bucket": "down_from_open", "trend_value": -30.0}),
+        ("d-against", "up", {"trend_bucket": "down_from_open", "trend_value": -30.0}),
+        ("d-flat", "up", {"trend_bucket": "flat", "trend_value": 2.0}),
+        ("d-nodir", None, {"trend_bucket": "up_from_open", "trend_value": 30.0}),
+    ]
+    for pid, direction, regime in rows:
+        position(conn, pid, day=day, arm="control", regime=regime, completing_direction=direction)
+    conn.execute("UPDATE fly_positions SET completed_at = entry_time WHERE position_id LIKE 'd-with%'")
+    conn.commit()
+    dbmod.record_measurement_break(conn, break_date="2026-08-21", kind="advisor_era_cutover", reason="era")
+
+
+def test_drift_alignment_buckets_by_completing_direction_against_trend(conn):
+    """Shown to fail before the dimension existed: `by_regime` raised on an unknown dimension."""
+    _seed_drift(conn)
+    rows = {r["bucket"]: r for r in analytics.by_regime(conn, "drift_alignment", arm="control")}
+    assert rows["with"]["trades"] == 2 and rows["with"]["value_min"] == 30.0
+    assert rows["with"]["completion_rate"] == 1.0
+    assert rows["against"]["trades"] == 1 and rows["against"]["value_max"] == -30.0
+    assert rows["flat"]["trades"] == 1
+    assert rows["untagged"]["trades"] == 1  # a tagged day with no completing direction is not `flat`
+    cov = analytics.regime_coverage(conn, arm="control")["dimensions"]["drift_alignment"]
+    assert cov["buckets"] == {"with": 2, "against": 1, "flat": 1} and cov["untagged"] == 1
+    doc = analytics.regime_cuts(conn, session="2026-09-21", generated_at="t")
+    control = next(b for b in doc["books"] if b["book"] == "control")
+    assert {b["bucket"] for b in control["dimensions"]["drift_alignment"]["buckets"]} >= {"with", "against"}
+
+
+def test_drift_alignment_completion_phase_reads_completion_columns(conn):
+    """Shown to fail with the count-1 `entry_` rename: only the first of the expression's two trend
+    references moved to the completion phase, so a flat entry read back as flat at completion."""
+    position(
+        conn,
+        "d-phase",
+        day="2026-09-21",
+        arm="control",
+        regime={"trend_bucket": "flat", "trend_value": 2.0},
+        completion={"trend_bucket": "up_from_open", "trend_value": 40.0},
+        completing_direction="up",
+    )
+    entry = analytics.by_regime(conn, "drift_alignment", arm="control")
+    done = analytics.by_regime(conn, "drift_alignment", arm="control", phase="completion")
+    assert [r["bucket"] for r in entry] == ["flat"]
+    assert [(r["bucket"], r["value_min"]) for r in done] == [("with", 40.0)]
+
+
+def test_regime_cuts_summary_carries_latency_and_miss_gap_quantiles(conn):
+    """Shown to fail with KeyError before the summaries existed. 17.5 pins linear interpolation
+    over nearest-rank (which would read 20)."""
+    day = "2026-09-21"
+    for i, lat in enumerate((10.0, 20.0, 30.0, 40.0)):
+        position(conn, f"q{i}", day=day, arm="control", latency=lat)
+    conn.execute("UPDATE fly_positions SET completed_at = entry_time WHERE position_id LIKE 'q%'")
+    for i, debit in enumerate((2.80, 3.00)):
+        position(conn, f"m{i}", day=day, arm="control", kind="short_vertical", pnl=-300.0, best_debit=debit)
+    position(conn, "m-noprice", day=day, arm="control", kind="short_vertical", pnl=-300.0)
+    conn.commit()
+    dbmod.record_measurement_break(conn, break_date="2026-08-21", kind="advisor_era_cutover", reason="era")
+    doc = analytics.regime_cuts(conn, session=day, generated_at="t")
+    control = next(b for b in doc["books"] if b["book"] == "control")
+    assert control["completion_latency_min"] == {"n": 4, "p25": 17.5, "p50": 25.0, "p75": 32.5, "max": 40.0}
+    assert control["miss_gap"] == {"n": 2, "min": -0.45, "p25": -0.4, "p50": -0.35, "p75": -0.3}
+
+
+def test_regime_cuts_summary_distributions_are_null_when_nothing_qualifies(conn):
+    _seed(conn)
+    doc = analytics.regime_cuts(conn, session=DAY, generated_at="t")
+    control = next(b for b in doc["books"] if b["book"] == "control")
+    assert control["completion_latency_min"] is None and control["miss_gap"] is None
 
 
 def test_regime_cuts_is_byte_stable(conn):

@@ -992,6 +992,23 @@ def test_regime_cuts_collapses_thin_books_and_labels_a_stale_artifact(tmp_home):
     assert out["era"]["ignored_future"] == ["2026-12-18"] and out["era"]["bounding_break"] == "cutover"
 
 
+def test_regime_cuts_carries_flies_outcome_distributions_and_omits_them_for_meic(tmp_home):
+    """Shown to fail with KeyError before the thinning copied the two keys."""
+    latency = {"n": 4, "p25": 17.5, "p50": 25.0, "p75": 32.5, "max": 40.0}
+    gap = {"n": 2, "min": -0.45, "p25": -0.4, "p50": -0.35, "p75": -0.3}
+    flies = _regime_doc()
+    flies["books"][0]["completion_latency_min"] = latency
+    flies["books"][0]["miss_gap"] = gap
+    _write_regime_doc(tmp_home, "flies", flies)
+    _write_regime_doc(tmp_home, "meic", _regime_doc(module="meic"))
+    out = factpack._regime_cuts(SESSION, ("flies", "meic"))
+    control = out["flies"]["books"][0]
+    assert control["completion_latency_min"] == latency and control["miss_gap"] == gap
+    meic = out["meic"]["books"][0]
+    assert "completion_latency_min" not in meic and "miss_gap" not in meic
+    assert "miss_gap" in out["_note"]
+
+
 def test_regime_cuts_unknown_cut_version_is_absent_not_misread(tmp_home):
     _write_regime_doc(tmp_home, "meic", _regime_doc(module="meic", cut_version=2))
     out = factpack._regime_cuts(SESSION, ("meic",))["meic"]

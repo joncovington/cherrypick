@@ -185,6 +185,39 @@ def test_completion_fields_are_null_for_a_module_without_the_concept():
     )
 
 
+def test_assemble_copies_outcome_distributions_only_when_present():
+    """Shown to fail by copying the keys unconditionally: a MEIC book would carry `miss_gap: None`
+    and read as a module that measures misses and found none."""
+    latency = {"n": 4, "p25": 17.5, "p50": 25.0, "p75": 32.5, "max": 40.0}
+    gap = {"n": 2, "min": -0.45, "p25": -0.4, "p50": -0.35, "p75": -0.3}
+    doc = _doc()
+    control_in = next(b for b in doc["books"] if b["book"] == "control")
+    assert "completion_latency_min" not in control_in and "miss_gap" not in control_in
+    books = [
+        {
+            "book": "control",
+            "era_start": "2026-08-21",
+            "era_break": None,
+            "summary": {"sessions": 9, "trades": 40, "completion_latency_min": latency, "miss_gap": gap},
+            "coverage": {},
+            "regimes": {},
+        },
+        {
+            "book": "advised:x",
+            "era_start": "2026-08-21",
+            "era_break": None,
+            "summary": {"sessions": 9, "trades": 40},
+            "coverage": {},
+            "regimes": {},
+        },
+    ]
+    doc = _doc(books=books)
+    control = next(b for b in doc["books"] if b["book"] == "control")
+    advised = next(b for b in doc["books"] if b["book"] == "advised:x")
+    assert control["completion_latency_min"] == latency and control["miss_gap"] == gap
+    assert "completion_latency_min" not in advised and "miss_gap" not in advised
+
+
 def test_the_document_carries_the_contract_fields_and_the_era():
     doc = _doc()
     assert (

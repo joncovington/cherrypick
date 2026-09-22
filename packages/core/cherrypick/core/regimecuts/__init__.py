@@ -124,6 +124,9 @@ _CELL_KEYS = (
 )
 
 
+_OUTCOME_KEYS = ("completion_latency_min", "miss_gap")
+
+
 def _cell(row: dict) -> dict:
     sessions = int(row.get("sessions") or 0)
     out: dict[str, Any] = {"sessions": sessions}
@@ -163,7 +166,13 @@ def assemble(
     `completion_rate` when the module has the concept), `coverage` is the module's
     `regime_coverage(...)["dimensions"]`, and `regimes` is `{dimension: [by_regime rows]}`.
     `cross_tabs` are `{dims, books: [{book, cells: [{buckets, ...summary, sessions}]}]}`.
-    Everything is re-ordered and `thin`-stamped here so two writers cannot disagree."""
+    Everything is re-ordered and `thin`-stamped here so two writers cannot disagree.
+
+    A summary may also carry the outcome distributions in `_OUTCOME_KEYS`; they are copied only
+    when the writer set them, so a module without the concept emits no key rather than a null
+    that reads as "measured and found nothing". Additive keys like these do not bump
+    `CUT_VERSION`: every reader takes them with `.get`, and a bump would have the advisor refuse
+    the other writer's artifact until its next nightly run."""
     out_books = []
     for b in sorted(books, key=lambda x: _book_sort_key(x["book"])):
         summary = b["summary"]
@@ -182,20 +191,22 @@ def assemble(
             ]
             buckets.sort(key=_bucket_sort_key)
             dims[dim] = {**cov, "buckets": buckets}
-        out_books.append(
-            {
-                "book": b["book"],
-                "era_start": b.get("era_start"),
-                "era_break": b.get("era_break"),
-                "sessions": int(summary.get("sessions") or 0),
-                "trades": summary.get("trades"),
-                "net_pnl": summary.get("net_pnl"),
-                "win_rate": summary.get("win_rate"),
-                "completed": summary.get("completed"),
-                "completion_rate": summary.get("completion_rate"),
-                "dimensions": dims,
-            }
-        )
+        book = {
+            "book": b["book"],
+            "era_start": b.get("era_start"),
+            "era_break": b.get("era_break"),
+            "sessions": int(summary.get("sessions") or 0),
+            "trades": summary.get("trades"),
+            "net_pnl": summary.get("net_pnl"),
+            "win_rate": summary.get("win_rate"),
+            "completed": summary.get("completed"),
+            "completion_rate": summary.get("completion_rate"),
+        }
+        for k in _OUTCOME_KEYS:
+            if k in summary:
+                book[k] = summary[k]
+        book["dimensions"] = dims
+        out_books.append(book)
     out_cross = []
     for ct in cross_tabs:
         entries = []

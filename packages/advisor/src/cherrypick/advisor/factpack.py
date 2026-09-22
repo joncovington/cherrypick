@@ -1470,7 +1470,10 @@ _REGIME_CUTS_NOTE = (
     "effect sat. Read `sessions` before anything else; same-day entries share a regime. Dimensions "
     "under 50% coverage or degenerate are dropped and named under _dropped. Cells are "
     + _REGIME_CELL_FORMAT
-    + "."
+    + ". A flies book may also carry completion_latency_min (quantiles in minutes over its "
+    "completed rows) and miss_gap (credit minus the best completing debit ever seen, over its "
+    "uncompleted short verticals; negative = the completion never came within reach, and the gate "
+    "needs it under credit minus fee_buffer). Absent for MEIC, which has neither concept."
 )
 
 
@@ -1529,6 +1532,9 @@ def _thin_regime_cuts(doc: dict[str, Any], session: str) -> dict[str, Any]:
         }
         if book.get("completion_rate") is not None:
             entry["completion_rate"] = book.get("completion_rate")
+        for k in ("completion_latency_min", "miss_gap"):
+            if book.get(k) is not None:
+                entry[k] = book[k]
         for dim, d in (book.get("dimensions") or {}).items():
             cov = d.get("coverage_pct")
             if d.get("degenerate"):
