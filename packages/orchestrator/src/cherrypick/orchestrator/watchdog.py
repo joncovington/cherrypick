@@ -1290,6 +1290,30 @@ def _check_eval_activity(
     return [Finding(f"{name}.eval_activity", finding, f"{label} eval activity", detail)]
 
 
+def _decision_window_open(mcfg: dict[str, Any], now_et: datetime) -> bool:
+    """Has this module's own entry window opened yet today?
+
+    A module that enters on a schedule has recorded no decision before its `entry_time`, and
+    `not_enacted` is the scorer's honest answer to a session that has not reached the module's
+    decision point. Reported, it is a false alarm; earnings enters at 15:45 ET, so the check's
+    10:30-16:30 window put every trading day's first five hours inside that gap and raised the
+    WARN 30-36 times a day from 2026-09-14 until this gate landed, on a module behaving as
+    designed — the same failure mode `carried` was added for on 2026-08-27.
+
+    The schedule is the orchestrator's own fact, so the gate lives here rather than in the
+    advisor's scorer: the verdict still comes from `enactment.py` untouched, and this only decides
+    whether the session has had a chance to produce it yet. A module with no `entry_time` runs
+    continuously and is judged from the open."""
+    entry = (mcfg.get("paper") or {}).get("entry_time")
+    if not entry:
+        return True
+    try:
+        hour, minute = (int(part) for part in str(entry).split(":")[:2])
+        return now_et.time() >= time(hour, minute)
+    except (TypeError, ValueError):
+        return True
+
+
 def _check_advice_enactment(cfg: dict[str, Any], now_et: datetime, is_trading: bool) -> list[Finding]:
     """Did today's modules actually APPLY the advice artifact issued for them last night?
 
@@ -1352,10 +1376,13 @@ def _check_advice_enactment(cfg: dict[str, Any], now_et: datetime, is_trading: b
     if not isinstance(payload, dict) or not payload.get("ok"):
         return []
 
+    modules = cfgmod.enabled_modules(cfg)
     dropped = [
         (name, (row or {}).get("detail") or "")
         for name, row in (payload.get("modules") or {}).items()
-        if isinstance(row, dict) and row.get("status") == "not_enacted"
+        if isinstance(row, dict)
+        and row.get("status") == "not_enacted"
+        and _decision_window_open(modules.get(name) or {}, now_et)
     ]
     if not dropped:
         return []

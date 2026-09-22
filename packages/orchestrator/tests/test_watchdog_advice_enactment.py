@@ -99,6 +99,33 @@ def test_it_is_windowed(advisor, when, why):
     assert watchdog._check_advice_enactment(CFG, when, True) == [], why
 
 
+def test_a_module_is_not_late_before_its_own_entry_window_opens(advisor):
+    """earnings decides at 15:45 ET. Between 10:30 and then it has recorded no decision because its
+    session has not started yet, not because it ignored the artifact — the same session scored the
+    next morning reads `carried`. Ungated, this fired 30-36 times a day, every trading day from
+    2026-09-14 to 09-22, on a module behaving exactly as designed."""
+    advisor(_payload(earnings="not_enacted"))
+    cfg = {
+        "advisor": {"enabled": True},
+        "modules": {"earnings": {"enabled": True, "paper": {"entry_time": "15:45"}}},
+    }
+    assert watchdog._check_advice_enactment(cfg, MIDDAY, True) == []
+    after_entry = datetime(2026, 8, 25, 16, 0, tzinfo=ET)
+    [finding] = watchdog._check_advice_enactment(cfg, after_entry, True)
+    assert "earnings" in finding.message, "once its window has opened, a dropped artifact is real"
+
+
+def test_a_module_with_no_entry_time_is_judged_from_the_open(advisor):
+    """A continuous loop decides from the open, so the window gate must not silence it."""
+    advisor(_payload(flies="not_enacted"))
+    cfg = {
+        "advisor": {"enabled": True},
+        "modules": {"flies": {"enabled": True, "paper": {"tick_interval_seconds": 15}}},
+    }
+    [finding] = watchdog._check_advice_enactment(cfg, MIDDAY, True)
+    assert "flies" in finding.message
+
+
 def test_it_is_silent_on_a_non_trading_day(advisor):
     advisor(_payload(meic="not_enacted"))
     assert watchdog._check_advice_enactment(CFG, MIDDAY, False) == []
