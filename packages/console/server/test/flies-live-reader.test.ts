@@ -101,14 +101,21 @@ afterEach(() => {
 });
 
 describe("period bounds", () => {
-  it("run Monday-to-session, first-of-month, and first-of-year in ET", () => {
-    const b = periodBounds("2026-09-17", new Date("2026-09-17T20:00:00Z")); // a Thursday
+  it("run Monday-to-session, first-of-month, and first-of-year", () => {
+    const b = periodBounds("2026-09-17"); // a Thursday
     expect(b.today).toEqual(["2026-09-17", "2026-09-17"]);
     expect(b.week).toEqual(["2026-09-14", "2026-09-17"]);
     expect(b.month).toEqual(["2026-09-01", "2026-09-17"]);
     expect(b.year).toEqual(["2026-01-01", "2026-09-17"]);
-    // a Sunday read still points at the week just traded
-    expect(periodBounds("2026-09-18", new Date("2026-09-20T20:00:00Z")).week[0]).toBe("2026-09-14");
+    expect(periodBounds("2026-09-18").week[0]).toBe("2026-09-14"); // a Friday
+    expect(periodBounds("2026-09-14").week).toEqual(["2026-09-14", "2026-09-14"]); // a Monday
+  });
+
+  it("follows the session across a month boundary, whatever the clock says", () => {
+    // Shown to fail before 2026-09-22: the week came from the wall clock, so this read as the
+    // current week and the payload test above went to zero the first Monday after its fixtures.
+    expect(periodBounds("2026-09-02").week).toEqual(["2026-08-31", "2026-09-02"]);
+    expect(periodBounds("2026-01-02").week).toEqual(["2025-12-29", "2026-01-02"]);
   });
 });
 

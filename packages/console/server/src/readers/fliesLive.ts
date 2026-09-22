@@ -28,27 +28,17 @@ const RTH_OPEN_MIN = 9 * 60 + 30;
 const RTH_CLOSE_MIN = 16 * 60;
 
 // --------------------------------------------------------------------------- period bounds (ET)
-function etParts(d: Date): { y: number; m: number; day: number; dow: number } {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: ET,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    weekday: "short",
-  }).formatToParts(d);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  const dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(get("weekday"));
-  return { y: Number(get("year")), m: Number(get("month")), day: Number(get("day")), dow };
-}
-
 function iso(y: number, m: number, d: number): string {
   return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
-/** `{today, week, month, year}` as inclusive `[start, end]` ISO session-date bounds, ET. The
- *  week starts Monday; a Saturday/Sunday read still points at the week just traded. */
-export function periodBounds(session: string, now: Date = new Date()): Record<"today" | "week" | "month" | "year", [string, string]> {
-  const { y, m, day, dow } = etParts(now);
+/** `{today, week, month, year}` as inclusive `[start, end]` ISO session-date bounds. The week
+ *  starts Monday. Derived from the SESSION, never the clock: until 2026-09-22 this read the wall
+ *  clock's week, so a past session opened on a later Monday got an empty window and the Live
+ *  page's week/month/year figures were the current period's, whatever day was being read. */
+export function periodBounds(session: string): Record<"today" | "week" | "month" | "year", [string, string]> {
+  const [y, m, day] = session.split("-").map(Number) as [number, number, number];
+  const dow = new Date(Date.UTC(y, m - 1, day)).getUTCDay();
   const back = dow === 0 ? 6 : dow - 1; // days since Monday
   const monday = new Date(Date.UTC(y, m - 1, day - back));
   const mondayIso = iso(monday.getUTCFullYear(), monday.getUTCMonth() + 1, monday.getUTCDate());
