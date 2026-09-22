@@ -15,14 +15,25 @@ snapshotted into `modeled_*` columns first (once, non-destructively) so nothing 
 
 Matching is exact, not fuzzy: trade-side legs (entry/completion/close) are matched by `order_id`,
 already stored on the position row for exactly this purpose; settlement-side legs (assignment/
-exercise/expiration) are matched by OCC option symbol + trade date, built from the position's own
-`side`/`center`/`wing_width`. A position with no matching broker data is left untouched and marked
-`unmatched` rather than guessed at — the same honesty stance the rest of this module takes.
+exercise/expiration) are matched by option symbol + trade date, taken from the leg symbols the
+ledger recorded at fill time and compared in streamer form through one shared converter. A position
+with no matching broker data is left untouched and marked `unmatched` rather than guessed at — the
+same honesty stance the rest of this module takes, and `unmatched` is a state to retry, never a
+verdict.
 
 Deliberately split in two: `reconcile_date` is pure given already-fetched transactions (easy to
 test against real transcribed order chains, same spirit as `tests/fixtures/books.json`); the async
-broker fetch lives in `live_loop.py`'s `BrokerAdapter.history` (morning auto-run) or this module's
-own `main()` (manual/CLI run) — neither of which this file imports, to stay broker-agnostic.
+broker fetch lives in this module's own `main()`, which it does not import at module scope, to stay
+broker-agnostic.
+
+**Run by a scheduled job, never by the live loop.** It rode the live tick until 2026-09-22, which
+meant it executed only under `--live`, sat behind the dead-man's switch, and stopped entirely once
+the loop disarmed — so a session traded on Tuesday was never confirmed against real cash if
+Wednesday was never armed, and every SPX session from 2026-08-03 sat `unmatched` unnoticed.
+Confirming the ledger against the broker must not depend on whether we chose to trade today, so the
+supervisor runs `<module>-fee-reconcile` daily (see the orchestrator's `fee_reconcile_at` /
+`fee_reconcile_argv`), and `python -m cherrypick.flies.fee_reconcile --symbol SPX` is the same work
+by hand.
 """
 
 from __future__ import annotations
@@ -31,6 +42,8 @@ import argparse
 import asyncio
 import json
 from datetime import date, timedelta
+
+from cherrypick.core import streamcache  # noqa: E402
 
 from cherrypick.flies import (
     clock,  # noqa: E402
@@ -56,8 +69,29 @@ def _occ_symbol(root_symbol: str, expiration: str, side: str, strike: float) -> 
     return f"{root_symbol.ljust(6)}{yy}{mm}{dd}{call_put}{int(round(strike * 1000)):08d}"
 
 
-def _position_leg_symbols(position: dict) -> list[str]:
-    """The settlement-relevant OCC leg symbols for a settled live position."""
+_LEG_SYMBOL_COLUMNS = ("center_leg_symbol", "wing_leg_symbol", "completing_leg_symbol")
+
+
+def _position_leg_symbols(position: dict, *, root: str | None = None) -> list[str]:
+    """The settlement-relevant leg symbols for a settled live position, in STREAMER form.
+
+    Streamer form rather than OCC because that is what the ledger records at fill time, and a
+    broker line converts into it through one shared, test-pinned function
+    (`streamcache.occ_to_streamer_symbol`) -- so the comparison never depends on reconstructing a
+    symbol correctly.
+
+    **The underlying's name is not the OCC root.** SPX 0DTE trades as SPXW, so building the symbol
+    from `position["symbol"]` produced `SPX   260921C07720000` against a broker reporting
+    `SPXW  260921C07720000`: no settlement line ever matched and every SPX session from 2026-08-03
+    fell to `unmatched`. The XSP era hid it, because XSP's root really is XSP.
+
+    So: prefer the leg symbols recorded at fill time; for rows written before those columns existed,
+    fall back to constructing them with `root` -- which the caller takes from the broker's own trade
+    lines, not from the underlying's name.
+    """
+    stored = [str(position[key]) for key in _LEG_SYMBOL_COLUMNS if position.get(key)]
+    if stored:
+        return stored
     side, center, width = position["side"], position["center"], position["wing_width"]
     long_strike = center - width if side == fly.PUT else center + width
     strikes = [center, long_strike]
@@ -65,8 +99,11 @@ def _position_leg_symbols(position: dict) -> list[str]:
         completing_strike = center + width if side == fly.PUT else center - width
         strikes.append(completing_strike)
     expiration = position["trade_date"]
-    symbol = position["symbol"]
-    return [_occ_symbol(symbol, expiration, side, strike) for strike in strikes]
+    occ_root = root or position["symbol"]
+    return [
+        streamcache.occ_to_streamer_symbol(_occ_symbol(occ_root, expiration, side, strike))
+        for strike in strikes
+    ]
 
 
 def _fee_total(txn: dict) -> float:
@@ -126,12 +163,16 @@ def _update_book_rollup(conn, book_id: str) -> None:
 def reconcile_date(conn, trade_date: str, symbol: str, transactions: list[dict], *, log=print) -> dict:
     """Reconcile every settled, unreconciled `symbol` position on `trade_date` against
     already-fetched broker `transactions` (see module docstring for why the fetch is separate).
-    Idempotent: a position already reconciled (or already marked unmatched) is skipped."""
+    Idempotent in one direction only: a RECONCILED position is terminal and skipped, an `unmatched`
+    one is re-examined. Excluding unmatched rows here disagreed with `pending_reconciliation`, which
+    only ever checked `broker_reconciled_at` -- so an unmatched date stayed pending forever while
+    this function refused to look at it, and the live loop refetched broker history every tick to do
+    nothing with it. A failed match is a state to retry, not a verdict."""
     positions = [
         dict(r)
         for r in conn.execute(
             "SELECT * FROM fly_positions WHERE trade_date = ? AND symbol = ? AND status = 'settled' "
-            "AND broker_reconciled_at IS NULL AND broker_reconciliation_status IS NULL",
+            "AND broker_reconciled_at IS NULL",
             (trade_date, symbol),
         ).fetchall()
     ]
@@ -159,12 +200,17 @@ def reconcile_date(conn, trade_date: str, symbol: str, transactions: list[dict],
             for t in transactions
             if t.get("transaction_type") == _TRADE_TRANSACTION_TYPE and str(t.get("order_id")) in order_ids
         ]
-        leg_symbols = set(_position_leg_symbols(position))
+        # The OCC root the broker actually used, read off the trade lines the order id already
+        # matched -- the broker's own record of what we traded. Only needed for rows written
+        # before the leg-symbol columns existed; see `_position_leg_symbols`.
+        traded = next((str(t["symbol"]) for t in trade_txns if t.get("symbol")), None)
+        traded_root = streamcache.occ_root(traded) if traded else None
+        leg_symbols = set(_position_leg_symbols(position, root=traded_root))
         settlement_txns = [
             t
             for t in transactions
             if t.get("transaction_type") == _SETTLEMENT_TRANSACTION_TYPE
-            and t.get("symbol") in leg_symbols
+            and streamcache.occ_to_streamer_symbol(str(t.get("symbol") or "")) in leg_symbols
             and t.get("transaction_date") == trade_date
         ]
         if not trade_txns or not settlement_txns:

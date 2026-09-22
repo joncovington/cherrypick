@@ -161,6 +161,108 @@ def test_reconcile_date_leaves_unmatched_position_untouched(live_conn):
     assert stored["modeled_pnl"] is None
 
 
+# The real 2026-09-21 SPX chain. The instrument's OCC root is SPXW -- SPX 0DTE trades as the
+# weekly -- while the position's `symbol` column says "SPX". Constructing the settlement symbol
+# from that column produced "SPX   260921C07720000", matched nothing, and marked every SPX session
+# unmatched from 2026-08-03 onward while the XSP era (whose root IS "XSP") reconciled fine.
+_SPXW_TRANSACTIONS = [
+    {**_trade_txn("507935135", 235.0), "symbol": "SPXW  260921C07720000"},
+    {**_trade_txn("507935135", -0.0), "symbol": "SPXW  260921C07725000"},
+    {
+        **_settlement_txn("SPXW  260921C07720000", -4470.0, clearing_fee=-5.0),
+        "transaction_date": "2026-09-21",
+    },
+    {
+        **_settlement_txn("SPXW  260921C07725000", 3970.0, clearing_fee=-5.0),
+        "transaction_date": "2026-09-21",
+    },
+]
+
+
+def _save_spxw_position(conn, **overrides):
+    row = {
+        "position_id": "spxw-vertical",
+        "trade_date": "2026-09-21",
+        "arm": "control",
+        "symbol": "SPX",
+        "kind": "short_vertical",
+        "side": "call",
+        "center": 7720.0,
+        "wing_width": 5.0,
+        "quantity": 1,
+        "net": 2.35,
+        "fees": 13.44,
+        "gross_pnl": -265.0,
+        "pnl": -278.44,
+        "status": "settled",
+        "entry_order_id": "507935135",
+        "center_leg_symbol": ".SPXW260921C7720",
+        "wing_leg_symbol": ".SPXW260921C7725",
+        "completing_leg_symbol": ".SPXW260921C7715",
+    }
+    row.update(overrides)
+    row.setdefault("book_id", f"{row['trade_date']}:{row['arm']}:{row['symbol']}")
+    dbmod.save_position(conn, row)
+    return row
+
+
+def test_an_spx_position_settles_against_its_spxw_legs(live_conn):
+    """Shown to fail before the root fix: `symbol` is "SPX" but the traded instrument is SPXW, so
+    the constructed OCC symbol matched no settlement line and the position fell to `unmatched`.
+    The real cash flow here is -4470 + 3970 = -500, the 5-wide's max loss."""
+    _save_spxw_position(live_conn)
+    result = fee_reconcile.reconcile_date(
+        live_conn, "2026-09-21", "SPX", _SPXW_TRANSACTIONS, log=lambda *_: None
+    )
+    assert result["reconciled"] == ["spxw-vertical"]
+    assert result["unmatched"] == []
+    stored = dict(
+        live_conn.execute(
+            "SELECT gross_pnl, expiry_payoff, broker_reconciliation_status FROM fly_positions "
+            "WHERE position_id = 'spxw-vertical'"
+        ).fetchone()
+    )
+    assert stored["broker_reconciliation_status"] == "reconciled"
+    assert stored["expiry_payoff"] == pytest.approx(-5.0)  # (-4470 + 3970) / 100
+
+
+def test_a_row_predating_the_leg_symbol_columns_takes_the_root_from_the_broker(live_conn):
+    """August's rows were written before the leg-symbol columns existed, so the root has to come
+    from the trade transactions the order id already matched -- the broker's own record of what we
+    traded, rather than a guess from the underlying's name."""
+    _save_spxw_position(live_conn, center_leg_symbol=None, wing_leg_symbol=None, completing_leg_symbol=None)
+    result = fee_reconcile.reconcile_date(
+        live_conn, "2026-09-21", "SPX", _SPXW_TRANSACTIONS, log=lambda *_: None
+    )
+    assert result["reconciled"] == ["spxw-vertical"]
+
+
+def test_an_unmatched_position_is_retried_rather_than_written_off(live_conn):
+    """`pending_reconciliation` kept listing these dates while `reconcile_date` skipped them, so the
+    live loop refetched broker history every tick and did nothing with it -- forever. Only a
+    successful reconcile is terminal."""
+    _save_spxw_position(live_conn)
+    first = fee_reconcile.reconcile_date(live_conn, "2026-09-21", "SPX", [], log=lambda *_: None)
+    assert first["unmatched"] == ["spxw-vertical"]
+
+    again = fee_reconcile.reconcile_date(
+        live_conn, "2026-09-21", "SPX", _SPXW_TRANSACTIONS, log=lambda *_: None
+    )
+    assert again["reconciled"] == ["spxw-vertical"], "an unmatched row must be re-examinable"
+
+    settled = fee_reconcile.reconcile_date(
+        live_conn, "2026-09-21", "SPX", _SPXW_TRANSACTIONS, log=lambda *_: None
+    )
+    assert settled["reconciled"] == [] and settled["unmatched"] == [], "reconciled stays terminal"
+
+
+def test_an_unmatched_date_stays_pending_so_the_retry_can_reach_it(live_conn):
+    _save_spxw_position(live_conn)
+    fee_reconcile.reconcile_date(live_conn, "2026-09-21", "SPX", [], log=lambda *_: None)
+    pending = fee_reconcile.pending_reconciliation(live_conn, "SPX", lookback_days=5, today="2026-09-22")
+    assert pending == ["2026-09-21"]
+
+
 def test_pending_reconciliation_excludes_today_and_out_of_window(live_conn):
     _save_744_position(live_conn, trade_date="2026-07-30")
     _save_744_position(live_conn, position_id="too-old", trade_date="2026-07-01")

@@ -81,7 +81,6 @@ from cherrypick.flies import (
     alerts_db,  # noqa: E402
     clock,  # noqa: E402
     engine,  # noqa: E402
-    fee_reconcile,  # noqa: E402
     fly,  # noqa: E402
     live_orders,  # noqa: E402
     provider,  # noqa: E402
@@ -1849,28 +1848,14 @@ def main() -> int:
                 print(json.dumps({"ok": True, "skipped": "not_a_trading_day", "date": day}))
                 return 0
 
-            # Morning fee reconciliation — confirms the previous day's/days' settled sessions
-            # against real broker cash flow (fee_reconcile.py). Cheap on every tick: the pending
-            # check is a local DB query, so most ticks find nothing and skip straight past; only
-            # when something is actually pending does it touch the broker, and reconciling a date
-            # clears it from `pending_reconciliation`'s query, so this needs no separate
-            # once-per-day marker. Best-effort: a fetch failure just leaves the date pending for
-            # the next tick, same fail-closed posture as `official_settlement_price`.
-            if live:
-                symbol = _live_cfg(config).get("symbol", "XSP")
-                pending_dates = fee_reconcile.pending_reconciliation(conn, symbol)
-                if pending_dates:
-                    recon_broker = BrokerAdapter(config)
-                for pending_date in pending_dates:
-                    transactions, err = recon_broker.history(pending_date, symbol)
-                    if transactions is None:
-                        _log(f"fee reconcile: broker history fetch failed for {pending_date}: {err}")
-                        continue
-                    result = fee_reconcile.reconcile_date(conn, pending_date, symbol, transactions, log=_log)
-                    _log(
-                        f"fee reconcile {pending_date}: reconciled={result['reconciled']} "
-                        f"unmatched={result['unmatched']}"
-                    )
+            # Fee reconciliation used to ride here, on every live tick. It moved out to its own
+            # scheduled job (`<module>-fee-reconcile`, jobspec.py) on 2026-09-22, because a tick is
+            # the wrong place for it: this block only ran under `--live`, the dead-man's switch
+            # above returns before reaching it, and the supervisor disables the live job the moment
+            # the loop disarms — so a session traded on Tuesday was never reconciled unless someone
+            # armed live trading again. Confirming real cash against the ledger must not depend on
+            # whether we chose to trade today. `python -m cherrypick.flies.fee_reconcile` is the
+            # same work, runnable by hand.
 
             # Tell the streamer which underlying we need kept fresh (best-effort), whether it
             # needs a wider-than-default ATM window after repeated missing_leg_quotes refusals

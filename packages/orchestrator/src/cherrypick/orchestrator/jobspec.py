@@ -69,6 +69,11 @@ CATCHUP_MINUTES = {
     # but one caught up at 20:00 still serves the console and the next pack; past that the next
     # session rewrites it.
     "regime-cuts": 240,
+    # Broker-cash reconciliation of a settled live session. Generous, because the whole point is
+    # that it must not depend on anyone arming the live loop: a box asleep until mid-afternoon
+    # should still reconcile that morning's pending dates, and an unreconciled date is only
+    # reachable for as long as `pending_reconciliation`'s lookback keeps listing it.
+    "fee-reconcile": 480,
     # A close card caught up mid-evening still describes the settled day correctly; past that the
     # next morning's cards take over.
     "status-digest-close": 90,
@@ -566,6 +571,28 @@ def derive_jobs(
                     cwd=root,
                     at_et=str(cuts_at),
                     catchup_minutes=CATCHUP_MINUTES["regime-cuts"],
+                    trading_days_only=True,
+                ),
+            )
+
+        # Broker-cash reconciliation of settled LIVE sessions (2026-09-22). Scheduled rather than
+        # ridden on the live tick, because it must run whether or not anyone armed live trading:
+        # the tick path only executed under `--live`, the dead-man's switch returned before
+        # reaching it, and the supervisor disables the live job entirely once disarmed -- so a
+        # session traded on Tuesday went unreconciled forever if Wednesday was never armed.
+        # Unconditional on arming by design; a module with no live path simply declares no keys.
+        recon_at = paper.get("fee_reconcile_at")
+        recon_argv = paper.get("fee_reconcile_argv")
+        if recon_at and recon_argv:
+            add(
+                f"{name}-fee-reconcile",
+                lambda name=name, root=root, recon_at=recon_at, recon_argv=recon_argv: JobSpec(
+                    id=f"{name}-fee-reconcile",
+                    argv=(pythonw, *recon_argv),
+                    kind=KIND_DAILY,
+                    cwd=root,
+                    at_et=str(recon_at),
+                    catchup_minutes=CATCHUP_MINUTES["fee-reconcile"],
                     trading_days_only=True,
                 ),
             )

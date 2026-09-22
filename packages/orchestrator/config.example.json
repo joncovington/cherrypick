@@ -140,6 +140,14 @@
           "regime-cuts",
           "--write"
         ],
+        "_fee_reconcile_note": "Broker-cash reconciliation of settled LIVE sessions (2026-09-22): at fee_reconcile_at (ET, trading days) the supervisor runs fee_reconcile_argv, which re-derives net/fees/gross_pnl/pnl for each settled live position from the broker's own transactions and snapshots the modeled values into modeled_* first. UNCONDITIONAL ON ARMING, which is the point: this used to ride the live tick, where it ran only under --live, sat behind the dead-man's switch, and stopped entirely once the loop disarmed -- so a session traded on Tuesday went unreconciled forever if Wednesday was never armed. 09:15 is after the broker posts the prior session's settlement lines overnight and before the entry window opens. Needs the module's broker credentials (GET-only). Remove both keys to drop the job.",
+        "fee_reconcile_at": "09:15",
+        "fee_reconcile_argv": [
+          "-m",
+          "cherrypick.flies.fee_reconcile",
+          "--symbol",
+          "SPX"
+        ],
         "paper_db": "~/.cherrypick/data/flies/paper_trades.db",
         "notify_trades": true,
         "trade_schema": "fly_book",

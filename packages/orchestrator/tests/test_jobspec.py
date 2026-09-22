@@ -736,3 +736,40 @@ def test_regime_cuts_job_is_absent_when_a_module_does_not_declare_it():
     cfg["modules"]["flies"]["paper"]["regime_cuts_at"] = "16:40"
     jobs, _ = derive(cfg)
     assert "flies-regime-cuts" not in {j.id for j in jobs}
+
+
+def _with_fee_reconcile(cfg, module="flies", at="09:15"):
+    cfg["modules"][module]["paper"]["fee_reconcile_at"] = at
+    cfg["modules"][module]["paper"]["fee_reconcile_argv"] = [
+        "-m",
+        f"cherrypick.{module}.fee_reconcile",
+        "--symbol",
+        "SPX",
+    ]
+    return cfg
+
+
+def test_fee_reconcile_job_runs_whether_or_not_live_trading_is_armed():
+    """The reason this job exists at all. Reconciliation used to ride the live tick, which only ran
+    under `--live`, sat behind the dead-man's switch, and stopped entirely once the loop disarmed --
+    so a session traded on Tuesday was never confirmed against broker cash if Wednesday was never
+    armed. Shown to fail before the job existed. Note there is no `enabled`/arming condition here,
+    unlike the `flies-live` job derived above; that absence IS the fix."""
+    cfg = _with_fee_reconcile(suite_cfg())
+    jobs, errors = derive(cfg)
+    assert errors == {}
+    job = {j.id: j for j in jobs}["flies-fee-reconcile"]
+    assert job.argv == ("pythonw", "-m", "cherrypick.flies.fee_reconcile", "--symbol", "SPX")
+    assert job.kind == jobspec.KIND_DAILY and job.at_et == "09:15" and job.trading_days_only
+    assert job.catchup_minutes == jobspec.CATCHUP_MINUTES["fee-reconcile"]
+    assert job.enabled is True, "never gated on arming -- that was the defect"
+    assert job.cwd.endswith("flies")
+
+
+def test_fee_reconcile_job_is_absent_when_a_module_does_not_declare_it():
+    jobs, _ = derive(suite_cfg())
+    assert not [j.id for j in jobs if j.id.endswith("-fee-reconcile")]
+    cfg = suite_cfg()
+    cfg["modules"]["flies"]["paper"]["fee_reconcile_at"] = "09:15"
+    jobs, _ = derive(cfg)
+    assert "flies-fee-reconcile" not in {j.id for j in jobs}
