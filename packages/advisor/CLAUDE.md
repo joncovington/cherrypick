@@ -455,8 +455,21 @@ by hand made net-GEX sign look predictive of flies completion until the trend cr
 effect sat in one seven-session cell. The pack should not be able to make that mistake. Measured
 the day it landed: 23 KB for the real pair (four flies books, three MEIC), 0.12 of the ceiling;
 the dict form of the same cells was 48 KB, which is why they are strings. `test_factpack.py` pins
-a synthetic far case (twelve mature flies books x six dimensions plus three MEIC x eight) under
-64 KB. The deep pack itself measured 372 KB without this section against its 200 KB ceiling.
+a synthetic far case (twelve mature flies books x **seven** dimensions and **two** cross-tabs,
+plus three MEIC x eight and one) under **72 KB**. The deep pack itself measured 372 KB without
+this section against its 200 KB ceiling.
+
+**Why that bound moved from 64 KB to 72 KB on 2026-09-22, and why it is not drift.** The far case
+grew because flies' artifact genuinely did: `drift_alignment` made it seven dimensions on 09-21
+and `gex x drift_alignment` made it two cross-tabs on 09-22. The old fixture still modelled six
+and one, so it was understating the shape it exists to bound, and correcting it measured 67.2 KB.
+The real section measured **15.3 KB** at the same moment (five flies books, four mature), up from
+13.2 KB -- the second cross-tab costs about 2 KB of a 200 KB ceiling. Cutting
+`REGIME_CUTS_CROSS_CELLS` from 6 to 4 was measured as the alternative and rejected: it saves
+0.6 KB on the real section, because the bulk is dimensions, not cross cells, and it would degrade
+the read being added. "Cut the largest section; do not raise the ceiling" governs the pack
+ceilings above, not this synthetic guard -- but raise this one only with a fresh measurement of
+the real section beside it, as here.
 
 **Measurement break for the advisor: proposals either side of 2026-09-22 (the first deep
 checkpoint that reads it) were made on different evidence.** Same rule as the 2026-08-26 budget
@@ -469,7 +482,10 @@ it under credit minus `fee_buffer`). Copied by `_thin_regime_cuts` when the writ
 absent for MEIC; `cut_version` stays 1 because every reader takes them with `.get`. The same
 landing added a `drift_alignment` dimension to flies' artifact (with / flat / against -- whether
 the leg needed the day to reverse), which arrives through the ordinary dimension path. The
-2026-09-22 deep pack is the first to carry all three, so the break above covers them: the pack
+2026-09-22 deep pack is the first to carry all three — and also flies' second declared cross-tab,
+`gex x drift_alignment` (declared in `flies.analytics.CROSS_TABS`, not in the shared default,
+since MEIC has no drift dimension; the thinning was already N-tab general, so it arrives with no
+advisor change). The break above covers them: the pack
 now shows the split behind the `refuse_trend_bucket` bound and the distribution behind
 `miss_stop_minutes`, which no earlier proposal could have seen. No bound was added -- the
 leg-level `refuse_completion_against_trend` gate stays out of `advice.bounds` on purpose.

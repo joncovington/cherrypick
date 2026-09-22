@@ -174,6 +174,20 @@ def _seed_drift(conn):
     dbmod.record_measurement_break(conn, break_date="2026-08-21", kind="advisor_era_cutover", reason="era")
 
 
+def test_second_cross_tab_pairs_gex_with_drift_alignment(conn):
+    """Shown to fail while flies wrote only the shared default cross-tab: the second pair is
+    declared module-side because MEIC writes the same artifact and has no drift dimension."""
+    _seed_drift(conn)
+    conn.execute("UPDATE fly_positions SET entry_gex_bucket = 'diffuse' WHERE position_id LIKE 'd-%'")
+    conn.commit()
+    doc = analytics.regime_cuts(conn, session="2026-09-21", generated_at="t")
+    assert [t["dims"] for t in doc["cross_tabs"]] == [["gex", "trend"], ["gex", "drift_alignment"]]
+    control = next(b for b in doc["cross_tabs"][1]["books"] if b["book"] == "control")
+    cells = {tuple(c["buckets"]): c for c in control["cells"]}
+    assert cells[("diffuse", "with")]["trades"] == 2 and cells[("diffuse", "with")]["completed"] == 2
+    assert cells[("diffuse", "against")]["trades"] == 1 and cells[("diffuse", "untagged")]["trades"] == 1
+
+
 def test_drift_alignment_buckets_by_completing_direction_against_trend(conn):
     """Shown to fail before the dimension existed: `by_regime` raised on an unknown dimension."""
     _seed_drift(conn)

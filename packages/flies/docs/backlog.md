@@ -78,9 +78,13 @@ landing. Reopens when any of the four is next touched.
 
 ## Regime cuts: the sweep and the partial sessions
 
-v1 carries one declared cross-tab (gex x trend). A general N x N sweep would be a fishing surface
-at nineteen sessions -- nearly every twelve-cell cross is thin -- and is deferred until a second
-cross earns its place the way the first did. `partial_session` breaks are listed as caveats inside
+v1 carried one declared cross-tab (gex x trend); a second, gex x drift_alignment, was declared on
+2026-09-21 when it earned its place the way the first did -- the first era-wide drift_alignment
+read contradicted a stated prior (control's `with` and `against` both near 68% over 20 sessions
+against 82% / 7%), and gex is the one dimension that can explain that either way. **A general
+N x N sweep stays deferred**, and so does the three-way cross it would start with: 27 cells at
+this sample is the fishing surface, and `trend` already sits inside `drift_alignment`. A third
+declared pair needs its own reason of the same kind. `partial_session` breaks are listed as caveats inside
 the era rather than excluded from it; excluding those dates would touch the shared
 `_period_clause`, and none falls inside the current era. Curve is the natural third writer (one
 dimension, `entry_regime`/`entry_ratio` already on the row) once its fee floor lets it enter.

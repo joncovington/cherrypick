@@ -159,8 +159,9 @@ decomposes into two measurable claims, neither of which needs a new arm:
   about the same moment.
 
 **The regime-cuts artifact (2026-09-19, `python run.py regime-cuts --write`).** Every arm with
-settled rows inside the era, cut by every regime dimension and by one declared cross-tab (gex x
-trend), written nightly at 16:40 ET by the supervisor (`paper.regime_cuts_at` / `regime_cuts_argv`
+settled rows inside the era, cut by every regime dimension and by the module's declared cross-tabs
+(`analytics.CROSS_TABS` -- gex x trend, and gex x drift_alignment since 2026-09-21), written
+nightly at 16:40 ET by the supervisor (`paper.regime_cuts_at` / `regime_cuts_argv`
 in the suite config) to `data/flies/regime_cuts-<session>.json` plus a `regime_cuts.json` latest
 copy that only a newer session replaces, so `--session` re-cuts a past day beside the current one
 and `--backfill --since` fills a run of them. The contract lives in `cherrypick.core.regimecuts`
@@ -198,6 +199,20 @@ book of -0.55 misses call for different remedies. Both are copied through
 The phase rename in `by_regime` now replaces every `entry_` rather than the first -- the derived
 expression names the trend pair twice, and the count-1 form read the entry tag under the
 completion phase; `test_regime_cuts.py` pins that.
+
+**The second cross-tab, gex x drift_alignment (2026-09-21).** Declared module-side in
+`analytics.CROSS_TABS` rather than in the shared `core.regimecuts.DEFAULT_CROSS_TABS`, because
+MEIC writes the same artifact from the same contract and an iron condor has no drift analogue;
+flies appends its own pair, so `cross_tabs[0]` stays the shared one for every reader that indexes
+it. It earns its place the way the first did -- the first exists because a hand cut made net-GEX
+sign look predictive until the trend cross showed the effect sat in one seven-session cell, and
+this one exists because the first era-wide `drift_alignment` read did the opposite: control's
+`with` and `against` completed at 69% and 68% over 20 sessions against a stated 82% / 7% prior,
+and gex is the one dimension that can explain that either way. A three-way gex x trend x
+drift_alignment cross was asked for and refused: 27 cells at this sample is the fishing surface
+the backlog defers, and `trend` is already inside `drift_alignment` (flat maps to flat;
+with/against splits each trend bucket by the leg's side), so the two-dimensional form says the
+same thing honestly.
 
 **Everything past the completion rate lives on a time axis, so the console's flies page has one.** `analytics.session_timeline`
 assembles the day from rows already written — spot and every arm's wanted centre on each iteration,

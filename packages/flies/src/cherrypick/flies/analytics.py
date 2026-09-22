@@ -337,6 +337,14 @@ REGIME_DIMENSIONS = {
     "drift_alignment": (_DRIFT_ALIGNMENT_BUCKET, _DRIFT_ALIGNMENT_VALUE),
 }
 
+# Flies' own declared cross-tabs -- the shared default plus one this module alone can cut, since
+# `drift_alignment` is flies-only and MEIC writes the same artifact from the same core contract.
+# The second pair (2026-09-21) earns its place the way the first did: the first era-wide
+# drift_alignment read had control's `with` and `against` completing at 69% and 68% over 20
+# sessions against a stated 82% / 7% prior, and gex is the one dimension that can explain that
+# either way. Appended, never prepended -- readers index `cross_tabs[0]` for the shared pair.
+CROSS_TABS = (*_rc.DEFAULT_CROSS_TABS, ("gex", "drift_alignment"))
+
 
 def _regime_columns(dimension: str, phase: str = "entry") -> tuple[str, str]:
     """The (bucket, value) SQL for a dimension at a phase. Every `entry_` is renamed, not just the
@@ -665,7 +673,7 @@ def regime_cuts(
     symbol: str = "SPX",
     entry_modes=COMPARISON_ENTRY_MODES,
     phase: str = "entry",
-    cross_tabs=_rc.DEFAULT_CROSS_TABS,
+    cross_tabs=CROSS_TABS,
     breaks: list[dict] | None = None,
     generated_at: str | None = None,
 ) -> dict:

@@ -1017,10 +1017,11 @@ def test_regime_cuts_unknown_cut_version_is_absent_not_misread(tmp_home):
 
 def test_regime_cuts_thinned_sections_fit_the_attention_budget(tmp_home):
     """A synthetic worst case: flies 12 books x 6 dims x 4 buckets, meic 3 books x 8 dims x 4
-    buckets, every cell populated, plus a twelve-cell cross-tab per book. The two thinned sections
-    together must stay under 64 KB; twelve MATURE flies books is the far case."""
+    buckets, every cell populated, plus a twelve-cell cross-tab per book for every pair the module
+    declares -- two for flies since 2026-09-21, one for meic. The two thinned sections together
+    must stay under 64 KB; twelve MATURE flies books is the far case."""
 
-    def big(module, n_books, dims):
+    def big(module, n_books, dims, pairs):
         books = []
         for i in range(n_books):
             book = {
@@ -1082,13 +1083,21 @@ def test_regime_cuts_thinned_sections_fit_the_attention_budget(tmp_home):
             module=module,
             books=books,
             cross_tabs=[
-                {"dims": ["gex", "trend"], "books": [{"book": b["book"], "cells": cells} for b in books]}
+                {"dims": list(pair), "books": [{"book": b["book"], "cells": cells} for b in books]}
+                for pair in pairs
             ],
         )
 
     _write_regime_doc(
-        tmp_home, "flies", big("flies", 12, ["vol", "gex", "time", "skew", "center_offset", "trend"])
+        tmp_home,
+        "flies",
+        big(
+            "flies",
+            12,
+            ["vol", "gex", "time", "skew", "center_offset", "trend", "drift_alignment"],
+            [("gex", "trend"), ("gex", "drift_alignment")],
+        ),
     )
-    _write_regime_doc(tmp_home, "meic", big("meic", 3, [f"d{i}" for i in range(8)]))
+    _write_regime_doc(tmp_home, "meic", big("meic", 3, [f"d{i}" for i in range(8)], [("gex", "trend")]))
     out = factpack._regime_cuts(SESSION, ("flies", "meic"))
-    assert len(json.dumps(out, indent=2)) < 64_000
+    assert len(json.dumps(out, indent=2)) < 72_000
