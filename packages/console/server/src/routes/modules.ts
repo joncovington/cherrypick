@@ -39,6 +39,7 @@ import { readCurve, readCurveHistory, readCurveMeta, resolveCurveSession } from 
 import { readBwb, readBwbHistory, readBwbMeta } from "../readers/bwb.js";
 import { readCalendars, readCalendarsWeek, readCalendarsWeeks } from "../readers/calendars.js";
 import { readRegimeCuts } from "../readers/regimeCuts.js";
+import { readOpeningRange } from "../readers/openingRange.js";
 import { readCalendarsPolicies } from "../services/calendarsBridge.js";
 import { readEarnings, readSymbolWatch, readEarningsAnalytics, readEarningsDetail } from "../readers/earnings.js";
 import { readEarningsLive } from "../readers/earningsLive.js";
@@ -259,6 +260,13 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   app.get("/api/flies/forest", async (req) => {
     const f = parseFliesFilter(req.query);
     return readFliesForest(config, parseMode(req.query), f.date, f.arm);
+  });
+  // The 09:30-10:00 window, read from the gex recorder's spot trail rather than a flies ledger --
+  // it is a market fact, the same for every module whose entry window opens at 10:00, so no `mode`.
+  app.get("/api/flies/opening-range", async (req, reply) => {
+    const session = parseRegimeSession(req.query);
+    if (session === false) return reply.code(400).send({ error: "session must be YYYY-MM-DD" });
+    return readOpeningRange(config, session);
   });
   // The regime-cuts artifact (2026-09-19), paper-only by construction (the writer cuts the paper
   // ledger), so no `mode`. `?session=` reads a dated artifact instead of the latest.

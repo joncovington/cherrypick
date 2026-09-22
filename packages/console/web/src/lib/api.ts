@@ -648,7 +648,7 @@ export type {
   ModulePerformanceResult,
 } from "@console/shared";
 import type { ModulePerformanceResult, PerformanceModuleId } from "@console/shared";
-import type { RegimeCutsModule, RegimeCutsPayload } from "@console/shared";
+import type { OpeningRangePayload, RegimeCutsModule, RegimeCutsPayload } from "@console/shared";
 
 /** One module's calibration reading, exit reasons, advised pairs and measurement breaks in one
  * request (`GET /api/performance/:module`). `era="current"` (the default) bounds to the suite's own
@@ -667,6 +667,18 @@ export function useModulePerformance(module: PerformanceModuleId, era: "current"
 /** The regime-cuts artifact for one module (`GET /api/<module>/regime-cuts[?session=]`): the
  * module's own nightly per-book x per-regime cut, rendered without recomputation. `session`
  * null = the latest artifact. Polled slowly: the file changes once a day. */
+/** The 09:30-10:00 window for one session. Polls faster than the artifact readers because it is
+ *  live during the half-hour it describes, and settles the moment the entry window opens. */
+export function useOpeningRange(session: string | null = null) {
+  const qs = session === null ? "" : `?session=${encodeURIComponent(session)}`;
+  return useQuery<OpeningRangePayload>({
+    queryKey: ["opening-range", session],
+    queryFn: () => getJson<OpeningRangePayload>(`/api/flies/opening-range${qs}`),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
 export function useRegimeCuts(module: RegimeCutsModule, session: string | null = null) {
   const qs = session === null ? "" : `?session=${encodeURIComponent(session)}`;
   return useQuery<RegimeCutsPayload>({

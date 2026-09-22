@@ -15,6 +15,7 @@ import { OccupancyMap } from "../../components/OccupancyMap";
 import { TimelineCard } from "../../pages/Flies/TimelineCard";
 import { HistoryTab } from "../../pages/Flies/HistoryTab";
 import { JournalCard } from "../../pages/Flies/JournalCard";
+import { OpeningRangeCard } from "../../pages/Flies/OpeningRangeCard";
 import { DivergenceCard } from "../../pages/Flies/DivergenceCard";
 import { PerformanceTab } from "../../pages/Flies/PerformanceTab";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
@@ -210,6 +211,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
       ),
     },
     { id: "timeline", label: "timeline", render: () => <TimelineCard mode={mode} filter={filter} arm={arm} /> },
+    { id: "openrange", label: "open range", render: () => <OpeningRangeCard filter={filter} /> },
     { id: "journal", label: "journal", render: () => <JournalCard mode={mode} filter={filter} /> },
     { id: "exits", label: "exits", render: () => <DivergenceCard mode={mode} filter={filter} /> },
     {
