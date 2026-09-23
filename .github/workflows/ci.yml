@@ -35,7 +35,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [core, orchestrator, meic, earnings, gex, flies, calendars, pmcc, streamer, desk]
+        # Every package with tests. The list grew one entry at a time as each module landed, and
+        # five of them were never added: bwb, curve, advisor, review and overview carried 553
+        # passing tests between them that CI had never once run. Adding a package here is part of
+        # landing it, not a follow-up.
+        package: [core, orchestrator, meic, earnings, gex, flies, calendars, pmcc, streamer, desk, bwb, curve, advisor, review, overview]
     defaults:
       run:
         working-directory: packages/${{ matrix.package }}
@@ -99,5 +103,8 @@ jobs:
       # step IS the typecheck.
       - name: Build (tsc + vite)
         run: pnpm build
+      # All three workspaces, not just the server. `--filter @console/server` left every web test
+      # unrun -- the build typechecks them, so they compiled, but no assertion in them had ever
+      # been evaluated by CI.
       - name: Test (vitest, incl. dry-run-only invariant scan)
-        run: pnpm --filter @console/server test
+        run: pnpm test
