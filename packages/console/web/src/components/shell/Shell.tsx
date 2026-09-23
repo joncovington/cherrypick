@@ -5,6 +5,7 @@ import { isModuleId } from "../../lightbox/moduleOrder";
 import { isFrameModule } from "../../lightbox/registry";
 import { useBoolPref, usePrefsSync } from "../../lib/prefs";
 import { useTradeNotifications } from "../../lib/useTradeNotifications";
+import { useKeyboardNav } from "../../lib/useKeyboardNav";
 
 export function Shell() {
   const location = useLocation();
@@ -17,6 +18,8 @@ export function Shell() {
   const dense = useBoolPref("denseTables");
   // Mounted once here (not per-page) so trade toasts fire regardless of which page is open.
   useTradeNotifications();
+  // Likewise: the shortcuts the header menu advertises work from every page.
+  useKeyboardNav();
   return (
     <div className={dense ? "shell dense" : "shell"}>
       <StatusHeader />
