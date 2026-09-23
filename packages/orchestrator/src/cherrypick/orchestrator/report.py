@@ -15,7 +15,7 @@ trade_notifier), each yielding a normalized closed-trade record `{profile, symbo
                  band it holds over live in `fly_books` and are NOT summarizable as a per-trade number,
                  so `run.py status` remains the place to read them.
 
-The per-profile grouping uses cherrypick.core.profiles.compare_profiles (group closed trades by their
+The per-profile grouping uses cherrypick.core.profiles.group_by_tag (group closed trades by their
 attribution tag, summarize each group).
 
 Alongside the closed-trade P&L, each module also reports its **open** positions carried past the close
@@ -30,7 +30,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 from cherrypick.core import ledgers as _ledgers
-from cherrypick.core.profiles import compare_profiles
+from cherrypick.core.profiles import group_by_tag
 
 from . import config as cfgmod
 
@@ -185,7 +185,7 @@ def run(
             "ok": True,
             "schema": schema,
             **_summarize(records),
-            "by_profile": compare_profiles(records, tag_key="profile", summarize=_summarize),
+            "by_profile": group_by_tag(records, tag_key="arm", summarize=_summarize),
             # Positions opened this session and carried past the close (empty for the 0DTE modules).
             "open": _summarize_open(open_records),
         }

@@ -33,37 +33,37 @@ _VERDICT_RANK = {FLAT: 0, UNKNOWN: 1, DRIFT: 2}
 # --------------------------------------------------------------------------- paper-DB open positions
 def _meic_open(conn) -> list[dict]:
     rows = conn.execute("SELECT symbol, risk_profile FROM ic_trades WHERE exit_time IS NULL").fetchall()
-    return [{"symbol": r["symbol"], "profile": r["risk_profile"]} for r in rows]
+    return [{"symbol": r["symbol"], "arm": r["risk_profile"]} for r in rows]
 
 
 def _earnings_open(conn) -> list[dict]:
     rows = conn.execute("SELECT symbol, profile FROM trades WHERE closed_at IS NULL").fetchall()
-    return [{"symbol": r["symbol"], "profile": r["profile"]} for r in rows]
+    return [{"symbol": r["symbol"], "arm": r["profile"]} for r in rows]
 
 
 def _flies_open(conn) -> list[dict]:
     rows = conn.execute("SELECT symbol, arm FROM fly_positions WHERE status = 'open'").fetchall()
-    return [{"symbol": r["symbol"], "profile": r["arm"]} for r in rows]
+    return [{"symbol": r["symbol"], "arm": r["arm"]} for r in rows]
 
 
 def _calendars_open(conn) -> list[dict]:
     rows = conn.execute("SELECT symbol, book FROM dc_positions WHERE status != 'closed'").fetchall()
-    return [{"symbol": r["symbol"], "profile": r["book"]} for r in rows]
+    return [{"symbol": r["symbol"], "arm": r["book"]} for r in rows]
 
 
 def _pmcc_open(conn) -> list[dict]:
     rows = conn.execute("SELECT symbol, book FROM pmcc_positions WHERE status != 'closed'").fetchall()
-    return [{"symbol": r["symbol"], "profile": r["book"]} for r in rows]
+    return [{"symbol": r["symbol"], "arm": r["book"]} for r in rows]
 
 
 def _curve_open(conn) -> list[dict]:
     rows = conn.execute("SELECT symbol, book FROM curve_positions WHERE status != 'closed'").fetchall()
-    return [{"symbol": r["symbol"], "profile": r["book"]} for r in rows]
+    return [{"symbol": r["symbol"], "arm": r["book"]} for r in rows]
 
 
 def _bwb_open(conn) -> list[dict]:
     rows = conn.execute("SELECT symbol, book FROM bwb_positions WHERE status != 'closed'").fetchall()
-    return [{"symbol": r["symbol"], "profile": r["book"]} for r in rows]
+    return [{"symbol": r["symbol"], "arm": r["book"]} for r in rows]
 
 
 # Same registry shape as report._READERS, but for OPEN (not-yet-closed) rows, keyed by paper.trade_schema.

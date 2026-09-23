@@ -36,7 +36,7 @@ from datetime import UTC, date, datetime
 
 from cherrypick.core import calendar as _calendar
 from cherrypick.core import ledgers as _ledgers
-from cherrypick.core.profiles import compare_profiles as _compare_profiles
+from cherrypick.core.profiles import group_by_tag as _group_by_tag
 
 from cherrypick.review import paths as _paths
 
@@ -658,12 +658,12 @@ def _by_profile(records: list[dict]) -> dict:
     takes no stops at all while the other two stop 70-90% of trades on a moving day. Flies runs its
     arms for exactly the same reason.
 
-    Grouped through `cherrypick.core.profiles.compare_profiles`, the helper the orchestrator's own
+    Grouped through `cherrypick.core.profiles.group_by_tag`, the helper the orchestrator's own
     per-profile reporting already uses, rather than a fourth hand-rolled grouping.
     """
     if not records:
         return {}
-    return _compare_profiles(records, tag_key="profile", summarize=_summarize)
+    return _group_by_tag(records, tag_key="arm", summarize=_summarize)
 
 
 def build_module_facts(module: str, session: str, db_path=None) -> dict:
@@ -720,7 +720,9 @@ def build_module_facts(module: str, session: str, db_path=None) -> dict:
         # other twelve came to -1,080.41: the sign of the day was that arm's sign, and nothing said
         # so. `sign_flips_without_largest` is the field to read first — a total that changes sign
         # without its biggest contributor is a measurement of that arm, not of the module.
-        "concentration": _ledgers.concentration(closed),
+        # Reads `arm`, writes `profile`: 22 fact sets on disk carry `by_profile`, and an artifact
+        # key is a versioned change rather than a rename. Moves with FACT_VERSION.
+        "concentration": _ledgers.concentration(closed, out="profile"),
         "carried_overnight": {
             "positions": len(carried),
             "capital_at_risk": round(sum(r.get("capital_at_risk") or 0.0 for r in carried), 2)

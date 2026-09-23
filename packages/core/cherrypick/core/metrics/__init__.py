@@ -4,7 +4,7 @@ One metric vocabulary for promotion evidence, computed over the suite's NORMALIZ
 closed-trade records (the shape the orchestrator's per-schema readers emit: dicts with
 `net_pnl`, and optionally `capital`, `session`, `slippage`). The three modules keep their
 own richer per-module analytics; THIS bundle is what `calibrate` injects into
-`compare_profiles`, so every rung on every module's ladder is judged in the same units:
+`group_by_tag`, so every rung on every module's ladder is judged in the same units:
 
 - return_on_capital: a 2-wide and a 10-wide IC must not weigh equally — net P&L as a
   fraction of the capital genuinely at risk.

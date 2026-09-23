@@ -1,7 +1,7 @@
 """What an experiment actually did — computed here, never asked of the model.
 
 The chain is the suite's existing one, not a new one: ``cherrypick.core.ledgers`` READERS normalise
-each module's closed rows, ``compare_profiles`` groups them by attribution tag,
+each module's closed rows, ``group_by_tag`` groups them by attribution tag,
 ``cherrypick.core.metrics.calibration_reading`` builds the reading, and ``qualify_readings`` applies
 the same promotion gate everything else in this suite is measured against.
 
@@ -22,7 +22,7 @@ from typing import Any
 from cherrypick.core import advice as _advice
 from cherrypick.core import ledgers as _ledgers
 from cherrypick.core.metrics import calibration_reading
-from cherrypick.core.profiles import QUALIFICATION_RULE, compare_profiles, qualify_readings
+from cherrypick.core.profiles import QUALIFICATION_RULE, group_by_tag, qualify_readings
 
 from cherrypick.advisor import bounds as _bounds
 from cherrypick.advisor import clock as _clock
@@ -70,7 +70,7 @@ def closed_records(module: str, *, start: str | None = None, end: str | None = N
 def readings(module: str, *, start: str | None = None, end: str | None = None) -> dict[str, Any]:
     """`{tag: reading}` for every attribution tag in this module's closed book."""
     records = closed_records(module, start=start, end=end)
-    return compare_profiles(records, tag_key="profile", summarize=calibration_reading)
+    return group_by_tag(records, tag_key="arm", summarize=calibration_reading)
 
 
 def _delta(advised: dict | None, base: dict | None) -> dict[str, Any]:
@@ -128,9 +128,9 @@ def reading_pair(
         records = [
             r
             for r in records
-            if r.get("profile") != tag_advised or r.get("experiment_id") in (None, experiment_id)
+            if r.get("arm") != tag_advised or r.get("experiment_id") in (None, experiment_id)
         ]
-    every = compare_profiles(records, tag_key="profile", summarize=calibration_reading)
+    every = group_by_tag(records, tag_key="arm", summarize=calibration_reading)
     advised, base = every.get(tag_advised), every.get(tag_base)
     qualified = qualify_readings(
         {t: r for t, r in ((tag_advised, advised), (tag_base, base)) if r}, rule=rule

@@ -55,9 +55,9 @@ def _rows_to_db(tmp_path, triples, meic_dir="meic"):
 
 def test_reading_counts_sample_winrate_and_days():
     recs = [
-        {"profile": "c", "net_pnl": 10.0, "session": "2026-06-01"},
-        {"profile": "c", "net_pnl": -5.0, "session": "2026-06-01"},  # same day
-        {"profile": "c", "net_pnl": 8.0, "session": "2026-06-02"},
+        {"arm": "c", "net_pnl": 10.0, "session": "2026-06-01"},
+        {"arm": "c", "net_pnl": -5.0, "session": "2026-06-01"},  # same day
+        {"arm": "c", "net_pnl": 8.0, "session": "2026-06-02"},
     ]
     r = calibrate._reading(recs)
     assert r["sample"] == 3

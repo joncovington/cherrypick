@@ -340,14 +340,17 @@ def test_the_final_default_is_a_trading_day_even_when_run_on_a_weekend():
 
 def test_module_facts_report_how_much_of_the_net_rests_on_one_arm():
     """A module total averages its arms, which is what hides the finding when the arms ARE the
-    experiment. flies published +6,748.01 for 2026-08-19 on a session where one seven-fill book
+    experiment. flies published +6,748.01 for 2026-08-19 on a session where one seven-fill arm
     returned +7,828.42 and the other twelve came to -1,080.41 — the sign of the day was that arm's
-    sign, and nothing in the published facts said so."""
+    sign, and nothing in the published facts said so.
+
+    Called the way facts.py calls it: records arrive keyed `arm`, and the block is emitted keyed
+    `profile`, which is the spelling the persisted fact set has always used."""
     records = [
-        {"profile": "width-10", "net_pnl": 7828.42, "session": "2026-08-19"},
-        *({"profile": f"other-{i}", "net_pnl": -1080.41 / 12, "session": "2026-08-19"} for i in range(12)),
+        {"arm": "width-10", "net_pnl": 7828.42, "session": "2026-08-19"},
+        *({"arm": f"other-{i}", "net_pnl": -1080.41 / 12, "session": "2026-08-19"} for i in range(12)),
     ]
-    out = _ledgers.concentration(records)
+    out = _ledgers.concentration(records, out="profile")
 
     assert out["sign_flips_without_largest"] is True
     assert out["largest"]["profile"] == "width-10"

@@ -8,7 +8,7 @@ external profiles file.
 
 Phase B adds the *attribution contract* (`attribution_tag`): every trade row carries a tag naming the
 named risk profile (or parallel-shadow paper book) that opened it, and reporting groups P&L by that
-tag. Phase C adds the calibration harness's *comparison engine* (`compare_profiles`): group tagged
+tag. Phase C adds the calibration harness's *comparison engine* (`group_by_tag`): group tagged
 trade rows by their attribution tag and apply a module-injected summary per group — the metric math
 stays per-module (it is domain-divergent) while the grouping orchestration is shared. Phase D adds the
 champion/challenger advisor (`recommend_champion`, `qualify_readings`): a pure, advisory, human-gated
@@ -79,8 +79,13 @@ def attribution_tag(value: Any, *, untagged: str = UNTAGGED) -> str:
     return text or untagged
 
 
-def compare_profiles(rows, *, tag_key: str, summarize, untagged: str = UNTAGGED) -> dict:
-    """Group profile-tagged trade rows by their attribution tag and summarize each group.
+def group_by_tag(rows, *, tag_key: str, summarize, untagged: str = UNTAGGED) -> dict:
+    """Group tagged rows by their attribution tag and summarize each group.
+
+    Named for what it does rather than what it is usually grouping. It is almost always an ARM —
+    the suite's word for one configured variant (root `CLAUDE.md`) — which is why it was called
+    `compare_profiles`; but `core.metrics.__main__` groups by `group_tag`, which is not an arm, so
+    a domain name would be wrong for one of its callers either way.
 
     The calibration harness's comparison engine (plan Part 10 Phase C). It consolidates the
     *orchestration* both modules hand-roll — MEICAgent's `cmd_get_range_summary` groups
@@ -91,13 +96,15 @@ def compare_profiles(rows, *, tag_key: str, summarize, untagged: str = UNTAGGED)
 
     - `rows`: iterable of mappings (a module's trade rows; sqlite3.Row or dict). Each must carry
       `tag_key`. The caller filters (e.g. to closed trades) before passing them in.
-    - `tag_key`: column naming the profile tag — `"risk_profile"` (MEIC) or `"profile"` (Earnings).
-    - `summarize`: `callable(list_of_rows_for_one_profile) -> value` (any JSON-able summary); the
-      module's own metric bundle. Called once per profile group, never on the whole set.
-    - `untagged`: sentinel for rows with no profile tag, applied via `attribution_tag` (MEIC uses
-      the `"unassigned"` default; Earnings passes `"default"` to match its non-null column).
+    - `tag_key`: the field naming the tag. `"arm"` for anything reading `core.ledgers`' normalised
+      records; a raw column name (`"risk_profile"`, `"profile"`) when reading a module's own rows
+      directly, which is still the case until those columns are renamed.
+    - `summarize`: `callable(list_of_rows_for_one_tag) -> value` (any JSON-able summary); the
+      module's own metric bundle. Called once per group, never on the whole set.
+    - `untagged`: sentinel for rows with no tag, applied via `attribution_tag` (MEIC uses the
+      `"unassigned"` default; Earnings passes `"default"` to match its non-null column).
 
-    Returns `{profile_tag: summarize(group)}`, groups in first-seen row order (deterministic and
+    Returns `{tag: summarize(group)}`, groups in first-seen row order (deterministic and
     behaviour-preserving for the callers being consolidated). Empty `rows` -> `{}`.
     """
     groups: dict[str, list] = {}
@@ -127,7 +134,7 @@ def find_identical_readings(
     conditions — this is the suite-level fix for that, since a reporting-layer defect like it can
     recur in any module, not just the one it was first noticed in.
 
-    Pure and additive: does not mutate `readings`, does not change what `compare_profiles`,
+    Pure and additive: does not mutate `readings`, does not change what `group_by_tag`,
     `qualify_readings` or `recommend_champion` return — callers decide what to do with a
     collision (the fact pack surfaces it as a warning; nothing here forces a merge).
 

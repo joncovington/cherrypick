@@ -813,7 +813,7 @@ def cmd_get_range_summary(args):
     rows = _rows_dicts(conn, where, params)
     conn.close()
 
-    profiles = _profiles.compare_profiles(rows, tag_key="risk_profile", summarize=_range_stats_for_rows)
+    profiles = _profiles.group_by_tag(rows, tag_key="risk_profile", summarize=_range_stats_for_rows)
 
     # Atomic (profile × symbol) portfolios, plus the by-symbol lens.
     buckets: dict[tuple, list] = {}

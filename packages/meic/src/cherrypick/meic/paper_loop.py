@@ -773,7 +773,7 @@ def _advice_profiles(cfg, today, *, persist=True):
     second experiment on control queued behind the first). Each is the registry def of the base
     profile its entry names with that entry's admitted params overlaid, evaluated by
     process_symbol beside the un-advised base (the control) -- the flies-arms pattern, and
-    compare_profiles reads the tag for free. The base comes from the entry, never from the tag,
+    group_by_tag reads the tag for free. The base comes from the entry, never from the tag,
     which no longer carries one. A decision recorded before this date resolves to its single
     legacy `advised:<base>` book (`cherrypick.core.advice.advised_books`), which is what its rows
     were tagged.

@@ -1788,7 +1788,7 @@ def _flies_band_containment() -> dict[str, Any]:
 def _arm_readings() -> dict[str, Any]:
     """Every arm's reading and qualification, per module — the numbers a verdict reasons FROM.
 
-    Computed through the suite's own chain (ledger readers → compare_profiles → qualify_readings),
+    Computed through the suite's own chain (ledger readers → group_by_tag → qualify_readings),
     so the model is looking at exactly what `verdicts.py` will compute when an experiment expires.
 
     `collisions` (added 2026-08-14) flags tags whose readings are byte-identical across sample,

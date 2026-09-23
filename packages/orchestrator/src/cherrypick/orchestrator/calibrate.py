@@ -8,7 +8,7 @@ paper DBs only (files, no broker, no network); it mutates nothing.
 live champion and judge every other tag against it as a challenger, emitting an advisory
 "promote / hold" verdict. Judging arms is `packages/advisor`'s job now, through its experiments —
 one mechanism rather than two answering the same question from different evidence and different
-thresholds. `core.profiles.recommend_champion` went with it; `compare_profiles`,
+thresholds. `core.profiles.recommend_champion` went with it; `group_by_tag`,
 `qualify_readings` and `QUALIFICATION_RULE` stayed, because the advisor reads through exactly that
 chain.
 
@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from cherrypick.core.metrics import calibration_reading
 from cherrypick.core.profiles import (
     QUALIFICATION_RULE,
-    compare_profiles,
+    group_by_tag,
     qualify_readings,
 )
 
@@ -42,8 +42,8 @@ _reading = calibration_reading
 
 
 def _group_readings(records: list[dict]) -> dict:
-    """Group closed trades by attribution tag and build a reading per group (shared compare_profiles)."""
-    return compare_profiles(records, tag_key="profile", summarize=_reading)
+    """Group closed trades by attribution tag and build a reading per group (shared group_by_tag)."""
+    return group_by_tag(records, tag_key="arm", summarize=_reading)
 
 
 # --------------------------------------------------------------------------- entrypoint

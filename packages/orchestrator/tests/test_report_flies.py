@@ -57,8 +57,8 @@ def test_reader_nets_gross_pnl_against_fees(tmp_path):
     conn.row_factory = sqlite3.Row
     records = report._flies_closed(conn)
 
-    assert {r["profile"] for r in records} == {"gex", "control"}
-    winner = next(r for r in records if r["profile"] == "gex")
+    assert {r["arm"] for r in records} == {"gex", "control"}
+    winner = next(r for r in records if r["arm"] == "gex")
     assert winner["gross_pnl"] == 105.0
     assert winner["cost"] == 6.89
     assert winner["net_pnl"] == pytest.approx(98.11)
@@ -111,7 +111,7 @@ def test_open_positions_reader_tags_by_arm(tmp_path):
     )
     conn = sqlite3.connect(db)
     conn.row_factory = sqlite3.Row
-    assert reconcile._flies_open(conn) == [{"symbol": "SPX", "profile": "gex"}]
+    assert reconcile._flies_open(conn) == [{"symbol": "SPX", "arm": "gex"}]
 
 
 def test_schema_is_registered_in_every_registry():

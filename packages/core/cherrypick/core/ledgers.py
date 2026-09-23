@@ -11,8 +11,15 @@ module is the single Python home; anything else derives from it or from the arti
 
 Every closed reader yields the same record shape, keyed by `paper.trade_schema`:
 
-    {profile, symbol, strategy, gross_pnl, cost, net_pnl, slippage, capital, max_profit, session,
+    {arm, symbol, strategy, gross_pnl, cost, net_pnl, slippage, capital, max_profit, session,
      experiment_id}
+
+`arm` is the suite's word for one configured variant run as its own portfolio (root `CLAUDE.md`).
+This module is where the four source spellings become one: `risk_profile` (meic), `arm` (flies),
+`book` (calendars/pmcc/curve/bwb) and `profile` (earnings) all land here as `arm`. The columns
+themselves still read what they always did, and move later; this is the seam, which is exactly
+what it is for. Note that an artifact key is NOT this record — `concentration`'s `out` parameter
+exists because the review fact set is still written `by_profile`.
 
 `experiment_id` (added 2026-09-16) is the advisor experiment the row was entered under, stamped by
 the module from its session advice decision -- set only on an advised book's rows, None on a
@@ -151,7 +158,7 @@ def _meic_closed(conn, start: str | None = None, end: str | None = None) -> list
 
     return [
         {
-            "profile": r["risk_profile"] or MEIC_UNTAGGED,
+            "arm": r["risk_profile"] or MEIC_UNTAGGED,
             "experiment_id": (r["experiment_id"] if has_exp else None),
             "symbol": r["symbol"],
             "strategy": None,
@@ -192,7 +199,7 @@ def _earnings_closed(conn, start: str | None = None, end: str | None = None) -> 
 
     return [
         {
-            "profile": r["profile"] or EARNINGS_UNTAGGED,
+            "arm": r["profile"] or EARNINGS_UNTAGGED,
             "experiment_id": (r["experiment_id"] if has_exp else None),
             "symbol": r["symbol"],
             "strategy": r["strategy"],
@@ -233,7 +240,7 @@ def _flies_closed(conn, start: str | None = None, end: str | None = None) -> lis
     ).fetchall()
     return [
         {
-            "profile": r["arm"] or FLIES_UNTAGGED,
+            "arm": r["arm"] or FLIES_UNTAGGED,
             "experiment_id": (r["experiment_id"] if has_exp else None),
             "symbol": r["symbol"],
             # legged vs outright: the two entry mechanisms perform differently enough that
@@ -293,7 +300,7 @@ def _calendars_closed(conn, start: str | None = None, end: str | None = None) ->
 
     return [
         {
-            "profile": r["book"] or CALENDARS_UNTAGGED,
+            "arm": r["book"] or CALENDARS_UNTAGGED,
             "experiment_id": (r["experiment_id"] if has_exp else None),
             "symbol": r["symbol"],
             "strategy": r["structure"],
@@ -347,7 +354,7 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
 
     return [
         {
-            "profile": r["book"] or PMCC_UNTAGGED,
+            "arm": r["book"] or PMCC_UNTAGGED,
             "experiment_id": (r["experiment_id"] if has_exp else None),
             "symbol": r["symbol"],
             "strategy": "pmcc_99",
@@ -410,7 +417,7 @@ def _curve_closed(conn, start: str | None = None, end: str | None = None) -> lis
 
     return [
         {
-            "profile": r["book"] or CURVE_UNTAGGED,
+            "arm": r["book"] or CURVE_UNTAGGED,
             "experiment_id": (r["experiment_id"] if has_exp else None),
             "symbol": r["symbol"],
             "strategy": "curve_vx",
@@ -437,7 +444,7 @@ def _curve_open(conn) -> list[dict]:
     ).fetchall()
     return [
         {
-            "profile": r["book"] or CURVE_UNTAGGED,
+            "arm": r["book"] or CURVE_UNTAGGED,
             "symbol": r["symbol"],
             "strategy": "curve_vx",
             "capital_at_risk": (
@@ -477,7 +484,7 @@ def _bwb_closed(conn, start: str | None = None, end: str | None = None) -> list[
 
     return [
         {
-            "profile": r["book"] or BWB_UNTAGGED,
+            "arm": r["book"] or BWB_UNTAGGED,
             "experiment_id": (r["experiment_id"] if has_exp else None),
             "symbol": r["symbol"],
             "strategy": "bwb_132",
@@ -510,7 +517,7 @@ def _bwb_open(conn) -> list[dict]:
     ).fetchall()
     return [
         {
-            "profile": r["book"] or BWB_UNTAGGED,
+            "arm": r["book"] or BWB_UNTAGGED,
             "symbol": r["symbol"],
             "strategy": "bwb_132",
             "capital_at_risk": (
@@ -562,7 +569,7 @@ def _earnings_open(conn) -> list[dict]:
     ).fetchall()
     return [
         {
-            "profile": r["profile"] or EARNINGS_UNTAGGED,
+            "arm": r["profile"] or EARNINGS_UNTAGGED,
             "symbol": r["symbol"],
             "strategy": r["strategy"],
             "capital_at_risk": (r["capital_at_risk"] or 0.0),
@@ -584,7 +591,7 @@ def _calendars_open(conn) -> list[dict]:
     ).fetchall()
     return [
         {
-            "profile": r["book"] or CALENDARS_UNTAGGED,
+            "arm": r["book"] or CALENDARS_UNTAGGED,
             "symbol": r["symbol"],
             "strategy": r["structure"],
             "capital_at_risk": (
@@ -609,7 +616,7 @@ def _pmcc_open(conn) -> list[dict]:
     ).fetchall()
     return [
         {
-            "profile": r["book"] or PMCC_UNTAGGED,
+            "arm": r["book"] or PMCC_UNTAGGED,
             "symbol": r["symbol"],
             "strategy": "pmcc_99",
             "capital_at_risk": (
@@ -648,8 +655,16 @@ OPEN_READERS = {
 # on their own.
 
 
-def concentration(records: list[dict], *, key: str = "profile", net_key: str = "net_pnl") -> dict:
+def concentration(
+    records: list[dict], *, field: str = "arm", out: str | None = None, net_key: str = "net_pnl"
+) -> dict:
     """How much of a net rests on its single largest contributor.
+
+    `field` is the record field to group by; `out` is what that field is CALLED in the result,
+    defaulting to `field`. They are separate for one reason: this function's output goes straight
+    into the review fact set, of which 22 are on disk keyed `by_profile`, and renaming a key in a
+    persisted artifact is a versioned change rather than a rename. So review reads `arm` and writes
+    `profile` until that artifact's own version bump. Nothing else passes `out`.
 
     Takes the normalised records every reader in this module yields, so it answers the same way for
     every schema — the point of the request was "for every module net", and a per-module
@@ -673,12 +688,13 @@ def concentration(records: list[dict], *, key: str = "profile", net_key: str = "
     would put two gates in play. The facts it needs — the leader's trade and session counts — are
     returned so the caller can apply its own.
     """
+    out = out or field
     total = 0.0
     per: dict[str, dict] = {}
     for record in records:
-        name = record.get(key) or "unassigned"
+        name = record.get(field) or "unassigned"
         net = record.get(net_key) or 0.0
-        slot = per.setdefault(name, {key: name, "net": 0.0, "trades": 0, "sessions": set()})
+        slot = per.setdefault(name, {out: name, "net": 0.0, "trades": 0, "sessions": set()})
         slot["net"] += net
         slot["trades"] += 1
         if record.get("session"):
@@ -690,7 +706,7 @@ def concentration(records: list[dict], *, key: str = "profile", net_key: str = "
     for slot in per.values():
         rows.append(
             {
-                key: slot[key],
+                out: slot[out],
                 "net": round(slot["net"], 2),
                 "trades": slot["trades"],
                 "sessions": len(slot["sessions"]),
@@ -705,7 +721,7 @@ def concentration(records: list[dict], *, key: str = "profile", net_key: str = "
     if not rows:
         return {
             "net": 0.0,
-            "by_" + key: [],
+            "by_" + out: [],
             "largest": None,
             "net_excluding_largest": 0.0,
             "sign_flips_without_largest": False,
@@ -717,7 +733,7 @@ def concentration(records: list[dict], *, key: str = "profile", net_key: str = "
     flips = abs(total) > 1e-9 and abs(without) > 1e-9 and (total > 0) != (without > 0)
     return {
         "net": round(total, 2),
-        "by_" + key: rows,
+        "by_" + out: rows,
         "largest": largest,
         "net_excluding_largest": without,
         # The headline caveat: the module's sign is this arm's sign.

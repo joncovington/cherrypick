@@ -1236,7 +1236,7 @@ def cmd_get_pnl_summary(args) -> dict:
             s: {"trades": len(vals), "total_pnl": sum(vals), "avg_pnl": sum(vals) / len(vals)}
             for s, vals in by_strategy.items()
         },
-        "by_profile": _profiles.compare_profiles(
+        "by_profile": _profiles.group_by_tag(
             scored, tag_key="profile", summarize=_pnl_bundle, untagged="default"
         ),
         "trades": closed,

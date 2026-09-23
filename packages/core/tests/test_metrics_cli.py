@@ -1,5 +1,5 @@
 """The shared calibration-reading CLI (python -m cherrypick.core.metrics): a JSON wrapper over
-ledgers.READERS + profiles.compare_profiles + calibration_reading, for a read-only TypeScript
+ledgers.READERS + profiles.group_by_tag + calibration_reading, for a read-only TypeScript
 bridge (the console) that cannot import Python directly.
 """
 

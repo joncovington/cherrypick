@@ -1,6 +1,6 @@
 """`python -m cherrypick.core.metrics` — the shared calibration-reading CLI.
 
-A JSON-in/JSON-out bridge over `ledgers.READERS` + `profiles.compare_profiles` +
+A JSON-in/JSON-out bridge over `ledgers.READERS` + `profiles.group_by_tag` +
 `calibration_reading`, for a read-only TypeScript surface (the console) that cannot import Python
 directly -- same pattern as `cherrypick.core.auth` and `cherrypick.core.calendar`'s own
 `__main__.py`. No new metric logic: this is the same normalise-then-summarize path
@@ -30,7 +30,7 @@ import sqlite3
 import sys
 
 from cherrypick.core import ledgers
-from cherrypick.core.profiles import compare_profiles
+from cherrypick.core.profiles import group_by_tag
 
 from . import calibration_reading, session_nets_dated
 
@@ -56,16 +56,16 @@ def cmd_read(args) -> dict:
         }
 
     # One group per EXPERIMENT for stamped advised rows (2026-09-16): the `advised:<base>` tag
-    # names a book, and every experiment on that base reuses it in turn, so grouping by tag
+    # names an arm, and every experiment on that base reuses it in turn, so grouping by tag
     # alone pooled three experiments' rows into one line. Rows carrying an experiment_id group
     # under `<tag>@<experiment_id>`; rows written before the stamp existed (experiment_id None)
     # stay under the bare tag, which the console labels as unstamped history rather than
-    # inferring their experiment from dates. Display grouping only: `profile` on the record is
+    # inferring their experiment from dates. Display grouping only: `arm` on the record is
     # untouched, so calibrate/report/verdicts see exactly what they always did.
     for r in records:
         exp = r.get("experiment_id")
-        r["group_tag"] = f"{r['profile']}@{exp}" if exp else r["profile"]
-    groups = compare_profiles(records, tag_key="group_tag", summarize=summarize)
+        r["group_tag"] = f"{r['arm']}@{exp}" if exp else r["arm"]
+    groups = group_by_tag(records, tag_key="group_tag", summarize=summarize)
     return {"ok": True, "schema": args.schema, "n_records": len(records), "groups": groups}
 
 
