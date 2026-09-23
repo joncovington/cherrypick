@@ -79,6 +79,62 @@ def test_guarded_names_only_modules_that_exist():
     assert not unknown, f"GUARDED names modules with no config here: {sorted(unknown)}"
 
 
+_MISSING = object()
+
+
+def _resolve(doc: dict, pointer: str):
+    """The value at a JSON Pointer, or `_MISSING`. Mirrors what `splice_value` will walk."""
+    node = doc
+    for raw in pointer.lstrip("/").split("/"):
+        key = raw.replace("~1", "/").replace("~0", "~")
+        if not isinstance(node, dict) or key not in node:
+            return _MISSING
+        node = node[key]
+    return node
+
+
+@pytest.mark.parametrize("module", sorted(GUARDED))
+def test_every_guarded_pointer_still_names_a_real_key(module: str):
+    """The other direction, and the one that was missing.
+
+    Every test above asks "is each declared gate guarded?" — `declared ⊆ guarded`. None asks
+    whether a guarded pointer still points at anything. That gap matters because `_op_save`
+    (configcli) refuses an edit by MATCHING ITS POINTER STRING against this table and nothing
+    else: there is no server-side allow-list, and `fieldMeta.ts` is the browser's form
+    definition, not a gate. So a key renamed in a module's config while its GUARDED entry kept
+    the old spelling would leave every assertion in this file passing, and the settings surface
+    free to write a live-trading field it is specifically designed to refuse.
+
+    Verified to fail by renaming `/live/arm` to `/live/book` in bwb's config example: this test
+    went red naming the pointer, and every other test in the file stayed green.
+    """
+    rel = MODULE_CONFIGS.get(module)
+    assert rel is not None, f"{module} is guarded but has no config example"
+    doc = json.loads((REPO / rel).read_text(encoding="utf-8"))
+
+    stale = [ptr for ptr in GUARDED[module] if _resolve(doc, ptr) is _MISSING]
+    assert not stale, (
+        f"{module}: {sorted(stale)} named in configedit.GUARDED but absent from {rel} — "
+        "a guard that matches no key refuses nothing, and the settings surface can write it"
+    )
+
+
+def test_flies_guards_the_rules_that_widen_a_live_pilot():
+    """flies has a live pilot running; bwb, which does not, guarded strictly more than it did.
+
+    The arm selector decides which arm trades real money. The floor override is the escape hatch
+    from the credit floor the whole module is built around. The margin cap and the per-day entry
+    budget bound what a bad session costs. None of these can arm the loop — and all of them widen
+    it once armed, which is the failure mode the bwb entry's own docstring names.
+    """
+    assert {
+        "/live/arm",
+        "/live/negative_floor_override",
+        "/live/max_open_margin_dollars",
+        "/live/max_structures_per_day",
+    } <= set(GUARDED["flies"])
+
+
 def test_flies_keeps_its_extra_live_pointers_guarded():
     """flies carries more than the on/off switch, and all of it must stay unreachable.
 

@@ -39,9 +39,18 @@ GUARDED: dict[str, dict[str, str]] = {
     "earnings": {
         "/enable_live_trading": "hand-edit after the live-trading plan's gates; never from this surface",
     },
+    # flies carried only the switch, the attestation and the two loss caps until 2026-09-23, while
+    # bwb — whose live block is the same shape — guarded its arm selector, its margin cap and its
+    # credit floor too. That asymmetry was backwards: the "cannot arm the loop but can widen it once
+    # armed" lesson is flies' own, and flies is the module with a live pilot actually running. The
+    # four below are the risk and admission rules; timing fields stay editable, as they do for bwb.
     "flies": {
         "/live/enabled": "flies live is armed per-day via /live-flies-start; this flag is a plan-rung step",
         "/live/gate0_confirmed": "a human attestation string — write it by hand, with the plan doc open",
+        "/live/arm": "which arm trades live money — switching it is a journaled measurement break, by hand",
+        "/live/negative_floor_override": "the credit floor's escape hatch — hand-edit deliberately",
+        "/live/max_open_margin_dollars": "live worst-case cap — hand-edit deliberately, never from here",
+        "/live/max_structures_per_day": "live entry budget — hand-edit deliberately, never from here",
         "/live/daily_loss_halt_dollars": "live loss halt — hand-edit deliberately, not from this surface",
         "/live/account_deploy_limit_pct": "live risk cap — hand-edit deliberately, not from this surface",
     },
