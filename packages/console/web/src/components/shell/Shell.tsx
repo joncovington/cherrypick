@@ -15,9 +15,13 @@ export function Shell() {
     <div className={dense ? "shell dense" : "shell"}>
       <StatusHeader />
       <main className="shell-content">
-        {/* Keyed by pathname so React remounts (rather than reconciles) on navigation, which is
-            what lets the CSS animation retrigger on every route change. */}
-        <div key={location.pathname} className="view-fade">
+        {/* Keyed by the MODULE, not the full pathname. The key exists to remount on navigation so
+            the CSS fade retriggers, but a module's slide lives in the path too (`/flies/forest`),
+            so keying on the whole thing remounted the module -- and refetched everything it had --
+            on every tab click. That is the defect the lightbox's own body fixed in 2026-09 by
+            staying mounted and handing off, and keying here undid it one level up. A tab change
+            now reconciles; a module change still remounts and fades. */}
+        <div key={location.pathname.split("/")[1] ?? ""} className="view-fade">
           <Outlet />
         </div>
       </main>
