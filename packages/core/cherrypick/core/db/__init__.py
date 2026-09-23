@@ -67,3 +67,46 @@ def connect_ro(path: Any, *, row_factory: Any = sqlite3.Row) -> sqlite3.Connecti
     if row_factory is not None:
         conn.row_factory = row_factory
     return conn
+
+
+def columns(conn: sqlite3.Connection, table: str) -> list[str]:
+    """`table`'s column names in declared order, or `[]` when it does not exist."""
+    return [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+
+
+def rename_column(conn: sqlite3.Connection, table: str, old: str, new: str) -> bool:
+    """`ALTER TABLE <table> RENAME COLUMN <old> TO <new>`, idempotently. True when it renamed.
+
+    **Why a rename and not add-new-keep-old.** The suite's one schema-change precedent
+    (`advisor.store._migrate_enactment`) rebuilds the table, and a rebuild is the wrong tool here:
+    it drops every index and constraint the original carried unless each is restored by hand, and
+    every table this migration touches has at least one. `ALTER TABLE ... RENAME COLUMN` has been
+    in SQLite since 3.25 (2018), carries indexes, constraints and views across untouched, and this
+    repo has simply never used it.
+
+    The tripwire also chooses for us. `stale_writer_columns` detects columns a FILE has that the
+    CODE does not declare -- so an additive rename (add `arm`, keep `book`) is invisible to it for
+    as long as both exist, and then false-positives forever once the old one is dropped. A rename
+    leaves it honest at every point.
+
+    Idempotent in the only way that is safe: it renames when `old` is present and `new` is not,
+    returns False when the rename has already happened, and REFUSES when both columns exist at
+    once. That last case is not a no-op to shrug at -- it means something wrote a half-migrated
+    schema, and picking either column silently would hand back a table whose rows are split across
+    two names.
+    """
+    have = columns(conn, table)
+    if not have:
+        raise ValueError(f"{table}: no such table")
+    if new in have and old in have:
+        raise ValueError(
+            f"{table}: both {old!r} and {new!r} exist -- half-migrated,"
+            " refusing to guess which holds the rows"
+        )
+    if new in have:
+        return False
+    if old not in have:
+        raise ValueError(f"{table}: has neither {old!r} nor {new!r} (columns: {have})")
+    conn.execute(f'ALTER TABLE {table} RENAME COLUMN "{old}" TO "{new}"')
+    conn.commit()
+    return True
