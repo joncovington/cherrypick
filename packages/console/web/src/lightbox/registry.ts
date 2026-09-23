@@ -2,15 +2,36 @@ import { lazy, type ComponentType } from "react";
 import type { ModuleId } from "./moduleOrder";
 
 /**
- * Lazy per module: a session only ever has one lightbox open at a time, so there is no reason for
- * Overview's initial load to pay for all ten manifests (each pulling in its own analytics
- * queries, chart cards and history tables) up front. `LightboxFrame`'s own portal/inert wiring and
- * every shared component (Card, ScopeBar, the shared chart kit) stay in the main chunk since
- * Overview and every lightbox use them; only the module-specific manifest code-splits.
+ * Which modules have moved to the module frame, and which are still lightboxes.
+ *
+ * The suite is being converted one module at a time rather than in one landing, so for a while
+ * both shapes ship: a frame module renders a left rail and a content pane inside the shell, a
+ * lightbox module still portals a dialog over the Overview. `ModuleRoute` reads this to decide
+ * which, and nothing else needs to know.
+ *
+ * `MODULE_LIGHTBOXES` is narrowed to `LightboxModuleId` on purpose. It would be easy to leave it
+ * covering every module and let a converted one sit in both maps, and the page would even work —
+ * whichever branch ran first would win. Narrowing makes moving a module a compile error until it
+ * is removed from the other side, so the two maps cannot both claim it.
+ *
+ * Lazy per entry, as before: a session only ever opens one module at a time, so the Overview's
+ * first load should not pay for twelve manifests' worth of analytics queries and chart cards.
  */
-export const MODULE_LIGHTBOXES: Record<ModuleId, ComponentType<{ slide: string }>> = {
-  meic: lazy(() => import("./manifests/MeicLightbox").then((m) => ({ default: m.MeicLightbox }))),
+export const FRAME_MODULE_IDS = ["flies"] as const;
+
+export type FrameModuleId = (typeof FRAME_MODULE_IDS)[number];
+export type LightboxModuleId = Exclude<ModuleId, FrameModuleId>;
+
+export function isFrameModule(m: ModuleId): m is FrameModuleId {
+  return (FRAME_MODULE_IDS as readonly string[]).includes(m);
+}
+
+export const MODULE_FRAMES: Record<FrameModuleId, ComponentType<{ slide: string }>> = {
   flies: lazy(() => import("./manifests/FliesLightbox").then((m) => ({ default: m.FliesLightbox }))),
+};
+
+export const MODULE_LIGHTBOXES: Record<LightboxModuleId, ComponentType<{ slide: string }>> = {
+  meic: lazy(() => import("./manifests/MeicLightbox").then((m) => ({ default: m.MeicLightbox }))),
   pmcc: lazy(() => import("./manifests/PmccLightbox").then((m) => ({ default: m.PmccLightbox }))),
   curve: lazy(() => import("./manifests/CurveLightbox").then((m) => ({ default: m.CurveLightbox }))),
   bwb: lazy(() => import("./manifests/BwbLightbox").then((m) => ({ default: m.BwbLightbox }))),

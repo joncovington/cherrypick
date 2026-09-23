@@ -35,6 +35,15 @@ vi.mock("../src/lib/useQuote", () => ({
 
 const { default: App } = await import("../src/App");
 
+/** The rendered text, as a reader (and `ui-check --expect`) sees it, rather than as markup. */
+function text(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function render(path: string): string {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return renderToString(
@@ -84,12 +93,55 @@ describe("the module routes", () => {
   });
 
   it("a deep-linked slide resolves the same as the bare module route", () => {
-    // Both land on OverviewWithLightbox; the slide segment is read by the module's own manifest
-    // once mounted (a `document`-dependent concern this pass can't see), but routing itself must
-    // not treat the extra segment as unknown.
-    const html = render("/flies/forest");
-    expect(html).toContain("Flies");
+    // Both land on the same route element; the slide segment is read there (frame) or by the
+    // module's own manifest once mounted (lightbox), but routing itself must not treat the extra
+    // segment as unknown.
+    const html = render("/meic/forest");
+    expect(html).toContain("MEIC");
     expect(html).not.toContain("Page not found");
+  });
+});
+
+describe("the module frame", () => {
+  /**
+   * Flies renders the frame rather than a lightbox, and the rail and breadcrumb sit OUTSIDE the
+   * lazy manifest specifically so a server render can see them — React emits the Suspense
+   * fallback for an unresolved `lazy()` rather than resolving it, so anything inside the boundary
+   * is invisible to every test this package has. Which tab a URL resolves to is therefore the one
+   * thing that IS checkable here, and it is most of what there is to get wrong.
+   */
+  it("renders the rail, and marks the tab the URL named", () => {
+    const html = render("/flies/forest");
+    expect(html).toContain('aria-label="modules"');
+    expect(html).toContain('aria-current="page"');
+    expect(text(html)).toContain("Flies / forest");
+  });
+
+  it("the bare module route opens on the first tab", () => {
+    expect(text(render("/flies"))).toContain("Flies / session");
+  });
+
+  it("an unknown slide falls back to the first tab rather than 404ing", () => {
+    const html = render("/flies/no-such-slide");
+    expect(text(html)).toContain("Flies / session");
+    expect(html).not.toContain("Page not found");
+  });
+
+  it("a renamed tab's old id reaches its replacement, not the first tab", () => {
+    // The dangerous failure is the quiet one: `/flies/exits` falling through to `session` would
+    // look like a working link while showing the wrong page. A 404 would at least be visible.
+    expect(text(render("/flies/exits"))).toContain("Flies / divergence");
+    expect(text(render("/flies/calibration"))).toContain("Flies / completion");
+    expect(text(render("/flies/journal"))).toContain("Flies / decisions");
+    expect(text(render("/flies/openrange"))).toContain("Flies / opening range");
+    expect(text(render("/flies/now"))).toContain("Flies / session");
+  });
+
+  it("a lightbox module grew no rail — the two shapes stay apart", () => {
+    const html = render("/meic");
+    expect(html).toContain("MEIC");
+    expect(html).not.toContain('aria-label="modules"');
+    expect(html).not.toContain("mf-nav");
   });
 });
 

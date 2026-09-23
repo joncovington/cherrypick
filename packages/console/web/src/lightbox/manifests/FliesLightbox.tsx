@@ -23,8 +23,20 @@ import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { ExperimentGuideView } from "../../components/ExperimentGuide";
 import { structureLabel } from "../../pages/Flies/structure";
 import { RegimeCutsTab } from "../../components/RegimeCutsTab";
-import { LightboxFrame } from "../LightboxFrame";
+import { ModuleFrame } from "../ModuleFrame";
+import { FLIES_SLIDES, type FliesSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
+
+/**
+ * Labels come from the nav declaration, not from here. The rail is built from that file and the
+ * breadcrumb from this one, so a label typed twice is a label that can disagree with itself; the
+ * ids are typed against it too, which is what stops a tab being added here and never appearing in
+ * the rail.
+ */
+const FLIES_LABEL = Object.fromEntries(FLIES_SLIDES.map((s) => [s.id, s.label])) as Record<
+  FliesSlideId,
+  string
+>;
 
 interface FliesLoopStatus {
   state: "live" | "idle" | "no-data";
@@ -102,13 +114,13 @@ export function FliesLightbox({ slide }: { slide: string }) {
   const replayDay = (d: string) => {
     setDate(d);
     const qs = params.toString();
-    navigate(`/flies/now${qs ? `?${qs}` : ""}`);
+    navigate(`/flies/session${qs ? `?${qs}` : ""}`);
   };
 
-  const slides: SlideDef[] = [
+  const slides: Array<SlideDef & { id: FliesSlideId }> = [
     {
-      id: "now",
-      label: "now",
+      id: "session",
+      label: FLIES_LABEL.session,
       render: () => (
         <div className="cards cards-wide">
           <section className="card">
@@ -192,7 +204,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
         </div>
       ),
     },
-    { id: "forest", label: "forest", render: () => <ForestCard mode={mode} filter={filter} /> },
+    { id: "forest", label: FLIES_LABEL.forest, render: () => <ForestCard mode={mode} filter={filter} /> },
     {
       // Attempts and occupancy merged (2026-09): both are bounded snapshots regardless of session
       // activity -- AttemptTimeline's SVG height depends only on arm count (marks position by time
@@ -201,7 +213,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
       // does not risk outgrowing the lightbox body on a busy session the way the journal/timeline
       // tabs' genuinely unbounded per-event content would.
       id: "attempts",
-      label: "attempts",
+      label: FLIES_LABEL.attempts,
       render: () => (
         <div className="cards cards-wide">
           <ArmRail module="flies" mode={mode} date={filter.date} />
@@ -210,13 +222,13 @@ export function FliesLightbox({ slide }: { slide: string }) {
         </div>
       ),
     },
-    { id: "timeline", label: "timeline", render: () => <TimelineCard mode={mode} filter={filter} arm={arm} /> },
-    { id: "openrange", label: "open range", render: () => <OpeningRangeCard filter={filter} /> },
-    { id: "journal", label: "journal", render: () => <JournalCard mode={mode} filter={filter} /> },
-    { id: "exits", label: "exits", render: () => <DivergenceCard mode={mode} filter={filter} /> },
+    { id: "timeline", label: FLIES_LABEL.timeline, render: () => <TimelineCard mode={mode} filter={filter} arm={arm} /> },
+    { id: "openingrange", label: FLIES_LABEL.openingrange, render: () => <OpeningRangeCard filter={filter} /> },
+    { id: "decisions", label: FLIES_LABEL.decisions, render: () => <JournalCard mode={mode} filter={filter} /> },
+    { id: "divergence", label: FLIES_LABEL.divergence, render: () => <DivergenceCard mode={mode} filter={filter} /> },
     {
       id: "books",
-      label: "books",
+      label: FLIES_LABEL.books,
       render: () => (
         <DataCard
           title={`Books — ${(data?.books.total ?? 0).toLocaleString()} matching`}
@@ -258,7 +270,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
     },
     {
       id: "trades",
-      label: "positions",
+      label: FLIES_LABEL.trades,
       render: () => (
         <DataCard
           title={`Positions — ${(data?.positions.total ?? 0).toLocaleString()} matching`}
@@ -306,14 +318,14 @@ export function FliesLightbox({ slide }: { slide: string }) {
         </DataCard>
       ),
     },
-    { id: "calibration", label: "calibration", render: () => <PerformanceTab mode={mode} filter={multiDayFilter} /> },
-    { id: "advisor", label: "advisor", render: () => <AdvisorSlide module="flies" /> },
-    { id: "performance", label: "performance", render: () => <PerformanceSlide module="flies" /> },
-    { id: "history", label: "history", render: () => <HistoryTab mode={mode} filter={multiDayFilter} onReplayDay={replayDay} /> },
-    { id: "regime", label: "regime cuts", render: () => <RegimeCutsTab module="flies" /> },
+    { id: "completion", label: FLIES_LABEL.completion, render: () => <PerformanceTab mode={mode} filter={multiDayFilter} /> },
+    { id: "advisor", label: FLIES_LABEL.advisor, render: () => <AdvisorSlide module="flies" /> },
+    { id: "performance", label: FLIES_LABEL.performance, render: () => <PerformanceSlide module="flies" /> },
+    { id: "history", label: FLIES_LABEL.history, render: () => <HistoryTab mode={mode} filter={multiDayFilter} onReplayDay={replayDay} /> },
+    { id: "regime", label: FLIES_LABEL.regime, render: () => <RegimeCutsTab module="flies" /> },
     {
       id: "guide",
-      label: "help",
+      label: FLIES_LABEL.guide,
       render: () => (
         <ExperimentGuideView
           url="/api/flies/arms"
@@ -325,7 +337,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
   ];
 
   return (
-    <LightboxFrame
+    <ModuleFrame
       module="flies"
       slide={slide}
       slides={slides}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useDirtyCount } from "../../pages/Config/stagedStore";
+import { SUITE_LINKS, MODULE_LINKS, CONFIG_LINK, ALL_NAV_LINKS, type NavLinkDef } from "./navLinks";
 
 /**
  * Page navigation as a hamburger dropdown on the "cherrypick" brand, replacing the fixed-width
@@ -11,33 +12,18 @@ import { useDirtyCount } from "../../pages/Config/stagedStore";
  * Same three groups the old `Nav` held, same active-route styling, same Config dirty dot -- this
  * is a relocation of that component's data, not a new information architecture.
  */
-const groups: Array<{ label: string | null; links: Array<{ to: string; label: string; end?: boolean; key?: string }> }> = [
-  {
-    label: null,
-    links: [
-      { to: "/", label: "Overview", end: true, key: "o" },
-      { to: "/reports", label: "Reports", key: "r" },
-      { to: "/advisor", label: "Advisor", key: "a" },
-      { to: "/live", label: "Live", key: "l" },
-    ],
-  },
-  {
-    label: "Modules",
-    links: [
-      { to: "/meic", label: "MEIC", key: "1" },
-      { to: "/flies", label: "Flies", key: "2" },
-      { to: "/pmcc", label: "PMCC", key: "3" },
-      { to: "/curve", label: "Curve", key: "4" },
-      { to: "/bwb", label: "BWB", key: "5" },
-      { to: "/calendars", label: "Calendars", key: "6" },
-      { to: "/earnings", label: "Earnings", key: "7" },
-      { to: "/gex", label: "GEX", key: "8" },
-    ],
-  },
-  { label: "Suite", links: [{ to: "/config", label: "Config" }] },
+/**
+ * The same three groups, now read from `navLinks.ts` — shared with the module frame's left rail
+ * and with the keyboard handler, so the menu cannot advertise a page the rail lacks or a `g`
+ * shortcut nothing implements.
+ */
+const groups: Array<{ label: string | null; links: readonly NavLinkDef[] }> = [
+  { label: null, links: SUITE_LINKS },
+  { label: "Modules", links: MODULE_LINKS },
+  { label: "Suite", links: [CONFIG_LINK] },
 ];
 
-const ALL_LINKS = groups.flatMap((g) => g.links);
+const ALL_LINKS = ALL_NAV_LINKS;
 
 function currentLabel(pathname: string): string {
   // Longest-match: "/meic" must not match before a more specific future route under it does.
