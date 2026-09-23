@@ -131,6 +131,46 @@ journal the boundary once. A bug fix that corrects a number the module was recor
 this category and should land immediately — waiting only produces more rows resting on a defect.
 Pure code changes (refactors, read surfaces, dedup) aren't measurement-affecting either.
 
+## The suite's vocabulary
+
+**An `arm` is one configured variant, run as its own portfolio.** Control and treatment, in the
+clinical sense — which is exactly what these are, and why `arm` won over the alternatives. The
+modules shipped four names for it (`arm` in flies, `book` in bwb/pmcc/curve/calendars,
+`risk_profile` in meic, `profile` in earnings) and two normalization layers that disagreed about
+which was canonical: `core/ledgers.py` maps every module's column to a field called `profile`,
+while the console's attempts reader maps the same columns to `armColumn`. The word is now `arm`,
+everywhere a new name is chosen.
+
+**Three words are taken, and must never be used for an arm:**
+
+| Word | What it already means | Where |
+|---|---|---|
+| `book` | flies' per-session P&L roll-up **of** an arm — a time slice, not a variant | `fly_books`, `book_id` |
+| `book` | the paper-vs-live ledger designation | review fact sets, `modules.<m>.book = "paper"` |
+| `profile` | a config preset registry | `meic/config.risk.json`, `core.profiles.load_profiles` |
+| `profile` | the gamma-by-strike curve | `GexProfileChart`, `useGexProfile` |
+| `strategy` | earnings' **structure type** (iron_fly vs double_calendar) | earnings is the only two-axis module: profile × strategy |
+
+Renaming flies' `arm` to `book` would have put two meanings on one word inside one schema, which
+is why `book` lost despite being four of the seven source columns.
+
+**Existing spellings are never withdrawn.** A module config is a file a person edits and keeps
+across upgrades, and there is no migration for one — so `books`/`profiles`/`base_book`/
+`base_profile` keep resolving for good, through `cherrypick.core.config`. That module also draws
+the distinction `cfg.get(key, {})` collapses: a registry **declared empty** is an operator turning
+every arm off, while a registry **absent** is a key that moved, and only the second is worth a
+warning. Every config read in the suite defaults silently, so a moved key does not fail — it
+resolves empty, every arm falls through to its `enabled` default, every arm runs on `defaults`,
+and the A/B measures nothing while the P&L looks fine.
+
+**Spelling: Python identifiers are American, TypeScript identifiers are British, prose is
+British, and `cancelled` is British everywhere including stored values.** That is the de-facto
+convention rather than a new rule — `realized_net` 330 times in `.py` against 11 `realised`, and
+not one American-spelled identifier of that family in `.ts` (`unrealisedNet`, `realisedNet`,
+`UnrealisedPnlCell`). The Python→TypeScript boundary re-spells; that is the convention working,
+not a bug to fix. Writing it down costs a paragraph; normalising it would rename ~200 identifiers
+and change no behaviour.
+
 ## Two working rules, both learned the hard way
 
 **Measure a duplication before folding it, and normalize the identifier first.** "These are the

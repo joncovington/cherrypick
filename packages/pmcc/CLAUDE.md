@@ -1,5 +1,12 @@
 # cherrypick-pmcc
 
+> **Vocabulary.** What this module calls a **book** is what the suite calls an **arm** — one
+> configured variant run as its own portfolio (see the root `CLAUDE.md`). The word `book` is
+> reserved suite-wide for flies' per-session P&L roll-up (`fly_books`) and for the paper-vs-live
+> ledger designation, so it is the odd one out here rather than the standard. The column
+> (`pmcc_positions.book`) moves with the rest of the schema; prose and the console already
+> say `arm`.
+
 PMCC-99 — deep-ITM covered calls on TQQQ and XSP, **paper-only and credential-free**: a pure
 stream-cache consumer in the calendars posture. Buy an 85-90-delta call at ~21 DTE — a stock
 substitute, deliberately NOT a LEAP — and sell the ATM call nearest spot at ~7 DTE, whichever side

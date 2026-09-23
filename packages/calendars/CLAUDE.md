@@ -1,5 +1,12 @@
 # cherrypick-calendars
 
+> **Vocabulary.** What this module calls a **book** is what the suite calls an **arm** — one
+> configured variant run as its own portfolio (see the root `CLAUDE.md`). The word `book` is
+> reserved suite-wide for flies' per-session P&L roll-up (`fly_books`) and for the paper-vs-live
+> ledger designation, so it is the odd one out here rather than the standard. The column
+> (`dc_positions.book`) moves with the rest of the schema; prose and the console already
+> say `arm`.
+
 Weekly SPY double calendars — a **paper-only forward exit-parameter experiment**. Every Monday
 (Tuesday after a Monday holiday) at 10:00 ET: one put calendar at the expected-move-down strike, one
 call calendar at the expected-move-up strike; short legs expiring that week's Friday, long legs the

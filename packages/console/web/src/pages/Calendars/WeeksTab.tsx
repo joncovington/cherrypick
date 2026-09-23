@@ -78,7 +78,7 @@ export function WeeksTab({ data }: { data: CalendarsPayload | undefined }) {
     <div className="cards cards-wide">
       <DataCard
         title="weeks"
-        headers={["week", "structure", "book", "positions", "entry debit", "entry spot", "settled", "gross", "fees", "net"]}
+        headers={["week", "structure", "arm", "positions", "entry debit", "entry spot", "settled", "gross", "fees", "net"]}
         loading={isLoading}
         isError={isError}
         rowCount={rows.length}

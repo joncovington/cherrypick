@@ -15,7 +15,7 @@ export function DecisionsCard({ module }: { module: DecisionsModule }) {
   return (
     <DataCard
       title={`Entry decisions${data?.tradeDate !== null && data?.tradeDate !== undefined ? ` (${data.tradeDate})` : ""}`}
-      headers={["book", "symbol", "reason", "n", "detail"]}
+      headers={["arm", "symbol", "reason", "n", "detail"]}
       numFrom={3}
       loading={isLoading}
       isError={isError}

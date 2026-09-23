@@ -20,7 +20,7 @@ export function HistoryTab() {
         headers={[
           "entry -> close",
           "symbol",
-          "book",
+          "arm",
           "short/long",
           "entry credit",
           "entry ratio/regime",

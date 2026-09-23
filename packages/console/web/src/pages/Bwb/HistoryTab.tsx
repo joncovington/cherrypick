@@ -17,7 +17,7 @@ export function HistoryTab() {
       <DataCard
         title="completed positions"
         className="view-fade"
-        headers={["entry -> close", "symbol", "book", "near/body x2/far", "entry credit", "add-on", "exit reason", "net", "fees"]}
+        headers={["entry -> close", "symbol", "arm", "near/body x2/far", "entry credit", "add-on", "exit reason", "net", "fees"]}
         loading={isLoading}
         isError={isError}
         busy={isPlaceholderData}

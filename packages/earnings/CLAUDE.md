@@ -1,5 +1,11 @@
 # cherrypick-earnings — Operational Instructions
 
+> **Vocabulary.** What this module calls a **profile** is what the suite calls an **arm** — one
+> configured variant run as its own portfolio (see the root `CLAUDE.md`). earnings is the only
+> two-axis module: `profile` is the arm, and `strategy` is the STRUCTURE type (iron_fly vs
+> double_calendar), which is a real distinction and is NOT being renamed. The column
+> (`trades.profile`) moves with the rest of the schema; prose and the console already say `arm`.
+
 > Operating contract for the cherrypick **Earnings** engine. Human-facing guides live in
 > [`docs/`](docs/README.md); suite-wide context is in the root
 > [documentation index](../../docs/README.md).

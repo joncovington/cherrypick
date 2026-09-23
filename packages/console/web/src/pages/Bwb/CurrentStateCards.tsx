@@ -90,7 +90,7 @@ function PositionRows({ rows }: { rows: BwbOpenPosition[] }) {
 export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefined; updatedAt?: number }) {
   if (data === undefined) return null;
   const empty = data.openPositions.length === 0;
-  const headers = ["symbol", "book", "entry", "expiry", "near/body x2/far", "P&L (net of costs to date)", "spot", "credit", "peak |delta|", "below flip", "add-on (short/long)"];
+  const headers = ["symbol", "arm", "entry", "expiry", "near/body x2/far", "P&L (net of costs to date)", "spot", "credit", "peak |delta|", "below flip", "add-on (short/long)"];
   if (empty) {
     return (
       <DataCard
@@ -152,7 +152,7 @@ export function FireCountsCard({ counts, correlationCaveat, updatedAt }: { count
           <table className="data-table num-from-1">
             <thead>
               <tr>
-                <th>book</th>
+                <th>arm</th>
                 <th>positions</th>
                 <th>fired</th>
                 <th>fire rate</th>
@@ -208,7 +208,7 @@ export function BookComparison({ data, updatedAt }: { data: BwbPayload | undefin
   const hasClosed = books.length > 0;
 
   return (
-    <Card title="net by book" collapseKey="bwb-books" updatedAt={updatedAt}>
+    <Card title="net by arm" collapseKey="bwb-books" updatedAt={updatedAt}>
       {!hasClosed ? (
         <p className="muted">
           no completed positions yet -- results fill in as the daily ladder settles at expiry

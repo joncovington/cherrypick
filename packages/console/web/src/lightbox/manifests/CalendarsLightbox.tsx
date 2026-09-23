@@ -63,7 +63,7 @@ export function CalendarsLightbox({ slide }: { slide: string }) {
               )}
               <DataCard
                 title="decisions today"
-                headers={["book", "reason", "occurrences", "last"]}
+                headers={["arm", "reason", "occurrences", "last"]}
                 loading={isLoading}
                 isError={isError}
                 rowCount={data?.today.decisions.length ?? 0}

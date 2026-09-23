@@ -243,7 +243,7 @@ export function PositionsCard({
   return (
     <DataCard
       title={title}
-      headers={["symbol", "book", "entry", "expiry (front/back)", "side", "debit", "spot at entry", "EM", "front IV", "back IV", "term", "status", "net"]}
+      headers={["symbol", "arm", "entry", "expiry (front/back)", "side", "debit", "spot at entry", "EM", "front IV", "back IV", "term", "status", "net"]}
       loading={loading}
       rowCount={positions.length}
       numFrom={5}
@@ -315,13 +315,13 @@ export function PositionsCard({
   );
 }
 
-/** Per-book, per-structure results over closed positions — the module's headline. */
+/** Per-arm, per-structure results over closed positions — the module's headline. */
 export function BookComparison({ data, updatedAt }: { data: CalendarsPayload | undefined; updatedAt?: number }) {
   const books = data?.books ?? [];
   return (
     <DataCard
-      title="book results"
-      headers={["book", "structure", "weeks", "positions", "gross", "fees", "net", "win rate"]}
+      title="results by arm"
+      headers={["arm", "structure", "weeks", "positions", "gross", "fees", "net", "win rate"]}
       loading={data === undefined}
       rowCount={books.length}
       numFrom={2}

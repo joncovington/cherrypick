@@ -41,7 +41,7 @@ export function PmccLightbox({ slide }: { slide: string }) {
             {isLoading ? (
               <DataCard
                 title="open positions"
-                headers={["book", "long", "short", "time value", "spot", "weekly yield", "entry spread", "protection", "assignment"]}
+                headers={["arm", "long", "short", "time value", "spot", "weekly yield", "entry spread", "protection", "assignment"]}
                 loading
                 rowCount={0}
                 numFrom={3}
@@ -59,7 +59,7 @@ export function PmccLightbox({ slide }: { slide: string }) {
                 return (
                   <DataCard
                     title="entry attempts today"
-                    headers={["symbol", "book", "outcome", "n", "detail"]}
+                    headers={["symbol", "arm", "outcome", "n", "detail"]}
                     loading={isLoading}
                     isError={isError}
                     rowCount={attempts.length}

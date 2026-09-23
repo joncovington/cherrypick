@@ -1,5 +1,11 @@
 # cherrypick-meic — Operational Instructions
 
+> **Vocabulary.** What this module calls a **risk profile** is what the suite calls an **arm** — one
+> configured variant run as its own portfolio (see the root `CLAUDE.md`). meic additionally keeps a
+> *config preset* registry in `config.risk.json` under `profiles`; that sense of the word is a
+> preset and stays. The column (`ic_trades.risk_profile`) moves with the rest of the schema; prose
+> and the console already say `arm`.
+
 > Operating contract for the cherrypick **MEIC** engine. Human-facing guides live in
 > [`docs/`](docs/README.md); the full entry-gate catalog is [`GATES.md`](GATES.md); suite-wide context is
 > in the root [documentation index](../../docs/README.md).

@@ -150,7 +150,7 @@ export function OpenTradesCard({
           <thead>
             <tr>
               <th>symbol</th>
-              <th>book</th>
+              <th>arm</th>
               <th>entry</th>
               <th>P&L (net of costs to date)</th>
               <th>long</th>
@@ -236,7 +236,7 @@ export function BookComparison({
   const hasClosed = books.length > 0;
 
   return (
-    <Card title="book comparison" collapseKey="pmcc-books" updatedAt={updatedAt}>
+    <Card title="arm comparison" collapseKey="pmcc-books" updatedAt={updatedAt}>
       {!hasClosed ? (
         <p className="muted">
           no completed cycles yet — per-book results fill in as positions close
@@ -248,7 +248,7 @@ export function BookComparison({
         <>
           {others.length > 0 && (
             <section className="pmcc-compare">
-              <h3>advised books</h3>
+              <h3>advised arms</h3>
               <p className="integrity-note">
                 One synthetic book per advisor experiment (advised:&lt;experiment name&gt;), each running its own
                 admitted params beside the base book it shadows. Excluded from the pairing above — their entries
@@ -266,7 +266,7 @@ export function BookComparison({
           )}
 
           <section className="pmcc-compare">
-            <h3>net by book</h3>
+            <h3>net by arm</h3>
             <table className="data-table num-from-1">
               <tbody>
                 {totals.map((t) => (

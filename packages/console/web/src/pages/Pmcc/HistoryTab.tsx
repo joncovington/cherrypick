@@ -207,7 +207,7 @@ export function HistoryTab() {
           "",
           "entry → close",
           "symbol",
-          "book",
+          "arm",
           "long",
           "short chain",
           "entry yield",

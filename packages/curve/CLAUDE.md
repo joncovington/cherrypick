@@ -1,5 +1,12 @@
 # cherrypick-curve
 
+> **Vocabulary.** What this module calls a **book** is what the suite calls an **arm** — one
+> configured variant run as its own portfolio (see the root `CLAUDE.md`). The word `book` is
+> reserved suite-wide for flies' per-session P&L roll-up (`fly_books`) and for the paper-vs-live
+> ledger designation, so it is the odd one out here rather than the standard. The column
+> (`curve_positions.book`) moves with the rest of the schema; prose and the console already
+> say `arm`.
+
 curve: **VXX call credit spreads** harvesting the VIX term-structure roll yield, gated by a daily
 VIX/VIX3M regime read — **paper-only and credential-free**, a pure stream-cache consumer in the
 calendars/pmcc posture. Every book trades the same shape (short call ~30-delta, long wing a
