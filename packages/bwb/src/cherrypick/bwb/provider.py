@@ -201,8 +201,8 @@ def gamma_flip_reading(db_path, symbol: str, expiration: str, root: str, *, max_
         return {
             "ok": True,
             "gamma_flip": result.get("gamma_flip"),
-            # Same compute, one more field: the wall book's placement level. Riding this reading
-            # rather than a second one keeps the wall on the identical basis as the flip book's
+            # Same compute, one more field: the wall arm's placement level. Riding this reading
+            # rather than a second one keeps the wall on the identical basis as the flip arm's
             # trigger — one number, one provenance, no second source to drift.
             "call_wall": result.get("call_wall"),
             "spot": spot,

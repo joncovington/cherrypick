@@ -33,7 +33,7 @@ def test_migrate_is_additive(tmp_path):
     path = str(tmp_path / "paper_trades.db")
     conn = db.connect(path)
     conn.execute(
-        "INSERT INTO curve_positions (position_id, symbol, book, entry_session, expiration, "
+        "INSERT INTO curve_positions (position_id, symbol, arm, entry_session, expiration, "
         "short_strike, long_strike) VALUES ('a', 'VXX', 'control', '2026-09-01', '2026-10-16', 30, 35)"
     )
     conn.commit()

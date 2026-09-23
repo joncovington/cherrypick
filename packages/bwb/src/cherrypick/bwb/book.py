@@ -14,12 +14,12 @@ from cherrypick.core import advice as _core_advice
 from cherrypick.bwb import clock, db, engine
 
 
-def position_id(symbol: str, book: str, entry_session: str) -> str:
-    return f"{symbol}:{book}:{entry_session}"
+def position_id(symbol: str, arm: str, entry_session: str) -> str:
+    return f"{symbol}:{arm}:{entry_session}"
 
 
 def structure_signature(expiration: str, body: float, near: float, far: float) -> str:
-    """A hash of (expiration, strikes) — the cohort key's second component. The four base books
+    """A hash of (expiration, strikes) — the cohort key's second component. The four base arms
     always share one signature (same plan, same tick); an advised overlay with different widths
     or body offset gets its own signature and its own trigger-tick rows rather than silently
     borrowing the base cohort's."""
@@ -31,7 +31,7 @@ def enter_position(
     conn,
     plan: dict,
     config: dict,
-    book: str,
+    arm: str,
     *,
     entry_session: str,
     advice_params: dict | None,
@@ -39,13 +39,13 @@ def enter_position(
     position_id_override: str | None = None,
     extra: dict | None = None,
 ) -> dict | None:
-    """Open one book's base BWB from a plan. Idempotent per position_id.
+    """Open one arm's base BWB from a plan. Idempotent per position_id.
 
     `position_id_override` and `extra` exist for the live ledger (2026-09-18): a live row's id
     carries an attempt suffix (a cancelled entry can be retried the same session) and travels to
     the broker as the order's external identifier, and the row is born with its pending-order
     marker. Both default to today's paper behaviour exactly."""
-    pid = position_id_override or position_id(plan["symbol"], book, entry_session)
+    pid = position_id_override or position_id(plan["symbol"], arm, entry_session)
     if conn.execute("SELECT 1 FROM bwb_positions WHERE position_id = ?", (pid,)).fetchone():
         return None
     quantity = int((config.get("defaults") or {}).get("quantity", 1))
@@ -60,7 +60,7 @@ def enter_position(
         {
             "position_id": pid,
             "symbol": plan["symbol"],
-            "book": book,
+            "arm": arm,
             "entry_session": entry_session,
             "structure_signature": sig,
             "quantity": quantity,
@@ -83,12 +83,12 @@ def enter_position(
             "entry_cost": cost["fee"],
             "entry_slippage": cost["slippage"],
             "advice_params": (
-                json.dumps(advice_params) if (advice_params and book.startswith("advised:")) else None
+                json.dumps(advice_params) if (advice_params and arm.startswith("advised:")) else None
             ),
-            "experiment_id": _core_advice.stamp_for(book, experiment_id),
+            "experiment_id": _core_advice.stamp_for(arm, experiment_id),
             "advice_base": (
-                engine.base_book(book, decision=experiment_id if isinstance(experiment_id, dict) else None)
-                if _core_advice.is_advised(book)
+                engine.base_book(arm, decision=experiment_id if isinstance(experiment_id, dict) else None)
+                if _core_advice.is_advised(arm)
                 else None
             ),
             "peak_abs_delta": None,
@@ -119,7 +119,7 @@ def enter_position(
                 "status": "open",
             },
         )
-    return {"position_id": pid, "book": book, "symbol": plan["symbol"], "entry_credit": plan["credit"]}
+    return {"position_id": pid, "arm": arm, "symbol": plan["symbol"], "entry_credit": plan["credit"]}
 
 
 def update_latches(conn, position: dict, *, peak_abs_delta, below_flip_seen: bool) -> None:

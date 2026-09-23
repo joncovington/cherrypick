@@ -1,7 +1,7 @@
 """Pure decisions over a pre-fetched snapshot: entry planning, structure math, and the fee stack.
 
 No I/O, no clock reads, no network — the same split every module in the suite keeps (provider
-fetches, engine decides, book persists, paper_loop owns the clock), which is both what makes the
+fetches, engine decides, arm persists, paper_loop owns the clock), which is both what makes the
 strategy testable and the suite guardrail on loop-decision paths.
 
 The strike selection is the earnings double-calendar's own hard-won shape: the expected move comes
@@ -19,40 +19,40 @@ from cherrypick.core import fees as _fees
 from cherrypick.core import settlement as _settlement
 from cherrypick.core import structures as _structures
 
-BOOKS = ("control", "path")
+ARMS = ("control", "path")
 
-# Entry-regime prefix for the Friday-entry books (docs/friday-entry-arm.md). `friday:path` must
+# Entry-regime prefix for the Friday-entry arms (docs/friday-entry-arm.md). `friday:path` must
 # behave exactly like `path` under management and exactly unlike it under structure tagging — the
-# first because exit POLICY is the base book's, the second because a Friday entry is dc_7_10 and
+# first because exit POLICY is the base arm's, the second because a Friday entry is dc_7_10 and
 # never pools with dc_4_7.
 FRIDAY_PREFIX = "friday:"
 
 
-def base_book(book: str, *, config: dict | None = None, decision: dict | None = None) -> str:
-    """The exit-policy identity behind a book name. `friday:path` is a path entered a session
+def base_book(arm: str, *, config: dict | None = None, decision: dict | None = None) -> str:
+    """The exit-policy identity behind a arm name. `friday:path` is a path entered a session
     earlier and `advised:control` is a control with overlaid params; both answer to their base
-    book's policy. Taking the LAST segment composes for any prefix stack without enumerating them
+    arm's policy. Taking the LAST segment composes for any prefix stack without enumerating them
     -- `advised:friday:control` reads as `control`.
 
     Every policy check must go through this rather than comparing the raw name. `management.decide`
-    compared `book == "path"` directly, which silently made `friday:path` a CLOSING book -- the one
-    book whose entire job is never to close.
+    compared `arm == "path"` directly, which silently made `friday:path` a CLOSING arm -- the one
+    arm whose entire job is never to close.
 
     **An advised tag no longer carries its base (2026-09-17).** Since that date each advisor
-    experiment gets its own book, `advised:<experiment name>`, and the base it shadows is named by
+    experiment gets its own arm, `advised:<experiment name>`, and the base it shadows is named by
     the session decision's experiment entry rather than by the tag. Resolution, in order: the
-    decision's entry for this tag when one is given; the last segment when it names a base book
+    decision's entry for this tag when one is given; the last segment when it names a base arm
     (the legacy `advised:control` / `advised:friday:control` tags, which every row before this date
     carries); else the module's configured `advice.base_book` (default `control`), which is the
     base every experiment on this module has shadowed so far."""
-    if not book.startswith(_core_advice.ADVISED_PREFIX):
-        return book.rsplit(":", 1)[-1]
+    if not arm.startswith(_core_advice.ADVISED_PREFIX):
+        return arm.rsplit(":", 1)[-1]
     for entry in _core_advice.advised_books(decision):
         tag = entry.get("tag")
-        if tag and (book == tag or book.startswith(tag + ":")) and entry.get("base"):
+        if tag and (arm == tag or arm.startswith(tag + ":")) and entry.get("base"):
             return str(entry["base"])
-    tail = book.rsplit(":", 1)[-1]
-    if tail in BOOKS:
+    tail = arm.rsplit(":", 1)[-1]
+    if tail in ARMS:
         return tail
     # Any accepted spelling: an operator who renames this key must not silently get
     # "control" as the base, which is a wrong A/B that still reads as a valid one.
@@ -90,7 +90,7 @@ def settlement_style(config: dict, symbol: str) -> str | None:
 # --------------------------------------------------------------------------- the dividend calendar
 #
 # A physically-settled underlying pays dividends, and an ITM short call is really assigned at the
-# close BEFORE the ex-date — a session before this module books anything. The module does not model
+# close BEFORE the ex-date — a session before this module arms anything. The module does not model
 # that; it SKIPS the week (user decision 2026-08-15: this is a paper experiment testing exit rules,
 # and an ex-div week is a different trade — excluding it is cheaper and more honest than
 # approximating it).
@@ -127,11 +127,11 @@ def ex_date_in_span(config: dict, symbol: str, start_day: str, end_day: str) -> 
     return None
 
 
-def merged_params(config: dict, book: str) -> dict:
-    """`defaults` overlaid with the book's own block — the flies `merged_params` shape, so an
-    advised book resolves through the same path as every other."""
-    params = {**(config.get("defaults") or {}), **(_cfg.registry(config, label="calendars").get(book) or {})}
-    params["book"] = book
+def merged_params(config: dict, arm: str) -> dict:
+    """`defaults` overlaid with the arm's own block — the flies `merged_params` shape, so an
+    advised arm resolves through the same path as every other."""
+    params = {**(config.get("defaults") or {}), **(_cfg.registry(config, label="calendars").get(arm) or {})}
+    params["arm"] = arm
     return params
 
 
@@ -307,7 +307,7 @@ def settle_intrinsic(strike: float, option_type: str, spot: float) -> float:
 
     Under CASH settlement this is the whole story. Under PHYSICAL settlement it is still the option's
     own value at expiry — what changes is that the leg also delivers stock, which `assignment_from`
-    books separately. Keeping intrinsic as the option half of both models is what lets one settlement
+    arms separately. Keeping intrinsic as the option half of both models is what lets one settlement
     path, one derivation, and one validation serve both styles.
     """
     if option_type == "put":
@@ -322,7 +322,7 @@ def settle_intrinsic(strike: float, option_type: str, spot: float) -> float:
 # model does not have.
 #
 # The decomposition this module uses, and the reason the change is additive rather than a rewrite:
-# book the delivered shares with a basis of the SETTLEMENT SPOT, not the strike. Then for a short put
+# arm the delivered shares with a basis of the SETTLEMENT SPOT, not the strike. Then for a short put
 # at strike K, credit E, settlement spot S_f, disposal S_m:
 #
 #     option leg  E - (K - S_f)      the existing intrinsic accounting, untouched

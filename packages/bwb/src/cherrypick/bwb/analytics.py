@@ -8,17 +8,17 @@ from __future__ import annotations
 
 
 def headline(conn) -> dict:
-    """Per-book, per-symbol results over CLOSED positions, plus what is still open and each arm's
+    """Per-arm, per-symbol results over CLOSED positions, plus what is still open and each arm's
     fire count — the real effective sample for an arm-vs-control comparison, not the trade count
     (until an arm's add-on fires, its rows are byte-identical to control's, an expected
     `find_identical_readings` collision)."""
-    books: dict[str, dict] = {}
+    arms: dict[str, dict] = {}
     for row in conn.execute(
-        "SELECT book, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees, "
+        "SELECT arm, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees, "
         "SUM(gross_pnl) - SUM(fees) AS net, SUM((gross_pnl - fees) > 0) AS wins "
-        "FROM bwb_positions WHERE status = 'closed' GROUP BY book, symbol ORDER BY book, symbol"
+        "FROM bwb_positions WHERE status = 'closed' GROUP BY arm, symbol ORDER BY arm, symbol"
     ):
-        books.setdefault(row["book"], {})[row["symbol"]] = {
+        arms.setdefault(row["arm"], {})[row["symbol"]] = {
             "positions": row["n"],
             "gross_pnl": round(row["gross"], 2) if row["gross"] is not None else None,
             "fees": round(row["fees"], 2) if row["fees"] is not None else None,
@@ -26,19 +26,19 @@ def headline(conn) -> dict:
             "win_rate": round(row["wins"] / row["n"], 4) if row["n"] else None,
         }
     open_rows = conn.execute("SELECT COUNT(*) AS n FROM bwb_positions WHERE status != 'closed'").fetchone()
-    return {"books": books, "open_positions": open_rows["n"], "fire_counts": fire_counts(conn)}
+    return {"arms": arms, "open_positions": open_rows["n"], "fire_counts": fire_counts(conn)}
 
 
 def fire_counts(conn) -> dict:
-    """Per-book add-on fire counts — trade count vs fire count, the plan's own honesty rule.
+    """Per-arm add-on fire counts — trade count vs fire count, the plan's own honesty rule.
     `delta` fires most (raw proximity); `bounce` needs the move plus a turn; `flip` needs spot to
-    have entered negative-gamma territory at all. A quiet `flip` book is the honest state."""
+    have entered negative-gamma territory at all. A quiet `flip` arm is the honest state."""
     out: dict[str, dict] = {}
     for row in conn.execute(
-        "SELECT book, COUNT(*) AS n, SUM(addon_fired_at IS NOT NULL) AS fired "
-        "FROM bwb_positions GROUP BY book ORDER BY book"
+        "SELECT arm, COUNT(*) AS n, SUM(addon_fired_at IS NOT NULL) AS fired "
+        "FROM bwb_positions GROUP BY arm ORDER BY arm"
     ):
-        out[row["book"]] = {
+        out[row["arm"]] = {
             "positions": row["n"],
             "fired": row["fired"] or 0,
             "fire_rate": round((row["fired"] or 0) / row["n"], 4) if row["n"] else None,
@@ -50,7 +50,7 @@ def worksheet(conn) -> list[dict]:
     """The live per-position worksheet: one row per open position with its entry metrics and the
     latest usable close-cost mark."""
     out = []
-    for p in conn.execute("SELECT * FROM bwb_positions WHERE status != 'closed' ORDER BY symbol, book"):
+    for p in conn.execute("SELECT * FROM bwb_positions WHERE status != 'closed' ORDER BY symbol, arm"):
         p = dict(p)
         latest = conn.execute(
             "SELECT close_cost, spot, marked_at FROM bwb_marks WHERE position_id = ? "
@@ -61,7 +61,7 @@ def worksheet(conn) -> list[dict]:
             {
                 "position_id": p["position_id"],
                 "symbol": p["symbol"],
-                "book": p["book"],
+                "arm": p["arm"],
                 "status": p["status"],
                 "body_strike": p["body_strike"],
                 "near_strike": p["near_strike"],

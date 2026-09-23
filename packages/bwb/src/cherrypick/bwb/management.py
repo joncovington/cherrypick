@@ -3,14 +3,14 @@
 Same layers as curve/pmcc, kept apart on purpose:
 
 - `effective_params` is the ONE choke point that restates a position's frozen advised params over
-  config. An advised book's rules are stamped on the row at entry and read back here every tick.
+  config. An advised arm's rules are stamped on the row at entry and read back here every tick.
 - `evaluate` is pure over (position, params, this tick's trigger read) and returns a verdict:
   `hold`, `arm` (latch update only, no order), or `fire_addon` (the add-on prices as a credit —
   execute it). Settlement (expiry) is handled by `book.py`/`paper_loop.py` directly, since it is
   unconditional on DTE rather than a management verdict.
 - `execution_gate` separately answers "may we act on this mark at all".
 
-Book semantics: `control` never arms. `delta`/`bounce`/`flip` arm on their own trigger.py
+Arm semantics: `control` never arms. `delta`/`bounce`/`flip` arm on their own trigger.py
 condition; once armed, every tick re-prices the add-on (`engine.plan_addon`) — a non-credit tick
 is a recorded refusal (`addon_not_credit`) and the arm stays live; the first credit tick fires.
 One add-on maximum per position — after firing, the trigger disarms permanently. Armed until
@@ -49,24 +49,24 @@ class Decision:
 
 
 def effective_params(position: dict, config: dict) -> dict:
-    """The params governing this position: the base book's merged config, with the row's frozen
-    `advice_params` overlaid for an advised book. An unreadable stamp is the base's config, never a
+    """The params governing this position: the base arm's merged config, with the row's frozen
+    `advice_params` overlaid for an advised arm. An unreadable stamp is the base's config, never a
     guess."""
     from cherrypick.bwb import engine
 
-    book = position.get("book") or "control"
+    arm = position.get("arm") or "control"
     # A legacy `advised:<base>` row names its base in the tag; a 2026-09-17 `advised:<experiment>`
     # row shadows the configured `advice.base_book`. One rule, in `engine.base_book`; the answer
     # rides on the params as `base_book` so the verdict never re-derives it from the tag.
     # The row's own stamp first (2026-09-17): an advised twin of a non-default base is managed under
     # THAT base after the session's decision file is gone, not under the configured default.
     stamped = position.get("advice_base")
-    base = str(stamped) if stamped else engine.base_book(book, config=config)
+    base = str(stamped) if stamped else engine.base_book(arm, config=config)
     params = {**PARAM_DEFAULTS, **engine.merged_params(config, base)}
-    params["book"] = book
+    params["arm"] = arm
     params["base_book"] = base
     raw = position.get("advice_params")
-    if book.startswith("advised:") and raw:
+    if arm.startswith("advised:") and raw:
         try:
             overlay = json.loads(raw) if isinstance(raw, str) else dict(raw)
         except (TypeError, ValueError):
@@ -82,7 +82,7 @@ def _base_book(params: dict) -> str:
         return str(params["base_book"])
     from cherrypick.bwb import engine
 
-    return engine.base_book(params.get("book") or "control")
+    return engine.base_book(params.get("arm") or "control")
 
 
 def evaluate(
@@ -94,7 +94,7 @@ def evaluate(
     addon_credit: float | None,
 ) -> tuple[Decision, dict]:
     """The verdict for one OPEN position this tick, plus the UPDATED latch state to persist
-    (`peak_abs_delta`, `below_flip_seen`) — persisted regardless of book, the counterfactual-on-
+    (`peak_abs_delta`, `below_flip_seen`) — persisted regardless of arm, the counterfactual-on-
     control property.
 
     `addon_credit` is what the add-on vertical would price at right now (None if unpriced or not

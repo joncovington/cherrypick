@@ -8,7 +8,7 @@ def _position(pid="2026-08-17:control:put", **overrides):
         "position_id": pid,
         "week_of": "2026-08-17",
         "entry_session": "2026-08-17",
-        "book": "control",
+        "arm": "control",
         "side": "put",
         "symbol": "SPX",
         "structure": "dc_4_7",
@@ -67,7 +67,7 @@ def test_record_decision_collapses_identical_runs(tmp_path):
         db.record_decision(
             conn,
             trade_date="2026-08-17",
-            book="*",
+            arm="*",
             symbol="SPX",
             mode="entry",
             reason="no_fresh_quotes",
@@ -76,7 +76,7 @@ def test_record_decision_collapses_identical_runs(tmp_path):
     db.record_decision(
         conn,
         trade_date="2026-08-17",
-        book="*",
+        arm="*",
         symbol="SPX",
         mode="entry",
         reason="entered dc_4_7",

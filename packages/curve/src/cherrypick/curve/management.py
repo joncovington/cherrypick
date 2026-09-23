@@ -3,12 +3,12 @@
 Same three layers as pmcc/calendars, kept apart on purpose:
 
 - `effective_params` is the ONE choke point that restates a position's frozen advised params over
-  config. An advised book's rules are stamped on the row at entry and read back here every tick.
+  config. An advised arm's rules are stamped on the row at entry and read back here every tick.
 - `evaluate` is pure over (position, params, a priced mark, the day's regime read) and returns a
   verdict.
 - `execution_gate` separately answers "may we act on this mark at all".
 
-Book semantics:
+Arm semantics:
 - `control` — close at `profit_take_pct` of the entry credit, OR the regime-flip hard exit
   (measured ratio crosses >= 1.0 mid-trade -> close next tick regardless of P&L), OR `close_dte`.
 - `noflip` — control's exit MINUS the flip rule: holds through backwardation to target or
@@ -39,7 +39,7 @@ PARAM_DEFAULTS = {
     "allow_delta_computed_fallback": True,
 }
 
-FLIP_BOOKS = ("control", "hook")  # noflip is the one book without the regime-flip exit
+FLIP_BOOKS = ("control", "hook")  # noflip is the one arm without the regime-flip exit
 
 
 @dataclass(frozen=True)
@@ -54,24 +54,24 @@ class Decision:
 
 
 def effective_params(position: dict, config: dict) -> dict:
-    """The params governing this position: the base book's merged config, with the row's frozen
-    `advice_params` overlaid for an advised book. An unreadable stamp is the base's config, never a
+    """The params governing this position: the base arm's merged config, with the row's frozen
+    `advice_params` overlaid for an advised arm. An unreadable stamp is the base's config, never a
     guess."""
     from cherrypick.curve import engine
 
-    book = position.get("book") or "control"
+    arm = position.get("arm") or "control"
     # A legacy `advised:<base>` row names its base in the tag; a 2026-09-17 `advised:<experiment>`
     # row shadows the configured `advice.base_book`. One rule, in `engine.base_book`; the answer
     # rides on the params as `base_book` so the flip-exit check never re-derives it from the tag.
     # The row's own stamp first (2026-09-17): an advised twin of a non-default base is managed under
     # THAT base after the session's decision file is gone, not under the configured default.
     stamped = position.get("advice_base")
-    base = str(stamped) if stamped else engine.base_book(book, config=config)
+    base = str(stamped) if stamped else engine.base_book(arm, config=config)
     params = {**PARAM_DEFAULTS, **engine.merged_params(config, base)}
-    params["book"] = book
+    params["arm"] = arm
     params["base_book"] = base
     raw = position.get("advice_params")
-    if book.startswith("advised:") and raw:
+    if arm.startswith("advised:") and raw:
         try:
             overlay = json.loads(raw) if isinstance(raw, str) else dict(raw)
         except (TypeError, ValueError):
@@ -87,7 +87,7 @@ def _base_book(params: dict) -> str:
         return str(params["base_book"])
     from cherrypick.curve import engine
 
-    return engine.base_book(params.get("book") or "control")
+    return engine.base_book(params.get("arm") or "control")
 
 
 def assignment_exposed(short_tv: float | None, params: dict) -> bool:
@@ -161,7 +161,7 @@ def _spread_blocks(mark_snapshot: dict, params: dict) -> bool:
 
     The zero-bid arithmetic, pre-empted rather than measured here: a short held to the end of its
     life quotes 0.00/0.01 -- a one-cent buyback and, as a ratio, exactly a 200% spread -- and a
-    percentage-only gate refuses precisely the scheduled exit the book is built around. earnings
+    percentage-only gate refuses precisely the scheduled exit the arm is built around. earnings
     measured 32 profit-target exits refused that way before its 2026-08-31 fix, and calendars lost
     a Friday close to it; this module's gate had not fired yet only because no position had aged
     into the state. A leg is refused only when both readings say wide; an older snapshot with no

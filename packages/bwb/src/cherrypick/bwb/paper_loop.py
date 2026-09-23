@@ -6,11 +6,11 @@ snapshots and persists what came back. No network, no MCP, no model call anywher
 One `run_once` carries the day's lifecycle:
 
 - At the entry tick (default 10:00 ET, once per session): plan and enter ONE new BWB per enabled
-  book — the daily ladder, so positions accumulate across sessions rather than capping at one.
+  arm — the daily ladder, so positions accumulate across sessions rather than capping at one.
 - Every in-session tick (60s): for each open COHORT (entry_session x structure_signature), read the
   near wing's delta + spot + gamma_flip ONCE and record one `bwb_trigger_ticks` row — the shared
-  telemetry every base book's positions in that cohort read. Then, per position: update latches,
-  evaluate the book's own trigger, arm/fire the add-on, mark every leg.
+  telemetry every base arm's positions in that cohort read. Then, per position: update latches,
+  evaluate the arm's own trigger, arm/fire the add-on, mark every leg.
 - Past the settle time on any day legs expire: settle at cash intrinsic off a staleness-gated print.
 """
 
@@ -89,7 +89,7 @@ def _release_loop_lock() -> None:
     looplock.release(_loop_lock_path())
 
 
-# --------------------------------------------------------------------------- advised book
+# --------------------------------------------------------------------------- advised arm
 def _advice_decision_path() -> str:
     return os.path.join(_paper_data_dir(), "advice_active.json")
 
@@ -101,30 +101,30 @@ def advice_decision(config: dict, today: str) -> dict:
 
 
 def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]:
-    """(the books entry may open today, `{advised tag: its experiment entry}`). One advised book
+    """(the arms entry may open today, `{advised tag: its experiment entry}`). One advised arm
     PER EXPERIMENT the day's decision admitted (2026-09-17): each entry names its own tag
     (`advised:<experiment name>`), the base it shadows and the params it overlays; a decision
     recorded before that date still yields its single `advised:<base>`. Empty map on a baseline
     day. The roster only matters at entry -- open rows are managed from the ledger whatever the
     roster says today."""
     declared = _cfg.registry(config, label="bwb", log=_log)
-    books = [b for b in engine.BOOKS if (declared.get(b) or {}).get("enabled", True)]
-    # The wall book is OPT-IN, the reverse of the base four: it trades a different structure
+    arms = [b for b in engine.ARMS if (declared.get(b) or {}).get("enabled", True)]
+    # The wall arm is OPT-IN, the reverse of the base four: it trades a different structure
     # (call-side, body at the GEX call wall) rather than a different add-on timing, so absence
-    # from `engine.BOOKS` is what keeps "the four books enter the identical BWB" true. It never
-    # arms (`triggers.evaluate` returns fired=False for an unknown book) and its trigger-tick
-    # cohort records the call-side candidates for a future replay, the way the put books' own
+    # from `engine.ARMS` is what keeps "the four arms enter the identical BWB" true. It never
+    # arms (`triggers.evaluate` returns fired=False for an unknown arm) and its trigger-tick
+    # cohort records the call-side candidates for a future replay, the way the put arms' own
     # triggers were earned.
     if (declared.get("wall") or {}).get("enabled"):
-        books.append("wall")
+        arms.append("wall")
     advised = advised_entries(advice_decision(config, today))
-    books.extend(tag for tag in advised if tag not in books)
-    return books, advised
+    arms.extend(tag for tag in advised if tag not in arms)
+    return arms, advised
 
 
 def advised_entries(decision: dict | None) -> dict[str, dict]:
-    """`{tag: experiment entry}` for every experiment the decision opens a book for, in artifact
-    order -- keyed by tag because planning, freezing and stamping all look the book up by it."""
+    """`{tag: experiment entry}` for every experiment the decision opens a arm for, in artifact
+    order -- keyed by tag because planning, freezing and stamping all look the arm up by it."""
     return {e["tag"]: e for e in _core_advice.advised_books(decision) if e.get("tag")}
 
 
@@ -215,8 +215,8 @@ def _unsettled_today(conn, day: str) -> bool:
 
 # --------------------------------------------------------------------------- entry (daily ladder)
 def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: str) -> int:
-    books, advised = session_books(config, day)
-    # The decision itself is what each advised row is stamped from: `stamp_for(book, decision)`
+    arms, advised = session_books(config, day)
+    # The decision itself is what each advised row is stamped from: `stamp_for(arm, decision)`
     # resolves the id per tag, so two experiments on one session carry two ids.
     decision = advice_decision(config, day) if advised else None
     defaults = config.get("defaults") or {}
@@ -225,7 +225,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
 
     plan_dates = clock.target_expiration(when.date(), defaults)
 
-    wanting = [b for b in books if db.open_position_for(conn, symbol, b, day) is None]
+    wanting = [b for b in arms if db.open_position_for(conn, symbol, b, day) is None]
     if not wanting:
         return 0
     if plan_dates is None:
@@ -233,7 +233,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             db.record_decision(
                 conn,
                 trade_date=day,
-                book=b,
+                arm=b,
                 symbol=symbol,
                 mode="entry",
                 reason="no_expiration_plan",
@@ -256,11 +256,11 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             quotes_stale=snapshot.get("rejected"),
         )
         for b in wanting:
-            db.record_entry_attempt(conn, trade_date=day, symbol=symbol, book=b, outcome=snapshot["reason"])
+            db.record_entry_attempt(conn, trade_date=day, symbol=symbol, arm=b, outcome=snapshot["reason"])
             db.record_decision(
                 conn,
                 trade_date=day,
-                book=b,
+                arm=b,
                 symbol=symbol,
                 mode="entry",
                 reason=snapshot["reason"],
@@ -285,8 +285,8 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
     for b in wanting:
         if b == "wall":
             # The wall comes off the SAME reading the flip trigger uses — one compute, one basis —
-            # read once here rather than per-book. A session with no reading is a refusal the
-            # attempt rows record; the wall book never borrows the EM placement as a fallback.
+            # read once here rather than per-arm. A session with no reading is a refusal the
+            # attempt rows record; the wall arm never borrows the EM placement as a fallback.
             if wall_reading is None:
                 wall_reading = provider.gamma_flip_reading(
                     cache_path,
@@ -300,7 +300,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                 snapshot, {**base_params, **engine.merged_params(config, "wall")}, wall
             )
         elif advised.get(b) and advised[b].get("params"):
-            # The twin is planned from the base book its decision entry names, not from control
+            # The twin is planned from the base arm its decision entry names, not from control
             # regardless -- otherwise the row claims one base and the economics come from another.
             # (The tag itself no longer carries the base since 2026-09-17.)
             advised_base = engine.base_book(b, config=config, decision=decision)
@@ -322,7 +322,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                 conn,
                 trade_date=day,
                 symbol=symbol,
-                book=b,
+                arm=b,
                 outcome=result["reason"],
                 block_detail=json.dumps(result.get("detail")) if result.get("detail") else None,
                 spot=snapshot["spot"],
@@ -330,7 +330,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             db.record_decision(
                 conn,
                 trade_date=day,
-                book=b,
+                arm=b,
                 symbol=symbol,
                 mode="entry",
                 reason=result["reason"],
@@ -354,7 +354,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             conn,
             trade_date=day,
             symbol=symbol,
-            book=b,
+            arm=b,
             outcome="filled",
             spot=plan["spot"],
             body_strike=plan["body_strike"],
@@ -365,7 +365,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
         db.record_decision(
             conn,
             trade_date=day,
-            book=b,
+            arm=b,
             symbol=symbol,
             mode="entry",
             reason=f"entered {plan['near_strike']:g}/{plan['body_strike']:g}x2/{plan['far_strike']:g} credit {plan['credit']:.2f}",
@@ -396,7 +396,7 @@ def _legs_with_symbol(conn, position: dict) -> list[dict]:
 # --------------------------------------------------------------------------- trigger ticks (the second product)
 def _record_trigger_ticks(config: dict, conn, *, cache_path: str, when: datetime, day: str) -> int:
     """One row per open COHORT (entry_session x structure_signature) — shared across every base
-    book's positions in that cohort."""
+    arm's positions in that cohort."""
     defaults = config.get("defaults") or {}
     symbol = _symbol(config)
     root = config.get("occ_root") or symbol
@@ -587,7 +587,7 @@ def _addon_snapshot(
     **`root` is the OCC root and is NOT the symbol.** This resolved `root = symbol` until
     2026-08-27, so every add-on lookup asked the cache for `SPX`-rooted contracts while SPX's
     weeklies are listed as `SPXW` — `not_root_listed`, on every tick, for every armed position. The
-    flip book armed all four of its positions the moment the gamma flip became measurable and then
+    flip arm armed all four of its positions the moment the gamma flip became measurable and then
     sat unable to price a single one. Every other snapshot in this module already resolves
     `config.get("occ_root") or symbol`; this was the one that did not.
     """
@@ -636,13 +636,13 @@ def _manage_positions(
         )
         if not decision.acts:
             # An armed position that cannot price its add-on is a REFUSAL, not silence. Collapsed
-            # per (date, book, reason), so a whole session of it costs one counted row.
+            # per (date, arm, reason), so a whole session of it costs one counted row.
             block = state.get("addon_block")
             if block and position.get("armed_at") and not position.get("addon_fired_at"):
                 db.record_decision(
                     conn,
                     trade_date=day,
-                    book=position["book"],
+                    arm=position["arm"],
                     symbol=position["symbol"],
                     mode="addon",
                     reason=f"addon_blocked:{block}",
@@ -655,7 +655,7 @@ def _manage_positions(
             bookmod.arm(conn, position, reason=decision.reason)
             executed = 1
             actions += 1
-            log(f"[{position['book']}] {pid} armed — {decision.reason}")
+            log(f"[{position['arm']}] {pid} armed — {decision.reason}")
         elif decision.action == "fire_addon" and gate is None:
             snap = _addon_snapshot(
                 cache_path,
@@ -677,7 +677,7 @@ def _manage_positions(
                         executed = 1
                         actions += 1
                         log(
-                            f"[{position['book']}] {pid} add-on fired — credit {addon_plan['plan']['credit']:.2f}"
+                            f"[{position['arm']}] {pid} add-on fired — credit {addon_plan['plan']['credit']:.2f}"
                         )
                     else:
                         gate = "pending_fill"

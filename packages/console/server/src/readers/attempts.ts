@@ -171,8 +171,8 @@ interface TableSpec {
  * Which modules have a per-arm entry decision to show.
  *
  * **`calendars` is deliberately absent, and it is not an oversight.** It writes `dc_entry_attempts`
- * like the others, but that table has no arm column — by design: "one plan, N books", where every
- * book's positions for a week come from the SAME entry plan and the books differ in exit policy
+ * like the others, but that table has no arm column — by design: "one plan, N arms", where every
+ * arm's positions for a week come from the SAME entry plan and the arms differ in exit policy
  * alone. There is no per-arm entry decision to rail, so its page shows the decision JOURNAL
  * instead, which is the right record for a module whose entry is unconditional.
  */
@@ -205,7 +205,7 @@ const SPECS: Record<AttemptsModule, TableSpec> = {
     file: () => "paper_trades.db",
     dir: (config) => config.paths.pmccDir,
     table: "pmcc_entry_attempts",
-    armColumn: "book",
+    armColumn: "arm",
     // The SHORT strike is what this structure re-decides each week — the long is a stock
     // substitute held across cycles — so it is the strike worth putting on a timeline.
     centerColumn: "short_strike",
@@ -217,7 +217,7 @@ const SPECS: Record<AttemptsModule, TableSpec> = {
     file: () => "paper_trades.db",
     dir: (config) => config.paths.curveDir,
     table: "curve_entry_attempts",
-    armColumn: "book",
+    armColumn: "arm",
     centerColumn: "short_strike",
     spotColumn: "spot",
     // curve keeps neither: no same-strike blocking rule, no entry cadence gate.

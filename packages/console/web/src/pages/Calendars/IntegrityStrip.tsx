@@ -41,9 +41,9 @@ export function IntegrityStrip({
       <div className="cal-integrity">
         <div className="integrity-integrity-banner">
           <strong>The policy table is only as good as its validation.</strong> The derivation re-runs the{" "}
-          <span className="mono">control</span> policy over the control book&rsquo;s own marks and the{" "}
-          <span className="mono">expiry-longs-mon</span> policy over the path book&rsquo;s, and both must
-          reproduce those books&rsquo; real recorded nets to the cent.{" "}
+          <span className="mono">control</span> policy over the control arm&rsquo;s own marks and the{" "}
+          <span className="mono">expiry-longs-mon</span> policy over the path arm&rsquo;s, and both must
+          reproduce those arms&rsquo; real recorded nets to the cent.{" "}
           {policies === undefined ? (
             <span className="muted">Not read yet.</span>
           ) : policies.error !== null ? (
@@ -57,12 +57,12 @@ export function IntegrityStrip({
               <span className="cal-ok">
                 {validation.compared} week{validation.compared === 1 ? "" : "s"} reproduced
               </span>{" "}
-              — the replay and the books agree about the same trades.
+              — the replay and the arms agree about the same trades.
             </>
           ) : (
             <span className="integrity-err">
               {validation.mismatches.length} of {validation.compared} checked week
-              {validation.compared === 1 ? "" : "s"} disagree with the books. Do not read the ranking until
+              {validation.compared === 1 ? "" : "s"} disagree with the arms. Do not read the ranking until
               that is explained.
             </span>
           )}
@@ -71,8 +71,8 @@ export function IntegrityStrip({
         {validation != null && validation.mismatches.length > 0 && (
           <ul className="integrity-plain-list integrity-err">
             {validation.mismatches.map((m) => (
-              <li key={`${m.weekOf}-${m.book}`}>
-                <span className="mono">{m.weekOf}</span> · {m.book} —{" "}
+              <li key={`${m.weekOf}-${m.arm}`}>
+                <span className="mono">{m.weekOf}</span> · {m.arm} —{" "}
                 {m.reason !== null
                   ? `not derivable (${m.reason})`
                   : `derived ${String(m.derivedNet)} vs recorded ${String(m.realNet)} (diff ${String(m.diff)})`}

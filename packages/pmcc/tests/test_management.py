@@ -1,4 +1,4 @@
-"""Per-book verdicts, the execution gate, the exposure flag, and the advised overlay."""
+"""Per-arm verdicts, the execution gate, the exposure flag, and the advised overlay."""
 
 from datetime import datetime
 
@@ -8,15 +8,15 @@ NOW = datetime(2026, 8, 24, 11, 0)
 
 POSITION = {
     "position_id": "TQQQ:control:2026-08-17",
-    "book": "control",
+    "arm": "control",
     "short_strike": 67.0,
     "short_expiration": "2026-08-28",
     "long_expiration": "2026-09-04",
 }
 
 
-def _params(book="control", **over):
-    p = {**management.PARAM_DEFAULTS, "book": book}
+def _params(arm="control", **over):
+    p = {**management.PARAM_DEFAULTS, "arm": arm}
     p.update(over)
     return p
 
@@ -81,14 +81,14 @@ def test_execution_gate():
 
 
 def test_effective_params_advised_overlay_and_control_untouched(config):
-    advised = {**POSITION, "book": "advised:control", "advice_params": '{"tv_managed_exit": true}'}
+    advised = {**POSITION, "arm": "advised:control", "advice_params": '{"tv_managed_exit": true}'}
     params = management.effective_params(advised, config)
     assert params["tv_managed_exit"] is True
-    assert params["book"] == "advised:control"
+    assert params["arm"] == "advised:control"
     control = management.effective_params(POSITION, config)
     assert control["tv_managed_exit"] is False
-    # The advised row still resolves through the base book's control rules -- the tv-exit override
-    # is a param, not a book fork.
+    # The advised row still resolves through the base arm's control rules -- the tv-exit override
+    # is a param, not a arm fork.
     d = management.evaluate(advised, params, now=NOW, short_tv=0.08, spot=70.0)
     assert d.action == "close_all"
     assert d.reason == "tv_exhausted"
@@ -139,36 +139,36 @@ def test_frozen_params_govern_an_open_advised_position_after_the_artifact_expire
     }
     assert core_advice.validate(expired, bounds, "2026-09-11")["ok"] is False
 
-    advised = {**POSITION, "book": "advised:control", "advice_params": '{"tv_managed_exit": true}'}
+    advised = {**POSITION, "arm": "advised:control", "advice_params": '{"tv_managed_exit": true}'}
     assert management.effective_params(advised, config)["tv_managed_exit"] is True
 
 
 def test_effective_params_resolve_an_experiment_tag_to_the_configured_base(config):
     """An `advised:<experiment>` row (2026-09-17) shadows `advice.base_book`, its frozen overlay on
     top; the legacy `advised:control` row keeps reading its base off the tag."""
-    config["books"]["control"]["tv_close_threshold"] = 0.12
-    row = {**POSITION, "book": "advised:tv-exit", "advice_params": '{"tv_managed_exit": true}'}
+    config["arms"]["control"]["tv_close_threshold"] = 0.12
+    row = {**POSITION, "arm": "advised:tv-exit", "advice_params": '{"tv_managed_exit": true}'}
     params = management.effective_params(row, config)
     assert params["base_book"] == "control"
-    assert params["tv_close_threshold"] == 0.12  # the base book's own block, not the defaults
+    assert params["tv_close_threshold"] == 0.12  # the base arm's own block, not the defaults
     assert params["tv_managed_exit"] is True
-    assert params["book"] == "advised:tv-exit"
-    # The retired pre-redesign tags still name their base through the config's books keys.
-    config["books"]["keltner"] = {"tv_close_threshold": 0.30}
-    old = management.effective_params({**POSITION, "book": "advised:keltner", "advice_params": "{}"}, config)
+    assert params["arm"] == "advised:tv-exit"
+    # The retired pre-redesign tags still name their base through the config's arms keys.
+    config["arms"]["keltner"] = {"tv_close_threshold": 0.30}
+    old = management.effective_params({**POSITION, "arm": "advised:keltner", "advice_params": "{}"}, config)
     assert old["base_book"] == "keltner" and old["tv_close_threshold"] == 0.30
 
 
 def test_a_row_stamped_with_its_base_wins_over_the_configured_fallback(config):
     """Shown to fail without the stamp (2026-09-17): after the session's decision file is gone,
     a twin of a non-default base fell back to `advice.base_book`. The row's `advice_base` wins."""
-    config["books"]["control"]["tv_close_threshold"] = 0.12
-    config["books"]["keltner"] = {"tv_close_threshold": 0.30}
+    config["arms"]["control"]["tv_close_threshold"] = 0.12
+    config["arms"]["keltner"] = {"tv_close_threshold": 0.30}
     config["advice"] = {"base_book": "control"}
-    row = {**POSITION, "book": "advised:tv-exit", "advice_params": "{}", "advice_base": "keltner"}
+    row = {**POSITION, "arm": "advised:tv-exit", "advice_params": "{}", "advice_base": "keltner"}
     params = management.effective_params(row, config)
     assert params["base_book"] == "keltner" and params["tv_close_threshold"] == 0.30
     bare = management.effective_params(
-        {**POSITION, "book": "advised:tv-exit", "advice_params": "{}", "advice_base": None}, config
+        {**POSITION, "arm": "advised:tv-exit", "advice_params": "{}", "advice_base": None}, config
     )
     assert bare["base_book"] == "control", "no stamp: the config fallback, as before"

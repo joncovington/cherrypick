@@ -27,17 +27,17 @@ from cherrypick.core import db as _core_db
 from cherrypick.core import ledgerstore as _ledgerstore
 
 _SCHEMA = """
--- One row per position per book: one deep-ITM long call + one ITM short call (the current one —
+-- One row per position per arm: one deep-ITM long call + one ITM short call (the current one —
 -- rolls retire short_call_<n> and open short_call_<n+1>, and `short_strike`/`short_expiration`
--- track the live short). `position_id` = "<symbol>:<book>:<entry_session>". Entry context is
+-- track the live short). `position_id` = "<symbol>:<arm>:<entry_session>". Entry context is
 -- stored as MEASURES (the whole worksheet, the keltner channel reads), never only as buckets: a
--- threshold can be re-cut later, a bucket cannot. Keltner measures are stamped on EVERY book's
--- rows, not just the keltner book's, so the filter's counterfactual stays readable from control.
+-- threshold can be re-cut later, a bucket cannot. Keltner measures are stamped on EVERY arm's
+-- rows, not just the keltner arm's, so the filter's counterfactual stays readable from control.
 CREATE TABLE IF NOT EXISTS pmcc_positions (
     id                             INTEGER PRIMARY KEY AUTOINCREMENT,
     position_id                    TEXT NOT NULL UNIQUE,
     symbol                         TEXT NOT NULL,
-    book                           TEXT NOT NULL,
+    arm                           TEXT NOT NULL,
     entry_session                  TEXT NOT NULL,
     quantity                       INTEGER NOT NULL DEFAULT 1,
     long_expiration                TEXT NOT NULL,
@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS pmcc_positions (
     updated_at                     TEXT,
     era                            TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_pmcc_positions_session ON pmcc_positions(entry_session, book);
+CREATE INDEX IF NOT EXISTS idx_pmcc_positions_session ON pmcc_positions(entry_session, arm);
 CREATE INDEX IF NOT EXISTS idx_pmcc_positions_status ON pmcc_positions(status);
 -- No index on `era`: it is an ADDED column (see _ADDED_COLUMNS below), and `_SCHEMA` runs via
 -- `executescript` BEFORE the migration that adds it to an existing database — an index statement
@@ -214,7 +214,7 @@ CREATE INDEX IF NOT EXISTS idx_pmcc_events_session ON pmcc_management_events(ses
 CREATE TABLE IF NOT EXISTS pmcc_decisions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     trade_date  TEXT NOT NULL,
-    book        TEXT NOT NULL,
+    arm        TEXT NOT NULL,
     symbol      TEXT NOT NULL,
     mode        TEXT NOT NULL,
     reason      TEXT NOT NULL,
@@ -226,7 +226,7 @@ CREATE TABLE IF NOT EXISTS pmcc_decisions (
 );
 CREATE INDEX IF NOT EXISTS idx_pmcc_decisions_date ON pmcc_decisions(trade_date);
 
--- One UNCOLLAPSED row per evaluated entry opportunity per (symbol, book) — the measurement record
+-- One UNCOLLAPSED row per evaluated entry opportunity per (symbol, arm) — the measurement record
 -- the collapsed journal cannot be. Carries the yield search's telemetry: what was wanted, what the
 -- chain offered, and how far off a refusal was.
 CREATE TABLE IF NOT EXISTS pmcc_entry_attempts (
@@ -234,7 +234,7 @@ CREATE TABLE IF NOT EXISTS pmcc_entry_attempts (
     ts             TEXT NOT NULL,
     trade_date     TEXT NOT NULL,
     symbol         TEXT NOT NULL,
-    book           TEXT NOT NULL,
+    arm           TEXT NOT NULL,
     outcome        TEXT NOT NULL,
     block_detail   TEXT,
     spot           REAL,
@@ -327,10 +327,10 @@ CREATE TABLE IF NOT EXISTS measurement_breaks (
 # IF NOT EXISTS would silently ignore on an existing file).
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     # The advisor experiment an advised row was entered under (2026-09-16), beside the params
-    # it froze -- `advised:<base>` names a book, and every experiment on that base reuses it.
+    # it froze -- `advised:<base>` names a arm, and every experiment on that base reuses it.
     "pmcc_positions": {
         "era": "TEXT",
-        "experiment_id": "TEXT",  # The base book an advised row shadows, stamped at entry from the session decision (2026-09-17): the tag no longer carries it, and after the session the decision file is gone. Management prefers this over the configured advice.base_book, so a twin of a non-default base keeps its rules.
+        "experiment_id": "TEXT",  # The base arm an advised row shadows, stamped at entry from the session decision (2026-09-17): the tag no longer carries it, and after the session the decision file is gone. Management prefers this over the configured advice.base_book, so a twin of a non-default base keeps its rules.
         "advice_base": "TEXT",
     },
     "pmcc_legs": {},
@@ -403,21 +403,21 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
 # --------------------------------------------------------------------------- readers
 
 
-def open_position_for(conn, symbol: str, book: str) -> dict | None:
-    """The not-yet-closed position for one (symbol, book), or None — the one-position-per-symbol
+def open_position_for(conn, symbol: str, arm: str) -> dict | None:
+    """The not-yet-closed position for one (symbol, arm), or None — the one-position-per-symbol
     concurrency rule's lookup."""
     r = conn.execute(
-        "SELECT * FROM pmcc_positions WHERE symbol = ? AND book = ? AND status != 'closed' "
+        "SELECT * FROM pmcc_positions WHERE symbol = ? AND arm = ? AND status != 'closed' "
         "ORDER BY entry_session DESC LIMIT 1",
-        (symbol, book),
+        (symbol, arm),
     ).fetchone()
     return dict(r) if r else None
 
 
-def open_position_count(conn, book: str) -> int:
+def open_position_count(conn, arm: str) -> int:
     return int(
         conn.execute(
-            "SELECT COUNT(*) FROM pmcc_positions WHERE book = ? AND status != 'closed'", (book,)
+            "SELECT COUNT(*) FROM pmcc_positions WHERE arm = ? AND status != 'closed'", (arm,)
         ).fetchone()[0]
     )
 
@@ -442,7 +442,7 @@ def expiring_open_legs(conn, day: str) -> list[dict]:
     return [
         dict(r)
         for r in conn.execute(
-            "SELECT l.*, p.book, p.symbol AS position_symbol, p.status AS position_status "
+            "SELECT l.*, p.arm, p.symbol AS position_symbol, p.status AS position_status "
             "FROM pmcc_legs l JOIN pmcc_positions p "
             "ON p.position_id = l.position_id WHERE l.status = 'open' AND l.expiration = ? "
             "ORDER BY l.position_id, l.leg_role",

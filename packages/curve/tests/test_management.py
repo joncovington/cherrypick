@@ -2,12 +2,12 @@ from datetime import datetime
 
 from cherrypick.curve import engine, management
 
-PARAMS = {**management.PARAM_DEFAULTS, "book": "control"}
+PARAMS = {**management.PARAM_DEFAULTS, "arm": "control"}
 
 
 def _position(**overrides):
     base = {
-        "book": "control",
+        "arm": "control",
         "expiration": "2026-10-16",
         "entry_credit": 1.00,
         "advice_params": None,
@@ -59,8 +59,8 @@ def test_flip_exit_fires_on_control_when_measured_backwardation():
 
 
 def test_flip_exit_never_fires_on_noflip():
-    noflip_params = {**management.PARAM_DEFAULTS, "book": "noflip"}
-    position = _position(book="noflip")
+    noflip_params = {**management.PARAM_DEFAULTS, "arm": "noflip"}
+    position = _position(arm="noflip")
     now = datetime(2026, 9, 1)
     decision = management.evaluate(
         position,
@@ -102,15 +102,15 @@ def test_unpriced_mark_holds():
 
 def test_effective_params_untouched_for_control():
     position = _position()
-    config = {"defaults": {"profit_take_pct": 0.55}, "books": {"control": {}}}
+    config = {"defaults": {"profit_take_pct": 0.55}, "arms": {"control": {}}}
     params = management.effective_params(position, config)
     assert params["profit_take_pct"] == 0.55
-    assert params["book"] == "control"
+    assert params["arm"] == "control"
 
 
 def test_effective_params_overlays_advised():
-    position = {"book": "advised:control", "advice_params": '{"profit_take_pct": 0.35}'}
-    config = {"defaults": {"profit_take_pct": 0.50}, "books": {"control": {}}}
+    position = {"arm": "advised:control", "advice_params": '{"profit_take_pct": 0.35}'}
+    config = {"defaults": {"profit_take_pct": 0.50}, "arms": {"control": {}}}
     params = management.effective_params(position, config)
     assert params["profit_take_pct"] == 0.35
 
@@ -212,12 +212,12 @@ def test_frozen_params_govern_an_open_advised_position_after_the_artifact_expire
     }
     assert core_advice.validate(expired, bounds, "2026-09-11")["ok"] is False
 
-    position = {"book": "advised:control", "advice_params": json.dumps({"profit_take_pct": 0.35})}
-    config = {"defaults": {"profit_take_pct": 0.50}, "books": {"control": {}}}
+    position = {"arm": "advised:control", "advice_params": json.dumps({"profit_take_pct": 0.35})}
+    config = {"defaults": {"profit_take_pct": 0.50}, "arms": {"control": {}}}
     assert management.effective_params(position, config)["profit_take_pct"] == 0.35
 
 
-# --------------------------- one advised book per experiment (2026-09-17)
+# --------------------------- one advised arm per experiment (2026-09-17)
 
 
 def test_base_book_resolves_an_experiment_tag_through_the_decision_then_the_config():
@@ -239,13 +239,13 @@ def test_base_book_resolves_an_experiment_tag_through_the_decision_then_the_conf
 def test_effective_params_resolve_an_experiment_tag_to_the_configured_base():
     config = {
         "defaults": {"profit_take_pct": 0.5},
-        "books": {"control": {}, "noflip": {"profit_take_pct": 0.4}},
+        "arms": {"control": {}, "noflip": {"profit_take_pct": 0.4}},
     }
-    row = {"book": "advised:take-35", "advice_params": '{"profit_take_pct": 0.35}'}
+    row = {"arm": "advised:take-35", "advice_params": '{"profit_take_pct": 0.35}'}
     params = management.effective_params(row, config)
     assert params["base_book"] == "control" and params["profit_take_pct"] == 0.35
     config["advice"] = {"base_book": "noflip"}
-    params = management.effective_params({"book": "advised:take-35", "advice_params": "{}"}, config)
+    params = management.effective_params({"arm": "advised:take-35", "advice_params": "{}"}, config)
     assert params["base_book"] == "noflip" and params["profit_take_pct"] == 0.4
 
 
@@ -255,19 +255,19 @@ def test_an_experiment_twin_of_noflip_never_flips_but_a_twin_of_control_does():
     backwardation = {"ok": True, "regime": "backwardation", "ratio": 1.05}
     now = datetime(2026, 9, 1)
     of_noflip = management.effective_params(
-        {"book": "advised:take-35", "advice_params": "{}"},
-        {"defaults": {}, "books": {"noflip": {}}, "advice": {"base_book": "noflip"}},
+        {"arm": "advised:take-35", "advice_params": "{}"},
+        {"defaults": {}, "arms": {"noflip": {}}, "advice": {"base_book": "noflip"}},
     )
     d = management.evaluate(
-        _position(book="advised:take-35"), of_noflip, now=now, close_cost=0.99, regime=backwardation
+        _position(arm="advised:take-35"), of_noflip, now=now, close_cost=0.99, regime=backwardation
     )
     assert d.action == "hold" and d.reason == "working"
     of_control = management.effective_params(
-        {"book": "advised:take-35", "advice_params": "{}"},
-        {"defaults": {}, "books": {"control": {}}, "advice": {"base_book": "control"}},
+        {"arm": "advised:take-35", "advice_params": "{}"},
+        {"defaults": {}, "arms": {"control": {}}, "advice": {"base_book": "control"}},
     )
     d = management.evaluate(
-        _position(book="advised:take-35"), of_control, now=now, close_cost=0.99, regime=backwardation
+        _position(arm="advised:take-35"), of_control, now=now, close_cost=0.99, regime=backwardation
     )
     assert d.action == "close_all" and d.reason == "regime_flip"
 
@@ -277,14 +277,14 @@ def test_a_row_stamped_with_its_base_wins_over_the_configured_fallback():
     used to read `control`'s rules from the config fallback. The row's `advice_base` wins."""
     config = {
         "defaults": {"profit_take_pct": 0.5},
-        "books": {"control": {}, "noflip": {"profit_take_pct": 0.4}},
+        "arms": {"control": {}, "noflip": {"profit_take_pct": 0.4}},
         "advice": {"base_book": "control"},
     }
     stamped = management.effective_params(
-        {"book": "advised:take-35", "advice_params": "{}", "advice_base": "noflip"}, config
+        {"arm": "advised:take-35", "advice_params": "{}", "advice_base": "noflip"}, config
     )
     assert stamped["base_book"] == "noflip" and stamped["profit_take_pct"] == 0.4
     bare = management.effective_params(
-        {"book": "advised:take-35", "advice_params": "{}", "advice_base": None}, config
+        {"arm": "advised:take-35", "advice_params": "{}", "advice_base": None}, config
     )
     assert bare["base_book"] == "control" and bare["profit_take_pct"] == 0.5

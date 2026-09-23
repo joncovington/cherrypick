@@ -20,7 +20,7 @@ def test_the_stamp_is_the_shared_rule():
 
 
 def test_each_advised_book_is_stamped_with_its_own_experiment_from_the_decision():
-    """Two experiments on one session are two books with two ids (2026-09-17) -- the stamp is
+    """Two experiments on one session are two arms with two ids (2026-09-17) -- the stamp is
     resolved per tag through the decision, never one id shared across the twins."""
     decision = {
         "day": "2026-09-17",

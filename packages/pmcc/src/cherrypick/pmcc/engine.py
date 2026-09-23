@@ -1,7 +1,7 @@
 """Pure decisions over a pre-fetched snapshot: leg selection, worksheet math, and the fee stack.
 
 No I/O, no clock reads, no network — the same split every module in the suite keeps (provider
-fetches, engine decides, book persists, paper_loop owns the clock), which is both what makes the
+fetches, engine decides, arm persists, paper_loop owns the clock), which is both what makes the
 strategy testable and the suite guardrail on loop-decision paths.
 
 The structure: one deep-ITM long call (85-90 delta, ~21 DTE — a stock substitute, NOT a LEAP)
@@ -21,7 +21,7 @@ from cherrypick.core import config as _cfg
 from cherrypick.core import fees as _fees
 from cherrypick.core import settlement as _settlement
 
-BOOKS = ("control",)
+ARMS = ("control",)
 
 # How an expiring leg settles, per underlying. The module models both styles and refuses a symbol it
 # has been told nothing about — the calendars guard, kept verbatim: an unmodelled settlement produces
@@ -80,24 +80,24 @@ def ex_date_in_span(config: dict, symbol: str, start_day: str, end_day: str) -> 
     return None
 
 
-def base_book(book: str, *, config: dict | None = None, decision: dict | None = None) -> str:
-    """The book whose rules an advised twin runs under. A base book is its own base.
+def base_book(arm: str, *, config: dict | None = None, decision: dict | None = None) -> str:
+    """The arm whose rules an advised twin runs under. A base arm is its own base.
 
     **An advised tag no longer carries its base (2026-09-17).** Each advisor experiment gets its
-    own book, `advised:<experiment name>`, and the base it shadows is named by the session
+    own arm, `advised:<experiment name>`, and the base it shadows is named by the session
     decision's experiment entry rather than by the tag. Resolution, in order: the decision's entry
-    for this tag when one is given; the tag's last segment when it names a base book -- the legacy
+    for this tag when one is given; the tag's last segment when it names a base arm -- the legacy
     `advised:control` every row before this date carries (and the retired `advised:keltner` /
-    `advised:roll` history, through the config's `books` keys); else the configured
+    `advised:roll` history, through the config's `arms` keys); else the configured
     `advice.base_book` (default `control`)."""
-    if not _core_advice.is_advised(book):
-        return book
+    if not _core_advice.is_advised(arm):
+        return arm
     for entry in _core_advice.advised_books(decision):
         tag = entry.get("tag")
-        if tag and (book == tag or book.startswith(tag + ":")) and entry.get("base"):
+        if tag and (arm == tag or arm.startswith(tag + ":")) and entry.get("base"):
             return str(entry["base"])
-    tail = book.split(":", 1)[1]
-    if tail in BOOKS or tail in _cfg.registry(config, label="pmcc"):
+    tail = arm.split(":", 1)[1]
+    if tail in ARMS or tail in _cfg.registry(config, label="pmcc"):
         return tail
     # Any accepted spelling: an operator who renames this key must not silently get
     # "control" as the base, which is a wrong A/B that still reads as a valid one.
@@ -105,11 +105,11 @@ def base_book(book: str, *, config: dict | None = None, decision: dict | None = 
     return str(_cfg.first_present(advice_cfg, *_cfg.BASE_ARM_KEYS) or "control")
 
 
-def merged_params(config: dict, book: str) -> dict:
-    """`defaults` overlaid with the book's own block — the flies `merged_params` shape, so an
-    advised book resolves through the same path as every other."""
-    params = {**(config.get("defaults") or {}), **(_cfg.registry(config, label="pmcc").get(book) or {})}
-    params["book"] = book
+def merged_params(config: dict, arm: str) -> dict:
+    """`defaults` overlaid with the arm's own block — the flies `merged_params` shape, so an
+    advised arm resolves through the same path as every other."""
+    params = {**(config.get("defaults") or {}), **(_cfg.registry(config, label="pmcc").get(arm) or {})}
+    params["arm"] = arm
     return params
 
 
@@ -408,7 +408,7 @@ def short_time_value(short_mid: float, spot: float, short_strike: float) -> floa
 def settle_intrinsic(strike: float, option_type: str, spot: float) -> float:
     """Intrinsic value of one leg at the settlement print. Under PHYSICAL settlement it is still the
     option's own value at expiry — what changes is that the leg also delivers stock, which
-    `assignment_from` books separately (the calendars decomposition, adopted whole)."""
+    `assignment_from` arms separately (the calendars decomposition, adopted whole)."""
     if option_type == "put":
         return round(max(0.0, strike - spot), 4)
     return round(max(0.0, spot - strike), 4)
@@ -416,7 +416,7 @@ def settle_intrinsic(strike: float, option_type: str, spot: float) -> float:
 
 # --------------------------------------------------------------------------- physical settlement
 #
-# The calendars decomposition, unchanged: book delivered shares at the SETTLEMENT SPOT, not the
+# The calendars decomposition, unchanged: arm delivered shares at the SETTLEMENT SPOT, not the
 # strike. For this module's short call at strike K, credit E, settlement spot S_f, cover price S_m:
 #
 #     option leg  E - (S_f - K)      the existing intrinsic accounting, untouched

@@ -78,8 +78,8 @@ TWO = {
 
 def test_session_books_open_one_advised_book_per_experiment(monkeypatch):
     monkeypatch.setattr(paper_loop, "advice_decision", lambda cfg, day: TWO)
-    books, advised = paper_loop.session_books({}, "2026-09-17")
-    assert books == ["control", "delta", "bounce", "flip", "advised:early-delta", "advised:late-delta"]
+    arms, advised = paper_loop.session_books({}, "2026-09-17")
+    assert arms == ["control", "delta", "bounce", "flip", "advised:early-delta", "advised:late-delta"]
     assert advised["advised:late-delta"]["experiment_id"] == "exp-b"
     assert "advised:rejected" not in advised  # that experiment's baseline day, nobody else's
 
@@ -95,8 +95,8 @@ def test_session_books_read_a_legacy_decision_as_the_single_advised_base_book(mo
             "experiment_id": "exp-old",
         },
     )
-    books, advised = paper_loop.session_books({}, "2026-09-17")
-    assert books == ["control", "delta", "bounce", "flip", "advised:delta"]
+    arms, advised = paper_loop.session_books({}, "2026-09-17")
+    assert arms == ["control", "delta", "bounce", "flip", "advised:delta"]
     assert advised["advised:delta"]["experiment_id"] == "exp-old"
 
 
@@ -108,8 +108,8 @@ def test_session_books_are_the_base_roster_on_a_baseline_day(monkeypatch):
 
 
 def test_each_advised_book_is_entered_with_its_own_overlay_and_stamp(tmp_path):
-    """Two experiments, two books, two frozen overlays, two ids -- resolved per tag through the
-    decision handed to `enter_position`; the base book stays unstamped."""
+    """Two experiments, two arms, two frozen overlays, two ids -- resolved per tag through the
+    decision handed to `enter_position`; the base arm stays unstamped."""
     conn = db.connect(str(tmp_path / "paper.db"))
     for tag in ("delta", "advised:early-delta", "advised:late-delta"):
         entry = next((e for e in TWO["experiments"] if e["tag"] == tag), None)
@@ -123,11 +123,11 @@ def test_each_advised_book_is_entered_with_its_own_overlay_and_stamp(tmp_path):
             experiment_id=TWO,
         )
     rows = {
-        r["book"]: r
-        for r in conn.execute("SELECT book, advice_params, experiment_id, advice_base FROM bwb_positions")
+        r["arm"]: r
+        for r in conn.execute("SELECT arm, advice_params, experiment_id, advice_base FROM bwb_positions")
     }
     assert rows["delta"]["experiment_id"] is None and rows["delta"]["advice_params"] is None
-    # the base each twin shadows is stamped from the decision entry; a base book carries none
+    # the base each twin shadows is stamped from the decision entry; a base arm carries none
     assert rows["delta"]["advice_base"] is None
     assert rows["advised:early-delta"]["advice_base"] == "delta"
     assert rows["advised:late-delta"]["advice_base"] == "delta"

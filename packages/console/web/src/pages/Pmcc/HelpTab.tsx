@@ -5,8 +5,8 @@ import { Card, fmtMoney, fmtPct } from "../../components/DataTable";
  * What this experiment is, in the module's own terms.
  *
  * Deliberately not the shared ExperimentGuideView: that component reads a flies/meic-shaped config
- * block and derives each arm's differences from its siblings. PMCC's single book plus its advised
- * books differ by one frozen overlay each, not by a set of declared arms, so a derived diff would report
+ * block and derives each arm's differences from its siblings. PMCC's single arm plus its advised
+ * arms differ by one frozen overlay each, not by a set of declared arms, so a derived diff would report
  * almost nothing. The prose here is the config's own `_what_this_is`/`_selection_note`/
  * `_management_note`, kept in one place. Rewritten for the 2026-08-23 redesign — see
  * packages/pmcc/CLAUDE.md's measurement-break note for what changed and why.
@@ -36,7 +36,7 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
             <span className="mono">tv_managed_exit</span>
             {p?.tvCloseThreshold != null && <> (threshold ≈{fmtMoney(p.tvCloseThreshold)})</>}, a live,
             advisor-tunable override read only through an experiment's{" "}
-            <span className="mono">advised:&lt;experiment name&gt;</span> book's frozen params
+            <span className="mono">advised:&lt;experiment name&gt;</span> arm's frozen params
             {p?.tvManagedExit === true && (
               <span className="chip chip-warn integrity-chip" style={{ marginLeft: 6 }}>
                 on in this config's defaults
@@ -53,18 +53,18 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
         </div>
       </Card>
 
-      <Card title="one book, plus its advised books" collapseKey="pmcc-help-books" defaultCollapsed>
+      <Card title="one arm, plus its advised arms" collapseKey="pmcc-help-arms" defaultCollapsed>
         <div className="pmcc-prose">
           <dl className="pmcc-defs">
             <dt>control</dt>
             <dd>
               The strategy as taught: mechanical entry whenever the slot is free, an 85-90-delta long, an ATM short
               with no yield floor, hold to the short's own expiration, then close both legs together. Never rolls —
-              there is no more roll book.
+              there is no more roll arm.
             </dd>
             <dt>advised:&lt;experiment name&gt;</dt>
             <dd>
-              One book per advisor experiment (any number at once since 2026-09-17), each carrying that
+              One arm per advisor experiment (any number at once since 2026-09-17), each carrying that
               experiment's admitted params frozen on each row at entry and restated every tick through the
               module's one choke point, measured against control. The one thing currently worth advising is{" "}
               <span className="mono">tv_managed_exit</span>/<span className="mono">tv_close_threshold</span> —
@@ -73,7 +73,7 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
             </dd>
           </dl>
           <p className="muted">
-            There is no more multi-book fill pairing to reason about: with one book plus its advised books, every{" "}
+            There is no more multi-arm fill pairing to reason about: with one arm plus its advised arms, every{" "}
             <span className="mono">control</span> cycle is directly comparable to every other{" "}
             <span className="mono">control</span> cycle.
           </p>
@@ -127,7 +127,7 @@ export function HelpTab({ data }: { data: PmccPayload | undefined }) {
       <Card title="settlement, by symbol" collapseKey="pmcc-help-settlement" defaultCollapsed>
         <div className="pmcc-prose">
           <p>
-            TQQQ is American physical delivery. An ITM short call at expiry books its intrinsic <em>and</em> delivers
+            TQQQ is American physical delivery. An ITM short call at expiry arms its intrinsic <em>and</em> delivers
             100 short shares per contract at the settlement print; the surviving ~14-DTE long stays open, and the
             next session's combined disposal covers the shares and sells the long.
           </p>

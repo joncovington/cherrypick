@@ -7,7 +7,7 @@ import { fmtStrike } from "../../lib/optionFormat";
 import { EntrySpreadCell } from "./EntrySpread";
 
 /**
- * How a short leg left the book.
+ * How a short leg left the arm.
  *
  * Only `assigned` is coloured. It is the one close that hands over shares and carries the weekend
  * exposure, so it is the one worth catching the eye; a `traded` close is the strategy working
@@ -188,12 +188,12 @@ function CycleDetail({ row }: { row: PmccCycleRow }) {
 }
 
 export function HistoryTab() {
-  const [book, setBook] = useState<string | null>(null);
+  const [arm, setBook] = useState<string | null>(null);
   const [symbol, setSymbol] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const meta = usePmccMeta();
-  const { page, setOffset, setLimit } = usePage([book, symbol]);
-  const { data, isLoading, isError, isPlaceholderData } = usePmccHistory({ book, symbol }, page);
+  const { page, setOffset, setLimit } = usePage([arm, symbol]);
+  const { data, isLoading, isError, isPlaceholderData } = usePmccHistory({ arm, symbol }, page);
   const assignments = usePmccAssignments();
   const rows = data?.rows ?? [];
   const outstanding = assignments.data?.rows ?? [];
@@ -225,7 +225,7 @@ export function HistoryTab() {
         updatedAt={data === undefined ? undefined : Date.now()}
         controls={
           <>
-            <ScopeSelect label="book filter" value={book} options={meta.data?.books} onChange={setBook} allLabel="all books" />
+            <ScopeSelect label="arm filter" value={arm} options={meta.data?.arms} onChange={setBook} allLabel="all arms" />
             <ScopeSelect
               label="symbol filter"
               value={symbol}
@@ -254,7 +254,7 @@ export function HistoryTab() {
                 <span className="muted"> → {r.closedSession ?? "—"}</span>
               </td>
               <td>{r.symbol}</td>
-              <td>{r.book}</td>
+              <td>{r.arm}</td>
               <td>{fmtStrike(r.longStrike)}</td>
               <td>
                 <ShortChain row={r} />

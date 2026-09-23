@@ -4,9 +4,9 @@ Four guards, each verified by breaking it on purpose during development — the 
 guard has to be shown to fail:
 
 * the regime is OFF unless configured, so landing the code changes nothing;
-* `friday:path` still HOLDS, which a raw `book == "path"` comparison silently broke — the one book
+* `friday:path` still HOLDS, which a raw `arm == "path"` comparison silently broke — the one arm
   whose entire job is never to close;
-* the exit gate reads "every book that intends to close has done so", never "the book is flat",
+* the exit gate reads "every arm that intends to close has done so", never "the arm is flat",
   because `path` never closes and a flat-gate would deadlock the entry on every Friday forever;
 * the Friday structure tag is distinct from the Monday one, so the two populations cannot pool.
 """
@@ -25,7 +25,7 @@ ET = clock.ET
 def _friday_cfg(**over):
     cfg = {
         "symbols": ["SPY"],
-        "books": {"control": {"enabled": True}, "path": {"enabled": True}},
+        "arms": {"control": {"enabled": True}, "path": {"enabled": True}},
         "friday_entry": {"enabled": True, "window_start": "15:50", "window_end": "16:00"},
     }
     cfg.update(over)
@@ -46,7 +46,7 @@ def test_base_book_strips_any_prefix_stack():
 
 def test_base_book_resolves_an_experiment_tag_through_the_decision_then_the_config():
     """Since 2026-09-17 an advised tag names the EXPERIMENT, not the base: `advised:noon-exit` says
-    nothing about which book it shadows. The decision entry answers first, the configured
+    nothing about which arm it shadows. The decision entry answers first, the configured
     `advice.base_book` answers for a row whose decision is gone, and the legacy `advised:control`
     tag still reads its base straight off the name."""
     decision = {
@@ -64,10 +64,10 @@ def test_base_book_resolves_an_experiment_tag_through_the_decision_then_the_conf
 
 def test_friday_path_holds_like_path():
     """The break this guards: `management.decide` compared the raw name, so `friday:path` — the
-    book whose whole job is never to close — was treated as a closing book."""
+    arm whose whole job is never to close — was treated as a closing arm."""
     d = management.evaluate(
-        {"book": "friday:path", "side": "put", "status": "open"},
-        {"book": "friday:path"},
+        {"arm": "friday:path", "side": "put", "status": "open"},
+        {"arm": "friday:path"},
         now=datetime(2026, 8, 28, 15, 50, tzinfo=ET),
         combined_value=1.0,
         combined_debit=2.0,
@@ -100,7 +100,7 @@ def test_friday_plan_trades_the_monday_contracts_under_a_distinct_tag():
 
 def test_friday_books_are_the_base_roster_prefixed_and_carry_no_advised_twin():
     assert paper_loop.friday_books(_friday_cfg()) == ["friday:control", "friday:path"]
-    disabled = _friday_cfg(books={"control": {"enabled": True}, "path": {"enabled": False}})
+    disabled = _friday_cfg(arms={"control": {"enabled": True}, "path": {"enabled": False}})
     assert paper_loop.friday_books(disabled) == ["friday:control"]
 
 
@@ -112,14 +112,14 @@ def conn(tmp_path):
     return db.connect(str(tmp_path / "cal.db"))
 
 
-def _pos(conn, position_id, book, front, status="open"):
+def _pos(conn, position_id, arm, front, status="open"):
     db.save_position(
         conn,
         {
             "position_id": position_id,
             "week_of": "2026-08-24",
             "entry_session": "2026-08-24",
-            "book": book,
+            "arm": arm,
             "side": "put",
             "symbol": "SPY",
             "structure": "dc_4_7",
@@ -135,7 +135,7 @@ def _pos(conn, position_id, book, front, status="open"):
 
 
 def test_exit_gate_ignores_path_which_never_closes(conn):
-    """THE deadlock guard. `path` holds to settlement by design, so a gate waiting for the book to
+    """THE deadlock guard. `path` holds to settlement by design, so a gate waiting for the arm to
     go flat is satisfied on no Friday ever and the entry silently never fires — a deadlock that
     would present as a skipped week and be misdiagnosed as a feed problem."""
     _pos(conn, "w:path:put", "path", "2026-08-28")
@@ -146,7 +146,7 @@ def test_exit_gate_ignores_path_which_never_closes(conn):
 def test_exit_gate_blocks_while_a_closing_book_is_still_open(conn):
     _pos(conn, "w:control:put", "control", "2026-08-28")
     pending = db.pending_closing_exits(conn, "2026-08-28")
-    assert [p["book"] for p in pending] == ["control"]
+    assert [p["arm"] for p in pending] == ["control"]
 
 
 def test_exit_gate_clears_once_the_closing_book_has_closed(conn):
@@ -265,7 +265,7 @@ def test_paired_debit_records_both_entrances_at_one_strike(conn):
             "position_id": "2026-08-31:friday:control:put",
             "week_of": "2026-08-31",
             "entry_session": "2026-08-28",
-            "book": "friday:control",
+            "arm": "friday:control",
             "side": "put",
             "symbol": "SPY",
             "structure": "dc_7_11",
@@ -298,7 +298,7 @@ def test_paired_debit_is_a_marked_refusal_when_the_strike_cannot_be_priced(conn)
             "position_id": "2026-08-31:friday:control:put",
             "week_of": "2026-08-31",
             "entry_session": "2026-08-28",
-            "book": "friday:control",
+            "arm": "friday:control",
             "side": "put",
             "symbol": "SPY",
             "structure": "dc_7_11",
@@ -334,7 +334,7 @@ def test_paired_debit_restates_rather_than_duplicating_on_a_retried_tick(conn):
             "position_id": "2026-08-31:friday:control:put",
             "week_of": "2026-08-31",
             "entry_session": "2026-08-28",
-            "book": "friday:control",
+            "arm": "friday:control",
             "side": "put",
             "symbol": "SPY",
             "structure": "dc_7_11",

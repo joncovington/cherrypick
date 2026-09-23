@@ -192,7 +192,7 @@ def margin_cap_exceeded(
     params: dict,
     reserve_addons: bool,
 ) -> tuple[bool, dict]:
-    """Would adding the proposed structure push the open book past either cap? Both caps are
+    """Would adding the proposed structure push the open arm past either cap? Both caps are
     worst-case dollars at expiry (never fees or margin as the broker computes it). `None` for a cap
     means that cap is off. Returns `(exceeded, totals)` so the refusal can say the numbers."""
     proposed = worst_case_loss_dollars(proposed_legs, proposed_credit, quantity)

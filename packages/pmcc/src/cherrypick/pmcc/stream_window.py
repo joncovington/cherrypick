@@ -78,7 +78,7 @@ def needed_width(cache_path, symbol: str, *, deep_window_pct: float, margin: int
 
 def recent_miss_occurrences(conn, trade_date: str, symbol: str) -> int:
     """The largest `pmcc_decisions.occurrences` for a window-miss refusal on `symbol` today, across
-    books and reasons. MAX rather than SUM: a shared window gap surfaces in multiple books at once,
+    arms and reasons. MAX rather than SUM: a shared window gap surfaces in multiple arms at once,
     and summing would inflate urgency for what is really one physical cause."""
     placeholders = ", ".join("?" * len(_MISS_REASONS))
     row = conn.execute(
@@ -164,24 +164,24 @@ def evaluate(
     return width
 
 
-def entry_possible(conn, symbol: str, books: list[str], max_positions: int) -> bool:
-    """Whether ANY book could still open `symbol` — the same condition `paper_loop`'s entry phase
-    uses to decide it has something to do (a free (symbol, book) slot, under the book's cap).
+def entry_possible(conn, symbol: str, arms: list[str], max_positions: int) -> bool:
+    """Whether ANY arm could still open `symbol` — the same condition `paper_loop`'s entry phase
+    uses to decide it has something to do (a free (symbol, arm) slot, under the arm's cap).
 
     Deliberately the same test rather than an approximation of it: this decides whether the widened
     window is subscribed at all, so a window that disagreed with the entry gate would either starve
     a reachable entry or keep paying for an unreachable one.
 
-    **`books` must include the advised twin, and did not until 2026-08-27.** `engine.BOOKS` holds
-    the BASE books only, so this asked "can control still enter?" while `advised:control` is a real
-    book with its own slot and its own entry. Control filled XSP on 2026-08-24, the gate went False,
+    **`arms` must include the advised twin, and did not until 2026-08-27.** `engine.ARMS` holds
+    the BASE arms only, so this asked "can control still enter?" while `advised:control` is a real
+    arm with its own slot and its own entry. Control filled XSP on 2026-08-24, the gate went False,
     the widened window was dropped — and the advised twin, still looking, recorded **658
     `no_deep_itm_long` refusals across the whole of 08-25 and 08-26** before a lucky re-centre let
     it in on the 27th. An A/B whose two arms cannot enter the same days is not an A/B.
     """
     return any(
         db.open_position_for(conn, symbol, b) is None and db.open_position_count(conn, b) < max_positions
-        for b in books
+        for b in arms
     )
 
 
@@ -193,7 +193,7 @@ def hints_for_symbols(
     config: dict,
     *,
     deep_window_pct: float | None = None,
-    books: list[str] | None = None,
+    arms: list[str] | None = None,
     max_positions: int = 1,
 ) -> dict[str, dict[str, int]]:
     """`{symbol: {"down": width, "up": margin}}` — max(structural need, escalated width) per symbol,
@@ -203,13 +203,13 @@ def hints_for_symbols(
     **The hint is DIRECTIONAL, and this module is why the request schema grew that.** Everything the
     widened window exists to find sits BELOW spot: the 85-90-delta long is 15-19% in the money on
     TQQQ. The short is ATM by definition and needs no depth at all. A symmetric count therefore
-    bought an identical block of strikes above spot that no book here can read, and on 2026-08-24
+    bought an identical block of strikes above spot that no arm here can read, and on 2026-08-24
     that block was the single largest waste in the suite's subscription budget. The upward figure is
     the declared margin only; the producer floors both sides at its own `window_strike_count`, so
     the ATM short is covered by the default window regardless of what this asks.
 
     **A symbol with no free slot gets no hint at all.** The widened window exists for exactly one
-    purpose — finding the 85-90-delta long AT ENTRY — and once every book holds `symbol`, nothing
+    purpose — finding the 85-90-delta long AT ENTRY — and once every arm holds `symbol`, nothing
     can be entered until one closes, which for a hold-to-expiration cycle is one to two WEEKS. The
     open position's own marks come from the request's `leg_sources`, never from this window, so the
     window is pure cost for the whole holding period. It was measured at 84% of the suite's
@@ -226,7 +226,7 @@ def hints_for_symbols(
     """
     p = window_params(config)
     hints: dict[str, dict[str, int]] = {}
-    roster = list(books) if books else []
+    roster = list(arms) if arms else []
     for symbol in symbols:
         symbol = symbol.strip().upper()
         if roster and not entry_possible(conn, symbol, roster, max_positions):

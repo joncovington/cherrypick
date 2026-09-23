@@ -117,7 +117,7 @@ def main(argv=None) -> int:
     sub.add_parser("excursions", help="per-closed-position MAE/MFE plus distributions").set_defaults(
         func=cmd_excursions
     )
-    sub.add_parser("headline", help="per-book results through the analytics layer").set_defaults(
+    sub.add_parser("headline", help="per-arm results through the analytics layer").set_defaults(
         func=cmd_headline
     )
     p_hist = sub.add_parser(

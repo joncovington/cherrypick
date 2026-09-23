@@ -239,7 +239,7 @@ def test_readiness_names_every_unmet_gate_and_passes_only_when_all_are_met(live_
     assert len(unmet) == 4 and any("halt flag" in g for g in unmet)  # arm defaults to control
     assert live_loop.readiness(live_config, halt_present=False, designated="5WX1234") == []
     bad = {**live_config, "live": {**live_config["live"], "arm": "wall"}}
-    assert any("not a base book" in g for g in live_loop.readiness(bad, halt_present=False, designated="x"))
+    assert any("not a base arm" in g for g in live_loop.readiness(bad, halt_present=False, designated="x"))
 
 
 # --------------------------------------------------------------------------- entry
@@ -713,7 +713,7 @@ def test_status_is_files_and_db_only(live_config, conn, cache, planned):
 def test_a_paper_tick_still_records_the_addon_the_instant_the_credit_is_met(
     config, monkeypatch, managed_home
 ):
-    """The no-break guard for the paper books: `_manage_positions` without a `fire` hook writes
+    """The no-break guard for the paper arms: `_manage_positions` without a `fire` hook writes
     the legs immediately, exactly as before the live seam existed."""
     from cherrypick.bwb import book as bookmod
     from cherrypick.bwb import paper_loop as pl

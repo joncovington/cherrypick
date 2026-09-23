@@ -30,7 +30,7 @@ def test_live_ledger_is_a_separate_file_and_never_the_env_override(managed_home,
 
 _PRE_LIVE_SCHEMA = """
 CREATE TABLE bwb_positions (
-    id INTEGER PRIMARY KEY, position_id TEXT UNIQUE, symbol TEXT, book TEXT, entry_session TEXT,
+    id INTEGER PRIMARY KEY, position_id TEXT UNIQUE, symbol TEXT, arm TEXT, entry_session TEXT,
     status TEXT, entry_credit REAL, fees REAL, gross_pnl REAL, quantity INTEGER
 );
 """
@@ -74,7 +74,7 @@ def test_live_columns_migrate_additively_onto_a_pre_live_ledger(managed_home):
     raw = sqlite3.connect(str(path))
     raw.executescript(_PRE_LIVE_SCHEMA)
     raw.execute(
-        "INSERT INTO bwb_positions (position_id, symbol, book, entry_session, status, entry_credit) "
+        "INSERT INTO bwb_positions (position_id, symbol, arm, entry_session, status, entry_credit) "
         "VALUES ('SPX:control:2026-09-01', 'SPX', 'control', '2026-09-01', 'open', 0.9)"
     )
     raw.commit()
@@ -99,8 +99,8 @@ def test_live_gates_fail_closed_and_require_a_base_book_arm():
     assert any("gate0_confirmed" in g for g in unmet) and any("live.arm" in g for g in unmet)
     for bad in ("wall", "advised:control", "", "Control"):
         unmet = broker_cli.live_gates({"live": {"enabled": True, "gate0_confirmed": "jon", "arm": bad}})
-        assert unmet and "not a base book" in unmet[0], bad
-    for arm in engine.BOOKS:
+        assert unmet and "not a base arm" in unmet[0], bad
+    for arm in engine.ARMS:
         assert broker_cli.live_gates({"live": {"enabled": True, "gate0_confirmed": "jon", "arm": arm}}) == []
 
 

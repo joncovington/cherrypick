@@ -25,10 +25,10 @@ export function HelpTab({ data }: { data: CalendarsPayload | undefined }) {
           </p>
           <p>
             So there is no entry filter to tune here and no view being expressed about the market. Two real
-            books collect the substrate — <span className="mono">control</span> closes everything at
+            arms collect the substrate — <span className="mono">control</span> closes everything at
             Friday&rsquo;s bell, <span className="mono">path</span> never closes and records the per-tick mark
             path — and the twelve-rule exit grid is derived read-side over that path rather than run as
-            twelve more books.
+            twelve more arms.
           </p>
           <p>
             <strong>Paper only, and structurally so.</strong> There is no live loop and no order-placement
@@ -64,7 +64,7 @@ export function HelpTab({ data }: { data: CalendarsPayload | undefined }) {
           <li>
             <strong>Capital is not the whole risk story for <span className="mono">path</span>.</strong> A
             long calendar&rsquo;s max loss is its debit, which is exactly right for every policy that exits
-            before the bell. A book that holds to expiry under physical settlement can be assigned, and the
+            before the bell. A arm that holds to expiry under physical settlement can be assigned, and the
             delivered shares&rsquo; weekend move is not bounded by the debit.
           </li>
           <li>
@@ -99,18 +99,18 @@ export function HelpTab({ data }: { data: CalendarsPayload | undefined }) {
             <dd>{p.maxQuoteAgeSeconds === null ? "—" : `${p.maxQuoteAgeSeconds}s`}</dd>
             <dt>max leg spread</dt>
             <dd>{fmtPct(p.maxLegSpreadPct === null ? null : p.maxLegSpreadPct * 100, 0)}</dd>
-            <dt>books</dt>
+            <dt>arms</dt>
             <dd>
-              {p.books.length === 0
+              {p.arms.length === 0
                 ? "—"
-                : p.books.map((b) => (
+                : p.arms.map((b) => (
                     <span key={b.name} className="mono">
                       {b.name}
                       {b.enabled ? "" : " (off)"}{" "}
                     </span>
                   ))}
             </dd>
-            <dt>advised books (one per advisor experiment)</dt>
+            <dt>advised arms (one per advisor experiment)</dt>
             <dd>{p.adviceEnabled ? "enabled" : "off"}</dd>
           </dl>
         )}

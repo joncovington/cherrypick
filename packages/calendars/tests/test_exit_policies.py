@@ -1,8 +1,8 @@
-"""The exit-policy derivation over one synthetic week, validated against the real books.
+"""The exit-policy derivation over one synthetic week, validated against the real arms.
 
-The week is built through the SAME book functions the loop uses (enter, close, settle, dispose),
+The week is built through the SAME arm functions the loop uses (enter, close, settle, dispose),
 with a controlled mark path: profit targets trigger on successive days, the stop never fires, the
-put strike is touched Thursday, and the control book closes at Friday's bell on the same tick the
+put strike is touched Thursday, and the control arm closes at Friday's bell on the same tick the
 derivation replays — so `validate_against_control` must come back clean to the cent.
 """
 
@@ -75,10 +75,10 @@ def _q(mid):
     return {"bid": round(mid - 0.2, 4), "ask": round(mid + 0.2, 4), "mid": mid, "age_seconds": 1.0}
 
 
-def _tick(conn, day, hhmm, spot, marks, books=("control", "path")):
-    """Record one tick's marks for every given book's open legs (roles present in `marks`)."""
+def _tick(conn, day, hhmm, spot, marks, arms=("control", "path")):
+    """Record one tick's marks for every given arm's open legs (roles present in `marks`)."""
     ts = _ts(day, hhmm)
-    for book_name in books:
+    for book_name in arms:
         for side in ("put", "call"):
             pid = f"{WEEK['week_of']}:{book_name}:{side}"
             for role_prefix, mid in marks.items():
@@ -143,7 +143,7 @@ def week_conn(tmp_path):
     # Path: shorts settle Friday, longs marked and disposed Monday.
     book.settle_expiring_legs(conn, "2026-08-21", SETTLE_SPOT, {}, symbol="SPX")
     mon_marks = {"back": 26.0}
-    _tick(conn, "2026-08-24", "09:50", 6470.0, mon_marks, books=("path",))
+    _tick(conn, "2026-08-24", "09:50", 6470.0, mon_marks, arms=("path",))
     for side in ("put", "call"):
         position = dict(
             conn.execute(
@@ -286,7 +286,7 @@ def spy_week_conn(tmp_path):
         )
 
     book.settle_expiring_legs(conn, "2026-08-21", SPY_SETTLE_SPOT, SPY_CONFIG, symbol="SPY")
-    _tick(conn, "2026-08-24", "09:50", SPY_DISPOSE_SPOT, {"back": 26.0}, books=("path",))
+    _tick(conn, "2026-08-24", "09:50", SPY_DISPOSE_SPOT, {"back": 26.0}, arms=("path",))
     for assignment in db.open_assignments(conn, before_session="2026-08-24"):
         book.dispose_assignment(conn, assignment, SPY_DISPOSE_SPOT, session_date="2026-08-24")
     for side in ("put", "call"):
@@ -331,7 +331,7 @@ def test_expiry_derivation_carries_the_delivered_shares(spy_week_conn):
 
 def test_the_derivation_still_reproduces_the_books_it_sits_beside(spy_week_conn):
     """The module's one guarantee, under the new settlement style: a derivation that cannot
-    reproduce the real books has no business ranking the policies between them."""
+    reproduce the real arms has no business ranking the policies between them."""
     validation = exit_policies.validate_against_control(spy_week_conn, SPY_CONFIG)
     assert validation["compared"] == 2
     assert validation["ok"], validation["mismatches"]

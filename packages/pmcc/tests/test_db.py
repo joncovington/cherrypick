@@ -34,7 +34,7 @@ def test_upsert_idempotent(tmp_path):
     row = {
         "position_id": "TQQQ:control:2026-08-17",
         "symbol": "TQQQ",
-        "book": "control",
+        "arm": "control",
         "entry_session": "2026-08-17",
         "long_expiration": "2026-09-04",
         "long_strike": 50.0,
@@ -72,7 +72,7 @@ def test_record_decision_collapses(tmp_path):
         db.record_decision(
             conn,
             trade_date="2026-08-17",
-            book="control",
+            arm="control",
             symbol="TQQQ",
             mode="entry",
             reason="no_fresh_quotes",

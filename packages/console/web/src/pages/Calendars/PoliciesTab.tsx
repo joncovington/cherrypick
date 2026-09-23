@@ -29,7 +29,7 @@ const POLICIES: Record<string, string> = {
   "time-fri-noon": "close everything from Friday noon rather than waiting for the bell.",
   "expiry-longs-fri": "let the shorts cash-settle or deliver, and sell the longs at Friday's close.",
   "expiry-longs-mon":
-    "let the shorts settle and ride the longs to their own Monday expiration morning — the path book's own shape.",
+    "let the shorts settle and ride the longs to their own Monday expiration morning — the path arm's own shape.",
 };
 
 export function PoliciesTab() {
@@ -42,16 +42,16 @@ export function PoliciesTab() {
       <Card title="what this table is" collapseKey="cal-policies-intro" className="view-fade">
         <div className="cal-prose">
           <p>
-            One entry stream, two real books, and a recorded per-tick mark path make every candidate exit rule
-            answerable <em>after the fact</em> without running it as its own book. Each policy below is
-            replayed over the path book&rsquo;s recorded marks — an exact replay at the recorded prices — and
+            One entry stream, two real arms, and a recorded per-tick mark path make every candidate exit rule
+            answerable <em>after the fact</em> without running it as its own arm. Each policy below is
+            replayed over the path arm&rsquo;s recorded marks — an exact replay at the recorded prices — and
             the exit it would have taken is priced at that tick&rsquo;s own bid/ask through the same cost stack
-            the live books use.
+            the live arms use.
           </p>
           <p>
-            Pairing is exact by construction: every book&rsquo;s week is entered from the same plan at the same
+            Pairing is exact by construction: every arm&rsquo;s week is entered from the same plan at the same
             fills, so this is a like-for-like comparison rather than an estimate. That is also why the grid is
-            not fifteen books — one permissive arm answers the whole thing.
+            not fifteen arms — one permissive arm answers the whole thing.
           </p>
           {data?.caveat != null && (
             <p className="integrity-warn">

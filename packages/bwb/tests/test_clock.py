@@ -81,7 +81,7 @@ def test_weekly_fridays_walks_every_week_not_just_the_first():
     """2026-09-11 (a Friday; the 18th is the AM monthly). The old cursor stepped to the Saturday
     after each Friday, and a Saturday's "this week's Friday" is the same Friday again, so the walk
     never left week one: at most one date, and none at all when that one was the excluded monthly.
-    Every book refused `no_expiration_plan` that day and would have all the following week."""
+    Every arm refused `no_expiration_plan` that day and would have all the following week."""
     from datetime import date
 
     weeklies = clock.weekly_fridays(date(2026, 9, 11), weeks_ahead=8)

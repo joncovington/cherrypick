@@ -98,7 +98,7 @@ _pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch t
 
 def _acquire_loop_lock(stale_seconds: int = 180) -> bool:
     """Single-instance guard shared by `--interval` and `--once`, so the supervised resident loop
-    and an off-session/manual `--once` can never iterate the same book concurrently.
+    and an off-session/manual `--once` can never iterate the same arm concurrently.
 
     `cherrypick.core.looplock` holds the semantics (a live holder is never stolen, whatever its
     age); `_pid_alive` is passed explicitly so a test monkeypatching that name still steers it."""
@@ -140,7 +140,7 @@ def _note_cadence_change(conn, interval_seconds: int) -> None:
         _log(f"cadence-change journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
-# --------------------------------------------------------------------------- advised book
+# --------------------------------------------------------------------------- advised arm
 def _advice_decision_path() -> str:
     return os.path.join(_paper_data_dir(), "advice_active.json")
 
@@ -165,26 +165,26 @@ def advice_decision(config: dict, today: str) -> dict:
 
 
 def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]:
-    """(the books entry may open today, `{advised tag: its experiment entry}`). The roster only
+    """(the arms entry may open today, `{advised tag: its experiment entry}`). The roster only
     matters at ENTRY — marking, management, disposition, and settlement all iterate open positions
-    from the ledger whatever their book tag, so a book once opened can never be stranded by a later
-    roster change. Single book (`control`) since the 2026-08-23 redesign, plus its advised twins.
+    from the ledger whatever their arm tag, so a arm once opened can never be stranded by a later
+    roster change. Single arm (`control`) since the 2026-08-23 redesign, plus its advised twins.
 
-    One advised book PER EXPERIMENT the day's decision admitted (2026-09-17): each entry names its
+    One advised arm PER EXPERIMENT the day's decision admitted (2026-09-17): each entry names its
     own tag (`advised:<experiment name>`), the base it shadows and the params it overlays; a
     decision recorded before that date still yields its single `advised:<base>`. The map is empty
     on a baseline day. Every tag here is on the roster the stream request subscribes for -- the
     2026-08-27 lesson (`stream_window.entry_possible`) holds for every twin, not just the first."""
     declared = _cfg.registry(config, label="pmcc", log=_log)
-    books = [b for b in engine.BOOKS if (declared.get(b) or {}).get("enabled", True)]
+    arms = [b for b in engine.ARMS if (declared.get(b) or {}).get("enabled", True)]
     advised = advised_entries(advice_decision(config, today))
-    books.extend(tag for tag in advised if tag not in books)
-    return books, advised
+    arms.extend(tag for tag in advised if tag not in arms)
+    return arms, advised
 
 
 def advised_entries(decision: dict | None) -> dict[str, dict]:
-    """`{tag: experiment entry}` for every experiment the decision opens a book for, in artifact
-    order -- keyed by tag because planning, freezing and stamping all look the book up by it."""
+    """`{tag: experiment entry}` for every experiment the decision opens a arm for, in artifact
+    order -- keyed by tag because planning, freezing and stamping all look the arm up by it."""
     return {e["tag"]: e for e in _core_advice.advised_books(decision) if e.get("tag")}
 
 
@@ -249,7 +249,7 @@ def run_once(
         actions += _dispose_shares(config, conn, cache_path=cache_path, when=when, day=day)
         actions += _dispose_longs(config, conn, cache_path=cache_path, when=when, day=day)
 
-    # Phase: entries, any trading day inside the window, per (symbol, book) with headroom.
+    # Phase: entries, any trading day inside the window, per (symbol, arm) with headroom.
     window_start = clock.hhmm_to_min(defaults.get("entry_window_start"), 10 * 60)
     window_end = clock.hhmm_to_min(defaults.get("entry_window_end"), 15 * 60 + 30)
     if window_start <= now_min <= window_end:
@@ -307,8 +307,8 @@ def _entry_guards(config: dict, symbol: str, plan_dates: dict, day: str) -> str 
 
 
 def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: str) -> int:
-    books, advised = session_books(config, day)
-    # The decision itself is what each advised row is stamped from: `stamp_for(book, decision)`
+    arms, advised = session_books(config, day)
+    # The decision itself is what each advised row is stamped from: `stamp_for(arm, decision)`
     # resolves the id per tag, so two experiments on one session carry two ids.
     decision = advice_decision(config, day) if advised else None
     defaults = config.get("defaults") or {}
@@ -319,20 +319,20 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
     for symbol in _symbols(config):
         wanting = [
             b
-            for b in books
+            for b in arms
             if db.open_position_for(conn, symbol, b) is None
             and db.open_position_count(conn, b) < max_positions
         ]
         if not wanting:
-            # Every book already holds this symbol, so there is nothing to attempt. Recorded rather
+            # Every arm already holds this symbol, so there is nothing to attempt. Recorded rather
             # than skipped: a session with no attempt rows at all reads identically to a loop that
             # never evaluated entry, and "all slots full" is the benign half of that pair. Collapsed
-            # per (day, book, symbol, reason), so a whole session costs one counted row.
-            for b in books:
+            # per (day, arm, symbol, reason), so a whole session costs one counted row.
+            for b in arms:
                 db.record_decision(
                     conn,
                     trade_date=day,
-                    book=b,
+                    arm=b,
                     symbol=symbol,
                     mode="entry",
                     reason="slot_held",
@@ -344,7 +344,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                 db.record_decision(
                     conn,
                     trade_date=day,
-                    book=b,
+                    arm=b,
                     symbol=symbol,
                     mode="entry",
                     reason="no_expiration_plan",
@@ -360,13 +360,13 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                     conn,
                     trade_date=day,
                     symbol=symbol,
-                    book=b,
+                    arm=b,
                     outcome=reason,
                 )
                 db.record_decision(
                     conn,
                     trade_date=day,
-                    book=b,
+                    arm=b,
                     symbol=symbol,
                     mode="entry",
                     reason=reason,
@@ -400,13 +400,13 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                     conn,
                     trade_date=day,
                     symbol=symbol,
-                    book=b,
+                    arm=b,
                     outcome=snapshot["reason"],
                 )
                 db.record_decision(
                     conn,
                     trade_date=day,
-                    book=b,
+                    arm=b,
                     symbol=symbol,
                     mode="entry",
                     reason=snapshot["reason"],
@@ -424,7 +424,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             spot=snapshot["spot"],
         )
 
-        # One plan for the base book; each advised book plans separately when its overlay touches
+        # One plan for the base arm; each advised arm plans separately when its overlay touches
         # entry, from the base its decision entry names (control, the only base this module has)
         # with that entry's own params on top.
         base_params = {**management.PARAM_DEFAULTS, **engine.merged_params(config, "control")}
@@ -450,7 +450,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                     conn,
                     trade_date=day,
                     symbol=symbol,
-                    book=b,
+                    arm=b,
                     outcome=result["reason"],
                     block_detail=result.get("detail"),
                     spot=snapshot["spot"],
@@ -458,7 +458,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                 db.record_decision(
                     conn,
                     trade_date=day,
-                    book=b,
+                    arm=b,
                     symbol=symbol,
                     mode="entry",
                     reason=result["reason"],
@@ -495,7 +495,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                 conn,
                 trade_date=day,
                 symbol=symbol,
-                book=b,
+                arm=b,
                 outcome="filled",
                 spot=plan["spot"],
                 long_strike=plan["long_strike"],
@@ -506,7 +506,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             db.record_decision(
                 conn,
                 trade_date=day,
-                book=b,
+                arm=b,
                 symbol=symbol,
                 mode="entry",
                 reason=(
@@ -631,7 +631,7 @@ def _manage_positions(config: dict, conn, values: dict, *, cache_path: str, when
                 gate = result.get("reason")
             else:
                 actions += 1
-                _log(f"[{position['book']}] {pid} closed — {decision.reason}")
+                _log(f"[{position['arm']}] {pid} closed — {decision.reason}")
         db.record_management_event(
             conn,
             position_id=pid,
@@ -675,7 +675,7 @@ def _dispose_longs(config: dict, conn, *, cache_path: str, when: datetime, day: 
                 gate = result.get("reason")
             else:
                 actions += 1
-                _log(f"[{position['book']}] {position['position_id']} long disposed")
+                _log(f"[{position['arm']}] {position['position_id']} long disposed")
         db.record_management_event(
             conn,
             position_id=position["position_id"],
@@ -728,7 +728,7 @@ def _dispose_shares(config: dict, conn, *, cache_path: str, when: datetime, day:
         result = bookmod.dispose_assignment(conn, assignment, spot, session_date=day)
         actions += 1
         _log(
-            f"[{assignment['book']}] {assignment['position_id']}: covered "
+            f"[{assignment['arm']}] {assignment['position_id']}: covered "
             f"{assignment['shares']} {assignment['direction']} {symbol} shares at {spot:.2f} "
             f"(assigned {assignment['assigned_session']} at {assignment['basis']:.2f}, "
             f"share P&L {result['share_pnl']:+.2f}, fee {result['fee']:.2f})"

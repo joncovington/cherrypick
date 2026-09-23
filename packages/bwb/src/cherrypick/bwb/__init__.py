@@ -2,10 +2,10 @@
 
 Every session at a fixed tick (default 10:00 ET), one put broken-wing butterfly on SPX is entered
 at the expected move for a net credit, ~7 DTE, held to expiry — a new one every session, so ~5-7
-positions ride concurrently per book at steady state. Paper-only, credential-free, a pure
+positions ride concurrently per arm at steady state. Paper-only, credential-free, a pure
 stream-cache consumer in the calendars/pmcc/curve posture. No live path.
 
-Four books trade the IDENTICAL base structure; the only variable is whether/when a reversal-
+Four arms trade the IDENTICAL base structure; the only variable is whether/when a reversal-
 triggered put credit spread add-on fires, turning the fly into a 1-3-2:
 
 - `control` — never adds on, the BWB rides alone to expiry.

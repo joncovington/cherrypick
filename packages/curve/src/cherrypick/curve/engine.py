@@ -6,7 +6,7 @@ paper_loop.py owns the clock.
 
 The structure is always one VXX call credit spread: short a call near `short_delta_target` (~0.30
 delta), buy the wing `spread_width` dollars higher at the nearest listed strike, same expiration —
-for every book. Keeping one shape across books means they differ only in their declared variable
+for every arm. Keeping one shape across arms means they differ only in their declared variable
 (entry gate, exit rule), never in what is traded.
 """
 
@@ -18,7 +18,7 @@ from cherrypick.core import advice as _core_advice
 from cherrypick.core import config as _cfg
 from cherrypick.core import fees as _fees
 
-BOOKS = ("control", "noflip", "hook")
+ARMS = ("control", "noflip", "hook")
 
 # VXX is a standard American-style, physically-settled equity option — the calendars/pmcc
 # decomposition applies verbatim. No `cash` style is offered: this module trades exactly one
@@ -27,24 +27,24 @@ BOOKS = ("control", "noflip", "hook")
 SETTLEMENT_STYLE = "physical"
 
 
-def base_book(book: str, *, config: dict | None = None, decision: dict | None = None) -> str:
-    """The book whose rules an advised twin runs under. A base book is its own base.
+def base_book(arm: str, *, config: dict | None = None, decision: dict | None = None) -> str:
+    """The arm whose rules an advised twin runs under. A base arm is its own base.
 
     **An advised tag no longer carries its base (2026-09-17).** Each advisor experiment gets its
-    own book, `advised:<experiment name>`, and the base it shadows is named by the session
+    own arm, `advised:<experiment name>`, and the base it shadows is named by the session
     decision's experiment entry rather than by the tag. Resolution, in order: the decision's entry
-    for this tag when one is given; the tag's last segment when it names a base book (the legacy
+    for this tag when one is given; the tag's last segment when it names a base arm (the legacy
     `advised:control` / `advised:hook` every row before this date carries); else the configured
     `advice.base_book` (default `control`). The hook gate and the flip exit both key on this, so
     an `advised:<name>` twin of `hook` is gated as a hook only when its entry says so."""
-    if not _core_advice.is_advised(book):
-        return book
+    if not _core_advice.is_advised(arm):
+        return arm
     for entry in _core_advice.advised_books(decision):
         tag = entry.get("tag")
-        if tag and (book == tag or book.startswith(tag + ":")) and entry.get("base"):
+        if tag and (arm == tag or arm.startswith(tag + ":")) and entry.get("base"):
             return str(entry["base"])
-    tail = book.split(":", 1)[1]
-    if tail in BOOKS or tail in _cfg.registry(config, label="curve"):
+    tail = arm.split(":", 1)[1]
+    if tail in ARMS or tail in _cfg.registry(config, label="curve"):
         return tail
     # Any accepted spelling: an operator who renames this key must not silently get
     # "control" as the base, which is a wrong A/B that still reads as a valid one.
@@ -52,11 +52,11 @@ def base_book(book: str, *, config: dict | None = None, decision: dict | None = 
     return str(_cfg.first_present(advice_cfg, *_cfg.BASE_ARM_KEYS) or "control")
 
 
-def merged_params(config: dict, book: str) -> dict:
-    """`defaults` overlaid with the book's own block — the flies/pmcc `merged_params` shape, so an
-    advised book resolves through the same path as every other."""
-    params = {**(config.get("defaults") or {}), **(_cfg.registry(config, label="curve").get(book) or {})}
-    params["book"] = book
+def merged_params(config: dict, arm: str) -> dict:
+    """`defaults` overlaid with the arm's own block — the flies/pmcc `merged_params` shape, so an
+    advised arm resolves through the same path as every other."""
+    params = {**(config.get("defaults") or {}), **(_cfg.registry(config, label="curve").get(arm) or {})}
+    params["arm"] = arm
     return params
 
 
@@ -243,7 +243,7 @@ def plan_entry(snapshot: dict, params: dict, config: dict | None = None) -> dict
         }
 
     # Fee-adjusted floor. The percentage check above passes on GROSS mid credit, which is not what
-    # the book keeps -- a real 2026-09-02 entry cleared it at 0.18 on a 1.00-wide spread (18%, floor
+    # the arm keeps -- a real 2026-09-02 entry cleared it at 0.18 on a 1.00-wide spread (18%, floor
     # 15%) and then paid $2.24 open commission plus $4.25 open slippage against $18.00 of credit,
     # leaving $11.51 before the position had even been marked once. Unlike MEIC's equivalent gate,
     # this nets SLIPPAGE as well as commission: MEIC's `_open_credit` already haircuts slippage out
@@ -356,7 +356,7 @@ def settle_intrinsic(strike: float, spot: float) -> float:
 
 # --------------------------------------------------------------------------- physical settlement
 #
-# The calendars/pmcc decomposition, unchanged: book delivered shares at the SETTLEMENT SPOT, not the
+# The calendars/pmcc decomposition, unchanged: arm delivered shares at the SETTLEMENT SPOT, not the
 # strike. A short call assigned ITM delivers SHORT shares; a long call exercised ITM (rare here —
 # close_dte keeps most positions out of expiration week) delivers LONG shares. Both are covered/sold
 # the next session, together, so a Friday settlement can carry shares over the weekend.

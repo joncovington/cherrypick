@@ -7,9 +7,9 @@ generically, so moving or renaming it silently removes this module from both.
 `bwb_trigger_ticks` is the module's second product: keyed per (entry-session cohort x tick), NOT
 per position — the telemetry (near-wing delta, peak delta, spot, gamma_flip, the below-flip latch,
 measured/unmeasured) depends only on the cohort's shared strikes and is byte-identical across the
-four base books, so normalizing to cohort level cuts the table 4x. The cohort key is
+four base arms, so normalizing to cohort level cuts the table 4x. The cohort key is
 `(entry_session, structure_signature)` — a hash of (expiration, strikes) — not `entry_session`
-alone: the four base books always share one signature, but an `advised:<base>` overlay that changes
+alone: the four base arms always share one signature, but an `advised:<base>` overlay that changes
 widths or body offset holds different strikes and gets its own telemetry rows.
 """
 
@@ -22,14 +22,14 @@ from cherrypick.core import db as _core_db
 from cherrypick.core import ledgerstore as _ledgerstore
 
 _SCHEMA = """
--- One row per position per book: one 1-3-2 candidate. `position_id` = "<symbol>:<book>:<entry_session>".
+-- One row per position per arm: one 1-3-2 candidate. `position_id` = "<symbol>:<arm>:<entry_session>".
 -- Entry context is stored as MEASURES, never only as buckets. Latches persist here so a supervisor
 -- restart mid-session cannot amnesia a morning trigger touch.
 CREATE TABLE IF NOT EXISTS bwb_positions (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     position_id         TEXT NOT NULL UNIQUE,
     symbol              TEXT NOT NULL,
-    book                TEXT NOT NULL,
+    arm                TEXT NOT NULL,
     entry_session       TEXT NOT NULL,
     structure_signature TEXT NOT NULL,
     quantity            INTEGER NOT NULL DEFAULT 1,
@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS bwb_positions (
     created_at          TEXT,
     updated_at          TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_bwb_positions_session ON bwb_positions(entry_session, book);
+CREATE INDEX IF NOT EXISTS idx_bwb_positions_session ON bwb_positions(entry_session, arm);
 CREATE INDEX IF NOT EXISTS idx_bwb_positions_status ON bwb_positions(status);
 
 -- Legs per position: near_long, body_short_1, body_short_2, far_long, addon_short, addon_long.
@@ -129,7 +129,7 @@ CREATE INDEX IF NOT EXISTS idx_bwb_marks_position ON bwb_marks(position_id, mark
 CREATE INDEX IF NOT EXISTS idx_bwb_marks_session ON bwb_marks(session_date);
 
 -- THE second product: one row per (cohort x tick), cohort = (entry_session, structure_signature).
--- Byte-identical across the four base books that share one signature -- the shared counterfactual.
+-- Byte-identical across the four base arms that share one signature -- the shared counterfactual.
 -- Carries the add-on bracket's own quotes so a replayed hypothetical fire is priceable, not just
 -- timeable.
 CREATE TABLE IF NOT EXISTS bwb_trigger_ticks (
@@ -177,7 +177,7 @@ CREATE INDEX IF NOT EXISTS idx_bwb_events_session ON bwb_management_events(sessi
 CREATE TABLE IF NOT EXISTS bwb_decisions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     trade_date  TEXT NOT NULL,
-    book        TEXT NOT NULL,
+    arm        TEXT NOT NULL,
     symbol      TEXT NOT NULL,
     mode        TEXT NOT NULL,
     reason      TEXT NOT NULL,
@@ -189,13 +189,13 @@ CREATE TABLE IF NOT EXISTS bwb_decisions (
 );
 CREATE INDEX IF NOT EXISTS idx_bwb_decisions_date ON bwb_decisions(trade_date);
 
--- One UNCOLLAPSED row per evaluated entry opportunity per (symbol, book).
+-- One UNCOLLAPSED row per evaluated entry opportunity per (symbol, arm).
 CREATE TABLE IF NOT EXISTS bwb_entry_attempts (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     ts           TEXT NOT NULL,
     trade_date   TEXT NOT NULL,
     symbol       TEXT NOT NULL,
-    book         TEXT NOT NULL,
+    arm         TEXT NOT NULL,
     outcome      TEXT NOT NULL,
     block_detail TEXT,
     spot         REAL,
@@ -250,9 +250,9 @@ CREATE TABLE IF NOT EXISTS measurement_breaks (
 # Columns added after the first release, per table. Empty at birth.
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     # The advisor experiment an advised row was entered under (2026-09-16), beside the params
-    # it froze -- `advised:<base>` names a book, and every experiment on that base reuses it.
+    # it froze -- `advised:<base>` names a arm, and every experiment on that base reuses it.
     "bwb_positions": {
-        "experiment_id": "TEXT",  # The base book an advised row shadows, stamped at entry from the session decision (2026-09-17): the tag no longer carries it, and after the session the decision file is gone. Management prefers this over the configured advice.base_book, so a twin of a non-default base keeps its rules.
+        "experiment_id": "TEXT",  # The base arm an advised row shadows, stamped at entry from the session decision (2026-09-17): the tag no longer carries it, and after the session the decision file is gone. Management prefers this over the configured advice.base_book, so a twin of a non-default base keeps its rules.
         "advice_base": "TEXT",
         # ---- LIVE scaffold (2026-09-18). Same schema on both ledgers; paper rows leave all of
         # these NULL. The live ledger is `live_trades.db`, a separate file (`live_db_path`).
@@ -356,18 +356,18 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
 
 
 # --------------------------------------------------------------------------- readers
-def open_position_for(conn, symbol: str, book: str, entry_session: str) -> dict | None:
+def open_position_for(conn, symbol: str, arm: str, entry_session: str) -> dict | None:
     r = conn.execute(
-        "SELECT * FROM bwb_positions WHERE symbol = ? AND book = ? AND entry_session = ?",
-        (symbol, book, entry_session),
+        "SELECT * FROM bwb_positions WHERE symbol = ? AND arm = ? AND entry_session = ?",
+        (symbol, arm, entry_session),
     ).fetchone()
     return dict(r) if r else None
 
 
-def open_position_count(conn, book: str) -> int:
+def open_position_count(conn, arm: str) -> int:
     return int(
         conn.execute(
-            "SELECT COUNT(*) FROM bwb_positions WHERE book = ? AND status != 'closed'", (book,)
+            "SELECT COUNT(*) FROM bwb_positions WHERE arm = ? AND status != 'closed'", (arm,)
         ).fetchone()[0]
     )
 
@@ -376,7 +376,7 @@ def expiring_open_legs(conn, day: str) -> list[dict]:
     return [
         dict(r)
         for r in conn.execute(
-            "SELECT l.*, p.book, p.symbol AS position_symbol, p.status AS position_status "
+            "SELECT l.*, p.arm, p.symbol AS position_symbol, p.status AS position_status "
             "FROM bwb_legs l JOIN bwb_positions p ON p.position_id = l.position_id "
             "WHERE l.status = 'open' AND l.expiration = ? ORDER BY l.position_id, l.leg_role",
             (day,),
@@ -438,13 +438,13 @@ def known_order_ids(conn) -> list[str]:
     return [str(v) for r in rows for v in (r[0], r[1]) if v is not None]
 
 
-def established_today(conn, book: str, day: str) -> int:
-    """Structures counted against `max_structures_per_day`: today's rows for the book that were
+def established_today(conn, arm: str, day: str) -> int:
+    """Structures counted against `max_structures_per_day`: today's rows for the arm that were
     NOT cancelled. A cancelled entry never established anything and does not spend the budget."""
     return int(
         conn.execute(
-            "SELECT COUNT(*) FROM bwb_positions WHERE book = ? AND entry_session = ? AND status != 'cancelled'",
-            (book, day),
+            "SELECT COUNT(*) FROM bwb_positions WHERE arm = ? AND entry_session = ? AND status != 'cancelled'",
+            (arm, day),
         ).fetchone()[0]
     )
 

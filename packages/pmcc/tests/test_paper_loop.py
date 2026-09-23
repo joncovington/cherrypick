@@ -28,7 +28,7 @@ def test_entry_day_control_only(cache, config, tmp_path):
     assert result["ok"], result
 
     positions = db.open_positions(conn)
-    assert {p["book"] for p in positions} == {"control"}
+    assert {p["arm"] for p in positions} == {"control"}
     p = positions[0]
     assert p["long_strike"] == 58.0
     assert p["short_strike"] == 71.0
@@ -47,7 +47,7 @@ def test_holds_to_expiration_then_closes(cache, config, tmp_path):
     when = datetime(2026, 8, 24, 11, 0)
     paper_loop.run_once(config, conn, cache_path=cache.path, when=when)
 
-    # Mid-week, well before the short's own expiration: the default control book holds regardless
+    # Mid-week, well before the short's own expiration: the default control arm holds regardless
     # of how the short's time value has moved (the 2026-08-23 redesign dropped the tv trigger).
     cache.option("TQQQ", "2026-09-04", 71.0, bid=0.05, ask=0.10)
     midweek = datetime(2026, 8, 26, 13, 0)
@@ -74,7 +74,7 @@ def _seed_position(conn, *, short_exp="2026-08-28", long_exp="2026-09-04"):
         {
             "position_id": pid,
             "symbol": "TQQQ",
-            "book": "control",
+            "arm": "control",
             "entry_session": "2026-08-24",
             "quantity": 1,
             "long_expiration": long_exp,
@@ -295,7 +295,7 @@ def test_finalize_refuses_while_shares_open(cache, config, tmp_path):
     assert not bookmod.finalize_if_done(conn, pid, reason="test", session_date="2026-08-31")
 
 
-# --------------------------- one advised book per experiment (2026-09-17)
+# --------------------------- one advised arm per experiment (2026-09-17)
 
 
 def _two_experiment_artifact(session):
@@ -340,7 +340,7 @@ def _two_experiment_artifact(session):
 def test_two_experiments_enter_as_two_books_with_their_own_params_and_stamps(
     cache, config, tmp_path, managed_home
 ):
-    """End to end through the artifact: control plus one advised book per admitted experiment,
+    """End to end through the artifact: control plus one advised arm per admitted experiment,
     each frozen with ITS overlay and stamped with ITS id; the rejected third opens nothing."""
     session = "2026-08-24"
     advice_dir = managed_home / "state" / "advice"
@@ -361,14 +361,14 @@ def test_two_experiments_enter_as_two_books_with_their_own_params_and_stamps(
     result = paper_loop.run_once(config, conn, cache_path=cache.path, when=datetime(2026, 8, 24, 11, 0))
     assert result["ok"], result
 
-    rows = {p["book"]: p for p in db.open_positions(conn)}
+    rows = {p["arm"]: p for p in db.open_positions(conn)}
     assert set(rows) == {"control", "advised:tv-exit", "advised:tv-05"}
     assert rows["control"]["advice_params"] is None and rows["control"]["experiment_id"] is None
     assert json.loads(rows["advised:tv-exit"]["advice_params"]) == {"tv_managed_exit": True}
     assert json.loads(rows["advised:tv-05"]["advice_params"]) == {"tv_close_threshold": 0.05}
     assert rows["advised:tv-exit"]["experiment_id"] == "exp-a"
     assert rows["advised:tv-05"]["experiment_id"] == "exp-b"
-    # Same entry plan across the books: the overlay here is exit-side only.
+    # Same entry plan across the arms: the overlay here is exit-side only.
     assert {p["net_debit"] for p in rows.values()} == {rows["control"]["net_debit"]}
     # The frozen params govern each twin under the control's rules.
     from cherrypick.pmcc import management

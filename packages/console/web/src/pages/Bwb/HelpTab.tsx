@@ -3,7 +3,7 @@ import { Card } from "../../components/DataTable";
 
 /**
  * What this experiment is, in the module's own terms -- the pmcc/curve HelpTab precedent: bwb's
- * four books differ by one stated add-on trigger rule each, so this is prose kept in one place
+ * four arms differ by one stated add-on trigger rule each, so this is prose kept in one place
  * rather than a derived diff view.
  */
 export function HelpTab({ data: _data }: { data: BwbPayload | undefined }) {
@@ -13,8 +13,8 @@ export function HelpTab({ data: _data }: { data: BwbPayload | undefined }) {
         <div className="pmcc-prose">
           <p>
             A daily-laddered SPX put broken-wing butterfly, entered every session at the expected move,
-            ~7 DTE, PM-settled. Every book enters the IDENTICAL BWB from the same plan on the same tick --
-            the books differ only in whether/when a reversal-triggered put credit spread add-on fires,
+            ~7 DTE, PM-settled. Every arm enters the IDENTICAL BWB from the same plan on the same tick --
+            the arms differ only in whether/when a reversal-triggered put credit spread add-on fires,
             turning the fly into a 1-3-2.
           </p>
           <p className="muted">
@@ -24,7 +24,7 @@ export function HelpTab({ data: _data }: { data: BwbPayload | undefined }) {
         </div>
       </Card>
 
-      <Card title="the four books -- one variable each" collapseKey="bwb-help-books" defaultCollapsed>
+      <Card title="the four arms -- one variable each" collapseKey="bwb-help-arms" defaultCollapsed>
         <div className="pmcc-prose">
           <dl className="pmcc-defs">
             <dt>control</dt>
@@ -43,8 +43,8 @@ export function HelpTab({ data: _data }: { data: BwbPayload | undefined }) {
             </dd>
             <dt>advised:&lt;experiment name&gt;</dt>
             <dd>
-              One book per advisor experiment, each carrying that experiment's admitted parameters frozen on each
-              row at entry and measured against the base book its experiment names. Several can run at once. Off
+              One arm per advisor experiment, each carrying that experiment's admitted parameters frozen on each
+              row at entry and measured against the base arm its experiment names. Several can run at once. Off
               by default, and deliberately unbounded.
             </dd>
           </dl>
@@ -59,7 +59,7 @@ export function HelpTab({ data: _data }: { data: BwbPayload | undefined }) {
             trigger is met the position is <span className="mono">armed</span>; every tick re-prices the
             add-on until the first credit tick fires it. One add-on maximum per position; after firing the
             trigger disarms permanently. Armed until expiry, no cutoff. After firing: hold everything to
-            expiry -- no profit-take, no stop, on any book.
+            expiry -- no profit-take, no stop, on any arm.
           </p>
         </div>
       </Card>
@@ -71,7 +71,7 @@ export function HelpTab({ data: _data }: { data: BwbPayload | undefined }) {
             an expected collision, not a defect. Each arm-vs-control comparison's effective sample is that
             arm's fire count. The three arms will NOT fire equally often: delta fires most, bounce needs
             the move plus a turn, flip needs spot to have entered negative-gamma territory at all and come
-            back. A quiet flip book is the honest state, not a broken one.
+            back. A quiet flip arm is the honest state, not a broken one.
           </p>
           <p>
             <strong>Daily-ladder correlation caveat:</strong> concurrent positions share regime context --
@@ -87,7 +87,7 @@ export function HelpTab({ data: _data }: { data: BwbPayload | undefined }) {
           <p>
             Every loop tick, for every open cohort (entry_session x structure_signature), the near-wing
             delta, peak delta, spot, gamma_flip and the below-flip latch are recorded -- byte-identical
-            across the four base books that share one signature. This is what makes a read-side threshold
+            across the four base arms that share one signature. This is what makes a read-side threshold
             replay possible over data the module itself recorded, rather than a vendor-imagined backtest.
           </p>
         </div>

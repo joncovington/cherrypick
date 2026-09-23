@@ -35,7 +35,7 @@ def update_peak(peak_abs_delta: float | None, abs_delta: float | None) -> float 
 
 
 def delta_fires(abs_delta: float | None, params: dict | None = None) -> bool:
-    """`delta` book: the near wing's |delta| has reached `delta_trigger` on THIS tick — raw
+    """`delta` arm: the near wing's |delta| has reached `delta_trigger` on THIS tick — raw
     proximity, the naive baseline."""
     if abs_delta is None:
         return False
@@ -44,7 +44,7 @@ def delta_fires(abs_delta: float | None, params: dict | None = None) -> bool:
 
 
 def bounce_fires(peak_abs_delta: float | None, abs_delta: float | None, params: dict | None = None) -> bool:
-    """`bounce` book: peak |delta| since entry cleared `delta_trigger` AND current |delta| has
+    """`bounce` arm: peak |delta| since entry cleared `delta_trigger` AND current |delta| has
     pulled back to `delta_trigger - bounce_pullback` or below — a confirmed reversal, not a touch.
 
     There is deliberately no separate `bounce_peak` key: the qualifying bar for the peak IS
@@ -71,7 +71,7 @@ def update_below_flip(below_flip_seen: bool, spot: float | None, gamma_flip: flo
 def flip_fires(
     below_flip_seen: bool, spot: float | None, gamma_flip: float | None, params: dict | None = None
 ) -> bool:
-    """`flip` book: spot has traded below `gamma_flip` at some point since entry (the latch) AND
+    """`flip` arm: spot has traded below `gamma_flip` at some point since entry (the latch) AND
     has reclaimed to `gamma_flip * flip_buffer` or above on THIS tick — the buffer (default 0.1%,
     the curve `contango_max` precedent) so a knife-edge tick-through is not mistaken for a
     reclaim."""
@@ -81,14 +81,14 @@ def flip_fires(
     return spot >= gamma_flip * p["flip_buffer"]
 
 
-def evaluate(book: str, state: dict, tick: dict, params: dict | None = None) -> dict:
-    """One book's trigger read for one tick. `state` carries `peak_abs_delta`/`below_flip_seen`
+def evaluate(arm: str, state: dict, tick: dict, params: dict | None = None) -> dict:
+    """One arm's trigger read for one tick. `state` carries `peak_abs_delta`/`below_flip_seen`
     (the position's persisted latches); `tick` carries `abs_delta`/`spot`/`gamma_flip` (this tick's
     measures, any of which may be None on an unmeasured tick).
 
-    Returns the UPDATED latch values plus whether the book's own condition fires on this tick — the
-    caller persists the latches regardless of book (every book's rows carry the same telemetry, the
-    module's counterfactual-on-control property) and only ACTS on `fired` for its own book."""
+    Returns the UPDATED latch values plus whether the arm's own condition fires on this tick — the
+    caller persists the latches regardless of arm (every arm's rows carry the same telemetry, the
+    module's counterfactual-on-control property) and only ACTS on `fired` for its own arm."""
     peak = update_peak(state.get("peak_abs_delta"), tick.get("abs_delta"))
     below_flip = update_below_flip(
         bool(state.get("below_flip_seen")), tick.get("spot"), tick.get("gamma_flip")
@@ -98,7 +98,7 @@ def evaluate(book: str, state: dict, tick: dict, params: dict | None = None) -> 
         "delta": delta_fires(tick.get("abs_delta"), params),
         "bounce": bounce_fires(peak, tick.get("abs_delta"), params),
         "flip": flip_fires(below_flip, tick.get("spot"), tick.get("gamma_flip"), params),
-    }.get(book, False)
+    }.get(arm, False)
     return {
         "peak_abs_delta": peak,
         "below_flip_seen": below_flip,

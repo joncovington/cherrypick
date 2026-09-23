@@ -1,9 +1,9 @@
 """Wires engine decisions to the paper ledger: entries, traded closes, and settlement.
 
-Single book (`control`) since the 2026-08-23 redesign — no more roll, no more keltner entry gate,
-no more multi-book fill pairing — plus its `advised:<experiment>` synthetic twins (one per advisor
+Single arm (`control`) since the 2026-08-23 redesign — no more roll, no more keltner entry gate,
+no more multi-arm fill pairing — plus its `advised:<experiment>` synthetic twins (one per advisor
 experiment since 2026-09-17; a single `advised:control` before).
-Since 2026-08-23 the book runs two symbols (TQQQ, physical; XSP, cash) rather than one; the
+Since 2026-08-23 the arm runs two symbols (TQQQ, physical; XSP, cash) rather than one; the
 settlement-style branch below is what keeps their bookkeeping correctly diverging.
 
 Fee/P&L conventions (the ledger reader depends on these):
@@ -24,28 +24,28 @@ from cherrypick.core import advice as _core_advice
 from cherrypick.pmcc import analytics, clock, db, engine
 
 
-def position_id(symbol: str, book: str, entry_session: str) -> str:
-    return f"{symbol}:{book}:{entry_session}"
+def position_id(symbol: str, arm: str, entry_session: str) -> str:
+    return f"{symbol}:{arm}:{entry_session}"
 
 
 def enter_position(
     conn,
     plan: dict,
     config: dict,
-    book: str,
+    arm: str,
     *,
     entry_session: str,
     advice_params: dict | None,
     keltner_measures: dict | None = None,
     experiment_id: str | dict | None = None,
 ) -> dict | None:
-    """Open one book's position from a plan. Idempotent per position_id: a book that already holds
+    """Open one arm's position from a plan. Idempotent per position_id: a arm that already holds
     the day's position is skipped, so a tick retry cannot double-enter.
 
     `experiment_id` is the session decision (the row's stamp resolved by its tag through
-    `cherrypick.core.advice.stamp_for`, so each advised book carries its own experiment) or, for a
+    `cherrypick.core.advice.stamp_for`, so each advised arm carries its own experiment) or, for a
     caller that already resolved it, the id itself."""
-    pid = position_id(plan["symbol"], book, entry_session)
+    pid = position_id(plan["symbol"], arm, entry_session)
     if conn.execute("SELECT 1 FROM pmcc_positions WHERE position_id = ?", (pid,)).fetchone():
         return None
     quantity = int((config.get("defaults") or {}).get("quantity", 1))
@@ -60,7 +60,7 @@ def enter_position(
         {
             "position_id": pid,
             "symbol": plan["symbol"],
-            "book": book,
+            "arm": arm,
             "entry_session": entry_session,
             "quantity": quantity,
             "long_expiration": plan["long_expiration"],
@@ -98,12 +98,12 @@ def enter_position(
             "keltner_bounce_atr": measures.get("keltner_bounce_atr"),
             "keltner_prev_close_gap": measures.get("keltner_prev_close_gap"),
             "advice_params": (
-                json.dumps(advice_params) if (advice_params and book.startswith("advised:")) else None
+                json.dumps(advice_params) if (advice_params and arm.startswith("advised:")) else None
             ),
-            "experiment_id": _core_advice.stamp_for(book, experiment_id),
+            "experiment_id": _core_advice.stamp_for(arm, experiment_id),
             "advice_base": (
-                engine.base_book(book, decision=experiment_id if isinstance(experiment_id, dict) else None)
-                if _core_advice.is_advised(book)
+                engine.base_book(arm, decision=experiment_id if isinstance(experiment_id, dict) else None)
+                if _core_advice.is_advised(arm)
                 else None
             ),
             "status": "open",
@@ -132,7 +132,7 @@ def enter_position(
                 "status": "open",
             },
         )
-    return {"position_id": pid, "book": book, "symbol": plan["symbol"], "net_debit": plan["net_debit"]}
+    return {"position_id": pid, "arm": arm, "symbol": plan["symbol"], "net_debit": plan["net_debit"]}
 
 
 def close_open_legs(
@@ -190,7 +190,7 @@ def settle_expiring_legs(
     open at its own expiry settles the same way and finalizes once nothing is outstanding (the
     backstop for a loop that was down through its disposition window).
 
-    Under the PHYSICAL settlement style an ITM leg also delivers shares. The option leg still books
+    Under the PHYSICAL settlement style an ITM leg also delivers shares. The option leg still arms
     at intrinsic — that is its value at expiry under either style — and the delivered shares become
     a `pmcc_assignments` row carrying the settlement spot as their basis: for this module's assigned
     short call, SHORT 100 shares per contract, covered the next session. The $5 event charge moves
@@ -292,7 +292,7 @@ def finalize_if_done(conn, pid: str, *, reason: str, session_date: str) -> bool:
     share position) closed, which is the day the result became a fact.
 
     An undisposed share position holds the close open exactly as an open option leg does. Closing a
-    position while its shares are still outstanding would book a result the account has not yet
+    position while its shares are still outstanding would arm a result the account has not yet
     realized — and here that gap can span a weekend."""
     legs = db.legs_for(conn, pid)
     if any(leg["status"] == "open" for leg in legs):

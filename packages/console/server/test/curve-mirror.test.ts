@@ -29,7 +29,7 @@ const LEDGER = path.join(os.homedir(), ".cherrypick", "data", "curve", "paper_tr
 
 interface Headline {
   ok: boolean;
-  headline: { books: Record<string, unknown>; open_positions: number; flip_divergence: { flip_divergence_count: number } };
+  headline: { arms: Record<string, unknown>; open_positions: number; flip_divergence: { flip_divergence_count: number } };
 }
 
 function moduleHeadline(): Headline | null {
@@ -53,10 +53,10 @@ describe.skipIf(!available)("the console's curve mirror agrees with the module i
     expect(mine.openCount).toBe(theirs!.headline.open_positions);
   });
 
-  it("reports the same set of books", () => {
+  it("reports the same set of arms", () => {
     const mine = readCurve(loadConfig());
     const theirs = moduleHeadline();
-    expect(new Set(mine.books.map((b) => b.book))).toEqual(new Set(Object.keys(theirs!.headline.books)));
+    expect(new Set(mine.arms.map((b) => b.arm))).toEqual(new Set(Object.keys(theirs!.headline.arms)));
   });
 
   it("agrees on flip_divergence_count", () => {
@@ -65,11 +65,11 @@ describe.skipIf(!available)("the console's curve mirror agrees with the module i
     expect(mine.flipDivergence.flipDivergenceCount).toBe(theirs!.headline.flip_divergence.flip_divergence_count);
   });
 
-  it("agrees on each book's net, to the cent", () => {
+  it("agrees on each arm's net, to the cent", () => {
     const mine = readCurve(loadConfig());
-    const theirs = moduleHeadline()!.headline.books as Record<string, Record<string, { net_pnl?: number }>>;
-    for (const cell of mine.books) {
-      const other = theirs[cell.book]?.[cell.symbol];
+    const theirs = moduleHeadline()!.headline.arms as Record<string, Record<string, { net_pnl?: number }>>;
+    for (const cell of mine.arms) {
+      const other = theirs[cell.arm]?.[cell.symbol];
       if (other?.net_pnl === undefined) continue;
       expect(cell.netPnl ?? 0).toBeCloseTo(other.net_pnl, 2);
     }
@@ -96,7 +96,7 @@ describe("readCurve against an empty ledger", () => {
     const dbFile = path.join(dir, "paper_trades.db");
     const db = new Database(dbFile);
     db.exec(`
-      CREATE TABLE curve_positions (id INTEGER PRIMARY KEY, position_id TEXT, symbol TEXT, book TEXT,
+      CREATE TABLE curve_positions (id INTEGER PRIMARY KEY, position_id TEXT, symbol TEXT, arm TEXT,
         entry_session TEXT, status TEXT, exit_reason TEXT, gross_pnl REAL, fees REAL);
       CREATE TABLE curve_marks (id INTEGER PRIMARY KEY, position_id TEXT, session_date TEXT,
         close_cost REAL, short_tv REAL, spot REAL, assignment_exposed INTEGER, usable INTEGER, refusal TEXT,
@@ -116,7 +116,7 @@ describe("readCurve against an empty ledger", () => {
     expect(result.dbPresent).toBe(true);
     expect(result.openPositions).toEqual([]);
     expect(result.openCount).toBe(0);
-    expect(result.books).toEqual([]);
+    expect(result.arms).toEqual([]);
     expect(result.flipDivergence.flipDivergenceCount).toBe(0);
     expect(result.flipDivergence.controlFlipExits).toBe(0);
     expect(result.regimeSeries).toEqual([]);

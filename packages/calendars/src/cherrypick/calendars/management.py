@@ -3,7 +3,7 @@
 Three layers, kept apart on purpose (the earnings pattern):
 
 - `effective_params` is the ONE choke point that restates a position's frozen advised params over
-  the config. An advised book's exit rules are stamped on the row at entry and read back here every
+  the config. An advised arm's exit rules are stamped on the row at entry and read back here every
   tick, so advice lapsing mid-week never hands an open position to rules nobody chose — and a
   control row comes back untouched.
 - `evaluate` is pure over (position, params, a priced mark, the clock) and returns a verdict.
@@ -11,13 +11,13 @@ Three layers, kept apart on purpose (the earnings pattern):
   gate is still recorded (`executed=0` with the gate), which is the only record that an exit was
   SEEN before it was allowed.
 
-Book semantics:
+Arm semantics:
 - `control` — the user-defined baseline: close every leg in the Friday exit window. No stops, no
   targets, no weekend hold. Its verdict repeats until executed; if the window is missed outright,
   settlement takes the shorts and Monday disposition the longs, with the blocked verdicts on file.
 - `path` — the permissive superset (MEIC's `open` arm precedent): never closes. Shorts run to cash
   settlement, longs to the Monday disposition. Its whole job is the recorded mark path.
-- `advised:<experiment name>` (one book per advisor experiment since 2026-09-17; `advised:control`
+- `advised:<experiment name>` (one arm per advisor experiment since 2026-09-17; `advised:control`
   before) — the frozen params decide: profit target / stop (as fractions of the entry
   debit, on the COMBINED double when both sides are open — see `evaluate`'s note), the
   short-strike-touch side close, the scheduled `time_exit`, and `long_disposition`. With
@@ -68,22 +68,22 @@ class Decision:
 
 
 def effective_params(position: dict, config: dict) -> dict:
-    """The params governing this position: the base book's merged config, with the row's frozen
-    `advice_params` overlaid for an advised book. An unreadable stamp is the control's config,
+    """The params governing this position: the base arm's merged config, with the row's frozen
+    `advice_params` overlaid for an advised arm. An unreadable stamp is the control's config,
     never a guess."""
-    book = position.get("book") or "control"
+    arm = position.get("arm") or "control"
     # The base is resolved through `engine.base_book` with the config in hand: a legacy
     # `advised:control` row names its base in the tag, a 2026-09-17 `advised:<experiment>` row
     # shadows the configured `advice.base_book`.
     # The row's own stamp first (2026-09-17): an advised twin of a non-default base is managed under
     # THAT base after the session's decision file is gone, not under the configured default.
     stamped = position.get("advice_base")
-    base = str(stamped) if stamped else engine.base_book(book, config=config)
+    base = str(stamped) if stamped else engine.base_book(arm, config=config)
     params = {**PARAM_DEFAULTS, **engine.merged_params(config, base)}
-    params["book"] = book
+    params["arm"] = arm
     params["base_book"] = base
     raw = position.get("advice_params")
-    if book.startswith("advised:") and raw:
+    if arm.startswith("advised:") and raw:
         try:
             overlay = json.loads(raw) if isinstance(raw, str) else dict(raw)
         except (TypeError, ValueError):
@@ -95,10 +95,10 @@ def effective_params(position: dict, config: dict) -> dict:
 def _scheduled_exit_day(position: dict, params: dict) -> date | None:
     """The day the whole structure is scheduled to close, per `time_exit` — None when
     `long_disposition` is `mon_open` (no whole-structure schedule exists then)."""
-    if params.get("long_disposition") == "mon_open" and params["book"] != "control":
+    if params.get("long_disposition") == "mon_open" and params["arm"] != "control":
         return None
     front = date.fromisoformat(position["front_expiration"])
-    if params["book"] != "control" and params.get("time_exit") == "thu_close":
+    if params["arm"] != "control" and params.get("time_exit") == "thu_close":
         day = front - timedelta(days=1)
         while not _cal.is_trading_day(day):
             day -= timedelta(days=1)
@@ -107,7 +107,7 @@ def _scheduled_exit_day(position: dict, params: dict) -> date | None:
 
 
 def _scheduled_exit_minute(params: dict) -> int:
-    if params["book"] != "control" and params.get("time_exit") == "fri_noon":
+    if params["arm"] != "control" and params.get("time_exit") == "fri_noon":
         return clock.hhmm_to_min(params.get("noon_exit_start"), 12 * 60)
     return clock.hhmm_to_min(params.get("exit_window_start"), 15 * 60 + 45)
 
@@ -128,16 +128,16 @@ def evaluate(
     closed — the profit target and stop are statements about the trade the user defined, which is
     the double, not one side. The caller owns that pairing; this function just compares.
     """
-    book = params["book"]
+    arm = params["arm"]
     # Through base_book, so `friday:path` holds exactly as `path` does — a raw name comparison
-    # would make the never-closing book close (see engine.base_book).
-    if engine.base_book(book) == "path":
+    # would make the never-closing arm close (see engine.base_book).
+    if engine.base_book(arm) == "path":
         return Decision("hold", "path_holds")
 
     today = now.date()
     now_min = clock.minute_of_day(now)
 
-    if book.startswith("advised:"):
+    if arm.startswith("advised:"):
         pt = params.get("profit_target_pct")
         sl = params.get("stop_loss_pct_of_debit")
         if combined_value is not None and combined_debit:
@@ -181,7 +181,7 @@ def _spread_blocks(mark_snapshot: dict, params: dict) -> bool:
     window, at 2.000 every time, while the call side closed normally at 0.222. The position missed
     its exit entirely, its front expired instead, and the longs went on Monday for a different
     result -- which is what the exit-policy replay then reported as a $1.30 disagreement with the
-    books it is validated against.
+    arms it is validated against.
 
     curve reached the same rule from the entry side (`_wing_spread_blocks`, 56 of 62 refusals in one
     session at exactly 2.000), and it made an exception there: the SHORT leg keeps the plain

@@ -132,7 +132,7 @@ def config():
             "max_quote_age_seconds": 300,
             "max_leg_spread_pct": 0.25,
         },
-        "books": {
+        "arms": {
             "control": {"enabled": True},
             "noflip": {"enabled": True},
             "hook": {"enabled": True},

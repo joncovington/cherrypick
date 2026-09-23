@@ -4,11 +4,11 @@ math, cash-settlement intrinsics, and the fee stack.
 No I/O, no clock reads, no network — the provider fetches, this decides, book.py persists,
 paper_loop.py owns the clock.
 
-The base structure is always the same shape for every book: a put broken-wing butterfly centered
+The base structure is always the same shape for every arm: a put broken-wing butterfly centered
 `expected_move` below spot — short x2 the body, long x1 one increment above (near wing, toward
 spot), long x1 two increments below (far wing) — priced for a net credit at mid, zero floor by
 design (a deliberate departure from the suite's `min_credit_pct_of_width` convention, per the
-plan). Books differ only in whether/when the add-on vertical fires; that logic lives in
+plan). Arms differ only in whether/when the add-on vertical fires; that logic lives in
 `triggers.py` and `management.py`, not here.
 """
 
@@ -19,7 +19,7 @@ from cherrypick.core import config as _cfg
 from cherrypick.core import fees as _fees
 from cherrypick.core import structures as _structures
 
-BOOKS = ("control", "delta", "bounce", "flip")
+ARMS = ("control", "delta", "bounce", "flip")
 
 # SPX is cash-settled, European-style: no assignment machinery is offered here. A config declaring
 # anything else is out of scope by construction — this module trades exactly one underlying.
@@ -28,23 +28,23 @@ SETTLEMENT_STYLE = "cash"
 STRIKE_INCREMENT = 5.0
 
 
-def base_book(book: str, *, config: dict | None = None, decision: dict | None = None) -> str:
-    """The book whose rules an advised twin runs under. A base book is its own base.
+def base_book(arm: str, *, config: dict | None = None, decision: dict | None = None) -> str:
+    """The arm whose rules an advised twin runs under. A base arm is its own base.
 
     **An advised tag no longer carries its base (2026-09-17).** Each advisor experiment gets its
-    own book, `advised:<experiment name>`, and the base it shadows is named by the session
+    own arm, `advised:<experiment name>`, and the base it shadows is named by the session
     decision's experiment entry rather than by the tag. Resolution, in order: the decision's entry
-    for this tag when one is given; the tag's last segment when it names a base book (the legacy
-    `advised:control` / `advised:delta` every row before this date carries -- `engine.BOOKS` plus
+    for this tag when one is given; the tag's last segment when it names a base arm (the legacy
+    `advised:control` / `advised:delta` every row before this date carries -- `engine.ARMS` plus
     the config's opt-in `wall`); else the configured `advice.base_book` (default `control`)."""
-    if not _core_advice.is_advised(book):
-        return book
+    if not _core_advice.is_advised(arm):
+        return arm
     for entry in _core_advice.advised_books(decision):
         tag = entry.get("tag")
-        if tag and (book == tag or book.startswith(tag + ":")) and entry.get("base"):
+        if tag and (arm == tag or arm.startswith(tag + ":")) and entry.get("base"):
             return str(entry["base"])
-    tail = book.split(":", 1)[1]
-    if tail in BOOKS or tail in _cfg.registry(config, label="bwb"):
+    tail = arm.split(":", 1)[1]
+    if tail in ARMS or tail in _cfg.registry(config, label="bwb"):
         return tail
     # Any accepted spelling: an operator who renames this key must not silently get
     # "control" as the base, which is a wrong A/B that still reads as a valid one.
@@ -52,11 +52,11 @@ def base_book(book: str, *, config: dict | None = None, decision: dict | None = 
     return str(_cfg.first_present(advice_cfg, *_cfg.BASE_ARM_KEYS) or "control")
 
 
-def merged_params(config: dict, book: str) -> dict:
-    """`defaults` overlaid with the book's own block — the curve/pmcc `merged_params` shape, so an
-    advised book resolves through the same path as every other."""
-    params = {**(config.get("defaults") or {}), **(_cfg.registry(config, label="bwb").get(book) or {})}
-    params["book"] = book
+def merged_params(config: dict, arm: str) -> dict:
+    """`defaults` overlaid with the arm's own block — the curve/pmcc `merged_params` shape, so an
+    advised arm resolves through the same path as every other."""
+    params = {**(config.get("defaults") or {}), **(_cfg.registry(config, label="bwb").get(arm) or {})}
+    params["arm"] = arm
     return params
 
 
@@ -76,7 +76,7 @@ def _puts(entries: list[dict], quotes: dict) -> dict[float, dict]:
 
 def _calls(entries: list[dict], quotes: dict) -> dict[float, dict]:
     """The call side of the chain with a usable quote, keyed by strike — `_puts`' mirror, for the
-    wall book's call-side structure."""
+    wall arm's call-side structure."""
     out = {}
     for e in entries:
         if e["option_type"] != "call":
@@ -252,7 +252,7 @@ def plan_entry(snapshot: dict, params: dict) -> dict:
 
 
 def select_wall_strikes(call_wall: float, spot: float, params: dict, listed: list[float]) -> dict:
-    """`select_strikes` mirrored for the wall book: body (short x2) at the CALL WALL; near wing one
+    """`select_strikes` mirrored for the wall arm: body (short x2) at the CALL WALL; near wing one
     increment BELOW the body (toward spot); far wing `far_wing_increments` (>=2) increments ABOVE.
     Snapped to listed strikes, and the wall must still sit above spot AFTER snapping — a body at or
     below spot is short calls in the money, a directional bet, not a "wall holds" bet."""
@@ -279,21 +279,21 @@ def select_wall_strikes(call_wall: float, spot: float, params: dict, listed: lis
 
 
 def plan_wall_entry(snapshot: dict, params: dict, call_wall: float | None) -> dict:
-    """The wall book's call-side BWB off the same snapshot: +1 near / -2 body / +1 far in CALLS,
+    """The wall arm's call-side BWB off the same snapshot: +1 near / -2 body / +1 far in CALLS,
     body at the GEX call wall, net credit required.
 
     Origin: the gex module's pin study (2026-08-31, 23 sessions) — a BOUND bet, not a pin bet: the
     close finished at or below the morning wall 19-21/23 while the tent captured 2/23. At ~7 DTE
-    this book asks a question the study did not answer (does the wall bound price over a WEEK?),
-    which is exactly why it gets its own book instead of borrowing the study as evidence.
+    this arm asks a question the study did not answer (does the wall bound price over a WEEK?),
+    which is exactly why it gets its own arm instead of borrowing the study as evidence.
 
     Two deliberate differences from `plan_entry`, both stated rather than silent:
 
     * No expected-move dependency — the wall is the placement, so a session with no wall reading
-      is a refusal (`call_wall_unavailable`), never an EM fallback wearing this book's name.
+      is a refusal (`call_wall_unavailable`), never an EM fallback wearing this arm's name.
     * The spread gate is percent AND absolute money, per leg (the curve/calendars rule). These are
       OTM calls at and above the wall, where a done short quotes 0.00 bid against a penny ask —
-      a 200% ratio and a one-cent width. The put books' gate stays percentage-only: their legs sit
+      a 200% ratio and a one-cent width. The put arms' gate stays percentage-only: their legs sit
       an expected move below spot where that arithmetic has not bitten, and changing what THEY
       admit would be its own measurement break.
     """
@@ -525,7 +525,7 @@ def close_cost(items: list[dict]) -> float | None:
 
 def settle_intrinsic(strike: float, spot: float, option_type: str = "put") -> float:
     """One leg's intrinsic value at cash settlement. Defaulting to put kept every existing call
-    site meaning what it always meant; the wall book's call legs pass their own type."""
+    site meaning what it always meant; the wall arm's call legs pass their own type."""
     if option_type == "call":
         return round(max(0.0, spot - strike), 4)
     return round(max(0.0, strike - spot), 4)

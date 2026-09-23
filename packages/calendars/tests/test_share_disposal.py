@@ -39,14 +39,14 @@ def _cache(tmp_path, *, spot=6500.0, age=0.0):
     return str(path)
 
 
-def _position(conn, position_id="p1", book="path"):
+def _position(conn, position_id="p1", arm="path"):
     db.save_position(
         conn,
         {
             "position_id": position_id,
             "week_of": FRIDAY,
             "entry_session": FRIDAY,
-            "book": book,
+            "arm": arm,
             "side": "call",
             "symbol": SYMBOL,
             "structure": "double_calendar",

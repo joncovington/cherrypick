@@ -58,10 +58,10 @@ def test_meic_max_profit_is_none_without_the_credit_columns():
 
 def _curve_conn(rows):
     return _conn(
-        "CREATE TABLE curve_positions (symbol TEXT, book TEXT, gross_pnl REAL, fees REAL, "
+        "CREATE TABLE curve_positions (symbol TEXT, arm TEXT, gross_pnl REAL, fees REAL, "
         "entry_slippage REAL, exit_slippage REAL, entry_max_loss REAL, entry_credit REAL, "
         "quantity INTEGER, closed_session TEXT, status TEXT)",
-        "INSERT INTO curve_positions (symbol, book, gross_pnl, fees, entry_slippage, "
+        "INSERT INTO curve_positions (symbol, arm, gross_pnl, fees, entry_slippage, "
         "exit_slippage, entry_max_loss, entry_credit, quantity, closed_session, status) "
         "VALUES (?,?,?,?,?,?,?,?,?,?,'closed')",
         rows,
@@ -107,7 +107,7 @@ def test_flies_max_profit_is_always_none():
 
 def test_calendars_max_profit_is_always_none():
     conn = _conn(
-        "CREATE TABLE dc_positions (symbol TEXT, book TEXT, structure TEXT, gross_pnl REAL, "
+        "CREATE TABLE dc_positions (symbol TEXT, arm TEXT, structure TEXT, gross_pnl REAL, "
         "fees REAL, entry_slippage REAL, exit_slippage REAL, entry_debit REAL, quantity INTEGER, "
         "closed_session TEXT, status TEXT)",
         "INSERT INTO dc_positions VALUES (?,?,?,?,?,?,?,?,?,?,'closed')",
@@ -119,7 +119,7 @@ def test_calendars_max_profit_is_always_none():
 
 def test_pmcc_max_profit_is_always_none():
     conn = _conn(
-        "CREATE TABLE pmcc_positions (symbol TEXT, book TEXT, gross_pnl REAL, fees REAL, "
+        "CREATE TABLE pmcc_positions (symbol TEXT, arm TEXT, gross_pnl REAL, fees REAL, "
         "entry_slippage REAL, exit_slippage REAL, net_debit REAL, quantity INTEGER, "
         "closed_session TEXT, status TEXT)",
         "INSERT INTO pmcc_positions VALUES (?,?,?,?,?,?,?,?,?,'closed')",
@@ -131,7 +131,7 @@ def test_pmcc_max_profit_is_always_none():
 
 def test_bwb_max_profit_is_always_none():
     conn = _conn(
-        "CREATE TABLE bwb_positions (symbol TEXT, book TEXT, gross_pnl REAL, fees REAL, "
+        "CREATE TABLE bwb_positions (symbol TEXT, arm TEXT, gross_pnl REAL, fees REAL, "
         "entry_max_loss REAL, quantity INTEGER, closed_session TEXT, status TEXT)",
         "INSERT INTO bwb_positions VALUES (?,?,?,?,?,?,?,'closed')",
         [("SPX", "control", 45.0, 2.0, 3.0, 1, "2026-08-20")],

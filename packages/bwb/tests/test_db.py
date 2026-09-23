@@ -30,7 +30,7 @@ def test_migrate_is_additive(tmp_path):
     path = str(tmp_path / "paper_trades.db")
     conn = db.connect(path)
     conn.execute(
-        "INSERT INTO bwb_positions (position_id, symbol, book, entry_session, structure_signature, "
+        "INSERT INTO bwb_positions (position_id, symbol, arm, entry_session, structure_signature, "
         "expiration, body_strike, near_strike, far_strike) VALUES "
         "('a', 'SPX', 'control', '2026-09-01', 'sig1', '2026-09-18', 6480, 6485, 6470)"
     )
@@ -53,7 +53,7 @@ def test_save_position_and_legs_round_trip(tmp_path):
         {
             "position_id": "SPX:control:2026-09-01",
             "symbol": "SPX",
-            "book": "control",
+            "arm": "control",
             "entry_session": "2026-09-01",
             "structure_signature": "sig1",
             "expiration": "2026-09-18",
@@ -147,7 +147,7 @@ def test_open_position_for_and_count(tmp_path):
         {
             "position_id": "SPX:control:2026-09-01",
             "symbol": "SPX",
-            "book": "control",
+            "arm": "control",
             "entry_session": "2026-09-01",
             "structure_signature": "sig1",
             "expiration": "2026-09-18",

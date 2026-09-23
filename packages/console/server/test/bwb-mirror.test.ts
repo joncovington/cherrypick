@@ -30,7 +30,7 @@ const LEDGER = path.join(os.homedir(), ".cherrypick", "data", "bwb", "paper_trad
 interface Headline {
   ok: boolean;
   headline: {
-    books: Record<string, unknown>;
+    arms: Record<string, unknown>;
     open_positions: number;
     fire_counts: Record<string, { positions: number; fired: number }>;
   };
@@ -57,28 +57,28 @@ describe.skipIf(!available)("the console's bwb mirror agrees with the module its
     expect(mine.openCount).toBe(theirs!.headline.open_positions);
   });
 
-  it("reports the same set of books", () => {
+  it("reports the same set of arms", () => {
     const mine = readBwb(loadConfig());
     const theirs = moduleHeadline();
-    expect(new Set(mine.books.map((b) => b.book))).toEqual(new Set(Object.keys(theirs!.headline.books)));
+    expect(new Set(mine.arms.map((b) => b.arm))).toEqual(new Set(Object.keys(theirs!.headline.arms)));
   });
 
   it("agrees on each arm's fire count", () => {
     const mine = readBwb(loadConfig());
     const theirs = moduleHeadline()!.headline.fire_counts;
     for (const c of mine.fireCounts) {
-      const other = theirs[c.book];
+      const other = theirs[c.arm];
       if (other === undefined) continue;
       expect(c.positions).toBe(other.positions);
       expect(c.fired).toBe(other.fired);
     }
   });
 
-  it("agrees on each book's net, to the cent", () => {
+  it("agrees on each arm's net, to the cent", () => {
     const mine = readBwb(loadConfig());
-    const theirs = moduleHeadline()!.headline.books as Record<string, Record<string, { net_pnl?: number }>>;
-    for (const cell of mine.books) {
-      const other = theirs[cell.book]?.[cell.symbol];
+    const theirs = moduleHeadline()!.headline.arms as Record<string, Record<string, { net_pnl?: number }>>;
+    for (const cell of mine.arms) {
+      const other = theirs[cell.arm]?.[cell.symbol];
       if (other?.net_pnl === undefined) continue;
       expect(cell.netPnl ?? 0).toBeCloseTo(other.net_pnl, 2);
     }
@@ -105,7 +105,7 @@ describe("readBwb against an empty ledger", () => {
     const dbFile = path.join(dir, "paper_trades.db");
     const db = new Database(dbFile);
     db.exec(`
-      CREATE TABLE bwb_positions (id INTEGER PRIMARY KEY, position_id TEXT, symbol TEXT, book TEXT,
+      CREATE TABLE bwb_positions (id INTEGER PRIMARY KEY, position_id TEXT, symbol TEXT, arm TEXT,
         entry_session TEXT, structure_signature TEXT, status TEXT, exit_reason TEXT,
         body_strike REAL, near_strike REAL, far_strike REAL, expiration TEXT, entry_spot REAL,
         entry_credit REAL, entry_max_loss REAL, peak_abs_delta REAL, below_flip_seen INTEGER,
@@ -115,7 +115,7 @@ describe("readBwb against an empty ledger", () => {
       CREATE TABLE bwb_trigger_ticks (id INTEGER PRIMARY KEY, entry_session TEXT,
         structure_signature TEXT, session_date TEXT, measured INTEGER, refusal TEXT, ticked_at REAL);
       CREATE TABLE bwb_entry_attempts (id INTEGER PRIMARY KEY, ts TEXT, trade_date TEXT, symbol TEXT,
-        book TEXT, outcome TEXT, credit REAL);
+        arm TEXT, outcome TEXT, credit REAL);
       CREATE TABLE bwb_management_events (id INTEGER PRIMARY KEY, position_id TEXT, occurred_at REAL,
         session_date TEXT, action TEXT, reason TEXT, executed INTEGER, gate TEXT);
       CREATE TABLE bwb_loop_iterations (id INTEGER PRIMARY KEY, ran_at REAL, session_date TEXT,
@@ -131,7 +131,7 @@ describe("readBwb against an empty ledger", () => {
     expect(result.dbPresent).toBe(true);
     expect(result.openPositions).toEqual([]);
     expect(result.openCount).toBe(0);
-    expect(result.books).toEqual([]);
+    expect(result.arms).toEqual([]);
     expect(result.fireCounts).toEqual([]);
     expect(result.entryAttemptsToday).toEqual([]);
     expect(result.managementEventsToday).toEqual([]);

@@ -53,7 +53,7 @@ def weekly_fridays(today: date, weeks_ahead: int = 8) -> list[date]:
     # stepped to the Saturday after each Friday, and a Saturday's "this week's Friday" is the day
     # before it -- the same Friday again -- so the walk never left week one: at most one date, and
     # NONE when that date was the (then excluded) monthly. 2026-09-11, a Friday with the 18th the
-    # monthly: target None, every book refused `no_expiration_plan`, and it would have stayed that
+    # monthly: target None, every arm refused `no_expiration_plan`, and it would have stayed that
     # way all of the following week.
     out: list[date] = []
     first = today - timedelta(days=today.weekday()) + timedelta(days=4)

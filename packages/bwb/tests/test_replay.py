@@ -160,7 +160,7 @@ def test_validate_against_real_matches_when_no_real_positions():
 
 
 def test_validate_against_real_reproduces_armed_book(config):
-    """A synthetic recorded cohort: a `delta` book position that armed for real, matched by trigger
+    """A synthetic recorded cohort: a `delta` arm position that armed for real, matched by trigger
     ticks that cross the base delta_trigger. The base-threshold replay must reproduce that arm."""
     conn = db.connect()
     now = time.time()
@@ -169,7 +169,7 @@ def test_validate_against_real_reproduces_armed_book(config):
         {
             "position_id": "SPX:delta:2026-08-24",
             "symbol": "SPX",
-            "book": "delta",
+            "arm": "delta",
             "entry_session": "2026-08-24",
             "structure_signature": "sig1",
             "expiration": "2026-08-31",

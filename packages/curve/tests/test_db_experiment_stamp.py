@@ -77,8 +77,8 @@ TWO = {
 
 def test_session_books_open_one_advised_book_per_experiment(monkeypatch):
     monkeypatch.setattr(paper_loop, "advice_decision", lambda cfg, day: TWO)
-    books, advised = paper_loop.session_books({}, "2026-09-17")
-    assert books == ["control", "noflip", "hook", "advised:take-35", "advised:hook-take"]
+    arms, advised = paper_loop.session_books({}, "2026-09-17")
+    assert arms == ["control", "noflip", "hook", "advised:take-35", "advised:hook-take"]
     assert advised["advised:hook-take"]["experiment_id"] == "exp-b"
     assert "advised:rejected" not in advised  # that experiment's baseline day, nobody else's
 
@@ -94,8 +94,8 @@ def test_session_books_read_a_legacy_decision_as_the_single_advised_base_book(mo
             "experiment_id": "exp-old",
         },
     )
-    books, advised = paper_loop.session_books({}, "2026-09-17")
-    assert books == ["control", "noflip", "hook", "advised:control"]
+    arms, advised = paper_loop.session_books({}, "2026-09-17")
+    assert arms == ["control", "noflip", "hook", "advised:control"]
     assert advised["advised:control"]["experiment_id"] == "exp-old"
 
 
@@ -115,8 +115,8 @@ def test_a_twin_of_hook_is_gated_as_a_hook_by_its_entry_not_its_tag():
 
 
 def test_each_advised_book_is_entered_with_its_own_overlay_and_stamp(tmp_path):
-    """Two experiments, two books, two frozen overlays, two ids -- resolved per tag through the
-    decision handed to `enter_position`; the base book stays unstamped."""
+    """Two experiments, two arms, two frozen overlays, two ids -- resolved per tag through the
+    decision handed to `enter_position`; the base arm stays unstamped."""
     conn = db.connect(str(tmp_path / "paper.db"))
     for tag in ("control", "advised:take-35", "advised:hook-take"):
         entry = next((e for e in TWO["experiments"] if e["tag"] == tag), None)
@@ -131,7 +131,7 @@ def test_each_advised_book_is_entered_with_its_own_overlay_and_stamp(tmp_path):
             experiment_id=TWO,
         )
     rows = {
-        r["book"]: r for r in conn.execute("SELECT book, advice_params, experiment_id FROM curve_positions")
+        r["arm"]: r for r in conn.execute("SELECT arm, advice_params, experiment_id FROM curve_positions")
     }
     assert rows["control"]["experiment_id"] is None and rows["control"]["advice_params"] is None
     assert rows["advised:take-35"]["experiment_id"] == "exp-a"

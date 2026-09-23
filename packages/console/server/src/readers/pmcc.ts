@@ -3,7 +3,7 @@ import path from "node:path";
 import type {
   Paged,
   PmccAssignment,
-  PmccBookCell,
+  PmccArmCell,
   PmccCycleRow,
   PmccIntegrity,
   PmccMeta,
@@ -45,7 +45,7 @@ const DB_FILE = "paper_trades.db";
  * because this package cannot import Python: it must be hand-kept equal to `CURRENT_ERA` in
  * `packages/pmcc/src/cherrypick/pmcc/analytics.py`.
  *
- * One era so far: `"redesign"` (2026-08-23 ->), opened by the single-symbol/single-book redesign
+ * One era so far: `"redesign"` (2026-08-23 ->), opened by the single-symbol/single-arm redesign
  * and the XSP addition. `era` is an ADDED column — every pre-redesign row reads back `NULL`, which
  * never equals the literal era string, so old rows are excluded by construction. `hasColumn` guards
  * a ledger this build's migration hasn't reached yet (stale checkout), in which case every row is
@@ -83,7 +83,7 @@ interface PmccParams {
  */
 const KNOWN_COLUMNS: Record<string, string[]> = {
   pmcc_positions: [
-    "id", "position_id", "symbol", "book", "entry_session", "quantity", "long_expiration", "long_strike",
+    "id", "position_id", "symbol", "arm", "entry_session", "quantity", "long_expiration", "long_strike",
     "short_expiration", "short_strike", "entry_time", "entry_spot", "long_entry_mid", "short_entry_mid",
     "net_debit", "entry_cost", "entry_slippage", "entry_short_dte", "entry_long_dte", "entry_total_premium",
     "entry_short_intrinsic", "entry_short_tv", "entry_net_tv", "entry_long_extrinsic", "entry_profit_pct",
@@ -191,7 +191,7 @@ function loadParams(config: ConsoleConfig): PmccParams {
 /**
  * The session every card on the page names.
  *
- * Resolved ONCE and unscoped, the way flies learned to: a per-book or per-symbol "latest" lets one
+ * Resolved ONCE and unscoped, the way flies learned to: a per-arm or per-symbol "latest" lets one
  * card answer for Monday while the card beside it answers for Friday, both correctly labelled and
  * irreconcilable. The loop's own iterations are the primary source because the loop ticks on days
  * that take no position at all — falling back to entries would name the last day something HAPPENED
@@ -270,7 +270,7 @@ function readOpenPositions(db: DatabaseHandle): PmccOpenPosition[] {
   );
   return db
     .prepare<[], Record<string, unknown>>(
-      "SELECT * FROM pmcc_positions WHERE status != 'closed' ORDER BY symbol, book",
+      "SELECT * FROM pmcc_positions WHERE status != 'closed' ORDER BY symbol, arm",
     )
     .all()
     .map((p) => {
@@ -280,7 +280,7 @@ function readOpenPositions(db: DatabaseHandle): PmccOpenPosition[] {
       return {
         positionId,
         symbol: str(p["symbol"]) ?? "",
-        book: str(p["book"]) ?? "",
+        arm: str(p["arm"]) ?? "",
         status: str(p["status"]) ?? "",
         longStrike: num(p["long_strike"]),
         longExpiration: str(p["long_expiration"]),
@@ -308,19 +308,19 @@ function readOpenPositions(db: DatabaseHandle): PmccOpenPosition[] {
 }
 
 /**
- * Mirrors `analytics.headline()`: per-book, per-symbol results over CLOSED positions, scoped to
+ * Mirrors `analytics.headline()`: per-arm, per-symbol results over CLOSED positions, scoped to
  * `CURRENT_ERA` by default — `era="ALL"` pools every era for an explicit cross-era read.
  *
  * Net is `SUM(gross) - SUM(fees)` — the same single subtraction `cherrypick.core.ledgers` performs
  * for the `pmcc_99` schema. One convention, stated in one place, computed identically here.
  */
-function readBooks(db: DatabaseHandle, era: string = CURRENT_ERA): PmccBookCell[] {
+function readBooks(db: DatabaseHandle, era: string = CURRENT_ERA): PmccArmCell[] {
   const scoped = era !== "ALL" && hasColumn(db, "pmcc_positions", "era");
-  const sql = `SELECT book, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees,
+  const sql = `SELECT arm, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees,
               SUM(gross_pnl) - SUM(fees) AS net, SUM((gross_pnl - fees) > 0) AS wins,
               SUM(roll_count) AS rolls
          FROM pmcc_positions WHERE status = 'closed'${scoped ? " AND era = ?" : ""}
-        GROUP BY book, symbol ORDER BY book, symbol`;
+        GROUP BY arm, symbol ORDER BY arm, symbol`;
   const rows = scoped
     ? db.prepare<[string], Record<string, unknown>>(sql).all(era)
     : db.prepare<[], Record<string, unknown>>(sql).all();
@@ -328,7 +328,7 @@ function readBooks(db: DatabaseHandle, era: string = CURRENT_ERA): PmccBookCell[
     const n = Number(r["n"] ?? 0);
     const wins = num(r["wins"]);
     return {
-      book: str(r["book"]) ?? "",
+      arm: str(r["arm"]) ?? "",
       symbol: str(r["symbol"]) ?? "",
       positions: n,
       grossPnl: num(r["gross"]),
@@ -398,7 +398,7 @@ export function readPmcc(config: ConsoleConfig): PmccPayload {
     dbPresent: false,
     openPositions: [],
     openCount: 0,
-    books: [],
+    arms: [],
     integrity: {
       exposure: { positionsWithExposure: 0, exposedTicks: 0, markedTicks: 0 },
       dividends: [],
@@ -437,15 +437,15 @@ export function readPmcc(config: ConsoleConfig): PmccPayload {
       ? []
       : db
           .prepare<[string], Record<string, unknown>>(
-            `SELECT symbol, book, outcome, COUNT(*) AS n,
+            `SELECT symbol, arm, outcome, COUNT(*) AS n,
                     MAX(block_detail) AS block_detail, MAX(best_yield) AS best_yield
                FROM pmcc_entry_attempts WHERE trade_date = ?
-              GROUP BY symbol, book, outcome ORDER BY symbol, book, n DESC`,
+              GROUP BY symbol, arm, outcome ORDER BY symbol, arm, n DESC`,
           )
           .all(session)
           .map((r) => ({
             symbol: str(r["symbol"]) ?? "",
-            book: str(r["book"]) ?? "",
+            arm: str(r["arm"]) ?? "",
             outcome: str(r["outcome"]) ?? "",
             n: Number(r["n"] ?? 0),
             blockDetail: str(r["block_detail"]),
@@ -496,7 +496,7 @@ export function readPmcc(config: ConsoleConfig): PmccPayload {
       dbPresent: true,
       openPositions,
       openCount: openPositions.length,
-      books: readBooks(db),
+      arms: readBooks(db),
       integrity: {
         exposure: {
           positionsWithExposure: exposureRows.filter((e) => e.exposed > 0).length,
@@ -543,7 +543,7 @@ export function readPmcc(config: ConsoleConfig): PmccPayload {
 }
 
 export interface PmccHistoryFilter {
-  book: string | null;
+  arm: string | null;
   symbol: string | null;
 }
 
@@ -563,9 +563,9 @@ export function readPmccHistory(
 ): Paged<PmccCycleRow> {
   const clauses = ["status IN ('closed', 'short_settled')"];
   const params: string[] = [];
-  if (filter.book !== null) {
-    clauses.push("book = ?");
-    params.push(filter.book);
+  if (filter.arm !== null) {
+    clauses.push("arm = ?");
+    params.push(filter.arm);
   }
   if (filter.symbol !== null) {
     clauses.push("symbol = ?");
@@ -576,7 +576,7 @@ export function readPmccHistory(
     const rows = pagedQuery<PmccCycleRow>(
       db,
       {
-        columns: `position_id, symbol, book, entry_session, closed_session, status, exit_reason,
+        columns: `position_id, symbol, arm, entry_session, closed_session, status, exit_reason,
                   long_strike, long_expiration, entry_spot, settlement_spot, net_debit, entry_net_tv,
                   entry_weekly_yield_pct, roll_count, itm_settlements, gross_pnl, fees,
                   entry_cost, exit_cost, entry_slippage, exit_slippage`,
@@ -592,7 +592,7 @@ export function readPmccHistory(
         return {
           positionId: str(r["position_id"]) ?? "",
           symbol: str(r["symbol"]) ?? "",
-          book: str(r["book"]) ?? "",
+          arm: str(r["arm"]) ?? "",
           entrySession: str(r["entry_session"]) ?? "",
           closedSession: str(r["closed_session"]),
           status: str(r["status"]) ?? "",
@@ -743,7 +743,7 @@ export function readPmccAssignments(config: ConsoleConfig): Array<PmccAssignment
 
 /** The history filter's own options. No era mechanism: the module has one era and one week of data. */
 export function readPmccMeta(config: ConsoleConfig): PmccMeta {
-  const empty: PmccMeta = { books: [], symbols: [], sessions: [] };
+  const empty: PmccMeta = { arms: [], symbols: [], sessions: [] };
   return withReadOnlyDb<PmccMeta>(dbPath(config), empty, (db) => {
     const column = (name: string, table: string): string[] =>
       db
@@ -752,7 +752,7 @@ export function readPmccMeta(config: ConsoleConfig): PmccMeta {
         .map((r) => str(r["v"]) ?? "")
         .filter((v) => v !== "");
     return {
-      books: column("book", "pmcc_positions"),
+      arms: column("arm", "pmcc_positions"),
       symbols: column("symbol", "pmcc_positions"),
       sessions: column("entry_session", "pmcc_positions").reverse(),
     };

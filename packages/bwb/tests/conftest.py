@@ -144,7 +144,7 @@ def config():
             "max_leg_spread_pct": 0.25,
             "entry_time": "10:00",
         },
-        "books": {
+        "arms": {
             "control": {"enabled": True},
             "delta": {"enabled": True},
             "bounce": {"enabled": True},

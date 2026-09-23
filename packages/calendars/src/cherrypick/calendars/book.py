@@ -1,8 +1,8 @@
 """Wires engine decisions to the paper ledger: entries, traded closes, and cash settlement.
 
-One plan, N books. Every book's positions for a week are written from the SAME plan — identical
+One plan, N arms. Every arm's positions for a week are written from the SAME plan — identical
 strikes, identical entry mids, identical modeled costs — which is what makes the whole experiment
-exactly paired by construction: any later divergence between books is exit policy and nothing else.
+exactly paired by construction: any later divergence between arms is exit policy and nothing else.
 
 Fee/P&L conventions (the ledger reader depends on these):
 - `gross_pnl` is mid-priced and cost-free: the sum of per-leg P&L (`engine.leg_pnl`) x100 x qty.
@@ -21,38 +21,38 @@ from cherrypick.core import advice as _core_advice
 from cherrypick.calendars import clock, db, engine
 
 
-def position_id(week_of: str, book: str, side: str) -> str:
-    return f"{week_of}:{book}:{side}"
+def position_id(week_of: str, arm: str, side: str) -> str:
+    return f"{week_of}:{arm}:{side}"
 
 
 def enter_week(
     conn,
     plan: dict,
     config: dict,
-    books: list[str],
+    arms: list[str],
     *,
     week: dict,
     advice_params: dict | None,
     experiment_id: str | dict | None = None,
     advised: dict[str, dict] | None = None,
 ) -> list[dict]:
-    """Open the week's put and call calendars in every session book. Idempotent per (book, side):
-    a book that already holds the position is skipped, so a tick retry cannot double-enter.
+    """Open the week's put and call calendars in every session arm. Idempotent per (arm, side):
+    a arm that already holds the position is skipped, so a tick retry cannot double-enter.
 
-    `advised` is `{tag: params}` -- each advised book's own overlay, frozen on its rows (one book per
+    `advised` is `{tag: params}` -- each advised arm's own overlay, frozen on its rows (one arm per
     experiment since 2026-09-17); `advice_params` is the older single overlay, applied to every
-    advised book in `books` when `advised` is not given. `experiment_id` is the session decision
-    (each book's stamp resolved by its tag through `cherrypick.core.advice.stamp_for`) or, for a
+    advised arm in `arms` when `advised` is not given. `experiment_id` is the session decision
+    (each arm's stamp resolved by its tag through `cherrypick.core.advice.stamp_for`) or, for a
     caller that already resolved it, the id itself."""
     opened = []
     quantity = int((config.get("defaults") or {}).get("quantity", 1))
     symbol = plan["symbol"]
     now = clock.now_iso()
-    for book in books:
-        overlay = advised.get(book) if advised is not None else advice_params
-        params_json = json.dumps(overlay) if (overlay and _core_advice.is_advised(book)) else None
+    for arm in arms:
+        overlay = advised.get(arm) if advised is not None else advice_params
+        params_json = json.dumps(overlay) if (overlay and _core_advice.is_advised(arm)) else None
         for side, side_plan in plan["sides"].items():
-            pid = position_id(week["week_of"], book, side)
+            pid = position_id(week["week_of"], arm, side)
             if conn.execute("SELECT 1 FROM dc_positions WHERE position_id = ?", (pid,)).fetchone():
                 continue
             leg_quotes = [{"bid": leg["bid"], "ask": leg["ask"]} for leg in side_plan["legs"]]
@@ -63,7 +63,7 @@ def enter_week(
                     "position_id": pid,
                     "week_of": week["week_of"],
                     "entry_session": week["entry_session"],
-                    "book": book,
+                    "arm": arm,
                     "side": side,
                     "symbol": symbol,
                     "structure": week["structure"],
@@ -85,12 +85,12 @@ def enter_week(
                     "entry_term_structure": plan["term_structure"],
                     "entry_context": json.dumps({"target": side_plan["target"]}),
                     "advice_params": params_json,
-                    "experiment_id": _core_advice.stamp_for(book, experiment_id),
+                    "experiment_id": _core_advice.stamp_for(arm, experiment_id),
                     "advice_base": (
                         engine.base_book(
-                            book, decision=experiment_id if isinstance(experiment_id, dict) else None
+                            arm, decision=experiment_id if isinstance(experiment_id, dict) else None
                         )
-                        if _core_advice.is_advised(book)
+                        if _core_advice.is_advised(arm)
                         else None
                     ),
                     "status": "open",
@@ -118,7 +118,7 @@ def enter_week(
                         "status": "open",
                     },
                 )
-            opened.append({"position_id": pid, "book": book, "side": side, "debit": side_plan["debit"]})
+            opened.append({"position_id": pid, "arm": arm, "side": side, "debit": side_plan["debit"]})
     return opened
 
 
@@ -177,7 +177,7 @@ def settle_expiring_legs(
     settles the same way and finalizes the position (`longs_expired` — the disposition was missed
     or refused all day, and intrinsic at the bell is the honest outcome).
 
-    Under a PHYSICAL settlement style an ITM leg also delivers shares. The option leg still books
+    Under a PHYSICAL settlement style an ITM leg also delivers shares. The option leg still arms
     at intrinsic — that is its value at expiry under either style — and the delivered shares become
     a `dc_assignments` row carrying the settlement spot as their basis, so the share leg contributes
     exactly the disposal-vs-settlement move and nothing that intrinsic already counted. The $5
@@ -278,7 +278,7 @@ def finalize_if_done(conn, pid: str, *, reason: str, session_date: str) -> bool:
     which is the day the result became a fact.
 
     An undisposed share position holds the close open exactly as an open option leg does. Closing a
-    week while its shares are still outstanding would book a result the account has not yet realized
+    week while its shares are still outstanding would arm a result the account has not yet realized
     — and on a physically-settled underlying that gap spans a weekend."""
     legs = db.legs_for(conn, pid)
     if any(leg["status"] == "open" for leg in legs):

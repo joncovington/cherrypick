@@ -166,16 +166,16 @@ class LedgerStore:
         except Exception:  # noqa: BLE001, S110
             pass
 
-    def record_decision(self, conn, *, trade_date, book, symbol, mode, reason, accepted, detail=None) -> None:
-        """Collapsing journal write: a run of identical (date, book, symbol, mode, reason) rows
+    def record_decision(self, conn, *, trade_date, arm, symbol, mode, reason, accepted, detail=None) -> None:
+        """Collapsing journal write: a run of identical (date, arm, symbol, mode, reason) rows
         becomes one row with a count."""
         table = self.table("decisions")
         try:
             ts = self.now()
             row = conn.execute(
-                f"SELECT id, occurrences FROM {table} WHERE trade_date = ? AND book = ? AND "
+                f"SELECT id, occurrences FROM {table} WHERE trade_date = ? AND arm = ? AND "
                 "symbol = ? AND mode = ? AND reason = ? ORDER BY id DESC LIMIT 1",
-                (trade_date, book, symbol, mode, reason),
+                (trade_date, arm, symbol, mode, reason),
             ).fetchone()
             if row is not None:
                 conn.execute(
@@ -184,9 +184,9 @@ class LedgerStore:
                 )
             else:
                 conn.execute(
-                    f"INSERT INTO {table} (trade_date, book, symbol, mode, reason, accepted, "
+                    f"INSERT INTO {table} (trade_date, arm, symbol, mode, reason, accepted, "
                     "occurrences, first_ts, last_ts, detail) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)",
-                    (trade_date, book, symbol, mode, reason, int(bool(accepted)), ts, ts, detail),
+                    (trade_date, arm, symbol, mode, reason, int(bool(accepted)), ts, ts, detail),
                 )
             conn.commit()
         except Exception:  # noqa: BLE001, S110
@@ -257,7 +257,7 @@ class LedgerStore:
         session — the disposal rule, since shares delivered by tonight's settlement cannot be sold
         until the next session opens."""
         sql = (
-            f"SELECT a.*, p.book, p.quantity FROM {self.table('assignments')} a "
+            f"SELECT a.*, p.arm, p.quantity FROM {self.table('assignments')} a "
             f"JOIN {self.table('positions')} p ON p.position_id = a.position_id "
             "WHERE a.status = 'open'"
         )

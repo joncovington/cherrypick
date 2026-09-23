@@ -2,7 +2,7 @@
 
 Subcommands (all read-only over the module's own ledger):
     status     open positions and the current expiration plan
-    headline   per-book, per-symbol results through the analytics layer
+    headline   per-arm, per-symbol results through the analytics layer
     worksheet  the live per-position worksheet (the user's spreadsheet, from the ledger)
     exposure   the early-assignment-exposure telemetry
     excursions per-closed-position MAE/MFE (docs/metrics-plan.md Phase 2) plus distributions
@@ -256,7 +256,7 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="command", required=True)
 
     sub.add_parser("status", help="open positions and the expiration plan").set_defaults(func=cmd_status)
-    p_headline = sub.add_parser("headline", help="per-book results through the analytics layer")
+    p_headline = sub.add_parser("headline", help="per-arm results through the analytics layer")
     p_headline.add_argument(
         "--era",
         default=None,

@@ -68,9 +68,9 @@ export function PmccLightbox({ slide }: { slide: string }) {
                     updatedAt={dataUpdatedAt}
                   >
                     {attempts.map((a) => (
-                      <tr key={`${a.symbol}-${a.book}-${a.outcome}`}>
+                      <tr key={`${a.symbol}-${a.arm}-${a.outcome}`}>
                         <td>{a.symbol}</td>
-                        <td>{a.book}</td>
+                        <td>{a.arm}</td>
                         <td>{a.outcome}</td>
                         <td>{a.n}</td>
                         <td className="muted">

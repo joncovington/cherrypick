@@ -6,11 +6,11 @@ snapshots and persists what came back. No network, no MCP, no model call anywher
 One `run_once` carries the day's lifecycle:
 
 - Any trading day: read today's VIX/VIX3M reading and write `curve_regime` — whether or not any
-  book trades (rule 7). A stale/missing quote writes a row marked unusable, never a guess.
+  arm trades (rule 7). A stale/missing quote writes a row marked unusable, never a guess.
 - Past the disposition time: cover shares an earlier settlement delivered, then sell surviving
   wings of short-settled positions.
 - At the entry tick (default 10:00 ET, once per session — position cap is one open position per
-  book, no laddering): plan and enter. `control`/`noflip` share one plan (the exact pairing); `hook`
+  arm, no laddering): plan and enter. `control`/`noflip` share one plan (the exact pairing); `hook`
   enters only on the two-day-confirmed hook signal.
 - Mark every open leg every tick, then manage: profit-take, the regime-flip hard exit
   (control/hook only, and only on a MEASURED crossing — rule 6), `close_dte`.
@@ -169,7 +169,7 @@ def _record_regime(
     return row
 
 
-# --------------------------------------------------------------------------- advised book
+# --------------------------------------------------------------------------- advised arm
 def _advice_decision_path() -> str:
     return os.path.join(_paper_data_dir(), "advice_active.json")
 
@@ -181,21 +181,21 @@ def advice_decision(config: dict, today: str) -> dict:
 
 
 def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]:
-    """(the books entry may open today, `{advised tag: its experiment entry}`). One advised book
+    """(the arms entry may open today, `{advised tag: its experiment entry}`). One advised arm
     PER EXPERIMENT the day's decision admitted (2026-09-17): each entry names its own tag
     (`advised:<experiment name>`), the base it shadows and the params it overlays; a decision
     recorded before that date still yields its single `advised:<base>`. Empty map on a baseline
     day -- and every day while `advice.enabled` stays false, which it is by design here. The
     roster only matters at entry; open rows are managed from the ledger whatever it says today."""
     declared = _cfg.registry(config, label="curve", log=_log)
-    books = [b for b in engine.BOOKS if (declared.get(b) or {}).get("enabled", True)]
+    arms = [b for b in engine.ARMS if (declared.get(b) or {}).get("enabled", True)]
     advised = advised_entries(advice_decision(config, today))
-    books.extend(tag for tag in advised if tag not in books)
-    return books, advised
+    arms.extend(tag for tag in advised if tag not in arms)
+    return arms, advised
 
 
 def advised_entries(decision: dict | None) -> dict[str, dict]:
-    """`{tag: experiment entry}` for every experiment the decision opens a book for, in artifact
+    """`{tag: experiment entry}` for every experiment the decision opens a arm for, in artifact
     order -- keyed by tag because gating, planning, freezing and stamping all look it up by tag."""
     return {e["tag"]: e for e in _core_advice.advised_books(decision) if e.get("tag")}
 
@@ -293,8 +293,8 @@ def _unsettled_today(conn, day: str) -> bool:
 
 # --------------------------------------------------------------------------- entry
 def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: str) -> int:
-    books, advised = session_books(config, day)
-    # The decision itself is what each advised row is stamped from: `stamp_for(book, decision)`
+    arms, advised = session_books(config, day)
+    # The decision itself is what each advised row is stamped from: `stamp_for(arm, decision)`
     # resolves the id per tag, so two experiments on one session carry two ids. It is also what
     # names each twin's base (the tag no longer does), for the hook gate and the plan below.
     decision = advice_decision(config, day) if advised else None
@@ -308,7 +308,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
 
     wanting = [
         b
-        for b in books
+        for b in arms
         if db.open_position_for(conn, symbol, b) is None and db.open_position_count(conn, b) < max_positions
     ]
     if not wanting:
@@ -318,7 +318,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             db.record_decision(
                 conn,
                 trade_date=day,
-                book=b,
+                arm=b,
                 symbol=symbol,
                 mode="entry",
                 reason="no_expiration_plan",
@@ -344,9 +344,9 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             )
         if reason is not None:
             wanting.remove(b)
-            db.record_entry_attempt(conn, trade_date=day, symbol=symbol, book=b, outcome=reason)
+            db.record_entry_attempt(conn, trade_date=day, symbol=symbol, arm=b, outcome=reason)
             db.record_decision(
-                conn, trade_date=day, book=b, symbol=symbol, mode="entry", reason=reason, accepted=False
+                conn, trade_date=day, arm=b, symbol=symbol, mode="entry", reason=reason, accepted=False
             )
         else:
             gated.append(b)
@@ -369,11 +369,11 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             quotes_stale=snapshot.get("rejected"),
         )
         for b in wanting:
-            db.record_entry_attempt(conn, trade_date=day, symbol=symbol, book=b, outcome=snapshot["reason"])
+            db.record_entry_attempt(conn, trade_date=day, symbol=symbol, arm=b, outcome=snapshot["reason"])
             db.record_decision(
                 conn,
                 trade_date=day,
-                book=b,
+                arm=b,
                 symbol=symbol,
                 mode="entry",
                 reason=snapshot["reason"],
@@ -397,7 +397,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
     for b in wanting:
         base = engine.base_book(b, config=config, decision=decision)
         if advised.get(b) and advised[b].get("params"):
-            # Planned from the base book the decision entry names, never from control regardless
+            # Planned from the base arm the decision entry names, never from control regardless
             # -- otherwise the row claims one base and the economics come from another.
             plans[b] = engine.plan_entry(
                 snapshot,
@@ -422,7 +422,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
                 conn,
                 trade_date=day,
                 symbol=symbol,
-                book=b,
+                arm=b,
                 outcome=result["reason"],
                 block_detail=json.dumps(result.get("detail")) if result.get("detail") else None,
                 spot=snapshot["spot"],
@@ -430,7 +430,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             db.record_decision(
                 conn,
                 trade_date=day,
-                book=b,
+                arm=b,
                 symbol=symbol,
                 mode="entry",
                 reason=result["reason"],
@@ -467,7 +467,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
             conn,
             trade_date=day,
             symbol=symbol,
-            book=b,
+            arm=b,
             outcome="filled",
             spot=plan["spot"],
             short_strike=plan["short_strike"],
@@ -478,7 +478,7 @@ def _try_entries(config: dict, conn, *, cache_path: str, when: datetime, day: st
         db.record_decision(
             conn,
             trade_date=day,
-            book=b,
+            arm=b,
             symbol=symbol,
             mode="entry",
             reason=(
@@ -586,7 +586,7 @@ def _manage_positions(config: dict, conn, values: dict, *, day: str) -> int:
                 gate = result.get("reason")
             else:
                 actions += 1
-                _log(f"[{position['book']}] {pid} closed — {decision.reason}")
+                _log(f"[{position['arm']}] {pid} closed — {decision.reason}")
         db.record_management_event(
             conn,
             position_id=pid,
@@ -628,7 +628,7 @@ def _dispose_wings(config: dict, conn, *, cache_path: str, when: datetime, day: 
                 gate = result.get("reason")
             else:
                 actions += 1
-                _log(f"[{position['book']}] {position['position_id']} wing disposed")
+                _log(f"[{position['arm']}] {position['position_id']} wing disposed")
         db.record_management_event(
             conn,
             position_id=position["position_id"],
@@ -669,7 +669,7 @@ def _dispose_shares(config: dict, conn, *, cache_path: str, when: datetime, day:
         result = bookmod.dispose_assignment(conn, assignment, spot, session_date=day)
         actions += 1
         _log(
-            f"[{assignment['book']}] {assignment['position_id']}: covered {assignment['shares']} "
+            f"[{assignment['arm']}] {assignment['position_id']}: covered {assignment['shares']} "
             f"{assignment['direction']} {symbol} shares at {spot:.2f}, share P&L {result['share_pnl']:+.2f}"
         )
         db.record_management_event(

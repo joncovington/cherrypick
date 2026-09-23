@@ -20,23 +20,23 @@ from cherrypick.core import advice as _core_advice
 from cherrypick.curve import clock, db, engine
 
 
-def position_id(symbol: str, book: str, entry_session: str) -> str:
-    return f"{symbol}:{book}:{entry_session}"
+def position_id(symbol: str, arm: str, entry_session: str) -> str:
+    return f"{symbol}:{arm}:{entry_session}"
 
 
 def enter_position(
     conn,
     plan: dict,
     config: dict,
-    book: str,
+    arm: str,
     *,
     entry_session: str,
     advice_params: dict | None,
     regime: dict | None,
     experiment_id: str | dict | None = None,
 ) -> dict | None:
-    """Open one book's position from a plan. Idempotent per position_id."""
-    pid = position_id(plan["symbol"], book, entry_session)
+    """Open one arm's position from a plan. Idempotent per position_id."""
+    pid = position_id(plan["symbol"], arm, entry_session)
     if conn.execute("SELECT 1 FROM curve_positions WHERE position_id = ?", (pid,)).fetchone():
         return None
     quantity = int((config.get("defaults") or {}).get("quantity", 1))
@@ -50,7 +50,7 @@ def enter_position(
         {
             "position_id": pid,
             "symbol": plan["symbol"],
-            "book": book,
+            "arm": arm,
             "entry_session": entry_session,
             "quantity": quantity,
             "expiration": plan["expiration"],
@@ -73,12 +73,12 @@ def enter_position(
             "entry_cost": cost["fee"],
             "entry_slippage": cost["slippage"],
             "advice_params": (
-                json.dumps(advice_params) if (advice_params and book.startswith("advised:")) else None
+                json.dumps(advice_params) if (advice_params and arm.startswith("advised:")) else None
             ),
-            "experiment_id": _core_advice.stamp_for(book, experiment_id),
+            "experiment_id": _core_advice.stamp_for(arm, experiment_id),
             "advice_base": (
-                engine.base_book(book, decision=experiment_id if isinstance(experiment_id, dict) else None)
-                if _core_advice.is_advised(book)
+                engine.base_book(arm, decision=experiment_id if isinstance(experiment_id, dict) else None)
+                if _core_advice.is_advised(arm)
                 else None
             ),
             "status": "open",
@@ -106,7 +106,7 @@ def enter_position(
                 "status": "open",
             },
         )
-    return {"position_id": pid, "book": book, "symbol": plan["symbol"], "entry_credit": plan["credit"]}
+    return {"position_id": pid, "arm": arm, "symbol": plan["symbol"], "entry_credit": plan["credit"]}
 
 
 def close_open_legs(

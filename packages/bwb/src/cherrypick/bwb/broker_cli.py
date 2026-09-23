@@ -37,7 +37,7 @@ def live_gates(config: dict) -> list[str]:
     """The unmet gates for a LIVE submission -- empty means live is allowed. Pure, and re-checked
     by the execution adapter on every live submit (not only at loop start).
 
-    `live.arm` must name one of the four base books: the wall book and every advised twin are
+    `live.arm` must name one of the four base arms: the wall arm and every advised twin are
     paper experiments whose structures are not the pilot's, and a typo here must refuse rather
     than trade something else."""
     live = config.get("live") or {}
@@ -47,8 +47,8 @@ def live_gates(config: dict) -> list[str]:
     if not str(live.get("gate0_confirmed") or "").strip():
         unmet.append("live.gate0_confirmed is empty -- a human must attest Gate 0 passed (who/when)")
     arm = str(live.get("arm") or "").strip()
-    if arm not in engine.BOOKS:
-        unmet.append(f"live.arm {arm!r} is not a base book (one of {', '.join(engine.BOOKS)})")
+    if arm not in engine.ARMS:
+        unmet.append(f"live.arm {arm!r} is not a base arm (one of {', '.join(engine.ARMS)})")
     return unmet
 
 

@@ -1,4 +1,4 @@
-import type { BwbBookCell, BwbFireCount, BwbOpenPosition, BwbPayload } from "@console/shared";
+import type { BwbArmCell, BwbFireCount, BwbOpenPosition, BwbPayload } from "@console/shared";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 import { SignedBar } from "../../components/Charts";
@@ -22,7 +22,7 @@ function strikeSet(near: number | null, body: number | null, far: number | null)
  * Shown beside the fly's `near/body x2/far` rather than folded into it, because a fired position is
  * a 1-3-2 and the two halves were priced at different moments -- the fly at entry, the add-on when
  * the trigger fired. Reading them as one five-strike structure would suggest they were chosen
- * together, which is the one thing the four books exist to disagree about.
+ * together, which is the one thing the four arms exist to disagree about.
  */
 function addonStrikes(short: number | null, long: number | null): string | null {
   if (short === null && long === null) return null;
@@ -59,7 +59,7 @@ function PositionRows({ rows }: { rows: BwbOpenPosition[] }) {
       {rows.map((p) => (
         <tr key={p.positionId}>
           <td>{p.symbol}</td>
-          <td>{p.book}</td>
+          <td>{p.arm}</td>
           {/* MM-DD, the pmcc precedent — every row here is near-dated, so the year is noise.
               The full date rides the title so it is still recoverable. */}
           <td title={p.entrySession}>{p.entrySession === "" ? "—" : p.entrySession.slice(5)}</td>
@@ -86,7 +86,7 @@ function PositionRows({ rows }: { rows: BwbOpenPosition[] }) {
   );
 }
 
-/** Every open BWB, one row each — symbol and expiry identify the trade, book identifies the arm. */
+/** Every open BWB, one row each — symbol and expiry identify the trade, arm identifies the arm. */
 export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefined; updatedAt?: number }) {
   if (data === undefined) return null;
   const empty = data.openPositions.length === 0;
@@ -99,7 +99,7 @@ export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefin
         loading={false}
         rowCount={0}
         numFrom={5}
-        empty="no open trades -- the daily ladder accumulates one BWB per book per session"
+        empty="no open trades -- the daily ladder accumulates one BWB per arm per session"
         updatedAt={updatedAt}
       >
         {null}
@@ -107,17 +107,17 @@ export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefin
     );
   }
   // One table, not one card per symbol. A card titled with a bare ticker said what the rows were
-  // ABOUT but not what they WERE, and it split a book that is meant to be read as a whole -- the
-  // ladder runs one BWB per book per session, so the interesting comparison is across books, which
+  // ABOUT but not what they WERE, and it split a arm that is meant to be read as a whole -- the
+  // ladder runs one BWB per arm per session, so the interesting comparison is across arms, which
   // a per-symbol split puts in separate cards the moment a second symbol exists. Symbol and expiry
   // moved onto the row instead, where they identify the trade rather than the container.
-  // Newest entry first: the ladder adds one BWB per book per session, so the top of this table is
-  // what today put on. Symbol and book only break ties within a session.
+  // Newest entry first: the ladder adds one BWB per arm per session, so the top of this table is
+  // what today put on. Symbol and arm only break ties within a session.
   const rows = [...data.openPositions].sort(
     (a, b) =>
       b.entrySession.localeCompare(a.entrySession) ||
       a.symbol.localeCompare(b.symbol) ||
-      a.book.localeCompare(b.book),
+      a.arm.localeCompare(b.arm),
   );
   return (
     <Card title="open trades" collapseKey="bwb-open-trades" updatedAt={updatedAt}>
@@ -139,10 +139,10 @@ export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefin
   );
 }
 
-/** Per-book add-on fire counts -- the plan's own honesty rule: the effective sample per arm is the
+/** Per-arm add-on fire counts -- the plan's own honesty rule: the effective sample per arm is the
  * FIRE count, not the trade count. */
 export function FireCountsCard({ counts, correlationCaveat, updatedAt }: { counts: BwbFireCount[]; correlationCaveat: string; updatedAt?: number }) {
-  const arms = counts.filter((c) => c.book !== "control");
+  const arms = counts.filter((c) => c.arm !== "control");
   return (
     <Card title="add-on fire counts -- the effective sample per arm" collapseKey="bwb-fires" updatedAt={updatedAt}>
       {arms.length === 0 ? (
@@ -160,8 +160,8 @@ export function FireCountsCard({ counts, correlationCaveat, updatedAt }: { count
             </thead>
             <tbody>
               {arms.map((c) => (
-                <tr key={c.book}>
-                  <td>{c.book}</td>
+                <tr key={c.arm}>
+                  <td>{c.arm}</td>
                   <td>{c.positions}</td>
                   <td>{c.fired}</td>
                   <td>{fmtPct(c.fireRate === null ? null : c.fireRate * 100, 1)}</td>
@@ -177,38 +177,38 @@ export function FireCountsCard({ counts, correlationCaveat, updatedAt }: { count
 }
 
 interface BookTotals {
-  book: string;
+  arm: string;
   positions: number;
   net: number | null;
   wins: number;
 }
 
-function totalsByBook(books: BwbBookCell[]): BookTotals[] {
+function totalsByBook(arms: BwbArmCell[]): BookTotals[] {
   const map = new Map<string, BookTotals>();
-  for (const cell of books) {
-    const t = map.get(cell.book) ?? { book: cell.book, positions: 0, net: null, wins: 0 };
+  for (const cell of arms) {
+    const t = map.get(cell.arm) ?? { arm: cell.arm, positions: 0, net: null, wins: 0 };
     t.positions += cell.positions;
     if (cell.netPnl !== null) t.net = (t.net ?? 0) + cell.netPnl;
     if (cell.winRate !== null) t.wins += cell.winRate * cell.positions;
-    map.set(cell.book, t);
+    map.set(cell.arm, t);
   }
   return [...map.values()].sort((a, b) => {
-    const ia = CORE_BOOKS.indexOf(a.book);
-    const ib = CORE_BOOKS.indexOf(b.book);
+    const ia = CORE_BOOKS.indexOf(a.arm);
+    const ib = CORE_BOOKS.indexOf(b.arm);
     if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-    return a.book.localeCompare(b.book);
+    return a.arm.localeCompare(b.arm);
   });
 }
 
-/** Net-by-book, over CLOSED positions -- `analytics.headline()`. */
+/** Net-by-arm, over CLOSED positions -- `analytics.headline()`. */
 export function BookComparison({ data, updatedAt }: { data: BwbPayload | undefined; updatedAt?: number }) {
-  const books = data?.books ?? [];
-  const totals = totalsByBook(books);
+  const arms = data?.arms ?? [];
+  const totals = totalsByBook(arms);
   const maxAbs = Math.max(1, ...totals.map((t) => Math.abs(t.net ?? 0)));
-  const hasClosed = books.length > 0;
+  const hasClosed = arms.length > 0;
 
   return (
-    <Card title="net by arm" collapseKey="bwb-books" updatedAt={updatedAt}>
+    <Card title="net by arm" collapseKey="bwb-arms" updatedAt={updatedAt}>
       {!hasClosed ? (
         <p className="muted">
           no completed positions yet -- results fill in as the daily ladder settles at expiry
@@ -220,8 +220,8 @@ export function BookComparison({ data, updatedAt }: { data: BwbPayload | undefin
         <table className="data-table num-from-1">
           <tbody>
             {totals.map((t) => (
-              <tr key={t.book}>
-                <td>{t.book}</td>
+              <tr key={t.arm}>
+                <td>{t.arm}</td>
                 <td style={{ width: "50%" }}>
                   <SignedBar value={t.net ?? 0} maxAbs={maxAbs} compact />
                 </td>

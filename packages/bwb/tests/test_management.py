@@ -1,10 +1,10 @@
 from cherrypick.bwb import engine, management
 
-PARAMS = {**management.PARAM_DEFAULTS, "book": "delta"}
+PARAMS = {**management.PARAM_DEFAULTS, "arm": "delta"}
 
 
 def _position(**overrides):
-    base = {"book": "delta", "advice_params": None, "armed_at": None, "addon_fired_at": None}
+    base = {"arm": "delta", "advice_params": None, "armed_at": None, "addon_fired_at": None}
     base.update(overrides)
     return base
 
@@ -89,8 +89,8 @@ def test_addon_already_fired_never_refires():
 
 
 def test_control_book_never_arms():
-    control_params = {**management.PARAM_DEFAULTS, "book": "control"}
-    position = _position(book="control")
+    control_params = {**management.PARAM_DEFAULTS, "arm": "control"}
+    position = _position(arm="control")
     decision, _ = management.evaluate(
         position,
         control_params,
@@ -103,16 +103,16 @@ def test_control_book_never_arms():
 
 
 def test_effective_params_untouched_for_control():
-    position = _position(book="control")
-    config = {"defaults": {"delta_trigger": 0.55}, "books": {"control": {}}}
+    position = _position(arm="control")
+    config = {"defaults": {"delta_trigger": 0.55}, "arms": {"control": {}}}
     params = management.effective_params(position, config)
     assert params["delta_trigger"] == 0.55
-    assert params["book"] == "control"
+    assert params["arm"] == "control"
 
 
 def test_effective_params_overlays_advised():
-    position = {"book": "advised:delta", "advice_params": '{"delta_trigger": 0.35}'}
-    config = {"defaults": {"delta_trigger": 0.50}, "books": {"delta": {}}}
+    position = {"arm": "advised:delta", "advice_params": '{"delta_trigger": 0.35}'}
+    config = {"defaults": {"delta_trigger": 0.50}, "arms": {"delta": {}}}
     params = management.effective_params(position, config)
     assert params["delta_trigger"] == 0.35
 
@@ -151,12 +151,12 @@ def test_frozen_params_govern_an_open_advised_position_after_the_artifact_expire
     }
     assert core_advice.validate(expired, bounds, "2026-09-11")["ok"] is False, "no new entries on it"
 
-    position = {"book": "advised:control", "advice_params": json.dumps({"delta_trigger": 0.35})}
-    config = {"defaults": {"delta_trigger": 0.50}, "books": {"control": {}}}
+    position = {"arm": "advised:control", "advice_params": json.dumps({"delta_trigger": 0.35})}
+    config = {"defaults": {"delta_trigger": 0.50}, "arms": {"control": {}}}
     assert management.effective_params(position, config)["delta_trigger"] == 0.35
 
 
-# --------------------------- one advised book per experiment (2026-09-17)
+# --------------------------- one advised arm per experiment (2026-09-17)
 
 
 def test_base_book_resolves_an_experiment_tag_through_the_decision_then_the_config():
@@ -172,18 +172,18 @@ def test_base_book_resolves_an_experiment_tag_through_the_decision_then_the_conf
     assert engine.base_book("advised:early-delta") == "control"
     assert engine.base_book("advised:early-delta", config={"advice": {"base_book": "bounce"}}) == "bounce"
     assert engine.base_book("advised:delta", config={"advice": {"base_book": "bounce"}}) == "delta"
-    assert engine.base_book("advised:wall", config={"books": {"wall": {"enabled": True}}}) == "wall"
+    assert engine.base_book("advised:wall", config={"arms": {"wall": {"enabled": True}}}) == "wall"
     assert engine.base_book("flip") == "flip"
 
 
 def test_effective_params_resolve_an_experiment_tag_to_the_configured_base():
-    config = {"defaults": {"delta_trigger": 0.50}, "books": {"control": {}, "delta": {"delta_trigger": 0.45}}}
-    row = {"book": "advised:early-delta", "advice_params": '{"delta_trigger": 0.35}'}
+    config = {"defaults": {"delta_trigger": 0.50}, "arms": {"control": {}, "delta": {"delta_trigger": 0.45}}}
+    row = {"arm": "advised:early-delta", "advice_params": '{"delta_trigger": 0.35}'}
     params = management.effective_params(row, config)
     assert params["base_book"] == "control"
     assert params["delta_trigger"] == 0.35
     config["advice"] = {"base_book": "delta"}
-    params = management.effective_params({"book": "advised:early-delta", "advice_params": "{}"}, config)
+    params = management.effective_params({"arm": "advised:early-delta", "advice_params": "{}"}, config)
     assert params["base_book"] == "delta" and params["delta_trigger"] == 0.45
 
 
@@ -192,19 +192,19 @@ def test_an_experiment_twin_arms_under_its_base_books_trigger_not_its_tags():
     `control` never arms -- the verdict reads the resolved base, never the tag."""
     tick = {"abs_delta": 0.99, "spot": 1.0, "gamma_flip": 1.0}
     twin_of_delta = management.effective_params(
-        {"book": "advised:early-delta", "advice_params": "{}"},
-        {"defaults": management.PARAM_DEFAULTS, "books": {"delta": {}}, "advice": {"base_book": "delta"}},
+        {"arm": "advised:early-delta", "advice_params": "{}"},
+        {"defaults": management.PARAM_DEFAULTS, "arms": {"delta": {}}, "advice": {"base_book": "delta"}},
     )
     decision, _ = management.evaluate(
-        _position(book="advised:early-delta"), twin_of_delta, trigger_state={}, tick=tick, addon_credit=None
+        _position(arm="advised:early-delta"), twin_of_delta, trigger_state={}, tick=tick, addon_credit=None
     )
     assert decision.action != "hold" or decision.reason != "not_triggered"
     twin_of_control = management.effective_params(
-        {"book": "advised:early-delta", "advice_params": "{}"},
-        {"defaults": management.PARAM_DEFAULTS, "books": {"control": {}}, "advice": {"base_book": "control"}},
+        {"arm": "advised:early-delta", "advice_params": "{}"},
+        {"defaults": management.PARAM_DEFAULTS, "arms": {"control": {}}, "advice": {"base_book": "control"}},
     )
     decision, _ = management.evaluate(
-        _position(book="advised:early-delta"), twin_of_control, trigger_state={}, tick=tick, addon_credit=None
+        _position(arm="advised:early-delta"), twin_of_control, trigger_state={}, tick=tick, addon_credit=None
     )
     assert decision.action == "hold" and decision.reason == "not_triggered"
 
@@ -215,19 +215,19 @@ def test_a_row_stamped_with_its_base_is_managed_under_that_base_after_the_decisi
     arming). The row's own `advice_base` now wins over the config fallback (2026-09-17)."""
     config = {
         "defaults": management.PARAM_DEFAULTS,
-        "books": {"control": {}, "delta": {}},
+        "arms": {"control": {}, "delta": {}},
         "advice": {"base_book": "control"},
     }
     stamped = management.effective_params(
-        {"book": "advised:early-delta", "advice_params": "{}", "advice_base": "delta"}, config
+        {"arm": "advised:early-delta", "advice_params": "{}", "advice_base": "delta"}, config
     )
     assert stamped["base_book"] == "delta"
     unstamped = management.effective_params(
-        {"book": "advised:early-delta", "advice_params": "{}", "advice_base": None}, config
+        {"arm": "advised:early-delta", "advice_params": "{}", "advice_base": None}, config
     )
     assert unstamped["base_book"] == "control", "no stamp: the config fallback, as before"
     tick = {"abs_delta": 0.99, "spot": 1.0, "gamma_flip": 1.0}
     decision, _ = management.evaluate(
-        _position(book="advised:early-delta"), stamped, trigger_state={}, tick=tick, addon_credit=None
+        _position(arm="advised:early-delta"), stamped, trigger_state={}, tick=tick, addon_credit=None
     )
     assert decision.action != "hold" or decision.reason != "not_triggered", "still a delta twin"

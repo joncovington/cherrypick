@@ -7,7 +7,7 @@ import { MeasurementBreaks } from "../../components/MeasurementBreaks";
  * it.
  *
  * The module's second honesty rule is that early assignment is unmodelled but MEASURED, and that
- * the paper result is therefore an upper bound — "do not read the books' net as achievable live
+ * the paper result is therefore an upper bound — "do not read the arms' net as achievable live
  * until that exposure is read beside it". A caveat rendered under a P&L figure, or behind a
  * tooltip, is a caveat the reader meets after they have already formed the number's meaning. So it
  * leads.

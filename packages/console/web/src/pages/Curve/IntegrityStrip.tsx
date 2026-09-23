@@ -8,7 +8,7 @@ import { MeasurementBreaks } from "../../components/MeasurementBreaks";
  *
  * curve's honesty rule 2 states it plainly: early assignment is unmodelled but MEASURED, and the
  * paper result is therefore an upper bound. Rule 7 states the regime series must be written every
- * session, whether or not any book trades -- so this strip also answers "is today's regime row
+ * session, whether or not any arm trades -- so this strip also answers "is today's regime row
  * present and usable", the continuity check the series exists for.
  */
 export function IntegrityStrip({ data, updatedAt }: { data: CurvePayload | undefined; updatedAt?: number }) {

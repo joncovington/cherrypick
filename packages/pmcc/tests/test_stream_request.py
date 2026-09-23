@@ -29,7 +29,7 @@ def test_open_leg_expirations_stay_requested(cache, config, tmp_path):
         {
             "position_id": "P",
             "symbol": "TQQQ",
-            "book": "control",
+            "arm": "control",
             "entry_session": "2026-08-17",
             "long_expiration": "2026-08-28",
             "long_strike": 50.0,
@@ -64,7 +64,7 @@ def test_leg_sources_query_returns_open_legs_only(tmp_path):
         {
             "position_id": "P",
             "symbol": "TQQQ",
-            "book": "control",
+            "arm": "control",
             "entry_session": "2026-08-17",
             "long_expiration": "2026-08-28",
             "long_strike": 50.0,
@@ -122,7 +122,7 @@ def test_window_escalates_on_misses_and_decays(tmp_path, config):
         db.record_decision(
             conn,
             trade_date="2026-08-24",
-            book="control",
+            arm="control",
             symbol="TQQQ",
             mode="entry",
             reason="no_deep_itm_long",
@@ -165,13 +165,13 @@ def test_union_read_sees_the_request(cache, config, tmp_path):
 # whether a hint is produced at all is what is under test, not how wide the chain says it must be.
 
 
-def _open_pos(conn, symbol="TQQQ", book="control", pid="HELD"):
+def _open_pos(conn, symbol="TQQQ", arm="control", pid="HELD"):
     db.save_position(
         conn,
         {
             "position_id": pid,
             "symbol": symbol,
-            "book": book,
+            "arm": arm,
             "entry_session": "2026-08-17",
             "long_expiration": "2026-09-11",
             "long_strike": 50.0,
@@ -182,13 +182,13 @@ def _open_pos(conn, symbol="TQQQ", book="control", pid="HELD"):
     )
 
 
-def _seed_position(conn, symbol: str, book: str, session: str = "2026-08-24") -> None:
+def _seed_position(conn, symbol: str, arm: str, session: str = "2026-08-24") -> None:
     db.save_position(
         conn,
         {
-            "position_id": f"{symbol}:{book}:{session}",
+            "position_id": f"{symbol}:{arm}:{session}",
             "symbol": symbol,
-            "book": book,
+            "arm": arm,
             "entry_session": session,
             "status": "open",
             "quantity": 1,
@@ -214,11 +214,11 @@ def test_hint_is_dropped_while_every_slot_is_held(cache, config, tmp_path, monke
     position's marks come from `leg_sources`, never from this window. Measured 2026-08-24: the held
     symbol's window was 84% of the suite's updating option quotes."""
     conn = db.connect(str(tmp_path / "paper.db"))
-    free = _hints(conn, cache, config, monkeypatch, books=["control"], max_positions=1)
+    free = _hints(conn, cache, config, monkeypatch, arms=["control"], max_positions=1)
     assert free.get("TQQQ") == {"down": 163, "up": 10}, "a free slot must still ask for its deep window"
 
     _open_pos(conn)
-    held = _hints(conn, cache, config, monkeypatch, books=["control"], max_positions=1)
+    held = _hints(conn, cache, config, monkeypatch, arms=["control"], max_positions=1)
     assert "TQQQ" not in held, "a held slot must not keep paying for an unusable window"
 
 
@@ -227,27 +227,27 @@ def test_hint_returns_as_soon_as_the_slot_frees(cache, config, tmp_path, monkeyp
     or two to arrive before the module wants them."""
     conn = db.connect(str(tmp_path / "paper.db"))
     _open_pos(conn)
-    assert "TQQQ" not in _hints(conn, cache, config, monkeypatch, books=["control"], max_positions=1)
+    assert "TQQQ" not in _hints(conn, cache, config, monkeypatch, arms=["control"], max_positions=1)
     conn.execute("UPDATE pmcc_positions SET status = 'closed'")
     conn.commit()
-    assert _hints(conn, cache, config, monkeypatch, books=["control"], max_positions=1).get("TQQQ")
+    assert _hints(conn, cache, config, monkeypatch, arms=["control"], max_positions=1).get("TQQQ")
 
 
 def test_a_second_free_book_keeps_the_window_alive(cache, config, tmp_path, monkeypatch):
-    """The gate is ANY book able to enter, matching the entry phase's own test — one book holding
-    must not drop a window another book could still use."""
+    """The gate is ANY arm able to enter, matching the entry phase's own test — one arm holding
+    must not drop a window another arm could still use."""
     conn = db.connect(str(tmp_path / "paper.db"))
-    _open_pos(conn, book="control")
-    hints = _hints(conn, cache, config, monkeypatch, books=["control", "advised:control"], max_positions=2)
+    _open_pos(conn, arm="control")
+    hints = _hints(conn, cache, config, monkeypatch, arms=["control", "advised:control"], max_positions=2)
     assert hints.get("TQQQ") == {"down": 163, "up": 10}
 
 
 def test_max_positions_cap_closes_the_window_too(cache, config, tmp_path, monkeypatch):
-    """A free (symbol, book) slot is not enough on its own — the book's own cap is the other half
+    """A free (symbol, arm) slot is not enough on its own — the arm's own cap is the other half
     of the entry phase's condition, so the window must respect it as well."""
     conn = db.connect(str(tmp_path / "paper.db"))
     _open_pos(conn, symbol="XSP", pid="OTHER")  # control holds its one allowed position, elsewhere
-    hints = _hints(conn, cache, config, monkeypatch, books=["control"], max_positions=1)
+    hints = _hints(conn, cache, config, monkeypatch, arms=["control"], max_positions=1)
     assert "TQQQ" not in hints
 
 
@@ -300,10 +300,10 @@ def test_window_hints_use_each_symbols_own_bound(cache, tmp_path, monkeypatch):
     monkeypatch.setattr(stream_window, "needed_width", fake_needed)
     cfg = {
         "defaults": {"deep_window_pct": 0.20, "deep_window_pct_by_symbol": {"XSP": 0.06}},
-        "books": {"control": {"enabled": True}},
+        "arms": {"control": {"enabled": True}},
     }
     stream_window.hints_for_symbols(
-        conn, cache.path, ["TQQQ", "XSP"], "2026-08-24", cfg, books=["control"], max_positions=1
+        conn, cache.path, ["TQQQ", "XSP"], "2026-08-24", cfg, arms=["control"], max_positions=1
     )
     assert seen == {"TQQQ": 0.20, "XSP": 0.06}
     assert provider.deep_window_pct_for(cfg, "XSP") == 0.06
@@ -311,10 +311,10 @@ def test_window_hints_use_each_symbols_own_bound(cache, tmp_path, monkeypatch):
 
 def test_the_deep_window_is_asked_for_downward_only(cache, config, tmp_path, monkeypatch):
     """Everything the widened window exists to find sits BELOW spot. A symmetric count bought an
-    identical block above it that no book here can read — the largest single waste in the suite's
+    identical block above it that no arm here can read — the largest single waste in the suite's
     subscription budget on 2026-08-24."""
     conn = db.connect(str(tmp_path / "paper.db"))
-    hint = _hints(conn, cache, config, monkeypatch, books=["control"], max_positions=1)["TQQQ"]
+    hint = _hints(conn, cache, config, monkeypatch, arms=["control"], max_positions=1)["TQQQ"]
     assert hint["down"] > hint["up"]
     # The upward figure is the declared margin, not a share of the deep need: the ATM short is
     # covered by the producer's own default window whatever this asks for.
@@ -324,7 +324,7 @@ def test_the_deep_window_is_asked_for_downward_only(cache, config, tmp_path, mon
 # --------------------------- the advised twin has its own slot, and its own window (2026-08-27)
 #
 # Control filled XSP on 2026-08-24; the window-hint gate asked only "can CONTROL still enter?",
-# went False, and dropped the widened window. The advised twin — a real book with its own slot,
+# went False, and dropped the widened window. The advised twin — a real arm with its own slot,
 # still trying — then recorded 658 `no_deep_itm_long` refusals across the whole of 08-25 and
 # 08-26 before a lucky re-centre let it in on the 27th. An A/B whose two arms cannot enter on the
 # same days is not an A/B.
@@ -340,7 +340,7 @@ def test_a_free_advised_slot_keeps_the_window_alive_after_control_fills(cache, c
         ["TQQQ"],
         "2026-08-24",
         config,
-        books=["control"],
+        arms=["control"],
         max_positions=1,
     )
     assert held_by_control_only == {}, "the defect: control's full slot dropped the whole window"
@@ -351,7 +351,7 @@ def test_a_free_advised_slot_keeps_the_window_alive_after_control_fills(cache, c
         ["TQQQ"],
         "2026-08-24",
         config,
-        books=["control", "advised:control"],
+        arms=["control", "advised:control"],
         max_positions=1,
     )
     assert with_advised.get("TQQQ"), "the advised twin can still enter, so it still needs the depth"
@@ -365,7 +365,7 @@ def test_entry_possible_sees_the_advised_twins_free_slot(tmp_path):
 
 
 def test_a_symbol_every_book_holds_still_gets_no_window():
-    """The saving the gate exists for has to survive the fix: once BOTH books hold it, nothing can
+    """The saving the gate exists for has to survive the fix: once BOTH arms hold it, nothing can
     be entered until one closes and the widened window is pure cost."""
     import tempfile
 
@@ -377,11 +377,11 @@ def test_a_symbol_every_book_holds_still_gets_no_window():
 
 def test_the_written_request_keeps_the_window_for_a_free_advised_slot(cache, config, tmp_path, monkeypatch):
     """End-to-end through `stream_request.write`, which is where the roster was actually wrong —
-    the direct `hints_for_symbols` tests above pass an explicit `books` and so cannot see it."""
+    the direct `hints_for_symbols` tests above pass an explicit `arms` and so cannot see it."""
     monkeypatch.setattr(stream_window, "needed_width", lambda *a, **k: 163)
     db_path = str(tmp_path / "paper.db")
     conn = db.connect(db_path)
-    _open_pos(conn, symbol="TQQQ", book="control")  # control full, advised twin free
+    _open_pos(conn, symbol="TQQQ", arm="control")  # control full, advised twin free
 
     # An active advice artifact is what puts `advised:control` on the roster.
     monkeypatch.setattr(
@@ -398,7 +398,7 @@ def test_the_written_request_keeps_the_window_for_a_free_advised_slot(cache, con
 
 def test_a_session_with_every_slot_held_still_records_why(cache, config, tmp_path, monkeypatch):
     """2026-08-28: pmcc showed no entry attempts at all. The loop was healthy — 241 entry
-    iterations, marks 0.5 min old — and every book already held every symbol, so the entry phase
+    iterations, marks 0.5 min old — and every arm already held every symbol, so the entry phase
     short-circuited before recording anything. "All slots full" and "the loop never evaluated
     entry" produced the identical empty table, which is the pair this module most needs to tell
     apart."""
@@ -414,7 +414,7 @@ def test_a_session_with_every_slot_held_still_records_why(cache, config, tmp_pat
         "SELECT symbol, reason, occurrences FROM pmcc_decisions WHERE reason = 'slot_held'"
     ).fetchall()
     assert {r["symbol"] for r in held} == set(config["symbols"])
-    # Collapsed, so a whole session of it is one counted row per book/symbol rather than one a tick.
+    # Collapsed, so a whole session of it is one counted row per arm/symbol rather than one a tick.
     paper_loop._try_entries(config, conn, cache_path=cache.path, when=clock.now_et(), day="2026-08-28")
     again = conn.execute(
         "SELECT occurrences FROM pmcc_decisions WHERE reason = 'slot_held' LIMIT 1"
@@ -423,7 +423,7 @@ def test_a_session_with_every_slot_held_still_records_why(cache, config, tmp_pat
 
 
 def test_the_roster_carries_every_advised_book_of_a_multi_experiment_decision(config, monkeypatch):
-    """The 2026-08-27 lesson, extended to many twins (2026-09-17): every experiment's book has its
+    """The 2026-08-27 lesson, extended to many twins (2026-09-17): every experiment's arm has its
     own slot and its own entry, so every one of them must be on the roster the window is kept
     alive for -- not just the first."""
     from cherrypick.pmcc import paper_loop
@@ -449,8 +449,8 @@ def test_the_roster_carries_every_advised_book_of_a_multi_experiment_decision(co
             ],
         },
     )
-    books, advised = paper_loop.session_books(config, "2026-08-24")
-    assert books == ["control", "advised:tv-exit", "advised:tv-05"]
+    arms, advised = paper_loop.session_books(config, "2026-08-24")
+    assert arms == ["control", "advised:tv-exit", "advised:tv-05"]
     assert set(advised) == {"advised:tv-exit", "advised:tv-05"}
 
 
@@ -461,8 +461,8 @@ def test_the_written_request_keeps_the_window_for_the_second_twins_free_slot(
     monkeypatch.setattr(stream_window, "needed_width", lambda *a, **k: 163)
     db_path = str(tmp_path / "paper.db")
     conn = db.connect(db_path)
-    _open_pos(conn, symbol="TQQQ", book="control", pid="HELD-C")
-    _open_pos(conn, symbol="TQQQ", book="advised:tv-exit", pid="HELD-A")
+    _open_pos(conn, symbol="TQQQ", arm="control", pid="HELD-C")
+    _open_pos(conn, symbol="TQQQ", arm="advised:tv-exit", pid="HELD-A")
     monkeypatch.setattr(
         __import__("cherrypick.pmcc.paper_loop", fromlist=["x"]),
         "advice_decision",
@@ -502,6 +502,6 @@ def test_a_legacy_decision_still_puts_the_single_advised_base_book_on_the_roster
             "experiment_id": "exp-old",
         },
     )
-    books, advised = paper_loop.session_books(config, "2026-08-24")
-    assert books == ["control", "advised:control"]
+    arms, advised = paper_loop.session_books(config, "2026-08-24")
+    assert arms == ["control", "advised:control"]
     assert advised["advised:control"]["experiment_id"] == "exp-old"

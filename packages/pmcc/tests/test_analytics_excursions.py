@@ -13,20 +13,20 @@ def _position(
     conn,
     position_id,
     symbol="TQQQ",
-    book="control",
+    arm="control",
     net_debit=10.0,
     quantity=1,
     status="closed",
     era="redesign",
 ):
     conn.execute(
-        "INSERT INTO pmcc_positions (position_id, symbol, book, entry_session, quantity, "
+        "INSERT INTO pmcc_positions (position_id, symbol, arm, entry_session, quantity, "
         "long_expiration, long_strike, short_expiration, short_strike, net_debit, status, era) "
         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             position_id,
             symbol,
-            book,
+            arm,
             "2026-08-20",
             quantity,
             "2026-09-11",

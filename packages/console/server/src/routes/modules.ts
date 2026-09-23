@@ -291,7 +291,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       const v = q[k];
       return typeof v === "string" && v !== "" && v.length <= max ? v : null;
     };
-    return readPmccHistory(config, { book: pick("book", 40), symbol: pick("symbol", 12) }, parsePage(req.query));
+    return readPmccHistory(config, { arm: pick("arm", 40) ?? pick("book", 40), symbol: pick("symbol", 12) }, parsePage(req.query));
   });
 
   // curve (VXX term-structure roll-yield harvest). No `mode` here either -- paper-only, no live loop.
@@ -303,7 +303,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       const v = q[k];
       return typeof v === "string" && v !== "" && v.length <= max ? v : null;
     };
-    return readCurveHistory(config, { book: pick("book", 40), symbol: pick("symbol", 12) }, parsePage(req.query));
+    return readCurveHistory(config, { arm: pick("arm", 40) ?? pick("book", 40), symbol: pick("symbol", 12) }, parsePage(req.query));
   });
 
   // bwb (SPX daily-laddered put broken-wing butterfly / 1-3-2 add-on trigger experiment). No `mode`
@@ -316,7 +316,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       const v = q[k];
       return typeof v === "string" && v !== "" && v.length <= max ? v : null;
     };
-    return readBwbHistory(config, { book: pick("book", 40), symbol: pick("symbol", 12) }, parsePage(req.query));
+    return readBwbHistory(config, { arm: pick("arm", 40) ?? pick("book", 40), symbol: pick("symbol", 12) }, parsePage(req.query));
   });
 
   // Weekly double calendars. No `mode` here either, and for the same structural reason as PMCC's.

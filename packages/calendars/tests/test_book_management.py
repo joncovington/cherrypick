@@ -1,4 +1,4 @@
-"""Entries across books, traded closes, cash settlement, and the management verdicts."""
+"""Entries across arms, traded closes, cash settlement, and the management verdicts."""
 
 import json
 from datetime import datetime
@@ -93,22 +93,22 @@ def test_enter_week_writes_every_book_with_shared_fills(conn):
         advice_params={"profit_target_pct": 0.2},
         experiment_id="exp-2026-09-14-calendars-1",
     )
-    assert len(opened) == 6  # 3 books x 2 sides
+    assert len(opened) == 6  # 3 arms x 2 sides
     rows = conn.execute(
-        "SELECT book, side, entry_debit, advice_params, experiment_id FROM dc_positions ORDER BY book, side"
+        "SELECT arm, side, entry_debit, advice_params, experiment_id FROM dc_positions ORDER BY arm, side"
     ).fetchall()
-    assert {r["entry_debit"] for r in rows} == {5.0}  # identical fills across books
-    frozen = {r["book"]: r["advice_params"] for r in rows}
+    assert {r["entry_debit"] for r in rows} == {5.0}  # identical fills across arms
+    frozen = {r["arm"]: r["advice_params"] for r in rows}
     assert frozen["control"] is None and frozen["path"] is None
     assert json.loads(frozen["advised:control"]) == {"profit_target_pct": 0.2}
-    # The experiment rides only on the advised book's rows -- the control is nobody's experiment.
-    stamped = {r["book"]: r["experiment_id"] for r in rows}
+    # The experiment rides only on the advised arm's rows -- the control is nobody's experiment.
+    stamped = {r["arm"]: r["experiment_id"] for r in rows}
     assert stamped == {"control": None, "path": None, "advised:control": "exp-2026-09-14-calendars-1"}
     assert conn.execute("SELECT COUNT(*) FROM dc_legs").fetchone()[0] == 12
 
 
 def test_enter_week_opens_one_book_per_experiment_with_its_own_overlay_and_stamp(conn):
-    """Two experiments on one session are two books (2026-09-17): each freezes ITS overlay and
+    """Two experiments on one session are two arms (2026-09-17): each freezes ITS overlay and
     carries ITS experiment id, resolved per tag through the decision -- never one id shared."""
     decision = {
         "day": WEEK["entry_session"],
@@ -142,15 +142,15 @@ def test_enter_week_opens_one_book_per_experiment_with_its_own_overlay_and_stamp
     )
     assert len(opened) == 6
     rows = conn.execute(
-        "SELECT book, advice_params, experiment_id FROM dc_positions WHERE side = 'put'"
+        "SELECT arm, advice_params, experiment_id FROM dc_positions WHERE side = 'put'"
     ).fetchall()
-    frozen = {r["book"]: json.loads(r["advice_params"]) if r["advice_params"] else None for r in rows}
+    frozen = {r["arm"]: json.loads(r["advice_params"]) if r["advice_params"] else None for r in rows}
     assert frozen == {
         "control": None,
         "advised:take-20": {"profit_target_pct": 0.2},
         "advised:noon-exit": {"time_exit": "fri_noon"},
     }
-    assert {r["book"]: r["experiment_id"] for r in rows} == {
+    assert {r["arm"]: r["experiment_id"] for r in rows} == {
         "control": None,
         "advised:take-20": "exp-a",
         "advised:noon-exit": "exp-b",
@@ -175,7 +175,7 @@ def test_enter_week_stamps_a_legacy_decision_onto_the_legacy_book(conn):
         advised={"advised:control": {"profit_target_pct": 0.2}},
         experiment_id=decision,
     )
-    row = conn.execute("SELECT experiment_id FROM dc_positions WHERE book = 'advised:control'").fetchone()
+    row = conn.execute("SELECT experiment_id FROM dc_positions WHERE arm = 'advised:control'").fetchone()
     assert row["experiment_id"] == "exp-old"
 
 
@@ -247,7 +247,7 @@ def test_settlement_leaves_short_settled_then_disposition_closes(conn):
 def _pos(book_name="control", side="put", **overrides):
     row = {
         "position_id": f"2026-08-17:{book_name}:{side}",
-        "book": book_name,
+        "arm": book_name,
         "side": side,
         "strike": 6465.0,
         "front_expiration": "2026-08-21",
@@ -339,7 +339,7 @@ def test_effective_params_resolve_an_experiment_tag_to_the_configured_base():
     frozen overlay on top; the legacy `advised:control` row keeps reading its base off the tag."""
     config = {
         "defaults": {"exit_window_start": "15:40"},
-        "books": {"control": {"exit_window_start": "15:45"}, "path": {"exit_window_start": "15:50"}},
+        "arms": {"control": {"exit_window_start": "15:45"}, "path": {"exit_window_start": "15:50"}},
         "advice": {"base_book": "control"},
     }
     row = _pos("advised:take-20", advice_params=json.dumps({"profit_target_pct": 0.2}))
@@ -347,7 +347,7 @@ def test_effective_params_resolve_an_experiment_tag_to_the_configured_base():
     assert params["base_book"] == "control"
     assert params["exit_window_start"] == "15:45"
     assert params["profit_target_pct"] == 0.2
-    assert params["book"] == "advised:take-20"
+    assert params["arm"] == "advised:take-20"
     legacy = management.effective_params(_pos("advised:control", advice_params=json.dumps({})), config)
     assert legacy["base_book"] == "control" and legacy["exit_window_start"] == "15:45"
 
@@ -488,7 +488,7 @@ def test_physical_settlement_delivers_shares_and_holds_the_week_open(conn):
     assert assigned["basis"] == 770.0  # the settlement spot, not the 776 strike
     assert assigned["status"] == "open"
 
-    # The option leg still books at intrinsic under either style; only its kind records the delivery.
+    # The option leg still arms at intrinsic under either style; only its kind records the delivery.
     front_put = conn.execute(
         "SELECT * FROM dc_legs WHERE leg_role = 'front_put' AND position_id LIKE '%:put'"
     ).fetchone()
@@ -596,7 +596,7 @@ def test_a_row_stamped_with_its_base_wins_over_the_configured_fallback():
     used to read `control`'s exit window from the config fallback. The row's `advice_base` wins."""
     config = {
         "defaults": {"exit_window_start": "15:40"},
-        "books": {"control": {"exit_window_start": "15:45"}, "path": {"exit_window_start": "15:50"}},
+        "arms": {"control": {"exit_window_start": "15:45"}, "path": {"exit_window_start": "15:50"}},
         "advice": {"base_book": "control"},
     }
     row = _pos("advised:take-20", advice_params=json.dumps({}))

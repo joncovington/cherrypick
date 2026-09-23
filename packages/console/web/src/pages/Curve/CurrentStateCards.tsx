@@ -1,10 +1,10 @@
-import type { CurveBookCell, CurveFlipDivergence, CurveOpenPosition, CurvePayload, CurveRegimeRow } from "@console/shared";
+import type { CurveArmCell, CurveFlipDivergence, CurveOpenPosition, CurvePayload, CurveRegimeRow } from "@console/shared";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 import { SignedBar } from "../../components/Charts";
 import { fmtStrike } from "../../lib/optionFormat";
 
-/** The three books whose identity the page knows. Each advisor experiment's `advised:<name>` book
+/** The three arms whose identity the page knows. Each advisor experiment's `advised:<name>` arm
  *  rides along generically -- any number of them since 2026-09-17. */
 const CORE_BOOKS = ["control", "noflip", "hook"];
 
@@ -41,7 +41,7 @@ function PositionRows({ rows }: { rows: CurveOpenPosition[] }) {
       {rows.map((p) => (
         <tr key={p.positionId}>
           <td>{p.symbol}</td>
-          <td>{p.book}</td>
+          <td>{p.arm}</td>
           <td title={p.entrySession}>{p.entrySession === "" ? "—" : p.entrySession.slice(5)}</td>
           <td title={p.expiration ?? undefined}>{p.expiration === null ? "—" : p.expiration.slice(5)}</td>
           <td>
@@ -88,10 +88,10 @@ function PositionRows({ rows }: { rows: CurveOpenPosition[] }) {
 }
 
 /**
- * One card per symbol, listing only the books actually holding a position.
+ * One card per symbol, listing only the arms actually holding a position.
  *
- * VXX is the module's only underlying, so in practice this is one card -- but a book holding
- * nothing is signal, not absence: the hook book idling all week is the experiment working exactly
+ * VXX is the module's only underlying, so in practice this is one card -- but a arm holding
+ * nothing is signal, not absence: the hook arm idling all week is the experiment working exactly
  * as designed (the pmcc keltner precedent, restated for curve's rarer entry).
  */
 export function OpenTradesCard({ data, updatedAt }: { data: CurvePayload | undefined; updatedAt?: number }) {
@@ -105,7 +105,7 @@ export function OpenTradesCard({ data, updatedAt }: { data: CurvePayload | undef
         loading={false}
         rowCount={0}
         numFrom={5}
-        empty="no open trades -- one position per book at ~30-45 DTE, so idle stretches are the ordinary state"
+        empty="no open trades -- one position per arm at ~30-45 DTE, so idle stretches are the ordinary state"
         updatedAt={updatedAt}
       >
         {null}
@@ -119,7 +119,7 @@ export function OpenTradesCard({ data, updatedAt }: { data: CurvePayload | undef
     (a, b) =>
       b.entrySession.localeCompare(a.entrySession) ||
       a.symbol.localeCompare(b.symbol) ||
-      a.book.localeCompare(b.book),
+      a.arm.localeCompare(b.arm),
   );
   return (
     <Card title="open trades" collapseKey="curve-open-trades" updatedAt={updatedAt}>
@@ -201,33 +201,33 @@ export function RegimeCard({ series, today, updatedAt }: { series: CurveRegimeRo
 }
 
 interface BookTotals {
-  book: string;
+  arm: string;
   positions: number;
   net: number | null;
   wins: number;
 }
 
-function totalsByBook(books: CurveBookCell[]): BookTotals[] {
+function totalsByBook(arms: CurveArmCell[]): BookTotals[] {
   const map = new Map<string, BookTotals>();
-  for (const cell of books) {
-    const t = map.get(cell.book) ?? { book: cell.book, positions: 0, net: null, wins: 0 };
+  for (const cell of arms) {
+    const t = map.get(cell.arm) ?? { arm: cell.arm, positions: 0, net: null, wins: 0 };
     t.positions += cell.positions;
     if (cell.netPnl !== null) t.net = (t.net ?? 0) + cell.netPnl;
     if (cell.winRate !== null) t.wins += cell.winRate * cell.positions;
-    map.set(cell.book, t);
+    map.set(cell.arm, t);
   }
   return [...map.values()].sort((a, b) => {
-    const ia = CORE_BOOKS.indexOf(a.book);
-    const ib = CORE_BOOKS.indexOf(b.book);
+    const ia = CORE_BOOKS.indexOf(a.arm);
+    const ib = CORE_BOOKS.indexOf(b.arm);
     if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-    return a.book.localeCompare(b.book);
+    return a.arm.localeCompare(b.arm);
   });
 }
 
 /**
- * The book comparison, split the way the module's own honesty rule requires: control/noflip are
+ * The arm comparison, split the way the module's own honesty rule requires: control/noflip are
  * exactly paired (same entry, same tick), but the FAIR sample for what the flip rule did is
- * `flip_divergence_count`, not the raw trade count -- until a flip fires the two books are
+ * `flip_divergence_count`, not the raw trade count -- until a flip fires the two arms are
  * byte-identical by construction. hook gets its own section because its variable IS the entry tick.
  */
 export function BookComparison({
@@ -239,21 +239,21 @@ export function BookComparison({
   flipDivergence: CurveFlipDivergence | undefined;
   updatedAt?: number;
 }) {
-  const books = data?.books ?? [];
-  const totals = totalsByBook(books);
-  const symbols = [...new Set(books.map((b) => b.symbol))].sort();
-  const cell = (book: string, symbol: string): CurveBookCell | undefined =>
-    books.find((b) => b.book === book && b.symbol === symbol);
-  const hook = totals.find((t) => t.book === "hook");
-  const others = totals.filter((t) => !CORE_BOOKS.includes(t.book));
+  const arms = data?.arms ?? [];
+  const totals = totalsByBook(arms);
+  const symbols = [...new Set(arms.map((b) => b.symbol))].sort();
+  const cell = (arm: string, symbol: string): CurveArmCell | undefined =>
+    arms.find((b) => b.arm === arm && b.symbol === symbol);
+  const hook = totals.find((t) => t.arm === "hook");
+  const others = totals.filter((t) => !CORE_BOOKS.includes(t.arm));
   const maxAbs = Math.max(1, ...totals.map((t) => Math.abs(t.net ?? 0)));
-  const hasClosed = books.length > 0;
+  const hasClosed = arms.length > 0;
 
   return (
-    <Card title="arm comparison" collapseKey="curve-books" updatedAt={updatedAt}>
+    <Card title="arm comparison" collapseKey="curve-arms" updatedAt={updatedAt}>
       {!hasClosed ? (
         <p className="muted">
-          no completed cycles yet -- per-book results fill in as positions close
+          no completed cycles yet -- per-arm results fill in as positions close
           {data !== undefined && data.openCount > 0 && (
             <> ({data.openCount} open position{data.openCount === 1 ? "" : "s"} so far)</>
           )}
@@ -263,7 +263,7 @@ export function BookComparison({
           <section className="pmcc-compare">
             <h3>control vs noflip -- the effective sample is flip_divergence, not trade count</h3>
             <p className="integrity-note">
-              Both books enter from the SAME plan on the SAME tick. Until a flip actually fires they are
+              Both arms enter from the SAME plan on the SAME tick. Until a flip actually fires they are
               byte-identical by construction, so the noflip comparison's real sample is{" "}
               <strong>{flipDivergence?.flipDivergenceCount ?? 0}</strong> position
               {(flipDivergence?.flipDivergenceCount ?? 0) === 1 ? "" : "s"} where control's flip fired while noflip
@@ -332,14 +332,14 @@ export function BookComparison({
             <section className="pmcc-compare">
               <h3>advised arms</h3>
               <p className="integrity-note">
-                One synthetic book per advisor experiment (advised:&lt;experiment name&gt;), each running its own
-                admitted params beside the base book it shadows. Excluded from the pairing above -- their entries
+                One synthetic arm per advisor experiment (advised:&lt;experiment name&gt;), each running its own
+                admitted params beside the base arm it shadows. Excluded from the pairing above -- their entries
                 are their own.
               </p>
               <ul className="integrity-plain-list">
                 {others.map((t) => (
-                  <li key={t.book}>
-                    <span className="mono">{t.book}</span> · {t.positions} cycle{t.positions === 1 ? "" : "s"} · net{" "}
+                  <li key={t.arm}>
+                    <span className="mono">{t.arm}</span> · {t.positions} cycle{t.positions === 1 ? "" : "s"} · net{" "}
                     <PnlCell v={t.net} />
                   </li>
                 ))}
@@ -352,8 +352,8 @@ export function BookComparison({
             <table className="data-table num-from-1">
               <tbody>
                 {totals.map((t) => (
-                  <tr key={t.book}>
-                    <td>{t.book}</td>
+                  <tr key={t.arm}>
+                    <td>{t.arm}</td>
                     <td style={{ width: "50%" }}>
                       <SignedBar value={t.net ?? 0} maxAbs={maxAbs} compact />
                     </td>

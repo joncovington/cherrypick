@@ -2,9 +2,9 @@
 
 Subcommands (all read-only over the module's own ledger):
     status     open positions and the current week plan
-    headline   per-book, per-structure results through the analytics layer
+    headline   per-arm, per-structure results through the analytics layer
     policies   the derived exit-policy comparison table — the module's whole point
-    validate   the derivation checked against the control book's real recorded results
+    validate   the derivation checked against the control arm's real recorded results
     excursions per-closed-position MAE/MFE (docs/metrics-plan.md Phase 2) plus distributions
 
 The paper loop's own argv (`python -m cherrypick.calendars.paper_loop --once|--interval|--settle|
@@ -123,15 +123,15 @@ def main(argv=None) -> int:
     sub.add_parser("excursions", help="per-closed-position MAE/MFE plus distributions").set_defaults(
         func=cmd_excursions
     )
-    sub.add_parser("headline", help="per-book results through the analytics layer").set_defaults(
+    sub.add_parser("headline", help="per-arm results through the analytics layer").set_defaults(
         func=cmd_headline
     )
     sub.add_parser("policies", help="the derived exit-policy comparison table").set_defaults(
         func=cmd_policies
     )
-    sub.add_parser(
-        "validate", help="derivation checked against the control book's real results"
-    ).set_defaults(func=cmd_validate)
+    sub.add_parser("validate", help="derivation checked against the control arm's real results").set_defaults(
+        func=cmd_validate
+    )
 
     p_break = sub.add_parser("record-break", help="journal a date results must not be pooled across")
     p_break.add_argument("--key", required=True)

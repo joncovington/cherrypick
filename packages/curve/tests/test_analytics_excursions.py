@@ -8,12 +8,12 @@ ordered P&L-relative-to-entry series `entry_credit - close_cost` represents.
 from cherrypick.curve import analytics, db
 
 
-def _position(conn, position_id, symbol="VXX", book="control", entry_credit=0.5, quantity=1, status="closed"):
+def _position(conn, position_id, symbol="VXX", arm="control", entry_credit=0.5, quantity=1, status="closed"):
     conn.execute(
-        "INSERT INTO curve_positions (position_id, symbol, book, entry_session, quantity, "
+        "INSERT INTO curve_positions (position_id, symbol, arm, entry_session, quantity, "
         "expiration, short_strike, long_strike, entry_credit, status) "
         "VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (position_id, symbol, book, "2026-08-20", quantity, "2026-09-19", 20.0, 21.0, entry_credit, status),
+        (position_id, symbol, arm, "2026-08-20", quantity, "2026-09-19", 20.0, 21.0, entry_credit, status),
     )
 
 

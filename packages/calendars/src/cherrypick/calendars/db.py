@@ -29,9 +29,9 @@ from cherrypick.core import ledgerstore as _ledgerstore
 from cherrypick.calendars import engine
 
 _SCHEMA = """
--- One row per calendar structure per book: a put-side or call-side calendar, two legs each.
--- `position_id` = "<week_of>:<book>:<side>" so a Tuesday-entry week keys identically to a Monday
--- one. `week_of` is the pairing key across books — every book's entries share the same fills, so
+-- One row per calendar structure per arm: a put-side or call-side calendar, two legs each.
+-- `position_id` = "<week_of>:<arm>:<side>" so a Tuesday-entry week keys identically to a Monday
+-- one. `week_of` is the pairing key across arms — every arm's entries share the same fills, so
 -- exact pairing in analysis is a JOIN, not an estimate. Entry context is stored as MEASURES
 -- (spot, EM, mids, IVs), never only as buckets: a threshold can be re-cut later, a bucket cannot.
 CREATE TABLE IF NOT EXISTS dc_positions (
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS dc_positions (
     position_id              TEXT NOT NULL UNIQUE,
     week_of                  TEXT NOT NULL,
     entry_session            TEXT NOT NULL,
-    book                     TEXT NOT NULL,
+    arm                     TEXT NOT NULL,
     side                     TEXT NOT NULL,
     symbol                   TEXT NOT NULL,
     structure                TEXT NOT NULL,
@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS dc_positions (
     created_at               TEXT,
     updated_at               TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_dc_positions_week ON dc_positions(week_of, book);
+CREATE INDEX IF NOT EXISTS idx_dc_positions_week ON dc_positions(week_of, arm);
 CREATE INDEX IF NOT EXISTS idx_dc_positions_status ON dc_positions(status);
 
 -- Two rows per position (front short, back long). `streamer_symbol` is a flat column because the
@@ -190,7 +190,7 @@ CREATE INDEX IF NOT EXISTS idx_dc_events_session ON dc_management_events(session
 CREATE TABLE IF NOT EXISTS dc_decisions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     trade_date  TEXT NOT NULL,
-    book        TEXT NOT NULL,
+    arm        TEXT NOT NULL,
     symbol      TEXT NOT NULL,
     mode        TEXT NOT NULL,
     reason      TEXT NOT NULL,
@@ -305,9 +305,9 @@ CREATE TABLE IF NOT EXISTS measurement_breaks (
 # IF NOT EXISTS would silently ignore on an existing file).
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     # The advisor experiment an advised row was entered under (2026-09-16), beside the params it
-    # froze -- `advised:<base>` names a book, and every experiment on that base reuses the tag.
+    # froze -- `advised:<base>` names a arm, and every experiment on that base reuses the tag.
     "dc_positions": {
-        "experiment_id": "TEXT",  # The base book an advised row shadows, stamped at entry from the session decision (2026-09-17): the tag no longer carries it, and after the session the decision file is gone. Management prefers this over the configured advice.base_book, so a twin of a non-default base keeps its rules.
+        "experiment_id": "TEXT",  # The base arm an advised row shadows, stamped at entry from the session decision (2026-09-17): the tag no longer carries it, and after the session the decision file is gone. Management prefers this over the configured advice.base_book, so a twin of a non-default base keeps its rules.
         "advice_base": "TEXT",
     },
     "dc_legs": {},
@@ -387,27 +387,27 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
 
 
 def pending_closing_exits(conn, expiration: str) -> list[dict]:
-    """Open positions expiring on `expiration` whose book still INTENDS to close — the Friday
+    """Open positions expiring on `expiration` whose arm still INTENDS to close — the Friday
     regime's ordering gate (docs/friday-entry-arm.md).
 
     The filter is deliberately "intends to close", not "is open": `path` never closes by design, so
-    a gate waiting for the book to go flat would be satisfied on no Friday ever and the Friday entry
+    a gate waiting for the arm to go flat would be satisfied on no Friday ever and the Friday entry
     would silently never fire — a deadlock presenting as a skipped week, which this module has
-    already produced twice for unrelated reasons and would be misdiagnosed as a third. The base-book
+    already produced twice for unrelated reasons and would be misdiagnosed as a third. The base-arm
     split is what separates the two (see engine.base_book), so `friday:path` is excluded here for
     the same reason `path` is.
     """
     rows = conn.execute(
-        "SELECT * FROM dc_positions WHERE front_expiration = ? AND status = 'open' ORDER BY book, side",
+        "SELECT * FROM dc_positions WHERE front_expiration = ? AND status = 'open' ORDER BY arm, side",
         (expiration,),
     )
-    return [dict(r) for r in rows if engine.base_book(r["book"]) != "path"]
+    return [dict(r) for r in rows if engine.base_book(r["arm"]) != "path"]
 
 
 def positions_for_week(conn, week_of: str) -> list[dict]:
     return [
         dict(r)
-        for r in conn.execute("SELECT * FROM dc_positions WHERE week_of = ? ORDER BY book, side", (week_of,))
+        for r in conn.execute("SELECT * FROM dc_positions WHERE week_of = ? ORDER BY arm, side", (week_of,))
     ]
 
 
@@ -417,7 +417,7 @@ def expiring_open_legs(conn, day: str) -> list[dict]:
     return [
         dict(r)
         for r in conn.execute(
-            "SELECT l.*, p.book, p.side AS position_side, p.symbol AS position_symbol, "
+            "SELECT l.*, p.arm, p.side AS position_side, p.symbol AS position_symbol, "
             "p.status AS position_status FROM dc_legs l JOIN dc_positions p "
             "ON p.position_id = l.position_id WHERE l.status = 'open' AND l.expiration = ? "
             "ORDER BY l.position_id, l.leg_role",

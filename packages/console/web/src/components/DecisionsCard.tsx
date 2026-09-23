@@ -5,10 +5,10 @@ import { useDecisions, type DecisionsModule } from "../lib/api";
  * The collapsed decision journal, one card shared by curve/pmcc/bwb (`readers/decisions.ts`'s own
  * docstring has the fuller "why this exists" -- the three modules all write
  * `core.ledgerstore.record_decision` from their loop but had no console reader before this). Every
- * row is a distinct (book, symbol, reason) this session, `occurrences` counting a gate that
+ * row is a distinct (arm, symbol, reason) this session, `occurrences` counting a gate that
  * refused the identical way tick after tick as one row rather than a flood of duplicates. Entered
  * rows (accepted) surface as a plain chip; every refusal keeps its own reason text so "why didn't
- * this book trade today" never comes down to a generic "no".
+ * this arm trade today" never comes down to a generic "no".
  */
 export function DecisionsCard({ module }: { module: DecisionsModule }) {
   const { data, isLoading, isError, dataUpdatedAt } = useDecisions(module);
@@ -24,8 +24,8 @@ export function DecisionsCard({ module }: { module: DecisionsModule }) {
       updatedAt={dataUpdatedAt}
     >
       {data?.rows.map((r, i) => (
-        <tr key={`${r.book}-${r.symbol}-${r.reason}-${String(i)}`}>
-          <td>{r.book}</td>
+        <tr key={`${r.arm}-${r.symbol}-${r.reason}-${String(i)}`}>
+          <td>{r.arm}</td>
           <td>{r.symbol}</td>
           <td>
             {r.reason}

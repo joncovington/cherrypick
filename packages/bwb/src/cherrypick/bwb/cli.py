@@ -3,9 +3,9 @@
 Subcommands (all read-only):
     status      open positions, the target expiration
     worksheet   the live per-position worksheet
-    fires       per-book add-on fire counts — the real effective sample per arm
+    fires       per-arm add-on fire counts — the real effective sample per arm
     triggers    trigger-tick coverage for a session
-    headline    per-book results through the analytics layer
+    headline    per-arm results through the analytics layer
     replay      the read-side threshold replay over bwb_trigger_ticks (see replay.py)
 
 The paper loop's own argv (`python -m cherrypick.bwb.paper_loop --once|--interval|--settle|
@@ -104,11 +104,11 @@ def main(argv=None) -> int:
 
     sub.add_parser("status", help="open positions, target expiration").set_defaults(func=cmd_status)
     sub.add_parser("worksheet", help="the live per-position worksheet").set_defaults(func=cmd_worksheet)
-    sub.add_parser("fires", help="per-book add-on fire counts").set_defaults(func=cmd_fires)
+    sub.add_parser("fires", help="per-arm add-on fire counts").set_defaults(func=cmd_fires)
     p_trig = sub.add_parser("triggers", help="trigger-tick coverage for a session")
     p_trig.add_argument("--date")
     p_trig.set_defaults(func=cmd_triggers)
-    sub.add_parser("headline", help="per-book results through the analytics layer").set_defaults(
+    sub.add_parser("headline", help="per-arm results through the analytics layer").set_defaults(
         func=cmd_headline
     )
     p_replay = sub.add_parser("replay", help="read-side threshold replay over bwb_trigger_ticks")

@@ -12,7 +12,7 @@ when the day starts or ends):
 - Any trading day, in session: mark every open leg every tick (the exit study's substrate), then
   run management on what the gates allow.
 - The entry day (Monday, or Tuesday after a Monday holiday), inside the entry window: plan and
-  open the week's double calendar in every session book.
+  open the week's double calendar in every session arm.
 - The back expiration's morning (Monday): dispose week N−1's surviving longs — before that same
   tick can open week N, so the two never contend.
 - Past the settle time on any day legs expire: cash-settle them off a staleness-gated spot read.
@@ -119,7 +119,7 @@ _pid_alive = looplock.pid_alive  # noqa: F401  (re-exported: tests monkeypatch t
 
 def _acquire_loop_lock(stale_seconds: int = 180) -> bool:
     """Single-instance guard shared by `--interval` and `--once`, so the supervised resident loop
-    and an off-session/manual `--once` can never iterate the same book concurrently.
+    and an off-session/manual `--once` can never iterate the same arm concurrently.
 
     `cherrypick.core.looplock` holds the semantics (a live holder is never stolen, whatever its
     age); `_pid_alive` is passed explicitly so a test monkeypatching that name still steers it."""
@@ -161,7 +161,7 @@ def _note_cadence_change(conn, interval_seconds: int) -> None:
         _log(f"cadence-change journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
-# --------------------------------------------------------------------------- advised book
+# --------------------------------------------------------------------------- advised arm
 def _advice_decision_path() -> str:
     return os.path.join(_paper_data_dir(), "advice_active.json")
 
@@ -187,27 +187,27 @@ def advice_decision(config: dict, today: str) -> dict:
 
 
 def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]:
-    """(the books the entry opens this week, `{advised tag: its experiment entry}`). The roster only
+    """(the arms the entry opens this week, `{advised tag: its experiment entry}`). The roster only
     matters at ENTRY — marking, management, disposition, and settlement all iterate open positions
-    from the ledger whatever their book tag, so a book once opened can never be stranded by a later
+    from the ledger whatever their arm tag, so a arm once opened can never be stranded by a later
     roster change (the stranding class the flies advised-arm roster helper exists to prevent is
     designed out here rather than handled).
 
-    One advised book PER EXPERIMENT the day's decision admitted (2026-09-17): each entry names its
-    own tag (`advised:<experiment name>`), the base book it shadows and the params it overlays,
+    One advised arm PER EXPERIMENT the day's decision admitted (2026-09-17): each entry names its
+    own tag (`advised:<experiment name>`), the base arm it shadows and the params it overlays,
     and a decision recorded before that date still yields its single `advised:<base>`. The map is
     empty on a baseline day."""
     declared = _cfg.registry(config, label="calendars", log=_log)
-    books = [b for b in engine.BOOKS if (declared.get(b) or {}).get("enabled", True)]
+    arms = [b for b in engine.ARMS if (declared.get(b) or {}).get("enabled", True)]
     advised = advised_entries(advice_decision(config, today))
-    books.extend(tag for tag in advised if tag not in books)
-    return books, advised
+    arms.extend(tag for tag in advised if tag not in arms)
+    return arms, advised
 
 
 def advised_entries(decision: dict | None) -> dict[str, dict]:
-    """`{tag: experiment entry}` for every experiment the decision opens a book for, in artifact
+    """`{tag: experiment entry}` for every experiment the decision opens a arm for, in artifact
     order. Keyed by tag because the tag is what every later step (planning, freezing, stamping)
-    looks the book up by."""
+    looks the arm up by."""
     return {e["tag"]: e for e in _core_advice.advised_books(decision) if e.get("tag")}
 
 
@@ -256,7 +256,7 @@ def run_once(
 
     # The session's advice decision is read and RECORDED on every in-session tick, entry day or
     # not (2026-09-17). Read-once: the first tick of the day derives it and every later one
-    # replays the file, so this is idempotent and can never change advice under an open book.
+    # replays the file, so this is idempotent and can never change advice under an open arm.
     # Until now it was derived only on the entry path, so on the four sessions a week with no
     # entry -- and on every day of a week refused at the gate -- the loop recorded no decision at
     # all, and the advisor scored a live, valid artifact as "the loop recorded no decision" for
@@ -290,7 +290,7 @@ def run_once(
             db.record_decision(
                 conn,
                 trade_date=day,
-                book="*",
+                arm="*",
                 symbol=(config.get("symbols") or ["SPX"])[0],
                 mode="entry",
                 reason="week_skipped_entry_window_exhausted",
@@ -353,11 +353,11 @@ def _record_paired_debits(conn, snapshot: dict, *, week: dict, day: str) -> None
         friday_rows = [
             p
             for p in db.positions_for_week(conn, week["week_of"])
-            if str(p.get("book") or "").startswith(engine.FRIDAY_PREFIX)
+            if str(p.get("arm") or "").startswith(engine.FRIDAY_PREFIX)
         ]
         if not friday_rows:
             return
-        # One row per SIDE: the books within the regime share the same fills, so any of them
+        # One row per SIDE: the arms within the regime share the same fills, so any of them
         # carries the same strike and debit for a side.
         by_side: dict[str, dict] = {}
         for p in friday_rows:
@@ -401,10 +401,10 @@ def friday_settings(config: dict) -> dict:
 
 
 def friday_books(config: dict) -> list[str]:
-    """The Friday regime's books: the base roster under the `friday:` prefix. No advised twin in
+    """The Friday regime's arms: the base roster under the `friday:` prefix. No advised twin in
     v1 — it would double the advisor surface for a regime with no history."""
     enabled = _cfg.registry(config, label="calendars", log=_log)
-    return [f"{engine.FRIDAY_PREFIX}{b}" for b in engine.BOOKS if enabled.get(b, {}).get("enabled", True)]
+    return [f"{engine.FRIDAY_PREFIX}{b}" for b in engine.ARMS if enabled.get(b, {}).get("enabled", True)]
 
 
 def _monday_regime_positions(conn, week_of: str) -> list[dict]:
@@ -415,7 +415,7 @@ def _monday_regime_positions(conn, week_of: str) -> list[dict]:
     return [
         p
         for p in db.positions_for_week(conn, week_of)
-        if not str(p.get("book") or "").startswith(engine.FRIDAY_PREFIX)
+        if not str(p.get("arm") or "").startswith(engine.FRIDAY_PREFIX)
     ]
 
 
@@ -425,7 +425,7 @@ def _journal_friday_skip(conn, config: dict, plan: dict) -> None:
     reason, so every tick after the window may call this."""
     try:
         if any(
-            str(p.get("book") or "").startswith(engine.FRIDAY_PREFIX)
+            str(p.get("arm") or "").startswith(engine.FRIDAY_PREFIX)
             for p in db.positions_for_week(conn, plan["week_of"])
         ):
             return
@@ -438,7 +438,7 @@ def _journal_friday_skip(conn, config: dict, plan: dict) -> None:
         db.record_decision(
             conn,
             trade_date=plan["entry_session"],
-            book="*",
+            arm="*",
             symbol=(config.get("symbols") or ["SPX"])[0],
             mode="entry",
             reason="friday_week_skipped",
@@ -458,7 +458,7 @@ def _maybe_friday_entry(config: dict, conn, *, cache_path: str, when: datetime, 
     * the clock window (default 15:50-16:00), which deliberately OPENS inside the exit window's
       tail rather than after it, so the entry gets twice the attempts and can start the moment the
       exits are actually done; and
-    * `db.pending_closing_exits`, which blocks the entry while any book that intends to close today
+    * `db.pending_closing_exits`, which blocks the entry while any arm that intends to close today
       still holds an expiring position. Ordering here is enforced by STATE, not by the clock,
       because `run_once` runs entry BEFORE management within a tick — a clock-only gate over an
       overlapping window would let one tick open the new week before closing the old one.
@@ -476,13 +476,13 @@ def _maybe_friday_entry(config: dict, conn, *, cache_path: str, when: datetime, 
         # already does. Self-reporting rather than scheduled — it needs no watcher, works every
         # Friday rather than only the first, and names WHY, which is the whole diagnosis. In
         # particular a week whose attempts are all `awaiting_session_exits` is the exit-gate
-        # DEADLOCK (the `path` book never closes, so a gate reading "flat" would wait forever) and
+        # DEADLOCK (the `path` arm never closes, so a gate reading "flat" would wait forever) and
         # not a market outcome; a week of `no_fresh_quotes` is the feed.
         if now_min > end:
             _journal_friday_skip(conn, config, plan)
         return 0
-    books = friday_books(config)
-    if not books:
+    arms = friday_books(config)
+    if not arms:
         return 0
     # Positions expiring TODAY are the ones this session closes; today is the Friday entry session.
     pending = db.pending_closing_exits(conn, when.date().isoformat())
@@ -498,13 +498,13 @@ def _maybe_friday_entry(config: dict, conn, *, cache_path: str, when: datetime, 
             block_detail=f"{len(pending)} position(s) still to close",
         )
         return 0
-    return _try_entry(config, conn, cache_path=cache_path, when=when, week=plan, books=books)
+    return _try_entry(config, conn, cache_path=cache_path, when=when, week=plan, arms=arms)
 
 
 def _try_entry(
-    config: dict, conn, *, cache_path: str, when: datetime, week: dict, books: list[str] | None = None
+    config: dict, conn, *, cache_path: str, when: datetime, week: dict, arms: list[str] | None = None
 ) -> int:
-    """Open the week's calendars. `books` overrides the session roster for a non-default entry
+    """Open the week's calendars. `arms` overrides the session roster for a non-default entry
     regime (the Friday arm passes its own); `week` carries the identity every row is stamped with,
     so a Friday plan's `entry_session` and `dc_7_10` tag flow through unchanged and this stays the
     ONE entry path rather than growing a second copy per regime."""
@@ -524,12 +524,12 @@ def _try_entry(
     # would have governed; the week had nothing to govern. Recording that is what lets the
     # advisor tell "refused with the advice in hand" from "the artifact never reached the loop".
     # `advised` maps each advised tag to its experiment entry (params + the id the row is stamped
-    # with, resolved per book through the decision itself -- two experiments on one session are
-    # two books with two stamps, never one id shared).
+    # with, resolved per arm through the decision itself -- two experiments on one session are
+    # two arms with two stamps, never one id shared).
     advised: dict[str, dict] = {}
     decision: dict | None = None
-    if books is None:
-        books, advised = session_books(config, day)
+    if arms is None:
+        arms, advised = session_books(config, day)
         if advised:
             decision = advice_decision(config, day)
     # else: no advised twin for a non-default regime (see the arm's doc)
@@ -565,8 +565,8 @@ def _try_entry(
                 block_detail=f"ex-date {hit}",
             )
             return 0
-    already = {(p["book"], p["side"]) for p in db.positions_for_week(conn, week["week_of"])}
-    if all((b, s) in already for b in books for s in ("put", "call")):
+    already = {(p["arm"], p["side"]) for p in db.positions_for_week(conn, week["week_of"])}
+    if all((b, s) in already for b in arms for s in ("put", "call")):
         return 0
 
     root = ((config.get("occ_roots") or {}).get(symbol)) or symbol
@@ -611,7 +611,7 @@ def _try_entry(
     # from the default regime's own pass (docs/friday-entry-arm.md). Pure telemetry beside the
     # entry, never a position: it prices the strikes the Friday arm already bought, so the two
     # entrances hold identical contracts and the difference in what they paid is the whole effect.
-    if books is None:
+    if arms is None:
         _record_paired_debits(conn, snapshot, week=week, day=day)
 
     params = engine.merged_params(config, "control")
@@ -629,7 +629,7 @@ def _try_entry(
         db.record_decision(
             conn,
             trade_date=day,
-            book="*",
+            arm="*",
             symbol=symbol,
             mode="entry",
             reason=planned["reason"],
@@ -642,7 +642,7 @@ def _try_entry(
         conn,
         plan,
         config,
-        books,
+        arms,
         week=week,
         advice_params=None,
         advised={tag: e.get("params") or {} for tag, e in advised.items()},
@@ -667,7 +667,7 @@ def _try_entry(
         db.record_decision(
             conn,
             trade_date=day,
-            book="*",
+            arm="*",
             symbol=symbol,
             mode="entry",
             reason=f"entered {week['structure']} em {plan['em']:.2f} "
@@ -675,7 +675,7 @@ def _try_entry(
             accepted=True,
         )
         _log(
-            f"{symbol}: entered {week['structure']} across {sorted({o['book'] for o in opened})} — "
+            f"{symbol}: entered {week['structure']} across {sorted({o['arm'] for o in opened})} — "
             f"em {plan['em']:.2f}, put {plan['sides']['put']['strike']:g} "
             f"({plan['sides']['put']['debit']:.2f}), call {plan['sides']['call']['strike']:g} "
             f"({plan['sides']['call']['debit']:.2f})"
@@ -729,7 +729,7 @@ def _mark_positions(config: dict, conn, *, cache_path: str, when: datetime, day:
 
 def _manage_positions(config: dict, conn, values: dict, *, when: datetime, day: str) -> int:
     """Evaluate every OPEN position against its own effective params. Combined value/debit pair a
-    position with its same-book twin while both are open (computed BEFORE any close this tick, so
+    position with its same-arm twin while both are open (computed BEFORE any close this tick, so
     both sides of a pair see the same numbers)."""
     actions = 0
     for pid, state in values.items():
@@ -739,7 +739,7 @@ def _manage_positions(config: dict, conn, values: dict, *, when: datetime, day: 
         params = management.effective_params(position, config)
         combined_value, combined_debit = state["value"], position["entry_debit"]
         twin_pid = bookmod.position_id(
-            position["week_of"], position["book"], "call" if position["side"] == "put" else "put"
+            position["week_of"], position["arm"], "call" if position["side"] == "put" else "put"
         )
         twin = values.get(twin_pid)
         if twin is not None and twin["position"]["status"] == "open":
@@ -769,7 +769,7 @@ def _manage_positions(config: dict, conn, values: dict, *, when: datetime, day: 
                 gate = result.get("reason")
             else:
                 actions += 1
-                _log(f"[{position['book']}] {pid} closed — {decision.reason}")
+                _log(f"[{position['arm']}] {pid} closed — {decision.reason}")
         db.record_management_event(
             conn,
             position_id=pid,
@@ -786,7 +786,7 @@ def _manage_positions(config: dict, conn, values: dict, *, when: datetime, day: 
 
 def _dispose_longs(config: dict, conn, *, cache_path: str, when: datetime, day: str) -> int:
     """Sell the surviving back legs on their own expiration morning (path and advised `mon_open`
-    books; also any book whose scheduled close was missed — the honest backstop, with the events
+    arms; also any arm whose scheduled close was missed — the honest backstop, with the events
     trail showing how it got here)."""
     actions = 0
     for position in db.open_positions(conn, statuses=("short_settled",)):
@@ -812,7 +812,7 @@ def _dispose_longs(config: dict, conn, *, cache_path: str, when: datetime, day: 
                 gate = result.get("reason")
             else:
                 actions += 1
-                _log(f"[{position['book']}] {position['position_id']} longs disposed")
+                _log(f"[{position['arm']}] {position['position_id']} longs disposed")
         db.record_management_event(
             conn,
             position_id=position["position_id"],
@@ -865,7 +865,7 @@ def _dispose_shares(config: dict, conn, *, cache_path: str, when: datetime, day:
         result = bookmod.dispose_assignment(conn, assignment, spot, session_date=day)
         actions += 1
         _log(
-            f"[{assignment['book']}] {assignment['position_id']}: disposed "
+            f"[{assignment['arm']}] {assignment['position_id']}: disposed "
             f"{assignment['shares']} {assignment['direction']} {symbol} shares at {spot:.2f} "
             f"(assigned {assignment['assigned_session']} at {assignment['basis']:.2f}, "
             f"share P&L {result['share_pnl']:+.2f}, fee {result['fee']:.2f})"

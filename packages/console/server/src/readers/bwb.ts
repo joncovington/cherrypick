@@ -1,6 +1,6 @@
 import path from "node:path";
 import type {
-  BwbBookCell,
+  BwbArmCell,
   BwbCycleRow,
   BwbEntryAttempt,
   BwbFireCount,
@@ -46,7 +46,7 @@ const CORRELATION_CAVEAT =
  */
 const KNOWN_COLUMNS: Record<string, string[]> = {
   bwb_positions: [
-    "id", "position_id", "symbol", "book", "entry_session", "structure_signature", "quantity",
+    "id", "position_id", "symbol", "arm", "entry_session", "structure_signature", "quantity",
     "expiration", "body_strike", "near_strike", "far_strike", "entry_time", "entry_spot",
     "entry_atm_strike", "entry_expected_move", "entry_body_mid", "entry_near_mid", "entry_far_mid",
     "entry_credit", "entry_narrow_width", "entry_wide_width", "entry_max_loss", "entry_dte",
@@ -102,7 +102,7 @@ function readOpenPositions(db: DatabaseHandle): BwbOpenPosition[] {
       ORDER BY marked_at DESC LIMIT 1`,
   );
   return db
-    .prepare<[], Record<string, unknown>>("SELECT * FROM bwb_positions WHERE status != 'closed' ORDER BY symbol, book")
+    .prepare<[], Record<string, unknown>>("SELECT * FROM bwb_positions WHERE status != 'closed' ORDER BY symbol, arm")
     .all()
     .map((p) => {
       const positionId = str(p["position_id"]) ?? "";
@@ -110,7 +110,7 @@ function readOpenPositions(db: DatabaseHandle): BwbOpenPosition[] {
       return {
         positionId,
         symbol: str(p["symbol"]) ?? "",
-        book: str(p["book"]) ?? "",
+        arm: str(p["arm"]) ?? "",
         status: str(p["status"]) ?? "",
         bodyStrike: num(p["body_strike"]),
         nearStrike: num(p["near_strike"]),
@@ -137,7 +137,7 @@ function readOpenPositions(db: DatabaseHandle): BwbOpenPosition[] {
 /**
  * Mark-to-market P&L for an OPEN position, in the module's own convention.
  *
- * `book.py` states it: "`gross_pnl` is mid-priced and cost-free (per-leg P&L x100 xqty); `fees` is
+ * `arm.py` states it: "`gross_pnl` is mid-priced and cost-free (per-leg P&L x100 xqty); `fees` is
  * the TOTAL modeled cost (entry + addon entry + settlement); net is always `gross_pnl - fees`."
  * This mirrors that, substituting the mark-to-market gross for the settled one, so an open row and
  * a closed row mean the same thing by the same arithmetic rather than by two definitions that
@@ -147,7 +147,7 @@ function readOpenPositions(db: DatabaseHandle): BwbOpenPosition[] {
  * SIGNED net to unwind EVERY leg at mid, the add-on's included, while `entry_credit` covers only
  * the original fly -- so the add-on credit has to be added back explicitly or a fired position is
  * charged for unwinding legs whose credit was never counted. Caught on the 2026-08-28 cohort, where
- * that omission put the fired `delta` book at -527.83 beside four identical siblings at -146.89.
+ * that omission put the fired `delta` arm at -527.83 beside four identical siblings at -146.89.
  *
  * `fees` on an open row is what has been INCURRED so far (entry + any add-on entry); the settlement
  * fee is not in it because settlement has not happened. So net here is net of costs to date, not of
@@ -173,21 +173,21 @@ function unrealised(
   };
 }
 
-/** Mirrors `analytics.headline()`'s book breakdown. */
-function readBooks(db: DatabaseHandle): BwbBookCell[] {
+/** Mirrors `analytics.headline()`'s arm breakdown. */
+function readBooks(db: DatabaseHandle): BwbArmCell[] {
   return db
     .prepare<[], Record<string, unknown>>(
-      `SELECT book, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees,
+      `SELECT arm, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees,
               SUM(gross_pnl) - SUM(fees) AS net, SUM((gross_pnl - fees) > 0) AS wins
          FROM bwb_positions WHERE status = 'closed'
-        GROUP BY book, symbol ORDER BY book, symbol`,
+        GROUP BY arm, symbol ORDER BY arm, symbol`,
     )
     .all()
     .map((r) => {
       const n = Number(r["n"] ?? 0);
       const wins = num(r["wins"]);
       return {
-        book: str(r["book"]) ?? "",
+        arm: str(r["arm"]) ?? "",
         symbol: str(r["symbol"]) ?? "",
         positions: n,
         grossPnl: num(r["gross"]),
@@ -202,13 +202,13 @@ function readBooks(db: DatabaseHandle): BwbBookCell[] {
 function readFireCounts(db: DatabaseHandle): BwbFireCount[] {
   return db
     .prepare<[], Record<string, unknown>>(
-      "SELECT book, COUNT(*) AS n, SUM(addon_fired_at IS NOT NULL) AS fired FROM bwb_positions GROUP BY book ORDER BY book",
+      "SELECT arm, COUNT(*) AS n, SUM(addon_fired_at IS NOT NULL) AS fired FROM bwb_positions GROUP BY arm ORDER BY arm",
     )
     .all()
     .map((r) => {
       const n = Number(r["n"] ?? 0);
       const fired = Number(r["fired"] ?? 0);
-      return { book: str(r["book"]) ?? "", positions: n, fired, fireRate: n > 0 ? fired / n : null };
+      return { arm: str(r["arm"]) ?? "", positions: n, fired, fireRate: n > 0 ? fired / n : null };
     });
 }
 
@@ -275,13 +275,13 @@ function readEntryAttemptsToday(db: DatabaseHandle, session: string | null): Bwb
   if (session === null) return [];
   return db
     .prepare<[string], Record<string, unknown>>(
-      "SELECT ts, symbol, book, outcome, credit FROM bwb_entry_attempts WHERE trade_date = ? ORDER BY ts",
+      "SELECT ts, symbol, arm, outcome, credit FROM bwb_entry_attempts WHERE trade_date = ? ORDER BY ts",
     )
     .all(session)
     .map((r) => ({
       ts: str(r["ts"]) ?? "",
       symbol: str(r["symbol"]) ?? "",
-      book: str(r["book"]) ?? "",
+      arm: str(r["arm"]) ?? "",
       outcome: str(r["outcome"]) ?? "",
       credit: num(r["credit"]),
     }));
@@ -331,7 +331,7 @@ export function readBwb(config: ConsoleConfig): BwbPayload {
     dbPresent: false,
     openPositions: [],
     openCount: 0,
-    books: [],
+    arms: [],
     fireCounts: [],
     correlationCaveat: CORRELATION_CAVEAT,
     entryAttemptsToday: [],
@@ -366,7 +366,7 @@ export function readBwb(config: ConsoleConfig): BwbPayload {
       dbPresent: true,
       openPositions,
       openCount: openPositions.length,
-      books: readBooks(db),
+      arms: readBooks(db),
       fireCounts: readFireCounts(db),
       correlationCaveat: CORRELATION_CAVEAT,
       entryAttemptsToday: readEntryAttemptsToday(db, session),
@@ -393,7 +393,7 @@ export function readBwb(config: ConsoleConfig): BwbPayload {
 }
 
 export interface BwbHistoryFilter {
-  book: string | null;
+  arm: string | null;
   symbol: string | null;
 }
 
@@ -405,9 +405,9 @@ export function readBwbHistory(
 ): Paged<BwbCycleRow> {
   const clauses = ["status = 'closed'"];
   const params: string[] = [];
-  if (filter.book !== null) {
-    clauses.push("book = ?");
-    params.push(filter.book);
+  if (filter.arm !== null) {
+    clauses.push("arm = ?");
+    params.push(filter.arm);
   }
   if (filter.symbol !== null) {
     clauses.push("symbol = ?");
@@ -418,7 +418,7 @@ export function readBwbHistory(
     pagedQuery<BwbCycleRow>(
       db,
       {
-        columns: `position_id, symbol, book, entry_session, closed_session, status, exit_reason,
+        columns: `position_id, symbol, arm, entry_session, closed_session, status, exit_reason,
                   body_strike, near_strike, far_strike, expiration, entry_spot, entry_credit,
                   armed_at, addon_fired_at, addon_credit, gross_pnl, fees`,
         from: "bwb_positions",
@@ -433,7 +433,7 @@ export function readBwbHistory(
         return {
           positionId: str(r["position_id"]) ?? "",
           symbol: str(r["symbol"]) ?? "",
-          book: str(r["book"]) ?? "",
+          arm: str(r["arm"]) ?? "",
           entrySession: str(r["entry_session"]) ?? "",
           closedSession: str(r["closed_session"]),
           status: str(r["status"]) ?? "",
@@ -458,7 +458,7 @@ export function readBwbHistory(
 
 /** The history filter's own options. No era mechanism: the module has one era and no pooled data yet. */
 export function readBwbMeta(config: ConsoleConfig): BwbMeta {
-  const empty: BwbMeta = { books: [], symbols: [], sessions: [] };
+  const empty: BwbMeta = { arms: [], symbols: [], sessions: [] };
   return withReadOnlyDb<BwbMeta>(dbPath(config), empty, (db) => {
     const column = (name: string, table: string): string[] =>
       db
@@ -467,7 +467,7 @@ export function readBwbMeta(config: ConsoleConfig): BwbMeta {
         .map((r) => str(r["v"]) ?? "")
         .filter((v) => v !== "");
     return {
-      books: column("book", "bwb_positions"),
+      arms: column("arm", "bwb_positions"),
       symbols: column("symbol", "bwb_positions"),
       sessions: column("entry_session", "bwb_positions").reverse(),
     };

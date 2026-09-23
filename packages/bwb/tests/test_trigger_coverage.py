@@ -113,7 +113,7 @@ def test_the_tick_path_resolves_spot_the_same_way_the_marks_path_does(cache, con
         {
             "position_id": "p1",
             "symbol": "SPX",
-            "book": "control",
+            "arm": "control",
             "entry_session": "2026-08-28",
             "structure_signature": "sig",
             "expiration": "2026-08-28",
@@ -196,7 +196,7 @@ def test_the_gamma_flip_read_needs_gamma_in_the_cache_reader(cache):
 
 # ------------------------------------------------- the add-on could never price (2026-08-27)
 #
-# The flip book armed all four of its positions the moment the gamma flip became measurable, and
+# The flip arm armed all four of its positions the moment the gamma flip became measurable, and
 # then sat unable to price a single add-on. `_addon_snapshot` resolved `root = symbol`, so every
 # lookup asked the cache for SPX-rooted contracts while SPX's weeklies are listed as SPXW —
 # `not_root_listed`, on every tick, for every armed position. Every other snapshot in the module

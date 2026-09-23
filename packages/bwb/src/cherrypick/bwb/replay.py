@@ -4,7 +4,7 @@ Per the plan: with the full cohort-level trigger-tick path recorded (near-wing d
 spot, gamma_flip, the below-flip latch, and the add-on bracket's own quotes at every tick),
 alternative thresholds become a read-side replay over data this module itself recorded — a
 different pullback, a different flip buffer, a raw delta trigger at a different level — exactly
-paired against the real books, the calendars `exit_policies.py` pattern (see that module's
+paired against the real arms, the calendars `exit_policies.py` pattern (see that module's
 docstring: forward-recorded, then replayed, never vendor-imagined).
 
 Split mirrors calendars: `replay_cohort_ticks` is the pure compute layer (a list of tick dicts in,
@@ -24,11 +24,11 @@ Two honesty rails, both load-bearing (the calendars precedent):
   incomplete reports `priceable: False` rather than inventing a credit.
 
 `validate_against_real` checks the replay's base-threshold (`TRIGGER_DEFAULTS`) reconstruction
-against what the real books actually recorded for this cohort. It compares ARM outcome (whether the
-book armed at all), not a timestamp-to-timestamp match: `bwb_positions.armed_at` is a stamped
+against what the real arms actually recorded for this cohort. It compares ARM outcome (whether the
+arm armed at all), not a timestamp-to-timestamp match: `bwb_positions.armed_at` is a stamped
 wall-clock string while `bwb_trigger_ticks.ticked_at` is the loop's own epoch float for the same
 instant, so the two are not directly diffable — replaying at the base config should reproduce
-whether each arm-eligible book armed, which is the fact this validation exists to protect.
+whether each arm-eligible arm armed, which is the fact this validation exists to protect.
 """
 
 from __future__ import annotations
@@ -51,10 +51,10 @@ def _addon_credit(tick: dict) -> float | None:
     return round(short_mid - long_mid, 4)
 
 
-def _fire_record(tick: dict, book: str) -> dict:
+def _fire_record(tick: dict, arm: str) -> dict:
     credit = _addon_credit(tick)
     return {
-        "book": book,
+        "arm": arm,
         "ticked_at": tick.get("ticked_at"),
         "session_date": tick.get("session_date"),
         "addon_credit": credit,
@@ -70,13 +70,13 @@ def replay_cohort_ticks(ticks: list[dict], params: dict | None = None) -> dict:
     `flip_fires` directly — the SAME pure functions the live loop evaluates, so a replay at the base
     thresholds is not a second implementation free to drift.
 
-    Returns the first hypothetical fire tick per arm book (or None if the recorded history never
+    Returns the first hypothetical fire tick per arm arm (or None if the recorded history never
     would have fired under `params`), plus the running latch state at the end of the cohort's
     history (useful for a still-open cohort whose fire, if any, hasn't happened yet)."""
     p = triggers._params(params)
     peak: float | None = None
     below_flip = False
-    fires: dict[str, dict | None] = {book: None for book in ARM_BOOKS}
+    fires: dict[str, dict | None] = {arm: None for arm in ARM_BOOKS}
 
     for tick in ticks:
         abs_delta = tick.get("near_abs_delta")
@@ -113,7 +113,7 @@ def replay_thresholds(
 
 
 def validate_against_real(conn, *, entry_session: str, structure_signature: str) -> dict:
-    """Validate the BASE-threshold replay's arm outcome against what the real books actually
+    """Validate the BASE-threshold replay's arm outcome against what the real arms actually
     recorded for this cohort (`bwb_positions.armed_at`) — exact-pairing validation, the calendars
     precedent: replaying at the base config should reproduce reality, so a mismatch here is a bug
     made visible, not noise to explain away."""
@@ -121,22 +121,22 @@ def validate_against_real(conn, *, entry_session: str, structure_signature: str)
     replayed = replay_cohort_ticks(ticks, None)
 
     checks = []
-    for book in ARM_BOOKS:
+    for arm in ARM_BOOKS:
         real = conn.execute(
             "SELECT position_id, armed_at, addon_fired_at FROM bwb_positions "
-            "WHERE book = ? AND entry_session = ? AND structure_signature = ?",
-            (book, entry_session, structure_signature),
+            "WHERE arm = ? AND entry_session = ? AND structure_signature = ?",
+            (arm, entry_session, structure_signature),
         ).fetchone()
         if real is None:
-            checks.append({"book": book, "ok": True, "reason": "no_real_position"})
+            checks.append({"arm": arm, "ok": True, "reason": "no_real_position"})
             continue
-        replayed_fire = replayed["fires"].get(book)
+        replayed_fire = replayed["fires"].get(arm)
         real_armed = bool(real["armed_at"])
         replayed_armed = replayed_fire is not None
         ok = real_armed == replayed_armed
         checks.append(
             {
-                "book": book,
+                "arm": arm,
                 "ok": ok,
                 "real_armed": real_armed,
                 "real_armed_at": real["armed_at"],

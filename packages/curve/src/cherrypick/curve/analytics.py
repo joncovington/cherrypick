@@ -12,14 +12,14 @@ from cherrypick.core.metrics import excursions as _mae_mfe
 
 
 def headline(conn) -> dict:
-    """Per-book, per-symbol results over CLOSED positions, plus what is still open."""
-    books: dict[str, dict] = {}
+    """Per-arm, per-symbol results over CLOSED positions, plus what is still open."""
+    arms: dict[str, dict] = {}
     for row in conn.execute(
-        "SELECT book, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees, "
+        "SELECT arm, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees, "
         "SUM(gross_pnl) - SUM(fees) AS net, SUM((gross_pnl - fees) > 0) AS wins "
-        "FROM curve_positions WHERE status = 'closed' GROUP BY book, symbol ORDER BY book, symbol"
+        "FROM curve_positions WHERE status = 'closed' GROUP BY arm, symbol ORDER BY arm, symbol"
     ):
-        books.setdefault(row["book"], {})[row["symbol"]] = {
+        arms.setdefault(row["arm"], {})[row["symbol"]] = {
             "positions": row["n"],
             "gross_pnl": round(row["gross"], 2) if row["gross"] is not None else None,
             "fees": round(row["fees"], 2) if row["fees"] is not None else None,
@@ -27,7 +27,7 @@ def headline(conn) -> dict:
             "win_rate": round(row["wins"] / row["n"], 4) if row["n"] else None,
         }
     open_rows = conn.execute("SELECT COUNT(*) AS n FROM curve_positions WHERE status != 'closed'").fetchone()
-    return {"books": books, "open_positions": open_rows["n"], "flip_divergence": flip_divergence(conn)}
+    return {"arms": arms, "open_positions": open_rows["n"], "flip_divergence": flip_divergence(conn)}
 
 
 def flip_divergence(conn) -> dict:
@@ -38,12 +38,12 @@ def flip_divergence(conn) -> dict:
     denominator for "what did the flip rule do" — this count is."""
     rows = conn.execute(
         "SELECT symbol, entry_session FROM curve_positions "
-        "WHERE book = 'control' AND exit_reason = 'regime_flip'"
+        "WHERE arm = 'control' AND exit_reason = 'regime_flip'"
     ).fetchall()
     diverged = 0
     for r in rows:
         noflip = conn.execute(
-            "SELECT 1 FROM curve_positions WHERE book = 'noflip' AND symbol = ? AND entry_session = ? "
+            "SELECT 1 FROM curve_positions WHERE arm = 'noflip' AND symbol = ? AND entry_session = ? "
             "AND (exit_reason != 'regime_flip' OR exit_reason IS NULL)",
             (r["symbol"], r["entry_session"]),
         ).fetchone()
@@ -63,7 +63,7 @@ def worksheet(conn) -> list[dict]:
     """The live per-position worksheet: one row per open position with its entry metrics and the
     latest usable close-cost mark."""
     out = []
-    for p in conn.execute("SELECT * FROM curve_positions WHERE status != 'closed' ORDER BY symbol, book"):
+    for p in conn.execute("SELECT * FROM curve_positions WHERE status != 'closed' ORDER BY symbol, arm"):
         p = dict(p)
         latest = conn.execute(
             "SELECT close_cost, spot, marked_at FROM curve_marks WHERE position_id = ? "
@@ -74,7 +74,7 @@ def worksheet(conn) -> list[dict]:
             {
                 "position_id": p["position_id"],
                 "symbol": p["symbol"],
-                "book": p["book"],
+                "arm": p["arm"],
                 "status": p["status"],
                 "short_strike": p["short_strike"],
                 "long_strike": p["long_strike"],
@@ -139,8 +139,8 @@ def excursions(conn) -> dict:
     the per-position list rather than reported with a fabricated 0.0."""
     positions = []
     for p in conn.execute(
-        "SELECT position_id, symbol, book, entry_credit, quantity FROM curve_positions "
-        "WHERE status = 'closed' ORDER BY symbol, book"
+        "SELECT position_id, symbol, arm, entry_credit, quantity FROM curve_positions "
+        "WHERE status = 'closed' ORDER BY symbol, arm"
     ):
         if p["entry_credit"] is None:
             continue
@@ -158,7 +158,7 @@ def excursions(conn) -> dict:
             {
                 "position_id": p["position_id"],
                 "symbol": p["symbol"],
-                "book": p["book"],
+                "arm": p["arm"],
                 "mae": mae_mfe["mae"],
                 "mfe": mae_mfe["mfe"],
                 "n": mae_mfe["n"],

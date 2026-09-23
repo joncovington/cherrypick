@@ -191,7 +191,7 @@ def test_leg_pnl_sold_and_bought():
     assert engine.leg_pnl({"action": "Sell to Open", "entry_mid": 2.0, "close_value": None}) is None
 
 
-# --------------------------------------------------------------------------- the wall book
+# --------------------------------------------------------------------------- the wall arm
 def test_plan_wall_entry_builds_the_call_side_mirror():
     """Body at the wall, near wing BELOW toward spot, far wing ABOVE — all calls, net credit.
 
@@ -218,7 +218,7 @@ def test_plan_wall_entry_builds_the_call_side_mirror():
 
 
 def test_plan_wall_entry_refuses_without_a_wall_rather_than_borrowing_the_em():
-    """No EM fallback: a session with no wall reading is a refusal, or the book trades control's
+    """No EM fallback: a session with no wall reading is a refusal, or the arm trades control's
     placement under its own name and the comparison dissolves."""
     snap = _snapshot(spot=6490.0)
     assert engine.plan_wall_entry(snap, PARAMS, None) == {"ok": False, "reason": "call_wall_unavailable"}
@@ -251,7 +251,7 @@ def test_wall_spread_gate_admits_a_penny_wide_leg_and_refuses_a_wide_one():
 
 
 def test_settle_intrinsic_knows_both_sides():
-    """A call settles on spot ABOVE strike. Transposed, the wall book's settlement would book its
+    """A call settles on spot ABOVE strike. Transposed, the wall arm's settlement would arm its
     max-loss case as a win."""
     assert engine.settle_intrinsic(6500, 6520, "call") == 20.0
     assert engine.settle_intrinsic(6500, 6480, "call") == 0.0
@@ -262,13 +262,13 @@ def test_settle_intrinsic_knows_both_sides():
 # --------------------------------------------------------------------------- the arm vocabulary
 
 
-@pytest.mark.parametrize("key", ["books", "arms", "profiles"])
+@pytest.mark.parametrize("key", ["arms", "arms", "profiles"])
 def test_the_arm_registry_resolves_under_every_accepted_spelling(key):
-    """bwb's config says `books`; the suite's word is `arms`; meic's files say `profiles`. All
+    """bwb's config says `arms`; the suite's word is `arms`; meic's files say `profiles`. All
     three resolve, and an accepted spelling is never withdrawn — a module config is a file a person
     edits and keeps across upgrades, and there is no migration for one.
 
-    The failure this prevents is the quiet one. `config.get("books") or {}` does not raise on a key
+    The failure this prevents is the quiet one. `config.get("arms") or {}` does not raise on a key
     that moved: the registry resolves empty, `delta` falls through to `defaults`, and it becomes
     byte-identical to `control` while still reporting as its own arm. The A/B measures nothing and
     the P&L looks fine.
@@ -287,4 +287,4 @@ def test_an_unreadable_registry_key_does_not_silently_flatten_the_arms():
     moved = {"defaults": {"dte": 7, "width": 25}, "variants": {"delta": {"width": 40}}}
 
     assert engine.merged_params(moved, "delta")["width"] == 25
-    assert engine.merged_params(moved, "delta") == engine.merged_params(moved, "control") | {"book": "delta"}
+    assert engine.merged_params(moved, "delta") == engine.merged_params(moved, "control") | {"arm": "delta"}

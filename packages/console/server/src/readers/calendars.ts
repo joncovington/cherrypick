@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type {
-  CalendarsBookCell,
+  CalendarsArmCell,
   CalendarsEmRow,
   CalendarsEntryWindow,
   CalendarsIntegrity,
@@ -54,7 +54,7 @@ const DIVIDEND_WARN_DAYS = 30;
  */
 const KNOWN_COLUMNS: Record<string, string[]> = {
   dc_positions: [
-    "id", "position_id", "week_of", "entry_session", "book", "side", "symbol", "structure",
+    "id", "position_id", "week_of", "entry_session", "arm", "side", "symbol", "structure",
     "front_expiration", "back_expiration", "strike", "quantity", "entry_time", "entry_debit",
     "entry_cost", "entry_slippage", "entry_spot", "entry_em", "entry_em_pct",
     "entry_front_atm_call_mid", "entry_front_atm_put_mid", "entry_front_iv", "entry_back_iv",
@@ -91,8 +91,8 @@ export function resolveCalendarsSession(config: ConsoleConfig): string | null {
 
 /**
  * Filled/refused/no-fill counts for the one shared entry plan a week evaluates -- unlike meic/
- * flies/pmcc/curve, calendars has no per-book arm column (`packages/console/server/src/routes/
- * modules.ts`'s own comment: "its books share one entry plan, so there is no per-arm entry
+ * flies/pmcc/curve, calendars has no per-arm arm column (`packages/console/server/src/routes/
+ * modules.ts`'s own comment: "its arms share one entry plan, so there is no per-arm entry
  * decision to show"), so this bypasses the shared `readers/attempts.ts` SPECS machinery (built
  * around grouping by arm) rather than forcing a fake single-arm shape onto it.
  */
@@ -127,7 +127,7 @@ interface CalendarsParams {
   exitWindowEnd: string | null;
   maxQuoteAgeSeconds: number | null;
   maxLegSpreadPct: number | null;
-  books: Array<{ name: string; enabled: boolean }>;
+  arms: Array<{ name: string; enabled: boolean }>;
   adviceEnabled: boolean;
   dividends: Record<string, { declaredThrough: string | null; exDates: string[] }>;
   settlement: Record<string, string>;
@@ -146,7 +146,7 @@ function loadParams(config: ConsoleConfig): CalendarsParams {
     if (doc !== null) break;
   }
   const defaults = obj(doc?.["defaults"]);
-  const booksBlock = obj(doc?.["books"]);
+  const booksBlock = obj(doc?.["arms"]);
   const dividendsBlock = obj(doc?.["dividends"]);
 
   const dividends: CalendarsParams["dividends"] = {};
@@ -182,7 +182,7 @@ function loadParams(config: ConsoleConfig): CalendarsParams {
     exitWindowEnd: str(defaults["exit_window_end"]),
     maxQuoteAgeSeconds: num(defaults["max_quote_age_seconds"]),
     maxLegSpreadPct: num(defaults["max_leg_spread_pct"]),
-    books: Object.entries(booksBlock)
+    arms: Object.entries(booksBlock)
       .filter(([name]) => !name.startsWith("_"))
       .map(([name, block]) => ({ name, enabled: obj(block)["enabled"] === true })),
     adviceEnabled: obj(doc?.["advice"])["enabled"] === true,
@@ -194,7 +194,7 @@ function loadParams(config: ConsoleConfig): CalendarsParams {
 /**
  * The session every card on the page names.
  *
- * Resolved ONCE and unscoped, the flies lesson: a per-book "latest" lets one card answer for Monday
+ * Resolved ONCE and unscoped, the flies lesson: a per-arm "latest" lets one card answer for Monday
  * while the card beside it answers for Friday, both correctly labelled and irreconcilable. The
  * loop's own iterations are the primary source because this loop ticks all week on a strategy that
  * enters once — falling back to entries would name the last day something HAPPENED rather than the
@@ -250,7 +250,7 @@ function toPosition(
     positionId: str(r["position_id"]) ?? "",
     weekOf: str(r["week_of"]) ?? "",
     entrySession: str(r["entry_session"]) ?? "",
-    book: str(r["book"]) ?? "",
+    arm: str(r["arm"]) ?? "",
     side: str(r["side"]) ?? "",
     symbol: str(r["symbol"]) ?? "",
     structure: str(r["structure"]) ?? "",
@@ -284,7 +284,7 @@ function toPosition(
 function readPositions(db: DatabaseHandle, where: string, params: string[]): CalendarsPosition[] {
   const rows = db
     .prepare<string[], Record<string, unknown>>(
-      `SELECT * FROM dc_positions WHERE ${where} ORDER BY week_of DESC, book, side`,
+      `SELECT * FROM dc_positions WHERE ${where} ORDER BY week_of DESC, arm, side`,
     )
     .all(...params);
   const legs = legsFor(db, rows.map((r) => str(r["position_id"]) ?? ""));
@@ -297,27 +297,27 @@ function readPositions(db: DatabaseHandle, where: string, params: string[]): Cal
 }
 
 /**
- * Mirrors `analytics.headline()`: per-book, per-structure results over CLOSED positions.
+ * Mirrors `analytics.headline()`: per-arm, per-structure results over CLOSED positions.
  *
  * Grouped by structure and never pooled across tags — the module's fourth honesty rule. Net is
  * `SUM(gross) - SUM(fees)`, the same single subtraction `cherrypick.core.ledgers` performs for the
  * `dc_week` schema.
  */
-function readBooks(db: DatabaseHandle): CalendarsBookCell[] {
+function readBooks(db: DatabaseHandle): CalendarsArmCell[] {
   return db
     .prepare<[], Record<string, unknown>>(
-      `SELECT book, structure, COUNT(*) AS n, COUNT(DISTINCT week_of) AS weeks,
+      `SELECT arm, structure, COUNT(*) AS n, COUNT(DISTINCT week_of) AS weeks,
               SUM(gross_pnl) AS gross, SUM(fees) AS fees, SUM(gross_pnl) - SUM(fees) AS net,
               SUM((gross_pnl - fees) > 0) AS wins
          FROM dc_positions WHERE status = 'closed'
-        GROUP BY book, structure ORDER BY book, structure`,
+        GROUP BY arm, structure ORDER BY arm, structure`,
     )
     .all()
     .map((r) => {
       const n = Number(r["n"] ?? 0);
       const wins = num(r["wins"]);
       return {
-        book: str(r["book"]) ?? "",
+        arm: str(r["arm"]) ?? "",
         structure: str(r["structure"]) ?? "",
         positions: n,
         weeks: Number(r["weeks"] ?? 0),
@@ -335,7 +335,7 @@ function readEmVsRealized(db: DatabaseHandle): CalendarsEmRow[] {
     .prepare<[], Record<string, unknown>>(
       `SELECT week_of, MIN(structure) AS structure, MIN(entry_spot) AS entry_spot, MIN(entry_em) AS em,
               MIN(settlement_spot) AS settle_spot
-         FROM dc_positions WHERE book = 'path' AND settlement_spot IS NOT NULL
+         FROM dc_positions WHERE arm = 'path' AND settlement_spot IS NOT NULL
         GROUP BY week_of ORDER BY week_of DESC`,
     )
     .all()
@@ -511,7 +511,7 @@ export function readCalendars(config: ConsoleConfig): CalendarsPayload {
     exitWindowEnd: params.exitWindowEnd,
     maxQuoteAgeSeconds: params.maxQuoteAgeSeconds,
     maxLegSpreadPct: params.maxLegSpreadPct,
-    books: params.books,
+    arms: params.arms,
     adviceEnabled: params.adviceEnabled,
   };
   const dividends = params.symbols.map((symbol) => {
@@ -544,7 +544,7 @@ export function readCalendars(config: ConsoleConfig): CalendarsPayload {
       feed: null,
     },
     openPositions: [],
-    books: [],
+    arms: [],
     emVsRealized: [],
     integrity: {
       markCoverage: { session: null, marks: 0, refused: 0, refusalShare: null, refusals: [] },
@@ -582,13 +582,13 @@ export function readCalendars(config: ConsoleConfig): CalendarsPayload {
         ? []
         : db
             .prepare<[string], Record<string, unknown>>(
-              `SELECT book, reason, accepted, SUM(occurrences) AS n, MAX(last_ts) AS last_ts
+              `SELECT arm, reason, accepted, SUM(occurrences) AS n, MAX(last_ts) AS last_ts
                  FROM dc_decisions WHERE trade_date = ?
-                GROUP BY book, reason, accepted ORDER BY n DESC`,
+                GROUP BY arm, reason, accepted ORDER BY n DESC`,
             )
             .all(session)
             .map((r) => ({
-              book: str(r["book"]) ?? "",
+              arm: str(r["arm"]) ?? "",
               reason: str(r["reason"]) ?? "",
               accepted: r["accepted"] === 1,
               occurrences: Number(r["n"] ?? 0),
@@ -618,7 +618,7 @@ export function readCalendars(config: ConsoleConfig): CalendarsPayload {
       },
       entryWindow: readEntryWindow(db, params, entrySession),
       openPositions: readPositions(db, "status != 'closed'", []),
-      books: readBooks(db),
+      arms: readBooks(db),
       emVsRealized: readEmVsRealized(db),
       integrity: {
         markCoverage: readMarkCoverage(db, session),
@@ -646,10 +646,10 @@ export function readCalendars(config: ConsoleConfig): CalendarsPayload {
 }
 
 /**
- * One row per (week, book) — the history tab's index.
+ * One row per (week, arm) — the history tab's index.
  *
- * Every book's positions for a week come from the SAME entry plan, so these rows are exactly paired
- * by construction and a divergence between two books on one week is exit policy and nothing else.
+ * Every arm's positions for a week come from the SAME entry plan, so these rows are exactly paired
+ * by construction and a divergence between two arms on one week is exit policy and nothing else.
  * `closed` rides beside `positions` because a week does not finish while its delivered shares are
  * outstanding, and a partial week must not read as a finished one with a small net.
  */
@@ -657,11 +657,11 @@ export function readCalendarsWeeks(config: ConsoleConfig): CalendarsWeekRow[] {
   return withReadOnlyDb<CalendarsWeekRow[]>(dbPath(config), [], (db) =>
     db
       .prepare<[], Record<string, unknown>>(
-        `SELECT week_of, book, MIN(structure) AS structure, MIN(entry_session) AS entry_session,
+        `SELECT week_of, arm, MIN(structure) AS structure, MIN(entry_session) AS entry_session,
                 COUNT(*) AS n, SUM(status = 'closed') AS closed, SUM(entry_debit) AS entry_debit,
                 MIN(entry_spot) AS entry_spot, MAX(settlement_spot) AS settlement_spot,
                 SUM(gross_pnl) AS gross, SUM(fees) AS fees
-           FROM dc_positions GROUP BY week_of, book ORDER BY week_of DESC, book`,
+           FROM dc_positions GROUP BY week_of, arm ORDER BY week_of DESC, arm`,
       )
       .all()
       .map((r) => {
@@ -673,7 +673,7 @@ export function readCalendarsWeeks(config: ConsoleConfig): CalendarsWeekRow[] {
           weekOf: str(r["week_of"]) ?? "",
           structure: str(r["structure"]) ?? "",
           entrySession: str(r["entry_session"]) ?? "",
-          book: str(r["book"]) ?? "",
+          arm: str(r["arm"]) ?? "",
           positions: n,
           closed,
           entryDebit: num(r["entry_debit"]),

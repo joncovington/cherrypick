@@ -134,7 +134,7 @@ def config():
             "max_leg_spread_pct": 0.25,
             "deep_window_pct": 0.20,
         },
-        "books": {
+        "arms": {
             "control": {"enabled": True},
         },
         "tastytrade_costs": {},

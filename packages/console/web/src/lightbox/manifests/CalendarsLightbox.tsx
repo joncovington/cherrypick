@@ -77,8 +77,8 @@ export function CalendarsLightbox({ slide }: { slide: string }) {
                 }
               >
                 {data?.today.decisions.map((d) => (
-                  <tr key={`${d.book}-${d.reason}-${String(d.accepted)}`}>
-                    <td className="mono">{d.book}</td>
+                  <tr key={`${d.arm}-${d.reason}-${String(d.accepted)}`}>
+                    <td className="mono">{d.arm}</td>
                     <td>
                       <span className="mono">{d.reason}</span>
                       {d.accepted && <span className="chip chip-ok integrity-chip">accepted</span>}

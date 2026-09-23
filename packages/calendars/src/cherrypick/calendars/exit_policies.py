@@ -1,11 +1,11 @@
 """Read-side exit-policy derivation — the experiment the module exists to run.
 
-One entry stream, two real books, and a recorded per-tick mark path make every candidate exit rule
-answerable after the fact WITHOUT running it as its own book: `derive` replays a policy tick by
-tick over the path book's recorded marks (an exact replay at the recorded prices, not MEIC's
+One entry stream, two real arms, and a recorded per-tick mark path make every candidate exit rule
+answerable after the fact WITHOUT running it as its own arm: `derive` replays a policy tick by
+tick over the path arm's recorded marks (an exact replay at the recorded prices, not MEIC's
 max-cost proxy), prices the exit it would have taken at that tick's own bid/ask through the same
-cost stack the live books use, and reports the week's net. Pairing is exact by construction —
-every book shares the same entry fills — so a policy table is a like-for-like comparison, not an
+cost stack the live arms use, and reports the week's net. Pairing is exact by construction —
+every arm shares the same entry fills — so a policy table is a like-for-like comparison, not an
 estimate.
 
 Two honesty rails, both load-bearing:
@@ -14,10 +14,10 @@ Two honesty rails, both load-bearing:
   policy is excluded and counted as excluded — silently pricing a missing tick would let a feed
   outage flatter whichever policy it happened to favor.
 - **The derivation is validated against reality every time it runs.** `validate_against_control`
-  re-derives the `control` policy from the control book's OWN marks and compares it to that book's
+  re-derives the `control` policy from the control arm's OWN marks and compares it to that arm's
   real recorded net (they should agree to the cent — same ticks, same mids, same cost model), and
-  the `expiry-longs-mon` policy against the path book's real net. A derivation that cannot
-  reproduce the books it is derived beside has no business ranking the policies between them.
+  the `expiry-longs-mon` policy against the path arm's real net. A derivation that cannot
+  reproduce the arms it is derived beside has no business ranking the policies between them.
 
 Granularity caveat, stated rather than hidden: a trigger is evaluated at the recorded tick cadence,
 so a threshold crossed and re-crossed between ticks is invisible — the derived exit is the first
@@ -56,11 +56,11 @@ _ROLES = ("front_put", "back_put", "front_call", "back_call")
 
 
 # --------------------------------------------------------------------------- path assembly
-def week_data(conn, week_of: str, book: str) -> dict | None:
-    """One week's positions, legs, and merged tick path for `book`, or None if the book never
+def week_data(conn, week_of: str, arm: str) -> dict | None:
+    """One week's positions, legs, and merged tick path for `arm`, or None if the arm never
     entered. Ticks merge both sides on `marked_at` (one shared timestamp per loop tick), each
     carrying whatever legs were marked usable at that instant."""
-    positions = {p["side"]: p for p in db.positions_for_week(conn, week_of) if p["book"] == book}
+    positions = {p["side"]: p for p in db.positions_for_week(conn, week_of) if p["arm"] == arm}
     if not positions:
         return None
     legs: dict[str, dict] = {}
@@ -151,7 +151,7 @@ def _close_roles(week: dict, tick: dict, roles: tuple[str, ...], config: dict, e
 
 
 def _settle_shorts(week: dict, exits: dict) -> tuple[float, float, str] | None:
-    """Price the shorts at settlement off the PATH book's recorded settlement, as
+    """Price the shorts at settlement off the PATH arm's recorded settlement, as
     `(exit_costs, share_pnl_dollars, label)`.
 
     The position row carries the settlement spot and intrinsic is recomputed from it, so the derived
@@ -270,13 +270,13 @@ def derive(week: dict, policy_name: str, config: dict) -> dict:
             if tick is None:
                 return _not_derivable(week, policy_name, "no_mark_fri_close")
             exit_costs += _close_roles(week, tick, long_roles, config, exits)["total"]
-        else:  # mon_open — the path book's own shape
+        else:  # mon_open — the path arm's own shape
             day = next(iter(week["positions"].values()))["back_expiration"]
             tick = _first_tick(week, long_roles, day=day, minute=disposition_min)
             if tick is not None:
                 exit_costs += _close_roles(week, tick, long_roles, config, exits)["total"]
             else:
-                # Never disposed — fall back to what the real book recorded (its own expiry
+                # Never disposed — fall back to what the real arm recorded (its own expiry
                 # settlement); a derivation inventing a Monday price the record does not hold
                 # would be a guess.
                 for role in long_roles:
@@ -333,20 +333,20 @@ def _not_derivable(week: dict, policy_name: str, reason: str) -> dict:
 
 
 # --------------------------------------------------------------------------- the read surfaces
-def _completed_weeks(conn, book: str) -> list[str]:
-    """Weeks whose `book` positions are all closed — a week still in flight has no answer yet."""
+def _completed_weeks(conn, arm: str) -> list[str]:
+    """Weeks whose `arm` positions are all closed — a week still in flight has no answer yet."""
     return [
         r["week_of"]
         for r in conn.execute(
             "SELECT week_of, COUNT(*) AS n, SUM(status = 'closed') AS done FROM dc_positions "
-            "WHERE book = ? GROUP BY week_of HAVING n = done ORDER BY week_of",
-            (book,),
+            "WHERE arm = ? GROUP BY week_of HAVING n = done ORDER BY week_of",
+            (arm,),
         )
     ]
 
 
 def comparison_table(conn, config: dict) -> dict:
-    """Every policy over every completed path-book week, grouped by structure tag (distinct tags
+    """Every policy over every completed path-arm week, grouped by structure tag (distinct tags
     are distinct trades and never pool). This table is the module's answer to "which exit
     parameters work" — read beside `validation`, which says whether to believe it."""
     weeks = [w for w in (week_data(conn, week_of, "path") for week_of in _completed_weeks(conn, "path")) if w]
@@ -396,27 +396,27 @@ def _break_date(conn, key: str) -> str | None:
 
 
 def validate_against_control(conn, config: dict, tolerance: float = 0.50) -> dict:
-    """The derivation reproduced against reality: derived `control` vs the control book's real
-    recorded net (from the control book's OWN marks), and derived `expiry-longs-mon` vs the path
-    book's real net. A mismatch past `tolerance` dollars means the replay and the books disagree
+    """The derivation reproduced against reality: derived `control` vs the control arm's real
+    recorded net (from the control arm's OWN marks), and derived `expiry-longs-mon` vs the path
+    arm's real net. A mismatch past `tolerance` dollars means the replay and the arms disagree
     about the same trade, and the policy table should not be trusted until it is explained."""
     checks = []
-    for book, policy_name in (("control", "control"), ("path", "expiry-longs-mon")):
-        for week_of in _completed_weeks(conn, book):
-            week = week_data(conn, week_of, book)
+    for arm, policy_name in (("control", "control"), ("path", "expiry-longs-mon")):
+        for week_of in _completed_weeks(conn, arm):
+            week = week_data(conn, week_of, arm)
             if week is None:
                 continue
             real_gross = sum(p["gross_pnl"] or 0 for p in week["positions"].values())
             real_fees = sum(p["fees"] or 0 for p in week["positions"].values())
             derived = derive(week, policy_name, config)
             if not derived["derivable"]:
-                checks.append({"week_of": week_of, "book": book, "ok": False, "reason": derived["reason"]})
+                checks.append({"week_of": week_of, "arm": arm, "ok": False, "reason": derived["reason"]})
                 continue
             diff = round(derived["net_pnl"] - round(real_gross - real_fees, 2), 2)
             checks.append(
                 {
                     "week_of": week_of,
-                    "book": book,
+                    "arm": arm,
                     "derived_net": derived["net_pnl"],
                     "real_net": round(real_gross - real_fees, 2),
                     "diff": diff,
@@ -426,7 +426,7 @@ def validate_against_control(conn, config: dict, tolerance: float = 0.50) -> dic
 
     # A week traded before the exit gate learned to read a spread in money as well as in percent is
     # not evidence about the replay. The gate could refuse a penny-wide leg on percentage alone, so
-    # a book could MISS its scheduled exit and take a different path -- which is exactly what
+    # a arm could MISS its scheduled exit and take a different path -- which is exactly what
     # 2026-08-24 control did -- and the replay would then be compared against a week the policy it
     # models never actually governed. Those weeks are reported separately rather than as failures,
     # and separately rather than silently: a suppressed row is how a check stops being a check.

@@ -3,7 +3,7 @@
 Two layers, kept apart on purpose (the earnings pattern, via calendars):
 
 - `effective_params` is the ONE choke point that restates a position's frozen advised params over
-  the config. An advised book's rules are stamped on the row at entry and read back here every
+  the config. An advised arm's rules are stamped on the row at entry and read back here every
   tick, so advice lapsing mid-position never hands it to rules nobody chose — and a control row
   comes back untouched.
 - `evaluate` is pure over (position, params, a priced mark, the clock) and returns a verdict.
@@ -11,19 +11,19 @@ Two layers, kept apart on purpose (the earnings pattern, via calendars):
   gate is still recorded (`executed=0` with the gate), which is the only record that an exit was
   SEEN before it was allowed.
 
-Book semantics, since the 2026-08-23 redesign to a single `control` book (now run across two
+Arm semantics, since the 2026-08-23 redesign to a single `control` arm (now run across two
 symbols, TQQQ and XSP):
 - `control` — mechanical entry whenever the slot is free; the default exit HOLDS the position to
   the short's own expiration and then closes both legs (`short_expiration`), rather than the old
-  tv-exhaustion trigger. There is no more roll book and no more breach special case — the short can
+  tv-exhaustion trigger. There is no more roll arm and no more breach special case — the short can
   now be OTM or ITM by construction (the ATM leg-selection redesign), so "hold like a covered call
   on a breach" no longer means anything distinct from "hold".
 - `tv_managed_exit` (default False) is a live, advisor-tunable escape hatch back to the PRE-redesign
   behavior: when True, `evaluate` closes early once the short's time value decays to
   `tv_close_threshold` — settable only through an `advised:control` row's frozen `advice_params`
-  overlay, so the suite can run hold-to-expiry vs. early-tv-exit as a paper A/B without a new book.
-- `advised:<experiment name>` (one book per advisor experiment since 2026-09-17; `advised:control`
-  before) — the base book's rules with the admitted param overrides frozen at entry.
+  overlay, so the suite can run hold-to-expiry vs. early-tv-exit as a paper A/B without a new arm.
+- `advised:<experiment name>` (one arm per advisor experiment since 2026-09-17; `advised:control`
+  before) — the base arm's rules with the admitted param overrides frozen at entry.
 
 Assignment-exposure telemetry lives BESIDE the verdict, not in it: `assignment_exposed` flags a
 mark whose short extrinsic sits under `assignment_exposure_tv` — the region where a real short is
@@ -70,21 +70,21 @@ class Decision:
 
 
 def effective_params(position: dict, config: dict) -> dict:
-    """The params governing this position: the base book's merged config, with the row's frozen
-    `advice_params` overlaid for an advised book. An unreadable stamp is the base's config, never a
+    """The params governing this position: the base arm's merged config, with the row's frozen
+    `advice_params` overlaid for an advised arm. An unreadable stamp is the base's config, never a
     guess."""
-    book = position.get("book") or "control"
+    arm = position.get("arm") or "control"
     # A legacy `advised:control` row names its base in the tag; a 2026-09-17 `advised:<experiment>`
     # row shadows the configured `advice.base_book`. One rule, in `engine.base_book`.
     # The row's own stamp first (2026-09-17): an advised twin of a non-default base is managed under
     # THAT base after the session's decision file is gone, not under the configured default.
     stamped = position.get("advice_base")
-    base = str(stamped) if stamped else engine.base_book(book, config=config)
+    base = str(stamped) if stamped else engine.base_book(arm, config=config)
     params = {**PARAM_DEFAULTS, **engine.merged_params(config, base)}
-    params["book"] = book
+    params["arm"] = arm
     params["base_book"] = base
     raw = position.get("advice_params")
-    if book.startswith("advised:") and raw:
+    if arm.startswith("advised:") and raw:
         try:
             overlay = json.loads(raw) if isinstance(raw, str) else dict(raw)
         except (TypeError, ValueError):
@@ -120,7 +120,7 @@ def evaluate(
     `short_tv` is the short leg's per-share extrinsic at the current mark (None when the mark was
     refused — nothing acts on a hole). Since the 2026-08-23 redesign the default rule is simply
     HOLD until the short's own expiration day, then close both legs together — there is no more
-    breach special case (the short can legitimately sit OTM or ITM) and no more roll book.
+    breach special case (the short can legitimately sit OTM or ITM) and no more roll arm.
     `tv_managed_exit` is the advisor-tunable override back to the old early-tv-exhaustion exit,
     readable only through an advised row's frozen params via `effective_params`.
     """

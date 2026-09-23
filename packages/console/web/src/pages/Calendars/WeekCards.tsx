@@ -30,7 +30,7 @@ const OUTCOMES: Record<string, string> = {
     "no strike is listed in BOTH expirations at the expected-move target, so no calendar can be built there.",
   non_positive_debit: "the structure priced at a zero or negative debit, which is not a calendar.",
   ex_dividend_week:
-    "a declared ex-dividend date falls inside the week. Skipped by design, not modelled — an ITM short call is really assigned the session before the ex-date, ahead of anything this module books.",
+    "a declared ex-dividend date falls inside the week. Skipped by design, not modelled — an ITM short call is really assigned the session before the ex-date, ahead of anything this module arms.",
   dividend_calendar_lapsed:
     "the week runs past the declared dividend calendar. Entry is refused rather than assuming the week dividend-free — a lapsed table stops entries loudly, by design.",
   unknown_settlement:
@@ -220,10 +220,10 @@ function sideLabel(p: CalendarsPosition): string {
 }
 
 /**
- * The structures the ledger currently holds, grouped by book.
+ * The structures the ledger currently holds, grouped by arm.
  *
- * Books, not a fixed grid: every book enters from the same plan, so a book missing from this list
- * is a book that did not enter, and a row of em-dashes would have invited that to read as a broken
+ * Arms, not a fixed grid: every arm enters from the same plan, so a arm missing from this list
+ * is a arm that did not enter, and a row of em-dashes would have invited that to read as a broken
  * number instead.
  */
 export function PositionsCard({
@@ -239,7 +239,7 @@ export function PositionsCard({
   updatedAt?: number;
   loading?: boolean;
 }) {
-  const books = [...new Set(positions.map((p) => p.book))];
+  const arms = [...new Set(positions.map((p) => p.arm))];
   return (
     <DataCard
       title={title}
@@ -250,11 +250,11 @@ export function PositionsCard({
       empty={emptyText}
       updatedAt={updatedAt}
       footer={
-        books.length > 0 && (
+        arms.length > 0 && (
           <p className="integrity-note">
-            Every book&rsquo;s positions for a week come from the <strong>same</strong> entry plan — identical
+            Every arm&rsquo;s positions for a week come from the <strong>same</strong> entry plan — identical
             strikes, identical mids, identical modeled costs — so any divergence between{" "}
-            {books.map((b) => (
+            {arms.map((b) => (
               <span className="mono" key={b}>
                 {b}{" "}
               </span>
@@ -268,7 +268,7 @@ export function PositionsCard({
         <tr key={p.positionId}>
           <td>{p.symbol}</td>
           <td>
-            <span className="mono">{p.book}</span>
+            <span className="mono">{p.arm}</span>
           </td>
           <td title={p.entrySession}>{p.entrySession === "" ? "—" : p.entrySession.slice(5)}</td>
           {/* Both legs: a double calendar's front and back expire on DIFFERENT dates by
@@ -317,15 +317,15 @@ export function PositionsCard({
 
 /** Per-arm, per-structure results over closed positions — the module's headline. */
 export function BookComparison({ data, updatedAt }: { data: CalendarsPayload | undefined; updatedAt?: number }) {
-  const books = data?.books ?? [];
+  const arms = data?.arms ?? [];
   return (
     <DataCard
       title="results by arm"
       headers={["arm", "structure", "weeks", "positions", "gross", "fees", "net", "win rate"]}
       loading={data === undefined}
-      rowCount={books.length}
+      rowCount={arms.length}
       numFrom={2}
-      empty="no week has closed yet — the books have nothing to report"
+      empty="no week has closed yet — the arms have nothing to report"
       updatedAt={updatedAt}
       footer={
         <p className="integrity-note">
@@ -335,10 +335,10 @@ export function BookComparison({ data, updatedAt }: { data: CalendarsPayload | u
         </p>
       }
     >
-      {books.map((b) => (
-        <tr key={`${b.book}-${b.structure}`}>
+      {arms.map((b) => (
+        <tr key={`${b.arm}-${b.structure}`}>
           <td>
-            <span className="mono">{b.book}</span>
+            <span className="mono">{b.arm}</span>
           </td>
           <td>
             <span className="mono">{b.structure}</span>

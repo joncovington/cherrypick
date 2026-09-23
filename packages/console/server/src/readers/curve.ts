@@ -1,6 +1,6 @@
 import path from "node:path";
 import type {
-  CurveBookCell,
+  CurveArmCell,
   CurveCycleRow,
   CurveFlipDivergence,
   CurveMeta,
@@ -49,7 +49,7 @@ interface CurveParams {
  */
 const KNOWN_COLUMNS: Record<string, string[]> = {
   curve_positions: [
-    "id", "position_id", "symbol", "book", "entry_session", "quantity", "expiration", "short_strike",
+    "id", "position_id", "symbol", "arm", "entry_session", "quantity", "expiration", "short_strike",
     "long_strike", "entry_time", "entry_spot", "entry_short_mid", "entry_long_mid", "entry_credit",
     "entry_width", "entry_max_loss", "entry_credit_pct_of_width", "entry_short_delta",
     "short_selected_by", "entry_dte", "entry_ratio", "entry_regime", "entry_hook", "entry_cost",
@@ -178,7 +178,7 @@ function readOpenPositions(db: DatabaseHandle): CurveOpenPosition[] {
       ORDER BY marked_at DESC LIMIT 1`,
   );
   return db
-    .prepare<[], Record<string, unknown>>("SELECT * FROM curve_positions WHERE status != 'closed' ORDER BY symbol, book")
+    .prepare<[], Record<string, unknown>>("SELECT * FROM curve_positions WHERE status != 'closed' ORDER BY symbol, arm")
     .all()
     .map((p) => {
       const positionId = str(p["position_id"]) ?? "";
@@ -187,7 +187,7 @@ function readOpenPositions(db: DatabaseHandle): CurveOpenPosition[] {
       return {
         positionId,
         symbol: str(p["symbol"]) ?? "",
-        book: str(p["book"]) ?? "",
+        arm: str(p["arm"]) ?? "",
         status: str(p["status"]) ?? "",
         shortStrike: num(p["short_strike"]),
         longStrike: num(p["long_strike"]),
@@ -209,21 +209,21 @@ function readOpenPositions(db: DatabaseHandle): CurveOpenPosition[] {
     });
 }
 
-/** Mirrors `analytics.headline()`: per-book, per-symbol results over CLOSED positions. */
-function readBooks(db: DatabaseHandle): CurveBookCell[] {
+/** Mirrors `analytics.headline()`: per-arm, per-symbol results over CLOSED positions. */
+function readBooks(db: DatabaseHandle): CurveArmCell[] {
   return db
     .prepare<[], Record<string, unknown>>(
-      `SELECT book, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees,
+      `SELECT arm, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees,
               SUM(gross_pnl) - SUM(fees) AS net, SUM((gross_pnl - fees) > 0) AS wins
          FROM curve_positions WHERE status = 'closed'
-        GROUP BY book, symbol ORDER BY book, symbol`,
+        GROUP BY arm, symbol ORDER BY arm, symbol`,
     )
     .all()
     .map((r) => {
       const n = Number(r["n"] ?? 0);
       const wins = num(r["wins"]);
       return {
-        book: str(r["book"]) ?? "",
+        arm: str(r["arm"]) ?? "",
         symbol: str(r["symbol"]) ?? "",
         positions: n,
         grossPnl: num(r["gross"]),
@@ -243,11 +243,11 @@ function readBooks(db: DatabaseHandle): CurveBookCell[] {
 function readFlipDivergence(db: DatabaseHandle): CurveFlipDivergence {
   const rows = db
     .prepare<[], Record<string, unknown>>(
-      "SELECT symbol, entry_session FROM curve_positions WHERE book = 'control' AND exit_reason = 'regime_flip'",
+      "SELECT symbol, entry_session FROM curve_positions WHERE arm = 'control' AND exit_reason = 'regime_flip'",
     )
     .all();
   const heldPast = db.prepare<[string, string], { hit: number }>(
-    `SELECT 1 AS hit FROM curve_positions WHERE book = 'noflip' AND symbol = ? AND entry_session = ?
+    `SELECT 1 AS hit FROM curve_positions WHERE arm = 'noflip' AND symbol = ? AND entry_session = ?
       AND (exit_reason != 'regime_flip' OR exit_reason IS NULL)`,
   );
   let diverged = 0;
@@ -305,7 +305,7 @@ function readMarkCoverage(db: DatabaseHandle, session: string | null): CurvePayl
 }
 
 /** Whether today's regime row exists and is usable -- the series' own continuity check, and the
- * module's rule that a session is written whether or not any book traded (its second product). */
+ * module's rule that a session is written whether or not any arm traded (its second product). */
 function readRegimeToday(db: DatabaseHandle, session: string | null): CurvePayload["integrity"]["regimeToday"] {
   if (session === null) return { present: false, usable: false, refusal: null };
   const row = db
@@ -341,7 +341,7 @@ export function readCurve(config: ConsoleConfig): CurvePayload {
     dbPresent: false,
     openPositions: [],
     openCount: 0,
-    books: [],
+    arms: [],
     flipDivergence: {
       flipDivergenceCount: 0,
       controlFlipExits: 0,
@@ -381,7 +381,7 @@ export function readCurve(config: ConsoleConfig): CurvePayload {
       dbPresent: true,
       openPositions,
       openCount: openPositions.length,
-      books: readBooks(db),
+      arms: readBooks(db),
       flipDivergence: readFlipDivergence(db),
       regimeSeries: readRegimeSeries(db),
       integrity: {
@@ -412,7 +412,7 @@ export function readCurve(config: ConsoleConfig): CurvePayload {
 }
 
 export interface CurveHistoryFilter {
-  book: string | null;
+  arm: string | null;
   symbol: string | null;
 }
 
@@ -424,9 +424,9 @@ export function readCurveHistory(
 ): Paged<CurveCycleRow> {
   const clauses = ["status = 'closed'"];
   const params: string[] = [];
-  if (filter.book !== null) {
-    clauses.push("book = ?");
-    params.push(filter.book);
+  if (filter.arm !== null) {
+    clauses.push("arm = ?");
+    params.push(filter.arm);
   }
   if (filter.symbol !== null) {
     clauses.push("symbol = ?");
@@ -437,7 +437,7 @@ export function readCurveHistory(
     pagedQuery<CurveCycleRow>(
       db,
       {
-        columns: `position_id, symbol, book, entry_session, closed_session, status, exit_reason,
+        columns: `position_id, symbol, arm, entry_session, closed_session, status, exit_reason,
                   short_strike, long_strike, expiration, entry_spot, settlement_spot, entry_credit,
                   entry_width, entry_ratio, entry_regime, entry_hook, gross_pnl, fees`,
         from: "curve_positions",
@@ -452,7 +452,7 @@ export function readCurveHistory(
         return {
           positionId: str(r["position_id"]) ?? "",
           symbol: str(r["symbol"]) ?? "",
-          book: str(r["book"]) ?? "",
+          arm: str(r["arm"]) ?? "",
           entrySession: str(r["entry_session"]) ?? "",
           closedSession: str(r["closed_session"]),
           status: str(r["status"]) ?? "",
@@ -478,7 +478,7 @@ export function readCurveHistory(
 
 /** The history filter's own options. No era mechanism: the module has one era and no pooled data yet. */
 export function readCurveMeta(config: ConsoleConfig): CurveMeta {
-  const empty: CurveMeta = { books: [], symbols: [], sessions: [] };
+  const empty: CurveMeta = { arms: [], symbols: [], sessions: [] };
   return withReadOnlyDb<CurveMeta>(dbPath(config), empty, (db) => {
     const column = (name: string, table: string): string[] =>
       db
@@ -487,7 +487,7 @@ export function readCurveMeta(config: ConsoleConfig): CurveMeta {
         .map((r) => str(r["v"]) ?? "")
         .filter((v) => v !== "");
     return {
-      books: column("book", "curve_positions"),
+      arms: column("arm", "curve_positions"),
       symbols: column("symbol", "curve_positions"),
       sessions: column("entry_session", "curve_positions").reverse(),
     };

@@ -5,11 +5,11 @@ import { Pager, ScopeSelect, usePage } from "../../components/ScopeBar";
 import { fmtStrike } from "../../lib/optionFormat";
 
 export function HistoryTab() {
-  const [book, setBook] = useState<string | null>(null);
+  const [arm, setBook] = useState<string | null>(null);
   const [symbol, setSymbol] = useState<string | null>(null);
   const meta = useCurveMeta();
-  const { page, setOffset, setLimit } = usePage([book, symbol]);
-  const { data, isLoading, isError, isPlaceholderData } = useCurveHistory({ book, symbol }, page);
+  const { page, setOffset, setLimit } = usePage([arm, symbol]);
+  const { data, isLoading, isError, isPlaceholderData } = useCurveHistory({ arm, symbol }, page);
   const rows = data?.rows ?? [];
 
   return (
@@ -37,7 +37,7 @@ export function HistoryTab() {
         updatedAt={data === undefined ? undefined : Date.now()}
         controls={
           <>
-            <ScopeSelect label="book filter" value={book} options={meta.data?.books} onChange={setBook} allLabel="all books" />
+            <ScopeSelect label="arm filter" value={arm} options={meta.data?.arms} onChange={setBook} allLabel="all arms" />
             <ScopeSelect
               label="symbol filter"
               value={symbol}
@@ -60,7 +60,7 @@ export function HistoryTab() {
               <span className="muted"> -&gt; {r.closedSession ?? "—"}</span>
             </td>
             <td>{r.symbol}</td>
-            <td>{r.book}</td>
+            <td>{r.arm}</td>
             <td>
               {fmtStrike(r.shortStrike)}
               <span className="muted"> / </span>

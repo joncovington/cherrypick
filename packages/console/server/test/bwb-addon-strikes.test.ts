@@ -2,13 +2,13 @@
  * The add-on's strikes on an open BWB.
  *
  * A fired add-on turns the fly into a 1-3-2, so its two strikes are the shape of the position now
- * rather than a detail of how it got there — and the four books exist precisely to disagree about
+ * rather than a detail of how it got there — and the four arms exist precisely to disagree about
  * WHEN to fire, which makes "fired at what" the comparison the open-trades table is for. The row
  * carried them all along (`addon_short_strike`, `addon_long_strike`); the reader dropped them.
  *
  * Built against a fixture rather than the real ledger so it runs anywhere, and because the case
  * worth pinning — a fired position beside an unfired one — is not guaranteed to exist on any given
- * day in a live book.
+ * day in a live arm.
  */
 
 import fs from "node:fs";
@@ -39,7 +39,7 @@ CREATE TABLE bwb_positions (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     position_id         TEXT NOT NULL UNIQUE,
     symbol              TEXT NOT NULL,
-    book                TEXT NOT NULL,
+    arm                TEXT NOT NULL,
     entry_session       TEXT NOT NULL,
     structure_signature TEXT NOT NULL,
     quantity            INTEGER NOT NULL DEFAULT 1,
@@ -163,7 +163,7 @@ CREATE TABLE bwb_entry_attempts (
     ts           TEXT NOT NULL,
     trade_date   TEXT NOT NULL,
     symbol       TEXT NOT NULL,
-    book         TEXT NOT NULL,
+    arm         TEXT NOT NULL,
     outcome      TEXT NOT NULL,
     block_detail TEXT,
     spot         REAL,
@@ -200,7 +200,7 @@ beforeAll(() => {
   const db = new Database(path.join(dir, "paper_trades.db"));
   db.exec(DDL);
   const ins = db.prepare(
-    `INSERT INTO bwb_positions (position_id, symbol, book, entry_session, structure_signature,
+    `INSERT INTO bwb_positions (position_id, symbol, arm, entry_session, structure_signature,
        quantity, expiration,
        body_strike, near_strike, far_strike, entry_time, entry_spot, entry_credit, entry_max_loss,
        entry_cost, peak_abs_delta, below_flip_seen, armed_at, addon_fired_at, addon_short_strike,
@@ -228,7 +228,7 @@ afterAll(() => {
 
 const read = () => readBwb({ paths: { bwbDir: dir } } as unknown as ConsoleConfig);
 
-const byBook = (book: string) => read().openPositions.find((p) => p.book === book);
+const byBook = (arm: string) => read().openPositions.find((p) => p.arm === arm);
 
 describe("the add-on's strikes on an open position", () => {
   it("surfaces both strikes once the add-on has fired", () => {
@@ -246,7 +246,7 @@ describe("the add-on's strikes on an open position", () => {
     expect(p?.addonShortStrike).toBeGreaterThan(p?.addonLongStrike ?? Infinity);
   });
 
-  it("leaves them null on a book that has not fired, rather than defaulting to a strike", () => {
+  it("leaves them null on a arm that has not fired, rather than defaulting to a strike", () => {
     // control never fires by design, so this is the common row. A zero here would render as a real
     // strike of 0 and read as a position that does not exist.
     const p = byBook("control");

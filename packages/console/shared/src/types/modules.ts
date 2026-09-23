@@ -47,7 +47,7 @@ export interface MeicSummaryRow {
  * One journaled measurement break. Results either side of the date must not be pooled.
  *
  * `scope` is present on the modules whose ledger records one (meic and flies scope a break to an
- * arm, or `*` for the whole book); the LedgerStore shape the newer modules use has no scope, and
+ * arm, or `*` for the whole arm); the LedgerStore shape the newer modules use has no scope, and
  * those simply omit it.
  */
 export interface MeasurementBreak {
@@ -147,14 +147,17 @@ export interface EntryReviewRow {
   reason: string | null;
 }
 
-/** Earnings browses both books at once, like scout does. */
+/** Earnings browses both arms at once, like scout does. */
 export interface EarningsIntegrity extends ModuleIntegrity {
   /**
-   * How many rows in scope come from each book.
+   * How many rows in scope come from each arm.
    *
-   * earnings is the one module with a live book beside a paper one, and these tables span BOTH on
-   * purpose while the analytics and strategy detail follow a mode toggle. That split is the page's
-   * sharpest way to mislead, so the mix is stated rather than left to the per-row badges.
+   * earnings is the one module with a live ledger beside a paper one, and these tables span BOTH
+   * on purpose while the analytics and strategy detail follow a mode toggle. That split is the
+   * page's sharpest way to mislead, so the mix is stated rather than left to the per-row badges.
+   *
+   * `books` here is the RESERVED sense -- the paper-vs-live ledger designation, not a variant.
+   * It keeps the word on purpose; see the vocabulary table in the root CLAUDE.md.
    */
   books: { live: number; paper: number };
   /** `old -> new` per break: this schema records what actually changed, not just that it did. */
@@ -366,16 +369,16 @@ export interface ExperimentGuide {
 //
 // Paper-only: there is no live DB and no live loop, so nothing here carries a `mode`. The module's
 // `live.enabled` is a documented placeholder (see packages/pmcc/CLAUDE.md), and offering a mode
-// toggle over a book that cannot exist would be a lie the type system can prevent.
+// toggle over a arm that cannot exist would be a lie the type system can prevent.
 //
 // Nulls are load-bearing throughout. `analytics.py` states the rule the whole module keeps: `None`
 // never means zero, because "not recorded" and "was zero" are different facts. Every nullable field
 // below is one the reader must leave null rather than defaulting.
 //
 // 2026-08-23 redesign (measurement break, see packages/pmcc/CLAUDE.md): TQQQ (American, physical
-// settlement), single-book (`control` + one synthetic `advised:<experiment>` book per advisor experiment), with XSP (Mini-SPX,
+// settlement), single-arm (`control` + one synthetic `advised:<experiment>` arm per advisor experiment), with XSP (Mini-SPX,
 // European, cash-settled) added the same day as a second symbol run as a separate population under
-// the identical rule set. The old `keltner`/`roll` books,
+// the identical rule set. The old `keltner`/`roll` arms,
 // the Keltner-channel gate and the roll chain are RETIRED going forward — there is no more keltner
 // readiness/series to mirror, and `pmcc_management_events` will never again record `roll_short`.
 // `rollCount`/`PmccRoll` stay in this file only because the columns/rows are additive history: a
@@ -387,7 +390,7 @@ export interface ExperimentGuide {
 export interface PmccOpenPosition {
   positionId: string;
   symbol: string;
-  book: string;
+  arm: string;
   /** `open`, or `short_settled` — the short expired ITM and its shares await next-session disposal. */
   status: string;
   longStrike: number | null;
@@ -400,7 +403,7 @@ export interface PmccOpenPosition {
   entryWeeklyYieldPct: number | null;
   downsideProtectionPct: number | null;
   breakeven: number | null;
-  /** Always 0 on a row opened after the 2026-08-23 redesign — there is no more roll book. A
+  /** Always 0 on a row opened after the 2026-08-23 redesign — there is no more roll arm. A
    *  pre-redesign row may carry a nonzero historical value. */
   rollCount: number | null;
   /** Latest usable short-leg mark. Null means no usable mark yet — never render it as 0. */
@@ -427,9 +430,9 @@ export interface PmccOpenPosition {
   feesToDate: number | null;
 }
 
-/** Per-book, per-symbol results over CLOSED positions — `analytics.headline()`. */
-export interface PmccBookCell {
-  book: string;
+/** Per-arm, per-symbol results over CLOSED positions — `analytics.headline()`. */
+export interface PmccArmCell {
+  arm: string;
   symbol: string;
   positions: number;
   grossPnl: number | null;
@@ -472,12 +475,12 @@ export interface PmccPayload {
   dbPresent: boolean;
   openPositions: PmccOpenPosition[];
   openCount: number;
-  books: PmccBookCell[];
+  arms: PmccArmCell[];
   integrity: PmccIntegrity;
   today: {
     attempts: Array<{
       symbol: string;
-      book: string;
+      arm: string;
       outcome: string;
       n: number;
       blockDetail: string | null;
@@ -495,7 +498,7 @@ export interface PmccPayload {
      * Whether the pre-redesign early-tv-exhaustion exit is live. Config-level `defaults` reads
      * false/off by default; the only place it can be true in practice is a frozen
      * `advised:<experiment>` row's `advice_params` overlay, since control itself always holds to
-     * `short_expiration`. Rendered so the page can say WHICH exit rule a book is running under.
+     * `short_expiration`. Rendered so the page can say WHICH exit rule a arm is running under.
      */
     tvManagedExit: boolean | null;
     assignmentExposureTv: number | null;
@@ -521,7 +524,7 @@ export interface PmccShortLeg {
   closeValue: number | null;
 }
 
-/** Historical only since the 2026-08-23 redesign retired the roll book — a cycle opened after that
+/** Historical only since the 2026-08-23 redesign retired the roll arm — a cycle opened after that
  *  date will never have one of these. Kept so pre-redesign history renders honestly. */
 export interface PmccRoll {
   session: string | null;
@@ -549,7 +552,7 @@ export interface PmccAssignment {
 export interface PmccCycleRow {
   positionId: string;
   symbol: string;
-  book: string;
+  arm: string;
   entrySession: string;
   closedSession: string | null;
   status: string;
@@ -586,7 +589,7 @@ export interface PmccCycleRow {
 }
 
 export interface PmccMeta {
-  books: string[];
+  arms: string[];
   symbols: string[];
   sessions: string[];
 }
@@ -621,12 +624,12 @@ export interface CalendarsLeg {
   closeValue: number | null;
 }
 
-/** One side (put or call) of one book's double calendar. Two of these make a week's structure. */
+/** One side (put or call) of one arm's double calendar. Two of these make a week's structure. */
 export interface CalendarsPosition {
   positionId: string;
   weekOf: string;
   entrySession: string;
-  book: string;
+  arm: string;
   side: string;
   symbol: string;
   structure: string;
@@ -658,9 +661,9 @@ export interface CalendarsPosition {
   feesToDate: number | null;
 }
 
-/** Per-book, per-structure results over CLOSED positions — `analytics.headline()`. */
-export interface CalendarsBookCell {
-  book: string;
+/** Per-arm, per-structure results over CLOSED positions — `analytics.headline()`. */
+export interface CalendarsArmCell {
+  arm: string;
   structure: string;
   positions: number;
   weeks: number;
@@ -744,12 +747,12 @@ export interface CalendarsPayload {
   currentWeek: { weekOf: string | null; positions: CalendarsPosition[] };
   entryWindow: CalendarsEntryWindow;
   openPositions: CalendarsPosition[];
-  books: CalendarsBookCell[];
+  arms: CalendarsArmCell[];
   emVsRealized: CalendarsEmRow[];
   integrity: CalendarsIntegrity;
   today: {
     lastIteration: { ranAt: number; phase: string; status: string; ageSeconds: number } | null;
-    decisions: Array<{ book: string; reason: string; accepted: boolean; occurrences: number; lastTs: string | null }>;
+    decisions: Array<{ arm: string; reason: string; accepted: boolean; occurrences: number; lastTs: string | null }>;
   };
   params: {
     symbols: string[];
@@ -761,7 +764,7 @@ export interface CalendarsPayload {
     exitWindowEnd: string | null;
     maxQuoteAgeSeconds: number | null;
     maxLegSpreadPct: number | null;
-    books: Array<{ name: string; enabled: boolean }>;
+    arms: Array<{ name: string; enabled: boolean }>;
     adviceEnabled: boolean;
   };
 }
@@ -800,7 +803,7 @@ export interface CalendarsPoliciesPayload {
     ok: boolean;
     mismatches: Array<{
       weekOf: string;
-      book: string;
+      arm: string;
       derivedNet: number | null;
       realNet: number | null;
       diff: number | null;
@@ -809,12 +812,12 @@ export interface CalendarsPoliciesPayload {
   } | null;
 }
 
-/** One row per week in the ledger, per book — the history tab's index. */
+/** One row per week in the ledger, per arm — the history tab's index. */
 export interface CalendarsWeekRow {
   weekOf: string;
   structure: string;
   entrySession: string;
-  book: string;
+  arm: string;
   positions: number;
   closed: number;
   entryDebit: number | null;
@@ -827,16 +830,16 @@ export interface CalendarsWeekRow {
 
 // ---- curve (VXX term-structure roll-yield harvest) ----
 //
-// Paper-only, credential-free, three books (`control`/`noflip`/`hook`) plus the advisor's synthetic
+// Paper-only, credential-free, three arms (`control`/`noflip`/`hook`) plus the advisor's synthetic
 // twin. `curve_regime` is the module's second product -- one row per session, written whether or
-// not any book trades -- so the payload carries it as its own series, not merely as context for a
+// not any arm trades -- so the payload carries it as its own series, not merely as context for a
 // position. `None` never means zero, the same rule every other module's analytics layer states.
 
 /** One open position, mirroring `analytics.worksheet()` plus its latest usable close-cost mark. */
 export interface CurveOpenPosition {
   positionId: string;
   symbol: string;
-  book: string;
+  arm: string;
   status: string;
   shortStrike: number | null;
   longStrike: number | null;
@@ -861,9 +864,9 @@ export interface CurveOpenPosition {
   feesToDate: number | null;
 }
 
-/** Per-book, per-symbol results over CLOSED positions -- `analytics.headline()`. */
-export interface CurveBookCell {
-  book: string;
+/** Per-arm, per-symbol results over CLOSED positions -- `analytics.headline()`. */
+export interface CurveArmCell {
+  arm: string;
   symbol: string;
   positions: number;
   grossPnl: number | null;
@@ -914,7 +917,7 @@ export interface CurvePayload {
   dbPresent: boolean;
   openPositions: CurveOpenPosition[];
   openCount: number;
-  books: CurveBookCell[];
+  arms: CurveArmCell[];
   flipDivergence: CurveFlipDivergence;
   /** The regime series, oldest first -- `analytics.regime_series()`. */
   regimeSeries: CurveRegimeRow[];
@@ -935,7 +938,7 @@ export interface CurvePayload {
 export interface CurveCycleRow {
   positionId: string;
   symbol: string;
-  book: string;
+  arm: string;
   entrySession: string;
   closedSession: string | null;
   status: string;
@@ -956,7 +959,7 @@ export interface CurveCycleRow {
 }
 
 export interface CurveMeta {
-  books: string[];
+  arms: string[];
   symbols: string[];
   sessions: string[];
 }
@@ -970,7 +973,7 @@ export interface CurveMeta {
 export interface BwbOpenPosition {
   positionId: string;
   symbol: string;
-  book: string;
+  arm: string;
   status: string;
   bodyStrike: number | null;
   nearStrike: number | null;
@@ -1002,9 +1005,9 @@ export interface BwbOpenPosition {
   feesToDate: number | null;
 }
 
-/** Per-book, per-symbol results over CLOSED positions -- `analytics.headline()`. */
-export interface BwbBookCell {
-  book: string;
+/** Per-arm, per-symbol results over CLOSED positions -- `analytics.headline()`. */
+export interface BwbArmCell {
+  arm: string;
   symbol: string;
   positions: number;
   grossPnl: number | null;
@@ -1013,11 +1016,11 @@ export interface BwbBookCell {
   winRate: number | null;
 }
 
-/** Per-book add-on fire counts -- `analytics.fire_counts()`. The plan's own honesty rule: the
+/** Per-arm add-on fire counts -- `analytics.fire_counts()`. The plan's own honesty rule: the
  * real effective sample for an arm-vs-control comparison is the fire count, not the trade count --
  * until an arm's add-on fires its rows are byte-identical to control's by construction. */
 export interface BwbFireCount {
-  book: string;
+  arm: string;
   positions: number;
   fired: number;
   fireRate: number | null;
@@ -1050,7 +1053,7 @@ export interface BwbIntegrity {
 export interface BwbEntryAttempt {
   ts: string;
   symbol: string;
-  book: string;
+  arm: string;
   outcome: string;
   credit: number | null;
 }
@@ -1071,7 +1074,7 @@ export interface BwbPayload {
   dbPresent: boolean;
   openPositions: BwbOpenPosition[];
   openCount: number;
-  books: BwbBookCell[];
+  arms: BwbArmCell[];
   fireCounts: BwbFireCount[];
   /** The daily-ladder correlation caveat, surfaced beside the counts per the module's own honesty
    * rule -- concurrent positions share regime context, so rows are not independent samples. */
@@ -1088,7 +1091,7 @@ export interface BwbPayload {
 export interface BwbCycleRow {
   positionId: string;
   symbol: string;
-  book: string;
+  arm: string;
   entrySession: string;
   closedSession: string | null;
   status: string;
@@ -1108,7 +1111,7 @@ export interface BwbCycleRow {
 }
 
 export interface BwbMeta {
-  books: string[];
+  arms: string[];
   symbols: string[];
   sessions: string[];
 }

@@ -99,9 +99,9 @@ def test_evaluate_control_never_fires():
 
 
 def test_evaluate_updates_latches_regardless_of_book():
-    """The counterfactual-on-control property: every book's evaluate() call updates the SAME
+    """The counterfactual-on-control property: every arm's evaluate() call updates the SAME
     latches from the SAME tick, so control's own rows carry what would have fired on another
-    book's trigger."""
+    arm's trigger."""
     state = {"peak_abs_delta": 0.30, "below_flip_seen": False}
     tick = {"abs_delta": 0.55, "spot": 100.0, "gamma_flip": 105.0}
     result = triggers.evaluate("control", state, tick, PARAMS)

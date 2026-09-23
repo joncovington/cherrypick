@@ -3,7 +3,7 @@ orders. SPX cash-settles; the ledger settles on the official print or not at all
 
 What this loop is, in one paragraph. The paper loop decides everything (`engine`, `triggers`,
 `management`) and records fills the instant a credit is met. This loop makes the SAME decisions
-over the SAME stream-cache snapshots for ONE book (`live.arm`), but every fill is the broker's
+over the SAME stream-cache snapshots for ONE arm (`live.arm`), but every fill is the broker's
 word: an entry is placed as a limit order and its row is born `pending`, the actual credit
 overwrites the modeled one on confirmation, and a terminal order leaves a `cancelled` row that
 never established anything. The 1-3-2 add-on is the same again, one step stricter (the meic rule):
@@ -134,8 +134,8 @@ def readiness(config: dict, *, halt_present: bool, designated: str | None) -> li
         unmet.append("live.enabled is false")
     if not str(live.get("gate0_confirmed") or "").strip():
         unmet.append("live.gate0_confirmed is empty -- a human must attest Gate 0 passed (who/when)")
-    if _arm(config) not in engine.BOOKS:
-        unmet.append(f"live.arm {_arm(config)!r} is not a base book (one of {', '.join(engine.BOOKS)})")
+    if _arm(config) not in engine.ARMS:
+        unmet.append(f"live.arm {_arm(config)!r} is not a base arm (one of {', '.join(engine.ARMS)})")
     if halt_present:
         unmet.append("halt flag present (state/halt-live.flag) -- live entries halted")
     if not designated:
@@ -153,8 +153,8 @@ def daily_loss_tripped(conn, day: str, limit_dollars: float | None) -> bool:
 
 
 def mark_drawdown_tripped(conn, limit_dollars: float | None) -> tuple[bool, float | None]:
-    """The open book's marked loss against `mark_drawdown_halt_dollars`. Blocks the NEXT entry
-    only -- never an exit, so nothing entered diverges from paper. A book that cannot be priced
+    """The open arm's marked loss against `mark_drawdown_halt_dollars`. Blocks the NEXT entry
+    only -- never an exit, so nothing entered diverges from paper. A arm that cannot be priced
     (None) does not trip and does not clear: the entry gate treats it as its own refusal."""
     if not limit_dollars:
         return False, None
@@ -263,7 +263,7 @@ def _confirm_entry_fill(conn, pos: dict, broker, log, config: dict, *, day: str)
         db.record_decision(
             conn,
             trade_date=day,
-            book=pos["book"],
+            arm=pos["arm"],
             symbol=pos["symbol"],
             mode="entry",
             reason=f"filled {price:.2f} (asked {float(pos['entry_limit']):.2f}, mid {float(mid or 0):.2f})",
@@ -276,7 +276,7 @@ def _confirm_entry_fill(conn, pos: dict, broker, log, config: dict, *, day: str)
         db.record_decision(
             conn,
             trade_date=day,
-            book=pos["book"],
+            arm=pos["arm"],
             symbol=pos["symbol"],
             mode="entry",
             reason=f"entry_{state}",
@@ -318,7 +318,7 @@ def _confirm_addon_fill(conn, pos: dict, broker, log, config: dict, *, day: str)
         db.record_decision(
             conn,
             trade_date=day,
-            book=pos["book"],
+            arm=pos["arm"],
             symbol=pos["symbol"],
             mode="addon",
             reason=f"addon filled {price:.2f} (asked {asked:.2f})",
@@ -339,7 +339,7 @@ def _confirm_addon_fill(conn, pos: dict, broker, log, config: dict, *, day: str)
         db.record_decision(
             conn,
             trade_date=day,
-            book=pos["book"],
+            arm=pos["arm"],
             symbol=pos["symbol"],
             mode="addon",
             reason=f"addon_{state}",
@@ -428,7 +428,7 @@ def _manage_pending_entry(
             db.record_decision(
                 conn,
                 trade_date=day,
-                book=pos["book"],
+                arm=pos["arm"],
                 symbol=pos["symbol"],
                 mode="entry",
                 reason=f"no_fill:{reason}",
@@ -503,7 +503,7 @@ def _manage_pending_entry(
     db.record_decision(
         conn,
         trade_date=day,
-        book=pos["book"],
+        arm=pos["arm"],
         symbol=pos["symbol"],
         mode="entry",
         reason=f"reprice:{steps + 1}",
@@ -541,7 +541,7 @@ def _manage_pending_addon(
             db.record_decision(
                 conn,
                 trade_date=day,
-                book=pos["book"],
+                arm=pos["arm"],
                 symbol=pos["symbol"],
                 mode="addon",
                 reason=f"addon_no_fill:{reason}",
@@ -620,14 +620,12 @@ def _open_with_legs(conn) -> list[tuple[dict, list[dict]]]:
     return [(pos, db.open_legs_for(conn, pos["position_id"])) for pos in db.open_positions(conn)]
 
 
-def _refuse(conn, *, day: str, book: str, symbol: str, reason: str, log, detail: str | None = None) -> dict:
-    db.record_entry_attempt(
-        conn, trade_date=day, symbol=symbol, book=book, outcome=reason, block_detail=detail
-    )
+def _refuse(conn, *, day: str, arm: str, symbol: str, reason: str, log, detail: str | None = None) -> dict:
+    db.record_entry_attempt(conn, trade_date=day, symbol=symbol, arm=arm, outcome=reason, block_detail=detail)
     db.record_decision(
-        conn, trade_date=day, book=book, symbol=symbol, mode="entry", reason=reason, accepted=False
+        conn, trade_date=day, arm=arm, symbol=symbol, mode="entry", reason=reason, accepted=False
     )
-    log(f"[{book}] entry refused: {reason}{' ' + detail if detail else ''}")
+    log(f"[{arm}] entry refused: {reason}{' ' + detail if detail else ''}")
     return {"entry": "refused", "reason": reason}
 
 
@@ -643,7 +641,7 @@ def _try_live_entry(
     root = config.get("occ_root") or symbol
     now_min = clock.minute_of_day(when)
     refuse = lambda reason, detail=None: _refuse(  # noqa: E731
-        conn, day=day, book=arm, symbol=symbol, reason=reason, log=log, detail=detail
+        conn, day=day, arm=arm, symbol=symbol, reason=reason, log=log, detail=detail
     )
 
     if now_min < entry_time_min(config) or now_min >= entry_cutoff_min(config):
@@ -723,7 +721,7 @@ def _try_live_entry(
     attempt = (
         1
         + conn.execute(
-            "SELECT COUNT(*) FROM bwb_positions WHERE book = ? AND entry_session = ?", (arm, day)
+            "SELECT COUNT(*) FROM bwb_positions WHERE arm = ? AND entry_session = ?", (arm, day)
         ).fetchone()[0]
     )
     pid = f"{symbol}:{arm}:{day}:{attempt}"
@@ -750,7 +748,7 @@ def _try_live_entry(
         db.record_decision(
             conn,
             trade_date=day,
-            book=arm,
+            arm=arm,
             symbol=symbol,
             mode="entry",
             reason=f"dry_run_preflight ok: {spec['price']:.2f} credit, fee est {estimate}",
@@ -796,7 +794,7 @@ def _try_live_entry(
         conn,
         trade_date=day,
         symbol=symbol,
-        book=arm,
+        arm=arm,
         outcome="placed",
         spot=plan["spot"],
         body_strike=plan["body_strike"],
@@ -807,7 +805,7 @@ def _try_live_entry(
     db.record_decision(
         conn,
         trade_date=day,
-        book=arm,
+        arm=arm,
         symbol=symbol,
         mode="entry",
         reason=f"placed {plan['near_strike']:g}/{plan['body_strike']:g}x2/{plan['far_strike']:g} at {spec['price']:.2f}",
@@ -838,7 +836,7 @@ def _make_fire(broker, config: dict, *, live: bool, day: str, when: datetime, lo
             db.record_decision(
                 conn,
                 trade_date=day,
-                book=position["book"],
+                arm=position["arm"],
                 symbol=symbol,
                 mode="addon",
                 reason="addon_throttled:one_per_tick",
@@ -857,7 +855,7 @@ def _make_fire(broker, config: dict, *, live: bool, day: str, when: datetime, lo
             db.record_decision(
                 conn,
                 trade_date=day,
-                book=position["book"],
+                arm=position["arm"],
                 symbol=symbol,
                 mode="addon",
                 reason="addon_below_live_floor"
@@ -875,7 +873,7 @@ def _make_fire(broker, config: dict, *, live: bool, day: str, when: datetime, lo
             db.record_decision(
                 conn,
                 trade_date=day,
-                book=position["book"],
+                arm=position["arm"],
                 symbol=symbol,
                 mode="addon",
                 reason="addon_submit_uncertain" if result.get("uncertain") else "addon_submit_failed",
@@ -888,7 +886,7 @@ def _make_fire(broker, config: dict, *, live: bool, day: str, when: datetime, lo
             db.record_decision(
                 conn,
                 trade_date=day,
-                book=position["book"],
+                arm=position["arm"],
                 symbol=symbol,
                 mode="addon",
                 reason=f"dry_run_preflight ok: add-on {spec['price']:.2f} credit",
@@ -922,7 +920,7 @@ def _make_fire(broker, config: dict, *, live: bool, day: str, when: datetime, lo
         db.record_decision(
             conn,
             trade_date=day,
-            book=position["book"],
+            arm=position["arm"],
             symbol=symbol,
             mode="addon",
             reason=f"addon placed at {spec['price']:.2f} (mid {plan['credit']:.2f})",

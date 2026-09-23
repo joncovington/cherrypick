@@ -3,7 +3,7 @@ import { Card, fmtMoney, fmtPct } from "../../components/DataTable";
 
 /**
  * What this experiment is, in the module's own terms -- the pmcc HelpTab precedent: curve's three
- * books differ by one stated rule each rather than by a set of overridden parameters, so this is
+ * arms differ by one stated rule each rather than by a set of overridden parameters, so this is
  * prose kept in one place rather than a derived diff view.
  */
 export function HelpTab({ data }: { data: CurvePayload | undefined }) {
@@ -14,8 +14,8 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
         <div className="pmcc-prose">
           <p>
             Sell a VXX call credit spread -- short call ~30-delta, long wing a declared width higher, same
-            ~30-45 DTE monthly expiration -- gated by a daily VIX/VIX3M regime read. Every book trades the same
-            shape; the books differ only in their declared entry gate and exit rule, never in what is traded.
+            ~30-45 DTE monthly expiration -- gated by a daily VIX/VIX3M regime read. Every arm trades the same
+            shape; the arms differ only in their declared entry gate and exit rule, never in what is traded.
           </p>
           <p>
             Close both legs once the cost to close has fallen to
@@ -24,12 +24,12 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
           </p>
           <p className="muted">
             Paper only: there is no live loop and no order-placement code anywhere in the module. Built
-            2026-08-22 -- the regime series accumulates value immediately even before any book has traded.
+            2026-08-22 -- the regime series accumulates value immediately even before any arm has traded.
           </p>
         </div>
       </Card>
 
-      <Card title="the three books -- one variable each" collapseKey="curve-help-books" defaultCollapsed>
+      <Card title="the three arms -- one variable each" collapseKey="curve-help-arms" defaultCollapsed>
         <div className="pmcc-prose">
           <dl className="pmcc-defs">
             <dt>control</dt>
@@ -55,9 +55,9 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
             </dd>
             <dt>advised:&lt;experiment name&gt;</dt>
             <dd>
-              One book per advisor experiment, each carrying that experiment's admitted parameters frozen on each
-              row at entry and measured against the base book its experiment names. Off by default. curve is a
-              structurally slow advisor target -- one position per book at ~30-45 DTE with 50% takes closes maybe
+              One arm per advisor experiment, each carrying that experiment's admitted parameters frozen on each
+              row at entry and measured against the base arm its experiment names. Off by default. curve is a
+              structurally slow advisor target -- one position per arm at ~30-45 DTE with 50% takes closes maybe
               2-4 trades a month -- so an early "underpowered" verdict here means "not enough data yet", never a
               failure.
             </dd>
@@ -65,7 +65,7 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
         </div>
       </Card>
 
-      <Card title="why the books are only partly comparable" collapseKey="curve-help-pairing" defaultCollapsed>
+      <Card title="why the arms are only partly comparable" collapseKey="curve-help-pairing" defaultCollapsed>
         <div className="pmcc-prose">
           <p>
             <strong>control and noflip are exactly paired.</strong> They enter from the same plan on the same
@@ -86,7 +86,7 @@ export function HelpTab({ data }: { data: CurvePayload | undefined }) {
         <div className="pmcc-prose">
           <p>
             The daily VIX/VIX3M ratio, its contango/backwardation classification, and the hook flag are written
-            every session, whether or not any book trades -- the series' value is its continuity. It is
+            every session, whether or not any arm trades -- the series' value is its continuity. It is
             RTH-gated and basis-stamped from day one: a recorder that freezes on the last streamed value
             overnight would double-weight whatever sign the session ended on. A stale or missing read writes a
             row marked unusable, never a frozen ratio.

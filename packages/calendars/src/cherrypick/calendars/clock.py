@@ -111,7 +111,7 @@ def friday_entry_plan(today: date) -> dict | None:
     the identical contracts, entered a session earlier — but the structure tag is computed from THIS
     entry date, so an ordinary week reads `dc_7_10` against the Monday regime's `dc_4_7` and the two
     populations can never pool (honesty rule 4). `week_of` stays the target week's Monday, so both
-    regimes' rows for one week group together while remaining distinct books.
+    regimes' rows for one week group together while remaining distinct arms.
 
     Returns None on any session that is not the trading day immediately before an entry session,
     which is what keeps this to one entry per week without a separate calendar.

@@ -5,7 +5,7 @@ One SQLite file, `~/.cherrypick/data/curve/paper_trades.db` — the filename is 
 generically, so moving or renaming it silently removes this module from both.
 
 `curve_regime` is the module's second product: one row per session, written whether or not any
-book trades, carrying the ratio, its classification, the hook flag, and each quote's own age and
+arm trades, carrying the ratio, its classification, the hook flag, and each quote's own age and
 freshness verdict — the honest continuity the series exists for (rule 7 of the module's honesty
 rules). A refused/unusable regime day is still a row (`usable = 0` with the refusal), the same
 "refused, never zero" discipline `curve_marks` applies to a mark path.
@@ -20,14 +20,14 @@ from cherrypick.core import db as _core_db
 from cherrypick.core import ledgerstore as _ledgerstore
 
 _SCHEMA = """
--- One row per position per book: one short call + one long call (the same expiration, always).
--- `position_id` = "<symbol>:<book>:<entry_session>". Entry context is stored as MEASURES, never
+-- One row per position per arm: one short call + one long call (the same expiration, always).
+-- `position_id` = "<symbol>:<arm>:<entry_session>". Entry context is stored as MEASURES, never
 -- only as buckets — a threshold can be re-cut later, a bucket cannot.
 CREATE TABLE IF NOT EXISTS curve_positions (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     position_id         TEXT NOT NULL UNIQUE,
     symbol              TEXT NOT NULL,
-    book                TEXT NOT NULL,
+    arm                TEXT NOT NULL,
     entry_session       TEXT NOT NULL,
     quantity            INTEGER NOT NULL DEFAULT 1,
     expiration           TEXT NOT NULL,
@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS curve_positions (
     created_at          TEXT,
     updated_at          TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_curve_positions_session ON curve_positions(entry_session, book);
+CREATE INDEX IF NOT EXISTS idx_curve_positions_session ON curve_positions(entry_session, arm);
 CREATE INDEX IF NOT EXISTS idx_curve_positions_status ON curve_positions(status);
 
 -- Legs per position: short_call, long_call.
@@ -190,7 +190,7 @@ CREATE INDEX IF NOT EXISTS idx_curve_events_session ON curve_management_events(s
 CREATE TABLE IF NOT EXISTS curve_decisions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     trade_date  TEXT NOT NULL,
-    book        TEXT NOT NULL,
+    arm        TEXT NOT NULL,
     symbol      TEXT NOT NULL,
     mode        TEXT NOT NULL,
     reason      TEXT NOT NULL,
@@ -202,14 +202,14 @@ CREATE TABLE IF NOT EXISTS curve_decisions (
 );
 CREATE INDEX IF NOT EXISTS idx_curve_decisions_date ON curve_decisions(trade_date);
 
--- One UNCOLLAPSED row per evaluated entry opportunity per (symbol, book) — what was wanted, what
+-- One UNCOLLAPSED row per evaluated entry opportunity per (symbol, arm) — what was wanted, what
 -- the chain offered, how far off a refusal was.
 CREATE TABLE IF NOT EXISTS curve_entry_attempts (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     ts             TEXT NOT NULL,
     trade_date     TEXT NOT NULL,
     symbol         TEXT NOT NULL,
-    book           TEXT NOT NULL,
+    arm           TEXT NOT NULL,
     outcome        TEXT NOT NULL,
     block_detail   TEXT,
     spot           REAL,
@@ -266,9 +266,9 @@ CREATE TABLE IF NOT EXISTS measurement_breaks (
 # Columns added after the first release, per table. Empty at birth.
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     # The advisor experiment an advised row was entered under (2026-09-16), beside the params
-    # it froze -- `advised:<base>` names a book, and every experiment on that base reuses it.
+    # it froze -- `advised:<base>` names a arm, and every experiment on that base reuses it.
     "curve_positions": {
-        "experiment_id": "TEXT",  # The base book an advised row shadows, stamped at entry from the session decision (2026-09-17): the tag no longer carries it, and after the session the decision file is gone. Management prefers this over the configured advice.base_book, so a twin of a non-default base keeps its rules.
+        "experiment_id": "TEXT",  # The base arm an advised row shadows, stamped at entry from the session decision (2026-09-17): the tag no longer carries it, and after the session the decision file is gone. Management prefers this over the configured advice.base_book, so a twin of a non-default base keeps its rules.
         "advice_base": "TEXT",
     },
     "curve_legs": {},
@@ -321,19 +321,19 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
 
 
 # --------------------------------------------------------------------------- readers
-def open_position_for(conn, symbol: str, book: str) -> dict | None:
+def open_position_for(conn, symbol: str, arm: str) -> dict | None:
     r = conn.execute(
-        "SELECT * FROM curve_positions WHERE symbol = ? AND book = ? AND status != 'closed' "
+        "SELECT * FROM curve_positions WHERE symbol = ? AND arm = ? AND status != 'closed' "
         "ORDER BY entry_session DESC LIMIT 1",
-        (symbol, book),
+        (symbol, arm),
     ).fetchone()
     return dict(r) if r else None
 
 
-def open_position_count(conn, book: str) -> int:
+def open_position_count(conn, arm: str) -> int:
     return int(
         conn.execute(
-            "SELECT COUNT(*) FROM curve_positions WHERE book = ? AND status != 'closed'", (book,)
+            "SELECT COUNT(*) FROM curve_positions WHERE arm = ? AND status != 'closed'", (arm,)
         ).fetchone()[0]
     )
 
@@ -342,7 +342,7 @@ def expiring_open_legs(conn, day: str) -> list[dict]:
     return [
         dict(r)
         for r in conn.execute(
-            "SELECT l.*, p.book, p.symbol AS position_symbol, p.status AS position_status "
+            "SELECT l.*, p.arm, p.symbol AS position_symbol, p.status AS position_status "
             "FROM curve_legs l JOIN curve_positions p ON p.position_id = l.position_id "
             "WHERE l.status = 'open' AND l.expiration = ? ORDER BY l.position_id, l.leg_role",
             (day,),

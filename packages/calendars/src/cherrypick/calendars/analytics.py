@@ -18,17 +18,17 @@ from cherrypick.calendars import exit_policies
 
 
 def headline(conn) -> dict:
-    """Per-book, per-structure results over CLOSED positions, plus what is still open. Net is
+    """Per-arm, per-structure results over CLOSED positions, plus what is still open. Net is
     `gross_pnl - fees`, the same subtraction the suite's ledger reader performs — one convention,
     stated once."""
-    books: dict[str, dict] = {}
+    arms: dict[str, dict] = {}
     for row in conn.execute(
-        "SELECT book, structure, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees, "
+        "SELECT arm, structure, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees, "
         "SUM(gross_pnl) - SUM(fees) AS net, SUM((gross_pnl - fees) > 0) AS wins, "
         "COUNT(DISTINCT week_of) AS weeks FROM dc_positions WHERE status = 'closed' "
-        "GROUP BY book, structure ORDER BY book, structure"
+        "GROUP BY arm, structure ORDER BY arm, structure"
     ):
-        books.setdefault(row["book"], {})[row["structure"]] = {
+        arms.setdefault(row["arm"], {})[row["structure"]] = {
             "positions": row["n"],
             "weeks": row["weeks"],
             "gross_pnl": round(row["gross"], 2) if row["gross"] is not None else None,
@@ -39,13 +39,13 @@ def headline(conn) -> dict:
     open_rows = conn.execute(
         "SELECT COUNT(*) AS n, COUNT(DISTINCT week_of) AS weeks FROM dc_positions WHERE status != 'closed'"
     ).fetchone()
-    return {"books": books, "open_positions": open_rows["n"], "open_weeks": open_rows["weeks"]}
+    return {"arms": arms, "open_positions": open_rows["n"], "open_weeks": open_rows["weeks"]}
 
 
 def week_detail(conn, week_of: str) -> dict:
     """Everything on file for one week: positions with their legs, and the management trail."""
     positions = []
-    for p in conn.execute("SELECT * FROM dc_positions WHERE week_of = ? ORDER BY book, side", (week_of,)):
+    for p in conn.execute("SELECT * FROM dc_positions WHERE week_of = ? ORDER BY arm, side", (week_of,)):
         p = dict(p)
         p["legs"] = [
             dict(leg)
@@ -77,7 +77,7 @@ def em_vs_realized(conn) -> list[dict]:
     out = []
     for row in conn.execute(
         "SELECT week_of, structure, MIN(entry_spot) AS entry_spot, MIN(entry_em) AS em, "
-        "MIN(settlement_spot) AS settle_spot FROM dc_positions WHERE book = 'path' "
+        "MIN(settlement_spot) AS settle_spot FROM dc_positions WHERE arm = 'path' "
         "AND settlement_spot IS NOT NULL GROUP BY week_of ORDER BY week_of"
     ):
         realized = (
@@ -98,7 +98,7 @@ def em_vs_realized(conn) -> list[dict]:
 
 
 def excursions(conn) -> dict:
-    """MAE/MFE per CLOSED position (one `dc_positions` row -- one side, one book, one week; the
+    """MAE/MFE per CLOSED position (one `dc_positions` row -- one side, one arm, one week; the
     same per-trade granularity `cherrypick.core.ledgers`'s `dc_week` reader uses), plus their
     distributions (docs/metrics-plan.md Phase 2).
 
@@ -115,8 +115,8 @@ def excursions(conn) -> dict:
     usable are skipped from the per-position list rather than reported with a fabricated 0.0."""
     positions = []
     for p in conn.execute(
-        "SELECT position_id, symbol, book, side, entry_debit, quantity FROM dc_positions "
-        "WHERE status = 'closed' ORDER BY week_of, book, side"
+        "SELECT position_id, symbol, arm, side, entry_debit, quantity FROM dc_positions "
+        "WHERE status = 'closed' ORDER BY week_of, arm, side"
     ):
         if p["entry_debit"] is None:
             continue
@@ -141,7 +141,7 @@ def excursions(conn) -> dict:
             {
                 "position_id": p["position_id"],
                 "symbol": p["symbol"],
-                "book": p["book"],
+                "arm": p["arm"],
                 "side": p["side"],
                 "mae": mae_mfe["mae"],
                 "mfe": mae_mfe["mfe"],

@@ -20,9 +20,9 @@ from cherrypick.core.metrics import excursions as _mae_mfe
 # construction rather than by a backfilled guess.
 #
 # One era so far: `"redesign"` (2026-08-23 ->), stamped by `book.enter_position` on every new row.
-# It closes the pre-redesign window — TNA/UPRO alongside TQQQ, the `keltner`/`roll` books, the
+# It closes the pre-redesign window — TNA/UPRO alongside TQQQ, the `keltner`/`roll` arms, the
 # ~99-delta-floor long and yield-targeted ITM short, the early-tv-exhaustion default exit — which
-# ran symbol/book/rule combinations the redesigned engine no longer produces and never will again.
+# ran symbol/arm/rule combinations the redesigned engine no longer produces and never will again.
 # Four closed cycles exist from that window (all TQQQ, one apiece across control/keltner/roll/
 # advised:control); they stay in the ledger as history and are still visible in the console's
 # History tab and any `era="ALL"` read, but pooling them into the new design's headline would
@@ -32,7 +32,7 @@ CURRENT_ERA = "redesign"
 
 
 def headline(conn, era: str | None = CURRENT_ERA) -> dict:
-    """Per-book, per-symbol results over CLOSED positions, plus what is still open. Net is
+    """Per-arm, per-symbol results over CLOSED positions, plus what is still open. Net is
     `gross_pnl - fees`, the same subtraction the suite's ledger reader performs — one convention,
     stated once.
 
@@ -44,15 +44,15 @@ def headline(conn, era: str | None = CURRENT_ERA) -> dict:
     if era and era != "ALL":
         where += " AND era = ?"
         params.append(era)
-    books: dict[str, dict] = {}
+    arms: dict[str, dict] = {}
     for row in conn.execute(
-        "SELECT book, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees, "
+        "SELECT arm, symbol, COUNT(*) AS n, SUM(gross_pnl) AS gross, SUM(fees) AS fees, "
         "SUM(gross_pnl) - SUM(fees) AS net, SUM((gross_pnl - fees) > 0) AS wins, "
         f"SUM(roll_count) AS rolls FROM pmcc_positions WHERE {where} "
-        "GROUP BY book, symbol ORDER BY book, symbol",
+        "GROUP BY arm, symbol ORDER BY arm, symbol",
         params,
     ):
-        books.setdefault(row["book"], {})[row["symbol"]] = {
+        arms.setdefault(row["arm"], {})[row["symbol"]] = {
             "positions": row["n"],
             "gross_pnl": round(row["gross"], 2) if row["gross"] is not None else None,
             "fees": round(row["fees"], 2) if row["fees"] is not None else None,
@@ -61,14 +61,14 @@ def headline(conn, era: str | None = CURRENT_ERA) -> dict:
             "rolls": row["rolls"],
         }
     open_rows = conn.execute("SELECT COUNT(*) AS n FROM pmcc_positions WHERE status != 'closed'").fetchone()
-    return {"books": books, "open_positions": open_rows["n"]}
+    return {"arms": arms, "open_positions": open_rows["n"]}
 
 
 def worksheet(conn) -> list[dict]:
     """The live per-position worksheet — the module's human read, one row per open position with
     its entry metrics and the latest usable short-leg mark's time value."""
     out = []
-    for p in conn.execute("SELECT * FROM pmcc_positions WHERE status != 'closed' ORDER BY symbol, book"):
+    for p in conn.execute("SELECT * FROM pmcc_positions WHERE status != 'closed' ORDER BY symbol, arm"):
         p = dict(p)
         latest = conn.execute(
             "SELECT short_tv, spot, marked_at FROM pmcc_marks WHERE position_id = ? "
@@ -79,7 +79,7 @@ def worksheet(conn) -> list[dict]:
             {
                 "position_id": p["position_id"],
                 "symbol": p["symbol"],
-                "book": p["book"],
+                "arm": p["arm"],
                 "status": p["status"],
                 "long_strike": p["long_strike"],
                 "long_expiration": p["long_expiration"],
@@ -152,8 +152,8 @@ def excursions(conn, era: str | None = CURRENT_ERA) -> dict:
 
     positions = []
     for p in conn.execute(
-        f"SELECT position_id, symbol, book, net_debit, quantity FROM pmcc_positions "
-        f"WHERE {where} ORDER BY symbol, book",
+        f"SELECT position_id, symbol, arm, net_debit, quantity FROM pmcc_positions "
+        f"WHERE {where} ORDER BY symbol, arm",
         params,
     ):
         if p["net_debit"] is None:
@@ -179,7 +179,7 @@ def excursions(conn, era: str | None = CURRENT_ERA) -> dict:
             {
                 "position_id": p["position_id"],
                 "symbol": p["symbol"],
-                "book": p["book"],
+                "arm": p["arm"],
                 "mae": mae_mfe["mae"],
                 "mfe": mae_mfe["mfe"],
                 "n": mae_mfe["n"],

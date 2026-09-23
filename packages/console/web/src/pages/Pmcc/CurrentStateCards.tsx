@@ -1,4 +1,4 @@
-import type { PmccBookCell, PmccOpenPosition, PmccPayload } from "@console/shared";
+import type { PmccArmCell, PmccOpenPosition, PmccPayload } from "@console/shared";
 import { Card, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 import { SignedBar } from "../../components/Charts";
@@ -6,8 +6,8 @@ import { fmtStrike } from "../../lib/optionFormat";
 import { EntrySpreadCell } from "./EntrySpread";
 
 /**
- * The one book whose identity the page knows since the 2026-08-23 redesign. Anything else (each
- * advisor experiment's `advised:<name>` synthetic book -- any number since 2026-09-17) rides along
+ * The one arm whose identity the page knows since the 2026-08-23 redesign. Anything else (each
+ * advisor experiment's `advised:<name>` synthetic arm -- any number since 2026-09-17) rides along
  * generically.
  */
 const CORE_BOOKS = ["control"];
@@ -52,7 +52,7 @@ function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: Pmcc
           <tr key={p.positionId}>
             <td>{p.symbol}</td>
             <td>
-              {p.book}
+              {p.arm}
               {p.status === "short_settled" && (
                 <span
                   className="chip chip-warn integrity-chip"
@@ -115,7 +115,7 @@ function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: Pmcc
  *
  * Was one card per symbol, titled with a bare ticker. Since the 2026-08-23 redesign the module
  * trades two symbols (TQQQ physical-settlement, XSP cash-settled) as separate populations in one
- * `control` book each plus the advised books -- so the split put four rows across two cards to say
+ * `control` arm each plus the advised arms -- so the split put four rows across two cards to say
  * something the symbol column now says per row, and the page already carries a symbol filter for
  * anyone who wants one population alone.
  *
@@ -136,12 +136,12 @@ export function OpenTradesCard({
   if (data === undefined) return null;
   const rows = data.openPositions
     .filter((p) => filterSymbol === null || p.symbol === filterSymbol)
-    // Newest entry first; symbol and book break ties within a session.
+    // Newest entry first; symbol and arm break ties within a session.
     .sort(
       (a, b) =>
         b.entrySession.localeCompare(a.entrySession) ||
         a.symbol.localeCompare(b.symbol) ||
-        a.book.localeCompare(b.book),
+        a.arm.localeCompare(b.arm),
     );
   return (
     <Card title="open trades" collapseKey="pmcc-open-trades" updatedAt={updatedAt}>
@@ -181,40 +181,40 @@ export function OpenTradesCard({
 }
 
 interface BookTotals {
-  book: string;
+  arm: string;
   positions: number;
   net: number | null;
   rolls: number | null;
   wins: number;
 }
 
-function totalsByBook(books: PmccBookCell[]): BookTotals[] {
+function totalsByBook(arms: PmccArmCell[]): BookTotals[] {
   const map = new Map<string, BookTotals>();
-  for (const cell of books) {
-    const t = map.get(cell.book) ?? { book: cell.book, positions: 0, net: null, rolls: null, wins: 0 };
+  for (const cell of arms) {
+    const t = map.get(cell.arm) ?? { arm: cell.arm, positions: 0, net: null, rolls: null, wins: 0 };
     t.positions += cell.positions;
     if (cell.netPnl !== null) t.net = (t.net ?? 0) + cell.netPnl;
     if (cell.rolls !== null) t.rolls = (t.rolls ?? 0) + cell.rolls;
     if (cell.winRate !== null) t.wins += cell.winRate * cell.positions;
-    map.set(cell.book, t);
+    map.set(cell.arm, t);
   }
-  // Core books first in their declared order, then anything else (advised books) alphabetically.
+  // Core arms first in their declared order, then anything else (advised arms) alphabetically.
   return [...map.values()].sort((a, b) => {
-    const ia = CORE_BOOKS.indexOf(a.book);
-    const ib = CORE_BOOKS.indexOf(b.book);
+    const ia = CORE_BOOKS.indexOf(a.arm);
+    const ib = CORE_BOOKS.indexOf(b.arm);
     if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-    return a.book.localeCompare(b.book);
+    return a.arm.localeCompare(b.arm);
   });
 }
 
 /**
- * The book comparison.
+ * The arm comparison.
  *
- * Since the 2026-08-23 redesign there is one book (`control`) plus the advisor's optional synthetic
- * books — one `advised:<experiment name>` per experiment since 2026-09-17 — and no more multi-book
+ * Since the 2026-08-23 redesign there is one arm (`control`) plus the advisor's optional synthetic
+ * arms — one `advised:<experiment name>` per experiment since 2026-09-17 — and no more multi-arm
  * fill pairing to reason about (the old control/keltner/roll grid, and the caveat that keltner and
  * roll could not be read across the same seam, is retired). Every `control` cycle is directly
- * comparable to every other `control` cycle; the advised books are called out separately because
+ * comparable to every other `control` cycle; the advised arms are called out separately because
  * their admitted params can differ position to position.
  */
 export function BookComparison({
@@ -229,17 +229,17 @@ export function BookComparison({
    *  cosmetic). */
   symbol?: string | null;
 }) {
-  const books = (data?.books ?? []).filter((b) => symbol === null || b.symbol === symbol);
-  const totals = totalsByBook(books);
-  const others = totals.filter((t) => !CORE_BOOKS.includes(t.book));
+  const arms = (data?.arms ?? []).filter((b) => symbol === null || b.symbol === symbol);
+  const totals = totalsByBook(arms);
+  const others = totals.filter((t) => !CORE_BOOKS.includes(t.arm));
   const maxAbs = Math.max(1, ...totals.map((t) => Math.abs(t.net ?? 0)));
-  const hasClosed = books.length > 0;
+  const hasClosed = arms.length > 0;
 
   return (
-    <Card title="arm comparison" collapseKey="pmcc-books" updatedAt={updatedAt}>
+    <Card title="arm comparison" collapseKey="pmcc-arms" updatedAt={updatedAt}>
       {!hasClosed ? (
         <p className="muted">
-          no completed cycles yet — per-book results fill in as positions close
+          no completed cycles yet — per-arm results fill in as positions close
           {data !== undefined && data.openCount > 0 && (
             <> ({data.openCount} open position{data.openCount === 1 ? "" : "s"} so far)</>
           )}
@@ -250,14 +250,14 @@ export function BookComparison({
             <section className="pmcc-compare">
               <h3>advised arms</h3>
               <p className="integrity-note">
-                One synthetic book per advisor experiment (advised:&lt;experiment name&gt;), each running its own
-                admitted params beside the base book it shadows. Excluded from the pairing above — their entries
+                One synthetic arm per advisor experiment (advised:&lt;experiment name&gt;), each running its own
+                admitted params beside the base arm it shadows. Excluded from the pairing above — their entries
                 are their own.
               </p>
               <ul className="integrity-plain-list">
                 {others.map((t) => (
-                  <li key={t.book}>
-                    <span className="mono">{t.book}</span> · {t.positions} cycle{t.positions === 1 ? "" : "s"} · net{" "}
+                  <li key={t.arm}>
+                    <span className="mono">{t.arm}</span> · {t.positions} cycle{t.positions === 1 ? "" : "s"} · net{" "}
                     <PnlCell v={t.net} />
                   </li>
                 ))}
@@ -270,8 +270,8 @@ export function BookComparison({
             <table className="data-table num-from-1">
               <tbody>
                 {totals.map((t) => (
-                  <tr key={t.book}>
-                    <td>{t.book}</td>
+                  <tr key={t.arm}>
+                    <td>{t.arm}</td>
                     <td style={{ width: "50%" }}>
                       <SignedBar value={t.net ?? 0} maxAbs={maxAbs} compact />
                     </td>

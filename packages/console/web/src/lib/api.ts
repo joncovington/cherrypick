@@ -299,13 +299,13 @@ export function usePmcc() {
 }
 
 export interface PmccHistoryFilter {
-  book: string | null;
+  arm: string | null;
   symbol: string | null;
 }
 
 export function usePmccHistory(filter: PmccHistoryFilter, page: PageState) {
   const params = new URLSearchParams();
-  if (filter.book !== null) params.set("book", filter.book);
+  if (filter.arm !== null) params.set("arm", filter.arm);
   if (filter.symbol !== null) params.set("symbol", filter.symbol);
   pageParams(params, "", page);
   return useQuery<Paged<PmccCycleRow>>({
@@ -339,13 +339,13 @@ export function useCurve() {
 }
 
 export interface CurveHistoryFilter {
-  book: string | null;
+  arm: string | null;
   symbol: string | null;
 }
 
 export function useCurveHistory(filter: CurveHistoryFilter, page: PageState) {
   const params = new URLSearchParams();
-  if (filter.book !== null) params.set("book", filter.book);
+  if (filter.arm !== null) params.set("arm", filter.arm);
   if (filter.symbol !== null) params.set("symbol", filter.symbol);
   pageParams(params, "", page);
   return useQuery<Paged<CurveCycleRow>>({
@@ -378,13 +378,13 @@ export function useBwb() {
 }
 
 export interface BwbHistoryFilter {
-  book: string | null;
+  arm: string | null;
   symbol: string | null;
 }
 
 export function useBwbHistory(filter: BwbHistoryFilter, page: PageState) {
   const params = new URLSearchParams();
-  if (filter.book !== null) params.set("book", filter.book);
+  if (filter.arm !== null) params.set("arm", filter.arm);
   if (filter.symbol !== null) params.set("symbol", filter.symbol);
   pageParams(params, "", page);
   return useQuery<Paged<BwbCycleRow>>({
@@ -408,7 +408,7 @@ export function useBwbMeta() {
 export type DecisionsModule = "curve" | "pmcc" | "bwb";
 
 export interface DecisionRow {
-  book: string;
+  arm: string;
   symbol: string;
   reason: string;
   accepted: boolean;
@@ -665,7 +665,7 @@ export function useModulePerformance(module: PerformanceModuleId, era: "current"
 
 
 /** The regime-cuts artifact for one module (`GET /api/<module>/regime-cuts[?session=]`): the
- * module's own nightly per-book x per-regime cut, rendered without recomputation. `session`
+ * module's own nightly per-arm x per-regime cut, rendered without recomputation. `session`
  * null = the latest artifact. Polled slowly: the file changes once a day. */
 /** The 09:30-10:00 window for one session. Polls faster than the artifact readers because it is
  *  live during the half-hour it describes, and settles the moment the entry window opens. */

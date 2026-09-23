@@ -109,13 +109,13 @@ def test_monday_entry_then_friday_settle_then_monday_disposition(tmp_path):
     conn = db.connect(str(tmp_path / "paper.db"))
     config = {"symbols": ["SPX"], "occ_roots": {"SPX": "SPXW"}}
 
-    # Monday inside the entry window: both books enter both sides, and get marked the same tick.
+    # Monday inside the entry window: both arms enter both sides, and get marked the same tick.
     out = paper_loop.run_once(config, conn, cache_path=cache, when=_at("2026-08-17", "10:05"))
     assert out["ok"]
     positions = conn.execute(
-        "SELECT book, side, structure, entry_debit, strike FROM dc_positions ORDER BY book, side"
+        "SELECT arm, side, structure, entry_debit, strike FROM dc_positions ORDER BY arm, side"
     ).fetchall()
-    assert [(r["book"], r["side"]) for r in positions] == [
+    assert [(r["arm"], r["side"]) for r in positions] == [
         ("control", "call"),
         ("control", "put"),
         ("path", "call"),
@@ -138,10 +138,9 @@ def test_monday_entry_then_friday_settle_then_monday_disposition(tmp_path):
     out = paper_loop.run_once(config, conn, cache_path=cache, when=_at("2026-08-21", "16:25"))
     assert out.get("settled_session")
     statuses = {
-        r["book"]: r["status"]
-        for r in conn.execute("SELECT book, status FROM dc_positions WHERE side = 'put'")
+        r["arm"]: r["status"] for r in conn.execute("SELECT arm, status FROM dc_positions WHERE side = 'put'")
     }
-    # Spot 6500: the 6465 put and 6535 call both finish OTM; every book still holds its longs.
+    # Spot 6500: the 6465 put and 6535 call both finish OTM; every arm still holds its longs.
     assert statuses == {"control": "short_settled", "path": "short_settled"}
 
     # Next Monday morning: longs dispose at their marks.
@@ -160,12 +159,12 @@ def test_control_scheduled_exit_closes_at_the_friday_bell(tmp_path):
     paper_loop.run_once(config, conn, cache_path=cache, when=_at("2026-08-17", "10:05"))
     out = paper_loop.run_once(config, conn, cache_path=cache, when=_at("2026-08-21", "15:50"))
     assert out["ok"]
-    control = {r["side"]: r for r in conn.execute("SELECT * FROM dc_positions WHERE book = 'control'")}
+    control = {r["side"]: r for r in conn.execute("SELECT * FROM dc_positions WHERE arm = 'control'")}
     assert all(r["status"] == "closed" for r in control.values())
     assert all(r["exit_reason"] == "scheduled_exit" for r in control.values())
-    # The path book held straight through the same tick.
+    # The path arm held straight through the same tick.
     path = conn.execute(
-        "SELECT COUNT(*) FROM dc_positions WHERE book = 'path' AND status = 'open'"
+        "SELECT COUNT(*) FROM dc_positions WHERE arm = 'path' AND status = 'open'"
     ).fetchone()[0]
     assert path == 2
     events = conn.execute(
@@ -359,7 +358,7 @@ def test_a_cash_symbol_needs_no_dividends_block(tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM dc_positions").fetchone()[0] == 4
 
 
-# --------------------------- one advised book per experiment (2026-09-17)
+# --------------------------- one advised arm per experiment (2026-09-17)
 
 
 def _two_experiment_artifact(session):
@@ -427,8 +426,8 @@ def test_session_books_open_one_advised_book_per_experiment(monkeypatch):
             ],
         },
     )
-    books, advised = paper_loop.session_books({}, "2026-08-17")
-    assert books == ["control", "path", "advised:noon-exit", "advised:take-20"]
+    arms, advised = paper_loop.session_books({}, "2026-08-17")
+    assert arms == ["control", "path", "advised:noon-exit", "advised:take-20"]
     assert advised["advised:take-20"]["experiment_id"] == "exp-b"
     assert "advised:rejected" not in advised  # a rejected overlay is that experiment's baseline day
 
@@ -444,8 +443,8 @@ def test_session_books_read_a_legacy_decision_as_the_single_advised_base_book(mo
             "experiment_id": "exp-old",
         },
     )
-    books, advised = paper_loop.session_books({}, "2026-08-17")
-    assert books == ["control", "path", "advised:control"]
+    arms, advised = paper_loop.session_books({}, "2026-08-17")
+    assert arms == ["control", "path", "advised:control"]
     assert advised["advised:control"]["experiment_id"] == "exp-old"
     assert advised["advised:control"]["params"] == {"time_exit": "fri_noon"}
 
@@ -458,7 +457,7 @@ def test_session_books_are_the_base_roster_on_a_baseline_day(monkeypatch):
 
 
 def test_two_experiments_enter_as_two_books_with_their_own_params_and_stamps(tmp_path, managed_home):
-    """End to end through the artifact: the entry opens control, path and one advised book per
+    """End to end through the artifact: the entry opens control, path and one advised arm per
     experiment, each frozen with ITS overlay and stamped with ITS id."""
     session = "2026-08-17"
     advice_dir = managed_home / "state" / "advice"
@@ -471,10 +470,10 @@ def test_two_experiments_enter_as_two_books_with_their_own_params_and_stamps(tmp
     paper_loop.run_once(_advice_config(), conn, cache_path=cache, when=_at(session, "10:05"))
 
     rows = conn.execute(
-        "SELECT book, advice_params, experiment_id FROM dc_positions WHERE side = 'put' ORDER BY book"
+        "SELECT arm, advice_params, experiment_id FROM dc_positions WHERE side = 'put' ORDER BY arm"
     ).fetchall()
-    assert [r["book"] for r in rows] == ["advised:noon-exit", "advised:take-20", "control", "path"]
-    by_book = {r["book"]: r for r in rows}
+    assert [r["arm"] for r in rows] == ["advised:noon-exit", "advised:take-20", "control", "path"]
+    by_book = {r["arm"]: r for r in rows}
     assert json.loads(by_book["advised:noon-exit"]["advice_params"]) == {"time_exit": "fri_noon"}
     assert json.loads(by_book["advised:take-20"]["advice_params"]) == {"profit_target_pct": 0.2}
     assert by_book["advised:noon-exit"]["experiment_id"] == "exp-a"

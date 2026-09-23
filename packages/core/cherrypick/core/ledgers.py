@@ -282,7 +282,7 @@ def _calendars_closed(conn, start: str | None = None, end: str | None = None) ->
     where, params = _session_where("closed_session", start, end)
     exp_col, has_exp = _experiment_select(conn, "dc_positions")
     rows = conn.execute(
-        f"SELECT symbol, book, structure, gross_pnl, fees, entry_slippage, exit_slippage, "
+        f"SELECT symbol, arm, structure, gross_pnl, fees, entry_slippage, exit_slippage, "
         f"entry_debit, quantity, closed_session{exp_col} FROM dc_positions WHERE status = 'closed'{where}",
         params,
     ).fetchall()
@@ -300,7 +300,7 @@ def _calendars_closed(conn, start: str | None = None, end: str | None = None) ->
 
     return [
         {
-            "arm": r["book"] or CALENDARS_UNTAGGED,
+            "arm": r["arm"] or CALENDARS_UNTAGGED,
             "experiment_id": (r["experiment_id"] if has_exp else None),
             "symbol": r["symbol"],
             "strategy": r["structure"],
@@ -337,7 +337,7 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
     where, params = _session_where("closed_session", start, end)
     exp_col, has_exp = _experiment_select(conn, "pmcc_positions")
     rows = conn.execute(
-        f"SELECT symbol, book, gross_pnl, fees, entry_slippage, exit_slippage, "
+        f"SELECT symbol, arm, gross_pnl, fees, entry_slippage, exit_slippage, "
         f"net_debit, quantity, closed_session{exp_col} FROM pmcc_positions WHERE status = 'closed'{where}",
         params,
     ).fetchall()
@@ -354,7 +354,7 @@ def _pmcc_closed(conn, start: str | None = None, end: str | None = None) -> list
 
     return [
         {
-            "arm": r["book"] or PMCC_UNTAGGED,
+            "arm": r["arm"] or PMCC_UNTAGGED,
             "experiment_id": (r["experiment_id"] if has_exp else None),
             "symbol": r["symbol"],
             "strategy": "pmcc_99",
@@ -388,7 +388,7 @@ def _curve_closed(conn, start: str | None = None, end: str | None = None) -> lis
     where, params = _session_where("closed_session", start, end)
     exp_col, has_exp = _experiment_select(conn, "curve_positions")
     rows = conn.execute(
-        f"SELECT symbol, book, gross_pnl, fees, entry_slippage, exit_slippage, "
+        f"SELECT symbol, arm, gross_pnl, fees, entry_slippage, exit_slippage, "
         f"entry_max_loss, entry_credit, quantity, closed_session{exp_col} FROM curve_positions "
         f"WHERE status = 'closed'{where}",
         params,
@@ -417,7 +417,7 @@ def _curve_closed(conn, start: str | None = None, end: str | None = None) -> lis
 
     return [
         {
-            "arm": r["book"] or CURVE_UNTAGGED,
+            "arm": r["arm"] or CURVE_UNTAGGED,
             "experiment_id": (r["experiment_id"] if has_exp else None),
             "symbol": r["symbol"],
             "strategy": "curve_vx",
@@ -439,12 +439,12 @@ def _curve_open(conn) -> list[dict]:
     `short_settled` position's delivered/received shares are the one leg that bound does not
     cover, per the module's own caveat."""
     rows = conn.execute(
-        "SELECT symbol, book, entry_max_loss, quantity, entry_session FROM curve_positions "
+        "SELECT symbol, arm, entry_max_loss, quantity, entry_session FROM curve_positions "
         "WHERE status != 'closed'"
     ).fetchall()
     return [
         {
-            "arm": r["book"] or CURVE_UNTAGGED,
+            "arm": r["arm"] or CURVE_UNTAGGED,
             "symbol": r["symbol"],
             "strategy": "curve_vx",
             "capital_at_risk": (
@@ -472,7 +472,7 @@ def _bwb_closed(conn, start: str | None = None, end: str | None = None) -> list[
     where, params = _session_where("closed_session", start, end)
     exp_col, has_exp = _experiment_select(conn, "bwb_positions")
     rows = conn.execute(
-        f"SELECT symbol, book, gross_pnl, fees, entry_max_loss, quantity, closed_session{exp_col} "
+        f"SELECT symbol, arm, gross_pnl, fees, entry_max_loss, quantity, closed_session{exp_col} "
         f"FROM bwb_positions WHERE status = 'closed'{where}",
         params,
     ).fetchall()
@@ -484,7 +484,7 @@ def _bwb_closed(conn, start: str | None = None, end: str | None = None) -> list[
 
     return [
         {
-            "arm": r["book"] or BWB_UNTAGGED,
+            "arm": r["arm"] or BWB_UNTAGGED,
             "experiment_id": (r["experiment_id"] if has_exp else None),
             "symbol": r["symbol"],
             "strategy": "bwb_132",
@@ -512,12 +512,12 @@ def _bwb_open(conn) -> list[dict]:
     per book at steady state, all carrying overnight through their ~7 DTE life. Capital at risk is
     the structure's defined max loss."""
     rows = conn.execute(
-        "SELECT symbol, book, entry_max_loss, quantity, entry_session FROM bwb_positions "
+        "SELECT symbol, arm, entry_max_loss, quantity, entry_session FROM bwb_positions "
         "WHERE status != 'closed'"
     ).fetchall()
     return [
         {
-            "arm": r["book"] or BWB_UNTAGGED,
+            "arm": r["arm"] or BWB_UNTAGGED,
             "symbol": r["symbol"],
             "strategy": "bwb_132",
             "capital_at_risk": (
@@ -586,12 +586,12 @@ def _calendars_open(conn) -> list[dict]:
     (defined max loss); a `short_settled` position's true remaining risk is smaller, but the debit
     stays the honest conservative bound without re-deriving marks here."""
     rows = conn.execute(
-        "SELECT symbol, book, structure, entry_debit, quantity, entry_session FROM dc_positions "
+        "SELECT symbol, arm, structure, entry_debit, quantity, entry_session FROM dc_positions "
         "WHERE status != 'closed'"
     ).fetchall()
     return [
         {
-            "arm": r["book"] or CALENDARS_UNTAGGED,
+            "arm": r["arm"] or CALENDARS_UNTAGGED,
             "symbol": r["symbol"],
             "strategy": r["structure"],
             "capital_at_risk": (
@@ -612,11 +612,11 @@ def _pmcc_open(conn) -> list[dict]:
     position's delivered shares are the one leg that bound does not cover, per the module's own
     caveat — the debit stays the honest conservative bound without re-deriving marks here."""
     rows = conn.execute(
-        "SELECT symbol, book, net_debit, quantity, entry_session FROM pmcc_positions WHERE status != 'closed'"
+        "SELECT symbol, arm, net_debit, quantity, entry_session FROM pmcc_positions WHERE status != 'closed'"
     ).fetchall()
     return [
         {
-            "arm": r["book"] or PMCC_UNTAGGED,
+            "arm": r["arm"] or PMCC_UNTAGGED,
             "symbol": r["symbol"],
             "strategy": "pmcc_99",
             "capital_at_risk": (

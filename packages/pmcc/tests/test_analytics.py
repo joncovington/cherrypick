@@ -3,11 +3,11 @@
 from cherrypick.pmcc import analytics, db
 
 
-def _closed_row(position_id, *, book, symbol, net, era):
+def _closed_row(position_id, *, arm, symbol, net, era):
     return {
         "position_id": position_id,
         "symbol": symbol,
-        "book": book,
+        "arm": arm,
         "entry_session": "2026-08-17",
         "long_expiration": "2026-09-04",
         "long_strike": 50.0,
@@ -22,25 +22,25 @@ def _closed_row(position_id, *, book, symbol, net, era):
 
 def test_headline_excludes_pre_era_rows_by_default(tmp_path):
     conn = db.connect(str(tmp_path / "paper.db"))
-    db.save_position(conn, _closed_row("A", book="keltner", symbol="TQQQ", net=100.0, era=None))
+    db.save_position(conn, _closed_row("A", arm="keltner", symbol="TQQQ", net=100.0, era=None))
     db.save_position(
-        conn, _closed_row("B", book="control", symbol="TQQQ", net=50.0, era=analytics.CURRENT_ERA)
+        conn, _closed_row("B", arm="control", symbol="TQQQ", net=50.0, era=analytics.CURRENT_ERA)
     )
 
     result = analytics.headline(conn)
 
-    assert "keltner" not in result["books"]
-    assert result["books"]["control"]["TQQQ"]["net_pnl"] == 50.0
+    assert "keltner" not in result["arms"]
+    assert result["arms"]["control"]["TQQQ"]["net_pnl"] == 50.0
 
 
 def test_headline_era_all_pools_every_row(tmp_path):
     conn = db.connect(str(tmp_path / "paper.db"))
-    db.save_position(conn, _closed_row("A", book="keltner", symbol="TQQQ", net=100.0, era=None))
+    db.save_position(conn, _closed_row("A", arm="keltner", symbol="TQQQ", net=100.0, era=None))
     db.save_position(
-        conn, _closed_row("B", book="control", symbol="TQQQ", net=50.0, era=analytics.CURRENT_ERA)
+        conn, _closed_row("B", arm="control", symbol="TQQQ", net=50.0, era=analytics.CURRENT_ERA)
     )
 
     result = analytics.headline(conn, era="ALL")
 
-    assert result["books"]["keltner"]["TQQQ"]["net_pnl"] == 100.0
-    assert result["books"]["control"]["TQQQ"]["net_pnl"] == 50.0
+    assert result["arms"]["keltner"]["TQQQ"]["net_pnl"] == 100.0
+    assert result["arms"]["control"]["TQQQ"]["net_pnl"] == 50.0

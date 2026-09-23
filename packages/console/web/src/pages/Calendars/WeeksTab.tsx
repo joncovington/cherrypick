@@ -4,7 +4,7 @@ import { useCalendarsWeek, useCalendarsWeeks } from "../../lib/api";
 import { DataCard, fmtMoney, fmtNum, fmtPct, PnlCell } from "../../components/DataTable";
 
 /**
- * Every week on file, per book, with the week's legs one click down.
+ * Every week on file, per arm, with the week's legs one click down.
  *
  * `closed` rides beside `positions` in every row because a week does not finish while its delivered
  * shares are outstanding — reporting the closed half's net under the week's name would read as the
@@ -20,7 +20,7 @@ function WeekDetail({ week }: { week: string }) {
       {rows.map((p) => (
         <div key={p.positionId}>
           <h4>
-            <span className="mono">{p.book}</span> · {p.side} @ {fmtNum(p.strike, 0)}
+            <span className="mono">{p.arm}</span> · {p.side} @ {fmtNum(p.strike, 0)}
             <span className="muted">
               {" "}
               · {p.status}
@@ -88,13 +88,13 @@ export function WeeksTab({ data }: { data: CalendarsPayload | undefined }) {
         className="view-fade"
       >
         {rows.map((r) => {
-          const key = `${r.weekOf}-${r.book}`;
+          const key = `${r.weekOf}-${r.arm}`;
           const partial = r.closed < r.positions;
           return [
             <tr key={key} className="cal-row-click" onClick={() => { setOpen(open === key ? null : key); }}>
               <td className="mono">{r.weekOf}</td>
               <td className="mono">{r.structure}</td>
-              <td className="mono">{r.book}</td>
+              <td className="mono">{r.arm}</td>
               <td>
                 {r.closed}/{r.positions}
                 {partial && (
@@ -110,8 +110,8 @@ export function WeeksTab({ data }: { data: CalendarsPayload | undefined }) {
               <td>{fmtMoney(r.fees)}</td>
               <td>{r.netPnl === null ? <span className="muted">—</span> : <PnlCell v={r.netPnl} />}</td>
             </tr>,
-            // The detail is the whole WEEK, every book of it, because the books are only
-            // interesting against each other -- they share the entry, so a single book's legs in
+            // The detail is the whole WEEK, every arm of it, because the arms are only
+            // interesting against each other -- they share the entry, so a single arm's legs in
             // isolation say nothing the row above does not.
             open === key ? (
               <tr key={`${key}-detail`} className="cal-detail-row">

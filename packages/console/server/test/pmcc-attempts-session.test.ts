@@ -55,7 +55,7 @@ function tmpPmccDb(): { config: ConsoleConfig; dbFile: string } {
     CREATE TABLE pmcc_loop_iterations (session_date TEXT, ran_at REAL, phase TEXT, status TEXT);
     CREATE TABLE pmcc_positions (entry_session TEXT);
     CREATE TABLE pmcc_entry_attempts (
-      id INTEGER PRIMARY KEY, ts REAL, trade_date TEXT, book TEXT, symbol TEXT,
+      id INTEGER PRIMARY KEY, ts REAL, trade_date TEXT, arm TEXT, symbol TEXT,
       outcome TEXT, block_detail TEXT, short_strike REAL, spot REAL, best_yield REAL
     );
   `);
@@ -68,7 +68,7 @@ function tmpPmccDb(): { config: ConsoleConfig; dbFile: string } {
     "ok",
   );
   db.prepare(
-    "INSERT INTO pmcc_entry_attempts (ts, trade_date, book, symbol, outcome, block_detail, short_strike, spot) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO pmcc_entry_attempts (ts, trade_date, arm, symbol, outcome, block_detail, short_strike, spot) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
   ).run(1_756_540_000, "2026-08-27", "control", "TQQQ", "filled", null, 85, 86.4);
   db.close();
   return { config: fakeConfig(pmccDir), dbFile };
