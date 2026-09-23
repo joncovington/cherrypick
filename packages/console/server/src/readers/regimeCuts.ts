@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type {
-  RegimeBook,
+  RegimeArm,
   RegimeBreak,
   RegimeCell,
   RegimeCrossCell,
@@ -28,7 +28,10 @@ import { num, obj, readOnlyDb, str } from "./db.js";
  * wrong contract for a page whose whole point is saying what the evidence is.
  */
 
-const SUPPORTED_CUT_VERSION = 1;
+// cut_version 2 renamed the artifact's `books`/`book`/`book_column` to `arms`/`arm`/`arm_column`.
+// Both are read: the module rewrites `regime_cuts.json` nightly and it reaches 2 within a day, but
+// the dated per-session copies the picker reads are never rewritten and stay at 1 for good.
+const SUPPORTED_CUT_VERSIONS = [1, 2];
 const LATEST = "regime_cuts.json";
 const DATED = /^regime_cuts-(\d{4}-\d{2}-\d{2})\.json$/;
 
@@ -94,13 +97,13 @@ function dimension(v: unknown): RegimeDimension {
   };
 }
 
-function book(v: unknown): RegimeBook {
+function arm(v: unknown): RegimeArm {
   const o = obj(v);
   const dims = obj(o["dimensions"]);
   const dimensions: Record<string, RegimeDimension> = {};
   for (const [k, d] of Object.entries(dims)) dimensions[k] = dimension(d);
   return {
-    book: str(o["book"]) ?? "?",
+    arm: str(o["arm"] ?? o["book"]) ?? "?",
     eraStart: str(o["era_start"]),
     eraBreak: brk(o["era_break"]),
     sessions: num(o["sessions"]) ?? 0,
@@ -111,6 +114,12 @@ function book(v: unknown): RegimeBook {
     completionRate: num(o["completion_rate"]),
     dimensions,
   };
+}
+
+/** The arm list under either spelling: `arms` at cut_version 2, `books` at 1. */
+function armList(o: Record<string, unknown>): unknown[] {
+  const v = o["arms"] ?? o["books"];
+  return Array.isArray(v) ? v : [];
 }
 
 function crossCell(v: unknown): RegimeCrossCell {
@@ -132,12 +141,10 @@ function crossTab(v: unknown): RegimeCrossTab {
   const o = obj(v);
   return {
     dims: Array.isArray(o["dims"]) ? o["dims"].map(String) : [],
-    books: Array.isArray(o["books"])
-      ? o["books"].map((b) => {
-          const bo = obj(b);
-          return { book: str(bo["book"]) ?? "?", cells: Array.isArray(bo["cells"]) ? bo["cells"].map(crossCell) : [] };
-        })
-      : [],
+    arms: armList(o).map((b) => {
+      const bo = obj(b);
+      return { arm: str(bo["arm"] ?? bo["book"]) ?? "?", cells: Array.isArray(bo["cells"]) ? bo["cells"].map(crossCell) : [] };
+    }),
   };
 }
 
@@ -145,9 +152,9 @@ const EMPTY_BREAK: RegimeBreak = { breakDate: "", scope: "*", kind: "", reason: 
 
 export function shapeRegimeCuts(raw: Record<string, unknown>): RegimeCuts {
   const era = obj(raw["era"]);
-  const books = Array.isArray(raw["books"]) ? raw["books"].map(book) : [];
+  const arms = armList(raw).map(arm);
   const dimensions: string[] = [];
-  for (const b of books) for (const k of Object.keys(b.dimensions)) if (!dimensions.includes(k)) dimensions.push(k);
+  for (const b of arms) for (const k of Object.keys(b.dimensions)) if (!dimensions.includes(k)) dimensions.push(k);
   const breaks = Array.isArray(era["breaks"]) ? era["breaks"] : [];
   const keep = (v: unknown): v is RegimeBreak => v !== null;
   return {
@@ -156,7 +163,7 @@ export function shapeRegimeCuts(raw: Record<string, unknown>): RegimeCuts {
     generatedAt: str(raw["generated_at"]),
     session: str(raw["session"]),
     symbol: str(raw["symbol"]),
-    bookColumn: str(raw["book_column"]),
+    armColumn: str(raw["arm_column"] ?? raw["book_column"]),
     entryModes: Array.isArray(raw["entry_modes"]) ? raw["entry_modes"].map(String) : null,
     thinBelowSessions: num(raw["thin_below_sessions"]) ?? 3,
     minEffectiveN: num(raw["min_effective_n"]) ?? 14,
@@ -168,7 +175,7 @@ export function shapeRegimeCuts(raw: Record<string, unknown>): RegimeCuts {
       ignoredFuture: Array.isArray(era["ignored_future"]) ? era["ignored_future"].map(brk).filter(keep) : [],
       caveats: Array.isArray(era["caveats"]) ? era["caveats"].map(brk).filter(keep) : [],
     },
-    books,
+    arms,
     crossTabs: Array.isArray(raw["cross_tabs"]) ? raw["cross_tabs"].map(crossTab) : [],
     dimensions,
   };
@@ -201,10 +208,10 @@ export function readRegimeCuts(
   }
   const o = obj(raw);
   const version = num(o["cut_version"]);
-  if (version !== SUPPORTED_CUT_VERSION || !Array.isArray(o["books"])) {
+  if (version === null || !SUPPORTED_CUT_VERSIONS.includes(version) || armList(o).length === 0) {
     return {
       status: "failed",
-      error: `unexpected shape (cut_version ${String(version)}; this console reads ${SUPPORTED_CUT_VERSION})`,
+      error: `unexpected shape (cut_version ${String(version)}; this console reads ${SUPPORTED_CUT_VERSIONS.join(", ")})`,
       sessions,
     };
   }

@@ -824,7 +824,7 @@ def test_experiments_full_carries_one_fresh_verdict_per_experiment_not_raw_rows(
 # --------------------------------------------------------------------------- regime cuts (2026-09-19)
 def _regime_doc(module="flies", session=SESSION, **overrides):
     doc = {
-        "cut_version": 1,
+        "cut_version": 2,
         "module": module,
         "generated_at": "t",
         "session": session,
@@ -835,9 +835,9 @@ def _regime_doc(module="flies", session=SESSION, **overrides):
             "ignored_future": [{"break_date": "2026-12-18", "scope": "*", "kind": "entry_rules"}],
             "caveats": [],
         },
-        "books": [
+        "arms": [
             {
-                "book": "control",
+                "arm": "control",
                 "era_start": "2026-08-21",
                 "sessions": 19,
                 "trades": 128,
@@ -895,7 +895,7 @@ def _regime_doc(module="flies", session=SESSION, **overrides):
                 },
             },
             {
-                "book": "advised:new",
+                "arm": "advised:new",
                 "era_start": "2026-09-17",
                 "sessions": 2,
                 "trades": 9,
@@ -907,9 +907,9 @@ def _regime_doc(module="flies", session=SESSION, **overrides):
         "cross_tabs": [
             {
                 "dims": ["gex", "trend"],
-                "books": [
+                "arms": [
                     {
-                        "book": "control",
+                        "arm": "control",
                         "cells": [
                             {
                                 "buckets": ["diffuse", "flat"],
@@ -932,7 +932,7 @@ def _regime_doc(module="flies", session=SESSION, **overrides):
                         ],
                     },
                     {
-                        "book": "advised:new",
+                        "arm": "advised:new",
                         "cells": [
                             {"buckets": ["a", "b"], "sessions": 1, "trades": 2, "net_pnl": 1.0, "thin": True}
                         ],
@@ -943,6 +943,26 @@ def _regime_doc(module="flies", session=SESSION, **overrides):
     }
     doc.update(overrides)
     return doc
+
+
+def _as_cut_v1(doc: dict) -> dict:
+    """The same document as cut_version 1 spelled it: `arms`/`arm` were `books`/`book`. Dated
+    per-session artifacts written before the bump are never rewritten, so this shape is read for
+    good and a test that only ever built the new one would prove nothing about them."""
+    out = dict(doc)
+    out["cut_version"] = 1
+    out["books"] = [{("book" if k == "arm" else k): v for k, v in a.items()} for a in doc.get("arms") or []]
+    out.pop("arms", None)
+    out["cross_tabs"] = [
+        {
+            "dims": t["dims"],
+            "books": [{("book" if k == "arm" else k): v for k, v in b.items()} for b in t.get("arms") or []],
+        }
+        for t in doc.get("cross_tabs") or []
+    ]
+    if "arm_column" in out:
+        out["book_column"] = out.pop("arm_column")
+    return out
 
 
 def _write_regime_doc(tmp_home, module, doc):
@@ -968,28 +988,28 @@ def test_regime_cuts_thin_cells_carry_no_pnl(tmp_home):
     is the exact misread the artifact exists to prevent. Cells are one string each."""
     _write_regime_doc(tmp_home, "flies", _regime_doc())
     out = factpack._regime_cuts(SESSION, ("flies",))["flies"]
-    gex = out["books"][0]["dimensions"]["gex"]["buckets"]
+    gex = out["arms"][0]["dimensions"]["gex"]["buckets"]
     assert gex["pinning"] == "sessions=2 trades=4 thin"
     assert gex["diffuse"] == "sessions=13 trades=70 completion=80% net=+861"
     # cross-tab: non-thin cells only, and a book left with none says so
-    ct = out["cross_tabs"][0]["books"]
+    ct = out["cross_tabs"][0]["arms"]
     assert ct[0]["cells"] == {"diffuse/flat": "sessions=13 trades=39 win=90% net=+1002"}
     assert ct[1]["cells"] == {} and ct[1]["_all_thin"] is True
 
 
 def test_regime_cuts_drops_low_coverage_and_degenerate_dimensions_and_says_so(tmp_home):
     _write_regime_doc(tmp_home, "flies", _regime_doc())
-    book = factpack._regime_cuts(SESSION, ("flies",))["flies"]["books"][0]
-    assert set(book["dimensions"]) == {"gex"}
-    assert "coverage 20.0%" in book["_dropped"]["skew"] and "degenerate" in book["_dropped"]["center_offset"]
+    arm = factpack._regime_cuts(SESSION, ("flies",))["flies"]["arms"][0]
+    assert set(arm["dimensions"]) == {"gex"}
+    assert "coverage 20.0%" in arm["_dropped"]["skew"] and "degenerate" in arm["_dropped"]["center_offset"]
 
 
-def test_regime_cuts_collapses_thin_books_and_labels_a_stale_artifact(tmp_home):
+def test_regime_cuts_collapses_thin_arms_and_labels_a_stale_artifact(tmp_home):
     _write_regime_doc(tmp_home, "flies", _regime_doc(session="2026-08-12"))
     out = factpack._regime_cuts(SESSION, ("flies",))["flies"]
     assert out["_stale"] == {"artifact_session": "2026-08-12", "pack_session": SESSION}
-    assert out["_thin_books"] == [{"book": "advised:new", "sessions": 2, "trades": 9}]
-    assert [b["book"] for b in out["books"]] == ["control"]
+    assert out["_thin_arms"] == [{"arm": "advised:new", "sessions": 2, "trades": 9}]
+    assert [b["arm"] for b in out["arms"]] == ["control"]
     assert out["era"]["ignored_future"] == ["2026-12-18"] and out["era"]["bounding_break"] == "cutover"
 
 
@@ -998,22 +1018,22 @@ def test_regime_cuts_carries_flies_outcome_distributions_and_omits_them_for_meic
     latency = {"n": 4, "p25": 17.5, "p50": 25.0, "p75": 32.5, "max": 40.0}
     gap = {"n": 2, "min": -0.45, "p25": -0.4, "p50": -0.35, "p75": -0.3}
     flies = _regime_doc()
-    flies["books"][0]["completion_latency_min"] = latency
-    flies["books"][0]["miss_gap"] = gap
+    flies["arms"][0]["completion_latency_min"] = latency
+    flies["arms"][0]["miss_gap"] = gap
     _write_regime_doc(tmp_home, "flies", flies)
     _write_regime_doc(tmp_home, "meic", _regime_doc(module="meic"))
     out = factpack._regime_cuts(SESSION, ("flies", "meic"))
-    control = out["flies"]["books"][0]
+    control = out["flies"]["arms"][0]
     assert control["completion_latency_min"] == latency and control["miss_gap"] == gap
-    meic = out["meic"]["books"][0]
+    meic = out["meic"]["arms"][0]
     assert "completion_latency_min" not in meic and "miss_gap" not in meic
     assert "miss_gap" in out["_note"]
 
 
 def test_regime_cuts_unknown_cut_version_is_absent_not_misread(tmp_home):
-    _write_regime_doc(tmp_home, "meic", _regime_doc(module="meic", cut_version=2))
+    _write_regime_doc(tmp_home, "meic", _regime_doc(module="meic", cut_version=3))
     out = factpack._regime_cuts(SESSION, ("meic",))["meic"]
-    assert "cut_version 2" in out["_absent"]
+    assert "cut_version 3" in out["_absent"]
 
 
 def test_regime_cuts_thinned_sections_fit_the_attention_budget(tmp_home):
@@ -1023,10 +1043,10 @@ def test_regime_cuts_thinned_sections_fit_the_attention_budget(tmp_home):
     must stay under 64 KB; twelve MATURE flies books is the far case."""
 
     def big(module, n_books, dims, pairs):
-        books = []
+        arm_rows = []
         for i in range(n_books):
             book = {
-                "book": f"b{i}",
+                "arm": f"b{i}",
                 "era_start": "2026-08-21",
                 "sessions": 20,
                 "trades": 400,
@@ -1066,7 +1086,7 @@ def test_regime_cuts_thinned_sections_fit_the_attention_budget(tmp_home):
                         for j in range(4)
                     ],
                 }
-            books.append(book)
+            arm_rows.append(book)
         cells = [
             {
                 "buckets": [f"g{j}", f"t{k}"],
@@ -1082,9 +1102,9 @@ def test_regime_cuts_thinned_sections_fit_the_attention_budget(tmp_home):
         ]
         return _regime_doc(
             module=module,
-            books=books,
+            arms=arm_rows,
             cross_tabs=[
-                {"dims": list(pair), "books": [{"book": b["book"], "cells": cells} for b in books]}
+                {"dims": list(pair), "arms": [{"arm": b["arm"], "cells": cells} for b in arm_rows]}
                 for pair in pairs
             ],
         )
@@ -1132,3 +1152,25 @@ def test_the_review_trend_reads_the_arm_split_under_either_spelling(tmp_home, ke
     entry = next(e for e in factpack._review_trend(SESSION) if e["session"] == prior)
     assert entry["modules"]["meic"]["by_arm"] == {"control": {"closed": 2, "net": 10.0, "wins": 1}}
     assert "by_profile" not in entry["modules"]["meic"]
+
+
+def test_a_cut_version_1_artifact_thins_exactly_like_the_version_2_one(tmp_home):
+    """cut_version 2 renamed the artifact's `books`/`book` to `arms`/`arm`. The latest file is
+    rewritten nightly and reaches 2 within a day, but the dated per-session copies beside it are
+    never rewritten, so the pack reads 1 for good.
+
+    Asserting the two thin to the SAME dict is the point: an equality here fails on any divergence,
+    including ones this test's author did not think of. A reader that took only `arms` would not
+    throw on a v1 artifact — it would emit a module with zero arms and a `_stale` block, which
+    reads as a module that traded nothing rather than as an artifact that was not understood.
+    """
+    v2 = _regime_doc()
+    _write_regime_doc(tmp_home, "flies", v2)
+    from_v2 = factpack._regime_cuts(SESSION, ("flies",))["flies"]
+
+    _write_regime_doc(tmp_home, "flies", _as_cut_v1(v2))
+    from_v1 = factpack._regime_cuts(SESSION, ("flies",))["flies"]
+
+    assert from_v1 == from_v2
+    assert [a["arm"] for a in from_v1["arms"]] == ["control"]
+    assert from_v1["cross_tabs"][0]["arms"][0]["arm"] == "control"

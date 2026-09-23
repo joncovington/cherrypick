@@ -28,7 +28,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-CUT_VERSION = 1
+CUT_VERSION = 2
 THIN_BELOW_SESSIONS = 3
 DEFAULT_CROSS_TABS: tuple[tuple[str, str], ...] = (("gex", "trend"),)
 LATEST_NAME = "regime_cuts.json"
@@ -99,9 +99,9 @@ def era_bounds(breaks: list[dict], session: str) -> dict:
     }
 
 
-def book_start(era: dict, book: str) -> tuple[str | None, dict | None]:
-    """`(era_start, era_break)` for one book: its own later break if it has one, else the era's."""
-    own = era["arm_starts"].get(book)
+def arm_start(era: dict, arm: str) -> tuple[str | None, dict | None]:
+    """`(era_start, era_break)` for one arm: its own later break if it has one, else the era's."""
+    own = era["arm_starts"].get(arm)
     if own is not None:
         return own[0], own[1]
     return era["start"], None
@@ -143,7 +143,7 @@ def _bucket_sort_key(b: dict) -> tuple:
     return (last, -int(b.get("trades") or 0), str(b["bucket"]))
 
 
-def _book_sort_key(name: str) -> tuple:
+def _arm_sort_key(name: str) -> tuple:
     return (name != "control", name.startswith("advised:"), name)
 
 
@@ -152,20 +152,24 @@ def assemble(
     module: str,
     session: str,
     symbol: str | None,
-    book_column: str,
+    arm_column: str,
     entry_modes: list[str] | tuple[str, ...] | None,
     phase: str,
     era: dict,
-    books: list[dict],
+    arms: list[dict],
     cross_tabs: list[dict],
     generated_at: str,
     min_effective_n: int,
 ) -> dict:
-    """The document. `books` are `{book, era_start, era_break, summary, coverage, regimes}` where
-    `summary` is the book's own `_summarize`-shaped dict plus `sessions` (and `completed` /
+    """The document. `arms` are `{arm, era_start, era_break, summary, coverage, regimes}` where
+    `summary` is the arm's own `_summarize`-shaped dict plus `sessions` (and `completed` /
     `completion_rate` when the module has the concept), `coverage` is the module's
     `regime_coverage(...)["dimensions"]`, and `regimes` is `{dimension: [by_regime rows]}`.
-    `cross_tabs` are `{dims, books: [{book, cells: [{buckets, ...summary, sessions}]}]}`.
+    `cross_tabs` are `{dims, arms: [{arm, cells: [{buckets, ...summary, sessions}]}]}`.
+
+    `arm_column` names the SQL column the module's own rows use, which is still `arm`,
+    `risk_profile` or `book` per module until that migration lands -- the KEY is the suite's
+    word, the VALUE is whatever the ledger actually calls it.
     Everything is re-ordered and `thin`-stamped here so two writers cannot disagree.
 
     A summary may also carry the outcome distributions in `_OUTCOME_KEYS`; they are copied only
@@ -173,8 +177,8 @@ def assemble(
     that reads as "measured and found nothing". Additive keys like these do not bump
     `CUT_VERSION`: every reader takes them with `.get`, and a bump would have the advisor refuse
     the other writer's artifact until its next nightly run."""
-    out_books = []
-    for b in sorted(books, key=lambda x: _book_sort_key(x["book"])):
+    out_arms = []
+    for b in sorted(arms, key=lambda x: _arm_sort_key(x["arm"])):
         summary = b["summary"]
         dims: dict[str, dict] = {}
         for dim, rows in b["regimes"].items():
@@ -191,8 +195,8 @@ def assemble(
             ]
             buckets.sort(key=_bucket_sort_key)
             dims[dim] = {**cov, "buckets": buckets}
-        book = {
-            "book": b["book"],
+        arm = {
+            "arm": b["arm"],
             "era_start": b.get("era_start"),
             "era_break": b.get("era_break"),
             "sessions": int(summary.get("sessions") or 0),
@@ -204,13 +208,13 @@ def assemble(
         }
         for k in _OUTCOME_KEYS:
             if k in summary:
-                book[k] = summary[k]
-        book["dimensions"] = dims
-        out_books.append(book)
+                arm[k] = summary[k]
+        arm["dimensions"] = dims
+        out_arms.append(arm)
     out_cross = []
     for ct in cross_tabs:
         entries = []
-        for b in sorted(ct["books"], key=lambda x: _book_sort_key(x["book"])):
+        for b in sorted(ct["arms"], key=lambda x: _arm_sort_key(x["arm"])):
             cells = [{"buckets": list(c["buckets"]), **_cell(c)} for c in b["cells"]]
             cells.sort(
                 key=lambda c: (
@@ -219,15 +223,15 @@ def assemble(
                     c["buckets"],
                 )
             )
-            entries.append({"book": b["book"], "cells": cells})
-        out_cross.append({"dims": list(ct["dims"]), "books": entries})
+            entries.append({"arm": b["arm"], "cells": cells})
+        out_cross.append({"dims": list(ct["dims"]), "arms": entries})
     return {
         "cut_version": CUT_VERSION,
         "module": module,
         "generated_at": generated_at,
         "session": session,
         "symbol": symbol,
-        "book_column": book_column,
+        "arm_column": arm_column,
         "entry_modes": list(entry_modes) if entry_modes else None,
         "phase": phase,
         "thin_below_sessions": THIN_BELOW_SESSIONS,
@@ -239,7 +243,7 @@ def assemble(
             "ignored_future": era["ignored_future"],
             "caveats": era["caveats"],
         },
-        "books": out_books,
+        "arms": out_arms,
         "cross_tabs": out_cross,
     }
 
@@ -298,8 +302,8 @@ __all__ = [
     "LATEST_NAME",
     "NON_BOUNDING_KINDS",
     "THIN_BELOW_SESSIONS",
+    "arm_start",
     "assemble",
-    "book_start",
     "dated_name",
     "dated_sessions",
     "era_bounds",

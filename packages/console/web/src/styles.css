@@ -2113,14 +2113,14 @@ select.text-input {
   color: var(--text);
 }
 
-.regime-grid-books {
+.regime-grid-arms {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   gap: 1rem;
   margin-top: 0.4rem;
 }
 
-.regime-grid-book h3 {
+.regime-grid-arm h3 {
   margin: 0 0 0.35rem;
   font-family: var(--num-face);
   color: var(--text);

@@ -90,14 +90,14 @@ def test_measurement_breaks_reader_returns_rows_oldest_first(ledger):
     conn.close()
 
 
-def test_regime_cuts_books_come_from_the_ledger_and_completion_is_null(ledger):
+def test_regime_cuts_arms_come_from_the_ledger_and_completion_is_null(ledger):
     conn = sqlite3.connect(ledger)
     conn.row_factory = sqlite3.Row
     doc = analytics.regime_cuts(conn, session=DAY, generated_at="t")
-    assert doc["module"] == "meic" and doc["book_column"] == "risk_profile" and doc["entry_modes"] is None
+    assert doc["module"] == "meic" and doc["arm_column"] == "risk_profile" and doc["entry_modes"] is None
     assert doc["era"]["start"] == "2026-08-21" and doc["era"]["key"] == analytics.CURRENT_ERA
     assert [b["break_date"] for b in doc["era"]["ignored_future"]] == ["2026-12-18"]
-    books = {b["book"]: b for b in doc["books"]}
+    books = {b["arm"]: b for b in doc["arms"]}
     assert set(books) == {"control", "advised:x"}  # the sample-era row is outside the era
     assert books["control"]["trades"] == 5 and books["control"]["completed"] is None
     assert books["control"]["completion_rate"] is None
@@ -113,7 +113,7 @@ def test_cross_tab_pairs_gex_and_trend(ledger):
     conn = sqlite3.connect(ledger)
     conn.row_factory = sqlite3.Row
     doc = analytics.regime_cuts(conn, session=DAY, generated_at="t")
-    control = next(b for b in doc["cross_tabs"][0]["books"] if b["book"] == "control")
+    control = next(b for b in doc["cross_tabs"][0]["arms"] if b["arm"] == "control")
     cells = {tuple(c["buckets"]): c for c in control["cells"]}
     assert cells[("diffuse", "flat")]["trades"] == 3 and cells[("diffuse", "up_from_open")]["thin"] is True
     assert cells[("diffuse", "up_from_open")]["net_pnl"] == -506.89

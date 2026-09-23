@@ -430,18 +430,18 @@ def regime_cuts(
         if r[0]
     ]
 
-    books = []
+    arms_out = []
     for profile in profiles:
-        start, brk = _rc.book_start(bounds, profile)
+        start, brk = _rc.arm_start(bounds, profile)
         w, p = _period_clause(start, session, profile, symbol, era)
         rows = conn.execute(f"SELECT pnl, fees, trade_date FROM ic_trades WHERE {w}", p).fetchall()
         coverage = regime_coverage(conn, start, session, symbol, era, arm=profile)["dimensions"]
         regimes = {
             dim: by_regime(conn, dim, start, session, symbol, era, arm=profile) for dim in REGIME_DIMENSIONS
         }
-        books.append(
+        arms_out.append(
             {
-                "book": profile,
+                "arm": profile,
                 "era_start": start,
                 "era_break": brk,
                 "summary": _summarize(rows),
@@ -454,22 +454,22 @@ def regime_cuts(
     for dims in cross_tabs:
         entries = []
         for profile in profiles:
-            start, _ = _rc.book_start(bounds, profile)
+            start, _ = _rc.arm_start(bounds, profile)
             cells = _cross_tab(
                 conn, tuple(dims), start=start, end=session, symbol=symbol, era=era, arm=profile
             )
-            entries.append({"book": profile, "cells": cells})
-        tabs.append({"dims": list(dims), "books": entries})
+            entries.append({"arm": profile, "cells": cells})
+        tabs.append({"dims": list(dims), "arms": entries})
 
     doc = _rc.assemble(
         module="meic",
         session=session,
         symbol=symbol,
-        book_column="risk_profile",
+        arm_column="risk_profile",
         entry_modes=None,
         phase="entry",
         era=bounds,
-        books=books,
+        arms=arms_out,
         cross_tabs=tabs,
         generated_at=generated_at or _clock.now_iso(),
         min_effective_n=MIN_EFFECTIVE_N,

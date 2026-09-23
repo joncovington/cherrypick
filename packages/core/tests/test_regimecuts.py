@@ -11,7 +11,7 @@ def _brk(date, scope="*", kind="entry_rules", reason="r"):
 
 
 # --------------------------------------------------------------------------- era
-def test_era_start_is_the_latest_book_wide_break_on_or_before_the_session():
+def test_era_start_is_the_latest_suite_wide_break_on_or_before_the_session():
     era = rc.era_bounds(
         [_brk("2026-08-11", kind="cadence"), _brk("2026-08-21", kind="cutover")], "2026-09-18"
     )
@@ -29,18 +29,18 @@ def test_era_ignores_future_dated_breaks_until_they_pass():
     assert rc.era_bounds(breaks, "2026-12-18")["start"] == "2026-12-18"
 
 
-def test_a_book_own_break_moves_only_that_book_start():
-    """Shown to fail by returning the book-wide start for every book."""
+def test_an_arm_own_break_moves_only_that_arm_start():
+    """Shown to fail by returning the suite-wide start for every arm."""
     breaks = [_brk("2026-08-21", kind="cutover"), _brk("2026-08-31", scope="callwall", kind="arm_added")]
     era = rc.era_bounds(breaks, "2026-09-18")
-    assert rc.book_start(era, "callwall") == ("2026-08-31", era["arm_starts"]["callwall"][1])
-    assert rc.book_start(era, "control") == ("2026-08-21", None)
+    assert rc.arm_start(era, "callwall") == ("2026-08-31", era["arm_starts"]["callwall"][1])
+    assert rc.arm_start(era, "control") == ("2026-08-21", None)
 
 
-def test_a_book_break_before_the_book_wide_boundary_is_superseded():
+def test_an_arm_break_before_the_suite_wide_boundary_is_superseded():
     breaks = [_brk("2026-08-11", scope="sign", kind="arm_added"), _brk("2026-08-21", kind="cutover")]
     era = rc.era_bounds(breaks, "2026-09-18")
-    assert rc.book_start(era, "sign") == ("2026-08-21", None)
+    assert rc.arm_start(era, "sign") == ("2026-08-21", None)
 
 
 def test_partial_session_breaks_never_bound_the_era_but_are_listed_as_caveats():
@@ -58,7 +58,7 @@ def test_partial_session_breaks_never_bound_the_era_but_are_listed_as_caveats():
 def test_no_break_means_start_is_none_and_nothing_is_ignored():
     era = rc.era_bounds([], "2026-09-18")
     assert era["start"] is None and era["bounding_break"] is None and era["ignored_future"] == []
-    assert rc.book_start(era, "control") == (None, None)
+    assert rc.arm_start(era, "control") == (None, None)
 
 
 # --------------------------------------------------------------------------- assembly
@@ -89,9 +89,9 @@ def _row(bucket, sessions, trades=10, net=100.0, completed=None):
 
 def _doc(**overrides):
     era = rc.era_bounds([_brk("2026-08-21", kind="cutover")], "2026-09-18")
-    books = [
+    arms = [
         {
-            "book": "advised:x",
+            "arm": "advised:x",
             "era_start": "2026-08-21",
             "era_break": None,
             "summary": {"sessions": 5, "trades": 20, "net_pnl": 50.0, "win_rate": 0.6},
@@ -113,7 +113,7 @@ def _doc(**overrides):
             },
         },
         {
-            "book": "control",
+            "arm": "control",
             "era_start": "2026-08-21",
             "era_break": None,
             "summary": {
@@ -144,11 +144,11 @@ def _doc(**overrides):
         module="flies",
         session="2026-09-18",
         symbol="SPX",
-        book_column="arm",
+        arm_column="arm",
         entry_modes=("legged",),
         phase="entry",
         era=era,
-        books=books,
+        arms=arms,
         cross_tabs=[],
         generated_at="2026-09-18T16:40:00-04:00",
         min_effective_n=14,
@@ -160,24 +160,24 @@ def _doc(**overrides):
 def test_thin_is_stamped_by_the_writer_below_three_sessions():
     """Shown to fail by flipping `<` to `<=` in `_cell`: the three-session bucket would read thin."""
     doc = _doc()
-    advised = next(b for b in doc["books"] if b["book"] == "advised:x")
+    advised = next(b for b in doc["arms"] if b["arm"] == "advised:x")
     by = {b["bucket"]: b for b in advised["dimensions"]["gex"]["buckets"]}
     assert by["untagged"]["thin"] is True and by["a"]["thin"] is True and by["b"]["thin"] is False
     assert doc["thin_below_sessions"] == 3
 
 
-def test_books_and_buckets_are_ordered_deterministically():
+def test_arms_and_buckets_are_ordered_deterministically():
     doc = _doc()
-    assert [b["book"] for b in doc["books"]] == ["control", "advised:x"]
-    advised = next(b for b in doc["books"] if b["book"] == "advised:x")
+    assert [b["arm"] for b in doc["arms"]] == ["control", "advised:x"]
+    advised = next(b for b in doc["arms"] if b["arm"] == "advised:x")
     assert [b["bucket"] for b in advised["dimensions"]["gex"]["buckets"]] == ["b", "a", "untagged"]
     assert json.dumps(_doc(), sort_keys=False) == json.dumps(_doc(), sort_keys=False)
 
 
 def test_completion_fields_are_null_for_a_module_without_the_concept():
     doc = _doc()
-    advised = next(b for b in doc["books"] if b["book"] == "advised:x")
-    control = next(b for b in doc["books"] if b["book"] == "control")
+    advised = next(b for b in doc["arms"] if b["arm"] == "advised:x")
+    control = next(b for b in doc["arms"] if b["arm"] == "control")
     assert advised["completed"] is None and advised["completion_rate"] is None
     assert advised["dimensions"]["gex"]["buckets"][0]["completed"] is None
     assert (
@@ -186,16 +186,16 @@ def test_completion_fields_are_null_for_a_module_without_the_concept():
 
 
 def test_assemble_copies_outcome_distributions_only_when_present():
-    """Shown to fail by copying the keys unconditionally: a MEIC book would carry `miss_gap: None`
+    """Shown to fail by copying the keys unconditionally: a MEIC arm would carry `miss_gap: None`
     and read as a module that measures misses and found none."""
     latency = {"n": 4, "p25": 17.5, "p50": 25.0, "p75": 32.5, "max": 40.0}
     gap = {"n": 2, "min": -0.45, "p25": -0.4, "p50": -0.35, "p75": -0.3}
     doc = _doc()
-    control_in = next(b for b in doc["books"] if b["book"] == "control")
+    control_in = next(b for b in doc["arms"] if b["arm"] == "control")
     assert "completion_latency_min" not in control_in and "miss_gap" not in control_in
-    books = [
+    arms = [
         {
-            "book": "control",
+            "arm": "control",
             "era_start": "2026-08-21",
             "era_break": None,
             "summary": {"sessions": 9, "trades": 40, "completion_latency_min": latency, "miss_gap": gap},
@@ -203,7 +203,7 @@ def test_assemble_copies_outcome_distributions_only_when_present():
             "regimes": {},
         },
         {
-            "book": "advised:x",
+            "arm": "advised:x",
             "era_start": "2026-08-21",
             "era_break": None,
             "summary": {"sessions": 9, "trades": 40},
@@ -211,9 +211,9 @@ def test_assemble_copies_outcome_distributions_only_when_present():
             "regimes": {},
         },
     ]
-    doc = _doc(books=books)
-    control = next(b for b in doc["books"] if b["book"] == "control")
-    advised = next(b for b in doc["books"] if b["book"] == "advised:x")
+    doc = _doc(arms=arms)
+    control = next(b for b in doc["arms"] if b["arm"] == "control")
+    advised = next(b for b in doc["arms"] if b["arm"] == "advised:x")
     assert control["completion_latency_min"] == latency and control["miss_gap"] == gap
     assert "completion_latency_min" not in advised and "miss_gap" not in advised
 
@@ -226,8 +226,8 @@ def test_the_document_carries_the_contract_fields_and_the_era():
     assert doc["era"]["start"] == "2026-08-21" and doc["era"]["bounding_break"]["kind"] == "cutover"
     assert doc["entry_modes"] == ["legged"] and doc["min_effective_n"] == 14
     # coverage's own bucket counts are dropped: the bucket rows carry them
-    assert "buckets" in doc["books"][0]["dimensions"]["gex"]
-    assert "tagged" in doc["books"][0]["dimensions"]["gex"]
+    assert "buckets" in doc["arms"][0]["dimensions"]["gex"]
+    assert "tagged" in doc["arms"][0]["dimensions"]["gex"]
 
 
 def test_cross_tab_cells_are_thin_stamped_and_ordered():
@@ -235,9 +235,9 @@ def test_cross_tab_cells_are_thin_stamped_and_ordered():
         cross_tabs=[
             {
                 "dims": ["gex", "trend"],
-                "books": [
+                "arms": [
                     {
-                        "book": "control",
+                        "arm": "control",
                         "cells": [
                             {"buckets": ["a", "untagged"], "sessions": 6, "trades": 4, "net_pnl": 1.0},
                             {"buckets": ["a", "flat"], "sessions": 2, "trades": 9, "net_pnl": -812.0},
@@ -248,7 +248,7 @@ def test_cross_tab_cells_are_thin_stamped_and_ordered():
             }
         ]
     )
-    cells = doc["cross_tabs"][0]["books"][0]["cells"]
+    cells = doc["cross_tabs"][0]["arms"][0]["cells"]
     assert [c["buckets"] for c in cells] == [["a", "flat"], ["a", "up"], ["a", "untagged"]]
     assert cells[0]["thin"] is True and cells[1]["thin"] is False
 

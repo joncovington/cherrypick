@@ -95,7 +95,7 @@ Things about this data that will mislead you if you do not know them:
 - `advisor_journal` is your own recent history, including proposals a human DISMISSED. Do not
   re-propose those. Build on the threads instead.
 - `arm_readings.<module>.collisions` lists arm tags whose readings are byte-identical across
-  sample/win_rate/days/net_pnl/sharpe/max_drawdown — either the same book trading under two names,
+  sample/win_rate/days/net_pnl/sharpe/max_drawdown — either the same arm trading under two names,
   or a config mistake that never differentiated them. Treat colliding tags as ONE data point, not
   two, when reasoning about a module's arms; this list is provided, not something to re-derive by
   eyeballing the readings yourself.
@@ -176,7 +176,7 @@ because the earnings module settles overnight; do not treat its earnings numbers
 `review_trend`, `arm_readings` (every arm's reading and its qualification checks), `bounds` (exactly
 which parameters each module will accept advice about, and between which values), `experiments_full`,
 `advice_audit`, `advisor_journal`, `flies_band_containment` (band placement against each session's
-realised range), and `regime_cuts` (each module's own per-book outcomes by the regime its entries
+realised range), and `regime_cuts` (each module's own per-arm outcomes by the regime its entries
 were tagged with, era-scoped by its measurement breaks -- a `thin` cell carries no P&L and may not be
 drawn on; read `sessions` before anything else).
 
@@ -188,8 +188,8 @@ Your job:
    the sample and day thresholds is UNDERPOWERED — say that rather than passing or failing it.
 3. Design new experiments strictly inside the provided `bounds`, each with a hypothesis and a
    success metric you could later be judged against. Experiments run CONCURRENTLY (since
-   2026-09-17): every one you admit gets its own `advised:<name>` book beside the same control,
-   so two ideas on one module need not wait for each other -- but each book is one lever, so keep
+   2026-09-17): every one you admit gets its own `advised:<name>` arm beside the same control,
+   so two ideas on one module need not wait for each other -- but each arm is one lever, so keep
    every experiment to the single parameter its hypothesis names, and do not propose an idea
    twice under two names. Give each a short, distinct `name`: it becomes the book's tag.
 4. Where the interesting idea does not fit in bounds, say it as `creative`. Reach as far as you

@@ -694,9 +694,9 @@ def regime_cuts(
         r[0] for r in conn.execute(f"SELECT DISTINCT arm FROM fly_positions WHERE {where}", params) if r[0]
     ]
 
-    books = []
+    arms_out = []
     for arm in arms:
-        start, brk = _rc.book_start(era, arm)
+        start, brk = _rc.arm_start(era, arm)
         w, p = _period_clause(start, session, arm=arm, symbol=symbol)
         w, p = _entry_mode_clause(w, p, entry_modes)
         rows = conn.execute(
@@ -715,9 +715,9 @@ def regime_cuts(
             dim: by_regime(conn, dim, start, session, entry_modes, symbol, phase=phase, arm=arm)
             for dim in REGIME_DIMENSIONS
         }
-        books.append(
+        arms_out.append(
             {
-                "book": arm,
+                "arm": arm,
                 "era_start": start,
                 "era_break": brk,
                 "summary": summary,
@@ -730,22 +730,22 @@ def regime_cuts(
     for dims in cross_tabs:
         entries = []
         for arm in arms:
-            start, _ = _rc.book_start(era, arm)
+            start, _ = _rc.arm_start(era, arm)
             cells = _cross_tab(
                 conn, tuple(dims), start=start, end=session, symbol=symbol, entry_modes=entry_modes, arm=arm
             )
-            entries.append({"book": arm, "cells": cells})
-        tabs.append({"dims": list(dims), "books": entries})
+            entries.append({"arm": arm, "cells": cells})
+        tabs.append({"dims": list(dims), "arms": entries})
 
     return _rc.assemble(
         module="flies",
         session=session,
         symbol=symbol,
-        book_column="arm",
+        arm_column="arm",
         entry_modes=entry_modes,
         phase=phase,
         era=era,
-        books=books,
+        arms=arms_out,
         cross_tabs=tabs,
         generated_at=generated_at or clock.now_iso(),
         min_effective_n=MIN_EFFECTIVE_N,

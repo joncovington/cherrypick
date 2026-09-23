@@ -30,14 +30,38 @@ function cfg(root: string): ConsoleConfig {
   } as unknown as ConsoleConfig;
 }
 
+/**
+ * The same document as cut_version 1 spelled it: `arms`/`arm`/`arm_column` were
+ * `books`/`book`/`book_column`. The dated per-session artifacts the picker lists are never
+ * rewritten, so this shape stays readable for good.
+ */
+function asCutV1(doc: Record<string, unknown>): Record<string, unknown> {
+  const ren = (o: unknown) => {
+    const r = { ...(o as Record<string, unknown>) };
+    if ("arm" in r) { r["book"] = r["arm"]; delete r["arm"]; }
+    return r;
+  };
+  const out: Record<string, unknown> = { ...doc, cut_version: 1 };
+  out["books"] = ((doc["arms"] as unknown[]) ?? []).map(ren);
+  delete out["arms"];
+  out["cross_tabs"] = ((doc["cross_tabs"] as Record<string, unknown>[]) ?? []).map((t) => ({
+    ...t,
+    books: ((t["arms"] as unknown[]) ?? []).map(ren),
+    arms: undefined,
+  }));
+  out["book_column"] = doc["arm_column"];
+  delete out["arm_column"];
+  return out;
+}
+
 function minimal(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    cut_version: 1,
+    cut_version: 2,
     module: "flies",
     generated_at: "2026-09-18T16:40:00-04:00",
     session: "2026-09-18",
     symbol: "SPX",
-    book_column: "arm",
+    arm_column: "arm",
     entry_modes: ["legged"],
     phase: "entry",
     thin_below_sessions: 3,
@@ -49,9 +73,9 @@ function minimal(overrides: Record<string, unknown> = {}): Record<string, unknow
       ignored_future: [{ break_date: "2026-12-18", scope: "*", kind: "entry_rules" }],
       caveats: [],
     },
-    books: [
+    arms: [
       {
-        book: "control",
+        arm: "control",
         era_start: "2026-08-21",
         era_break: null,
         sessions: 19,
@@ -79,7 +103,7 @@ function minimal(overrides: Record<string, unknown> = {}): Record<string, unknow
         },
       },
       {
-        book: "callwall",
+        arm: "callwall",
         era_start: "2026-08-31",
         era_break: { break_date: "2026-08-31", scope: "callwall", kind: "arm_added", reason: "added" },
         sessions: 12,
@@ -96,11 +120,11 @@ function minimal(overrides: Record<string, unknown> = {}): Record<string, unknow
     cross_tabs: [
       {
         dims: ["gex", "trend"],
-        books: [{ book: "control", cells: [{ buckets: ["diffuse", "up_from_open"], sessions: 7, trades: 21, net_pnl: -898.79, thin: false }] }],
+        arms: [{ book: "control", cells: [{ buckets: ["diffuse", "up_from_open"], sessions: 7, trades: 21, net_pnl: -898.79, thin: false }] }],
       },
       {
         dims: ["gex", "drift_alignment"],
-        books: [{ book: "control", cells: [{ buckets: ["diffuse", "against"], sessions: 6, trades: 14, net_pnl: -240.0, thin: false }] }],
+        arms: [{ book: "control", cells: [{ buckets: ["diffuse", "against"], sessions: 6, trades: 14, net_pnl: -240.0, thin: false }] }],
       },
     ],
     ...overrides,
@@ -142,10 +166,10 @@ describe("readRegimeCuts", () => {
   });
 
   it("a wrong cut_version is failed, not silently rendered", () => {
-    write("flies", "regime_cuts.json", minimal({ cut_version: 2 }));
+    write("flies", "regime_cuts.json", minimal({ cut_version: 3 }));
     const out = readRegimeCuts(config, "flies");
     expect(out.status).toBe("failed");
-    if (out.status === "failed") expect(out.error).toMatch(/cut_version 2/);
+    if (out.status === "failed") expect(out.error).toMatch(/cut_version 3/);
   });
 
   it("a valid artifact passes thin through untouched and never re-derives it", () => {
@@ -155,10 +179,10 @@ describe("readRegimeCuts", () => {
     const out = readRegimeCuts(config, "flies");
     expect(out.status).toBe("ok");
     if (out.status !== "ok") return;
-    const diffuse = out.cuts.books[0]!.dimensions["gex"]!.buckets.find((b) => b.bucket === "diffuse")!;
+    const diffuse = out.cuts.arms[0]!.dimensions["gex"]!.buckets.find((b) => b.bucket === "diffuse")!;
     expect(diffuse.sessions).toBe(1);
     expect(diffuse.thin).toBe(false);
-    expect(out.cuts.crossTabs[0]!.books[0]!.cells[0]!.thin).toBe(false);
+    expect(out.cuts.crossTabs[0]!.arms[0]!.cells[0]!.thin).toBe(false);
   });
 
   it("carries every declared cross-tab, in the writer's order", () => {
@@ -180,7 +204,7 @@ describe("readRegimeCuts", () => {
     if (out.status !== "ok") throw new Error(out.status);
     expect(out.cuts.dimensions).toEqual(["gex", "trend", "vol"]);
     expect(out.cuts.era.ignoredFuture.map((b) => b.breakDate)).toEqual(["2026-12-18"]);
-    expect(out.cuts.books[1]!.eraBreak?.kind).toBe("arm_added");
+    expect(out.cuts.arms[1]!.eraBreak?.kind).toBe("arm_added");
   });
 
   it("a ledger newer than the artifact is reported as stale; no ledger means null", () => {
@@ -205,6 +229,29 @@ describe("readRegimeCuts", () => {
     expect(readRegimeCuts(config, "flies").status).toBe("absent");
   });
 
+  /**
+   * cut_version 2 renamed `books`/`book`/`book_column` to `arms`/`arm`/`arm_column`. The module
+   * rewrites `regime_cuts.json` nightly so it reaches 2 within a day, but the dated per-session
+   * copies the picker lists are never rewritten and stay at 1 for good.
+   *
+   * Comparing the two whole shaped objects is the point: it fails on any divergence, not just the
+   * ones named here. A reader that took only `arms` would not throw on a v1 artifact -- it would
+   * fail the shape check and render "unexpected shape" over a file that is perfectly good.
+   */
+  it("shapes a cut_version 1 artifact exactly like the version 2 one", () => {
+    write("flies", "regime_cuts.json", minimal());
+    const v2 = readRegimeCuts(config, "flies");
+
+    write("flies", "regime_cuts.json", asCutV1(minimal()));
+    const v1 = readRegimeCuts(config, "flies");
+
+    expect(v1.status).toBe("ok");
+    if (v1.status !== "ok" || v2.status !== "ok") return;
+    expect({ ...v1.cuts, cutVersion: 0 }).toEqual({ ...v2.cuts, cutVersion: 0 });
+    expect(v1.cuts.arms[0]!.arm).toBe("control");
+    expect(v1.cuts.armColumn).toBe("arm");
+  });
+
   it("dated artifacts are listed and selectable by session", () => {
     write("flies", "regime_cuts-2026-09-17.json", minimal({ session: "2026-09-17" }));
     write("flies", "regime_cuts-2026-09-18.json", minimal());
@@ -219,8 +266,8 @@ describe("readRegimeCuts", () => {
 
 describe("shapeRegimeCuts", () => {
   it("tolerates a missing optional block without throwing", () => {
-    const cuts = shapeRegimeCuts({ cut_version: 1, books: [] });
-    expect(cuts.books).toEqual([]);
+    const cuts = shapeRegimeCuts({ cut_version: 2, arms: [] });
+    expect(cuts.arms).toEqual([]);
     expect(cuts.dimensions).toEqual([]);
     expect(cuts.era.start).toBeNull();
   });

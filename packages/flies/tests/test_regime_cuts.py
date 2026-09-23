@@ -125,7 +125,7 @@ def test_regime_cuts_scopes_the_era_and_each_arm_from_its_own_break(conn):
     doc = analytics.regime_cuts(conn, session=DAY, generated_at="t")
     assert doc["era"]["start"] == "2026-08-21"
     assert [b["break_date"] for b in doc["era"]["ignored_future"]] == ["2026-12-18"]
-    books = {b["book"]: b for b in doc["books"]}
+    books = {b["arm"]: b for b in doc["arms"]}
     assert books["callwall"]["era_start"] == "2026-08-31" and books["callwall"]["trades"] == 1
     assert books["control"]["era_start"] == "2026-08-21" and books["control"]["trades"] == 5
     assert "advised:x" in books  # twins are books
@@ -134,7 +134,7 @@ def test_regime_cuts_scopes_the_era_and_each_arm_from_its_own_break(conn):
 def test_regime_cuts_stamps_thin_and_carries_completion(conn):
     _seed(conn)
     doc = analytics.regime_cuts(conn, session=DAY, generated_at="t")
-    books = {b["book"]: b for b in doc["books"]}
+    books = {b["arm"]: b for b in doc["arms"]}
     advised_gex = books["advised:x"]["dimensions"]["gex"]["buckets"]
     assert advised_gex[0]["bucket"] == "clustered" and advised_gex[0]["thin"] is True
     control_gex = {b["bucket"]: b for b in books["control"]["dimensions"]["gex"]["buckets"]}
@@ -148,7 +148,7 @@ def test_cross_tab_cells_pair_the_two_buckets(conn):
     doc = analytics.regime_cuts(conn, session=DAY, generated_at="t")
     ct = doc["cross_tabs"][0]
     assert ct["dims"] == ["gex", "trend"]
-    control = next(b for b in ct["books"] if b["book"] == "control")
+    control = next(b for b in ct["arms"] if b["arm"] == "control")
     cells = {tuple(c["buckets"]): c for c in control["cells"]}
     assert cells[("diffuse", "flat")]["trades"] == 3 and cells[("diffuse", "flat")]["thin"] is False
     assert (
@@ -182,7 +182,7 @@ def test_second_cross_tab_pairs_gex_with_drift_alignment(conn):
     conn.commit()
     doc = analytics.regime_cuts(conn, session="2026-09-21", generated_at="t")
     assert [t["dims"] for t in doc["cross_tabs"]] == [["gex", "trend"], ["gex", "drift_alignment"]]
-    control = next(b for b in doc["cross_tabs"][1]["books"] if b["book"] == "control")
+    control = next(b for b in doc["cross_tabs"][1]["arms"] if b["arm"] == "control")
     cells = {tuple(c["buckets"]): c for c in control["cells"]}
     assert cells[("diffuse", "with")]["trades"] == 2 and cells[("diffuse", "with")]["completed"] == 2
     assert cells[("diffuse", "against")]["trades"] == 1 and cells[("diffuse", "untagged")]["trades"] == 1
@@ -200,7 +200,7 @@ def test_drift_alignment_buckets_by_completing_direction_against_trend(conn):
     cov = analytics.regime_coverage(conn, arm="control")["dimensions"]["drift_alignment"]
     assert cov["buckets"] == {"with": 2, "against": 1, "flat": 1} and cov["untagged"] == 1
     doc = analytics.regime_cuts(conn, session="2026-09-21", generated_at="t")
-    control = next(b for b in doc["books"] if b["book"] == "control")
+    control = next(b for b in doc["arms"] if b["arm"] == "control")
     assert {b["bucket"] for b in control["dimensions"]["drift_alignment"]["buckets"]} >= {"with", "against"}
 
 
@@ -235,7 +235,7 @@ def test_regime_cuts_summary_carries_latency_and_miss_gap_quantiles(conn):
     conn.commit()
     dbmod.record_measurement_break(conn, break_date="2026-08-21", kind="advisor_era_cutover", reason="era")
     doc = analytics.regime_cuts(conn, session=day, generated_at="t")
-    control = next(b for b in doc["books"] if b["book"] == "control")
+    control = next(b for b in doc["arms"] if b["arm"] == "control")
     assert control["completion_latency_min"] == {"n": 4, "p25": 17.5, "p50": 25.0, "p75": 32.5, "max": 40.0}
     assert control["miss_gap"] == {"n": 2, "min": -0.45, "p25": -0.4, "p50": -0.35, "p75": -0.3}
 
@@ -243,7 +243,7 @@ def test_regime_cuts_summary_carries_latency_and_miss_gap_quantiles(conn):
 def test_regime_cuts_summary_distributions_are_null_when_nothing_qualifies(conn):
     _seed(conn)
     doc = analytics.regime_cuts(conn, session=DAY, generated_at="t")
-    control = next(b for b in doc["books"] if b["book"] == "control")
+    control = next(b for b in doc["arms"] if b["arm"] == "control")
     assert control["completion_latency_min"] is None and control["miss_gap"] is None
 
 

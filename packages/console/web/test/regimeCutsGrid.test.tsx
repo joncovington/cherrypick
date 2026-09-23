@@ -22,7 +22,7 @@ function cell(buckets: string[], over: Partial<RegimeCrossCell> = {}): RegimeCro
 
 const tab = (cells: RegimeCrossCell[], dims = ["gex", "drift_alignment"]): RegimeCrossTab => ({
   dims,
-  books: [{ book: "control", cells }],
+  arms: [{ arm: "control", cells }],
 });
 
 describe("CrossTabGrid", () => {

@@ -1,5 +1,5 @@
 /**
- * The regime-cuts slide (2026-09-19): per book x per regime dimension x bucket outcomes, written
+ * The regime-cuts slide (2026-09-19): per arm x per regime dimension x bucket outcomes, written
  * nightly by the module that owns the rows (`data/<module>/regime_cuts.json`, contract in
  * `cherrypick.core.regimecuts`) and rendered here WITHOUT recomputation.
  *
@@ -47,8 +47,8 @@ export interface RegimeBreak {
   reason: string | null;
 }
 
-export interface RegimeBook {
-  book: string;
+export interface RegimeArm {
+  arm: string;
   eraStart: string | null;
   eraBreak: RegimeBreak | null;
   sessions: number;
@@ -74,7 +74,7 @@ export interface RegimeCrossCell {
 
 export interface RegimeCrossTab {
   dims: string[];
-  books: Array<{ book: string; cells: RegimeCrossCell[] }>;
+  arms: Array<{ arm: string; cells: RegimeCrossCell[] }>;
 }
 
 export interface RegimeEra {
@@ -93,14 +93,14 @@ export interface RegimeCuts {
   generatedAt: string | null;
   session: string | null;
   symbol: string | null;
-  bookColumn: string | null;
+  armColumn: string | null;
   entryModes: string[] | null;
   thinBelowSessions: number;
   minEffectiveN: number;
   era: RegimeEra;
-  books: RegimeBook[];
+  arms: RegimeArm[];
   crossTabs: RegimeCrossTab[];
-  /** Union of dimension keys across books, first-seen order -- the only thing this console derives. */
+  /** Union of dimension keys across arms, first-seen order -- the only thing this console derives. */
   dimensions: string[];
 }
 

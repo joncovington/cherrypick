@@ -1,12 +1,12 @@
 import { Fragment, useState } from "react";
-import type { RegimeBook, RegimeCell, RegimeCrossCell, RegimeCrossTab, RegimeCuts, RegimeCutsModule } from "@console/shared";
+import type { RegimeArm, RegimeCell, RegimeCrossCell, RegimeCrossTab, RegimeCuts, RegimeCutsModule } from "@console/shared";
 import { useRegimeCuts } from "../lib/api";
 import { Card, PnlCell, SkeletonRows, fmtMoney } from "./DataTable";
 
 /**
  * The regime-cuts slide (2026-09-19): the module's own nightly artifact, one table per regime
- * dimension (rows = books, columns = the buckets that occur) and one grid per declared cross-tab
- * (one small multiple per book), rendered as written. This component derives nothing: `thin` is
+ * dimension (rows = arms, columns = the buckets that occur) and one grid per declared cross-tab
+ * (one small multiple per arm), rendered as written. This component derives nothing: `thin` is
  * the writer's flag, the era and every number come off the file, and the only layout decision
  * made here is which rows and columns to draw, from the buckets present. Absent, failed and
  * stale are shown as three different things.
@@ -56,18 +56,18 @@ function byTradesDesc(totals: Map<string, number>): string[] {
     .map((e) => e[0]);
 }
 
-function bucketColumns(books: RegimeBook[], dim: string): string[] {
-  // Union of buckets across books, ordered by total trades desc, untagged/unknown last -- the one
-  // layout decision this slide makes. The writer already orders each book's own buckets that way.
+function bucketColumns(arms: RegimeArm[], dim: string): string[] {
+  // Union of buckets across arms, ordered by total trades desc, untagged/unknown last -- the one
+  // layout decision this slide makes. The writer already orders each arm's own buckets that way.
   const totals = new Map<string, number>();
-  for (const b of books) for (const c of b.dimensions[dim]?.buckets ?? []) totals.set(c.bucket, (totals.get(c.bucket) ?? 0) + c.trades);
+  for (const b of arms) for (const c of b.dimensions[dim]?.buckets ?? []) totals.set(c.bucket, (totals.get(c.bucket) ?? 0) + c.trades);
   return byTradesDesc(totals);
 }
 
 /** One axis of a cross-tab: the buckets that occur at position `i` of every cell's pair. */
 function crossAxis(tab: RegimeCrossTab, i: number): string[] {
   const totals = new Map<string, number>();
-  for (const b of tab.books) for (const c of b.cells) {
+  for (const b of tab.arms) for (const c of b.cells) {
     const k = c.buckets[i];
     if (k !== undefined) totals.set(k, (totals.get(k) ?? 0) + c.trades);
   }
@@ -79,15 +79,15 @@ const cellRate = (c: RegimeCrossCell): number | null => c.completionRate ?? c.wi
 export function CrossTabGrid({ tab, thinBelowSessions }: { tab: RegimeCrossTab; thinBelowSessions: number }) {
   const rows = crossAxis(tab, 0);
   const cols = crossAxis(tab, 1);
-  const rateLabel = tab.books.some((b) => b.cells.some((c) => c.completionRate !== null)) ? "completion" : "win";
+  const rateLabel = tab.arms.some((b) => b.cells.some((c) => c.completionRate !== null)) ? "completion" : "win";
   return (
     <>
-      <div className="regime-grid-books">
-        {tab.books.map((b) => {
+      <div className="regime-grid-arms">
+        {tab.arms.map((b) => {
           const byKey = new Map(b.cells.map((c) => [c.buckets.join("\u0000"), c] as const));
           return (
-            <div className="regime-grid-book" key={b.book}>
-              <h3>{b.book}</h3>
+            <div className="regime-grid-arm" key={b.arm}>
+              <h3>{b.arm}</h3>
               <div
                 className="regime-grid"
                 style={{ gridTemplateColumns: `auto repeat(${cols.length}, minmax(3.2rem, 1fr))` }}
@@ -145,8 +145,8 @@ export function CrossTabGrid({ tab, thinBelowSessions }: { tab: RegimeCrossTab; 
 }
 
 function DimensionCard({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
-  const columns = bucketColumns(cuts.books, dim);
-  const rateLabel = cuts.books.some((b) => b.completionRate !== null) ? "completion" : "win";
+  const columns = bucketColumns(cuts.arms, dim);
+  const rateLabel = cuts.arms.some((b) => b.completionRate !== null) ? "completion" : "win";
   return (
     <Card title={`by ${dim}`} collapseKey={`regime-${cuts.module}-${dim}`}>
       <div className="table-scroll">
@@ -160,7 +160,7 @@ function DimensionCard({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
             </tr>
           </thead>
           <tbody>
-            {cuts.books.map((b) => {
+            {cuts.arms.map((b) => {
               const d = b.dimensions[dim];
               const byBucket = new Map((d?.buckets ?? []).map((c) => [c.bucket, c] as const));
               const flags = d
@@ -171,9 +171,9 @@ function DimensionCard({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
                   ].filter((f): f is string => f !== null)
                 : ["no rows"];
               return (
-                <tr key={b.book}>
+                <tr key={b.arm}>
                   <td>
-                    {b.book}
+                    {b.arm}
                     {flags.length > 0 && (
                       <span className="muted" style={{ fontSize: 10, marginLeft: 6 }}>
                         {flags.join(" · ")}
@@ -197,8 +197,8 @@ function DimensionCard({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
         </table>
       </div>
       <p className="muted" style={{ fontSize: 11, marginTop: "0.5rem", marginBottom: 0 }}>
-        Each cell reads {rateLabel} % · net · sessions. A dash means no rows in that bucket for that book. A dimmed
-        cell is one the writer flagged thin (fewer than {cuts.thinBelowSessions} sessions); a book's suffix is the
+        Each cell reads {rateLabel} % · net · sessions. A dash means no rows in that bucket for that arm. A dimmed
+        cell is one the writer flagged thin (fewer than {cuts.thinBelowSessions} sessions); an arm's suffix is the
         writer's coverage and power reading for this dimension.
       </p>
     </Card>
@@ -218,7 +218,7 @@ function CrossTabCard({ cuts, tab }: { cuts: RegimeCuts; tab: RegimeCrossTab }) 
 }
 
 function EraCard({ cuts, stale }: { cuts: RegimeCuts; stale: { artifactSession: string; latestSession: string } | null }) {
-  const own = cuts.books.filter((b) => b.eraStart !== null && b.eraStart !== cuts.era.start);
+  const own = cuts.arms.filter((b) => b.eraStart !== null && b.eraStart !== cuts.era.start);
   return (
     <Card title="era" collapseKey={`regime-${cuts.module}-era`}>
       <p style={{ marginTop: 0 }}>
@@ -238,7 +238,7 @@ function EraCard({ cuts, stale }: { cuts: RegimeCuts; stale: { artifactSession: 
       )}
       {own.length > 0 && (
         <p className="muted" style={{ marginTop: 0 }}>
-          own start: {own.map((b) => `${b.book} from ${b.eraStart}${b.eraBreak ? ` (${b.eraBreak.kind})` : ""}`).join("; ")}
+          own start: {own.map((b) => `${b.arm} from ${b.eraStart}${b.eraBreak ? ` (${b.eraBreak.kind})` : ""}`).join("; ")}
         </p>
       )}
       {cuts.era.ignoredFuture.length > 0 && (
@@ -258,14 +258,14 @@ function EraCard({ cuts, stale }: { cuts: RegimeCuts; stale: { artifactSession: 
             <th>from</th>
             <th>sessions</th>
             <th>trades</th>
-            <th>{cuts.books.some((b) => b.completionRate !== null) ? "completion" : "win"}</th>
+            <th>{cuts.arms.some((b) => b.completionRate !== null) ? "completion" : "win"}</th>
             <th>net</th>
           </tr>
         </thead>
         <tbody>
-          {cuts.books.map((b) => (
-            <tr key={b.book} style={b.sessions < cuts.thinBelowSessions ? { opacity: 0.55 } : undefined}>
-              <td>{b.book}</td>
+          {cuts.arms.map((b) => (
+            <tr key={b.arm} style={b.sessions < cuts.thinBelowSessions ? { opacity: 0.55 } : undefined}>
+              <td>{b.arm}</td>
               <td>{b.eraStart ?? "—"}</td>
               <td>{b.sessions}</td>
               <td>{b.trades}</td>
@@ -334,7 +334,7 @@ export function RegimeCutsTab({ module }: { module: RegimeCutsModule }) {
     <div className="cards cards-wide view-fade">
       <Card title="regime cuts" updatedAt={dataUpdatedAt} controls={picker} collapseKey={`regime-${module}-head`}>
         <p className="muted" style={{ margin: 0 }}>
-          Every book, cut by the regime each entry was tagged with, as the module wrote it (generated {cuts.generatedAt ?? "?"}).
+          Every arm, cut by the regime each entry was tagged with, as the module wrote it (generated {cuts.generatedAt ?? "?"}).
           The console renders this artifact and computes nothing from it: thin cells, coverage, era and every number
           are the writer's. Sessions are the unit of independence; read them before the net.
         </p>

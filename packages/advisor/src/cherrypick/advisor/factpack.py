@@ -30,6 +30,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core import config as _cfg
 from cherrypick.core import home as _home
 from cherrypick.core import regime as _regime
 
@@ -1461,7 +1462,11 @@ _BAND_MARGIN_BUCKETS = ((float("-inf"), 0.0), (0.0, 10.0), (10.0, 25.0), (25.0, 
 
 # --------------------------------------------------------------------------- regime cuts (deep)
 REGIME_CUTS_MODULES = ("flies", "meic")
-REGIME_CUTS_VERSION = 1
+# cut_version 2 renamed the artifact's `books`/`book`/`book_column` to `arms`/`arm`/`arm_column`.
+# Both are read: the latest artifact is rewritten nightly and reaches 2 within a day, but the dated
+# per-session copies beside it are never rewritten and stay at 1 for good.
+REGIME_CUTS_VERSIONS = (1, 2)
+REGIME_CUTS_VERSION = max(REGIME_CUTS_VERSIONS)
 REGIME_CUTS_MIN_COVERAGE_PCT = 50.0
 REGIME_CUTS_CROSS_CELLS = 6
 _REGIME_CELL_FORMAT = (
@@ -1501,8 +1506,23 @@ def _cell_text(cell: dict[str, Any]) -> str:
     return f"sessions={sessions} trades={trades} {label}={pct} net={net_s}"
 
 
+def _arm_rows(container: dict[str, Any]) -> list[dict[str, Any]]:
+    """The arm list under either spelling: `arms` at cut_version 2, `books` at 1."""
+    return _cfg.first_present(container, "arms", "books", default=None) or []
+
+
+def _arm_name(row: dict[str, Any]) -> Any:
+    """One arm row's name under either spelling."""
+    return _cfg.first_present(row, "arm", "book")
+
+
 def _thin_regime_cuts(doc: dict[str, Any], session: str) -> dict[str, Any]:
-    """The model's slice of one module's artifact: contrast, not bookkeeping."""
+    """The model's slice of one module's artifact: contrast, not bookkeeping.
+
+    Reads cut_version 1 (`books`/`book`) and 2 (`arms`/`arm`) alike and always emits the version-2
+    spelling, because the pack carries several modules side by side and two of them disagreeing on
+    the word would read as two different quantities.
+    """
     era = doc.get("era") or {}
     out: dict[str, Any] = {
         "session": doc.get("session"),
@@ -1515,35 +1535,35 @@ def _thin_regime_cuts(doc: dict[str, Any], session: str) -> dict[str, Any]:
             "ignored_future": [b.get("break_date") for b in era.get("ignored_future") or []],
             "caveats": [b.get("break_date") for b in era.get("caveats") or []],
         },
-        "books": [],
-        "_thin_books": [],
+        "arms": [],
+        "_thin_arms": [],
         "cross_tabs": [],
     }
     if doc.get("session") != session:
         out["_stale"] = {"artifact_session": doc.get("session"), "pack_session": session}
     thin_below = int(doc.get("thin_below_sessions") or 3)
-    for book in doc.get("books") or []:
-        if int(book.get("sessions") or 0) < thin_below:
-            out["_thin_books"].append(
-                {"book": book.get("book"), "sessions": book.get("sessions"), "trades": book.get("trades")}
+    for arm in _arm_rows(doc):
+        if int(arm.get("sessions") or 0) < thin_below:
+            out["_thin_arms"].append(
+                {"arm": _arm_name(arm), "sessions": arm.get("sessions"), "trades": arm.get("trades")}
             )
             continue
         entry: dict[str, Any] = {
-            "book": book.get("book"),
-            "era_start": book.get("era_start"),
-            "sessions": book.get("sessions"),
-            "trades": book.get("trades"),
-            "win_rate": book.get("win_rate"),
-            "net_pnl": book.get("net_pnl"),
+            "arm": _arm_name(arm),
+            "era_start": arm.get("era_start"),
+            "sessions": arm.get("sessions"),
+            "trades": arm.get("trades"),
+            "win_rate": arm.get("win_rate"),
+            "net_pnl": arm.get("net_pnl"),
             "dimensions": {},
             "_dropped": {},
         }
-        if book.get("completion_rate") is not None:
-            entry["completion_rate"] = book.get("completion_rate")
+        if arm.get("completion_rate") is not None:
+            entry["completion_rate"] = arm.get("completion_rate")
         for k in ("completion_latency_min", "miss_gap"):
-            if book.get(k) is not None:
-                entry[k] = book[k]
-        for dim, d in (book.get("dimensions") or {}).items():
+            if arm.get(k) is not None:
+                entry[k] = arm[k]
+        for dim, d in (arm.get("dimensions") or {}).items():
             cov = d.get("coverage_pct")
             if d.get("degenerate"):
                 entry["_dropped"][dim] = "degenerate: every tagged row in one bucket"
@@ -1557,21 +1577,21 @@ def _thin_regime_cuts(doc: dict[str, Any], session: str) -> dict[str, Any]:
                 "underpowered": d.get("underpowered"),
                 "buckets": {str(c.get("bucket")): _cell_text(c) for c in d.get("buckets") or []},
             }
-        out["books"].append(entry)
+        out["arms"].append(entry)
     for tab in doc.get("cross_tabs") or []:
-        books = []
-        for b in tab.get("books") or []:
+        tab_arms = []
+        for b in _arm_rows(tab):
             live = [c for c in b.get("cells") or [] if not c.get("thin")]
             live.sort(key=lambda c: -int(c.get("trades") or 0))
             cells = {
                 "/".join(map(str, c.get("buckets") or [])): _cell_text(c)
                 for c in live[:REGIME_CUTS_CROSS_CELLS]
             }
-            item: dict[str, Any] = {"book": b.get("book"), "cells": cells}
+            item: dict[str, Any] = {"arm": _arm_name(b), "cells": cells}
             if not cells:
                 item["_all_thin"] = True
-            books.append(item)
-        out["cross_tabs"].append({"dims": tab.get("dims"), "books": books})
+            tab_arms.append(item)
+        out["cross_tabs"].append({"dims": tab.get("dims"), "arms": tab_arms})
     return out
 
 
@@ -1587,11 +1607,11 @@ def _regime_cuts(session: str, modules) -> dict[str, Any]:
                 "_absent": f"no {module} regime_cuts artifact ({module}-regime-cuts has not written one)"
             }
             continue
-        if doc.get("cut_version") != REGIME_CUTS_VERSION:
+        if doc.get("cut_version") not in REGIME_CUTS_VERSIONS:
             out[module] = {
                 "_absent": (
                     f"{module} regime_cuts artifact is cut_version {doc.get('cut_version')!r}; "
-                    f"this pack reads {REGIME_CUTS_VERSION}"
+                    f"this pack reads {', '.join(map(str, REGIME_CUTS_VERSIONS))}"
                 )
             }
             continue
