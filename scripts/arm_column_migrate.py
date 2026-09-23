@@ -59,9 +59,7 @@ def main() -> int:
         default="book",
         help="comma-separated source column names to migrate (default: book -- the four-module unit)",
     )
-    ap.add_argument(
-        "--include-backups", action="store_true", help="also migrate practice/backup ledgers"
-    )
+    ap.add_argument("--include-backups", action="store_true", help="also migrate practice/backup ledgers")
     args = ap.parse_args()
 
     pf = _preflight()
@@ -85,10 +83,7 @@ def main() -> int:
     for r in sorted(rows, key=lambda x: (x["module"], x["file"], x["table"])):
         tag = f"{r['module']}/{r['file']}::{r['table']}"
         if not args.apply:
-            print(
-                f"  would rename {tag}  {r['from']} -> arm"
-                f"  ({r['rows']:,} rows, {len(r['indexes'])} idx)"
-            )
+            print(f"  would rename {tag}  {r['from']} -> arm  ({r['rows']:,} rows, {len(r['indexes'])} idx)")
             continue
         conn = sqlite3.connect(r["db"])
         try:
