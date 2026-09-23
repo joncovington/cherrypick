@@ -3132,6 +3132,85 @@ body.lb-open {
   overflow: auto;
   padding: 0.8rem 1rem 1rem;
 }
+body.sheet-open {
+  overflow: hidden;
+}
+
+/* ---- what goes inside a card ---- */
+.stat-big {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+.stat-big-value {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.5rem;
+  line-height: 1.1;
+}
+
+/* A measure against its scale, with an optional band behind it and a comparison tick on it.
+   Every part is optional and a missing one is simply absent — a band drawn at zero or a tick at
+   the left edge would be a drawn claim about something nobody measured. */
+.bullet {
+  position: relative;
+  display: block;
+  height: 10px;
+  background: var(--row-line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.bullet-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(67, 181, 122, 0.22);
+}
+.bullet-value {
+  position: absolute;
+  left: 0;
+  top: 3px;
+  bottom: 3px;
+  background: #7aa2ff;
+  border-radius: 1px;
+}
+.bullet-marker {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--text);
+}
+
+.diverge {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+.diverge-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 11.5px;
+  margin-bottom: 0.2rem;
+}
+.diverge-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.diverge-value {
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+/* For a measure whose sign carries no verdict — fee drag is always positive, and tinting the
+   column green would imply something nobody claimed. */
+.diverge-neutral .signed-bar-fill {
+  background: #a06bd9;
+}
 
 @media (max-width: 1000px) {
   .grid-12 > [class*="span-"] {
