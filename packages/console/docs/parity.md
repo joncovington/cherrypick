@@ -11,6 +11,11 @@ So this file changed jobs. It is no longer a transition checklist against a runn
 row still marked **missing** below is now simply **console's backlog**, and there is nothing left to
 diff against except that tag.
 
+**For the lightbox→frame transition there is a second reference: `layout-before-frame.md`.** It
+records every module's slides and cards as they stood on 2026-09-22, the day before the module
+frame began replacing the lightbox, down to each console-side threshold. This file diffs the
+console against the dashboards it replaced; that one diffs the console against itself.
+
 **Re-audited 2026-08-26, and this file had drifted in both directions.** Several rows marked missing
 had shipped and the row was never updated (the shared day selector, the ex-dividend warning), which
 makes a backlog read as longer than it is. Others were carried as "missing" when the honest answer
