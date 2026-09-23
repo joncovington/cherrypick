@@ -257,3 +257,34 @@ def test_settle_intrinsic_knows_both_sides():
     assert engine.settle_intrinsic(6500, 6480, "call") == 0.0
     assert engine.settle_intrinsic(6500, 6480) == 20.0  # default stays put
     assert engine.settle_intrinsic(6500, 6520, "put") == 0.0
+
+
+# --------------------------------------------------------------------------- the arm vocabulary
+
+
+@pytest.mark.parametrize("key", ["books", "arms", "profiles"])
+def test_the_arm_registry_resolves_under_every_accepted_spelling(key):
+    """bwb's config says `books`; the suite's word is `arms`; meic's files say `profiles`. All
+    three resolve, and an accepted spelling is never withdrawn — a module config is a file a person
+    edits and keeps across upgrades, and there is no migration for one.
+
+    The failure this prevents is the quiet one. `config.get("books") or {}` does not raise on a key
+    that moved: the registry resolves empty, `delta` falls through to `defaults`, and it becomes
+    byte-identical to `control` while still reporting as its own arm. The A/B measures nothing and
+    the P&L looks fine.
+    """
+    cfg = {"defaults": {"dte": 7, "width": 25}, key: {"delta": {"width": 40}}}
+
+    assert engine.merged_params(cfg, "delta")["width"] == 40
+    assert engine.merged_params(cfg, "delta")["dte"] == 7  # defaults still underlay
+    assert engine.merged_params(cfg, "control")["width"] == 25  # an arm with no block
+
+
+def test_an_unreadable_registry_key_does_not_silently_flatten_the_arms():
+    """The negative of the test above, stated so the mechanism is visible rather than assumed: a
+    spelling the suite does not read leaves `delta` identical to `control`, which is exactly the
+    outcome the alias list exists to make impossible."""
+    moved = {"defaults": {"dte": 7, "width": 25}, "variants": {"delta": {"width": 40}}}
+
+    assert engine.merged_params(moved, "delta")["width"] == 25
+    assert engine.merged_params(moved, "delta") == engine.merged_params(moved, "control") | {"book": "delta"}

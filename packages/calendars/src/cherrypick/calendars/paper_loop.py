@@ -32,6 +32,7 @@ from datetime import datetime
 
 from cherrypick.core import advice as _core_advice
 from cherrypick.core import calendar as _cal
+from cherrypick.core import config as _cfg
 from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
@@ -196,7 +197,8 @@ def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]
     own tag (`advised:<experiment name>`), the base book it shadows and the params it overlays,
     and a decision recorded before that date still yields its single `advised:<base>`. The map is
     empty on a baseline day."""
-    books = [b for b in engine.BOOKS if (config.get("books") or {}).get(b, {}).get("enabled", True)]
+    declared = _cfg.registry(config, label="calendars", log=_log)
+    books = [b for b in engine.BOOKS if (declared.get(b) or {}).get("enabled", True)]
     advised = advised_entries(advice_decision(config, today))
     books.extend(tag for tag in advised if tag not in books)
     return books, advised
@@ -401,7 +403,7 @@ def friday_settings(config: dict) -> dict:
 def friday_books(config: dict) -> list[str]:
     """The Friday regime's books: the base roster under the `friday:` prefix. No advised twin in
     v1 — it would double the advisor surface for a regime with no history."""
-    enabled = config.get("books") or {}
+    enabled = _cfg.registry(config, label="calendars", log=_log)
     return [f"{engine.FRIDAY_PREFIX}{b}" for b in engine.BOOKS if enabled.get(b, {}).get("enabled", True)]
 
 

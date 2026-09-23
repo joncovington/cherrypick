@@ -72,6 +72,7 @@ from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
 from cherrypick.core import calendar as _cal  # noqa: E402
+from cherrypick.core import config as _cfg  # noqa: E402
 from cherrypick.core import execution as _execution
 from cherrypick.core import home as _home  # noqa: E402
 from cherrypick.core import live as _live  # noqa: E402
@@ -257,7 +258,7 @@ def readiness(config: dict, *, halt_present: bool, designated: str | None) -> li
     if not str(live.get("gate0_confirmed") or "").strip():
         unmet.append("live.gate0_confirmed is empty — a human must attest Gate 0 (who/when)")
     arm = live.get("arm", DEFAULT_ARM)
-    arms = config.get("arms") or {}
+    arms = _cfg.registry(config, label="flies")
     if arm not in arms:
         unmet.append(f"live.arm {arm!r} is not a configured arm")
     if halt_present:

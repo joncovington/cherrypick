@@ -35,6 +35,7 @@ from datetime import datetime
 
 from cherrypick.core import advice as _core_advice
 from cherrypick.core import calendar as _cal
+from cherrypick.core import config as _cfg
 from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
@@ -174,7 +175,8 @@ def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]
     decision recorded before that date still yields its single `advised:<base>`. The map is empty
     on a baseline day. Every tag here is on the roster the stream request subscribes for -- the
     2026-08-27 lesson (`stream_window.entry_possible`) holds for every twin, not just the first."""
-    books = [b for b in engine.BOOKS if (config.get("books") or {}).get(b, {}).get("enabled", True)]
+    declared = _cfg.registry(config, label="pmcc", log=_log)
+    books = [b for b in engine.BOOKS if (declared.get(b) or {}).get("enabled", True)]
     advised = advised_entries(advice_decision(config, today))
     books.extend(tag for tag in advised if tag not in books)
     return books, advised

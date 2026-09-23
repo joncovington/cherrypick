@@ -25,6 +25,7 @@ from datetime import datetime
 
 from cherrypick.core import advice as _core_advice
 from cherrypick.core import calendar as _cal
+from cherrypick.core import config as _cfg
 from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
@@ -106,14 +107,15 @@ def session_books(config: dict, today: str) -> tuple[list[str], dict[str, dict]]
     recorded before that date still yields its single `advised:<base>`. Empty map on a baseline
     day. The roster only matters at entry -- open rows are managed from the ledger whatever the
     roster says today."""
-    books = [b for b in engine.BOOKS if (config.get("books") or {}).get(b, {}).get("enabled", True)]
+    declared = _cfg.registry(config, label="bwb", log=_log)
+    books = [b for b in engine.BOOKS if (declared.get(b) or {}).get("enabled", True)]
     # The wall book is OPT-IN, the reverse of the base four: it trades a different structure
     # (call-side, body at the GEX call wall) rather than a different add-on timing, so absence
     # from `engine.BOOKS` is what keeps "the four books enter the identical BWB" true. It never
     # arms (`triggers.evaluate` returns fired=False for an unknown book) and its trigger-tick
     # cohort records the call-side candidates for a future replay, the way the put books' own
     # triggers were earned.
-    if (config.get("books") or {}).get("wall", {}).get("enabled"):
+    if (declared.get("wall") or {}).get("enabled"):
         books.append("wall")
     advised = advised_entries(advice_decision(config, today))
     books.extend(tag for tag in advised if tag not in books)

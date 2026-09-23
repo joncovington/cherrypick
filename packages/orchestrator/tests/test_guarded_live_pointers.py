@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 
 import pytest
+from cherrypick.core.config import ARM_REGISTRY_KEYS, BASE_ARM_KEYS
 
 from cherrypick.orchestrator.configedit import GUARDED
 
@@ -191,3 +192,59 @@ def test_no_module_arms_live_from_the_environment():
             if _ENV_ARMING.search(line) and not line.lstrip().startswith("#"):
                 offenders.append(f"{src.relative_to(REPO)}:{lineno}: {line.strip()}")
     assert not offenders, "live trading armed from the environment:\n" + "\n".join(offenders)
+
+
+# --------------------------------------------------------------------------- the arm vocabulary
+
+
+def _doc(path: str) -> dict:
+    return json.loads((REPO / path).read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("module,rel", sorted(MODULE_CONFIGS.items()))
+def test_a_shipped_config_only_spells_its_registry_a_way_the_suite_reads(module: str, rel: str):
+    """Every arm registry in a shipped example must use a spelling `core.config.registry` accepts.
+
+    This is the one config mistake that cannot announce itself. Every registry read in the suite
+    defaults -- `cfg.get("books", {})` and friends -- so a key that is misspelled, renamed or edited
+    out does not raise: the registry resolves empty, every arm falls through to its `enabled`
+    default, every arm runs on `defaults`, and the A/B measures nothing while the P&L stays
+    entirely plausible. Shipping an example with a key nothing reads would teach an operator to
+    write exactly that.
+
+    Driven off the examples rather than a list of modules, so a module that grows a registry is
+    covered the day it declares one. A module with no registry is not a failure: desk has no loop,
+    and meic keeps its arms in `config.risk.json` beside this file.
+    """
+    doc = _doc(rel)
+    present = [k for k in ARM_REGISTRY_KEYS if k in doc]
+    lookalikes = {
+        k
+        for k in doc
+        if k not in ARM_REGISTRY_KEYS and k.lower().rstrip("s") in ("arm", "book", "profile", "variant")
+    }
+    assert not lookalikes, (
+        f"{module}: {sorted(lookalikes)} looks like an arm registry but is not a spelling "
+        f"core.config.registry reads {ARM_REGISTRY_KEYS}; it would resolve empty and silently "
+        "run every arm on defaults"
+    )
+    if present:
+        assert isinstance(doc[present[0]], dict), f"{module}: {present[0]} must be a mapping"
+
+
+@pytest.mark.parametrize("module,rel", sorted(MODULE_CONFIGS.items()))
+def test_a_shipped_advice_block_names_its_base_a_way_the_suite_reads(module: str, rel: str):
+    """Same rule for the key naming the arm an advised twin is measured against.
+
+    A base key the suite does not read resolves to "control", which is not an error and not a
+    crash -- it is a valid-looking A/B run against the wrong arm.
+    """
+    advice = _doc(rel).get("advice")
+    if not isinstance(advice, dict):
+        return
+    named = [k for k in advice if k.startswith("base")]
+    unknown = [k for k in named if k not in BASE_ARM_KEYS]
+    assert not unknown, (
+        f"{module}: advice.{unknown} is not a spelling core.advice reads {BASE_ARM_KEYS}; "
+        'the base would silently resolve to "control"'
+    )

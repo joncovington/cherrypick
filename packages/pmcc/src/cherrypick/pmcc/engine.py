@@ -17,6 +17,7 @@ either.
 from __future__ import annotations
 
 from cherrypick.core import advice as _core_advice
+from cherrypick.core import config as _cfg
 from cherrypick.core import fees as _fees
 from cherrypick.core import settlement as _settlement
 
@@ -96,15 +97,18 @@ def base_book(book: str, *, config: dict | None = None, decision: dict | None = 
         if tag and (book == tag or book.startswith(tag + ":")) and entry.get("base"):
             return str(entry["base"])
     tail = book.split(":", 1)[1]
-    if tail in BOOKS or tail in ((config or {}).get("books") or {}):
+    if tail in BOOKS or tail in _cfg.registry(config, label="pmcc"):
         return tail
-    return str(((config or {}).get("advice") or {}).get("base_book") or "control")
+    # Any accepted spelling: an operator who renames this key must not silently get
+    # "control" as the base, which is a wrong A/B that still reads as a valid one.
+    advice_cfg = (config or {}).get("advice") or {}
+    return str(_cfg.first_present(advice_cfg, *_cfg.BASE_ARM_KEYS) or "control")
 
 
 def merged_params(config: dict, book: str) -> dict:
     """`defaults` overlaid with the book's own block — the flies `merged_params` shape, so an
     advised book resolves through the same path as every other."""
-    params = {**(config.get("defaults") or {}), **((config.get("books") or {}).get(book) or {})}
+    params = {**(config.get("defaults") or {}), **(_cfg.registry(config, label="pmcc").get(book) or {})}
     params["book"] = book
     return params
 

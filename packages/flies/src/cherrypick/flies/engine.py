@@ -28,6 +28,7 @@ Three arms, differing only in WHERE and WHEN they centre a structure:
 from __future__ import annotations
 
 from cherrypick.core import calendar as _cal
+from cherrypick.core import config as _cfg
 from cherrypick.core import entry as _entry
 
 from cherrypick.flies import fly
@@ -119,7 +120,7 @@ def merged_params(config: dict, arm: str) -> dict:
     on any symbol's chain regardless of that symbol's own strike spacing, rather than naming a point
     value fit against one symbol (see the `width-N` note above ARMS)."""
     params = dict(config.get("defaults", {}))
-    params.update(config.get("arms", {}).get(arm, {}))
+    params.update(_cfg.registry(config, label="flies").get(arm) or {})
     if "wing_width_strikes" in params:
         params["wing_width"] = params["strike_increment"] * params["wing_width_strikes"]
     params["arm"] = arm

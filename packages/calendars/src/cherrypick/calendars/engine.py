@@ -14,6 +14,7 @@ leg independently was caught live producing calendars whose legs sat on differen
 from __future__ import annotations
 
 from cherrypick.core import advice as _core_advice
+from cherrypick.core import config as _cfg
 from cherrypick.core import fees as _fees
 from cherrypick.core import settlement as _settlement
 from cherrypick.core import structures as _structures
@@ -53,7 +54,10 @@ def base_book(book: str, *, config: dict | None = None, decision: dict | None = 
     tail = book.rsplit(":", 1)[-1]
     if tail in BOOKS:
         return tail
-    return str(((config or {}).get("advice") or {}).get("base_book") or "control")
+    # Any accepted spelling: an operator who renames this key must not silently get
+    # "control" as the base, which is a wrong A/B that still reads as a valid one.
+    advice_cfg = (config or {}).get("advice") or {}
+    return str(_cfg.first_present(advice_cfg, *_cfg.BASE_ARM_KEYS) or "control")
 
 
 # How an expiring leg settles, per underlying. The module models both styles and refuses a symbol it
@@ -126,7 +130,7 @@ def ex_date_in_span(config: dict, symbol: str, start_day: str, end_day: str) -> 
 def merged_params(config: dict, book: str) -> dict:
     """`defaults` overlaid with the book's own block — the flies `merged_params` shape, so an
     advised book resolves through the same path as every other."""
-    params = {**(config.get("defaults") or {}), **((config.get("books") or {}).get(book) or {})}
+    params = {**(config.get("defaults") or {}), **(_cfg.registry(config, label="calendars").get(book) or {})}
     params["book"] = book
     return params
 

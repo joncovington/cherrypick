@@ -19,8 +19,15 @@ export interface FieldMeta {
   target: ConfigTargetId;
   /** A fixed pointer, or omitted when `dynamic` enumerates them from the document. */
   pointer?: string;
-  /** Enumerate the keys of the object at `under`, editing `${under}/${key}${child}` for each. */
-  dynamic?: { under: string; child: string };
+  /**
+   * Enumerate the keys of the object at `under`, editing `${under}/${key}${child}` for each.
+   * `under` may list several pointers: the first one the document actually has is used. An arm
+   * registry is spelled `arms`, `books` or `profiles` depending on the module and on how long ago
+   * the operator wrote the file, and all three are read for good (see cherrypick.core.config).
+   * A single pointer here would not error on the others -- the toggles would just silently not be
+   * offered, which reads as a module that has no arms.
+   */
+  dynamic?: { under: string | string[]; child: string };
   label: string;
   help?: string;
   type: FieldType;
@@ -67,14 +74,14 @@ export const FIELDS: FieldMeta[] = [
   // --- arms & profiles ---------------------------------------------------------------------
   {
     target: "flies",
-    dynamic: { under: "/arms", child: "/enabled" },
+    dynamic: { under: ["/arms", "/books", "/profiles"], child: "/enabled" },
     label: "Flies arm",
     type: "boolean",
     section: "arms",
   },
   {
     target: "meic-risk",
-    dynamic: { under: "/profiles", child: "/enabled" },
+    dynamic: { under: ["/profiles", "/arms", "/books"], child: "/enabled" },
     label: "MEIC risk profile",
     type: "boolean",
     section: "arms",
@@ -277,12 +284,17 @@ export function resolveSection(
 
     const pointers: Array<{ pointer: string; label: string }> = [];
     if (meta.dynamic !== undefined) {
-      const container = valueAt(model.doc, meta.dynamic.under);
-      if (typeof container !== "object" || container === null || Array.isArray(container)) continue;
-      for (const key of Object.keys(container as Record<string, unknown>)) {
+      const candidates = Array.isArray(meta.dynamic.under) ? meta.dynamic.under : [meta.dynamic.under];
+      const under = candidates.find((p) => {
+        const v = valueAt(model.doc, p);
+        return typeof v === "object" && v !== null && !Array.isArray(v);
+      });
+      if (under === undefined) continue;
+      const container = valueAt(model.doc, under) as Record<string, unknown>;
+      for (const key of Object.keys(container)) {
         // `_`-prefixed keys are the configs' docs-as-data, not entries.
         if (key.startsWith("_")) continue;
-        pointers.push({ pointer: `${meta.dynamic.under}/${key}${meta.dynamic.child}`, label: key });
+        pointers.push({ pointer: `${under}/${key}${meta.dynamic.child}`, label: key });
       }
     } else if (meta.pointer !== undefined) {
       pointers.push({ pointer: meta.pointer, label: meta.label });

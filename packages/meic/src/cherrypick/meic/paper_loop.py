@@ -38,6 +38,7 @@ from pathlib import Path
 
 from cherrypick.core import advice as _core_advice  # bounded-advice validator
 from cherrypick.core import calendar as _cal  # shared NYSE trading-day calendar
+from cherrypick.core import config as _cfg
 from cherrypick.core import home as _core_home  # the shared state dir
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
@@ -782,7 +783,7 @@ def _advice_profiles(cfg, today, *, persist=True):
     management-only twin (entries capped to zero) stands in, built on the base `_advised_base`
     resolves for the tag.
     """
-    base = (cfg.get("advice") or {}).get("base_profile", "control")
+    base = _cfg.first_present(cfg.get("advice") or {}, *_cfg.BASE_ARM_KEYS, default="control")
     decision = _core_advice.session_decision(
         _core_home.state_dir(),
         "meic",
@@ -797,7 +798,9 @@ def _advice_profiles(cfg, today, *, persist=True):
     registry = paper.load_profiles()
     out = {}
     for entry in _core_advice.advised_books(decision):
-        base_def = registry.get(entry.get("base") or decision.get("base_profile") or base)
+        base_def = registry.get(
+            entry.get("base") or _cfg.first_present(decision, *_cfg.BASE_ARM_KEYS) or base
+        )
         if not isinstance(base_def, dict):
             logger.warning(
                 "advice [%s]: base profile %r is not in the registry; no book",

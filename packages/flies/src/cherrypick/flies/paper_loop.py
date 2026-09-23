@@ -22,6 +22,7 @@ import time
 
 from cherrypick.core import advice as _core_advice
 from cherrypick.core import calendar as _cal  # noqa: E402
+from cherrypick.core import config as _cfg  # noqa: E402
 from cherrypick.core import home as _home
 from cherrypick.core import logs as _logs
 from cherrypick.core import looplock
@@ -370,7 +371,7 @@ def session_arms(config: dict, conn, trade_date: str) -> list[str]:
     advised: list[str] = []
     for entry in _core_advice.advised_books(decision):
         tag = entry["tag"]
-        base = entry.get("base") or decision.get("base_arm") or "control"
+        base = entry.get("base") or _cfg.first_present(decision, *_cfg.BASE_ARM_KEYS) or "control"
         arm_defs[tag] = {**(arm_defs.get(base) or {}), **entry["params"]}
         advised.append(tag)
 
@@ -396,7 +397,7 @@ def _advised_base(decision: dict, tag: str, arm_defs: dict) -> str:
     suffix = tag[len(_core_advice.ADVISED_PREFIX) :] if _core_advice.is_advised(tag) else tag
     if suffix in arm_defs:
         return suffix
-    return decision.get("base_arm") or "control"
+    return _cfg.first_present(decision, *_cfg.BASE_ARM_KEYS) or "control"
 
 
 def settle_time_min(config: dict) -> int:

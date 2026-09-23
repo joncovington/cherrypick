@@ -21,6 +21,7 @@ import sys
 # (SystemExit "no config found"), unlike gex's equivalent, but fix it for the same reason.
 _PKG_ROOT = str(pathlib.Path(__file__).resolve().parents[3])
 
+from cherrypick.core import config as _cfg  # noqa: E402
 from cherrypick.core import home as _core_home  # noqa: E402
 
 from cherrypick.flies import book as bookmod  # noqa: E402
@@ -35,7 +36,7 @@ def load_config(path: str | None = None) -> dict:
 
 
 def enabled_arms(config: dict) -> list[str]:
-    arms = config.get("arms", {})
+    arms = _cfg.registry(config, label="flies")
     return [a for a in engine.ARMS if arms.get(a, {}).get("enabled", True) and a in arms]
 
 

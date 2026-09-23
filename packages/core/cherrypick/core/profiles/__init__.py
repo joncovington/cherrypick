@@ -33,23 +33,35 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
+from cherrypick.core import config as _cfg
+
 # Canonical sentinel for a trade row that carries no named profile (a live trade, or a
 # pre-attribution row) when it surfaces in a profile-grouped rollup. See `attribution_tag`.
 UNTAGGED = "unassigned"
 
 
-def load_profiles(config: Mapping | None = None, *, external_path: Any = None) -> dict:
-    """Return the `{name: profile_def}` registry from either an inline config or an external JSON file.
+def load_profiles(
+    config: Mapping | None = None,
+    *,
+    external_path: Any = None,
+    label: str | None = None,
+    log: Any = None,
+) -> dict:
+    """Return the `{name: arm_def}` registry from either an inline config or an external JSON file.
 
-    Dual-source so neither module migrates its layout: MEICAgent keeps profiles in a separate
-    `config.risk.json` (pass `external_path`); EarningsAgent keeps them inline under
-    `config["profiles"]` (pass `config`). The external file's top-level `"profiles"` key is used.
+    Dual-source so neither module migrates its layout: MEICAgent keeps its arms in a separate
+    `config.risk.json` (pass `external_path`); EarningsAgent keeps them inline (pass `config`).
+
+    The key is read through `cherrypick.core.config.registry`, so `arms`, `books` and `profiles`
+    all resolve and no spelling an operator already has in a file is ever withdrawn. `log` gets the
+    one warning that matters: a registry that is ABSENT rather than declared empty, which is a key
+    that moved and is about to run every arm on `defaults`.
     """
     if external_path is not None:
         with open(external_path) as f:
             data = json.load(f)
-        return dict(data.get("profiles", {}))
-    return dict((config or {}).get("profiles", {}))
+        return _cfg.registry(data, label=label or str(external_path), log=log)
+    return _cfg.registry(config, label=label or "inline config", log=log)
 
 
 def select_profile(profiles: Mapping, name: str) -> dict:

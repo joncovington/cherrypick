@@ -481,7 +481,15 @@ def session_decision(
     to be the one that recorded it.
     """
     acfg = config.get("advice") or {}
-    base = {} if base_key is None else {base_key: acfg.get(base_key, "control")}
+    # Read under ANY accepted spelling, write under the module's own. The read has to be
+    # tolerant because a renamed key would otherwise resolve to "control" -- a wrong base
+    # that produces a plausible A/B against the wrong arm. The WRITE stays `base_key`
+    # because each module reads its decision back by its own name.
+    base = (
+        {}
+        if base_key is None
+        else {base_key: _cfg.first_present(acfg, *_cfg.BASE_ARM_KEYS, default="control")}
+    )
     path = Path(decision_path)
 
     decision = None
