@@ -62,7 +62,7 @@ pnpm test                         # vitest
 pnpm typecheck                    # tsc --noEmit across all three workspaces
 python run.py dashboard --serve   # what the supervisor's `console` job invokes
 pnpm --filter @console/desktop start   # the desktop window
-pnpm ui-check --route /flies --click performance --expect "drawdown"   # drive the REAL browser
+pnpm ui-check --route /flies/performance --expect "drawdown"   # drive the REAL browser
 ```
 
 **Confirming a change actually reached the page.** The suite's rule is that a front-end change is
@@ -281,7 +281,43 @@ changes as safe, and it is the only check that sees past the fallback below.
   scroll body on the slide id with the route fade on it, so every tab change unmounted the module's
   content and replayed a fade from opacity 0 — the module vanished and faded back. The body now
   stays mounted, the slide's own subtree is keyed with a 120ms settle from mostly-visible, and the
-  scroll position resets explicitly (the remount used to do that for free).
+  scroll position resets explicitly (the remount used to do that for free). **The same rule bit
+  again one level up (2026-09-22):** `Shell` keyed its outlet on the whole pathname, so a tab
+  change remounted the module and refetched everything it had. It keys on the module segment now.
+- **Modules are moving off the lightbox onto a module frame, one at a time (2026-09-22).** A frame
+  module renders a persistent left rail and a content pane inside the shell; a lightbox module
+  still portals a dialog over the Overview. `registry.ts` holds `FRAME_MODULE_IDS` and two maps,
+  and `MODULE_LIGHTBOXES` is narrowed to exclude the converted ones so a module cannot sit in
+  both. `ModuleRoute` picks. **Flies is the pilot; GEX is a reparent only when its turn comes —
+  its chart, its `OI vs vol` default, its spot trail and its walls do not change.**
+  - **The rail is static data (`lightbox/navGroups.ts`), not the manifest.** Manifests are `lazy()`
+    and React's server renderer emits the Suspense fallback rather than resolving them, so nothing
+    inside a manifest is visible to `renderToString` — which is every test this package has. The
+    rail and the breadcrumb live outside the boundary, which is the only reason `routes.test.tsx`
+    can assert which tab a URL resolved to. Keeping the tab list twice is the cost: the manifest's
+    ids are typed against the declaration, and `ModuleFrame` compares the two at runtime and says
+    so **on the page**, because a tab missing from the rail otherwise reads as a tab that was
+    removed on purpose.
+  - **A renamed tab keeps its old id as an alias**, resolved before the first-tab fallback.
+    `/flies/exits` must reach `divergence`; falling through to the first tab would look like a
+    working link while showing the wrong page, which is worse than a 404.
+  - **Dense tables are detail sheets, not tabs.** `components/grid/DetailSheet.tsx`, opened from a
+    card's ⤢ and scoped to that card's subject. Deliberately transient state rather than a route:
+    the table is a zoom on the tab you are reading, and a zoom has to be cheap to reverse, so
+    Escape and the backdrop close it and focus returns to the opener.
+  - **A card's tone comes only from the sign of a number or a flag a writer already set.** This is
+    the read-surface rule (the console computes no verdicts) applied to pixels, and it matters more
+    on a chart than in a table: `withReadOnlyDb` collapses "store absent", "query threw" and
+    "genuinely empty" into one return value, and a chart renders all three as a flat line at zero
+    while a table renders them as "no rows". Hence `StatTile` renders a null as an em dash with no
+    tone and `Spark` refuses to draw under two points. The `dragPct > 30` tint that lived in three
+    files did not survive the sweep; `thin` did, because the module stamps it.
+  - **A chart in a grid cell measures itself** (`lib/useMeasure.ts`). The hand-rolled SVGs are
+    written at `width = 1150` and scale with `viewBox`; scaling is not reflowing, and a 9px axis
+    label at a third of the width is 3px. The fallback stays 1150, which is what SSR and the first
+    paint get.
+  - **Animations are deferred, not removed.** Motion in the console is its own piece of work; the
+    frame components ship with none of their own so that work starts from a neutral baseline.
 - **The calendars page is the same question answered the other way, and the split is the point.**
   `readers/calendars.ts` reads that ledger directly like every other reader here, but two things it
   will not compute go out through `services/calendarsBridge.ts` as a subprocess: the exit-policy
@@ -424,8 +460,10 @@ one `readOnlyDb` `MAX(trade_date)` against a declared per-module table). The ear
 collapses the first two; this one does not. Dated artifacts are listed for a session picker.
 
 Verify in the browser after `pnpm --filter @console/shared build && pnpm build` and a console
-restart: `MSYS_NO_PATHCONV=1 pnpm ui-check --route /flies --click regime --expect "era since"`, and
-the same with `--route /meic`.
+restart: `MSYS_NO_PATHCONV=1 pnpm ui-check --route /flies/regime --expect "era since"`, and the
+same with `--route /meic/regime`. Every slide is addressable, so prefer `--route` over
+`--click`: it needs no text match and no settle delay, and on the frame `--click` cannot reach a
+tab at all (it skips anything inside a `<nav>`, and the rail is one).
 
 ## Suite guardrails (apply here too)
 
