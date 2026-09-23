@@ -7,6 +7,7 @@ import { DivergingBars } from "../../components/grid/DivergingBars";
 import { GridCard, StatTile } from "../../components/grid/GridCard";
 import { fmtMoney } from "../../lib/format";
 import { useModulePerformance, useRegimeCuts, type FliesFilter } from "../../lib/api";
+import { ForestCard } from "./ForestCard";
 import { OpeningRangeCard } from "./OpeningRangeCard";
 
 /**
@@ -152,6 +153,16 @@ export function FliesSession({
         }
       />
 
+      {/* The hero. A butterfly only pays if spot walks away from its centre, so the shape of the
+          payoff is the session's actual subject and everything above is a number about it. */}
+      <ForestCard
+        mode={mode}
+        filter={filter}
+        variant="hero"
+        height={248}
+        onExpand={() => onOpenSheet("books")}
+      />
+
       <GridCard
         label="net by arm"
         span={4}
@@ -179,7 +190,7 @@ export function FliesSession({
 
       <GridCard
         label={crossTab === undefined ? "regime cuts" : `regime — ${crossTab.dims.join(" × ")}`}
-        span={5}
+        span={8}
         h={304}
         foot={
           cuts === null
@@ -209,7 +220,7 @@ export function FliesSession({
 
       <GridCard
         label="fee drag by arm"
-        span={3}
+        span={4}
         h={304}
         onExpand={() => onOpenSheet("books")}
         expandLabel="fee drag"

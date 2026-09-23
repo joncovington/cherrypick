@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
 import { useQuote } from "../../lib/useQuote";
@@ -9,6 +9,8 @@ import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
 import { niceTicks } from "../../components/chart/scales";
 import { SpotMarker, HoverReadout } from "../../components/chart/Tooltip";
 import { useHoverX } from "../../components/chart/useHoverX";
+import { useMeasure } from "../../lib/useMeasure";
+import { GridCard } from "../../components/grid/GridCard";
 
 interface StructureCurve {
   kind: string;
@@ -155,13 +157,32 @@ function sameCurve(a: PayoffCurve, b: PayoffCurve): boolean {
  * minimums), curves extended flat to the window edges, single-arm green/red
  * fill, per-arm centre dashlines, labelled spot line, hover readout, legend.
  */
-export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesFilter }) {
+export function ForestCard({
+  mode,
+  filter,
+  variant = "full",
+  height = 320,
+  onExpand,
+}: {
+  mode: TradingMode;
+  filter: FliesFilter;
+  /** `hero` drops the controls and the per-arm sentences to sit in a grid cell. */
+  variant?: "full" | "hero";
+  height?: number;
+  onExpand?: () => void;
+}) {
   const { data, isLoading } = useForest(mode, filter);
   const [xwidth, setXwidth] = useState<(typeof X_WIDTHS)[number]>("auto");
   const [ywidth, setYwidth] = useState<(typeof Y_WIDTHS)[number]>("auto");
   const [showParts, setShowParts] = useState(true);
-  const width = 1150;
-  const height = 320;
+  // The chart is drawn at its container's width rather than at a fixed 1150 that scales: at a
+  // third of the page the 9px axis labels would render at 3px, and `niceTicks` would be spacing
+  // ticks for a width this chart does not have. 1150 remains the fallback, which is what a server
+  // render and the first paint before the observer fires both get.
+  const [hostRef, width] = useMeasure<HTMLDivElement>(1150);
+  // Two of these can be on one page now (the session hero and the forest tab), and a duplicate
+  // clip-path id would have the first one's rect clipping the second one's plot.
+  const clipId = useId();
   const pad = { l: 62, r: 12, t: 20, b: 26 };
   const { fx: hoverX, onMouseMove: onHoverMove, onMouseLeave: onHoverLeave } = useHoverX(width, pad.l, pad.r);
   // Subscribe the day's actual underlying (SPX days must not show an XSP
@@ -267,7 +288,7 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
         onMouseLeave={onHoverLeave}
       >
         <defs>
-          <clipPath id="forest-plot">
+          <clipPath id={clipId}>
             <rect x={pad.l} y={plotTop} width={width - pad.l - pad.r} height={plotBottom - plotTop} />
           </clipPath>
         </defs>
@@ -330,7 +351,7 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
             sum, clipped to the plot and labelled at its centre so a dashed line can be read back
             to a position without guessing */}
         {parts.length > 0 && (
-          <g clipPath="url(#forest-plot)">
+          <g clipPath={`url(#${clipId})`}>
             {parts.map((s, i) => {
               const prices = shown[0]!.curve.prices;
               const { xs, ys } = extendFlat(prices, s.pnl, xMin, xMax);
@@ -442,6 +463,69 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
     );
   }
 
+  // The measured element wraps the chart rather than being the card, so the width read is the
+  // plot's own and not the card's padding box.
+  const chart = (
+    <div ref={hostRef} className="forest-host">
+      {body}
+    </div>
+  );
+
+  const sentences = (
+    <div style={{ marginTop: "0.5rem" }}>
+      {shown.map((a) => (
+        <p key={a.arm} className="muted" style={{ margin: "0.15rem 0", fontSize: 12 }}>
+          <span className={a.curve.floor.floorHolds ? "pnl-pos" : "pnl-neg"}>●</span>{" "}
+          <span style={{ color: colorOf(a.arm) }}>{a.arm}</span>
+          {twinOf.has(a.arm) ? <span className="muted"> (identical to {twinOf.get(a.arm)})</span> : null} — {floorSentence(a.curve)}
+        </p>
+      ))}
+      {settled !== null && (
+        <p className="muted" style={{ margin: "0.15rem 0", fontSize: 12 }}>
+          Settled at <strong>{settled.price.toFixed(2)}</strong>
+          {settled.source !== null ? ` (${settled.source.replace(/_/g, " ")})` : ""}
+          {data?.lastTickSpot != null &&
+            ` — last intraday tick was ${data.lastTickSpot.toFixed(2)}, ${Math.abs(data.lastTickSpot - settled.price).toFixed(2)} ${data.lastTickSpot >= settled.price ? "above" : "below"} the close.`}
+        </p>
+      )}
+    </div>
+  );
+
+  if (variant === "hero") {
+    // One arm shown means the floor sentence IS the caveat, and it is the sentence that carries
+    // the price band. Several arms have several floors, which will not fit one line, so the foot
+    // counts them and the forest tab keeps the sentences.
+    const only = shown.length === 1 ? shown[0] : undefined;
+    const holds = shown.filter((a) => a.curve.floor.floorHolds).length;
+    return (
+      <GridCard
+        label={`payoff at expiry${data?.tradeDate != null ? ` — ${data.tradeDate}` : ""}`}
+        span={8}
+        h={304}
+        onExpand={onExpand}
+        expandLabel="the books behind this payoff"
+        foot={
+          only !== undefined
+            ? `${only.arm} — ${floorSentence(only.curve)}`
+            : shown.length === 0
+              ? "nothing open on this session"
+              : `${String(shown.length)} arms · ${String(holds)} whose floor holds everywhere`
+        }
+      >
+        {isLoading ? (
+          <span className="skeleton skeleton-text" style={{ width: "50%" }} />
+        ) : shown.length === 0 ? (
+          <p className="muted">no positions on this day</p>
+        ) : (
+          <>
+            {chart}
+            {legendRow}
+          </>
+        )}
+      </GridCard>
+    );
+  }
+
   return (
     <section className="card">
       <div className="panel-head-row">
@@ -472,25 +556,9 @@ export function ForestCard({ mode, filter }: { mode: TradingMode; filter: FliesF
         <p className="muted">no positions on this day</p>
       ) : (
         <>
-          {body}
+          {chart}
           {legendRow}
-          <div style={{ marginTop: "0.5rem" }}>
-            {shown.map((a) => (
-              <p key={a.arm} className="muted" style={{ margin: "0.15rem 0", fontSize: 12 }}>
-                <span className={a.curve.floor.floorHolds ? "pnl-pos" : "pnl-neg"}>●</span>{" "}
-                <span style={{ color: colorOf(a.arm) }}>{a.arm}</span>
-                {twinOf.has(a.arm) ? <span className="muted"> (identical to {twinOf.get(a.arm)})</span> : null} — {floorSentence(a.curve)}
-              </p>
-            ))}
-            {settled !== null && (
-              <p className="muted" style={{ margin: "0.15rem 0", fontSize: 12 }}>
-                Settled at <strong>{settled.price.toFixed(2)}</strong>
-                {settled.source !== null ? ` (${settled.source.replace(/_/g, " ")})` : ""}
-                {data?.lastTickSpot != null &&
-                  ` — last intraday tick was ${data.lastTickSpot.toFixed(2)}, ${Math.abs(data.lastTickSpot - settled.price).toFixed(2)} ${data.lastTickSpot >= settled.price ? "above" : "below"} the close.`}
-              </p>
-            )}
-          </div>
+          {sentences}
         </>
       )}
     </section>

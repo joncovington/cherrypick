@@ -140,7 +140,11 @@ export function FliesLightbox({ slide }: { slide: string }) {
         />
       ),
     },
-    { id: "forest", label: FLIES_LABEL.forest, render: () => <ForestCard mode={mode} filter={filter} /> },
+    {
+      id: "forest",
+      label: FLIES_LABEL.forest,
+      render: () => <ForestCard mode={mode} filter={filter} onExpand={() => setSheet("books")} />,
+    },
     {
       // Attempts and occupancy merged (2026-09): both are bounded snapshots regardless of session
       // activity -- AttemptTimeline's SVG height depends only on arm count (marks position by time
