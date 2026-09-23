@@ -48,8 +48,9 @@ export interface ModuleNavDecl {
  * - `journal` → `decisions`, matching what bwb/pmcc/curve/calendars already call the same thing.
  * - `openrange` → `openingrange`, matching the card, the doc and the study.
  *
- * `books`, `trades` and `history` are still tabs here and are removed when their detail sheets
- * land. They are grouped under `tables` so the partition guard holds in the meantime.
+ * `books`, `trades` and `history` are no longer tabs at all: they are the three dense tables, and
+ * they open as detail sheets from the cards whose numbers they explain. A table is a zoom on a
+ * reading, not a place of its own.
  */
 export const FLIES_SLIDES = [
   { id: "session", label: "session" },
@@ -64,9 +65,6 @@ export const FLIES_SLIDES = [
   { id: "performance", label: "performance" },
   { id: "advisor", label: "advisor" },
   { id: "guide", label: "help" },
-  { id: "books", label: "books" },
-  { id: "trades", label: "positions" },
-  { id: "history", label: "history" },
 ] as const satisfies readonly NavSlide[];
 
 export type FliesSlideId = (typeof FLIES_SLIDES)[number]["id"];
@@ -77,7 +75,6 @@ export const NAV_DECL: Partial<Record<ModuleId, ModuleNavDecl>> = {
     groups: [
       { label: "today", ids: ["session", "forest", "timeline", "openingrange"] },
       { label: "evidence", ids: ["attempts", "decisions", "divergence", "regime"] },
-      { label: "tables", ids: ["books", "trades", "history"] },
       { label: "study", ids: ["completion", "performance", "advisor"] },
       { label: "help", ids: ["guide"] },
     ],

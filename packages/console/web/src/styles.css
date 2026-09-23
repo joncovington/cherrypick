@@ -3009,6 +3009,7 @@ body.lb-open {
 .span-12 { grid-column: span 12; }
 .h-64 { height: 64px; }
 .h-96 { height: 96px; }
+.h-128 { height: 128px; }
 .h-248 { height: 248px; }
 .h-304 { height: 304px; }
 
@@ -3210,6 +3211,14 @@ body.sheet-open {
    column green would imply something nobody claimed. */
 .diverge-neutral .signed-bar-fill {
   background: #a06bd9;
+}
+
+/* A cross-tab is as wide as its buckets; inside a fixed-height card it scrolls rather than
+   forcing the card to grow or clipping a column off without saying so. */
+.regime-scroll {
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
 }
 
 @media (max-width: 1000px) {

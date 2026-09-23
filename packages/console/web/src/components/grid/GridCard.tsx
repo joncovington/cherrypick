@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 /** The declared card sizes. A card is a span and a height, and the pair is its size. */
 export type CardSpan = 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 12;
-export type CardHeight = 64 | 96 | 248 | 304;
+export type CardHeight = 64 | 96 | 128 | 248 | 304;
 
 /**
  * A card on the frame's 12-column grid: head, one visualization, one foot line.
@@ -79,7 +79,9 @@ export function StatTile({
   onExpand,
   expandLabel,
   span = 3,
-  h = 96,
+  // 128 rather than 96: a tile carrying a number AND a shape under it does not fit the short
+  // step, and a clipped value is worse than a taller row.
+  h = 128,
   children,
 }: {
   label: ReactNode;
