@@ -201,13 +201,17 @@ def test_a_ratio_on_trivial_counts_is_not_evidence():
 # --------------------------------------------------------------------------- arms
 
 
-def _arm_session(session, arms: dict[str, tuple[int, float, int]], module="meic", breaks=None):
-    """arms: {name: (closed, net, wins)}"""
+def _arm_session(session, arms: dict[str, tuple[int, float, int]], module="meic", breaks=None, key="by_arm"):
+    """arms: {name: (closed, net, wins)}
+
+    `key` is the arm-split spelling: `by_arm` from fact_version 8, `by_profile` below it. It is a
+    parameter because a trend window reaches back across the bump and has to read both.
+    """
     facts.write(
         {
             "session": session,
             "status": "final",
-            "fact_version": facts.FACT_VERSION,
+            "fact_version": facts.FACT_VERSION if key == "by_arm" else 7,
             "modules": {
                 module: {
                     "ok": True,
@@ -223,7 +227,7 @@ def _arm_session(session, arms: dict[str, tuple[int, float, int]], module="meic"
                     "expected_vs_observed": {"basis": "x", "expected": None, "observed": None},
                     "health": {"loop_ticked": True},
                     "sample": {"n": 0, "effective_n": 1, "breaks": breaks, "suspected_break": None},
-                    "by_profile": {
+                    key: {
                         name: {
                             "closed": c,
                             "net": n,
@@ -246,7 +250,7 @@ def test_the_arm_split_survives_into_the_trend(store):
     no-stop `open` together with the width arms that stop most of the book on a moving day."""
     _arm_session("2026-08-11", {"open": (10, 100.0, 8), "width-5": (10, -50.0, 4)}, breaks=[])
     _arm_session("2026-08-12", {"open": (10, 200.0, 9), "width-5": (10, -25.0, 5)}, breaks=[])
-    got = trends.trend("meic", "2026-08-12", window=5)["by_profile"]
+    got = trends.trend("meic", "2026-08-12", window=5)["by_arm"]
     assert got["open"]["net"] == 300.0 and got["open"]["sessions"] == 2
     assert got["width-5"]["net"] == -75.0
     assert got["open"]["win_rate"] == pytest.approx(0.85)
@@ -257,7 +261,7 @@ def test_an_arm_that_appears_late_counts_only_its_own_sessions(store):
     trade in would understate it."""
     _arm_session("2026-08-11", {"control": (4, 40.0, 4)}, breaks=[])
     _arm_session("2026-08-12", {"control": (4, 40.0, 4), "control-drift": (3, 30.0, 3)}, breaks=[])
-    got = trends.trend("meic", "2026-08-12", window=5)["by_profile"]
+    got = trends.trend("meic", "2026-08-12", window=5)["by_arm"]
     assert got["control"]["sessions"] == 2
     assert got["control-drift"]["sessions"] == 1 and got["control-drift"]["net"] == 30.0
 
@@ -341,3 +345,16 @@ def test_the_render_calls_out_arms_that_shared_a_centring_rule(store):
     out = render.render("2026-08-12")
     assert "not independent that session" in out
     assert "control, gex-intrinsic all centred `atm`" in out
+
+
+def test_a_window_spanning_the_v8_rename_reads_both_spellings(store):
+    """fact_version 8 renamed the arm split `by_profile` -> `by_arm`, and sets written before it are
+    never rewritten. So any window longer than the days since the bump straddles both spellings, and
+    a reader that took only one would silently halve an arm's history — the arm would still be
+    there, still plausible, reporting a shorter sample than it has."""
+    _arm_session("2026-08-11", {"open": (10, 100.0, 8)}, breaks=[], key="by_profile")
+    _arm_session("2026-08-12", {"open": (10, 200.0, 9)}, breaks=[], key="by_arm")
+
+    got = trends.trend("meic", "2026-08-12", window=5)["by_arm"]
+    assert got["open"]["sessions"] == 2, "the pre-bump session was dropped"
+    assert got["open"]["net"] == 300.0

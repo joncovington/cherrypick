@@ -1381,8 +1381,16 @@ def _review_trend(session: str) -> list[dict[str, Any]]:
             {
                 "session": prior,
                 "status": facts.get("status"),
+                # The arm split under either spelling — `by_arm` from fact_version 8, `by_profile`
+                # below it — normalised to the current one, so a trend window that straddles the
+                # bump reads as one series rather than two half-length ones.
                 "modules": {
-                    name: {k: v for k, v in (block or {}).items() if k in ("net_pnl", "trades", "by_profile")}
+                    name: {k: v for k, v in (block or {}).items() if k in ("net_pnl", "trades", "by_arm")}
+                    | (
+                        {"by_arm": block["by_profile"]}
+                        if isinstance(block, dict) and "by_arm" not in block and "by_profile" in block
+                        else {}
+                    )
                     for name, block in (facts.get("modules") or {}).items()
                 },
             }

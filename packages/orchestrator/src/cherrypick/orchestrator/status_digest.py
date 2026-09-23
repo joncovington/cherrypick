@@ -28,6 +28,7 @@ from datetime import datetime
 from typing import Any
 
 from cherrypick.core import home as corehome
+from cherrypick.core.config import first_present as _first_present
 
 from cherrypick.notify import Notifier
 
@@ -170,7 +171,8 @@ def _module_lines(name: str, block: dict, prev_mod: dict | None) -> list[str]:
 
     conc = block.get("concentration") or {}
     if conc.get("sign_flips_without_largest"):
-        largest = (conc.get("largest") or {}).get("profile") or "largest arm"
+        # `arm` from fact_version 8, `profile` in the sets written before it.
+        largest = _first_present(conc.get("largest"), "arm", "profile") or "largest arm"
         lines.append(f"⚠ net sign rests on {largest}")
 
     health = block.get("health") or {}

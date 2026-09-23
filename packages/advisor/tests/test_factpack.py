@@ -7,6 +7,7 @@ import json
 import fakes
 import pytest
 
+from cherrypick.advisor import clock as _clock
 from cherrypick.advisor import factpack, paths, store
 
 SESSION = "2026-08-13"
@@ -1101,3 +1102,33 @@ def test_regime_cuts_thinned_sections_fit_the_attention_budget(tmp_home):
     _write_regime_doc(tmp_home, "meic", big("meic", 3, [f"d{i}" for i in range(8)], [("gex", "trend")]))
     out = factpack._regime_cuts(SESSION, ("flies", "meic"))
     assert len(json.dumps(out, indent=2)) < 72_000
+
+
+# --------------------------------------------------------------------------- the v8 arm rename
+
+
+def _write_eod(session: str, module_block: dict) -> None:
+    d = paths.module_data_dir("review")
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"eod-{session}.json").write_text(
+        json.dumps({"session": session, "status": "final", "modules": {"meic": module_block}}),
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize("key", ["by_arm", "by_profile"])
+def test_the_review_trend_reads_the_arm_split_under_either_spelling(tmp_home, key):
+    """Review's fact set renamed `by_profile` -> `by_arm` at fact_version 8 and the sets written
+    before it are never rewritten, so a five-session trend straddles both spellings for a working
+    week after the bump. Both arrive in the pack as `by_arm`, because the model is being asked to
+    compare five sessions and two spellings would read as two different things.
+
+    The failure this prevents is silent: a dropped split leaves the session in the trend with its
+    totals intact and only the arms missing, which looks like a session where nothing was split.
+    """
+    prior = _clock.previous_sessions(SESSION, factpack.TREND_SESSIONS)[0]
+    _write_eod(prior, {"ok": True, key: {"control": {"closed": 2, "net": 10.0, "wins": 1}}})
+
+    entry = next(e for e in factpack._review_trend(SESSION) if e["session"] == prior)
+    assert entry["modules"]["meic"]["by_arm"] == {"control": {"closed": 2, "net": 10.0, "wins": 1}}
+    assert "by_profile" not in entry["modules"]["meic"]

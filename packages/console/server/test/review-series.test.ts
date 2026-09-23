@@ -91,4 +91,22 @@ describe("review per-session series", () => {
     expect(era.suiteDaily).toEqual([{ session: "2026-08-20", net: 100, closed: 2 }]);
     expect(era.trendByModule["flies"]).toBeUndefined();
   });
+
+  /**
+   * fact_version 8 renamed the arm split `by_profile` -> `by_arm`, and sets written before it are
+   * never rewritten. The session picker reaches back over the whole era, so the console reads both
+   * spellings for good. A reader that took only one would not throw — the session would render
+   * with its totals and an empty arm table, which reads as a module that runs a single arm.
+   */
+  it.each([
+    ["by_arm", "fact_version 8 and after"],
+    ["by_profile", "every set written before it"],
+  ])("shapes the arm split from %s (%s)", (key) => {
+    const arms = { control: { closed: 2, net: 100, wins: 2, gross: 100, cost: 0 } };
+    writeFacts("2026-08-20", { meic: { ...okModule(100, 2), [key]: arms } });
+    const { current } = readReview(config);
+    const meic = current?.modules.find((m) => m.module === "meic");
+    expect(meic?.arms.map((a) => a.arm)).toEqual(["control"]);
+    expect(meic?.arms[0]?.net).toBe(100);
+  });
 });

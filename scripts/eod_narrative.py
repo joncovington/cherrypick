@@ -80,9 +80,11 @@ Things about this data that will mislead you if you do not know them:
   does not track breaks at all, which is weaker than an empty list, not stronger.
 - `sample.suspected_break` is a regime change nobody journaled. Treat it as a reason to distrust a
   comparison spanning it.
-- `by_profile` is the ARM SPLIT, and for most modules it is the actual experiment: the arms run
+- `by_arm` is the ARM SPLIT, and for most modules it is the actual experiment: the arms run
   against the same underlying on the same sessions, so comparing them is worth far more than the
-  raw sample suggests. A module-level total averages them and hides the finding.
+  raw sample suggests. A module-level total averages them and hides the finding. Sets written
+  before `fact_version` 8 spell this key `by_profile` and mean exactly the same thing; likewise
+  `concentration.largest` names the arm under `arm` from v8 and `profile` below it.
 - `expected_vs_observed` is each module's OWN model. The three modules' bases are not comparable
   with each other.
 - `status: provisional` means the overnight module has not settled.

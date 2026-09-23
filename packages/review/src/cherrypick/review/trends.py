@@ -16,6 +16,8 @@ session it was built from.
 
 from __future__ import annotations
 
+from cherrypick.core.config import first_present as _first_present
+
 from cherrypick.review import facts as _facts
 from cherrypick.review import paths as _paths
 
@@ -91,10 +93,12 @@ def trend(module: str, end_session: str, window: int = DEFAULT_WINDOW) -> dict:
     # a single session of it is nearly worthless -- MEIC's `open` beat both width arms on all four
     # sessions so far, which is suggestive and nothing more until the window is longer than the
     # gap between breaks.
-    by_profile: dict[str, dict] = {}
+    # `by_arm` from fact_version 8, `by_profile` below it. A window reaches back across the
+    # bump by definition, so a trend mixes both spellings in one pass and always will.
+    by_arm: dict[str, dict] = {}
     for _, entry in slices:
-        for arm, g in (entry.get("by_profile") or {}).items():
-            acc = by_profile.setdefault(
+        for arm, g in (_first_present(entry, "by_arm", "by_profile", default={}) or {}).items():
+            acc = by_arm.setdefault(
                 arm,
                 {"closed": 0, "net": 0.0, "wins": 0, "sessions": 0, "capital": 0.0, "capital_seen": False},
             )
@@ -106,7 +110,7 @@ def trend(module: str, end_session: str, window: int = DEFAULT_WINDOW) -> dict:
             if capital:
                 acc["capital"] += capital
                 acc["capital_seen"] = True
-    for acc in by_profile.values():
+    for acc in by_arm.values():
         acc["net"] = round(acc["net"], 2)
         acc["win_rate"] = round(acc["wins"] / acc["closed"], 4) if acc["closed"] else None
         acc["capital_at_risk"] = round(acc["capital"], 2) if acc["capital_seen"] else None
@@ -130,7 +134,7 @@ def trend(module: str, end_session: str, window: int = DEFAULT_WINDOW) -> dict:
         "effective_n": effective,
         "capital_at_risk": round(sum(capitals), 2) if capitals else None,
         "on_max_risk": round(net / sum(capitals), 6) if capitals else None,
-        "by_profile": by_profile,
+        "by_arm": by_arm,
     }
 
 

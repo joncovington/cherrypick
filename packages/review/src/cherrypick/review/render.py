@@ -12,6 +12,8 @@ was.
 
 from __future__ import annotations
 
+from cherrypick.core.config import first_present as _first_present
+
 from cherrypick.review import facts as _facts
 from cherrypick.review import paths as _paths
 from cherrypick.review import trends as _trends
@@ -131,10 +133,12 @@ def render(session: str, window: int = _trends.DEFAULT_WINDOW) -> str:
     # underlying on the same sessions, which makes it a paired test. A module-level row averages
     # them and hides it — MEIC's `open` takes no stops at all while its width arms stop most of
     # the book on a moving day, and the module total shows none of that.
+    # `by_arm` from fact_version 8; `by_profile` in every set written before it. Renders are run
+    # over old sessions routinely, so both spellings are read here for good.
     arm_blocks = {
-        n: m["by_profile"]
+        n: _first_present(m, "by_arm", "by_profile", default={})
         for n, m in (facts.get("modules") or {}).items()
-        if m.get("ok") and len(m.get("by_profile") or {}) > 1
+        if m.get("ok") and len(_first_present(m, "by_arm", "by_profile", default={}) or {}) > 1
     }
     if arm_blocks:
         L.append("## By arm")

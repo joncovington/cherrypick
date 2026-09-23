@@ -130,8 +130,8 @@ export function listSessions(config: ConsoleConfig): string[] {
   }
 }
 
-function shapeArms(byProfile: Record<string, unknown>): ReviewArm[] {
-  return Object.entries(byProfile)
+function shapeArms(byArm: Record<string, unknown>): ReviewArm[] {
+  return Object.entries(byArm)
     .map(([arm, raw]) => {
       const g = rec(raw);
       const ret = rec(g["return"]);
@@ -201,7 +201,9 @@ function shapeModule(name: string, raw: unknown): ReviewModule {
     observed: num(expected["observed"]),
     carriedPositions: num(carried["positions"]) ?? 0,
     carriedCapital: num(carried["capital_at_risk"]),
-    arms: shapeArms(rec(m["by_profile"])),
+    // `by_arm` from fact_version 8, `by_profile` in every set written before it. The console
+    // renders old sessions from the picker, so both spellings are read here for good.
+    arms: shapeArms(rec(m["by_arm"] ?? m["by_profile"])),
   };
 }
 

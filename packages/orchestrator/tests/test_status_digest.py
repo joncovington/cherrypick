@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from cherrypick.orchestrator import config as cfgmod
 from cherrypick.orchestrator import jobspec, status_digest
 
@@ -90,12 +92,17 @@ def test_no_suite_level_net_is_ever_printed():
     assert "1,000" not in text
 
 
-def test_concentration_sign_flip_gets_a_caveat():
+@pytest.mark.parametrize("key", ["arm", "profile"])
+def test_concentration_sign_flip_gets_a_caveat(key):
+    """`arm` is the fact_version 8 spelling and `profile` is every set written before it. The digest
+    runs against whatever session it is handed, including a backfill of an old one, so it names the
+    arm under both. Reading only one spelling would not error -- it would print the generic "largest
+    arm" and lose the one fact the caveat exists to carry."""
     doc = facts(
         meic=module_block(
             concentration={
                 "sign_flips_without_largest": True,
-                "largest": {"profile": "control"},
+                "largest": {key: "control"},
             }
         )
     )

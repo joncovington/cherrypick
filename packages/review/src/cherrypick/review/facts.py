@@ -42,7 +42,12 @@ from cherrypick.review import paths as _paths
 
 # 6 (2026-08-26): each module's facts gained `concentration` — how much of the net rests on one arm.
 # Additive; nothing gates on this number, it is displayed so a reader can tell which shape they have.
-FACT_VERSION = 7  # 7: + health.entries per module, flies health.completions (2026-09-01)
+# 7 (2026-09-01): + health.entries per module, flies health.completions.
+# 8 (2026-09-23): `by_profile` -> `by_arm`, and `concentration`'s rows and `largest` with it. One
+# word for a variant across the suite (root CLAUDE.md). A RENAME, not an addition, which is the
+# whole reason it takes a version: the 22 sets already on disk say `by_profile` and are never
+# rewritten, so every reader takes both spellings and will keep doing so.
+FACT_VERSION = 8
 
 STATUS_PROVISIONAL = "provisional"
 STATUS_FINAL = "final"
@@ -648,18 +653,18 @@ def _degraded_to(records: list[dict]) -> str | None:
     return reasons.pop() if len(reasons) == 1 else None
 
 
-def _by_profile(records: list[dict]) -> dict:
-    """Split a module's session by its attribution tag — MEIC's risk_profile, flies' arm, earnings'
-    book. `cherrypick.core.ledgers` normalises all three onto `profile`.
+def _by_arm(records: list[dict]) -> dict:
+    """Split a module's session by its attribution tag — MEIC's `risk_profile`, flies' `arm`,
+    earnings' `profile`. `cherrypick.core.ledgers` normalises all of them onto `arm`.
 
     Collapsing these away loses the experiment. MEIC currently runs `open`, `width-5` and `width-10`
     against the same underlying on the same sessions, which is a paired comparison and the entire
-    reason three profiles exist; a single module row reports their average and hides that `open`
+    reason three arms exist; a single module row reports their average and hides that `open`
     takes no stops at all while the other two stop 70-90% of trades on a moving day. Flies runs its
     arms for exactly the same reason.
 
     Grouped through `cherrypick.core.profiles.group_by_tag`, the helper the orchestrator's own
-    per-profile reporting already uses, rather than a fourth hand-rolled grouping.
+    per-arm reporting already uses, rather than a fourth hand-rolled grouping.
     """
     if not records:
         return {}
@@ -713,16 +718,16 @@ def build_module_facts(module: str, session: str, db_path=None) -> dict:
         "health": health,
         "results": {k: totals[k] for k in ("closed", "gross", "cost", "net", "wins", "losses")},
         # The arms, kept because for MEIC and flies the comparison between them IS the experiment.
-        "by_profile": _by_profile(closed),
+        "by_arm": _by_arm(closed),
         # ...and how much of the net above is ONE of them. A module total averages its arms, which
         # is exactly what hides the finding when the arms are the experiment. flies published
-        # +6,748.01 for 2026-08-19 on a session where one seven-fill book returned +7,828.42 and the
+        # +6,748.01 for 2026-08-19 on a session where one seven-fill arm returned +7,828.42 and the
         # other twelve came to -1,080.41: the sign of the day was that arm's sign, and nothing said
         # so. `sign_flips_without_largest` is the field to read first — a total that changes sign
         # without its biggest contributor is a measurement of that arm, not of the module.
-        # Reads `arm`, writes `profile`: 22 fact sets on disk carry `by_profile`, and an artifact
-        # key is a versioned change rather than a rename. Moves with FACT_VERSION.
-        "concentration": _ledgers.concentration(closed, out="profile"),
+        # Keyed `arm` from v8; the sets written at v7 and below say `profile` here and in
+        # `largest`, and `status_digest` takes both.
+        "concentration": _ledgers.concentration(closed),
         "carried_overnight": {
             "positions": len(carried),
             "capital_at_risk": round(sum(r.get("capital_at_risk") or 0.0 for r in carried), 2)
