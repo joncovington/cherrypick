@@ -42,7 +42,12 @@ from cherrypick.advisor import settings as _settings
 from cherrypick.advisor import store as _store
 from cherrypick.advisor import verdicts as _verdicts
 
-PACK_VERSION = 1
+# 2 (2026-09-23): every module's arm column is ALIASED to `arm` in the pack, so meic's
+# `risk_profile`, pmcc/bwb/curve/calendars' `book` and flies' `arm` read as one word in a
+# document that sets them side by side. No dual-read: nothing in the suite re-reads a persisted
+# pack except `enactment._recorded_advice`, which reads `paper.<module>.advice_active` and is
+# untouched by this. The only other reader is the model, which is handed the pack as text.
+PACK_VERSION = 2
 
 LIGHT_SLOTS = ("open", "am1", "am2", "midday", "pm1", "pm2", "close")
 DEEP_SLOT = "deep"
@@ -270,16 +275,25 @@ def _counts(rows: list[dict], key: str, value: str = "n") -> dict[str, Any]:
     return {str(r[key] or "unknown"): r[value] for r in rows}
 
 
-def _closed_by_exit_reason(conn, table: str, *, group: tuple[str, ...] = ("book",)) -> list[dict[str, Any]]:
-    """Closed rows by book and exit reason with their gross and fees -- the same statement the
+def _closed_by_exit_reason(
+    conn, table: str, *, arm_column: str = "book", group: tuple[str, ...] = ()
+) -> list[dict[str, Any]]:
+    """Closed rows by arm and exit reason with their gross and fees -- the same statement the
     calendars, bwb and curve sections each carried with only the table name swapped (2026-09-12).
     pmcc keeps its own: it pools by era, which is the point of that section and is guarded by a
-    source-reading test."""
-    cols = ", ".join(group)
+    source-reading test.
+
+    `arm_column` is the module's own column name and it is ALIASED to `arm`, because the pack sets
+    several modules side by side and the model should not have to learn that meic's `risk_profile`,
+    pmcc's `book` and flies' `arm` are the same thing. The alias is the whole translation: when
+    those columns are renamed for real the alias becomes a no-op and the pack does not change."""
+    extra = "".join(f", {g}" for g in group)
     return _store.rows(
         conn,
-        f"SELECT {cols}, exit_reason, COUNT(*) n, SUM(gross_pnl) gross, SUM(fees) fees"  # noqa: S608
-        f" FROM {table} WHERE status = 'closed' GROUP BY {cols}, exit_reason ORDER BY book",
+        f"SELECT {arm_column} AS arm{extra}, exit_reason, COUNT(*) n,"  # noqa: S608
+        f" SUM(gross_pnl) gross, SUM(fees) fees"
+        f" FROM {table} WHERE status = 'closed'"
+        f" GROUP BY {arm_column}{extra}, exit_reason ORDER BY {arm_column}",
     )
 
 
@@ -491,27 +505,27 @@ def _meic(session: str) -> dict[str, Any]:
     def read(conn):
         attempts = _store.rows(
             conn,
-            "SELECT risk_profile, outcome, COUNT(*) n FROM entry_attempts WHERE trade_date = ?"
+            "SELECT risk_profile AS arm, outcome, COUNT(*) n FROM entry_attempts WHERE trade_date = ?"
             " GROUP BY risk_profile, outcome ORDER BY risk_profile, n DESC",
             (session,),
         )
         blocks = _store.rows(
             conn,
-            "SELECT risk_profile, block_detail, COUNT(*) n FROM entry_attempts"
+            "SELECT risk_profile AS arm, block_detail, COUNT(*) n FROM entry_attempts"
             " WHERE trade_date = ? AND block_detail IS NOT NULL"
             " GROUP BY risk_profile, block_detail ORDER BY n DESC LIMIT ?",
             (session, TOP_N),
         )
         book = _store.rows(
             conn,
-            "SELECT risk_profile, status, COUNT(*) n, SUM(net_credit) credit, SUM(pnl) pnl,"
+            "SELECT risk_profile AS arm, status, COUNT(*) n, SUM(net_credit) credit, SUM(pnl) pnl,"
             " SUM(fees) fees FROM ic_trades WHERE trade_date = ? GROUP BY risk_profile, status",
             (session,),
         )
         regime_session = _meic_regime_session(conn, session)
         stops = _store.rows(
             conn,
-            "SELECT risk_profile, COUNT(*) n FROM ic_trades WHERE trade_date = ?"
+            "SELECT risk_profile AS arm, COUNT(*) n FROM ic_trades WHERE trade_date = ?"
             " AND (put_max_cost IS NOT NULL OR call_max_cost IS NOT NULL)"
             " AND exit_time IS NOT NULL GROUP BY risk_profile",
             (session,),
@@ -520,22 +534,21 @@ def _meic(session: str) -> dict[str, Any]:
         # than open/width-5/width-10, so on a low-IV-rank day control can go completely dark while
         # the looser arms trade -- 0 of 297 on 2026-08-14 -- and a width comparison drawn on such a
         # session has no same-session baseline under it. Stated as its own flag rather than left to
-        # be inferred from book_by_profile's absent row: an absent row reads as "nothing to report"
+        # be inferred from book_by_arm's absent row: an absent row reads as "nothing to report"
         # far more easily than as "the control was gated out", which is the whole finding.
         # `rows_or_none`: `fired: false` is the finding "the control was gated out", so a query
         # this reader could not run must read as unmeasured (None), never as that finding.
         fills = _store.rows_or_none(
             conn,
-            "SELECT risk_profile, COUNT(*) n FROM ic_trades WHERE trade_date = ? GROUP BY risk_profile",
+            "SELECT risk_profile AS arm, COUNT(*) n FROM ic_trades"
+            " WHERE trade_date = ? GROUP BY risk_profile",
             (session,),
         )
-        by_profile = _counts(fills or [], "risk_profile")
+        by_arm = _counts(fills or [], "arm")
         return {
-            "entry_attempts": [
-                {"profile": r["risk_profile"], "outcome": r["outcome"], "n": r["n"]} for r in attempts
-            ],
+            "entry_attempts": [{"arm": r["arm"], "outcome": r["outcome"], "n": r["n"]} for r in attempts],
             "top_block_details": blocks,
-            "book_by_profile": book,
+            "book_by_arm": book,
             # The session's regime as a DISTRIBUTION over in-hours ticks, not the last row
             # (2026-09-16). `latest_regime` used to hand the model the final iteration_regime row,
             # and for a 0DTE module the final row is the one tick after the bell where the expiring
@@ -552,10 +565,10 @@ def _meic(session: str) -> dict[str, Any]:
             "session. Per-entry rows record BOTH bases (gex_net_at_entry, gex_net_vol_at_entry), "
             "so which basis better separates outcomes is a read-side derivation once session "
             "depth allows, not a reason for parallel experiments now.",
-            "closed_with_stop_instrumentation": _counts(stops, "risk_profile"),
+            "closed_with_stop_instrumentation": _counts(stops, "arm"),
             "control_fired": {
-                "fired": None if fills is None else by_profile.get("control", 0) > 0,
-                "fills_by_profile": by_profile,
+                "fired": None if fills is None else by_arm.get("control", 0) > 0,
+                "fills_by_arm": by_arm,
                 "_note": "bucket width comparisons on this; never drop a session because it is false",
             },
         }
@@ -736,7 +749,7 @@ def _calendars(session: str) -> dict[str, Any]:
     def read(conn):
         open_rows = _store.rows(
             conn,
-            "SELECT p.position_id, p.book, p.side, p.structure, p.strike, p.entry_debit,"
+            "SELECT p.position_id, p.book AS arm, p.side, p.structure, p.strike, p.entry_debit,"
             " p.entry_em, p.entry_spot, p.status, p.front_expiration, p.back_expiration,"
             " (SELECT m.mid FROM dc_marks m WHERE m.position_id = p.position_id AND m.usable = 1"
             "   AND m.leg_role LIKE 'back%' ORDER BY m.marked_at DESC LIMIT 1) last_back_mid,"
@@ -746,7 +759,7 @@ def _calendars(session: str) -> dict[str, Any]:
             "   ORDER BY m.marked_at DESC LIMIT 1) last_spot"
             " FROM dc_positions p WHERE p.status != 'closed' ORDER BY p.book, p.side",
         )
-        closed = _closed_by_exit_reason(conn, "dc_positions", group=("book", "structure"))
+        closed = _closed_by_exit_reason(conn, "dc_positions", group=("structure",))
         attempts = _store.rows(
             conn,
             "SELECT outcome, COUNT(*) n FROM dc_entry_attempts WHERE trade_date = ?"
@@ -784,7 +797,7 @@ def _pmcc(session: str) -> dict[str, Any]:
     def read(conn):
         open_rows = _store.rows(
             conn,
-            "SELECT p.position_id, p.book, p.symbol, p.long_strike, p.long_expiration,"
+            "SELECT p.position_id, p.book AS arm, p.symbol, p.long_strike, p.long_expiration,"
             " p.short_strike, p.short_expiration, p.net_debit, p.entry_net_tv,"
             " p.entry_weekly_yield_pct, p.entry_downside_protection_pct, p.roll_count, p.status,"
             " (SELECT m.short_tv FROM pmcc_marks m WHERE m.position_id = p.position_id"
@@ -805,13 +818,13 @@ def _pmcc(session: str) -> dict[str, Any]:
         # the one reader that did not.
         closed = _store.rows(
             conn,
-            "SELECT COALESCE(era, '(pre-redesign)') era, book, symbol, exit_reason, COUNT(*) n,"
+            "SELECT COALESCE(era, '(pre-redesign)') era, book AS arm, symbol, exit_reason, COUNT(*) n,"
             " SUM(gross_pnl) gross, SUM(fees) fees, SUM(roll_count) rolls FROM pmcc_positions"
             " WHERE status = 'closed' GROUP BY era, book, symbol, exit_reason ORDER BY era, book",
         )
         attempts = _store.rows(
             conn,
-            "SELECT book, outcome, COUNT(*) n FROM pmcc_entry_attempts WHERE trade_date = ?"
+            "SELECT book AS arm, outcome, COUNT(*) n FROM pmcc_entry_attempts WHERE trade_date = ?"
             " GROUP BY book, outcome ORDER BY n DESC",
             (session,),
         )
@@ -857,7 +870,7 @@ def _bwb(session: str) -> dict[str, Any]:
     def read(conn):
         open_rows = _store.rows(
             conn,
-            "SELECT position_id, book, symbol, entry_session, body_strike, near_strike, far_strike,"
+            "SELECT position_id, book AS arm, symbol, entry_session, body_strike, near_strike, far_strike,"
             " entry_credit, entry_max_loss, entry_dte, expiration, peak_abs_delta, below_flip_seen,"
             " armed_at, arm_reason, addon_fired_at, addon_credit, status"
             " FROM bwb_positions WHERE status != 'closed' ORDER BY book, entry_session",
@@ -865,7 +878,7 @@ def _bwb(session: str) -> dict[str, Any]:
         closed = _closed_by_exit_reason(conn, "bwb_positions")
         attempts = _store.rows(
             conn,
-            "SELECT book, outcome, block_detail, COUNT(*) n FROM bwb_entry_attempts"
+            "SELECT book AS arm, outcome, block_detail, COUNT(*) n FROM bwb_entry_attempts"
             " WHERE trade_date = ? GROUP BY book, outcome, block_detail ORDER BY n DESC LIMIT ?",
             (session, TOP_N),
         )
@@ -881,13 +894,11 @@ def _bwb(session: str) -> dict[str, Any]:
         # config, opt-in: a call-side BWB at the GEX call wall) trades a DIFFERENT structure by
         # its own declaration — but the pack's note still said "the four books trade the identical
         # base fly", so the model read wall's rows as the contrast silently breaking (#101).
-        # Derived from the rows, not a list: a book is non-base the moment it appears.
-        base_books = {"control", "delta", "bounce", "flip"}
-        seen = _store.rows(conn, "SELECT DISTINCT book FROM bwb_positions ORDER BY book")
+        # Derived from the rows, not a list: an arm is non-base the moment it appears.
+        base_arms = {"control", "delta", "bounce", "flip"}
+        seen = _store.rows(conn, "SELECT DISTINCT book AS arm FROM bwb_positions ORDER BY book")
         non_base = [
-            r["book"]
-            for r in seen
-            if r["book"] not in base_books and not str(r["book"]).startswith("advised:")
+            r["arm"] for r in seen if r["arm"] not in base_arms and not str(r["arm"]).startswith("advised:")
         ]
         return {
             "open_positions": open_rows,
@@ -928,13 +939,13 @@ def _curve(session: str) -> dict[str, Any]:
     def read(conn):
         open_rows = _store.rows(
             conn,
-            "SELECT position_id, book, symbol, entry_session, short_strike, long_strike,"
+            "SELECT position_id, book AS arm, symbol, entry_session, short_strike, long_strike,"
             " expiration, status FROM curve_positions WHERE status != 'closed' ORDER BY book",
         )
         closed = _closed_by_exit_reason(conn, "curve_positions")
         attempts = _store.rows(
             conn,
-            "SELECT book, outcome, block_detail, COUNT(*) n FROM curve_entry_attempts"
+            "SELECT book AS arm, outcome, block_detail, COUNT(*) n FROM curve_entry_attempts"
             " WHERE trade_date = ? GROUP BY book, outcome, block_detail ORDER BY n DESC LIMIT ?",
             (session, TOP_N),
         )

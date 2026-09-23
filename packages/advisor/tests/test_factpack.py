@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import pathlib
 
 import fakes
 import pytest
@@ -41,7 +42,7 @@ def test_the_light_pack_carries_each_modules_day(seeded):
     pack = factpack.build(SESSION, "midday")
 
     meic = pack["paper"]["meic"]
-    assert {"profile": "control", "outcome": "filled", "n": 1} in meic["entry_attempts"]
+    assert {"arm": "control", "outcome": "filled", "n": 1} in meic["entry_attempts"]
     assert {r["block_detail"] for r in meic["top_block_details"]} == {
         "regime_gex_negative",
         "cadence_not_clear",
@@ -1174,3 +1175,64 @@ def test_a_cut_version_1_artifact_thins_exactly_like_the_version_2_one(tmp_home)
     assert from_v1 == from_v2
     assert [a["arm"] for a in from_v1["arms"]] == ["control"]
     assert from_v1["cross_tabs"][0]["arms"][0]["arm"] == "control"
+
+
+def _entry_attempt_blocks(pack: dict) -> dict[str, list]:
+    """Every module's `entry_attempts` in the pack, found by walking it rather than by naming the
+    modules — a hand-kept list would silently stop covering the next module to grow one."""
+    found = {}
+    for module, section in (pack.get("paper") or {}).items():
+        rows = section.get("entry_attempts") if isinstance(section, dict) else None
+        if isinstance(rows, list) and rows:
+            found[module] = rows
+    return found
+
+
+def test_every_modules_entry_attempts_name_the_variant_arm(seeded):
+    """The pack sets six modules side by side, and their ledgers spell the variant three different
+    ways: meic `risk_profile`, pmcc/bwb/curve/calendars `book`, flies `arm`. Before pack_version 2
+    all three reached the model in one document, which asks it to know they are the same thing.
+
+    This covers only the modules the fixture seeds (flies and meic today), which is why the source
+    test below exists as well: it holds for all six whatever the fixture happens to contain.
+    """
+    pack = factpack.build(SESSION, "deep")
+    blocks = _entry_attempt_blocks(pack)
+    assert blocks, "no module reported entry attempts; this test would pass vacuously"
+
+    for module, rows in blocks.items():
+        for row in rows:
+            assert "arm" in row, f"{module} entry_attempts row has no `arm`: {sorted(row)}"
+            leaked = {"book", "risk_profile", "profile"} & set(row)
+            assert not leaked, f"{module} entry_attempts row still carries {sorted(leaked)}"
+
+
+def test_every_entry_attempts_statement_aliases_its_arm_column(seeded):
+    """The source companion to the test above, in the posture this module already uses for pmcc's
+    era pooling: read the statements rather than the output, so the rule holds for the four modules
+    the fixture does not seed.
+
+    Two rules, both driven off the file so a module added later is covered the day its statement is
+    written. No statement may hand the model a raw `book` or `risk_profile`; and every statement
+    whose table HAS an arm column must yield it as `arm`.
+
+    calendars is the one exception and it is not an oversight: `dc_entry_attempts` carries no arm
+    column at all, because a week's double calendar is attempted once and then booked to both arms.
+    It is named here so that the day it grows one, this test fails rather than quietly skipping it.
+    """
+    import re
+
+    src = pathlib.Path(factpack.__file__).read_text(encoding="utf-8")
+    joined = re.sub(r'"\s+"', "", src)  # statements split across adjacent literals
+    stmts = re.findall(r'"(SELECT[^"]*?entry_attempts[^"]*)"', joined)
+    assert len(stmts) >= 6, f"expected a statement per module, found {len(stmts)}"
+
+    ARMLESS = ("dc_entry_attempts",)
+    for stmt in stmts:
+        names = [c.strip().split()[-1] for c in stmt[len("SELECT ") : stmt.index(" FROM ")].split(",")]
+        leaked = {"book", "risk_profile", "profile"} & set(names)
+        assert not leaked, f"hands the model a raw {sorted(leaked)}: {stmt[:90]}"
+        if any(t in stmt for t in ARMLESS):
+            assert "arm" not in names, f"{ARMLESS} grew an arm column; drop it from ARMLESS: {stmt[:90]}"
+            continue
+        assert "arm" in names, f"names no `arm` column: {stmt[:90]}"

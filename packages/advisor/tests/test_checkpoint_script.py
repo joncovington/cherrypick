@@ -198,7 +198,7 @@ def test_dry_run_prints_the_prompt_and_writes_nothing_but_the_pack(home, tmp_pat
     out = _run("--slot", "deep", "--session", SESSION, "--dry-run", tmp_path=tmp_path)["stdout"]
     assert "--- prompt (deep) ---" in out
     assert "read-only context" in out  # the live-facts note reaches the model
-    assert '"pack_version": 1' in out
+    assert '"pack_version": 2' in out
     assert not paths.raw_path(SESSION, "deep").exists()
     assert not paths.checkpoint_path(SESSION, "deep").exists()
     assert not paths.advice_path("meic", NEXT_SESSION).exists()
