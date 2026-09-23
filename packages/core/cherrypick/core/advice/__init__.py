@@ -65,6 +65,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core import config as _cfg
+
 ADVICE_DIR = "advice"
 
 
@@ -296,7 +298,13 @@ def advised_books(decision: dict[str, Any] | None) -> list[dict[str, Any]]:
 
 
 def _legacy_base(decision: dict[str, Any]) -> str:
-    for key in ("base_arm", "base_profile", "base_book", "base_prefix"):
+    """The base arm a pre-`experiments` decision names, under whichever spelling wrote it.
+
+    The list lives in `core.config` now — the same four spellings are read by the console in two
+    more places, and three copies of one alias list in two languages is how they end up in
+    different orders (they already were).
+    """
+    for key in _cfg.BASE_ARM_KEYS:
         if decision.get(key):
             return str(decision[key])
     return "control"

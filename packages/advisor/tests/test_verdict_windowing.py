@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cherrypick.advisor import clock, store, verdicts
 from fakes import MEIC_DDL, insert, make_db
+
+from cherrypick.advisor import clock, store, verdicts
 
 OLD_SESSION = "2026-07-01"  # pre-experiment history that must NOT reach the pair
 SESSION = "2026-08-20"  # the experiment's created_session
