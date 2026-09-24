@@ -293,3 +293,68 @@ def test_settlement_is_not_blocked_by_the_spread_gate(book):
     gates = [r[0] for r in conn.execute("SELECT gate FROM management_events WHERE order_id='T1'")]
     conn.close()
     assert "spread_too_wide" not in gates
+
+
+# --------------------------------------------------------------------------- what settling costs
+def test_settling_costs_five_dollars_per_itm_strike_and_nothing_for_a_worthless_one():
+    """An expired leg is exercised or assigned, not traded: one $5 event per ITM option symbol,
+    however many contracts rest on it, and nothing at all for a leg that expires worthless."""
+    quotes = {"ITM1": {"mid": 5.0}, "ITM2": {"mid": 0.3}, "OTM": {"mid": 0.0}}
+    assert settlement.settlement_fee(["ITM1", "ITM2", "OTM"], quotes) == 10.0
+    assert settlement.settlement_fee(["OTM"], quotes) == 0.0
+    assert settlement.settlement_fee(["ITM1", "ITM1"], quotes) == 5.0  # one symbol, one event
+
+
+def _exit_cost(path):
+    conn = sqlite3.connect(path)
+    value = conn.execute("SELECT exit_cost FROM trades WHERE order_id='T1'").fetchone()[0]
+    conn.close()
+    return value
+
+
+def test_an_expired_fly_pays_its_itm_strike_and_no_closing_stack(book):
+    """Settled at 195, only the short 190 call finishes in the money: $5. Until 2026-09-24 this
+    went through the closing-cost stack as if bought back -- clearing on all four legs, the three
+    worthless ones included, and nothing for the exercise itself. (The fixture's closing stack is
+    stubbed at $1.00, so reaching it at all would show here.)"""
+    config = {"strategies": {}, "management": {}, "tastytrade_costs": {}}
+    paper_loop.manage(config, at("13:00"), phase="manage", execute=True)
+    assert _exit_cost(book) == pytest.approx(5.0)
+
+
+def test_the_settlement_fee_does_not_scale_with_contracts(book):
+    conn = sqlite3.connect(book)
+    conn.execute("UPDATE trades SET quantity = 3 WHERE order_id='T1'")
+    conn.commit()
+    conn.close()
+    config = {"strategies": {}, "management": {}, "tastytrade_costs": {}}
+    paper_loop.manage(config, at("13:00"), phase="manage", execute=True)
+    assert _exit_cost(book) == pytest.approx(5.0)
+
+
+def test_a_calendars_live_back_month_still_pays_the_closing_stack(monkeypatch):
+    """Only the expired half settles by exercise; the back month is traded out."""
+    snap = {
+        "quotes": {
+            occ(FRONT, "C", 195): {"bid": 0.0, "ask": 0.0, "mid": 0.0},
+            occ(FRONT, "P", 185): {"bid": 0.0, "ask": 0.0, "mid": 0.0},
+            occ(BACK, "C", 195): {"bid": 1.0, "ask": 1.2, "mid": 1.1},
+            occ(BACK, "P", 185): {"bid": 1.0, "ask": 1.2, "mid": 1.1},
+        },
+        "settled_legs": [occ(FRONT, "C", 195), occ(FRONT, "P", 185)],
+    }
+    seen, saved = {}, {}
+
+    def exit_costs(order, quotes, quantity, config):
+        seen["legs"] = [one["symbol"] for one in order["order"]["legs"]]
+        return {"total_cost": 1.0, "slippage": 0.2}
+
+    monkeypatch.setattr(paper_loop.costs, "apply_exit_costs", exit_costs)
+    monkeypatch.setattr(
+        paper_loop.db_paper, "cmd_save_close", lambda ns: saved.update(json.loads(ns.data)) or {"ok": False}
+    )
+    paper_loop.close_position(
+        trade(CALENDAR, strategy="double_calendar"), snap, "front_expiry", {}, at("13:00")
+    )
+    assert seen["legs"] == [occ(BACK, "C", 195), occ(BACK, "P", 185)]
+    assert saved["exit_cost"] == pytest.approx(1.0)  # the back month's stack; the OTM front is free

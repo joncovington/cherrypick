@@ -39,6 +39,8 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 
+from cherrypick.core import fees as _fees
+
 from cherrypick.earnings import provider, scanner
 
 
@@ -79,6 +81,21 @@ def settlement_close(symbol: str, expiry: date, config: dict) -> float | None:
     if got != expiry:
         return None
     return float(row["close"])
+
+
+def settlement_fee(expired_symbols, quotes: dict) -> float:
+    """What settling the expired legs costs: $5 per option symbol that finishes IN THE MONEY, and
+    nothing for one that expires worthless -- per strike, never per contract, since the broker
+    charges one exercise/assignment event per symbol (`cherrypick.core.fees.ic_expire_fee`).
+
+    Until 2026-09-24 an expired leg went through the ordinary closing-cost stack as if bought back
+    at intrinsic: clearing and regulatory fees on every expired contract (charged even on an OTM
+    leg, which never transacts) and nothing for the exercise event itself. `quotes` is the settled
+    snapshot's own: an expired leg's mid IS its intrinsic value. The share delivery an assignment
+    starts is not modelled (docs/10-exits.md), so neither are its share-side fees.
+    """
+    itm = sum(1 for sym in set(expired_symbols) if (quotes.get(sym) or {}).get("mid", 0) > 0)
+    return _fees.ic_expire_fee(itm)
 
 
 def split_legs(legs: list[dict], today: date) -> tuple[list[dict], list[dict]]:

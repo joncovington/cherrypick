@@ -377,8 +377,24 @@ def close_position(trade: dict, snap: dict, reason: str, config: dict, now: date
         return {"ok": False, "error": "exit_debit_unavailable"}
 
     quantity = trade.get("quantity") or 1
-    leg_quotes = [snap["quotes"][leg["symbol"]] for leg in legs]
-    exit_costs = costs.apply_exit_costs({"order": {"legs": legs}}, leg_quotes, quantity, config)
+    # A settlement closes its expired legs by exercise, not by trade: $5 per ITM strike and nothing
+    # for a worthless one (`settlement.settlement_fee`). Only the legs still listed -- a calendar's
+    # back month -- are traded out, so only they take the closing-cost stack.
+    settled = set(snap.get("settled_legs") or [])
+    traded = [leg for leg in legs if leg["symbol"] not in settled]
+    leg_quotes = [snap["quotes"][leg["symbol"]] for leg in traded]
+    exit_costs = (
+        costs.apply_exit_costs({"order": {"legs": traded}}, leg_quotes, quantity, config)
+        if traded
+        else {"total_cost": 0.0, "slippage": 0.0}
+    )
+    if settled:
+        exit_costs = {
+            **exit_costs,
+            "total_cost": round(
+                exit_costs["total_cost"] + settlement.settlement_fee(settled, snap["quotes"]), 2
+            ),
+        }
     result = db_paper.cmd_save_close(
         _ns(
             data=json.dumps(
