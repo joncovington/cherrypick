@@ -262,6 +262,7 @@ function readOpenPositions(db: DatabaseHandle): PmccOpenPosition[] {
     positionsTable: "pmcc_positions",
     legsTable: "pmcc_legs",
     marksTable: "pmcc_marks",
+    assignmentsTable: "pmcc_assignments",
   });
   const latestMark = db.prepare<[string], Record<string, unknown>>(
     `SELECT short_tv, spot, marked_at FROM pmcc_marks

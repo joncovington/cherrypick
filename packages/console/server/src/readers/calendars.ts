@@ -292,6 +292,7 @@ function readPositions(db: DatabaseHandle, where: string, params: string[]): Cal
     positionsTable: "dc_positions",
     legsTable: "dc_legs",
     marksTable: "dc_marks",
+    assignmentsTable: "dc_assignments",
   });
   return rows.map((r) => toPosition(r, legs.get(str(r["position_id"]) ?? "") ?? [], pnl));
 }

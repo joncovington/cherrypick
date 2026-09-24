@@ -14,19 +14,22 @@ import { unrealisedByPosition } from "../src/readers/unrealised.js";
 
 function db(rows: {
   positions: Array<[string, string, number | null, number]>;
-  legs: Array<[string, string, string, number | null, string]>;
-  marks: Array<[string, string, number | null, number, number]>;
+  legs: Array<[string, string, string, number | null, string] | [string, string, string, number | null, string, number | null]>;
+  marks: Array<[string, string, number | null, number, number] | [string, string, number | null, number, number, number | null]>;
+  assignments?: Array<[string, string, number, number, string]>;
 }) {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "unreal-")), "l.db");
   const conn = new Database(file);
   conn.exec(`
     CREATE TABLE p (position_id TEXT, status TEXT, fees REAL, quantity INTEGER);
-    CREATE TABLE l (position_id TEXT, leg_role TEXT, action TEXT, entry_mid REAL, status TEXT);
-    CREATE TABLE m (position_id TEXT, leg_role TEXT, mid REAL, usable INTEGER, marked_at REAL);
+    CREATE TABLE l (position_id TEXT, leg_role TEXT, action TEXT, entry_mid REAL, status TEXT, close_value REAL);
+    CREATE TABLE m (position_id TEXT, leg_role TEXT, mid REAL, usable INTEGER, marked_at REAL, spot REAL);
+    CREATE TABLE a (position_id TEXT, direction TEXT, shares INTEGER, basis REAL, status TEXT);
   `);
   for (const r of rows.positions) conn.prepare("INSERT INTO p VALUES (?,?,?,?)").run(...r);
-  for (const r of rows.legs) conn.prepare("INSERT INTO l VALUES (?,?,?,?,?)").run(...r);
-  for (const r of rows.marks) conn.prepare("INSERT INTO m VALUES (?,?,?,?,?)").run(...r);
+  for (const r of rows.legs) conn.prepare("INSERT INTO l VALUES (?,?,?,?,?,?)").run(...r, ...(r.length === 5 ? [null] : []));
+  for (const r of rows.marks) conn.prepare("INSERT INTO m VALUES (?,?,?,?,?,?)").run(...r, ...(r.length === 5 ? [null] : []));
+  for (const r of rows.assignments ?? []) conn.prepare("INSERT INTO a VALUES (?,?,?,?,?)").run(...r);
   return conn;
 }
 
@@ -110,5 +113,49 @@ describe("mark-to-market P&L", () => {
       marks: [["A", "long", 1.5, 1, 1]],
     });
     expect(unrealisedByPosition(conn as never, OPTS).has("A")).toBe(false);
+  });
+
+  it("counts a settled front short at its settlement value, as finalize will (2026-09-24)", () => {
+    // A calendar between Friday's settlement and Monday's disposal: the front short (sold at 2.00)
+    // expired worthless, the back long (bought at 3.00) still marks at 2.50. The front credit is
+    // real money; reading open legs alone showed -50 here instead of +150.
+    const conn = db({
+      positions: [["A", "short_settled", 10, 1]],
+      legs: [
+        ["A", "front", "Sell to Open", 2.0, "settled", 0.0],
+        ["A", "back", "Buy to Open", 3.0, "open"],
+      ],
+      marks: [["A", "back", 2.5, 1, 5, 764.0]],
+    });
+    const out = unrealisedByPosition(conn as never, OPTS).get("A");
+    expect(out?.unrealisedGross).toBe(150);
+    expect(out?.unrealisedNet).toBe(140);
+  });
+
+  it("prices shares still held from an assignment at the position's latest recorded spot", () => {
+    // 2026-09-07's shape: an ITM front short assigned 100 long SPY at 764.20; the position's latest
+    // mark read spot 759.43. The front short settled at its intrinsic, 1.20.
+    const conn = db({
+      positions: [["A", "short_settled", 10, 1]],
+      legs: [
+        ["A", "front", "Sell to Open", 2.0, "settled", 1.2],
+        ["A", "back", "Buy to Open", 3.0, "open"],
+      ],
+      marks: [["A", "back", 3.0, 1, 5, 759.43]],
+      assignments: [["A", "long", 100, 764.2, "open"]],
+    });
+    const out = unrealisedByPosition(conn as never, { ...OPTS, assignmentsTable: "a" }).get("A");
+    // legs: (2.00 - 1.20) + (3.00 - 3.00) = 0.80 -> 80; shares: (759.43 - 764.20) x 100 = -477
+    expect(out?.unrealisedGross).toBe(-397);
+  });
+
+  it("refuses held shares it has no spot to price, rather than counting them as zero", () => {
+    const conn = db({
+      positions: [["A", "open", 0, 1]],
+      legs: [["A", "short", "Sell to Open", 1.0, "settled", 2.0]],
+      marks: [],
+      assignments: [["A", "short", 100, 50.0, "open"]],
+    });
+    expect(unrealisedByPosition(conn as never, { ...OPTS, assignmentsTable: "a" }).get("A")?.unrealisedGross).toBeNull();
   });
 });

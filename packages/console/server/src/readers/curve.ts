@@ -12,6 +12,7 @@ import type {
 import type { ConsoleConfig } from "../config.js";
 import { num, obj, readJson, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
+import { NO_UNREALISED, unrealisedByPosition } from "./unrealised.js";
 
 /**
  * curve's read layer.
@@ -145,10 +146,16 @@ function exposureByPosition(db: DatabaseHandle): Map<string, { exposed: number; 
  * Mark-to-market P&L for a credit spread whose marks carry a whole-structure `close_cost`.
  *
  * The same convention `readers/unrealised.ts` implements per-leg for pmcc and calendars, reached by
- * a shorter route: `close_cost` is the SIGNED net to unwind every leg at mid (negative for a credit
- * structure you must buy back), so the credit received plus that is the position's mark. Kept here
- * rather than in the shared helper because the input differs -- curve's mark table precomputes what
- * the others leave per-leg -- and folding two different inputs behind one name would hide that.
+ * a shorter route: `close_cost` is what buying the spread back costs at mid (`engine.spread_close_cost`,
+ * `short_mid - long_mid`, POSITIVE for a credit spread), so the mark is the credit received LESS it --
+ * `analytics.excursions`' own `entry_credit - close_cost`. Until 2026-09-24 this added the two, the
+ * bwb sign convention on curve's number: every open spread read 2 x close_cost x 100 x qty too high,
+ * and a losing one read as a growing profit (2026-09-02 control's last mark showed +$26 on a real
+ * +$10). Kept here rather than in the shared helper because the input differs -- curve's mark table
+ * precomputes what the others leave per-leg.
+ *
+ * Only for a position with an open leg. Once both have settled -- an ITM expiry waiting on its share
+ * disposal -- `readers/unrealised.ts` prices it the modules' way instead of this stale mark.
  *
  * `fees` is costs INCURRED so far; no settlement fee is in it because settlement has not happened.
  */
@@ -162,7 +169,7 @@ function creditUnrealised(
   if (credit === null || closeCost === null) {
     return { unrealisedGross: null, unrealisedNet: null, feesToDate: fees };
   }
-  const gross = Math.round((credit + closeCost) * 100 * qty * 100) / 100;
+  const gross = Math.round((credit - closeCost) * 100 * qty * 100) / 100;
   return {
     unrealisedGross: gross,
     unrealisedNet: fees === null ? null : Math.round((gross - fees) * 100) / 100,
@@ -172,6 +179,27 @@ function creditUnrealised(
 
 function readOpenPositions(db: DatabaseHandle): CurveOpenPosition[] {
   const exposure = exposureByPosition(db);
+  // No legs table (an older ledger or a fixture): every position reads as having open legs, the
+  // pre-2026-09-24 behaviour, rather than the whole payload falling to withReadOnlyDb's fallback.
+  const haveLegs = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'curve_legs'").get() !== undefined;
+  const openLegs = new Map<string, number>();
+  for (const r of haveLegs
+    ? db
+        .prepare<[], Record<string, unknown>>(
+          "SELECT position_id, COUNT(*) AS n FROM curve_legs WHERE status = 'open' GROUP BY position_id",
+        )
+        .all()
+    : []) {
+    openLegs.set(str(r["position_id"]) ?? "", Number(r["n"]));
+  }
+  // A position with no open leg is past expiry and waiting on share disposal: its last close_cost
+  // is a pre-expiry price for legs that no longer exist. Priced from settled legs plus held shares.
+  const settledPnl = !haveLegs ? new Map() : unrealisedByPosition(db, {
+    positionsTable: "curve_positions",
+    legsTable: "curve_legs",
+    marksTable: "curve_marks",
+    assignmentsTable: "curve_assignments",
+  });
   const latestMark = db.prepare<[string], Record<string, unknown>>(
     `SELECT close_cost, spot, marked_at FROM curve_marks
       WHERE position_id = ? AND close_cost IS NOT NULL AND usable = 1
@@ -182,7 +210,8 @@ function readOpenPositions(db: DatabaseHandle): CurveOpenPosition[] {
     .all()
     .map((p) => {
       const positionId = str(p["position_id"]) ?? "";
-      const mark = latestMark.get(positionId);
+      const legsOpen = !haveLegs || (openLegs.get(positionId) ?? 0) > 0;
+      const mark = legsOpen ? latestMark.get(positionId) : undefined;
       const exp = exposure.get(positionId);
       return {
         positionId,
@@ -204,7 +233,9 @@ function readOpenPositions(db: DatabaseHandle): CurveOpenPosition[] {
         currentCloseCost: mark === undefined ? null : num(mark["close_cost"]),
         currentSpot: mark === undefined ? null : num(mark["spot"]),
         entrySession: str(p["entry_session"]) ?? "",
-        ...creditUnrealised(p, mark === undefined ? null : num(mark["close_cost"])),
+        ...(legsOpen
+          ? creditUnrealised(p, mark === undefined ? null : num(mark["close_cost"]))
+          : (settledPnl.get(positionId) ?? { ...NO_UNREALISED, feesToDate: num(p["fees"]) })),
       };
     });
 }
