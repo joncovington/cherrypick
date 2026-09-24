@@ -204,7 +204,7 @@ def test_a_session_that_has_not_happened_is_not_counted(home, conn):
 
 CAL_DDL = """
 CREATE TABLE dc_positions (
-    position_id TEXT PRIMARY KEY, book TEXT, status TEXT, advice_params TEXT
+    position_id TEXT PRIMARY KEY, arm TEXT, status TEXT, advice_params TEXT
 );
 """
 
@@ -247,7 +247,7 @@ def test_advice_frozen_on_an_open_position_is_carried_not_dropped(home, monkeypa
         [
             {
                 "position_id": "p1",
-                "book": "advised:control",
+                "arm": "advised:control",
                 "status": "open",
                 "advice_params": json.dumps({"time_exit": "fri_noon"}),
             },
@@ -275,7 +275,7 @@ def test_changed_advice_is_not_carried_by_the_old_stamp(home):
         [
             {
                 "position_id": "p1",
-                "book": "advised:control",
+                "arm": "advised:control",
                 "status": "open",
                 "advice_params": json.dumps({"time_exit": "fri_noon"}),
             },
@@ -294,7 +294,7 @@ def test_an_undated_closed_position_carries_nothing(home):
         [
             {
                 "position_id": "p1",
-                "book": "advised:control",
+                "arm": "advised:control",
                 "status": "closed",
                 "advice_params": json.dumps({"time_exit": "fri_noon"}),
             },
@@ -313,7 +313,7 @@ def test_a_namespaced_artifact_param_matches_the_leaf_it_is_stamped_as(home, mon
         [
             {
                 "position_id": "p1",
-                "book": "advised:control",
+                "arm": "advised:control",
                 "status": "open",
                 "advice_params": json.dumps({"profit_target_pct": 0.35}),
             },
@@ -330,7 +330,7 @@ def test_a_partially_stamped_artifact_is_not_carried(home):
         [
             {
                 "position_id": "p1",
-                "book": "advised:control",
+                "arm": "advised:control",
                 "status": "open",
                 "advice_params": json.dumps({"time_exit": "fri_noon"}),
             },
@@ -348,7 +348,7 @@ def test_a_reject_all_artifact_is_never_carried(home):
         [
             {
                 "position_id": "p1",
-                "book": "advised:control",
+                "arm": "advised:control",
                 "status": "open",
                 "advice_params": json.dumps({"time_exit": "fri_noon"}),
             },
@@ -368,7 +368,7 @@ def test_carry_is_never_claimed_for_a_past_session(home):
         [
             {
                 "position_id": "p1",
-                "book": "advised:control",
+                "arm": "advised:control",
                 "status": "open",
                 "advice_params": json.dumps({"time_exit": "fri_noon"}),
             },
@@ -389,7 +389,7 @@ def test_carry_is_never_claimed_for_a_past_session(home):
 
 DATED_DDL = """
 CREATE TABLE dc_positions (
-    position_id TEXT PRIMARY KEY, book TEXT, status TEXT, advice_params TEXT, closed_session TEXT
+    position_id TEXT PRIMARY KEY, arm TEXT, status TEXT, advice_params TEXT, closed_session TEXT
 );
 """
 
@@ -409,7 +409,7 @@ def _dated_ledger(home, ddl, table, rows):
 def _closed_row(session, params, **over):
     row = {
         "position_id": "p1",
-        "book": "advised:control",
+        "arm": "advised:control",
         "status": "closed",
         "advice_params": json.dumps(params),
         "closed_session": session,

@@ -621,7 +621,7 @@ def test_bwb_pack_carves_non_base_books_out_of_the_contrast(tmp_home):
     rows as the contrast silently breaking (#101). The carve-out is derived from the rows."""
     bwb = fakes.make_db(
         paths.module_data_dir("bwb") / "paper_trades.db",
-        "CREATE TABLE bwb_positions (position_id TEXT, book TEXT, symbol TEXT, entry_session TEXT,"
+        "CREATE TABLE bwb_positions (position_id TEXT, arm TEXT, symbol TEXT, entry_session TEXT,"
         " body_strike REAL, near_strike REAL, far_strike REAL, expiration TEXT, status TEXT,"
         " entry_credit REAL, armed_at TEXT, addon_fired_at TEXT, gross_pnl REAL, fees REAL,"
         " exit_reason TEXT);",
@@ -630,9 +630,9 @@ def test_bwb_pack_carves_non_base_books_out_of_the_contrast(tmp_home):
         bwb,
         "bwb_positions",
         [
-            {"position_id": "p1", "book": "control", "symbol": "SPX", "status": "open"},
-            {"position_id": "p2", "book": "advised:control", "symbol": "SPX", "status": "open"},
-            {"position_id": "p3", "book": "wall", "symbol": "SPX", "status": "open"},
+            {"position_id": "p1", "arm": "control", "symbol": "SPX", "status": "open"},
+            {"position_id": "p2", "arm": "advised:control", "symbol": "SPX", "status": "open"},
+            {"position_id": "p3", "arm": "wall", "symbol": "SPX", "status": "open"},
         ],
     )
     out = factpack._bwb(SESSION)

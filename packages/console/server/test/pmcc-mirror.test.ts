@@ -28,7 +28,7 @@ const LEDGER = path.join(os.homedir(), ".cherrypick", "data", "pmcc", "paper_tra
 
 interface Headline {
   ok: boolean;
-  headline: { books: Record<string, unknown>; open_positions: number };
+  headline: { arms: Record<string, unknown>; open_positions: number };
 }
 
 function moduleHeadline(): Headline | null {
@@ -57,21 +57,21 @@ describe.skipIf(!available)("the console's PMCC mirror agrees with the module it
     expect(mine.openCount).toBe(theirs!.headline.open_positions);
   });
 
-  it("reports the same set of books", () => {
+  it("reports the same set of arms", () => {
     const mine = readPmcc(loadConfig());
     const theirs = moduleHeadline();
-    expect(new Set(mine.books.map((b) => b.book))).toEqual(new Set(Object.keys(theirs!.headline.books)));
+    expect(new Set(mine.arms.map((b) => b.arm))).toEqual(new Set(Object.keys(theirs!.headline.arms)));
   });
 
-  it("agrees on each book's net, to the cent", () => {
+  it("agrees on each arm's net, to the cent", () => {
     // The number a reader acts on. A mirror that drifts here is worse than no mirror: it is a
     // second opinion wearing the module's authority.
     const mine = readPmcc(loadConfig());
-    const theirs = moduleHeadline()!.headline.books as Record<string, { net?: number }>;
-    for (const book of mine.books) {
-      const other = theirs[book.book];
+    const theirs = moduleHeadline()!.headline.arms as Record<string, { net?: number }>;
+    for (const arm of mine.arms) {
+      const other = theirs[arm.arm];
       if (other?.net === undefined) continue;
-      expect(book.net ?? 0).toBeCloseTo(other.net, 2);
+      expect(arm.net ?? 0).toBeCloseTo(other.net, 2);
     }
   });
 });
