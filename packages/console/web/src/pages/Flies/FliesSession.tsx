@@ -195,7 +195,7 @@ export function FliesSession({
         foot={
           cuts === null
             ? "the module writes this artifact nightly"
-            : `era since ${cuts.books[0]?.eraStart ?? "—"}${regimeStale !== null ? " · stale" : ""} · thin below ${String(cuts.thinBelowSessions)} sessions`
+            : `era since ${cuts.arms[0]?.eraStart ?? "—"}${regimeStale !== null ? " · stale" : ""} · thin below ${String(cuts.thinBelowSessions)} sessions`
         }
       >
         {regime.data === undefined ? (
