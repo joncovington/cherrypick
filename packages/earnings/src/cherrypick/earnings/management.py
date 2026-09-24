@@ -15,7 +15,8 @@ about — the ones that need the position's whole history rather than one tick:
 
   * the PEAD gate: a loser closes the first morning, a winner may carry (see `_HOLD_NOTE`),
   * the session cap: three sessions and out, whatever the verdict,
-  * the pin guard: no short strike left near spot in the last hour of its expiration day.
+  * the pin guard: no short strike left near spot in the last hour of its expiration day,
+  * the expiry close: nothing held through any leg's expiration (see `_expiry_close_due`).
 
 The research behind each is in docs/10-exits.md, per strategy, with the ones that are house rules
 rather than published findings marked as such.
@@ -32,7 +33,7 @@ from datetime import time as _time
 # `management.ET` rather than deriving their own.
 from cherrypick.core.clock import ET  # noqa: F401
 
-from cherrypick.earnings import scanner
+from cherrypick.earnings import provider, scanner
 from cherrypick.earnings.strategies import (
     atm_calendar,
     broken_wing_butterfly,
@@ -92,6 +93,11 @@ POLICY_DEFAULTS = {
     # on a comfortably-cleared profit target, which would otherwise have ridden to next-day
     # settlement instead of taking the exit the position had already earned.
     "max_leg_spread_abs_zero_bid": 0.20,
+    # Every position with a leg expiring today is closed from this time (ET), whatever its P&L
+    # or any other rule. These are physically settled single names: an ITM leg that expires is an
+    # exercise or an assignment -- shares, overnight gap risk, and fees -- so the house rule is to
+    # trade out, never to settle. Matches MEIC's physical-settlement force close.
+    "expiry_close_time": "15:30",
     # Pin risk: a short strike sitting on spot into the close of its expiration day.
     "pin_guard_dollars": 1.00,
     "pin_guard_window_minutes": 60,
@@ -216,6 +222,26 @@ def _pin_risk(trade: dict, legs: list[dict], spot: float | None, policy: dict, n
     return any(abs(strike - spot) <= policy["pin_guard_dollars"] for strike in short_strikes(legs))
 
 
+def _expiry_close_due(legs: list[dict], policy: dict, now: datetime) -> list[str]:
+    """The legs expiring TODAY, once the expiry-close time has come -- empty otherwise.
+
+    The rule this enforces is that nothing physically settled is held through expiration: the
+    position is traded out, every one, whatever its P&L. It exists because the alternative
+    happened. 71 positions entered 2026-08-25..27 rode to their 2026-08-28 expiry with their exits
+    already decided -- profit targets, stops, pin guards and session caps, all refused by the
+    spread gate or the execution window, until the quotes were gone and nothing could close them.
+    Read off each leg's own symbol, not the row's `expiration`: a calendar's legs do not share one.
+    """
+    try:
+        hour, minute = (int(x) for x in str(policy["expiry_close_time"]).split(":"))
+    except (KeyError, TypeError, ValueError):
+        hour, minute = 15, 30
+    if now.timetz().replace(tzinfo=None) < _time(hour, minute):
+        return []
+    today = now.date()
+    return [leg["symbol"] for leg in legs if provider.expiry_from_occ(leg.get("symbol") or "") == today]
+
+
 def _strategy_verdict(trade: dict, quotes: dict, config: dict, *, open_legs, is_first_check_of_day, now):
     """Run the strategy's own evaluate_position, whatever shape its signature takes.
 
@@ -246,8 +272,9 @@ def evaluate(
 ) -> Decision:
     """What should happen to this position, given a priced snapshot and the clock.
 
-    Order of precedence, and why: the pin guard first because it is about an outcome nothing else
-    prices; then the strategy's own verdict, which owns every threshold; then the two rules that
+    Order of precedence, and why: the expiry close first, because holding a physically settled
+    position through expiration is not an outcome any other rule may trade against; then the pin
+    guard, because it is about an outcome nothing else prices; then the strategy's own verdict, which owns every threshold; then the two rules that
     need more than one tick to see -- the session cap and the PEAD gate -- which only ever turn a
     hold into a close, never the reverse.
     """
@@ -262,6 +289,10 @@ def evaluate(
     policy = policy_for(strategy, config)
     legs = json.loads(trade.get("legs_json") or "[]")
     quotes = snapshot["quotes"]
+
+    expiring = _expiry_close_due(legs, policy, now)
+    if expiring:
+        return Decision("close_all", "expiry_close", {"expiring": expiring})
 
     if _pin_risk(trade, legs, snapshot.get("spot"), policy, now):
         return Decision("close_all", "pin_risk", {"spot": snapshot.get("spot")})
@@ -298,8 +329,19 @@ def evaluate(
     return Decision("hold", "working", {"pnl": pnl, "exit_debit": exit_debit})
 
 
-def execution_gate(snapshot: dict, config: dict, strategy: str, *, now: datetime) -> str | None:
+# Closes that must not wait for a better market. The expiry close's whole point is to be flat
+# before the bell; a spread too wide to take a profit at is still a spread to pay, and refusing it
+# is exactly how the 2026-08-28 positions ended up settling instead.
+MUST_EXIT = ("expiry_close",)
+
+
+def execution_gate(
+    snapshot: dict, config: dict, strategy: str, *, now: datetime, reason: str | None = None
+) -> str | None:
     """Why this mark may not be acted on, or None if it may.
+
+    A `reason` in MUST_EXIT is not held back by the spread gate: the wider market is paid and
+    recorded as slippage, because the alternative is an exercise or an assignment.
 
     Separate from `evaluate` so a blocked verdict is still a verdict: it gets recorded with the gate
     that held it, and the next tick reconsiders. Folding this into the decision would make an exit
@@ -317,7 +359,7 @@ def execution_gate(snapshot: dict, config: dict, strategy: str, *, now: datetime
     if now.timetz().replace(tzinfo=None) < _time(hour, minute):
         return "before_exec_window"
 
-    if _spread_blocks(snapshot, policy):
+    if reason not in MUST_EXIT and _spread_blocks(snapshot, policy):
         return "spread_too_wide"
     return None
 

@@ -70,7 +70,9 @@ harder class of bug.
 ## What closes a position
 
 Checked in this order. Settlement comes before everything because it is the one case with no market
-to consult; the pin guard is next because it is about an outcome nothing else prices; the strategy's
+to consult; the expiry close is next because holding a physically settled position through its
+expiration is not an outcome any other rule may trade against; the pin guard follows because it is
+about an outcome nothing else prices; the strategy's
 own verdict follows because it owns every threshold; the last two only ever turn a *hold* into a
 *close*, never the reverse.
 
@@ -78,17 +80,26 @@ own verdict follows because it owns every threshold; the last two only ever turn
    the position is resolved at **intrinsic against the expiration day's own settlement close**,
    read from the local `stocks.ohlcv` history rather than a quote. Reason `expired` when every leg
    has gone, `front_expiry` when only a calendar's front month has and the back is closed at its own
-   real market. See *Settlement* below.
-1. **Pin guard** — any **short** strike within `pin_guard_dollars` (1.00) of spot inside the last
+   real market. See *Settlement* below. Since 2026-09-24 reaching this step is a **failed exit**
+   (the settle event carries `failed_exit`): step 1 should have traded the position out.
+1. **Expiry close** — from `expiry_close_time` (15:30 ET) on the expiration day of **any** leg,
+   every position closes, whatever its P&L and whatever else is true. These are physically settled
+   single names: an ITM leg that expires is an exercise or an assignment — shares, an overnight gap
+   and fees — so the house rule is to trade out, never to settle. Read off each leg's own symbol, so
+   a calendar whose front month expires today closes too. Neither the spread gate nor the per-tick
+   execution cap holds it back (see below). Reason `expiry_close`. It exists because the alternative
+   happened: 71 positions entered 2026-08-25..27 rode to their 2026-08-28 expiry with exits already
+   decided and refused by the gates, until the quotes were gone.
+2. **Pin guard** — any **short** strike within `pin_guard_dollars` (1.00) of spot inside the last
    `pin_guard_window_minutes` (60) of its expiration day. Fires on *proximity*, not on being in the
    money: assignment is decided by the settlement print, which has not happened yet. Reason `pin_risk`.
-2. **The strategy's own `evaluate_position`** — profit target, stop, leg-delta stops, and (for the
+3. **The strategy's own `evaluate_position`** — profit target, stop, leg-delta stops, and (for the
    calendars) the front-expiration time stop. Thresholds live in `strategies.<name>` and are listed
    below. The management layer never restates them.
-3. **Session cap** — an overnight structure closes after `hold_winners_max_days` (3) sessions
+4. **Session cap** — an overnight structure closes after `hold_winners_max_days` (3) sessions
    whatever the verdict. Counted in **trading** sessions, so a Friday entry still open on Monday has
    been held one session, not three, and a weekend cannot spend the budget. Reason `max_hold`.
-4. **PEAD gate** — on the first check of a day, a position at or below breakeven closes. Holding a
+5. **PEAD gate** — on the first check of a day, a position at or below breakeven closes. Holding a
    winner past the first morning is worth roughly +1.4pp on average as the residual crush drains over
    three to five sessions; holding a **loser** fights post-earnings drift, which continues rather than
    reverting. Reason `pead_loser`; disable per strategy with `close_losers_first_morning: false`.
@@ -107,6 +118,10 @@ verdict with `executed = 0` and the gate that held it, and the next tick reconsi
 | `tick_execution_cap` | more than `max_executions_per_tick` (3) closes already taken; deferred a minute |
 | `close_failed` | the close itself failed; `close_attempts` is bumped and it becomes `stranded` at 2 |
 
+**The expiry close is not held back by `spread_too_wide` or `tick_execution_cap`.** A market too
+wide to take a profit at is still one to pay on the way out of an expiration; the wider fill is
+recorded as slippage, because the alternative is an exercise or an assignment.
+
 **Settlement is not gated by any of these**, and that is the point of it being step 0. An expired
 contract quotes a zero bid against a stale ask, which is a 200% spread against a 0.35 policy, so a
 settlement routed through `spread_too_wide` would be refused on every tick forever.
@@ -120,7 +135,7 @@ Every close records one, on the trade itself (`trades.exit_reason`). Before this
 `scan_log`, joinable back to a trade by nothing better than (date, symbol, strategy) — which cannot
 identify a position held across several sessions at all.
 
-`profit_target` · `stop_loss` · `pead_loser` · `max_hold` · `pin_risk` · `leg_stop_delta` ·
+`profit_target` · `stop_loss` · `pead_loser` · `max_hold` · `expiry_close` · `pin_risk` · `leg_stop_delta` ·
 `time_exit` · `iv_crush_backstop` · `close_window` · `expired` · `front_expiry` ·
 `legacy_next_morning` (every pre-cutover exit).
 

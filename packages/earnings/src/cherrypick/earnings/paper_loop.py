@@ -472,7 +472,10 @@ def manage(config: dict, now: datetime, *, phase: str, execute: bool) -> dict:
                 )
                 continue
             # No execution cap and no exec window: settling is bookkeeping about something that has
-            # already happened, not an order competing for the broker's attention.
+            # already happened, not an order competing for the broker's attention. It is also a
+            # FAILED exit for any leg that reached its expiration: `management._expiry_close_due`
+            # trades every position out from 15:30 on expiration day, so a settlement means that
+            # close never happened (no quotes, or the loop was down). The event says so.
             result = close_position(trade, settled, settle_reason, config, now)
             if not result.get("ok"):
                 _record_event(
@@ -495,7 +498,11 @@ def manage(config: dict, now: datetime, *, phase: str, execute: bool) -> dict:
                 now,
                 phase,
                 executed=True,
-                detail={"source": "settlement", "settled_legs": settled.get("settled_legs")},
+                detail={
+                    "source": "settlement",
+                    "settled_legs": settled.get("settled_legs"),
+                    "failed_exit": settle_reason == "expired",
+                },
                 mark_id=mark_id,
             )
             continue
@@ -525,11 +532,16 @@ def manage(config: dict, now: datetime, *, phase: str, execute: bool) -> dict:
         gate = (
             None
             if not decision.closes
-            else management.execution_gate(snap, config, trade.get("strategy") or "", now=now)
+            else management.execution_gate(
+                snap, config, trade.get("strategy") or "", now=now, reason=decision.reason
+            )
         )
         if decision.closes and not execute:
             gate = gate or "open_window"
-        if decision.closes and actions >= max_executions:
+        # The per-tick cap spreads discretionary exits across ticks; an expiry close is not
+        # discretionary, and a book with many positions expiring the same day must not queue
+        # past the bell behind it.
+        if decision.closes and actions >= max_executions and decision.reason not in management.MUST_EXIT:
             gate = gate or "tick_execution_cap"
 
         if not decision.closes or gate:

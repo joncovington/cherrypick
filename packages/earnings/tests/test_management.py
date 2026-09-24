@@ -384,3 +384,59 @@ def test_the_unrealized_mark_uses_the_same_arithmetic_as_the_realised_close():
     """A mark that disagreed with the P&L eventually recorded would make every excursion column a
     different measurement from the result it is supposed to explain."""
     assert management.unrealized_pnl({"entry_credit": 5.0}, 3.5) == pytest.approx(150.0)
+
+
+# --------------------------------------------------------------------------- the expiry close
+def test_every_position_is_closed_at_1530_on_its_expiration_day():
+    """Physically settled single names are traded out, never settled: from 15:30 on a leg's
+    expiration day the position closes whatever its P&L -- here a winner short of its target, far from spot,
+    that every other rule would carry."""
+    decision = evaluate(trade(), snapshot(4.50, spot=240.0), now=at("15:30", "2026-08-21"))
+    assert decision.action == "close_all" and decision.reason == "expiry_close"
+    assert len(decision.detail["expiring"]) == 4
+
+
+def test_the_expiry_close_waits_for_its_time():
+    assert evaluate(trade(), snapshot(4.50, spot=240.0), now=at("15:29", "2026-08-21")).action == "hold"
+
+
+def test_the_expiry_close_does_not_fire_on_any_other_day():
+    assert evaluate(trade(), snapshot(4.50, spot=240.0), now=at("15:30", "2026-08-20")).action == "hold"
+
+
+def test_the_expiry_close_reads_each_legs_own_expiry():
+    """A calendar's row names its FRONT month while its back legs outlive it; the rule reads the
+    symbols, so a front month expiring today closes the calendar even with the back still listed."""
+    legs = [
+        {"symbol": "AAPL  260821C00190000", "action": "Sell to Open", "quantity": 1},
+        {"symbol": "AAPL  260918C00190000", "action": "Buy to Open", "quantity": 1},
+    ]
+    t = trade(strategy="double_calendar", legs=legs)
+    decision = management.evaluate(
+        t,
+        {"ok": True, "quotes": {}, "spot": 190.0, "max_spread_pct": 0.0, "source": "stream"},
+        CONFIG,
+        now=at("15:45", "2026-08-21"),
+        sessions_held=1,
+        open_legs=[],
+    )
+    assert decision.reason == "expiry_close"
+    assert decision.detail["expiring"] == ["AAPL  260821C00190000"]
+
+
+def test_the_expiry_close_is_not_held_back_by_a_wide_spread():
+    """The 2026-08-28 incident: exits decided and refused by the spread gate until the quotes were
+    gone. A must-exit close pays the wide market instead; a discretionary one still waits for it."""
+    wide = snapshot(0.50, spread=0.90)
+    now = at("15:30", "2026-08-21")
+    assert (
+        management.execution_gate(wide, CONFIG, "iron_fly", now=now, reason="profit_target")
+        == "spread_too_wide"
+    )
+    assert management.execution_gate(wide, CONFIG, "iron_fly", now=now, reason="expiry_close") is None
+
+
+def test_the_expiry_close_time_is_configurable():
+    config = {**CONFIG, "management": {"expiry_close_time": "15:00"}}
+    decision = evaluate(trade(), snapshot(4.50, spot=240.0), now=at("15:00", "2026-08-21"), config=config)
+    assert decision.reason == "expiry_close"
