@@ -35,7 +35,9 @@ export interface SessionAnalytics {
     riskFree: number;
     completionPct: number | null;
     fees: number;
+    completed: number;
     maxPossibleLoss: number;
+    sessionPeakWorst: { worst: number; at: string } | null;
   };
   byArm: Array<{ arm: string; trades: number; net: number }>;
   feeDrag: Array<{ arm: string; dragPct: number | null }>;
@@ -83,6 +85,23 @@ export function FliesSession({
   }
   const topRefusal = [...refusals.entries()].sort((x, y) => y[1] - x[1])[0];
 
+  // After the live book settles, "worst case at expiry" would read $0 over a day that carried real
+  // risk. The server hands back the session's peak until the next session opens; open positions
+  // always win, because while anything is open the live figure is the one that matters.
+  const heldPeak = today !== undefined && today.open === 0 ? today.sessionPeakWorst : null;
+  const worstValue = heldPeak !== null ? heldPeak.worst : today?.maxPossibleLoss;
+
+  // Completed, open and stranded partition `entered`; naming only the open count read "0 still open
+  // of 4 entered" beside 75% on a settled day, which says nothing about where the other 25% went.
+  const completionFoot = (() => {
+    if (today === undefined) return "—";
+    const stranded = today.positions - today.completed - today.open;
+    const parts = [`${String(today.completed)} of ${String(today.positions)} completed`];
+    if (today.open > 0) parts.push(`${String(today.open)} still open`);
+    if (stranded > 0) parts.push(`${String(stranded)} settled uncompleted`);
+    return parts.join(" · ");
+  })();
+
   const cuts = regime.data?.status === "ok" ? regime.data.cuts : null;
   const crossTab = cuts?.crossTabs[0];
   const regimeStale = regime.data?.status === "ok" ? regime.data.stale : null;
@@ -112,11 +131,7 @@ export function FliesSession({
       <StatTile
         label="completion"
         value={today?.completionPct != null ? `${today.completionPct.toFixed(0)}%` : null}
-        foot={
-          today === undefined
-            ? "—"
-            : `${String(today.open)} still open of ${String(today.positions)} entered`
-        }
+        foot={completionFoot}
       >
         <Bullet
           min={0}
@@ -128,13 +143,19 @@ export function FliesSession({
 
       <StatTile
         label="worst case at expiry"
-        value={today !== undefined ? fmtMoney(today.maxPossibleLoss) : null}
-        tone={today !== undefined && today.maxPossibleLoss < 0 ? "neg" : "dim"}
-        title="every open position's own worst case, net of fees and the worst-case assignment fee — zero means nothing open can still lose"
+        value={worstValue !== undefined ? fmtMoney(worstValue) : null}
+        tone={worstValue !== undefined && worstValue < 0 ? "neg" : "dim"}
+        title={
+          heldPeak !== null
+            ? "the live book is settled: this is the largest worst case it carried during the session, from the loop's own per-tick exposure — shown until the next session opens"
+            : "every open position's own worst case, net of fees and the worst-case assignment fee — zero means nothing open can still lose"
+        }
         foot={
           today === undefined
             ? "—"
-            : `${String(today.riskFree)} of ${String(today.positions)} positions are risk-free`
+            : heldPeak !== null
+              ? `session peak at ${heldPeak.at.slice(11, 16)} ET · settled · until the next open`
+              : `${String(today.riskFree)} of ${String(today.positions)} positions are risk-free`
         }
       />
 

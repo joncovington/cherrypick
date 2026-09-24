@@ -1678,11 +1678,60 @@ export interface FliesAnalytics {
     riskFree: number;
     completionPct: number | null;
     fees: number;
+    /** Positions whose completing leg filled -- the numerator of `completionPct`. */
+    completed: number;
     /** Every OPEN position own worst case, summed. Zero means nothing open can still lose. */
     maxPossibleLoss: number;
+    /**
+     * LIVE only: the largest worst case at expiry the pilot's book carried at any tick of this
+     * session, from the loop's own `fly_live_marks.open_margin`. Held after settlement until the
+     * next session opens, then null -- see `sessionPeakWorst`.
+     */
+    sessionPeakWorst: { worst: number; at: string } | null;
   };
   byArm: Array<{ arm: string; trades: number; net: number; winPct: number | null; avg: number | null; profitFactor: number | null }>;
   feeDrag: Array<{ arm: string; gross: number; fees: number; net: number; dragPct: number | null }>;
+}
+
+/**
+ * The live pilot's largest worst case at expiry on `tradeDate`, held until the next session opens.
+ *
+ * The figure is the loop's own: `fly_live_marks.open_margin` is the tick's open worst-case
+ * exposure, the number the buying-power gate reads, so this page and the gate cannot disagree.
+ * (Checked against a replay of `fly.book_floor` over the rewound positions on 2026-09-24: both
+ * $283.44.) The tile it feeds summed only OPEN positions, so it read $0 the moment the book settled
+ * while the page was still showing that session.
+ *
+ * "Until the next session opens" needs a calendar, and this package keeps none of its own. The
+ * paper loop runs every trading session and writes its first `fly_snapshots` row at 09:30 ET, so a
+ * paper row dated after `tradeDate` at or past 09:30 IS the next open having happened -- weekends
+ * and holidays included, with nothing re-derived. No paper ledger means that cannot be known, and
+ * the figure stays up, labelled with its time.
+ */
+function sessionPeakWorst(
+  config: ConsoleConfig,
+  db: DatabaseHandle,
+  tradeDate: string,
+): { worst: number; at: string } | null {
+  const hasMarks = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='fly_live_marks'").get();
+  if (hasMarks === undefined) return null;
+  const peak = db
+    .prepare<[string], { at: string; margin: number | null }>(
+      `SELECT iteration_ts AS at, MAX(open_margin) AS margin FROM fly_live_marks
+        WHERE trade_date = ? GROUP BY iteration_ts ORDER BY margin DESC, iteration_ts ASC LIMIT 1`,
+    )
+    .get(tradeDate);
+  if (peak === undefined || peak.margin === null || !(peak.margin > 0)) return null;
+  const nextOpened = withReadOnlyDb<boolean>(path.join(config.paths.fliesDir, "paper_trades.db"), false, (paper) => {
+    const row = paper
+      .prepare<[string], { n: number }>(
+        `SELECT COUNT(*) AS n FROM fly_snapshots
+          WHERE trade_date > ? AND substr(iteration_ts, 12, 5) >= '09:30'`,
+      )
+      .get(tradeDate);
+    return (row?.n ?? 0) > 0;
+  });
+  return nextOpened ? null : { worst: -peak.margin, at: peak.at };
 }
 
 export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, filter: FliesFilter): FliesAnalytics {
@@ -1690,7 +1739,18 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
   const dbPath = path.join(config.paths.fliesDir, file);
   const empty: FliesAnalytics = {
     mode,
-    today: { tradeDate: null, netPnl: 0, positions: 0, open: 0, riskFree: 0, completionPct: null, fees: 0, maxPossibleLoss: 0 },
+    today: {
+      tradeDate: null,
+      netPnl: 0,
+      positions: 0,
+      open: 0,
+      riskFree: 0,
+      completionPct: null,
+      fees: 0,
+      completed: 0,
+      maxPossibleLoss: 0,
+      sessionPeakWorst: null,
+    },
     byArm: [],
     feeDrag: [],
   };
@@ -1743,7 +1803,9 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
         riskFree: Number(t["risk_free"] ?? 0),
         completionPct: positions > 0 ? (Number(t["completed"] ?? 0) / positions) * 100 : null,
         fees: Number(t["fees"] ?? 0),
+        completed: Number(t["completed"] ?? 0),
         maxPossibleLoss,
+        sessionPeakWorst: mode === "live" ? sessionPeakWorst(config, db, tradeDate) : null,
       };
     }
 
