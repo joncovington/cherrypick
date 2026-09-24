@@ -161,7 +161,7 @@ describe("readModulePerformance", () => {
     fs.mkdirSync(config.paths.curveDir, { recursive: true });
     const db = new Database(path.join(config.paths.curveDir, "paper_trades.db"));
     db.exec(
-      "CREATE TABLE curve_positions (position_id TEXT, book TEXT, status TEXT, exit_reason TEXT, gross_pnl REAL, fees REAL)",
+      "CREATE TABLE curve_positions (position_id TEXT, arm TEXT, status TEXT, exit_reason TEXT, gross_pnl REAL, fees REAL)",
     );
     db.prepare(
       "INSERT INTO curve_positions VALUES ('p1','control','closed','profit_take',40.0,2.0)",

@@ -191,7 +191,7 @@ export function readCalendarsPolicies(now = Date.now()): PoliciesResult {
         const row = obj(m);
         return {
           weekOf: str(row["week_of"]) ?? "",
-          book: str(row["book"]) ?? "",
+          book: str(row["arm"] ?? row["book"]) ?? "",
           derivedNet: numOrNull(row["derived_net"]),
           realNet: numOrNull(row["real_net"]),
           diff: numOrNull(row["diff"]),

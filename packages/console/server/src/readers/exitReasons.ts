@@ -66,7 +66,7 @@ const SPECS: Partial<Record<ExitReasonsModule, Spec>> = {
   calendars: {
     dir: (config) => config.paths.calendarsDir,
     positionsTable: "dc_positions",
-    tagColumn: "book",
+    tagColumn: "arm",
     closedWhere: "status = 'closed'",
     netExpr: "gross_pnl - fees",
     events: { table: "dc_management_events", positionKey: "position_id", eventKey: "position_id" },
@@ -74,7 +74,7 @@ const SPECS: Partial<Record<ExitReasonsModule, Spec>> = {
   pmcc: {
     dir: (config) => config.paths.pmccDir,
     positionsTable: "pmcc_positions",
-    tagColumn: "book",
+    tagColumn: "arm",
     closedWhere: "status = 'closed'",
     netExpr: "gross_pnl - fees",
     events: { table: "pmcc_management_events", positionKey: "position_id", eventKey: "position_id" },
@@ -82,7 +82,7 @@ const SPECS: Partial<Record<ExitReasonsModule, Spec>> = {
   curve: {
     dir: (config) => config.paths.curveDir,
     positionsTable: "curve_positions",
-    tagColumn: "book",
+    tagColumn: "arm",
     closedWhere: "status = 'closed'",
     netExpr: "gross_pnl - fees",
     events: { table: "curve_management_events", positionKey: "position_id", eventKey: "position_id" },
@@ -90,7 +90,7 @@ const SPECS: Partial<Record<ExitReasonsModule, Spec>> = {
   bwb: {
     dir: (config) => config.paths.bwbDir,
     positionsTable: "bwb_positions",
-    tagColumn: "book",
+    tagColumn: "arm",
     closedWhere: "status = 'closed'",
     netExpr: "gross_pnl - fees",
     events: { table: "bwb_management_events", positionKey: "position_id", eventKey: "position_id" },

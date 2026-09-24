@@ -52,10 +52,10 @@ describe("readExitReasons", () => {
     fs.mkdirSync(path.join(tmp, "curve"), { recursive: true });
     const db = new Database(path.join(tmp, "curve", "paper_trades.db"));
     db.exec(
-      "CREATE TABLE curve_positions (position_id TEXT, book TEXT, status TEXT, exit_reason TEXT, gross_pnl REAL, fees REAL)",
+      "CREATE TABLE curve_positions (position_id TEXT, arm TEXT, status TEXT, exit_reason TEXT, gross_pnl REAL, fees REAL)",
     );
     const ins = db.prepare(
-      "INSERT INTO curve_positions (position_id, book, status, exit_reason, gross_pnl, fees) VALUES (?,?,?,?,?,?)",
+      "INSERT INTO curve_positions (position_id, arm, status, exit_reason, gross_pnl, fees) VALUES (?,?,?,?,?,?)",
     );
     ins.run("p1", "control", "closed", "profit_take", 40.0, 2.0);
     ins.run("p2", "control", "closed", "profit_take", 60.0, 2.0);
@@ -78,7 +78,7 @@ describe("readExitReasons", () => {
     fs.mkdirSync(path.join(tmp, "curve"), { recursive: true });
     const db = new Database(path.join(tmp, "curve", "paper_trades.db"));
     db.exec(
-      "CREATE TABLE curve_positions (position_id TEXT, book TEXT, status TEXT, exit_reason TEXT, gross_pnl REAL, fees REAL)",
+      "CREATE TABLE curve_positions (position_id TEXT, arm TEXT, status TEXT, exit_reason TEXT, gross_pnl REAL, fees REAL)",
     );
     db.exec(
       "CREATE TABLE curve_management_events (position_id TEXT, action TEXT, reason TEXT, executed INTEGER, gate TEXT)",

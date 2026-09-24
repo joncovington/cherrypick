@@ -62,22 +62,26 @@ export function readDecisions(config: ConsoleConfig, module: DecisionsModule, da
   if (tradeDate === null) return empty;
 
   return withReadOnlyDb<DecisionsPayload>(dbPath, empty, (db) => {
+    // `SELECT *` rather than naming the variant column: it was `book` until the 2026-09-23 rename and
+    // is `arm` after it, and a query naming the missing one throws -- which withReadOnlyDb turns into
+    // the empty payload, so this card read "no decisions" for every session after the rename.
     const rows = db
-      .prepare<[string], Record<string, unknown>>(
-        `SELECT book, symbol, reason, accepted, occurrences, detail
-           FROM ${spec.table}
-          WHERE trade_date = ?
-          ORDER BY accepted ASC, occurrences DESC, book ASC`,
-      )
+      .prepare<[string], Record<string, unknown>>(`SELECT * FROM ${spec.table} WHERE trade_date = ?`)
       .all(tradeDate)
       .map((r) => ({
-        book: str(r["book"]) ?? "",
+        book: str(r["arm"] ?? r["book"]) ?? "",
         symbol: str(r["symbol"]) ?? "",
         reason: str(r["reason"]) ?? "",
         accepted: Number(r["accepted"] ?? 0) === 1,
         occurrences: Math.round(numLoose(r["occurrences"]) ?? 1),
         detail: str(r["detail"]),
-      }));
+      }))
+      .sort(
+        (a, b) =>
+          Number(a.accepted) - Number(b.accepted) ||
+          b.occurrences - a.occurrences ||
+          (a.book < b.book ? -1 : a.book > b.book ? 1 : 0),
+      );
     return { module, tradeDate, rows };
   });
 }

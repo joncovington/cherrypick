@@ -48,7 +48,7 @@ function ledgerModuleNormalize(idKey: string, tagKey: string): Spec["normalize"]
     const rows = Array.isArray(excursions["positions"]) ? excursions["positions"] : [];
     const positions: ExcursionPosition[] = rows.map((r: Record<string, unknown>) => ({
       id: String(r[idKey] ?? ""),
-      tag: String(r[tagKey] ?? ""),
+      tag: String(r[tagKey] ?? r["book"] ?? ""), // `book` until the 2026-09-23 rename
       symbol: typeof r["symbol"] === "string" ? r["symbol"] : "",
       mae: typeof r["mae"] === "number" ? r["mae"] : 0,
       mfe: typeof r["mfe"] === "number" ? r["mfe"] : 0,
@@ -65,15 +65,15 @@ function ledgerModuleNormalize(idKey: string, tagKey: string): Spec["normalize"]
 const SPECS: Partial<Record<PerformanceModuleId, Spec>> = {
   curve: {
     argv: (dbPath) => ["-m", "cherrypick.curve.cli", "--db", dbPath, "excursions"],
-    normalize: ledgerModuleNormalize("position_id", "book"),
+    normalize: ledgerModuleNormalize("position_id", "arm"),
   },
   calendars: {
     argv: (dbPath) => ["-m", "cherrypick.calendars.cli", "--db", dbPath, "excursions"],
-    normalize: ledgerModuleNormalize("position_id", "book"),
+    normalize: ledgerModuleNormalize("position_id", "arm"),
   },
   pmcc: {
     argv: (dbPath) => ["-m", "cherrypick.pmcc.cli", "--db", dbPath, "excursions"],
-    normalize: ledgerModuleNormalize("position_id", "book"),
+    normalize: ledgerModuleNormalize("position_id", "arm"),
   },
   earnings: {
     // No --db flag on this module's CLI -- it resolves the paper ledger from the default home the
