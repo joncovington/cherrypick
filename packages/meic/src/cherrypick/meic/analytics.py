@@ -573,6 +573,31 @@ def breakeven_scorecard(conn, start=None, end=None, symbol=None, era=CURRENT_ERA
 # --------------------------------------------------------------------------- stop-policy counterfactual
 
 
+def _stop_rows(conn, where: str, params: list) -> list[dict]:
+    """ic_trades rows for the stop surfaces, each force-closed row carrying its real per-side exit
+    (`put_exit_price` / `call_exit_price`, from `ic_spread_legs`). A force-close is not a stop, so
+    it happens under every policy: `stop_policies.derive` values the sides a policy did not stop at
+    that real fill rather than as held to settlement."""
+    rows = [dict(r) for r in conn.execute(f"SELECT * FROM ic_trades WHERE {where}", params).fetchall()]
+    forced = [r["ic_order_id"] for r in rows if r.get("status") == "force_closed"]
+    if forced:
+        exits: dict[tuple, float] = {}
+        for i in range(0, len(forced), 500):
+            chunk = forced[i : i + 500]
+            marks = ",".join("?" * len(chunk))
+            for leg in conn.execute(
+                f"SELECT ic_order_id, side, exit_price FROM ic_spread_legs "
+                f"WHERE status = 'force_closed' AND ic_order_id IN ({marks})",
+                chunk,
+            ).fetchall():
+                exits[(leg[0], leg[1])] = leg[2]
+        for r in rows:
+            if r.get("status") == "force_closed":
+                r["put_exit_price"] = exits.get((r["ic_order_id"], "put"))
+                r["call_exit_price"] = exits.get((r["ic_order_id"], "call"))
+    return rows
+
+
 def stop_counterfactual(
     conn, policy_name: str, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="control"
 ) -> dict:
@@ -586,15 +611,13 @@ def stop_counterfactual(
     from cherrypick.meic import stop_policies as _sp
 
     where, params = _period_clause(start, end, arm, symbol, era)
-    rows = conn.execute(f"SELECT * FROM ic_trades WHERE {where}", params).fetchall()
+    rows = _stop_rows(conn, where, params)
+    fees = _paper.stop_fees()
 
     actual_pnl = actual_fees = derived_pnl = derived_fees = 0.0
     put_fired = call_fired = derivable = 0
-    for sqlite_row in rows:
-        row = dict(sqlite_row)
-        out = _sp.derive(
-            row, policy_name, fee_one_side=_paper.close_fees_one_side, fee_full_ic=_paper.close_fees_full_ic
-        )
+    for row in rows:
+        out = _sp.derive(row, policy_name, fees=fees)
         if not out["derivable"]:
             continue
         derivable += 1
@@ -605,7 +628,7 @@ def stop_counterfactual(
         put_fired += int(out["put_fired"])
         call_fired += int(out["call_fired"])
 
-    sessions = len({dict(r)["trade_date"] for r in rows})
+    sessions = len({r["trade_date"] for r in rows})
     return {
         "policy": policy_name,
         "arm": arm,
@@ -624,18 +647,17 @@ def validate_stop_derivation(conn, start=None, end=None, era=CURRENT_ERA, tolera
     """The derivation's own validation, wired to the live ledger — see
     stop_policies.validate_against_control's docstring for the reasoning. Run this before trusting
     stop_counterfactual's numbers for a new range; a non-ok result means the derivation (or the
-    underlying recorded fields) has drifted from what control's real mechanism produced."""
+    underlying recorded fields) has drifted from what the stopping arms' real mechanism produced.
+
+    Over EVERY arm in the range: the validation itself picks the ones that really stopped. The
+    advisor era has none (its `control` never stops), so the check is answerable there only with
+    `era="ALL"`, which reaches the sample era's width arms -- and says so via `arms`."""
     from cherrypick.meic import paper as _paper
     from cherrypick.meic import stop_policies as _sp
 
-    where, params = _period_clause(start, end, "control", None, era)
-    rows = [dict(r) for r in conn.execute(f"SELECT * FROM ic_trades WHERE {where}", params).fetchall()]
-    return _sp.validate_against_control(
-        rows,
-        fee_one_side=_paper.close_fees_one_side,
-        fee_full_ic=_paper.close_fees_full_ic,
-        tolerance=tolerance,
-    )
+    where, params = _period_clause(start, end, None, None, era)
+    rows = _stop_rows(conn, where, params)
+    return _sp.validate_against_control(rows, fees=_paper.stop_fees(), tolerance=tolerance)
 
 
 # --------------------------------------------------------------------------- the stop curve
@@ -666,7 +688,8 @@ def stop_grid(conn, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="con
 
     ratios = tuple(ratios or _sp.GRID_RATIOS)
     where, params = _period_clause(start, end, arm, symbol, era)
-    rows = [dict(r) for r in conn.execute(f"SELECT * FROM ic_trades WHERE {where}", params).fetchall()]
+    rows = _stop_rows(conn, where, params)
+    fees = _paper.stop_fees()
 
     points = {
         r: {
@@ -683,12 +706,7 @@ def stop_grid(conn, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="con
     }
     for row in rows:
         capital = _sp.capital_at_risk(row)
-        scored = _sp.score_grid(
-            row,
-            fee_one_side=_paper.close_fees_one_side,
-            fee_full_ic=_paper.close_fees_full_ic,
-            ratios=ratios,
-        )
+        scored = _sp.score_grid(row, fees=fees, ratios=ratios)
         for ratio, out in scored.items():
             bucket = points[ratio]
             if out["censored"]:
@@ -732,9 +750,10 @@ def stop_grid(conn, start=None, end=None, symbol=None, era=CURRENT_ERA, arm="con
         "ratios": list(ratios),
         "curve": curve,
         "_note": (
-            "Exact for the policy an arm really ran; a MAX-COST PROXY for any other threshold "
-            "(stop_policies' module docstring measures ~$2-8/side replay error). Censored points "
-            "are excluded from every total rather than counted as not-fired."
+            "Exact for the policy an arm really ran; any other fired side is priced AT ITS TRIGGER, "
+            "optimistic by the gap-through real stops pay (validate_stop_derivation's "
+            "fill_over_trigger). Every point carries the real book's fees, opening fee included. "
+            "Censored points are excluded from every total rather than counted as not-fired."
         ),
     }
 
@@ -753,16 +772,15 @@ def stop_session_rollup(
     from cherrypick.meic import stop_policies as _sp
 
     where, params = _period_clause(start, end, arm, symbol, era)
-    rows = [dict(r) for r in conn.execute(f"SELECT * FROM ic_trades WHERE {where}", params).fetchall()]
+    rows = _stop_rows(conn, where, params)
+    fees = _paper.stop_fees()
 
     by_session: dict[str, dict] = {}
     for row in rows:
         session = row.get("trade_date")
         if not session:
             continue
-        shadow = _sp.shadow_settle(
-            row, fee_one_side=_paper.close_fees_one_side, fee_full_ic=_paper.close_fees_full_ic
-        )
+        shadow = _sp.shadow_settle(row, fees=fees)
         bucket = by_session.setdefault(
             session,
             {
@@ -785,11 +803,9 @@ def stop_session_rollup(
         bucket["derivable"] += 1
         bucket["realized_net"] += shadow["realized_net"]
         bucket["shadow_net"] += shadow["shadow_settle_net"]
-        # A held-to-settlement side pays no closing fee, so the shadow book's fees are whatever
-        # stop-none itself incurs -- which is 0 when neither side fires.
-        none_out = _sp.derive(
-            row, "stop-none", fee_one_side=_paper.close_fees_one_side, fee_full_ic=_paper.close_fees_full_ic
-        )
+        # The shadow book's fees are whatever stop-none itself pays: the opening fee, a force
+        # close's closing fee, and the settlement fee on ITM strikes held to expiry.
+        none_out = _sp.derive(row, "stop-none", fees=fees)
         bucket["shadow_fees"] += none_out["fee"] or 0.0
 
     out = []

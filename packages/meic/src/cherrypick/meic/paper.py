@@ -103,8 +103,65 @@ def close_fees_one_side(symbol: str, quantity: int = 1) -> float:
     return _fees.ic_close_fee(symbol, quantity, legs=2, sell_legs=1, ndigits=4)
 
 
-def expire_fees() -> float:
-    return _fees.ic_expire_fee()
+def settlement_itm_strikes(
+    put_strike, call_strike, wing_width, underlying, *, put_open: bool, call_open: bool
+) -> int | None:
+    """How many of an IC's option symbols settle IN THE MONEY at `underlying`, counting only the
+    sides still held to settlement. None when the count cannot be known (a strike, the width or the
+    price is missing) -- never a guessed 0, which would be the free settlement this fixes.
+
+    One per ITM strike, however many contracts rest on it: the broker settles a symbol as one
+    event (`cherrypick.core.fees.ASSIGNMENT_FEE_PER_SETTLEMENT`, confirmed against real
+    transactions). A put side's short (K) and long (K - wing) are ITM below each strike, a call
+    side's short (K) and long (K + wing) above; at exactly the strike a leg has no intrinsic value
+    and settles for nothing.
+    """
+    if underlying is None or wing_width is None:
+        return None
+    count = 0
+    if put_open:
+        if put_strike is None:
+            return None
+        count += int(underlying < put_strike) + int(underlying < put_strike - wing_width)
+    if call_open:
+        if call_strike is None:
+            return None
+        count += int(underlying > call_strike) + int(underlying > call_strike + wing_width)
+    return count
+
+
+def expire_fees(itm_strikes: int = 0) -> float:
+    """What cash settlement costs: $5 per ITM strike (`settlement_itm_strikes`), never per contract.
+
+    It charged nothing until 2026-09-24 ("expiration is not a transaction"), which was true for an
+    OTM leg and wrong for an ITM one: SPX/XSP cash settlement is an exercise/assignment event the
+    broker charges for, and every sibling module (flies, bwb, calendars, curve, pmcc) charged it.
+    2,379 ITM settlements in the paper ledger went uncharged, $11,895."""
+    return _fees.ic_expire_fee(itm_strikes)
+
+
+def stop_fees():
+    """The fee schedule `stop_policies` charges a derived book: the same four charges the real book
+    pays, so a derived net and a real net are the same quantity."""
+    from cherrypick.meic import stop_policies as _sp
+
+    def expire_side(row: dict, side: str, underlying) -> float | None:
+        n = settlement_itm_strikes(
+            row.get("put_strike"),
+            row.get("call_strike"),
+            row.get("wing_width"),
+            underlying,
+            put_open=side == "put",
+            call_open=side == "call",
+        )
+        return None if n is None else expire_fees(n)
+
+    return _sp.Fees(
+        open=open_fees,
+        one_side=close_fees_one_side,
+        full_ic=close_fees_full_ic,
+        expire_side=expire_side,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1836,8 +1893,19 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
 
     if action == "expire":
         # Cash-settled 'left to expire': settle each still-open side at its intrinsic value
-        # (already capped at the wing width). No fees — expiration is not a transaction.
+        # (already capped at the wing width), and pay $5 per ITM strike among the sides still held
+        # -- see `expire_fees`. A price-less decision (a hand-built one) charges nothing rather than
+        # guessing; `evaluate_open_trade` never settles without a price.
         existing_pnl = trade.get("pnl") or 0
+        itm_strikes = settlement_itm_strikes(
+            trade.get("put_strike"),
+            trade.get("call_strike"),
+            trade.get("wing_width"),
+            decision.get("settle_underlying"),
+            put_open=bool(decision["put_open"]),
+            call_open=bool(decision["call_open"]),
+        )
+        settlement_fee = expire_fees(itm_strikes or 0)
         delta_pnl = 0
         if decision["put_open"]:
             put_pnl = round((trade["put_credit"] - decision["put_exit_price"]) * mult, 2)
@@ -1895,6 +1963,7 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
                 "exit_time": now,
                 "exit_reason": "stopped+expired_settlement" if was_stopped else "expired_settlement",
                 "pnl": existing_pnl + delta_pnl,
+                "fees": (trade.get("fees") or 0) + settlement_fee,
                 # Recorded for BOTH sides, including any already stopped — this is the counterfactual.
                 # For a stopped side, settle_value < its stop cost means the stop paid more than holding
                 # would have, which is the question the stop-rule debate actually turns on.
@@ -2102,7 +2171,7 @@ def main():
             "open": open_fees,
             "close_full": close_fees_full_ic,
             "close_side": close_fees_one_side,
-            "expire": lambda s, q: expire_fees(),
+            "expire": lambda s, q: expire_fees(),  # per ITM strike: `settlement_itm_strikes`
         }[args.action]
         fee = fn(args.symbol, args.quantity)
         print(json.dumps({"ok": True, "symbol": args.symbol, "action": args.action, "fee": fee}))

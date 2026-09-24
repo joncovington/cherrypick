@@ -60,8 +60,26 @@ def test_close_fees_one_side_is_roughly_half_full_ic():
     assert side == pytest.approx(full / 2, abs=0.02)
 
 
-def test_expire_fees_are_zero():
+def test_expire_fees_are_five_dollars_per_itm_strike():
+    """Cash settlement charges $5 per ITM strike (one settlement event per option symbol), and
+    nothing when every leg finishes out of the money. It charged nothing at all until 2026-09-24."""
     assert paper.expire_fees() == 0.0
+    assert paper.expire_fees(1) == 5.0
+    assert paper.expire_fees(3) == 15.0
+
+
+def test_itm_strikes_count_each_strike_of_the_held_sides_once():
+    # 7480/7470 put side, 7520/7530 call side (wing 10).
+    count = paper.settlement_itm_strikes
+    assert count(7480, 7520, 10, 7500, put_open=True, call_open=True) == 0  # between the shorts
+    assert count(7480, 7520, 10, 7475, put_open=True, call_open=True) == 1  # short put only
+    assert count(7480, 7520, 10, 7460, put_open=True, call_open=True) == 2  # through both put strikes
+    assert count(7480, 7520, 10, 7535, put_open=True, call_open=True) == 2  # through both call strikes
+    assert count(7480, 7520, 10, 7480, put_open=True, call_open=True) == 0  # AT the strike: no intrinsic
+    # A side already stopped is not held to settlement, so its strikes cannot settle.
+    assert count(7480, 7520, 10, 7535, put_open=True, call_open=False) == 0
+    # Unknowable is None, never a guessed zero.
+    assert count(7480, 7520, 10, None, put_open=True, call_open=True) is None
 
 
 def test_fees_scale_with_quantity():
@@ -2756,3 +2774,79 @@ def test_union_widths_includes_a_scalar_profile_width():
         "advised:control": {"wing_width_points": 10},
     }
     assert paper.union_widths_for_symbol("SPX", base, profiles) == [5, 10]
+
+
+def test_an_itm_settlement_books_five_dollars_per_strike_not_per_contract(paper_db_path):
+    """The write path end to end. Two contracts settling through both call strikes are two
+    settlement events, $10 -- not $20. Recorded P&L is unchanged: the fee lands in `fees` only."""
+    _insert_paper_trade(
+        paper_db_path,
+        ic_order_id="ITM-1",
+        symbol="SPX",
+        status="open",
+        quantity=2,
+        put_strike=7480.0,
+        call_strike=7520.0,
+        wing_width=10.0,
+        net_credit=0.58,
+        put_credit=0.30,
+        call_credit=0.28,
+        pnl=None,
+        fees=6.89,
+    )
+    trade = {**_expiring_trade(), "ic_order_id": "ITM-1", "fees": 6.89, "pnl": None}
+    decision = paper.evaluate_open_trade(
+        trade,
+        {},
+        _params(MODERATE),
+        force_close=False,
+        underlying_price=7535.0,
+        is_cash_settled=True,
+        settle=True,
+    )
+    assert decision["action"] == "expire"
+    paper._apply_exit_decision(trade, decision, "SPX", paper_db_path)
+
+    import sqlite3
+
+    conn = sqlite3.connect(paper_db_path)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT fees, pnl FROM ic_trades WHERE ic_order_id = 'ITM-1'").fetchone()
+    conn.close()
+    assert row["fees"] == pytest.approx(6.89 + 10.0)
+    assert row["pnl"] == pytest.approx((0.30 - 0.0) * 100 + (0.28 - 10.0) * 100)
+
+
+def test_an_otm_settlement_still_costs_nothing(paper_db_path):
+    _insert_paper_trade(
+        paper_db_path,
+        ic_order_id="OTM-1",
+        symbol="SPX",
+        status="open",
+        put_strike=7480.0,
+        call_strike=7520.0,
+        wing_width=10.0,
+        net_credit=0.58,
+        put_credit=0.30,
+        call_credit=0.28,
+        pnl=None,
+        fees=6.89,
+    )
+    trade = {**_expiring_trade(), "ic_order_id": "OTM-1", "fees": 6.89, "pnl": None}
+    decision = paper.evaluate_open_trade(
+        trade,
+        {},
+        _params(MODERATE),
+        force_close=False,
+        underlying_price=7500.0,
+        is_cash_settled=True,
+        settle=True,
+    )
+    paper._apply_exit_decision(trade, decision, "SPX", paper_db_path)
+
+    import sqlite3
+
+    conn = sqlite3.connect(paper_db_path)
+    fees = conn.execute("SELECT fees FROM ic_trades WHERE ic_order_id = 'OTM-1'").fetchone()[0]
+    conn.close()
+    assert fees == pytest.approx(6.89)

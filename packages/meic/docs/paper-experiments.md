@@ -95,11 +95,14 @@ position cost** and with exact pairing (same entries, same strikes, same credit,
 | `strike-touch` | stop only on an actual spot breach of the short strike | strongest per-dollar support in the tracked sample — most stops fired on sides that were never breached |
 
 This is only valid because paper has no market impact and positions are independent, and it is
-**validated, not assumed**: `analytics.validate_stop_derivation` reconstructs `control`'s real
-0.95×net mechanism from `open`'s recorded fields and must reproduce `control`'s realized P&L within
-fill noise (confirmed exact — zero discrepancy — against 17 real production `control` rows). If a
-future change makes that validation fail, every number under "Stop-policy table" in the EOD report
-is void until it's fixed.
+**validated, not assumed**: `analytics.validate_stop_derivation` re-derives every arm that really
+stopped, at the ratio each row ran, and must reproduce its realized P&L within fill noise
+(2026-09-24: 4,817 of 4,817 real stops across 14 arms, maximum difference $0.00). It was written
+against `control` when `control` was the stopping book, and after the 2026-08-21 redefinition made
+`control` the never-stopping substrate it validated nothing (4,678 of 6,043 rows "mismatched");
+it now finds the stopping arms from the rows themselves. If a future change makes that validation
+fail, every number under "Stop-policy table" in the EOD report is void until it's fixed. What the
+derivation prices and charges is set out in `packages/meic/CLAUDE.md` ("reworked 2026-09-24").
 
 ### Corrections this redesign made to earlier assumptions
 

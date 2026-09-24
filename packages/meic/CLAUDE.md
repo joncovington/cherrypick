@@ -285,10 +285,22 @@ which is the opposite conclusion. `stop_policies.censored_above` returns the rat
 stopped row can say nothing, and every censored point is reported as `censored` and excluded from
 the totals rather than summed as a non-fire. `open` runs with `per_side_stop_management: false`, so
 its paths run to settlement and censor nothing — which is what makes it the sweep's home.
-Everything here remains the documented **max-cost proxy** for any threshold other than the one an
-arm really ran (~$2–8/side replay error), and `analytics.validate_stop_derivation` is what to run
-before trusting a range: it re-derives control's REAL mechanism from control's own paths and checks
-it against control's recorded P&L.
+**What a derived stop is priced at, and charged (reworked 2026-09-24).** A side whose real stop
+crossed first fills at its real stop cost -- exact. Any other fired side is priced **at its
+trigger**, which is optimistic by the gap-through real stops pay (median 6% past the trigger, p90
+24%, measured over 3,902 real stops and reported as `fill_over_trigger`). Until that date it was
+priced at the side's running MAXIMUM -- the worst the side ever got, on average 2.1x credit on the
+never-stopping control -- which penalised every stop policy there by ~$1.3M and answered "what if
+we stopped at the worst moment". Every derived trade is charged the four fees the real book pays
+(opening fee, each closing fee, $5 per ITM strike held to settlement; `stop_policies.Fees`, built by
+`paper.stop_fees()`); the opening fee was missing, which flipped width-5's answer. A force-closed
+trade is valued at its real force-close fill (`ic_spread_legs`) on every side the policy did not
+stop -- a force-close happens under every policy. Costs are compared at the 4-decimal precision
+they are recorded to, or a stop recorded a rounding unit under its trigger reads as never fired.
+`analytics.validate_stop_derivation` is what to run before trusting a range: it re-derives every
+arm that REALLY stopped (never a hard-coded `control`, which since 2026-08-21 never stops) at the
+ratio each row ran, and must reproduce its recorded P&L -- 4,817 of 4,817 real stops, to the cent.
+The advisor era has no stopping arm, so it answers there only with `era="ALL"`.
 
 **Max FAVOURABLE excursion is not recorded and reads `None`, deliberately.** Only the adverse
 running maximum is stored, and the stream cache keeps no quote history to reconstruct the other

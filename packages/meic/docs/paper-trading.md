@@ -57,9 +57,13 @@ Paper P&L is net of the **exact tastytrade fee schedule** (`paper.open_fees`,
 - **Active close** (per-side stop / force-close): no commission, but clearing + ORF +
   exchange fee + TAF still apply on the legs being closed. A per-side stop closes 2 legs; a
   full-IC close closes 4. (MEIC has no profit-target close.)
-- **Expired / settled:** no fees at all — expiration is not a transaction.
+- **Expired / settled:** $5 per ITM strike among the sides held to settlement, never per
+  contract (the broker settles each option symbol as one event); an OTM leg costs nothing.
+  Charged nothing at all until 2026-09-24 ("expiration is not a transaction"), which was right
+  for an OTM leg and wrong for an ITM one -- 2,379 ITM settlements went uncharged, $11,895.
 
-This means a stopped IC correctly pays open+close costs and an expired IC pays open-only,
+This means a stopped IC correctly pays open+close costs and an expired IC pays open plus its ITM
+settlement,
 which is what makes narrow-width/low-credit setups (e.g. XSP) show realistic — sometimes
 negative — net P&L instead of an optimistic flat-average estimate.
 

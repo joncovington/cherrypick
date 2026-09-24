@@ -401,6 +401,7 @@ def test_stop_counterfactual_runs_against_the_substrate_stream(conn):
         call_max_cost=2.0,
         put_settle_value=0.0,
         call_settle_value=0.0,
+        settle_underlying=7500.0,
         pnl=180.0,
         fees=0.0,
     )
@@ -411,24 +412,44 @@ def test_stop_counterfactual_runs_against_the_substrate_stream(conn):
     assert out["arm"] == "control"
 
 
-def test_validate_stop_derivation_wired_to_control(conn):
+def test_validate_stop_derivation_checks_the_arms_that_really_stopped(conn):
+    """Over every arm in range, keeping the ones that really stopped. `control` recorded a 0.95
+    trigger and ran to settlement without one, so it is not what the derivation is checked on."""
     thresh = 0.95 * 1.8
     _insert(
         conn,
         ic_order_id="1",
-        risk_profile="control",
+        risk_profile="width-5",
         status="stopped",
         put_credit=0.9,
         call_credit=0.9,
         net_credit=1.8,
+        stop_trigger_current=0.95,
+        put_stop_cost=thresh,
         put_max_cost=thresh,
         call_max_cost=0.3,
         put_settle_value=None,
         call_settle_value=0.0,
+        settle_underlying=7500.0,
         pnl=round((0.9 - thresh) * 100 + (0.9 - 0.0) * 100, 2),
         fees=4.49,
     )
+    _insert(
+        conn,
+        ic_order_id="2",
+        risk_profile="control",
+        status="expired",
+        stop_trigger_current=0.95,
+        put_max_cost=2.5,
+        call_max_cost=0.3,
+        put_settle_value=0.0,
+        call_settle_value=0.0,
+        settle_underlying=7500.0,
+        pnl=180.0,
+        fees=0.0,
+    )
     out = analytics.validate_stop_derivation(conn)
+    assert out["arms"] == ["width-5"]
     assert out["compared"] == 1
     assert out["ok"] is True
 
@@ -634,6 +655,7 @@ def test_stop_grid_scores_the_whole_curve_from_one_recorded_path(conn):
         call_max_cost=0.2,  # 1.71 / 1.8 = exactly 0.95x
         put_settle_value=2.0,
         call_settle_value=0.0,
+        settle_underlying=7448.0,
         pnl=-20.0,
         fees=0.0,
     )
@@ -669,6 +691,7 @@ def test_stop_grid_reports_censored_points_instead_of_folding_them_into_totals(c
         call_max_cost=0.1,  # stopped at 1.0x net credit
         put_settle_value=0.0,
         call_settle_value=0.0,
+        settle_underlying=7500.0,
         pnl=-90.0,
         fees=4.49,
     )
@@ -692,8 +715,9 @@ def test_stop_session_rollup_names_what_the_stop_cost_per_session(conn):
         call_max_cost=0.1,
         put_settle_value=0.0,
         call_settle_value=0.0,
+        settle_underlying=7500.0,
         pnl=180.0,
-        fees=0.0,
+        fees=6.8866,
     )
     _insert(
         conn,
@@ -705,14 +729,17 @@ def test_stop_session_rollup_names_what_the_stop_cost_per_session(conn):
         call_max_cost=0.2,
         put_settle_value=0.0,
         call_settle_value=0.0,
+        settle_underlying=7500.0,
         pnl=180.0,
-        fees=0.0,
+        fees=6.8866,
     )
     rows = analytics.stop_session_rollup(conn)
     assert [r["session"] for r in rows] == ["2026-08-13", "2026-08-14"]
     for r in rows:
-        # `open` never stops, so realized and shadow are the same book and the stop cost nothing.
+        # control never stops, so realized and shadow are the same book and the stop cost nothing
+        # -- which, with real fees carrying the opening fee, it used to report as $6.89 a trade.
         assert r["stop_cost"] == 0.0
+        assert r["fee_delta"] == 0.0
         assert r["shadow_pnl_without_stop"] == r["realized_pnl_with_stop"]
 
 
