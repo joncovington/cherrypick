@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * Where a dense table lives, now that the frame holds visualizations.
@@ -16,6 +17,15 @@ import { useEffect, useId, useRef, type ReactNode } from "react";
  *
  * No animation: motion in this console is being designed as its own piece of work, and the frame
  * starts from none rather than from a habit.
+ *
+ * **Portalled to `document.body`, and it disables everything BESIDE itself, never above it.** Until
+ * 2026-09-24 it rendered inline and set `inert` on `closest(".mf")` -- the module frame it was
+ * rendered inside -- so it disabled itself: every sheet drew normally and ignored every click,
+ * scroll and Tab, and only Escape (listened for on `document`) still worked. Now it sits beside the
+ * page, marks each OTHER top-level element inert (the shell, and a lightbox if one is open), and
+ * only then takes focus, so focus lands inside it and the Tab loop can hold it. The rule for any
+ * overlay here: never make an ancestor of the dialog inert. `pnpm ui-check --route <r> --sheets`
+ * checks it in a real browser; a static render cannot see `inert` or focus.
  */
 export function DetailSheet({
   open,
@@ -29,20 +39,32 @@ export function DetailSheet({
   children: ReactNode;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<Element | null>(null);
   const headingId = useId();
 
   useEffect(() => {
     if (!open || typeof document === "undefined") return;
     openerRef.current = document.activeElement;
-    dialogRef.current?.focus();
-    // The frame's own body must not scroll behind the sheet -- two scrollbars, one of which moves
-    // content the reader cannot see, is the usual way a modal loses people.
-    const frame = dialogRef.current?.closest(".mf") ?? null;
-    frame?.setAttribute("inert", "");
+    // Nothing behind the sheet may take a click, a scroll or focus -- two scrollbars, one of which
+    // moves content the reader cannot see, is the usual way a modal loses people. Only elements
+    // this sheet disables are restored; one already inert (the shell under an open lightbox)
+    // belongs to whoever set it.
+    const host = backdropRef.current;
+    const disabled: Element[] = [];
+    for (const el of Array.from(document.body.children)) {
+      if (host === null || el === host || el.contains(host) || el.hasAttribute("inert")) continue;
+      el.setAttribute("inert", "");
+      el.setAttribute("aria-hidden", "true");
+      disabled.push(el);
+    }
     document.body.classList.add("sheet-open");
+    dialogRef.current?.focus();
     return () => {
-      frame?.removeAttribute("inert");
+      for (const el of disabled) {
+        el.removeAttribute("inert");
+        el.removeAttribute("aria-hidden");
+      }
       document.body.classList.remove("sheet-open");
       (openerRef.current as HTMLElement | null)?.focus?.();
     };
@@ -77,9 +99,10 @@ export function DetailSheet({
 
   if (!open) return null;
 
-  return (
+  const sheet = (
     <div
       className="sheet-backdrop"
+      ref={backdropRef}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -102,4 +125,7 @@ export function DetailSheet({
       </div>
     </div>
   );
+  // The server renderer has no document and no portals; it renders the sheet in place, which is
+  // all a static render (and the tests built on one) can check anyway.
+  return typeof document === "undefined" ? sheet : createPortal(sheet, document.body);
 }

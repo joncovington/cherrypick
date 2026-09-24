@@ -19,6 +19,7 @@
  *   pnpm ui-check --route /flies --expect "loop live"
  *   pnpm ui-check --route /earnings --click overview --expect "across both books"
  *   pnpm ui-check --route /meic --shot meic.png --full
+ *   pnpm ui-check --route /flies/session --sheets     # every card's ⤢ sheet must be usable
  *
  * Exit codes: 0 pass (or skipped), 1 an --expect was missing, 2 the console was unreachable.
  */
@@ -68,6 +69,7 @@ function parseArgs(argv) {
     else if (a === "--shot") out.shot = next();
     else if (a === "--dump") out.dump = next();
     else if (a === "--full") out.full = true;
+    else if (a === "--sheets") out.sheets = true;
     else if (a === "--viewport") out.viewport = next();
     else if (a === "--timeout") out.timeout = Number(next());
     else if (a === "--help" || a === "-h") out.help = true;
@@ -103,6 +105,56 @@ async function clickByText(page, text) {
   console.log(`  clicked ${JSON.stringify(result.label)} (${result.via})`);
   // Tab content is fetched, so settle rather than assume the click was enough.
   await new Promise((r) => setTimeout(r, 1500));
+}
+
+/**
+ * Open every card's ⤢ detail sheet on the page and require each one to be USABLE, not merely drawn.
+ *
+ * Written against a real defect (2026-09-24): the sheet set `inert` on the module frame it was
+ * rendered inside, so it disabled itself -- it drew normally and ignored every click, scroll and
+ * Tab, and only Escape (listened for on `document`) still worked. A static render cannot see
+ * `inert` or focus, so this is the check that can. Per sheet: nothing around it inert, focus inside
+ * it, a real click at its close button's centre lands on that button, and that click closes it.
+ */
+async function checkSheets(page) {
+  const count = await page.$$eval(".gcard-expand", (bs) => bs.length);
+  if (count === 0) throw new Error("--sheets: no card ⤢ buttons (.gcard-expand) on this page");
+  const failures = [];
+  for (let i = 0; i < count; i++) {
+    const buttons = await page.$$(".gcard-expand");
+    const label = await buttons[i].evaluate((b) => b.getAttribute("aria-label") ?? b.textContent);
+    await buttons[i].click();
+    await page.waitForSelector('.sheet[role="dialog"]', { timeout: 5000 });
+    const state = await page.evaluate(() => {
+      const sheet = document.querySelector('.sheet[role="dialog"]');
+      const close = sheet.querySelector(".sheet-close");
+      const box = close.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+      return {
+        inertAncestor: sheet.closest("[inert]")?.className ?? null,
+        focusInside: sheet.contains(document.activeElement),
+        closeReachable: hit === close || close.contains(hit),
+      };
+    });
+    await page.mouse.click(...(await page.$eval(".sheet-close", (c) => {
+      const b = c.getBoundingClientRect();
+      return [b.x + b.width / 2, b.y + b.height / 2];
+    })));
+    await new Promise((r) => setTimeout(r, 300));
+    const closed = await page.evaluate(() => document.querySelector('.sheet[role="dialog"]') === null);
+    const problems = [];
+    if (state.inertAncestor !== null) problems.push(`inside an inert ancestor (.${state.inertAncestor})`);
+    if (!state.focusInside) problems.push("focus is not inside the sheet");
+    if (!state.closeReachable) problems.push("a click at the close button lands on something else");
+    if (!closed) problems.push("clicking close did not close it");
+    console.log(`  sheet ${JSON.stringify(label)}: ${problems.length === 0 ? "usable" : problems.join("; ")}`);
+    if (problems.length > 0) failures.push(label);
+    if (!closed) {
+      await page.keyboard.press("Escape");
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
+  return failures;
 }
 
 async function main() {
@@ -197,6 +249,8 @@ async function main() {
       console.log(`ui-check: screenshot -> ${args.shot}${args.full === true ? " (full page)" : ""}`);
     }
 
+    const sheetFailures = args.sheets === true ? await checkSheets(page) : [];
+
     const missing = args.expects.filter((t) => !body.includes(t));
     for (const t of args.expects) {
       console.log(`  ${missing.includes(t) ? "MISSING" : "found  "}  ${JSON.stringify(t)}`);
@@ -213,6 +267,10 @@ async function main() {
 
     if (missing.length > 0) {
       console.error(`ui-check: ${missing.length} expectation(s) not on the rendered page.`);
+      return FAIL_EXPECT;
+    }
+    if (sheetFailures.length > 0) {
+      console.error(`ui-check: ${sheetFailures.length} detail sheet(s) not usable.`);
       return FAIL_EXPECT;
     }
     console.log(`ui-check: ${url} OK`);
