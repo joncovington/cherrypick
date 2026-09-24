@@ -275,3 +275,26 @@ would retire it — is [openingrange.md](openingrange.md). Implementation is
 
 Recorded here now so the declaration has a date in the log that the finding can later be read
 against. **No conclusion is claimed.**
+
+## 2026-09-24 — settled-book floors recomputed under the corrected expiry fee (a correction, not a break)
+
+Settlement folds the expiry fee its real price charged into each position's `fees`, and
+`fly.position_pnl` reused that figure at every price, so a settled book's `worst` priced a
+hypothetical settlement with the real one's fees (fixed in c138a6d0). Every settled `fly_books`
+floor was recomputed by `scripts/flies_recompute_book_floor.py`; `pnl` did not move, because the
+correction cancels at the settlement price, and the script refuses to write if it would.
+
+**Paper:** 248 settled books. Recomputing under the old rule reproduces every stored `worst`, so each
+change is this fix alone: 196 `worst` values move (median −$9, range −$240 to +$151), 49 bands move,
+and three books flip `floor_holds` from held to broken — 2026-07-30 `time_window` XSP (+$10.67 to
+−$18.33), 2026-07-31 `gex` XSP (+$22.32 to −$12.68), 2026-08-04 `control` SPX (+$113.15 to
+−$126.85). The large moves are real: a many-position book's worst price leaves dozens of strikes in
+the money at $5 each, where the old rule charged only the handful its actual settlement did.
+**Live:** 9 books; 7 `worst` values move (−$29.98 to +$5.03), none flips. Six live rows had been
+stored before broker fee reconciliation rewrote their positions' fees, so their recompute absorbs
+that too. 2026-09-23's stored book `pnl` ($201.04) is stale against its own reconciled positions
+($199.04) and was left as recorded.
+
+Consequences for reads of the band classifier (`python run.py bands`) and any `floor_holds` rate:
+re-run them; figures taken before today rest on the old floors. Backups sit beside each ledger as
+`*.bak-pre-floor-recompute-20260924-*`.
