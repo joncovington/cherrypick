@@ -1314,6 +1314,71 @@ def _decision_window_open(mcfg: dict[str, Any], now_et: datetime) -> bool:
         return True
 
 
+# The trade-notify job runs every 30s and the watchdog tick runs it again, and every pass that gets
+# the lock saves its state whether or not anything was sent. A state file this old means passes are
+# failing before the save, not that the market was quiet.
+_TRADE_NOTIFY_STALE_MIN = 30
+
+
+def _check_trade_notify(cfg: dict[str, Any]) -> list[Finding]:
+    """Is the trade notifier recording what it sends?
+
+    Its failures are invisible by construction: this tick calls it inside a bare except, and the
+    job's own output goes nowhere. On 2026-09-24 pmcc's and bwb's formatters raised on a renamed
+    column from 09:31 ET, the state was never saved, and every flies event of the day went out ~95
+    times -- 7,726 notifications for 553 events -- with no finding anywhere. Two shapes, both read
+    from the notifier's own state file: a module whose pass raised (`last_error`, set by
+    `trade_notifier._process_isolated` and cleared by its next clean pass), and a whole run failing
+    before it saves (the file stops moving). Silent when no module asks for trade notifications."""
+    from . import trade_notifier
+
+    wanted = any(
+        (m.get("paper") or {}).get("notify_trades") or (m.get("live") or {}).get("notify_trades")
+        for m in cfgmod.enabled_modules(cfg).values()
+    )
+    path = trade_notifier._STATE
+    if not wanted or not path.exists():
+        return []  # nothing asked for, or never activated (the first pass seeds rather than sends)
+
+    findings: list[Finding] = []
+    age_min = (datetime.now(timezone.utc).timestamp() - path.stat().st_mtime) / 60
+    if age_min > _TRADE_NOTIFY_STALE_MIN:
+        findings.append(
+            Finding(
+                "trade_notify.saved",
+                WARN,
+                "Trade notifications are not being recorded",
+                f"The notifier last saved its state {age_min:.0f} min ago (it runs every 30s). Every "
+                "pass that fails before saving re-sends everything it sent since, so expect repeats. "
+                "Run `python run.py notify-trades` to see the error.",
+            )
+        )
+    else:
+        findings.append(Finding("trade_notify.saved", OK, "Trade notifications", "recording"))
+
+    state = util.read_json(path)
+    failing = {
+        name: st["last_error"]
+        for name, st in (state.items() if isinstance(state, dict) else [])
+        if isinstance(st, dict) and isinstance(st.get("last_error"), dict)
+    }
+    if failing:
+        detail = "; ".join(
+            f"{name}: {e.get('error')} (since {e.get('at')})" for name, e in sorted(failing.items())
+        )
+        findings.append(
+            Finding(
+                "trade_notify.errors",
+                WARN,
+                f"Trade notifications failing for {', '.join(sorted(failing))}",
+                f"{detail}. Those modules' events are not being sent; the others are unaffected.",
+            )
+        )
+    else:
+        findings.append(Finding("trade_notify.errors", OK, "Trade notifier modules", "no errors"))
+    return findings
+
+
 def _check_advice_enactment(cfg: dict[str, Any], now_et: datetime, is_trading: bool) -> list[Finding]:
     """Did today's modules actually APPLY the advice artifact issued for them last night?
 
@@ -2067,6 +2132,16 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     # Was last night's advice actually applied? Deterministic, and it replaced an AI checkpoint
     # that never once caught this (see _check_advice_enactment).
     findings += _check_advice_enactment(cfg, now, is_trading)
+    # The trade notifier runs below inside a bare except; its own state is the only trace of a
+    # failure (see _check_trade_notify).
+    try:
+        findings += _check_trade_notify(cfg)
+    except Exception as exc:
+        findings.append(
+            Finding(
+                "trade_notify.check_error", WARN, "Trade-notify check failed", f"{type(exc).__name__}: {exc}"
+            )
+        )
 
     # Watchdog the standalone market-data producer (dormant until the cutover enables the top-level
     # `streamer` block; today MEIC still owns the streamer under modules.meic.streamer).
