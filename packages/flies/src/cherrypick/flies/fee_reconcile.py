@@ -110,6 +110,122 @@ def _fee_total(txn: dict) -> float:
     return sum(abs(float(txn[field])) for field in _FEE_FIELDS if txn.get(field) not in (None, ""))
 
 
+# Signed contracts per unit of structure, keyed by the column that records each leg's symbol.
+# Read by ROLE rather than by position in a list, because a position's settlement share depends
+# on which of its legs is short: a fly is short two at its centre, a short vertical one.
+_LEG_ROLES = {
+    "fly": (("center_leg_symbol", -2), ("wing_leg_symbol", 1), ("completing_leg_symbol", 1)),
+    "short_vertical": (("center_leg_symbol", -1), ("wing_leg_symbol", 1)),
+}
+
+
+def _position_leg_quantities(position: dict, *, root: str | None = None) -> dict[str, int] | None:
+    """`{streamer symbol: signed contracts}` for this position's OWN legs, or None for a kind whose
+    leg structure is not declared in `_LEG_ROLES`."""
+    roles = _LEG_ROLES.get(position["kind"])
+    if roles is None:
+        return None
+    stored = [position.get(col) for col, _ in roles]
+    if all(stored):
+        symbols = [str(s) for s in stored]
+    else:
+        # Rows written before the leg-symbol columns existed. `_position_leg_symbols` constructs
+        # [centre, long wing, completing wing] -- the same order `_LEG_ROLES` declares.
+        symbols = _position_leg_symbols({**position, **{col: None for col, _ in roles}}, root=root)
+    qty = position.get("quantity") or 1
+    out: dict[str, int] = {}
+    for (_, per_unit), sym in zip(roles, symbols, strict=True):
+        out[sym] = out.get(sym, 0) + per_unit * qty
+    return out
+
+
+def _order_ids(position: dict) -> set[str]:
+    return {
+        str(position[k])
+        for k in ("entry_order_id", "completion_order_id", "close_order_id")
+        if position.get(k)
+    }
+
+
+def _trade_lines(position: dict, transactions: list[dict]) -> list[dict]:
+    ids = _order_ids(position)
+    return [
+        t
+        for t in transactions
+        if t.get("transaction_type") == _TRADE_TRANSACTION_TYPE and str(t.get("order_id")) in ids
+    ]
+
+
+def _traded_root(trade_txns: list[dict]) -> str | None:
+    """The OCC root the broker actually used, read off the trade lines the order id already matched
+    -- the broker's own record of what we traded. Only needed for rows written before the
+    leg-symbol columns existed; see `_position_leg_symbols`."""
+    traded = next((str(t["symbol"]) for t in trade_txns if t.get("symbol")), None)
+    return streamcache.occ_root(traded) if traded else None
+
+
+def _settlement_lines(transactions: list[dict], trade_date: str) -> dict[str, list[dict]]:
+    """The broker's settlement lines for `trade_date`, grouped by streamer symbol."""
+    out: dict[str, list[dict]] = {}
+    for t in transactions:
+        if (
+            t.get("transaction_type") != _SETTLEMENT_TRANSACTION_TYPE
+            or t.get("transaction_date") != trade_date
+        ):
+            continue
+        out.setdefault(streamcache.occ_to_streamer_symbol(str(t.get("symbol") or "")), []).append(t)
+    return out
+
+
+def _qty(txn: dict) -> float:
+    return abs(float(txn["quantity"])) if txn.get("quantity") not in (None, "") else 0.0
+
+
+def _allocate_settlement(
+    legs: dict[str, int], lines: dict[str, list[dict]], referenced_by: dict[str, int]
+) -> tuple[float, float] | None:
+    """(settlement cash, settlement fees) in dollars that belong to ONE position, or None when a leg
+    cannot be priced from the broker's record.
+
+    **A settlement line is per strike, not per position.** The broker settles its NET holding in
+    each option once, so when two positions share a strike -- which adjacent flies five points
+    apart always do, one fly's upper wing being the next one's lower -- a single line carries the
+    cash for both. This used to credit every position with every line on any of its leg symbols,
+    at full value: on 2026-09-22 the 7765P line ($72 for 2 contracts, one in each put fly) was
+    counted in both flies, and so was its $5 fee, and the session was written up $67.00 above the
+    cash the broker actually paid.
+
+    So each line is reduced to a per-contract value -- cash over the line's own quantity -- and the
+    position takes its own signed contracts' worth. That is exact whoever else holds the strike: a
+    second position, or another strategy trading the same expiry. The sign comes from the POSITION
+    (long receives, short pays), the magnitude from the broker. Fees split the same way.
+
+    A line without a quantity cannot be split. It is still unambiguous when this is the only
+    position referencing that symbol, and then the whole line is its own, as before; when it is
+    shared, the position is left unmatched rather than guessed at.
+    """
+    cash_total = 0.0
+    fee_total = 0.0
+    for sym, q in legs.items():
+        sym_lines = lines.get(sym)
+        if not sym_lines:
+            return None  # a leg with no settlement line at all: nothing to price it from
+        cash_lines = [t for t in sym_lines if float(t.get("value") or 0) != 0]
+        fees = sum(_fee_total(t) for t in sym_lines)
+        if all(_qty(t) > 0 for t in cash_lines) and (not fees or any(_qty(t) > 0 for t in sym_lines)):
+            contracts = sum(_qty(t) for t in cash_lines)
+            per_contract = sum(abs(float(t["value"])) for t in cash_lines) / contracts if contracts else 0.0
+            cash_total += q * per_contract
+            fee_basis = sum(_qty(t) for t in sym_lines if _fee_total(t) > 0) or contracts
+            fee_total += abs(q) * (fees / fee_basis if fee_basis else 0.0)
+        elif referenced_by.get(sym, 0) == 1:
+            cash_total += sum(float(t["value"]) for t in sym_lines)
+            fee_total += fees
+        else:
+            return None
+    return cash_total, fee_total
+
+
 def pending_reconciliation(conn, symbol: str, lookback_days: int = 5, today: str | None = None) -> list[str]:
     """Settled trade dates for `symbol` in the live DB that haven't been reconciled yet, strictly
     before today (broker settlement fees post the next business day, never same-day) and within
@@ -187,24 +303,26 @@ def reconcile_date(conn, trade_date: str, symbol: str, transactions: list[dict],
     if not positions:
         return result
 
+    lines = _settlement_lines(transactions, trade_date)
+    # How many of the day's positions reference each leg symbol -- ALL settled ones, reconciled or
+    # not, because the broker's line covers every holder. Only matters for a line with no quantity.
+    referenced_by: dict[str, int] = {}
+    for row in conn.execute(
+        "SELECT * FROM fly_positions WHERE trade_date = ? AND symbol = ? AND status = 'settled'",
+        (trade_date, symbol),
+    ).fetchall():
+        row = dict(row)
+        # Resolved exactly as the loop below resolves it, or the two disagree on the root of a row
+        # that predates the leg-symbol columns and a unique leg reads as unreferenced.
+        root = _traded_root(_trade_lines(row, transactions))
+        for sym in set(_position_leg_symbols(row, root=root)):
+            referenced_by[sym] = referenced_by.get(sym, 0) + 1
+
     book_ids = set()
     for position in positions:
         book_ids.add(position["book_id"])
-        order_ids = {
-            str(position[k])
-            for k in ("entry_order_id", "completion_order_id", "close_order_id")
-            if position.get(k)
-        }
-        trade_txns = [
-            t
-            for t in transactions
-            if t.get("transaction_type") == _TRADE_TRANSACTION_TYPE and str(t.get("order_id")) in order_ids
-        ]
-        # The OCC root the broker actually used, read off the trade lines the order id already
-        # matched -- the broker's own record of what we traded. Only needed for rows written
-        # before the leg-symbol columns existed; see `_position_leg_symbols`.
-        traded = next((str(t["symbol"]) for t in trade_txns if t.get("symbol")), None)
-        traded_root = streamcache.occ_root(traded) if traded else None
+        trade_txns = _trade_lines(position, transactions)
+        traded_root = _traded_root(trade_txns)
         leg_symbols = set(_position_leg_symbols(position, root=traded_root))
         settlement_txns = [
             t
@@ -227,9 +345,34 @@ def reconcile_date(conn, trade_date: str, symbol: str, transactions: list[dict],
             continue
 
         qty = position.get("quantity") or 1
+        legs = _position_leg_quantities(position, root=traded_root)
+        if legs is None:
+            # A kind whose leg structure is not declared: it can only take whole lines, which is
+            # right only when no other position shares any of them.
+            unique = all(referenced_by.get(s, 0) == 1 for s in leg_symbols)
+            allocated = (
+                (sum(float(t["value"]) for t in settlement_txns), sum(_fee_total(t) for t in settlement_txns))
+                if unique
+                else None
+            )
+        else:
+            allocated = _allocate_settlement(legs, lines, referenced_by)
+        if allocated is None:
+            conn.execute(
+                "UPDATE fly_positions SET broker_reconciliation_status = 'unmatched' WHERE position_id = ?",
+                (position["position_id"],),
+            )
+            conn.commit()
+            result["unmatched"].append(position["position_id"])
+            log(
+                f"fee_reconcile: {position['position_id']} unmatched "
+                "(a shared settlement line could not be split to this position)"
+            )
+            continue
+        settle_cash, settle_fees = allocated
         real_net = sum(float(t["value"]) for t in trade_txns) / (100 * qty)
-        real_payoff = sum(float(t["value"]) for t in settlement_txns) / (100 * qty)
-        real_fees = round(sum(_fee_total(t) for t in trade_txns + settlement_txns), 2)
+        real_payoff = settle_cash / (100 * qty)
+        real_fees = round(sum(_fee_total(t) for t in trade_txns) + settle_fees, 2)
         real_gross = round((real_net + real_payoff) * fly.CONTRACT_MULTIPLIER * qty, 2)
         real_pnl = round(real_gross - real_fees, 2)
         modeled_pnl = position.get("pnl")

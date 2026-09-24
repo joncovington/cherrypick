@@ -302,3 +302,160 @@ def test_a_fee_that_stops_matching_the_model_is_flagged_per_symbol(live_conn):
     assert v["symbol"] == "XSP   260730P00744000"
     assert v["modeled_fee"] == 5.0 and v["real_fee"] == 10.0
     assert any("FEE-MODEL WARN" in m for m in logged)
+
+
+# --------------------------------------------------------------------------- a strike two positions share
+# 2026-09-22 SPX, as the broker actually reported it. Three flies; the two put flies SHARE the 7765P
+# strike -- the 7760 fly's upper wing is the 7770 fly's lower wing -- so the broker settled the pair
+# on a single 7765P line: $72.00 for 2 contracts. The reconciler credited that whole line, and its
+# $5 fee, to BOTH flies and wrote the session $67.00 above the cash the broker paid.
+_0922 = "2026-09-22"
+
+
+def _t(order_id, value):
+    return {
+        "transaction_type": "Trade",
+        "order_id": order_id,
+        "value": str(value),
+        "regulatory_fees": "-0.02",
+        "clearing_fees": "-0.1",
+        "commission": "-1.0",
+        "proprietary_index_option_fees": "-0.6",
+    }
+
+
+def _s(strike_side, qty, value, fee=None):
+    return {
+        "transaction_type": "Receive Deliver",
+        "transaction_date": _0922,
+        "symbol": f"SPXW  260922{strike_side[-1]}0{strike_side[:-1]}000",
+        "quantity": str(qty),
+        "value": str(value),
+        "regulatory_fees": None,
+        "clearing_fees": str(fee) if fee is not None else None,
+        "commission": None,
+        "proprietary_index_option_fees": None,
+    }
+
+
+_0922_TRANSACTIONS = [
+    # call fly 7765 (7760 / 7765x2 / 7770): +938 -693 entry, +463 -683 completion
+    _t("508339476", 938.0),
+    _t("508339476", -693.0),
+    _t("508339536", 463.0),
+    _t("508339536", -683.0),
+    # put fly 7760 (7755 / 7760x2 / 7765)
+    _t("508395276", 832.0),
+    _t("508395276", -607.0),
+    _t("508395337", 357.0),
+    _t("508395337", -552.0),
+    # put fly 7770 (7765 / 7770x2 / 7775)
+    _t("508472249", 483.0),
+    _t("508472249", -273.0),
+    _t("508472400", 178.0),
+    _t("508472400", -363.0),
+    # settlement: each strike once, for the broker's NET holding
+    _s("7760C", 1, 0.0),
+    _s("7760C", 1, 464.0, -5.0),
+    _s("7765C", 2, 0.0),
+    _s("7770C", 1, 0.0),
+    _s("7755P", 1, 0.0),
+    _s("7760P", 2, 0.0),
+    _s("7765P", 2, 0.0),
+    _s("7765P", 2, 72.0, -5.0),  # <- the shared line
+    _s("7770P", 2, 0.0),
+    _s("7770P", 2, -1072.0, -5.0),
+    _s("7775P", 1, 0.0),
+    _s("7775P", 1, 1036.0, -5.0),
+]
+
+
+def _save_0922(conn, pid, center, side, entry_id, completion_id, legs):
+    centre, wing, completing = (f".SPXW260922{side[0].upper()}{k}" for k in legs)
+    row = {
+        "position_id": pid,
+        "trade_date": _0922,
+        "arm": "control",
+        "symbol": "SPX",
+        "book_id": f"{_0922}:control:SPX",
+        "kind": "fly",
+        "side": side,
+        "center": center,
+        "wing_width": 5,
+        "quantity": 1,
+        "status": "settled",
+        "net": 0.25,
+        "fees": 11.88,
+        "entry_order_id": entry_id,
+        "completion_order_id": completion_id,
+        "center_leg_symbol": centre,
+        "wing_leg_symbol": wing,
+        "completing_leg_symbol": completing,
+    }
+    dbmod.save_position(conn, row)
+
+
+def _seed_0922(conn):
+    _save_0922(conn, "c7765", 7765, "call", "508339476", "508339536", (7765, 7770, 7760))
+    _save_0922(conn, "p7760", 7760, "put", "508395276", "508395337", (7760, 7755, 7765))
+    _save_0922(conn, "p7770", 7770, "put", "508472249", "508472400", (7770, 7765, 7775))
+    dbmod.save_book(
+        conn,
+        {
+            "book_id": f"{_0922}:control:SPX",
+            "trade_date": _0922,
+            "arm": "control",
+            "symbol": "SPX",
+            "pnl": 0.0,
+            "fees": 0.0,
+            "status": "settled",
+        },
+    )
+
+
+def test_a_settlement_line_two_positions_share_is_split_not_counted_twice(live_conn):
+    _seed_0922(live_conn)
+    result = fee_reconcile.reconcile_date(live_conn, _0922, "SPX", _0922_TRANSACTIONS)
+    assert sorted(result["reconciled"]) == ["c7765", "p7760", "p7770"]
+
+    rows = {r["position_id"]: r for r in live_conn.execute("SELECT * FROM fly_positions")}
+    # Each fly owns ONE of the two 7765P contracts: 0.36 apiece, not 0.72 to each.
+    assert rows["c7765"]["expiry_payoff"] == pytest.approx(4.64)
+    assert rows["p7760"]["expiry_payoff"] == pytest.approx(0.36)
+    assert rows["p7770"]["expiry_payoff"] == pytest.approx(0.00, abs=1e-9)
+    # ...and the one $5 fee on that line is split between them, not charged to each.
+    assert rows["p7760"]["fees"] == pytest.approx(6.88 + 2.50)
+    assert rows["p7770"]["fees"] == pytest.approx(6.88 + 2.50 + 5.00 + 5.00)
+    assert rows["c7765"]["pnl"] == pytest.approx(477.12)
+    assert rows["p7760"]["pnl"] == pytest.approx(56.62)
+    assert rows["p7770"]["pnl"] == pytest.approx(5.62)
+
+
+def test_the_book_reconciles_to_exactly_the_cash_the_broker_moved(live_conn):
+    """The invariant that makes the split checkable without trusting the split: summed over every
+    position, the attributed cash must equal what the broker actually moved, each line once."""
+    _seed_0922(live_conn)
+    fee_reconcile.reconcile_date(live_conn, _0922, "SPX", _0922_TRANSACTIONS)
+
+    broker_cash = sum(float(t["value"]) for t in _0922_TRANSACTIONS)  # trades + settlement, once each
+    broker_fees = sum(fee_reconcile._fee_total(t) for t in _0922_TRANSACTIONS)
+    assert broker_cash - broker_fees == pytest.approx(539.36)
+
+    total = live_conn.execute("SELECT SUM(pnl) FROM fly_positions").fetchone()[0]
+    assert total == pytest.approx(539.36), "attributed P&L no longer equals the broker's cash"
+    book = live_conn.execute("SELECT pnl FROM fly_books").fetchone()[0]
+    assert book == pytest.approx(539.36)
+
+
+def test_a_shared_line_without_quantities_is_left_unmatched_not_guessed(live_conn):
+    """Without a quantity a shared line cannot be split. Guessing -- whole line to each, or half to
+    each -- would write a confident number that nothing supports. Unmatched is retried later."""
+    _seed_0922(live_conn)
+    stripped = [
+        {**t, "quantity": None} if t["transaction_type"] == "Receive Deliver" else t
+        for t in _0922_TRANSACTIONS
+    ]
+    result = fee_reconcile.reconcile_date(live_conn, _0922, "SPX", stripped)
+
+    assert "c7765" in result["reconciled"], "its lines are its own, so it still reconciles"
+    assert set(result["unmatched"]) == {"p7760", "p7770"}
