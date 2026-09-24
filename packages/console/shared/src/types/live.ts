@@ -100,6 +100,11 @@ export interface LiveFliesPayload {
     fees: number;
     /** Every open position's own worst case, summed (negative = a real loss is still possible). */
     maxPossibleLoss: number;
+    /**
+     * The session's largest worst case at expiry, held after the book settles until the next
+     * session opens (null while it cannot apply). Same figure as the flies session tab's.
+     */
+    sessionPeakWorst: { worst: number; at: string } | null;
     /** The latest tick's summed mid mark across open positions, and when it was taken. */
     markPnl: number | null;
     markedAt: string | null;

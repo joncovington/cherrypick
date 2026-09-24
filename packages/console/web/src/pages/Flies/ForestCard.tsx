@@ -24,6 +24,8 @@ interface BookFloor {
   worst: number;
   worstAt: number | null;
   worstTail: "below" | "above" | null;
+  /** Every separate stretch at the worst, low to high; absent on a payload older than the field. */
+  worstPlaces?: Array<{ lo: number; hi: number; tail: "below" | "above" | null }>;
   floorHolds: boolean;
   locked: boolean;
   band: [number, number] | null;
@@ -120,7 +122,18 @@ export function floorSentence(c: PayoffCurve): string {
   if (f.locked) return `locked at ${fmtMoney(f.worst)} at every price — nothing price does can change this book`;
   if (f.floorHolds) return `floor holds everywhere; worst case ${fmtMoney(f.worst)}`;
   let worst = `worst case ${fmtMoney(f.worst)}`;
-  if (f.worstAt !== null) {
+  // Every place the worst is reached, not one of them: a stranded vertical's low and a tail are
+  // routinely the same dollar figure, and naming only one reads as "safe everywhere else".
+  const places = (f.worstPlaces ?? []).map((w) => {
+    if (w.tail === "below") return `at or below ${w.hi.toFixed(0)}`;
+    if (w.tail === "above") return `at or above ${w.lo.toFixed(0)}`;
+    const lo = w.lo.toFixed(0);
+    const hi = w.hi.toFixed(0);
+    return lo === hi ? `at ${lo}` : `from ${lo} to ${hi}`;
+  });
+  if (places.length > 0) {
+    worst += ` ${places.length > 1 ? `${places.slice(0, -1).join(", ")} and ${places[places.length - 1]!}` : places[0]!}`;
+  } else if (f.worstAt !== null) {
     const at = f.worstAt.toFixed(0);
     worst += f.worstTail === "below" ? ` at or below ${at}` : f.worstTail === "above" ? ` at or above ${at}` : ` at ${at}`;
   }

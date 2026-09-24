@@ -34,6 +34,29 @@ describe("the forest's floor sentence", () => {
     expect(text).not.toContain("7645");
   });
 
+  it("names every place the worst case is reached, not just the tail", () => {
+    // 2026-09-24 live control: -$224.11 at the 7695 point, where the stranded 7685/7690 call spread
+    // is fully lost and no fly pays, and again from 7710 up. The sentence used to say only "at or
+    // above 7710", which read as though nothing near the settlement could reach it.
+    const text = floorSentence(
+      curve({
+        worst: -224.11,
+        worstAt: 7710,
+        worstTail: "above",
+        worstPlaces: [
+          { lo: 7695, hi: 7695, tail: null },
+          { lo: 7710, hi: 7760, tail: "above" },
+        ],
+      }),
+    );
+    expect(text).toContain("worst case -$224.11 at 7695 and at or above 7710");
+  });
+
+  it("names an interior flat run as a range", () => {
+    const text = floorSentence(curve({ worstPlaces: [{ lo: 7690, hi: 7695, tail: null }] }));
+    expect(text).toContain("from 7690 to 7695");
+  });
+
   it("keeps the single-window sentence when there is only one", () => {
     const text = floorSentence(curve({ bands: [[7703, 7707]] }));
     expect(text).toContain("profitable between 7703 and 7707");

@@ -194,6 +194,14 @@ export interface BookFloor {
    */
   worstAt: number | null;
   worstTail: "below" | "above" | null;
+  /**
+   * EVERY separate stretch of the scan where the book sits at its worst, low to high: a point
+   * (lo === hi), an interior flat run, or a tail running off the grid. `worstAt` names one of them,
+   * and a book's worst is often reached twice -- 2026-09-24's live control touched -$224.11 at the
+   * 7695 point AND from 7710 up, and naming only the tail hid the low sitting nine points under
+   * the settlement. Console-only: `fly.book_floor` reports one `worst_at`.
+   */
+  worstPlaces: Array<{ lo: number; hi: number; tail: "below" | "above" | null }>;
   floorHolds: boolean;
   /** The book cannot move: worst equals best at every price. A distinct state worth naming. */
   locked: boolean;
@@ -227,6 +235,7 @@ const EMPTY_FLOOR: BookFloor = {
   worst: 0,
   worstAt: null,
   worstTail: null,
+  worstPlaces: [],
   floorHolds: true,
   locked: false,
   band: null,
@@ -315,10 +324,30 @@ export function bookFloor(positions: FlyPosition[], step = 1): BookFloor {
     worstTail = "above";
   }
 
+  const worstPlaces: BookFloor["worstPlaces"] = [];
+  for (let i = 0; i < pnls.length; i++) {
+    if (!near(pnls[i]!, worstRaw)) continue;
+    let j = i;
+    while (j + 1 < pnls.length && near(pnls[j + 1]!, worstRaw)) j++;
+    const tail = i === 0 ? "below" : j === pnls.length - 1 ? "above" : null;
+    // The scan probes a cent either side of every strike, where the assignment fee steps, so one
+    // low can surface as two runs 0.02 apart around its strike. Runs closer than a grid step are
+    // one place, or the caption would name the same strike twice.
+    const last = worstPlaces[worstPlaces.length - 1];
+    if (last !== undefined && prices[i]! - last.hi < step) {
+      last.hi = prices[j]!;
+      if (tail === "above") last.tail = "above";
+    } else {
+      worstPlaces.push({ lo: prices[i]!, hi: prices[j]!, tail });
+    }
+    i = j;
+  }
+
   return {
     worst: Math.round(worstRaw * 100) / 100,
     worstAt,
     worstTail,
+    worstPlaces,
     floorHolds: worstRaw >= 0,
     locked: near(worstRaw, bestRaw),
     band,

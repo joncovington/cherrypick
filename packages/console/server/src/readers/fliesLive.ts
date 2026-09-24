@@ -333,6 +333,7 @@ export function readFliesLive(config: ConsoleConfig, session: string | null = nu
       completionPct: analytics.today.completionPct,
       fees: analytics.today.fees,
       maxPossibleLoss: analytics.today.maxPossibleLoss,
+      sessionPeakWorst: analytics.today.sessionPeakWorst,
       markPnl: marks.latest?.total ?? null,
       markedAt: marks.latest?.at ?? null,
       maxDrawdown: dd.maxDrawdown,

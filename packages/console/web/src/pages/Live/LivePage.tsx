@@ -71,6 +71,7 @@ export function LivePage() {
   const bp = d?.buyingPower;
   const acct = bp?.account ?? null;
   const capPct = bp && bp.cap ? Math.min(100, (bp.open / bp.cap) * 100) : null;
+  const heldPeak = d !== undefined && d.today.open === 0 && d.today.pending === 0 ? d.today.sessionPeakWorst : null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem" }}>
@@ -95,16 +96,31 @@ export function LivePage() {
                   {d.today.maxDrawdown !== null ? ` · drawdown ${fmtMoney(d.today.maxDrawdown)}` : ""}
                 </span>
               </div>
-              <div className="stat-tile" title="every open position's own worst case, net of fees and the assignment reserve — the same figure the buying-power cap reads">
-                <span className="stat-label">open exposure / cap</span>
-                <span className={`stat-value ${bp && bp.cap && bp.open > bp.cap ? "pnl-neg" : ""}`}>
-                  {bp ? `${fmtMoney(bp.open)} / ${bp.cap === null ? "no cap" : fmtMoney(bp.cap)}` : "—"}
-                </span>
-                <span className="muted" style={{ display: "block", fontSize: 11 }}>
-                  {capPct !== null ? `${capPct.toFixed(0)}% used · ` : ""}
-                  {d.today.open} open · {d.today.pending} working · {d.today.completionPct !== null ? `${d.today.completionPct.toFixed(0)}% complete` : "no completions"}
-                </span>
-              </div>
+              {heldPeak !== null ? (
+                // Settled: the last tick's exposure is the book just before the bell, which beside
+                // "0 open" reads as risk still on. The session's peak is what the day carried.
+                <div className="stat-tile" title="the book is settled: the largest worst case at expiry it carried during the session, from the loop's own per-tick exposure — shown until the next session opens">
+                  <span className="stat-label">worst case at expiry · session peak / cap</span>
+                  <span className={`stat-value ${bp && bp.cap && -heldPeak.worst > bp.cap ? "pnl-neg" : ""}`}>
+                    {`${fmtMoney(-heldPeak.worst)} / ${bp?.cap == null ? "no cap" : fmtMoney(bp.cap)}`}
+                  </span>
+                  <span className="muted" style={{ display: "block", fontSize: 11 }}>
+                    at {hhmmOf(heldPeak.at)} · settled · until the next open ·{" "}
+                    {d.today.completionPct !== null ? `${d.today.completionPct.toFixed(0)}% complete` : "no completions"}
+                  </span>
+                </div>
+              ) : (
+                <div className="stat-tile" title="every open position's own worst case, net of fees and the assignment reserve — the same figure the buying-power cap reads">
+                  <span className="stat-label">open exposure / cap</span>
+                  <span className={`stat-value ${bp && bp.cap && bp.open > bp.cap ? "pnl-neg" : ""}`}>
+                    {bp ? `${fmtMoney(bp.open)} / ${bp.cap === null ? "no cap" : fmtMoney(bp.cap)}` : "—"}
+                  </span>
+                  <span className="muted" style={{ display: "block", fontSize: 11 }}>
+                    {capPct !== null ? `${capPct.toFixed(0)}% used · ` : ""}
+                    {d.today.open} open · {d.today.pending} working · {d.today.completionPct !== null ? `${d.today.completionPct.toFixed(0)}% complete` : "no completions"}
+                  </span>
+                </div>
+              )}
               <div className="stat-tile" title={acct ? `broker account ${acct.account}, as of ${acct.at} — whole account, every module and manual trade included; a mid is not a fill` : bp?.accountError ?? "broker read unavailable"}>
                 <span className="stat-label">account · broker</span>
                 <span className="stat-value">
