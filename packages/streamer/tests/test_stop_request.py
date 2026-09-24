@@ -14,7 +14,16 @@ from cherrypick.streamer import daemon
 
 
 def _cfg(tmp_path):
-    return {"streamer": {"cache_db": str(tmp_path / "stream_cache.db")}}
+    # `source.stream_cache_db` is the key `config.cache_path` reads. This used to say
+    # `streamer.cache_db`, which nothing reads: the override was silently ignored, the stop file
+    # resolved into the REAL home, and running this test stopped the production streamer.
+    return {"source": {"stream_cache_db": str(tmp_path / "stream_cache.db")}}
+
+
+def test_the_test_config_really_redirects_the_stop_file(tmp_path):
+    """Pins the line above. A mistyped key resolves silently to the default, so the only way to
+    know the override took is to look where the path landed."""
+    assert _config.stop_path(_cfg(tmp_path)).parent == tmp_path
 
 
 def test_a_compliant_daemon_is_stopped_by_the_file_and_never_signalled(tmp_path, monkeypatch):

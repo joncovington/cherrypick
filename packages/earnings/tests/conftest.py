@@ -1,4 +1,24 @@
+# ---- before ANY package import: the home is a throwaway, for the whole session -------------------
+# Several modules resolve paths ONCE, at import (`db_paper.DB_PATH`, `db.DB_PATH` -- the LIVE ledger --,
+# the paper loop's lock and pid files). A function-scoped fixture runs too late to move those: they
+# already point at the real home. Measured 2026-09-23: with a per-test fixture in place, a plain run
+# still inserted 5 frozen-clock `loop_iterations` rows into the REAL earnings ledger every time. So the
+# master override is set here, when pytest imports this conftest and before it imports a single
+# test module -- which catches every import-time path, including ones nobody has listed.
+import os as _os
+import tempfile as _tempfile
+
 import pytest
+
+_os.environ["CHERRYPICK_HOME"] = _tempfile.mkdtemp(prefix="cherrypick-test-home-")
+for _leaked in (
+    "EARNINGS_DATA_DIR",
+    "EARNINGS_LOGS_DIR",
+    "EARNINGS_CONFIG",
+    "MARKETDATA_DATA_DIR",
+    "CHERRYPICK_MODULES_HOME",
+):
+    _os.environ.pop(_leaked, None)
 
 
 @pytest.fixture
@@ -57,3 +77,31 @@ def good_criteria():
         "combined_option_volume": 1000,
         "skew_abs": 0.05,
     }
+
+
+# --------------------------------------------------------------------------- the home is never the real one
+@pytest.fixture(autouse=True)
+def _isolated_home(tmp_path_factory, monkeypatch):
+    """Every test runs against a throwaway cherrypick home.
+
+    Measured 2026-09-23 by running this suite with `CHERRYPICK_HOME` pointed at an empty directory
+    and listing what appeared. Without this fixture a plain `pytest` here writes into the REAL home:
+    meic touched its paper ledger, `state/meic.heartbeat` (which the watchdog reads -- a test run
+    could make a dead loop look alive) and `state/stream_requests/meic.json` (which the streamer
+    reads); earnings inserted `loop_iterations` rows into the real paper ledger at a frozen test
+    clock, 221 of them by the time anyone looked. The streamer package's own tests stopped the
+    production streamer the same way.
+
+    The master override moves the whole tree; the narrow per-scope overrides are cleared because
+    a leaked one wins over it.
+    """
+    home = tmp_path_factory.mktemp("cherrypick-home")
+    monkeypatch.setenv("CHERRYPICK_HOME", str(home))
+    for leaked in (
+        "EARNINGS_DATA_DIR",
+        "EARNINGS_LOGS_DIR",
+        "MARKETDATA_DATA_DIR",
+        "CHERRYPICK_MODULES_HOME",
+    ):
+        monkeypatch.delenv(leaked, raising=False)
+    return home
