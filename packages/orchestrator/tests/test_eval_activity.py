@@ -92,21 +92,61 @@ def test_meic_reader_counts_evals_errors_and_reason(tmp_path):
     con.close()
 
 
-def test_flies_reader_counts_ok_vs_refused(tmp_path):
+def _flies_db(tmp_path, statuses, attempts=()):
     con = sqlite3.connect(tmp_path / "f.db")
     con.row_factory = sqlite3.Row
     con.execute(
         "CREATE TABLE fly_snapshots(id INTEGER PRIMARY KEY, iteration_ts TEXT, trade_date TEXT, status TEXT)"
     )
     con.execute("CREATE TABLE fly_positions(id INTEGER PRIMARY KEY, trade_date TEXT, entry_time TEXT)")
-    for st in ("ok", "ok", "no_fresh_quotes"):
+    con.execute(
+        "CREATE TABLE fly_entry_attempts(id INTEGER PRIMARY KEY, ts TEXT, trade_date TEXT, "
+        "outcome TEXT, block_detail TEXT)"
+    )
+    for st in statuses:
         con.execute(
             "INSERT INTO fly_snapshots(iteration_ts, trade_date, status) VALUES (?,?,?)",
             (_now(), "2026-07-23", st),
         )
+    for outcome, detail in attempts:
+        con.execute(
+            "INSERT INTO fly_entry_attempts(ts, trade_date, outcome, block_detail) VALUES (?,?,?,?)",
+            (_now(), "2026-07-23", outcome, detail),
+        )
     con.commit()
+    return con
+
+
+def test_flies_reader_names_the_feed_when_the_feed_refused_most_ticks(tmp_path):
+    con = _flies_db(tmp_path, ("ok", "no_fresh_quotes", "no_fresh_quotes"))
     act = ea._flies_activity(con, "2026-07-23", 30)
-    assert act["evaluated"] == 2 and act["errors"] == 1 and act["top_reason"] == "no_fresh_quotes"
+    assert act["evaluated"] == 1 and act["errors"] == 2 and act["top_reason"] == "no_fresh_quotes"
+    con.close()
+
+
+def test_flies_reader_names_the_arms_gate_when_one_bell_tick_was_refused(tmp_path):
+    """2026-09-24: the 09:30:00 tick is refused every day before the first options print, and the
+    reader called the whole blackout half-hour "all no_fresh_quotes" while every arm was holding
+    the 10:00 no-entry floor."""
+    con = _flies_db(
+        tmp_path,
+        ("no_fresh_quotes",) + ("ok",) * 114,
+        [("window_blocked", "before_open_gate")] * 12 + [("gate_blocked", "credit_below_floor")] * 3,
+    )
+    act = ea._flies_activity(con, "2026-07-23", 30)
+    assert act["evaluated"] == 114 and act["errors"] == 1
+    assert act["top_reason"] == "before_open_gate"
+    status, detail = ea.assess(act, window_min=30, eval_stale_min=10, error_frac_warn=0.5)
+    assert status == ea.OK and detail == "114 evals, 0 entries (all before_open_gate)"
+    con.close()
+
+
+def test_flies_reader_warns_when_the_arms_are_starved_of_leg_quotes(tmp_path):
+    """A data fault stays loud: missing_leg_quotes is the chain failing to cover the structure."""
+    con = _flies_db(tmp_path, ("ok",) * 10, [("no_candidate", "missing_leg_quotes")] * 5)
+    act = ea._flies_activity(con, "2026-07-23", 30)
+    status, detail = ea.assess(act, window_min=30, eval_stale_min=10, error_frac_warn=0.5)
+    assert status == ea.WARN and "missing_leg_quotes" in detail
     con.close()
 
 

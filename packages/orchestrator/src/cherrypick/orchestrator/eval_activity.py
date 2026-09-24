@@ -76,6 +76,26 @@ _BENIGN_REASON = frozenset(
         # --- flies (fly_snapshots.status): a bad tick, not a fault ---
         "no_fresh_quotes",
         "no_spot_price",
+        # --- flies entry gates (fly_entry_attempts.block_detail) ---
+        # Deliberately absent: missing_leg_quotes, no_delta_quotes_beyond_spot and
+        # gex_unavailable_for_call_wall. Those are the chain or the GEX surface failing to cover
+        # what an arm needed -- a data fault -- and a day dominated by one should warn.
+        "before_open_gate",
+        "duplicate_structure",
+        "max_positions_reached",
+        "max_positions_this_window_reached",
+        "early_close_session",
+        "miss_stop",
+        "trend_bucket_refused",
+        "forecast_range_exceeds_cap",
+        "call_wall_not_above_spot",
+        "no_strike_near_delta_target",
+        "credit_above_ceiling_mostly_intrinsic",
+        "bwb_credit_below_floor",
+        "bwb_credit_above_ceiling_mostly_intrinsic",
+        "bwb_tail_risk_above_max",
+        "debit_cannot_be_out_earned",
+        "debit_above_ceiling_mostly_intrinsic",
     }
 )
 
@@ -206,6 +226,25 @@ def _meic_activity(conn, day: str, window_min: int) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- fly_book (fly_snapshots)
+def _flies_top_block(conn, day: str, window_min: int) -> str | None:
+    """The commonest reason an arm was refused an entry inside the window, from `fly_entry_attempts`
+    -- one uncollapsed row per evaluated opportunity, so a count over it is a count of refusals
+    rather than of collapsed runs. None when the ledger predates the table or nothing was refused."""
+    try:
+        rows = conn.execute(
+            "SELECT ts, COALESCE(block_detail, outcome) AS why FROM fly_entry_attempts "
+            "WHERE trade_date = ? AND outcome != 'filled'",
+            (day,),
+        ).fetchall()
+    except sqlite3.Error:
+        return None
+    counts: dict[str, int] = {}
+    for r in rows:
+        if r["why"] and _in_window(r["ts"], window_min):
+            counts[r["why"]] = counts.get(r["why"], 0) + 1
+    return max(counts, key=counts.get) if counts else None
+
+
 def _flies_activity(conn, day: str, window_min: int) -> dict[str, Any]:
     rows = conn.execute(
         "SELECT iteration_ts, status FROM fly_snapshots WHERE trade_date = ? ORDER BY id", (day,)
@@ -217,9 +256,16 @@ def _flies_activity(conn, day: str, window_min: int) -> dict[str, Any]:
     evaluated = sum(1 for r in recent if r["status"] == "ok")
     refused = [r["status"] for r in recent if r["status"] != "ok"]  # no_fresh_quotes / no_spot_price
     errors = len(refused)
+    # The feed's refusal names the day only when the feed refused most ticks. Otherwise the arms saw
+    # a snapshot and chose not to enter, and why is in the entry-attempt record. Until 2026-09-24
+    # this took the commonest refused snapshot whatever its share, so the one 09:30:00 tick the
+    # opening bell refuses every day was reported as "115 evals, 0 entries (all no_fresh_quotes)"
+    # while every arm was actually holding the 10:00 blackout (`before_open_gate`, 1,428 times).
     top = None
-    if refused:
+    if refused and len(refused) >= evaluated:
         top = max(set(refused), key=refused.count)
+    elif evaluated:
+        top = _flies_top_block(conn, day, window_min)
     ent = conn.execute("SELECT entry_time FROM fly_positions WHERE trade_date = ?", (day,)).fetchall()
     entries = sum(1 for e in ent if _in_window(e["entry_time"], window_min))
     return {
