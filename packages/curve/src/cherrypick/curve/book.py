@@ -194,7 +194,10 @@ def settle_expiring_legs(
                 entry["assigned"] += 1
 
     for pid, info in by_position.items():
-        fee = engine.settlement_fee(info["itm"])
+        # Only a cash-settled ITM leg pays here. A physical one pays its $5 event at disposal, inside
+        # `engine.assignment_fee` -- and VXX is always physical, so charging `itm` here charged every
+        # assigned leg twice. calendars and pmcc carried this guard; curve did not.
+        fee = engine.settlement_fee(info["itm"] - info["assigned"])
         _accumulate_exit_costs(conn, pid, fee=fee, slippage=0.0)
         prev_itm = conn.execute(
             "SELECT itm_settlements FROM curve_positions WHERE position_id = ?", (pid,)
