@@ -31,6 +31,31 @@ DEFAULT_SLIPPAGE_FRAC = _fees.DEFAULT_COSTS["slippage_frac_of_spread"]
 
 PUT, CALL = "put", "call"
 
+CANCELLED = "cancelled"
+
+
+def entry_never_filled(row: dict) -> bool:
+    """True when this row's ENTRY order was cancelled, so no position ever existed.
+
+    The ledger keeps a row for every entry the loop ATTEMPTED, filled or not -- the attempt is
+    part of the record and the trade log is right to show it. But a cancelled entry is not a
+    position: nothing was bought, nothing was sold, and its credit was never collected. Anything
+    computing book economics (P&L, floor, the payoff forest) has to drop these or it credits the
+    book with money it never received.
+
+    **Stated as an exclusion, not an inclusion, and that is the whole point.** `entry_fill_status`
+    is NULL on all 1,218 paper rows -- the paper loop has never set it -- so a predicate of the
+    form ``entry_fill_status == "filled"`` would silently erase every paper position ever recorded
+    while looking perfectly reasonable. Unknown is not cancelled, the same way `None` is not zero
+    anywhere else in this suite. Only a row that SAYS it was cancelled is dropped.
+    """
+    return CANCELLED in (row.get("status"), row.get("entry_fill_status"))
+
+
+def held(rows: list[dict]) -> list[dict]:
+    """`rows` minus the entries that never filled -- see `entry_never_filled`."""
+    return [r for r in rows if not entry_never_filled(r)]
+
 
 # --------------------------------------------------------------------------- expiry payoffs
 def fly_payoff(center: float, wing_width: float, underlying: float) -> float:

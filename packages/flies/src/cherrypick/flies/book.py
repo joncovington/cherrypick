@@ -1150,7 +1150,11 @@ def settle_book(
             row["hedge_settle_value"] = fly.long_option_payoff(p["side"], p["hedge_strike"], settlement_price)
         dbmod.save_position(conn, row)
 
-    final = [_to_position(r) for r in dbmod.book_positions(conn, book_id)]
+    # Cancelled entries are dropped before the book is valued. They were never positions, so
+    # crediting the book with their credit inflates the day by exactly the money it never
+    # received -- and the loop below would then stamp them `settled`, which is how a cancelled
+    # entry ends up indistinguishable from a real one in every later read.
+    final = [_to_position(r) for r in fly.held(dbmod.book_positions(conn, book_id))]
     for p in final:
         p["status"] = "settled"
     summary = _save_book(conn, book_id, trade_date, arm, symbol, final, params, settlement_price)

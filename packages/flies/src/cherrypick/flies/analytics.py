@@ -1495,7 +1495,13 @@ def decision_journal(conn, day: str, arm: str | None = None) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def positions_for_day(conn, day: str, arm: str | None = None, symbol: str | None = None) -> list[dict]:
+def positions_for_day(
+    conn, day: str, arm: str | None = None, symbol: str | None = None, *, include_cancelled: bool = False
+) -> list[dict]:
+    """The day's positions. Entries whose order was CANCELLED are excluded by default: they are
+    part of the attempt record but they are not positions, and every caller here is computing book
+    economics. `include_cancelled=True` is for a surface that genuinely wants the full attempt
+    record -- see `fly.entry_never_filled` for why this is an exclusion rather than an inclusion."""
     clause, params = ["trade_date = ?"], [day]
     if arm and arm != "ALL":
         clause.append("arm = ?")
@@ -1506,7 +1512,8 @@ def positions_for_day(conn, day: str, arm: str | None = None, symbol: str | None
     rows = conn.execute(
         f"SELECT * FROM fly_positions WHERE {' AND '.join(clause)} ORDER BY entry_time", params
     ).fetchall()
-    return [dict(r) for r in rows]
+    out = [dict(r) for r in rows]
+    return out if include_cancelled else fly.held(out)
 
 
 def trade_log(conn, limit: int = 1000, arm=None, symbol=None) -> list[dict]:
