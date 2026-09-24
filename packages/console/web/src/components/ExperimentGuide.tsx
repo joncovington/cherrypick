@@ -96,7 +96,7 @@ function EntryCard({ entry, unit }: { entry: ExperimentGuideEntry; unit: string 
             {entry.lastSession}
           </>
         ) : (
-          <>no positions in this book</>
+          <>no positions in this arm</>
         )}
       </div>
 

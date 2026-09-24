@@ -202,6 +202,12 @@ export interface BookFloor {
   bandOpen: { below: boolean; above: boolean };
   /** Every contiguous non-negative zone, low to high (the forest's zones). */
   bands: Array<[number, number]>;
+  /**
+   * Whether the LOWEST zone runs off the scan grid below, and the HIGHEST off it above. The grid's
+   * ends are where the scan stopped looking, not where the book stops paying, so a caption naming
+   * them as edges would invent a boundary. `bandOpen` answers the same question for `band` alone.
+   */
+  bandsOpen: { below: boolean; above: boolean };
   unboundedBelow: boolean;
 }
 
@@ -226,6 +232,7 @@ const EMPTY_FLOOR: BookFloor = {
   band: null,
   bandOpen: { below: false, above: false },
   bands: [],
+  bandsOpen: { below: false, above: false },
   unboundedBelow: false,
 };
 
@@ -320,6 +327,10 @@ export function bookFloor(positions: FlyPosition[], step = 1): BookFloor {
       above: band !== null && band[1] === prices[prices.length - 1],
     },
     bands: zones,
+    bandsOpen: {
+      below: zones.length > 0 && zones[0]![0] === prices[0],
+      above: zones.length > 0 && zones[zones.length - 1]![1] === prices[prices.length - 1],
+    },
     unboundedBelow: pnls[0]! < 0 || pnls[pnls.length - 1]! < 0,
   };
 }

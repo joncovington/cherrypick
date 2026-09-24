@@ -292,7 +292,7 @@ export function AdvisorSlideBody({ data }: { data: AdvisorModulePayload }) {
         <p className="muted">
           Only an applied session advances the count. Carried means the params were already frozen on
           positions the module still held; nothing new was decided and nothing was charged.
-          {active.length > 1 && " One strip per experiment: each is scored on its own book."}
+          {active.length > 1 && " One strip per experiment: each is scored on its own arm."}
         </p>
       </section>
 

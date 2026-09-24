@@ -29,6 +29,8 @@ interface BookFloor {
   band: [number, number] | null;
   bandOpen: { below: boolean; above: boolean };
   bands: Array<[number, number]>;
+  /** Whether the lowest zone runs off the scan grid below, and the highest off it above. */
+  bandsOpen: { below: boolean; above: boolean };
   unboundedBelow: boolean;
 }
 
@@ -112,7 +114,7 @@ function nearestIndex(prices: number[], price: number): number {
  * not bounded there; a flat worst case is "at or below" its inner end, not at an arbitrary grid
  * point; and a book whose worst equals its best is locked — nothing price does can change it.
  */
-function floorSentence(c: PayoffCurve): string {
+export function floorSentence(c: PayoffCurve): string {
   const f = c.floor;
   if (c.empty) return "no positions";
   if (f.locked) return `locked at ${fmtMoney(f.worst)} at every price — nothing price does can change this book`;
@@ -123,6 +125,25 @@ function floorSentence(c: PayoffCurve): string {
     worst += f.worstTail === "below" ? ` at or below ${at}` : f.worstTail === "above" ? ` at or above ${at}` : ` at ${at}`;
   }
   if (f.band === null) return `${worst}; negative everywhere.`;
+  // Several separate windows. `band` is only the one around the price, so describing it alone and
+  // calling the rest "outside that band" named the other windows as losses -- on 2026-09-23 that
+  // was three profitable windows out of four. Every window is listed, an end the scan ran off is
+  // named as open rather than as an edge, and the losses are placed where they actually are.
+  if (f.bands.length > 1) {
+    const last = f.bands.length - 1;
+    const windows = f.bands.map(([a, b], i) =>
+      i === 0 && f.bandsOpen.below
+        ? `below ${b.toFixed(0)}`
+        : i === last && f.bandsOpen.above
+          ? `above ${a.toFixed(0)}`
+          : `${a.toFixed(0)}–${b.toFixed(0)}`,
+    );
+    const losses = ["between them"];
+    if (!f.bandsOpen.below) losses.push(`below ${f.bands[0]![0].toFixed(0)}`);
+    if (!f.bandsOpen.above) losses.push(`above ${f.bands[last]![1].toFixed(0)}`);
+    const where = losses.length > 1 ? `${losses.slice(0, -1).join(", ")} and ${losses[losses.length - 1]}` : losses[0];
+    return `${worst}, profitable only in ${f.bands.length} separate windows (${windows.join(", ")}), and loses ${where}.`;
+  }
   const [lo, hi] = f.band;
   const where = f.bandOpen.above
     ? `profitable from ${lo.toFixed(0)} upward`

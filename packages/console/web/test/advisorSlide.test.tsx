@@ -116,7 +116,7 @@ describe("the module's advisor slide", () => {
     expect(html).toContain("no scored sessions yet");
   });
 
-  it("renders every active experiment on its own book, with its own progress and strip", () => {
+  it("renders every active experiment on its own arm, with its own progress and strip", () => {
     // Two experiments on one base at once (2026-09-17): nothing on the slide may assume one.
     const second = active({
       id: "exp-2026-09-11-bwb-1",

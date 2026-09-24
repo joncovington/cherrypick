@@ -216,7 +216,7 @@ export function ArmRail({
             ? module === "pmcc"
               // pmcc's books isolate one variable each and it has no entry-cadence gate, so the
               // meic/flies subtitle would describe pacing this module does not do.
-              ? "one book per variable · paper only"
+              ? "one arm per variable · paper only"
               : "one portfolio each · unbounded capital · paced by cadence"
             : module === "flies"
               ? "live pilot — real capital, one arm, one position at a time"

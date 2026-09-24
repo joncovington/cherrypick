@@ -158,9 +158,9 @@ function TabSummary({
       <>
         <p>
           Each card is a paper <strong>A/B</strong>: the admitted parameters running as the
-          experiment's own <code>advised:&lt;name&gt;</code> book beside the module's base, entered from
+          experiment's own <code>advised:&lt;name&gt;</code> arm beside the module's base, entered from
           the same plan, so the comparison is exactly paired and any difference is the parameters and
-          nothing else. A module can run several at once, each on its own book.
+          nothing else. A module can run several at once, each on its own arm.
         </p>
         <p className="muted">
           {activeExperiments} running, {concludedExperiments} concluded. Verdicts come from the

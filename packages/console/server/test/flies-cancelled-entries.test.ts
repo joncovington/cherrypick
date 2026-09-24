@@ -89,3 +89,21 @@ describe("the flies forest", () => {
     expect(readFliesForest(paper, "paper", DAY, "control").arms[0]!.curve.positions).toBe(1);
   });
 });
+
+describe("the forest's profitable windows", () => {
+  /**
+   * With the cancelled entries gone, 2026-09-23's real book is profitable in four separate
+   * windows, not one. The caption used to name only the window around the price and call
+   * everything else a loss. The floor already listed every window; what it did not say was which
+   * ends of the outermost windows are real edges and which are just where the scan stopped.
+   */
+  it("reports every window, and which outer ends are open", () => {
+    const floor = readFliesForest(config, "live", DAY, "control").arms[0]!.curve.floor;
+
+    expect(floor.bands.length).toBe(4);
+    expect(floor.bandsOpen.below).toBe(true); // below 7695 every leg expires worthless: pays forever
+    expect(floor.bandsOpen.above).toBe(false); // above the 7730 fly the stranded vertical loses
+    expect(floor.bands[1]![0]).toBeLessThanOrEqual(7706.05); // settlement sits inside a real window
+    expect(floor.bands[1]![1]).toBeGreaterThanOrEqual(7706.05);
+  });
+});

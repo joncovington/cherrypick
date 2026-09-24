@@ -15,7 +15,7 @@ import type { ModulePerformanceGroup } from "../src/readers/performance.js";
  * verdicts are computed there and stored, a second computation would be a second opinion free to
  * drift).
  *
- * Since 2026-09-17 each experiment writes its own book (`advised:<experiment name>`) and the base
+ * Since 2026-09-17 each experiment writes its own arm (`advised:<experiment name>`) and the base
  * is on the experiment's row, not in the tag. These pin the resolution order in
  * `experimentIndex.ts`: the stamp on the rows, then the tag against the experiment's own, then
  * the legacy `advised:<base>` reading for rows no experiment claims.
@@ -133,7 +133,7 @@ describe("readAdvisedPairs", () => {
     expect(readAdvisedPairs(config, "curve", groups)).toEqual([]);
   });
 
-  it("two experiments on one base are two pairs against that base, each its own book", () => {
+  it("two experiments on one base are two pairs against that base, each its own arm", () => {
     // The change itself (2026-09-17): the tag names the experiment, the row names the base.
     const { config, tmp } = tmpConfig();
     seedStore(tmp, [
