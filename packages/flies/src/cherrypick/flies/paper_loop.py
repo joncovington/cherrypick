@@ -709,6 +709,24 @@ def run_status(config: dict, conn, *, cache_path: str) -> dict:
     }
 
 
+def _register_stream_request(config: dict, conn, db_path) -> None:
+    """Tell the streamer which underlyings we need kept fresh in the shared cache (best-effort), and
+    whether any of them need a wider-than-default ATM window after repeated missing_leg_quotes
+    refusals (stream_window.py; state lives in this DB, so paper's escalation is independent of
+    live's own)."""
+    try:
+        sw = config.get("stream_window") or {}
+        base_width = int(sw.get("base_width", 60))
+        symbols = config.get("symbols") or ["SPX"]
+        today = provider.now_et().date().isoformat()
+        hints = stream_window.hints_for_symbols(
+            conn, symbols, today, base_width=base_width, request_base_width=bool(sw.get("request_base_width"))
+        )
+    except Exception:  # noqa: BLE001 — window escalation is advisory, never fatal to the loop
+        hints = None
+    stream_request.register(config, window_hints=hints, db_path=db_path)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="cherrypick-flies paper session driver")
     ap.add_argument("--config")
@@ -741,21 +759,7 @@ def main(argv=None) -> int:
     config = climod.load_config(args.config)
     cache_path = args.stream_cache or stream_cache_path(config)
     conn = dbmod.connect(args.db)
-    # Tell the streamer which underlyings we need kept fresh in the shared cache (best-effort), and
-    # whether any of them need a wider-than-default ATM window after repeated missing_leg_quotes
-    # refusals (stream_window.py; state lives in this DB, so paper's escalation is independent of
-    # live's own).
-    try:
-        sw = config.get("stream_window") or {}
-        base_width = int(sw.get("base_width", 60))
-        symbols = config.get("symbols") or ["SPX"]
-        today = provider.now_et().date().isoformat()
-        hints = stream_window.hints_for_symbols(
-            conn, symbols, today, base_width=base_width, request_base_width=bool(sw.get("request_base_width"))
-        )
-    except Exception:  # noqa: BLE001 — window escalation is advisory, never fatal to the loop
-        hints = None
-    stream_request.register(config, window_hints=hints, db_path=args.db)
+    _register_stream_request(config, conn, args.db)
 
     if args.status:
         print(json.dumps(run_status(config, conn, cache_path=cache_path), indent=2, default=str))
@@ -795,6 +799,12 @@ def main(argv=None) -> int:
                 # dead resident child, but dying on every quote hiccup would turn each into a
                 # restart+backoff cycle when the next tick would have been fine.
                 try:
+                    # Every tick, not once per process: the escalator only ever sees the misses
+                    # this loop has already recorded, so evaluating it at startup alone meant a
+                    # resident session could never widen mid-session. On 2026-09-24 callwall
+                    # refused 69 times on missing_leg_quotes from 13:30 ET and the request did
+                    # not widen until the next process start, 31 seconds after the close.
+                    _register_stream_request(config, conn, args.db)
                     run_once(config, conn, cache_path=cache_path, force=args.force)
                 except Exception as exc:  # noqa: BLE001
                     _log(f"iteration error (continuing): {type(exc).__name__}: {exc}")
