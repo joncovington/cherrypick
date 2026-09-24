@@ -430,7 +430,7 @@ export function readFliesForest(
     const rows = db
       .prepare<string[], Record<string, unknown>>(
         `SELECT arm, kind, side, center, wing_width, far_width, net, quantity, fees, status
-           FROM fly_positions WHERE trade_date = ? AND status != 'voided' AND void_reason IS NULL${armClause}`,
+           FROM fly_positions WHERE trade_date = ? AND status != 'voided' AND void_reason IS NULL AND ${NOT_CANCELLED}${armClause}`,
       )
       .all(...params);
     const byArm = new Map<string, FlyPosition[]>();
@@ -456,7 +456,7 @@ export function readFliesForest(
     const symRow = db
       .prepare<string[], { symbol: string | null }>(
         `SELECT symbol FROM fly_positions
-          WHERE trade_date = ? AND status != 'voided' AND void_reason IS NULL${armClause}
+          WHERE trade_date = ? AND status != 'voided' AND void_reason IS NULL AND ${NOT_CANCELLED}${armClause}
           GROUP BY symbol ORDER BY COUNT(*) DESC LIMIT 1`,
       )
       .get(...params);
@@ -552,7 +552,9 @@ function buildFliesTimeline(dbPath: string, mode: TradingMode, day: string | nul
       latencyMin: number | null;
     }
     const rows: TimelineRow[] = db
-      .prepare<[string], Record<string, unknown>>("SELECT * FROM fly_positions WHERE trade_date = ? ORDER BY entry_time")
+      .prepare<[string], Record<string, unknown>>(
+        `SELECT * FROM fly_positions WHERE trade_date = ? AND ${NOT_CANCELLED} ORDER BY entry_time`,
+      )
       .all(date)
       .map((r): TimelineRow => ({
         kind: String(r["kind"] ?? "fly"),
@@ -732,6 +734,19 @@ export function readFliesJournal(config: ConsoleConfig, mode: TradingMode, day: 
 
 /** Settled, non-void — the shared WHERE every history read builds on. */
 const SETTLED = "status = 'settled' AND void_reason IS NULL";
+
+/**
+ * A cancelled entry's order was pulled before it filled, so it never was a position: nothing was
+ * bought or sold and its credit was never collected. The ledger keeps the row as a record of the
+ * attempt, and every query here that counts, values or replays POSITIONS has to drop it -- or the
+ * forest draws a stranded vertical that never existed, today's tiles count it as open, and max
+ * loss adds its floor. Python's `fly.entry_never_filled` is the same rule on the module side.
+ *
+ * Written as an exclusion on purpose: `entry_fill_status` is NULL on every paper row, so
+ * `entry_fill_status = 'filled'` would drop the whole paper history. COALESCE keeps a NULL status
+ * in, rather than letting `!=` quietly discard it.
+ */
+export const NOT_CANCELLED = "COALESCE(status, '') != 'cancelled'";
 
 export interface FliesSummary {
   trades: number;
@@ -1463,7 +1478,7 @@ export function readFliesPerformance(
         .prepare<string[], Record<string, unknown>>(
           `SELECT position_id, kind, credit, ${spec.best} AS best, ${spec.latency} AS latency,
                   underlying_at_entry, ${spec.spot} AS spot_at_done
-             FROM fly_positions WHERE entry_mode = ? AND void_reason IS NULL${sc.and}`,
+             FROM fly_positions WHERE entry_mode = ? AND void_reason IS NULL AND ${NOT_CANCELLED}${sc.and}`,
         )
         .all(mode, ...sc.params);
       // 'fly' is the converted kind for BOTH modes: a completed leg-in and a rolled bwb both end up
@@ -1569,7 +1584,7 @@ export function readFliesPerformance(
       db
         .prepare<string[], Record<string, unknown>>(
           `SELECT trade_date, COUNT(*) AS legged, SUM(CASE WHEN kind = 'fly' THEN 1 ELSE 0 END) AS completed
-             FROM fly_positions WHERE entry_mode = ? AND void_reason IS NULL${sc.and}
+             FROM fly_positions WHERE entry_mode = ? AND void_reason IS NULL AND ${NOT_CANCELLED}${sc.and}
               GROUP BY trade_date ORDER BY trade_date`,
         )
         .all(mode, ...sc.params)
@@ -1693,7 +1708,7 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
                   SUM(CASE WHEN risk_free = 1 THEN 1 ELSE 0 END) AS risk_free,
                   SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS completed,
                   COALESCE(SUM(fees), 0) AS fees
-             FROM fly_positions WHERE trade_date = ?${armClause}`,
+             FROM fly_positions WHERE trade_date = ? AND ${NOT_CANCELLED}${armClause}`,
         )
         .get(tradeDate, ...armParams) ?? {};
       const positions = Number(t["positions"] ?? 0);
@@ -1703,7 +1718,7 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
         .prepare<string[], Record<string, unknown>>(
           `SELECT kind, side, center, wing_width, far_width, net, quantity, fees, status
              FROM fly_positions WHERE trade_date = ?${armClause}
-              AND status NOT IN ('settled','closed','voided')`,
+              AND status NOT IN ('settled','closed','voided','cancelled')`,
         )
         .all(tradeDate, ...armParams);
       const maxPossibleLoss = openRows.reduce((sum, r) => {
