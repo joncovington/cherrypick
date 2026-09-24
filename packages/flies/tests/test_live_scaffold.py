@@ -1963,6 +1963,32 @@ def test_live_vs_paper_restricts_paper_to_live_sessions(live_conn):
     paper.close()
 
 
+def test_a_cancelled_live_entry_is_not_counted_against_completion(live_conn):
+    """An entry order that cancelled before filling never held risk, so it is not an entry.
+
+    The failure is not symmetric with the forest's, and it is the more dangerous of the two. A
+    cancelled entry is stored as a `short_vertical` that never completed, so counting it LOWERS
+    live completion, widens the gap to paper, and walks toward the abort rule on a live pilot that
+    is doing fine. On 2026-09-23 two of seven live rows were cancelled entries; counted, that day
+    alone would have read 4 completions from 7 entries instead of 4 from 5."""
+    from cherrypick.flies import analytics
+
+    paper = _paper_conn()
+    _legged_row(live_conn, "L1", kind="fly", latency=8.0, debit=0.5)
+    _legged_row(live_conn, "L2", kind="fly", latency=9.0, debit=0.5)
+    _legged_row(live_conn, "L3", kind="short_vertical")  # the pulled order
+    live_conn.execute("UPDATE fly_positions SET status = 'cancelled' WHERE position_id = 'L3'")
+    live_conn.commit()
+    _legged_row(paper, "P1", kind="fly", latency=4.0, debit=0.4)
+
+    out = analytics.live_vs_paper(live_conn, paper, "gex")
+
+    assert out["live"]["entries"] == 2, "the cancelled entry was counted"
+    assert out["live"]["completion_rate"] == pytest.approx(1.0)
+    assert out["completion_gap"] == pytest.approx(0.0)
+    paper.close()
+
+
 def test_abort_rule_arms_and_triggers(live_conn):
     from cherrypick.flies import analytics
 
