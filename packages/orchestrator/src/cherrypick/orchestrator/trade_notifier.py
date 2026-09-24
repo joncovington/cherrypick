@@ -31,6 +31,7 @@ import json
 import os
 import sqlite3
 import time
+from datetime import datetime, timezone
 from datetime import time as dtime
 from typing import Any
 
@@ -178,6 +179,15 @@ def _digest_window_open(now: float) -> bool:
     if not timeutil.is_trading_day(et, timeutil.load_holidays([et.year])):
         return False
     return _DIGEST_OPEN <= et.time() <= _DIGEST_CLOSE
+
+
+def _arm(r) -> str:
+    """The arm a calendars/pmcc/curve/bwb row belongs to. The column was `book` until the
+    2026-09-23 rename and is `arm` after it; a pre-migration backup still says `book`, so read both.
+    Reading only `book` raised on the first post-rename event, which aborted the whole pass before
+    its state was saved -- and every later pass then re-sent every flies event of the day."""
+    keys = r.keys()
+    return r["arm"] if "arm" in keys else r["book"]
 
 
 def _embed(color: int, title: str, details: str, footer: str | None = None) -> dict:
@@ -885,7 +895,7 @@ def _calendars_seed(conn) -> dict:
 def _fmt_calendars_entry(r) -> str:
     return (
         f"\U0001f7e2 Calendars paper ENTRY — {r['symbol']} {r['structure']} {r['side']} calendar "
-        f"{r['strike']:.0f} for ${r['entry_debit']:.2f} debit (EM {r['entry_em']:.1f}) [{r['book']}]"
+        f"{r['strike']:.0f} for ${r['entry_debit']:.2f} debit (EM {r['entry_em']:.1f}) [{_arm(r)}]"
     )
 
 
@@ -895,14 +905,14 @@ def _embed_calendars_entry(r) -> dict:
         f"· debit ${r['entry_debit']:.2f} · spot {r['entry_spot']:.2f} ± EM {r['entry_em']:.1f}"
     )
     title = f"ENTRY · {r['symbol']} {r['structure']} {r['side']} {r['strike']:.0f}"[:256]
-    return _embed(COLOR_ENTRY, title, details, footer=r["book"])
+    return _embed(COLOR_ENTRY, title, details, footer=_arm(r))
 
 
 def _fmt_calendars_settlement(r) -> str:
     itm = "ITM" if (r["itm_settlements"] or 0) > 0 else "OTM"
     return (
         f"⚖️ Calendars SHORT SETTLED — {r['symbol']} {r['side']} {r['strike']:.0f} "
-        f"{itm} at {r['settlement_spot']:.2f}; the long rides to {r['back_expiration']} [{r['book']}]"
+        f"{itm} at {r['settlement_spot']:.2f}; the long rides to {r['back_expiration']} [{_arm(r)}]"
     )
 
 
@@ -912,14 +922,14 @@ def _embed_calendars_settlement(r) -> dict:
         f"long open to {r['back_expiration']}"
     )
     title = f"SHORT SETTLED · {r['symbol']} {r['side']} {r['strike']:.0f}"[:256]
-    return _embed(COLOR_COMPLETE, title, details, footer=r["book"])
+    return _embed(COLOR_COMPLETE, title, details, footer=_arm(r))
 
 
 def _fmt_calendars_exit(r) -> str:
     net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
     return (
         f"\U0001f3c1 Calendars paper CLOSED — {r['symbol']} {r['structure']} {r['side']} "
-        f"{r['strike']:.0f} net ${net:+.2f} ({r['exit_reason']}) [{r['book']}]"
+        f"{r['strike']:.0f} net ${net:+.2f} ({r['exit_reason']}) [{_arm(r)}]"
     )
 
 
@@ -930,7 +940,7 @@ def _embed_calendars_exit(r) -> dict:
         f"{r['exit_reason']} · week {r['week_of']}"
     )
     title = f"CLOSED · {r['symbol']} {r['structure']} {r['side']} {r['strike']:.0f}"[:256]
-    return _embed(COLOR_EXIT, title, details, footer=r["book"])
+    return _embed(COLOR_EXIT, title, details, footer=_arm(r))
 
 
 def _calendars_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
@@ -996,7 +1006,7 @@ def _fmt_pmcc_entry(r) -> str:
     return (
         f"\U0001f7e2 PMCC-99 paper ENTRY — {r['symbol']} long {r['long_strike']:.0f} "
         f"({r['long_expiration']}) / short {r['short_strike']:.0f} ({r['short_expiration']}) "
-        f"for ${r['net_debit']:.2f} debit, TV ${r['entry_net_tv'] or 0:.2f} [{r['book']}]"
+        f"for ${r['net_debit']:.2f} debit, TV ${r['entry_net_tv'] or 0:.2f} [{_arm(r)}]"
     )
 
 
@@ -1007,27 +1017,27 @@ def _embed_pmcc_entry(r) -> dict:
         f"· protection {(r['entry_downside_protection_pct'] or 0) * 100:.1f}% · spot {r['entry_spot']:.2f}"
     )
     title = f"ENTRY · {r['symbol']} PMCC {r['long_strike']:.0f}/{r['short_strike']:.0f}"[:256]
-    return _embed(COLOR_ENTRY, title, details, footer=r["book"])
+    return _embed(COLOR_ENTRY, title, details, footer=_arm(r))
 
 
 def _fmt_pmcc_roll(r) -> str:
     return (
         f"\U0001f504 PMCC-99 ROLLED — {r['symbol']} short now {r['short_strike']:.0f} "
-        f"({r['short_expiration']}), roll #{r['roll_count']} [{r['book']}]"
+        f"({r['short_expiration']}), roll #{r['roll_count']} [{_arm(r)}]"
     )
 
 
 def _embed_pmcc_roll(r) -> dict:
     details = f"short now {r['short_strike']:.0f} {r['short_expiration']} · roll #{r['roll_count']}"
     title = f"ROLLED · {r['symbol']} PMCC short {r['short_strike']:.0f}"[:256]
-    return _embed(COLOR_COMPLETE, title, details, footer=r["book"])
+    return _embed(COLOR_COMPLETE, title, details, footer=_arm(r))
 
 
 def _fmt_pmcc_settlement(r) -> str:
     itm = "ITM (shares delivered)" if (r["itm_settlements"] or 0) > 0 else "OTM"
     return (
         f"⚖️ PMCC-99 SHORT SETTLED — {r['symbol']} {r['short_strike']:.0f} {itm} "
-        f"at {r['settlement_spot']:.2f}; the long rides to the next session [{r['book']}]"
+        f"at {r['settlement_spot']:.2f}; the long rides to the next session [{_arm(r)}]"
     )
 
 
@@ -1037,7 +1047,7 @@ def _embed_pmcc_settlement(r) -> dict:
         f"long open to {r['long_expiration']}"
     )
     title = f"SHORT SETTLED · {r['symbol']} PMCC {r['short_strike']:.0f}"[:256]
-    return _embed(COLOR_COMPLETE, title, details, footer=r["book"])
+    return _embed(COLOR_COMPLETE, title, details, footer=_arm(r))
 
 
 def _fmt_pmcc_exit(r) -> str:
@@ -1045,7 +1055,7 @@ def _fmt_pmcc_exit(r) -> str:
     return (
         f"\U0001f3c1 PMCC-99 paper CLOSED — {r['symbol']} "
         f"{r['long_strike']:.0f}/{r['short_strike']:.0f} net ${net:+.2f} "
-        f"({r['exit_reason']}) [{r['book']}]"
+        f"({r['exit_reason']}) [{_arm(r)}]"
     )
 
 
@@ -1056,7 +1066,7 @@ def _embed_pmcc_exit(r) -> dict:
         f"{r['exit_reason']} · entered {r['entry_session']}"
     )
     title = f"CLOSED · {r['symbol']} PMCC {r['long_strike']:.0f}/{r['short_strike']:.0f}"[:256]
-    return _embed(COLOR_EXIT, title, details, footer=r["book"])
+    return _embed(COLOR_EXIT, title, details, footer=_arm(r))
 
 
 def _pmcc_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
@@ -1126,7 +1136,7 @@ def _curve_seed(conn) -> dict:
 def _fmt_curve_entry(r) -> str:
     return (
         f"\U0001f7e2 Curve paper ENTRY — {r['symbol']} short {r['short_strike']:.0f}C / "
-        f"long {r['long_strike']:.0f}C for ${r['entry_credit']:.2f} credit [{r['book']}]"
+        f"long {r['long_strike']:.0f}C for ${r['entry_credit']:.2f} credit [{_arm(r)}]"
     )
 
 
@@ -1136,21 +1146,21 @@ def _embed_curve_entry(r) -> dict:
         f"credit ${r['entry_credit']:.2f} · spot {r['entry_spot'] or 0:.2f}"
     )
     title = f"ENTRY · {r['symbol']} curve {r['short_strike']:.0f}/{r['long_strike']:.0f}"[:256]
-    return _embed(COLOR_ENTRY, title, details, footer=r["book"])
+    return _embed(COLOR_ENTRY, title, details, footer=_arm(r))
 
 
 def _fmt_curve_settlement(r) -> str:
     itm = "ITM (shares delivered)" if (r["itm_settlements"] or 0) > 0 else "OTM"
     return (
         f"⚖️ Curve SHORT SETTLED — {r['symbol']} {r['short_strike']:.0f}C {itm} "
-        f"at {r['settlement_spot']:.2f}; the long rides to the next session [{r['book']}]"
+        f"at {r['settlement_spot']:.2f}; the long rides to the next session [{_arm(r)}]"
     )
 
 
 def _embed_curve_settlement(r) -> dict:
     details = f"settled {r['settlement_spot']:.2f} · {r['itm_settlements'] or 0} ITM"
     title = f"SHORT SETTLED · {r['symbol']} curve {r['short_strike']:.0f}"[:256]
-    return _embed(COLOR_COMPLETE, title, details, footer=r["book"])
+    return _embed(COLOR_COMPLETE, title, details, footer=_arm(r))
 
 
 def _fmt_curve_exit(r) -> str:
@@ -1158,7 +1168,7 @@ def _fmt_curve_exit(r) -> str:
     return (
         f"\U0001f3c1 Curve paper CLOSED — {r['symbol']} "
         f"{r['short_strike']:.0f}/{r['long_strike']:.0f} net ${net:+.2f} "
-        f"({r['exit_reason']}) [{r['book']}]"
+        f"({r['exit_reason']}) [{_arm(r)}]"
     )
 
 
@@ -1169,7 +1179,7 @@ def _embed_curve_exit(r) -> dict:
         f"{r['exit_reason']} · entered {r['entry_session']}"
     )
     title = f"CLOSED · {r['symbol']} curve {r['short_strike']:.0f}/{r['long_strike']:.0f}"[:256]
-    return _embed(COLOR_EXIT, title, details, footer=r["book"])
+    return _embed(COLOR_EXIT, title, details, footer=_arm(r))
 
 
 def _curve_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
@@ -1233,7 +1243,7 @@ def _fmt_bwb_entry(r) -> str:
     return (
         f"\U0001f7e2 BWB paper ENTRY — {r['symbol']} put fly body {r['body_strike']:.0f} "
         f"near {r['near_strike']:.0f} / far {r['far_strike']:.0f} for ${r['entry_credit']:.2f} "
-        f"credit [{r['book']}]"
+        f"credit [{_arm(r)}]"
     )
 
 
@@ -1243,14 +1253,14 @@ def _embed_bwb_entry(r) -> dict:
         f"{r['expiration']} · credit ${r['entry_credit']:.2f} · spot {r['entry_spot'] or 0:.2f}"
     )
     title = f"ENTRY · {r['symbol']} BWB {r['body_strike']:.0f}"[:256]
-    return _embed(COLOR_ENTRY, title, details, footer=r["book"])
+    return _embed(COLOR_ENTRY, title, details, footer=_arm(r))
 
 
 def _fmt_bwb_addon(r) -> str:
     return (
         f"\U0001f504 BWB ADD-ON FIRED — {r['symbol']} credit spread "
         f"{r['addon_short_strike']:.0f}/{r['addon_long_strike']:.0f} for ${r['addon_credit']:.2f} "
-        f"credit, now a 1-3-2 [{r['book']}]"
+        f"credit, now a 1-3-2 [{_arm(r)}]"
     )
 
 
@@ -1259,28 +1269,28 @@ def _embed_bwb_addon(r) -> dict:
         f"add-on {r['addon_short_strike']:.0f}/{r['addon_long_strike']:.0f} · credit ${r['addon_credit']:.2f}"
     )
     title = f"ADD-ON FIRED · {r['symbol']} BWB {r['body_strike']:.0f}"[:256]
-    return _embed(COLOR_COMPLETE, title, details, footer=r["book"])
+    return _embed(COLOR_COMPLETE, title, details, footer=_arm(r))
 
 
 def _fmt_bwb_settlement(r) -> str:
     itm = "ITM (shares delivered)" if (r["itm_settlements"] or 0) > 0 else "OTM"
     return (
         f"⚖️ BWB SETTLED — {r['symbol']} body {r['body_strike']:.0f} {itm} "
-        f"at {r['settlement_spot']:.2f} [{r['book']}]"
+        f"at {r['settlement_spot']:.2f} [{_arm(r)}]"
     )
 
 
 def _embed_bwb_settlement(r) -> dict:
     details = f"settled {r['settlement_spot']:.2f} · {r['itm_settlements'] or 0} ITM"
     title = f"SETTLED · {r['symbol']} BWB {r['body_strike']:.0f}"[:256]
-    return _embed(COLOR_COMPLETE, title, details, footer=r["book"])
+    return _embed(COLOR_COMPLETE, title, details, footer=_arm(r))
 
 
 def _fmt_bwb_exit(r) -> str:
     net = (r["gross_pnl"] or 0.0) - (r["fees"] or 0.0)
     return (
         f"\U0001f3c1 BWB paper CLOSED — {r['symbol']} body {r['body_strike']:.0f} "
-        f"net ${net:+.2f} ({r['exit_reason']}) [{r['book']}]"
+        f"net ${net:+.2f} ({r['exit_reason']}) [{_arm(r)}]"
     )
 
 
@@ -1291,7 +1301,7 @@ def _embed_bwb_exit(r) -> dict:
         f"{r['exit_reason']} · entered {r['entry_session']}"
     )
     title = f"CLOSED · {r['symbol']} BWB {r['body_strike']:.0f}"[:256]
-    return _embed(COLOR_EXIT, title, details, footer=r["book"])
+    return _embed(COLOR_EXIT, title, details, footer=_arm(r))
 
 
 def _bwb_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
@@ -1386,6 +1396,23 @@ class _LiveNotifier:
 
 
 # --------------------------------------------------------------------------- entrypoint
+def _process_isolated(process_fn, conn, st: dict, notifier, name: str, **kwargs) -> dict:
+    """One module's pass, failing on its own. The state is saved once, after every module, so a
+    module that raised used to take everyone's save down with it -- and each module had already
+    SENT its events, so the next pass sent them all again. On 2026-09-24 pmcc and bwb raised on a
+    renamed column from 09:31 ET to the close and every flies event went out ~95 times. The error is
+    kept on the module's own state as well as in the summary, because the watchdog calls this
+    inside a bare except and a summary alone is read by nobody."""
+    try:
+        out = process_fn(conn, st, notifier, name, **kwargs)
+    except Exception as exc:  # noqa: BLE001 -- one module's defect must not replay every other's
+        err = f"{type(exc).__name__}: {exc}"
+        st["last_error"] = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "error": err}
+        return {"error": err}
+    st.pop("last_error", None)
+    return out
+
+
 def run(cfg: dict | None = None) -> dict:
     if not _acquire_lock():
         # Another invocation (the 2-min task vs the watchdog tick) is mid-run; racing it
@@ -1430,16 +1457,13 @@ def run(cfg: dict | None = None) -> dict:
                     summary[name] = {"seeded": True}
                     continue
                 if schema == "meic_ic":
-                    summary[name] = process_fn(
-                        conn,
-                        st,
-                        notifier,
-                        name,
-                        summary_prefixes=summary_prefixes,
-                        summary_interval_minutes=summary_interval_minutes,
-                    )
+                    kwargs = {
+                        "summary_prefixes": summary_prefixes,
+                        "summary_interval_minutes": summary_interval_minutes,
+                    }
                 else:
-                    summary[name] = process_fn(conn, st, notifier, name)
+                    kwargs = {}
+                summary[name] = _process_isolated(process_fn, conn, st, notifier, name, **kwargs)
             finally:
                 conn.close()
 
@@ -1470,16 +1494,10 @@ def run(cfg: dict | None = None) -> dict:
                     summary[key] = {"seeded": True}
                     continue
                 if schema == "meic_ic":
-                    summary[key] = process_fn(
-                        conn,
-                        st,
-                        live_notifier,
-                        name,
-                        summary_prefixes=(),
-                        summary_interval_minutes=summary_interval_minutes,
-                    )
+                    kwargs = {"summary_prefixes": (), "summary_interval_minutes": summary_interval_minutes}
                 else:
-                    summary[key] = process_fn(conn, st, live_notifier, name)
+                    kwargs = {}
+                summary[key] = _process_isolated(process_fn, conn, st, live_notifier, name, **kwargs)
             finally:
                 conn.close()
 
