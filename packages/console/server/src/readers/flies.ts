@@ -427,9 +427,12 @@ export function readFliesForest(
       .get(tradeDate);
     const armClause = arm !== null ? " AND arm = ?" : "";
     const params: string[] = arm !== null ? [tradeDate, arm] : [tradeDate];
+    // `settlement_price` lets a settled row price each point's own expiry fee (see positionPnl);
+    // asked for only where the ledger has it, since naming a missing column empties the forest.
+    const settleCol = hasColumn(db, "fly_positions", "settlement_price") ? ", settlement_price" : "";
     const rows = db
       .prepare<string[], Record<string, unknown>>(
-        `SELECT arm, kind, side, center, wing_width, far_width, net, quantity, fees, status
+        `SELECT arm, kind, side, center, wing_width, far_width, net, quantity, fees, status${settleCol}
            FROM fly_positions WHERE trade_date = ? AND status != 'voided' AND void_reason IS NULL AND ${NOT_CANCELLED}${armClause}`,
       )
       .all(...params);
@@ -451,6 +454,7 @@ export function readFliesForest(
         quantity: Number(r["quantity"] ?? 1),
         fees: Number(r["fees"] ?? 0),
         status: r["status"] === null ? null : String(r["status"]),
+        settlementPrice: typeof r["settlement_price"] === "number" ? r["settlement_price"] : null,
       });
     }
     const symRow = db
@@ -566,6 +570,7 @@ function buildFliesTimeline(dbPath: string, mode: TradingMode, day: string | nul
         quantity: Number(r["quantity"] ?? 1),
         fees: Number(r["fees"] ?? 0),
         status: r["status"] === null ? null : String(r["status"]),
+        settlementPrice: typeof r["settlement_price"] === "number" ? r["settlement_price"] : null,
         symbol: String(r["symbol"] ?? "XSP"),
         entryTime: r["entry_time"] === null ? null : String(r["entry_time"]),
         completedAt: r["completed_at"] === null ? null : String(r["completed_at"]),

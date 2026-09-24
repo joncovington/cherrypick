@@ -19,6 +19,11 @@ export interface FlyPosition {
   quantity: number;
   fees: number;
   status: string | null;
+  /**
+   * On a settled row, the price it settled at. `positionPnl` then swaps the fee that price charged
+   * for the fee the priced point would, as fly.position_pnl does; absent means keep `fees` as is.
+   */
+  settlementPrice?: number | null;
 }
 
 export function flyPayoff(center: number, w: number, s: number): number {
@@ -80,6 +85,11 @@ export function positionPnl(p: FlyPosition, s: number): number {
   const cash = p.net + payoff;
   let fees = p.fees;
   if (p.status !== "settled") fees += ASSIGNMENT_FEE_PER_EVENT * itmLegsAtSettlement(p, s);
+  else if (p.settlementPrice != null) {
+    // A settled row's fees hold what its own settlement charged; at any other price it would have
+    // charged that price's fee. Exact at the settlement price, so the recorded P&L is unchanged.
+    fees += ASSIGNMENT_FEE_PER_EVENT * (itmLegsAtSettlement(p, s) - itmLegsAtSettlement(p, p.settlementPrice));
+  }
   return cash * CONTRACT_MULTIPLIER * p.quantity - fees;
 }
 
@@ -156,8 +166,13 @@ export function stateAt(row: FlyRow, when: string): FlyPosition | null {
     quantity: row.quantity,
     fees: row.fees,
     status: row.status,
+    settlementPrice: row.settlementPrice ?? null,
   };
   if (row.completedAt !== null && when < row.completedAt) {
+    // A rewound state has an opening fee and has not settled; keeping `settled` here charged it no
+    // expiry fee at any price.
+    state.status = null;
+    state.settlementPrice = null;
     if (row.entryMode === "legged" && row.credit !== null) {
       state.kind = "short_vertical";
       state.net = row.credit;

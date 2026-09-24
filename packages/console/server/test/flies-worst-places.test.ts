@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { bookFloor, type FlyPosition } from "../src/analytics/fliesPayoff.js";
+import { bookFloor, positionPnl, type FlyPosition } from "../src/analytics/fliesPayoff.js";
 
 /**
  * The shape of 2026-09-24's live control book: three completed flies and the 14:05 call spread
@@ -28,3 +28,23 @@ describe("bookFloor's worst places", () => {
     ]);
   });
 });
+
+describe("a settled row read at a hypothetical price", () => {
+  // The 14:05 call spread: settled at 7704.13 with $10 of expiry fees folded into its $13.44.
+  const settled = {
+    kind: "short_vertical", side: "call", center: 7685, wingWidth: 5, farWidth: null, net: 2.55, quantity: 1,
+    fees: 13.44, status: "settled", settlementPrice: 7704.13,
+  } as FlyPosition;
+
+  it("reproduces its recorded P&L at its own settlement price", () => {
+    expect(positionPnl(settled, 7704.13)).toBeCloseTo(-258.44, 2);
+  });
+
+  it("carries the fee the priced point would charge, not the one its settlement did", () => {
+    // Below 7685 nothing is in the money: no expiry fee, so only the $3.44 commission comes off.
+    expect(positionPnl(settled, 7680)).toBeCloseTo(255 - 3.44, 2);
+    // Without the settlement price the folded fee stays, as before.
+    expect(positionPnl({ ...settled, settlementPrice: null }, 7680)).toBeCloseTo(255 - 13.44, 2);
+  });
+});
+
