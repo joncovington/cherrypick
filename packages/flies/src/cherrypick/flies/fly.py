@@ -403,6 +403,15 @@ def position_pnl(position: dict, underlying: float) -> float:
                     position) computes it fresh from `underlying`, so the payoff curve and the
                     session-timeline replay stay honest about a cost that has not happened yet
                     but would if the session ended at this price (honesty rule 1).
+        settlement_price
+                    on a settled position, the price it settled at. With it, the fee charged there
+                    is swapped for the fee `underlying` would have triggered, so a settled book
+                    read at a HYPOTHETICAL price carries that price's fee rather than the one the
+                    real settlement happened to charge. At `underlying == settlement_price` the two
+                    cancel exactly, so every recorded `pnl` is unchanged. Without it a settled
+                    book's worst case mixed the two: 2026-09-24's live control read -$224.11 at
+                    7695 and 7710+, carrying the $30 of fees 7704.13 charged where either of those
+                    prices would have charged $25 (-$219.11).
     """
     qty = position.get("quantity", 1)
     w = position["wing_width"]
@@ -423,6 +432,8 @@ def position_pnl(position: dict, underlying: float) -> float:
     fees = position.get("fees", 0.0)
     if position.get("status") != "settled":
         fees += assignment_fee(position, underlying)
+    elif position.get("settlement_price") is not None:
+        fees += assignment_fee(position, underlying) - assignment_fee(position, position["settlement_price"])
     return cash * CONTRACT_MULTIPLIER * qty - fees
 
 

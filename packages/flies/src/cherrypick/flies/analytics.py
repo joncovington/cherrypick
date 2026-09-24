@@ -1557,6 +1557,11 @@ def payoff_curve(conn, day: str, arm: str, step: float = 1.0, points: int = 120)
             "net": r["net"],
             "quantity": r["quantity"] or 1,
             "fees": r["fees"] or 0.0,
+            # Without these a settled row's fees (which already hold the fee its settlement
+            # charged) got a fresh per-price fee added on top -- charged twice on every settled
+            # book's curve. `fly.position_pnl` swaps the one for the other instead.
+            "status": r["status"],
+            "settlement_price": r["settlement_price"],
         }
         for r in positions_for_day(conn, day, arm)
     ]
@@ -1621,9 +1626,17 @@ def _state_at(row: dict, when: str) -> dict | None:
         "net": row["net"],
         "quantity": row["quantity"] or 1,
         "fees": row["fees"] or 0.0,
+        # A settled row's fees hold the fee its settlement charged; carrying these lets
+        # `fly.position_pnl` swap that for the fee at the replayed price instead of adding a
+        # second one. The rewind branches below replace `fees` with an opening fee, so they drop
+        # both again: a rewound state has not settled.
+        "status": row.get("status"),
+        "settlement_price": row.get("settlement_price"),
     }
     completed = row.get("completed_at")
     if completed and when < completed:
+        state["status"] = None
+        state["settlement_price"] = None
         entry_mode = row.get("entry_mode")
         if entry_mode == "legged" and row.get("credit") is not None:
             state["kind"] = "short_vertical"

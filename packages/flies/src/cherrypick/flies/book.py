@@ -232,6 +232,9 @@ def _to_position(row: dict) -> dict:
         "fees": row["fees"] or 0.0,
         "entry_mode": row["entry_mode"],
         "status": row["status"],
+        # With `status`, lets `fly.position_pnl` price a settled position's expiry fee at any price
+        # rather than at the one it settled at (see there).
+        "settlement_price": row["settlement_price"],
         "position_id": row["position_id"],
         # Carried because the session stats are recomputed from these dicts after settlement, and
         # pin rate is one of the three numbers the whole thesis turns on.
