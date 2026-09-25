@@ -33,7 +33,13 @@ import { readMeicProfileGuide } from "../src/readers/experimentGuide.js";
  */
 
 const ARM = "ctl-arm"; // distinctive, so finding it in a payload cannot be a coincidence
-const DAY = "2026-09-24";
+// Today in ET, computed the way readMeicAnalytics computes its "today" -- that reader's per-arm table
+// is today-scoped, so a fixed date passes on the day it was written and fails from the next (CI ran
+// it at 00:06 UTC on 2026-09-25 and found no arm).
+const DAY = (() => {
+  const et = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+  return new Date(Date.UTC(et.getFullYear(), et.getMonth(), et.getDate())).toISOString().slice(0, 10);
+})();
 const SCHEMA = fs.readFileSync(path.join(__dirname, "fixtures", "meic-ledger-schema.sql"), "utf-8");
 
 function tmpConfig(tmp: string): ConsoleConfig {
