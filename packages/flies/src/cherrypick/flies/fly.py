@@ -199,6 +199,14 @@ def leg_debit(q: dict, slippage_frac: float = DEFAULT_SLIPPAGE_FRAC) -> float:
     return _leg_mid(q) + slippage_frac * _leg_spread(q)
 
 
+def conceded(price_fn, *quotes: dict, slippage_frac: float) -> float:
+    """Price points a modelled fill gave up against mid: `price_fn` at the fill's slippage fraction
+    against the same function at zero. Measured off the pricing function itself rather than a second
+    formula for the haircut, so the two cannot disagree about what the fill cost. Recorded as
+    `slippage_dollars`; it is already inside the fill price, so it is a measure, never a new cost."""
+    return round(abs(price_fn(*quotes, slippage_frac) - price_fn(*quotes, 0.0)), 4)
+
+
 def leg_credit(q: dict, slippage_frac: float = DEFAULT_SLIPPAGE_FRAC) -> float:
     """Credit received SELLING one leg: mid minus the haircut on its own spread."""
     return _leg_mid(q) - slippage_frac * _leg_spread(q)

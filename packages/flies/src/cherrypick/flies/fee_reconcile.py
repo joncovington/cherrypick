@@ -382,7 +382,7 @@ def reconcile_date(conn, trade_date: str, symbol: str, transactions: list[dict],
             "modeled_net = COALESCE(modeled_net, ?), modeled_fees = COALESCE(modeled_fees, ?), "
             "modeled_gross_pnl = COALESCE(modeled_gross_pnl, ?), modeled_pnl = COALESCE(modeled_pnl, ?), "
             "modeled_expiry_payoff = COALESCE(modeled_expiry_payoff, ?), "
-            "net = ?, fees = ?, gross_pnl = ?, pnl = ?, expiry_payoff = ?, "
+            "net = ?, fees = ?, gross_pnl = ?, pnl = ?, expiry_payoff = ?, settlement_fees = ?, "
             "broker_reconciled_at = ?, broker_reconciliation_status = 'reconciled' "
             "WHERE position_id = ?",
             (
@@ -396,6 +396,8 @@ def reconcile_date(conn, trade_date: str, symbol: str, transactions: list[dict],
                 real_gross,
                 real_pnl,
                 round(real_payoff, 4),
+                # The broker's own settlement fee for this position, the part of `fees` it is.
+                round(settle_fees, 2),
                 clock.now_iso(),
                 position["position_id"],
             ),

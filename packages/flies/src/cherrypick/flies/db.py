@@ -493,6 +493,18 @@ _ADDED_POSITION_COLUMNS = {
     "wing_leg_symbol": "TEXT",
     "far_leg_symbol": "TEXT",
     "completing_leg_symbol": "TEXT",
+    # Cost breakdowns (2026-09-24), for the suite's standard trade table: fees / settlement /
+    # slippage as separate columns. Both are COMPONENTS, never extra costs:
+    #   settlement_fees   the part of `fees` that is the exercise/assignment charge at settlement
+    #                     ($5 per ITM leg, `fly.expire_fee`) -- `fees` stays the TOTAL, so every
+    #                     reader already summing it is unchanged. Live: the broker's own settlement
+    #                     fee once `fee_reconcile` has matched it. NULL = not recorded.
+    #   slippage_dollars  what the modelled fills conceded against mid, entry + completion + roll,
+    #                     in dollars. ALREADY inside the fill prices and so inside gross_pnl -- a
+    #                     measure of it, never subtracted again. NULL for positions opened before it
+    #                     was recorded and for live fills (the broker's price, not a modelled one).
+    "settlement_fees": "REAL",
+    "slippage_dollars": "REAL",
 }
 
 # Rows whose decisions rest on a defect, stamped once when `void_reason` is first added. Keyed on

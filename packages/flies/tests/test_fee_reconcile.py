@@ -426,6 +426,10 @@ def test_a_settlement_line_two_positions_share_is_split_not_counted_twice(live_c
     # ...and the one $5 fee on that line is split between them, not charged to each.
     assert rows["p7760"]["fees"] == pytest.approx(6.88 + 2.50)
     assert rows["p7770"]["fees"] == pytest.approx(6.88 + 2.50 + 5.00 + 5.00)
+    # The settlement part of those fees is recorded beside the total -- the broker's own figure,
+    # split the same way -- so the trade table can show fees and settlement apart.
+    assert rows["p7760"]["settlement_fees"] == pytest.approx(2.50)
+    assert rows["p7770"]["settlement_fees"] == pytest.approx(2.50 + 5.00 + 5.00)
     assert rows["c7765"]["pnl"] == pytest.approx(477.12)
     assert rows["p7760"]["pnl"] == pytest.approx(56.62)
     assert rows["p7770"]["pnl"] == pytest.approx(5.62)

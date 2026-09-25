@@ -1230,6 +1230,12 @@ def evaluate_credit_spread_entry(
 
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
     credit = fly.vertical_credit(quote(snapshot, side, center), quote(snapshot, side, long_strike), slip)
+    conceded_pts = fly.conceded(
+        fly.vertical_credit,
+        quote(snapshot, side, center),
+        quote(snapshot, side, long_strike),
+        slippage_frac=slip,
+    )
 
     min_credit = params.get("min_credit_pct_of_width", 0.20) * width
     if credit < min_credit:
@@ -1273,6 +1279,7 @@ def evaluate_credit_spread_entry(
             "center_delta": center_delta(snapshot, side, center),
             "wing_width": width,
             "credit": round(credit, 4),
+            "slippage": conceded_pts,
             "quantity": qty,
             "open_fee": fly.vertical_open_fee(symbol, qty),
             "completing_strike": completing_strike,
@@ -1302,6 +1309,12 @@ def evaluate_completion(snapshot: dict, position: dict, params: dict) -> tuple:
     # Buying the completing spread: long the far strike, short the centre (which offsets nothing —
     # it doubles the existing short into the fly's -2 centre).
     debit = fly.vertical_debit(quote(snapshot, side, long_strike), quote(snapshot, side, center), slip)
+    conceded_pts = fly.conceded(
+        fly.vertical_debit,
+        quote(snapshot, side, long_strike),
+        quote(snapshot, side, center),
+        slippage_frac=slip,
+    )
 
     symbol = snapshot["symbol"]
     qty = position.get("quantity", 1)
@@ -1335,6 +1348,7 @@ def evaluate_completion(snapshot: dict, position: dict, params: dict) -> tuple:
     # running minimum, which is what makes that question answerable after the fact.
     plan = {
         "debit": round(debit, 4),
+        "slippage": conceded_pts,
         "net": round(net, 4),
         "completion_fee": completion_fee,
         "floor": round(floor, 2),
@@ -1433,6 +1447,12 @@ def evaluate_debit_vertical_entry(
 
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
     debit = fly.vertical_debit(quote(snapshot, side, long_strike), quote(snapshot, side, center), slip)
+    conceded_pts = fly.conceded(
+        fly.vertical_debit,
+        quote(snapshot, side, long_strike),
+        quote(snapshot, side, center),
+        slippage_frac=slip,
+    )
 
     if debit <= 0:
         # A non-positive modeled debit means a stale or crossed quote -- a debit vertical's value
@@ -1474,6 +1494,7 @@ def evaluate_debit_vertical_entry(
             "center_delta": center_delta(snapshot, side, center),
             "wing_width": width,
             "debit": round(debit, 4),
+            "slippage": conceded_pts,
             "quantity": qty,
             "open_fee": open_fee,
             "completing_direction": fly.debit_first_completing_direction(side),
@@ -1502,6 +1523,12 @@ def evaluate_debit_completion(snapshot: dict, position: dict, params: dict) -> t
 
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
     credit = fly.vertical_credit(quote(snapshot, side, center), quote(snapshot, side, wing_strike), slip)
+    conceded_pts = fly.conceded(
+        fly.vertical_credit,
+        quote(snapshot, side, center),
+        quote(snapshot, side, wing_strike),
+        slippage_frac=slip,
+    )
 
     symbol = snapshot["symbol"]
     qty = position.get("quantity", 1)
@@ -1526,6 +1553,7 @@ def evaluate_debit_completion(snapshot: dict, position: dict, params: dict) -> t
     )
     plan = {
         "credit": round(credit, 4),
+        "slippage": conceded_pts,
         "net": round(net, 4),
         "completion_fee": completion_fee,
         "floor": round(floor, 2),
@@ -1580,6 +1608,12 @@ def evaluate_iron_completion(snapshot: dict, position: dict, params: dict) -> tu
     credit2 = fly.vertical_credit(
         quote(snapshot, opposite_side, center), quote(snapshot, opposite_side, opposite_wing), slip
     )
+    conceded_pts = fly.conceded(
+        fly.vertical_credit,
+        quote(snapshot, opposite_side, center),
+        quote(snapshot, opposite_side, opposite_wing),
+        slippage_frac=slip,
+    )
 
     symbol = snapshot["symbol"]
     qty = position.get("quantity", 1)
@@ -1604,6 +1638,7 @@ def evaluate_iron_completion(snapshot: dict, position: dict, params: dict) -> tu
     gate_credit = round(width + buffer_pts - credit1, 4)
     plan = {
         "credit": round(credit2, 4),
+        "slippage": conceded_pts,
         "net": round(net, 4),
         "completion_fee": completion_fee,
         "floor": round(floor, 2),
@@ -1724,6 +1759,13 @@ def evaluate_bwb_entry(
         slip,
     )
     credit = -raw
+    conceded_pts = fly.conceded(
+        fly.fly_debit,
+        quote(snapshot, side, lower_wing),
+        quote(snapshot, side, center),
+        quote(snapshot, side, upper_wing),
+        slippage_frac=slip,
+    )
 
     tail = far_width - width
     min_credit = params.get("min_bwb_credit_pct_of_tail", 0.15) * tail
@@ -1765,6 +1807,7 @@ def evaluate_bwb_entry(
             "wing_width": width,
             "far_width": far_width,
             "credit": round(credit, 4),
+            "slippage": conceded_pts,
             "quantity": qty,
             "open_fee": open_fee,
             "entry_window": window,
@@ -1805,6 +1848,12 @@ def evaluate_roll(snapshot: dict, position: dict, params: dict) -> tuple:
     # Long the strike the fly needs, short the wide wing currently held -- a debit vertical spanning
     # exactly (far_width - wing_width), which is the tail being bought back.
     roll_debit = fly.vertical_debit(quote(snapshot, side, roll_strike), quote(snapshot, side, far_wing), slip)
+    conceded_pts = fly.conceded(
+        fly.vertical_debit,
+        quote(snapshot, side, roll_strike),
+        quote(snapshot, side, far_wing),
+        slippage_frac=slip,
+    )
 
     symbol = snapshot["symbol"]
     qty = position.get("quantity", 1)
@@ -1827,6 +1876,7 @@ def evaluate_roll(snapshot: dict, position: dict, params: dict) -> tuple:
     )
     plan = {
         "roll_debit": round(roll_debit, 4),
+        "slippage": conceded_pts,
         "net": round(net, 4),
         "roll_fee": roll_fee,
         "floor": round(floor, 2),
@@ -1897,6 +1947,13 @@ def evaluate_outright_entry(
     debit = fly.fly_debit(
         quote(snapshot, side, lower), quote(snapshot, side, center), quote(snapshot, side, upper), slip
     )
+    conceded_pts = fly.conceded(
+        fly.fly_debit,
+        quote(snapshot, side, lower),
+        quote(snapshot, side, center),
+        quote(snapshot, side, upper),
+        slippage_frac=slip,
+    )
     if debit <= 0:
         # A non-positive modeled debit means a stale or crossed quote, not free money: a long fly's
         # value is bounded below by zero, so nobody sells one for a credit.
@@ -1923,6 +1980,7 @@ def evaluate_outright_entry(
             "center_reason": center_reason,
             "wing_width": width,
             "debit": round(debit, 4),
+            "slippage": conceded_pts,
             "quantity": qty,
             "open_fee": open_fee,
             "cost": round(cost, 2),

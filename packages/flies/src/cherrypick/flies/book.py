@@ -220,6 +220,20 @@ def _minute_of_day(entry_time) -> int | None:
     return parsed.hour * 60 + parsed.minute
 
 
+def _entry_slippage(plan: dict) -> float:
+    """The dollars an entry's modelled fill conceded against mid (`plan["slippage"]`, in points)."""
+    return round(plan["slippage"] * fly.CONTRACT_MULTIPLIER * plan["quantity"], 2)
+
+
+def _slippage_after(pos: dict, plan: dict) -> float | None:
+    """The position's running slippage plus what this completion or roll conceded. Stays None for a
+    position opened before it was recorded: adding only the later fill would read as a total."""
+    prior = pos.get("slippage_dollars")
+    if prior is None:
+        return None
+    return round(prior + plan["slippage"] * fly.CONTRACT_MULTIPLIER * pos.get("quantity", 1), 2)
+
+
 def _to_position(row: dict) -> dict:
     """Database row -> the plain dict the pure math in fly.py consumes."""
     return {
@@ -230,6 +244,9 @@ def _to_position(row: dict) -> dict:
         "net": row["net"],
         "quantity": row["quantity"] or 1,
         "fees": row["fees"] or 0.0,
+        # None when the position was opened before slippage was recorded: its total stays unknown
+        # rather than reading as whatever the later fills alone conceded.
+        "slippage_dollars": dict(row).get("slippage_dollars"),
         "entry_mode": row["entry_mode"],
         "status": row["status"],
         # With `status`, lets `fly.position_pnl` price a settled position's expiry fee at any price
@@ -434,6 +451,7 @@ def process_snapshot(
             pos["kind"] = "iron_fly"
             pos["net"] = plan["net"]
             pos["fees"] = pos["fees"] + plan["completion_fee"]
+            pos["slippage_dollars"] = _slippage_after(pos, plan)
             latency = _minutes_since(pos.get("entry_time"), now)
             dbmod.save_position(
                 conn,
@@ -444,6 +462,7 @@ def process_snapshot(
                     "credit": plan["credit"],
                     "completion_mode": "iron",
                     "fees": pos["fees"],
+                    "slippage_dollars": pos["slippage_dollars"],
                     "floor_dollars": plan["floor"],
                     "risk_free": int(fly.is_risk_free(pos)),
                     "completed_at": now,
@@ -486,6 +505,7 @@ def process_snapshot(
         pos["kind"] = "fly"
         pos["net"] = plan["net"]
         pos["fees"] = pos["fees"] + plan["completion_fee"]
+        pos["slippage_dollars"] = _slippage_after(pos, plan)
         latency = _minutes_since(pos.get("entry_time"), now)
         dbmod.save_position(
             conn,
@@ -496,6 +516,7 @@ def process_snapshot(
                 "debit": plan["debit"],
                 "completion_mode": "debit",
                 "fees": pos["fees"],
+                "slippage_dollars": pos["slippage_dollars"],
                 "floor_dollars": plan["floor"],
                 "risk_free": int(fly.is_risk_free(pos)),
                 "completed_at": now,
@@ -547,6 +568,7 @@ def process_snapshot(
         pos["kind"] = "fly"
         pos["net"] = plan["net"]
         pos["fees"] = pos["fees"] + plan["completion_fee"]
+        pos["slippage_dollars"] = _slippage_after(pos, plan)
         latency = _minutes_since(pos.get("entry_time"), now)
         dbmod.save_position(
             conn,
@@ -556,6 +578,7 @@ def process_snapshot(
                 "net": plan["net"],
                 "credit": plan["credit"],
                 "fees": pos["fees"],
+                "slippage_dollars": pos["slippage_dollars"],
                 "floor_dollars": plan["floor"],
                 "risk_free": int(fly.is_risk_free(pos)),
                 "completed_at": now,
@@ -605,6 +628,7 @@ def process_snapshot(
         pos["kind"] = "fly"
         pos["net"] = plan["net"]
         pos["fees"] = pos["fees"] + plan["roll_fee"]
+        pos["slippage_dollars"] = _slippage_after(pos, plan)
         latency = _minutes_since(pos.get("entry_time"), now)
         dbmod.save_position(
             conn,
@@ -614,6 +638,7 @@ def process_snapshot(
                 "net": plan["net"],
                 "roll_debit": plan["roll_debit"],
                 "fees": pos["fees"],
+                "slippage_dollars": pos["slippage_dollars"],
                 "floor_dollars": plan["floor"],
                 "risk_free": int(fly.is_risk_free(pos)),
                 # One "finished structure" column for every reader -- for a bwb, completed_at and
@@ -719,6 +744,7 @@ def process_snapshot(
                 "net": plan["credit"],
                 "quantity": plan["quantity"],
                 "fees": plan["open_fee"],
+                "slippage_dollars": _entry_slippage(plan),
                 "entry_mode": "legged",
                 "status": "open",
                 "position_id": position_id,
@@ -754,6 +780,7 @@ def process_snapshot(
                     "net": plan["credit"],
                     "credit": plan["credit"],
                     "fees": plan["open_fee"],
+                    "slippage_dollars": _entry_slippage(plan),
                     "entry_time": now,
                     "entry_window": plan["entry_window"],
                     "center_reason": plan["center_reason"],
@@ -816,6 +843,7 @@ def process_snapshot(
                 "net": -plan["debit"],
                 "quantity": plan["quantity"],
                 "fees": plan["open_fee"],
+                "slippage_dollars": _entry_slippage(plan),
                 "entry_mode": "debit_first",
                 "status": "open",
                 "position_id": position_id,
@@ -846,6 +874,7 @@ def process_snapshot(
                     "net": -plan["debit"],
                     "debit": plan["debit"],
                     "fees": plan["open_fee"],
+                    "slippage_dollars": _entry_slippage(plan),
                     "entry_time": now,
                     "entry_window": plan["entry_window"],
                     "center_reason": plan["center_reason"],
@@ -909,6 +938,7 @@ def process_snapshot(
                 "net": plan["credit"],
                 "quantity": plan["quantity"],
                 "fees": plan["open_fee"],
+                "slippage_dollars": _entry_slippage(plan),
                 "entry_mode": "bwb_roll",
                 "status": "open",
                 "position_id": position_id,
@@ -940,6 +970,7 @@ def process_snapshot(
                     "net": plan["credit"],
                     "credit": plan["credit"],
                     "fees": plan["open_fee"],
+                    "slippage_dollars": _entry_slippage(plan),
                     "entry_time": now,
                     "entry_window": plan["entry_window"],
                     "center_reason": plan["center_reason"],
@@ -1009,6 +1040,7 @@ def process_snapshot(
                 "net": -plan["debit"],
                 "quantity": plan["quantity"],
                 "fees": plan["open_fee"],
+                "slippage_dollars": _entry_slippage(plan),
                 "entry_mode": "outright",
                 "status": "open",
                 "position_id": position_id,
@@ -1038,6 +1070,7 @@ def process_snapshot(
                     "net": -plan["debit"],
                     "debit": plan["debit"],
                     "fees": plan["open_fee"],
+                    "slippage_dollars": _entry_slippage(plan),
                     "entry_time": now,
                     "entry_window": plan["entry_window"],
                     "center_reason": plan["center_reason"],
@@ -1142,6 +1175,8 @@ def settle_book(
             "expiry_payoff": p["expiry_payoff"],
             "gross_pnl": round(gross, 2),
             "fees": p["fees"],
+            # The part of `fees` that is settlement -- recorded beside the total, not taken out of it.
+            "settlement_fees": p["assignment_fee"],
             "pnl": p["pnl"],
             "pinned": int(p["pinned"]),
             "status": "settled",
