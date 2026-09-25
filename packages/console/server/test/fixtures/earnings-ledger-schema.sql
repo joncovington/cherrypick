@@ -41,8 +41,8 @@ CREATE TABLE entry_reviews (
     reason         TEXT,
     criteria_json  TEXT,
     logged_at      REAL,
-    profile        TEXT NOT NULL DEFAULT 'default',
-    UNIQUE(scan_date, symbol, profile)
+    arm            TEXT NOT NULL DEFAULT 'default',
+    UNIQUE(scan_date, symbol, arm)
 );
 CREATE TABLE loop_iterations (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,7 +75,7 @@ CREATE TABLE management_events (
     -- An advised twin runs different exit params than its control, and without this stamp "did the
     -- advised target ever fire" was unanswerable from this table -- the order_id encodes it, but a
     -- reader should never have to parse identifiers to learn a fact the writer knew.
-    profile      TEXT
+    arm          TEXT
 );
 CREATE TABLE market_context (
     context_date  TEXT PRIMARY KEY,
@@ -124,7 +124,7 @@ CREATE TABLE scan_log (
     stage          TEXT NOT NULL DEFAULT 'screen',
     reject_details TEXT,
     logged_at      REAL,
-    profile        TEXT NOT NULL DEFAULT 'default'
+    arm            TEXT NOT NULL DEFAULT 'default'
 );
 CREATE TABLE trade_legs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -152,7 +152,7 @@ CREATE TABLE trades (
     pnl             REAL,
     opened_at       REAL,
     closed_at       REAL,
-    profile         TEXT NOT NULL DEFAULT 'default',
+    arm             TEXT NOT NULL DEFAULT 'default',
     quantity        INTEGER,
     capital_at_risk REAL,
     entry_cost      REAL,

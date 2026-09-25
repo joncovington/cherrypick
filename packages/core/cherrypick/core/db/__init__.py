@@ -101,6 +101,29 @@ def arm_column(conn: sqlite3.Connection, table: str) -> str:
     )
 
 
+class PreRenameLedger(RuntimeError):
+    """A ledger still carries a column under the name the code has renamed it from."""
+
+
+def refuse_pre_rename(conn: sqlite3.Connection, tables: tuple[str, ...], old: str, new: str = "arm") -> None:
+    """Refuse to go on against a ledger whose `old` column has not been renamed to `new` yet.
+
+    For a module whose schema code runs on every connection (DDL plus additive migrations): on a
+    ledger that still says `old`, the migration list -- which now names `new` -- would find `new`
+    missing and ADD it, leaving the table with both names, history in one and every new row in the
+    other, and nothing raised. Call this before the DDL and the migrations. It refuses rather than
+    renaming on purpose: the rename is a reviewable step with backups
+    (`scripts/arm_column_migrate.py`), not a side effect of a loop starting.
+    """
+    for table in tables:
+        have = columns(conn, table)
+        if old in have and new not in have:
+            raise PreRenameLedger(
+                f"{table} still has `{old}`; run `python scripts/arm_column_migrate.py --only {old} "
+                "--include-backups --apply` (loops stopped, ledgers backed up) before this code touches it"
+            )
+
+
 def rename_column(conn: sqlite3.Connection, table: str, old: str, new: str) -> bool:
     """`ALTER TABLE <table> RENAME COLUMN <old> TO <new>`, idempotently. True when it renamed.
 

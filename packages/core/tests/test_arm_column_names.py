@@ -107,7 +107,9 @@ def _earnings_readers() -> list[Path]:
             if path.suffix not in SUFFIXES or "node_modules" in path.parts or "dist" in path.parts:
                 continue
             if "earnings" in path.relative_to(REPO).parts[:2]:
-                continue  # earnings itself: its own column, renamed in its own window
+                # earnings itself says `profile` for presets and filter arguments throughout; its
+                # column is pinned by its own schema fixture and refusal tests instead.
+                continue
             if EARNINGS_SQL.search(path.read_text(encoding="utf-8", errors="replace")):
                 out.append(path)
     return out

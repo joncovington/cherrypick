@@ -86,7 +86,7 @@ SAVE_SPEC = {
     "expiration": "2026-08-15",
     "legs_json": "[]",
     "entry_credit": 3.1,
-    "profile": "strat_test:iron_fly",
+    "arm": "strat_test:iron_fly",
     "quantity": 2,
     "capital_at_risk": 690.0,
     "entry_cost": 2.6,
@@ -131,7 +131,7 @@ def test_each_experiment_opens_its_own_twin_of_the_strategy_it_names(homes):
     assert [t["name"] for t in advice.twins_for(decided, "iron_condor")] == ["condor-only"]
 
     specs = [advice.twin_spec(SAVE_SPEC, t["params"], t["experiment_id"], name=t["name"]) for t in twins]
-    assert [t["profile"] for t in specs] == [
+    assert [t["arm"] for t in specs] == [
         "advised:fly-target-early:iron_fly",
         "advised:fly-target-late:iron_fly",
     ]
@@ -173,7 +173,7 @@ def test_a_legacy_decision_file_still_opens_the_legacy_twin_tag(homes):
     twins = advice.twins_for(decided, "iron_fly")
     assert len(twins) == 1 and twins[0]["name"] is None
     twin = advice.twin_spec(SAVE_SPEC, twins[0]["params"], twins[0]["experiment_id"], name=twins[0]["name"])
-    assert twin["profile"] == "advised:strat_test:iron_fly"
+    assert twin["arm"] == "advised:strat_test:iron_fly"
     assert twin["order_id"] == "advised-" + SAVE_SPEC["order_id"]
     assert twin["experiment_id"] == "exp-2026-08-31-earnings-1"
 
@@ -253,7 +253,7 @@ def test_a_replay_does_not_fix_the_live_days_decision(homes):
 
 def test_the_twin_is_identical_in_everything_but_its_params():
     twin = advice.twin_spec(SAVE_SPEC, {"profit_target_pct": 0.3}, experiment_id="exp-2026-08-31-earnings-1")
-    assert twin["profile"] == "advised:strat_test:iron_fly"
+    assert twin["arm"] == "advised:strat_test:iron_fly"
     assert twin["order_id"].startswith("advised-")
     assert json.loads(twin["advice_params"]) == {"profit_target_pct": 0.3}
     assert twin["experiment_id"] == "exp-2026-08-31-earnings-1"

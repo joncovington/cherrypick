@@ -315,7 +315,7 @@ def _legacy_db(path):
         " order_id TEXT PRIMARY KEY, strategy TEXT NOT NULL DEFAULT 'iron_fly', symbol TEXT NOT NULL,"
         " expiration TEXT NOT NULL, short_strike REAL, long_call_strike REAL, long_put_strike REAL,"
         " legs_json TEXT, entry_credit REAL, exit_debit REAL, pnl REAL, opened_at REAL, closed_at REAL,"
-        " profile TEXT NOT NULL DEFAULT 'default', quantity INTEGER, capital_at_risk REAL,"
+        " arm TEXT NOT NULL DEFAULT 'default', quantity INTEGER, capital_at_risk REAL,"
         " entry_cost REAL, exit_cost REAL, entry_context TEXT, entry_iv REAL, exit_iv REAL,"
         " close_attempts INTEGER NOT NULL DEFAULT 0, last_close_error TEXT, last_close_attempt_at REAL,"
         " entry_slippage REAL, exit_slippage REAL)"
@@ -428,7 +428,7 @@ def test_a_management_event_carries_the_profile_it_judged(tmp_path):
                     "action": "close_all",
                     "reason": "profit_target",
                     "executed": True,
-                    "profile": "advised:strat_test:iron_condor",
+                    "arm": "advised:strat_test:iron_condor",
                 }
             )
         )
@@ -436,7 +436,7 @@ def test_a_management_event_carries_the_profile_it_judged(tmp_path):
     event = db_paper.cmd_get_management_events(
         _ns(order_id="advised-st-ic-X-1", session_date=None, limit=None)
     )["events"][0]
-    assert event["profile"] == "advised:strat_test:iron_condor"
+    assert event["arm"] == "advised:strat_test:iron_condor"
     # An event recorded without one stays NULL -- "recorded before the stamp existed" is a fact.
     db_paper.cmd_record_management_event(
         _ns(data=json.dumps({"order_id": "legacy-1", "action": "hold", "reason": "target_not_hit"}))
@@ -444,7 +444,7 @@ def test_a_management_event_carries_the_profile_it_judged(tmp_path):
     legacy = db_paper.cmd_get_management_events(_ns(order_id="legacy-1", session_date=None, limit=None))[
         "events"
     ][0]
-    assert legacy["profile"] is None
+    assert legacy["arm"] is None
 
 
 def test_hold_days_backfill_derives_only_what_two_recorded_timestamps_prove(tmp_path):

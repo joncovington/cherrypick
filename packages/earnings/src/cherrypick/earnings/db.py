@@ -48,6 +48,8 @@ import sqlite3
 import sys
 import time
 
+from cherrypick.core import config as _cfg
+
 # Make `import paths` resolve when this file is imported (not run as the __main__ script, which
 # gets its own directory on sys.path automatically) -- mirrors credentials.py's self-insert.
 from cherrypick.core import db as _db
@@ -74,7 +76,7 @@ CREATE TABLE IF NOT EXISTS trades (
     pnl             REAL,
     opened_at       REAL,
     closed_at       REAL,
-    profile         TEXT NOT NULL DEFAULT 'default',
+    arm             TEXT NOT NULL DEFAULT 'default',
     quantity        INTEGER,
     capital_at_risk REAL,
     entry_cost      REAL,
@@ -120,7 +122,7 @@ CREATE TABLE IF NOT EXISTS scan_log (
     stage          TEXT NOT NULL DEFAULT 'screen',
     reject_details TEXT,
     logged_at      REAL,
-    profile        TEXT NOT NULL DEFAULT 'default'
+    arm            TEXT NOT NULL DEFAULT 'default'
 );
 
 CREATE TABLE IF NOT EXISTS daily_summary (
@@ -164,8 +166,8 @@ CREATE TABLE IF NOT EXISTS entry_reviews (
     reason         TEXT,
     criteria_json  TEXT,
     logged_at      REAL,
-    profile        TEXT NOT NULL DEFAULT 'default',
-    UNIQUE(scan_date, symbol, profile)
+    arm            TEXT NOT NULL DEFAULT 'default',
+    UNIQUE(scan_date, symbol, arm)
 );
 """
 
@@ -173,7 +175,7 @@ CREATE TABLE IF NOT EXISTS entry_reviews (
 # kept identical so the two databases' trades/scan_log tables never drift apart, even though
 # live trading doesn't use named profiles/sizing/cost attribution today.
 _MIGRATIONS = [
-    ("trades", "profile", "ALTER TABLE trades ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
+    ("trades", "arm", "ALTER TABLE trades ADD COLUMN arm TEXT NOT NULL DEFAULT 'default'"),
     ("trades", "quantity", "ALTER TABLE trades ADD COLUMN quantity INTEGER"),
     ("trades", "capital_at_risk", "ALTER TABLE trades ADD COLUMN capital_at_risk REAL"),
     ("trades", "entry_cost", "ALTER TABLE trades ADD COLUMN entry_cost REAL"),
@@ -181,7 +183,7 @@ _MIGRATIONS = [
     ("trades", "entry_context", "ALTER TABLE trades ADD COLUMN entry_context TEXT"),
     ("trades", "entry_iv", "ALTER TABLE trades ADD COLUMN entry_iv REAL"),
     ("trades", "exit_iv", "ALTER TABLE trades ADD COLUMN exit_iv REAL"),
-    ("scan_log", "profile", "ALTER TABLE scan_log ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
+    ("scan_log", "arm", "ALTER TABLE scan_log ADD COLUMN arm TEXT NOT NULL DEFAULT 'default'"),
     # See db_paper.py's copies of these two for the full reasoning: 'screen' rows carry the
     # accept/reject verdict, 'execution' rows what happened to an accepted candidate afterwards;
     # reject_details carries each reason's measured value and the threshold it missed.
@@ -197,8 +199,22 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _db.apply_additive_migrations(conn, _MIGRATIONS)
 
 
+# The tables carrying the arm column (`profile` until 2026-09-24).
+_ARM_TABLES = ("trades", "scan_log", "entry_reviews")
+
+
+def _arm_of(spec: dict, default: str | None = "default") -> str | None:
+    """The arm a save spec is tagged with. The key was `profile` until 2026-09-24 (the column's old
+    name) and is `arm` after it; a caller still sending `profile` is read, never dropped -- dropping
+    it would file the row under `default`, i.e. under the wrong arm, with nothing raised."""
+    return _cfg.first_present(spec, "arm", "profile", default=default)
+
+
 def _conn() -> sqlite3.Connection:
     conn = _db.connect(DB_PATH)  # mkdir parent + row_factory=Row (see cherrypick.core.db)
+    # Before the DDL and the migrations, which now name `arm`: on a ledger that still says
+    # `profile` they would ADD `arm` beside it and split every table's history from its new rows.
+    _db.refuse_pre_rename(conn, _ARM_TABLES, "profile")
     conn.executescript(_DDL)
     _migrate(conn)
     return conn
@@ -265,7 +281,7 @@ def cmd_save_trade(args) -> dict:
         conn.execute(
             "INSERT INTO trades "
             "(order_id, strategy, symbol, expiration, short_strike, long_call_strike, "
-            " long_put_strike, legs_json, entry_credit, opened_at, profile, quantity, "
+            " long_put_strike, legs_json, entry_credit, opened_at, arm, quantity, "
             " capital_at_risk, entry_cost, entry_context, entry_iv) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
@@ -279,7 +295,7 @@ def cmd_save_trade(args) -> dict:
                 spec.get("legs_json"),
                 spec.get("entry_credit"),
                 spec.get("opened_at", time.time()),
-                spec.get("profile", "default"),
+                _arm_of(spec),
                 spec.get("quantity"),
                 spec.get("capital_at_risk"),
                 spec.get("entry_cost"),
@@ -393,7 +409,7 @@ def cmd_log_scan(args) -> dict:
     try:
         conn.execute(
             "INSERT INTO scan_log (scan_date, strategy, symbol, tier, outcome, reason, stage, "
-            "reject_details, logged_at, profile) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "reject_details, logged_at, arm) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 spec["scan_date"],
                 spec.get("strategy", "iron_fly"),
@@ -404,7 +420,7 @@ def cmd_log_scan(args) -> dict:
                 spec.get("stage", "screen"),
                 json.dumps(spec["reject_details"]) if spec.get("reject_details") else None,
                 spec.get("logged_at", time.time()),
-                spec.get("profile", "default"),
+                _arm_of(spec),
             ),
         )
         conn.commit()
@@ -445,7 +461,7 @@ _ENTRY_REVIEW_COLUMNS = (
     "reason",
     "criteria_json",
     "logged_at",
-    "profile",
+    "arm",
 )
 
 
@@ -486,7 +502,7 @@ def _entry_review_values(spec: dict) -> tuple:
         spec.get("reason"),
         json.dumps(crit) if crit is not None else None,
         spec.get("logged_at", time.time()),
-        spec.get("profile", "default"),
+        _arm_of(spec),
     )
 
 
@@ -494,7 +510,7 @@ def cmd_save_entry_review(args) -> dict:
     """Upsert one per-symbol entry-review record — the data reviewed for a symbol during an entry scan
     plus the chosen/rejected decision (see scanner.build_entry_review_spec for the field set and
     db_paper.py's identical command for the paper-side twin). Idempotent on (scan_date, symbol,
-    profile) so a re-run of the scan overwrites. Read by scout's read-only earnings page."""
+    arm) so a re-run of the scan overwrites. Read by scout's read-only earnings page."""
     spec = json.loads(args.data)
     for req in ("scan_date", "symbol"):
         if not spec.get(req):
@@ -504,11 +520,11 @@ def cmd_save_entry_review(args) -> dict:
         cols = ", ".join(_ENTRY_REVIEW_COLUMNS)
         placeholders = ", ".join("?" for _ in _ENTRY_REVIEW_COLUMNS)
         updates = ", ".join(
-            f"{c}=excluded.{c}" for c in _ENTRY_REVIEW_COLUMNS if c not in ("scan_date", "symbol", "profile")
+            f"{c}=excluded.{c}" for c in _ENTRY_REVIEW_COLUMNS if c not in ("scan_date", "symbol", "arm")
         )
         conn.execute(
             f"INSERT INTO entry_reviews ({cols}) VALUES ({placeholders}) "
-            f"ON CONFLICT(scan_date, symbol, profile) DO UPDATE SET {updates}",
+            f"ON CONFLICT(scan_date, symbol, arm) DO UPDATE SET {updates}",
             _entry_review_values(spec),
         )
         conn.commit()

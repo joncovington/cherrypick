@@ -155,10 +155,13 @@ def twin_spec(
     """
     slug = _core_advice.slug(name) if name else ""
     prefix = f"{ADVISED_PREFIX.rstrip(':')}-{slug}-" if slug else f"{ADVISED_PREFIX.rstrip(':')}-"
+    # The spec's arm key was `profile` until 2026-09-24; a base spec still carrying it must not
+    # leave that stale key on the twin beside the advised `arm`.
+    base = {k: v for k, v in save_spec.items() if k != "profile"}
     return {
-        **save_spec,
+        **base,
         "order_id": f"{prefix}{save_spec['order_id']}",
-        "profile": advised_book(save_spec["profile"], name),
+        "arm": advised_book(save_spec.get("arm", save_spec.get("profile")), name),
         "advice_params": json.dumps(params),
         "experiment_id": experiment_id,
     }

@@ -61,7 +61,7 @@ BENCHMARKS = {
 }
 
 
-def book_family_filter(profile: str, column: str = "profile"):
+def book_family_filter(profile: str, column: str = "arm"):
     """A (SQL fragment, params) pair matching a book tag and its per-strategy
     sub-books: 'strat_test' covers both the combined 'strat_test' book and
     every 'strat_test:<strategy>' book (strat_test_portfolio). Uses an exact

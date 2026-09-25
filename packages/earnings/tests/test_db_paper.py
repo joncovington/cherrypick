@@ -144,7 +144,7 @@ def test_migration_adds_new_columns_without_dropping_rows(tmp_path, monkeypatch)
     positions = db_paper.cmd_get_open_positions(_ns())
     assert len(positions["positions"]) == 1
     assert positions["positions"][0]["order_id"] == "LEGACY1"
-    assert positions["positions"][0]["profile"] == "default"
+    assert positions["positions"][0]["arm"] == "default"
     assert positions["positions"][0]["quantity"] is None
 
 
@@ -159,7 +159,7 @@ def test_save_trade_persists_profile_quantity_and_costs():
                     "expiration": "2026-08-21",
                     "legs_json": "[]",
                     "entry_credit": -15.60,
-                    "profile": "strat_test",
+                    "arm": "strat_test",
                     "quantity": 5,
                     "capital_at_risk": 1560.0,
                     "entry_cost": 12.30,
@@ -170,7 +170,7 @@ def test_save_trade_persists_profile_quantity_and_costs():
     )
     positions = db_paper.cmd_get_open_positions(_ns())["positions"]
     row = positions[0]
-    assert row["profile"] == "strat_test"
+    assert row["arm"] == "strat_test"
     assert row["quantity"] == 5
     assert row["capital_at_risk"] == pytest.approx(1560.0)
     assert row["entry_cost"] == pytest.approx(12.30)
@@ -205,7 +205,7 @@ def test_log_scan_persists_profile():
                     "strategy": "iron_fly",
                     "tier": "Tier 1",
                     "outcome": "Tier 1",
-                    "profile": "strat_test",
+                    "arm": "strat_test",
                 }
             )
         )
@@ -213,7 +213,7 @@ def test_log_scan_persists_profile():
     import sqlite3
 
     conn = sqlite3.connect(db_paper.DB_PATH)
-    row = conn.execute("SELECT profile FROM scan_log WHERE symbol = 'AAPL'").fetchone()
+    row = conn.execute("SELECT arm FROM scan_log WHERE symbol = 'AAPL'").fetchone()
     conn.close()
     assert row[0] == "strat_test"
 
@@ -306,13 +306,13 @@ def test_migration_adds_iv_columns_to_legacy_schema(tmp_path, monkeypatch):
         CREATE TABLE trades (
             order_id TEXT PRIMARY KEY, strategy TEXT, symbol TEXT, expiration TEXT,
             entry_credit REAL, opened_at REAL, closed_at REAL,
-            profile TEXT NOT NULL DEFAULT 'default', quantity INTEGER,
+            arm TEXT NOT NULL DEFAULT 'default', quantity INTEGER,
             capital_at_risk REAL, entry_cost REAL, exit_cost REAL, entry_context TEXT
         );
         CREATE TABLE scan_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT, scan_date TEXT, strategy TEXT,
             symbol TEXT, tier TEXT, outcome TEXT, reason TEXT, logged_at REAL,
-            profile TEXT NOT NULL DEFAULT 'default'
+            arm TEXT NOT NULL DEFAULT 'default'
         );
     """)
     conn.execute(

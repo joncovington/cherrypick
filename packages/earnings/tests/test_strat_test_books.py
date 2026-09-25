@@ -30,7 +30,7 @@ def test_is_strat_test_book_matches_combined_and_per_strategy_only():
 
 def test_book_family_filter_matches_book_and_subbooks_but_not_lookalikes():
     conn = sqlite3.connect(":memory:")
-    conn.execute("CREATE TABLE t (profile TEXT)")
+    conn.execute("CREATE TABLE t (arm TEXT)")
     conn.executemany(
         "INSERT INTO t VALUES (?)",
         [
@@ -42,6 +42,6 @@ def test_book_family_filter_matches_book_and_subbooks_but_not_lookalikes():
         ],
     )
     frag, params = sm.book_family_filter("strat_test")
-    rows = {row[0] for row in conn.execute(f"SELECT profile FROM t WHERE {frag}", params)}
+    rows = {row[0] for row in conn.execute(f"SELECT arm FROM t WHERE {frag}", params)}
     conn.close()
     assert rows == {"strat_test", "strat_test:iron_fly", "strat_test:atm_calendar"}

@@ -15,14 +15,14 @@ Commands:
   save_trade --data '{"order_id": "...", "strategy": "iron_fly", "symbol": "...",
       "expiration": "YYYY-MM-DD", "short_strike": F, "long_call_strike": F,
       "long_put_strike": F, "legs_json": "...", "entry_credit": F,
-      "profile": "balanced", "quantity": N, "capital_at_risk": F, "entry_cost": F,
+      "arm": "balanced", "quantity": N, "capital_at_risk": F, "entry_cost": F,
       "entry_context": {...}}'
   save_close --data '{"order_id": "...", "exit_debit": F, "pnl": F, "exit_cost": F,
       "exit_reason": "profit_target"}'
   get_open_legs --order_id X
   save_leg_close --data '{"order_id": "...", "leg_role": "...", "close_price": F}'
   log_scan --data '{"scan_date": "YYYY-MM-DD", "symbol": "...", "strategy": "iron_fly",
-      "tier": "...", "outcome": "...", "reason": "...", "profile": "balanced"}'
+      "tier": "...", "outcome": "...", "reason": "...", "arm": "balanced"}'
   get_pnl_summary [--strategy X] [--profile X]
   get_excursions [--strategy X] [--profile X]  -- MAE/MFE per closed trade, mirrored from the
       already-tracked max_unrealized_pnl/min_unrealized_pnl excursion columns
@@ -46,7 +46,7 @@ strategies with independently-closeable legs (e.g. double_calendar's threatened-
 stays NULL until every one of its legs is closed via save_leg_close and save_close is called
 for the position as a whole.
 
-`profile` (defaults to 'default') tags which named risk profile / test book opened a trade
+`arm` (defaults to 'default'; `profile` until 2026-09-24) tags which arm / test book opened a trade
 or produced a scan_log row (see docs/strat-test-portfolios.md) -- lets many isolated books
 share this one file without ever mixing their P&L or candidate history. `quantity` and
 `capital_at_risk` come from sizing.compute_position_size; `entry_cost`/`exit_cost` come from
@@ -71,6 +71,7 @@ from datetime import date as _date
 # Make `import paths` resolve when this file is imported (not run as the __main__ script, which
 # gets its own directory on sys.path automatically) -- mirrors credentials.py's self-insert.
 from cherrypick.core import calendar as _calendar
+from cherrypick.core import config as _cfg
 from cherrypick.core import db as _db
 from cherrypick.core import profiles as _profiles
 
@@ -103,7 +104,7 @@ CREATE TABLE IF NOT EXISTS trades (
     pnl             REAL,
     opened_at       REAL,
     closed_at       REAL,
-    profile         TEXT NOT NULL DEFAULT 'default',
+    arm             TEXT NOT NULL DEFAULT 'default',
     quantity        INTEGER,
     capital_at_risk REAL,
     entry_cost      REAL,
@@ -142,7 +143,7 @@ CREATE TABLE IF NOT EXISTS scan_log (
     stage          TEXT NOT NULL DEFAULT 'screen',
     reject_details TEXT,
     logged_at      REAL,
-    profile        TEXT NOT NULL DEFAULT 'default'
+    arm            TEXT NOT NULL DEFAULT 'default'
 );
 
 CREATE TABLE IF NOT EXISTS daily_summary (
@@ -197,7 +198,7 @@ CREATE TABLE IF NOT EXISTS management_events (
     -- An advised twin runs different exit params than its control, and without this stamp "did the
     -- advised target ever fire" was unanswerable from this table -- the order_id encodes it, but a
     -- reader should never have to parse identifiers to learn a fact the writer knew.
-    profile      TEXT
+    arm          TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_management_events_order ON management_events(order_id, occurred_at);
 CREATE INDEX IF NOT EXISTS idx_management_events_session ON management_events(session_date);
@@ -287,8 +288,8 @@ CREATE TABLE IF NOT EXISTS entry_reviews (
     reason         TEXT,
     criteria_json  TEXT,
     logged_at      REAL,
-    profile        TEXT NOT NULL DEFAULT 'default',
-    UNIQUE(scan_date, symbol, profile)
+    arm            TEXT NOT NULL DEFAULT 'default',
+    UNIQUE(scan_date, symbol, arm)
 );
 """
 
@@ -296,7 +297,7 @@ CREATE TABLE IF NOT EXISTS entry_reviews (
 # existed (CREATE TABLE IF NOT EXISTS is a no-op on an already-existing table, so new
 # columns never appear there without this). Each entry: (table, column, ADD COLUMN clause).
 _MIGRATIONS = [
-    ("trades", "profile", "ALTER TABLE trades ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
+    ("trades", "arm", "ALTER TABLE trades ADD COLUMN arm TEXT NOT NULL DEFAULT 'default'"),
     ("trades", "quantity", "ALTER TABLE trades ADD COLUMN quantity INTEGER"),
     ("trades", "capital_at_risk", "ALTER TABLE trades ADD COLUMN capital_at_risk REAL"),
     ("trades", "entry_cost", "ALTER TABLE trades ADD COLUMN entry_cost REAL"),
@@ -325,7 +326,7 @@ _MIGRATIONS = [
     ("trades", "advice_params", "ALTER TABLE trades ADD COLUMN advice_params TEXT"),
     # 2026-09-16: the advisor experiment an advised twin was entered under, beside its params.
     ("trades", "experiment_id", "ALTER TABLE trades ADD COLUMN experiment_id TEXT"),
-    ("scan_log", "profile", "ALTER TABLE scan_log ADD COLUMN profile TEXT NOT NULL DEFAULT 'default'"),
+    ("scan_log", "arm", "ALTER TABLE scan_log ADD COLUMN arm TEXT NOT NULL DEFAULT 'default'"),
     # A candidate's life has two stages and only the first was ever recorded: one that cleared the
     # screen and then died in order building, sizing, the risk cap or a missing quote left no trace.
     # 'screen' rows carry the accept/reject verdict, 'execution' rows what happened after it.
@@ -402,7 +403,7 @@ _MIGRATIONS = [
     ("trades", "min_unrealized_pnl", "ALTER TABLE trades ADD COLUMN min_unrealized_pnl REAL"),
     # NULL on historical rows deliberately (never backfilled from order_id parsing): a NULL says
     # "recorded before the stamp existed", where a parsed guess would assert provenance it lacks.
-    ("management_events", "profile", "ALTER TABLE management_events ADD COLUMN profile TEXT"),
+    ("management_events", "arm", "ALTER TABLE management_events ADD COLUMN arm TEXT"),
 ]
 
 # Backfills that run once, when their column is first added. Keyed by "table.column" so a fresh
@@ -462,8 +463,22 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
+# The tables carrying the arm column (`profile` until 2026-09-24).
+_ARM_TABLES = ("trades", "scan_log", "entry_reviews", "management_events")
+
+
+def _arm_of(spec: dict, default: str | None = "default") -> str | None:
+    """The arm a save spec is tagged with. The key was `profile` until 2026-09-24 (the column's old
+    name) and is `arm` after it; a caller still sending `profile` is read, never dropped -- dropping
+    it would file the row under `default`, i.e. under the wrong arm, with nothing raised."""
+    return _cfg.first_present(spec, "arm", "profile", default=default)
+
+
 def _conn() -> sqlite3.Connection:
     conn = _db.connect(DB_PATH)  # mkdir parent + row_factory=Row (see cherrypick.core.db)
+    # Before the DDL and the migrations, which now name `arm`: on a ledger that still says
+    # `profile` they would ADD `arm` beside it and split every table's history from its new rows.
+    _db.refuse_pre_rename(conn, _ARM_TABLES, "profile")
     conn.executescript(_DDL)
     _migrate(conn)
     return conn
@@ -502,7 +517,7 @@ def cmd_save_trade(args) -> dict:
         conn.execute(
             "INSERT INTO trades "
             "(order_id, strategy, symbol, expiration, short_strike, long_call_strike, "
-            " long_put_strike, legs_json, entry_credit, opened_at, profile, quantity, "
+            " long_put_strike, legs_json, entry_credit, opened_at, arm, quantity, "
             " capital_at_risk, entry_cost, entry_slippage, entry_context, entry_iv, "
             " advice_params, experiment_id, status) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')",
@@ -517,7 +532,7 @@ def cmd_save_trade(args) -> dict:
                 spec.get("legs_json"),
                 spec.get("entry_credit"),
                 spec.get("opened_at", time.time()),
-                spec.get("profile", "default"),
+                _arm_of(spec),
                 spec.get("quantity"),
                 spec.get("capital_at_risk"),
                 spec.get("entry_cost"),
@@ -752,7 +767,7 @@ def cmd_record_management_event(args) -> dict:
     try:
         cur = conn.execute(
             "INSERT INTO management_events (order_id, occurred_at, session_date, phase, action, "
-            " reason, executed, gate, detail_json, mark_id, profile)"
+            " reason, executed, gate, detail_json, mark_id, arm)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 order_id,
@@ -765,7 +780,7 @@ def cmd_record_management_event(args) -> dict:
                 spec.get("gate"),
                 json.dumps(detail) if detail is not None else None,
                 spec.get("mark_id"),
-                spec.get("profile"),
+                _arm_of(spec, default=None),
             ),
         )
         conn.commit()
@@ -1044,7 +1059,7 @@ _ENTRY_REVIEW_COLUMNS = (
     "reason",
     "criteria_json",
     "logged_at",
-    "profile",
+    "arm",
 )
 
 
@@ -1085,7 +1100,7 @@ def _entry_review_values(spec: dict) -> tuple:
         spec.get("reason"),
         json.dumps(crit) if crit is not None else None,
         spec.get("logged_at", time.time()),
-        spec.get("profile", "default"),
+        _arm_of(spec),
     )
 
 
@@ -1093,7 +1108,7 @@ def cmd_save_entry_review(args) -> dict:
     """Upsert one per-symbol entry-review record — the data reviewed for a symbol during an entry scan
     plus the chosen/rejected decision (see scanner.build_entry_review_spec for the field set). Read by
     the orchestrator's trade-notify (per-symbol push), the EOD analysis, and scout's read-only earnings
-    page. Idempotent on (scan_date, symbol, profile) so a re-run of the scan overwrites."""
+    page. Idempotent on (scan_date, symbol, arm) so a re-run of the scan overwrites."""
     spec = json.loads(args.data)
     for req in ("scan_date", "symbol"):
         if not spec.get(req):
@@ -1103,11 +1118,11 @@ def cmd_save_entry_review(args) -> dict:
         cols = ", ".join(_ENTRY_REVIEW_COLUMNS)
         placeholders = ", ".join("?" for _ in _ENTRY_REVIEW_COLUMNS)
         updates = ", ".join(
-            f"{c}=excluded.{c}" for c in _ENTRY_REVIEW_COLUMNS if c not in ("scan_date", "symbol", "profile")
+            f"{c}=excluded.{c}" for c in _ENTRY_REVIEW_COLUMNS if c not in ("scan_date", "symbol", "arm")
         )
         conn.execute(
             f"INSERT INTO entry_reviews ({cols}) VALUES ({placeholders}) "
-            f"ON CONFLICT(scan_date, symbol, profile) DO UPDATE SET {updates}",
+            f"ON CONFLICT(scan_date, symbol, arm) DO UPDATE SET {updates}",
             _entry_review_values(spec),
         )
         conn.commit()
@@ -1167,7 +1182,7 @@ def cmd_log_scan(args) -> dict:
     try:
         conn.execute(
             "INSERT INTO scan_log (scan_date, strategy, symbol, tier, outcome, reason, stage, "
-            "reject_details, logged_at, profile) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "reject_details, logged_at, arm) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 spec["scan_date"],
                 spec.get("strategy", "iron_fly"),
@@ -1178,7 +1193,7 @@ def cmd_log_scan(args) -> dict:
                 spec.get("stage", "screen"),
                 json.dumps(spec["reject_details"]) if spec.get("reject_details") else None,
                 spec.get("logged_at", time.time()),
-                spec.get("profile", "default"),
+                _arm_of(spec),
             ),
         )
         conn.commit()
@@ -1198,7 +1213,7 @@ def cmd_get_pnl_summary(args) -> dict:
             query += " AND strategy = ?"
             params.append(strategy)
         if profile:
-            query += " AND profile = ?"
+            query += " AND arm = ?"
             params.append(profile)
         rows = conn.execute(query + " ORDER BY closed_at", params).fetchall()
     finally:
@@ -1237,7 +1252,7 @@ def cmd_get_pnl_summary(args) -> dict:
             for s, vals in by_strategy.items()
         },
         "by_profile": _profiles.group_by_tag(
-            scored, tag_key="profile", summarize=_pnl_bundle, untagged="default"
+            scored, tag_key="arm", summarize=_pnl_bundle, untagged="default"
         ),
         "trades": closed,
     }
@@ -1266,7 +1281,7 @@ def cmd_get_excursions(args) -> dict:
             query += " AND strategy = ?"
             params.append(strategy)
         if profile:
-            query += " AND profile = ?"
+            query += " AND arm = ?"
             params.append(profile)
         rows = conn.execute(query, params).fetchall()
     finally:

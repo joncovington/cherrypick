@@ -355,7 +355,7 @@ def _save_entry_review(
         composite_score=score,
         timing_assumed=timing_assumed,
     )
-    spec["profile"] = TEST_PROFILE
+    spec["arm"] = TEST_PROFILE
     try:
         db_paper.cmd_save_entry_review(argparse.Namespace(data=json.dumps(spec, default=str)))
     except Exception:
@@ -618,7 +618,7 @@ def _log_scan_row(
                         "stage": stage,
                         "reject_details": reject_details or None,
                         "logged_at": time.time(),
-                        "profile": profile,
+                        "arm": profile,
                     },
                     default=str,
                 )
@@ -823,7 +823,7 @@ def cmd_run_entries(args) -> dict:
                     "expiration": order.get("expiration") or order.get("front_expiration"),
                     "legs_json": json.dumps(scaled_legs),
                     "entry_credit": entry_credit,
-                    "profile": book,
+                    "arm": book,
                     "quantity": quantity,
                     "capital_at_risk": size["capital_at_risk"],
                     "entry_cost": entry_costs["total_cost"],
@@ -862,7 +862,7 @@ def cmd_run_entries(args) -> dict:
                     )
                     if not twin_result.get("ok"):
                         print(
-                            f"advised twin {twin['profile']} not saved for {symbol} {strategy_name}: "
+                            f"advised twin {twin['arm']} not saved for {symbol} {strategy_name}: "
                             f"{twin_result.get('error')}"
                         )
                     else:
@@ -986,7 +986,7 @@ def _log_close_decision(trade: dict, outcome: str, reason: str | None) -> None:
                         "outcome": outcome,
                         "reason": reason,
                         "logged_at": time.time(),
-                        "profile": trade.get("profile"),
+                        "arm": trade.get("arm"),
                     }
                 )
             )
@@ -1002,7 +1002,7 @@ def cmd_run_closes(args) -> dict:
     config = scanner._load_config()
     _capture_market_context(_date.today().isoformat())  # close-session morning VIX for the analysis
     positions = db_paper.cmd_get_open_positions(argparse.Namespace())["positions"]
-    positions = [p for p in positions if _is_strat_test_book(p.get("profile"))]
+    positions = [p for p in positions if _is_strat_test_book(p.get("arm"))]
 
     closed: list[dict] = []
     skipped: list[dict] = []
