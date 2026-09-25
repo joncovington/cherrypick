@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { ConsoleConfig } from "../src/config.js";
-import { readFlies, readFliesTradeLog, NO_TRADE_LOG_QUERY, CURRENT_ERA } from "../src/readers/flies.js";
+import { readFlies, readFliesAnalytics, readFliesTradeLog, NO_TRADE_LOG_QUERY, CURRENT_ERA } from "../src/readers/flies.js";
 
 /**
  * The trade table standard (packages/console/CLAUDE.md) on the flies tables.
@@ -27,7 +27,8 @@ function seed(dir: string): void {
     CREATE TABLE fly_books (
       id INTEGER PRIMARY KEY, book_id TEXT, trade_date TEXT, arm TEXT, symbol TEXT,
       credit_collected REAL, debits_paid REAL, fees REAL, net_cash REAL, floor_holds INTEGER,
-      band_low REAL, band_high REAL, pnl REAL, status TEXT
+      band_low REAL, band_high REAL, pnl REAL, status TEXT, settlement_price REAL,
+      settlement_source TEXT, updated_at TEXT
     );
     CREATE TABLE fly_positions (
       id INTEGER PRIMARY KEY, position_id TEXT, book_id TEXT, trade_date TEXT, entry_time TEXT,
@@ -35,7 +36,7 @@ function seed(dir: string): void {
       far_width REAL, entry_window TEXT, quantity INTEGER, net REAL, gross_pnl REAL, fees REAL,
       settlement_fees REAL, slippage_dollars REAL, expiry_payoff REAL, closed_before_expiry INTEGER,
       floor_dollars REAL, risk_free INTEGER, pnl REAL, completion_latency_min REAL, pinned INTEGER,
-      status TEXT, void_reason TEXT
+      status TEXT, void_reason TEXT, completed_at TEXT
     );
   `);
   const pos = db.prepare(
@@ -59,9 +60,15 @@ function seed(dir: string): void {
   // The book records the three held positions: credit 240+100, debit 40, fees 50, pnl 110.
   db.prepare(
     `INSERT INTO fly_books (book_id, trade_date, arm, symbol, credit_collected, debits_paid, fees,
-                            net_cash, floor_holds, band_low, band_high, pnl, status)
-     VALUES ('b1', ?, 'control', ?, 340, 40, 50, 250, 1, 5990, 6010, 110, 'settled')`,
-  ).run(DAY, SYM);
+                            net_cash, floor_holds, band_low, band_high, pnl, status,
+                            settlement_price, settlement_source, updated_at)
+     VALUES ('b1', ?, 'control', ?, 340, 40, 50, 250, 1, 5990, 6010, 110, 'settled',
+             6004.5, 'last_trade', ? || 'T16:05:00-04:00')`,
+  ).run(DAY, SYM, DAY);
+  // Completion latencies on the three held positions, 4 / 10 / 30 minutes: median 10. The cancelled
+  // entry's 90 must not count.
+  const lat = db.prepare("UPDATE fly_positions SET completion_latency_min = ? WHERE position_id = ?");
+  for (const [m, id] of [[4, "p1"], [10, "p2"], [30, "p3"], [90, "p4"]] as Array<[number, string]>) lat.run(m, id);
   db.close();
 }
 
@@ -169,5 +176,17 @@ describe("the books and positions tables", () => {
 
   it("leaves a book's slippage unknown unless every held position recorded it", () => {
     expect(payload().books.rows[0]?.slippage).toBeNull();
+  });
+});
+
+describe("the session tiles' settlement and timing", () => {
+  const today = () => readFliesAnalytics(config, "paper", { arm: null, date: DAY, symbol: null, era: "ALL" }).today;
+
+  it("names the print the session settled against and where it came from", () => {
+    expect(today().settlement).toEqual({ price: 6004.5, source: "last_trade", at: `${DAY}T16:05:00-04:00` });
+  });
+
+  it("takes the median completion time over held positions only", () => {
+    expect(today().medianCompletionMin).toBe(10);
   });
 });

@@ -1,29 +1,30 @@
-import type { TradingMode } from "@console/shared";
+import { useQuery } from "@tanstack/react-query";
+import type { LiveFliesPayload, TradingMode } from "@console/shared";
 import { useAttempts } from "../../components/Attempts";
-import { CrossTabGrid } from "../../components/RegimeCutsTab";
-import { Spark } from "../../components/chart/Spark";
+import { useAdvisorModule, STATUS_LABEL } from "../../components/advisor/AdvisorSlide";
 import { Bullet } from "../../components/grid/Bullet";
 import { DivergingBars } from "../../components/grid/DivergingBars";
 import { GridCard, StatTile } from "../../components/grid/GridCard";
 import { fmtMoney } from "../../lib/format";
-import { useModulePerformance, useRegimeCuts, type FliesFilter } from "../../lib/api";
+import { useOpeningRange, type FliesFilter } from "../../lib/api";
 import { ForestCard } from "./ForestCard";
-import { OpeningRangeCard } from "./OpeningRangeCard";
+import { SpotPathCard } from "./SpotPathCard";
 
 /**
- * The flies session tab, leading with shapes rather than columns.
+ * The flies session tab: what happened on ONE session, leading with shapes rather than columns.
  *
- * What it does NOT do is as much of the design as what it does. Every tone here is either the
- * sign of a number or a flag the writer already set; nothing on this page decides that a rate is
- * good. The old table tinted fee drag above 30% red, and that threshold was invented in this
- * package (in three files, with no shared constant) -- it does not come along. `thin` on a regime
- * cell does, because the module stamped it.
+ * Everything on it is scoped to the session in view. That is the rule the 2026-09-24 rework applied:
+ * the regime cross-tab (era-wide, and a duplicate of the regime cuts tab), fee drag (a structural
+ * question one session answers badly; the completion tab has it across the era) and the 14-session
+ * spark under net today (a second timeframe inside a one-session tile) all left. The opening range
+ * shrank to a tile linking to its own tab. What came in is about the day itself: the spot path with
+ * entries and completions on it, why entries were refused, which advice was in force, the live
+ * pilot, and when and where the session settled.
  *
- * Two data notes that shaped the layout. `/api/flies/analytics` has no per-session series at all,
- * so the sparkline on "net today" comes from the calibration reading's own `sessionNets`; when
- * that reading is empty there is no spark, rather than a flat line. And filled-versus-refused is
- * summed here from the per-arm attempt counts the writer emits -- a sum, which the foot line
- * says, not a classification.
+ * What it does NOT do is as much of the design as what it does. Every tone here is either the sign
+ * of a number or a flag the writer already set; nothing on this page decides that a rate is good.
+ * Filled-versus-refused is summed here from the per-arm attempt counts the writer emits -- a sum,
+ * which the foot line says, not a classification.
  */
 
 export interface SessionAnalytics {
@@ -38,9 +39,24 @@ export interface SessionAnalytics {
     completed: number;
     maxPossibleLoss: number;
     sessionPeakWorst: { worst: number; at: string } | null;
+    settlement?: { price: number; source: string | null; at: string | null } | null;
+    medianCompletionMin?: number | null;
   };
   byArm: Array<{ arm: string; trades: number; net: number }>;
-  feeDrag: Array<{ arm: string; dragPct: number | null }>;
+}
+
+/** The live pilot's view of one session — the Live page's own payload, asked for that date. */
+function useLiveSession(session: string | null) {
+  return useQuery<LiveFliesPayload>({
+    queryKey: ["live-flies", session],
+    enabled: session !== null,
+    queryFn: async () => {
+      const res = await fetch(`/api/live/flies?session=${encodeURIComponent(session ?? "")}`);
+      if (!res.ok) throw new Error(`live: HTTP ${res.status}`);
+      return (await res.json()) as LiveFliesPayload;
+    },
+    refetchInterval: 30_000,
+  });
 }
 
 export function FliesSession({
@@ -56,21 +72,13 @@ export function FliesSession({
   analytics: SessionAnalytics | undefined;
   loading: boolean;
 }) {
-  const perf = useModulePerformance("flies", "current");
   const attempts = useAttempts("flies", mode, filter.date);
-  const regime = useRegimeCuts("flies");
-
   const a = analytics;
   const today = a?.today;
-
-  // The spark's series: the arm in scope if one is selected, else the first book that is not an
-  // advised twin (a twin's history is its experiment's, not the module's), else whatever exists.
-  const groups = perf.data?.ok === true ? perf.data.groups : [];
-  const group =
-    groups.find((g) => g.tag === arm) ??
-    groups.find((g) => !g.tag.startsWith("advised:")) ??
-    groups[0];
-  const sessionNets = (group?.sessionNets ?? []).slice(-14).map(([, net]) => net);
+  const session = today?.tradeDate ?? null;
+  const range = useOpeningRange(session);
+  const advisor = useAdvisorModule("flies");
+  const live = useLiveSession(session);
 
   const armRows = attempts.data?.arms ?? [];
   const fills = armRows.reduce((n, r) => n + r.fills, 0);
@@ -81,7 +89,8 @@ export function FliesSession({
       refusals.set(reason, (refusals.get(reason) ?? 0) + n);
     }
   }
-  const topRefusal = [...refusals.entries()].sort((x, y) => y[1] - x[1])[0];
+  const refusalRows = [...refusals.entries()].sort((x, y) => y[1] - x[1]);
+  const refusedTotal = refusalRows.reduce((n, [, c]) => n + c, 0);
 
   // After the live book settles, "worst case at expiry" would read $0 over a day that carried real
   // risk. The server hands back the session's peak until the next session opens; open positions
@@ -97,12 +106,39 @@ export function FliesSession({
     const parts = [`${String(today.completed)} of ${String(today.positions)} completed`];
     if (today.open > 0) parts.push(`${String(today.open)} still open`);
     if (stranded > 0) parts.push(`${String(stranded)} settled uncompleted`);
+    if (today.medianCompletionMin != null) parts.push(`median ${today.medianCompletionMin.toFixed(0)}m to complete`);
     return parts.join(" · ");
   })();
 
-  const cuts = regime.data?.status === "ok" ? regime.data.cuts : null;
-  const crossTab = cuts?.crossTabs[0];
-  const regimeStale = regime.data?.status === "ok" ? regime.data.stale : null;
+  // Advice in force: the advisor's own enactment rows for this session, one per experiment. Names
+  // and params come off the experiment records; nothing here judges whether the advice helped.
+  const adv = advisor.data;
+  const experiments = [...(adv?.active ?? []), ...(adv?.queued ?? []), ...(adv?.concluded ?? [])];
+  const cells = (adv?.sessions ?? []).filter((c) => c.session === session);
+  const applied = cells.filter((c) => c.status === "enacted" || c.status === "carried");
+  const adviceFoot =
+    adv === undefined
+      ? "—"
+      : cells.length === 0
+        ? "no advice recorded for this session"
+        : cells
+            .map((c) => {
+              const e = experiments.find((x) => x.id === c.experimentId);
+              const params = e === undefined ? "" : Object.entries(e.params).map(([k, v]) => `${k} ${String(v)}`).join(", ");
+              const label = STATUS_LABEL[c.status] ?? c.status;
+              return `${e?.name ?? c.experimentId ?? "—"}${params !== "" ? ` (${params})` : ""}: ${label}`;
+            })
+            .join(" · ");
+
+  // The live pilot on this session. `arm` is the pilot's CURRENT arm record, so it only speaks for
+  // this session when its date is this session's.
+  const lv = live.data;
+  const armedHere = lv !== undefined && lv.arm.armed && lv.arm.date === session;
+  const liveTrades = lv?.periods.today.trades ?? 0;
+  const liveNet = lv?.periods.today.net ?? null;
+
+  const or = range.data;
+  const settle = today?.settlement ?? null;
 
   return (
     <div className="grid-12">
@@ -112,24 +148,15 @@ export function FliesSession({
         tone={today !== undefined && today.netPnl >= 0 ? "pos" : "neg"}
         to="/flies/history"
         toLabel="the session history behind net today"
-        foot={
-          group === undefined
-            ? "no session history in this era yet"
-            : `${group.tag} · last ${String(sessionNets.length)} sessions · after fees`
-        }
-      >
-        <Spark
-          values={sessionNets}
-          mode="cumulative"
-          height={22}
-          title={`cumulative net over the last ${String(sessionNets.length)} sessions`}
-        />
-      </StatTile>
+        foot={today === undefined ? "—" : `after fees · ${String(today.positions)} positions · fees ${fmtMoney(today.fees)}`}
+      />
 
       <StatTile
         label="completion"
         value={today?.completionPct != null ? `${today.completionPct.toFixed(0)}%` : null}
         foot={completionFoot}
+        to="/flies/completion"
+        toLabel="completion across the era"
       >
         <Bullet
           min={0}
@@ -163,12 +190,70 @@ export function FliesSession({
       <StatTile
         label="entries"
         value={armRows.length === 0 ? null : String(fills)}
+        to="/flies/attempts"
+        toLabel="every attempt on this session"
         foot={
           armRows.length === 0
             ? "no attempts recorded on this session"
-            : `from ${tries.toLocaleString()} evaluations over ${String(armRows.length)} arms${
-                topRefusal === undefined ? "" : ` · most refused: ${topRefusal[0]}`
-              }`
+            : `from ${tries.toLocaleString()} evaluations over ${String(armRows.length)} arms`
+        }
+      />
+
+      <StatTile
+        label="opening range"
+        value={or?.rangePoints != null ? `${or.rangePoints.toFixed(1)} pts` : null}
+        to="/flies/openingrange"
+        toLabel="the opening range, bucket by bucket"
+        foot={
+          or === undefined
+            ? "—"
+            : or.complete && or.low !== null && or.high !== null
+              ? `${or.low.toFixed(0)}–${or.high.toFixed(0)} · 10:00 at ${or.last?.toFixed(2) ?? "—"}`
+              : (or.reason ?? `${String(or.bucketsPresent)} of ${String(or.bucketsExpected)} buckets`)
+        }
+      />
+
+      <StatTile
+        label="settlement"
+        value={settle !== null ? settle.price.toFixed(2) : null}
+        to="/flies/books"
+        toLabel="the books this print settled"
+        title="the print this session's books settled against, and where the module took it from"
+        foot={
+          settle === null
+            ? today !== undefined && today.open > 0
+              ? "not settled yet"
+              : "no settled book on this session"
+            : `${settle.source ?? "source not recorded"}${settle.at !== null ? ` · written ${settle.at.slice(11, 16)}` : ""}`
+        }
+      />
+
+      <StatTile
+        label="advice in force"
+        value={adv === undefined ? null : cells.length === 0 ? "none" : `${String(applied.length)} of ${String(cells.length)}`}
+        tone="dim"
+        to="/flies/advisor"
+        toLabel="the advisor's experiments on flies"
+        title="experiments whose advice the loop applied on this session, of those the advisor issued"
+        foot={adviceFoot}
+      />
+
+      {/* No link yet: the Live page is still an overlay module, and a card here opens pages, never
+          overlays. It gets one when Live moves onto the module frame. */}
+      <StatTile
+        label="live pilot"
+        value={lv === undefined ? null : liveTrades > 0 && liveNet !== null ? fmtMoney(liveNet) : armedHere ? "armed" : "off"}
+        tone={liveTrades > 0 && liveNet !== null ? (liveNet >= 0 ? "pos" : "neg") : "dim"}
+        foot={
+          lv === undefined
+            ? "—"
+            : `${
+                armedHere
+                  ? `armed · ${lv.arm.arm ?? "—"} ${lv.arm.symbol ?? ""}`
+                  : liveTrades > 0
+                    ? "traded this session"
+                    : "not armed for this session"
+              } · ${String(liveTrades)} live trade${liveTrades === 1 ? "" : "s"}`
         }
       />
 
@@ -207,55 +292,30 @@ export function FliesSession({
         />
       </GridCard>
 
-      <GridCard
-        label={crossTab === undefined ? "regime cuts" : `regime — ${crossTab.dims.join(" × ")}`}
-        span={8}
-        h={304}
-        foot={
-          cuts === null
-            ? "the module writes this artifact nightly"
-            : `era since ${cuts.arms[0]?.eraStart ?? "—"}${regimeStale !== null ? " · stale" : ""} · thin below ${cuts.thinBelowSessions ?? "—"} sessions`
-        }
-      >
-        {regime.data === undefined ? (
-          <p className="muted">reading…</p>
-        ) : regime.data.status === "failed" ? (
-          <p className="pnl-neg">
-            the regime-cuts artifact could not be read: {regime.data.error}. This is a failure, not
-            an empty day.
-          </p>
-        ) : regime.data.status === "absent" ? (
-          <p className="muted">
-            no regime-cuts artifact yet — the module writes it nightly at 16:40 ET.
-          </p>
-        ) : crossTab === undefined ? (
-          <p className="muted">the artifact holds no cross-tab for this era.</p>
-        ) : (
-          <div className="regime-scroll">
-            <CrossTabGrid tab={crossTab} thinBelowSessions={cuts?.thinBelowSessions ?? null} />
-          </div>
-        )}
-      </GridCard>
+      <SpotPathCard mode={mode} filter={filter} arm={arm} />
 
+
+      {/* Why the quiet arms were quiet: the gates, or the market. Counts are evaluations refused,
+          summed across arms, so one arm refusing every tick for an hour reads as a long bar. */}
       <GridCard
-        label="fee drag by arm"
+        label="why entries were refused"
         span={4}
         h={304}
-        to="/flies/books"
-        toLabel="the books behind fee drag"
-        foot="fees against premium collected · no threshold applied"
+        to="/flies/attempts"
+        toLabel="every refusal, arm by arm"
+        foot={
+          armRows.length === 0
+            ? "no attempts recorded on this session"
+            : `${refusedTotal.toLocaleString()} refused evaluations · summed over ${String(armRows.length)} arms`
+        }
       >
         <DivergingBars
-          rows={(a?.feeDrag ?? []).map((r) => ({ label: r.arm, value: r.dragPct }))}
-          format={(v) => `${v.toFixed(1)}%`}
+          rows={refusalRows.map(([reason, n]) => ({ label: reason, value: n }))}
+          format={(v) => v.toLocaleString()}
           tone="none"
-          emptyText={loading ? "reading…" : "nothing settled on this session yet"}
+          emptyText={attempts.isLoading ? "reading…" : "nothing refused on this session"}
         />
       </GridCard>
-
-      <div className="span-12">
-        <OpeningRangeCard filter={filter} />
-      </div>
     </div>
   );
 }

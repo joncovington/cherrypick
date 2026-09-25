@@ -61,6 +61,8 @@ interface FliesAnalytics {
     completed: number;
     maxPossibleLoss: number;
     sessionPeakWorst: { worst: number; at: string } | null;
+    settlement?: { price: number; source: string | null; at: string | null } | null;
+    medianCompletionMin?: number | null;
   };
   byArm: Array<{ arm: string; trades: number; net: number; winPct: number | null; avg: number | null; profitFactor: number | null }>;
   feeDrag: Array<{ arm: string; gross: number; fees: number; net: number; dragPct: number | null }>;

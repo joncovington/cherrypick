@@ -24,7 +24,7 @@ import { gateDistance } from "./experimentStats";
  * advisor's, and the comparison is as of the last evening pass, which the slide says.
  */
 
-function useAdvisorModule(module: string) {
+export function useAdvisorModule(module: string) {
   return useQuery<AdvisorModulePayload>({
     queryKey: ["advisor-module", module],
     queryFn: async () => {
@@ -38,7 +38,7 @@ function useAdvisorModule(module: string) {
   });
 }
 
-const STATUS_LABEL: Record<string, string> = {
+export const STATUS_LABEL: Record<string, string> = {
   enacted: "applied",
   carried: "carried",
   not_enacted: "not applied",

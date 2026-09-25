@@ -1838,6 +1838,12 @@ export interface FliesAnalytics {
      * next session opens, then null -- see `sessionPeakWorst`.
      */
     sessionPeakWorst: { worst: number; at: string } | null;
+    /** The print this session's books settled against, where it came from, and when the book was
+     *  written — null until a book has settled. The latest if books disagree, which they should not. */
+    settlement: { price: number; source: string | null; at: string | null } | null;
+    /** Median minutes from entry to the completing fill over this session's completed positions —
+     *  the module's own `completion_latency_min`, not re-derived here. Null when none completed. */
+    medianCompletionMin: number | null;
   };
   byArm: Array<{ arm: string; trades: number; net: number; winPct: number | null; avg: number | null; profitFactor: number | null }>;
   feeDrag: Array<{ arm: string; gross: number; fees: number; net: number; dragPct: number | null }>;
@@ -1858,6 +1864,39 @@ export interface FliesAnalytics {
  * and holidays included, with nothing re-derived. No paper ledger means that cannot be known, and
  * the figure stays up, labelled with its time.
  */
+/** The session's settlement print, off its books. Optional columns: an older ledger reads null. */
+function sessionSettlement(
+  db: DatabaseHandle,
+  tradeDate: string,
+): { price: number; source: string | null; at: string | null } | null {
+  if (!hasColumn(db, "fly_books", "settlement_price")) return null;
+  const source = hasColumn(db, "fly_books", "settlement_source") ? "settlement_source" : "NULL";
+  const at = hasColumn(db, "fly_books", "updated_at") ? "updated_at" : "NULL";
+  const r = db
+    .prepare<string[], Record<string, unknown>>(
+      `SELECT settlement_price AS price, ${source} AS source, ${at} AS at FROM fly_books
+        WHERE trade_date = ? AND settlement_price IS NOT NULL ORDER BY id DESC LIMIT 1`,
+    )
+    .get(tradeDate);
+  const price = r === undefined ? null : num(r["price"]);
+  return price === null || r === undefined ? null : { price, source: str(r["source"]), at: str(r["at"]) };
+}
+
+function medianCompletion(db: DatabaseHandle, tradeDate: string, armClause: string, armParams: string[]): number | null {
+  if (!hasColumn(db, "fly_positions", "completion_latency_min")) return null;
+  const mins = db
+    .prepare<string[], { m: number }>(
+      `SELECT completion_latency_min AS m FROM fly_positions
+        WHERE trade_date = ? AND completion_latency_min IS NOT NULL AND ${NOT_CANCELLED}${armClause}
+        ORDER BY completion_latency_min`,
+    )
+    .all(tradeDate, ...armParams)
+    .map((r) => r.m);
+  if (mins.length === 0) return null;
+  const mid = Math.floor(mins.length / 2);
+  return mins.length % 2 === 1 ? mins[mid]! : (mins[mid - 1]! + mins[mid]!) / 2;
+}
+
 function sessionPeakWorst(
   config: ConsoleConfig,
   db: DatabaseHandle,
@@ -1900,6 +1939,8 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
       completed: 0,
       maxPossibleLoss: 0,
       sessionPeakWorst: null,
+      settlement: null,
+      medianCompletionMin: null,
     },
     byArm: [],
     feeDrag: [],
@@ -1956,6 +1997,8 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
         completed: Number(t["completed"] ?? 0),
         maxPossibleLoss,
         sessionPeakWorst: mode === "live" ? sessionPeakWorst(config, db, tradeDate) : null,
+        settlement: sessionSettlement(db, tradeDate),
+        medianCompletionMin: medianCompletion(db, tradeDate, armClause, armParams),
       };
     }
 

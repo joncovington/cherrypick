@@ -26,7 +26,7 @@ interface Timeline {
   feedSummary: { total: number; ok: number; refusals: Record<string, number> };
 }
 
-function useTimeline(mode: TradingMode, filter: FliesFilter) {
+export function useTimeline(mode: TradingMode, filter: FliesFilter) {
   return useQuery<Timeline>({
     queryKey: ["flies-timeline", mode, filter.date, filter.symbol, filter.era],
     queryFn: async () => {
