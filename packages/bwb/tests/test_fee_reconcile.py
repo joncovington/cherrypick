@@ -182,6 +182,8 @@ def test_a_settlement_fee_that_differs_from_the_model_is_reported_per_symbol(set
     out = fee_reconcile.reconcile_date(conn, EXP, "SPX", txns, log=lambda *_: None)
     assert out["reconciled"] == [pid]
     assert out["fee_variance"][0]["real_fee"] == 10.0 and out["fee_variance"][0]["modeled_fee"] == 5.0
+    # Reconciled: the settlement part is the broker's own, not the schedule's.
+    assert _row(conn, pid)["settlement_fees"] == pytest.approx(10.0)
 
 
 def test_settlement_charges_the_event_fee_per_distinct_symbol_not_per_leg_row(settled):
@@ -190,3 +192,5 @@ def test_settlement_charges_the_event_fee_per_distinct_symbol_not_per_leg_row(se
     conn, pid, row = settled
     assert row["itm_settlements"] == 2
     assert row["fees"] == pytest.approx(6.89 + 2 * 5.0)
+    # The settlement part of that total, recorded beside it: fees stays the total.
+    assert row["settlement_fees"] == pytest.approx(2 * 5.0)

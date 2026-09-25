@@ -54,6 +54,16 @@ const KNOWN_COLUMNS: Record<string, string[]> = {
     "arm_reason", "addon_fired_at", "addon_short_strike", "addon_long_strike", "addon_credit",
     "addon_cost", "addon_slippage", "status", "exit_reason", "closed_at", "closed_session",
     "settlement_spot", "itm_settlements", "gross_pnl", "fees", "created_at", "updated_at",
+    // The advisor stamps and the live scaffold (2026-09-16..18), missing from this list until
+    // 2026-09-25 -- so every ledger raised 28 drift warnings for columns the module declares.
+    "experiment_id", "advice_base", "entry_order_id", "entry_external_id", "entry_fill_status",
+    "entry_limit", "entry_placed_at", "entry_live_floor", "entry_reprice_count", "entry_repriced_at",
+    "entry_mid_at_submit", "addon_order_id", "addon_external_id", "addon_fill_status", "addon_placed_at",
+    "addon_live_floor", "addon_reprice_count", "addon_repriced_at", "addon_mid_at_submit", "addon_attempts",
+    "pending_addon_json", "entry_fee_estimate", "addon_fee_estimate", "fees_source", "modeled_fees",
+    "modeled_gross_pnl", "reconciled_at", "settlement_source",
+    // The settlement part of `fees` (2026-09-25).
+    "settlement_fees",
   ],
   bwb_legs: [
     "id", "position_id", "leg_role", "occ_symbol", "streamer_symbol", "expiration", "strike",

@@ -125,6 +125,9 @@ def reconcile_date(conn, expiration: str, symbol: str, transactions: list[dict],
                     else modeled_gross
                 ),
                 "fees": real_fees,
+                # The broker's own settlement fees -- the part of `real_fees` the settlement
+                # transactions carried, recorded beside the total.
+                "settlement_fees": round(sum(_fee_total(t) for t in settlement_txns), 2),
                 "gross_pnl": real_gross,
                 "fees_source": "reconciled",
                 "reconciled_at": clock.now_iso(),

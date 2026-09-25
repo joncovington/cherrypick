@@ -293,6 +293,12 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         # Which source the settlement print came from ('official' for a hand-supplied --price,
         # else the core.settlement source tag). A live row never settles on a provisional one.
         "settlement_source": "TEXT",
+        # The part of `fees` that is the cash-settlement charge ($5 per distinct ITM symbol,
+        # `engine.settlement_fee`), recorded beside the total rather than taken out of it
+        # (2026-09-25), so the suite's trade tables can show trading fees, settlement and slippage
+        # as separate columns. `fees` stays the TOTAL. On a reconciled live row, the broker's own
+        # settlement fees. NULL where it was never recorded.
+        "settlement_fees": "REAL",
     },
     "bwb_legs": {},
     "bwb_marks": {},

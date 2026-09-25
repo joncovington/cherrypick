@@ -220,7 +220,7 @@ def settle_expiring_legs(
     for pid, info in by_position.items():
         info["itm"] = len(info["itm_symbols"])
         fee = engine.settlement_fee(info["itm"])
-        _accumulate_fees(conn, pid, fee)
+        _accumulate_fees(conn, pid, fee, settlement=True)
         prev_itm = conn.execute(
             "SELECT itm_settlements FROM bwb_positions WHERE position_id = ?", (pid,)
         ).fetchone()
@@ -237,9 +237,16 @@ def settle_expiring_legs(
     return results
 
 
-def _accumulate_fees(conn, pid: str, fee: float) -> None:
-    row = conn.execute("SELECT fees FROM bwb_positions WHERE position_id = ?", (pid,)).fetchone()
-    db.save_position(conn, {"position_id": pid, "fees": round((row["fees"] or 0.0) + fee, 2)})
+def _accumulate_fees(conn, pid: str, fee: float, *, settlement: bool = False) -> None:
+    """Add `fee` to the position's fee total -- and, for a settlement charge, to the settlement
+    part recorded beside it (`settlement_fees`, a component of `fees`, never an extra cost)."""
+    row = conn.execute(
+        "SELECT fees, settlement_fees FROM bwb_positions WHERE position_id = ?", (pid,)
+    ).fetchone()
+    update = {"position_id": pid, "fees": round((row["fees"] or 0.0) + fee, 2)}
+    if settlement:
+        update["settlement_fees"] = round((row["settlement_fees"] or 0.0) + fee, 2)
+    db.save_position(conn, update)
 
 
 def finalize_if_done(conn, pid: str, *, reason: str, session_date: str) -> bool:
