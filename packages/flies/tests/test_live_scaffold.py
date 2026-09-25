@@ -2185,3 +2185,13 @@ def test_completion_cancel_failure_is_logged_not_silently_dropped(live_conn):
         "SELECT completion_order_id FROM fly_positions WHERE position_id = 'STUCK1'"
     ).fetchone()
     assert row["completion_order_id"] == "ORD-STUCK"  # left in place, not silently cleared
+
+
+def test_the_live_log_never_holds_a_full_account_number(monkeypatch):
+    """Order placements log the broker's response whole, and it carries the account number. The log
+    sink masks it (the suite guardrail): `****` and the last four, never the number itself."""
+    seen = []
+    monkeypatch.setattr(live_loop, "_setup_logging", lambda: None)
+    monkeypatch.setattr(live_loop._logger, "info", seen.append)
+    live_loop._log('entry order (LIVE): {"ok": true, "account_number": "5WT99991", "order_id": "O1"}')
+    assert seen == ['entry order (LIVE): {"ok": true, "account_number": "****9991", "order_id": "O1"}']

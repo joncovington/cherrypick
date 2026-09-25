@@ -76,6 +76,7 @@ from cherrypick.core import config as _cfg  # noqa: E402
 from cherrypick.core import execution as _execution
 from cherrypick.core import home as _home  # noqa: E402
 from cherrypick.core import live as _live  # noqa: E402
+from cherrypick.core import redact as _redact  # noqa: E402
 from cherrypick.core import settlement as _settlement  # noqa: E402
 
 from cherrypick.flies import (
@@ -176,7 +177,9 @@ def _setup_logging() -> None:
 
 def _log(message: str) -> None:
     _setup_logging()
-    _logger.info(message)
+    # Masked at the sink (2026-09-25): order-placement lines log the broker's response whole, and it
+    # carries the full account number, which the suite guardrail says a log never holds.
+    _logger.info(_redact.redact_accounts(message))
 
 
 # --------------------------------------------------------------------------- locks
