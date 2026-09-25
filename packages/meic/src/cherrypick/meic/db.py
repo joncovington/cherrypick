@@ -378,6 +378,13 @@ _ADDED_TRADE_COLUMNS = {
     # Cost-sensitivity instrumentation: cumulative modeled slippage dollars (entry +
     # priced exits). Linear in the slippage fraction, so stressed-2x net reads off it.
     "slippage_dollars": "REAL DEFAULT 0",
+    # The part of `fees` that is the cash-settlement charge ($5 per ITM strike, `paper.expire_fees`),
+    # recorded beside the total rather than taken out of it (2026-09-25) so the suite's trade tables
+    # can show trading fees and settlement as separate columns. `fees` stays the TOTAL, so every
+    # reader already summing it is unchanged. 0 on a row that closed without settling; NULL where it
+    # is not known (a settlement with no recorded price, and rows from before it was written that
+    # `scripts/meic_backfill_settlement_fees.py` could not recover).
+    "settlement_fees": "REAL",
     # Regime tags (regime.classify_regime, 'entry' phase — MEIC's ic_trades has no legging step,
     # so there is no separate 'completion' snapshot the way flies' fly_positions has one). Bucket
     # + the continuous float it was cut from, per dimension, so a threshold can be re-derived from
@@ -1053,6 +1060,8 @@ _UPDATABLE_TRADE_FIELDS = (
     "last_unmarked_at",
     # Cost-sensitivity instrumentation — accumulated on every priced exit.
     "slippage_dollars",
+    # The settlement component of `fees`, written with it at expiry.
+    "settlement_fees",
     # Written only on a physically-settled force-close (paper._apply_exit_decision); missing from
     # this whitelist meant every such force-close's update_trade call was rejected by argparse
     # (`unrecognized arguments: --pin_risk_applied`), leaving the row stuck at status='open'

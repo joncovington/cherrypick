@@ -2811,9 +2811,11 @@ def test_an_itm_settlement_books_five_dollars_per_strike_not_per_contract(paper_
 
     conn = sqlite3.connect(paper_db_path)
     conn.row_factory = sqlite3.Row
-    row = conn.execute("SELECT fees, pnl FROM ic_trades WHERE ic_order_id = 'ITM-1'").fetchone()
+    row = conn.execute("SELECT fees, settlement_fees, pnl FROM ic_trades WHERE ic_order_id = 'ITM-1'").fetchone()
     conn.close()
     assert row["fees"] == pytest.approx(6.89 + 10.0)
+    # The settlement part of that total, recorded beside it: fees stays the total.
+    assert row["settlement_fees"] == pytest.approx(10.0)
     assert row["pnl"] == pytest.approx((0.30 - 0.0) * 100 + (0.28 - 10.0) * 100)
 
 
@@ -2847,6 +2849,10 @@ def test_an_otm_settlement_still_costs_nothing(paper_db_path):
     import sqlite3
 
     conn = sqlite3.connect(paper_db_path)
-    fees = conn.execute("SELECT fees FROM ic_trades WHERE ic_order_id = 'OTM-1'").fetchone()[0]
+    fees, settlement = conn.execute(
+        "SELECT fees, settlement_fees FROM ic_trades WHERE ic_order_id = 'OTM-1'"
+    ).fetchone()
     conn.close()
     assert fees == pytest.approx(6.89)
+    # Settled, and it cost nothing: a recorded zero, not an unknown.
+    assert settlement == 0

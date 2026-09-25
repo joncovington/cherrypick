@@ -1961,6 +1961,9 @@ def _apply_exit_decision(trade: dict, decision: dict, symbol: str, db_path: str)
                 "exit_reason": "stopped+expired_settlement" if was_stopped else "expired_settlement",
                 "pnl": existing_pnl + delta_pnl,
                 "fees": (trade.get("fees") or 0) + settlement_fee,
+                # The part of `fees` that is settlement, beside the total. Unknown (dropped, so NULL)
+                # when there was no price to count ITM strikes against -- not a charged zero.
+                "settlement_fees": None if itm_strikes is None else settlement_fee,
                 # Recorded for BOTH sides, including any already stopped — this is the counterfactual.
                 # For a stopped side, settle_value < its stop cost means the stop paid more than holding
                 # would have, which is the question the stop-rule debate actually turns on.
