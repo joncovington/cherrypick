@@ -647,7 +647,7 @@ def test_synthetic_entry_fill_prices_at_mid_minus_slippage():
     assert row["net_credit"] == pytest.approx(0.73, abs=1e-4)
     # Strictly between the worst-case natural bid (0.58) and the full mid (0.78).
     assert chosen["ic_natural_bid"] < row["net_credit"] < 0.78
-    assert row["risk_profile"] == "conservative"
+    assert row["arm"] == "conservative"
     assert row["execution_mode"] == "paper"
 
 
@@ -1649,7 +1649,7 @@ def test_process_symbol_settles_stopped_trades_on_the_eod_adjacent_force_close(p
         ic_order_id="STOPPED-QQQ-1",
         symbol="QQQ",
         trade_date="2026-08-07",
-        risk_profile="conservative",
+        arm="conservative",
         status="stopped",
         put_strike=470,
         call_strike=490,
@@ -1757,7 +1757,7 @@ def _insert_paper_trade(db_path, **kwargs):
     defaults = dict(
         trade_date="2026-07-01",
         symbol="SPX",
-        risk_profile="conservative",
+        arm="conservative",
         net_credit=1.5,
         pnl=150.0,
         fees=25.0,
@@ -1780,7 +1780,7 @@ def test_get_range_summary_groups_by_profile(paper_db_path, capsys):
     _insert_paper_trade(
         paper_db_path,
         ic_order_id="P-1",
-        risk_profile="conservative",
+        arm="conservative",
         trade_date="2026-07-01",
         pnl=150.0,
         fees=25.0,
@@ -1789,7 +1789,7 @@ def test_get_range_summary_groups_by_profile(paper_db_path, capsys):
     _insert_paper_trade(
         paper_db_path,
         ic_order_id="P-2",
-        risk_profile="conservative",
+        arm="conservative",
         trade_date="2026-07-01",
         pnl=-120.0,
         fees=25.0,
@@ -1798,7 +1798,7 @@ def test_get_range_summary_groups_by_profile(paper_db_path, capsys):
     _insert_paper_trade(
         paper_db_path,
         ic_order_id="P-3",
-        risk_profile="moderate",
+        arm="moderate",
         trade_date="2026-07-01",
         pnl=100.0,
         fees=25.0,
@@ -1888,7 +1888,7 @@ def test_process_symbol_end_to_end_fills_and_marks(tmp_path):
     )
     open_out = json.loads(open_check.stdout.strip())
     assert len(open_out["open_trades"]) == 1
-    assert open_out["open_trades"][0]["risk_profile"] == "conservative"
+    assert open_out["open_trades"][0]["arm"] == "conservative"
 
 
 @pytest.fixture()
@@ -1918,7 +1918,7 @@ def test_process_symbol_concurrency_budget_is_per_symbol(paper_db_path, two_symb
             paper_db_path,
             ic_order_id=f"SPX-{i}",
             symbol="SPX",
-            risk_profile="conservative",
+            arm="conservative",
             trade_date="2026-07-09",
             status="open",
         )
@@ -1965,7 +1965,7 @@ def test_process_symbol_daily_target_is_per_symbol(paper_db_path, two_symbol_env
             paper_db_path,
             ic_order_id=f"SPX-{i}",
             symbol="SPX",
-            risk_profile="conservative",
+            arm="conservative",
             trade_date="2026-07-09",
             status="expired",
         )

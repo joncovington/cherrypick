@@ -148,7 +148,7 @@ def test_an_open_experiment_book_gets_a_management_twin_on_its_base(homes):
     conn = sqlite3.connect(paper_loop._PAPER_DB)
     ts = f"{DAY}T13:00:00"
     conn.execute(
-        "INSERT INTO ic_trades (ic_order_id, trade_date, symbol, risk_profile, status, "
+        "INSERT INTO ic_trades (ic_order_id, trade_date, symbol, arm, status, "
         "created_at, updated_at) VALUES ('A1', ?, 'SPX', 'advised:stop-early-probe', 'open', ?, ?)",
         (DAY, ts, ts),
     )
@@ -256,7 +256,7 @@ def test_open_advised_positions_get_a_management_only_twin(homes):
     conn = sqlite3.connect(paper_loop._PAPER_DB)
     ts = f"{DAY}T13:00:00"
     conn.execute(
-        "INSERT INTO ic_trades (ic_order_id, trade_date, symbol, risk_profile, status, "
+        "INSERT INTO ic_trades (ic_order_id, trade_date, symbol, arm, status, "
         "created_at, updated_at) VALUES ('A1', ?, 'SPX', 'advised:control', 'open', ?, ?)",
         (DAY, ts, ts),
     )

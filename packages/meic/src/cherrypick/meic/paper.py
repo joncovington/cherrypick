@@ -985,7 +985,7 @@ def synthetic_entry_fill(
         "status": "open",
         "fill_confirmed_at": now,
         "fees": chosen["open_fee"],
-        "risk_profile": profile_name,
+        "arm": profile_name,
         "experiment_id": params.get("experiment_id"),
         "execution_mode": execution_mode,
         "iv_rank_source": snapshot.get("iv_rank_source", "native"),
@@ -1454,7 +1454,7 @@ def _record_entry_attempt(
     try:
         conn = sqlite3.connect(db_path, timeout=5)
         conn.execute(
-            "INSERT INTO entry_attempts (ts, trade_date, risk_profile, symbol, expiration, outcome, "
+            "INSERT INTO entry_attempts (ts, trade_date, arm, symbol, expiration, outcome, "
             "block_detail, proposed_legs, put_strike, call_strike, wing_width, underlying_price, "
             "iv_rank, gex_net, gex_positive, session_quality, would_be_credit, ic_order_id, "
             "seconds_until_cadence_clear) "
@@ -1495,7 +1495,7 @@ def _record_entry_attempt(
 
 
 def _get_open_trades_all(symbol: str, trade_date: str, db_path: str) -> list:
-    """Every open trade for this symbol+date, across every risk_profile/arm — one query.
+    """Every open trade for this symbol+date, across every arm — one query.
     db.py's get_open_trades already returns them unfiltered (it has no --profile flag); the
     filtering to one profile happens in Python. Callers processing every profile for a symbol in
     one pass (`process_symbol`) should call this ONCE and filter the returned list locally rather
@@ -1546,7 +1546,7 @@ def _settle_stopped_trades(
 
 
 def _get_open_trades(symbol: str, profile: str, trade_date: str, db_path: str) -> list:
-    return [t for t in _get_open_trades_all(symbol, trade_date, db_path) if t.get("risk_profile") == profile]
+    return [t for t in _get_open_trades_all(symbol, trade_date, db_path) if t.get("arm") == profile]
 
 
 def _minutes_of_day(iso_str) -> int | None:
@@ -1571,10 +1571,7 @@ def _profile_day_stats(profile: str, trade_date: str, db_path: str, symbol: str 
     try:
         con = sqlite3.connect(db_path)
         con.row_factory = sqlite3.Row
-        q = (
-            "SELECT entry_time FROM ic_trades WHERE trade_date=? AND risk_profile=? "
-            "AND status NOT IN ('cancelled')"
-        )
+        q = "SELECT entry_time FROM ic_trades WHERE trade_date=? AND arm=? AND status NOT IN ('cancelled')"
         params = [trade_date, profile]
         if symbol:
             q += " AND symbol=?"
@@ -1626,7 +1623,7 @@ def process_symbol(
     # the loop re-ran the identical SQL N times for N profiles sharing one symbol.
     open_by_profile: dict[str, list] = {}
     for t in _get_open_trades_all(symbol, snapshot["date"], db_path):
-        open_by_profile.setdefault(t.get("risk_profile"), []).append(t)
+        open_by_profile.setdefault(t.get("arm"), []).append(t)
 
     results = {}
     for name in names:

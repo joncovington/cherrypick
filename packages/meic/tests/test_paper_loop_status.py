@@ -52,7 +52,7 @@ def _open_trade(path, order_id, day, **over):
         "trade_date": day,
         "symbol": "SPX",
         "status": "open",
-        "risk_profile": "control",
+        "arm": "control",
         "era": analytics.CURRENT_ERA,
         "net_credit": 1.8,
         "wing_width": 10,

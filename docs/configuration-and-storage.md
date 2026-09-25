@@ -107,7 +107,7 @@ paper and live data are never queryable through one connection.
 **MEIC — `ic_trades`** (one row per iron condor, PK `ic_order_id`): trade_date, entry/exit times, symbol,
 put/call strikes, wing_width, put/call/net credit, quantity, greeks at entry (put/call/long deltas),
 underlying price at entry, IV rank, session/skew/price-action signals, stop state, exit_reason, pnl, fees,
-risk_profile. Companion tables: `ic_spread_legs` (per-side exits), `daily_summary`, `loop_log`, and
+arm. Companion tables: `ic_spread_legs` (per-side exits), `daily_summary`, `loop_log`, and
 `market_context` (per-day VIX/VIX1D/per-symbol snapshot for the analysis report).
 
 **Earnings — `trades`** (one row per position, PK order ID): strategy, symbol, expiration, legs_json,

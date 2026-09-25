@@ -112,7 +112,7 @@ Each module's paper DB has a different schema, selected by `paper.trade_schema` 
 
 | `trade_schema` | Module | Table | Closed-trade rule |
 |---|---|---|---|
-| `meic_ic` | MEIC | `ic_trades` | `exit_time` set; net = `pnl − fees`; tag = `risk_profile`. |
+| `meic_ic` | MEIC | `ic_trades` | `exit_time` set; net = `pnl − fees`; tag = `arm`. |
 | `earnings` | Earnings | `trades` | `closed_at` set; net = `pnl − entry_cost − exit_cost`; tag = `profile`. |
 | `fly_book` | Flies | `fly_positions` | settled rows; net after the modeled fee stack; tag = experiment *arm* (not a risk profile). |
 

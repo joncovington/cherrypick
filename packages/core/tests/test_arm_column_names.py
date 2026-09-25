@@ -1,4 +1,4 @@
-"""No code outside a module may name that module's pre-rename arm column.
+"""No code may name meic's pre-rename arm column.
 
 The 2026-09-23 `book` rename was sound and still broke two things afterwards, both for the same
 reason: a reader OUTSIDE the migrated packages still asked for the old column, and nobody had
@@ -7,7 +7,8 @@ listed it. The notifier re-sent 7,726 notifications for 553 events; four console
 common word. `risk_profile` is not, so for meic the inventory can be the repository itself.
 
 Outside meic, a reader resolves the column per file (`core.db.arm_column`, the console's
-`armColumnOf`), so the old name has no business in its code. It may appear in exactly two ways:
+`armColumnOf`); inside it, the column is `arm` (renamed 2026-09-24). So the old name has no business
+in any code. It may appear in exactly two ways:
 
   - inside backticks, in prose that names the column (a docstring, a comment);
   - in the declared alias lists below, which are where the spellings are defined.
@@ -22,7 +23,7 @@ REPO = Path(__file__).resolve().parents[3]
 
 # Where the code lives: every package's source, the console's workspaces, and the scripts.
 ROOTS = [
-    *(p for p in (REPO / "packages").glob("*/src") if p.parent.name != "meic"),
+    *(REPO / "packages").glob("*/src"),
     REPO / "packages" / "core" / "cherrypick",
     *(REPO / "packages" / "console").glob("*/src"),
     REPO / "scripts",
@@ -35,6 +36,7 @@ ALLOWED = {
     "packages/console/server/src/readers/db.ts": "ARM_COLUMNS, the TypeScript alias list",
     "scripts/arm_column_preflight.py": "OLD_NAMES: the preflight looks for exactly these",
     "scripts/retag_advised_books.py": "one-off, ran 2026-09-17 against the pre-rename ledgers",
+    "packages/meic/src/cherrypick/meic/db.py": "_refuse_pre_rename names the old column to refuse it",
 }
 
 WORD = re.compile(r"\brisk_profile\b")
@@ -54,10 +56,10 @@ def _offending_lines():
                     yield f"{rel}:{n}: {line.strip()}"
 
 
-def test_nothing_outside_meic_names_its_pre_rename_arm_column():
+def test_no_code_names_meics_pre_rename_arm_column():
     hits = list(_offending_lines())
     assert not hits, (
-        "code outside meic names `risk_profile` directly -- resolve the column per file instead "
+        "code names `risk_profile` directly -- resolve the column per file instead "
         "(core.db.arm_column / armColumnOf):\n" + "\n".join(hits)
     )
 
@@ -72,6 +74,7 @@ def test_the_scan_covers_the_readers_that_broke_last_time():
         "packages/console/server/src/readers/meic.ts",
         "packages/core/cherrypick/core/ledgers.py",
         "packages/advisor/src/cherrypick/advisor/factpack.py",
+        "packages/meic/src/cherrypick/meic/paper.py",
     ):
         assert must in scanned, f"{must} is outside the scan"
     for allowed in ALLOWED:

@@ -574,7 +574,7 @@ def _entry_attempts_section(conn, day) -> list:
     L = ["## Entry attempts (the refusal ledger)"]
     try:
         rows = conn.execute(
-            "SELECT risk_profile, outcome, block_detail, COUNT(*) n, "
+            "SELECT arm, outcome, block_detail, COUNT(*) n, "
             "       AVG(seconds_until_cadence_clear) avg_wait "
             "  FROM entry_attempts WHERE trade_date=? GROUP BY 1, 2, 3",
             (day,),
@@ -591,7 +591,7 @@ def _entry_attempts_section(conn, day) -> list:
     by_arm = {}
     for r in rows:
         d = dict(r)
-        arm = by_arm.setdefault(d["risk_profile"], {"fills": 0, "refused": 0, "reasons": {}, "wait": []})
+        arm = by_arm.setdefault(d["arm"], {"fills": 0, "refused": 0, "reasons": {}, "wait": []})
         if d["outcome"] == "filled":
             arm["fills"] += d["n"]
         else:
@@ -742,8 +742,7 @@ def _open_advised_tags():
     try:
         conn = sqlite3.connect(_PAPER_DB)
         rows = conn.execute(
-            "SELECT DISTINCT risk_profile FROM ic_trades "
-            "WHERE risk_profile LIKE 'advised:%' AND status IN ('open', 'partial')"
+            "SELECT DISTINCT arm FROM ic_trades WHERE arm LIKE 'advised:%' AND status IN ('open', 'partial')"
         ).fetchall()
         conn.close()
         return [r[0] for r in rows]

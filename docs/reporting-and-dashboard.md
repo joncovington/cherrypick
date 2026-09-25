@@ -121,7 +121,7 @@ desktop toast, because real money warrants one where paper deliberately doesn't.
 decides how its events reach you:
 
 - **`per-trade`** (default) — one push per entry, stop, and exit. `trade_summary.profile_prefixes`
-  routes only the arms whose `risk_profile` starts with a listed prefix into the digest instead, which
+  routes only the arms whose name (`arm`) starts with a listed prefix into the digest instead, which
   is how a high-volume study arm is kept quiet while the everyday book stays per-trade.
 - **`summary`** — every MEIC trade accumulates into a periodic per-symbol digest, pushed every
   `interval_minutes`; `profile_prefixes` is ignored. A quiet window pushes nothing rather than an empty

@@ -223,7 +223,7 @@ def test_unknown_policy_name_raises_keyerror():
 
 
 def _arm_row(order_id, arm, real_pnl, status, **overrides):
-    row = _row(ic_order_id=order_id, risk_profile=arm, status=status, pnl=real_pnl, stop_trigger_current=0.95)
+    row = _row(ic_order_id=order_id, arm=arm, status=status, pnl=real_pnl, stop_trigger_current=0.95)
     row.update(overrides)
     return row
 
@@ -394,7 +394,7 @@ def test_shadow_settle_compares_like_with_like_fees():
         status="stopped",
         ic_order_id="ic-1",
         trade_date="2026-08-14",
-        risk_profile="width-5",
+        arm="width-5",
         put_max_cost=1.8,
         call_max_cost=0.1,
         put_settle_value=0.0,

@@ -307,7 +307,7 @@ def _open_trade_row(symbol="QQQ"):
         "net_credit": 1.07,
         "quantity": 1,
         "status": "open",
-        "risk_profile": "live",
+        "arm": "live",
         "execution_mode": "live",
     }
 

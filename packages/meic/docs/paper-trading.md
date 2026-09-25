@@ -38,7 +38,7 @@ quotes**, and only stubbing the two broker-mutating calls (submit, close).
 - **Isolated storage.** All paper (and replay) trades live in `paper_trades.db` in the data home
   (`~/.cherrypick/data/meic/` by default; see [`cherrypick/meic/paths.py`](../src/cherrypick/meic/paths.py)), written via
   `db.call()` (`cherrypick/meic/db.py`) — an in-process dispatcher, not a subprocess per write —
-  against the same schema and commands as the live DB, with a `risk_profile` and `execution_mode`
+  against the same schema and commands as the live DB, with an `arm` and `execution_mode`
   (`paper` | `replay`) column added (`python -m cherrypick.meic.db --db <that path> <command>` is
   still valid for a human running it by hand from a terminal; it's just not how the engine itself
   writes). The live loop and `meic_trades.db` are never touched by this system.

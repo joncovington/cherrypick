@@ -28,7 +28,7 @@ CREATE TABLE entry_attempts (
     id                          INTEGER PRIMARY KEY AUTOINCREMENT,
     ts                          TEXT NOT NULL,
     trade_date                  TEXT NOT NULL,
-    risk_profile                TEXT NOT NULL,
+    arm                         TEXT NOT NULL,
     symbol                      TEXT NOT NULL,
     expiration                  TEXT,
     outcome                     TEXT NOT NULL,  -- filled | cadence_blocked | sign_rule_blocked
@@ -147,7 +147,7 @@ CREATE TABLE ic_trades (
     fees                      REAL,
     dollar_multiplier         REAL DEFAULT 100,
     fill_confirmed_at         TEXT,
-    risk_profile              TEXT,
+    arm                       TEXT,
     execution_mode            TEXT,
     iv_rank_source            TEXT,
     created_at                TEXT NOT NULL,
@@ -211,10 +211,10 @@ CREATE TABLE measurement_breaks (
     created_at  TEXT NOT NULL,
     UNIQUE (break_date, scope, kind)
 );
-CREATE INDEX idx_entry_attempts_date ON entry_attempts (trade_date, risk_profile);
+CREATE INDEX idx_entry_attempts_date ON entry_attempts (trade_date, arm);
 CREATE INDEX idx_entry_attempts_outcome ON entry_attempts (trade_date, outcome);
 CREATE INDEX idx_ic_trades_date_status ON ic_trades(trade_date, status);
-CREATE INDEX idx_ic_trades_profile_date ON ic_trades(risk_profile, trade_date, status);
+CREATE INDEX idx_ic_trades_profile_date ON ic_trades(arm, trade_date, status);
 CREATE INDEX idx_ic_trades_symbol_status ON ic_trades(symbol, status);
 CREATE INDEX idx_iteration_regime_date ON iteration_regime (loop_date, symbol);
 CREATE INDEX idx_loop_log_symbol_date ON loop_log(symbol, loop_date);

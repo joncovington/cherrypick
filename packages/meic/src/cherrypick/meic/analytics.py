@@ -53,9 +53,8 @@ def _rate(numerator, denominator, digits=4):
 def _period_clause(start=None, end=None, arm=None, symbol=None, era=CURRENT_ERA):
     """The shared WHERE every read surface in this module builds on.
 
-    `arm` filters `risk_profile` — MEIC has no separate `arm` column (see the Phase 2 design
-    note: the stream/arm tag IS `risk_profile`, the same column every existing reader —
-    orchestrator report/calibrate, section.py, and the console — already groups on). `era="ALL"`
+    `arm` filters the `arm` column -- the stream/arm tag every reader groups on (orchestrator
+    report/calibrate, section.py, the console). It was `risk_profile` until 2026-09-24. `era="ALL"`
     disables the era filter for an explicit cross-era read; any other value (including the
     CURRENT_ERA default) filters to exactly that era.
     """
@@ -70,7 +69,7 @@ def _period_clause(start=None, end=None, arm=None, symbol=None, era=CURRENT_ERA)
         clause.append("trade_date <= ?")
         params.append(end)
     if arm and arm != "ALL":
-        clause.append("risk_profile = ?")
+        clause.append("arm = ?")
         params.append(arm)
     if symbol and symbol != "ALL":
         clause.append("symbol = ?")
@@ -114,12 +113,10 @@ def by_arm(conn, start=None, end=None, symbol=None, era=CURRENT_ERA) -> list[dic
     """Per-stream comparison — the module's headline output. A blended total would hide the
     only contrast the forward test is designed to draw."""
     where, params = _period_clause(start, end, symbol=symbol, era=era)
-    rows = conn.execute(
-        f"SELECT risk_profile, pnl, fees, trade_date FROM ic_trades WHERE {where}", params
-    ).fetchall()
+    rows = conn.execute(f"SELECT arm, pnl, fees, trade_date FROM ic_trades WHERE {where}", params).fetchall()
     grouped: dict[str, list] = {}
     for r in rows:
-        grouped.setdefault(r["risk_profile"] or "unassigned", []).append(r)
+        grouped.setdefault(r["arm"] or "unassigned", []).append(r)
     out = [{"arm": arm, **_summarize(rs)} for arm, rs in grouped.items()]
     return sorted(out, key=lambda x: x["net_pnl"] or 0, reverse=True)
 
@@ -420,9 +417,7 @@ def regime_cuts(
     bounds = _rc.era_bounds(breaks, session)
     where, params = _period_clause(bounds["start"], session, None, symbol, era)
     profiles = [
-        r[0]
-        for r in conn.execute(f"SELECT DISTINCT risk_profile FROM ic_trades WHERE {where}", params)
-        if r[0]
+        r[0] for r in conn.execute(f"SELECT DISTINCT arm FROM ic_trades WHERE {where}", params) if r[0]
     ]
 
     arms_out = []
@@ -460,7 +455,7 @@ def regime_cuts(
         module="meic",
         session=session,
         symbol=symbol,
-        arm_column="risk_profile",
+        arm_column="arm",
         entry_modes=None,
         phase="entry",
         era=bounds,
@@ -841,8 +836,7 @@ def control_fired(conn, start=None, end=None, symbol=None, era=CURRENT_ERA) -> d
     """
     where, params = _period_clause(start, end, None, symbol, era)
     rows = conn.execute(
-        f"SELECT trade_date, risk_profile, COUNT(*) n FROM ic_trades WHERE {where}"
-        " GROUP BY trade_date, risk_profile",
+        f"SELECT trade_date, arm, COUNT(*) n FROM ic_trades WHERE {where} GROUP BY trade_date, arm",
         params,
     ).fetchall()
 
@@ -850,7 +844,7 @@ def control_fired(conn, start=None, end=None, symbol=None, era=CURRENT_ERA) -> d
     for row in rows:
         r = dict(row)
         bucket = sessions.setdefault(r["trade_date"], {"session": r["trade_date"], "by_arm": {}})
-        bucket["by_arm"][r["risk_profile"]] = r["n"]
+        bucket["by_arm"][r["arm"]] = r["n"]
 
     out = []
     for session in sorted(sessions):
@@ -944,16 +938,15 @@ def arm_divergence(
     """
     where, params = _period_clause(start, end, symbol=symbol, era=era)
     rows = conn.execute(
-        f"SELECT risk_profile, trade_date, put_strike, call_strike FROM ic_trades "
-        f"WHERE {where} AND risk_profile IN (?, ?)",
+        f"SELECT arm, trade_date, put_strike, call_strike FROM ic_trades WHERE {where} AND arm IN (?, ?)",
         [*params, stream_a, stream_b],
     ).fetchall()
     by_stream: dict[str, set] = {stream_a: set(), stream_b: set()}
     by_date: dict[str, dict[str, set]] = {}
     for r in rows:
         key = (r["put_strike"], r["call_strike"])
-        by_stream[r["risk_profile"]].add(key)
-        by_date.setdefault(r["trade_date"], {stream_a: set(), stream_b: set()})[r["risk_profile"]].add(key)
+        by_stream[r["arm"]].add(key)
+        by_date.setdefault(r["trade_date"], {stream_a: set(), stream_b: set()})[r["arm"]].add(key)
 
     sessions_with_both = [d for d, s in by_date.items() if s[stream_a] and s[stream_b]]
     overlap_fracs = []
@@ -1125,7 +1118,7 @@ def gex_gate_counterfactual(
     """
     where, params = _period_clause(start, end, None, symbol, era)
     arms = [arm] if isinstance(arm, str) else list(arm)
-    where += f" AND risk_profile IN ({','.join('?' * len(arms))})"
+    where += f" AND arm IN ({','.join('?' * len(arms))})"
     params = list(params) + arms
 
     rows = conn.execute(
@@ -1224,7 +1217,7 @@ def settlement_audit(conn, start=None, end=None, symbol=None, era="ALL") -> dict
     rows = [
         dict(r)
         for r in conn.execute(
-            "SELECT id, trade_date, symbol, risk_profile, exit_reason, put_strike, call_strike,"
+            "SELECT id, trade_date, symbol, arm, exit_reason, put_strike, call_strike,"
             " wing_width, quantity, net_credit, put_credit, call_credit, settle_underlying, pnl,"
             f" put_stop_cost, call_stop_cost FROM ic_trades WHERE {where}",
             params,
@@ -1265,7 +1258,7 @@ def settlement_audit(conn, start=None, end=None, symbol=None, era="ALL") -> dict
         {
             "id": r["id"],
             "session": r["trade_date"],
-            "arm": r["risk_profile"],
+            "arm": r["arm"],
             "recorded_pnl": _round(r["pnl"]),
             "modelled_pnl": _round(modelled(r, r["settle_underlying"])),
         }
@@ -1321,6 +1314,6 @@ def settlement_audit(conn, start=None, end=None, symbol=None, era="ALL") -> dict
         "reproduced": len(priced) - len(mismatched),
         "mismatched": mismatched,
         "unpriced_settlements": len(unpriced),
-        "unpriced_detail": sorted({(r["trade_date"], r["risk_profile"]) for r in unpriced}),
+        "unpriced_detail": sorted({(r["trade_date"], r["arm"]) for r in unpriced}),
         "by_session": sensitivity,
     }

@@ -3,8 +3,9 @@
 > **Vocabulary.** What this module calls a **risk profile** is what the suite calls an **arm** — one
 > configured variant run as its own portfolio (see the root `CLAUDE.md`). meic additionally keeps a
 > *config preset* registry in `config.risk.json` under `profiles`; that sense of the word is a
-> preset and stays. The column (`ic_trades.risk_profile`) moves with the rest of the schema; prose
-> and the console already say `arm`.
+> preset and stays. The column is `arm` (`ic_trades.arm`, `entry_attempts.arm`) -- it was
+> `risk_profile` until 2026-09-24, and `db.init_db` refuses a ledger that still says so rather than
+> adding `arm` beside it (`scripts/arm_column_migrate.py --only risk_profile` renames one).
 
 > Operating contract for the cherrypick **MEIC** engine. Human-facing guides live in
 > [`docs/`](docs/README.md); the full entry-gate catalog is [`GATES.md`](GATES.md); suite-wide context is
@@ -260,8 +261,8 @@ experiments), `open` (every study gate off, no per-side stop,
 `overlap_scope: "none"`, full per-side path recording — the permissive superset every gate variant
 and every derived stop policy is answered from read-side, rather than by running a separate arm per
 question), and `width-5`/`width-10` (wing width pinned, the one genuinely non-derivable structural
-variant, paired against each other on the same ticks). All four write `risk_profile = <arm name>`
-— there is no separate `arm` column. See [docs/paper-experiments.md](docs/paper-experiments.md)
+variant, paired against each other on the same ticks). All four write `arm = <arm name>`
+(the column was `risk_profile` until 2026-09-24). See [docs/paper-experiments.md](docs/paper-experiments.md)
 for the full design, the breakeven identity the test is measuring against, and the derived stop
 policies (`stop-none`/`stop-0.75-net`/`stop-2.0-side`/`strike-touch`, computed from `open`'s
 recorded paths, never run as separate entry streams).

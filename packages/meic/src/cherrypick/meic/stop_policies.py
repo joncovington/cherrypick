@@ -256,7 +256,7 @@ def shadow_settle(row: dict, *, fees: Fees) -> dict:
     return {
         "ic_order_id": row.get("ic_order_id"),
         "trade_date": row.get("trade_date"),
-        "risk_profile": row.get("risk_profile"),
+        "arm": row.get("arm"),
         "symbol": row.get("symbol"),
         "stop_fired": row.get("status") == "stopped",
         "credit_at_entry": net_credit,
@@ -317,7 +317,7 @@ def validate_against_control(rows: list[dict], *, fees: Fees, tolerance: float =
     """
     stopping_arms = sorted(
         {
-            r.get("risk_profile")
+            r.get("arm")
             for r in rows
             if r.get("put_stop_cost") is not None or r.get("call_stop_cost") is not None
         }
@@ -326,7 +326,7 @@ def validate_against_control(rows: list[dict], *, fees: Fees, tolerance: float =
     compared, mismatches, overshoot = [], [], []
     skipped_force_closed = skipped_no_recorded_pnl = 0
     for row in rows:
-        if row.get("risk_profile") not in stopping_arms:
+        if row.get("arm") not in stopping_arms:
             continue
         status = row.get("status")
         if status == "force_closed":
@@ -350,7 +350,7 @@ def validate_against_control(rows: list[dict], *, fees: Fees, tolerance: float =
         delta = round(derived["pnl"] - real_pnl, 2)
         entry = {
             "ic_order_id": row.get("ic_order_id"),
-            "arm": row.get("risk_profile"),
+            "arm": row.get("arm"),
             "real_pnl": real_pnl,
             "derived_pnl": derived["pnl"],
             "delta": delta,

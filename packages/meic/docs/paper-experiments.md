@@ -66,9 +66,8 @@ worthless anyway. That gap is what the derived stop policies below are built to 
 | `width-5` | SPX wing pinned to 5, otherwise identical gates to `open`, but keeps `control`'s real 0.95×net stop | the one genuinely non-derivable structural variant — wing width isn't a float you can re-derive after the fact |
 | `width-10` | SPX wing pinned to 10, same design as `width-5` | paired against `width-5` on the same ticks; expected to near-duplicate `control`'s own book under `control`'s widest-first selection — `analytics.arm_divergence` reports how often the two streams actually realized different strikes, so that isn't assumed |
 
-All four write `risk_profile = <arm name>` (there is no separate `arm` column — every existing
-reader, from the orchestrator's `report`/`calibrate` to `dashboard.py`/`section.py`, already groups
-on `risk_profile`). Rows carry an `era` column: `'book'` for the pre-cutover ladder-era history
+All four write `arm = <arm name>` -- the column every reader, from the orchestrator's
+`report`/`calibrate` to the console, groups on. It was `risk_profile` until 2026-09-24. Rows carry an `era` column: `'book'` for the pre-cutover ladder-era history
 above, `'sample'` for everything from the four-stream design onward — `analytics.py`'s functions
 default to `era='sample'` so the two selection intensities are never silently pooled.
 
@@ -408,7 +407,7 @@ day a cell simply holds its four cohorts; on a choppy day it rotates through mor
 
 ## Reading the results
 
-Every book is tagged with its profile name in `ic_trades.risk_profile`, and the whole read side is
+Every book is tagged with its profile name in `ic_trades.arm`, and the whole read side is
 profile-name-agnostic:
 
 - `python -m cherrypick.meic.db get_range_summary --start <d> --end <d>` groups metrics by profile.

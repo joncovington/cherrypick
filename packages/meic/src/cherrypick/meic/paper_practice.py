@@ -531,7 +531,7 @@ def _ic_row(book_name, date, ic, pnl, fees, status, exit_reason, exit_iso):
         "underlying_price_entry": ic["spot_entry"],
         "iv_rank_at_entry": ic.get("iv_rank"),
         "session_quality": session_quality(ic["entry_min"]),
-        "risk_profile": book_name,
+        "arm": book_name,
         "execution_mode": "practice_0dtespx",
         "iv_rank_source": ic.get("iv_rank_source", "vix_band"),
         "pnl": pnl,

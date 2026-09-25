@@ -60,13 +60,13 @@ def _records(conn, arm: str, start: str | None = None) -> list[dict]:
     so a reading here and a reading from `cherrypick calibrate` can never disagree about which day
     a trade belongs to.
     """
-    where = ["risk_profile = ?", "exit_time IS NOT NULL"]
+    where = ["arm = ?", "exit_time IS NOT NULL"]
     params: list = [arm]
     if start:
         where.append("substr(exit_time, 1, 10) >= ?")
         params.append(start)
     rows = conn.execute(
-        f"SELECT symbol, risk_profile, pnl, fees, exit_time, slippage_dollars, "  # noqa: S608 -- fixed clauses
+        f"SELECT symbol, arm, pnl, fees, exit_time, slippage_dollars, "  # noqa: S608 -- fixed clauses
         f"gex_net_at_entry, gex_positive_at_entry, gamma_flip_at_entry, gex_spot_at_entry "
         f"FROM ic_trades WHERE {' AND '.join(where)}",
         params,

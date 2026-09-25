@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS ic_trades (
     fees                      REAL,
     dollar_multiplier         REAL DEFAULT 100,
     fill_confirmed_at         TEXT,
-    risk_profile              TEXT,
+    arm                       TEXT,
     execution_mode            TEXT,
     iv_rank_source            TEXT,
     created_at                TEXT NOT NULL,
@@ -266,7 +266,7 @@ CREATE TABLE IF NOT EXISTS entry_attempts (
     id                          INTEGER PRIMARY KEY AUTOINCREMENT,
     ts                          TEXT NOT NULL,
     trade_date                  TEXT NOT NULL,
-    risk_profile                TEXT NOT NULL,
+    arm                         TEXT NOT NULL,
     symbol                      TEXT NOT NULL,
     expiration                  TEXT,
     outcome                     TEXT NOT NULL,  -- filled | cadence_blocked | sign_rule_blocked
@@ -313,7 +313,7 @@ CREATE TABLE IF NOT EXISTS measurement_breaks (
 
 CREATE INDEX IF NOT EXISTS idx_measurement_breaks_date ON measurement_breaks (break_date);
 
-CREATE INDEX IF NOT EXISTS idx_entry_attempts_date ON entry_attempts (trade_date, risk_profile);
+CREATE INDEX IF NOT EXISTS idx_entry_attempts_date ON entry_attempts (trade_date, arm);
 CREATE INDEX IF NOT EXISTS idx_entry_attempts_outcome ON entry_attempts (trade_date, outcome);
 
 """
@@ -350,7 +350,9 @@ _ADDED_TRADE_COLUMNS = {
     # conceded to the spread on entry. Paper rows leave it NULL.
     "entry_mid_at_submit": "REAL",
     "dollar_multiplier": "REAL DEFAULT 100",
-    "risk_profile": "TEXT",
+    # `risk_profile` until 2026-09-24. Only ever ADDED to a ledger that has neither name -- one that
+    # still says `risk_profile` is refused by `_refuse_pre_rename` before this list is read.
+    "arm": "TEXT",
     "execution_mode": "TEXT",
     "iv_rank_source": "TEXT",
     # GEX regime at entry (see the CREATE above for why). Additive only — the orchestrator reads
@@ -441,11 +443,40 @@ _ADDED_TRADE_COLUMNS = {
 }
 
 
+class PreRenameLedger(RuntimeError):
+    """This ledger still names its arm column `risk_profile`; the code names it `arm`."""
+
+
+def _refuse_pre_rename(conn: sqlite3.Connection) -> None:
+    """Refuse to touch the schema of a ledger whose arm column has not been renamed yet.
+
+    The column was `risk_profile` until 2026-09-24. On a ledger that still says so, `_migrate` would
+    find `arm` missing from `ic_trades` and ADD it -- leaving the table with both names, history in
+    one and every new row in the other, and nothing raised. That is the half-migrated shape
+    `core.db.rename_column` and the migration script both refuse, and the paper loop runs
+    `init_db` every iteration, so it would be produced within seconds of a loop starting on new
+    code against an old file.
+
+    It refuses rather than renaming here on purpose: the rename is a reviewable step with its own
+    backups (`scripts/arm_column_migrate.py --only risk_profile`), not a side effect of a loop
+    starting.
+    """
+    for table in ("ic_trades", "entry_attempts"):
+        cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if "risk_profile" in cols and "arm" not in cols:
+            raise PreRenameLedger(
+                f"{table} still has `risk_profile`; run "
+                "`python scripts/arm_column_migrate.py --only risk_profile --include-backups --apply` "
+                "(loops stopped, ledgers backed up) before this code touches it"
+            )
+
+
 def _migrate(conn: sqlite3.Connection) -> list[str]:
     """Add any ic_trades columns missing from an older paper/live DB. Returns what it added (for
     tests and logs). Deliberately NOT cherrypick.core.db.apply_additive_migrations' plain
     additive-only form — cmd_init_db also drops a retired column (trend_signal), which that
     helper does not support."""
+    _refuse_pre_rename(conn)
     added = []
     existing = {row[1] for row in conn.execute("PRAGMA table_info(ic_trades)")}
     for column, sql_type in _ADDED_TRADE_COLUMNS.items():
@@ -547,6 +578,9 @@ def stale_writer_columns(conn: sqlite3.Connection) -> list[str]:
 
 def cmd_init_db(_args):
     conn = _connect()
+    # Before the DDL, not just inside _migrate: `CREATE INDEX ... (trade_date, arm)` would fail on an
+    # old ledger with a bare "no such column" that names neither the cause nor the fix.
+    _refuse_pre_rename(conn)
     for statement in _DDL.split(";"):
         stmt = statement.strip()
         if stmt:
@@ -554,7 +588,7 @@ def cmd_init_db(_args):
     existing_before = {row[1] for row in conn.execute("PRAGMA table_info(ic_trades)")}
     _migrate(conn)
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_ic_trades_profile_date ON ic_trades(risk_profile, trade_date, status)"
+        "CREATE INDEX IF NOT EXISTS idx_ic_trades_profile_date ON ic_trades(arm, trade_date, status)"
     )
     # Drop columns removed from the schema
     if "trend_signal" in existing_before:
@@ -808,18 +842,18 @@ def cmd_get_range_summary(args):
         where.append("symbol = ?")
         params.append(args.symbol.upper())
     if args.profile:
-        where.append("risk_profile = ?")
+        where.append("arm = ?")
         params.append(args.profile)
     rows = _rows_dicts(conn, where, params)
     conn.close()
 
-    profiles = _profiles.group_by_tag(rows, tag_key="risk_profile", summarize=_range_stats_for_rows)
+    profiles = _profiles.group_by_tag(rows, tag_key="arm", summarize=_range_stats_for_rows)
 
     # Atomic (profile × symbol) portfolios, plus the by-symbol lens.
     buckets: dict[tuple, list] = {}
     by_symbol_rows: dict[str, list] = {}
     for r in rows:
-        prof = _profiles.attribution_tag(r.get("risk_profile"))
+        prof = _profiles.attribution_tag(r.get("arm"))
         sym = (r.get("symbol") or "?").upper()
         buckets.setdefault((prof, sym), []).append(r)
         by_symbol_rows.setdefault(sym, []).append(r)
@@ -844,7 +878,7 @@ def cmd_get_range_summary(args):
 
 def _rows_dicts(conn: sqlite3.Connection, where: list[str], params: list) -> list[dict]:
     sql = (
-        "SELECT trade_date, risk_profile, symbol, pnl, fees, net_credit, status "
+        "SELECT trade_date, arm, symbol, pnl, fees, net_credit, status "
         f"FROM ic_trades WHERE {' AND '.join(where)} ORDER BY trade_date, id"
     )
     return [dict(r) for r in conn.execute(sql, params).fetchall()]
@@ -1602,7 +1636,7 @@ def main():
     p_range.add_argument("--start", required=True, help="Inclusive start date, YYYY-MM-DD")
     p_range.add_argument("--end", required=True, help="Inclusive end date, YYYY-MM-DD")
     p_range.add_argument(
-        "--profile", default=None, help="Filter to one risk_profile; omit to group by every profile present"
+        "--profile", default=None, help="Filter to one arm; omit to group by every profile present"
     )
     p_range.add_argument("--symbol", default=None, help="Filter to one symbol; omit for all symbols")
 

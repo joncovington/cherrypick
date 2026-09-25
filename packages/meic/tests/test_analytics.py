@@ -1,5 +1,5 @@
 """meic/analytics.py — the read-only query layer ported from flies' analytics.py shape, adapted
-to MEIC's gross-pnl-only schema (net computed at read time) and risk_profile-as-arm convention.
+to MEIC's gross-pnl-only schema (net computed at read time) and its `arm` tag convention.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ def _insert(conn, **overrides):
         "trade_date": "2026-08-07",
         "symbol": "SPX",
         "status": "expired",
-        "risk_profile": "control",
+        "arm": "control",
         "era": analytics.CURRENT_ERA,
         "put_credit": 0.9,
         "call_credit": 0.9,
@@ -102,9 +102,9 @@ def test_win_rate_is_net_of_fees():
 
 
 def test_by_arm_groups_and_ranks_by_net_pnl(conn):
-    _insert(conn, ic_order_id="1", risk_profile="control", pnl=100.0, fees=5.0)
-    _insert(conn, ic_order_id="2", risk_profile="open", pnl=10.0, fees=5.0)
-    _insert(conn, ic_order_id="3", risk_profile="open", pnl=-5.0, fees=5.0)
+    _insert(conn, ic_order_id="1", arm="control", pnl=100.0, fees=5.0)
+    _insert(conn, ic_order_id="2", arm="open", pnl=10.0, fees=5.0)
+    _insert(conn, ic_order_id="3", arm="open", pnl=-5.0, fees=5.0)
     out = analytics.by_arm(conn)
     assert [r["arm"] for r in out] == ["control", "open"]  # control's +95 ranks above open's -5
     assert out[0]["net_pnl"] == 95.0
@@ -274,9 +274,9 @@ def test_breakeven_scorecard_empty_returns_none_fields(conn):
 
 
 def test_breakeven_scorecard_scoped_per_arm(conn):
-    _insert(conn, ic_order_id="1", risk_profile="control", fees=5.0, net_credit=1.0)
+    _insert(conn, ic_order_id="1", arm="control", fees=5.0, net_credit=1.0)
     _insert_legs(conn, "1", "expired", "expired")
-    _insert(conn, ic_order_id="2", risk_profile="open", fees=5.0, net_credit=1.0)
+    _insert(conn, ic_order_id="2", arm="open", fees=5.0, net_credit=1.0)
     _insert_legs(conn, "2", "stopped", "stopped")
     control = analytics.breakeven_scorecard(conn, arm="control")
     open_arm = analytics.breakeven_scorecard(conn, arm="open")
@@ -327,7 +327,7 @@ def test_arm_divergence_flags_identical_strikes_same_session(conn):
     _insert(
         conn,
         ic_order_id="1",
-        risk_profile="control",
+        arm="control",
         trade_date="2026-08-07",
         put_strike=7450,
         call_strike=7550,
@@ -335,7 +335,7 @@ def test_arm_divergence_flags_identical_strikes_same_session(conn):
     _insert(
         conn,
         ic_order_id="2",
-        risk_profile="width-10",
+        arm="width-10",
         trade_date="2026-08-07",
         put_strike=7450,
         call_strike=7550,
@@ -350,7 +350,7 @@ def test_arm_divergence_reports_partial_overlap(conn):
     _insert(
         conn,
         ic_order_id="1",
-        risk_profile="control",
+        arm="control",
         trade_date="2026-08-07",
         put_strike=7450,
         call_strike=7550,
@@ -358,7 +358,7 @@ def test_arm_divergence_reports_partial_overlap(conn):
     _insert(
         conn,
         ic_order_id="2",
-        risk_profile="control",
+        arm="control",
         trade_date="2026-08-07",
         put_strike=7440,
         call_strike=7560,
@@ -366,7 +366,7 @@ def test_arm_divergence_reports_partial_overlap(conn):
     _insert(
         conn,
         ic_order_id="3",
-        risk_profile="width-10",
+        arm="width-10",
         trade_date="2026-08-07",
         put_strike=7450,
         call_strike=7550,
@@ -377,8 +377,8 @@ def test_arm_divergence_reports_partial_overlap(conn):
 
 
 def test_arm_divergence_no_shared_sessions(conn):
-    _insert(conn, ic_order_id="1", risk_profile="control", trade_date="2026-08-06")
-    _insert(conn, ic_order_id="2", risk_profile="width-10", trade_date="2026-08-07")
+    _insert(conn, ic_order_id="1", arm="control", trade_date="2026-08-06")
+    _insert(conn, ic_order_id="2", arm="width-10", trade_date="2026-08-07")
     out = analytics.arm_divergence(conn, "control", "width-10")
     assert out["sessions_with_both"] == 0
     assert out["avg_strike_overlap_pct"] is None
@@ -392,7 +392,7 @@ def test_stop_counterfactual_runs_against_the_substrate_stream(conn):
     _insert(
         conn,
         ic_order_id="1",
-        risk_profile="control",
+        arm="control",
         status="expired",
         put_credit=0.9,
         call_credit=0.9,
@@ -419,7 +419,7 @@ def test_validate_stop_derivation_checks_the_arms_that_really_stopped(conn):
     _insert(
         conn,
         ic_order_id="1",
-        risk_profile="width-5",
+        arm="width-5",
         status="stopped",
         put_credit=0.9,
         call_credit=0.9,
@@ -437,7 +437,7 @@ def test_validate_stop_derivation_checks_the_arms_that_really_stopped(conn):
     _insert(
         conn,
         ic_order_id="2",
-        risk_profile="control",
+        arm="control",
         status="expired",
         stop_trigger_current=0.95,
         put_max_cost=2.5,
@@ -649,7 +649,7 @@ def test_stop_grid_scores_the_whole_curve_from_one_recorded_path(conn):
     _insert(
         conn,
         ic_order_id="1",
-        risk_profile="control",
+        arm="control",
         status="expired",
         put_max_cost=1.71,
         call_max_cost=0.2,  # 1.71 / 1.8 = exactly 0.95x
@@ -685,7 +685,7 @@ def test_stop_grid_reports_censored_points_instead_of_folding_them_into_totals(c
     _insert(
         conn,
         ic_order_id="1",
-        risk_profile="width-5",
+        arm="width-5",
         status="stopped",
         put_max_cost=1.8,
         call_max_cost=0.1,  # stopped at 1.0x net credit
@@ -708,7 +708,7 @@ def test_stop_session_rollup_names_what_the_stop_cost_per_session(conn):
     _insert(
         conn,
         ic_order_id="1",
-        risk_profile="control",
+        arm="control",
         status="expired",
         trade_date="2026-08-13",
         put_max_cost=1.8,
@@ -722,7 +722,7 @@ def test_stop_session_rollup_names_what_the_stop_cost_per_session(conn):
     _insert(
         conn,
         ic_order_id="2",
-        risk_profile="control",
+        arm="control",
         status="expired",
         trade_date="2026-08-14",
         put_max_cost=0.2,
@@ -750,11 +750,11 @@ def test_control_fired_tags_the_sessions_control_sat_out(conn):
     """The asymmetry proposal #6 is about: control's stricter iv_rank floor can leave it dark while
     the looser arms trade, so those sessions have no same-session baseline."""
     # 08-13: control traded alongside width-5.
-    _insert(conn, ic_order_id="1", risk_profile="control", trade_date="2026-08-13")
-    _insert(conn, ic_order_id="2", risk_profile="width-5", trade_date="2026-08-13")
+    _insert(conn, ic_order_id="1", arm="control", trade_date="2026-08-13")
+    _insert(conn, ic_order_id="2", arm="width-5", trade_date="2026-08-13")
     # 08-14: control gated out entirely; width-5 and open still traded.
-    _insert(conn, ic_order_id="3", risk_profile="width-5", trade_date="2026-08-14")
-    _insert(conn, ic_order_id="4", risk_profile="open", trade_date="2026-08-14")
+    _insert(conn, ic_order_id="3", arm="width-5", trade_date="2026-08-14")
+    _insert(conn, ic_order_id="4", arm="open", trade_date="2026-08-14")
 
     out = analytics.control_fired(conn)
     assert out["n_sessions"] == 2
@@ -771,7 +771,7 @@ def test_control_fired_tags_the_sessions_control_sat_out(conn):
 def test_control_fired_buckets_rather_than_excludes(conn):
     """A dark session is a real session with a real result. It has to come back in the list so a
     caller can group on it — dropping it would decide the answer by choosing the sample."""
-    _insert(conn, ic_order_id="1", risk_profile="width-5", trade_date="2026-08-14")
+    _insert(conn, ic_order_id="1", arm="width-5", trade_date="2026-08-14")
     out = analytics.control_fired(conn)
     assert out["n_sessions"] == 1, "the dark session is still reported, not filtered away"
     assert out["sessions"][0]["by_arm"] == {"width-5": 1}
@@ -827,7 +827,7 @@ def test_gex_gate_counterfactual_reads_across_the_open_to_control_rename(conn):
     _insert(
         conn,
         ic_order_id="1",
-        risk_profile="open",
+        arm="open",
         era="sample",
         gex_positive_at_entry=0,
         pnl=100.0,
@@ -836,7 +836,7 @@ def test_gex_gate_counterfactual_reads_across_the_open_to_control_rename(conn):
     _insert(
         conn,
         ic_order_id="2",
-        risk_profile="control",
+        arm="control",
         era=analytics.CURRENT_ERA,
         gex_positive_at_entry=0,
         pnl=100.0,

@@ -24,7 +24,7 @@ def _insert(conn, **overrides):
         "trade_date": "2026-09-14",
         "symbol": "SPX",
         "status": "expired",
-        "risk_profile": "control",
+        "arm": "control",
         "era": analytics.CURRENT_ERA,
         "put_credit": 0.9,
         "call_credit": 0.9,
@@ -68,7 +68,7 @@ def ledger(tmp_path, monkeypatch):
             conn,
             ic_order_id=f"a{i}",
             trade_date=day,
-            risk_profile="advised:x",
+            arm="advised:x",
             entry_gex_bucket="clustered",
             entry_trend_bucket="flat",
         )
@@ -94,7 +94,7 @@ def test_regime_cuts_arms_come_from_the_ledger_and_completion_is_null(ledger):
     conn = sqlite3.connect(ledger)
     conn.row_factory = sqlite3.Row
     doc = analytics.regime_cuts(conn, session=DAY, generated_at="t")
-    assert doc["module"] == "meic" and doc["arm_column"] == "risk_profile" and doc["entry_modes"] is None
+    assert doc["module"] == "meic" and doc["arm_column"] == "arm" and doc["entry_modes"] is None
     assert doc["era"]["start"] == "2026-08-21" and doc["era"]["key"] == analytics.CURRENT_ERA
     assert [b["break_date"] for b in doc["era"]["ignored_future"]] == ["2026-12-18"]
     books = {b["arm"]: b for b in doc["arms"]}

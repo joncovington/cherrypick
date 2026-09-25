@@ -30,7 +30,7 @@ def ledger(tmp_path, monkeypatch):
         "trade_date": "2026-08-25",
         "symbol": "SPX",
         "status": "expired",
-        "risk_profile": "control",
+        "arm": "control",
         "era": analytics.CURRENT_ERA,
         "put_credit": 0.9,
         "call_credit": 0.9,
