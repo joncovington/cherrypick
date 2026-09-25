@@ -481,3 +481,69 @@ def test_shortfall_is_silent_on_a_window_that_only_narrows():
 def test_describe_shortfall_names_the_side_when_a_window_is_directional():
     assert "TQQQ=163v/12^" in sc.describe_shortfall({"window_hints": {"TQQQ": [163, 12]}})
     assert "XSP=90" in sc.describe_shortfall({"window_hints": {"XSP": [90, 90]}})
+
+
+def _arm(wired, module="flies", date=None):
+    """A live arm record dated `date` (default: today in ET), the shape `/live-<module>-start` writes."""
+    from cherrypick.orchestrator import timeutil
+
+    state = cfgmod.STATE_DIR  # patched to the test's temp dir by `wired`
+    state.mkdir(parents=True, exist_ok=True)
+    (state / f"{module}-live-arm.json").write_text(
+        json.dumps({"date": date or timeutil.now_et().date().isoformat(), "armed_by": "test"}),
+        encoding="utf-8",
+    )
+
+
+def test_a_window_only_recycle_waits_while_live_trading_is_armed(wired, spy, requests, monkeypatch):
+    """A recycle is a ~20s gap in the quote cache every live tick reads. A wider window can wait for the
+    disarm; the stamp is left alone so the recycle still happens once the arm lapses."""
+    from cherrypick.orchestrator import timeutil
+
+    monkeypatch.setattr(timeutil, "now_et", lambda *a, **k: _noon())
+    requests("pmcc", symbols=["XSP"], window_hints={"XSP": 71})
+    _stamp_producer(wired)
+    requests("pmcc", symbols=["XSP"], window_hints={"XSP": 72})
+    _age_stamp("streamer", sc.HINT_RECYCLE_COOLDOWN_S + 1)
+    _arm(wired, date=_noon().date().isoformat())
+
+    finding = wd._recycle_streamer_if_stale("streamer", wired, STREAMER, settling=False)
+    assert spy == {"stop": 0, "start": 0}
+    assert finding.status == wd.OK and "flies live is armed" in finding.message
+    assert sc.staleness(STREAMER, wired, "streamer", check_subscriptions=True)["stale"] is True
+
+
+def test_a_new_symbol_still_recycles_while_live_trading_is_armed(wired, spy, requests, monkeypatch):
+    """Blindness beats tidiness, armed or not: a module that cannot see an instrument at all."""
+    from cherrypick.orchestrator import timeutil
+
+    monkeypatch.setattr(timeutil, "now_et", lambda *a, **k: _noon())
+    requests("earnings", symbols=["AAPL"])
+    _stamp_producer(wired)
+    requests("earnings", symbols=["AAPL", "MSFT"])
+    _arm(wired, date=_noon().date().isoformat())
+
+    wd._recycle_streamer_if_stale("streamer", wired, STREAMER, settling=False)
+    assert spy == {"stop": 1, "start": 1}
+
+
+def test_a_stale_arm_record_does_not_hold_a_recycle(wired, spy, requests, monkeypatch):
+    """Yesterday's record, or one past its disarm time, is not armed: the window recycle goes ahead."""
+    from cherrypick.orchestrator import timeutil
+
+    monkeypatch.setattr(timeutil, "now_et", lambda *a, **k: _noon())
+    requests("pmcc", symbols=["XSP"], window_hints={"XSP": 71})
+    _stamp_producer(wired)
+    requests("pmcc", symbols=["XSP"], window_hints={"XSP": 72})
+    _age_stamp("streamer", sc.HINT_RECYCLE_COOLDOWN_S + 1)
+    _arm(wired, date="2026-01-02")
+
+    wd._recycle_streamer_if_stale("streamer", wired, STREAMER, settling=False)
+    assert spy == {"stop": 1, "start": 1}
+
+
+def _noon():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    return datetime(2026, 9, 25, 12, 0, tzinfo=ZoneInfo("America/New_York"))

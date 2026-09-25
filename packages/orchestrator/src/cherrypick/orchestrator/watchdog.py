@@ -843,6 +843,19 @@ def _streamer_churn_finding(label: str, status: dict[str, Any]) -> Finding | Non
     return finding
 
 
+def live_armed_modules(now: datetime | None = None) -> list[str]:
+    """Modules whose live arm record is valid right now (dated today in ET, before its disarm time
+    plus grace) -- the same test the supervisor uses to enable a `<module>-live` job, read off the
+    `<module>-live-arm.json` files the modules' human-confirmed arm commands write."""
+    now = now or timeutil.now_et()
+    armed = []
+    for path in sorted(cfgmod.STATE_DIR.glob("*-live-arm.json")):
+        rec = util.read_json(path, default=None)
+        if isinstance(rec, dict) and jobspec.arm_record_valid(rec, {}, now)[0]:
+            armed.append(path.name[: -len("-live-arm.json")])
+    return armed
+
+
 def _recycle_streamer_if_stale(label: str, root: Path, spec: dict[str, Any], settling: bool) -> Finding:
     """A streamer that is up and streaming, but on config — or a subscription set — from before the
     last edit.
@@ -874,6 +887,22 @@ def _recycle_streamer_if_stale(label: str, root: Path, spec: dict[str, Any], set
         return healthy
     if not state["stale"]:
         return healthy
+
+    # A WINDOW-ONLY growth waits while live trading is armed (2026-09-25). A recycle is a ~20s gap in
+    # the one quote cache every loop reads, and a live tick in the gap refuses on stale data. A wider
+    # window is a nicety that can wait for the disarm; a new SYMBOL is blindness and still recycles.
+    # The stamp is left alone, so the recycle happens on the first check after the arm lapses.
+    short = state.get("shortfall") or {}
+    if state.get("kind") == "subscriptions" and not short.get("symbols"):
+        armed = live_armed_modules()
+        if armed:
+            return Finding(
+                label,
+                OK,
+                "Streamer",
+                f"running · holding a window-only recycle while {', '.join(armed)} live is armed "
+                f"({servicecfg.describe_shortfall(short)})",
+            )
 
     if state.get("kind") == "subscriptions":
         why = state["reason"]
