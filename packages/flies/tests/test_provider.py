@@ -415,3 +415,16 @@ def test_trailing_range_is_none_below_the_session_floor(cache):
     seed_session(cache, trade_date="2020-01-06", day_open=5000.0, day_high=5060.0, day_low=5000.0)
     snap = provider.build_snapshot(cache, "SPX")
     assert snap["session"]["trailing_range_points"] is None
+
+
+def test_snapshot_declares_the_strikes_it_could_hold(cache):
+    """The engine tells a leg outside this window (`legs_beyond_strike_window`) from a leg inside it
+    with no quote (`missing_leg_quotes`) by reading it off the snapshot."""
+    seed(cache)
+    snap = provider.build_snapshot(cache, "SPX")
+    pct = provider.DEFAULT_STRIKE_WINDOW_PCT
+    assert snap["strike_window"] == {
+        "low": round(6000.0 * (1 - pct), 4),
+        "high": round(6000.0 * (1 + pct), 4),
+    }
+    assert all(snap["strike_window"]["low"] <= k <= snap["strike_window"]["high"] for k in snap["puts"])

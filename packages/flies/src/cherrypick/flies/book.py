@@ -346,6 +346,7 @@ def process_snapshot(
         "max_positions_reached": "window_blocked",
         "max_positions_this_window_reached": "window_blocked",
         "missing_leg_quotes": "no_candidate",
+        "legs_beyond_strike_window": "no_candidate",
         "no_0dte_expiration": "no_candidate",
     }
 

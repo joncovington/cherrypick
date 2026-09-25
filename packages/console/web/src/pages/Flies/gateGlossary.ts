@@ -24,6 +24,8 @@ export const GATE_GLOSSARY: Record<string, string> = {
 
   // strike / quote plumbing
   missing_leg_quotes: "One or more legs have no live quote to price the trade against.",
+  legs_beyond_strike_window:
+    "A leg sits further from spot than the strikes flies trades (strike_window_pct, 1.5% by default) — where the arm aimed, not a gap in the data.",
   implausible_debit_quote: "The completing debit quote fails a sanity check (e.g. negative or inverted).",
   implausible_fly_quote: "The fly's all-in quote fails a sanity check.",
   not_a_credit_spread: "This position isn't an open short vertical -- nothing to complete this way.",

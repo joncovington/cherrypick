@@ -2210,3 +2210,38 @@ def test_every_registered_arm_has_a_config_entry_and_vice_versa():
         "registered_not_configured": sorted(set(engine.ARMS) - configured),
         "configured_not_registered": sorted(configured - set(engine.ARMS)),
     }
+
+
+# --------------------------------------------------------------------------- where a miss sits
+def test_a_leg_outside_the_snapshots_strike_window_is_refused_for_where_it_sits():
+    """The provider keeps only strikes within strike_window_pct of spot. A leg beyond that is not a
+    data gap -- no quote feed or streamer width will fill it -- so it must not read as one: the
+    streamer-window escalator counts `missing_leg_quotes`, and on 2026-09-25 callwall's far walls
+    widened the SPX request twice, recycling the streamer, for strikes the snapshot never holds."""
+    # Centre 6000 on the put side wants the 5995 wing, which this window stops short of.
+    far = snapshot(
+        underlying_price=5998.0, puts={6000: q(5.0, 5.4)}, strike_window={"low": 5997.0, "high": 6100.0}
+    )
+    enter, reason, _ = engine.evaluate_credit_spread_entry(far, params(), [])
+    assert not enter and reason == "legs_beyond_strike_window"
+
+
+def test_a_leg_inside_the_window_with_no_quote_is_still_a_missing_quote():
+    bare = snapshot(
+        underlying_price=5998.0, puts={6000: q(5.0, 5.4)}, strike_window={"low": 5900.0, "high": 6100.0}
+    )
+    enter, reason, _ = engine.evaluate_credit_spread_entry(bare, params(), [])
+    assert not enter and reason == "missing_leg_quotes"
+
+
+def test_a_snapshot_without_a_declared_window_keeps_the_old_reason():
+    # Stored snapshots from before 2026-09-25 carry no window; replaying one must not relabel it.
+    assert engine._miss_reason(snapshot(), [5000.0]) == "missing_leg_quotes"
+    assert (
+        engine._miss_reason(snapshot(strike_window={"low": 5910.0, "high": 6090.0}), [6090.0])
+        == "missing_leg_quotes"
+    )
+    assert (
+        engine._miss_reason(snapshot(strike_window={"low": 5910.0, "high": 6090.0}), [6095.0])
+        == "legs_beyond_strike_window"
+    )

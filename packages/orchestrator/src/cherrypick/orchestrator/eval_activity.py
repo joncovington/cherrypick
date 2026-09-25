@@ -80,6 +80,9 @@ _BENIGN_REASON = frozenset(
         # Deliberately absent: missing_leg_quotes, no_delta_quotes_beyond_spot and
         # gex_unavailable_for_call_wall. Those are the chain or the GEX surface failing to cover
         # what an arm needed -- a data fault -- and a day dominated by one should warn.
+        # legs_beyond_strike_window is the opposite: the arm placed its structure outside the
+        # strikes flies trades at all (strike_window_pct of spot) -- where the arm aimed, not a gap.
+        "legs_beyond_strike_window",
         "before_open_gate",
         "duplicate_structure",
         "max_positions_reached",

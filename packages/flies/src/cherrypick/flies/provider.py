@@ -11,7 +11,9 @@ modes matter enough to be gates rather than warnings:
   Stale quotes.    A cached bid/ask from twenty minutes ago will happily price a fill that could never
                    have happened. On 0DTE, a few minutes is a different market. Legs older than
                    `max_quote_age_seconds` are dropped, and a structure missing a leg simply isn't
-                   offered — the engine reports `missing_leg_quotes` and moves on.
+                   offered — the engine reports `missing_leg_quotes` and moves on. (A leg
+                   outside `strike_window_pct` of spot is never in the snapshot at all; the engine
+                   reports that one as `legs_beyond_strike_window`.)
   Crossed quotes.  bid > ask means a torn read or a broken feed, not an opportunity.
 
 Precondition: MEIC's streamer must be running, and must be subscribed to the symbol. Open interest
@@ -267,6 +269,10 @@ def build_snapshot(
             "now_min": minute_of_day(when),
             "puts": puts,
             "calls": calls,
+            # The strikes this snapshot could hold at all. A leg outside it is refused as
+            # `legs_beyond_strike_window`, not `missing_leg_quotes` (engine._miss_reason): no data
+            # gap and no streamer width will fill it.
+            "strike_window": {"low": round(spot - window, 4), "high": round(spot + window, 4)},
             "gex": gex,
             # The session's own open/high/low and prior close (2026-08-04). Descriptive input for
             # the `trend` regime tag only -- no gate reads it. See `_session_bounds`.

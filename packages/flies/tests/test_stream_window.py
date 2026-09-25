@@ -257,3 +257,18 @@ def test_a_ledger_created_before_last_checked_occurrences_is_migrated_on_connect
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(fly_stream_window)")}
     assert "last_checked_occurrences" in cols
     assert stream_window.evaluate(conn, SYMBOL, DAY, base_width=45, now="2026-07-31T10:00:00-04:00") == 45
+
+
+def test_legs_beyond_the_strike_window_never_widen_the_request(conn):
+    """A structure placed outside the snapshot's strike window is refused as
+    `legs_beyond_strike_window`, which no streamer width can fix -- so however often it recurs, the
+    request stays at its base."""
+    when = "2026-07-31T10:00:00-04:00"
+    conn.execute(
+        "INSERT INTO fly_decisions (trade_date, arm, symbol, mode, reason, accepted, first_seen, "
+        "last_seen, occurrences, center_first, center_last, position_id, detail) "
+        "VALUES (?, 'callwall', ?, 'legged', 'legs_beyond_strike_window', 0, ?, ?, 78, 6250, 6250, NULL, NULL)",
+        (DAY, SYMBOL, when, when),
+    )
+    conn.commit()
+    assert stream_window.evaluate(conn, SYMBOL, DAY, base_width=60, now=when) == 60

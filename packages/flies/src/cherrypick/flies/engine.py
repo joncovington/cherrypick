@@ -165,6 +165,28 @@ def _have(snapshot: dict, side: str, strikes) -> bool:
     return all(quote(snapshot, side, s) is not None for s in strikes)
 
 
+# A leg outside the snapshot's strike window, as against a leg inside it with no usable quote
+# (2026-09-25). The provider keeps only strikes within `strike_window_pct` of spot, so a structure
+# placed further out -- callwall centred on a wall 130-250 points above spot, say -- is refused for
+# where it sits, not for a data gap. Both used to read `missing_leg_quotes`, and the streamer-window
+# escalator (stream_window.py) counts that as a gap: on 2026-09-24/25 it widened the SPX request to
+# 105 and then 135 strikes a side for legs no width could deliver, recycling the streamer mid-session.
+LEGS_BEYOND_STRIKE_WINDOW = "legs_beyond_strike_window"
+
+
+def _miss_reason(snapshot: dict, strikes) -> str:
+    """Why `_have` failed: `legs_beyond_strike_window` when any wanted strike lies outside the
+    snapshot's declared strike window, else `missing_leg_quotes`. A snapshot with no declared window
+    (one stored before 2026-09-25, or a test's) keeps the old reason."""
+    bounds = snapshot.get("strike_window") or {}
+    low, high = bounds.get("low"), bounds.get("high")
+    if low is None or high is None:
+        return "missing_leg_quotes"
+    if any(float(k) < low or float(k) > high for k in strikes):
+        return LEGS_BEYOND_STRIKE_WINDOW
+    return "missing_leg_quotes"
+
+
 # --------------------------------------------------------------------------- centre selection
 def atm_strike(spot: float, increment: float) -> float:
     return round(round(spot / increment) * increment, 4)
@@ -1148,7 +1170,7 @@ def evaluate_credit_spread_entry(
     side = CALL if params.get("center_rule") == "call_wall" else choose_side(snapshot, center)
     long_strike = center - width if side == PUT else center + width
     if not _have(snapshot, side, [center, long_strike]):
-        return False, "missing_leg_quotes", None
+        return False, _miss_reason(snapshot, [center, long_strike]), None
 
     # Drift gate (opt-in per arm via `refuse_completion_against_trend`; off when unset).
     #
@@ -1303,7 +1325,7 @@ def evaluate_completion(snapshot: dict, position: dict, params: dict) -> tuple:
     side, center, width = position["side"], position["center"], position["wing_width"]
     long_strike = center + width if side == PUT else center - width
     if not _have(snapshot, side, [center, long_strike]):
-        return False, "missing_leg_quotes", None
+        return False, _miss_reason(snapshot, [center, long_strike]), None
 
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
     # Buying the completing spread: long the far strike, short the centre (which offsets nothing —
@@ -1423,7 +1445,7 @@ def evaluate_debit_vertical_entry(
     side = choose_debit_side(snapshot, center)
     long_strike = center - width if side == CALL else center + width
     if not _have(snapshot, side, [center, long_strike]):
-        return False, "missing_leg_quotes", None
+        return False, _miss_reason(snapshot, [center, long_strike]), None
 
     # Per-arm portfolio rules -- see the equivalent block in `evaluate_credit_spread_entry`. This
     # entry holds the mirror geometry (short the centre, long the far strike) and is refused on the
@@ -1519,7 +1541,7 @@ def evaluate_debit_completion(snapshot: dict, position: dict, params: dict) -> t
     # wing on the far side, same formula `evaluate_credit_spread_entry` uses for its long_strike.
     wing_strike = center - width if side == PUT else center + width
     if not _have(snapshot, side, [center, wing_strike]):
-        return False, "missing_leg_quotes", None
+        return False, _miss_reason(snapshot, [center, wing_strike]), None
 
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
     credit = fly.vertical_credit(quote(snapshot, side, center), quote(snapshot, side, wing_strike), slip)
@@ -1602,7 +1624,7 @@ def evaluate_iron_completion(snapshot: dict, position: dict, params: dict) -> tu
     opposite_side = CALL if side == PUT else PUT
     opposite_wing = center - width if opposite_side == PUT else center + width
     if not _have(snapshot, opposite_side, [center, opposite_wing]):
-        return False, "missing_leg_quotes", None
+        return False, _miss_reason(snapshot, [center, opposite_wing]), None
 
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
     credit2 = fly.vertical_credit(
@@ -1720,7 +1742,7 @@ def evaluate_bwb_entry(
     side = choose_bwb_side(snapshot, center)
     near_wing, _, far_wing = fly.bwb_strikes(side, center, width, far_width)
     if not _have(snapshot, side, [near_wing, center, far_wing]):
-        return False, "missing_leg_quotes", None
+        return False, _miss_reason(snapshot, [near_wing, center, far_wing]), None
 
     # Per-arm portfolio rules -- see `evaluate_credit_spread_entry`. A bwb is entered complete, so
     # unlike the two legged modes its proposed legs ARE the whole structure: both wings plus the
@@ -1842,7 +1864,7 @@ def evaluate_roll(snapshot: dict, position: dict, params: dict) -> tuple:
     # leg the position lacks; `far_wing` is the one it must give up to get it.
     roll_strike = center - width if side == PUT else center + width
     if not _have(snapshot, side, [roll_strike, far_wing]):
-        return False, "missing_leg_quotes", None
+        return False, _miss_reason(snapshot, [roll_strike, far_wing]), None
 
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
     # Long the strike the fly needs, short the wide wing currently held -- a debit vertical spanning
@@ -1941,7 +1963,7 @@ def evaluate_outright_entry(
     side = CALL if snapshot.get("underlying_price", center) > center else PUT
     lower, upper = center - width, center + width
     if not _have(snapshot, side, [lower, center, upper]):
-        return False, "missing_leg_quotes", None
+        return False, _miss_reason(snapshot, [lower, center, upper]), None
 
     slip = params.get("slippage_frac", fly.DEFAULT_SLIPPAGE_FRAC)
     debit = fly.fly_debit(

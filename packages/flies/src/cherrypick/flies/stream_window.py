@@ -1,6 +1,12 @@
 """Auto-escalate a symbol's requested streamer ATM-window width after repeated
 `missing_leg_quotes` refusals, and decay it back down once they stop.
 
+What it does NOT count (2026-09-25): `legs_beyond_strike_window`, a structure placed outside the
+snapshot's own `strike_window_pct` of spot. The provider never offers those strikes whatever the
+streamer carries, so widening cannot help -- and it did the harm instead: callwall's far walls drove
+the SPX request to 105 and 135 strikes a side on 2026-09-25, and each widening recycled the streamer.
+Until then both cases read `missing_leg_quotes`.
+
 A static window is a guess: too narrow and a wide wing or a fast move sits outside the streamer's
 subscribed strikes (`missing_leg_quotes` -- a data-availability gap, nothing to do with the strike's
 actual value); too wide and the daemon subscribes to far more quotes than the symbol usually needs.
