@@ -502,6 +502,10 @@ earnings (2026-09-25; `readers/earnings.ts` `earningsTradeCash`,
 `server/test/earnings-trade-standard.test.ts`) is on the same charged model: entry_cost and
 exit_cost carry the slippage charge and, on exit_cost, any settlement fee. Its history is the closed
 trades across both books; open positions are the positions page.
+calendars, pmcc and curve share one accounting, so they share `readers/positionCash.ts`
+(`positionCash`, `positionCashColumns`, `tradeTotals`) and `components/TradeMoney.tsx` (the ten
+money headers and cells, and the totals chip); `server/test/position-trade-standard.test.ts` pins
+it through curve. Their exit kinds add `assigned`: a physically settled leg delivers shares.
 
 ## Suite guardrails (apply here too)
 

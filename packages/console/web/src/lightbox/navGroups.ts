@@ -145,6 +145,26 @@ export const EARNINGS_SLIDES = [
 
 export type EarningsSlideId = (typeof EARNINGS_SLIDES)[number]["id"];
 
+/**
+ * curve's tabs, on the frame since 2026-09-25. `now` → `session`; its cards became pages: `regime`
+ * (the daily VIX/VIX3M read, recorded every session traded or not), `decisions`, `arms` (net by
+ * arm with the noflip divergence) and `positions`. `history` is the completed cycles in the
+ * suite's standard trade layout.
+ */
+export const CURVE_SLIDES = [
+  { id: "session", label: "session" },
+  { id: "regime", label: "regime" },
+  { id: "decisions", label: "decisions" },
+  { id: "arms", label: "arms" },
+  { id: "performance", label: "performance" },
+  { id: "advisor", label: "advisor" },
+  { id: "positions", label: "positions" },
+  { id: "history", label: "history" },
+  { id: "guide", label: "help" },
+] as const satisfies readonly NavSlide[];
+
+export type CurveSlideId = (typeof CURVE_SLIDES)[number]["id"];
+
 export const NAV_DECL: Partial<Record<ModuleId, ModuleNavDecl>> = {
   flies: {
     slides: FLIES_SLIDES,
@@ -195,6 +215,17 @@ export const NAV_DECL: Partial<Record<ModuleId, ModuleNavDecl>> = {
       { label: "tables", ids: ["positions", "history"] },
     ],
     legacy: { now: "session", overview: "session", detail: "strategies", trades: "history" },
+  },
+  curve: {
+    slides: CURVE_SLIDES,
+    groups: [
+      { label: "today", ids: ["session", "regime"] },
+      { label: "evidence", ids: ["decisions", "arms"] },
+      { label: "study", ids: ["performance", "advisor"] },
+      { label: "tables", ids: ["positions", "history"] },
+      { label: "help", ids: ["guide"] },
+    ],
+    legacy: { now: "session" },
   },
 };
 

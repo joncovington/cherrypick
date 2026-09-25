@@ -1,56 +1,74 @@
 import { useCurve } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
-import { Card } from "../../components/DataTable";
 import { LoopPill } from "../../components/ScopeBar";
 import { IntegrityStrip } from "../../pages/Curve/IntegrityStrip";
 import { BookComparison, RegimeCard, OpenTradesCard } from "../../pages/Curve/CurrentStateCards";
+import { CurveSession } from "../../pages/Curve/CurveSession";
 import { DecisionsCard } from "../../components/DecisionsCard";
 import { HistoryTab } from "../../pages/Curve/HistoryTab";
 import { HelpTab } from "../../pages/Curve/HelpTab";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
-import { LightboxFrame } from "../LightboxFrame";
+import { ModuleFrame } from "../ModuleFrame";
+import { CURVE_SLIDES, type CurveSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
 
-/** curve (VXX term-structure roll-yield harvest). */
+const CURVE_LABEL = Object.fromEntries(CURVE_SLIDES.map((s) => [s.id, s.label])) as Record<CurveSlideId, string>;
+
+/**
+ * curve (VXX term-structure roll-yield harvest), on the module frame since 2026-09-25: a left rail
+ * of pages, and nothing on the surface opens an overlay.
+ */
 export function CurveLightbox({ slide }: { slide: string }) {
   const { data, isLoading, dataUpdatedAt } = useCurve();
   const loopState =
     data?.today.lastIteration == null ? "no-data" : data.today.lastIteration.ageSeconds < 900 ? "live" : "idle";
   const todayRegime = data?.regimeSeries.find((r) => r.tradeDate === data.session);
 
-  const slides: SlideDef[] = [
+  const slides: Array<SlideDef & { id: CurveSlideId }> = [
+    { id: "session", label: CURVE_LABEL.session, render: () => <CurveSession data={data} loading={isLoading} /> },
     {
-      id: "now",
-      label: "now",
-      render: () =>
-        data !== undefined && !data.dbPresent ? (
-          <div className="cards cards-wide">
-            <Card title="curve" collapseKey="curve-absent">
-              <p className="muted">
-                This module has not run on this machine -- there is no paper store at{" "}
-                <span className="mono">~/.cherrypick/data/curve/paper_trades.db</span> yet. curve
-                was built 2026-08-22; the page fills in once its first scheduled session runs.
-              </p>
-            </Card>
-          </div>
-        ) : (
-          <div className="cards cards-wide">
-            <RegimeCard series={data?.regimeSeries ?? []} today={todayRegime} updatedAt={dataUpdatedAt} />
-            {isLoading ? null : <OpenTradesCard data={data} updatedAt={dataUpdatedAt} />}
-            <DecisionsCard module="curve" />
-            <BookComparison data={data} flipDivergence={data?.flipDivergence} updatedAt={dataUpdatedAt} />
-          </div>
-        ),
+      id: "regime",
+      label: CURVE_LABEL.regime,
+      render: () => (
+        <div className="cards cards-wide">
+          <RegimeCard series={data?.regimeSeries ?? []} today={todayRegime} updatedAt={dataUpdatedAt} />
+        </div>
+      ),
     },
-    { id: "history", label: "history", render: () => <HistoryTab /> },
-    { id: "advisor", label: "advisor", render: () => <AdvisorSlide module="curve" /> },
-    { id: "performance", label: "performance", render: () => <PerformanceSlide module="curve" /> },
-    { id: "guide", label: "help", render: () => <HelpTab data={data} /> },
+    {
+      id: "decisions",
+      label: CURVE_LABEL.decisions,
+      render: () => (
+        <div className="cards cards-wide">
+          <DecisionsCard module="curve" />
+        </div>
+      ),
+    },
+    {
+      id: "arms",
+      label: CURVE_LABEL.arms,
+      render: () => (
+        <div className="cards cards-wide">
+          <BookComparison data={data} flipDivergence={data?.flipDivergence} updatedAt={dataUpdatedAt} />
+        </div>
+      ),
+    },
+    { id: "performance", label: CURVE_LABEL.performance, render: () => <PerformanceSlide module="curve" /> },
+    { id: "advisor", label: CURVE_LABEL.advisor, render: () => <AdvisorSlide module="curve" /> },
+    {
+      id: "positions",
+      label: CURVE_LABEL.positions,
+      render: () => (
+        <div className="cards cards-wide">{isLoading ? null : <OpenTradesCard data={data} updatedAt={dataUpdatedAt} />}</div>
+      ),
+    },
+    { id: "history", label: CURVE_LABEL.history, render: () => <HistoryTab /> },
+    { id: "guide", label: CURVE_LABEL.guide, render: () => <HelpTab data={data} /> },
   ];
 
   return (
-    <LightboxFrame
+    <ModuleFrame
       module="curve"
       slide={slide}
       slides={slides}

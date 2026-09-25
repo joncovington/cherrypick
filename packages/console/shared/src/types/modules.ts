@@ -923,6 +923,8 @@ export interface CurveOpenPosition {
   entryMaxLoss: number | null;
   /** Contracts of the structure -- what a per-share debit or max loss is multiplied by (x100). */
   quantity: number | null;
+  /** The opening credit in whole-position dollars, signed. The standard's `entry`. */
+  entryCash: number | null;
   entryCreditPctOfWidth: number | null;
   entryRatio: number | null;
   entryRegime: string | null;
@@ -1010,7 +1012,7 @@ export interface CurvePayload {
 }
 
 /** One completed cycle: entry through exit. */
-export interface CurveCycleRow {
+export interface CurveCycleRow extends TradeMoney {
   positionId: string;
   symbol: string;
   arm: string;
@@ -1028,10 +1030,9 @@ export interface CurveCycleRow {
   entryRatio: number | null;
   entryRegime: string | null;
   entryHook: boolean;
-  grossPnl: number | null;
-  fees: number | null;
-  netPnl: number | null;
 }
+
+export type CurveHistory = Paged<CurveCycleRow> & { totals: TradeTotals };
 
 export interface CurveMeta {
   arms: string[];
@@ -1199,6 +1200,37 @@ export interface BwbCycleRow {
   settlementFees: number | null;
   slippage: number | null;
   netPnl: number | null;
+}
+
+/**
+ * The trade table standard's money columns (root CLAUDE.md, "Trade histories and reports"), shared
+ * by the position modules whose ledgers keep one accounting (calendars, pmcc, curve): whole-position
+ * dollars, signed cash flow, entry + exit = gross, gross − fees − settlement − slippage = net.
+ */
+export interface TradeMoney {
+  quantity: number | null;
+  /** Net entry price per share, signed: credit +, debit −. The one per-share column. */
+  price: number | null;
+  entryCash: number | null;
+  exitCash: number | null;
+  exitKind: "closed" | "settled" | "expired" | "assigned" | null;
+  grossPnl: number | null;
+  /** Trading fees; with settlement folded in where the split was never recorded. */
+  fees: number | null;
+  settlementFees: number | null;
+  /** Charged as a cost in these modules, and subtracted. */
+  slippage: number | null;
+  netPnl: number | null;
+}
+
+/** Totals over every row a history matches — never the rendered page. */
+export interface TradeTotals {
+  positions: number;
+  gross: number;
+  fees: number;
+  settlementFees: number;
+  slippage: number;
+  net: number;
 }
 
 /** Totals over every completed position the history filter matches — never the rendered page. */

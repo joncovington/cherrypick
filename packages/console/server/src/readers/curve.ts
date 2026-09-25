@@ -1,7 +1,9 @@
 import path from "node:path";
+import { EMPTY_TRADE_TOTALS, positionCash, positionCashColumns, tradeTotals } from "./positionCash.js";
 import type {
   CurveArmCell,
   CurveCycleRow,
+  CurveHistory,
   CurveFlipDivergence,
   CurveMeta,
   CurveOpenPosition,
@@ -229,6 +231,10 @@ function readOpenPositions(db: DatabaseHandle): CurveOpenPosition[] {
         entryWidth: num(p["entry_width"]),
         entryMaxLoss: num(p["entry_max_loss"]),
         quantity: num(p["quantity"]),
+        entryCash:
+          num(p["entry_credit"]) === null
+            ? null
+            : Math.round(Number(p["entry_credit"]) * 100 * (num(p["quantity"]) ?? 1) * 100) / 100,
         entryCreditPctOfWidth: num(p["entry_credit_pct_of_width"]),
         entryRatio: num(p["entry_ratio"]),
         entryRegime: str(p["entry_regime"]),
@@ -456,7 +462,7 @@ export function readCurveHistory(
   config: ConsoleConfig,
   filter: CurveHistoryFilter,
   page: PageRequest = FIRST_PAGE,
-): Paged<CurveCycleRow> {
+): CurveHistory {
   const clauses = ["status = 'closed'"];
   const params: string[] = [];
   if (filter.arm !== null) {
@@ -468,22 +474,28 @@ export function readCurveHistory(
     params.push(filter.symbol);
   }
 
-  return withReadOnlyDb<Paged<CurveCycleRow>>(dbPath(config), emptyPage(page), (db) =>
-    pagedQuery<CurveCycleRow>(
+  return withReadOnlyDb<CurveHistory>(dbPath(config), { ...emptyPage(page), totals: EMPTY_TRADE_TOTALS }, (db) => {
+    const where = clauses.join(" AND ");
+    const columns = `position_id, symbol, arm, entry_session, closed_session, exit_reason,
+                  short_strike, long_strike, expiration, entry_spot, settlement_spot, entry_credit,
+                  entry_width, entry_ratio, entry_regime, entry_hook, ${positionCashColumns(db, "curve_")}`;
+    const totals = tradeTotals(
+      db
+        .prepare<string[], Record<string, unknown>>(`SELECT ${columns} FROM curve_positions WHERE ${where}`)
+        .all(...params)
+        .map((r) => positionCash(r, num(r["entry_credit"]))),
+    );
+    const paged = pagedQuery<CurveCycleRow>(
       db,
       {
-        columns: `position_id, symbol, arm, entry_session, closed_session, status, exit_reason,
-                  short_strike, long_strike, expiration, entry_spot, settlement_spot, entry_credit,
-                  entry_width, entry_ratio, entry_regime, entry_hook, gross_pnl, fees`,
+        columns,
         from: "curve_positions",
-        where: clauses.join(" AND "),
+        where,
         params,
         orderBy: "entry_session DESC, id DESC",
       },
       page,
       (r) => {
-        const gross = num(r["gross_pnl"]);
-        const fees = num(r["fees"]);
         return {
           positionId: str(r["position_id"]) ?? "",
           symbol: str(r["symbol"]) ?? "",
@@ -502,13 +514,12 @@ export function readCurveHistory(
           entryRatio: num(r["entry_ratio"]),
           entryRegime: str(r["entry_regime"]),
           entryHook: r["entry_hook"] === 1,
-          grossPnl: gross,
-          fees,
-          netPnl: gross === null || fees === null ? null : gross - fees,
+          ...positionCash(r, num(r["entry_credit"])),
         };
       },
-    ),
-  );
+    );
+    return { ...paged, totals };
+  });
 }
 
 /** The history filter's own options. No era mechanism: the module has one era and no pooled data yet. */

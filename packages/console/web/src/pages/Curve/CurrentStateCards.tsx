@@ -3,6 +3,7 @@ import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../compone
 import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 import { SignedBar } from "../../components/Charts";
 import { fmtStrike } from "../../lib/optionFormat";
+import { fmtCash, fmtPrice } from "../../lib/format";
 
 /** The three arms whose identity the page knows. Each advisor experiment's `advised:<name>` arm
  *  rides along generically -- any number of them since 2026-09-17. */
@@ -58,7 +59,9 @@ function PositionRows({ rows }: { rows: CurveOpenPosition[] }) {
             {strikeAt(p.longStrike, p.expiration)}
           </td>
           <td>{fmtNum(p.currentSpot ?? p.entrySpot, 2)}</td>
-          <td>{fmtMoney(p.entryCredit)}</td>
+          <td>{p.quantity ?? "—"}</td>
+          <td>{fmtPrice(p.entryCredit)}</td>
+          <td>{fmtCash(p.entryCash)}</td>
           <td>{fmtPct(p.entryCreditPctOfWidth === null ? null : p.entryCreditPctOfWidth * 100, 1)}</td>
           <td>
             {p.entryRatio === null ? "—" : fmtNum(p.entryRatio, 3)}
@@ -101,7 +104,7 @@ export function OpenTradesCard({ data, updatedAt }: { data: CurvePayload | undef
     return (
       <DataCard
         title="open trades"
-        headers={["symbol", "arm", "entry", "expiry", "P&L (net of costs to date)", "short/long", "spot", "credit", "credit % of width", "ratio/regime", "assignment"]}
+        headers={["symbol", "arm", "opened", "expiry", "mark (net of costs to date)", "short/long", "spot", "qty", "price", "entry", "credit % of width", "ratio/regime", "assignment"]}
         loading={false}
         rowCount={0}
         numFrom={5}
@@ -127,7 +130,7 @@ export function OpenTradesCard({ data, updatedAt }: { data: CurvePayload | undef
         <table className="data-table num-from-5">
           <thead>
             <tr>
-              {["symbol", "arm", "entry", "expiry", "P&L (net of costs to date)", "short/long", "spot", "credit", "credit % of width", "ratio/regime", "assignment"].map((h) => (
+              {["symbol", "arm", "opened", "expiry", "mark (net of costs to date)", "short/long", "spot", "qty", "price", "entry", "credit % of width", "ratio/regime", "assignment"].map((h) => (
                 <th key={h}>{h}</th>
               ))}
             </tr>

@@ -61,8 +61,10 @@ export function BwbSession({ data, loading }: { data: BwbPayload | undefined; lo
         foot={
           data === undefined
             ? "—"
-            : marked.length === 0
-              ? "no usable mark yet"
+            : open.length === 0
+              ? "nothing open"
+              : marked.length === 0
+                ? "no usable mark yet"
               : `marked net ${fmtMoney(openNet)} · ${String(marked.length)} of ${String(open.length)} marked · costs to date`
         }
       />

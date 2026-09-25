@@ -21,6 +21,7 @@ import type {
   PmccAssignment,
   CurvePayload,
   CurveCycleRow,
+  CurveHistory,
   CurveMeta,
   BwbPayload,
   BwbCycleRow,
@@ -367,9 +368,9 @@ export function useCurveHistory(filter: CurveHistoryFilter, page: PageState) {
   if (filter.arm !== null) params.set("arm", filter.arm);
   if (filter.symbol !== null) params.set("symbol", filter.symbol);
   pageParams(params, "", page);
-  return useQuery<Paged<CurveCycleRow>>({
+  return useQuery<CurveHistory>({
     queryKey: ["curve-history", filter, page],
-    queryFn: () => getJson<Paged<CurveCycleRow>>(`/api/curve/history?${params.toString()}`),
+    queryFn: () => getJson<CurveHistory>(`/api/curve/history?${params.toString()}`),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   });
