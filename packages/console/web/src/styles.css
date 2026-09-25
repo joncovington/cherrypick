@@ -3429,6 +3429,12 @@ body.lb-open {
   margin-top: 0.5rem;
   width: 100%;
 }
+/* A history table's numeric columns, marked per column (components/table/HistoryTable.tsx):
+   a reorderable table cannot right-align by position the way num-from-N does. */
+.data-table th.num,
+.data-table td.num {
+  text-align: right;
+}
 .history-controls {
   display: flex;
   align-items: center;

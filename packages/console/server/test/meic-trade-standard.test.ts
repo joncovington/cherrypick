@@ -119,3 +119,19 @@ describe("meicExitKind", () => {
     expect(meicExitKind(null, null, null, null, null)).toBeNull();
   });
 });
+
+describe("meic's history date range", () => {
+  const ranged = (day: string | null, from: string | null, to: string | null) =>
+    readMeic(config, "paper", { ...NO_TRADE_QUERY, era: "ALL", view: "history", day, from, to });
+
+  it("replaces the one-session scope: a range spans days whatever day the header picked", () => {
+    expect(ranged("2026-01-02", DAY, DAY).trades.total).toBe(read("history").trades.total);
+    expect(ranged("2026-01-02", null, null).trades.total).toBe(0);
+  });
+
+  it("drops the sessions outside it, totals included", () => {
+    const r = ranged(null, "2026-09-25", null);
+    expect(r.trades.total).toBe(0);
+    expect(r.totals.trades).toBe(0);
+  });
+});

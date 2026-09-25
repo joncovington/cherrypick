@@ -1,10 +1,13 @@
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import type { PmccCycleRow } from "@console/shared";
 import { usePmccAssignments, usePmccHistory, usePmccMeta } from "../../lib/api";
-import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
+import { Card, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { Pager, ScopeSelect, usePage } from "../../components/ScopeBar";
 import { fmtStrike } from "../../lib/optionFormat";
-import { TRADE_MONEY_HEADERS, TradeMoneyCells, TradeTotalsChip } from "../../components/TradeMoney";
+import { TradeTotalsChip, tradeMoneyColumns } from "../../components/TradeMoney";
+import { HistoryTable } from "../../components/table/HistoryTable";
+import { useUrlDateRange } from "../../components/table/DateRange";
+import type { ColumnDef } from "../../components/table/columns";
 import { EntrySpreadCell } from "./EntrySpread";
 
 /**
@@ -107,8 +110,6 @@ function FeeSplit({ row }: { row: PmccCycleRow }) {
 
 function CycleDetail({ row }: { row: PmccCycleRow }) {
   return (
-    <tr className="pmcc-detail-row">
-      <td colSpan={19}>
         <div className="pmcc-detail">
           <section>
             <h4>legs</h4>
@@ -183,47 +184,92 @@ function CycleDetail({ row }: { row: PmccCycleRow }) {
             <FeeSplit row={row} />
           </section>
         </div>
-      </td>
-    </tr>
   );
 }
+
+const MONEY = tradeMoneyColumns<PmccCycleRow>("the diagonal's net debit, per share");
+
+const COLUMNS: ColumnDef<PmccCycleRow>[] = [
+  {
+    id: "dates",
+    header: "entry → close",
+    kind: "describe",
+    render: (r) => (
+      <>
+        {r.entrySession}
+        <span className="muted"> → {r.closedSession ?? "—"}</span>
+      </>
+    ),
+  },
+  { id: "symbol", header: "symbol", kind: "describe", render: (r) => r.symbol },
+  { id: "arm", header: "arm", kind: "describe", render: (r) => r.arm },
+  { id: "long", header: "long", kind: "describe", numeric: true, render: (r) => fmtStrike(r.longStrike) },
+  { id: "shorts", header: "short chain", kind: "describe", render: (r) => <ShortChain row={r} /> },
+  {
+    id: "yield",
+    header: "entry yield",
+    kind: "describe",
+    numeric: true,
+    render: (r) => fmtPct(r.entryWeeklyYieldPct === null ? null : r.entryWeeklyYieldPct * 100, 2),
+  },
+  {
+    id: "spread",
+    header: "entry spread",
+    kind: "describe",
+    numeric: true,
+    render: (r) => <EntrySpreadCell pct={r.entryMaxSpreadPct} abs={r.entryMaxSpreadAbs} netTv={r.entryNetTv} />,
+  },
+  ...MONEY.describe,
+  {
+    id: "reason",
+    header: "exit reason",
+    kind: "describe",
+    render: (r) =>
+      r.status === "short_settled" ? (
+        <span
+          className="chip chip-warn integrity-chip"
+          title="The short settled ITM; delivered shares are covered next session together with the long's sale. The result is not final until then, so its exit and net read as a dash."
+        >
+          awaiting disposal
+        </span>
+      ) : (
+        (r.exitReason ?? <span className="muted">—</span>)
+      ),
+  },
+  ...MONEY.money,
+];
 
 export function HistoryTab() {
   const [arm, setBook] = useState<string | null>(null);
   const [symbol, setSymbol] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const { from, to } = useUrlDateRange();
   const meta = usePmccMeta();
-  const { page, setOffset, setLimit } = usePage([arm, symbol]);
-  const { data, isLoading, isError, isPlaceholderData } = usePmccHistory({ arm, symbol }, page);
+  const { page, setOffset, setLimit } = usePage([arm, symbol, from, to]);
+  const { data, isLoading, isError, isPlaceholderData } = usePmccHistory({ arm, symbol, from, to }, page);
   const assignments = usePmccAssignments();
-  const rows = data?.rows ?? [];
   const outstanding = assignments.data?.rows ?? [];
 
   return (
     <div className="cards cards-wide">
-      <DataCard
+      <HistoryTable
+        table="pmcc-history"
         title="completed cycles"
         className="view-fade"
-        headers={[
-          "",
-          "entry → close",
-          "symbol",
-          "arm",
-          "long",
-          "short chain",
-          "entry yield",
-          "entry spread",
-          ...TRADE_MONEY_HEADERS,
-          "exit reason",
-        ]}
+        defs={COLUMNS}
+        rows={data?.rows ?? []}
+        rowKey={(r) => r.positionId}
         loading={isLoading}
         isError={isError}
         busy={isPlaceholderData}
-        rowCount={rows.length}
-        numFrom={6}
-        empty="no completed cycles yet — the module has been live since 2026-08-16"
+        empty={
+          from !== null || to !== null
+            ? "no cycle closed in this date range"
+            : "no completed cycles yet — the module has been live since 2026-08-16"
+        }
         updatedAt={data === undefined ? undefined : Date.now()}
-        controls={
+        dateBasis="closed"
+        filters={
           <>
             <ScopeSelect label="arm filter" value={arm} options={meta.data?.arms} onChange={setBook} allLabel="all arms" />
             <ScopeSelect
@@ -243,47 +289,14 @@ export function HistoryTab() {
             </>
           )
         }
-      >
-        {rows.map((r) => (
-          <Fragment key={r.positionId}>
-            <tr
-              onClick={() => setOpen(open === r.positionId ? null : r.positionId)}
-              style={{ cursor: "pointer" }}
-              title="click for legs, rolls and settlement detail"
-            >
-              <td>{open === r.positionId ? "▾" : "▸"}</td>
-              <td>
-                {r.entrySession}
-                <span className="muted"> → {r.closedSession ?? "—"}</span>
-              </td>
-              <td>{r.symbol}</td>
-              <td>{r.arm}</td>
-              <td>{fmtStrike(r.longStrike)}</td>
-              <td>
-                <ShortChain row={r} />
-              </td>
-              <td>{fmtPct(r.entryWeeklyYieldPct === null ? null : r.entryWeeklyYieldPct * 100, 2)}</td>
-              <td>
-                <EntrySpreadCell pct={r.entryMaxSpreadPct} abs={r.entryMaxSpreadAbs} netTv={r.entryNetTv} />
-              </td>
-              <TradeMoneyCells row={r} priceTitle="the diagonal's net debit, per share" />
-              <td>
-                {r.status === "short_settled" ? (
-                  <span
-                    className="chip chip-warn integrity-chip"
-                    title="The short settled ITM; delivered shares are covered next session together with the long's sale. The result is not final until then, so its exit and net read as a dash."
-                  >
-                    awaiting disposal
-                  </span>
-                ) : (
-                  (r.exitReason ?? <span className="muted">—</span>)
-                )}
-              </td>
-            </tr>
-            {open === r.positionId && <CycleDetail row={r} />}
-          </Fragment>
-        ))}
-      </DataCard>
+        rowProps={(r) => ({
+          onClick: () => setOpen(open === r.positionId ? null : r.positionId),
+          style: { cursor: "pointer" },
+          title: "click for legs, rolls and settlement detail",
+        })}
+        expanded={(r) => (open === r.positionId ? <CycleDetail row={r} /> : null)}
+        detailClassName="pmcc-detail-row"
+      />
 
       <Card title="delivered shares" collapseKey="pmcc-assignments">
         {outstanding.length === 0 ? (

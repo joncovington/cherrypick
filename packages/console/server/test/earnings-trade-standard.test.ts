@@ -100,3 +100,20 @@ describe("earnings' open positions", () => {
     expect(open?.credit).toBe(270);
   });
 });
+
+describe("earnings' history date range", () => {
+  it("bounds the close, rows and totals alike", () => {
+    const day = row("t-itm")!.closedAt!.slice(0, 10);
+    const r = readEarnings(config, undefined, "ALL", { from: day, to: day });
+    const expected = history().trades.rows.filter((x) => x.closedAt?.slice(0, 10) === day);
+    expect(r.trades.rows.map((x) => x.orderId).sort()).toEqual(expected.map((x) => x.orderId).sort());
+    expect(r.totals.trades).toBe(expected.length);
+    expect(r.totals.net).toBeCloseTo(expected.reduce((n, x) => n + (x.net ?? 0), 0), 2);
+  });
+
+  it("leaves the open positions alone", () => {
+    const r = readEarnings(config, undefined, "ALL", { from: "2030-01-01", to: null });
+    expect(r.trades.total).toBe(0);
+    expect(r.openPositions).toEqual(history().openPositions);
+  });
+});

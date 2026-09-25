@@ -50,11 +50,14 @@ function shortHour(hour: string): string {
   return m ? `${m[1]}–${m[2]}` : hour;
 }
 
-function useHistory(mode: TradingMode, filter: FliesFilter) {
+function useHistory(mode: TradingMode, filter: FliesFilter, from: string | null, to: string | null) {
   return useQuery<History>({
-    queryKey: ["flies-history", mode, filter.arm, filter.symbol, filter.era],
+    queryKey: ["flies-history", mode, filter.arm, filter.symbol, filter.era, from, to],
     queryFn: async () => {
-      const res = await fetch(`/api/flies/history?${fliesQuery(mode, { ...filter, date: null })}`);
+      const range = new URLSearchParams();
+      if (from !== null) range.set("from", from);
+      if (to !== null) range.set("to", to);
+      const res = await fetch(`/api/flies/history?${fliesQuery(mode, { ...filter, date: null })}&${range.toString()}`);
       if (!res.ok) throw new Error(`history: HTTP ${res.status}`);
       return (await res.json()) as History;
     },
@@ -264,7 +267,11 @@ export function HistoryTab({
 }) {
   // `date` is dropped on purpose: this tab answers questions ACROSS sessions, so pinning the day
   // selected on the Today tab would empty it.
-  const { data, isLoading } = useHistory(mode, filter);
+  // The date range is in the page address and bounds the WHOLE tab (2026-09-25): the summaries
+  // and the trade log alike, so a narrowed page never sets one table beside cards still answering
+  // for the era. With no range set, everything reads the era, as it always has.
+  const { from, to } = useUrlDateRange();
+  const { data, isLoading } = useHistory(mode, filter, from, to);
   const [outcome, setOutcome] = useState<(typeof OUTCOMES)[number]>("all");
   const [search, setSearch] = useState("");
 
@@ -280,7 +287,6 @@ export function HistoryTab({
   // and every measurement break in this module is a date, so a log filterable only by prefix cannot
   // be pointed at one side of a break.
   // In the page address since 2026-09-25, so a filtered log survives a reload and can be shared.
-  const { from, to } = useUrlDateRange();
   const range = { from, to };
   const cols = useColumnLayout("flies-history", TRADE_LOG_COLUMNS);
 
@@ -322,6 +328,9 @@ export function HistoryTab({
 
   return (
     <div className="cards cards-wide">
+      <div className="history-controls" style={{ margin: 0 }}>
+        <DateRangeBar basis="trade date" allTitle="every session in the era picked in the header" />
+      </div>
       <section className="card">
         <h2>Daily P&L calendar (settled days — click a day to replay it)</h2>
         {isLoading ? <span className="skeleton skeleton-text" style={{ width: "40%" }} /> : <FliesCalendar days={data?.dailyPnl ?? []} onPick={onReplayDay} />}
@@ -449,7 +458,6 @@ export function HistoryTab({
             ))}
           </div>
           <input className="text-input" placeholder="search…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ textTransform: "none" }} />
-          <DateRangeBar />
         </div>
         <div className={`table-scroll ${logQuery.isPlaceholderData ? "table-busy" : ""}`}>
           <table className="data-table">

@@ -70,3 +70,11 @@ describe("pmcc's completed cycles", () => {
     expect(history().totals.net).toBe(126);
   });
 });
+
+describe("pmcc's history date range", () => {
+  it("keeps the cycle that closed inside it and drops one with no close yet", () => {
+    const r = readPmccHistory(config, { arm: null, symbol: null, range: { from: "2026-09-19", to: null } });
+    expect(r.rows.map((x) => x.positionId)).toEqual(["p-done"]);
+    expect(r.totals.net).toBe(126);
+  });
+});

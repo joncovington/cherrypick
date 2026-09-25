@@ -117,3 +117,15 @@ describe("positionCash", () => {
     expect(c.netPnl).toBeNull();
   });
 });
+
+describe("curve's history date range", () => {
+  const ranged = (from: string | null, to: string | null) =>
+    readCurveHistory(config, { arm: null, symbol: null, range: { from, to } });
+
+  it("bounds the close, not the entry", () => {
+    // Entered 2026-09-01, closed 2026-09-20.
+    expect(ranged("2026-09-20", "2026-09-20").total).toBe(history().total);
+    expect(ranged("2026-09-01", "2026-09-19").total).toBe(0);
+    expect(ranged("2026-09-01", "2026-09-19").totals.positions).toBe(0);
+  });
+});

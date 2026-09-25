@@ -81,3 +81,13 @@ describe("calendars' weeks", () => {
     expect(t.net).toBe(9.87);
   });
 });
+
+describe("calendars' weeks date range", () => {
+  it("bounds the week, totals included", () => {
+    const r = readCalendarsWeeks(config, { from: "2026-09-07", to: null });
+    expect(r.rows.map((x) => x.weekOf)).toEqual(["2026-09-07"]);
+    // w2 is unfinished, so nothing in range is summed.
+    expect(r.totals.positions).toBe(0);
+    expect(readCalendarsWeeks(config, { from: null, to: "2026-09-06" }).rows.map((x) => x.weekOf)).toEqual(["2026-08-31"]);
+  });
+});

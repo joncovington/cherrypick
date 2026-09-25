@@ -1,3 +1,4 @@
+import { NO_RANGE, rangeClauses, type DateRange } from "./dateRange.js";
 import path from "node:path";
 import type { FliesPayload, FliesBookRow, FliesPositionRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
@@ -1338,6 +1339,7 @@ export function readFliesHistory(
   config: ConsoleConfig,
   mode: TradingMode,
   filter: FliesFilter,
+  range: DateRange = NO_RANGE,
 ): FliesHistory {
   const file = mode === "live" ? "live_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.fliesDir, file);
@@ -1346,7 +1348,14 @@ export function readFliesHistory(
     thinBelowSessions: null,
   };
   return withReadOnlyDb<FliesHistory>(dbPath, empty, (db) => {
-    const sc = scopeClause(filter);
+    // The History page's date range (2026-09-25) bounds the summaries as well as the trade log, so
+    // a range narrows the whole page rather than one table beside cards still answering for the era.
+    const base = scopeClause(filter);
+    const bound = rangeClauses("trade_date", range);
+    const sc = {
+      and: base.and + bound.clauses.map((c) => ` AND ${c}`).join(""),
+      params: [...base.params, ...bound.params],
+    };
     const legged = pnlRows(db, `${SETTLED} AND entry_mode = 'legged'${sc.and}`, sc.params);
     const all = pnlRows(db, `${SETTLED}${sc.and}`, sc.params);
     // Sorted by NAME, not by net. A leaderboard over 3-8 sessions manufactures a ranking out of

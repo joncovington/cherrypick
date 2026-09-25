@@ -132,7 +132,7 @@ export async function dismissAdvisorProposal(id: number): Promise<AdvisorPayload
   return mutateJson<AdvisorPayload>(`/api/advisor/proposals/${String(id)}/dismiss`, "POST", {});
 }
 
-export interface MeicTradeQuery {
+export interface MeicTradeQuery extends DateRangeQuery {
   /** null = the latest session, resolved server-side like every other Today card. */
   day: string | null;
   symbol: string | null;
@@ -161,8 +161,9 @@ export function useMeic(mode: TradingMode, q: MeicTradeQuery) {
   if (q.profile !== null) params.set("profile", q.profile);
   if (q.era !== null) params.set("era", q.era);
   if (q.reason !== null) params.set("reason", q.reason);
+  rangeParams(params, q);
   return useQuery<MeicPayload>({
-    queryKey: ["meic", mode, q.view, q.day, q.symbol, q.profile, q.era, q.outcome, q.reason, q.search, q.limit, q.offset],
+    queryKey: ["meic", mode, q.view, q.day, q.from, q.to, q.symbol, q.profile, q.era, q.outcome, q.reason, q.search, q.limit, q.offset],
     queryFn: () => getJson<MeicPayload>(`/api/meic?${params.toString()}`),
     refetchInterval: 15_000,
     // A page that briefly empties while the next one loads reads as "no
@@ -187,6 +188,22 @@ export function fliesQuery(mode: TradingMode, filter: FliesFilter): string {
   if (filter.symbol !== null) params.set("symbol", filter.symbol);
   if (filter.era !== null) params.set("era", filter.era);
   return params.toString();
+}
+
+/**
+ * A history table's date range, both sides inclusive and either open (components/table/DateRange).
+ * Optional on the filters that carry it, so a caller with no range control need not name one.
+ */
+export interface DateRangeQuery {
+  from?: string | null;
+  to?: string | null;
+}
+
+export const NO_DATE_RANGE: DateRangeQuery = {};
+
+function rangeParams(params: URLSearchParams, r: DateRangeQuery): void {
+  if (r.from != null) params.set("from", r.from);
+  if (r.to != null) params.set("to", r.to);
 }
 
 export interface PageState {
@@ -320,7 +337,7 @@ export function usePmcc() {
   });
 }
 
-export interface PmccHistoryFilter {
+export interface PmccHistoryFilter extends DateRangeQuery {
   arm: string | null;
   symbol: string | null;
 }
@@ -329,6 +346,7 @@ export function usePmccHistory(filter: PmccHistoryFilter, page: PageState) {
   const params = new URLSearchParams();
   if (filter.arm !== null) params.set("arm", filter.arm);
   if (filter.symbol !== null) params.set("symbol", filter.symbol);
+  rangeParams(params, filter);
   pageParams(params, "", page);
   return useQuery<PmccHistory>({
     queryKey: ["pmcc-history", filter, page],
@@ -360,7 +378,7 @@ export function useCurve() {
   });
 }
 
-export interface CurveHistoryFilter {
+export interface CurveHistoryFilter extends DateRangeQuery {
   arm: string | null;
   symbol: string | null;
 }
@@ -369,6 +387,7 @@ export function useCurveHistory(filter: CurveHistoryFilter, page: PageState) {
   const params = new URLSearchParams();
   if (filter.arm !== null) params.set("arm", filter.arm);
   if (filter.symbol !== null) params.set("symbol", filter.symbol);
+  rangeParams(params, filter);
   pageParams(params, "", page);
   return useQuery<CurveHistory>({
     queryKey: ["curve-history", filter, page],
@@ -399,7 +418,7 @@ export function useBwb() {
   });
 }
 
-export interface BwbHistoryFilter {
+export interface BwbHistoryFilter extends DateRangeQuery {
   arm: string | null;
   symbol: string | null;
 }
@@ -408,6 +427,7 @@ export function useBwbHistory(filter: BwbHistoryFilter, page: PageState) {
   const params = new URLSearchParams();
   if (filter.arm !== null) params.set("arm", filter.arm);
   if (filter.symbol !== null) params.set("symbol", filter.symbol);
+  rangeParams(params, filter);
   pageParams(params, "", page);
   return useQuery<BwbHistory>({
     queryKey: ["bwb-history", filter, page],
@@ -476,10 +496,12 @@ export function useCalendars() {
   });
 }
 
-export function useCalendarsWeeks() {
+export function useCalendarsWeeks(range: DateRangeQuery = NO_DATE_RANGE) {
+  const params = new URLSearchParams();
+  rangeParams(params, range);
   return useQuery<CalendarsWeeks>({
-    queryKey: ["calendars-weeks"],
-    queryFn: () => getJson<CalendarsWeeks>("/api/calendars/weeks"),
+    queryKey: ["calendars-weeks", range.from, range.to],
+    queryFn: () => getJson<CalendarsWeeks>(`/api/calendars/weeks?${params.toString()}`),
     // A week finishes once a week. Polling this hard would be noise.
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
@@ -505,13 +527,19 @@ export function useCalendarsPolicies() {
   });
 }
 
-export function useEarnings(trades: PageState, reviews: PageState, era: string | null = null) {
+export function useEarnings(
+  trades: PageState,
+  reviews: PageState,
+  era: string | null = null,
+  range: DateRangeQuery = NO_DATE_RANGE,
+) {
   const params = new URLSearchParams();
   pageParams(params, "trades", trades);
   pageParams(params, "reviews", reviews);
   if (era !== null) params.set("era", era);
+  rangeParams(params, range);
   return useQuery<EarningsPayload>({
-    queryKey: ["earnings", trades, reviews, era],
+    queryKey: ["earnings", trades, reviews, era, range.from, range.to],
     queryFn: () => getJson<EarningsPayload>(`/api/earnings?${params.toString()}`),
     refetchInterval: 30_000,
     placeholderData: (prev) => prev,

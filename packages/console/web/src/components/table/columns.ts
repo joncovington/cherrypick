@@ -27,6 +27,8 @@ export interface ColumnDef<R> {
   kind: "describe" | "money";
   /** Only `net`: cannot be hidden, always last. */
   pinned?: boolean;
+  /** A describe column holding numbers (strikes, qty, price): right-aligned. Money always is. */
+  numeric?: boolean;
   className?: string;
   render: (row: R) => ReactNode;
 }

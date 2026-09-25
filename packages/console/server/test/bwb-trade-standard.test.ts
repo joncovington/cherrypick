@@ -117,3 +117,21 @@ describe("bwb's completed positions", () => {
     expect(t.gross - t.fees - t.settlementFees - t.slippage).toBeCloseTo(t.net, 2);
   });
 });
+
+describe("bwb's history date range", () => {
+  // Every closed fixture position closed on 2026-09-22; the range bounds the CLOSE.
+  const ranged = (from: string | null, to: string | null) =>
+    readBwbHistory(config, { arm: null, symbol: null, range: { from, to } });
+
+  it("keeps the positions that closed inside it, totals included", () => {
+    expect(ranged("2026-09-22", "2026-09-22").total).toBe(history().total);
+    expect(ranged("2026-09-22", null).totals.net).toBe(history().totals.net);
+  });
+
+  it("drops the ones that closed outside it, from the rows and the totals alike", () => {
+    const r = ranged(null, "2026-09-21");
+    expect(r.total).toBe(0);
+    expect(r.totals.positions).toBe(0);
+    expect(ranged("2026-09-23", null).total).toBe(0);
+  });
+});

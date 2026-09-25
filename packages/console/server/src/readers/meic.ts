@@ -1,3 +1,4 @@
+import { hasRange, rangeClauses } from "./dateRange.js";
 import path from "node:path";
 import type { MeicDivergence, MeicPayload, MeicTradeRow, MeicTradeTotals, MeicSummaryRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
@@ -89,6 +90,12 @@ export interface MeicTradeQuery extends MeicScopeFilter, PageRequest {
    * whole era instead — the same confusion the flies books had.
    */
   day: string | null;
+  /**
+   * Inclusive trade-date bounds (2026-09-25). Either one set REPLACES the one-session scope above:
+   * the history table's date range asks "across these days", which the header's day cannot answer.
+   */
+  from?: string | null;
+  to?: string | null;
   outcome: MeicOutcome;
   /** `positions`: every trade the session held (cancelled entries never were). `history`: the ones
    *  that have closed. Two pages of the same query, so they can never disagree about a row. */
@@ -120,9 +127,16 @@ function tradeFilterSql(db: DatabaseHandle, q: MeicTradeQuery): { where: string;
   const clauses = ["1=1"];
   const params = [...sc.params];
   if (sc.and !== "") clauses.push(sc.and.slice(5));
+  const range = { from: q.from ?? null, to: q.to ?? null };
+  if (hasRange(range)) {
+    const r = rangeClauses("trade_date", range);
+    clauses.push(...r.clauses);
+    params.push(...r.params);
+  }
   // Resolved within the same scope the forest uses, so the two cards can never name different days.
-  const day =
-    q.day ??
+  const day = hasRange(range)
+    ? null
+    : q.day ??
     db
       .prepare<string[], { d: string | null }>(`SELECT MAX(trade_date) AS d FROM ic_trades WHERE 1=1${sc.and}`)
       .get(...sc.params)?.d ??

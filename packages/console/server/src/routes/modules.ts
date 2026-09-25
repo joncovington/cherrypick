@@ -1,3 +1,4 @@
+import { isoDate, parseDateRange } from "../readers/dateRange.js";
 import type { FastifyInstance } from "fastify";
 import type { TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
@@ -82,7 +83,9 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const outcome = text("outcome", 10);
     const reason = text("reason", 60);
     const date = text("date", 10);
+    const range = parseDateRange(query);
     return {
+      ...range,
       ...parseMeicScope(query),
       day: date === "" ? null : date,
       outcome: outcome === "wins" || outcome === "losses" || outcome === "open" ? outcome : "all",
@@ -204,9 +207,6 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       positions: parsePage(req.query, "positions"),
     }),
   );
-  /** An ISO date, or null for "no bound this way". See the tradelog route below. */
-  const isoDate = (v: unknown): string | null =>
-    typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.trim()) ? v.trim() : null;
 
   app.get("/api/flies/tradelog", async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
@@ -238,7 +238,9 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
   );
   app.get("/api/flies/loop", async (req) => readFliesLoopStatus(config, parseMode(req.query)));
   app.get("/api/flies/meta", async (req) => readFliesMeta(config, parseMode(req.query), parseFliesFilter(req.query).era));
-  app.get("/api/flies/history", async (req) => readFliesHistory(config, parseMode(req.query), parseFliesFilter(req.query)));
+  app.get("/api/flies/history", async (req) =>
+    readFliesHistory(config, parseMode(req.query), parseFliesFilter(req.query), parseDateRange(req.query)),
+  );
   app.get("/api/flies/voided", async (req) =>
     readVoidedRows(config, parseMode(req.query), parseFliesFilter(req.query)),
   );
@@ -292,7 +294,11 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       const v = q[k];
       return typeof v === "string" && v !== "" && v.length <= max ? v : null;
     };
-    return readPmccHistory(config, { arm: pick("arm", 40) ?? pick("book", 40), symbol: pick("symbol", 12) }, parsePage(req.query));
+    return readPmccHistory(
+      config,
+      { arm: pick("arm", 40) ?? pick("book", 40), symbol: pick("symbol", 12), range: parseDateRange(q) },
+      parsePage(req.query),
+    );
   });
 
   // curve (VXX term-structure roll-yield harvest). No `mode` here either -- paper-only, no live loop.
@@ -304,7 +310,11 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       const v = q[k];
       return typeof v === "string" && v !== "" && v.length <= max ? v : null;
     };
-    return readCurveHistory(config, { arm: pick("arm", 40) ?? pick("book", 40), symbol: pick("symbol", 12) }, parsePage(req.query));
+    return readCurveHistory(
+      config,
+      { arm: pick("arm", 40) ?? pick("book", 40), symbol: pick("symbol", 12), range: parseDateRange(q) },
+      parsePage(req.query),
+    );
   });
 
   // bwb (SPX daily-laddered put broken-wing butterfly / 1-3-2 add-on trigger experiment). No `mode`
@@ -317,12 +327,16 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       const v = q[k];
       return typeof v === "string" && v !== "" && v.length <= max ? v : null;
     };
-    return readBwbHistory(config, { arm: pick("arm", 40) ?? pick("book", 40), symbol: pick("symbol", 12) }, parsePage(req.query));
+    return readBwbHistory(
+      config,
+      { arm: pick("arm", 40) ?? pick("book", 40), symbol: pick("symbol", 12), range: parseDateRange(q) },
+      parsePage(req.query),
+    );
   });
 
   // Weekly double calendars. No `mode` here either, and for the same structural reason as PMCC's.
   app.get("/api/calendars", async () => readCalendars(config));
-  app.get("/api/calendars/weeks", async () => readCalendarsWeeks(config));
+  app.get("/api/calendars/weeks", async (req) => readCalendarsWeeks(config, parseDateRange(req.query)));
   app.get("/api/calendars/week", async (req) => {
     const week = (req.query as Record<string, unknown> | undefined)?.["week"];
     if (typeof week !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(week)) return { rows: [] };
@@ -343,6 +357,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       config,
       { trades: parsePage(req.query, "trades"), reviews: parsePage(req.query, "reviews") },
       parseEarningsEra(req.query),
+      parseDateRange(req.query),
     ),
   );
   app.get("/api/earnings/upcoming", async () => readSymbolWatch(config));

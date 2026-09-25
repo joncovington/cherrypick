@@ -1,8 +1,11 @@
 import { useState } from "react";
-import type { CalendarsPayload } from "@console/shared";
+import type { CalendarsPayload, CalendarsWeekRow } from "@console/shared";
 import { useCalendarsWeek, useCalendarsWeeks } from "../../lib/api";
 import { DataCard, fmtNum, fmtPct } from "../../components/DataTable";
-import { TRADE_MONEY_HEADERS, TradeMoneyCells, TradeTotalsChip } from "../../components/TradeMoney";
+import { TradeTotalsChip, tradeMoneyColumns } from "../../components/TradeMoney";
+import { HistoryTable } from "../../components/table/HistoryTable";
+import { useUrlDateRange } from "../../components/table/DateRange";
+import type { ColumnDef } from "../../components/table/columns";
 
 /**
  * Every week on file, per arm, with the week's legs one click down.
@@ -69,59 +72,70 @@ function WeekDetail({ week }: { week: string }) {
   );
 }
 
+const MONEY = tradeMoneyColumns<CalendarsWeekRow>("the week's call and put calendar debits together, per share");
+
+const COLUMNS: ColumnDef<CalendarsWeekRow>[] = [
+  { id: "week", header: "week", kind: "describe", className: "mono", render: (r) => r.weekOf },
+  { id: "structure", header: "structure", kind: "describe", className: "mono", render: (r) => r.structure },
+  { id: "arm", header: "arm", kind: "describe", className: "mono", render: (r) => r.arm },
+  {
+    id: "positions",
+    header: "positions",
+    kind: "describe",
+    numeric: true,
+    render: (r) => (
+      <>
+        {r.closed}/{r.positions}
+        {r.closed < r.positions && (
+          <span className="chip chip-warn integrity-chip" title="A week does not close while any leg — or any delivered share position — is still outstanding.">
+            open
+          </span>
+        )}
+      </>
+    ),
+  },
+  { id: "spot", header: "entry spot", kind: "describe", numeric: true, render: (r) => fmtNum(r.entrySpot, 2) },
+  { id: "settled", header: "settled", kind: "describe", numeric: true, render: (r) => fmtNum(r.settlementSpot, 2) },
+  ...MONEY.describe,
+  ...MONEY.money,
+];
+
 export function WeeksTab({ data }: { data: CalendarsPayload | undefined }) {
-  const { data: weeks, isLoading, isError, dataUpdatedAt } = useCalendarsWeeks();
+  const { from, to } = useUrlDateRange();
+  const { data: weeks, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useCalendarsWeeks({ from, to });
   const [open, setOpen] = useState<string | null>(null);
-  const rows = weeks?.rows ?? [];
   const em = data?.emVsRealized ?? [];
+  const keyOf = (r: CalendarsWeekRow) => `${r.weekOf}-${r.arm}`;
 
   return (
     <div className="cards cards-wide">
-      <DataCard
+      <HistoryTable
+        table="calendars-weeks"
         title="weeks"
-        headers={["week", "structure", "arm", "positions", "entry spot", "settled", ...TRADE_MONEY_HEADERS]}
+        className="view-fade"
+        defs={COLUMNS}
+        rows={weeks?.rows ?? []}
+        rowKey={keyOf}
         loading={isLoading}
         isError={isError}
-        rowCount={rows.length}
-        numFrom={3}
-        empty="no week has been entered yet"
+        busy={isPlaceholderData}
+        empty={from !== null || to !== null ? "no week in this date range" : "no week has been entered yet"}
         updatedAt={dataUpdatedAt}
-        className="view-fade"
+        dateBasis="week"
+        allTitle="every week on file"
         footer={<TradeTotalsChip totals={weeks?.totals} noun="finished weeks" />}
-      >
-        {rows.map((r) => {
-          const key = `${r.weekOf}-${r.arm}`;
-          const partial = r.closed < r.positions;
-          return [
-            <tr key={key} className="cal-row-click" onClick={() => { setOpen(open === key ? null : key); }}>
-              <td className="mono">{r.weekOf}</td>
-              <td className="mono">{r.structure}</td>
-              <td className="mono">{r.arm}</td>
-              <td>
-                {r.closed}/{r.positions}
-                {partial && (
-                  <span className="chip chip-warn integrity-chip" title="A week does not close while any leg — or any delivered share position — is still outstanding.">
-                    open
-                  </span>
-                )}
-              </td>
-              <td>{fmtNum(r.entrySpot, 2)}</td>
-              <td>{fmtNum(r.settlementSpot, 2)}</td>
-              <TradeMoneyCells row={r} priceTitle="the week's call and put calendar debits together, per share" />
-            </tr>,
-            // The detail is the whole WEEK, every arm of it, because the arms are only
-            // interesting against each other -- they share the entry, so a single arm's legs in
-            // isolation say nothing the row above does not.
-            open === key ? (
-              <tr key={`${key}-detail`} className="cal-detail-row">
-                <td colSpan={16}>
-                  <WeekDetail week={r.weekOf} />
-                </td>
-              </tr>
-            ) : null,
-          ];
+        rowProps={(r) => ({
+          className: "cal-row-click",
+          onClick: () => {
+            setOpen(open === keyOf(r) ? null : keyOf(r));
+          },
         })}
-      </DataCard>
+        // The detail is the whole WEEK, every arm of it, because the arms are only interesting
+        // against each other -- they share the entry, so a single arm's legs in isolation say
+        // nothing the row above does not.
+        expanded={(r) => (open === keyOf(r) ? <WeekDetail week={r.weekOf} /> : null)}
+        detailClassName="cal-detail-row"
+      />
 
       <DataCard
         title="expected move vs realized"

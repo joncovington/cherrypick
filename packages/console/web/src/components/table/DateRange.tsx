@@ -58,7 +58,17 @@ export function presetRange(preset: "week" | "month" | "30d", today: string): [s
   return [shift(today, -((dow + 6) % 7)), today];
 }
 
-export function DateRangeBar() {
+export function DateRangeBar({
+  basis,
+  allLabel = "all",
+  allTitle = "every session in the page's era",
+}: {
+  /** Which date the range bounds ("closed", "week"), where a module's rows carry more than one. */
+  basis?: string;
+  /** What no range means here -- MEIC's history falls back to the header's session, not the era. */
+  allLabel?: string;
+  allTitle?: string;
+} = {}) {
   const { from, to, setRange } = useUrlDateRange();
   const today = etToday();
   const presets: Array<["week" | "month" | "30d", string]> = [
@@ -72,6 +82,11 @@ export function DateRangeBar() {
   })?.[0];
   return (
     <div className="date-range" role="group" aria-label="date range">
+      {basis !== undefined && (
+        <span className="muted" title={`the range bounds each row's ${basis} date`}>
+          {basis}
+        </span>
+      )}
       <div className="mode-toggle">
         {presets.map(([p, label]) => (
           <button
@@ -87,9 +102,9 @@ export function DateRangeBar() {
           type="button"
           className={from === null && to === null ? "mode-btn active" : "mode-btn"}
           onClick={() => setRange(null, null)}
-          title="every session in the page's era"
+          title={allTitle}
         >
-          all
+          {allLabel}
         </button>
       </div>
       <label className="muted">

@@ -515,7 +515,7 @@ All seven trading modules are on the module frame and the standard as of 2026-09
 surfaces (Live, Reports, Advisor, GEX, Config) are still lightboxes; a card that would link to one
 (the flies live-pilot tile) has no link until it moves, since a card opens pages, never overlays.
 
-## History-table controls (2026-09-25, flies first)
+## History-table controls (2026-09-25, every trade module)
 
 A history table declares its columns once (`components/table/columns.ts`, `ColumnDef`): header,
 definition tooltip, cell, and kind. The controls come from that list, not from hand-written rows:
@@ -530,9 +530,22 @@ definition tooltip, cell, and kind. The controls come from that list, not from h
   preference that follows to the desktop shell. It is never in the URL.
 - **Date range** (`DateRangeBar`, `useUrlDateRange`): `?from=&to=` in the page address, written with
   `replace`, so a filtered view reloads and shares. Presets end today in New York time. The server
-  applies it, so the match count and the totals chip describe the range.
-
-Next: the other six history tables, the same way.
+  applies it (`readers/dateRange.ts`: one parser, one clause builder), so the match count and the
+  totals chip describe the range. Each module bounds the date its history is ABOUT, and the bar
+  names it: the trade date for flies and meic, the close for bwb/pmcc/curve/earnings (a result
+  belongs to the day it was realised, so an open position is outside any range), the week for
+  calendars.
+- **`HistoryTable`** (`components/table/HistoryTable.tsx`) is the card every module but flies uses:
+  columns menu, the table's own filters, the date range, and an optional detail row per row. Money
+  and `numeric` describe columns right-align per column (`td.num`), because a reorderable table
+  cannot align by position the way `num-from-N` does. `tradeMoneyColumns` holds calendars/pmcc/
+  curve's shared columns.
+- **Two deliberate differences.** Flies' range sits at the top of its History tab and bounds the
+  summaries (calendar, by-arm, by-hour, completion matrix) as well as the log, so a narrowed tab
+  never sets one table beside cards still answering for the era. MEIC's history is one session by
+  default; a range REPLACES the header's day there, and the bar's no-range button reads `session`.
+  Earnings' range bounds its history and totals only -- the other pages ride the same query but
+  not the range.
 
 ## Suite guardrails (apply here too)
 

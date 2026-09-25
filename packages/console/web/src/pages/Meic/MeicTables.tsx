@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
-import type { TradingMode } from "@console/shared";
+import type { MeicTradeRow, TradingMode } from "@console/shared";
 import { useMeic } from "../../lib/api";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
 import { fmtCash, fmtPrice } from "../../lib/format";
+import { HistoryTable } from "../../components/table/HistoryTable";
+import { useUrlDateRange } from "../../components/table/DateRange";
+import type { ColumnDef } from "../../components/table/columns";
 
 /**
  * MEIC's two trade tables in the suite's standard layout (root CLAUDE.md, "Trade histories and
@@ -88,6 +91,74 @@ export function MeicPositionsTable({ mode, scope }: { mode: TradingMode; scope: 
   );
 }
 
+/**
+ * The history's columns (components/table/columns.ts). MEIC's slippage is conceded inside the
+ * modelled fill prices, so `slip` is a measure beside the costs and nothing subtracts it.
+ */
+const HISTORY_COLUMNS: ColumnDef<MeicTradeRow>[] = [
+  { id: "date", header: "date", kind: "describe", render: (r) => r.tradeDate },
+  { id: "time", header: "time", kind: "describe", className: "muted", render: (r) => r.entryTime?.slice(11, 16) ?? "—" },
+  { id: "sym", header: "sym", kind: "describe", render: (r) => r.symbol },
+  { id: "put", header: "put", kind: "describe", numeric: true, render: (r) => fmtNum(r.putStrike, 0) },
+  { id: "call", header: "call", kind: "describe", numeric: true, render: (r) => fmtNum(r.callStrike, 0) },
+  { id: "wing", header: "wing", kind: "describe", numeric: true, render: (r) => fmtNum(r.wingWidth, 0) },
+  { id: "qty", header: "qty", kind: "describe", numeric: true, render: (r) => fmtNum(r.quantity, 0) },
+  {
+    id: "price",
+    header: "price",
+    title: "net entry credit per share",
+    kind: "describe",
+    numeric: true,
+    render: (r) => fmtPrice(r.netCredit),
+  },
+  { id: "how", header: "how", kind: "describe", className: "muted", render: (r) => r.exitKind ?? "—" },
+  { id: "reason", header: "exit reason", kind: "describe", className: "muted", render: (r) => r.exitReason ?? "—" },
+  {
+    id: "entry",
+    header: "entry",
+    title: "entry cash flow for the whole position: + received, − paid",
+    kind: "money",
+    render: (r) => fmtCash(r.entryCash),
+  },
+  {
+    id: "exit",
+    header: "exit",
+    title: "the close, the stop, or the settlement at the bell",
+    kind: "money",
+    render: (r) => fmtCash(r.exitCash),
+  },
+  { id: "gross", header: "gross", title: "entry + exit, before any cost", kind: "money", render: (r) => fmtMoney(r.gross) },
+  {
+    id: "fees",
+    header: "fees",
+    title: "trading fees: commissions and exchange fees",
+    kind: "money",
+    className: "muted",
+    render: (r) => (
+      <span title={r.settlementFees === null ? "the fee total: its settlement share was not recorded" : undefined}>
+        {fmtMoney(r.fees)}
+      </span>
+    ),
+  },
+  {
+    id: "settle",
+    header: "settle",
+    title: "exercise / assignment fees at settlement",
+    kind: "money",
+    className: "muted",
+    render: (r) => (r.settlementFees === null ? "n/r" : fmtMoney(r.settlementFees)),
+  },
+  {
+    id: "slip",
+    header: "slip",
+    title: "what the modelled fills gave up against mid — already inside gross, never subtracted again",
+    kind: "money",
+    className: "muted",
+    render: (r) => fmtMoney(r.slippage),
+  },
+  { id: "net", header: "net", title: "gross − fees − settlement", kind: "money", pinned: true, render: (r) => <PnlCell v={r.net} /> },
+];
+
 export function MeicHistoryTable({
   mode,
   scope,
@@ -105,55 +176,45 @@ export function MeicHistoryTable({
     const t = setTimeout(() => setDebounced(search), 250);
     return () => clearTimeout(t);
   }, [search]);
-  const { page, setOffset, setLimit } = usePage([mode, scope.day, scope.symbol, scope.profile, scope.era, outcome, reason, debounced]);
+  // A date range REPLACES the header's session (the server drops the day when either bound is set):
+  // "across these days" is a question the one-session scope cannot answer.
+  const { from, to } = useUrlDateRange();
+  const ranged = from !== null || to !== null;
+  const { page, setOffset, setLimit } = usePage([
+    mode, scope.day, scope.symbol, scope.profile, scope.era, outcome, reason, debounced, from, to,
+  ]);
   const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useMeic(mode, {
     ...scope,
     view: "history",
     outcome,
     reason,
     search: debounced,
+    from,
+    to,
     ...page,
   });
-  const rows = data?.trades.rows ?? [];
   const total = data?.trades.total ?? 0;
   const t = data?.totals;
+  const where = ranged ? ` from ${from ?? "the start"} to ${to ?? "today"}` : sessionLabel(scope.day);
   return (
-    <DataCard
-      title={`History — ${total.toLocaleString()} closed${sessionLabel(scope.day)}`}
-      headers={["time", "sym", "put", "call", "wing", "qty", "price", "entry", "exit", "how", "gross", "fees", "settle", "slip", "net", "exit reason"]}
-      numFrom={2}
+    <HistoryTable
+      table="meic-history"
+      title={`History — ${total.toLocaleString()} closed${where}`}
+      defs={HISTORY_COLUMNS}
+      rows={data?.trades.rows ?? []}
+      rowKey={(r) => `${r.mode}-${r.id}`}
       loading={isLoading}
       isError={isError}
-      rowCount={rows.length}
-      skeletonRows={10}
       busy={isPlaceholderData}
-      empty="nothing closed on this session matches these filters"
-      updatedAt={dataUpdatedAt}
-      footer={
-        total > 0 && (
-          <>
-            {t !== undefined && t.trades > 0 && (
-              <span
-                className="chip"
-                title="Over every row matching these filters — not just this page. Gross − fees − settlement = net. Slippage is inside the fill prices, so inside gross; it is shown, never subtracted."
-              >
-                net <PnlCell v={t.net} /> · gross {fmtMoney(t.gross)} · fees {fmtMoney(t.fees)} · settlement{" "}
-                {fmtMoney(t.settlementFees)} · slippage {fmtMoney(t.slippage)}
-              </span>
-            )}
-            <Pager
-              offset={data?.trades.offset ?? page.offset}
-              limit={data?.trades.limit ?? page.limit}
-              total={total}
-              onOffset={setOffset}
-              onLimit={setLimit}
-            />
-          </>
-        )
+      empty={
+        ranged ? "nothing closed in this date range matches these filters" : "nothing closed on this session matches these filters"
       }
-      controls={
+      updatedAt={dataUpdatedAt}
+      allLabel="session"
+      allTitle="the session picked in the header, as every other page on this frame shows"
+      filters={
         <>
-          <div className="mode-toggle" style={{ marginLeft: 0 }} role="group" aria-label="outcome filter">
+          <div className="mode-toggle" role="group" aria-label="outcome filter">
             {OUTCOMES.map((o) => (
               <button key={o} type="button" className={outcome === o ? "mode-btn active" : "mode-btn"} onClick={() => setOutcome(o)}>
                 {o}
@@ -180,29 +241,29 @@ export function MeicHistoryTable({
           />
         </>
       }
-    >
-      {rows.map((r) => (
-        <tr key={`${r.mode}-${r.id}`}>
-          <td className="muted">{r.entryTime?.slice(11, 16) ?? "—"}</td>
-          <td>{r.symbol}</td>
-          <td>{fmtNum(r.putStrike, 0)}</td>
-          <td>{fmtNum(r.callStrike, 0)}</td>
-          <td>{fmtNum(r.wingWidth, 0)}</td>
-          <td>{fmtNum(r.quantity, 0)}</td>
-          <td>{fmtPrice(r.netCredit)}</td>
-          <td>{fmtCash(r.entryCash)}</td>
-          <td>{fmtCash(r.exitCash)}</td>
-          <td className="muted">{r.exitKind ?? "—"}</td>
-          <td>{fmtMoney(r.gross)}</td>
-          <td className="muted" title={r.settlementFees === null ? "the fee total: its settlement share was not recorded" : undefined}>
-            {fmtMoney(r.fees)}
-          </td>
-          <td className="muted">{r.settlementFees === null ? "n/r" : fmtMoney(r.settlementFees)}</td>
-          <td className="muted">{fmtMoney(r.slippage)}</td>
-          <td><PnlCell v={r.net} /></td>
-          <td className="muted" style={{ textAlign: "left" }}>{r.exitReason ?? "—"}</td>
-        </tr>
-      ))}
-    </DataCard>
+      footer={
+        total > 0 && (
+          <>
+            {t !== undefined && t.trades > 0 && (
+              <span
+                className="chip"
+                title="Over every row matching these filters — not just this page. Gross − fees − settlement = net. Slippage is inside the fill prices, so inside gross; it is shown, never subtracted."
+              >
+                net <PnlCell v={t.net} /> · {t.trades.toLocaleString()} trades · {t.sessions.toLocaleString()} session
+                {t.sessions === 1 ? "" : "s"} · gross {fmtMoney(t.gross)} · fees {fmtMoney(t.fees)} · settlement{" "}
+                {fmtMoney(t.settlementFees)} · slippage {fmtMoney(t.slippage)}
+              </span>
+            )}
+            <Pager
+              offset={data?.trades.offset ?? page.offset}
+              limit={data?.trades.limit ?? page.limit}
+              total={total}
+              onOffset={setOffset}
+              onLimit={setLimit}
+            />
+          </>
+        )
+      }
+    />
   );
 }

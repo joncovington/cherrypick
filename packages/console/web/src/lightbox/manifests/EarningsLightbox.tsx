@@ -10,6 +10,8 @@ import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable"
 import { Pager, usePage } from "../../components/ScopeBar";
 import { fmtCash, fmtPrice } from "../../lib/format";
 import { EarningsDetailCards } from "../../pages/Earnings/EarningsDetail";
+import { EarningsHistory } from "../../pages/Earnings/EarningsHistory";
+import { useUrlDateRange } from "../../components/table/DateRange";
 import { EarningsLiveCard, EarningsManagementLog } from "../../pages/Earnings/EarningsLive";
 import { EarningsSession, type EarningsAnalytics } from "../../pages/Earnings/EarningsSession";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
@@ -93,9 +95,14 @@ function EraScope({ era, onChange }: { era: string | null; onChange: (v: string 
 export function EarningsLightbox({ slide }: { slide: string }) {
   const [mode, setMode] = useMode();
   const [era, setEra] = useState<string | null>(null);
-  const tradesPage = usePage();
+  // The history's date range, in the page address; it bounds the history table and its totals only.
+  const range = useUrlDateRange();
+  const tradesPage = usePage([era, range.from, range.to]);
   const reviewsPage = usePage();
-  const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useEarnings(tradesPage.page, reviewsPage.page, era);
+  const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useEarnings(tradesPage.page, reviewsPage.page, era, {
+    from: range.from,
+    to: range.to,
+  });
   const upcoming = useUpcoming();
   const analytics = useEarningsAnalytics(mode, era);
   const a = analytics.data;
@@ -263,62 +270,14 @@ export function EarningsLightbox({ slide }: { slide: string }) {
       id: "history",
       label: EARNINGS_LABEL.history,
       render: () => (
-        <DataCard
-          title={`History — ${(data?.trades.total ?? 0).toLocaleString()} closed across both books`}
-          headers={["", "opened", "closed", "sym", "strategy", "qty", "price", "entry", "exit", "how", "gross", "fees", "settle", "slip", "net", "exit reason"]}
-          numFrom={5}
+        <EarningsHistory
+          data={data}
           loading={isLoading}
           isError={isError}
           busy={isPlaceholderData}
-          rowCount={data?.trades.rows.length ?? 0}
-          skeletonRows={8}
-          empty="nothing closed in this era yet"
-          footer={
-            (data?.trades.total ?? 0) > 0 && (
-              <>
-                {t !== undefined && t.trades > 0 && (
-                  <span
-                    className="chip"
-                    title="Over every closed trade in this era, both books — not just this page. Gross − fees − settlement − slippage = net: earnings charges slippage as a cost."
-                  >
-                    net <PnlCell v={t.net} /> · gross {fmtMoney(t.gross)} · fees {fmtMoney(t.fees)} · settlement{" "}
-                    {fmtMoney(t.settlementFees)} · slippage {fmtMoney(t.slippage)}
-                  </span>
-                )}
-                <Pager
-                  offset={data?.trades.offset ?? tradesPage.page.offset}
-                  limit={data?.trades.limit ?? tradesPage.page.limit}
-                  total={data?.trades.total ?? 0}
-                  onOffset={tradesPage.setOffset}
-                  onLimit={tradesPage.setLimit}
-                />
-              </>
-            )
-          }
-        >
-          {data?.trades.rows.map((r) => (
-            <tr key={`${r.mode}-${r.orderId}`}>
-              <td><PaperLiveBadge mode={r.mode} /></td>
-              <td>{r.openedAt?.slice(0, 10) ?? "—"}</td>
-              <td className="muted">{r.closedAt?.slice(0, 10) ?? "—"}</td>
-              <td>{r.symbol}</td>
-              <td>{r.strategy}</td>
-              <td>{fmtNum(r.quantity, 0)}</td>
-              <td>{fmtPrice(r.entryCredit)}</td>
-              <td>{fmtCash(r.entryCash)}</td>
-              <td>{fmtCash(r.exitCash)}</td>
-              <td className="muted">{r.exitKind ?? "—"}</td>
-              <td>{fmtMoney(r.gross)}</td>
-              <td className="muted" title={r.settlementFees === null ? "includes any settlement: its share was not recorded" : undefined}>
-                {fmtMoney(r.fees)}
-              </td>
-              <td className="muted">{r.settlementFees === null ? "n/r" : fmtMoney(r.settlementFees)}</td>
-              <td className="muted" title="charged as a cost in earnings, and subtracted">{fmtMoney(r.slippage)}</td>
-              <td><PnlCell v={r.net} /></td>
-              <td className="muted">{r.exitReason ?? "—"}</td>
-            </tr>
-          ))}
-        </DataCard>
+          ranged={range.from !== null || range.to !== null}
+          page={{ ...tradesPage.page, setOffset: tradesPage.setOffset, setLimit: tradesPage.setLimit }}
+        />
       ),
     },
   ];

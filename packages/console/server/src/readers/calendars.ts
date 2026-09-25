@@ -1,3 +1,4 @@
+import { NO_RANGE, rangeClauses, type DateRange } from "./dateRange.js";
 import fs from "node:fs";
 import path from "node:path";
 import { EMPTY_TRADE_TOTALS, positionCash, positionCashColumns, tradeTotals } from "./positionCash.js";
@@ -663,17 +664,20 @@ export function readCalendars(config: ConsoleConfig): CalendarsPayload {
  * `closed` rides beside `positions` because a week does not finish while its delivered shares are
  * outstanding, and a partial week must not read as a finished one with a small net.
  */
-export function readCalendarsWeeks(config: ConsoleConfig): CalendarsWeeks {
+export function readCalendarsWeeks(config: ConsoleConfig, range: DateRange = NO_RANGE): CalendarsWeeks {
+  // A calendar's result belongs to its week, so the range bounds `week_of` (the Monday).
+  const bound = rangeClauses("week_of", range);
+  const where = bound.clauses.length === 0 ? "" : `WHERE ${bound.clauses.join(" AND ")}`;
   return withReadOnlyDb<CalendarsWeeks>(dbPath(config), { rows: [], totals: EMPTY_TRADE_TOTALS }, (db) => {
     // Each position through the shared standard (`positionCash`), then summed per week and arm, so a
     // week's columns are the same arithmetic as every other module's rows -- not a second SQL sum.
     const positions = db
-      .prepare<[], Record<string, unknown>>(
+      .prepare<string[], Record<string, unknown>>(
         `SELECT week_of, arm, structure, entry_session, entry_debit, entry_spot, settlement_spot,
                 ${positionCashColumns(db, "dc_")}
-           FROM dc_positions ORDER BY week_of DESC, arm, id`,
+           FROM dc_positions ${where} ORDER BY week_of DESC, arm, id`,
       )
-      .all();
+      .all(...bound.params);
     const weeks = new Map<string, { head: Record<string, unknown>; parts: Array<Record<string, unknown>> }>();
     for (const p of positions) {
       const key = `${str(p["week_of"]) ?? ""}\u0000${str(p["arm"]) ?? ""}`;

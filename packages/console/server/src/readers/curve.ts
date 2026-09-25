@@ -1,3 +1,4 @@
+import { rangeClauses, type DateRange } from "./dateRange.js";
 import path from "node:path";
 import { EMPTY_TRADE_TOTALS, positionCash, positionCashColumns, tradeTotals } from "./positionCash.js";
 import type {
@@ -455,6 +456,8 @@ export function readCurve(config: ConsoleConfig): CurvePayload {
 export interface CurveHistoryFilter {
   arm: string | null;
   symbol: string | null;
+  /** Inclusive bounds on the close date; absent means every close. */
+  range?: DateRange;
 }
 
 /** Completed cycles, newest first. */
@@ -473,6 +476,10 @@ export function readCurveHistory(
     clauses.push("symbol = ?");
     params.push(filter.symbol);
   }
+  // A result belongs to the session it was realised on, so the range bounds the close.
+  const range = rangeClauses("closed_session", filter.range);
+  clauses.push(...range.clauses);
+  params.push(...range.params);
 
   return withReadOnlyDb<CurveHistory>(dbPath(config), { ...emptyPage(page), totals: EMPTY_TRADE_TOTALS }, (db) => {
     const where = clauses.join(" AND ");

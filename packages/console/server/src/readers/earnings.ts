@@ -1,3 +1,4 @@
+import { inRange, NO_RANGE, type DateRange } from "./dateRange.js";
 import fs from "node:fs";
 import path from "node:path";
 import type { EarningsPayload, EarningsTradeRow, EarningsTradeTotals, EntryReviewRow, TradingMode } from "@console/shared";
@@ -582,6 +583,7 @@ export function readEarnings(
   config: ConsoleConfig,
   page: EarningsPageRequest = EARNINGS_FIRST_PAGE,
   era: string | null = null,
+  range: DateRange = NO_RANGE,
 ): EarningsPayload {
   const since = eraSince(config, era);
   const liveDb = path.join(config.paths.earningsDir, "earnings_trades.db");
@@ -619,8 +621,9 @@ export function readEarnings(
   );
 
   // The history table is the CLOSED trades; open positions have their own page. Totals over every
-  // closed trade in scope, through the same arithmetic as each row.
-  const closed = trades.filter((t) => t.closedAt !== null && t.gross !== null);
+  // closed trade in scope, through the same arithmetic as each row. The date range bounds the close:
+  // a result belongs to the day it was realised.
+  const closed = trades.filter((t) => t.closedAt !== null && t.gross !== null && inRange(t.closedAt, range));
   const totals = closed.reduce<EarningsTradeTotals>(
     (t, r) => ({
       trades: t.trades + 1,

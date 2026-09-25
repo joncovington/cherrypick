@@ -4,7 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { ConsoleConfig } from "../src/config.js";
-import { readFlies, readFliesAnalytics, readFliesTradeLog, NO_TRADE_LOG_QUERY, CURRENT_ERA } from "../src/readers/flies.js";
+import {
+  readFlies,
+  readFliesAnalytics,
+  readFliesHistory,
+  readFliesTradeLog,
+  NO_TRADE_LOG_QUERY,
+  CURRENT_ERA,
+} from "../src/readers/flies.js";
 
 /**
  * The trade table standard (packages/console/CLAUDE.md) on the flies tables.
@@ -188,5 +195,18 @@ describe("the session tiles' settlement and timing", () => {
 
   it("takes the median completion time over held positions only", () => {
     expect(today().medianCompletionMin).toBe(10);
+  });
+});
+
+describe("flies' History summaries follow the date range", () => {
+  it("counts the fixture session inside the range and nothing outside it", () => {
+    const all = readFliesHistory(config, "paper", { arm: null, date: null, symbol: null, era: "ALL" });
+    const inside = readFliesHistory(config, "paper", { arm: null, date: null, symbol: null, era: "ALL" }, { from: DAY, to: DAY });
+    const outside = readFliesHistory(config, "paper", { arm: null, date: null, symbol: null, era: "ALL" }, { from: null, to: "2026-09-23" });
+    expect(all.dailyPnl.map((d) => d.date)).toEqual([DAY]);
+    expect(inside.dailyPnl).toEqual(all.dailyPnl);
+    expect(inside.byArm).toEqual(all.byArm);
+    expect(outside.dailyPnl).toEqual([]);
+    expect(outside.byArm).toEqual([]);
   });
 });

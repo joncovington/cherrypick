@@ -1,3 +1,4 @@
+import { rangeClauses, type DateRange } from "./dateRange.js";
 import path from "node:path";
 import type {
   BwbArmCell,
@@ -412,6 +413,8 @@ export function readBwb(config: ConsoleConfig): BwbPayload {
 export interface BwbHistoryFilter {
   arm: string | null;
   symbol: string | null;
+  /** Inclusive bounds on the close date; absent means every close. */
+  range?: DateRange;
 }
 
 /** Completed positions, newest first. */
@@ -491,6 +494,10 @@ export function readBwbHistory(
     clauses.push("symbol = ?");
     params.push(filter.symbol);
   }
+  // A result belongs to the session it was realised on, so the range bounds the close.
+  const range = rangeClauses("closed_session", filter.range);
+  clauses.push(...range.clauses);
+  params.push(...range.params);
 
   return withReadOnlyDb<BwbHistory>(dbPath(config), { ...emptyPage(page), totals: EMPTY_BWB_TOTALS }, (db) => {
     const where = clauses.join(" AND ");

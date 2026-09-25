@@ -1,3 +1,4 @@
+import { rangeClauses, type DateRange } from "./dateRange.js";
 import fs from "node:fs";
 import path from "node:path";
 import { EMPTY_TRADE_TOTALS, positionCash, positionCashColumns, tradeTotals } from "./positionCash.js";
@@ -556,6 +557,8 @@ export function readPmcc(config: ConsoleConfig): PmccPayload {
 export interface PmccHistoryFilter {
   arm: string | null;
   symbol: string | null;
+  /** Inclusive bounds on the close date; absent means every close. */
+  range?: DateRange;
 }
 
 /**
@@ -582,6 +585,10 @@ export function readPmccHistory(
     clauses.push("symbol = ?");
     params.push(filter.symbol);
   }
+  // A result belongs to the session it was realised on, so the range bounds the close.
+  const range = rangeClauses("closed_session", filter.range);
+  clauses.push(...range.clauses);
+  params.push(...range.params);
 
   return withReadOnlyDb<PmccHistory>(dbPath(config), { ...emptyPage(page), totals: EMPTY_TRADE_TOTALS }, (db) => {
     const where = clauses.join(" AND ");
