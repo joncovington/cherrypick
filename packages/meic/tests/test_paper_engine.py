@@ -2811,7 +2811,9 @@ def test_an_itm_settlement_books_five_dollars_per_strike_not_per_contract(paper_
 
     conn = sqlite3.connect(paper_db_path)
     conn.row_factory = sqlite3.Row
-    row = conn.execute("SELECT fees, settlement_fees, pnl FROM ic_trades WHERE ic_order_id = 'ITM-1'").fetchone()
+    row = conn.execute(
+        "SELECT fees, settlement_fees, pnl FROM ic_trades WHERE ic_order_id = 'ITM-1'"
+    ).fetchone()
     conn.close()
     assert row["fees"] == pytest.approx(6.89 + 10.0)
     # The settlement part of that total, recorded beside it: fees stays the total.
