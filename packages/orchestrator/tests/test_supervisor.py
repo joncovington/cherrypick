@@ -358,6 +358,34 @@ def test_a_dead_adopted_orphan_is_throttled_rather_than_hot_looped(spawned, tmp_
     assert st["consecutive_failures"] >= 1 and st["backoff_until"] > time.time()
 
 
+def test_an_adopted_orphan_gone_at_its_window_end_is_a_session_end_not_a_failure(spawned, tmp_path):
+    """2026-09-24: a 15:00 supervisor restart adopted flies' and calendars' children; both finished
+    their sessions at 16:00, were read as unknown failures, and were respawned into the closing
+    minute, where the module's gate had already shut -- a second failure each, and a scar that sat
+    in the registry overnight. A windowed resident gone in its window's last minute has done what a
+    session end looks like, so it is taken as one: no failure, no respawn."""
+    sup = supervisor.Supervisor(flies_cfg(tmp_path))
+    st = sup._state.setdefault("flies-paper", {})
+    st.update({"running_pid": 999_999, "kind": "resident"})  # adopted, and no longer alive
+    sup._handles.pop("flies-paper", None)
+    res = sup.pass_once(now=datetime(2026, 8, 10, 16, 0, 20, tzinfo=ET))
+    assert st.get("consecutive_failures", 0) == 0 and st.get("backoff_until") is None
+    assert st["last_exit_code"] != supervisor._EXIT_UNKNOWN
+    assert "flies-paper" not in res["started"], "not respawned into the closing minute"
+
+
+def test_an_adopted_orphan_gone_mid_window_is_still_throttled_as_unknown(spawned, tmp_path):
+    # The end-of-window reading must not leak into the window: mid-session a vanished child may be a
+    # crash, and the existing throttled-unknown path is the right one there.
+    sup = supervisor.Supervisor(flies_cfg(tmp_path))
+    st = sup._state.setdefault("flies-paper", {})
+    st.update({"running_pid": 999_999, "kind": "resident"})
+    sup._handles.pop("flies-paper", None)
+    sup.pass_once(now=datetime(2026, 8, 10, 15, 59, tzinfo=ET))
+    assert st["last_exit_code"] == supervisor._EXIT_UNKNOWN
+    assert st["consecutive_failures"] >= 1
+
+
 def _port_job(port=5070, reclaim=True):
     from cherrypick.orchestrator import jobspec
 

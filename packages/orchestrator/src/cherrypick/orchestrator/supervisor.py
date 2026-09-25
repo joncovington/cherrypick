@@ -346,7 +346,7 @@ class Supervisor:
             elif pid:
                 st["running_pid"] = None
 
-    def _job_running(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> bool:
+    def _job_running(self, spec: jobspec.JobSpec, st: dict[str, Any], now: datetime | None = None) -> bool:
         handle = self._handles.get(spec.id)
         if handle is not None:
             code = handle.poll()
@@ -358,6 +358,23 @@ class Supervisor:
         pid = st.get("running_pid")
         if pid and pid_alive(pid):
             return True  # adopted orphan still going
+        if pid and self._at_window_end(spec, now):
+            # ...except when it went at its window's end. A windowed resident's module loop closes
+            # its own gate on the window's last minute and exits, so an adopted child gone by then
+            # has done exactly what a session end looks like -- and a crash in that same minute
+            # changes nothing, because the window is shutting either way. Counting it as a failure
+            # (2026-09-24: flies and calendars, both adopted at a 15:00 supervisor restart) left a
+            # failure scar and then respawned each into the closing minute, where the module's gate
+            # had already shut: an instant exit 0, recorded as too-soon, a second failure. Take the
+            # module at its word instead, the same as a handled child exiting 0 after settling.
+            st["running_pid"] = None
+            st["last_exit_code"] = None  # still unknowable; not dressed up as a 0
+            st["last_exit_at"] = _utc_iso()
+            st["module_stopped"] = True
+            st["consecutive_failures"] = 0
+            st["backoff_until"] = None
+            _log(f"{spec.id}: adopted child gone at its window's end — taken as session complete")
+            return False
         if pid:
             # Orphan finished while we weren't holding a handle: exit code unknowable. This used to
             # record nothing at all, which left `backoff_until` untouched and so gave a dead orphan
@@ -528,7 +545,7 @@ class Supervisor:
         self, spec: jobspec.JobSpec, st: dict[str, Any], now: datetime, holidays: set[str]
     ) -> bool:
         want, why = jobspec.resident_should_run(spec, now, holidays)
-        alive = self._job_running(spec, st)
+        alive = self._job_running(spec, st, now)
         if not want:
             # Outside its window the child exits on its own (the module loop is session-scoped);
             # never terminate here — a settlement or final write may still be in flight.
@@ -638,6 +655,15 @@ class Supervisor:
         if started is None:
             return False
         return time.time() - started >= max(_RESIDENT_SETTLE_SECONDS, spec.silence_seconds)
+
+    def _at_window_end(self, spec: jobspec.JobSpec, now: datetime | None) -> bool:
+        """A windowed resident, in or past the last minute of its window (`in_window` counts the end
+        minute as inside, whole minutes). False without a clock or a window -- the caller then keeps
+        the old, conservative reading."""
+        if now is None or not self._resident_windowed(spec) or spec.window_invert:
+            return False
+        eh, em = (int(x) for x in str(spec.window_end).split(":"))
+        return (now.hour, now.minute) >= (eh, em)
 
     def _resident_windowed(self, spec: jobspec.JobSpec) -> bool:
         """A resident job whose clean exit could mean "my session is over".

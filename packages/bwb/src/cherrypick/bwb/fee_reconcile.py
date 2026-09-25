@@ -165,16 +165,26 @@ def reconcile_date(conn, expiration: str, symbol: str, transactions: list[dict],
     return result
 
 
-def main(argv=None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """The command line the supervisor's `bwb-fee-reconcile` job invokes, from the orchestrator
+    config's `fee_reconcile_argv`. It accepts `--symbol` because that config does -- the same argv
+    shape as flies' reconciler. Without it every scheduled run died in argparse with exit 2 before
+    reconciling anything (2026-09-22 to 09-24); test_fee_reconcile_argv parses the shipped argv
+    through this parser so the two cannot drift apart again."""
     ap = argparse.ArgumentParser(description="reconcile the bwb live ledger against broker transactions")
     ap.add_argument("--date", help="YYYY-MM-DD expiration to reconcile (default: every pending one)")
+    ap.add_argument("--symbol", help="underlying to reconcile (default: the bwb config's `symbol`, else SPX)")
     ap.add_argument("--config")
-    args = ap.parse_args(argv)
+    return ap
+
+
+def main(argv=None) -> int:
+    args = build_parser().parse_args(argv)
     from cherrypick.bwb import cli as climod
     from cherrypick.bwb import live_loop
 
     config = climod.load_config(args.config)
-    symbol = (config.get("symbol") or "SPX").strip().upper()
+    symbol = (args.symbol or config.get("symbol") or "SPX").strip().upper()
     conn = db.connect(db.live_db_path())
     broker = live_loop.BrokerAdapter(config)
     dates = [args.date] if args.date else pending_reconciliation(conn, symbol)

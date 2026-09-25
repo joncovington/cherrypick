@@ -473,7 +473,9 @@ async def _reconcile_all(conn, symbol: str, dates: list[str], *, log=print) -> l
     return results
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """The command line the supervisor's `flies-fee-reconcile` job invokes, from the orchestrator
+    config's `fee_reconcile_argv` -- pinned against that shipped argv by test_fee_reconcile_argv."""
     ap = argparse.ArgumentParser(
         description="Reconcile the flies LIVE ledger against actual broker cash flow."
     )
@@ -481,7 +483,11 @@ def main() -> int:
     ap.add_argument("--date", help="A single trade_date (YYYY-MM-DD). Default: every pending date.")
     ap.add_argument("--lookback-days", type=int, default=5)
     ap.add_argument("--db")
-    args = ap.parse_args()
+    return ap
+
+
+def main(argv=None) -> int:
+    args = build_parser().parse_args(argv)
 
     conn = dbmod.connect(args.db or dbmod.live_db_path())
     dates = [args.date] if args.date else pending_reconciliation(conn, args.symbol, args.lookback_days)
