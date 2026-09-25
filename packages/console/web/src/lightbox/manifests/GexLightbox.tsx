@@ -13,7 +13,8 @@ import {
   type GexStrikeRow,
   type GexView,
 } from "../../pages/Gex/GexProfileChart";
-import { LightboxFrame } from "../LightboxFrame";
+import { ModuleFrame } from "../ModuleFrame";
+import { GEX_SLIDES, type GexSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
 
 interface GexProfilePayload {
@@ -142,18 +143,14 @@ export function formatAsOf(epochSeconds: number): string {
   return asOfIsToday(epochSeconds) ? time : `${etDay(d)} ${time}`;
 }
 
-const GEX_SLIDE_IDS = ["gex", "skew", "volume", "history"] as const;
-type GexSlideId = (typeof GEX_SLIDE_IDS)[number];
-
 function isGexSlideId(v: string): v is GexSlideId {
-  return (GEX_SLIDE_IDS as readonly string[]).includes(v);
+  return GEX_SLIDES.some((s) => s.id === v);
 }
 
 /**
- * GEX as a lightbox (2026-09): the suite-level surface given the same overlay/rail/keyboard-nav
- * treatment as the trading modules, in the same carousel ring after Earnings. Its four former page
- * tabs (GEX/IV Skew/Volume/History) are this lightbox's own slides, and the integrity strip -- which
- * used to sit above every tab's cards on the standalone page -- now rides the same footer-chip-plus-
+ * GEX on the module frame (2026-09-25; a lightbox before that). Its four former page tabs
+ * (GEX/IV Skew/Volume/History) are its pages, declared in `navGroups.ts`, and the integrity strip --
+ * which used to sit above every tab's cards on the standalone page -- rides the same chip-plus-
  * drawer slot every other module manifest uses (`integrity`/`integrityAttention`), collapsed by
  * default rather than always spending body height on it; the by-strike chart is bounded to fit the
  * body without scrolling (`.gex-chart-fit` in `GexProfileChart.tsx`), which the strip's own height
@@ -350,7 +347,7 @@ export function GexLightbox({ slide }: { slide: string }) {
   ];
 
   return (
-    <LightboxFrame
+    <ModuleFrame
       module="gex"
       slide={slide}
       slides={slides}

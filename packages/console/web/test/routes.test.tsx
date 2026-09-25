@@ -5,11 +5,7 @@ import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NAV_DECL } from "../src/lightbox/navGroups";
-import { FRAME_MODULE_IDS, type FrameModuleId } from "../src/lightbox/registry";
-import { MODULE_LABEL } from "../src/lightbox/moduleOrder";
-
-/** Where each frame module's pages live, for the card-link check below. */
-const PAGE_DIR: Record<FrameModuleId, string> = { flies: "Flies", meic: "Meic", bwb: "Bwb", earnings: "Earnings", curve: "Curve", pmcc: "Pmcc", calendars: "Calendars" };
+import { MODULE_LABEL, TRADING_MODULE_ORDER, isModuleId } from "../src/lightbox/moduleOrder";
 
 /**
  * Route wiring, rendered rather than read.
@@ -77,12 +73,6 @@ describe("no path renders a blank page", () => {
 });
 
 describe("the module routes", () => {
-  // Each module now opens as a lightbox carousel over the Overview (`OverviewWithLightbox`),
-  // portalled via `createPortal(..., document.body)` -- there is no `document` in this
-  // server-render pass, so `LightboxFrame` deliberately renders null here (see its own comment)
-  // rather than throwing. What IS verifiable without a browser: the route resolves to a real
-  // module (not the 404 catch-all) and the header menu names it. The carousel's own content is a
-  // `pnpm ui-check` concern, covered per-module there.
   it("/pmcc resolves to the pmcc module, not the catch-all", () => {
     const html = render("/pmcc");
     expect(html).toContain("PMCC");
@@ -95,18 +85,9 @@ describe("the module routes", () => {
     expect(html).not.toContain("Page not found");
   });
 
-  it("an unknown module name still 404s, rather than opening an empty carousel", () => {
+  it("an unknown module name still 404s, rather than opening an empty frame", () => {
     const html = render("/not-a-real-module");
     expect(html).toContain("Page not found");
-  });
-
-  it("a deep-linked slide resolves the same as the bare module route", () => {
-    // Both land on the same route element; the slide segment is read there (frame) or by the
-    // module's own manifest once mounted (lightbox), but routing itself must not treat the extra
-    // segment as unknown.
-    const html = render("/gex/profile");
-    expect(html).toContain("GEX");
-    expect(html).not.toContain("Page not found");
   });
 });
 
@@ -153,66 +134,72 @@ describe("the module frame", () => {
     expect(text(render("/meic/sessions"))).toContain("MEIC / sessions");
   });
 
-  // Cards link to module pages rather than opening overlays (2026-09-24). A link to a tab the rail
-  // does not declare resolves to the first tab and looks like it worked, so the links are read from
-  // each frame module's own page sources -- not a list kept here -- and each must open its own tab.
-  // Driven off FRAME_MODULE_IDS, so a module that moves onto the frame is covered the day it moves.
-  for (const module of FRAME_MODULE_IDS) {
-    it(`every page a ${module} card links to is a real tab, not the first-tab fallback`, () => {
-      const pagesDir = path.join(__dirname, "..", "src", "pages", PAGE_DIR[module]);
-      const targets = new Set<string>();
-      const pattern = new RegExp(`\\bto="(\\/${module}\\/[a-z]+)"`, "g");
-      for (const f of fs.readdirSync(pagesDir).filter((n) => n.endsWith(".tsx"))) {
-        for (const m of fs.readFileSync(path.join(pagesDir, f), "utf-8").matchAll(pattern)) targets.add(m[1]!);
+  // Cards link to pages rather than opening overlays (2026-09-24). A link to a tab the rail does
+  // not declare resolves to the first tab and looks like it worked, so every `to="/<page>/<tab>"`
+  // in the web source is read -- not a list kept here -- and each must open its own tab. That
+  // covers links across pages too (flies' live-pilot tile to Live, 2026-09-25).
+  const links = new Set<string>();
+  const walk = (dir: string): void => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name.endsWith(".tsx")) {
+        for (const m of fs.readFileSync(p, "utf-8").matchAll(/\bto="(\/([a-z]+)\/[a-z]+)"/g)) {
+          if (isModuleId(m[2]!)) links.add(m[1]!);
+        }
       }
-      expect(targets.size).toBeGreaterThan(0);
-      const slides = NAV_DECL[module]!.slides;
-      for (const to of targets) {
-        const id = to.split("/")[2]!;
-        const label = slides.find((s) => s.id === id)?.label;
-        expect(label, `${to} is not a declared ${module} tab`).toBeDefined();
-        expect(text(render(to)), `${to} did not open its own tab`).toContain(`${MODULE_LABEL[module]} / ${label!}`);
-      }
-    });
-  }
+    }
+  };
+  walk(path.join(__dirname, "..", "src"));
 
-  it("a lightbox module grew no rail — the two shapes stay apart", () => {
-    const html = render("/gex");
-    expect(html).toContain("GEX");
-    expect(html).not.toContain('aria-label="modules"');
-    expect(html).not.toContain("mf-nav");
+  it("finds card links on every trading module's pages", () => {
+    // A regex that silently matched nothing would pass every check below.
+    for (const module of TRADING_MODULE_ORDER) {
+      expect([...links].some((l) => l.startsWith(`/${module}/`)), `no card links found for ${module}`).toBe(true);
+    }
+  });
+
+  it("every page a card links to is a real tab, not the first-tab fallback", () => {
+    for (const to of links) {
+      const [, module, id] = to.split("/") as [string, string, string];
+      if (!isModuleId(module)) continue;
+      const label = NAV_DECL[module].slides.find((sl) => sl.id === id)?.label;
+      expect(label, `${to} is not a declared ${module} tab`).toBeDefined();
+      expect(text(render(to)), `${to} did not open its own tab`).toContain(`${MODULE_LABEL[module]} / ${label!}`);
+    }
   });
 });
 
-describe("the reports/gex/advisor/config routes", () => {
-  // Reports, GEX, Advisor and Config are suite-level surfaces given the same lightbox carousel
-  // treatment as the trading modules (2026-09) -- they resolve through the same
-  // `OverviewWithLightbox` and hit the same SSR-can't-render-a-portal wall the module routes
-  // describe block already covers.
-  it("/reports resolves to the reports lightbox, not the catch-all", () => {
-    const html = render("/reports");
-    expect(html).toContain("Reports");
-    expect(html).not.toContain("Page not found");
-  });
+describe("the suite surfaces are on the frame", () => {
+  // GEX, Live, Reports, Advisor and Config moved off the lightbox on 2026-09-25, the last five.
+  // Each renders the rail, opens out under its own name, and resolves its tab from the URL.
+  const cases: Array<[string, string]> = [
+    ["/gex/skew", "GEX / iv skew"],
+    ["/gex", "GEX / gex"],
+    ["/live", "Live / today"],
+    ["/reports/eod", "Reports / eod"],
+    ["/reports", "Reports / morning"],
+    ["/advisor", "Advisor / advisor"],
+    ["/config/prefs", "Config / prefs"],
+    ["/config", "Config / arms"], // "arms & profiles": the ampersand is escaped in markup
+  ];
+  for (const [route, crumb] of cases) {
+    it(`${route} renders the rail and opens on ${crumb}`, () => {
+      const html = render(route);
+      expect(html).toContain('aria-label="modules"');
+      // NavLink marks the current tab only when the URL names it, as on every other page.
+      if (route.split("/").length > 2) expect(html).toContain('aria-current="page"');
+      expect(text(html)).toContain(crumb);
+      expect(html).not.toContain("Page not found");
+    });
+  }
 
-  it("/gex resolves to the gex lightbox, not the catch-all", () => {
-    const html = render("/gex");
-    expect(html).toContain("GEX");
-    expect(html).not.toContain("Page not found");
+  it("an unknown tab on a suite surface falls back to its first tab rather than 404ing", () => {
+    expect(text(render("/gex/profile"))).toContain("GEX / gex");
   });
+});
 
-  it("/advisor resolves to the advisor lightbox, not the catch-all", () => {
-    const html = render("/advisor");
-    expect(html).toContain("Advisor");
-    expect(html).not.toContain("Page not found");
-  });
-
-  it("/config resolves to the config lightbox, not the catch-all", () => {
-    const html = render("/config");
-    expect(html).toContain("Config");
-    expect(html).not.toContain("Page not found");
-  });
-
+describe("the old report routes", () => {
   it("/morning and /review are still routed — they do not fall through to not-found", () => {
     // `<Navigate>` redirects through a state update, which a single server-render pass never runs,
     // so the destination's content is not what comes back here. What IS verifiable is that both

@@ -1,23 +1,17 @@
-/**
- * The seven trading modules, in the same order the header menu lists them
- * (`components/shell/HeaderMenu.tsx`) -- one order, so "next slide" at a module's last slide and
- * the nav dropdown agree about what "next" means.
- */
+/** The seven trading modules, in the order the suite lists them. */
 export const TRADING_MODULE_ORDER = ["meic", "flies", "pmcc", "curve", "bwb", "calendars", "earnings"] as const;
 
 export type TradingModuleId = (typeof TRADING_MODULE_ORDER)[number];
 
 /**
- * The suite-level surfaces (2026-09): not module books, but given the same lightbox carousel
- * treatment as the trading modules -- overlay, slide rail, keyboard nav -- rather than a separate
- * standalone-page style. They sit after the trading modules in the carousel ring, so stepping past
- * Earnings reaches GEX rather than wrapping straight back to MEIC.
+ * The suite-level surfaces: not module books, but pages on the same frame as the trading modules
+ * (since 2026-09-25) -- a rail of tabs and a content pane -- rather than a separate page style.
  */
 export const SUITE_ORDER = ["gex", "live", "reports", "advisor", "config"] as const;
 
 export type SuiteId = (typeof SUITE_ORDER)[number];
 
-/** Every id the lightbox carousel and its ring (next/prev module) know how to open. */
+/** Every page on the frame: `/:module` and `/:module/:slide`. */
 export const MODULE_ORDER = [...TRADING_MODULE_ORDER, ...SUITE_ORDER] as const;
 
 export type ModuleId = (typeof MODULE_ORDER)[number];

@@ -5,11 +5,10 @@ import { navSlideIds, resolveSlide } from "./navGroups";
 import type { SlideDef } from "./types";
 
 /**
- * What a module renders inside, once it is on the frame rather than in a lightbox.
+ * What every page renders inside: the breadcrumb header, the integrity drawer, and the body.
  *
- * Deliberately the SAME prop contract as `LightboxFrame`, so converting a module is one import
- * line and nothing else: the eleven that have not moved keep working untouched, and the two
- * systems coexist behind `registry.ts` until they have all been swept.
+ * It took over the old `LightboxFrame`'s prop contract unchanged, so each page moved onto the frame
+ * with one import line (2026-09-22 to 2026-09-25); the lightbox was removed once the last had moved.
  *
  * What it keeps: slide resolution and the replace-navigate for an id the module does not have,
  * the query string riding along on every tab change, and the body staying mounted while only the

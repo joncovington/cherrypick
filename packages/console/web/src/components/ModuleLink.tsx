@@ -3,9 +3,9 @@ import { Link } from "react-router-dom";
 import { isModuleId } from "../lightbox/moduleOrder";
 
 /**
- * A module name rendered as a link to its lightbox (`/<module>`) when `id` is one of the seven
- * real modules, and as a plain element otherwise -- several producers/rows carry an id with no
- * lightbox at all (streamer, gex), and linking those would be a dead click. Two shapes share this
+ * A module name rendered as a link to its page (`/<module>`) when `id` names one, and as a plain
+ * element otherwise -- several producers/rows carry an id with no page at all (streamer), and
+ * linking those would be a dead click. Two shapes share this
  * same `isModuleId` gate: a table cell (`ModuleCellLink`, `module-link` styling) and a chip
  * (`ModuleChipLink`, kept as a chip element either way so its tone class still applies).
  */

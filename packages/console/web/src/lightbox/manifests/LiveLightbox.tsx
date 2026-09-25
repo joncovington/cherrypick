@@ -1,11 +1,11 @@
 import { LivePage, useLiveFlies } from "../../pages/Live/LivePage";
 import { LoopPill } from "../../components/ScopeBar";
-import { LightboxFrame } from "../LightboxFrame";
+import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
 
 /**
- * The Live page (2026-09-17): the flies live pilot's day as a suite-level lightbox. One slide,
- * read-only, no order path. The header carries the arming strip -- armed for today or not, the
+ * The Live page (2026-09-17): the flies live pilot's day, on the module frame since 2026-09-25.
+ * One page, read-only, no order path. The header carries the arming strip -- armed for today or not, the
  * halt flag, the pilot's arm and symbol -- and the live loop's own pill, so the first glance says
  * whether anything can trade before the tiles say what it did.
  */
@@ -31,5 +31,5 @@ function LivePill() {
 }
 
 export function LiveLightbox({ slide }: { slide: string }) {
-  return <LightboxFrame module="live" slide={slide} slides={slides} session={null} badge={<ArmBadge />} loopPill={<LivePill />} />;
+  return <ModuleFrame module="live" slide={slide} slides={slides} session={null} badge={<ArmBadge />} loopPill={<LivePill />} />;
 }

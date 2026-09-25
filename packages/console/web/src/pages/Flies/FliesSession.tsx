@@ -238,10 +238,10 @@ export function FliesSession({
         foot={adviceFoot}
       />
 
-      {/* No link yet: the Live page is still an overlay module, and a card here opens pages, never
-          overlays. It gets one when Live moves onto the module frame. */}
       <StatTile
         label="live pilot"
+        to="/live/today"
+        toLabel="the live pilot's day: arming, orders and fills"
         value={lv === undefined ? null : liveTrades > 0 && liveNet !== null ? fmtMoney(liveNet) : armedHere ? "armed" : "off"}
         tone={liveTrades > 0 && liveNet !== null ? (liveNet >= 0 ? "pos" : "neg") : "dim"}
         foot={

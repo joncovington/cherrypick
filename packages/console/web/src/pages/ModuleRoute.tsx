@@ -1,19 +1,15 @@
 import { Suspense } from "react";
 import { useParams } from "react-router-dom";
 import { NotFoundPage } from "./NotFoundPage";
-import { OverviewWithLightbox } from "./Overview/OverviewWithLightbox";
 import { ModuleNav } from "../components/shell/ModuleNav";
 import { FrameChrome } from "../lightbox/ModuleFrame";
-import { MODULE_FRAMES, isFrameModule } from "../lightbox/registry";
+import { MODULE_FRAMES } from "../lightbox/registry";
 import { isModuleId } from "../lightbox/moduleOrder";
 import { NAV_DECL, resolveSlide } from "../lightbox/navGroups";
 
 /**
- * `/:module` and `/:module/:slide` for both shapes of module page.
- *
- * A module still on the lightbox goes to `OverviewWithLightbox` exactly as before — the Overview
- * underneath, the dialog portalled over it. A module on the frame renders here instead, inside
- * the shell's own outlet, as a rail plus a content pane.
+ * `/:module` and `/:module/:slide`: every page renders here, inside the shell's own outlet, as a
+ * rail plus a content pane.
  *
  * The rail and the breadcrumb sit OUTSIDE the Suspense boundary deliberately. The manifest is
  * lazy, and React's server renderer emits the fallback rather than resolving it, so anything
@@ -25,10 +21,9 @@ import { NAV_DECL, resolveSlide } from "../lightbox/navGroups";
 export function ModuleRoute() {
   const { module = "", slide = "" } = useParams();
   if (!isModuleId(module)) return <NotFoundPage />;
-  if (!isFrameModule(module)) return <OverviewWithLightbox />;
 
   const Frame = MODULE_FRAMES[module];
-  const slides = NAV_DECL[module]?.slides ?? [];
+  const slides = NAV_DECL[module].slides;
   const activeId = resolveSlide(module, slide, slides);
   const label = slides.find((s) => s.id === activeId)?.label ?? activeId;
 

@@ -736,7 +736,7 @@ export function ExperimentCard({
  * Every running and queued experiment in one table (2026-09-12): the at-a-glance answer the
  * cards below give only when expanded — how far each has got, what its last scored session did,
  * where it stands against control, and how far the sample is from the gate. Each module's own
- * lightbox carries the full picture on its "advisor" slide; this is the cross-module roll-up.
+ * "advisor" page carries the full picture; this is the cross-module roll-up.
  */
 export function ExperimentRollup({ experiments }: { experiments: AdvisorExperiment[] }) {
   return (
@@ -796,7 +796,7 @@ export function ExperimentRollup({ experiments }: { experiments: AdvisorExperime
         </table>
       </div>
       <p className="muted">
-        Comparisons are as of the last evening pass. Each module's lightbox has an <em>advisor</em> slide with the
+        Comparisons are as of the last evening pass. Each module has an <em>advisor</em> page with the
         session-by-session strip, tomorrow's artifact and the queue.
       </p>
     </section>

@@ -264,7 +264,7 @@ changes as safe, and it is the only check that sees past the fallback below.
   upward", not "between 7659 and 7715"; a flat worst case is "at or below 7645"; and a book whose
   worst equals its best is "locked" — 2026-09-11 control was one, two stranded verticals whose
   loss four adjacent 5-wide flies cancel exactly at every price.
-- **Each module's lightbox carries an `advisor` slide; the advisor page is the cross-module
+- **Each module carries an `advisor` page; the Advisor page is the cross-module
   roll-up (2026-09-12).** A reader looking at a module asks "is my A/B working", and the advisor
   page answered that only after expanding one collapsed card per experiment — its at-a-glance
   signals were a status chip, an `underpowered` chip every active experiment carries, and a
@@ -277,19 +277,23 @@ changes as safe, and it is the only check that sees past the fallback below.
   it in all seven module manifests; the page's experiments tab opens with a roll-up table of the
   same numbers across modules. The two write actions (kill, dismiss) stay on the advisor page and
   only there; the module slides are read-only like every other module slide.
-- **A lightbox slide change is a handoff, not a remount.** `LightboxFrame` used to key the whole
+- **A tab change is a handoff, not a remount.** The old `LightboxFrame` used to key the whole
   scroll body on the slide id with the route fade on it, so every tab change unmounted the module's
   content and replayed a fade from opacity 0 — the module vanished and faded back. The body now
   stays mounted, the slide's own subtree is keyed with a 120ms settle from mostly-visible, and the
   scroll position resets explicitly (the remount used to do that for free). **The same rule bit
   again one level up (2026-09-22):** `Shell` keyed its outlet on the whole pathname, so a tab
   change remounted the module and refetched everything it had. It keys on the module segment now.
-- **Modules are moving off the lightbox onto a module frame, one at a time (2026-09-22).** A frame
-  module renders a persistent left rail and a content pane inside the shell; a lightbox module
-  still portals a dialog over the Overview. `registry.ts` holds `FRAME_MODULE_IDS` and two maps,
-  and `MODULE_LIGHTBOXES` is narrowed to exclude the converted ones so a module cannot sit in
-  both. `ModuleRoute` picks. **Flies is the pilot; GEX is a reparent only when its turn comes —
-  its chart, its `OI vs vol` default, its spot trail and its walls do not change.**
+- **Every page is on the module frame (2026-09-22 to 2026-09-25).** A page renders a persistent
+  left rail and a content pane inside the shell. The pages moved one at a time -- flies first, the
+  seven trading modules, then the suite surfaces (GEX, Live, Reports, Advisor, Config) last -- with
+  the lightbox (a dialog portalled over the Overview) shipping beside the frame until the last one
+  moved; then it, its carousel ring and its CSS were removed. `registry.ts`'s `MODULE_FRAMES` and
+  `navGroups.ts`'s `NAV_DECL` are both full `Record`s over `ModuleId`, so a page added to
+  `moduleOrder.ts` without a manifest and a declaration does not compile. GEX moved as a reparent
+  only: its chart, its `OI vs vol` default, its spot trail and its walls did not change. Advisor
+  stays one page holding its own four tabs, because it carries write actions wired through state
+  that spans the page (`navGroups.ts` says why).
   - **The rail is static data (`lightbox/navGroups.ts`), not the manifest.** Manifests are `lazy()`
     and React's server renderer emits the Suspense fallback rather than resolving them, so nothing
     inside a manifest is visible to `renderToString` — which is every test this package has. The
@@ -308,8 +312,9 @@ changes as safe, and it is the only check that sees past the fallback below.
     tables are pages in the rail (flies' `tables` group: books, positions, history), not overlay
     sheets -- they were `DetailSheet`s from 2026-09-22 until 2026-09-24, when every place a reader
     can go became a page that can be reloaded, shared and reached from the rail. Two checks:
-    `routes.test.tsx` reads each `to="/flies/…"` from the pages' own source and requires it to
-    resolve to that tab (a link to an undeclared tab silently lands on the first one), and
+    `routes.test.tsx` reads every `to="/<page>/<tab>"` in the web source -- links across pages
+    included, like flies' live-pilot tile to `/live/today` -- and requires each to resolve to that
+    tab (a link to an undeclared tab silently lands on the first one), and
     `pnpm ui-check --route /flies/session --links` follows every card link in real Chrome.
   - **A card's tone comes only from the sign of a number or a flag a writer already set.** This is
     the read-surface rule (the console computes no verdicts) applied to pixels, and it matters more
@@ -414,7 +419,7 @@ What that means per surface:
 
 ## The Live page: the flies live pilot's day (2026-09-17)
 
-`/live` is a suite-level lightbox (`lightbox/manifests/LiveLightbox.tsx`, page `pages/Live/`) over
+`/live` is a suite-level page on the frame (`lightbox/manifests/LiveLightbox.tsx`, page `pages/Live/`) over
 one endpoint, `GET /api/live/flies` (`routes/live.ts` -> `readers/fliesLive.ts`). It composes
 readers that already existed -- the arming strip from `services/liveLock`, the loop pill from
 `readFliesLoopStatus`, the feed from `readFliesJournal`, the at-risk figure from
@@ -511,9 +516,8 @@ pmcc and calendars have their own tests on schema fixtures generated from the mo
 each position through `positionCash`, summed per week and arm, with exit and net null until every
 position -- delivered shares included -- has closed, and totals over finished weeks only.
 
-All seven trading modules are on the module frame and the standard as of 2026-09-25. The suite
-surfaces (Live, Reports, Advisor, GEX, Config) are still lightboxes; a card that would link to one
-(the flies live-pilot tile) has no link until it moves, since a card opens pages, never overlays.
+All seven trading modules are on the module frame and the standard as of 2026-09-25, and the
+suite surfaces joined them the same day, so the flies live-pilot tile links to `/live/today`.
 
 ## History-table controls (2026-09-25, every trade module)
 

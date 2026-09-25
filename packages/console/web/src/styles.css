@@ -1189,22 +1189,6 @@ select.text-input {
   animation: view-fade-in 150ms ease-out;
 }
 
-/* A lightbox slide handoff: the incoming slide settles in from mostly-visible rather than from
-   blank, so a tab change reads as the content changing, not the module disappearing. The body
-   around it stays mounted (see LightboxFrame). */
-@keyframes lb-slide-in {
-  from {
-    opacity: 0.55;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.lb-slide {
-  animation: lb-slide-in 120ms ease-out;
-}
-
 /* Trade-event and action toasts. Entrance only, matching the lightbox's own rule: a toast unmounts
    on its own timer (lib/toast.ts) or a click, and animating an unmount would need to outlive the
    unmount itself -- the complexity this app's plain-CSS motion system deliberately stays out of. */
@@ -1294,9 +1278,6 @@ select.text-input {
   .flash-down,
   .roll,
   .view-fade,
-  .lb-slide,
-  .lb-backdrop,
-  .lb-frame,
   .toast {
     animation: none;
   }
@@ -2699,211 +2680,10 @@ select.text-input {
   box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.5);
 }
 
-/* ---- Module lightbox carousel (2026-09) ------------------------------------------------------- */
-/* Each module opens as a full-screen carousel over the Overview (the backdrop stays mounted and
-   polling, inert while this is open) -- see web/src/lightbox/. */
-
-.lb-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(5, 6, 8, 0.72);
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.5rem;
-  animation: lb-backdrop-in 160ms ease-out;
-}
-
-.lb-frame {
-  width: min(1600px, 100%);
-  height: 100%;
-  max-height: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  outline: none;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
-  animation: lb-frame-in 160ms ease-out;
-}
-
-/* Lightbox open: the overlay-over-Overview reinforced with a brief fade+rise rather than a hard
-   cut. No exit animation -- the frame unmounts on close (a route change away from the module),
-   and animating an unmount would need to outlive the unmount itself, which is the kind of
-   complexity this app's plain-CSS motion system deliberately stays out of. */
-@keyframes lb-backdrop-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes lb-frame-in {
-  from {
-    opacity: 0;
-    transform: translateY(0.5rem) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.lb-head {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  padding: 0.75rem 1.1rem;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.lb-head h1 {
-  font-size: 1.05rem;
-  margin: 0;
-  letter-spacing: 0.03em;
-}
-
-.lb-nav {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin-left: auto;
-}
-
-.lb-count {
-  font-size: 12px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  padding: 0 0.3rem;
-}
-
-.lb-arrow {
-  width: 1.9rem;
-  height: 1.9rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg-card);
-  color: var(--text);
-  cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
-}
-
-.lb-arrow:hover {
-  border-color: var(--text-muted);
-}
-
-.lb-arrow.active {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.lb-rail {
-  display: flex;
-  gap: 0.35rem;
-  flex-wrap: wrap;
-  padding: 0.55rem 1.1rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-raised);
-  flex-shrink: 0;
-}
-
-.lb-rail-chip {
-  font: inherit;
-  font-size: 11.5px;
-  letter-spacing: 0.03em;
-  padding: 0.25rem 0.65rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-}
-
-.lb-rail-chip:hover {
-  color: var(--text);
-}
-
-.lb-rail-chip.active {
-  color: var(--text);
-  background: rgba(210, 63, 87, 0.12);
-  border-color: var(--accent);
-}
-
-.lb-rail-chip:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.lb-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 1rem 1.1rem 1.25rem;
-}
-
-/* The Overview stays mounted and polling behind the lightbox, but must not be reachable by tab
-   or by a stray click while a carousel dialog is open. */
-.shell[inert] {
-  pointer-events: none;
-}
-
-body.lb-open {
-  overflow: hidden;
-}
-
+/* A manifest's `persistentTop` content (MEIC's era note, Config's lock): pinned above the page
+   body on every tab. The class name is the lightbox's, from before the suite moved to the frame. */
 .lb-persistent {
   padding: 0.5rem 1.1rem 0;
-  flex-shrink: 0;
-}
-
-.lb-footer {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  border-top: 1px solid var(--border);
-  background: var(--bg-raised);
-  padding: 0.35rem 1.1rem;
-}
-
-.lb-footer-chip {
-  font: inherit;
-  font-size: 12px;
-  color: var(--text-muted);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0.15rem 0;
-}
-
-.lb-footer-chip:hover,
-.lb-footer-chip.active {
-  color: var(--text);
-}
-
-.lb-footer-chip.chip-warn {
-  color: var(--warn);
-}
-
-/* Opens UPWARD from the footer, over the slide body -- the same "drawer over content, page never
-   grows" idiom the Overview's status bar uses. */
-.lb-integrity-drawer {
-  max-height: min(55vh, 26rem);
-  overflow: auto;
-  padding: 0.75rem 1.1rem;
-  border-top: 1px solid var(--border);
-  background: var(--bg);
   flex-shrink: 0;
 }
 
@@ -3175,8 +2955,7 @@ body.lb-open {
 }
 
 /* ---- the module frame (2026-09-22) ----
-   A module that has been swept renders here instead of in a lightbox: a persistent rail on the
-   left, a sub-header carrying the breadcrumb and the module's own controls, and a body that
+   Every page but the Overview renders here: a persistent rail on the left, a sub-header carrying the breadcrumb and the module's own controls, and a body that
    scrolls on its own. The shell's content pane gives up its padding and its scrollbar for these
    (`.shell-content-flush` / `.view-fill`) so the rail can sit against the header and the body
    can own the only scroll on the page. */

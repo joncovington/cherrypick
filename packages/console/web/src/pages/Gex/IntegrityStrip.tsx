@@ -28,7 +28,7 @@ function age(seconds: number | null): string {
  * calendar, so it needs no holiday table to be right.
  */
 /** Whether this reading has anything the footer chip should flag -- same thresholds the strip
- *  itself renders against, exported so the lightbox wrapping this in a footer drawer can tone its
+ *  itself renders against, exported so the frame wrapping this in its integrity drawer can tone its
  *  chip without recomputing a second opinion of "stale". */
 export function gexHasAttention(data: GexPayload | undefined): boolean {
   const i = data?.integrity;

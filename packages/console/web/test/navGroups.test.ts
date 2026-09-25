@@ -6,6 +6,7 @@ import {
   navSlideIds,
   resolveSlide,
 } from "../src/lightbox/navGroups";
+import { MODULE_ORDER } from "../src/lightbox/moduleOrder";
 
 /**
  * The nav declaration is a second copy of something each manifest also states, so the failures
@@ -66,10 +67,28 @@ describe("resolveSlide", () => {
   });
 });
 
-describe("a module with no declaration", () => {
-  it("has no static slides, so keyboard stepping declines rather than guessing", () => {
-    expect(navSlideIds("gex")).toEqual([]);
-  });
+describe("every page's nav declaration", () => {
+  // The flies checks above, over every page on the frame -- the suite surfaces included since they
+  // moved (2026-09-25). Driven off MODULE_ORDER, so a page added there is covered the day it lands.
+  for (const module of MODULE_ORDER) {
+    it(`${module}: every tab is unique, reachable from the rail, and every old id lands on a real one`, () => {
+      const decl = NAV_DECL[module];
+      const ids = navSlideIds(module);
+      expect(ids.length).toBeGreaterThan(0);
+      expect(new Set(ids).size).toBe(ids.length);
+      const { groups, ungrouped, unknown } = navGroups(module, decl.slides);
+      expect(ungrouped).toEqual([]);
+      expect(unknown).toEqual([]);
+      expect(groups.flatMap((g) => g.slides.map((s) => s.id)).sort()).toEqual([...ids].sort());
+      for (const [old, replacement] of Object.entries(decl.legacy ?? {})) {
+        expect(ids).toContain(replacement);
+        expect(ids).not.toContain(old);
+      }
+    });
+  }
+});
+
+describe("a module that declares no groups", () => {
 
   it("groups whatever it is handed into one unlabelled run", () => {
     const slides = [

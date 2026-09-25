@@ -5,11 +5,11 @@ import { SECTIONS } from "../../pages/Config/fieldMeta";
 import { useConfigModel, useLockStatus } from "../../pages/Config/useConfigModel";
 import { useBoolPref, writePref } from "../../lib/prefs";
 import { clearAllStaged, useDirtyCount } from "../../pages/Config/stagedStore";
-import { LightboxFrame } from "../LightboxFrame";
+import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
 
 /**
- * Config as a lightbox (2026-09): one slide per section (`fieldMeta.ts`'s own `SECTIONS`, the
+ * Config on the module frame (2026-09-25; a lightbox before that): one page per section (`fieldMeta.ts`'s own `SECTIONS`, the
  * same grouping the standalone page stacked as cards -- `arms`, `modules`, `timing`, `notify`,
  * `dev` -- plus a `prefs` slide for the browser-local console preferences) instead of scrolling
  * past all six. `LockHero` -- the live-trading halt toggle, this page's one bounded write
@@ -88,7 +88,7 @@ export function ConfigLightbox({ slide }: { slide: string }) {
   ];
 
   return (
-    <LightboxFrame
+    <ModuleFrame
       module="config"
       slide={slide}
       slides={slides}

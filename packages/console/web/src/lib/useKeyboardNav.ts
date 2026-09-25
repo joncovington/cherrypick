@@ -19,8 +19,8 @@ function isEditable(target: EventTarget | null): boolean {
 /**
  * Mounted once, in the Shell. Listens, asks `reduceKey` what the key means, and navigates.
  *
- * Escape is deliberately not handled here: the detail sheet owns its own, and so does the
- * lightbox, and a third listener racing them is how a single Escape closes two things.
+ * Escape is deliberately not handled here: the detail sheet and the header menu own their own,
+ * and a second listener racing them is how a single Escape closes two things.
  */
 export function useKeyboardNav() {
   const navigate = useNavigate();

@@ -1,4 +1,5 @@
 import type { ModuleId } from "./moduleOrder";
+import { SECTIONS } from "../pages/Config/fieldMeta";
 
 /**
  * What the nav rail knows about a module's tabs, WITHOUT loading that module's code.
@@ -205,7 +206,48 @@ export const CALENDARS_SLIDES = [
 
 export type CalendarsSlideId = (typeof CALENDARS_SLIDES)[number]["id"];
 
-export const NAV_DECL: Partial<Record<ModuleId, ModuleNavDecl>> = {
+/**
+ * The suite surfaces, on the frame since 2026-09-25 -- the last five, so the lightbox is gone.
+ *
+ * - GEX keeps its four former page tabs.
+ * - Live is one page: the flies live pilot's day, read-only.
+ * - Reports keeps its two artifacts, `morning` and `eod`, written by separate packages.
+ * - Advisor stays ONE page holding its own internal tabs (today / proposals / experiments /
+ *   history). It carries the console's only two write actions besides Config's, wired through
+ *   session and tab state that spans the page, and splitting that across frame pages is a change
+ *   to a control path the suite keeps narrow -- a separate piece of work if it is ever wanted.
+ * - Config has a page per `fieldMeta.ts` section plus `prefs`, read from that list rather than
+ *   copied, so a section added there is a page here without a second edit.
+ */
+export const GEX_SLIDES = [
+  { id: "gex", label: "gex" },
+  { id: "skew", label: "iv skew" },
+  { id: "volume", label: "volume" },
+  { id: "history", label: "history" },
+] as const satisfies readonly NavSlide[];
+
+export type GexSlideId = (typeof GEX_SLIDES)[number]["id"];
+
+export const LIVE_SLIDES = [{ id: "today", label: "today" }] as const satisfies readonly NavSlide[];
+
+export const REPORTS_SLIDES = [
+  { id: "morning", label: "morning" },
+  { id: "eod", label: "eod" },
+] as const satisfies readonly NavSlide[];
+
+export const ADVISOR_SLIDES = [{ id: "advisor", label: "advisor" }] as const satisfies readonly NavSlide[];
+
+export const CONFIG_SLIDES: readonly NavSlide[] = [
+  ...SECTIONS.map((s) => ({ id: s.id, label: s.title.toLowerCase() })),
+  { id: "prefs", label: "prefs" },
+];
+
+/**
+ * Every page in the suite declares its tabs here. A full `Record` since the last lightbox moved
+ * (2026-09-25): a module added to `moduleOrder.ts` without a declaration does not compile, where
+ * before it would have rendered an empty rail.
+ */
+export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   flies: {
     slides: FLIES_SLIDES,
     groups: [
@@ -289,9 +331,14 @@ export const NAV_DECL: Partial<Record<ModuleId, ModuleNavDecl>> = {
     ],
     legacy: { now: "session" },
   },
+  gex: { slides: GEX_SLIDES },
+  live: { slides: LIVE_SLIDES },
+  reports: { slides: REPORTS_SLIDES },
+  advisor: { slides: ADVISOR_SLIDES },
+  config: { slides: CONFIG_SLIDES },
 };
 
-/** The declared ids, in rail order. Empty for a module still on the lightbox. */
+/** The declared ids, in rail order. */
 export function navSlideIds(module: ModuleId): string[] {
   return (NAV_DECL[module]?.slides ?? []).map((s) => s.id);
 }

@@ -1,16 +1,14 @@
 import { MorningPage } from "../../pages/Morning/MorningPage";
 import { ReviewPage } from "../../pages/Review/ReviewPage";
-import { LightboxFrame } from "../LightboxFrame";
+import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
 
 /**
- * The suite's two session reports as a lightbox (2026-09): the pre-open morning pack and the
- * end-of-day review, given the same overlay/rail/keyboard-nav treatment as the trading modules.
+ * The suite's two session reports, on the module frame since 2026-09-25: the pre-open morning pack
+ * and the end-of-day review, one page each.
  * They stay separate artifacts written by separate packages (`packages/overview`,
- * `packages/review`) rendered by their own unchanged page components -- this lightbox holds the
- * slide and nothing else, same as the old `ReportsPage` held only the tab. The old `?tab=eod`
- * query-param convention is now the `eod` slide id (`/reports/eod`), matching every other
- * lightbox's own slide-in-the-URL convention.
+ * `packages/review`) rendered by their own unchanged page components -- this manifest holds the
+ * page list and nothing else. `/reports/eod` is the review; `/review` redirects there.
  */
 const slides: SlideDef[] = [
   { id: "morning", label: "morning", render: () => <MorningPage /> },
@@ -18,5 +16,5 @@ const slides: SlideDef[] = [
 ];
 
 export function ReportsLightbox({ slide }: { slide: string }) {
-  return <LightboxFrame module="reports" slide={slide} slides={slides} session={null} />;
+  return <ModuleFrame module="reports" slide={slide} slides={slides} session={null} />;
 }
