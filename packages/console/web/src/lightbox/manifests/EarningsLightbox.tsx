@@ -8,12 +8,14 @@ import { IntegrityStrip } from "../../pages/Earnings/IntegrityStrip";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
-import { BarChart } from "../../components/Charts";
+import { fmtCash, fmtPrice } from "../../lib/format";
 import { EarningsDetailCards } from "../../pages/Earnings/EarningsDetail";
 import { EarningsLiveCard, EarningsManagementLog } from "../../pages/Earnings/EarningsLive";
+import { EarningsSession, type EarningsAnalytics } from "../../pages/Earnings/EarningsSession";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
-import { LightboxFrame } from "../LightboxFrame";
+import { ModuleFrame } from "../ModuleFrame";
+import { EARNINGS_SLIDES, type EarningsSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
 
 interface UpcomingRow {
@@ -37,6 +39,8 @@ interface UpcomingPayload {
   rows: UpcomingRow[];
 }
 
+const EARNINGS_LABEL = Object.fromEntries(EARNINGS_SLIDES.map((s) => [s.id, s.label])) as Record<EarningsSlideId, string>;
+
 function useUpcoming() {
   return useQuery<UpcomingPayload>({
     queryKey: ["earnings-upcoming"],
@@ -53,22 +57,6 @@ function tierClass(tier: string): string {
   if (tier === "recommended") return "chip-ok";
   if (tier === "near_miss") return "chip-warn";
   return "";
-}
-
-interface EarningsAnalytics {
-  kpis: { totalNet: number; closedTrades: number; expectancy: number | null; strategiesActive: number };
-  openPositions: Array<{
-    strategy: string;
-    symbol: string;
-    quantity: number | null;
-    credit: number | null;
-    netOfCost: number | null;
-    maxLoss: number | null;
-    entryCost: number | null;
-    expiration: string | null;
-  }>;
-  weekly: Array<{ week: string; net: number }>;
-  strategies: Array<{ strategy: string; trades: number; winRatePct: number | null; profitFactor: number | null; expectancy: number | null; net: number }>;
 }
 
 function useEarningsAnalytics(mode: TradingMode, era: string | null) {
@@ -98,6 +86,10 @@ function EraScope({ era, onChange }: { era: string | null; onChange: (v: string 
   );
 }
 
+/**
+ * earnings on the module frame (2026-09-25): a left rail of pages, and nothing on the surface opens
+ * an overlay. The tab names and the reasons for them are declared in `navGroups.ts`.
+ */
 export function EarningsLightbox({ slide }: { slide: string }) {
   const [mode, setMode] = useMode();
   const [era, setEra] = useState<string | null>(null);
@@ -107,59 +99,34 @@ export function EarningsLightbox({ slide }: { slide: string }) {
   const upcoming = useUpcoming();
   const analytics = useEarningsAnalytics(mode, era);
   const a = analytics.data;
+  const t = data?.totals;
 
-  const slides: SlideDef[] = [
+  const slides: Array<SlideDef & { id: EarningsSlideId }> = [
     {
-      id: "now",
-      label: "now",
+      id: "session",
+      label: EARNINGS_LABEL.session,
+      render: () => (
+        <EarningsSession
+          analytics={a}
+          loading={analytics.isLoading}
+          recommended={upcoming.data === undefined ? null : upcoming.data.rows.filter((r) => r.tier === "recommended").length}
+        />
+      ),
+    },
+    {
+      id: "decisions",
+      label: EARNINGS_LABEL.decisions,
       render: () => (
         <div className="cards cards-wide">
-          <EarningsLiveCard />
           <EarningsManagementLog />
         </div>
       ),
     },
     {
-      id: "overview",
-      label: "overview",
+      id: "strategies",
+      label: EARNINGS_LABEL.strategies,
       render: () => (
         <div className="cards cards-wide">
-          <section className="card">
-            <h2>Strategy test — {mode}</h2>
-            <div className="stats-grid">
-              <div className="stat-tile">
-                <span className="stat-label">net expectancy / trade</span>
-                <span className={`stat-value ${(a?.kpis.expectancy ?? 0) >= 0 ? "pnl-pos" : "pnl-neg"}`}>
-                  {a?.kpis.expectancy != null ? fmtMoney(a.kpis.expectancy) : "—"}
-                </span>
-              </div>
-              <div className="stat-tile">
-                <span className="stat-label">total net P&L</span>
-                <span className={`stat-value ${(a?.kpis.totalNet ?? 0) >= 0 ? "pnl-pos" : "pnl-neg"}`}>
-                  {a !== undefined ? fmtMoney(a.kpis.totalNet) : "—"}
-                </span>
-              </div>
-              <div className="stat-tile">
-                <span className="stat-label">closed trades</span>
-                <span className="stat-value">{a?.kpis.closedTrades ?? "—"}</span>
-              </div>
-              <div className="stat-tile">
-                <span className="stat-label">strategies active</span>
-                <span className="stat-value">{a?.kpis.strategiesActive ?? "—"}</span>
-              </div>
-              <div className="stat-tile">
-                <span className="stat-label">capital at risk (open)</span>
-                <span className="stat-value">
-                  {a !== undefined ? fmtMoney(a.openPositions.reduce((s, p) => s + Math.abs(p.maxLoss ?? 0), 0)) : "—"}
-                </span>
-              </div>
-            </div>
-            {a !== undefined && a.weekly.length > 0 && (
-              <div style={{ marginTop: "0.8rem" }}>
-                <BarChart bars={a.weekly.slice(-16).map((w) => ({ x: w.week, y: w.net }))} height={140} />
-              </div>
-            )}
-          </section>
           <DataCard
             title="Cross-strategy comparison (net of costs)"
             headers={["strategy", "trades", "win rate", "profit factor", "expectancy", "net"]}
@@ -178,131 +145,54 @@ export function EarningsLightbox({ slide }: { slide: string }) {
               </tr>
             ))}
           </DataCard>
-          <DataCard
-            title="Open positions"
-            headers={["strategy", "sym", "qty", "credit/(debit)", "net of cost", "max loss", "entry cost", "exp"]}
-            numFrom={1}
-            loading={analytics.isLoading}
-            rowCount={a?.openPositions.length ?? 0}
-            empty="no open positions"
-          >
-            {a?.openPositions.map((p, i) => (
-              <tr key={`${p.symbol}-${i}`}>
-                <td>{p.strategy}</td>
-                <td>{p.symbol}</td>
-                <td>{fmtNum(p.quantity, 0)}</td>
-                <td>{p.credit != null ? fmtMoney(p.credit) : "—"}</td>
-                <td>{p.netOfCost != null ? <PnlCell v={p.netOfCost} /> : "—"}</td>
-                <td>{p.maxLoss != null ? fmtMoney(-Math.abs(p.maxLoss)) : "—"}</td>
-                <td className="muted">{p.entryCost != null ? fmtMoney(p.entryCost) : "—"}</td>
-                <td className="muted">{p.expiration ?? "—"}</td>
-              </tr>
-            ))}
-            {a !== undefined && a.openPositions.length > 0 && (
-              <tr>
-                <td colSpan={2} className="muted">{a.openPositions.length} open</td>
-                <td />
-                <td>{fmtMoney(a.openPositions.reduce((s, p) => s + (p.credit ?? 0), 0))}</td>
-                <td><PnlCell v={a.openPositions.reduce((s, p) => s + (p.netOfCost ?? 0), 0)} /></td>
-                <td className="pnl-neg">{fmtMoney(-a.openPositions.reduce((s, p) => s + Math.abs(p.maxLoss ?? 0), 0))}</td>
-                <td className="muted">{fmtMoney(a.openPositions.reduce((s, p) => s + (p.entryCost ?? 0), 0))}</td>
-                <td />
-              </tr>
-            )}
-          </DataCard>
+          <EarningsDetailCards mode={mode} era={era} />
         </div>
       ),
     },
-    { id: "detail", label: "strategy detail", render: () => <EarningsDetailCards mode={mode} era={era} /> },
-    // Always reads the paper ledger regardless of the page's own mode toggle -- calibrate's own
-    // "paper only" rule for promotion evidence, same as every other module's performance slide.
-    { id: "advisor", label: "advisor", render: () => <AdvisorSlide module="earnings" /> },
-    { id: "performance", label: "performance", render: () => <PerformanceSlide module="earnings" /> },
     {
-      id: "trades",
-      label: "trades",
+      id: "screening",
+      label: EARNINGS_LABEL.screening,
       render: () => (
-        <div className="cards cards-wide">
-          <DataCard
-            title={`Trades — ${(data?.trades.total ?? 0).toLocaleString()} across both books`}
-            headers={["", "opened", "sym", "strategy", "exp", "credit", "qty", "closed", "gross", "costs", "net"]}
-            numFrom={1}
-            loading={isLoading}
-            isError={isError}
-            busy={isPlaceholderData}
-            rowCount={data?.trades.rows.length ?? 0}
-            skeletonRows={8}
-            footer={
-              (data?.trades.total ?? 0) > 0 && (
-                <Pager
-                  offset={data?.trades.offset ?? tradesPage.page.offset}
-                  limit={data?.trades.limit ?? tradesPage.page.limit}
-                  total={data?.trades.total ?? 0}
-                  onOffset={tradesPage.setOffset}
-                  onLimit={tradesPage.setLimit}
-                />
-              )
-            }
-          >
-            {data?.trades.rows.map((t) => (
-              <tr key={`${t.mode}-${t.orderId}`}>
-                <td><PaperLiveBadge mode={t.mode} /></td>
-                <td>{t.openedAt?.slice(0, 10) ?? "—"}</td>
-                <td>{t.symbol}</td>
-                <td>{t.strategy}</td>
-                <td className="muted">{t.expiration ?? "—"}</td>
-                <td>{fmtMoney(t.entryCredit)}</td>
-                <td>{fmtNum(t.quantity, 0)}</td>
-                <td className="muted">{t.closedAt?.slice(0, 10) ?? "open"}</td>
-                {/* `pnl` is GROSS here -- earnings keeps its costs out of it -- and showed as "P&L" until
-                    2026-09-24. Net is the ledger's rule: pnl - entry_cost - exit_cost. */}
-                <td className="muted">{fmtMoney(t.pnl)}</td>
-                <td className="pnl-neg">{t.pnl !== null ? fmtMoney(t.costs) : "—"}</td>
-                <td><PnlCell v={t.pnl !== null ? t.pnl - (t.costs ?? 0) : null} /></td>
-              </tr>
-            ))}
-          </DataCard>
-          <DataCard
-            title={`Entry reviews (screened symbols) — ${(data?.reviews.total ?? 0).toLocaleString()} across both books`}
-            headers={["", "scan", "sym", "timing", "winrate", "IV/RV", "exp move", "selected", "reason"]}
-            numFrom={1}
-            loading={isLoading}
-            isError={isError}
-            busy={isPlaceholderData}
-            rowCount={data?.reviews.rows.length ?? 0}
-            skeletonRows={10}
-            footer={
-              (data?.reviews.total ?? 0) > 0 && (
-                <Pager
-                  offset={data?.reviews.offset ?? reviewsPage.page.offset}
-                  limit={data?.reviews.limit ?? reviewsPage.page.limit}
-                  total={data?.reviews.total ?? 0}
-                  onOffset={reviewsPage.setOffset}
-                  onLimit={reviewsPage.setLimit}
-                />
-              )
-            }
-          >
-            {data?.reviews.rows.map((r, i) => (
-              <tr key={`${r.mode}-${r.scanDate}-${r.symbol}-${i}`} className={r.selected ? "row-selected" : ""}>
-                <td><PaperLiveBadge mode={r.mode} /></td>
-                <td>{r.scanDate}</td>
-                <td>{r.symbol}</td>
-                <td className="muted">{r.timing ?? "—"}</td>
-                <td>{fmtNum(r.winrate, 1)}</td>
-                <td>{fmtNum(r.ivRvRatio, 2)}</td>
-                <td>{fmtNum(r.expectedMove, 2)}</td>
-                <td>{r.selected ? "✓" : ""}</td>
-                <td className="muted">{r.reason ?? "—"}</td>
-              </tr>
-            ))}
-          </DataCard>
-        </div>
+        <DataCard
+          title={`Entry reviews (screened symbols) — ${(data?.reviews.total ?? 0).toLocaleString()} across both books`}
+          headers={["", "scan", "sym", "timing", "winrate", "IV/RV", "exp move", "selected", "reason"]}
+          numFrom={1}
+          loading={isLoading}
+          isError={isError}
+          busy={isPlaceholderData}
+          rowCount={data?.reviews.rows.length ?? 0}
+          skeletonRows={10}
+          footer={
+            (data?.reviews.total ?? 0) > 0 && (
+              <Pager
+                offset={data?.reviews.offset ?? reviewsPage.page.offset}
+                limit={data?.reviews.limit ?? reviewsPage.page.limit}
+                total={data?.reviews.total ?? 0}
+                onOffset={reviewsPage.setOffset}
+                onLimit={reviewsPage.setLimit}
+              />
+            )
+          }
+        >
+          {data?.reviews.rows.map((r, i) => (
+            <tr key={`${r.mode}-${r.scanDate}-${r.symbol}-${i}`} className={r.selected ? "row-selected" : ""}>
+              <td><PaperLiveBadge mode={r.mode} /></td>
+              <td>{r.scanDate}</td>
+              <td>{r.symbol}</td>
+              <td className="muted">{r.timing ?? "—"}</td>
+              <td>{fmtNum(r.winrate, 1)}</td>
+              <td>{fmtNum(r.ivRvRatio, 2)}</td>
+              <td>{fmtNum(r.expectedMove, 2)}</td>
+              <td>{r.selected ? "✓" : ""}</td>
+              <td className="muted">{r.reason ?? "—"}</td>
+            </tr>
+          ))}
+        </DataCard>
       ),
     },
     {
       id: "upcoming",
-      label: "upcoming",
+      label: EARNINGS_LABEL.upcoming,
       render: () => (
         <DataCard
           title={`Upcoming earnings (forward scan${upcoming.data && upcoming.data.total > 0 ? ` — ${upcoming.data.done}/${upcoming.data.total}` : ""})`}
@@ -335,10 +225,106 @@ export function EarningsLightbox({ slide }: { slide: string }) {
         </DataCard>
       ),
     },
+    // Always reads the paper ledger regardless of the page's own mode toggle -- calibrate's own
+    // "paper only" rule for promotion evidence, same as every other module's performance slide.
+    { id: "performance", label: EARNINGS_LABEL.performance, render: () => <PerformanceSlide module="earnings" /> },
+    { id: "advisor", label: EARNINGS_LABEL.advisor, render: () => <AdvisorSlide module="earnings" /> },
+    {
+      id: "positions",
+      label: EARNINGS_LABEL.positions,
+      render: () => (
+        <div className="cards cards-wide">
+          <EarningsLiveCard />
+          <DataCard
+            title={`Open positions — ${mode} book, entry side`}
+            headers={["strategy", "sym", "exp", "qty", "price", "entry", "entry cost", "max loss"]}
+            numFrom={3}
+            loading={analytics.isLoading}
+            rowCount={a?.openPositions.length ?? 0}
+            empty="no open positions"
+          >
+            {a?.openPositions.map((p, i) => (
+              <tr key={`${p.symbol}-${i}`}>
+                <td>{p.strategy}</td>
+                <td>{p.symbol}</td>
+                <td className="muted">{p.expiration ?? "—"}</td>
+                <td>{fmtNum(p.quantity, 0)}</td>
+                <td>{fmtPrice(p.price)}</td>
+                <td>{fmtCash(p.credit)}</td>
+                <td className="muted" title="entry fees and slippage charged so far">{fmtMoney(p.entryCost)}</td>
+                <td>{p.maxLoss != null ? fmtMoney(-Math.abs(p.maxLoss)) : "—"}</td>
+              </tr>
+            ))}
+          </DataCard>
+        </div>
+      ),
+    },
+    {
+      id: "history",
+      label: EARNINGS_LABEL.history,
+      render: () => (
+        <DataCard
+          title={`History — ${(data?.trades.total ?? 0).toLocaleString()} closed across both books`}
+          headers={["", "opened", "closed", "sym", "strategy", "qty", "price", "entry", "exit", "how", "gross", "fees", "settle", "slip", "net", "exit reason"]}
+          numFrom={5}
+          loading={isLoading}
+          isError={isError}
+          busy={isPlaceholderData}
+          rowCount={data?.trades.rows.length ?? 0}
+          skeletonRows={8}
+          empty="nothing closed in this era yet"
+          footer={
+            (data?.trades.total ?? 0) > 0 && (
+              <>
+                {t !== undefined && t.trades > 0 && (
+                  <span
+                    className="chip"
+                    title="Over every closed trade in this era, both books — not just this page. Gross − fees − settlement − slippage = net: earnings charges slippage as a cost."
+                  >
+                    net <PnlCell v={t.net} /> · gross {fmtMoney(t.gross)} · fees {fmtMoney(t.fees)} · settlement{" "}
+                    {fmtMoney(t.settlementFees)} · slippage {fmtMoney(t.slippage)}
+                  </span>
+                )}
+                <Pager
+                  offset={data?.trades.offset ?? tradesPage.page.offset}
+                  limit={data?.trades.limit ?? tradesPage.page.limit}
+                  total={data?.trades.total ?? 0}
+                  onOffset={tradesPage.setOffset}
+                  onLimit={tradesPage.setLimit}
+                />
+              </>
+            )
+          }
+        >
+          {data?.trades.rows.map((r) => (
+            <tr key={`${r.mode}-${r.orderId}`}>
+              <td><PaperLiveBadge mode={r.mode} /></td>
+              <td>{r.openedAt?.slice(0, 10) ?? "—"}</td>
+              <td className="muted">{r.closedAt?.slice(0, 10) ?? "—"}</td>
+              <td>{r.symbol}</td>
+              <td>{r.strategy}</td>
+              <td>{fmtNum(r.quantity, 0)}</td>
+              <td>{fmtPrice(r.entryCredit)}</td>
+              <td>{fmtCash(r.entryCash)}</td>
+              <td>{fmtCash(r.exitCash)}</td>
+              <td className="muted">{r.exitKind ?? "—"}</td>
+              <td>{fmtMoney(r.gross)}</td>
+              <td className="muted" title={r.settlementFees === null ? "includes any settlement: its share was not recorded" : undefined}>
+                {fmtMoney(r.fees)}
+              </td>
+              <td className="muted">{r.settlementFees === null ? "n/r" : fmtMoney(r.settlementFees)}</td>
+              <td className="muted" title="charged as a cost in earnings, and subtracted">{fmtMoney(r.slippage)}</td>
+              <td><PnlCell v={r.net} /></td>
+              <td className="muted">{r.exitReason ?? "—"}</td>
+            </tr>
+          ))}
+        </DataCard>
+      ),
+    },
   ];
 
   return (
-    <LightboxFrame
+    <ModuleFrame
       module="earnings"
       slide={slide}
       slides={slides}

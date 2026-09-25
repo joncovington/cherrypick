@@ -123,6 +123,28 @@ export const BWB_SLIDES = [
 
 export type BwbSlideId = (typeof BWB_SLIDES)[number]["id"];
 
+/**
+ * earnings' tabs, on the frame since 2026-09-25. The old `now` (live marks and the management log)
+ * and `overview` (KPIs, the strategy comparison, open positions) are split by what they are:
+ * `session` is the book in tiles and shapes, `positions` the open trades (live marks, then the
+ * entry side), `decisions` the management log, `strategies` the comparison beside the old
+ * `detail`, and `screening` the entry reviews that sat under the trade log. `history` is the closed
+ * trades in the suite's standard layout; the old `trades` id reaches it.
+ */
+export const EARNINGS_SLIDES = [
+  { id: "session", label: "session" },
+  { id: "decisions", label: "decisions" },
+  { id: "strategies", label: "strategies" },
+  { id: "screening", label: "screening" },
+  { id: "upcoming", label: "upcoming" },
+  { id: "performance", label: "performance" },
+  { id: "advisor", label: "advisor" },
+  { id: "positions", label: "positions" },
+  { id: "history", label: "history" },
+] as const satisfies readonly NavSlide[];
+
+export type EarningsSlideId = (typeof EARNINGS_SLIDES)[number]["id"];
+
 export const NAV_DECL: Partial<Record<ModuleId, ModuleNavDecl>> = {
   flies: {
     slides: FLIES_SLIDES,
@@ -163,6 +185,16 @@ export const NAV_DECL: Partial<Record<ModuleId, ModuleNavDecl>> = {
       { label: "help", ids: ["guide"] },
     ],
     legacy: { now: "session" },
+  },
+  earnings: {
+    slides: EARNINGS_SLIDES,
+    groups: [
+      { label: "today", ids: ["session", "upcoming"] },
+      { label: "evidence", ids: ["decisions", "screening", "strategies"] },
+      { label: "study", ids: ["performance", "advisor"] },
+      { label: "tables", ids: ["positions", "history"] },
+    ],
+    legacy: { now: "session", overview: "session", detail: "strategies", trades: "history" },
   },
 };
 

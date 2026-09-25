@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { EarningsPayload, EarningsTradeRow, EntryReviewRow, TradingMode } from "@console/shared";
+import type { EarningsPayload, EarningsTradeRow, EarningsTradeTotals, EntryReviewRow, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { suiteEra, withReadOnlyDb, num, str, armColumnOf } from "./db.js";
+import { suiteEra, withReadOnlyDb, num, str, armColumnOf, hasColumn, type DatabaseHandle } from "./db.js";
 import { pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { isoStamp, sessionDate } from "../services/report.js";
@@ -29,13 +29,71 @@ function onOrAfter(stamp: unknown, since: string | null): boolean {
   return session === null || session >= since;
 }
 
+function round2(v: number): number {
+  return Math.round(v * 100) / 100;
+}
+
+/** A `trades` column, or NULL where the ledger lacks it (the live ledger's reduced schema). */
+function tradeCol(db: DatabaseHandle, name: string): string {
+  return hasColumn(db, "trades", name) ? name : "NULL";
+}
+
+/**
+ * How a closed trade left: its expired legs settled with something in the money, they expired
+ * worthless, or it was traded out. A calendar whose front month settled and whose back month was
+ * sold is `settled` when the front finished in the money, else `closed`.
+ */
+export function earningsExitKind(exitReason: string | null, settlementFees: number | null): EarningsTradeRow["exitKind"] {
+  if (exitReason === null) return null;
+  const itm = (settlementFees ?? 0) > 0;
+  if (exitReason === "expired") return itm ? "settled" : "expired";
+  if (exitReason === "front_expiry") return itm ? "settled" : "closed";
+  return "closed";
+}
+
+/**
+ * The standard's money columns for one trade. `pnl` is GROSS and the costs sit in
+ * entry_cost + exit_cost, which carry the slippage charge and (exit_cost) any settlement fee;
+ * each comes out once, so net stays `pnl − entry_cost − exit_cost` (core.ledgers' earnings rule).
+ */
+function earningsTradeCash(r: Record<string, unknown>): Pick<
+  EarningsTradeRow,
+  "entryCash" | "exitCash" | "exitKind" | "exitReason" | "gross" | "fees" | "settlementFees" | "slippage" | "net"
+> {
+  const qty = num(r["quantity"]) ?? 1;
+  const credit = num(r["entry_credit"]);
+  const gross = num(r["pnl"]);
+  const closed = r["closed_at"] != null && gross !== null;
+  const costs = r["entry_cost"] == null && r["exit_cost"] == null ? null : (num(r["entry_cost"]) ?? 0) + (num(r["exit_cost"]) ?? 0);
+  const settlementFees = closed ? num(r["settlement_fees"]) : null;
+  const slips = [num(r["entry_slippage"]), num(r["exit_slippage"])];
+  const slippage = slips[0] === null && slips[1] === null ? null : round2((slips[0] ?? 0) + (slips[1] ?? 0));
+  const entryCash = credit !== null ? round2(credit * 100 * qty) : null;
+  const exitReason = str(r["exit_reason"]);
+  return {
+    entryCash,
+    exitCash: closed && entryCash !== null ? round2(gross - entryCash) : null,
+    exitKind: closed ? earningsExitKind(exitReason, settlementFees) : null,
+    exitReason,
+    gross,
+    fees: costs === null ? null : round2(costs - (settlementFees ?? 0) - (slippage ?? 0)),
+    settlementFees,
+    slippage,
+    net: gross === null || costs === null ? null : round2(gross - costs),
+  };
+}
+
 function readTrades(dbPath: string, mode: TradingMode, since: string | null): EarningsTradeRow[] {
   return withReadOnlyDb<EarningsTradeRow[]>(dbPath, [], (db) =>
     db
       .prepare<[], Record<string, unknown>>(
         // `profile` until earnings' column moves; resolved per file, the live ledger included.
         `SELECT order_id, symbol, strategy, expiration, entry_credit, pnl, quantity, entry_cost, exit_cost,
-                opened_at, closed_at, ${armColumnOf(db, "trades")} AS arm
+                opened_at, closed_at, ${armColumnOf(db, "trades")} AS arm,
+                ${tradeCol(db, "exit_reason")} AS exit_reason,
+                ${tradeCol(db, "entry_slippage")} AS entry_slippage,
+                ${tradeCol(db, "exit_slippage")} AS exit_slippage,
+                ${tradeCol(db, "settlement_fees")} AS settlement_fees
            FROM trades ORDER BY opened_at DESC`,
       )
       .all()
@@ -49,10 +107,8 @@ function readTrades(dbPath: string, mode: TradingMode, since: string | null): Ea
         strategy: str(r["strategy"]) ?? "",
         expiration: str(r["expiration"]),
         entryCredit: num(r["entry_credit"]),
-        pnl: num(r["pnl"]),
-        costs:
-          r["entry_cost"] == null && r["exit_cost"] == null ? null : (num(r["entry_cost"]) ?? 0) + (num(r["exit_cost"]) ?? 0),
         quantity: num(r["quantity"]),
+        ...earningsTradeCash(r),
         // Epoch floats in this store, not strings — see isoStamp.
         openedAt: isoStamp(r["opened_at"]),
         closedAt: isoStamp(r["closed_at"]),
@@ -372,6 +428,9 @@ export interface EarningsAnalytics {
     strategy: string;
     symbol: string;
     quantity: number | null;
+    /** Net entry price per share, signed (credit +, debit −). */
+    price: number | null;
+    /** Whole-position entry cash, signed: price x 100 x quantity. */
     credit: number | null;
     netOfCost: number | null;
     maxLoss: number | null;
@@ -448,8 +507,12 @@ export function readEarningsAnalytics(
           strategy: str(r["strategy"]) ?? "?",
           symbol: str(r["symbol"]) ?? "?",
           quantity: num(r["quantity"]),
-          credit: credit !== null ? credit * 100 : null,
-          netOfCost: credit !== null ? credit * 100 - (entryCost ?? 0) : null,
+          // Per share, signed (credit +, debit −): the standard's one per-share column.
+          price: credit,
+          // Whole-position entry cash: x100 x contracts. It was x100 alone until 2026-09-25, which
+          // every one-contract position so far read correctly and a second contract would not.
+          credit: credit !== null ? round2(credit * 100 * (num(r["quantity"]) ?? 1)) : null,
+          netOfCost: credit !== null ? round2(credit * 100 * (num(r["quantity"]) ?? 1) - (entryCost ?? 0)) : null,
           maxLoss: num(r["capital_at_risk"]),
           entryCost,
           expiration: str(r["expiration"]),
@@ -555,7 +618,26 @@ export function readEarnings(
     }),
   );
 
-  return { trades: pageArray(trades, page.trades), reviews: pageArray(reviews, page.reviews), integrity };
+  // The history table is the CLOSED trades; open positions have their own page. Totals over every
+  // closed trade in scope, through the same arithmetic as each row.
+  const closed = trades.filter((t) => t.closedAt !== null && t.gross !== null);
+  const totals = closed.reduce<EarningsTradeTotals>(
+    (t, r) => ({
+      trades: t.trades + 1,
+      gross: round2(t.gross + (r.gross ?? 0)),
+      fees: round2(t.fees + (r.fees ?? 0)),
+      settlementFees: round2(t.settlementFees + (r.settlementFees ?? 0)),
+      slippage: round2(t.slippage + (r.slippage ?? 0)),
+      net: round2(t.net + (r.net ?? 0)),
+    }),
+    { trades: 0, gross: 0, fees: 0, settlementFees: 0, slippage: 0, net: 0 },
+  );
+  return {
+    trades: pageArray(closed, page.trades),
+    totals,
+    reviews: pageArray(reviews, page.reviews),
+    integrity,
+  };
 }
 
 const EARNINGS_KNOWN_COLUMNS: Record<string, string[]> = {

@@ -165,15 +165,37 @@ export interface EarningsTradeRow {
   symbol: string;
   strategy: string;
   expiration: string | null;
+  /** Net entry price per share, signed: credit +, debit −. */
   entryCredit: number | null;
-  /** GROSS: this ledger keeps its costs out of `pnl` (earnings' rule, core.ledgers). */
-  pnl: number | null;
-  /** entry_cost + exit_cost, in dollars; net = pnl - costs. */
-  costs: number | null;
   quantity: number | null;
+  /** The trade table standard (root CLAUDE.md): whole-position dollars, signed cash flow.
+   *  entry + exit = gross; gross − fees − settlement − slippage = net. earnings prices fills at mid
+   *  and CHARGES slippage as a cost (inside entry_cost/exit_cost), so it is subtracted here. */
+  entryCash: number | null;
+  exitCash: number | null;
+  exitKind: "closed" | "settled" | "expired" | null;
+  exitReason: string | null;
+  /** GROSS: this ledger keeps its costs out of `pnl` (earnings' rule, core.ledgers). */
+  gross: number | null;
+  /** Trading fees: entry_cost + exit_cost less settlement and slippage. */
+  fees: number | null;
+  settlementFees: number | null;
+  slippage: number | null;
+  /** gross − entry_cost − exit_cost. */
+  net: number | null;
   openedAt: string | null;
   closedAt: string | null;
   profile: string | null;
+}
+
+/** Totals over every closed trade the history holds — never the rendered page. */
+export interface EarningsTradeTotals {
+  trades: number;
+  gross: number;
+  fees: number;
+  settlementFees: number;
+  slippage: number;
+  net: number;
 }
 
 export interface EntryReviewRow {
@@ -206,7 +228,10 @@ export interface EarningsIntegrity extends ModuleIntegrity {
 }
 
 export interface EarningsPayload {
+  /** The CLOSED trades across both books, newest first -- the history table. Open positions are
+   *  the positions page's (`/api/earnings/analytics`, `/api/earnings/live`). */
   trades: Paged<EarningsTradeRow>;
+  totals: EarningsTradeTotals;
   reviews: Paged<EntryReviewRow>;
   integrity: EarningsIntegrity;
 }

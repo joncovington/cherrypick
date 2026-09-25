@@ -498,6 +498,10 @@ bwb (2026-09-25; `readers/bwb.ts` `bwbTradeCash`, `server/test/bwb-trade-standar
 the first module on the other slippage model: charged as a cost inside `fees`, so each part (entry
 and add-on fees, their slippage, settlement) comes out of the total once, and a broker-reconciled
 row takes out none, since its real fills already carry it.
+earnings (2026-09-25; `readers/earnings.ts` `earningsTradeCash`,
+`server/test/earnings-trade-standard.test.ts`) is on the same charged model: entry_cost and
+exit_cost carry the slippage charge and, on exit_cost, any settlement fee. Its history is the closed
+trades across both books; open positions are the positions page.
 
 ## Suite guardrails (apply here too)
 

@@ -1,5 +1,6 @@
 import { useEarningsLive, type EarningsEvent, type EarningsOpenPosition } from "../../lib/api";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
+import { fmtPrice } from "../../lib/format";
 
 /**
  * What the managed loop is holding right now.
@@ -56,9 +57,9 @@ const POSITION_HEADERS = [
   "Symbol",
   "Strategy",
   "Opened",
-  "Credit",
-  "Mark",
-  "Unrealized",
+  "Price",
+  "Mark (per share)",
+  "Unrealized (gross)",
   "Best / worst",
   "Waiting on",
 ];
@@ -87,7 +88,7 @@ export function EarningsLiveCard() {
           <td>{p.symbol}</td>
           <td>{p.strategy}</td>
           <td title={p.openedAt ?? ""}>{ago(p.openedAt)}</td>
-          <td>{fmtNum(p.entryCredit)}</td>
+          <td>{fmtPrice(p.entryCredit)}</td>
           {/* A refused mark records that we looked and could not price it — real, but not a
               valuation, so it is never shown as one. */}
           <td title={p.mark ? `${p.mark.source ?? "?"} · ${ago(p.mark.markedAt)}` : ""}>
