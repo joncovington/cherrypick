@@ -322,7 +322,11 @@ export function HistoryTab({
               net <PnlCell v={totals.netPnl} /> · {totals.trades.toLocaleString()} trades ·{" "}
               {totals.sessions.toLocaleString()} session{totals.sessions === 1 ? "" : "s"} · gross{" "}
               {fmtMoney(totals.grossPnl)} · fees {fmtMoney(totals.fees)} · settlement {fmtMoney(totals.settlementFees)}
-              {totals.slippageTrades > 0 && <> · slippage {fmtMoney(totals.slippage)}</>}
+              {" "}
+              · slippage{" "}
+              {totals.slippageTrades === totals.trades
+                ? fmtMoney(totals.slippage)
+                : `${fmtMoney(totals.slippage)} (recorded on ${totals.slippageTrades.toLocaleString()} of ${totals.trades.toLocaleString()})`}
             </span>
           )}
           {/* A filter, not a tab strip: role=group rather than tablist, which would promise
@@ -390,7 +394,9 @@ export function HistoryTab({
                     {fmtMoney(r.fees)}
                   </td>
                   <td className="muted">{r.settlementFees === null ? "n/r" : fmtMoney(r.settlementFees)}</td>
-                  <td className="muted">{fmtMoney(r.slippage)}</td>
+                  <td className="muted" title={r.slippage === null ? "not recorded: flies records the slippage its modelled fills concede from 2026-09-25 on, and a live fill is the broker's own price, with none modelled" : "conceded against mid — inside gross, never subtracted"}>
+                    {r.slippage === null ? "n/r" : fmtMoney(r.slippage)}
+                  </td>
                   <td><PnlCell v={r.pnl} /></td>
                   <td className="muted">{r.latencyMin !== null ? `${r.latencyMin.toFixed(0)}m` : "—"}</td>
                   <td>{r.pinned && <span className="chain-badge chain-badge-short">pinned</span>}</td>

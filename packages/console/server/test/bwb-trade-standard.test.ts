@@ -45,13 +45,15 @@ beforeAll(() => {
   );
   // Settled through the body with the add-on fired: entry (0.85 + 0.40) x100 = +125, gross -300
   // so exit -425; fees 3.44 + 1.20 slip + 2.30 add-on + 0.80 add-on slip + 10 settlement = 17.74.
-  ins.run("p-itm", "delta", "expired", 0.85, "2026-09-18T11:00", 0.4, -300, 17.74, 2, 3.44, 1.2, 2.3, 0.8, 10, "modeled");
+  ins.run("p-itm", "delta", "expired", 0.85, "2026-09-18T11:00", 0.4, -300, 17.74, 2, 3.44, 1.2, 2.3, 0.8, 10, null);
   // Expired worthless, never fired: keeps its credit.
-  ins.run("p-otm", "control", "expired", 0.85, null, null, 85, 4.64, 0, 3.44, 1.2, null, null, 0, "modeled");
+  ins.run("p-otm", "control", "expired", 0.85, null, null, 85, 4.64, 0, 3.44, 1.2, null, null, 0, null);
   // Broker-reconciled: fees is the broker's total, slippage is inside the real fills.
   ins.run("p-rec", "control", "expired", 0.9, null, null, 90, 8.0, 0, 3.44, 1.2, null, null, 0, "reconciled");
-  // Split never recorded.
-  ins.run("p-old", "flip", "expired", 0.8, null, null, 80, 9.64, 1, 3.44, 1.2, null, null, null, "modeled");
+  // Split never recorded (a paper row: fees_source NULL).
+  ins.run("p-old", "flip", "expired", 0.8, null, null, 80, 9.64, 1, 3.44, 1.2, null, null, null, null);
+  // A live row before reconciliation: 1.20 of MEASURED slippage that was never charged into fees.
+  ins.run("p-live", "control", "expired", 0.85, null, null, 85, 4.64, 0, 3.44, 1.2, null, null, 0, "broker_estimate");
   // Still open: not history.
   db.prepare(
     `INSERT INTO bwb_positions (position_id, symbol, arm, entry_session, status, entry_credit, quantity, fees)
@@ -66,7 +68,7 @@ const row = (id: string) => history().rows.find((r) => r.positionId === id);
 
 describe("bwb's completed positions", () => {
   it("are the closed ones only", () => {
-    expect(history().total).toBe(4);
+    expect(history().total).toBe(5);
   });
 
   it("sign the opening cash flows, the add-on's included, in whole-position dollars", () => {
@@ -89,9 +91,11 @@ describe("bwb's completed positions", () => {
     expect(r?.netPnl).toBe(-317.74);
   });
 
-  it("take no slippage out of a broker-reconciled total", () => {
+  it("take no slippage out of a live row's total, reconciled or not", () => {
     expect(row("p-rec")?.slippage).toBeNull();
     expect(row("p-rec")?.fees).toBe(8);
+    expect(row("p-live")?.slippage).toBeNull();
+    expect(row("p-live")?.fees).toBe(4.64);
   });
 
   it("leave settlement in the fees where the split was never recorded", () => {
@@ -107,9 +111,9 @@ describe("bwb's completed positions", () => {
 
   it("total the same way the rows add up", () => {
     const t = history().totals;
-    expect(t.positions).toBe(4);
-    expect(t.gross).toBe(-45);
-    expect(t.net).toBeCloseTo(-45 - 17.74 - 4.64 - 8 - 9.64, 2);
+    expect(t.positions).toBe(5);
+    expect(t.gross).toBe(40);
+    expect(t.net).toBeCloseTo(40 - 17.74 - 4.64 - 8 - 9.64 - 4.64, 2);
     expect(t.gross - t.fees - t.settlementFees - t.slippage).toBeCloseTo(t.net, 2);
   });
 });

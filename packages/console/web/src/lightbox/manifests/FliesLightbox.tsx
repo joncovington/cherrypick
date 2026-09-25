@@ -211,7 +211,9 @@ export function FliesLightbox({ slide }: { slide: string }) {
                 {fmtMoney(b.fees)}
               </td>
               <td className="muted">{b.settlementFees === null ? (b.status === "settled" ? "n/r" : "—") : fmtMoney(b.settlementFees)}</td>
-              <td className="muted">{fmtMoney(b.slippage)}</td>
+              <td className="muted" title={b.slippage === null ? "not recorded on every held position: flies records the slippage its modelled fills concede from 2026-09-25 on, and a live fill is the broker's own price, with none modelled" : "conceded against mid — inside gross, never subtracted"}>
+                {b.slippage === null ? (b.status === "settled" ? "n/r" : "—") : fmtMoney(b.slippage)}
+              </td>
               <td>{b.status === "settled" ? <PnlCell v={b.pnl} /> : <span className="muted">—</span>}</td>
             </tr>
           ))}

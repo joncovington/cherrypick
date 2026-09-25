@@ -444,8 +444,8 @@ export function bwbExitKind(exitReason: string | null, itmSettlements: number | 
 /**
  * The standard's money columns for a completed position. `gross_pnl` is mid-priced and cost-free
  * and `fees` the TOTAL (entry fee + entry slippage + add-on fee + add-on slippage + settlement),
- * so the parts come out of it once each and net stays `gross_pnl - fees`. On a reconciled live row
- * `fees` is the broker's total and the fills already carry the slippage, so none is taken out.
+ * so the parts come out of it once each and net stays `gross_pnl - fees`. On a live row the
+ * slippage is measured against mid and was never charged into `fees`, so none is taken out.
  */
 function bwbTradeCash(r: Record<string, unknown>): Pick<
   BwbCycleRow,
@@ -454,9 +454,12 @@ function bwbTradeCash(r: Record<string, unknown>): Pick<
   const gross = num(r["gross_pnl"]);
   const total = num(r["fees"]);
   const settlementFees = num(r["settlement_fees"]);
-  const reconciled = str(r["fees_source"]) === "reconciled";
+  // Paper rows leave `fees_source` NULL. Any live row -- modeled, broker estimate or reconciled --
+  // records slippage MEASURED against the mid it asked from, and it is never part of `fees` (the
+  // live loop's own rule), so there is nothing to take out of the total.
+  const live = str(r["fees_source"]) !== null;
   const slipParts = [num(r["entry_slippage"]), num(r["addon_slippage"])];
-  const slippage = reconciled || slipParts[0] === null ? null : round2((slipParts[0] ?? 0) + (slipParts[1] ?? 0));
+  const slippage = live || slipParts[0] === null ? null : round2((slipParts[0] ?? 0) + (slipParts[1] ?? 0));
   const entryCash = bwbEntryCash(r);
   return {
     quantity: num(r["quantity"]),
