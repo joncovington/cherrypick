@@ -1072,7 +1072,8 @@ export interface FliesTradeLogRow {
   fees: number | null;
   settlementFees: number | null;
   /** What the modelled fills conceded against mid. Already inside the prices, so already inside
-   *  gross — shown beside it, never subtracted. Null for live fills and older paper rows. */
+   *  gross — shown beside it, never subtracted. On a live row it is MEASURED at the entry fill
+   *  against the submission mid (entry only). Null where it was never recorded. */
   slippage: number | null;
   pnl: number | null;
   latencyMin: number | null;

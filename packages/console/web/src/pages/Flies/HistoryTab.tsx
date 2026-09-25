@@ -394,7 +394,7 @@ export function HistoryTab({
                     {fmtMoney(r.fees)}
                   </td>
                   <td className="muted">{r.settlementFees === null ? "n/r" : fmtMoney(r.settlementFees)}</td>
-                  <td className="muted" title={r.slippage === null ? "not recorded: flies records the slippage its modelled fills concede from 2026-09-25 on, and a live fill is the broker's own price, with none modelled" : "conceded against mid — inside gross, never subtracted"}>
+                  <td className="muted" title={r.slippage === null ? "not recorded: flies records slippage from 2026-09-25 on: what a paper fill's model concedes, and on a live fill what the entry conceded against the mid it was asked from" : "conceded against mid — inside gross, never subtracted"}>
                     {r.slippage === null ? "n/r" : fmtMoney(r.slippage)}
                   </td>
                   <td><PnlCell v={r.pnl} /></td>

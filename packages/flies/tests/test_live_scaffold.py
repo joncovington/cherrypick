@@ -303,6 +303,7 @@ def test_entry_fresh_reprice_matches_vertical_credit_on_the_same_quotes():
     new_price, info = live_orders.entry_fresh_reprice(spec, fresh)
     assert info["fresh_credit"] == pytest.approx(expected_credit, abs=1e-9)
     assert new_price == live_orders.tick_floor(expected_credit)
+    assert info["fresh_mid"] == pytest.approx(fly.vertical_credit(short_q, long_q, 0.0), abs=1e-4)
 
 
 def test_entry_fresh_reprice_missing_leg_refuses_to_price():
@@ -587,6 +588,56 @@ def test_live_entry_recorded_at_the_fresh_repriced_value(live_conn):
     assert spec["price"] == expected
     row = live_conn.execute("SELECT * FROM fly_positions").fetchone()
     assert row["net"] == expected and row["credit"] == expected
+    # ...and the fresh quotes' MID beside it, which the fill's measured slippage is taken against.
+    assert row["entry_mid_at_submit"] == pytest.approx(fly.vertical_credit(short_q, long_q, 0.0), abs=1e-4)
+    assert row["slippage_dollars"] is None  # nothing measured until the broker confirms a fill
+
+
+def test_the_recorded_mid_is_the_fresh_quotes_not_the_cached_plan(live_conn):
+    """The live entry is re-priced off fresh REST quotes, so the mid it was asked from is theirs. A
+    fresh market richer than the cache (the short leg up 0.10) must move the recorded mid with it --
+    falling back to the plan's cached mid would measure the fill against a price nobody quoted."""
+    from cherrypick.flies import fly
+
+    table = _quote_table(_snapshot())
+    first = FakeBroker()
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, first, live=True, log=lambda *_: None)
+    short_sym, long_sym = (leg["symbol"] for leg in first.placed[0]["spec"]["legs"])
+    live_conn.execute("DELETE FROM fly_positions")
+    live_conn.commit()
+    richer = {**table, short_sym: {**table[short_sym], "mid": table[short_sym]["mid"] + 0.10}}
+    live_loop.run_once(
+        _loop_cfg(), _snapshot(), live_conn, FakeBroker(fresh=richer), live=True, log=lambda *_: None
+    )
+    row = live_conn.execute("SELECT * FROM fly_positions").fetchone()
+    assert row["entry_mid_at_submit"] == pytest.approx(
+        fly.vertical_credit(richer[short_sym], richer[long_sym], 0.0), abs=1e-4
+    )
+
+
+def test_a_live_entry_fill_records_its_slippage_measured_against_the_submission_mid(live_conn):
+    """Measured, never modelled (the MEIC and bwb convention): mid minus the actual credit, x100 x
+    qty. A fill at 1.05 against a 1.12 mid conceded $7.00; better than mid would read negative."""
+    dbmod.save_position(live_conn, {**_open_entry_row(), "entry_mid_at_submit": 1.12})
+    broker = FakeBroker(order_statuses={"ORD-E1": {"status": "Filled", "price": "1.05", "filled": True}})
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["slippage_dollars"] == pytest.approx(7.0)
+
+
+def test_a_fill_without_a_recorded_mid_measures_nothing(live_conn):
+    """A row placed before the mid was recorded: unknown, never a guessed zero."""
+    dbmod.save_position(live_conn, _open_entry_row())
+    broker = FakeBroker(order_statuses={"ORD-E1": {"status": "Filled", "price": "1.05", "filled": True}})
+    live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    row = live_conn.execute("SELECT * FROM fly_positions WHERE position_id = 'E1'").fetchone()
+    assert row["slippage_dollars"] is None
+
+
+def test_measured_entry_slippage_signs_price_improvement_negative():
+    assert live_loop.measured_entry_slippage(1.12, 1.05, 2) == pytest.approx(14.0)
+    assert live_loop.measured_entry_slippage(1.12, 1.15, 1) == pytest.approx(-3.0)
+    assert live_loop.measured_entry_slippage(None, 1.05, 1) is None
 
 
 def test_live_entry_skipped_when_fresh_quote_unavailable(live_conn):

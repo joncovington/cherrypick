@@ -501,10 +501,17 @@ _ADDED_POSITION_COLUMNS = {
     #                     fee once `fee_reconcile` has matched it. NULL = not recorded.
     #   slippage_dollars  what the modelled fills conceded against mid, entry + completion + roll,
     #                     in dollars. ALREADY inside the fill prices and so inside gross_pnl -- a
-    #                     measure of it, never subtracted again. NULL for positions opened before it
-    #                     was recorded and for live fills (the broker's price, not a modelled one).
+    #                     measure of it, never subtracted again. On a LIVE row it is measured
+    #                     instead, at the entry fill, against `entry_mid_at_submit` (entry only).
+    #                     NULL for positions opened before it was recorded.
     "settlement_fees": "REAL",
     "slippage_dollars": "REAL",
+    # LIVE only (2026-09-25): the entry vertical's MID when the order was submitted -- off the
+    # fresh REST quotes the live entry is re-priced from. The fill confirmation measures
+    # `slippage_dollars` against it (mid minus the actual credit, x100 x qty; negative is price
+    # improvement), the MEIC and bwb convention. Entry only: the completion is a resting limit that
+    # fills whenever the market reaches it, so it has no submission mid to concede against.
+    "entry_mid_at_submit": "REAL",
 }
 
 # Rows whose decisions rest on a defect, stamped once when `void_reason` is first added. Keyed on

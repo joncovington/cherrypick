@@ -334,22 +334,44 @@ def margin_cap_exceeded(cap: float | None, positions: list[dict], plan: dict) ->
 
 
 # --------------------------------------------------------------------------- fill confirmation
+def measured_entry_slippage(
+    mid: float | None, actual_credit: float | None, quantity: int | None
+) -> float | None:
+    """What a live entry fill conceded against the mid it was asked from, in dollars: (mid − actual
+    credit) x100 x qty -- negative is price improvement. MEASURED, never modelled, and not a fee:
+    like the model's concession on a paper row it is already inside the fill price. None when the
+    submission mid was not recorded (rows placed before 2026-09-25), never a guessed zero."""
+    if mid is None or actual_credit is None:
+        return None
+    return round((float(mid) - float(actual_credit)) * fly.CONTRACT_MULTIPLIER * int(quantity or 1), 2)
+
+
 def _confirm_entry_fill(conn, pos: dict, broker, log) -> dict:
     """Poll a pending entry order; record the ACTUAL fill credit once confirmed. Returns the
     (possibly updated) position dict."""
     state, price = _execution.fill_state(broker.status(pos["entry_order_id"]), fallback_price=pos["net"])
     if state == "filled":
         actual_credit = price  # the model only when the broker reported a fill without a parseable price
+        slippage = measured_entry_slippage(
+            pos.get("entry_mid_at_submit"), actual_credit, pos.get("quantity", 1)
+        )
         conn.execute(
-            "UPDATE fly_positions SET net = ?, credit = ?, entry_fill_status = 'filled' WHERE id = ?",
-            (actual_credit, actual_credit, pos["id"]),
+            "UPDATE fly_positions SET net = ?, credit = ?, entry_fill_status = 'filled', "
+            "slippage_dollars = ? WHERE id = ?",
+            (actual_credit, actual_credit, slippage, pos["id"]),
         )
         conn.commit()
         log(
             f"entry FILLED {pos['position_id']}: modeled {pos['net']:.2f} credit -> "
             f"actual {actual_credit:.2f}"
         )
-        return {**pos, "net": actual_credit, "credit": actual_credit, "entry_fill_status": "filled"}
+        return {
+            **pos,
+            "net": actual_credit,
+            "credit": actual_credit,
+            "entry_fill_status": "filled",
+            "slippage_dollars": slippage,
+        }
     if state in _TERMINAL_UNFILLED:
         conn.execute(
             "UPDATE fly_positions SET entry_fill_status = ?, status = 'cancelled' WHERE id = ?",
@@ -843,6 +865,9 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
         else:
             spec = live_orders.entry_spec(snapshot, plan)
             entry_price = plan["credit"]
+            # The mid the order is asked from, for the fill's measured slippage: the fresh quotes'
+            # when re-priced below, else the plan's own (its credit plus what the model conceded).
+            entry_mid = round(plan["credit"] + plan.get("slippage", 0.0), 4)
             # FRESH-QUOTE CHECK (live-only, entry-only — the one narrow exception to "cached
             # quotes gate broker calls"): the cached snapshot's credit can diverge from what the
             # broker's real-time execution-quality check considers marketable (a low-liquidity
@@ -886,6 +911,7 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                 else:
                     spec["price"] = new_price
                     entry_price = new_price
+                    entry_mid = info.get("fresh_mid", entry_mid)
             if spec is not None:
                 # Per-attempt unique (paper's book.py convention: microsecond timestamp), not
                 # day+arm+center alone — a retry at the SAME centre after an earlier rejection
@@ -936,6 +962,7 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                             # actually submitted), else the cached `plan["credit"]` unchanged.
                             "net": entry_price,
                             "credit": entry_price,
+                            "entry_mid_at_submit": entry_mid,
                             "fees": plan["open_fee"],
                             "floor_dollars": floor,
                             "risk_free": 0,

@@ -102,7 +102,13 @@ def entry_fresh_reprice(
         missing = [s for s, q in ((short_sym, short_q), (long_sym, long_q)) if q is None]
         return None, {"reason": "fresh_quote_missing", "missing": missing}
     fresh_credit = fly.vertical_credit(short_q, long_q, slip)
-    return tick_floor(fresh_credit), {"fresh_credit": round(fresh_credit, 4)}
+    # The same quotes at zero slippage: the vertical's mid, which a live fill's slippage is
+    # measured against once it is confirmed.
+    fresh_mid = fly.vertical_credit(short_q, long_q, 0.0)
+    return tick_floor(fresh_credit), {
+        "fresh_credit": round(fresh_credit, 4),
+        "fresh_mid": round(fresh_mid, 4),
+    }
 
 
 def completion_spec(snapshot: dict, position: dict, plan: dict) -> dict:
