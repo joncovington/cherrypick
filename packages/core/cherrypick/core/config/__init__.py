@@ -42,6 +42,13 @@ ARM_REGISTRY_KEYS: tuple[str, ...] = ("arms", "books", "profiles")
 # `core.advice._legacy_base` has always done.
 BASE_ARM_KEYS: tuple[str, ...] = ("base_arm", "base_profile", "base_book", "base_prefix")
 
+# The qualification rule's session bar, and the reading field it is checked against. Both were
+# spelled `days` until 2026-09-24 -- a count of distinct trading sessions, which a calendar day is
+# not (a weekend is two days and no sessions). Live configs carry `min_days` and 30 advisor artifacts
+# on disk carry readings with `days`, so both spellings are read for good. Canonical first.
+MIN_SESSIONS_KEYS: tuple[str, ...] = ("min_sessions", "min_days")
+SESSIONS_KEYS: tuple[str, ...] = ("sessions", "days")
+
 _warned: set[tuple[str, tuple[str, ...]]] = set()
 
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
+from cherrypick.core import metrics as _metrics
 from cherrypick.core import regimecuts as _rc
 
 from cherrypick.flies import (
@@ -385,13 +386,11 @@ def _regime_columns(dimension: str, phase: str = "entry") -> tuple[str, str]:
 # the prior move with the tool that reads it.
 
 
-# The session count below which a dimension cannot support a threshold re-cut. Matches MEIC's
-# analytics.MIN_EFFECTIVE_N, which in turn matches its experiment.MIN_SESSIONS_FOR_INTERVAL: all
-# three answer "how many sessions before a book may draw a conclusion", and a different number here
-# would make the same question resolve differently per module. It exists so "not enough sessions
-# yet" is a reported state rather than something a reader must infer from a row count that looks
-# large. Raise it, don't lower it, if a re-cut made on a sample this size later fails to hold.
-MIN_EFFECTIVE_N = 14
+# The session count below which a dimension cannot support a threshold re-cut: the suite's one
+# `core.metrics.MIN_EFFECTIVE_N`, shared with meic so the same question cannot resolve differently
+# per module. It exists so "not enough sessions yet" is a reported state rather than something a
+# reader must infer from a row count that looks large.
+MIN_EFFECTIVE_N = _metrics.MIN_EFFECTIVE_N
 
 # How small within-session movement must be, relative to movement BETWEEN sessions, before a
 # dimension counts as daily-scale. Not a constancy test: a daily-scale input still wobbles within a

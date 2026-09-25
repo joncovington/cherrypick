@@ -36,6 +36,7 @@ import statistics
 from zoneinfo import ZoneInfo
 
 from cherrypick.core import marketregime as _mr
+from cherrypick.core import metrics as _metrics
 from cherrypick.core import streamcache as _sc
 
 ET = ZoneInfo("America/New_York")
@@ -46,11 +47,9 @@ CLOSE_MIN = 16 * 60
 BUCKET_MINUTES = 5
 ATR_WINDOW = 20
 
-# The floor a cell must clear before a difference may be read off it, in SESSIONS. Deliberately the
-# same number as meic.experiment's MIN_SESSIONS_FOR_INTERVAL and flies' MIN_EFFECTIVE_N: all three
-# answer "how many independent draws before this may be concluded from", and a fourth number here
-# would make the same question resolve differently depending on which file a reader opened.
-MIN_SESSIONS = 14
+# The floor a cell must clear before a difference may be read off it, in SESSIONS: the suite's one
+# `core.metrics.MIN_EFFECTIVE_N`, the bar meic and flies already read.
+MIN_SESSIONS = _metrics.MIN_EFFECTIVE_N
 # Out-of-sample sessions required before the headline split is evaluated at all. Higher than
 # MIN_SESSIONS because the headline is a two-way split: each side needs its own floor.
 MIN_OUT_OF_SAMPLE = 30

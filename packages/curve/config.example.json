@@ -81,7 +81,7 @@
   "calibration": {
     "rule": {
       "min_sample": 20,
-      "min_days": 14,
+      "min_sessions": 14,
       "min_win_rate": 0.0,
       "min_net_pnl": 0.0
     }

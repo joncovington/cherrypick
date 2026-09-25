@@ -69,7 +69,7 @@ def test_calibrate_excludes_pre_epoch_sessions_from_the_reading(tmp_path):
     prof = out["modules"]["meic"]["profiles"][_CHAMPION]
     assert out["data_epoch"]["date"] == "2026-07-01"
     assert prof["reading"]["sample"] == 3
-    assert prof["reading"]["days"] == 3
+    assert prof["reading"]["sessions"] == 3
 
 
 def test_calibrate_without_epoch_keeps_full_history(tmp_path):

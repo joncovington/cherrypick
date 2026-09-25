@@ -33,17 +33,17 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
-from cherrypick.core.metrics import calibration_reading  # noqa: E402
+from cherrypick.core.metrics import MIN_EFFECTIVE_N, calibration_reading  # noqa: E402
 
 from cherrypick.meic import paths as _paths  # noqa: E402
 
 CONTROL_ARM = "gex-open"  # ungated: takes the entries the live policy refuses
 TREATMENT_ARM = "gex-blocked"  # gated: runs the live policy
 
-# Below this many sessions no interval is quoted. PROMOTION_RULE.min_days is 14 and MEIC's own
-# experiment docs put the bar at 14-20 sessions for a regime-level claim; quoting a bootstrap
-# interval over 3 clusters would dress up noise as a measurement.
-MIN_SESSIONS_FOR_INTERVAL = 14
+# Below this many sessions no interval is quoted: the suite's one `core.metrics.MIN_EFFECTIVE_N`.
+# MEIC's own experiment docs put the bar at 14-20 sessions for a regime-level claim; quoting a
+# bootstrap interval over 3 clusters would dress up noise as a measurement.
+MIN_SESSIONS_FOR_INTERVAL = MIN_EFFECTIVE_N
 
 
 def _connect(db_path=None) -> sqlite3.Connection:

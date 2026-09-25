@@ -13,7 +13,7 @@ import { dismissAdvisorProposal, killAdvisorExperiment, useAdvisor } from "../..
 import { otherFields, paramRows, scalar } from "./proposalPayload";
 import { TabStrip } from "../../components/ScopeBar";
 import { pushToast } from "../../lib/toast";
-import { gateDistance, lastCounted } from "../../components/advisor/experimentStats";
+import { gateDistance, lastCounted, readingSessions } from "../../components/advisor/experimentStats";
 
 /**
  * The AI advisor. Renders what it observed, proposed and ran — and judges none of it here.
@@ -538,7 +538,7 @@ export function PairTable({ pairs }: { pairs: AdvisorPair[] }) {
       <table className="data-table data-table-labelled">
         <thead>
           <tr>
-            <th>Book</th>
+            <th>Arm</th>
             <th>Net</th>
             <th>Win rate</th>
             <th>Trades</th>
@@ -559,7 +559,7 @@ export function PairTable({ pairs }: { pairs: AdvisorPair[] }) {
                   <td className={pnlClass(reading?.["net_pnl"])}>{money(reading?.["net_pnl"])}</td>
                   <td>{pct(reading?.["win_rate"])}</td>
                   <td>{count(reading?.["sample"] as number | null)}</td>
-                  <td>{count(reading?.["days"] as number | null)}</td>
+                  <td>{count(readingSessions(reading))}</td>
                   <td>
                     {reading === null ? (
                       <span className="muted">no rows</span>

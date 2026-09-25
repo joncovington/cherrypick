@@ -116,8 +116,8 @@ def test_group_by_tag_empty_rows():
     assert profiles.group_by_tag([], tag_key="risk_profile", summarize=_count) == {}
 
 
-_GOOD = {"sample": 40, "win_rate": 0.65, "days": 20, "net_pnl": 500.0}
-_THIN = {"sample": 3, "win_rate": 0.9, "days": 2, "net_pnl": 50.0}
+_GOOD = {"sample": 40, "win_rate": 0.65, "sessions": 20, "net_pnl": 500.0}
+_THIN = {"sample": 3, "win_rate": 0.9, "sessions": 2, "net_pnl": 50.0}
 
 
 # --------------------------------------------------------------------------- qualify_readings
@@ -131,7 +131,7 @@ def test_qualify_readings_returns_per_tag_qualification_only():
             "checks": {
                 "sample": {"value": 40, "threshold": 20, "pass": True},
                 "win_rate": {"value": 0.65, "threshold": 0.60, "pass": True},
-                "days": {"value": 20, "threshold": 14, "pass": True},
+                "sessions": {"value": 20, "threshold": 14, "pass": True},
             },
         },
         "time_window": {
@@ -139,7 +139,7 @@ def test_qualify_readings_returns_per_tag_qualification_only():
             "checks": {
                 "sample": {"value": 3, "threshold": 20, "pass": False},
                 "win_rate": {"value": 0.9, "threshold": 0.60, "pass": True},
-                "days": {"value": 2, "threshold": 14, "pass": False},
+                "sessions": {"value": 2, "threshold": 14, "pass": False},
             },
         },
     }
@@ -156,6 +156,34 @@ def test_qualify_readings_rule_override_applies_per_tag():
     assert out["control"]["qualified"] is False
 
 
+def test_a_config_still_spelled_min_days_is_the_bar_actually_applied():
+    # The trap the fold exists for: merged naively onto the defaults, `min_days: 30` sits beside
+    # `min_sessions: 14`, the check reads the default, and a 20-session arm qualifies against a
+    # bar its operator set at 30 -- with nothing raised. Every live config said `min_days`.
+    rule = profiles.qualification_rule({"min_days": 30})
+    assert rule["min_sessions"] == 30
+    assert "min_days" not in rule
+    out = profiles.qualify_readings({"control": _GOOD}, rule={"min_days": 30})
+    assert out["control"]["checks"]["sessions"] == {"value": 20, "threshold": 30, "pass": False}
+    assert out["control"]["qualified"] is False
+
+
+def test_the_canonical_spelling_wins_when_a_rule_carries_both():
+    assert profiles.qualification_rule({"min_sessions": 10, "min_days": 30})["min_sessions"] == 10
+
+
+def test_a_reading_written_before_the_rename_is_still_checked_on_its_sessions():
+    legacy = {"sample": 40, "win_rate": 0.65, "days": 20, "net_pnl": 500.0}
+    out = profiles.qualify_readings({"control": legacy})
+    assert out["control"]["checks"]["sessions"] == {"value": 20, "threshold": 14, "pass": True}
+
+
+def test_the_default_session_bar_is_the_suite_wide_one():
+    from cherrypick.core import metrics
+
+    assert profiles.qualification_rule()["min_sessions"] == metrics.MIN_EFFECTIVE_N
+
+
 def test_qualify_readings_empty_readings_returns_empty_dict():
     assert profiles.qualify_readings({}) == {}
 
@@ -165,7 +193,7 @@ def _full_reading(**over):
     base = {
         "sample": 13,
         "win_rate": 0.1538,
-        "days": 1,
+        "sessions": 1,
         "net_pnl": 5.63,
         "sharpe": 0.008,
         "max_drawdown": 169.98,
@@ -189,7 +217,7 @@ def test_find_identical_readings_groups_byte_identical_arms():
             "fields": {
                 "sample": 13,
                 "win_rate": 0.1538,
-                "days": 1,
+                "sessions": 1,
                 "net_pnl": 5.63,
                 "sharpe": 0.008,
                 "max_drawdown": 169.98,
@@ -206,7 +234,14 @@ def test_find_identical_readings_no_collision_is_empty_list():
 def test_find_identical_readings_ignores_readings_with_any_unmeasured_field():
     """Two zero-sample arms both read win_rate/sharpe as None -- an unmeasured field can't
     certify two readings are the same, so this must never report a false collision."""
-    empty = {"sample": 0, "win_rate": None, "days": 0, "net_pnl": 0.0, "sharpe": None, "max_drawdown": 0.0}
+    empty = {
+        "sample": 0,
+        "win_rate": None,
+        "sessions": 0,
+        "net_pnl": 0.0,
+        "sharpe": None,
+        "max_drawdown": 0.0,
+    }
     readings = {"a": empty, "b": dict(empty)}
     assert profiles.find_identical_readings(readings) == []
 
@@ -224,7 +259,7 @@ def test_find_identical_readings_supports_three_way_collisions():
 
 
 def test_find_identical_readings_custom_fields():
-    readings = {"a": {"net_pnl": 5.0, "days": 9}, "b": {"net_pnl": 5.0, "days": 1}}
+    readings = {"a": {"net_pnl": 5.0, "sessions": 9}, "b": {"net_pnl": 5.0, "sessions": 1}}
     assert profiles.find_identical_readings(readings, fields=("net_pnl",)) == [
         {"tags": ["a", "b"], "fields": {"net_pnl": 5.0}}
     ]

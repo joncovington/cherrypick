@@ -21,8 +21,9 @@ from typing import Any
 
 from cherrypick.core import advice as _advice
 from cherrypick.core import ledgers as _ledgers
+from cherrypick.core.config import SESSIONS_KEYS, first_present
 from cherrypick.core.metrics import calibration_reading
-from cherrypick.core.profiles import QUALIFICATION_RULE, group_by_tag, qualify_readings
+from cherrypick.core.profiles import group_by_tag, qualification_rule, qualify_readings
 
 from cherrypick.advisor import bounds as _bounds
 from cherrypick.advisor import clock as _clock
@@ -135,7 +136,7 @@ def reading_pair(
     qualified = qualify_readings(
         {t: r for t, r in ((tag_advised, advised), (tag_base, base)) if r}, rule=rule
     )
-    thresholds = {**QUALIFICATION_RULE, **(rule or {})}
+    thresholds = qualification_rule(rule)
     return {
         "module": module,
         "advised_tag": tag_advised,
@@ -150,13 +151,12 @@ def reading_pair(
 
 
 def _underpowered(reading: dict | None, thresholds: dict) -> bool:
-    """Not enough evidence to have measured anything, whatever the numbers say. Sample and days
+    """Not enough evidence to have measured anything, whatever the numbers say. Sample and sessions
     only — a book can miss the win-rate bar honestly, but it cannot miss the sample bar honestly."""
     if not reading:
         return True
-    return (reading.get("sample") or 0) < thresholds["min_sample"] or (reading.get("days") or 0) < thresholds[
-        "min_days"
-    ]
+    sessions = first_present(reading, *SESSIONS_KEYS) or 0
+    return (reading.get("sample") or 0) < thresholds["min_sample"] or sessions < thresholds["min_sessions"]
 
 
 def concluded_session(experiment: dict) -> str | None:

@@ -201,3 +201,14 @@ def test_the_advised_side_keeps_only_this_experiments_rows_or_unstamped_ones(tmp
     assert pair["advised"]["sample"] == 2
     assert pair["advised"]["net_pnl"] == (25.0 - 6.0) + (10.0 - 6.0)
     assert pair["base"]["sample"] == 1
+
+
+def test_underpowered_reads_a_reading_spelled_either_way():
+    # Readings stored before 2026-09-24 say `days`; a live config's rule may still say `min_days`.
+    # Either spelling must reach the session bar -- read as absent, every verdict would be underpowered.
+    from cherrypick.core.profiles import qualification_rule
+
+    rule = qualification_rule({"min_days": 5, "min_sample": 3})
+    assert verdicts._underpowered({"sample": 9, "days": 6}, rule) is False
+    assert verdicts._underpowered({"sample": 9, "sessions": 6}, rule) is False
+    assert verdicts._underpowered({"sample": 9, "sessions": 4}, rule) is True

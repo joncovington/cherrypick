@@ -61,6 +61,10 @@ facts and averaging them together is how a cost model quietly flatters itself.
 OPEN_READERS is a deliberately separate registry answering "what is still on the book", not "what
 settled". Only a multi-day strategy carries overnight; the 0DTE modules are empty by construction
 rather than by a query that could surface an unsettled 0DTE position as though it were a hold.
+Its records carry `capital` under the same name the closed records use (they said `capital_at_risk`
+until 2026-09-24 -- one quantity, two names across the two registries). The artifacts built from
+them -- the report's `open` block, review's `carried_overnight` -- still write `capital_at_risk`,
+which is an accurate name for a persisted key and not the record's.
 """
 
 from __future__ import annotations
@@ -447,7 +451,7 @@ def _curve_open(conn) -> list[dict]:
             "arm": r["arm"] or CURVE_UNTAGGED,
             "symbol": r["symbol"],
             "strategy": "curve_vx",
-            "capital_at_risk": (
+            "capital": (
                 round(float(r["entry_max_loss"]) * 100 * (r["quantity"] or 1), 2)
                 if r["entry_max_loss"] is not None
                 else 0.0
@@ -520,7 +524,7 @@ def _bwb_open(conn) -> list[dict]:
             "arm": r["arm"] or BWB_UNTAGGED,
             "symbol": r["symbol"],
             "strategy": "bwb_132",
-            "capital_at_risk": (
+            "capital": (
                 round(float(r["entry_max_loss"]) * 100 * (r["quantity"] or 1), 2)
                 if r["entry_max_loss"] is not None
                 else 0.0
@@ -572,7 +576,7 @@ def _earnings_open(conn) -> list[dict]:
             "arm": r["profile"] or EARNINGS_UNTAGGED,
             "symbol": r["symbol"],
             "strategy": r["strategy"],
-            "capital_at_risk": (r["capital_at_risk"] or 0.0),
+            "capital": (r["capital_at_risk"] or 0.0),
             "session": session_from_epoch(r["opened_at"]),
         }
         for r in rows
@@ -594,7 +598,7 @@ def _calendars_open(conn) -> list[dict]:
             "arm": r["arm"] or CALENDARS_UNTAGGED,
             "symbol": r["symbol"],
             "strategy": r["structure"],
-            "capital_at_risk": (
+            "capital": (
                 round(float(r["entry_debit"]) * 100 * (r["quantity"] or 1), 2)
                 if r["entry_debit"] is not None
                 else 0.0
@@ -619,7 +623,7 @@ def _pmcc_open(conn) -> list[dict]:
             "arm": r["arm"] or PMCC_UNTAGGED,
             "symbol": r["symbol"],
             "strategy": "pmcc_99",
-            "capital_at_risk": (
+            "capital": (
                 round(float(r["net_debit"]) * 100 * (r["quantity"] or 1), 2)
                 if r["net_debit"] is not None
                 else 0.0

@@ -1845,7 +1845,7 @@ def _arm_readings() -> dict[str, Any]:
     travel beside the verdict as `rule` so the model can cite what it was actually judged against
     rather than assuming the default three.
     """
-    from cherrypick.core.profiles import QUALIFICATION_RULE, find_identical_readings, qualify_readings
+    from cherrypick.core.profiles import find_identical_readings, qualification_rule, qualify_readings
 
     out: dict[str, Any] = {}
     cfg = _store.read_json(_home.config_path(), default={}) or {}
@@ -1855,7 +1855,7 @@ def _arm_readings() -> dict[str, Any]:
         out[module] = {
             "readings": readings,
             "qualification": qualify_readings(readings, rule=rule) if readings else {},
-            "rule": {**QUALIFICATION_RULE, **rule},
+            "rule": qualification_rule(rule),
             "collisions": find_identical_readings(readings) if readings else [],
         }
     return out

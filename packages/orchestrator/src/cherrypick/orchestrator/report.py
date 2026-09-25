@@ -66,7 +66,7 @@ def _summarize_open(records: list[dict]) -> dict:
         by_symbol[r["symbol"]] = by_symbol.get(r["symbol"], 0) + 1
     return {
         "positions": len(records),
-        "capital_at_risk": round(sum(r.get("capital_at_risk") or 0.0 for r in records), 2),
+        "capital_at_risk": round(sum(r.get("capital") or 0.0 for r in records), 2),
         "by_symbol": dict(sorted(by_symbol.items())),
     }
 

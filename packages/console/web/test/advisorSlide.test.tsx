@@ -3,7 +3,7 @@ import { renderToString } from "react-dom/server";
 import type { AdvisorActiveExperiment, AdvisorExperiment, AdvisorModulePayload } from "@console/shared";
 
 import { AdvisorSlideBody, SessionStrip, SessionStrips } from "../src/components/advisor/AdvisorSlide";
-import { gateDistance, lastCounted } from "../src/components/advisor/experimentStats";
+import { gateDistance, lastCounted, readingSessions } from "../src/components/advisor/experimentStats";
 
 const text = (node: React.ReactElement) => renderToString(node).replace(/<!--\s*-->/g, "");
 
@@ -170,8 +170,21 @@ describe("the module's advisor slide", () => {
   });
 
   it("reports the gate distance and the last scored session for the roll-up", () => {
-    expect(gateDistance(experiment())).toBe("trades 9 of 20 · days 2 of 14");
+    // The fixture is a verdict written before 2026-09-24, spelled `days`/`min_days`.
+    expect(gateDistance(experiment())).toBe("trades 9 of 20 · sessions 2 of 14");
     expect(lastCounted(experiment())).toEqual({ session: "2026-09-11", status: "not_enacted" });
     expect(lastCounted(experiment({ journal: [] }))).toBeNull();
+  });
+
+  it("reads a verdict written with `sessions`/`min_sessions` the same way", () => {
+    const pair = {
+      advised: { net_pnl: 1, win_rate: 0.5, sample: 9, sessions: 3 },
+      rule: { min_sample: 20, min_sessions: 15 },
+    };
+    const e = experiment({ verdict: { pairs: [pair as never], underpowered: true, recommendation: null, stalled: null } });
+    expect(gateDistance(e)).toBe("trades 9 of 20 · sessions 3 of 15");
+    expect(readingSessions({ sessions: 3, days: 99 })).toBe(3);
+    expect(readingSessions({ days: 2 })).toBe(2);
+    expect(readingSessions(null)).toBeNull();
   });
 });

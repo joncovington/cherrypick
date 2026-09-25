@@ -156,7 +156,7 @@ export function LivePage() {
               <td>{hhmmOf(p.entryTime)}</td>
               <td>{structure(p)}</td>
               <td>{fillState(p)}</td>
-              <td>{p.net.toFixed(2)}</td>
+              <td>{p.netCredit.toFixed(2)}</td>
               <td className={tone(p.floorDollars)}>{p.floorDollars !== null ? fmtMoney(p.floorDollars) : "—"}</td>
               <td className={tone(p.mark?.markPnl)} title={p.mark ? `mid ${p.mark.structureMid.toFixed(2)} at ${hhmmOf(p.mark.at)}` : "no usable mark"}>
                 {p.mark ? fmtMoney(p.mark.markPnl) : "—"}

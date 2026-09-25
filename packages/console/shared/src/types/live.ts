@@ -25,8 +25,9 @@ export interface LivePosition {
   center: number;
   wingWidth: number;
   quantity: number;
-  /** Per-contract net cash so far: positive = credit collected. */
-  net: number;
+  /** Per-contract net cash so far: positive = credit collected. A PRICE, so not `net` -- which on
+   *  LivePeriod above, and across the console, means P&L after fees. */
+  netCredit: number;
   fees: number;
   floorDollars: number | null;
   riskFree: boolean;

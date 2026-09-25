@@ -178,6 +178,16 @@ def sqn(values: Sequence[float]) -> float | None:
 CVAR_QUANTILE = 0.10
 CVAR_MIN_SESSIONS = 20
 
+# The session count below which a variant may not draw a conclusion: no bootstrap interval is quoted
+# (meic.experiment), no threshold re-cut is read off a dimension (flies/meic analytics), no
+# opening-range cell is compared (core.openingrange), and no arm qualifies for a champion comparison
+# (core.profiles.QUALIFICATION_RULE). Five places were already asking this one question, with five
+# constants that happened to agree on 14 and comments promising each other they would stay that way.
+# One number, so the answer cannot resolve differently depending on which file a reader opened.
+# Sessions, not trades, for the CVaR reason above. Raise it, don't lower it, if a conclusion drawn
+# on a sample this size later fails to hold.
+MIN_EFFECTIVE_N = 14
+
 
 def session_nets(records: Sequence[Mapping]) -> list[float]:
     """Per-session net P&L in session order — the series every tail metric keys on. Records
@@ -301,7 +311,7 @@ def calibration_reading(records: Sequence[Mapping]) -> dict:
     return {
         "sample": n,
         "win_rate": round(wins / n, 4) if n else None,
-        "days": len(sessions),
+        "sessions": len(sessions),
         "net_pnl": round(sum(nets), 2),
         "net_pnl_2x_slippage": stressed,
         "slippage_coverage": slippage_coverage,

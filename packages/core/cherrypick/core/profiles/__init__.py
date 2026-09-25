@@ -34,6 +34,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from cherrypick.core import config as _cfg
+from cherrypick.core import metrics as _metrics
 
 # Canonical sentinel for a trade row that carries no named profile (a live trade, or a
 # pre-attribution row) when it surfaces in a profile-grouped rollup. See `attribution_tag`.
@@ -130,7 +131,7 @@ def group_by_tag(rows, *, tag_key: str, summarize, untagged: str = UNTAGGED) -> 
 # summarize a whole book rather than raw per-trade rows -- two arms sharing these by coincidence
 # across more than a couple of trades is far less likely than two arms sharing the same underlying
 # trades under different tags, or a config mistake that never differentiated them.
-IDENTITY_FIELDS = ("sample", "win_rate", "days", "net_pnl", "sharpe", "max_drawdown")
+IDENTITY_FIELDS = ("sample", "win_rate", "sessions", "net_pnl", "sharpe", "max_drawdown")
 
 
 def find_identical_readings(
@@ -178,8 +179,29 @@ def find_identical_readings(
 
 # The qualification bar a challenger's reading must clear before its metric is even compared to the
 # champion's (was PROMOTION_RULE — a rung-graduation bar; renamed because these thresholds now gate
-# entry into a COMPARISON, they don't by themselves promote anything anywhere). Overridable per call.
-QUALIFICATION_RULE = {"min_days": 14, "min_win_rate": 0.60, "min_sample": 20}
+# entry into a COMPARISON, they don't by themselves promote anything anywhere). Overridable per call,
+# through `qualification_rule` -- never by merging onto this dict directly (see there).
+QUALIFICATION_RULE = {"min_sessions": _metrics.MIN_EFFECTIVE_N, "min_win_rate": 0.60, "min_sample": 20}
+
+
+def qualification_rule(rule: Mapping | None = None) -> dict:
+    """`QUALIFICATION_RULE` with a caller's or config's overrides applied, sessions key canonical.
+
+    The session bar was spelled `min_days` until 2026-09-24, and live configs still say so; that
+    spelling is accepted for good (`core.config.MIN_SESSIONS_KEYS`). It has to be folded BEFORE the
+    merge, which is why this exists rather than the ``{**QUALIFICATION_RULE, **rule}`` every caller
+    used to write: merged naively, a config's ``"min_days": 20`` lands beside the default
+    ``"min_sessions": 14``, the check reads the default, and the operator's stricter bar is ignored
+    with nothing raised. The result carries only the canonical key.
+    """
+    rule = dict(rule or {})
+    present = [k for k in _cfg.MIN_SESSIONS_KEYS if k in rule]
+    if present:
+        value = rule[present[0]]
+        for key in present:
+            del rule[key]
+        rule["min_sessions"] = value
+    return {**QUALIFICATION_RULE, **rule}
 
 
 def _check(value, threshold) -> dict:
@@ -189,7 +211,8 @@ def _check(value, threshold) -> dict:
 def _qualify_one(reading: Mapping, thresholds: Mapping) -> dict:
     """The threshold checks shared by `recommend_champion` and `qualify_readings` — factored out so
     the two public functions cannot drift on what "qualified" means. Same three base checks as the
-    old `recommend_promotion` (sample/win_rate/days) plus the three opt-in hardened checks:
+    old `recommend_promotion` (sample/win_rate/sessions, the last once called `days`) plus the
+    three opt-in hardened checks:
 
     - `min_net_pnl` — net-of-cost P&L must clear the bar. Opt in with 0.0 to mean "an arm that lost
       money does not qualify, whatever its win rate." The base three cannot see that case at all,
@@ -215,7 +238,7 @@ def _qualify_one(reading: Mapping, thresholds: Mapping) -> dict:
     checks = {
         "sample": _check(reading.get("sample"), thresholds["min_sample"]),
         "win_rate": _check(reading.get("win_rate"), thresholds["min_win_rate"]),
-        "days": _check(reading.get("days"), thresholds["min_days"]),
+        "sessions": _check(_cfg.first_present(reading, *_cfg.SESSIONS_KEYS), thresholds["min_sessions"]),
     }
     if "min_net_pnl" in thresholds:
         checks["net_pnl"] = _check(reading.get("net_pnl"), thresholds["min_net_pnl"])
@@ -250,7 +273,7 @@ def qualify_readings(readings: Mapping[str, Mapping], *, rule: Mapping | None = 
     `"graduate:<next>"` even when "next" was an unrelated parallel arm; fed through this function it
     cannot produce anything resembling a promotion, because the shape has nowhere to put one.
     """
-    thresholds = {**QUALIFICATION_RULE, **(rule or {})}
+    thresholds = qualification_rule(rule)
     return {tag: _qualify_one(reading, thresholds) for tag, reading in readings.items()}
 
 

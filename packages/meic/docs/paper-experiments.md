@@ -221,7 +221,7 @@ between them. Symbol-agnostic, so the `(profile × symbol)` grain supplies that 
 
 **Sessions are the sample, not trades.** Same-day trades share a regime. `experiment.py` reports
 `sessions` beside every trade count and refuses to quote a bootstrap interval below **14 sessions**
-(`PROMOTION_RULE.min_days`); the bootstrap resamples whole sessions rather than individual trades,
+(`core.metrics.MIN_EFFECTIVE_N`, the suite-wide session bar); the bootstrap resamples whole sessions rather than individual trades,
 because with fewer than ~30 clusters per-trade inference is badly optimistic. Read at 14, decide at
 20+.
 

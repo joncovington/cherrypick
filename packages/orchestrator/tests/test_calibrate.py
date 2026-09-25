@@ -62,7 +62,7 @@ def test_reading_counts_sample_winrate_and_days():
     r = calibrate._reading(recs)
     assert r["sample"] == 3
     assert r["win_rate"] == round(2 / 3, 4)
-    assert r["days"] == 2  # two distinct sessions
+    assert r["sessions"] == 2  # two distinct sessions
     assert r["net_pnl"] == 13.0
 
 

@@ -30,7 +30,7 @@ DEFAULTS: dict[str, Any] = {
     # cap a module's advised roster; over-cap specs queue and activate FIFO as before. null/0 = off.
     "max_experiments_per_module": None,
     # 15 sessions so an experiment that runs its course can actually satisfy the promotion gate
-    # (min_days 14, min_sample 20). A model asking for fewer gets its request honored, clamped, and
+    # (min_sessions 14, min_sample 20). A model asking for fewer gets its request honored, clamped, and
     # a verdict labeled `underpowered` if the numbers land below the bar.
     "experiment_sessions": 15,
     "experiment_sessions_min": 5,

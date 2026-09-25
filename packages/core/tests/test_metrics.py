@@ -215,7 +215,7 @@ def test_calibration_reading_carries_the_expansion_report_only():
     assert r["drawdown_span"] == {"longest": 2, "open": 0}
     # Report-only: the qualification rule set is untouched by the new keys.
     out = qualify_readings({"a": r})
-    assert set(out["a"]["checks"]) == {"sample", "win_rate", "days"}
+    assert set(out["a"]["checks"]) == {"sample", "win_rate", "sessions"}
 
 
 # --- capture rate / max profit-loss pct ----------------------------------------
@@ -279,7 +279,7 @@ def test_calibration_reading_bundles_the_promotion_evidence():
         _rec(12.0, capital=500.0, session="2026-07-23", slippage=4.0),
     ]
     r = metrics.calibration_reading(records)
-    assert r["sample"] == 3 and r["days"] == 3
+    assert r["sample"] == 3 and r["sessions"] == 3
     assert r["win_rate"] == pytest.approx(round(2 / 3, 4))
     assert r["net_pnl"] == 24.0
     assert r["net_pnl_2x_slippage"] == 12.0
@@ -381,7 +381,7 @@ def _good_reading(**over):
     base = {
         "sample": 25,
         "win_rate": 0.7,
-        "days": 20,
+        "sessions": 20,
         "net_pnl": 300.0,
         "net_pnl_2x_slippage": 120.0,
         "slippage_coverage": 25,
@@ -394,7 +394,7 @@ def _good_reading(**over):
 def test_default_rule_is_unchanged_by_the_new_keys():
     out = qualify_readings({"conservative": _good_reading()})
     assert out["conservative"]["qualified"] is True
-    assert set(out["conservative"]["checks"]) == {"sample", "win_rate", "days"}
+    assert set(out["conservative"]["checks"]) == {"sample", "win_rate", "sessions"}
 
 
 def test_min_net_pnl_refuses_a_book_that_wins_often_and_loses_money():

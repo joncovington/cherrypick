@@ -25,6 +25,8 @@ far more evidence than it is.
 
 from __future__ import annotations
 
+from cherrypick.core import metrics as _metrics
+
 # Every P&L query filters to a resolved trade. An open position is not a result yet, and counting
 # it as one would flatter whichever stream happens to be holding something at read time.
 _RESOLVED = "status IN ('stopped', 'expired', 'force_closed')"
@@ -188,17 +190,10 @@ def _bucket_expr(dimension: str) -> str:
     )
 
 
-# The session count below which a dimension cannot support a threshold re-cut. Deliberately the SAME
-# number as experiment.MIN_SESSIONS_FOR_INTERVAL (14) rather than a second one invented here: both
-# answer "how many sessions before this book may draw a conclusion", and two constants for one
-# question is how they start disagreeing. Not imported from experiment.py because that module pulls
-# in paths/config and this one is a pure read layer over an open connection — the coupling is stated
-# here and pinned by a test instead.
-#
-# The bar's own provenance is experiment.py's: PROMOTION_RULE.min_days is 14 and this module's docs
-# put a regime-level claim at 14-20 sessions. Raise it, don't lower it, if a re-cut made on a sample
-# this size later fails to hold.
-MIN_EFFECTIVE_N = 14
+# The session count below which a dimension cannot support a threshold re-cut: the suite's one
+# `core.metrics.MIN_EFFECTIVE_N`, the same bar experiment.MIN_SESSIONS_FOR_INTERVAL reads. This
+# module's docs put a regime-level claim at 14-20 sessions.
+MIN_EFFECTIVE_N = _metrics.MIN_EFFECTIVE_N
 
 # How small within-session movement has to be, relative to movement BETWEEN sessions, before a
 # dimension is called daily-scale. Not a test for a constant: a daily-scale input still wobbles
@@ -981,7 +976,11 @@ def arm_divergence(
 
 
 def session_bootstrap(
-    values_by_session_a: dict, values_by_session_b: dict, *, min_sessions: int = 14, iterations: int = 2000
+    values_by_session_a: dict,
+    values_by_session_b: dict,
+    *,
+    min_sessions: int = MIN_EFFECTIVE_N,
+    iterations: int = 2000,
 ) -> dict:
     """Session-level bootstrap for comparing two streams — the estimator two-tier cadence in
     docs/paper-experiments.md calls for: gate splits use per-SESSION means (a session with zero

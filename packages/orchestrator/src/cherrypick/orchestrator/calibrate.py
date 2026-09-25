@@ -24,8 +24,8 @@ from datetime import datetime, timezone
 
 from cherrypick.core.metrics import calibration_reading
 from cherrypick.core.profiles import (
-    QUALIFICATION_RULE,
     group_by_tag,
+    qualification_rule,
     qualify_readings,
 )
 
@@ -34,7 +34,7 @@ from . import report
 
 # --------------------------------------------------------------------------- readings
 # The reading IS the shared bundle (cherrypick.core.metrics.calibration_reading): sample /
-# win_rate / days / net_pnl plus return_on_capital, per-trade sharpe, session-ordered max
+# win_rate / sessions / net_pnl plus return_on_capital, per-trade sharpe, session-ordered max
 # drawdown, sample_progress, and the 2x-slippage restatement with coverage counts — one
 # metric vocabulary for every tag on every module, and the shape the hardened qualification
 # checks (min_return_on_capital, require_slippage_survival) consume.
@@ -85,7 +85,7 @@ def run(cfg: dict | None = None) -> dict:
 
         # The epoch is ENFORCED here: a calibration reading must never blend sessions
         # produced by retired code (pre-fix leg ratios, fee undercounts, status-based wins) into
-        # its sample/days/win-rate. Records without a session date are treated as pre-epoch —
+        # its sample/sessions/win-rate. Records without a session date are treated as pre-epoch —
         # if we can't date it, it can't support a recommendation.
         if epoch is not None:
             records = [r for r in records if r.get("session") and r["session"] >= epoch["date"]]
@@ -105,7 +105,7 @@ def run(cfg: dict | None = None) -> dict:
         modules_out[name] = {
             "ok": True,
             "schema": schema,
-            "rule": {**QUALIFICATION_RULE, **rule},
+            "rule": qualification_rule(rule),
             "profiles": profiles_out,
         }
 

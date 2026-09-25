@@ -98,7 +98,7 @@ function positionsFor(db: Database.Database, session: string): LivePosition[] {
         center: Number(r["center"]),
         wingWidth: Number(r["wing_width"]),
         quantity: Number(r["quantity"] ?? 1),
-        net: Number(r["net"] ?? 0),
+        netCredit: Number(r["net"] ?? 0),
         fees: Number(r["fees"] ?? 0),
         floorDollars: num(r["floor_dollars"]),
         riskFree: Boolean(num(r["risk_free"])),
