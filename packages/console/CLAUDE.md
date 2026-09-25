@@ -494,6 +494,10 @@ Modules on the standard (and on the module frame): flies, meic (2026-09-25; `rea
 `meicTradeCash`, `pages/Meic/MeicTables.tsx`, `server/test/meic-trade-standard.test.ts`). MEIC's
 entry is summed from its two side credits, rounded per side as its write path rounds each side's
 P&L; from the rounded `net_credit` instead, 1,798 worthless expiries showed a one-cent exit.
+bwb (2026-09-25; `readers/bwb.ts` `bwbTradeCash`, `server/test/bwb-trade-standard.test.ts`) is
+the first module on the other slippage model: charged as a cost inside `fees`, so each part (entry
+and add-on fees, their slippage, settlement) comes out of the total once, and a broker-reconciled
+row takes out none, since its real fills already carry it.
 
 ## Suite guardrails (apply here too)
 

@@ -2,6 +2,8 @@ import path from "node:path";
 import type {
   BwbArmCell,
   BwbCycleRow,
+  BwbHistory,
+  BwbHistoryTotals,
   BwbEntryAttempt,
   BwbFireCount,
   BwbManagementEvent,
@@ -11,7 +13,7 @@ import type {
   Paged,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { num, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
+import { hasColumn, num, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
 
 /**
@@ -112,7 +114,10 @@ function readOpenPositions(db: DatabaseHandle): BwbOpenPosition[] {
       ORDER BY marked_at DESC LIMIT 1`,
   );
   return db
-    .prepare<[], Record<string, unknown>>("SELECT * FROM bwb_positions WHERE status != 'closed' ORDER BY symbol, arm")
+    // A cancelled row is a live entry that never filled: it was never a position (the standard).
+    .prepare<[], Record<string, unknown>>(
+      "SELECT * FROM bwb_positions WHERE status NOT IN ('closed', 'cancelled') ORDER BY symbol, arm",
+    )
     .all()
     .map((p) => {
       const positionId = str(p["position_id"]) ?? "";
@@ -130,6 +135,7 @@ function readOpenPositions(db: DatabaseHandle): BwbOpenPosition[] {
         entryCredit: num(p["entry_credit"]),
         entryMaxLoss: num(p["entry_max_loss"]),
         quantity: num(p["quantity"]),
+        entryCash: bwbEntryCash(p),
         peakAbsDelta: num(p["peak_abs_delta"]),
         belowFlipSeen: p["below_flip_seen"] === 1,
         armedAt: str(p["armed_at"]),
@@ -409,11 +415,69 @@ export interface BwbHistoryFilter {
 }
 
 /** Completed positions, newest first. */
+function round2(v: number): number {
+  return Math.round(v * 100) / 100;
+}
+
+/** The opening cash flows, signed: the fly's credit plus the add-on's once it fired, x100 x qty. */
+function bwbEntryCash(p: Record<string, unknown>): number | null {
+  const credit = num(p["entry_credit"]);
+  if (credit === null) return null;
+  return round2((credit + (num(p["addon_credit"]) ?? 0)) * 100 * (num(p["quantity"]) ?? 1));
+}
+
+/** A `bwb_positions` column, or NULL on a ledger that predates it. */
+function bwbCol(db: DatabaseHandle, name: string): string {
+  return hasColumn(db, "bwb_positions", name) ? name : "NULL";
+}
+
+/**
+ * How a completed position left: settled at the print with something in the money, expired
+ * worthless, or closed before expiry.
+ */
+export function bwbExitKind(exitReason: string | null, itmSettlements: number | null): BwbCycleRow["exitKind"] {
+  if (exitReason === null) return null;
+  if (exitReason === "expired") return (itmSettlements ?? 0) > 0 ? "settled" : "expired";
+  return "closed";
+}
+
+/**
+ * The standard's money columns for a completed position. `gross_pnl` is mid-priced and cost-free
+ * and `fees` the TOTAL (entry fee + entry slippage + add-on fee + add-on slippage + settlement),
+ * so the parts come out of it once each and net stays `gross_pnl - fees`. On a reconciled live row
+ * `fees` is the broker's total and the fills already carry the slippage, so none is taken out.
+ */
+function bwbTradeCash(r: Record<string, unknown>): Pick<
+  BwbCycleRow,
+  "quantity" | "entryCash" | "exitCash" | "exitKind" | "grossPnl" | "fees" | "settlementFees" | "slippage" | "netPnl"
+> {
+  const gross = num(r["gross_pnl"]);
+  const total = num(r["fees"]);
+  const settlementFees = num(r["settlement_fees"]);
+  const reconciled = str(r["fees_source"]) === "reconciled";
+  const slipParts = [num(r["entry_slippage"]), num(r["addon_slippage"])];
+  const slippage = reconciled || slipParts[0] === null ? null : round2((slipParts[0] ?? 0) + (slipParts[1] ?? 0));
+  const entryCash = bwbEntryCash(r);
+  return {
+    quantity: num(r["quantity"]),
+    entryCash,
+    exitCash: gross !== null && entryCash !== null ? round2(gross - entryCash) : null,
+    exitKind: bwbExitKind(str(r["exit_reason"]), num(r["itm_settlements"])),
+    grossPnl: gross,
+    fees: total === null ? null : round2(total - (settlementFees ?? 0) - (slippage ?? 0)),
+    settlementFees,
+    slippage,
+    netPnl: gross === null || total === null ? null : round2(gross - total),
+  };
+}
+
+const EMPTY_BWB_TOTALS: BwbHistoryTotals = { positions: 0, gross: 0, fees: 0, settlementFees: 0, slippage: 0, net: 0 };
+
 export function readBwbHistory(
   config: ConsoleConfig,
   filter: BwbHistoryFilter,
   page: PageRequest = FIRST_PAGE,
-): Paged<BwbCycleRow> {
+): BwbHistory {
   const clauses = ["status = 'closed'"];
   const params: string[] = [];
   if (filter.arm !== null) {
@@ -425,22 +489,42 @@ export function readBwbHistory(
     params.push(filter.symbol);
   }
 
-  return withReadOnlyDb<Paged<BwbCycleRow>>(dbPath(config), emptyPage(page), (db) =>
-    pagedQuery<BwbCycleRow>(
+  return withReadOnlyDb<BwbHistory>(dbPath(config), { ...emptyPage(page), totals: EMPTY_BWB_TOTALS }, (db) => {
+    const where = clauses.join(" AND ");
+    const cols = `position_id, symbol, arm, entry_session, closed_session, status, exit_reason,
+                  body_strike, near_strike, far_strike, expiration, entry_spot, entry_credit,
+                  armed_at, addon_fired_at, addon_credit, gross_pnl, fees, quantity, itm_settlements,
+                  entry_slippage, addon_slippage,
+                  ${bwbCol(db, "settlement_fees")} AS settlement_fees,
+                  ${bwbCol(db, "fees_source")} AS fees_source`;
+    // Totals from the same rows through the same arithmetic as each row, so the chip and the
+    // table cannot disagree about what a column means.
+    const totals = db
+      .prepare<string[], Record<string, unknown>>(`SELECT ${cols} FROM bwb_positions WHERE ${where}`)
+      .all(...params)
+      .map(bwbTradeCash)
+      .reduce<BwbHistoryTotals>(
+        (t, c) => ({
+          positions: t.positions + 1,
+          gross: round2(t.gross + (c.grossPnl ?? 0)),
+          fees: round2(t.fees + (c.fees ?? 0)),
+          settlementFees: round2(t.settlementFees + (c.settlementFees ?? 0)),
+          slippage: round2(t.slippage + (c.slippage ?? 0)),
+          net: round2(t.net + (c.netPnl ?? 0)),
+        }),
+        EMPTY_BWB_TOTALS,
+      );
+    const paged = pagedQuery<BwbCycleRow>(
       db,
       {
-        columns: `position_id, symbol, arm, entry_session, closed_session, status, exit_reason,
-                  body_strike, near_strike, far_strike, expiration, entry_spot, entry_credit,
-                  armed_at, addon_fired_at, addon_credit, gross_pnl, fees`,
+        columns: cols,
         from: "bwb_positions",
-        where: clauses.join(" AND "),
+        where,
         params,
         orderBy: "entry_session DESC, id DESC",
       },
       page,
       (r) => {
-        const gross = num(r["gross_pnl"]);
-        const fees = num(r["fees"]);
         return {
           positionId: str(r["position_id"]) ?? "",
           symbol: str(r["symbol"]) ?? "",
@@ -458,13 +542,12 @@ export function readBwbHistory(
           armedAt: str(r["armed_at"]),
           addonFiredAt: str(r["addon_fired_at"]),
           addonCredit: num(r["addon_credit"]),
-          grossPnl: gross,
-          fees,
-          netPnl: gross === null || fees === null ? null : gross - fees,
+          ...bwbTradeCash(r),
         };
       },
-    ),
-  );
+    );
+    return { ...paged, totals };
+  });
 }
 
 /** The history filter's own options. No era mechanism: the module has one era and no pooled data yet. */

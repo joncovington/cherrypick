@@ -9,7 +9,7 @@ import { FRAME_MODULE_IDS, type FrameModuleId } from "../src/lightbox/registry";
 import { MODULE_LABEL } from "../src/lightbox/moduleOrder";
 
 /** Where each frame module's pages live, for the card-link check below. */
-const PAGE_DIR: Record<FrameModuleId, string> = { flies: "Flies", meic: "Meic" };
+const PAGE_DIR: Record<FrameModuleId, string> = { flies: "Flies", meic: "Meic", bwb: "Bwb" };
 
 /**
  * Route wiring, rendered rather than read.

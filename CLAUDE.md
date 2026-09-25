@@ -193,7 +193,7 @@ another.
 - **Slippage is its own column, and says which model it is.** The suite prices it two ways. Where
   the modelled fill price already concedes it (flies, meic), it is inside gross — shown beside the
   costs as a measure and never subtracted again. Where fills are taken at mid and slippage is
-  charged as a cost (calendars, pmcc, curve, earnings), it is a cost: its own column, subtracted
+  charged as a cost (bwb, calendars, pmcc, curve, earnings), it is a cost: its own column, subtracted
   once, and out of the fee column. The header's title says which; a figure that is subtracted in
   one module and not in another is never shown under one unqualified name.
 - **Open and closed are different tables.** Open positions carry the entry side (and a mark, where

@@ -104,6 +104,25 @@ export const MEIC_SLIDES = [
 
 export type MeicSlideId = (typeof MEIC_SLIDES)[number]["id"];
 
+/**
+ * bwb's tabs, on the frame since 2026-09-25. `now` → `session` (tiles and shapes, each linking
+ * into the rail); its dense cards became pages: `positions` (open trades, marked), `arms` (net by
+ * arm beside the fire counts, with the module's honesty caveats) and `decisions`. `history` is the
+ * completed positions in the suite's standard trade layout.
+ */
+export const BWB_SLIDES = [
+  { id: "session", label: "session" },
+  { id: "decisions", label: "decisions" },
+  { id: "arms", label: "arms" },
+  { id: "performance", label: "performance" },
+  { id: "advisor", label: "advisor" },
+  { id: "positions", label: "positions" },
+  { id: "history", label: "history" },
+  { id: "guide", label: "help" },
+] as const satisfies readonly NavSlide[];
+
+export type BwbSlideId = (typeof BWB_SLIDES)[number]["id"];
+
 export const NAV_DECL: Partial<Record<ModuleId, ModuleNavDecl>> = {
   flies: {
     slides: FLIES_SLIDES,
@@ -133,6 +152,17 @@ export const NAV_DECL: Partial<Record<ModuleId, ModuleNavDecl>> = {
       { label: "help", ids: ["guide"] },
     ],
     legacy: { now: "session", trades: "history" },
+  },
+  bwb: {
+    slides: BWB_SLIDES,
+    groups: [
+      { label: "today", ids: ["session"] },
+      { label: "evidence", ids: ["decisions", "arms"] },
+      { label: "study", ids: ["performance", "advisor"] },
+      { label: "tables", ids: ["positions", "history"] },
+      { label: "help", ids: ["guide"] },
+    ],
+    legacy: { now: "session" },
   },
 };
 

@@ -1,62 +1,71 @@
 import { useBwb } from "../../lib/api";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
-import { Card } from "../../components/DataTable";
 import { LoopPill } from "../../components/ScopeBar";
 import { IntegrityStrip } from "../../pages/Bwb/IntegrityStrip";
 import { BookComparison, FireCountsCard, OpenTradesCard } from "../../pages/Bwb/CurrentStateCards";
+import { BwbSession } from "../../pages/Bwb/BwbSession";
 import { DecisionsCard } from "../../components/DecisionsCard";
 import { HistoryTab } from "../../pages/Bwb/HistoryTab";
 import { HelpTab } from "../../pages/Bwb/HelpTab";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
-import { LightboxFrame } from "../LightboxFrame";
+import { ModuleFrame } from "../ModuleFrame";
+import { BWB_SLIDES, type BwbSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
 
-/** bwb (SPX daily-laddered put broken-wing butterfly / 1-3-2 add-on trigger experiment). */
+const BWB_LABEL = Object.fromEntries(BWB_SLIDES.map((s) => [s.id, s.label])) as Record<BwbSlideId, string>;
+
+/**
+ * bwb (SPX daily-laddered put broken-wing butterfly / 1-3-2 add-on trigger experiment), on the
+ * module frame since 2026-09-25: a left rail of pages, and nothing on the surface opens an overlay.
+ */
 export function BwbLightbox({ slide }: { slide: string }) {
   const { data, isLoading, dataUpdatedAt } = useBwb();
   const loopState =
     data?.today.lastIteration == null ? "no-data" : data.today.lastIteration.ageSeconds < 900 ? "live" : "idle";
 
-  const slides: SlideDef[] = [
+  const slides: Array<SlideDef & { id: BwbSlideId }> = [
+    { id: "session", label: BWB_LABEL.session, render: () => <BwbSession data={data} loading={isLoading} /> },
     {
-      id: "now",
-      label: "now",
-      render: () =>
-        data !== undefined && !data.dbPresent ? (
-          <div className="cards cards-wide">
-            <Card title="bwb" collapseKey="bwb-absent">
-              <p className="muted">
-                This module has not run on this machine -- there is no paper store at{" "}
-                <span className="mono">~/.cherrypick/data/bwb/paper_trades.db</span> yet. bwb was
-                built 2026-08-23; the page fills in once its first scheduled session runs.
-              </p>
-            </Card>
-          </div>
-        ) : (
-          <div className="cards cards-wide">
-            {isLoading ? null : <OpenTradesCard data={data} updatedAt={dataUpdatedAt} />}
-            <FireCountsCard
-              counts={data?.fireCounts ?? []}
-              correlationCaveat={
-                data?.correlationCaveat ??
-                "concurrent positions share regime context -- rows are not independent samples"
-              }
-              updatedAt={dataUpdatedAt}
-            />
-            <DecisionsCard module="bwb" />
-            <BookComparison data={data} updatedAt={dataUpdatedAt} />
-          </div>
-        ),
+      id: "decisions",
+      label: BWB_LABEL.decisions,
+      render: () => (
+        <div className="cards cards-wide">
+          <DecisionsCard module="bwb" />
+        </div>
+      ),
     },
-    { id: "history", label: "history", render: () => <HistoryTab /> },
-    { id: "advisor", label: "advisor", render: () => <AdvisorSlide module="bwb" /> },
-    { id: "performance", label: "performance", render: () => <PerformanceSlide module="bwb" /> },
-    { id: "guide", label: "help", render: () => <HelpTab data={data} /> },
+    {
+      id: "arms",
+      label: BWB_LABEL.arms,
+      render: () => (
+        <div className="cards cards-wide">
+          <BookComparison data={data} updatedAt={dataUpdatedAt} />
+          <FireCountsCard
+            counts={data?.fireCounts ?? []}
+            correlationCaveat={
+              data?.correlationCaveat ?? "concurrent positions share regime context -- rows are not independent samples"
+            }
+            updatedAt={dataUpdatedAt}
+          />
+        </div>
+      ),
+    },
+    { id: "performance", label: BWB_LABEL.performance, render: () => <PerformanceSlide module="bwb" /> },
+    { id: "advisor", label: BWB_LABEL.advisor, render: () => <AdvisorSlide module="bwb" /> },
+    {
+      id: "positions",
+      label: BWB_LABEL.positions,
+      render: () => (
+        <div className="cards cards-wide">{isLoading ? null : <OpenTradesCard data={data} updatedAt={dataUpdatedAt} />}</div>
+      ),
+    },
+    { id: "history", label: BWB_LABEL.history, render: () => <HistoryTab /> },
+    { id: "guide", label: BWB_LABEL.guide, render: () => <HelpTab data={data} /> },
   ];
 
   return (
-    <LightboxFrame
+    <ModuleFrame
       module="bwb"
       slide={slide}
       slides={slides}

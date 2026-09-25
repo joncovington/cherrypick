@@ -1034,6 +1034,9 @@ export interface BwbOpenPosition {
   entryMaxLoss: number | null;
   /** Contracts of the structure -- what a per-share debit or max loss is multiplied by (x100). */
   quantity: number | null;
+  /** The opening cash flows in whole-position dollars, signed (credit +): the fly's credit, plus
+   *  the add-on's once it has fired. The trade table standard's `entry`. */
+  entryCash: number | null;
   /** Persisted trigger latches -- never held only in loop memory (a supervisor restart mid-session
    * must not amnesia a morning touch). */
   peakAbsDelta: number | null;
@@ -1157,10 +1160,33 @@ export interface BwbCycleRow {
   armedAt: string | null;
   addonFiredAt: string | null;
   addonCredit: number | null;
+  quantity: number | null;
+  /** The trade table standard (root CLAUDE.md): whole-position dollars, signed cash flow.
+   *  entry + exit = gross; gross − fees − settlement − slippage = net. bwb prices fills at mid and
+   *  CHARGES slippage as a cost, so here it is subtracted -- except on a broker-reconciled row,
+   *  whose real fills already carry it (`slippage` null there). */
+  entryCash: number | null;
+  exitCash: number | null;
+  exitKind: "closed" | "settled" | "expired" | null;
   grossPnl: number | null;
+  /** Trading fees; with settlement folded in where the split was never recorded. */
   fees: number | null;
+  settlementFees: number | null;
+  slippage: number | null;
   netPnl: number | null;
 }
+
+/** Totals over every completed position the history filter matches — never the rendered page. */
+export interface BwbHistoryTotals {
+  positions: number;
+  gross: number;
+  fees: number;
+  settlementFees: number;
+  slippage: number;
+  net: number;
+}
+
+export type BwbHistory = Paged<BwbCycleRow> & { totals: BwbHistoryTotals };
 
 export interface BwbMeta {
   arms: string[];

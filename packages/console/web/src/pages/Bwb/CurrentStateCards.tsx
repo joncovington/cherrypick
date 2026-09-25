@@ -3,6 +3,7 @@ import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../compone
 import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 import { SignedBar } from "../../components/Charts";
 import { fmtStrike } from "../../lib/optionFormat";
+import { fmtCash, fmtPrice } from "../../lib/format";
 
 const CORE_BOOKS = ["control", "delta", "bounce", "flip"];
 
@@ -65,6 +66,9 @@ function PositionRows({ rows }: { rows: BwbOpenPosition[] }) {
           <td title={p.entrySession}>{p.entrySession === "" ? "—" : p.entrySession.slice(5)}</td>
           <td title={p.expiration ?? undefined}>{p.expiration === null ? "—" : p.expiration.slice(5)}</td>
           <td>{strikeSet(p.nearStrike, p.bodyStrike, p.farStrike)}</td>
+          <td>{p.quantity ?? "—"}</td>
+          <td title="the fly's own net credit, per share">{fmtPrice(p.entryCredit)}</td>
+          <td title="the fly's credit plus the add-on's once fired, whole position">{fmtCash(p.entryCash)}</td>
           <td>
             <UnrealisedPnlCell
               gross={p.unrealisedGross}
@@ -74,7 +78,6 @@ function PositionRows({ rows }: { rows: BwbOpenPosition[] }) {
             />
           </td>
           <td>{fmtNum(p.currentSpot ?? p.entrySpot, 2)}</td>
-          <td>{fmtMoney(p.entryCredit)}</td>
           <td>{p.peakAbsDelta === null ? "—" : fmtNum(p.peakAbsDelta, 3)}</td>
           <td>{p.belowFlipSeen ? <span className="chip chip-warn integrity-chip">below flip</span> : <span className="muted">—</span>}</td>
           <td>
@@ -90,7 +93,7 @@ function PositionRows({ rows }: { rows: BwbOpenPosition[] }) {
 export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefined; updatedAt?: number }) {
   if (data === undefined) return null;
   const empty = data.openPositions.length === 0;
-  const headers = ["symbol", "arm", "entry", "expiry", "near/body x2/far", "P&L (net of costs to date)", "spot", "credit", "peak |delta|", "below flip", "add-on (short/long)"];
+  const headers = ["symbol", "arm", "opened", "expiry", "near/body x2/far", "qty", "price", "entry", "mark (net of costs to date)", "spot", "peak |delta|", "below flip", "add-on (short/long)"];
   if (empty) {
     return (
       <DataCard

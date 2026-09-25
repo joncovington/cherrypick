@@ -24,6 +24,7 @@ import type {
   CurveMeta,
   BwbPayload,
   BwbCycleRow,
+  BwbHistory,
   BwbMeta,
   CalendarsPayload,
   CalendarsPoliciesPayload,
@@ -405,9 +406,9 @@ export function useBwbHistory(filter: BwbHistoryFilter, page: PageState) {
   if (filter.arm !== null) params.set("arm", filter.arm);
   if (filter.symbol !== null) params.set("symbol", filter.symbol);
   pageParams(params, "", page);
-  return useQuery<Paged<BwbCycleRow>>({
+  return useQuery<BwbHistory>({
     queryKey: ["bwb-history", filter, page],
-    queryFn: () => getJson<Paged<BwbCycleRow>>(`/api/bwb/history?${params.toString()}`),
+    queryFn: () => getJson<BwbHistory>(`/api/bwb/history?${params.toString()}`),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   });
