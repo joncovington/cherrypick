@@ -42,9 +42,11 @@ Order lifecycle:
 
 Gates checked every live tick (`readiness()`): `live.enabled`, a non-empty `gate0_confirmed`
 attestation, one configured arm, a designated account, halt flag absent — plus the daily-loss
-breaker on the live ledger. Live concurrency: at most one incomplete position at a time (an
-open short vertical always blocks; a completed fly blocks only while its floor is negative and
-`live.negative_floor_override` doesn't name it). Buying power is capped locally by
+breaker on the live ledger. Live concurrency (2026-09-25): no count limit by default -- the
+buying-power cap below is the sizing gate, and an uncompleted vertical or a negative-floor fly
+counts against it at its worst case. `live.max_incomplete_spreads` restores a count limit (1 was
+the pilot's rule until 2026-09-25), with `live.negative_floor_override` still naming a stuck
+negative-floor fly it may step past. Buying power is capped locally by
 `live.max_open_margin_dollars` (2026-09-17): the worst-case dollar exposure of every open live
 position plus the proposed spread's own must fit under it, computed from the ledger and the
 plan alone -- no balance read, so a transient broker failure can never block a legitimate
@@ -289,11 +291,10 @@ def _cutoff_reached(now_min: int | None, params: dict) -> bool:
 
 
 def _is_blocking(pos: dict, override_position_id: str | None) -> bool:
-    """True if this open position should prevent a new entry.
+    """True if this open position counts as incomplete for `live.max_incomplete_spreads`.
 
-    An open short vertical always blocks — it IS the one incomplete spread the pilot allows.
-    A completed fly blocks only when its floor is negative (not risk-free) after fees, and
-    even then only until a human names this exact position_id in
+    An open short vertical always counts. A completed fly counts only when its floor is negative
+    (not risk-free) after fees, and even then only until a human names this exact position_id in
     `live.negative_floor_override` — so a stale override can never silently cover a different,
     later stuck position."""
     if pos.get("kind") != "fly":
@@ -801,7 +802,15 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
                 detail=f"{established}/{day_cap}",
             )
 
-    blockers = _blocking_positions(positions, live_cfg.get("negative_floor_override"))
+    # Count limit on incomplete positions (live.max_incomplete_spreads). Off by default since
+    # 2026-09-25: the pilot now sizes by the buying-power cap alone, which counts an uncompleted
+    # vertical and a negative-floor fly at their worst case. The pilot ran with 1 until then --
+    # "one incomplete position at a time" -- and setting 1 restores exactly that. A replay of
+    # control's paper era (08-21..09-24): the rule netted +$2,130 with a -$883 max drawdown and a
+    # -$298 worst session; the $1,000 cap alone +$3,119, -$1,256 and -$818.
+    limit = live_cfg.get("max_incomplete_spreads")
+    incomplete = _blocking_positions(positions, live_cfg.get("negative_floor_override"))
+    blockers = incomplete if limit and len(incomplete) >= int(limit) else []
     if day_capped:
         pass  # the day's structure budget is spent — no entry evaluation at all
     elif blockers:

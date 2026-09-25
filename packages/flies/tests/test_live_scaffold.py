@@ -881,7 +881,63 @@ def test_blocking_positions_ignores_closed_rows():
     assert live_loop._blocking_positions([open_pos, closed_pos], None) == [open_pos]
 
 
+def _one_at_a_time_cfg():
+    cfg = _loop_cfg()
+    cfg["live"]["max_incomplete_spreads"] = 1
+    return cfg
+
+
+def _open_vertical(live_conn, pid="OPEN1", center=7495.0):
+    from cherrypick.flies import clock
+
+    dbmod.save_position(
+        live_conn,
+        {
+            "position_id": pid,
+            "book_id": f"{DAY}:gex:SPX",
+            "trade_date": DAY,
+            "arm": "gex",
+            "entry_mode": "legged",
+            "symbol": "SPX",
+            "kind": "short_vertical",
+            "side": PUT,
+            "center": center,
+            "wing_width": 5,
+            "quantity": 1,
+            "net": 1.05,
+            "credit": 1.05,
+            "fees": 3.44,
+            "status": "open",
+            "entry_time": clock.now_iso(),
+            "entry_order_id": f"ORD-{pid}",
+            "entry_fill_status": "filled",
+        },
+    )
+
+
+def test_by_default_an_open_spread_does_not_block_a_new_entry(live_conn):
+    """Since 2026-09-25 the pilot sizes by the buying-power cap alone: an uncompleted vertical is
+    exposure the cap counts, not a reason on its own to refuse the next entry."""
+    _open_vertical(live_conn, center=7480.0)
+    broker = FakeBroker()
+    summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    assert not any("still an incomplete spread" in s.get("entry", "") for s in summary["skips"])
+    assert summary["entered"] == 1
+
+
+def test_the_buying_power_cap_still_refuses_with_no_count_limit(live_conn):
+    """Two open verticals' worst case plus a third's must fit under the cap, count limit or not."""
+    _open_vertical(live_conn, "OPEN1", center=7480.0)
+    _open_vertical(live_conn, "OPEN2", center=7470.0)
+    cfg = _loop_cfg()
+    cfg["live"]["max_open_margin_dollars"] = 1000
+    summary = live_loop.run_once(cfg, _snapshot(), live_conn, FakeBroker(), live=True, log=lambda *_: None)
+    assert summary["entered"] == 0
+    assert any(s.get("entry", "").startswith("max_open_margin_reached") for s in summary["skips"])
+
+
 def test_entry_refused_while_a_spread_is_still_open(live_conn):
+    """With `live.max_incomplete_spreads` = 1 -- the pilot's rule until 2026-09-25, off by default since."""
     from cherrypick.flies import clock
 
     dbmod.save_position(
@@ -908,7 +964,9 @@ def test_entry_refused_while_a_spread_is_still_open(live_conn):
         },
     )
     broker = FakeBroker()
-    summary = live_loop.run_once(_loop_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
+    summary = live_loop.run_once(
+        _one_at_a_time_cfg(), _snapshot(), live_conn, broker, live=True, log=lambda *_: None
+    )
     assert summary["entered"] == 0
     assert any("still an incomplete spread" in s.get("entry", "") for s in summary["skips"])
     # No second ENTRY was placed — the only order is the resting COMPLETION for the confirmed
@@ -953,6 +1011,7 @@ def test_entry_allowed_once_completed_fly_is_risk_free(live_conn):
 
 
 def test_entry_refused_when_completed_fly_has_negative_floor(live_conn):
+    """With `live.max_incomplete_spreads` = 1 -- the pilot's rule until 2026-09-25, off by default since."""
     from cherrypick.flies import clock
 
     dbmod.save_position(
@@ -981,7 +1040,7 @@ def test_entry_refused_when_completed_fly_has_negative_floor(live_conn):
         },
     )
     broker = FakeBroker()
-    cfg = _loop_cfg()
+    cfg = _one_at_a_time_cfg()
     summary = live_loop.run_once(cfg, _snapshot(), live_conn, broker, live=True, log=lambda *_: None)
     assert summary["entered"] == 0
     assert any("negative floor" in s.get("entry", "") for s in summary["skips"])
