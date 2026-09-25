@@ -225,8 +225,19 @@ export interface FliesTradeLogRow {
   /** Far wing, only when the wing is BROKEN; null on a symmetric fly. */
   farWidth: number | null;
   window: string | null;
-  net: number | null;
+  quantity: number | null;
+  /** Net entry price per share, signed: credit +, debit −. */
+  price: number | null;
+  /** Whole-position dollars, signed cash flow: entry + exit = gross; gross − fees − settlement = net. */
+  entryCash: number | null;
+  exitCash: number | null;
+  exitKind: "closed" | "settled" | "expired" | null;
+  gross: number | null;
+  /** Trading fees — the fee TOTAL when `settlementFees` is null (the split was never recorded). */
   fees: number | null;
+  settlementFees: number | null;
+  /** Already inside gross — informational, never subtracted. */
+  slippage: number | null;
   pnl: number | null;
   latencyMin: number | null;
   pinned: boolean;
@@ -239,6 +250,10 @@ export interface FliesTradeLogTotals {
   netPnl: number;
   grossPnl: number;
   fees: number;
+  settlementFees: number;
+  slippage: number;
+  /** How many of `trades` recorded slippage — the slippage sum covers only those. */
+  slippageTrades: number;
 }
 
 export type FliesTradeLog = Paged<FliesTradeLogRow> & { totals: FliesTradeLogTotals };

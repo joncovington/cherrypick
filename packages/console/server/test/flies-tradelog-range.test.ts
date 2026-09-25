@@ -28,6 +28,7 @@ function seed(dir: string): void {
       id INTEGER PRIMARY KEY, trade_date TEXT, entry_time TEXT, symbol TEXT, arm TEXT,
       entry_mode TEXT, kind TEXT, side TEXT, center REAL, wing_width REAL, far_width REAL,
       entry_window TEXT,
+      quantity INTEGER DEFAULT 1,
       net REAL, fees REAL, pnl REAL, gross_pnl REAL, completion_latency_min REAL, pinned INTEGER,
       status TEXT, void_reason TEXT
     );
@@ -160,7 +161,9 @@ describe("the log's totals", () => {
   it("is zeroed, not absent, when nothing matches", () => {
     const r = log({ from: "2026-08-25", to: "2026-08-20" });
     expect(r.total).toBe(0);
-    expect(r.totals).toEqual({ trades: 0, sessions: 0, netPnl: 0, grossPnl: 0, fees: 0 });
+    expect(r.totals).toEqual({
+      trades: 0, sessions: 0, netPnl: 0, grossPnl: 0, fees: 0, settlementFees: 0, slippage: 0, slippageTrades: 0,
+    });
   });
 });
 

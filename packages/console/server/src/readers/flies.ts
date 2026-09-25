@@ -199,6 +199,46 @@ function latestTradeDate(dbPath: string): string | null {
   return UNRESOLVABLE_DAY;
 }
 
+/**
+ * A book's row in the trade table standard. The book records its own credit, debits, fee total and
+ * net; gross is net + fees, so entry + exit = gross and gross − fees − settlement = net hold by
+ * construction, and the book's recorded pnl stays the one net figure. Settlement and slippage come
+ * from its positions — slippage only when every held position recorded it.
+ */
+function bookCash(r: Record<string, unknown>): Pick<
+  FliesBookRow,
+  "entryCash" | "exitCash" | "gross" | "fees" | "settlementFees" | "slippage"
+> {
+  const credit = num(r["credit_collected"]);
+  const debits = num(r["debits_paid"]);
+  const total = num(r["fees"]);
+  const pnl = num(r["pnl"]);
+  const settlementFees = num(r["settlement_fees"]);
+  const entryCash = credit !== null && debits !== null ? round2(credit - debits) : null;
+  const gross = pnl !== null && total !== null ? round2(pnl + total) : null;
+  return {
+    entryCash,
+    exitCash: gross !== null && entryCash !== null ? round2(gross - entryCash) : null,
+    gross,
+    fees: total !== null && settlementFees !== null ? round2(total - settlementFees) : total,
+    settlementFees,
+    slippage: num(r["slippage"]),
+  };
+}
+
+/**
+ * One book's total of a position cost column, over the positions that were held. A NULL — never an
+ * error — when the positions table lacks any column the subquery reads: the books table must not go
+ * blank because the positions table drifted, and `withReadOnlyDb` would make it blank, not loud.
+ */
+function perBookSum(db: DatabaseHandle, aggregate: string, column: string): string {
+  const needed = ["book_id", "void_reason", "status", column];
+  if (!needed.every((c) => hasColumn(db, "fly_positions", c))) return "NULL";
+  return `(SELECT ${aggregate} FROM fly_positions p
+            WHERE p.book_id = fly_books.book_id AND p.void_reason IS NULL
+              AND COALESCE(p.status, '') != 'cancelled')`;
+}
+
 export function readFlies(
   config: ConsoleConfig,
   mode: TradingMode,
@@ -219,8 +259,12 @@ export function readFlies(
     pagedQuery<FliesBookRow>(
       db,
       {
+        // Settlement and slippage live on the positions: summed per book over the ones that were
+        // held (the book's own pnl already leaves cancelled and voided rows out).
         columns: `book_id, trade_date, arm, symbol, credit_collected, debits_paid, fees,
-                  net_cash, floor_holds, band_low, band_high, pnl, status`,
+                  floor_holds, band_low, band_high, pnl, status,
+                  ${perBookSum(db, "SUM(p.settlement_fees)", "settlement_fees")} AS settlement_fees,
+                  ${perBookSum(db, "CASE WHEN COUNT(*) = COUNT(p.slippage_dollars) THEN SUM(p.slippage_dollars) END", "slippage_dollars")} AS slippage`,
         from: "fly_books",
         where,
         params,
@@ -233,10 +277,7 @@ export function readFlies(
         tradeDate: str(r["trade_date"]) ?? "",
         arm: str(r["arm"]),
         symbol: str(r["symbol"]) ?? "",
-        creditCollected: num(r["credit_collected"]),
-        debitsPaid: num(r["debits_paid"]),
-        fees: num(r["fees"]),
-        netCash: num(r["net_cash"]),
+        ...bookCash(r),
         floorHolds: r["floor_holds"] === null ? null : r["floor_holds"] === 1,
         bandLow: num(r["band_low"]),
         bandHigh: num(r["band_high"]),
@@ -245,14 +286,17 @@ export function readFlies(
       })),
   );
 
+  // A cancelled entry never filled and a voided row was struck from the record: neither was ever a
+  // position, so neither is listed as one (the books table already leaves both out of its pnl).
+  const held = `${where} AND ${NOT_CANCELLED} AND void_reason IS NULL`;
   const positions = withReadOnlyDb<Paged<FliesPositionRow>>(dbPath, emptyPage(page.positions), (db) =>
     pagedQuery<FliesPositionRow>(
       db,
       {
         columns: `position_id, trade_date, symbol, arm, entry_mode, kind, side, center, wing_width,
-                  quantity, net, floor_dollars, risk_free, status, pnl, entry_time`,
+                  far_width, quantity, net, floor_dollars, risk_free, status, pnl, entry_time`,
         from: "fly_positions",
-        where,
+        where: held,
         params,
         orderBy: "id DESC",
       },
@@ -268,8 +312,10 @@ export function readFlies(
         side: str(r["side"]),
         center: num(r["center"]),
         wingWidth: num(r["wing_width"]),
+        farWidth: num(r["far_width"]),
         quantity: num(r["quantity"]),
         net: num(r["net"]),
+        entryCash: num(r["net"]) !== null ? round2(Number(r["net"]) * 100 * (num(r["quantity"]) ?? 1)) : null,
         floorDollars: num(r["floor_dollars"]),
         riskFree: r["risk_free"] === 1,
         status: str(r["status"]) ?? "",
@@ -1011,11 +1057,78 @@ export interface FliesTradeLogRow {
    *  whole trade in a bwb, and a single width would quietly describe it as something it is not. */
   farWidth: number | null;
   window: string | null;
-  net: number | null;
+  quantity: number | null;
+  /** Net entry price per share, signed: credit +, debit −. The one per-share column in the row. */
+  price: number | null;
+  /** The trade table standard (console CLAUDE.md): whole-position dollars, signed cash flow.
+   *  entry + exit = gross; gross − fees − settlement = net. `exit` is derived as gross − entry so
+   *  the row sums by construction, and it carries the settlement payoff of a held-to-expiry fly. */
+  entryCash: number | null;
+  exitCash: number | null;
+  exitKind: FliesExitKind;
+  gross: number | null;
+  /** Trading fees — the ledger's `fees` total less `settlementFees`. When the settlement split was
+   *  never recorded (`settlementFees` null) this is the TOTAL, and the row says so. */
   fees: number | null;
+  settlementFees: number | null;
+  /** What the modelled fills conceded against mid. Already inside the prices, so already inside
+   *  gross — shown beside it, never subtracted. Null for live fills and older paper rows. */
+  slippage: number | null;
   pnl: number | null;
   latencyMin: number | null;
   pinned: boolean;
+}
+
+/** How a held position left the book: closed at a quote, or settled against the print — `settled`
+ *  when anything was in the money at the bell, `expired` when every leg died worthless. */
+export type FliesExitKind = "closed" | "settled" | "expired" | null;
+
+export function fliesExitKind(
+  closedBeforeExpiry: unknown,
+  expiryPayoff: number | null,
+  settlementFees: number | null,
+): FliesExitKind {
+  if (closedBeforeExpiry === 1) return "closed";
+  if (expiryPayoff === null) return null;
+  return expiryPayoff !== 0 || (settlementFees ?? 0) > 0 ? "settled" : "expired";
+}
+
+function round2(v: number): number {
+  return Math.round(v * 100) / 100;
+}
+
+/**
+ * A cost column of `fly_positions`, or a NULL in its place on a ledger that predates it. The module
+ * adds these on open, so a current ledger always has them; the fallback exists so a ledger the
+ * module has not opened since the upgrade reads as "not recorded" rather than blanking every table
+ * that names one (`withReadOnlyDb` would turn the missing-column error into an empty page).
+ */
+function costColumn(db: DatabaseHandle, name: string, alias = ""): string {
+  return hasColumn(db, "fly_positions", name) ? `${alias}${name}` : "NULL";
+}
+
+/** The standard's money columns for one settled fly, derived from what the ledger records. */
+function tradeCash(r: Record<string, unknown>): Pick<
+  FliesTradeLogRow,
+  "quantity" | "price" | "entryCash" | "exitCash" | "exitKind" | "gross" | "fees" | "settlementFees" | "slippage"
+> {
+  const quantity = num(r["quantity"]);
+  const price = num(r["net"]);
+  const gross = num(r["gross_pnl"]);
+  const total = num(r["fees"]);
+  const settlementFees = num(r["settlement_fees"]);
+  const entryCash = price !== null ? round2(price * 100 * (quantity ?? 1)) : null;
+  return {
+    quantity,
+    price,
+    entryCash,
+    exitCash: gross !== null && entryCash !== null ? round2(gross - entryCash) : null,
+    exitKind: fliesExitKind(r["closed_before_expiry"], num(r["expiry_payoff"]), settlementFees),
+    gross,
+    fees: total !== null && settlementFees !== null ? round2(total - settlementFees) : total,
+    settlementFees,
+    slippage: num(r["slippage_dollars"]),
+  };
 }
 
 export type FliesOutcome = "all" | "wins" | "losses" | "pinned" | "risk-free";
@@ -1028,7 +1141,13 @@ export interface FliesTradeLogTotals {
   sessions: number;
   netPnl: number;
   grossPnl: number;
+  /** Trading fees — the fee total less settlement. */
   fees: number;
+  settlementFees: number;
+  /** Informational, already inside gross. `slippageTrades` says how many rows it covers, since a
+   *  sum over the recorded rows alone would otherwise read as the whole scope's. */
+  slippage: number;
+  slippageTrades: number;
 }
 
 export interface FliesTradeLogQuery extends PageRequest {
@@ -1070,6 +1189,9 @@ const EMPTY_TOTALS: FliesTradeLogTotals = {
   netPnl: 0,
   grossPnl: 0,
   fees: 0,
+  settlementFees: 0,
+  slippage: 0,
+  slippageTrades: 0,
 };
 
 export function readFliesTradeLog(
@@ -1129,7 +1251,10 @@ export function readFliesTradeLog(
         `SELECT COUNT(*) AS trades, COUNT(DISTINCT trade_date) AS sessions,
                 COALESCE(SUM(pnl), 0) AS net_pnl,
                 COALESCE(SUM(gross_pnl), 0) AS gross_pnl,
-                COALESCE(SUM(fees), 0) AS fees
+                COALESCE(SUM(fees), 0) - COALESCE(SUM(${costColumn(db, "settlement_fees")}), 0) AS fees,
+                COALESCE(SUM(${costColumn(db, "settlement_fees")}), 0) AS settlement_fees,
+                COALESCE(SUM(${costColumn(db, "slippage_dollars")}), 0) AS slippage,
+                COUNT(${costColumn(db, "slippage_dollars")}) AS slippage_trades
          FROM fly_positions WHERE ${where}`,
       )
       .get(...params);
@@ -1139,12 +1264,20 @@ export function readFliesTradeLog(
       netPnl: Number(agg?.["net_pnl"] ?? 0),
       grossPnl: Number(agg?.["gross_pnl"] ?? 0),
       fees: Number(agg?.["fees"] ?? 0),
+      settlementFees: Number(agg?.["settlement_fees"] ?? 0),
+      slippage: Number(agg?.["slippage"] ?? 0),
+      slippageTrades: Number(agg?.["slippage_trades"] ?? 0),
     };
     const paged = pagedQuery<FliesTradeLogRow>(
       db,
       {
         columns: `trade_date, entry_time, symbol, arm, entry_mode, kind, side, center, wing_width,
-                  far_width, entry_window, net, fees, pnl, completion_latency_min, pinned`,
+                  far_width, entry_window, quantity, net, gross_pnl, fees,
+                  ${costColumn(db, "settlement_fees")} AS settlement_fees,
+                  ${costColumn(db, "slippage_dollars")} AS slippage_dollars,
+                  ${costColumn(db, "expiry_payoff")} AS expiry_payoff,
+                  ${costColumn(db, "closed_before_expiry")} AS closed_before_expiry,
+                  pnl, completion_latency_min, pinned`,
         from: "fly_positions",
         where,
         params,
@@ -1163,8 +1296,7 @@ export function readFliesTradeLog(
         wingWidth: num(r["wing_width"]),
         farWidth: num(r["far_width"]),
         window: str(r["entry_window"]),
-        net: num(r["net"]),
-        fees: num(r["fees"]),
+        ...tradeCash(r),
         pnl: num(r["pnl"]),
         latencyMin: num(r["completion_latency_min"]),
         pinned: r["pinned"] === 1,

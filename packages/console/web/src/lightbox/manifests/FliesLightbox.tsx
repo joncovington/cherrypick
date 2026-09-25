@@ -21,7 +21,8 @@ import { PerformanceTab } from "../../pages/Flies/PerformanceTab";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { ExperimentGuideView } from "../../components/ExperimentGuide";
-import { structureLabel } from "../../pages/Flies/structure";
+import { clockTime, structureLabel, wingWidth } from "../../pages/Flies/structure";
+import { fmtCash, fmtPrice } from "../../lib/format";
 import { RegimeCutsTab } from "../../components/RegimeCutsTab";
 import { ModuleFrame } from "../ModuleFrame";
 import { FLIES_SLIDES, type FliesSlideId } from "../navGroups";
@@ -175,7 +176,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
       render: () => (
         <DataCard
           title={`Books — ${(data?.books.total ?? 0).toLocaleString()} matching`}
-          headers={["date", "arm", "sym", "credit", "debits", "fees", "net cash", "floor", "band", "status", "P&L"]}
+          headers={["date", "arm", "sym", "status", "floor", "band", "entry", "exit", "gross", "fees", "settle", "slip", "net"]}
           numFrom={1}
           loading={isLoading}
           isError={isError}
@@ -198,14 +199,18 @@ export function FliesLightbox({ slide }: { slide: string }) {
               <td>{b.tradeDate}</td>
               <td className="muted">{b.arm ?? "—"}</td>
               <td>{b.symbol}</td>
-              <td>{fmtMoney(b.creditCollected)}</td>
-              <td>{fmtMoney(b.debitsPaid)}</td>
-              <td>{fmtMoney(b.fees)}</td>
-              <td>{fmtMoney(b.netCash)}</td>
+              <td>{b.status}</td>
               <td>{b.floorHolds === null ? "—" : b.floorHolds ? "holds" : "no"}</td>
               <td className="muted">{b.bandLow !== null && b.bandHigh !== null ? `${fmtNum(b.bandLow, 0)}–${fmtNum(b.bandHigh, 0)}` : "—"}</td>
-              <td>{b.status}</td>
-              <td><PnlCell v={b.pnl} /></td>
+              <td>{fmtCash(b.entryCash)}</td>
+              <td>{b.status === "settled" ? fmtCash(b.exitCash) : "—"}</td>
+              <td>{b.status === "settled" ? fmtMoney(b.gross) : "—"}</td>
+              <td className="muted" title={b.settlementFees === null ? "the fee total: its settlement share was not recorded" : undefined}>
+                {fmtMoney(b.fees)}
+              </td>
+              <td className="muted">{b.settlementFees === null ? (b.status === "settled" ? "n/r" : "—") : fmtMoney(b.settlementFees)}</td>
+              <td className="muted">{fmtMoney(b.slippage)}</td>
+              <td>{b.status === "settled" ? <PnlCell v={b.pnl} /> : <span className="muted">—</span>}</td>
             </tr>
           ))}
         </DataCard>
@@ -217,7 +222,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
       render: () => (
         <DataCard
           title={`Positions — ${(data?.positions.total ?? 0).toLocaleString()} matching`}
-          headers={["symbol", "arm", "mode", "kind", "centre", "net", "floor", "", "status"]}
+          headers={["time", "sym", "arm", "mode", "kind", "centre", "wing", "qty", "price", "entry", "floor", "", "status"]}
           numFrom={1}
           loading={isLoading}
           isError={isError}
@@ -239,12 +244,16 @@ export function FliesLightbox({ slide }: { slide: string }) {
         >
           {data?.positions.rows.map((p) => (
             <tr key={p.positionId}>
+              <td className="muted">{clockTime(p.entryTime)}</td>
               <td>{p.symbol}</td>
               <td className="muted">{p.arm ?? "—"}</td>
               <td className="muted">{p.entryMode ?? "—"}</td>
               <td>{structureLabel(p.kind, p.side)}</td>
               <td>{fmtNum(p.center, 0)}</td>
-              <td>{fmtNum(p.net, 2)}</td>
+              <td>{wingWidth(p.wingWidth, p.farWidth)}</td>
+              <td>{p.quantity ?? "—"}</td>
+              <td>{fmtPrice(p.net)}</td>
+              <td>{fmtCash(p.entryCash)}</td>
               <td>{p.floorDollars !== null ? <PnlCell v={p.floorDollars} /> : "—"}</td>
               <td>
                 {p.riskFree ? (

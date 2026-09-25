@@ -4,38 +4,8 @@ import type { TradingMode } from "@console/shared";
 import { useFliesTradeLog, fliesQuery, type FliesFilter } from "../../lib/api";
 import { DataCard, PnlCell, SkeletonRows, fmtMoney, fmtNum } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
-import { structureLabel } from "./structure";
-
-/**
- * The clock time of an entry, read off the stored ISO string rather than through a `Date`.
- *
- * `entry_time` carries the market's own UTC offset, so parsing it and formatting it would re-render
- * a 13:54 SPX entry as 10:54 for a viewer on the west coast — a session-relative fact silently
- * restated in a timezone the session never happened in. Slicing keeps the market clock, which is
- * the only one the entry windows and the module's own buckets are expressed in.
- */
-function clockTime(iso: string | null | undefined): string {
-  // Truthiness rather than `=== null`: a server that predates this column omits the field entirely,
-  // and `undefined.length` throws where a missing value should simply render as a dash. The console
-  // is deployed independently of nothing, but it IS built and restarted independently, so the two
-  // halves disagree for as long as one has restarted and the other has not.
-  if (!iso || iso.length < 16) return "—";
-  return iso.slice(11, 16);
-}
-
-/**
- * Wing width in points, `near/far` when the wing is broken.
- *
- * A symmetric fly records only `wingWidth` and both sides are that wide; a bwb records a wider
- * `farWidth` beside it, and the gap between them IS the trade. Collapsing the pair to one number
- * would describe a 5/10 broken wing as a 5-point fly, which is a different structure with a
- * different risk profile.
- */
-function wingWidth(near: number | null | undefined, far: number | null | undefined): string {
-  if (near === null || near === undefined) return "—";
-  const n = fmtNum(near, 0);
-  return far === null || far === undefined || far === near ? n : `${n}/${fmtNum(far, 0)}`;
-}
+import { clockTime, structureLabel, wingWidth } from "./structure";
+import { fmtCash, fmtPrice } from "../../lib/format";
 
 interface Summary {
   trades: number;
@@ -339,10 +309,20 @@ export function HistoryTab({
             // trades share a regime and are not independent observations — this module's own
             // experiment docs put the effective N at the session count, so a net over 40 trades
             // from 3 sessions is a 3-sample reading wearing a 40-sample coat.
-            <span className="chip" title="Net is after fees, over every row matching these filters — not just this page.">
+            <span
+              className="chip"
+              title={
+                "Over every row matching these filters — not just this page. Gross − fees − settlement = net. " +
+                "Slippage is what the modelled fills conceded against mid: already inside gross, never subtracted again" +
+                (totals.slippageTrades < totals.trades
+                  ? ` — recorded on ${totals.slippageTrades.toLocaleString()} of these ${totals.trades.toLocaleString()} trades.`
+                  : ".")
+              }
+            >
               net <PnlCell v={totals.netPnl} /> · {totals.trades.toLocaleString()} trades ·{" "}
-              {totals.sessions.toLocaleString()} session{totals.sessions === 1 ? "" : "s"} ·{" "}
-              fees {fmtMoney(totals.fees)}
+              {totals.sessions.toLocaleString()} session{totals.sessions === 1 ? "" : "s"} · gross{" "}
+              {fmtMoney(totals.grossPnl)} · fees {fmtMoney(totals.fees)} · settlement {fmtMoney(totals.settlementFees)}
+              {totals.slippageTrades > 0 && <> · slippage {fmtMoney(totals.slippage)}</>}
             </span>
           )}
           {/* A filter, not a tab strip: role=group rather than tablist, which would promise
@@ -373,9 +353,19 @@ export function HistoryTab({
           <table className="data-table">
             <thead>
               <tr>
-                <th>date</th><th>entry</th><th>sym</th><th>arm</th><th>mode</th><th>kind</th>
+                <th>date</th><th>time</th><th>sym</th><th>arm</th><th>mode</th><th>kind</th>
                 <th>centre</th><th title="wing width in points; near/far when the wing is broken">wing</th>
-                <th>window</th><th>net</th><th>fees</th><th>P&L</th><th>latency</th><th></th>
+                <th>window</th><th>qty</th>
+                <th title="net entry price per share — cr received, db paid">price</th>
+                <th title="entry cash flow for the whole position: + received, − paid">entry</th>
+                <th title="exit cash flow: the close, or the settlement payoff at the bell">exit</th>
+                <th>how</th>
+                <th title="entry + exit, before any cost">gross</th>
+                <th title="trading fees: commissions and exchange fees">fees</th>
+                <th title="exercise / assignment fees at settlement">settle</th>
+                <th title="what the modelled fills gave up against mid — already inside gross, never subtracted again">slip</th>
+                <th title="gross − fees − settlement">net</th>
+                <th>latency</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -390,8 +380,17 @@ export function HistoryTab({
                   <td>{fmtNum(r.center, 0)}</td>
                   <td>{wingWidth(r.wingWidth, r.farWidth)}</td>
                   <td className="muted">{r.window ?? "—"}</td>
-                  <td>{fmtNum(r.net, 2)}</td>
-                  <td className="muted">{r.fees !== null ? fmtMoney(r.fees) : "—"}</td>
+                  <td>{r.quantity ?? "—"}</td>
+                  <td>{fmtPrice(r.price)}</td>
+                  <td>{fmtCash(r.entryCash)}</td>
+                  <td>{fmtCash(r.exitCash)}</td>
+                  <td className="muted">{r.exitKind ?? "—"}</td>
+                  <td>{fmtMoney(r.gross)}</td>
+                  <td className="muted" title={r.settlementFees === null ? "the fee total: its settlement share was not recorded" : undefined}>
+                    {fmtMoney(r.fees)}
+                  </td>
+                  <td className="muted">{r.settlementFees === null ? "n/r" : fmtMoney(r.settlementFees)}</td>
+                  <td className="muted">{fmtMoney(r.slippage)}</td>
                   <td><PnlCell v={r.pnl} /></td>
                   <td className="muted">{r.latencyMin !== null ? `${r.latencyMin.toFixed(0)}m` : "—"}</td>
                   <td>{r.pinned && <span className="chain-badge chain-badge-short">pinned</span>}</td>

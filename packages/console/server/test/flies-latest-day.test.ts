@@ -32,7 +32,7 @@ function seed(dir: string): void {
       id INTEGER PRIMARY KEY, position_id TEXT, trade_date TEXT, symbol TEXT, arm TEXT,
       entry_mode TEXT, kind TEXT, side TEXT, center REAL, wing_width REAL, far_width REAL,
       quantity INTEGER, net REAL, gross_pnl REAL, floor_dollars REAL, risk_free INTEGER,
-      status TEXT, pnl REAL, fees REAL, entry_time TEXT, completed_at TEXT
+      status TEXT, pnl REAL, fees REAL, entry_time TEXT, completed_at TEXT, void_reason TEXT
     );
   `);
   const book = db.prepare(

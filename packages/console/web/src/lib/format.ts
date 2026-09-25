@@ -17,6 +17,26 @@ export function fmtMoney(v: number | null): string {
   return `${sign}$${Math.abs(v).toFixed(2)}`;
 }
 
+/**
+ * A signed cash flow in whole-position dollars: `+$178.75` received, `-$50.00` paid. The trade table
+ * standard (console CLAUDE.md) signs every entry/exit this way so a row adds up left to right.
+ */
+export function fmtCash(v: number | null): string {
+  if (v === null) return "—";
+  if (v === 0) return "$0.00";
+  return `${v > 0 ? "+" : "-"}$${Math.abs(v).toFixed(2)}`;
+}
+
+/**
+ * A per-share net price, `1.79 cr` / `0.50 db` — the one per-share column in a trade table, marked
+ * so it cannot be read as dollars. Positive is a credit, the same sign as `fmtCash`.
+ */
+export function fmtPrice(v: number | null, digits = 2): string {
+  if (v === null) return "—";
+  if (v === 0) return (0).toFixed(digits);
+  return `${Math.abs(v).toFixed(digits)} ${v > 0 ? "cr" : "db"}`;
+}
+
 export function fmtNum(v: number | null, digits = 2): string {
   return v === null ? "—" : v.toFixed(digits);
 }

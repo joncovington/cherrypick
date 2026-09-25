@@ -80,10 +80,16 @@ export interface FliesBookRow {
   tradeDate: string;
   arm: string | null;
   symbol: string;
-  creditCollected: number | null;
-  debitsPaid: number | null;
+  /** The trade table standard (packages/console/CLAUDE.md): whole-book dollars, signed cash flow.
+   *  entry + exit = gross; gross − fees − settlement = net (`pnl`). */
+  entryCash: number | null;
+  exitCash: number | null;
+  gross: number | null;
+  /** Trading fees; the fee TOTAL when the settlement split was never recorded. */
   fees: number | null;
-  netCash: number | null;
+  settlementFees: number | null;
+  /** Informational — already inside gross. Null unless every held position recorded it. */
+  slippage: number | null;
   floorHolds: boolean | null;
   bandLow: number | null;
   bandHigh: number | null;
@@ -102,8 +108,13 @@ export interface FliesPositionRow {
   side: string | null;
   center: number | null;
   wingWidth: number | null;
+  /** Far wing, only when the structure is broken. */
+  farWidth: number | null;
   quantity: number | null;
+  /** Net entry price per share, signed: credit +, debit −. */
   net: number | null;
+  /** The entry in whole-position dollars, same sign. */
+  entryCash: number | null;
   floorDollars: number | null;
   riskFree: boolean;
   status: string;
