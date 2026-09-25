@@ -4,6 +4,7 @@ import { usePmccAssignments, usePmccHistory, usePmccMeta } from "../../lib/api";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
 import { Pager, ScopeSelect, usePage } from "../../components/ScopeBar";
 import { fmtStrike } from "../../lib/optionFormat";
+import { TRADE_MONEY_HEADERS, TradeMoneyCells, TradeTotalsChip } from "../../components/TradeMoney";
 import { EntrySpreadCell } from "./EntrySpread";
 
 /**
@@ -78,13 +79,13 @@ function FeeSplit({ row }: { row: PmccCycleRow }) {
   const commissions = (row.entryCost ?? 0) + (row.exitCost ?? 0);
   const slippage = (row.entrySlippage ?? 0) + (row.exitSlippage ?? 0);
   const accounted = commissions + slippage;
-  const other = row.fees === null ? null : row.fees - accounted;
-  const slipShare = row.fees !== null && row.fees > 0 ? (slippage / row.fees) * 100 : null;
+  const other = row.feesTotal === null ? null : row.feesTotal - accounted;
+  const slipShare = row.feesTotal !== null && row.feesTotal > 0 ? (slippage / row.feesTotal) * 100 : null;
   return (
     <>
       <p>
         <span className="muted">commissions</span> {fmtMoney(commissions)} ·{" "}
-        <span className={slipShare !== null && slipShare > 50 ? "integrity-warn" : ""}>
+        <span>
           <span className="muted">slippage</span> {fmtMoney(slippage)}
           {slipShare !== null && <> ({fmtPct(slipShare, 0)} of fees)</>}
         </span>
@@ -107,7 +108,7 @@ function FeeSplit({ row }: { row: PmccCycleRow }) {
 function CycleDetail({ row }: { row: PmccCycleRow }) {
   return (
     <tr className="pmcc-detail-row">
-      <td colSpan={11}>
+      <td colSpan={19}>
         <div className="pmcc-detail">
           <section>
             <h4>legs</h4>
@@ -177,7 +178,7 @@ function CycleDetail({ row }: { row: PmccCycleRow }) {
             <h4>result</h4>
             <p>
               <span className="muted">gross</span> {fmtMoney(row.grossPnl)} · <span className="muted">fees</span>{" "}
-              {fmtMoney(row.fees)} · <span className="muted">net</span> <PnlCell v={row.netPnl} />
+              {fmtMoney(row.feesTotal)} · <span className="muted">net</span> <PnlCell v={row.netPnl} />
             </p>
             <FeeSplit row={row} />
           </section>
@@ -212,9 +213,8 @@ export function HistoryTab() {
           "short chain",
           "entry yield",
           "entry spread",
+          ...TRADE_MONEY_HEADERS,
           "exit reason",
-          "net",
-          "fees",
         ]}
         loading={isLoading}
         isError={isError}
@@ -237,7 +237,10 @@ export function HistoryTab() {
         }
         footer={
           data !== undefined && (
-            <Pager offset={data.offset} limit={data.limit} total={data.total} onOffset={setOffset} onLimit={setLimit} />
+            <>
+              <TradeTotalsChip totals={data.totals} noun="completed cycles" />
+              <Pager offset={data.offset} limit={data.limit} total={data.total} onOffset={setOffset} onLimit={setLimit} />
+            </>
           )
         }
       >
@@ -263,11 +266,12 @@ export function HistoryTab() {
               <td>
                 <EntrySpreadCell pct={r.entryMaxSpreadPct} abs={r.entryMaxSpreadAbs} netTv={r.entryNetTv} />
               </td>
+              <TradeMoneyCells row={r} priceTitle="the diagonal's net debit, per share" />
               <td>
                 {r.status === "short_settled" ? (
                   <span
                     className="chip chip-warn integrity-chip"
-                    title="The short settled ITM; delivered shares are covered next session together with the long's sale. The result is not final until then."
+                    title="The short settled ITM; delivered shares are covered next session together with the long's sale. The result is not final until then, so its exit and net read as a dash."
                   >
                     awaiting disposal
                   </span>
@@ -275,16 +279,6 @@ export function HistoryTab() {
                   (r.exitReason ?? <span className="muted">—</span>)
                 )}
               </td>
-              <td>
-                {r.status === "short_settled" ? (
-                  <span className="muted" title="pending next-session disposal">
-                    —
-                  </span>
-                ) : (
-                  <PnlCell v={r.netPnl} />
-                )}
-              </td>
-              <td>{fmtMoney(r.fees)}</td>
             </tr>
             {open === r.positionId && <CycleDetail row={r} />}
           </Fragment>

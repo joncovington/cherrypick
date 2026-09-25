@@ -17,6 +17,7 @@ import type {
   MorningPayload,
   PmccPayload,
   PmccCycleRow,
+  PmccHistory,
   PmccMeta,
   PmccAssignment,
   CurvePayload,
@@ -328,9 +329,9 @@ export function usePmccHistory(filter: PmccHistoryFilter, page: PageState) {
   if (filter.arm !== null) params.set("arm", filter.arm);
   if (filter.symbol !== null) params.set("symbol", filter.symbol);
   pageParams(params, "", page);
-  return useQuery<Paged<PmccCycleRow>>({
+  return useQuery<PmccHistory>({
     queryKey: ["pmcc-history", filter, page],
-    queryFn: () => getJson<Paged<PmccCycleRow>>(`/api/pmcc/history?${params.toString()}`),
+    queryFn: () => getJson<PmccHistory>(`/api/pmcc/history?${params.toString()}`),
     // A cycle closes a few times a week at most — polling it hard would be noise.
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,

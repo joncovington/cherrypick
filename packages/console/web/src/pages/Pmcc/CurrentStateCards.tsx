@@ -3,6 +3,7 @@ import { Card, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTa
 import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
 import { SignedBar } from "../../components/Charts";
 import { fmtStrike } from "../../lib/optionFormat";
+import { fmtCash, fmtPrice } from "../../lib/format";
 import { EntrySpreadCell } from "./EntrySpread";
 
 /**
@@ -63,6 +64,9 @@ function PositionRows({ rows, params }: { rows: PmccOpenPosition[]; params: Pmcc
               )}
             </td>
             <td title={p.entrySession}>{p.entrySession === "" ? "—" : p.entrySession.slice(5)}</td>
+            <td>{p.quantity ?? "—"}</td>
+            <td title="the diagonal's net debit, per share">{fmtPrice(p.netDebit === null ? null : -p.netDebit)}</td>
+            <td>{fmtCash(p.entryCash)}</td>
             <td>
               <UnrealisedPnlCell
                 gross={p.unrealisedGross}
@@ -151,8 +155,11 @@ export function OpenTradesCard({
             <tr>
               <th>symbol</th>
               <th>arm</th>
+              <th>opened</th>
+              <th>qty</th>
+              <th>price</th>
               <th>entry</th>
-              <th>P&L (net of costs to date)</th>
+              <th>mark (net of costs to date)</th>
               <th>long</th>
               <th>short</th>
               <th>time value</th>
@@ -166,7 +173,7 @@ export function OpenTradesCard({
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={12} className="muted">
+                <td colSpan={15} className="muted">
                   no open trades{filterSymbol === null ? "" : ` on ${filterSymbol}`}
                 </td>
               </tr>

@@ -68,7 +68,7 @@ describe("resolveSlide", () => {
 
 describe("a module with no declaration", () => {
   it("has no static slides, so keyboard stepping declines rather than guessing", () => {
-    expect(navSlideIds("pmcc")).toEqual([]);
+    expect(navSlideIds("gex")).toEqual([]);
   });
 
   it("groups whatever it is handed into one unlabelled run", () => {
@@ -76,7 +76,7 @@ describe("a module with no declaration", () => {
       { id: "a", label: "a" },
       { id: "b", label: "b" },
     ];
-    const { groups, ungrouped, unknown } = navGroups("pmcc", slides);
+    const { groups, ungrouped, unknown } = navGroups("gex", slides);
     expect(groups).toEqual([{ label: null, slides }]);
     expect(ungrouped).toEqual([]);
     expect(unknown).toEqual([]);

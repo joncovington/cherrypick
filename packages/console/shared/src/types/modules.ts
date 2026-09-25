@@ -472,6 +472,8 @@ export interface PmccOpenPosition {
   netDebit: number | null;
   /** Contracts of the structure -- what a per-share debit or max loss is multiplied by (x100). */
   quantity: number | null;
+  /** The opening debit in whole-position dollars, signed (negative: paid). The standard's `entry`. */
+  entryCash: number | null;
   entryNetTv: number | null;
   entryWeeklyYieldPct: number | null;
   downsideProtectionPct: number | null;
@@ -622,7 +624,10 @@ export interface PmccAssignment {
 }
 
 /** One completed cycle: entry through exit, with the whole short chain it took to get there. */
-export interface PmccCycleRow {
+export interface PmccCycleRow extends TradeMoney {
+  /** The fee TOTAL (`fees` in the ledger) -- what the cycle detail's breakdown splits. The standard's
+   *  `fees` column is trading fees only, beside settlement and slippage. */
+  feesTotal: number | null;
   positionId: string;
   symbol: string;
   arm: string;
@@ -660,6 +665,8 @@ export interface PmccCycleRow {
   rolls: PmccRoll[];
   assignments: PmccAssignment[];
 }
+
+export type PmccHistory = Paged<PmccCycleRow> & { totals: TradeTotals };
 
 export interface PmccMeta {
   arms: string[];

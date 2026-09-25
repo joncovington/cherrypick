@@ -165,6 +165,25 @@ export const CURVE_SLIDES = [
 
 export type CurveSlideId = (typeof CURVE_SLIDES)[number]["id"];
 
+/**
+ * PMCC-99's tabs, on the frame since 2026-09-25. `now` → `session`; its cards became pages:
+ * `decisions` (the arm rail, the attempt timeline, today's attempts and management verdicts, the
+ * decision log), `arms` (the arm comparison) and `positions`. `history` is the completed cycles in
+ * the suite's standard trade layout, each still expanding to its legs, rolls and settlement.
+ */
+export const PMCC_SLIDES = [
+  { id: "session", label: "session" },
+  { id: "decisions", label: "decisions" },
+  { id: "arms", label: "arms" },
+  { id: "performance", label: "performance" },
+  { id: "advisor", label: "advisor" },
+  { id: "positions", label: "positions" },
+  { id: "history", label: "history" },
+  { id: "guide", label: "help" },
+] as const satisfies readonly NavSlide[];
+
+export type PmccSlideId = (typeof PMCC_SLIDES)[number]["id"];
+
 export const NAV_DECL: Partial<Record<ModuleId, ModuleNavDecl>> = {
   flies: {
     slides: FLIES_SLIDES,
@@ -220,6 +239,17 @@ export const NAV_DECL: Partial<Record<ModuleId, ModuleNavDecl>> = {
     slides: CURVE_SLIDES,
     groups: [
       { label: "today", ids: ["session", "regime"] },
+      { label: "evidence", ids: ["decisions", "arms"] },
+      { label: "study", ids: ["performance", "advisor"] },
+      { label: "tables", ids: ["positions", "history"] },
+      { label: "help", ids: ["guide"] },
+    ],
+    legacy: { now: "session" },
+  },
+  pmcc: {
+    slides: PMCC_SLIDES,
+    groups: [
+      { label: "today", ids: ["session"] },
       { label: "evidence", ids: ["decisions", "arms"] },
       { label: "study", ids: ["performance", "advisor"] },
       { label: "tables", ids: ["positions", "history"] },

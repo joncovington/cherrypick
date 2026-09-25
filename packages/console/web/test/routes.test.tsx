@@ -9,7 +9,7 @@ import { FRAME_MODULE_IDS, type FrameModuleId } from "../src/lightbox/registry";
 import { MODULE_LABEL } from "../src/lightbox/moduleOrder";
 
 /** Where each frame module's pages live, for the card-link check below. */
-const PAGE_DIR: Record<FrameModuleId, string> = { flies: "Flies", meic: "Meic", bwb: "Bwb", earnings: "Earnings", curve: "Curve" };
+const PAGE_DIR: Record<FrameModuleId, string> = { flies: "Flies", meic: "Meic", bwb: "Bwb", earnings: "Earnings", curve: "Curve", pmcc: "Pmcc" };
 
 /**
  * Route wiring, rendered rather than read.
@@ -104,8 +104,8 @@ describe("the module routes", () => {
     // Both land on the same route element; the slide segment is read there (frame) or by the
     // module's own manifest once mounted (lightbox), but routing itself must not treat the extra
     // segment as unknown.
-    const html = render("/pmcc/forest");
-    expect(html).toContain("PMCC");
+    const html = render("/gex/profile");
+    expect(html).toContain("GEX");
     expect(html).not.toContain("Page not found");
   });
 });
@@ -177,8 +177,8 @@ describe("the module frame", () => {
   }
 
   it("a lightbox module grew no rail — the two shapes stay apart", () => {
-    const html = render("/pmcc");
-    expect(html).toContain("PMCC");
+    const html = render("/gex");
+    expect(html).toContain("GEX");
     expect(html).not.toContain('aria-label="modules"');
     expect(html).not.toContain("mf-nav");
   });

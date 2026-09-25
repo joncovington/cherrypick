@@ -1,10 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
+import { EMPTY_TRADE_TOTALS, positionCash, positionCashColumns, tradeTotals } from "./positionCash.js";
 import type {
   Paged,
   PmccAssignment,
   PmccArmCell,
   PmccCycleRow,
+  PmccHistory,
   PmccIntegrity,
   PmccMeta,
   PmccOpenPosition,
@@ -292,6 +294,10 @@ function readOpenPositions(db: DatabaseHandle): PmccOpenPosition[] {
         shortExpiration: str(p["short_expiration"]),
         entrySpot: num(p["entry_spot"]),
         netDebit: num(p["net_debit"]),
+        entryCash:
+          num(p["net_debit"]) === null
+            ? null
+            : Math.round(-Number(p["net_debit"]) * 100 * (num(p["quantity"]) ?? 1) * 100) / 100,
         quantity: num(p["quantity"]),
         entryNetTv: num(p["entry_net_tv"]),
         entryWeeklyYieldPct: num(p["entry_weekly_yield_pct"]),
@@ -565,7 +571,7 @@ export function readPmccHistory(
   config: ConsoleConfig,
   filter: PmccHistoryFilter,
   page: PageRequest = FIRST_PAGE,
-): Paged<PmccCycleRow> {
+): PmccHistory {
   const clauses = ["status IN ('closed', 'short_settled')"];
   const params: string[] = [];
   if (filter.arm !== null) {
@@ -577,24 +583,35 @@ export function readPmccHistory(
     params.push(filter.symbol);
   }
 
-  return withReadOnlyDb<Paged<PmccCycleRow>>(dbPath(config), emptyPage(page), (db) => {
+  return withReadOnlyDb<PmccHistory>(dbPath(config), { ...emptyPage(page), totals: EMPTY_TRADE_TOTALS }, (db) => {
+    const where = clauses.join(" AND ");
+    const columns = `position_id, symbol, arm, entry_session, closed_session, exit_reason,
+                  long_strike, long_expiration, entry_spot, settlement_spot, net_debit, entry_net_tv,
+                  entry_weekly_yield_pct, roll_count, entry_cost, exit_cost, ${positionCashColumns(db, "pmcc_")}`;
+    // net_debit is a debit, positive: the standard signs it as money paid.
+    const entryOf = (r: Record<string, unknown>) => (num(r["net_debit"]) === null ? null : -Number(r["net_debit"]));
+    // Totals over the COMPLETED cycles only: a short_settled row's result is not final until its
+    // delivered shares are covered, so it is listed but not summed.
+    const totals = tradeTotals(
+      db
+        .prepare<string[], Record<string, unknown>>(`SELECT ${columns} FROM pmcc_positions WHERE ${where} AND status = 'closed'`)
+        .all(...params)
+        .map((r) => positionCash(r, entryOf(r))),
+    );
     const rows = pagedQuery<PmccCycleRow>(
       db,
       {
-        columns: `position_id, symbol, arm, entry_session, closed_session, status, exit_reason,
-                  long_strike, long_expiration, entry_spot, settlement_spot, net_debit, entry_net_tv,
-                  entry_weekly_yield_pct, roll_count, itm_settlements, gross_pnl, fees,
-                  entry_cost, exit_cost, entry_slippage, exit_slippage`,
+        columns,
         from: "pmcc_positions",
-        where: clauses.join(" AND "),
+        where,
         params,
         orderBy: "entry_session DESC, id DESC",
       },
       page,
       (r) => {
-        const gross = num(r["gross_pnl"]);
-        const fees = num(r["fees"]);
         return {
+          ...positionCash(r, entryOf(r)),
+          feesTotal: num(r["fees"]),
           positionId: str(r["position_id"]) ?? "",
           symbol: str(r["symbol"]) ?? "",
           arm: str(r["arm"]) ?? "",
@@ -611,10 +628,6 @@ export function readPmccHistory(
           entryWeeklyYieldPct: num(r["entry_weekly_yield_pct"]),
           rollCount: num(r["roll_count"]),
           itmSettlements: num(r["itm_settlements"]),
-          grossPnl: gross,
-          fees,
-          // Null propagates: an unrecorded gross or fee is not a zero-cost trade.
-          netPnl: gross === null || fees === null ? null : gross - fees,
           entryCost: num(r["entry_cost"]),
           exitCost: num(r["exit_cost"]),
           entrySlippage: num(r["entry_slippage"]),
@@ -630,7 +643,7 @@ export function readPmccHistory(
 
     // Detail for THIS PAGE's positions only — three small queries beat one join fanning three ways.
     const ids = rows.rows.map((r) => r.positionId);
-    if (ids.length === 0) return rows;
+    if (ids.length === 0) return { ...rows, totals };
     const marks = ids.map(() => "?").join(", ");
 
     const shortsBy = new Map<string, PmccShortLeg[]>();
@@ -707,6 +720,7 @@ export function readPmccHistory(
 
     return {
       ...rows,
+      totals,
       rows: rows.rows.map((r) => ({
         ...r,
         entryMaxSpreadPct: spreads.get(r.positionId)?.pct ?? null,
