@@ -225,7 +225,7 @@ export function EarningsLightbox({ slide }: { slide: string }) {
         <div className="cards cards-wide">
           <DataCard
             title={`Trades — ${(data?.trades.total ?? 0).toLocaleString()} across both books`}
-            headers={["", "opened", "sym", "strategy", "exp", "credit", "qty", "closed", "P&L"]}
+            headers={["", "opened", "sym", "strategy", "exp", "credit", "qty", "closed", "gross", "costs", "net"]}
             numFrom={1}
             loading={isLoading}
             isError={isError}
@@ -254,7 +254,11 @@ export function EarningsLightbox({ slide }: { slide: string }) {
                 <td>{fmtMoney(t.entryCredit)}</td>
                 <td>{fmtNum(t.quantity, 0)}</td>
                 <td className="muted">{t.closedAt?.slice(0, 10) ?? "open"}</td>
-                <td><PnlCell v={t.pnl} /></td>
+                {/* `pnl` is GROSS here -- earnings keeps its costs out of it -- and showed as "P&L" until
+                    2026-09-24. Net is the ledger's rule: pnl - entry_cost - exit_cost. */}
+                <td className="muted">{fmtMoney(t.pnl)}</td>
+                <td className="pnl-neg">{t.pnl !== null ? fmtMoney(t.costs) : "—"}</td>
+                <td><PnlCell v={t.pnl !== null ? t.pnl - (t.costs ?? 0) : null} /></td>
               </tr>
             ))}
           </DataCard>

@@ -128,7 +128,10 @@ export interface EarningsTradeRow {
   strategy: string;
   expiration: string | null;
   entryCredit: number | null;
+  /** GROSS: this ledger keeps its costs out of `pnl` (earnings' rule, core.ledgers). */
   pnl: number | null;
+  /** entry_cost + exit_cost, in dollars; net = pnl - costs. */
+  costs: number | null;
   quantity: number | null;
   openedAt: string | null;
   closedAt: string | null;
@@ -404,6 +407,8 @@ export interface PmccOpenPosition {
   shortExpiration: string | null;
   entrySpot: number | null;
   netDebit: number | null;
+  /** Contracts of the structure -- what a per-share debit or max loss is multiplied by (x100). */
+  quantity: number | null;
   entryNetTv: number | null;
   entryWeeklyYieldPct: number | null;
   downsideProtectionPct: number | null;
@@ -853,6 +858,8 @@ export interface CurveOpenPosition {
   entryCredit: number | null;
   entryWidth: number | null;
   entryMaxLoss: number | null;
+  /** Contracts of the structure -- what a per-share debit or max loss is multiplied by (x100). */
+  quantity: number | null;
   entryCreditPctOfWidth: number | null;
   entryRatio: number | null;
   entryRegime: string | null;
@@ -987,6 +994,8 @@ export interface BwbOpenPosition {
   entrySpot: number | null;
   entryCredit: number | null;
   entryMaxLoss: number | null;
+  /** Contracts of the structure -- what a per-share debit or max loss is multiplied by (x100). */
+  quantity: number | null;
   /** Persisted trigger latches -- never held only in loop memory (a supervisor restart mid-session
    * must not amnesia a morning touch). */
   peakAbsDelta: number | null;

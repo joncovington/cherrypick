@@ -107,8 +107,22 @@ function countOutcomes(
   return { filled, refused, noFill, topRefusal: top !== undefined ? `${top[0]} ×${String(top[1])}` : null };
 }
 
-function sumMaxLoss(positions: Array<{ entryMaxLoss?: number | null }>): number | null {
-  return positions.reduce<number | null>((s, p) => (p.entryMaxLoss != null ? (s ?? 0) + p.entryMaxLoss : s), null);
+/**
+ * A per-share amount (a debit paid, a max loss) as the dollars it puts at risk: x100 x quantity.
+ *
+ * The ledgers store these per share, and this column summed them raw until 2026-09-24 -- so the
+ * calendars, pmcc, curve and bwb rows read about 100x too small beside meic's, flies' and earnings'
+ * true dollars under the one "at risk" header. Same rule as `core.ledgers`' `capital` for these four
+ * modules: per-share x 100 x quantity, a missing quantity read as one contract.
+ */
+export function sumDollarsAtRisk<T extends { quantity?: number | null }>(
+  positions: readonly T[],
+  perShare: (p: T) => number | null | undefined,
+): number | null {
+  return positions.reduce<number | null>((s, p) => {
+    const v = perShare(p);
+    return v != null ? (s ?? 0) + v * 100 * (p.quantity ?? 1) : s;
+  }, null);
 }
 
 function sumUnrealised(positions: Array<{ unrealisedNet?: number | null }>): number | null {
@@ -200,7 +214,7 @@ export function readDesk(config: ConsoleConfig): DeskPayload {
     {
       module: "calendars",
       open: calendars.openPositions.length,
-      atRisk: sumField(calendars.openPositions as unknown as Record<string, unknown>[], "entryDebit"),
+      atRisk: sumDollarsAtRisk(calendars.openPositions, (p) => p.entryDebit),
       atRiskLabel: "debit at risk",
       unrealisedNet: sumField(calendars.openPositions as unknown as Record<string, unknown>[], "unrealisedNet"),
       markAgeSeconds: calendars.today.lastIteration?.ageSeconds ?? null,
@@ -210,7 +224,7 @@ export function readDesk(config: ConsoleConfig): DeskPayload {
     {
       module: "pmcc",
       open: pmcc.openCount,
-      atRisk: sumField(pmcc.openPositions as unknown as Record<string, unknown>[], "netDebit"),
+      atRisk: sumDollarsAtRisk(pmcc.openPositions, (p) => p.netDebit),
       atRiskLabel: "debit at risk",
       unrealisedNet: sumUnrealised(pmcc.openPositions),
       markAgeSeconds: pmcc.today.lastIteration?.ageSeconds ?? null,
@@ -220,7 +234,7 @@ export function readDesk(config: ConsoleConfig): DeskPayload {
     {
       module: "curve",
       open: curve.openCount,
-      atRisk: sumMaxLoss(curve.openPositions),
+      atRisk: sumDollarsAtRisk(curve.openPositions, (p) => p.entryMaxLoss),
       atRiskLabel: "at risk",
       unrealisedNet: sumUnrealised(curve.openPositions),
       markAgeSeconds: curve.today.lastIteration?.ageSeconds ?? null,
@@ -230,7 +244,7 @@ export function readDesk(config: ConsoleConfig): DeskPayload {
     {
       module: "bwb",
       open: bwb.openCount,
-      atRisk: sumMaxLoss(bwb.openPositions),
+      atRisk: sumDollarsAtRisk(bwb.openPositions, (p) => p.entryMaxLoss),
       atRiskLabel: "at risk (zero-floor by design)",
       unrealisedNet: sumUnrealised(bwb.openPositions),
       markAgeSeconds: bwb.today.lastIteration?.ageSeconds ?? null,

@@ -119,6 +119,7 @@ function readOpenPositions(db: DatabaseHandle): BwbOpenPosition[] {
         entrySpot: num(p["entry_spot"]),
         entryCredit: num(p["entry_credit"]),
         entryMaxLoss: num(p["entry_max_loss"]),
+        quantity: num(p["quantity"]),
         peakAbsDelta: num(p["peak_abs_delta"]),
         belowFlipSeen: p["below_flip_seen"] === 1,
         armedAt: str(p["armed_at"]),

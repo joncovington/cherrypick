@@ -225,6 +225,7 @@ function readOpenPositions(db: DatabaseHandle): CurveOpenPosition[] {
         entryCredit: num(p["entry_credit"]),
         entryWidth: num(p["entry_width"]),
         entryMaxLoss: num(p["entry_max_loss"]),
+        quantity: num(p["quantity"]),
         entryCreditPctOfWidth: num(p["entry_credit_pct_of_width"]),
         entryRatio: num(p["entry_ratio"]),
         entryRegime: str(p["entry_regime"]),

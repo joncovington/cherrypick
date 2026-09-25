@@ -289,6 +289,7 @@ function readOpenPositions(db: DatabaseHandle): PmccOpenPosition[] {
         shortExpiration: str(p["short_expiration"]),
         entrySpot: num(p["entry_spot"]),
         netDebit: num(p["net_debit"]),
+        quantity: num(p["quantity"]),
         entryNetTv: num(p["entry_net_tv"]),
         entryWeeklyYieldPct: num(p["entry_weekly_yield_pct"]),
         downsideProtectionPct: num(p["entry_downside_protection_pct"]),

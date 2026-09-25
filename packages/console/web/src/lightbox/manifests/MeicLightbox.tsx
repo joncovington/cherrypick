@@ -321,7 +321,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
       render: () => (
         <DataCard
           title={`Trades — ${total.toLocaleString()} matching${day !== null ? ` on ${day}` : " on the latest session"}`}
-          headers={["date", "entry", "sym", "put", "call", "wing", "credit", "qty", "IVR", "status", "P&L", "exit reason"]}
+          headers={["date", "entry", "sym", "put", "call", "wing", "credit", "qty", "IVR", "status", "gross", "fees", "net", "exit reason"]}
           numFrom={3}
           loading={isLoading}
           isError={isError}
@@ -383,7 +383,12 @@ export function MeicLightbox({ slide }: { slide: string }) {
               <td>{fmtNum(t.quantity, 0)}</td>
               <td className="muted">{t.ivRankAtEntry !== null ? `${(t.ivRankAtEntry * 100).toFixed(0)}%` : "—"}</td>
               <td><StatusBadge status={t.status} /></td>
-              <td><PnlCell v={t.pnl} /></td>
+              {/* `pnl` is GROSS in this ledger; net = gross - fees (core.ledgers' meic rule). This column
+                  used to show gross under "P&L" while the outcome filter above sorted on net, so a row
+                  could read green under "losses" (fixed 2026-09-24). */}
+              <td className="muted">{fmtMoney(t.pnl)}</td>
+              <td className="pnl-neg">{t.pnl !== null ? fmtMoney(t.fees) : "—"}</td>
+              <td><PnlCell v={t.pnl !== null ? t.pnl - (t.fees ?? 0) : null} /></td>
               <td className="muted" style={{ textAlign: "left" }}>{t.exitReason ?? "—"}</td>
             </tr>
           ))}

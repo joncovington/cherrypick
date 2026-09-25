@@ -34,7 +34,7 @@ function readTrades(dbPath: string, mode: TradingMode, since: string | null): Ea
     db
       .prepare<[], Record<string, unknown>>(
         // `profile` until earnings' column moves; resolved per file, the live ledger included.
-        `SELECT order_id, symbol, strategy, expiration, entry_credit, pnl, quantity,
+        `SELECT order_id, symbol, strategy, expiration, entry_credit, pnl, quantity, entry_cost, exit_cost,
                 opened_at, closed_at, ${armColumnOf(db, "trades")} AS arm
            FROM trades ORDER BY opened_at DESC`,
       )
@@ -50,6 +50,8 @@ function readTrades(dbPath: string, mode: TradingMode, since: string | null): Ea
         expiration: str(r["expiration"]),
         entryCredit: num(r["entry_credit"]),
         pnl: num(r["pnl"]),
+        costs:
+          r["entry_cost"] == null && r["exit_cost"] == null ? null : (num(r["entry_cost"]) ?? 0) + (num(r["exit_cost"]) ?? 0),
         quantity: num(r["quantity"]),
         // Epoch floats in this store, not strings — see isoStamp.
         openedAt: isoStamp(r["opened_at"]),
