@@ -196,14 +196,15 @@ export function ForestCard({
   filter,
   variant = "full",
   height = 320,
-  onExpand,
+  to,
 }: {
   mode: TradingMode;
   filter: FliesFilter;
   /** `hero` drops the controls and the per-arm sentences to sit in a grid cell. */
   variant?: "full" | "hero";
   height?: number;
-  onExpand?: () => void;
+  /** The page that holds this payoff's detail (the hero links to the books). */
+  to?: string;
 }) {
   const { data, isLoading } = useForest(mode, filter);
   const [xwidth, setXwidth] = useState<(typeof X_WIDTHS)[number]>("auto");
@@ -536,8 +537,8 @@ export function ForestCard({
         label={`payoff at expiry${data?.tradeDate != null ? ` — ${data.tradeDate}` : ""}`}
         span={8}
         h={304}
-        onExpand={onExpand}
-        expandLabel="the books behind this payoff"
+        to={to}
+        toLabel="the books behind this payoff"
         foot={
           only !== undefined
             ? `${only.arm} — ${floorSentence(only.curve)}`

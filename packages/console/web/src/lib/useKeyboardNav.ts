@@ -43,7 +43,6 @@ export function useKeyboardNav() {
         key: e.key,
         now: Date.now(),
         editable: isEditable(e.target),
-        sheetOpen: document.querySelector('.sheet[role="dialog"]') !== null,
         modified: e.ctrlKey || e.metaKey || e.altKey,
         slides,
         slide,

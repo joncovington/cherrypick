@@ -13,7 +13,6 @@ function press(
     key,
     now: 1000,
     editable: false,
-    sheetOpen: false,
     modified: false,
     slides: FLIES,
     slide: "forest",
@@ -79,11 +78,6 @@ describe("what must never steal a keystroke", () => {
     for (const key of ["g", "j", "k", "2"]) {
       expect(press(IDLE, key, { editable: true }).action).toBeNull();
     }
-  });
-
-  it("an open detail sheet, which owns the keyboard while it is up", () => {
-    expect(press(IDLE, "2", { sheetOpen: true }).action).toBeNull();
-    expect(press(IDLE, "j", { sheetOpen: true }).action).toBeNull();
   });
 
   it("a modified key — Ctrl+R is a reload, not a jump to reports", () => {

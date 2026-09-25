@@ -31,8 +31,6 @@ export interface KeyEvent {
   now: number;
   /** Focus is in a text field — every key belongs to it, including `g` and the digits. */
   editable: boolean;
-  /** A detail sheet is open; it owns Escape and should not be navigated out from under. */
-  sheetOpen: boolean;
   modified: boolean;
   slides: string[];
   slide: string | null;
@@ -42,7 +40,7 @@ export function reduceKey(state: KeyState, ev: KeyEvent): { state: KeyState; act
   const idle: KeyState = { pendingG: null };
 
   // Typing a symbol into a search box must not navigate, and neither should Ctrl+R.
-  if (ev.editable || ev.sheetOpen || ev.modified) return { state: idle, action: null };
+  if (ev.editable || ev.modified) return { state: idle, action: null };
 
   // Inside the chord window, this key completes `g …`. Outside it, a stale `g` from a minute ago
   // must not turn an `o` into a navigation.

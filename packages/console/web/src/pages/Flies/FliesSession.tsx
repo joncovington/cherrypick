@@ -49,14 +49,12 @@ export function FliesSession({
   arm,
   analytics,
   loading,
-  onOpenSheet,
 }: {
   mode: TradingMode;
   filter: FliesFilter;
   arm: string | null;
   analytics: SessionAnalytics | undefined;
   loading: boolean;
-  onOpenSheet: (which: "books" | "positions" | "history") => void;
 }) {
   const perf = useModulePerformance("flies", "current");
   const attempts = useAttempts("flies", mode, filter.date);
@@ -112,8 +110,8 @@ export function FliesSession({
         label="net today"
         value={today !== undefined ? fmtMoney(today.netPnl) : null}
         tone={today !== undefined && today.netPnl >= 0 ? "pos" : "neg"}
-        onExpand={() => onOpenSheet("history")}
-        expandLabel="net today"
+        to="/flies/history"
+        toLabel="the session history behind net today"
         foot={
           group === undefined
             ? "no session history in this era yet"
@@ -181,15 +179,15 @@ export function FliesSession({
         filter={filter}
         variant="hero"
         height={248}
-        onExpand={() => onOpenSheet("books")}
+        to="/flies/books"
       />
 
       <GridCard
         label="net by arm"
         span={4}
         h={304}
-        onExpand={() => onOpenSheet("positions")}
-        expandLabel="net by arm"
+        to="/flies/positions"
+        toLabel="the positions behind net by arm"
         foot={
           a === undefined
             ? loading
@@ -243,8 +241,8 @@ export function FliesSession({
         label="fee drag by arm"
         span={4}
         h={304}
-        onExpand={() => onOpenSheet("books")}
-        expandLabel="fee drag"
+        to="/flies/books"
+        toLabel="the books behind fee drag"
         foot="fees against premium collected · no threshold applied"
       >
         <DivergingBars

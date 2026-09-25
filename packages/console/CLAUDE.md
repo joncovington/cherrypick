@@ -301,10 +301,16 @@ changes as safe, and it is the only check that sees past the fallback below.
   - **A renamed tab keeps its old id as an alias**, resolved before the first-tab fallback.
     `/flies/exits` must reach `divergence`; falling through to the first tab would look like a
     working link while showing the wrong page, which is worse than a 404.
-  - **Dense tables are detail sheets, not tabs.** `components/grid/DetailSheet.tsx`, opened from a
-    card's ⤢ and scoped to that card's subject. Deliberately transient state rather than a route:
-    the table is a zoom on the tab you are reading, and a zoom has to be cheap to reverse, so
-    Escape and the backdrop close it and focus returns to the opener.
+  - **Nothing on a frame module opens an overlay; cards link to the module's own pages.** A card
+    whose number has a denser form sets `to` (`GridCard`/`StatTile`): its title and its ⤢ both
+    link to that page, carrying the current query string, because mode, date, arm and era live
+    there and a link that dropped them would open the right page on the wrong session. The dense
+    tables are pages in the rail (flies' `tables` group: books, positions, history), not overlay
+    sheets -- they were `DetailSheet`s from 2026-09-22 until 2026-09-24, when every place a reader
+    can go became a page that can be reloaded, shared and reached from the rail. Two checks:
+    `routes.test.tsx` reads each `to="/flies/…"` from the pages' own source and requires it to
+    resolve to that tab (a link to an undeclared tab silently lands on the first one), and
+    `pnpm ui-check --route /flies/session --links` follows every card link in real Chrome.
   - **A card's tone comes only from the sign of a number or a flag a writer already set.** This is
     the read-surface rule (the console computes no verdicts) applied to pixels, and it matters more
     on a chart than in a table: `withReadOnlyDb` collapses "store absent", "query threw" and

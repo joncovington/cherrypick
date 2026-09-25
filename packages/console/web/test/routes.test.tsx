@@ -1,7 +1,10 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, it, expect, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { FLIES_SLIDES } from "../src/lightbox/navGroups";
 
 /**
  * Route wiring, rendered rather than read.
@@ -135,6 +138,25 @@ describe("the module frame", () => {
     expect(text(render("/flies/journal"))).toContain("Flies / decisions");
     expect(text(render("/flies/openrange"))).toContain("Flies / opening range");
     expect(text(render("/flies/now"))).toContain("Flies / session");
+    expect(text(render("/flies/trades"))).toContain("Flies / positions");
+  });
+
+  it("every page a flies card links to is a real tab, not the first-tab fallback", () => {
+    // Cards link to module pages rather than opening overlays (2026-09-24). A link to a tab the
+    // rail does not declare resolves to `session` and looks like it worked, so the links are read
+    // from the pages' own source -- not a list kept here -- and each must name its own tab.
+    const dir = path.join(__dirname, "..", "src", "pages", "Flies");
+    const targets = new Set<string>();
+    for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".tsx"))) {
+      for (const m of fs.readFileSync(path.join(dir, f), "utf-8").matchAll(/\bto="(\/flies\/[a-z]+)"/g)) targets.add(m[1]!);
+    }
+    expect(targets.size).toBeGreaterThan(0);
+    for (const to of targets) {
+      const id = to.split("/")[2]!;
+      const label = FLIES_SLIDES.find((s) => s.id === id)?.label;
+      expect(label, `${to} is not a declared flies tab`).toBeDefined();
+      expect(text(render(to)), `${to} did not open its own tab`).toContain(`Flies / ${label!}`);
+    }
   });
 
   it("a lightbox module grew no rail — the two shapes stay apart", () => {

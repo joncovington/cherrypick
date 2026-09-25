@@ -3,7 +3,7 @@ import { renderToString } from "react-dom/server";
 import { GridCard, StatTile } from "../src/components/grid/GridCard";
 import { Bullet } from "../src/components/grid/Bullet";
 import { DivergingBars } from "../src/components/grid/DivergingBars";
-import { DetailSheet } from "../src/components/grid/DetailSheet";
+import { MemoryRouter } from "react-router-dom";
 import { Spark } from "../src/components/chart/Spark";
 
 /**
@@ -14,11 +14,6 @@ import { Spark } from "../src/components/chart/Spark";
  * swallows reader failures into an empty payload by design (`withReadOnlyDb`), so "absent",
  * "failed" and "genuinely zero" all arrive here looking alike. That is why the em-dash rule and
  * the minimum-points rule are tested rather than assumed.
- *
- * Focus restore and Escape on the sheet are browser behaviour: there is no DOM in this suite (no
- * jsdom, by choice — every test is renderToString), so they are checked with `pnpm ui-check` and
- * by hand. What is checkable here is that the dialog is announced correctly and that a closed
- * sheet renders nothing at all.
  */
 
 describe("StatTile", () => {
@@ -62,13 +57,24 @@ describe("GridCard", () => {
     expect(html).toContain("h-304");
   });
 
-  it("offers no expander unless there is something to expand", () => {
-    expect(renderToString(<GridCard label="fee drag" span={3} h={248} />)).not.toContain("gcard-expand");
+  it("links nowhere unless it has a page to link to -- and needs no router then", () => {
+    const html = renderToString(<GridCard label="fee drag" span={3} h={248} />);
+    expect(html).not.toContain("gcard-expand");
+    expect(html).not.toContain("<a ");
+  });
+
+  it("links its title AND its ⤢ to the module page, keeping the reader's query", () => {
+    // The query carries mode, date, arm and era: a link that dropped it would open the right page
+    // on the wrong session. And no overlay: nothing here may announce a dialog any more.
     const html = renderToString(
-      <GridCard label="net by arm" span={4} h={304} onExpand={() => undefined} />,
+      <MemoryRouter initialEntries={["/flies/session?mode=live&date=2026-09-23"]}>
+        <GridCard label="net by arm" span={4} h={304} to="/flies/positions" toLabel="the positions behind net by arm" />
+      </MemoryRouter>,
     );
-    expect(html).toContain('aria-haspopup="dialog"');
-    expect(html).toContain('aria-label="open net by arm detail"');
+    const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]!.replace(/&amp;/g, "&"));
+    expect(hrefs).toEqual(["/flies/positions?mode=live&date=2026-09-23", "/flies/positions?mode=live&date=2026-09-23"]);
+    expect(html).toContain('aria-label="open the positions behind net by arm"');
+    expect(html).not.toContain("aria-haspopup");
   });
 });
 
@@ -121,32 +127,5 @@ describe("DivergingBars", () => {
     );
     expect(html).toContain("diverge-neutral");
     expect(html).not.toContain("pnl-pos");
-  });
-});
-
-describe("DetailSheet", () => {
-  it("renders nothing at all when closed", () => {
-    expect(
-      renderToString(
-        <DetailSheet open={false} title="Positions" onClose={() => undefined}>
-          <p>rows</p>
-        </DetailSheet>,
-      ),
-    ).toBe("");
-  });
-
-  it("announces itself as a dialog named by its own heading", () => {
-    const html = renderToString(
-      <DetailSheet open title="Positions" onClose={() => undefined}>
-        <p>a row</p>
-      </DetailSheet>,
-    );
-    expect(html).toContain('role="dialog"');
-    expect(html).toContain('aria-modal="true"');
-    expect(html).toContain('aria-label="close detail"');
-    const labelledBy = /aria-labelledby="([^"]+)"/.exec(html)?.[1];
-    expect(labelledBy).toBeDefined();
-    expect(html).toContain(`id="${labelledBy!}"`);
-    expect(html).toContain("a row");
   });
 });

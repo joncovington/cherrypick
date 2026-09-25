@@ -48,9 +48,11 @@ export interface ModuleNavDecl {
  * - `journal` → `decisions`, matching what bwb/pmcc/curve/calendars already call the same thing.
  * - `openrange` → `openingrange`, matching the card, the doc and the study.
  *
- * `books`, `trades` and `history` are no longer tabs at all: they are the three dense tables, and
- * they open as detail sheets from the cards whose numbers they explain. A table is a zoom on a
- * reading, not a place of its own.
+ * `books`, `positions` and `history` are the three dense tables. From 2026-09-22 they opened as
+ * overlay sheets from the cards whose numbers they explain; since 2026-09-24 they are pages in the
+ * rail's `tables` group, and those cards link to them -- nothing on the surface opens an overlay,
+ * so every place a reader can go can be reloaded, shared and reached from the rail. The old
+ * `trades` id (the tab before the sheets) reaches `positions`.
  */
 export const FLIES_SLIDES = [
   { id: "session", label: "session" },
@@ -64,6 +66,9 @@ export const FLIES_SLIDES = [
   { id: "completion", label: "completion" },
   { id: "performance", label: "performance" },
   { id: "advisor", label: "advisor" },
+  { id: "books", label: "books" },
+  { id: "positions", label: "positions" },
+  { id: "history", label: "history" },
   { id: "guide", label: "help" },
 ] as const satisfies readonly NavSlide[];
 
@@ -76,6 +81,7 @@ export const NAV_DECL: Partial<Record<ModuleId, ModuleNavDecl>> = {
       { label: "today", ids: ["session", "forest", "timeline", "openingrange"] },
       { label: "evidence", ids: ["attempts", "decisions", "divergence", "regime"] },
       { label: "study", ids: ["completion", "performance", "advisor"] },
+      { label: "tables", ids: ["books", "positions", "history"] },
       { label: "help", ids: ["guide"] },
     ],
     legacy: {
@@ -84,6 +90,7 @@ export const NAV_DECL: Partial<Record<ModuleId, ModuleNavDecl>> = {
       calibration: "completion",
       journal: "decisions",
       openrange: "openingrange",
+      trades: "positions",
     },
   },
 };

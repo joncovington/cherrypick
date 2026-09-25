@@ -25,7 +25,6 @@ import { structureLabel } from "../../pages/Flies/structure";
 import { RegimeCutsTab } from "../../components/RegimeCutsTab";
 import { ModuleFrame } from "../ModuleFrame";
 import { FLIES_SLIDES, type FliesSlideId } from "../navGroups";
-import { DetailSheet } from "../../components/grid/DetailSheet";
 import { FliesSession } from "../../pages/Flies/FliesSession";
 import type { SlideDef } from "../types";
 
@@ -92,9 +91,6 @@ export function FliesLightbox({ slide }: { slide: string }) {
   const [date, setDate] = useState<string | null>(null);
   const [era, setEra] = useState<string | null>(null);
   const [symbol, setSymbol] = useState<string | null>(null);
-  // Which dense table is open over the frame. Transient on purpose -- not in the URL, because a
-  // reload should return to the tab, not to the table. See DetailSheet.
-  const [sheet, setSheet] = useState<"books" | "positions" | "history" | null>(null);
   const meta = useFliesMeta(mode, era);
   const resolvedDate = date ?? meta.data?.dates[0] ?? null;
   const filter: FliesFilter = { arm, date: resolvedDate, symbol, era };
@@ -120,9 +116,7 @@ export function FliesLightbox({ slide }: { slide: string }) {
 
   const replayDay = (d: string) => {
     setDate(d);
-    // Picking a day out of the history sheet is a request to go look at it, so the sheet that
-    // asked the question gets out of the way.
-    setSheet(null);
+    // Picking a day out of the history table is a request to go look at it: the session page.
     const qs = params.toString();
     navigate(`/flies/session${qs ? `?${qs}` : ""}`);
   };
@@ -138,14 +132,13 @@ export function FliesLightbox({ slide }: { slide: string }) {
           arm={arm}
           analytics={a}
           loading={analytics.isLoading}
-          onOpenSheet={setSheet}
         />
       ),
     },
     {
       id: "forest",
       label: FLIES_LABEL.forest,
-      render: () => <ForestCard mode={mode} filter={filter} onExpand={() => setSheet("books")} />,
+      render: () => <ForestCard mode={mode} filter={filter} />,
     },
     {
       // Attempts and occupancy merged (2026-09): both are bounded snapshots regardless of session
@@ -172,6 +165,107 @@ export function FliesLightbox({ slide }: { slide: string }) {
     { id: "advisor", label: FLIES_LABEL.advisor, render: () => <AdvisorSlide module="flies" /> },
     { id: "performance", label: FLIES_LABEL.performance, render: () => <PerformanceSlide module="flies" /> },
     { id: "regime", label: FLIES_LABEL.regime, render: () => <RegimeCutsTab module="flies" /> },
+    // The three dense tables (2026-09-24: pages in the rail's `tables` group, where they had been
+    // overlay sheets). Same markup, pagers and queries as before -- they moved rather than changed.
+    // The session cards whose numbers they explain link here: net today to history, net by arm to
+    // positions, fee drag and the payoff hero to books.
+    {
+      id: "books",
+      label: FLIES_LABEL.books,
+      render: () => (
+        <DataCard
+          title={`Books — ${(data?.books.total ?? 0).toLocaleString()} matching`}
+          headers={["date", "arm", "sym", "credit", "debits", "fees", "net cash", "floor", "band", "status", "P&L"]}
+          numFrom={1}
+          loading={isLoading}
+          isError={isError}
+          busy={isPlaceholderData}
+          rowCount={data?.books.rows.length ?? 0}
+          footer={
+            (data?.books.total ?? 0) > 0 && (
+              <Pager
+                offset={data?.books.offset ?? booksPage.page.offset}
+                limit={data?.books.limit ?? booksPage.page.limit}
+                total={data?.books.total ?? 0}
+                onOffset={booksPage.setOffset}
+                onLimit={booksPage.setLimit}
+              />
+            )
+          }
+        >
+          {data?.books.rows.map((b) => (
+            <tr key={b.bookId}>
+              <td>{b.tradeDate}</td>
+              <td className="muted">{b.arm ?? "—"}</td>
+              <td>{b.symbol}</td>
+              <td>{fmtMoney(b.creditCollected)}</td>
+              <td>{fmtMoney(b.debitsPaid)}</td>
+              <td>{fmtMoney(b.fees)}</td>
+              <td>{fmtMoney(b.netCash)}</td>
+              <td>{b.floorHolds === null ? "—" : b.floorHolds ? "holds" : "no"}</td>
+              <td className="muted">{b.bandLow !== null && b.bandHigh !== null ? `${fmtNum(b.bandLow, 0)}–${fmtNum(b.bandHigh, 0)}` : "—"}</td>
+              <td>{b.status}</td>
+              <td><PnlCell v={b.pnl} /></td>
+            </tr>
+          ))}
+        </DataCard>
+      ),
+    },
+    {
+      id: "positions",
+      label: FLIES_LABEL.positions,
+      render: () => (
+        <DataCard
+          title={`Positions — ${(data?.positions.total ?? 0).toLocaleString()} matching`}
+          headers={["symbol", "arm", "mode", "kind", "centre", "net", "floor", "", "status"]}
+          numFrom={1}
+          loading={isLoading}
+          isError={isError}
+          busy={isPlaceholderData}
+          rowCount={data?.positions.rows.length ?? 0}
+          skeletonRows={10}
+          empty={arm !== null || date !== null ? "no matching positions" : "no positions today"}
+          footer={
+            (data?.positions.total ?? 0) > 0 && (
+              <Pager
+                offset={data?.positions.offset ?? positionsPage.page.offset}
+                limit={data?.positions.limit ?? positionsPage.page.limit}
+                total={data?.positions.total ?? 0}
+                onOffset={positionsPage.setOffset}
+                onLimit={positionsPage.setLimit}
+              />
+            )
+          }
+        >
+          {data?.positions.rows.map((p) => (
+            <tr key={p.positionId}>
+              <td>{p.symbol}</td>
+              <td className="muted">{p.arm ?? "—"}</td>
+              <td className="muted">{p.entryMode ?? "—"}</td>
+              <td>{structureLabel(p.kind, p.side)}</td>
+              <td>{fmtNum(p.center, 0)}</td>
+              <td>{fmtNum(p.net, 2)}</td>
+              <td>{p.floorDollars !== null ? <PnlCell v={p.floorDollars} /> : "—"}</td>
+              <td>
+                {p.riskFree ? (
+                  <span className="chain-badge chain-badge-long">risk-free</span>
+                ) : p.kind === "fly" || p.kind === "iron_fly" ? (
+                  <span className="chain-badge chain-badge-short">floor negative</span>
+                ) : (
+                  <span className="chain-badge">at risk</span>
+                )}
+              </td>
+              <td>{p.status}</td>
+            </tr>
+          ))}
+        </DataCard>
+      ),
+    },
+    {
+      id: "history",
+      label: FLIES_LABEL.history,
+      render: () => <HistoryTab mode={mode} filter={multiDayFilter} onReplayDay={replayDay} />,
+    },
     {
       id: "guide",
       label: FLIES_LABEL.guide,
@@ -186,7 +280,6 @@ export function FliesLightbox({ slide }: { slide: string }) {
   ];
 
   return (
-    <>
     <ModuleFrame
       module="flies"
       slide={slide}
@@ -237,99 +330,5 @@ export function FliesLightbox({ slide }: { slide: string }) {
       integrity={<ModuleIntegrityStrip integrity={data?.integrity} collapseKey="flies-integrity" updatedAt={dataUpdatedAt} />}
       integrityAttention={(data?.integrity?.measurementBreaks.length ?? 0) > 0 || (data?.integrity?.schemaDrift.length ?? 0) > 0}
     />
-
-    {/* The three dense tables that used to be tabs. Same markup, same pagers, same queries --
-        they moved rather than changed. Each opens from the card whose numbers it explains: the
-        books behind fee drag, the positions behind net-by-arm, the sessions behind net-today. */}
-    <DetailSheet open={sheet === "books"} title="Books" onClose={() => setSheet(null)}>
-      <DataCard
-        title={`Books — ${(data?.books.total ?? 0).toLocaleString()} matching`}
-        headers={["date", "arm", "sym", "credit", "debits", "fees", "net cash", "floor", "band", "status", "P&L"]}
-        numFrom={1}
-        loading={isLoading}
-        isError={isError}
-        busy={isPlaceholderData}
-        rowCount={data?.books.rows.length ?? 0}
-        footer={
-          (data?.books.total ?? 0) > 0 && (
-            <Pager
-              offset={data?.books.offset ?? booksPage.page.offset}
-              limit={data?.books.limit ?? booksPage.page.limit}
-              total={data?.books.total ?? 0}
-              onOffset={booksPage.setOffset}
-              onLimit={booksPage.setLimit}
-            />
-          )
-        }
-      >
-        {data?.books.rows.map((b) => (
-          <tr key={b.bookId}>
-            <td>{b.tradeDate}</td>
-            <td className="muted">{b.arm ?? "—"}</td>
-            <td>{b.symbol}</td>
-            <td>{fmtMoney(b.creditCollected)}</td>
-            <td>{fmtMoney(b.debitsPaid)}</td>
-            <td>{fmtMoney(b.fees)}</td>
-            <td>{fmtMoney(b.netCash)}</td>
-            <td>{b.floorHolds === null ? "—" : b.floorHolds ? "holds" : "no"}</td>
-            <td className="muted">{b.bandLow !== null && b.bandHigh !== null ? `${fmtNum(b.bandLow, 0)}–${fmtNum(b.bandHigh, 0)}` : "—"}</td>
-            <td>{b.status}</td>
-            <td><PnlCell v={b.pnl} /></td>
-          </tr>
-        ))}
-      </DataCard>
-    </DetailSheet>
-
-    <DetailSheet open={sheet === "positions"} title="Positions" onClose={() => setSheet(null)}>
-      <DataCard
-        title={`Positions — ${(data?.positions.total ?? 0).toLocaleString()} matching`}
-        headers={["symbol", "arm", "mode", "kind", "centre", "net", "floor", "", "status"]}
-        numFrom={1}
-        loading={isLoading}
-        isError={isError}
-        busy={isPlaceholderData}
-        rowCount={data?.positions.rows.length ?? 0}
-        skeletonRows={10}
-        empty={arm !== null || date !== null ? "no matching positions" : "no positions today"}
-        footer={
-          (data?.positions.total ?? 0) > 0 && (
-            <Pager
-              offset={data?.positions.offset ?? positionsPage.page.offset}
-              limit={data?.positions.limit ?? positionsPage.page.limit}
-              total={data?.positions.total ?? 0}
-              onOffset={positionsPage.setOffset}
-              onLimit={positionsPage.setLimit}
-            />
-          )
-        }
-      >
-        {data?.positions.rows.map((p) => (
-          <tr key={p.positionId}>
-            <td>{p.symbol}</td>
-            <td className="muted">{p.arm ?? "—"}</td>
-            <td className="muted">{p.entryMode ?? "—"}</td>
-            <td>{structureLabel(p.kind, p.side)}</td>
-            <td>{fmtNum(p.center, 0)}</td>
-            <td>{fmtNum(p.net, 2)}</td>
-            <td>{p.floorDollars !== null ? <PnlCell v={p.floorDollars} /> : "—"}</td>
-            <td>
-              {p.riskFree ? (
-                <span className="chain-badge chain-badge-long">risk-free</span>
-              ) : p.kind === "fly" || p.kind === "iron_fly" ? (
-                <span className="chain-badge chain-badge-short">floor negative</span>
-              ) : (
-                <span className="chain-badge">at risk</span>
-              )}
-            </td>
-            <td>{p.status}</td>
-          </tr>
-        ))}
-      </DataCard>
-    </DetailSheet>
-
-    <DetailSheet open={sheet === "history"} title="History" onClose={() => setSheet(null)}>
-      <HistoryTab mode={mode} filter={multiDayFilter} onReplayDay={replayDay} />
-    </DetailSheet>
-    </>
   );
 }
