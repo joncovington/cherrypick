@@ -171,6 +171,41 @@ not one American-spelled identifier of that family in `.ts` (`unrealisedNet`, `r
 not a bug to fix. Writing it down costs a paragraph; normalising it would rename ~200 identifiers
 and change no behaviour.
 
+## Trade histories and reports: one money layout
+
+Every surface that shows a trade — a console table, a review fact set, a report, a notification —
+states its money the same way. The suite had drifted into a column called "P&L" that was gross on
+two trade logs, an at-risk figure 100× small on four modules, and settlement fees folded silently
+into a fee total; each was correct by its own module's lights, and none could be compared with
+another.
+
+- **"P&L" means net, always.** net = gross − fees − settlement (− slippage, where it is charged as a
+  cost). A gross figure is labelled gross.
+- **Signed cash flow.** A credit received is `+`, a debit paid is `−`, on every entry and exit.
+- **Whole-position dollars.** Money is price × multiplier × quantity. The one per-share figure is
+  the net price, and it says so (`1.25 cr` / `0.40 db`).
+- **Rows add up.** entry + exit = gross; gross − every cost column = net. A surface derives what a
+  ledger lacks so the identities hold, and never shows two figures that cannot be reconciled.
+- **Costs are separate.** Trading fees (commissions, exchange) and settlement (exercise, assignment,
+  delivery) are different columns. Where a ledger records a fee total with settlement as a
+  component, it is subtracted once; where the split was never recorded, the total stays in fees and
+  settlement reads `n/r` — never a zero.
+- **Slippage is its own column, and says which model it is.** The suite prices it two ways. Where
+  the modelled fill price already concedes it (flies, meic), it is inside gross — shown beside the
+  costs as a measure and never subtracted again. Where fills are taken at mid and slippage is
+  charged as a cost (calendars, pmcc, curve, earnings), it is a cost: its own column, subtracted
+  once, and out of the fee column. The header's title says which; a figure that is subtracted in
+  one module and not in another is never shown under one unqualified name.
+- **Open and closed are different tables.** Open positions carry the entry side (and a mark, where
+  the module records one); history carries the exit, how it ended (`closed` / `settled` /
+  `expired` / `assigned`), gross, costs and net. Cancelled and voided rows are in neither.
+- **Fee drag** is fees ÷ premium collected, named that way.
+
+This is a presentation rule. Recording a missing cost component in a ledger is not
+measurement-affecting — it changes what a row *says*, not what the module did — so it lands
+immediately, with a dry-run-by-default backfill where history can be recovered. Flies is the
+reference implementation; `packages/console/CLAUDE.md` holds the console specifics.
+
 ## Two working rules, both learned the hard way
 
 **Measure a duplication before folding it, and normalize the identifier first.** "These are the

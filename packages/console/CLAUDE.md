@@ -473,33 +473,22 @@ tab at all (it skips anything inside a `<nav>`, and the rail is one).
 
 ## The trade table standard (2026-09-24)
 
-Every entry, position and history table follows one money layout, taken from how broker activity
-screens and options trading journals lay out a round trip. Flies is the reference implementation
-(`readers/flies.ts` `tradeCash`/`bookCash`, rendered on the books/positions/history slides); the
-other modules move onto it as their surfaces move onto the module frame.
+The suite rule (root CLAUDE.md, "Trade histories and reports") applied here. Flies is the reference
+implementation: `readers/flies.ts` `tradeCash`/`bookCash` derive the columns, `fmtCash` (signed,
+`+$178.75`) and `fmtPrice` (`1.25 cr`) in `lib/format.ts` render them, and the books / positions /
+history slides show them. Header order: identity and structure, then qty, price, entry, exit, how
+it ended, gross, fees, settle, slip, net — with each money header's `title` stating its definition.
 
-- **Signed cash flow.** A credit received is `+`, a debit paid is `−`, on every entry and exit.
-  `fmtCash` renders it (`+$178.75`); a row reads left to right as money in and out.
-- **Whole-position dollars.** Money columns are price × 100 × quantity. The one per-share column is
-  the net price, rendered with `fmtPrice` as `1.25 cr` / `0.40 db` so it cannot be read as dollars.
-- **The identities hold per row:** entry + exit = **gross**, and gross − **fees** − **settlement** =
-  **net**. Exit is derived as gross − entry, so a settlement payoff sits in exit and the row sums by
-  construction. **"P&L" always means net.** A column called P&L that is gross is the bug
-  `e007fcc0` fixed on two trade logs.
-- **Costs are separate columns.** `fees` is trading fees (commissions, exchange); `settle` is the
-  exercise/assignment fee at the bell. Where a ledger records a fee TOTAL with settlement as a
-  component (flies: `fees` and `settlement_fees`), the reader subtracts once; where the split was
-  never recorded, `fees` stays the total, settlement renders `n/r`, and the cell's title says so.
-- **Slippage is a measure, not a cost.** What a modelled fill conceded against mid is already inside
-  its price, so already inside gross. It gets its own column beside the costs and is never
-  subtracted again; a total over it says how many rows recorded it.
-- **Open and history are different tables.** Open positions carry the entry side (qty, price,
-  entry, floor/risk); history carries exit, how it left (`closed`/`settled`/`expired`/`assigned`),
-  gross, costs and net. Cancelled entries and voided rows are never positions and are in neither.
-- **Fee drag** is fees ÷ premium collected, always named that way.
+- Money is derived on the server, never in a component, so every surface of a module agrees.
+- A cost column added recently is read as optional (`NULL` when the ledger predates it): a missing
+  column must read as "not recorded", and `withReadOnlyDb` would otherwise turn it into an empty
+  table that looks like a quiet day.
+- A totals chip carries gross, fees, settlement and net over every matching row, and says how many
+  rows a partially-recorded measure (slippage) covers.
 
 `server/test/flies-trade-standard.test.ts` pins the identities, the single subtraction and the
 held-only rule; it was checked by removing the subtraction and the filter and watching it fail.
+Each module that moves onto the standard gets the same test against its own fixture.
 
 ## Suite guardrails (apply here too)
 
