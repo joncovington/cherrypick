@@ -894,9 +894,10 @@ supervision. The log is now free to be exactly as talkative as a human reading i
 ## Guardrails (suite-wide)
 
 - Paper by default; live is a deliberately narrow, per-day-armed pilot (one arm — `control` since
-  2026-09-17, `gex` before — one symbol, one incomplete position at a time, under a local
-  buying-power cap `live.max_open_margin_dollars` read from the ledger and the plan, never a
-  balance call — see `live_loop.py` and docs/live-trading-plan.md). No entry of any mode on an
+  2026-09-17, `gex` before — one symbol, sized by a local buying-power cap
+  `live.max_open_margin_dollars` read from the ledger and the plan, never a balance call, with an
+  uncompleted vertical counted at its worst case. No count limit on incomplete positions since
+  2026-09-25; `live.max_incomplete_spreads: 1` restores the pilot's old one-at-a-time rule — see `live_loop.py` and docs/live-trading-plan.md). No entry of any mode on an
   NYSE early-close session, paper or live (`engine.early_close_gate`, 2026-09-17): every clock
   here assumes a 16:00 close, so a 13:00 day is refused outright rather than re-derived. No new entry of
   any mode after 12:30 ET on a triple-witching session either (`engine.triple_witching_gate`,

@@ -23,7 +23,13 @@ every mode's live fields right, not just the row.
 - **Deferred 2026-09-19** because it is pre-existing code, larger than the session that noticed
   it, and downstream of live-order construction.
 
-## Two open spreads at once in the live pilot
+## Two open spreads at once in the live pilot -- DONE 2026-09-25 (cap only, no count limit)
+
+Landed in a0a820d4: `live.max_incomplete_spreads` defaults to no limit, so the `$1,000` cap is the
+only sizing gate (1 restores the old rule). The replay was run first (control, 08-21..09-24): the
+one-incomplete rule netted +$2,130 (max drawdown -$883, worst session -$298), the cap alone +$3,119
+(-$1,256, -$818). `miss_stop_minutes` was NOT turned on live with it. The original deferral note
+follows for the record.
 
 `live_loop._is_blocking` admits one incomplete spread; the `$1,000` margin cap already admits two.
 Mechanically small. Deferred because a second entry ten minutes after the first sells the same side

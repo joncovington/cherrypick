@@ -11,8 +11,8 @@ One workspace for the trading-tool suite. Work in the package for your area — 
 - **packages/streamer** — the suite's **single** producer of the shared stream cache every module
   reads. Modules declare symbols via `state/stream_requests/`; nothing else may write that cache.
 - **packages/flies** — 0DTE net-credit butterfly ("profit forest") module. Paper by default, with a
-  deliberately narrow, per-day-armed live pilot (one arm, one symbol, one incomplete position at a
-  time); built to make a negative result usable — floors are measured after fees, and a book-level
+  deliberately narrow, per-day-armed live pilot (one arm, one symbol, sized by a worst-case
+  buying-power cap); built to make a negative result usable — floors are measured after fees, and a book-level
   floor always carries the price band over which it holds.
 - **packages/calendars** — weekly SPY double-calendar module, **paper-only** and credential-free: a
   pure stream-cache consumer whose 4DTE/7DTE chains come from the streamer's `expirations` request
