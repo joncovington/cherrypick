@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { MeicDivergence, MeicPayload, MeicTradeRow, MeicSummaryRow, Paged, TradingMode } from "@console/shared";
+import type { MeicDivergence, MeicPayload, MeicTradeRow, MeicTradeTotals, MeicSummaryRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import type { DatabaseHandle } from "./db.js";
 import { withReadOnlyDb, hasColumn, hasTable, num, str, armColumnOf, findArmColumn } from "./db.js";
@@ -90,6 +90,9 @@ export interface MeicTradeQuery extends MeicScopeFilter, PageRequest {
    */
   day: string | null;
   outcome: MeicOutcome;
+  /** `positions`: every trade the session held (cancelled entries never were). `history`: the ones
+   *  that have closed. Two pages of the same query, so they can never disagree about a row. */
+  view: MeicTradeView;
   /** Exit reason as the analytics card labels it — "open" means no exit reason yet. */
   reason: string | null;
   search: string;
@@ -100,9 +103,12 @@ export const NO_TRADE_QUERY: MeicTradeQuery = {
   ...FIRST_PAGE,
   day: null,
   outcome: "all",
+  view: "positions",
   reason: null,
   search: "",
 };
+
+export type MeicTradeView = "positions" | "history";
 
 /**
  * The log's filters run in SQL rather than over the fetched page. Filtering a
@@ -128,6 +134,8 @@ function tradeFilterSql(db: DatabaseHandle, q: MeicTradeQuery): { where: string;
   if (q.outcome === "wins") clauses.push("pnl IS NOT NULL AND pnl - COALESCE(fees, 0) > 0");
   if (q.outcome === "losses") clauses.push("pnl IS NOT NULL AND pnl - COALESCE(fees, 0) <= 0");
   if (q.outcome === "open") clauses.push("pnl IS NULL");
+  clauses.push("COALESCE(status, '') != 'cancelled'");
+  if (q.view === "history") clauses.push("pnl IS NOT NULL");
   if (q.reason !== null) {
     clauses.push("COALESCE(exit_reason, 'open') = ?");
     params.push(q.reason);
@@ -143,6 +151,86 @@ function tradeFilterSql(db: DatabaseHandle, q: MeicTradeQuery): { where: string;
   return { where: clauses.join(" AND "), params };
 }
 
+function round2(v: number): number {
+  return Math.round(v * 100) / 100;
+}
+
+/** An `ic_trades` column, or NULL on a ledger that predates it (see flies' `costColumn`). */
+function meicCol(db: DatabaseHandle, name: string): string {
+  return hasColumn(db, "ic_trades", name) ? name : "NULL";
+}
+
+const EMPTY_MEIC_TOTALS: MeicTradeTotals = {
+  trades: 0,
+  sessions: 0,
+  gross: 0,
+  fees: 0,
+  settlementFees: 0,
+  slippage: 0,
+  net: 0,
+  credit: 0,
+  byArm: [],
+};
+
+/**
+ * How a closed iron condor left the book. A side held to the bell and settled in the money makes it
+ * `settled`; otherwise a stop or a force-close makes it `closed`; otherwise it `expired` worthless.
+ * The exit reason rides beside it for the detail (a stop on one side and an expiry on the other).
+ */
+export function meicExitKind(
+  pnl: number | null,
+  exitReason: string | null,
+  settlementFees: number | null,
+  putSettle: number | null,
+  callSettle: number | null,
+): MeicTradeRow["exitKind"] {
+  if (pnl === null) return null;
+  const reason = exitReason ?? "";
+  const expired = reason.includes("expire");
+  const itm = (settlementFees ?? 0) > 0 || (putSettle ?? 0) > 0 || (callSettle ?? 0) > 0;
+  if (expired && itm) return "settled";
+  if (reason.includes("stop") || reason.includes("force")) return "closed";
+  return "expired";
+}
+
+/**
+ * The standard's money columns for one iron condor. `pnl` is GROSS in this ledger and `fees` the
+ * total (core.ledgers' meic rule), so net = pnl − fees and the settlement part comes out of the
+ * total exactly once. Exit = gross − entry, so the row adds up by construction.
+ */
+function meicTradeCash(r: Record<string, unknown>): Pick<
+  MeicTradeRow,
+  "entryCash" | "exitCash" | "exitKind" | "gross" | "fees" | "settlementFees" | "slippage" | "net"
+> {
+  const mult = num(r["dollar_multiplier"]) ?? 100;
+  const qty = num(r["quantity"]) ?? 1;
+  const credit = num(r["net_credit"]);
+  const gross = num(r["pnl"]);
+  const total = num(r["fees"]);
+  const settlementFees = num(r["settlement_fees"]);
+  // From the two sides when the row has them, rounded per side exactly as the write path rounds
+  // each side's P&L -- otherwise the rounded `net_credit` leaves a worthless expiry a cent off $0.
+  const put = num(r["put_credit"]);
+  const call = num(r["call_credit"]);
+  const entryCash =
+    put !== null && call !== null
+      ? round2(round2(put * mult * qty) + round2(call * mult * qty))
+      : credit !== null
+        ? round2(credit * mult * qty)
+        : null;
+  const closed = gross !== null;
+  return {
+    entryCash,
+    exitCash: closed && entryCash !== null ? round2(gross - entryCash) : null,
+    exitKind: meicExitKind(gross, str(r["exit_reason"]), settlementFees, num(r["put_settle_value"]), num(r["call_settle_value"])),
+    gross,
+    fees: total !== null && settlementFees !== null ? round2(total - settlementFees) : total,
+    settlementFees: closed ? settlementFees : null,
+    slippage: num(r["slippage_dollars"]),
+    net: closed ? round2(gross - (total ?? 0)) : null,
+  };
+}
+
 export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTradeQuery = NO_TRADE_QUERY): MeicPayload {
   const file = mode === "live" ? "meic_trades.db" : "paper_trades.db";
   const dbPath = path.join(config.paths.meicDir, file);
@@ -152,7 +240,12 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
       db,
       {
         columns: `id, trade_date, entry_time, symbol, put_strike, call_strike, wing_width,
-                  net_credit, quantity, status, pnl, fees, exit_reason, iv_rank_at_entry`,
+                  net_credit, put_credit, call_credit, quantity, status, pnl, fees, exit_reason, iv_rank_at_entry,
+                  ${meicCol(db, "dollar_multiplier")} AS dollar_multiplier,
+                  ${meicCol(db, "settlement_fees")} AS settlement_fees,
+                  ${meicCol(db, "slippage_dollars")} AS slippage_dollars,
+                  ${meicCol(db, "put_settle_value")} AS put_settle_value,
+                  ${meicCol(db, "call_settle_value")} AS call_settle_value`,
         from: "ic_trades",
         where: f.where,
         params: f.params,
@@ -171,12 +264,52 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
         netCredit: num(r["net_credit"]),
         quantity: num(r["quantity"]),
         status: str(r["status"]) ?? "",
-        pnl: num(r["pnl"]),
-        fees: num(r["fees"]),
+        ...meicTradeCash(r),
         exitReason: str(r["exit_reason"]),
         ivRankAtEntry: num(r["iv_rank_at_entry"]),
       }),
     );
+  });
+
+  const totals = withReadOnlyDb<MeicTradeTotals>(dbPath, EMPTY_MEIC_TOTALS, (db) => {
+    const f = tradeFilterSql(db, query);
+    const mult = `COALESCE(${meicCol(db, "dollar_multiplier")}, 100) * COALESCE(quantity, 1)`;
+    const sums = `COUNT(*) AS trades, COUNT(DISTINCT trade_date) AS sessions,
+                  COALESCE(SUM(pnl), 0) AS gross, COALESCE(SUM(fees), 0) AS fees,
+                  COALESCE(SUM(${meicCol(db, "settlement_fees")}), 0) AS settlement,
+                  COALESCE(SUM(${meicCol(db, "slippage_dollars")}), 0) AS slippage,
+                  COALESCE(SUM(net_credit * ${mult}), 0) AS credit`;
+    const shape = (r: Record<string, unknown>) => {
+      const gross = Number(r["gross"] ?? 0);
+      const fees = Number(r["fees"] ?? 0);
+      const settlementFees = Number(r["settlement"] ?? 0);
+      return {
+        trades: Number(r["trades"] ?? 0),
+        gross: round2(gross),
+        fees: round2(fees - settlementFees),
+        settlementFees: round2(settlementFees),
+        net: round2(gross - fees),
+        credit: round2(Number(r["credit"] ?? 0)),
+      };
+    };
+    const all =
+      db
+        .prepare<string[], Record<string, unknown>>(`SELECT ${sums} FROM ic_trades WHERE ${f.where} AND pnl IS NOT NULL`)
+        .get(...f.params) ?? {};
+    const byArm = db
+      .prepare<string[], Record<string, unknown>>(
+        `SELECT ${armColumnOf(db, "ic_trades")} AS arm, ${sums} FROM ic_trades
+          WHERE ${f.where} AND pnl IS NOT NULL GROUP BY 1`,
+      )
+      .all(...f.params)
+      .map((r) => ({ arm: str(r["arm"]) ?? "—", ...shape(r) }))
+      .sort((a, b) => b.net - a.net);
+    return {
+      ...shape(all),
+      sessions: Number(all["sessions"] ?? 0),
+      slippage: round2(Number(all["slippage"] ?? 0)),
+      byArm,
+    };
   });
 
   // Bounded to the same era as the trade log above it — daily_summary has no era column, so the
@@ -216,7 +349,7 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
     }),
   );
 
-  return { mode, trades, summaries, integrity };
+  return { mode, trades, totals, summaries, integrity };
 }
 
 /** Columns this build knows about, so a ledger written by a NEWER checkout is visible as drift

@@ -4,7 +4,12 @@ import { describe, it, expect, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { FLIES_SLIDES } from "../src/lightbox/navGroups";
+import { NAV_DECL } from "../src/lightbox/navGroups";
+import { FRAME_MODULE_IDS, type FrameModuleId } from "../src/lightbox/registry";
+import { MODULE_LABEL } from "../src/lightbox/moduleOrder";
+
+/** Where each frame module's pages live, for the card-link check below. */
+const PAGE_DIR: Record<FrameModuleId, string> = { flies: "Flies", meic: "Meic" };
 
 /**
  * Route wiring, rendered rather than read.
@@ -99,8 +104,8 @@ describe("the module routes", () => {
     // Both land on the same route element; the slide segment is read there (frame) or by the
     // module's own manifest once mounted (lightbox), but routing itself must not treat the extra
     // segment as unknown.
-    const html = render("/meic/forest");
-    expect(html).toContain("MEIC");
+    const html = render("/pmcc/forest");
+    expect(html).toContain("PMCC");
     expect(html).not.toContain("Page not found");
   });
 });
@@ -141,27 +146,39 @@ describe("the module frame", () => {
     expect(text(render("/flies/trades"))).toContain("Flies / positions");
   });
 
-  it("every page a flies card links to is a real tab, not the first-tab fallback", () => {
-    // Cards link to module pages rather than opening overlays (2026-09-24). A link to a tab the
-    // rail does not declare resolves to `session` and looks like it worked, so the links are read
-    // from the pages' own source -- not a list kept here -- and each must name its own tab.
-    const dir = path.join(__dirname, "..", "src", "pages", "Flies");
-    const targets = new Set<string>();
-    for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".tsx"))) {
-      for (const m of fs.readFileSync(path.join(dir, f), "utf-8").matchAll(/\bto="(\/flies\/[a-z]+)"/g)) targets.add(m[1]!);
-    }
-    expect(targets.size).toBeGreaterThan(0);
-    for (const to of targets) {
-      const id = to.split("/")[2]!;
-      const label = FLIES_SLIDES.find((s) => s.id === id)?.label;
-      expect(label, `${to} is not a declared flies tab`).toBeDefined();
-      expect(text(render(to)), `${to} did not open its own tab`).toContain(`Flies / ${label!}`);
-    }
+  it("MEIC's renamed tabs reach their replacements", () => {
+    expect(text(render("/meic"))).toContain("MEIC / session");
+    expect(text(render("/meic/now"))).toContain("MEIC / session");
+    expect(text(render("/meic/trades"))).toContain("MEIC / history");
+    expect(text(render("/meic/sessions"))).toContain("MEIC / sessions");
   });
 
+  // Cards link to module pages rather than opening overlays (2026-09-24). A link to a tab the rail
+  // does not declare resolves to the first tab and looks like it worked, so the links are read from
+  // each frame module's own page sources -- not a list kept here -- and each must open its own tab.
+  // Driven off FRAME_MODULE_IDS, so a module that moves onto the frame is covered the day it moves.
+  for (const module of FRAME_MODULE_IDS) {
+    it(`every page a ${module} card links to is a real tab, not the first-tab fallback`, () => {
+      const pagesDir = path.join(__dirname, "..", "src", "pages", PAGE_DIR[module]);
+      const targets = new Set<string>();
+      const pattern = new RegExp(`\\bto="(\\/${module}\\/[a-z]+)"`, "g");
+      for (const f of fs.readdirSync(pagesDir).filter((n) => n.endsWith(".tsx"))) {
+        for (const m of fs.readFileSync(path.join(pagesDir, f), "utf-8").matchAll(pattern)) targets.add(m[1]!);
+      }
+      expect(targets.size).toBeGreaterThan(0);
+      const slides = NAV_DECL[module]!.slides;
+      for (const to of targets) {
+        const id = to.split("/")[2]!;
+        const label = slides.find((s) => s.id === id)?.label;
+        expect(label, `${to} is not a declared ${module} tab`).toBeDefined();
+        expect(text(render(to)), `${to} did not open its own tab`).toContain(`${MODULE_LABEL[module]} / ${label!}`);
+      }
+    });
+  }
+
   it("a lightbox module grew no rail — the two shapes stay apart", () => {
-    const html = render("/meic");
-    expect(html).toContain("MEIC");
+    const html = render("/pmcc");
+    expect(html).toContain("PMCC");
     expect(html).not.toContain('aria-label="modules"');
     expect(html).not.toContain("mf-nav");
   });

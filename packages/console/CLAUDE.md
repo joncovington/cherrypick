@@ -490,6 +490,11 @@ it ended, gross, fees, settle, slip, net — with each money header's `title` st
 held-only rule; it was checked by removing the subtraction and the filter and watching it fail.
 Each module that moves onto the standard gets the same test against its own fixture.
 
+Modules on the standard (and on the module frame): flies, meic (2026-09-25; `readers/meic.ts`
+`meicTradeCash`, `pages/Meic/MeicTables.tsx`, `server/test/meic-trade-standard.test.ts`). MEIC's
+entry is summed from its two side credits, rounded per side as its write path rounds each side's
+P&L; from the rounded `net_credit` instead, 1,798 worthless expiries showed a one-cent exit.
+
 ## Suite guardrails (apply here too)
 
 Suite-wide guardrails apply — see root CLAUDE.md. Package-specific: **loopback-only serving**. This

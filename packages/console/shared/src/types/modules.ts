@@ -23,13 +23,39 @@ export interface MeicTradeRow {
   putStrike: number | null;
   callStrike: number | null;
   wingWidth: number | null;
+  /** Net entry price per share, signed: credit +. */
   netCredit: number | null;
   quantity: number | null;
   status: string;
-  pnl: number | null;
+  /** The trade table standard (root CLAUDE.md): whole-position dollars, signed cash flow.
+   *  entry + exit = gross; gross − fees − settlement = net. Slippage sits inside the fill prices,
+   *  so it is a measure beside gross and never subtracted. */
+  entryCash: number | null;
+  exitCash: number | null;
+  exitKind: "closed" | "settled" | "expired" | null;
+  gross: number | null;
+  /** Trading fees; the fee TOTAL where the settlement split was never recorded. */
   fees: number | null;
+  settlementFees: number | null;
+  slippage: number | null;
+  net: number | null;
   exitReason: string | null;
   ivRankAtEntry: number | null;
+}
+
+/** Totals over every row the trade query matches — never the rendered page. */
+export interface MeicTradeTotals {
+  trades: number;
+  sessions: number;
+  gross: number;
+  fees: number;
+  settlementFees: number;
+  slippage: number;
+  net: number;
+  /** Premium collected — the sum of entry cash over these rows, the denominator of fee drag. */
+  credit: number;
+  /** The same totals, one row per arm, net descending. */
+  byArm: Array<{ arm: string; trades: number; gross: number; fees: number; settlementFees: number; net: number; credit: number }>;
 }
 
 export interface MeicSummaryRow {
@@ -68,6 +94,7 @@ export interface MeicPayload {
   mode: TradingMode;
   /** The trade log, newest first — one page of it. */
   trades: Paged<MeicTradeRow>;
+  totals: MeicTradeTotals;
   summaries: MeicSummaryRow[];
   integrity: ModuleIntegrity;
 }

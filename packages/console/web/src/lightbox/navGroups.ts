@@ -74,6 +74,36 @@ export const FLIES_SLIDES = [
 
 export type FliesSlideId = (typeof FLIES_SLIDES)[number]["id"];
 
+/**
+ * MEIC's tabs, on the frame since 2026-09-25. Three changes of meaning, all toward what flies
+ * already calls the same things:
+ *
+ * - `now` → `session`: it shows the resolved session (the header's day select), not the calendar
+ *   day. The calendar periods (today / week / month / all) moved to `sessions`, beside the daily
+ *   summaries, since they are multi-session readings.
+ * - `trades` → two tables in the suite's standard layout: `positions` (every trade the session
+ *   held, entry side) and `history` (the closed ones: exit, how it ended, gross, fees, settlement,
+ *   slippage, net). The old `trades` id reaches `history`.
+ * - The old `history` (deep cards and daily summaries) is `sessions`. Its id now names the trade
+ *   history, which is what the same id means on flies — a bookmark to it lands on the closest thing.
+ */
+export const MEIC_SLIDES = [
+  { id: "session", label: "session" },
+  { id: "forest", label: "forest" },
+  { id: "attempts", label: "attempts" },
+  { id: "exits", label: "exits" },
+  { id: "regime", label: "regime cuts" },
+  { id: "calibration", label: "calibration" },
+  { id: "performance", label: "performance" },
+  { id: "advisor", label: "advisor" },
+  { id: "positions", label: "positions" },
+  { id: "history", label: "history" },
+  { id: "sessions", label: "sessions" },
+  { id: "guide", label: "help" },
+] as const satisfies readonly NavSlide[];
+
+export type MeicSlideId = (typeof MEIC_SLIDES)[number]["id"];
+
 export const NAV_DECL: Partial<Record<ModuleId, ModuleNavDecl>> = {
   flies: {
     slides: FLIES_SLIDES,
@@ -92,6 +122,17 @@ export const NAV_DECL: Partial<Record<ModuleId, ModuleNavDecl>> = {
       openrange: "openingrange",
       trades: "positions",
     },
+  },
+  meic: {
+    slides: MEIC_SLIDES,
+    groups: [
+      { label: "today", ids: ["session", "forest", "attempts"] },
+      { label: "evidence", ids: ["exits", "regime"] },
+      { label: "study", ids: ["calibration", "performance", "advisor"] },
+      { label: "tables", ids: ["positions", "history", "sessions"] },
+      { label: "help", ids: ["guide"] },
+    ],
+    legacy: { now: "session", trades: "history" },
   },
 };
 

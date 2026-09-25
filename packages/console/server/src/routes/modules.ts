@@ -86,6 +86,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
       ...parseMeicScope(query),
       day: date === "" ? null : date,
       outcome: outcome === "wins" || outcome === "losses" || outcome === "open" ? outcome : "all",
+      view: text("view", 10) === "history" ? "history" : "positions",
       reason: reason === "" ? null : reason,
       search: text("search", 60),
       limit: int("limit", 100),

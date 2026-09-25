@@ -135,6 +135,8 @@ export interface MeicTradeQuery {
   profile: string | null;
   era: string | null;
   outcome: string;
+  /** `positions`: every trade the session held; `history`: the closed ones. */
+  view: "positions" | "history";
   reason: string | null;
   search: string;
   limit: number;
@@ -145,6 +147,7 @@ export function useMeic(mode: TradingMode, q: MeicTradeQuery) {
   const params = new URLSearchParams({
     mode,
     outcome: q.outcome,
+    view: q.view,
     search: q.search,
     limit: String(q.limit),
     offset: String(q.offset),
@@ -155,7 +158,7 @@ export function useMeic(mode: TradingMode, q: MeicTradeQuery) {
   if (q.era !== null) params.set("era", q.era);
   if (q.reason !== null) params.set("reason", q.reason);
   return useQuery<MeicPayload>({
-    queryKey: ["meic", mode, q.day, q.symbol, q.profile, q.era, q.outcome, q.reason, q.search, q.limit, q.offset],
+    queryKey: ["meic", mode, q.view, q.day, q.symbol, q.profile, q.era, q.outcome, q.reason, q.search, q.limit, q.offset],
     queryFn: () => getJson<MeicPayload>(`/api/meic?${params.toString()}`),
     refetchInterval: 15_000,
     // A page that briefly empties while the next one loads reads as "no

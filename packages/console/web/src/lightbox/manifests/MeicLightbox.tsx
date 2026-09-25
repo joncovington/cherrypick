@@ -6,7 +6,7 @@ import { useMode } from "../../lib/useMode";
 import { ModeToggle } from "../../components/ModeToggle";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { Card, DataCard, PnlCell, fmtMoney, fmtNum, fmtPct } from "../../components/DataTable";
-import { ScopeSelect, EraSelect, LoopPill, Pager, usePage } from "../../components/ScopeBar";
+import { ScopeSelect, EraSelect, LoopPill } from "../../components/ScopeBar";
 import { ModuleIntegrityStrip } from "../../components/ModuleIntegrityStrip";
 import { MeicDeepCards } from "../../pages/Meic/MeicDeepCards";
 import { MeicDivergenceCard } from "../../pages/Meic/MeicDivergenceCard";
@@ -15,16 +15,17 @@ import { ArmRail, AttemptTimeline } from "../../components/Attempts";
 import { OccupancyMap } from "../../components/OccupancyMap";
 import { MeicForestCard } from "../../pages/Meic/MeicForestCard";
 import { MeicPerformanceTab } from "../../pages/Meic/MeicPerformanceTab";
+import { MeicSession } from "../../pages/Meic/MeicSession";
+import { MeicHistoryTable, MeicPositionsTable, type MeicScope } from "../../pages/Meic/MeicTables";
 import { PerformanceSlide } from "../../components/performance/PerformanceSlide";
 import { AdvisorSlide } from "../../components/advisor/AdvisorSlide";
 import { RegimeCutsTab } from "../../components/RegimeCutsTab";
-import { LightboxFrame } from "../LightboxFrame";
+import { ModuleFrame } from "../ModuleFrame";
+import { MEIC_SLIDES, type MeicSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
 
 interface MeicAnalytics {
   periods: Array<{ label: string; net: number; trades: number; wins: number; losses: number }>;
-  byProfile: Array<{ profile: string; trades: number; net: number; winPct: number | null; avg: number | null; profitFactor: number | null }>;
-  profileFeeDrag: Array<{ profile: string; gross: number; fees: number; net: number; dragPct: number | null }>;
   exitReasons: Array<{ reason: string; count: number }>;
   feeDrag: { grossCredit: number; fees: number; netPnl: number; dragPct: number | null };
 }
@@ -46,6 +47,8 @@ interface LoopStatus {
   sessionQuality: string | null;
 }
 
+const MEIC_LABEL = Object.fromEntries(MEIC_SLIDES.map((s) => [s.id, s.label])) as Record<MeicSlideId, string>;
+
 function scopeQuery(mode: TradingMode, symbol: string | null, profile: string | null, era: string | null): string {
   const p = new URLSearchParams({ mode });
   if (symbol !== null) p.set("symbol", symbol);
@@ -66,28 +69,18 @@ function useMeicAnalytics(mode: TradingMode, symbol: string | null, profile: str
   });
 }
 
-const OUTCOMES = ["all", "wins", "losses", "open"] as const;
-
-function StatusBadge({ status }: { status: string }) {
-  const s = status.toLowerCase();
-  const cls = s.includes("stop") ? "chain-badge-short" : s.includes("expire") ? "chain-badge-long" : "";
-  return <span className={`chain-badge ${cls}`}>{status}</span>;
-}
-
+/**
+ * MEIC on the module frame (2026-09-25): a left rail of pages rather than a carousel of slides, and
+ * nothing on the surface opens an overlay — every card links to a page the rail also reaches. The
+ * tab names and their groups are declared in `navGroups.ts` (`MEIC_SLIDES`), where the reasons for
+ * the three renames are written down.
+ */
 export function MeicLightbox({ slide }: { slide: string }) {
   const [mode, setMode] = useMode();
   const [symbol, setSymbol] = useState<string | null>(null);
   const [profile, setProfile] = useState<string | null>(null);
   const [era, setEra] = useState<string | null>(null);
   const [day, setDay] = useState<string | null>(null);
-  const [outcome, setOutcome] = useState<(typeof OUTCOMES)[number]>("all");
-  const [reason, setReason] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search), 250);
-    return () => clearTimeout(t);
-  }, [search]);
 
   const scope = useQuery<MeicScopeData>({
     queryKey: ["meic-scope", mode, era],
@@ -118,105 +111,41 @@ export function MeicLightbox({ slide }: { slide: string }) {
   const activeEra = era ?? defaultEra;
   const resolvedEra = era ?? defaultEra ?? null;
 
-  const { page, setOffset, setLimit } = usePage([mode, day, symbol, profile, resolvedEra, outcome, reason, debouncedSearch]);
-
-  const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useMeic(mode, {
+  // The frame's own read: the session list for the day select and the integrity strip. One row of
+  // the positions view -- the same query key the session tab's position count uses.
+  const { data, isLoading, isError, dataUpdatedAt } = useMeic(mode, {
     day,
     symbol,
     profile,
     era: resolvedEra,
-    outcome,
-    reason,
-    search: debouncedSearch,
-    ...page,
+    view: "positions",
+    outcome: "all",
+    reason: null,
+    search: "",
+    limit: 1,
+    offset: 0,
   });
   const analytics = useMeicAnalytics(mode, symbol, profile, era);
   const a = analytics.data;
   const totalExits = a?.exitReasons.reduce((s, r) => s + r.count, 0) ?? 0;
-  const trades = data?.trades.rows ?? [];
-  const total = data?.trades.total ?? 0;
   const l = loop.data;
   const eras = scope.data?.eras ?? [];
   const activeEraCount = eras.find((e) => e.era === activeEra)?.trades ?? 0;
   const otherEraCount = eras.reduce((s, e) => s + e.trades, 0) - activeEraCount;
   const emptyEra = era !== "ALL" && eras.length > 0 && activeEraCount === 0 && otherEraCount > 0;
 
-  const slides: SlideDef[] = [
-    {
-      id: "now",
-      label: "now",
-      render: () => (
-        <div className="cards cards-wide">
-          <Card title="Performance (net of fees)" updatedAt={analytics.dataUpdatedAt}>
-            <div className="stats-grid">
-              {(a?.periods ?? []).map((p) => (
-                <div key={p.label} className="stat-tile">
-                  <span className="stat-label">{p.label}</span>
-                  <span className={`stat-value ${p.net >= 0 ? "pnl-pos" : "pnl-neg"}`}>{fmtMoney(p.net)}</span>
-                  <span className="muted" style={{ fontSize: 11 }}>
-                    {p.trades} trades · {p.wins}W/{p.losses}L
-                    {p.wins + p.losses > 0 ? ` · ${((p.wins / (p.wins + p.losses)) * 100).toFixed(0)}%` : ""}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Card>
-          <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(18rem, 1fr))" }}>
-            <DataCard
-              title="By profile — today"
-              headers={["profile", "trades", "net", "win %", "avg", "PF"]}
-              numFrom={1}
-              loading={analytics.isLoading}
-              rowCount={a?.byProfile.length ?? 0}
-              updatedAt={analytics.dataUpdatedAt}
-              empty="nothing settled yet today — 0DTE positions resolve at the close"
-            >
-              {a?.byProfile.map((r) => (
-                <tr key={r.profile}>
-                  <td>{r.profile}</td>
-                  <td>{r.trades}</td>
-                  <td><PnlCell v={r.net} /></td>
-                  <td>{r.winPct != null ? `${r.winPct.toFixed(0)}%` : "—"}</td>
-                  <td>{r.avg != null ? fmtMoney(r.avg) : "—"}</td>
-                  <td>{r.profitFactor != null ? r.profitFactor.toFixed(2) : "—"}</td>
-                </tr>
-              ))}
-            </DataCard>
-            <DataCard
-              title="Fee drag by profile — today (drag is fees against premium collected)"
-              headers={["profile", "credit", "fees", "net", "drag %"]}
-              numFrom={1}
-              loading={analytics.isLoading}
-              rowCount={a?.profileFeeDrag.length ?? 0}
-              updatedAt={analytics.dataUpdatedAt}
-              empty="nothing settled yet today — 0DTE positions resolve at the close"
-            >
-              {a?.profileFeeDrag.map((r) => (
-                <tr key={r.profile}>
-                  <td>{r.profile}</td>
-                  <td>{fmtMoney(r.gross)}</td>
-                  <td className="pnl-neg">{fmtMoney(r.fees)}</td>
-                  <td><PnlCell v={r.net} /></td>
-                  <td className={r.dragPct != null && r.dragPct > 30 ? "pnl-neg" : "muted"}>
-                    {r.dragPct != null ? `${r.dragPct.toFixed(1)}%` : "—"}
-                  </td>
-                </tr>
-              ))}
-            </DataCard>
-          </div>
-        </div>
-      ),
-    },
-    { id: "forest", label: "forest", render: () => <MeicForestCard mode={mode} date={day} /> },
+  const scopeArgs: MeicScope = { day, symbol, profile, era: resolvedEra };
+  const reasons = (a?.exitReasons ?? []).map((r) => r.reason);
+
+  const slides: Array<SlideDef & { id: MeicSlideId }> = [
+    { id: "session", label: MEIC_LABEL.session, render: () => <MeicSession mode={mode} scope={scopeArgs} /> },
+    { id: "forest", label: MEIC_LABEL.forest, render: () => <MeicForestCard mode={mode} date={day} /> },
     {
       // Attempts and occupancy merged (2026-09): both are bounded snapshots regardless of session
-      // activity -- AttemptTimeline's SVG height depends only on arm count (marks position by time
-      // on a fixed-width axis, not by attempt index), and OccupancyMap shows only CURRENTLY open
-      // legs (a snapshot table, not a growing log of every leg touched today) -- so combining them
-      // does not risk outgrowing the lightbox body on a busy session the way the journal/timeline
-      // tabs' genuinely unbounded per-event content would.
+      // activity -- AttemptTimeline's SVG height depends only on arm count, and OccupancyMap shows
+      // only CURRENTLY open legs -- so combining them cannot outgrow the page on a busy session.
       id: "attempts",
-      label: "attempts",
+      label: MEIC_LABEL.attempts,
       render: () => (
         <div className="cards cards-wide">
           <ArmRail module="meic" mode={mode} date={day} />
@@ -227,7 +156,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
     },
     {
       id: "exits",
-      label: "exits",
+      label: MEIC_LABEL.exits,
       render: () => (
         <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(18rem, 1fr))" }}>
           <DataCard
@@ -251,11 +180,11 @@ export function MeicLightbox({ slide }: { slide: string }) {
           <Card title="Fee drag (this era)" updatedAt={analytics.dataUpdatedAt}>
             <div className="stats-grid">
               <div className="stat-tile">
-                <span className="stat-label">gross credit</span>
+                <span className="stat-label">premium collected</span>
                 <span className="stat-value">{a !== undefined ? fmtMoney(a.feeDrag.grossCredit) : "—"}</span>
               </div>
               <div className="stat-tile">
-                <span className="stat-label">total fees</span>
+                <span className="stat-label">fees and settlement</span>
                 <span className="stat-value pnl-neg">{a !== undefined ? fmtMoney(a.feeDrag.fees) : "—"}</span>
               </div>
               <div className="stat-tile">
@@ -273,22 +202,39 @@ export function MeicLightbox({ slide }: { slide: string }) {
         </div>
       ),
     },
+    { id: "regime", label: MEIC_LABEL.regime, render: () => <RegimeCutsTab module="meic" /> },
     {
       id: "calibration",
-      label: "calibration",
+      label: MEIC_LABEL.calibration,
       render: () => <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />,
     },
-    { id: "advisor", label: "advisor", render: () => <AdvisorSlide module="meic" /> },
-    {
-      id: "performance",
-      label: "performance",
-      render: () => <PerformanceSlide module="meic" />,
-    },
+    { id: "performance", label: MEIC_LABEL.performance, render: () => <PerformanceSlide module="meic" /> },
+    { id: "advisor", label: MEIC_LABEL.advisor, render: () => <AdvisorSlide module="meic" /> },
+    { id: "positions", label: MEIC_LABEL.positions, render: () => <MeicPositionsTable mode={mode} scope={scopeArgs} /> },
     {
       id: "history",
-      label: "history",
+      label: MEIC_LABEL.history,
+      render: () => <MeicHistoryTable mode={mode} scope={scopeArgs} reasons={reasons} />,
+    },
+    {
+      id: "sessions",
+      label: MEIC_LABEL.sessions,
       render: () => (
         <div className="cards cards-wide">
+          <Card title="Calendar periods (net of fees)" updatedAt={analytics.dataUpdatedAt}>
+            <div className="stats-grid">
+              {(a?.periods ?? []).map((p) => (
+                <div key={p.label} className="stat-tile">
+                  <span className="stat-label">{p.label}</span>
+                  <span className={`stat-value ${p.net >= 0 ? "pnl-pos" : "pnl-neg"}`}>{fmtMoney(p.net)}</span>
+                  <span className="muted" style={{ fontSize: 11 }}>
+                    {p.trades} trades · {p.wins}W/{p.losses}L
+                    {p.wins + p.losses > 0 ? ` · ${((p.wins / (p.wins + p.losses)) * 100).toFixed(0)}%` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Card>
           <MeicDeepCards mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />
           <DataCard
             title="Daily summaries"
@@ -314,102 +260,21 @@ export function MeicLightbox({ slide }: { slide: string }) {
         </div>
       ),
     },
-    { id: "regime", label: "regime cuts", render: () => <RegimeCutsTab module="meic" /> },
-    {
-      id: "trades",
-      label: "trades",
-      render: () => (
-        <DataCard
-          title={`Trades — ${total.toLocaleString()} matching${day !== null ? ` on ${day}` : " on the latest session"}`}
-          headers={["date", "entry", "sym", "put", "call", "wing", "credit", "qty", "IVR", "status", "gross", "fees", "net", "exit reason"]}
-          numFrom={3}
-          loading={isLoading}
-          isError={isError}
-          rowCount={trades.length}
-          skeletonRows={10}
-          busy={isPlaceholderData}
-          empty="no trades match these filters"
-          updatedAt={dataUpdatedAt}
-          footer={
-            total > 0 && (
-              <Pager
-                offset={data?.trades.offset ?? page.offset}
-                limit={data?.trades.limit ?? page.limit}
-                total={total}
-                onOffset={setOffset}
-                onLimit={setLimit}
-              />
-            )
-          }
-          controls={
-            <>
-              <div className="mode-toggle" style={{ marginLeft: 0 }} role="group" aria-label="outcome filter">
-                {OUTCOMES.map((o) => (
-                  <button key={o} type="button" className={outcome === o ? "mode-btn active" : "mode-btn"} onClick={() => setOutcome(o)}>
-                    {o}
-                  </button>
-                ))}
-              </div>
-              <select
-                className="text-input"
-                value={reason ?? ""}
-                onChange={(e) => setReason(e.target.value === "" ? null : e.target.value)}
-                aria-label="exit reason"
-              >
-                <option value="">all reasons</option>
-                {a?.exitReasons.map((r) => (
-                  <option key={r.reason} value={r.reason}>{r.reason}</option>
-                ))}
-              </select>
-              <input
-                className="text-input"
-                placeholder="search…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                style={{ textTransform: "none", width: "8rem" }}
-              />
-            </>
-          }
-        >
-          {trades.map((t) => (
-            <tr key={`${t.mode}-${t.id}`}>
-              <td>{t.tradeDate}</td>
-              <td className="muted">{t.entryTime?.slice(11, 16) ?? "—"}</td>
-              <td>{t.symbol}</td>
-              <td>{fmtNum(t.putStrike, 0)}</td>
-              <td>{fmtNum(t.callStrike, 0)}</td>
-              <td>{fmtNum(t.wingWidth, 0)}</td>
-              <td>{fmtMoney(t.netCredit)}</td>
-              <td>{fmtNum(t.quantity, 0)}</td>
-              <td className="muted">{t.ivRankAtEntry !== null ? `${(t.ivRankAtEntry * 100).toFixed(0)}%` : "—"}</td>
-              <td><StatusBadge status={t.status} /></td>
-              {/* `pnl` is GROSS in this ledger; net = gross - fees (core.ledgers' meic rule). This column
-                  used to show gross under "P&L" while the outcome filter above sorted on net, so a row
-                  could read green under "losses" (fixed 2026-09-24). */}
-              <td className="muted">{fmtMoney(t.pnl)}</td>
-              <td className="pnl-neg">{t.pnl !== null ? fmtMoney(t.fees) : "—"}</td>
-              <td><PnlCell v={t.pnl !== null ? t.pnl - (t.fees ?? 0) : null} /></td>
-              <td className="muted" style={{ textAlign: "left" }}>{t.exitReason ?? "—"}</td>
-            </tr>
-          ))}
-        </DataCard>
-      ),
-    },
     {
       id: "guide",
-      label: "help",
+      label: MEIC_LABEL.guide,
       render: () => (
         <ExperimentGuideView
           url="/api/meic/profiles"
           mode={mode}
-          intro="Every ENABLED risk profile is evaluated on every tick — they are parallel arms of one experiment, not a ladder you pick a rung from, and active_profile no longer selects between them. Each description below is the module's own, read from config.risk.json, and 'what makes it different' is derived from the profile's settings: the values it does not share with the module's base config or with most of its siblings."
+          intro="Every ENABLED arm is evaluated on every tick — they are parallel arms of one experiment, not a ladder you pick a rung from, and active_profile no longer selects between them. Each description below is the module's own, read from config.risk.json, and 'what makes it different' is derived from the arm's settings: the values it does not share with the module's base config or with most of its siblings."
         />
       ),
     },
   ];
 
   return (
-    <LightboxFrame
+    <ModuleFrame
       module="meic"
       slide={slide}
       slides={slides}
@@ -430,7 +295,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
               value={day ?? ""}
               onChange={(e) => setDay(e.target.value === "" ? null : e.target.value)}
               aria-label="session"
-              title="Governs the arm rail, attempt timeline, occupancy map and forest together, so they can never describe different days side by side."
+              title="Governs every page with a session in it -- session, forest, attempts, positions and history -- so no two can describe different days side by side."
             >
               <option value="">latest session</option>
               {data?.summaries.map((sm) => (
@@ -439,7 +304,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
             </select>
           )}
           <ScopeSelect label="symbol" value={symbol} options={scope.data?.symbols} onChange={setSymbol} allLabel="all symbols" />
-          <ScopeSelect label="profile" value={profile} options={scope.data?.profiles} onChange={setProfile} allLabel="all profiles" />
+          <ScopeSelect label="arm" value={profile} options={scope.data?.profiles} onChange={setProfile} allLabel="all arms" />
           <EraSelect value={era} eras={scope.data?.eras} currentEra={scope.data?.currentEra} onChange={setEra} />
           {l?.ivRank != null && <span className="chip">IV rank {(l.ivRank * 100).toFixed(0)}%</span>}
           {l?.underlyingPrice != null && <span className="chip">{l.underlyingPrice.toFixed(2)}</span>}
