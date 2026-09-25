@@ -248,7 +248,10 @@ export interface ReviewModule {
   capitalAtRisk: number | null;
   onMaxRisk: number | null;
   n: number | null;
-  effectiveN: number | null;
+  /** Independent (session, symbol) events behind the day's trades -- review's `sample.effective_n`. */
+  events: number | null;
+  /** The writer's flag: every trade was one market event. */
+  singleEvent: boolean;
   /** null = the module tracks no breaks at all, which is weaker than an empty list, not stronger. */
   breaks: string[] | null;
   suspectedBreak: { ratio: number; trades: number; trailingMedian: number } | null;

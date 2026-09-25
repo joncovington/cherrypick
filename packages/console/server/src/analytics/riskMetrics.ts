@@ -73,6 +73,8 @@ export interface RiskSummary {
   calmar: number | null;
   recoveryFactor: number | null;
   sampleSize: number;
+  /** 0 < sampleSize < RATIO_MIN_OBSERVATIONS: the ratios above are printed but not yet meaningful. */
+  undersampledFlag: boolean;
   /** Sharpe above 3 on a sample this small is a warning about the sample, not a result. */
   sharpeOverfitFlag: boolean;
 }
@@ -83,6 +85,7 @@ export const EMPTY_RISK: RiskSummary = {
   calmar: null,
   recoveryFactor: null,
   sampleSize: 0,
+  undersampledFlag: false,
   sharpeOverfitFlag: false,
 };
 
@@ -107,6 +110,15 @@ export function equityCurve(daily: Array<{ date: string; net: number }>): Equity
  * its short per week, so both would be wrong on the daily constant if they ever grow this surface.
  */
 export const PERIODS = { TRADING_SESSIONS: 252, TRADING_WEEKS: 52 } as const;
+
+/**
+ * Below this many observations an annualized ratio is not yet meaningful: `mean/sd x sqrt(252)`
+ * over a few dozen days swings on one outlier day. Deliberately NOT core.metrics.MIN_EFFECTIVE_N
+ * (14): that bar answers "may this variant conclude anything", this one "is a 252-scaled ratio
+ * stable yet", and the second needs more data than the first. Lived in MeicPerformanceTab as a
+ * bare `< 30` until 2026-09-24; it is decided here, beside the ratio, and published as a flag.
+ */
+export const RATIO_MIN_OBSERVATIONS = 30;
 
 /**
  * Sharpe, Sortino, Calmar and recovery factor over a curve, annualized on `periodsPerYear`.
@@ -140,6 +152,7 @@ export function riskSummary(
     calmar: maxDdPct > 0 ? round3(annualized / maxDdPct) : null,
     recoveryFactor: maxDd > 0 ? round3(netTotal / maxDd) : null,
     sampleSize: n,
+    undersampledFlag: n > 0 && n < RATIO_MIN_OBSERVATIONS,
     sharpeOverfitFlag: sharpe !== null && sharpe > 3,
   };
 }

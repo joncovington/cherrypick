@@ -57,6 +57,10 @@ export interface RegimeArm {
   winRate: number | null;
   completed: number | null;
   completionRate: number | null;
+  /** Fewer than `thinBelowSessions` sessions -- stamped by the writer (2026-09-24). null on an
+   *  artifact written before arm-level stamping: shown undimmed rather than re-derived here, and
+   *  the module rewrites the file nightly. */
+  thin: boolean | null;
   dimensions: Record<string, RegimeDimension>;
 }
 
@@ -95,8 +99,10 @@ export interface RegimeCuts {
   symbol: string | null;
   armColumn: string | null;
   entryModes: string[] | null;
-  thinBelowSessions: number;
-  minEffectiveN: number;
+  /** The writer's declared thresholds; null when the artifact does not publish one -- never a
+   *  console copy of core's constant. */
+  thinBelowSessions: number | null;
+  minEffectiveN: number | null;
   era: RegimeEra;
   arms: RegimeArm[];
   crossTabs: RegimeCrossTab[];

@@ -185,6 +185,24 @@ describe("readRegimeCuts", () => {
     expect(out.cuts.crossTabs[0]!.arms[0]!.cells[0]!.thin).toBe(false);
   });
 
+  it("passes an arm's thin through, and never invents the writer's thresholds", () => {
+    // `thin: false` on a 1-session arm is impossible from the writer -- there so a reader that
+    // re-derived `sessions < thinBelowSessions` would flip it. And an artifact publishing no
+    // thresholds reads null, not a console copy of core's 3 and 14.
+    const doc = minimal() as Record<string, unknown> & { arms: Array<Record<string, unknown>> };
+    doc.arms[0] = { ...doc.arms[0], sessions: 1, thin: false };
+    delete doc["thin_below_sessions"];
+    delete doc["min_effective_n"];
+    write("flies", "regime_cuts.json", doc);
+    const out = readRegimeCuts(config, "flies");
+    expect(out.status).toBe("ok");
+    if (out.status !== "ok") return;
+    expect(out.cuts.arms[0]!.thin).toBe(false);
+    expect(out.cuts.arms[1]!.thin).toBeNull(); // written before arm-level stamping
+    expect(out.cuts.thinBelowSessions).toBeNull();
+    expect(out.cuts.minEffectiveN).toBeNull();
+  });
+
   it("carries every declared cross-tab, in the writer's order", () => {
     // A regression pin, not a red-first test: the reader already mapped them all, but the slide
     // took [0] until 2026-09-22 and flies now declares two.

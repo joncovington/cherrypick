@@ -166,6 +166,17 @@ def test_thin_is_stamped_by_the_writer_below_three_sessions():
     assert doc["thin_below_sessions"] == 3
 
 
+def test_an_arm_is_thin_stamped_by_the_writer_like_every_cell():
+    # The console's era table compared an arm's sessions against the threshold itself; the writer
+    # now stamps the arm, so no reader carries the rule. Same `<` as `_cell`.
+    # Shown to fail by removing the stamp (KeyError) or stamping a constant (one side goes wrong).
+    thick = _doc()["arms"]  # the default arms: 5 and 9 sessions
+    assert all(a["thin"] is False for a in thick)
+    thin_arm = {"arm": "thin-arm", "summary": {"sessions": 2, "trades": 3}, "coverage": {}, "regimes": {}}
+    (only,) = _doc(arms=[thin_arm])["arms"]
+    assert only["thin"] is True
+
+
 def test_arms_and_buckets_are_ordered_deterministically():
     doc = _doc()
     assert [b["arm"] for b in doc["arms"]] == ["control", "advised:x"]

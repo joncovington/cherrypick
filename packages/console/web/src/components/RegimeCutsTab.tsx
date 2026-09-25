@@ -76,7 +76,7 @@ function crossAxis(tab: RegimeCrossTab, i: number): string[] {
 
 const cellRate = (c: RegimeCrossCell): number | null => c.completionRate ?? c.winRate;
 
-export function CrossTabGrid({ tab, thinBelowSessions }: { tab: RegimeCrossTab; thinBelowSessions: number }) {
+export function CrossTabGrid({ tab, thinBelowSessions }: { tab: RegimeCrossTab; thinBelowSessions: number | null }) {
   const rows = crossAxis(tab, 0);
   const cols = crossAxis(tab, 1);
   const rateLabel = tab.arms.some((b) => b.cells.some((c) => c.completionRate !== null)) ? "completion" : "win";
@@ -138,7 +138,7 @@ export function CrossTabGrid({ tab, thinBelowSessions }: { tab: RegimeCrossTab; 
       <p className="muted" style={{ fontSize: 11, marginTop: "0.5rem", marginBottom: 0 }}>
         Colour is {rateLabel} rate (darker = higher); the cell prints sessions and {rateLabel} %. Rows are{" "}
         {tab.dims[0]}, columns {tab.dims[1]}. A grey cell is one the writer flagged thin (fewer than{" "}
-        {thinBelowSessions} sessions); hover for trades, completed, win and avg.
+        {thinBelowSessions ?? "the writer's floor of"} sessions); hover for trades, completed, win and avg.
       </p>
     </>
   );
@@ -166,7 +166,7 @@ function DimensionCard({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
               const flags = d
                 ? [
                     d.coveragePct !== null && d.coveragePct < 100 ? `cov ${d.coveragePct.toFixed(0)}%` : null,
-                    d.underpowered ? `n=${d.effectiveN} underpowered` : null,
+                    d.underpowered ? `${d.sessions} sessions · underpowered` : null,
                     d.degenerate ? "degenerate" : null,
                   ].filter((f): f is string => f !== null)
                 : ["no rows"];
@@ -198,7 +198,7 @@ function DimensionCard({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
       </div>
       <p className="muted" style={{ fontSize: 11, marginTop: "0.5rem", marginBottom: 0 }}>
         Each cell reads {rateLabel} % · net · sessions. A dash means no rows in that bucket for that arm. A dimmed
-        cell is one the writer flagged thin (fewer than {cuts.thinBelowSessions} sessions); an arm's suffix is the
+        cell is one the writer flagged thin (fewer than {cuts.thinBelowSessions ?? "the writer's floor of"} sessions); an arm's suffix is the
         writer's coverage and power reading for this dimension.
       </p>
     </Card>
@@ -264,7 +264,7 @@ function EraCard({ cuts, stale }: { cuts: RegimeCuts; stale: { artifactSession: 
         </thead>
         <tbody>
           {cuts.arms.map((b) => (
-            <tr key={b.arm} style={b.sessions < cuts.thinBelowSessions ? { opacity: 0.55 } : undefined}>
+            <tr key={b.arm} style={b.thin === true ? { opacity: 0.55 } : undefined}>
               <td>{b.arm}</td>
               <td>{b.eraStart ?? "—"}</td>
               <td>{b.sessions}</td>

@@ -590,7 +590,11 @@ def _sample(records: list[dict]) -> dict:
     how 64 earnings trades get read as 64 observations when they represent ~14.
     """
     events = {(r.get("session") or "", r.get("symbol") or "") for r in records}
-    return {"n": len(records), "effective_n": len(events)}
+    # `effective_n` counts EVENTS -- not the regime cuts' `effective_n` (sessions, or rows for an
+    # intraday dimension), which shares the name and nothing else. The key stays for the sets on disk;
+    # the console calls it `events`. `single_event` is stamped here (2026-09-24) so the console stops
+    # applying its own `<= 1` to decide when a day's trades were really one market event.
+    return {"n": len(records), "effective_n": len(events), "single_event": len(events) == 1}
 
 
 # --------------------------------------------------------------------------- assembly

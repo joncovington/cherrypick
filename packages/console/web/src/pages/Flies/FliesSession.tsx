@@ -216,7 +216,7 @@ export function FliesSession({
         foot={
           cuts === null
             ? "the module writes this artifact nightly"
-            : `era since ${cuts.arms[0]?.eraStart ?? "—"}${regimeStale !== null ? " · stale" : ""} · thin below ${String(cuts.thinBelowSessions)} sessions`
+            : `era since ${cuts.arms[0]?.eraStart ?? "—"}${regimeStale !== null ? " · stale" : ""} · thin below ${cuts.thinBelowSessions ?? "—"} sessions`
         }
       >
         {regime.data === undefined ? (
@@ -234,7 +234,7 @@ export function FliesSession({
           <p className="muted">the artifact holds no cross-tab for this era.</p>
         ) : (
           <div className="regime-scroll">
-            <CrossTabGrid tab={crossTab} thinBelowSessions={cuts?.thinBelowSessions ?? 3} />
+            <CrossTabGrid tab={crossTab} thinBelowSessions={cuts?.thinBelowSessions ?? null} />
           </div>
         )}
       </GridCard>

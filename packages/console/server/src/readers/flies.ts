@@ -13,6 +13,7 @@ import {
 } from "../analytics/riskMetrics.js";
 import { emptyPage, pagedQuery, pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
+import { readRegimeCuts } from "./regimeCuts.js";
 
 /**
  * The era this module counts as evidence — the SPX 5-wide books from 2026-08-01.
@@ -965,6 +966,10 @@ export function readArmDivergence(config: ConsoleConfig, mode: TradingMode, day:
 
 export interface FliesHistory {
   mode: TradingMode;
+  /** The session floor below which a row is thin, as the flies regime-cuts writer declares it
+   *  (core.regimecuts.THIN_BELOW_SESSIONS via `thin_below_sessions`). null without an artifact:
+   *  the History tab then dims nothing rather than carry its own copy of the number. */
+  thinBelowSessions: number | null;
   /** Legged-only, per the reference: the arms differ by centring/timing/width, never by entry mode. */
   byArm: Array<{ arm: string } & FliesSummary>;
   byEntryMode: Array<{ entryMode: string } & FliesSummary>;
@@ -1205,6 +1210,7 @@ export function readFliesHistory(
   const dbPath = path.join(config.paths.fliesDir, file);
   const empty: FliesHistory = {
     mode, byArm: [], byEntryMode: [], byEntryHour: [], byArmHour: [], feeDrag: [], dailyPnl: [],
+    thinBelowSessions: null,
   };
   return withReadOnlyDb<FliesHistory>(dbPath, empty, (db) => {
     const sc = scopeClause(filter);
@@ -1275,8 +1281,15 @@ export function readFliesHistory(
       byArmHour,
       feeDrag: byArm,
       dailyPnl,
+      thinBelowSessions: fliesThinFloor(config),
     };
   });
+}
+
+/** The thin floor the flies regime-cuts writer declares, or null when it has published none. */
+function fliesThinFloor(config: ConsoleConfig): number | null {
+  const regime = readRegimeCuts(config, "flies");
+  return regime.status === "ok" ? regime.cuts.thinBelowSessions : null;
 }
 
 /** One leg-in-then-convert story: entries, conversions, why the misses missed, and how long the

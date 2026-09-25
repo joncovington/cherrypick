@@ -61,6 +61,8 @@ interface CompletionSummary {
 }
 
 interface History {
+  /** The regime-cuts writer's thin floor; null when it has published none (see readers/flies.ts). */
+  thinBelowSessions: number | null;
   byArm: Array<{ arm: string } & Summary>;
   byEntryMode: Array<{ entryMode: string } & Summary>;
   byEntryHour: Array<{ hour: string } & Summary>;
@@ -87,20 +89,31 @@ function useHistory(mode: TradingMode, filter: FliesFilter) {
   });
 }
 
-function SummaryRows<T extends Summary>({ rows, label }: { rows: T[] | undefined; label: keyof T }) {
+function SummaryRows<T extends Summary>({
+  rows,
+  label,
+  thinBelow,
+}: {
+  rows: T[] | undefined;
+  label: keyof T;
+  /** The regime-cuts writer's declared floor; null when it has published none. */
+  thinBelow: number | null;
+}) {
   return (
     <>
       {rows?.map((r) => {
         // Sessions are the unit of independence, so they decide whether the rest of the row means
-        // anything. Under 3 the net, win rate and profit factor are one or two days of weather;
-        // dimmed rather than hidden, because the row is still the honest record of what happened.
-        const thin = r.sessions < 3;
+        // anything. Below the writer's floor the net, win rate and profit factor are a day or two of
+        // weather; dimmed rather than hidden, because the row is still the honest record of what
+        // happened. The floor is the one core.regimecuts declares, read from its artifact -- not a 3
+        // kept here, which is how two surfaces start disagreeing about the same row.
+        const thin = thinBelow !== null && r.sessions < thinBelow;
         return (
           <tr key={String(r[label])} style={thin ? { opacity: 0.55 } : undefined}>
             <td>
               {String(r[label])}
               {thin && (
-                <span className="muted" style={{ fontSize: 10, marginLeft: 4 }} title="Fewer than 3 sessions — same-day trades share a regime, so this is one or two independent observations however many trades it holds.">
+                <span className="muted" style={{ fontSize: 10, marginLeft: 4 }} title={`Fewer than ${thinBelow} sessions — same-day trades share a regime, so this is a handful of independent observations however many trades it holds.`}>
                   thin
                 </span>
               )}
@@ -245,13 +258,13 @@ export function HistoryTab({
 
       <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(34rem, 1fr))" }}>
         <DataCard title="By arm (legged only, settled)" headers={headers} loading={isLoading} rowCount={data?.byArm.length ?? 0}>
-          <SummaryRows rows={data?.byArm} label="arm" />
+          <SummaryRows rows={data?.byArm} label="arm" thinBelow={data?.thinBelowSessions ?? null} />
         </DataCard>
         <DataCard title="By entry mode" headers={headers} loading={isLoading} rowCount={data?.byEntryMode.length ?? 0}>
-          <SummaryRows rows={data?.byEntryMode} label="entryMode" />
+          <SummaryRows rows={data?.byEntryMode} label="entryMode" thinBelow={data?.thinBelowSessions ?? null} />
         </DataCard>
         <DataCard title="By entry hour (deliberately unranked)" headers={headers} loading={isLoading} rowCount={data?.byEntryHour.length ?? 0}>
-          <SummaryRows rows={data?.byEntryHour} label="hour" />
+          <SummaryRows rows={data?.byEntryHour} label="hour" thinBelow={data?.thinBelowSessions ?? null} />
         </DataCard>
         <DataCard title="Fee drag by arm" headers={["arm", "gross", "fees", "net", "drag %"]} loading={isLoading} rowCount={data?.feeDrag.length ?? 0}>
           {data?.feeDrag.map((r) => (
@@ -260,7 +273,7 @@ export function HistoryTab({
               <td>{fmtMoney(r.grossPnl)}</td>
               <td className="pnl-neg">{fmtMoney(r.fees)}</td>
               <td><PnlCell v={r.netPnl} /></td>
-              <td className={r.feeDragPct !== null && r.feeDragPct > 30 ? "pnl-neg" : "muted"}>
+              <td className="muted">
                 {r.feeDragPct !== null ? `${r.feeDragPct.toFixed(1)}%` : "—"}
               </td>
             </tr>

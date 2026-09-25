@@ -47,7 +47,11 @@ export interface ReviewModule {
   capitalAtRisk: number | null;
   onMaxRisk: number | null;
   n: number | null;
-  effectiveN: number | null;
+  /** Independent (session, symbol) events -- the fact set's `sample.effective_n`, which is not the
+   *  regime cuts' `effective_n` despite the shared key. */
+  events: number | null;
+  /** Every trade was one market event -- stamped by the writer (`sample.single_event`). */
+  singleEvent: boolean;
   /** null = the module does not track breaks at all, which is weaker than an empty list. */
   breaks: string[] | null;
   suspectedBreak: { ratio: number; trades: number; trailingMedian: number } | null;
@@ -158,7 +162,7 @@ function shapeModule(name: string, raw: unknown): ReviewModule {
       reason: typeof m["reason"] === "string" ? (m["reason"] as string) : "unreadable",
       loopTicked: null, iterations: null, errors: null,
       closed: 0, net: 0, gross: 0, cost: 0, wins: 0,
-      capitalAtRisk: null, onMaxRisk: null, n: null, effectiveN: null,
+      capitalAtRisk: null, onMaxRisk: null, n: null, events: null, singleEvent: false,
       breaks: null, suspectedBreak: null,
       expectedBasis: null, expected: null, observed: null,
       carriedPositions: 0, carriedCapital: null, carriedCapitalUnknown: 0, arms: [],
@@ -187,7 +191,11 @@ function shapeModule(name: string, raw: unknown): ReviewModule {
     capitalAtRisk: num(ret["capital_at_risk"]),
     onMaxRisk: num(ret["on_max_risk"]),
     n: num(sample["n"]),
-    effectiveN: num(sample["effective_n"]),
+    events: num(sample["effective_n"]),
+    // The writer's flag since 2026-09-24. Sets written before it carry none; for those the same
+    // exactly-one-event rule is applied here, so the picker's older sessions keep their chip.
+    singleEvent:
+      typeof sample["single_event"] === "boolean" ? sample["single_event"] : num(sample["effective_n"]) === 1,
     // Preserve null-vs-empty: null means the module tracks no breaks at all.
     breaks: Array.isArray(sample["breaks"]) ? (sample["breaks"] as string[]) : null,
     suspectedBreak: num(suspected["ratio"])

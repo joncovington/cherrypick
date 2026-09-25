@@ -23,6 +23,7 @@ interface Performance {
     calmar: number | null;
     recoveryFactor: number | null;
     sampleSize: number;
+    undersampledFlag: boolean;
     sharpeOverfitFlag: boolean;
   };
   roll: {
@@ -259,8 +260,8 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
           <>
             <EquityUnderwater equity={data?.equity ?? []} />
             <div className="stats-grid" style={{ marginTop: "0.75rem" }}>
-              <Tile label="sharpe" value={fmtRatio(data?.risk.sharpe ?? null)} tone={tone(data?.risk.sharpe ?? null)} />
-              <Tile label="sortino" value={fmtRatio(data?.risk.sortino ?? null)} tone={tone(data?.risk.sortino ?? null)} />
+              <Tile label="sharpe (daily, ann.)" value={fmtRatio(data?.risk.sharpe ?? null)} tone={tone(data?.risk.sharpe ?? null)} />
+              <Tile label="sortino (daily, ann.)" value={fmtRatio(data?.risk.sortino ?? null)} tone={tone(data?.risk.sortino ?? null)} />
               <Tile label="calmar" value={fmtRatio(data?.risk.calmar ?? null)} tone={tone(data?.risk.calmar ?? null)} />
               <Tile
                 label="max drawdown"

@@ -110,3 +110,17 @@ describe("review per-session series", () => {
     expect(meic?.arms[0]?.net).toBe(100);
   });
 });
+
+
+describe("the single-event chip reads the writer's flag", () => {
+  it("uses `single_event` when the set carries it, and the same rule for sets written before it", () => {
+    // A stamped set whose flag disagrees with its own count -- impossible from the writer, there so a
+    // reader that recomputed `effective_n === 1` instead of reading the flag would fail.
+    writeFacts("2026-09-23", { meic: { ...okModule(10, 3), sample: { n: 3, effective_n: 1, single_event: false } } });
+    expect(readReview(config, "2026-09-23").current?.modules[0]?.singleEvent).toBe(false);
+    expect(readReview(config, "2026-09-23").current?.modules[0]?.events).toBe(1);
+    // A pre-flag set: no `single_event`, so the reader applies the exactly-one-event rule itself.
+    writeFacts("2026-09-22", { meic: { ...okModule(10, 3), sample: { n: 3, effective_n: 1 } } });
+    expect(readReview(config, "2026-09-22").current?.modules[0]?.singleEvent).toBe(true);
+  });
+});

@@ -121,7 +121,7 @@ def test_effective_sample_counts_events_not_rows():
     Reading the raw count as the sample is how 64 earnings trades got read as 64 independent
     events when they are ~14."""
     records = [{"session": "2026-08-12", "symbol": "SPX"} for _ in range(673)]
-    assert facts._sample(records) == {"n": 673, "effective_n": 1}
+    assert facts._sample(records) == {"n": 673, "effective_n": 1, "single_event": True}
 
 
 def test_effective_sample_separates_distinct_symbols_and_days():
@@ -131,7 +131,7 @@ def test_effective_sample_separates_distinct_symbols_and_days():
         {"session": "2026-08-12", "symbol": "AMAT"},
         {"session": "2026-08-11", "symbol": "CSCO"},
     ]
-    assert facts._sample(records) == {"n": 4, "effective_n": 3}
+    assert facts._sample(records) == {"n": 4, "effective_n": 3, "single_event": False}
 
 
 # --------------------------------------------------------------------------- health.entries

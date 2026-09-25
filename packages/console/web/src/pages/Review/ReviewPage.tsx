@@ -118,16 +118,15 @@ function ModuleCard({ m }: { m: ReviewModule }) {
     );
   }
   const peak = m.arms.reduce((max, a) => Math.max(max, Math.abs(a.net)), 0);
-  const thin = (m.effectiveN ?? 0) <= 1;
 
   return (
     <section className="card review-module">
       <div className="card-head">
         <h2>{m.module}</h2>
         {m.closed === 0 && <span className="chip">no trades</span>}
-        {thin && m.closed > 0 && (
+        {m.singleEvent && m.closed > 0 && (
           <span className="chip chip-warn" title="Trades sharing a symbol and session share one market event">
-            {count(m.effectiveN)} event
+            {count(m.events)} event
           </span>
         )}
         <span className="card-asof">

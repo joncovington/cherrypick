@@ -112,6 +112,7 @@ function arm(v: unknown): RegimeArm {
     winRate: num(o["win_rate"]),
     completed: num(o["completed"]),
     completionRate: num(o["completion_rate"]),
+    thin: typeof o["thin"] === "boolean" ? o["thin"] : null,
     dimensions,
   };
 }
@@ -165,8 +166,10 @@ export function shapeRegimeCuts(raw: Record<string, unknown>): RegimeCuts {
     symbol: str(raw["symbol"]),
     armColumn: str(raw["arm_column"] ?? raw["book_column"]),
     entryModes: Array.isArray(raw["entry_modes"]) ? raw["entry_modes"].map(String) : null,
-    thinBelowSessions: num(raw["thin_below_sessions"]) ?? 3,
-    minEffectiveN: num(raw["min_effective_n"]) ?? 14,
+    // The writer's thresholds or nothing: a `?? 3` here was a console copy of core's constant, the
+    // re-derivation core.regimecuts exists to prevent.
+    thinBelowSessions: num(raw["thin_below_sessions"]),
+    minEffectiveN: num(raw["min_effective_n"]),
     era: {
       start: str(era["start"]),
       key: str(era["key"]),

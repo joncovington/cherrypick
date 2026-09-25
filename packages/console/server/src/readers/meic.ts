@@ -388,6 +388,7 @@ export interface MeicPerformance {
     calmar: number | null;
     recoveryFactor: number | null;
     sampleSize: number;
+    undersampledFlag: boolean;
     sharpeOverfitFlag: boolean;
   };
   periods: Array<{
@@ -434,7 +435,7 @@ export function readMeicPerformance(
     mode,
     profiles: [],
     equity: [],
-    risk: { sharpe: null, sortino: null, calmar: null, recoveryFactor: null, sampleSize: 0, sharpeOverfitFlag: false },
+    risk: { sharpe: null, sortino: null, calmar: null, recoveryFactor: null, sampleSize: 0, undersampledFlag: false, sharpeOverfitFlag: false },
     periods: [],
     studyArms: [],
     bySession: [],

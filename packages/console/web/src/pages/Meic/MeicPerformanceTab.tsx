@@ -36,6 +36,7 @@ interface Performance {
     calmar: number | null;
     recoveryFactor: number | null;
     sampleSize: number;
+    undersampledFlag: boolean;
     sharpeOverfitFlag: boolean;
   };
   periods: Array<{
@@ -91,8 +92,8 @@ export function MeicPerformanceTab({
       <Card title="Risk-adjusted metrics ($100k bankroll, 252-day annualization)" updatedAt={dataUpdatedAt}>
         <div className="stats-grid">
           {[
-            ["sharpe", risk?.sharpe],
-            ["sortino", risk?.sortino],
+            ["sharpe (daily, ann.)", risk?.sharpe],
+            ["sortino (daily, ann.)", risk?.sortino],
             ["calmar", risk?.calmar],
             ["recovery factor", risk?.recoveryFactor],
           ].map(([label, v]) => (
@@ -106,10 +107,10 @@ export function MeicPerformanceTab({
             <span className="stat-value">{risk?.sampleSize ?? "—"}</span>
           </div>
         </div>
-        {risk !== undefined && (risk.sharpeOverfitFlag || (risk.sampleSize > 0 && risk.sampleSize < 30)) && (
+        {risk !== undefined && (risk.sharpeOverfitFlag || risk.undersampledFlag) && (
           <p className="stale-note" style={{ marginBottom: 0 }}>
             {risk.sharpeOverfitFlag && "Sharpe > 3 reads as a curve-fit warning, not a stronger pass. "}
-            {risk.sampleSize < 30 && `Only ${risk.sampleSize} sessions — ratio metrics are not yet meaningful.`}
+            {risk.undersampledFlag && `Only ${risk.sampleSize} sessions — ratio metrics are not yet meaningful.`}
           </p>
         )}
       </Card>

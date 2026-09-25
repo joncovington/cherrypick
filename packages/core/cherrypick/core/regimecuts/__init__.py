@@ -167,9 +167,8 @@ def assemble(
     `regime_coverage(...)["dimensions"]`, and `regimes` is `{dimension: [by_regime rows]}`.
     `cross_tabs` are `{dims, arms: [{arm, cells: [{buckets, ...summary, sessions}]}]}`.
 
-    `arm_column` names the SQL column the module's own rows use, which is still `arm`,
-    `risk_profile` or `book` per module until that migration lands -- the KEY is the suite's
-    word, the VALUE is whatever the ledger actually calls it.
+    `arm_column` names the SQL column the module's own rows use -- `arm` in every ledger since the
+    2026-09-24 rename; artifacts written before it may carry `risk_profile` or `book` here.
     Everything is re-ordered and `thin`-stamped here so two writers cannot disagree.
 
     A summary may also carry the outcome distributions in `_OUTCOME_KEYS`; they are copied only
@@ -200,6 +199,9 @@ def assemble(
             "era_start": b.get("era_start"),
             "era_break": b.get("era_break"),
             "sessions": int(summary.get("sessions") or 0),
+            # Stamped here like every cell's, so the console's era table stops comparing an arm's
+            # sessions against the threshold itself (2026-09-24). Additive: no CUT_VERSION bump.
+            "thin": int(summary.get("sessions") or 0) < THIN_BELOW_SESSIONS,
             "trades": summary.get("trades"),
             "net_pnl": summary.get("net_pnl"),
             "win_rate": summary.get("win_rate"),

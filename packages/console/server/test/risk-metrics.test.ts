@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { PERIODS, equityCurve, median, periodKey, riskSummary, stdev } from "../src/analytics/riskMetrics.js";
+import { PERIODS, RATIO_MIN_OBSERVATIONS, equityCurve, median, periodKey, riskSummary, stdev } from "../src/analytics/riskMetrics.js";
 
 describe("periodKey", () => {
   it("returns the day itself for daily", () => {
@@ -122,5 +122,22 @@ describe("annualization", () => {
     const weekly = riskSummary(curve, PERIODS.TRADING_WEEKS);
     expect(daily.recoveryFactor).toBe(weekly.recoveryFactor);
     expect(daily.sampleSize).toBe(weekly.sampleSize);
+  });
+});
+
+
+describe("undersampledFlag", () => {
+  // The rule lived in MeicPerformanceTab as a bare `< 30` until 2026-09-24; it is decided here now,
+  // beside the ratio it qualifies, and the page only reads the flag.
+  const days = (n: number) =>
+    equityCurve(Array.from({ length: n }, (_, i) => ({ date: `2026-08-${String(i + 1).padStart(2, "0")}`, net: i % 2 ? 100 : -50 })));
+
+  it("is raised below RATIO_MIN_OBSERVATIONS and cleared at it", () => {
+    expect(riskSummary(days(RATIO_MIN_OBSERVATIONS - 1)).undersampledFlag).toBe(true);
+    expect(riskSummary(days(RATIO_MIN_OBSERVATIONS)).undersampledFlag).toBe(false);
+  });
+
+  it("is not raised on an empty curve, which has no ratio to qualify", () => {
+    expect(riskSummary([]).undersampledFlag).toBe(false);
   });
 });

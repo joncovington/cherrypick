@@ -64,7 +64,7 @@ export function MetricTiles({ reading }: { reading: Record<string, unknown> }) {
       <Tile label="win rate" value={fmtPct(pctFraction(winRate), 1)} tone={tone(winRate === null ? null : winRate - 0.5)} n={sample} />
       <Tile label="expectancy" value={fmtMoney(expectancy)} tone={tone(expectancy)} afterFees n={sample} />
       <Tile label="profit factor" value={fmtNum(profitFactor)} tone={tone(profitFactor === null ? null : profitFactor - 1)} n={sample} />
-      <Tile label="sharpe" value={fmtNum(sharpe)} tone={tone(sharpe)} n={sample} />
+      <Tile label="sharpe / trade" value={fmtNum(sharpe)} tone={tone(sharpe)} n={sample} />
       <Tile label="max drawdown" value={fmtMoney(maxDrawdown === null ? null : -maxDrawdown)} tone={maxDrawdown === null || maxDrawdown === 0 ? "dim" : "neg"} afterFees />
       <Tile label="return on capital" value={fmtPct(pctFraction(returnOnCapital), 1)} tone={tone(returnOnCapital)} n={sample} />
       <Tile label="capture rate" value={fmtPct(pctFraction(captureRate.v), 1)} tone={tone(captureRate.v)} n={captureRate.n} />
