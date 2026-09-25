@@ -32,7 +32,7 @@ def load_config(path: str | None = None) -> dict:
 def cmd_status(args) -> int:
     from cherrypick.calendars import clock, db
 
-    conn = db.connect(args.db)
+    conn = db.connect_ro(args.db)
     print(
         json.dumps(
             {
@@ -50,7 +50,7 @@ def cmd_status(args) -> int:
 def cmd_headline(args) -> int:
     from cherrypick.calendars import analytics, db
 
-    conn = db.connect(args.db)
+    conn = db.connect_ro(args.db)
     print(json.dumps({"ok": True, "headline": analytics.headline(conn)}, indent=2, default=str))
     return 0
 
@@ -58,7 +58,7 @@ def cmd_headline(args) -> int:
 def cmd_excursions(args) -> int:
     from cherrypick.calendars import analytics, db
 
-    conn = db.connect(args.db)
+    conn = db.connect_ro(args.db)
     print(json.dumps({"ok": True, "excursions": analytics.excursions(conn)}, indent=2, default=str))
     return 0
 
@@ -67,7 +67,7 @@ def cmd_policies(args) -> int:
     from cherrypick.calendars import db, exit_policies
 
     config = load_config(args.config)
-    conn = db.connect(args.db)
+    conn = db.connect_ro(args.db)
     print(
         json.dumps(
             {"ok": True, "policies": exit_policies.comparison_table(conn, config)}, indent=2, default=str
@@ -80,7 +80,7 @@ def cmd_validate(args) -> int:
     from cherrypick.calendars import db, exit_policies
 
     config = load_config(args.config)
-    conn = db.connect(args.db)
+    conn = db.connect_ro(args.db)
     print(
         json.dumps(
             {"ok": True, "validation": exit_policies.validate_against_control(conn, config)},
@@ -102,7 +102,7 @@ def cmd_record_break(args) -> int:
 
     from cherrypick.calendars import db
 
-    conn = db.connect(args.db)
+    conn = db.connect_ro(args.db)
     conn.execute(
         "INSERT OR REPLACE INTO measurement_breaks (break_date, key, old_value, new_value, note, recorded_at)"
         " VALUES (?, ?, ?, ?, ?, ?)",

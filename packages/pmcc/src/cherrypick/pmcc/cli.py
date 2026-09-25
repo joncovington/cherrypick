@@ -34,7 +34,7 @@ def cmd_status(args) -> int:
     from cherrypick.pmcc import clock, db
 
     config = load_config(args.config)
-    conn = db.connect(args.db)
+    conn = db.connect_ro(args.db)
     print(
         json.dumps(
             {
@@ -52,7 +52,7 @@ def cmd_status(args) -> int:
 def cmd_headline(args) -> int:
     from cherrypick.pmcc import analytics, db
 
-    conn = db.connect(args.db)
+    conn = db.connect_ro(args.db)
     era = getattr(args, "era", None) or analytics.CURRENT_ERA
     print(
         json.dumps(
@@ -65,7 +65,7 @@ def cmd_headline(args) -> int:
 def cmd_worksheet(args) -> int:
     from cherrypick.pmcc import analytics, db
 
-    conn = db.connect(args.db)
+    conn = db.connect_ro(args.db)
     print(json.dumps({"ok": True, "worksheet": analytics.worksheet(conn)}, indent=2, default=str))
     return 0
 
@@ -73,7 +73,7 @@ def cmd_worksheet(args) -> int:
 def cmd_excursions(args) -> int:
     from cherrypick.pmcc import analytics, db
 
-    conn = db.connect(args.db)
+    conn = db.connect_ro(args.db)
     era = getattr(args, "era", None) or analytics.CURRENT_ERA
     print(
         json.dumps(
@@ -88,7 +88,7 @@ def cmd_excursions(args) -> int:
 def cmd_exposure(args) -> int:
     from cherrypick.pmcc import analytics, db
 
-    conn = db.connect(args.db)
+    conn = db.connect_ro(args.db)
     print(json.dumps({"ok": True, "exposure": analytics.exposure(conn)}, indent=2, default=str))
     return 0
 

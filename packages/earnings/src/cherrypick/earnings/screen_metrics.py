@@ -31,9 +31,10 @@ counts and symbols and nothing resembling an expected return.
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections import Counter, defaultdict
 from pathlib import Path
+
+from cherrypick.core import db as _core_db
 
 from cherrypick.earnings import strategy_metrics as _sm
 
@@ -132,8 +133,7 @@ def load_scan_rows(
     Read-only direct SQLite (not the db_paper.py CLI), same as `strategy_metrics.load_closed_trades`
     -- a report runs several of these per invocation.
     """
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = _core_db.connect_ro(db_path)  # a read: never create or touch the ledger
     try:
         query = "SELECT * FROM scan_log WHERE 1=1"
         params: list = []
@@ -406,8 +406,7 @@ def load_trade_costs(
     to drift. That also makes it retroactive -- it answers for all 64 existing trades, unlike every
     other measurement added this week, which only starts accumulating now.
     """
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = _core_db.connect_ro(db_path)  # a read: never create or touch the ledger
     try:
         query = "SELECT * FROM trades WHERE closed_at IS NOT NULL AND capital_at_risk > 0"
         params: list = []

@@ -378,6 +378,17 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
     return conn
 
 
+def connect_ro(db_path: str | None = None) -> sqlite3.Connection:
+    """Open the ledger READ-ONLY, for the read side (`cli.py`, and through it the console's bridges).
+
+    `connect` is the write path: it runs the schema and the additive migrations on every open. The
+    CLI's verbs are all reads, yet they used it -- so a console page load that shelled out to one
+    could migrate a live ledger, and against a home with no ledger yet it CREATED one (seen
+    2026-09-24 in a scratch home: empty ledgers appeared for modules that had never run there). A
+    read-only open does neither: a missing ledger is an error the caller reports as unavailable."""
+    return _core_db.connect_ro(db_path or os.environ.get("CALENDARS_DB_PATH") or default_db_path())
+
+
 # --------------------------------------------------------------------------- telemetry writers
 # Wrapped: telemetry may never cost a trade or a tick. A decision writer failing is logged by the
 # caller's own log line, never raised into the loop.

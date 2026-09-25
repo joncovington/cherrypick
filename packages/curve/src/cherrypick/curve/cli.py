@@ -32,7 +32,7 @@ def cmd_status(args) -> int:
     from cherrypick.curve import db, paper_loop
 
     config = load_config(args.config)
-    conn = db.connect(args.db)
+    conn = db.connect_ro(args.db)
     print(
         json.dumps(
             paper_loop.run_status(config, conn, cache_path=paper_loop.stream_cache_path(config)),
@@ -46,7 +46,7 @@ def cmd_status(args) -> int:
 def cmd_regime(args) -> int:
     from cherrypick.curve import analytics, db
 
-    conn = db.connect(args.db)
+    conn = db.connect_ro(args.db)
     print(
         json.dumps(
             {"ok": True, "regime_series": analytics.regime_series(conn, limit=args.limit)},
@@ -60,7 +60,7 @@ def cmd_regime(args) -> int:
 def cmd_worksheet(args) -> int:
     from cherrypick.curve import analytics, db
 
-    conn = db.connect(args.db)
+    conn = db.connect_ro(args.db)
     print(json.dumps({"ok": True, "worksheet": analytics.worksheet(conn)}, indent=2, default=str))
     return 0
 
@@ -68,7 +68,7 @@ def cmd_worksheet(args) -> int:
 def cmd_exposure(args) -> int:
     from cherrypick.curve import analytics, db
 
-    conn = db.connect(args.db)
+    conn = db.connect_ro(args.db)
     print(json.dumps({"ok": True, "exposure": analytics.exposure(conn)}, indent=2, default=str))
     return 0
 
@@ -76,7 +76,7 @@ def cmd_exposure(args) -> int:
 def cmd_excursions(args) -> int:
     from cherrypick.curve import analytics, db
 
-    conn = db.connect(args.db)
+    conn = db.connect_ro(args.db)
     print(json.dumps({"ok": True, "excursions": analytics.excursions(conn)}, indent=2, default=str))
     return 0
 
@@ -84,7 +84,7 @@ def cmd_excursions(args) -> int:
 def cmd_headline(args) -> int:
     from cherrypick.curve import analytics, db
 
-    conn = db.connect(args.db)
+    conn = db.connect_ro(args.db)
     print(json.dumps({"ok": True, "headline": analytics.headline(conn)}, indent=2, default=str))
     return 0
 

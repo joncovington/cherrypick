@@ -492,6 +492,16 @@ def cmd_init_db(args) -> dict:
     return {"ok": True, "db_path": str(DB_PATH)}
 
 
+def _conn_ro() -> sqlite3.Connection:
+    """The ledger opened READ-ONLY, for the pure read verbs (`get_pnl_summary`, `get_excursions`).
+
+    `_conn()` runs the DDL and every migration on each open, which is right for a writer and wrong
+    for a read: the console runs `get_excursions` on a page load, and through `_conn()` that could
+    migrate the live paper ledger or create one in a home that had none. A read-only open does
+    neither, and never meets `refuse_pre_rename` -- a read of an old ledger is not a write to it."""
+    return _db.connect_ro(DB_PATH)
+
+
 def cmd_get_open_positions(args) -> dict:
     conn = _conn()
     try:
@@ -1205,7 +1215,7 @@ def cmd_log_scan(args) -> dict:
 def cmd_get_pnl_summary(args) -> dict:
     strategy = getattr(args, "strategy", None)
     profile = getattr(args, "profile", None)
-    conn = _conn()
+    conn = _conn_ro()
     try:
         query = "SELECT * FROM trades WHERE closed_at IS NOT NULL"
         params: list = []
@@ -1273,7 +1283,7 @@ def cmd_get_excursions(args) -> dict:
     both are."""
     strategy = getattr(args, "strategy", None)
     profile = getattr(args, "profile", None)
-    conn = _conn()
+    conn = _conn_ro()
     try:
         query = "SELECT order_id, strategy, symbol, max_unrealized_pnl, min_unrealized_pnl FROM trades WHERE closed_at IS NOT NULL"
         params: list = []
