@@ -113,7 +113,7 @@ def test_window_hint_computed_from_deep_chain(cache, config, tmp_path):
     hints = stream_window.hints_for_symbols(
         fresh, cache.path, ["TQQQ"], "2026-08-24", config, deep_window_pct=0.45
     )
-    assert hints["TQQQ"] == {"down": 42, "up": 10}, "32 strikes of chain + 10 margin"
+    assert hints["TQQQ"] == {"down": 50, "up": 10}, "32 strikes of chain + 10 margin, rounded up to 10"
 
 
 def test_window_escalates_on_misses_and_decays(tmp_path, config):
@@ -215,7 +215,7 @@ def test_hint_is_dropped_while_every_slot_is_held(cache, config, tmp_path, monke
     symbol's window was 84% of the suite's updating option quotes."""
     conn = db.connect(str(tmp_path / "paper.db"))
     free = _hints(conn, cache, config, monkeypatch, arms=["control"], max_positions=1)
-    assert free.get("TQQQ") == {"down": 163, "up": 10}, "a free slot must still ask for its deep window"
+    assert free.get("TQQQ") == {"down": 170, "up": 10}, "a free slot must still ask for its deep window"
 
     _open_pos(conn)
     held = _hints(conn, cache, config, monkeypatch, arms=["control"], max_positions=1)
@@ -239,7 +239,7 @@ def test_a_second_free_book_keeps_the_window_alive(cache, config, tmp_path, monk
     conn = db.connect(str(tmp_path / "paper.db"))
     _open_pos(conn, arm="control")
     hints = _hints(conn, cache, config, monkeypatch, arms=["control", "advised:control"], max_positions=2)
-    assert hints.get("TQQQ") == {"down": 163, "up": 10}
+    assert hints.get("TQQQ") == {"down": 170, "up": 10}
 
 
 def test_max_positions_cap_closes_the_window_too(cache, config, tmp_path, monkeypatch):
@@ -255,7 +255,7 @@ def test_no_roster_keeps_the_old_unconditional_behaviour(cache, config, tmp_path
     """Callers that pass no roster (older call sites, direct use) must be unaffected."""
     conn = db.connect(str(tmp_path / "paper.db"))
     _open_pos(conn)
-    assert _hints(conn, cache, config, monkeypatch).get("TQQQ") == {"down": 163, "up": 10}
+    assert _hints(conn, cache, config, monkeypatch).get("TQQQ") == {"down": 170, "up": 10}
 
 
 # --- the deep window is per SYMBOL -----------------------------------------------------------
@@ -505,3 +505,29 @@ def test_a_legacy_decision_still_puts_the_single_advised_base_book_on_the_roster
     arms, advised = paper_loop.session_books(config, "2026-08-24")
     assert arms == ["control", "advised:control"]
     assert advised["advised:control"]["experiment_id"] == "exp-old"
+
+
+def test_a_one_strike_wobble_in_the_need_does_not_move_the_request(cache, config, tmp_path, monkeypatch):
+    """The need counts $1 strikes in a band that is a percent of spot, so it moves by one as spot
+    crosses a dollar boundary -- XSP read 71 then 72 on 2026-09-25, and the watchdog restarted the
+    whole quote feed on each. Rounded up to 10, both are 80: the request holds still."""
+    conn = db.connect(str(tmp_path / "paper.db"))
+    widths = []
+    for need in (71, 72, 73):
+        monkeypatch.setattr(stream_window, "needed_width", lambda *a, _n=need, **k: _n)
+        widths.append(
+            stream_window.hints_for_symbols(
+                conn, cache.path, ["XSP"], "2026-09-25", config, deep_window_pct=0.08
+            )["XSP"]["down"]
+        )
+    assert widths == [80, 80, 80]
+
+
+def test_rounding_never_exceeds_the_cap(cache, config, tmp_path, monkeypatch):
+    conn = db.connect(str(tmp_path / "paper.db"))
+    config["stream_window"] = {**config.get("stream_window", {}), "max_width": 195}
+    monkeypatch.setattr(stream_window, "needed_width", lambda *a, **k: 191)
+    hint = stream_window.hints_for_symbols(
+        conn, cache.path, ["XSP"], "2026-09-25", config, deep_window_pct=0.08
+    )
+    assert hint["XSP"]["down"] == 195

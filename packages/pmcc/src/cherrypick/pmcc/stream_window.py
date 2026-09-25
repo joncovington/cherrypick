@@ -26,6 +26,13 @@ DEFAULT_INCREMENT = 30
 DEFAULT_MAX_WIDTH = 200
 DEFAULT_MISS_THRESHOLD = 3
 DEFAULT_DECAY_AFTER_MINUTES = 60
+# The emitted width is rounded UP to a multiple of this (2026-09-25). The structural need is a count
+# of $1 strikes in a band that is a fixed PERCENT of spot, so it moves by a strike whenever spot
+# crosses a dollar boundary: XSP's 8% band read 71 at 770.66 and 72 at 770.00. The watchdog recycles
+# the streamer on ANY growth past its launch-time request, so that wobble restarted the whole suite's
+# quote feed twice in the first half hour of 2026-09-25 with a live session armed. Rounding to 10
+# holds the request still across ordinary moves; it steps only on a move of roughly $100 on XSP.
+DEFAULT_ROUND_TO = 10
 
 _MISS_REASONS = ("no_deep_itm_long", "missing_leg_quotes")
 
@@ -39,6 +46,7 @@ def window_params(config: dict) -> dict:
         "max_width": int(block.get("max_width", DEFAULT_MAX_WIDTH)),
         "miss_threshold": int(block.get("miss_threshold", DEFAULT_MISS_THRESHOLD)),
         "decay_after_minutes": int(block.get("decay_after_minutes", DEFAULT_DECAY_AFTER_MINUTES)),
+        "round_to": max(1, int(block.get("round_to", DEFAULT_ROUND_TO))),
     }
 
 
@@ -247,6 +255,9 @@ def hints_for_symbols(
             decay_after_minutes=p["decay_after_minutes"],
         )
         width = max(computed or 0, escalated)
+        # Up to a multiple of `round_to`, so a one-strike wobble in the computed need cannot grow the
+        # request (see DEFAULT_ROUND_TO); the cap still binds after rounding.
+        width = -(-width // p["round_to"]) * p["round_to"]
         width = min(width, p["max_width"])
         # Emit whatever the chain actually needs. This used to be suppressed below `base_width` on
         # the reasoning that the producer already covered that much -- and `base_width` was a
