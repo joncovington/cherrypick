@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TradingMode } from "@console/shared";
-import { useFliesTradeLog, fliesQuery, type FliesFilter } from "../../lib/api";
+import { useFliesTradeLog, fliesQuery, type FliesFilter, type FliesTradeLogRow } from "../../lib/api";
+import { useColumnLayout, type ColumnDef } from "../../components/table/columns";
+import { ColumnsMenu } from "../../components/table/ColumnsMenu";
+import { DateRangeBar, useUrlDateRange } from "../../components/table/DateRange";
 import { DataCard, PnlCell, SkeletonRows, fmtMoney, fmtNum } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
 import { clockTime, structureLabel, wingWidth } from "./structure";
@@ -153,6 +156,103 @@ export function FliesCalendar({
 
 const OUTCOMES = ["all", "wins", "losses", "pinned", "risk-free"] as const;
 
+const UNRECORDED_SLIP =
+  "not recorded: flies records slippage from 2026-09-25 on: what a paper fill's model concedes, and on a live fill what the entry conceded against the mid it was asked from";
+
+/**
+ * The trade log's columns, declared once (see components/table/columns.ts): describe columns can be
+ * hidden and reordered, the money block keeps the standard's order, and net is always last.
+ */
+const TRADE_LOG_COLUMNS: ColumnDef<FliesTradeLogRow>[] = [
+  { id: "date", header: "date", kind: "describe", render: (r) => r.tradeDate },
+  { id: "time", header: "time", kind: "describe", className: "muted", render: (r) => clockTime(r.entryTime) },
+  { id: "sym", header: "sym", kind: "describe", render: (r) => r.symbol },
+  { id: "arm", header: "arm", kind: "describe", className: "muted", render: (r) => r.arm ?? "—" },
+  { id: "mode", header: "mode", kind: "describe", className: "muted", render: (r) => r.entryMode ?? "—" },
+  { id: "kind", header: "kind", kind: "describe", render: (r) => structureLabel(r.kind, r.side) },
+  { id: "centre", header: "centre", kind: "describe", render: (r) => fmtNum(r.center, 0) },
+  {
+    id: "wing",
+    header: "wing",
+    title: "wing width in points; near/far when the wing is broken",
+    kind: "describe",
+    render: (r) => wingWidth(r.wingWidth, r.farWidth),
+  },
+  { id: "window", header: "window", kind: "describe", className: "muted", render: (r) => r.window ?? "—" },
+  { id: "qty", header: "qty", kind: "describe", render: (r) => r.quantity ?? "—" },
+  {
+    id: "price",
+    header: "price",
+    title: "net entry price per share — cr received, db paid",
+    kind: "describe",
+    render: (r) => fmtPrice(r.price),
+  },
+  { id: "how", header: "how", kind: "describe", className: "muted", render: (r) => r.exitKind ?? "—" },
+  {
+    id: "latency",
+    header: "latency",
+    title: "minutes from entry to the completing fill",
+    kind: "describe",
+    className: "muted",
+    render: (r) => (r.latencyMin !== null ? `${r.latencyMin.toFixed(0)}m` : "—"),
+  },
+  {
+    id: "pinned",
+    header: "pinned",
+    title: "settled inside the short strike's band",
+    kind: "describe",
+    render: (r) => (r.pinned ? <span className="chain-badge chain-badge-short">pinned</span> : null),
+  },
+  {
+    id: "entry",
+    header: "entry",
+    title: "entry cash flow for the whole position: + received, − paid",
+    kind: "money",
+    render: (r) => fmtCash(r.entryCash),
+  },
+  {
+    id: "exit",
+    header: "exit",
+    title: "exit cash flow: the close, or the settlement payoff at the bell",
+    kind: "money",
+    render: (r) => fmtCash(r.exitCash),
+  },
+  { id: "gross", header: "gross", title: "entry + exit, before any cost", kind: "money", render: (r) => fmtMoney(r.gross) },
+  {
+    id: "fees",
+    header: "fees",
+    title: "trading fees: commissions and exchange fees",
+    kind: "money",
+    className: "muted",
+    render: (r) => (
+      <span title={r.settlementFees === null ? "the fee total: its settlement share was not recorded" : undefined}>
+        {fmtMoney(r.fees)}
+      </span>
+    ),
+  },
+  {
+    id: "settle",
+    header: "settle",
+    title: "exercise / assignment fees at settlement",
+    kind: "money",
+    className: "muted",
+    render: (r) => (r.settlementFees === null ? "n/r" : fmtMoney(r.settlementFees)),
+  },
+  {
+    id: "slip",
+    header: "slip",
+    title: "what the fills gave up against mid — already inside gross, never subtracted again",
+    kind: "money",
+    className: "muted",
+    render: (r) => (
+      <span title={r.slippage === null ? UNRECORDED_SLIP : "conceded against mid — inside gross, never subtracted"}>
+        {r.slippage === null ? "n/r" : fmtMoney(r.slippage)}
+      </span>
+    ),
+  },
+  { id: "net", header: "net", title: "gross − fees − settlement", kind: "money", pinned: true, render: (r) => <PnlCell v={r.pnl} /> },
+];
+
 export function HistoryTab({
   mode,
   filter,
@@ -179,9 +279,10 @@ export function HistoryTab({
   // date as text, which answers "2026-08" but not "the week either side of the cadence change" —
   // and every measurement break in this module is a date, so a log filterable only by prefix cannot
   // be pointed at one side of a break.
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const range = { from: from === "" ? null : from, to: to === "" ? null : to };
+  // In the page address since 2026-09-25, so a filtered log survives a reload and can be shared.
+  const { from, to } = useUrlDateRange();
+  const range = { from, to };
+  const cols = useColumnLayout("flies-history", TRADE_LOG_COLUMNS);
 
   const { page, setOffset, setLimit } = usePage([
     mode, outcome, debouncedSearch, from, to, filter.arm, filter.era,
@@ -329,6 +430,15 @@ export function HistoryTab({
                 : `${fmtMoney(totals.slippage)} (recorded on ${totals.slippageTrades.toLocaleString()} of ${totals.trades.toLocaleString()})`}
             </span>
           )}
+        </div>
+        <div className="history-controls">
+          <ColumnsMenu
+            defs={TRADE_LOG_COLUMNS}
+            layout={cols.layout}
+            onChange={cols.setLayout}
+            onReset={cols.reset}
+            isDefault={cols.isDefault}
+          />
           {/* A filter, not a tab strip: role=group rather than tablist, which would promise
               tab semantics for something that narrows one table. */}
           <div className="mode-toggle" role="group" aria-label="outcome filter">
@@ -339,67 +449,27 @@ export function HistoryTab({
             ))}
           </div>
           <input className="text-input" placeholder="search…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ textTransform: "none" }} />
-          <label className="muted" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
-            from
-            <input className="text-input" type="date" value={from} max={to === "" ? undefined : to} onChange={(e) => setFrom(e.target.value)} aria-label="from date" />
-          </label>
-          <label className="muted" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
-            to
-            <input className="text-input" type="date" value={to} min={from === "" ? undefined : from} onChange={(e) => setTo(e.target.value)} aria-label="to date" />
-          </label>
-          {(from !== "" || to !== "") && (
-            <button type="button" className="mode-btn" onClick={() => { setFrom(""); setTo(""); }}>
-              clear dates
-            </button>
-          )}
+          <DateRangeBar />
         </div>
         <div className={`table-scroll ${logQuery.isPlaceholderData ? "table-busy" : ""}`}>
           <table className="data-table">
             <thead>
               <tr>
-                <th>date</th><th>time</th><th>sym</th><th>arm</th><th>mode</th><th>kind</th>
-                <th>centre</th><th title="wing width in points; near/far when the wing is broken">wing</th>
-                <th>window</th><th>qty</th>
-                <th title="net entry price per share — cr received, db paid">price</th>
-                <th title="entry cash flow for the whole position: + received, − paid">entry</th>
-                <th title="exit cash flow: the close, or the settlement payoff at the bell">exit</th>
-                <th>how</th>
-                <th title="entry + exit, before any cost">gross</th>
-                <th title="trading fees: commissions and exchange fees">fees</th>
-                <th title="exercise / assignment fees at settlement">settle</th>
-                <th title="what the modelled fills gave up against mid — already inside gross, never subtracted again">slip</th>
-                <th title="gross − fees − settlement">net</th>
-                <th>latency</th><th></th>
+                {cols.columns.map((c) => (
+                  <th key={c.id} title={c.title}>
+                    {c.header}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {log.map((r, i) => (
                 <tr key={i}>
-                  <td>{r.tradeDate}</td>
-                  <td className="muted">{clockTime(r.entryTime)}</td>
-                  <td>{r.symbol}</td>
-                  <td className="muted">{r.arm ?? "—"}</td>
-                  <td className="muted">{r.entryMode ?? "—"}</td>
-                  <td>{structureLabel(r.kind, r.side)}</td>
-                  <td>{fmtNum(r.center, 0)}</td>
-                  <td>{wingWidth(r.wingWidth, r.farWidth)}</td>
-                  <td className="muted">{r.window ?? "—"}</td>
-                  <td>{r.quantity ?? "—"}</td>
-                  <td>{fmtPrice(r.price)}</td>
-                  <td>{fmtCash(r.entryCash)}</td>
-                  <td>{fmtCash(r.exitCash)}</td>
-                  <td className="muted">{r.exitKind ?? "—"}</td>
-                  <td>{fmtMoney(r.gross)}</td>
-                  <td className="muted" title={r.settlementFees === null ? "the fee total: its settlement share was not recorded" : undefined}>
-                    {fmtMoney(r.fees)}
-                  </td>
-                  <td className="muted">{r.settlementFees === null ? "n/r" : fmtMoney(r.settlementFees)}</td>
-                  <td className="muted" title={r.slippage === null ? "not recorded: flies records slippage from 2026-09-25 on: what a paper fill's model concedes, and on a live fill what the entry conceded against the mid it was asked from" : "conceded against mid — inside gross, never subtracted"}>
-                    {r.slippage === null ? "n/r" : fmtMoney(r.slippage)}
-                  </td>
-                  <td><PnlCell v={r.pnl} /></td>
-                  <td className="muted">{r.latencyMin !== null ? `${r.latencyMin.toFixed(0)}m` : "—"}</td>
-                  <td>{r.pinned && <span className="chain-badge chain-badge-short">pinned</span>}</td>
+                  {cols.columns.map((c) => (
+                    <td key={c.id} className={c.className}>
+                      {c.render(r)}
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>

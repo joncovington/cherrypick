@@ -3349,3 +3349,93 @@ body.lb-open {
     display: none;
   }
 }
+
+/* History-table controls (2026-09-25): a date range kept in the URL, and a columns panel that drops
+   from its button rather than opening a dialog -- the table stays visible and updates behind it. */
+.date-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.date-range label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.cols-menu {
+  position: relative;
+  display: inline-block;
+}
+.cols-panel {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 16rem;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 0.5rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.cols-section {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0.35rem 0 0.25rem;
+}
+.cols-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cols-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.15rem 0.25rem;
+  border-bottom: 1px solid var(--row-line);
+}
+.cols-item.dragging {
+  opacity: 0.4;
+}
+.cols-item label {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+.cols-grip {
+  color: var(--text-muted);
+  cursor: grab;
+  font-size: 10px;
+}
+.cols-arrows button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 0.2rem;
+}
+.cols-arrows button:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.cols-reset {
+  margin-top: 0.5rem;
+  width: 100%;
+}
+.history-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin: 0.4rem 0 0.6rem;
+}
+.history-controls-spacer {
+  flex: 1;
+}

@@ -515,6 +515,25 @@ All seven trading modules are on the module frame and the standard as of 2026-09
 surfaces (Live, Reports, Advisor, GEX, Config) are still lightboxes; a card that would link to one
 (the flies live-pilot tile) has no link until it moves, since a card opens pages, never overlays.
 
+## History-table controls (2026-09-25, flies first)
+
+A history table declares its columns once (`components/table/columns.ts`, `ColumnDef`): header,
+definition tooltip, cell, and kind. The controls come from that list, not from hand-written rows:
+
+- **Columns menu** (`ColumnsMenu`): a panel dropped from a button in the table's controls row, not
+  a dialog -- the table stays visible and updates behind it. `describe` columns can be hidden and
+  dragged (or moved with arrow buttons) into any order. `money` columns can be hidden, but stay one
+  block in the standard's order at the end, and `net` (`pinned`) is always shown and always last.
+  `resolveColumns` enforces that against any stored layout, drops ids the table no longer has, and
+  shows a column declared since the layout was saved (`web/test/tableColumns.test.ts`).
+- **Layout storage:** the prefs store (`lib/prefs.ts`) under `columns:<table>`. It's a per-viewer
+  preference that follows to the desktop shell. It is never in the URL.
+- **Date range** (`DateRangeBar`, `useUrlDateRange`): `?from=&to=` in the page address, written with
+  `replace`, so a filtered view reloads and shares. Presets end today in New York time. The server
+  applies it, so the match count and the totals chip describe the range.
+
+Next: the other six history tables, the same way.
+
 ## Suite guardrails (apply here too)
 
 Suite-wide guardrails apply — see root CLAUDE.md. Package-specific: **loopback-only serving**. This
