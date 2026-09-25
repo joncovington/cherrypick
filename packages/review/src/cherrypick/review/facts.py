@@ -730,7 +730,13 @@ def build_module_facts(module: str, session: str, db_path=None) -> dict:
         "concentration": _ledgers.concentration(closed),
         "carried_overnight": {
             "positions": len(carried),
-            "capital_at_risk": round(sum(r.get("capital") or 0.0 for r in carried), 2) if carried else None,
+            # Known capital summed, unknown counted: None when nothing carried has a known capital.
+            "capital_at_risk": (
+                round(sum(r["capital"] for r in carried if r.get("capital") is not None), 2)
+                if any(r.get("capital") is not None for r in carried)
+                else None
+            ),
+            "capital_unknown": sum(1 for r in carried if r.get("capital") is None),
         },
         "return": _returns(closed),
         "expected_vs_observed": expected,

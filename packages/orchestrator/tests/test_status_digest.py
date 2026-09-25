@@ -78,6 +78,16 @@ def test_null_renders_as_em_dash_never_zero():
     assert "$0" not in field["value"] and "$0" not in message
 
 
+def test_carried_capital_says_how_many_positions_it_leaves_out():
+    # The total is of KNOWN capital only (2026-09-24); a reader must be told it is short.
+    doc = facts(
+        meic=module_block(carried_overnight={"positions": 3, "capital_at_risk": 1480.0, "capital_unknown": 2})
+    )
+    _, _, embed, _ = build(doc)
+    field = next(f for f in embed["fields"] if f["name"] == "meic")
+    assert "(+2 unknown)" in field["value"]
+
+
 def test_no_suite_level_net_is_ever_printed():
     """Two modules whose nets sum to a round, recognizable figure — if any code path totals across
     modules, that figure appears somewhere in the output and this fails (verified by adding such a

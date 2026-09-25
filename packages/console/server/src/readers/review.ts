@@ -56,6 +56,7 @@ export interface ReviewModule {
   observed: number | null;
   carriedPositions: number;
   carriedCapital: number | null;
+  carriedCapitalUnknown: number;
   arms: ReviewArm[];
 }
 
@@ -160,7 +161,7 @@ function shapeModule(name: string, raw: unknown): ReviewModule {
       capitalAtRisk: null, onMaxRisk: null, n: null, effectiveN: null,
       breaks: null, suspectedBreak: null,
       expectedBasis: null, expected: null, observed: null,
-      carriedPositions: 0, carriedCapital: null, arms: [],
+      carriedPositions: 0, carriedCapital: null, carriedCapitalUnknown: 0, arms: [],
     };
   }
   const results = rec(m["results"]);
@@ -201,6 +202,9 @@ function shapeModule(name: string, raw: unknown): ReviewModule {
     observed: num(expected["observed"]),
     carriedPositions: num(carried["positions"]) ?? 0,
     carriedCapital: num(carried["capital_at_risk"]),
+    // How many carried positions the capital total leaves out for want of a recorded capital. Absent
+    // on sets written before 2026-09-24, which folded those in as 0.0 -- read as 0 there.
+    carriedCapitalUnknown: num(carried["capital_unknown"]) ?? 0,
     // `by_arm` from fact_version 8, `by_profile` in every set written before it. The console
     // renders old sessions from the picker, so both spellings are read here for good.
     arms: shapeArms(rec(m["by_arm"] ?? m["by_profile"])),

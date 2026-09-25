@@ -257,6 +257,8 @@ export interface ReviewModule {
   observed: number | null;
   carriedPositions: number;
   carriedCapital: number | null;
+  /** Carried positions whose capital was never recorded -- left out of `carriedCapital`, not counted as 0. */
+  carriedCapitalUnknown: number;
   arms: ReviewArm[];
 }
 

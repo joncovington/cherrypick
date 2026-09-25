@@ -213,6 +213,27 @@ def test_report_surfaces_open_positions_carried_overnight(tmp_path):
     assert day["modules"]["meic"]["open"]["positions"] == 0
 
 
+def test_an_open_position_of_unknown_capital_is_counted_not_folded_in_as_zero(tmp_path):
+    """`None` never means zero (core.ledgers). Until 2026-09-24 the open readers wrote 0.0 for a
+    position whose capital was never recorded, so the total quietly claimed a riskless position.
+    Now the total is what is known, and the unknown ones are counted beside it."""
+    cfg = _cfg(tmp_path)
+    _meic_db(tmp_path / "meic" / "paper.db", [])
+    open_ep = 1_700_000_000.0
+    _earnings_db(
+        tmp_path / "earn" / "paper.db",
+        rows=[],
+        open_rows=[
+            ("DHI", "strat_test", "iron_fly", 1480.0, open_ep),
+            ("KBH", "strat_test", "iron_fly", None, open_ep),  # capital never recorded
+        ],
+    )
+    eopen = report.run(cfg, session=report._session_from_epoch(open_ep))["modules"]["earnings"]["open"]
+    assert eopen["positions"] == 2
+    assert eopen["capital_at_risk"] == 1480.0
+    assert eopen["capital_unknown"] == 1
+
+
 def test_report_open_positions_degrade_on_legacy_schema(tmp_path):
     """A pre-migration earnings DB without capital_at_risk/opened_at must still report P&L; the
     overnight view just comes back empty rather than failing the module."""

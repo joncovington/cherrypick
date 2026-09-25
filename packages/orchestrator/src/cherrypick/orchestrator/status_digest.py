@@ -183,7 +183,9 @@ def _module_lines(name: str, block: dict, prev_mod: dict | None) -> list[str]:
 
     carried = block.get("carried_overnight") or {}
     if carried.get("positions"):
-        lines.append(f"open {carried['positions']} · at risk {_money(carried.get('capital_at_risk'))}")
+        unknown = carried.get("capital_unknown") or 0
+        tail = f" (+{unknown} unknown)" if unknown else ""
+        lines.append(f"open {carried['positions']} · at risk {_money(carried.get('capital_at_risk'))}{tail}")
 
     if health:
         if health.get("loop_ticked"):

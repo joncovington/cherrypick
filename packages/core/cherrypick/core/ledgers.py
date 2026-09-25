@@ -64,7 +64,10 @@ rather than by a query that could surface an unsettled 0DTE position as though i
 Its records carry `capital` under the same name the closed records use (they said `capital_at_risk`
 until 2026-09-24 -- one quantity, two names across the two registries). The artifacts built from
 them -- the report's `open` block, review's `carried_overnight` -- still write `capital_at_risk`,
-which is an accurate name for a persisted key and not the record's.
+which is an accurate name for a persisted key and not the record's. An open record whose capital
+is unknown carries None, like a closed one (until 2026-09-24 the open readers wrote 0.0, which a
+total then counted as a real, riskless position); the totals built from them sum what is known
+and say how much is not (`capital_unknown`).
 """
 
 from __future__ import annotations
@@ -456,7 +459,7 @@ def _curve_open(conn) -> list[dict]:
             "capital": (
                 round(float(r["entry_max_loss"]) * 100 * (r["quantity"] or 1), 2)
                 if r["entry_max_loss"] is not None
-                else 0.0
+                else None
             ),
             "session": r["entry_session"] or "",
         }
@@ -529,7 +532,7 @@ def _bwb_open(conn) -> list[dict]:
             "capital": (
                 round(float(r["entry_max_loss"]) * 100 * (r["quantity"] or 1), 2)
                 if r["entry_max_loss"] is not None
-                else 0.0
+                else None
             ),
             "session": r["entry_session"] or "",
         }
@@ -580,7 +583,7 @@ def _earnings_open(conn) -> list[dict]:
             "arm": r["arm"] or EARNINGS_UNTAGGED,
             "symbol": r["symbol"],
             "strategy": r["strategy"],
-            "capital": (r["capital_at_risk"] or 0.0),
+            "capital": r["capital_at_risk"],
             "session": session_from_epoch(r["opened_at"]),
         }
         for r in rows
@@ -605,7 +608,7 @@ def _calendars_open(conn) -> list[dict]:
             "capital": (
                 round(float(r["entry_debit"]) * 100 * (r["quantity"] or 1), 2)
                 if r["entry_debit"] is not None
-                else 0.0
+                else None
             ),
             "session": r["entry_session"] or "",
         }
@@ -630,7 +633,7 @@ def _pmcc_open(conn) -> list[dict]:
             "capital": (
                 round(float(r["net_debit"]) * 100 * (r["quantity"] or 1), 2)
                 if r["net_debit"] is not None
-                else 0.0
+                else None
             ),
             "session": r["entry_session"] or "",
         }

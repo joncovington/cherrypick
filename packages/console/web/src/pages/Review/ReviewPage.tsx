@@ -223,7 +223,8 @@ function ModuleCard({ m }: { m: ReviewModule }) {
       {m.carriedPositions > 0 && (
         <p className="review-caveat">
           <span className="dot status-warn" /> {m.carriedPositions} position(s) carried overnight,{" "}
-          {money(m.carriedCapital)} at risk — no realised P&amp;L until they settle.
+          {money(m.carriedCapital)} at risk
+          {m.carriedCapitalUnknown > 0 ? ` (+${m.carriedCapitalUnknown} of unknown capital)` : ""} — no realised P&amp;L until they settle.
         </p>
       )}
     </section>

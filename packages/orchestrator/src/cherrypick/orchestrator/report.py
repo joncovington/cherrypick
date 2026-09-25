@@ -64,9 +64,13 @@ def _summarize_open(records: list[dict]) -> dict:
     by_symbol: dict[str, int] = {}
     for r in records:
         by_symbol[r["symbol"]] = by_symbol.get(r["symbol"], 0) + 1
+    # Known capital summed, unknown counted beside it: a position whose capital was never recorded is
+    # not a riskless one, and folding it in as 0.0 made the total claim it was.
+    known = [r["capital"] for r in records if r.get("capital") is not None]
     return {
         "positions": len(records),
-        "capital_at_risk": round(sum(r.get("capital") or 0.0 for r in records), 2),
+        "capital_at_risk": round(sum(known), 2),
+        "capital_unknown": len(records) - len(known),
         "by_symbol": dict(sorted(by_symbol.items())),
     }
 

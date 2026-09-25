@@ -211,9 +211,11 @@ def render(session: str, window: int = _trends.DEFAULT_WINDOW) -> str:
         L.append("## Carried overnight")
         L.append("")
         for name, c in carried.items():
+            unknown = c.get("capital_unknown") or 0
+            missing = f" (+{unknown} of unknown capital)" if unknown else ""
             L.append(
                 f"- **{name}**: {c['positions']} position(s), "
-                f"{_money(c['capital_at_risk'])} at risk — no realised P&L until they settle"
+                f"{_money(c['capital_at_risk'])} at risk{missing} — no realised P&L until they settle"
             )
         L.append("")
 
