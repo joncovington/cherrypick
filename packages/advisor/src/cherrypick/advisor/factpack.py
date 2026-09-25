@@ -25,12 +25,14 @@ it — and because enactment is structurally paper-only, showing it costs nothin
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from cherrypick.core import config as _cfg
+from cherrypick.core import db as _db
 from cherrypick.core import home as _home
 from cherrypick.core import regime as _regime
 
@@ -501,33 +503,44 @@ def _meic_regime_session(conn, session: str) -> dict[str, Any] | None:
     }
 
 
+def _arm_col(conn, table: str) -> str:
+    """The ledger's arm column under whichever name this file carries (`core.db.arm_column`).
+    Falls back to `arm` when there is none, so the query is refused and recorded in
+    `QUERY_ERRORS` like any other a pack could not run -- tolerant, never silent."""
+    try:
+        return _db.arm_column(conn, table)
+    except sqlite3.Error:
+        return "arm"
+
+
 def _meic(session: str) -> dict[str, Any]:
     def read(conn):
+        ea, ic = _arm_col(conn, "entry_attempts"), _arm_col(conn, "ic_trades")
         attempts = _store.rows(
             conn,
-            "SELECT risk_profile AS arm, outcome, COUNT(*) n FROM entry_attempts WHERE trade_date = ?"
-            " GROUP BY risk_profile, outcome ORDER BY risk_profile, n DESC",
+            f"SELECT {ea} AS arm, outcome, COUNT(*) n FROM entry_attempts WHERE trade_date = ?"
+            f" GROUP BY {ea}, outcome ORDER BY {ea}, n DESC",
             (session,),
         )
         blocks = _store.rows(
             conn,
-            "SELECT risk_profile AS arm, block_detail, COUNT(*) n FROM entry_attempts"
+            f"SELECT {ea} AS arm, block_detail, COUNT(*) n FROM entry_attempts"
             " WHERE trade_date = ? AND block_detail IS NOT NULL"
-            " GROUP BY risk_profile, block_detail ORDER BY n DESC LIMIT ?",
+            f" GROUP BY {ea}, block_detail ORDER BY n DESC LIMIT ?",
             (session, TOP_N),
         )
         book = _store.rows(
             conn,
-            "SELECT risk_profile AS arm, status, COUNT(*) n, SUM(net_credit) credit, SUM(pnl) pnl,"
-            " SUM(fees) fees FROM ic_trades WHERE trade_date = ? GROUP BY risk_profile, status",
+            f"SELECT {ic} AS arm, status, COUNT(*) n, SUM(net_credit) credit, SUM(pnl) pnl,"
+            f" SUM(fees) fees FROM ic_trades WHERE trade_date = ? GROUP BY {ic}, status",
             (session,),
         )
         regime_session = _meic_regime_session(conn, session)
         stops = _store.rows(
             conn,
-            "SELECT risk_profile AS arm, COUNT(*) n FROM ic_trades WHERE trade_date = ?"
+            f"SELECT {ic} AS arm, COUNT(*) n FROM ic_trades WHERE trade_date = ?"
             " AND (put_max_cost IS NOT NULL OR call_max_cost IS NOT NULL)"
-            " AND exit_time IS NOT NULL GROUP BY risk_profile",
+            f" AND exit_time IS NOT NULL GROUP BY {ic}",
             (session,),
         )
         # Did the baseline trade at all today? control/control-drift carry a stricter iv_rank floor
@@ -540,8 +553,7 @@ def _meic(session: str) -> dict[str, Any]:
         # this reader could not run must read as unmeasured (None), never as that finding.
         fills = _store.rows_or_none(
             conn,
-            "SELECT risk_profile AS arm, COUNT(*) n FROM ic_trades"
-            " WHERE trade_date = ? GROUP BY risk_profile",
+            f"SELECT {ic} AS arm, COUNT(*) n FROM ic_trades WHERE trade_date = ? GROUP BY {ic}",
             (session,),
         )
         by_arm = _counts(fills or [], "arm")

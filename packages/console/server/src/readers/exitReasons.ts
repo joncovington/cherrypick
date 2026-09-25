@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { ExitReasonRow, HeldBackRow, PerformanceModuleId } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { withReadOnlyDb, hasTable, hasColumn, str, numLoose } from "./db.js";
+import { withReadOnlyDb, hasTable, hasColumn, armColumnOf, str, numLoose } from "./db.js";
 
 /**
  * Realized exit reasons per profile/book, plus what an execution gate held back before a verdict
@@ -36,7 +36,6 @@ export interface ExitReasonsResult {
 interface Spec {
   dir: (config: ConsoleConfig) => string;
   positionsTable: string;
-  tagColumn: string;
   closedWhere: string;
   netExpr: string;
   events: { table: string; positionKey: string; eventKey: string } | null;
@@ -50,7 +49,6 @@ const SPECS: Partial<Record<ExitReasonsModule, Spec>> = {
   meic: {
     dir: (config) => config.paths.meicDir,
     positionsTable: "ic_trades",
-    tagColumn: "risk_profile",
     closedWhere: "exit_time IS NOT NULL",
     netExpr: "pnl - fees",
     events: null,
@@ -58,7 +56,6 @@ const SPECS: Partial<Record<ExitReasonsModule, Spec>> = {
   earnings: {
     dir: (config) => config.paths.earningsDir,
     positionsTable: "trades",
-    tagColumn: "profile",
     closedWhere: "closed_at IS NOT NULL",
     netExpr: "pnl - entry_cost - exit_cost",
     events: { table: "management_events", positionKey: "order_id", eventKey: "order_id" },
@@ -66,7 +63,6 @@ const SPECS: Partial<Record<ExitReasonsModule, Spec>> = {
   calendars: {
     dir: (config) => config.paths.calendarsDir,
     positionsTable: "dc_positions",
-    tagColumn: "arm",
     closedWhere: "status = 'closed'",
     netExpr: "gross_pnl - fees",
     events: { table: "dc_management_events", positionKey: "position_id", eventKey: "position_id" },
@@ -74,7 +70,6 @@ const SPECS: Partial<Record<ExitReasonsModule, Spec>> = {
   pmcc: {
     dir: (config) => config.paths.pmccDir,
     positionsTable: "pmcc_positions",
-    tagColumn: "arm",
     closedWhere: "status = 'closed'",
     netExpr: "gross_pnl - fees",
     events: { table: "pmcc_management_events", positionKey: "position_id", eventKey: "position_id" },
@@ -82,7 +77,6 @@ const SPECS: Partial<Record<ExitReasonsModule, Spec>> = {
   curve: {
     dir: (config) => config.paths.curveDir,
     positionsTable: "curve_positions",
-    tagColumn: "arm",
     closedWhere: "status = 'closed'",
     netExpr: "gross_pnl - fees",
     events: { table: "curve_management_events", positionKey: "position_id", eventKey: "position_id" },
@@ -90,7 +84,6 @@ const SPECS: Partial<Record<ExitReasonsModule, Spec>> = {
   bwb: {
     dir: (config) => config.paths.bwbDir,
     positionsTable: "bwb_positions",
-    tagColumn: "arm",
     closedWhere: "status = 'closed'",
     netExpr: "gross_pnl - fees",
     events: { table: "bwb_management_events", positionKey: "position_id", eventKey: "position_id" },
@@ -114,10 +107,13 @@ export function readExitReasons(config: ConsoleConfig, module: ExitReasonsModule
     if (!hasTable(db, spec.positionsTable) || !hasColumn(db, spec.positionsTable, "exit_reason")) {
       return empty;
     }
+    // Resolved per file: meic's and earnings' ledgers keep their old column name until each one's
+    // own rename window, and nothing here may assume which side of it a file is on.
+    const tagColumn = armColumnOf(db, spec.positionsTable);
 
     const reasonRows = db
       .prepare<[], Record<string, unknown>>(
-        `SELECT ${spec.tagColumn} AS tag, exit_reason AS reason, COUNT(*) AS n,
+        `SELECT ${tagColumn} AS tag, exit_reason AS reason, COUNT(*) AS n,
                 SUM(${spec.netExpr}) AS net, AVG(${spec.netExpr}) AS avg_net
            FROM ${spec.positionsTable}
           WHERE ${spec.closedWhere} AND exit_reason IS NOT NULL
@@ -138,7 +134,7 @@ export function readExitReasons(config: ConsoleConfig, module: ExitReasonsModule
       const ev = spec.events;
       const heldRows = db
         .prepare<[], Record<string, unknown>>(
-          `SELECT p.${spec.tagColumn} AS tag, e.action AS action, e.reason AS reason, e.gate AS gate,
+          `SELECT p.${tagColumn} AS tag, e.action AS action, e.reason AS reason, e.gate AS gate,
                   COUNT(*) AS n
              FROM ${ev.table} e
              JOIN ${spec.positionsTable} p ON e.${ev.eventKey} = p.${ev.positionKey}

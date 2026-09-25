@@ -780,14 +780,16 @@ def test_a_refused_query_is_named_and_never_reads_as_zero(seeded):
 
     db = paths.module_data_dir("meic") / "paper_trades.db"
     conn = sqlite3.connect(db)
-    conn.execute("ALTER TABLE ic_trades RENAME COLUMN risk_profile TO profile")
+    # Not `profile`/`arm`: every spelling in core.db.ARM_COLUMNS is now resolved, not refused. A
+    # name no ledger has ever used is what a column that moved somewhere unexpected looks like.
+    conn.execute("ALTER TABLE ic_trades RENAME COLUMN risk_profile TO variant")
     conn.commit()
     conn.close()
 
     pack = factpack.build(SESSION, "deep")
     assert pack["paper"]["meic"]["control_fired"]["fired"] is None
     assert pack["query_errors"], "the refused queries must be listed"
-    assert any("risk_profile" in e["sql"] for e in pack["query_errors"])
+    assert any("ic_trades" in e["sql"] for e in pack["query_errors"])
 
 
 def test_a_clean_build_lists_no_query_errors(seeded):

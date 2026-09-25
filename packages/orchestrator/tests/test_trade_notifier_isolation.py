@@ -89,3 +89,38 @@ def test_a_module_that_raises_does_not_take_the_other_modules_save_with_it(tmp_p
     saved = json.loads((tmp_path / "trade_notify.json").read_text(encoding="utf-8"))
     assert saved["good"]["notified_entry_ids"] == ["1"]  # so the next pass does not send it again
     assert saved["bad"]["last_error"]["error"] == "IndexError: No item with that key"
+
+
+def test_a_dry_run_formats_every_event_and_sends_and_saves_nothing(tmp_path, monkeypatch):
+    # The rehearsal a schema change needs: every formatter run against the ledger, nothing leaving
+    # the machine, and the next real pass unaffected -- it must still send what the dry run saw.
+    monkeypatch.setattr(tn, "_STATE", tmp_path / "trade_notify.json")
+    monkeypatch.setattr(tn, "_LOCK", tmp_path / "trade_notify.lock")
+    before = json.dumps({"good": {}})
+    (tmp_path / "trade_notify.json").write_text(before, encoding="utf-8")
+    db = tmp_path / "paper.db"
+    sqlite3.connect(db).close()
+
+    def good_process(conn, st, notifier, name):
+        notifier.notify("INFO", "trade.good.entry.1", "Paper entry", "entry 1")
+        st["notified_entry_ids"] = ["1"]
+        return {"entrys_notified": 1}
+
+    monkeypatch.setattr(tn, "_SCHEMAS", {"good_schema": (None, good_process)})
+    monkeypatch.setattr(
+        tn.cfgmod,
+        "enabled_modules",
+        lambda cfg: {"good": {"paper": {"notify_trades": True, "trade_schema": "good_schema"}}},
+    )
+    monkeypatch.setattr(tn.cfgmod, "paper_db_path", lambda mcfg, name: db)
+
+    def no_real_notifier(*_a, **_k):
+        raise AssertionError("a dry run built a real notifier")
+
+    monkeypatch.setattr(tn, "Notifier", no_real_notifier)
+
+    result = tn.run(cfg={"notify": {}}, dry_run=True)
+
+    assert result["dry_run"] is True
+    assert result["would_send"] == [{"key": "trade.good.entry.1", "title": "Paper entry"}]
+    assert (tmp_path / "trade_notify.json").read_text(encoding="utf-8") == before

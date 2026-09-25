@@ -35,7 +35,7 @@ this per-trade row does not carry (fly_book, bwb_132) or that mixes credit/debit
 (earnings) -- see each reader's own comment for why. Deliberately not derived by guessing at a
 formula from `capital` alone.
 
-  - "meic_ic"  : MEIC's `ic_trades`; closed = exit_time set; net = pnl - fees; tag = risk_profile.
+  - "meic_ic"  : MEIC's `ic_trades`; closed = exit_time set; net = pnl - fees; tag = `risk_profile`.
                  Capital at risk is derived: (wing_width - net_credit) x multiplier x quantity.
   - "earnings" : earnings' `trades`; closed = closed_at set; net = pnl - entry_cost - exit_cost;
                  tag = profile; capital = capital_at_risk stored at entry.
@@ -134,8 +134,9 @@ def _meic_closed(conn, start: str | None = None, end: str | None = None) -> list
     mult_col = ", dollar_multiplier" if "dollar_multiplier" in cols else ""
     where, params = _session_where("substr(exit_time, 1, 10)", start, end)
     exp_col, has_exp = _experiment_select(conn, "ic_trades")
+    arm = core_db.arm_column(conn, "ic_trades")  # `risk_profile` until meic's column moves
     rows = conn.execute(
-        f"SELECT symbol, risk_profile, pnl, fees, exit_time{slip_col}{cap_cols}{mult_col}{exp_col} "
+        f"SELECT symbol, {arm} AS arm, pnl, fees, exit_time{slip_col}{cap_cols}{mult_col}{exp_col} "
         f"FROM ic_trades WHERE exit_time IS NOT NULL{where}",
         params,
     ).fetchall()
@@ -162,7 +163,7 @@ def _meic_closed(conn, start: str | None = None, end: str | None = None) -> list
 
     return [
         {
-            "arm": r["risk_profile"] or MEIC_UNTAGGED,
+            "arm": r["arm"] or MEIC_UNTAGGED,
             "experiment_id": (r["experiment_id"] if has_exp else None),
             "symbol": r["symbol"],
             "strategy": None,

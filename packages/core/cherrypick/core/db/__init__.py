@@ -74,6 +74,33 @@ def columns(conn: sqlite3.Connection, table: str) -> list[str]:
     return [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
 
 
+# Every spelling a variant's column has had, canonical first (root CLAUDE.md, "The suite's
+# vocabulary"). A ledger's column moves to `arm` in a window of its own, so a reader outside the
+# module cannot know which side of that window the file it opened is on.
+ARM_COLUMNS: tuple[str, ...] = ("arm", "risk_profile", "book", "profile")
+
+
+def arm_column(conn: sqlite3.Connection, table: str) -> str:
+    """The name `table`'s arm column goes by in THIS file: the first of `ARM_COLUMNS` present.
+
+    For readers outside the module that owns the ledger, which have to read it on either side of
+    its rename. Callers alias it at the SELECT (``f"{col} AS arm"``) and read `arm` from then on.
+    Raises when there is none -- a reader that cannot find its tag column must not guess one, and
+    the failure the arm migration taught (a reader asking for a column that moved, its error
+    swallowed into an empty payload) is exactly what returning a default would reproduce. It raises
+    `sqlite3.OperationalError`, the error the query itself would have raised on a missing column or
+    table, so every reader's existing ``except sqlite3.Error`` (an uninitialised ledger, a module
+    that has never run) keeps meaning what it meant.
+    """
+    have = columns(conn, table)
+    for name in ARM_COLUMNS:
+        if name in have:
+            return name
+    raise sqlite3.OperationalError(
+        f"{table}: no arm column (looked for {', '.join(ARM_COLUMNS)}; has {have})"
+    )
+
+
 def rename_column(conn: sqlite3.Connection, table: str, old: str, new: str) -> bool:
     """`ALTER TABLE <table> RENAME COLUMN <old> TO <new>`, idempotently. True when it renamed.
 

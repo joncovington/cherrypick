@@ -8,7 +8,7 @@ import type {
   TradingMode,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { readJson, str, withReadOnlyDb } from "./db.js";
+import { armColumnOf, readJson, str, withReadOnlyDb } from "./db.js";
 import { adviceDeclOf, advisedTagStatus, type AdviceDecl } from "./adviceDecl.js";
 import { readExperimentIndex, resolveAdvisedTag, type ExperimentRef } from "./experimentIndex.js";
 
@@ -96,8 +96,9 @@ interface LedgerRow {
   n: number;
 }
 
-function ledgerSpans(dbPath: string, table: string, column: string): Map<string, LedgerRow> {
+function ledgerSpans(dbPath: string, table: string): Map<string, LedgerRow> {
   return withReadOnlyDb<Map<string, LedgerRow>>(dbPath, new Map(), (db) => {
+    const column = armColumnOf(db, table);
     const out = new Map<string, LedgerRow>();
     for (const r of db
       .prepare<[], Record<string, unknown>>(
@@ -166,8 +167,9 @@ function removedEntries(seen: Map<string, LedgerRow>, known: Set<string>): Exper
  * held 2079 unstamped rows beside 421 stamped with one experiment -- is history the guide lists
  * as such rather than handing every row to the one experiment that happened to be stamped.
  */
-function ledgerStamps(dbPath: string, table: string, column: string): Map<string, string[]> {
+function ledgerStamps(dbPath: string, table: string): Map<string, string[]> {
   return withReadOnlyDb<Map<string, string[]>>(dbPath, new Map(), (db) => {
+    const column = armColumnOf(db, table);
     const cols = new Set(db.prepare<[], { name: string }>(`PRAGMA table_info(${table})`).all().map((c) => c.name));
     const out = new Map<string, string[]>();
     if (!cols.has("experiment_id")) return out;
@@ -284,7 +286,7 @@ export function readFliesArmGuide(config: ConsoleConfig, mode: TradingMode): Exp
   const armsBlock = (doc["arms"] ?? {}) as Record<string, unknown>;
   const defaults = (doc["defaults"] ?? {}) as Record<string, unknown>;
   const dbPath = path.join(config.paths.fliesDir, mode === "live" ? "live_trades.db" : "paper_trades.db");
-  const seen = ledgerSpans(dbPath, "fly_positions", "arm");
+  const seen = ledgerSpans(dbPath, "fly_positions");
 
   const blocks = Object.entries(armsBlock).filter(
     ([n, v]) => !n.startsWith("_") && typeof v === "object" && v !== null,
@@ -325,7 +327,7 @@ export function readFliesArmGuide(config: ConsoleConfig, mode: TradingMode): Exp
     adviceDeclOf(doc, "base_arm"),
     "arm",
     readExperimentIndex(config, "flies"),
-    ledgerStamps(dbPath, "fly_positions", "arm"),
+    ledgerStamps(dbPath, "fly_positions"),
   );
   return {
     ...base,
@@ -362,7 +364,7 @@ export function readMeicProfileGuide(config: ConsoleConfig, mode: TradingMode): 
   // the base values come from the module's own config and the majority rule does most of the work.
   const moduleConfig = readJson(path.join(config.paths.cherrypick, "config", "meic.json")) ?? {};
   const dbPath = path.join(config.paths.meicDir, mode === "live" ? "meic_trades.db" : "paper_trades.db");
-  const seen = ledgerSpans(dbPath, "ic_trades", "risk_profile");
+  const seen = ledgerSpans(dbPath, "ic_trades");
 
   const blocks = Object.entries(profiles).filter(
     ([n, v]) => !n.startsWith("_") && typeof v === "object" && v !== null,
@@ -394,7 +396,7 @@ export function readMeicProfileGuide(config: ConsoleConfig, mode: TradingMode): 
     adviceDeclOf(moduleConfig, "base_profile"),
     "profile",
     readExperimentIndex(config, "meic"),
-    ledgerStamps(dbPath, "ic_trades", "risk_profile"),
+    ledgerStamps(dbPath, "ic_trades"),
   );
   return {
     ...base,

@@ -184,6 +184,32 @@ function fileStamp(p: string): string {
 const columnCache = new Map<string, { stamp: string; columns: Set<string> }>();
 
 /**
+ * Every spelling a variant's column has had, canonical first — core.db.ARM_COLUMNS. A module's
+ * ledger renames its column to `arm` in a window of its own (bwb/calendars/curve/pmcc on
+ * 2026-09-23; meic and earnings each later), so a reader cannot know which side of that window the
+ * file it opened is on, and a live ledger can sit on the other side from its paper twin.
+ */
+export const ARM_COLUMNS = ["arm", "risk_profile", "book", "profile"] as const;
+
+/**
+ * The name `table`'s arm column goes by in THIS file. Callers alias it at the SELECT
+ * (`${col} AS arm`). Throws when there is none: `readOnlyDb` then records a failure, which
+ * `/api/health` shows — where returning a guess would reproduce the 2026-09-23 defect, a reader
+ * asking for a column that moved and its error swallowed into an empty-but-200 payload.
+ */
+export function armColumnOf(db: Database.Database, table: string): string {
+  const found = findArmColumn(db, table);
+  if (found === null) throw new Error(`${table}: no arm column (looked for ${ARM_COLUMNS.join(", ")})`);
+  return found;
+}
+
+/** `armColumnOf` for a reader that already treats an untagged ledger as a legitimate state. */
+export function findArmColumn(db: Database.Database, table: string): string | null {
+  for (const name of ARM_COLUMNS) if (hasColumn(db, table, name)) return name;
+  return null;
+}
+
+/**
  * Whether a column exists, for stores whose schema has moved over time — an
  * older DB (or the practice store) can be missing a column the current one has.
  *

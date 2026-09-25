@@ -90,6 +90,7 @@ def _save_state(state: dict) -> None:
     os.replace(tmp, _STATE)
 
 
+from cherrypick.core import db as _db  # noqa: E402
 from cherrypick.core.db import connect_ro as _connect_ro  # noqa: E402 — shared read-only opener
 
 
@@ -121,8 +122,9 @@ def _meic_seed(conn) -> dict:
 
 
 def _meic_new_entries(conn, last_entry_id: int) -> list:
+    arm = _db.arm_column(conn, "ic_trades")
     return conn.execute(
-        "SELECT id, symbol, risk_profile, put_strike, call_strike, wing_width, net_credit, quantity, "
+        f"SELECT id, symbol, {arm} AS arm, put_strike, call_strike, wing_width, net_credit, quantity, "
         "entry_time FROM ic_trades WHERE id > ? AND status NOT IN ('pending', 'cancelled', 'partial_entry') "
         "ORDER BY id",
         (last_entry_id,),
@@ -130,16 +132,18 @@ def _meic_new_entries(conn, last_entry_id: int) -> list:
 
 
 def _meic_new_exits(conn, notified_ids: set) -> list:
+    arm = _db.arm_column(conn, "ic_trades")
     rows = conn.execute(
-        "SELECT id, symbol, risk_profile, exit_reason, pnl, fees, entry_time, exit_time FROM ic_trades "
+        f"SELECT id, symbol, {arm} AS arm, exit_reason, pnl, fees, entry_time, exit_time FROM ic_trades "
         "WHERE exit_time IS NOT NULL"
     ).fetchall()
     return [r for r in rows if r["id"] not in notified_ids]
 
 
 def _meic_new_stops(conn) -> list:
+    arm = _db.arm_column(conn, "ic_trades")
     return conn.execute(
-        "SELECT id, symbol, risk_profile, put_strike, call_strike, put_stop_cost, call_stop_cost "
+        f"SELECT id, symbol, {arm} AS arm, put_strike, call_strike, put_stop_cost, call_stop_cost "
         "FROM ic_trades WHERE put_stop_cost IS NOT NULL OR call_stop_cost IS NOT NULL ORDER BY id"
     ).fetchall()
 
@@ -182,12 +186,16 @@ def _digest_window_open(now: float) -> bool:
 
 
 def _arm(r) -> str:
-    """The arm a calendars/pmcc/curve/bwb row belongs to. The column was `book` until the
-    2026-09-23 rename and is `arm` after it; a pre-migration backup still says `book`, so read both.
+    """The arm a row belongs to, under any name its ledger has used (`core.db.ARM_COLUMNS`):
+    calendars/pmcc/curve/bwb said `book` until 2026-09-23, meic says `risk_profile` until its own
+    window. The meic selects alias to `arm` already; this is the net under a row that did not.
     Reading only `book` raised on the first post-rename event, which aborted the whole pass before
     its state was saved -- and every later pass then re-sent every flies event of the day."""
     keys = r.keys()
-    return r["arm"] if "arm" in keys else r["book"]
+    for name in _db.ARM_COLUMNS:
+        if name in keys:
+            return r[name]
+    raise KeyError(f"row has no arm column (looked for {', '.join(_db.ARM_COLUMNS)})")
 
 
 def _embed(color: int, title: str, details: str, footer: str | None = None) -> dict:
@@ -223,7 +231,7 @@ def _embed_meic_entry(r) -> dict:
     )
     if entered:
         details += f" · entered {entered}"
-    return _embed(COLOR_ENTRY, f"OPEN · {r['symbol']} iron condor", details, footer=r["risk_profile"])
+    return _embed(COLOR_ENTRY, f"OPEN · {r['symbol']} iron condor", details, footer=_arm(r))
 
 
 def _embed_meic_exit(r) -> dict:
@@ -233,7 +241,7 @@ def _embed_meic_exit(r) -> dict:
     entered, exited = _hhmm_et(r["entry_time"]), _hhmm_et(r["exit_time"])
     if entered or exited:
         details += f" · {entered or '?'} → {exited or '?'}"
-    return _embed(COLOR_EXIT, f"CLOSE · {r['symbol']} iron condor", details, footer=r["risk_profile"])
+    return _embed(COLOR_EXIT, f"CLOSE · {r['symbol']} iron condor", details, footer=_arm(r))
 
 
 def _embed_meic_stop(r, wing: str) -> dict:
@@ -247,7 +255,7 @@ def _embed_meic_stop(r, wing: str) -> dict:
         COLOR_STOP,
         f"STOP · {r['symbol']} {label} wing",
         f"{strike_str} stopped @ {cost_str}",
-        footer=r["risk_profile"],
+        footer=_arm(r),
     )
 
 
@@ -261,7 +269,7 @@ def _fmt_meic_stop(r, wing: str) -> str:
     cost_str = f"${cost:.2f}" if cost is not None else "n/a"
     return (
         f"\U0001f6d1 MEIC paper STOP — {r['symbol']} {label} wing {strike_str} "
-        f"stopped @ {cost_str} [{r['risk_profile']}]"
+        f"stopped @ {cost_str} [{_arm(r)}]"
     )
 
 
@@ -269,7 +277,7 @@ def _fmt_meic_entry(r) -> str:
     return (
         f"\U0001f7e2 MEIC paper ENTRY — {r['symbol']} "
         f"{r['put_strike']:.0f}P/{r['call_strike']:.0f}C w{r['wing_width']:.0f} "
-        f"x{r['quantity']} credit ${r['net_credit']:.2f} [{r['risk_profile']}]"
+        f"x{r['quantity']} credit ${r['net_credit']:.2f} [{_arm(r)}]"
     )
 
 
@@ -277,23 +285,23 @@ def _fmt_meic_exit(r) -> str:
     pnl = r["pnl"]
     pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
     return (
-        f"\U0001f534 MEIC paper EXIT — {r['symbol']} [{r['risk_profile']}] "
+        f"\U0001f534 MEIC paper EXIT — {r['symbol']} [{_arm(r)}] "
         f"{r['exit_reason'] or 'closed'}, P&L {pnl_str}"
     )
 
 
-def _is_summary_profile(risk_profile: str | None, prefixes: tuple[str, ...]) -> bool:
-    return bool(prefixes) and str(risk_profile or "").startswith(prefixes)
+def _is_summary_profile(arm: str | None, prefixes: tuple[str, ...]) -> bool:
+    return bool(prefixes) and str(arm or "").startswith(prefixes)
 
 
-def _short_arm_label(risk_profile: str) -> str:
+def _short_arm_label(arm: str) -> str:
     """The digest's compact per-entry tag for a study arm.
 
     The width-study special cases ('width-5' -> 'w5', 'width-adaptive' -> 'adpt') came out when that
     study was retired 2026-08-05; the current arms (`gex-open`/`gex-blocked`) are short enough to
     render as-is. Kept as the seam rather than inlined at the call site, so the next arm family with
     unwieldy names has one obvious place to add its abbreviation."""
-    return risk_profile or "?"
+    return arm or "?"
 
 
 def _money(x: float) -> str:
@@ -303,7 +311,8 @@ def _money(x: float) -> str:
 def _meic_day_totals(conn, symbol: str, day: str, prefixes: tuple[str, ...]) -> tuple[int, float]:
     """Count + net (pnl - fees) of every study-profile trade CLOSED today for one symbol — the
     digest's running day total, independent of what this particular flush window caught."""
-    where = " OR ".join(["risk_profile LIKE ?"] * len(prefixes))
+    arm = _db.arm_column(conn, "ic_trades")
+    where = " OR ".join([f"{arm} LIKE ?"] * len(prefixes))
     params = [symbol, day] + [f"{p}%" for p in prefixes]
     row = conn.execute(
         f"SELECT COUNT(*), COALESCE(SUM(pnl - fees), 0) FROM ic_trades "
@@ -374,8 +383,8 @@ def _meic_process(
 
     entries = _meic_new_entries(conn, st["last_entry_id"])
     for r in entries:
-        if _is_summary_profile(r["risk_profile"], summary_prefixes):
-            pending.setdefault(r["symbol"], {"entries": [], "exits": []})["entries"].append(r["risk_profile"])
+        if _is_summary_profile(_arm(r), summary_prefixes):
+            pending.setdefault(r["symbol"], {"entries": [], "exits": []})["entries"].append(_arm(r))
         else:
             notifier.notify(
                 "INFO",
@@ -404,7 +413,7 @@ def _meic_process(
                 key = f"{r['id']}:{wing}"
                 if key in stopped:
                     continue
-                if not _is_summary_profile(r["risk_profile"], summary_prefixes):
+                if not _is_summary_profile(_arm(r), summary_prefixes):
                     notifier.notify(
                         "INFO",
                         f"trade.{name}.stop.{key}",
@@ -419,7 +428,7 @@ def _meic_process(
     notified = set(st.get("notified_exit_ids", []))
     exits = _meic_new_exits(conn, notified)
     for r in exits:
-        if _is_summary_profile(r["risk_profile"], summary_prefixes):
+        if _is_summary_profile(_arm(r), summary_prefixes):
             net = (r["pnl"] or 0.0) - (r["fees"] or 0.0)
             pending.setdefault(r["symbol"], {"entries": [], "exits": []})["exits"].append(net)
         else:
@@ -1413,7 +1422,22 @@ def _process_isolated(process_fn, conn, st: dict, notifier, name: str, **kwargs)
     return out
 
 
-def run(cfg: dict | None = None) -> dict:
+class _DryRunNotifier:
+    """Formats, records, sends nothing. What `run(dry_run=True)` hands every module in place of the
+    real notifier, so a pass can be rehearsed against a ledger -- a copy after a schema change, say --
+    with every formatter exercised and no message leaving the machine."""
+
+    def __init__(self):
+        self.sent: list[dict] = []
+
+    def notify(self, level: str, key: str, title: str, message: str, embed: dict | None = None):
+        self.sent.append({"key": key, "title": title})
+
+
+def run(cfg: dict | None = None, *, dry_run: bool = False) -> dict:
+    """One notification pass. `dry_run` runs every module's formatters against the current state and
+    reports what WOULD be sent, per module, without sending or saving anything -- the state is a
+    copy, so the next real pass behaves exactly as if this one never ran."""
     if not _acquire_lock():
         # Another invocation (the 2-min task vs the watchdog tick) is mid-run; racing it
         # would replay its already-notified ids. Skip — the next tick covers us.
@@ -1422,10 +1446,11 @@ def run(cfg: dict | None = None) -> dict:
         cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
         notify_cfg = cfg.get("notify", {})
         channels = notify_cfg.get("trade_channels", ["log", "discord"])
-        notifier = Notifier({**notify_cfg, "channels": channels})
+        recorder = _DryRunNotifier() if dry_run else None
+        notifier = recorder if recorder is not None else Notifier({**notify_cfg, "channels": channels})
         summary_cfg = notify_cfg.get("trade_summary", {})
         # mode "summary" routes EVERY trade to the digest regardless of profile; the empty prefix
-        # matches every risk_profile (str.startswith("") is always True, and the day-totals query's
+        # matches every arm (str.startswith("") is always True, and the day-totals query's
         # LIKE '%' matches every row). "per-trade" (the default) keeps the prefix routing.
         if summary_cfg.get("mode", "per-trade") == "summary":
             summary_prefixes: tuple[str, ...] = ("",)
@@ -1433,7 +1458,7 @@ def run(cfg: dict | None = None) -> dict:
             summary_prefixes = tuple(summary_cfg.get("profile_prefixes", []))
         summary_interval_minutes = summary_cfg.get("interval_minutes", 15)
 
-        state = _load_state()
+        state = json.loads(json.dumps(_load_state())) if dry_run else _load_state()
         summary: dict[str, Any] = {}
 
         for name, mcfg in cfgmod.enabled_modules(cfg).items():
@@ -1484,7 +1509,9 @@ def run(cfg: dict | None = None) -> dict:
                 continue
             seed_fn, process_fn = adapter
             live_channels = sorted(set(channels) | {"desktop"})
-            live_notifier = _LiveNotifier(Notifier({**notify_cfg, "channels": live_channels}))
+            live_notifier = _LiveNotifier(
+                recorder if recorder is not None else Notifier({**notify_cfg, "channels": live_channels})
+            )
             key = f"{name}:live"
             conn = _connect_ro(db_path)
             try:
@@ -1501,6 +1528,8 @@ def run(cfg: dict | None = None) -> dict:
             finally:
                 conn.close()
 
+        if recorder is not None:
+            return {"ok": True, "dry_run": True, "modules": summary, "would_send": recorder.sent}
         _save_state(state)
         return {"ok": True, "modules": summary}
     finally:

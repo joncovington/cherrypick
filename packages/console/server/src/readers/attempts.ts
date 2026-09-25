@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { withReadOnlyDb, num, str, hasColumn } from "./db.js";
+import { withReadOnlyDb, num, str, hasColumn, armColumnOf } from "./db.js";
 
 /**
  * The entry-attempts ledger — one row per evaluated entry opportunity per arm.
@@ -159,7 +159,6 @@ interface TableSpec {
   file: (mode: TradingMode) => string;
   dir: (config: ConsoleConfig) => string;
   table: string;
-  armColumn: string;
   centerColumn: string;
   spotColumn: string;
   /** Columns only some ledgers keep. Absent ones read as null rather than failing the query. */
@@ -181,7 +180,6 @@ const SPECS: Record<AttemptsModule, TableSpec> = {
     file: (mode) => (mode === "live" ? "meic_trades.db" : "paper_trades.db"),
     dir: (config) => config.paths.meicDir,
     table: "entry_attempts",
-    armColumn: "risk_profile",
     // MEIC has no single "centre" — the profit zone is the short PAIR — so the
     // put short stands in for one on the timeline, and the pair is available in
     // the row itself for anything that needs both.
@@ -194,7 +192,6 @@ const SPECS: Record<AttemptsModule, TableSpec> = {
     file: (mode) => (mode === "live" ? "live_trades.db" : "paper_trades.db"),
     dir: (config) => config.paths.fliesDir,
     table: "fly_entry_attempts",
-    armColumn: "arm",
     centerColumn: "center",
     spotColumn: "spot",
     blockingStrikeColumn: "blocking_strike",
@@ -205,7 +202,6 @@ const SPECS: Record<AttemptsModule, TableSpec> = {
     file: () => "paper_trades.db",
     dir: (config) => config.paths.pmccDir,
     table: "pmcc_entry_attempts",
-    armColumn: "arm",
     // The SHORT strike is what this structure re-decides each week — the long is a stock
     // substitute held across cycles — so it is the strike worth putting on a timeline.
     centerColumn: "short_strike",
@@ -217,7 +213,6 @@ const SPECS: Record<AttemptsModule, TableSpec> = {
     file: () => "paper_trades.db",
     dir: (config) => config.paths.curveDir,
     table: "curve_entry_attempts",
-    armColumn: "arm",
     centerColumn: "short_strike",
     spotColumn: "spot",
     // curve keeps neither: no same-strike blocking rule, no entry cadence gate.
@@ -252,6 +247,9 @@ export function readEntryAttempts(
 
   return withReadOnlyDb<AttemptsPayload>(dbPath, empty, (db) => {
     if (!hasColumn(db, spec.table, "outcome")) return empty;
+    // Resolved per FILE, not per module: meic's ledger says `risk_profile` until its own window,
+    // and a live ledger can be on the other side of that window from its paper twin.
+    const armColumn = armColumnOf(db, spec.table);
 
     const dayRow = day
       ? { d: day }
@@ -261,7 +259,7 @@ export function readEntryAttempts(
 
     const rows = db
       .prepare<[string], Record<string, unknown>>(
-        `SELECT ts, trade_date, ${spec.armColumn} AS arm, symbol, outcome, block_detail,
+        `SELECT ts, trade_date, ${armColumn} AS arm, symbol, outcome, block_detail,
                 ${spec.centerColumn} AS center,
                 ${spec.blockingStrikeColumn ?? "NULL"} AS blocking_strike,
                 ${spec.cadenceColumn ?? "NULL"} AS seconds_until_cadence_clear,
@@ -349,7 +347,7 @@ export function readEntryAttempts(
     try {
       const lifetime = db
         .prepare<[], { arm: string; seen: number; filled: number }>(
-          `SELECT ${spec.armColumn} AS arm,
+          `SELECT ${armColumn} AS arm,
                   COUNT(DISTINCT trade_date) AS seen,
                   COUNT(DISTINCT CASE WHEN outcome = 'filled' THEN trade_date END) AS filled
              FROM ${spec.table} GROUP BY 1`,
@@ -371,12 +369,13 @@ export function readEntryAttempts(
     // rail and the arm scorecard cannot disagree.
     if (module === "meic") {
       try {
+        const icArm = armColumnOf(db, "ic_trades");
         const pairs = db
           .prepare<[string], { arm: string; resolved: number; doubles: number }>(
-            `SELECT risk_profile AS arm,
+            `SELECT ${icArm} AS arm,
                     COUNT(*) AS resolved,
                     SUM(CASE WHEN put_status = 'stopped' AND call_status = 'stopped' THEN 1 ELSE 0 END) AS doubles
-               FROM (SELECT t.ic_order_id, t.risk_profile,
+               FROM (SELECT t.ic_order_id, t.${icArm},
                             MAX(CASE WHEN l.side = 'put' THEN l.status END) AS put_status,
                             MAX(CASE WHEN l.side = 'call' THEN l.status END) AS call_status
                        FROM ic_trades t JOIN ic_spread_legs l ON l.ic_order_id = t.ic_order_id

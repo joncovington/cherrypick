@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { withReadOnlyDb, num, str } from "./db.js";
+import { withReadOnlyDb, num, str, armColumnOf } from "./db.js";
 
 /**
  * Which contracts each arm currently holds, and on which side — the data behind
@@ -101,15 +101,16 @@ export function readOccupancy(
         : db.prepare<[], { d: string }>("SELECT MAX(trade_date) AS d FROM ic_trades").get();
       const tradeDate = dayRow?.d ?? null;
       if (tradeDate === null) return empty;
+      const armColumn = armColumnOf(db, "ic_trades"); // `risk_profile` until meic's column moves
       const rows = db
         .prepare<[string], Record<string, unknown>>(
-          `SELECT risk_profile, put_strike, call_strike, wing_width
+          `SELECT ${armColumn} AS arm, put_strike, call_strike, wing_width
              FROM ic_trades WHERE trade_date = ? AND status = 'open'`,
         )
         .all(tradeDate);
       const legs: OccupancyLeg[] = [];
       for (const r of rows) {
-        const arm = str(r["risk_profile"]) ?? "?";
+        const arm = str(r["arm"]) ?? "?";
         const w = num(r["wing_width"]);
         const p = num(r["put_strike"]);
         const c = num(r["call_strike"]);

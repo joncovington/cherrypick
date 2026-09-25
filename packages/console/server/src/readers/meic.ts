@@ -2,7 +2,7 @@ import path from "node:path";
 import type { MeicDivergence, MeicPayload, MeicTradeRow, MeicSummaryRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import type { DatabaseHandle } from "./db.js";
-import { withReadOnlyDb, hasColumn, hasTable, num, str } from "./db.js";
+import { withReadOnlyDb, hasColumn, hasTable, num, str, armColumnOf, findArmColumn } from "./db.js";
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
 import { payoffAt, type Leg } from "../analytics/payoff.js";
@@ -73,7 +73,7 @@ function scopeSql(db: DatabaseHandle, scope: MeicScopeFilter): { and: string; pa
     params.push(scope.symbol);
   }
   if (scope.profile !== null) {
-    clauses.push("risk_profile = ?");
+    clauses.push(`${armColumnOf(db, "ic_trades")} = ?`);
     params.push(scope.profile);
   }
   return { and: clauses.length > 0 ? ` AND ${clauses.join(" AND ")}` : "", params };
@@ -281,8 +281,8 @@ export function readMeicScope(
         .map((r) => r.s),
       profiles: db
         .prepare<string[], { p: string }>(
-          `SELECT DISTINCT risk_profile AS p FROM ic_trades
-            WHERE risk_profile IS NOT NULL${and} ORDER BY risk_profile`,
+          `SELECT DISTINCT ${armColumnOf(db, "ic_trades")} AS p FROM ic_trades
+            WHERE ${armColumnOf(db, "ic_trades")} IS NOT NULL${and} ORDER BY p`,
         )
         .all(...params)
         .map((r) => r.p),
@@ -442,7 +442,9 @@ export function readMeicPerformance(
     regimeCoverage: [],
   };
   return withReadOnlyDb<MeicPerformance>(dbPath, empty, (db) => {
-    const hasProfile = hasColumn(db, "ic_trades", "risk_profile");
+    // `risk_profile` until meic's column moves; an old live ledger has neither, and reads untagged.
+    const armColumn = findArmColumn(db, "ic_trades");
+    const hasProfile = armColumn !== null;
     // Era narrows every figure on the page, including the cross-profile and
     // cross-arm comparisons — comparing a profile's book-era rows against
     // another's sample-era rows would not be a comparison at all.
@@ -460,7 +462,7 @@ export function readMeicPerformance(
       params.push(symbol);
     }
     if (profile !== null && hasProfile) {
-      clauses.push("risk_profile = ?");
+      clauses.push(`${armColumn} = ?`);
       params.push(profile);
     }
     const where = clauses.join(" AND ");
@@ -480,7 +482,7 @@ export function readMeicPerformance(
     // inside the SUM, and its comment describes this exact failure — "a number that looks like a
     // result". The guard was applied there and not here. Caught by server/test/meic-mirror.test.ts
     // on its first run, which is what that test exists for.
-    const profileClauses = [RESOLVED, "pnl IS NOT NULL", "risk_profile IS NOT NULL"];
+    const profileClauses = [RESOLVED, "pnl IS NOT NULL", `${armColumn ?? "arm"} IS NOT NULL`];
     const profileParams: string[] = [];
     if (eraOn) {
       profileClauses.push("era = ?");
@@ -494,13 +496,13 @@ export function readMeicPerformance(
       ? (() => {
           const rows = db
             .prepare<string[], Record<string, unknown>>(
-              `SELECT risk_profile, trade_date, pnl, fees FROM ic_trades
-                WHERE ${profileClauses.join(" AND ")} ORDER BY risk_profile, trade_date, entry_time`,
+              `SELECT ${armColumn} AS arm, trade_date, pnl, fees FROM ic_trades
+                WHERE ${profileClauses.join(" AND ")} ORDER BY arm, trade_date, entry_time`,
             )
             .all(...profileParams);
           const groups = new Map<string, Array<Record<string, unknown>>>();
           for (const r of rows) {
-            const k = String(r["risk_profile"]);
+            const k = String(r["arm"]);
             let list = groups.get(k);
             if (list === undefined) {
               list = [];
@@ -605,15 +607,15 @@ export function readMeicPerformance(
       ? (() => {
           const rows = db
             .prepare<string[], Record<string, unknown>>(
-              `SELECT risk_profile, trade_date, COALESCE(SUM(pnl - COALESCE(fees, 0)), 0) AS net FROM ic_trades
-                WHERE ${RESOLVED} AND risk_profile IS NOT NULL${eraOn ? " AND era = ?" : ""}
-                GROUP BY risk_profile, trade_date ORDER BY risk_profile, trade_date`,
+              `SELECT ${armColumn} AS arm, trade_date, COALESCE(SUM(pnl - COALESCE(fees, 0)), 0) AS net FROM ic_trades
+                WHERE ${RESOLVED} AND ${armColumn} IS NOT NULL${eraOn ? " AND era = ?" : ""}
+                GROUP BY arm, trade_date ORDER BY arm, trade_date`,
             )
             .all(...(eraOn ? [activeEra] : []));
           const byArm = new Map<string, Array<{ date: string; cumulative: number }>>();
           const running = new Map<string, number>();
           for (const r of rows) {
-            const arm = String(r["risk_profile"]);
+            const arm = String(r["arm"]);
             const next = (running.get(arm) ?? 0) + Number(r["net"]);
             running.set(arm, next);
             let list = byArm.get(arm);
@@ -907,12 +909,12 @@ export function readMeicAnalytics(
     // reader already carries a note about.
     const profileRows = db
       .prepare<string[], Record<string, unknown>>(
-        `SELECT risk_profile AS profile, ${SETTLED} AS trades,
+        `SELECT ${armColumnOf(db, "ic_trades")} AS profile, ${SETTLED} AS trades,
                 ${NET} AS net, ${WINS} AS wins, ${LOSSES} AS losses,
                 COALESCE(SUM(CASE WHEN pnl - COALESCE(fees, 0) > 0 THEN pnl - COALESCE(fees, 0) ELSE 0 END), 0) AS won,
                 COALESCE(SUM(CASE WHEN pnl - COALESCE(fees, 0) < 0 THEN COALESCE(fees, 0) - pnl ELSE 0 END), 0) AS lost
            FROM ic_trades WHERE ${RESOLVED} AND trade_date = ?${sc.and}
-          GROUP BY risk_profile HAVING trades > 0 ORDER BY net DESC`,
+          GROUP BY profile HAVING trades > 0 ORDER BY net DESC`,
       )
       .all(today, ...sc.params);
     const byProfile = profileRows.map((r) => {
@@ -935,11 +937,11 @@ export function readMeicAnalytics(
       .prepare<string[], Record<string, unknown>>(
         // Restricted to settled rows so gross, fees and net all describe the same trades — a drag
         // percentage mixing an unsettled row's fees into a settled row's credit means nothing.
-        `SELECT risk_profile AS profile,
+        `SELECT ${armColumnOf(db, "ic_trades")} AS profile,
                 COALESCE(SUM(net_credit * COALESCE(quantity, 1) * 100), 0) AS gross,
                 COALESCE(SUM(fees), 0) AS fees, ${NET} AS net
            FROM ic_trades WHERE ${RESOLVED} AND pnl IS NOT NULL AND trade_date = ?${sc.and}
-          GROUP BY risk_profile ORDER BY risk_profile`,
+          GROUP BY profile ORDER BY profile`,
       )
       .all(today, ...sc.params)
       .map((r) => {
@@ -1137,7 +1139,7 @@ export function readMeicForest(
 
     const rows = db
       .prepare<string[], Record<string, unknown>>(
-        `SELECT ic_order_id, risk_profile, symbol, put_strike, call_strike, wing_width,
+        `SELECT ic_order_id, ${armColumnOf(db, "ic_trades")} AS arm, symbol, put_strike, call_strike, wing_width,
                 net_credit, quantity, status, underlying_price_entry,
                 pnl, COALESCE(fees, 0) AS fees
            FROM ic_trades
@@ -1155,7 +1157,7 @@ export function readMeicForest(
       if (source.length === 0) return [];
       const byProfile = new Map<string, Array<Record<string, unknown>>>();
       for (const r of source) {
-        const profile = str(r["risk_profile"]) ?? "?";
+        const profile = str(r["arm"]) ?? "?";
         const list = byProfile.get(profile) ?? [];
         list.push(r);
         byProfile.set(profile, list);
@@ -1221,7 +1223,7 @@ export function readMeicForest(
     for (const r of rows) {
       const status = str(r["status"]);
       if (status === "open") continue;
-      const profile = str(r["risk_profile"]) ?? "?";
+      const profile = str(r["arm"]) ?? "?";
       const w = num(r["wing_width"]) ?? 0;
       const p = num(r["put_strike"]);
       const c = num(r["call_strike"]);
@@ -1281,14 +1283,15 @@ export function readMeicDivergence(config: ConsoleConfig, mode: TradingMode, day
 
     const rows = db
       .prepare<[string], Record<string, unknown>>(
-        "SELECT ts, symbol, risk_profile, outcome FROM entry_attempts WHERE trade_date = ? ORDER BY ts",
+        `SELECT ts, symbol, ${armColumnOf(db, "entry_attempts")} AS arm, outcome FROM entry_attempts
+          WHERE trade_date = ? ORDER BY ts`,
       )
       .all(date);
 
     const ticks = new Map<string, Record<string, string>>();
     const outcomeCounts = new Map<string, number>();
     for (const r of rows) {
-      const profile = str(r["risk_profile"]);
+      const profile = str(r["arm"]);
       const outcome = str(r["outcome"]);
       if (profile === null || outcome === null) continue;
       outcomeCounts.set(outcome, (outcomeCounts.get(outcome) ?? 0) + 1);

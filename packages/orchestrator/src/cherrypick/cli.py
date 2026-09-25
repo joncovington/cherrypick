@@ -1086,8 +1086,8 @@ def cmd_positions(cfg, args) -> None:
         sys.exit(3)
 
 
-def cmd_notify_trades(cfg) -> None:
-    _emit(trade_notifier.run(cfg))
+def cmd_notify_trades(cfg, dry_run: bool = False) -> None:
+    _emit(trade_notifier.run(cfg, dry_run=dry_run))
 
 
 def cmd_notify_desk(cfg) -> None:
@@ -1352,7 +1352,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="For archive: report what would be archived without writing or deleting",
+        help=(
+            "For archive: report what would be archived without writing or deleting. "
+            "For notify-trades: format every pending event and report it, sending and saving nothing"
+        ),
     )
     parser.add_argument(
         "--stop",
@@ -1404,7 +1407,7 @@ def main() -> None:
         "account": lambda: cmd_account(cfg, args),
         "migrate-home": lambda: cmd_migrate_home(cfg, args.apply),
         "calibrate": lambda: cmd_calibrate(cfg),
-        "notify-trades": lambda: cmd_notify_trades(cfg),
+        "notify-trades": lambda: cmd_notify_trades(cfg, dry_run=args.dry_run),
         "notify-desk": lambda: cmd_notify_desk(cfg),
         "notify-status": lambda: cmd_notify_status(cfg, force=args.force, close=args.close),
         "run-earnings-entry": lambda: _run_earnings(cfg, "entry"),

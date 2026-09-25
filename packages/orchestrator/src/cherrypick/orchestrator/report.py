@@ -7,7 +7,7 @@ first slice of the reporting/alerting hub (later: the Part-14 status dashboard a
 
 Three paper-DB schemas are wired, dispatched by `paper.trade_schema` (same registry idea as
 trade_notifier), each yielding a normalized closed-trade record `{profile, symbol, strategy, net_pnl}`:
-  - "meic_ic"  : MEICAgent's `ic_trades`; closed = exit_time set; net = pnl - fees; tag = risk_profile.
+  - "meic_ic"  : MEICAgent's `ic_trades`; closed = exit_time set; net = pnl - fees; tag = `risk_profile`.
   - "earnings" : EarningsAgent's `trades`; closed = closed_at set; net = pnl - entry_cost - exit_cost;
                  tag = profile.
   - "fly_book" : cherrypick-flies' `fly_positions`; closed = status 'settled'; net = gross_pnl - fees;

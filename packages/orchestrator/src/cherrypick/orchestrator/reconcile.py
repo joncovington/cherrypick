@@ -19,6 +19,8 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
+from cherrypick.core import db as _db
+
 from . import config as cfgmod
 from . import doctor, report
 from .util import first_json, mask_account
@@ -32,8 +34,9 @@ _VERDICT_RANK = {FLAT: 0, UNKNOWN: 1, DRIFT: 2}
 
 # --------------------------------------------------------------------------- paper-DB open positions
 def _meic_open(conn) -> list[dict]:
-    rows = conn.execute("SELECT symbol, risk_profile FROM ic_trades WHERE exit_time IS NULL").fetchall()
-    return [{"symbol": r["symbol"], "arm": r["risk_profile"]} for r in rows]
+    arm = _db.arm_column(conn, "ic_trades")  # `risk_profile` until meic's column moves
+    rows = conn.execute(f"SELECT symbol, {arm} AS arm FROM ic_trades WHERE exit_time IS NULL").fetchall()
+    return [{"symbol": r["symbol"], "arm": r["arm"]} for r in rows]
 
 
 def _earnings_open(conn) -> list[dict]:

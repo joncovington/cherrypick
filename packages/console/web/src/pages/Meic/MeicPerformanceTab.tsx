@@ -127,7 +127,7 @@ export function MeicPerformanceTab({
               {isLoading ? (
                 <tr><td colSpan={10}><span className="skeleton skeleton-text" style={{ width: "60%" }} /></td></tr>
               ) : data?.profiles.length === 0 ? (
-                <tr><td colSpan={10} className="muted">no profile-tagged trades (live DB has no risk_profile column)</td></tr>
+                <tr><td colSpan={10} className="muted">no arm-tagged trades (this ledger has no arm column)</td></tr>
               ) : (
                 data?.profiles.map((p) => (
                   <tr key={p.profile}>
