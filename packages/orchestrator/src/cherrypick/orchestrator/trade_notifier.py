@@ -379,7 +379,7 @@ def _meic_process(
     now: float | None = None,
 ) -> dict:
     now = time.time() if now is None else now
-    pending = st.setdefault("pending_summary", {})  # symbol -> {"entries": [profile,...], "exits": [net,...]}
+    pending = st.setdefault("pending_summary", {})  # symbol -> {"entries": [arm,...], "exits": [net,...]}
 
     entries = _meic_new_entries(conn, st["last_entry_id"])
     for r in entries:
@@ -490,16 +490,18 @@ def _earnings_seed(conn) -> dict:
 
 
 def _earnings_new_entries(conn, notified_ids: set) -> list:
+    arm = _db.arm_column(conn, "trades")  # `profile` until earnings' column moves
     rows = conn.execute(
         "SELECT order_id, strategy, symbol, short_strike, long_call_strike, long_put_strike, "
-        "entry_credit, quantity, profile, opened_at FROM trades ORDER BY opened_at"
+        f"entry_credit, quantity, {arm} AS arm, opened_at FROM trades ORDER BY opened_at"
     ).fetchall()
     return [r for r in rows if r["order_id"] not in notified_ids]
 
 
 def _earnings_new_exits(conn, notified_ids: set) -> list:
+    arm = _db.arm_column(conn, "trades")
     rows = conn.execute(
-        "SELECT order_id, strategy, symbol, pnl, profile, opened_at, closed_at FROM trades "
+        f"SELECT order_id, strategy, symbol, pnl, {arm} AS arm, opened_at, closed_at FROM trades "
         "WHERE closed_at IS NOT NULL ORDER BY closed_at"
     ).fetchall()
     return [r for r in rows if r["order_id"] not in notified_ids]
@@ -524,7 +526,7 @@ def _fmt_earnings_entry(r) -> str:
     strike_str = f" {strikes}" if strikes else ""
     return (
         f"\U0001f7e2 Earnings paper ENTRY — {r['symbol']} {strat}{strike_str} "
-        f"x{r['quantity'] or 1} credit {credit_str} [{r['profile']}]"
+        f"x{r['quantity'] or 1} credit {credit_str} [{_arm(r)}]"
     )
 
 
@@ -532,7 +534,7 @@ def _fmt_earnings_exit(r) -> str:
     pnl = r["pnl"]
     pnl_str = f"${pnl:+.2f}" if pnl is not None else "n/a"
     strat = (r["strategy"] or "spread").replace("_", " ")
-    return f"\U0001f534 Earnings paper EXIT — {r['symbol']} {strat} [{r['profile']}], P&L {pnl_str}"
+    return f"\U0001f534 Earnings paper EXIT — {r['symbol']} {strat} [{_arm(r)}], P&L {pnl_str}"
 
 
 def _embed_earnings_entry(r) -> dict:
@@ -545,7 +547,7 @@ def _embed_earnings_entry(r) -> dict:
     entered = _hhmm_epoch(r["opened_at"])
     if entered:
         details += f" · entered {entered}"
-    return _embed(COLOR_ENTRY, f"OPEN · {r['symbol']} {strat}", details, footer=r["profile"])
+    return _embed(COLOR_ENTRY, f"OPEN · {r['symbol']} {strat}", details, footer=_arm(r))
 
 
 def _embed_earnings_exit(r) -> dict:
@@ -556,16 +558,17 @@ def _embed_earnings_exit(r) -> dict:
     entered, exited = _hhmm_epoch(r["opened_at"]), _hhmm_epoch(r["closed_at"])
     if entered or exited:
         details += f" · {entered or '?'} → {exited or '?'}"
-    return _embed(COLOR_EXIT, f"CLOSE · {r['symbol']} {strat}", details, footer=r["profile"])
+    return _embed(COLOR_EXIT, f"CLOSE · {r['symbol']} {strat}", details, footer=_arm(r))
 
 
 def _earnings_new_reviews(conn, notified_ids: set) -> list:
     """New per-symbol entry reviews (id watermark). Guarded — the table is absent on older DBs."""
     try:
+        arm = _db.arm_column(conn, "entry_reviews")
         rows = conn.execute(
             "SELECT id, scan_date, symbol, timing, price, volume, winrate, winrate_sample, "
             "iv_rv_ratio, term_structure, market_cap, expected_move, best_tier, selected, reason, "
-            "profile FROM entry_reviews ORDER BY id"
+            f"{arm} AS arm FROM entry_reviews ORDER BY id"
         ).fetchall()
     except sqlite3.Error:
         return []
@@ -604,7 +607,7 @@ def _fmt_earnings_review(r) -> str:
     icon = "\U0001f7e2" if r["selected"] else "⚪"  # green vs white circle
     decision = "chosen" if r["selected"] else "rejected"
     timing = f" ({r['timing']})" if r["timing"] else ""
-    head = f"{icon} Earnings review — {r['symbol']}{timing}: {decision} — {r['reason']} [{r['profile']}]"
+    head = f"{icon} Earnings review — {r['symbol']}{timing}: {decision} — {r['reason']} [{_arm(r)}]"
     return "\n".join([head, *_earnings_review_bullets(r)])
 
 
@@ -628,7 +631,7 @@ def _embed_earnings_review(r) -> dict:
         color,
         f"{verb} · {r['symbol']}{timing}",
         details or "no figures recorded",
-        footer=r["profile"],
+        footer=_arm(r),
     )
 
 

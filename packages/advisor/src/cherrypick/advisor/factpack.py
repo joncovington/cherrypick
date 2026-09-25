@@ -646,9 +646,12 @@ def _earnings(session: str) -> dict[str, Any]:
         )
         # Open positions with their most recent usable mark. Earnings is the one module that holds
         # overnight, so "what is on the book right now" is a question only it can answer.
+        # `profile` until earnings' column moves; aliased to `arm` like every other module's pack
+        # section (the alias the 2026-09-23 pass gave meic and the `book` modules, and missed here).
+        tr = _arm_col(conn, "trades")
         open_rows = _store.rows(
             conn,
-            "SELECT t.order_id, t.strategy, t.symbol, t.profile, t.entry_credit, t.capital_at_risk,"
+            f"SELECT t.order_id, t.strategy, t.symbol, t.{tr} AS arm, t.entry_credit, t.capital_at_risk,"
             " t.hold_days, t.max_unrealized_pnl, t.min_unrealized_pnl,"
             " (SELECT unrealized_pnl FROM position_marks m WHERE m.order_id = t.order_id"
             "   AND m.usable = 1 ORDER BY m.marked_at DESC LIMIT 1) last_mark,"
@@ -658,9 +661,9 @@ def _earnings(session: str) -> dict[str, Any]:
         )
         closed = _store.rows(
             conn,
-            "SELECT profile, strategy, COUNT(*) n, SUM(pnl) pnl, SUM(entry_cost + exit_cost) cost"
+            f"SELECT {tr} AS arm, strategy, COUNT(*) n, SUM(pnl) pnl, SUM(entry_cost + exit_cost) cost"
             " FROM trades WHERE closed_at IS NOT NULL"
-            " AND date(closed_at, 'unixepoch', 'localtime') = ? GROUP BY profile, strategy",
+            f" AND date(closed_at, 'unixepoch', 'localtime') = ? GROUP BY {tr}, strategy",
             (session,),
         )
         health = _store.rows(
@@ -704,7 +707,7 @@ def _earnings(session: str) -> dict[str, Any]:
                 "an advised row sharing entry_credit/capital with a control row under the same "
                 "stripped order_id is the PAIRED-TWIN DESIGN (identical fills, divergent "
                 "management), not double-tagging; only unpaired_advised > 0 is a defect. "
-                "management_events carry a `profile` stamp from 2026-09-01 (NULL before), so "
+                "management_events carry an arm stamp from 2026-09-01 (NULL before), so "
                 "whether an advised exit param fired is answerable from that table directly."
             ),
         }

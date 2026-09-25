@@ -40,8 +40,9 @@ def _meic_open(conn) -> list[dict]:
 
 
 def _earnings_open(conn) -> list[dict]:
-    rows = conn.execute("SELECT symbol, profile FROM trades WHERE closed_at IS NULL").fetchall()
-    return [{"symbol": r["symbol"], "arm": r["profile"]} for r in rows]
+    arm = _db.arm_column(conn, "trades")  # `profile` until earnings' column moves
+    rows = conn.execute(f"SELECT symbol, {arm} AS arm FROM trades WHERE closed_at IS NULL").fetchall()
+    return [{"symbol": r["symbol"], "arm": r["arm"]} for r in rows]
 
 
 def _flies_open(conn) -> list[dict]:

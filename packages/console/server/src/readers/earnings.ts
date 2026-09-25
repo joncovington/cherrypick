@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { EarningsPayload, EarningsTradeRow, EntryReviewRow, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { suiteEra, withReadOnlyDb, num, str } from "./db.js";
+import { suiteEra, withReadOnlyDb, num, str, armColumnOf } from "./db.js";
 import { pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { isoStamp, sessionDate } from "../services/report.js";
@@ -33,8 +33,9 @@ function readTrades(dbPath: string, mode: TradingMode, since: string | null): Ea
   return withReadOnlyDb<EarningsTradeRow[]>(dbPath, [], (db) =>
     db
       .prepare<[], Record<string, unknown>>(
+        // `profile` until earnings' column moves; resolved per file, the live ledger included.
         `SELECT order_id, symbol, strategy, expiration, entry_credit, pnl, quantity,
-                opened_at, closed_at, profile
+                opened_at, closed_at, ${armColumnOf(db, "trades")} AS arm
            FROM trades ORDER BY opened_at DESC`,
       )
       .all()
@@ -53,7 +54,7 @@ function readTrades(dbPath: string, mode: TradingMode, since: string | null): Ea
         // Epoch floats in this store, not strings — see isoStamp.
         openedAt: isoStamp(r["opened_at"]),
         closedAt: isoStamp(r["closed_at"]),
-        profile: str(r["profile"]),
+        profile: str(r["arm"]),
       })),
   );
 }

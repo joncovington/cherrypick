@@ -38,7 +38,7 @@ formula from `capital` alone.
   - "meic_ic"  : MEIC's `ic_trades`; closed = exit_time set; net = pnl - fees; tag = `risk_profile`.
                  Capital at risk is derived: (wing_width - net_credit) x multiplier x quantity.
   - "earnings" : earnings' `trades`; closed = closed_at set; net = pnl - entry_cost - exit_cost;
-                 tag = profile; capital = capital_at_risk stored at entry.
+                 tag = `profile`; capital = capital_at_risk stored at entry.
   - "fly_book" : flies' `fly_positions`; closed = status 'settled'; net = gross_pnl - fees;
                  tag = arm. P&L only -- the module's book-level floor and the price band it holds
                  over live in `fly_books` and are not summarisable as a per-trade number.
@@ -192,8 +192,9 @@ def _earnings_closed(conn, start: str | None = None, end: str | None = None) -> 
     # so a SQL bound would shift evening closes across the session boundary. The table is
     # small (one row per position); run() applies the tz-correct Python filter.
     exp_col, has_exp = _experiment_select(conn, "trades")
+    arm = core_db.arm_column(conn, "trades")  # `profile` until earnings' column moves
     rows = conn.execute(
-        f"SELECT symbol, profile, strategy, pnl, entry_cost, exit_cost, closed_at"
+        f"SELECT symbol, {arm} AS arm, strategy, pnl, entry_cost, exit_cost, closed_at"
         f"{slip_cols}{cap_col}{exp_col} FROM trades WHERE closed_at IS NOT NULL"
     ).fetchall()
 
@@ -204,7 +205,7 @@ def _earnings_closed(conn, start: str | None = None, end: str | None = None) -> 
 
     return [
         {
-            "arm": r["profile"] or EARNINGS_UNTAGGED,
+            "arm": r["arm"] or EARNINGS_UNTAGGED,
             "experiment_id": (r["experiment_id"] if has_exp else None),
             "symbol": r["symbol"],
             "strategy": r["strategy"],
@@ -569,12 +570,14 @@ def _earnings_open(conn) -> list[dict]:
     known max loss set at entry — the honest overnight-exposure number, since these have no realized
     P&L until they settle. `session` is the OPEN session (opened_at), so the digest for a day shows
     what that day put on, matching the earnings module's own 'Opened this session' EOD section."""
+    arm = core_db.arm_column(conn, "trades")
     rows = conn.execute(
-        "SELECT symbol, profile, strategy, capital_at_risk, opened_at FROM trades WHERE closed_at IS NULL"
+        f"SELECT symbol, {arm} AS arm, strategy, capital_at_risk, opened_at FROM trades"
+        " WHERE closed_at IS NULL"
     ).fetchall()
     return [
         {
-            "arm": r["profile"] or EARNINGS_UNTAGGED,
+            "arm": r["arm"] or EARNINGS_UNTAGGED,
             "symbol": r["symbol"],
             "strategy": r["strategy"],
             "capital": (r["capital_at_risk"] or 0.0),
