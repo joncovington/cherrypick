@@ -320,6 +320,12 @@ def test_an_expired_fly_pays_its_itm_strike_and_no_closing_stack(book):
     config = {"strategies": {}, "management": {}, "tastytrade_costs": {}}
     paper_loop.manage(config, at("13:00"), phase="manage", execute=True)
     assert _exit_cost(book) == pytest.approx(5.0)
+    # The settlement part of that exit_cost, recorded beside it: exit_cost stays the total.
+    conn = sqlite3.connect(book)
+    assert conn.execute("SELECT settlement_fees FROM trades WHERE order_id='T1'").fetchone()[
+        0
+    ] == pytest.approx(5.0)
+    conn.close()
 
 
 def test_the_settlement_fee_does_not_scale_with_contracts(book):
@@ -358,3 +364,4 @@ def test_a_calendars_live_back_month_still_pays_the_closing_stack(monkeypatch):
     )
     assert seen["legs"] == [occ(BACK, "C", 195), occ(BACK, "P", 185)]
     assert saved["exit_cost"] == pytest.approx(1.0)  # the back month's stack; the OTM front is free
+    assert saved["settlement_fees"] == 0  # settled worthless: recorded, and zero

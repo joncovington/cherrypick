@@ -165,7 +165,7 @@ CREATE TABLE trades (
     hold_days       INTEGER,
     max_unrealized_pnl REAL,
     min_unrealized_pnl REAL
-, close_attempts INTEGER NOT NULL DEFAULT 0, last_close_error TEXT, last_close_attempt_at REAL, entry_slippage REAL, exit_slippage REAL, advice_params TEXT, experiment_id TEXT);
+, close_attempts INTEGER NOT NULL DEFAULT 0, last_close_error TEXT, last_close_attempt_at REAL, entry_slippage REAL, exit_slippage REAL, advice_params TEXT, experiment_id TEXT, settlement_fees REAL);
 CREATE INDEX idx_loop_iterations_session ON loop_iterations(session_date, ran_at);
 CREATE INDEX idx_management_events_order ON management_events(order_id, occurred_at);
 CREATE INDEX idx_management_events_session ON management_events(session_date);

@@ -388,12 +388,11 @@ def close_position(trade: dict, snap: dict, reason: str, config: dict, now: date
         if traded
         else {"total_cost": 0.0, "slippage": 0.0}
     )
+    settlement_fee = settlement.settlement_fee(settled, snap["quotes"]) if settled else 0.0
     if settled:
         exit_costs = {
             **exit_costs,
-            "total_cost": round(
-                exit_costs["total_cost"] + settlement.settlement_fee(settled, snap["quotes"]), 2
-            ),
+            "total_cost": round(exit_costs["total_cost"] + settlement_fee, 2),
         }
     result = db_paper.cmd_save_close(
         _ns(
@@ -404,6 +403,8 @@ def close_position(trade: dict, snap: dict, reason: str, config: dict, now: date
                     "pnl": management.unrealized_pnl(trade, exit_debit),
                     "exit_cost": exit_costs["total_cost"],
                     "exit_slippage": exit_costs["slippage"],
+                    # The settlement part of exit_cost, recorded beside it (0 when nothing settled).
+                    "settlement_fees": round(settlement_fee, 2),
                     "exit_iv": harness._avg_sold_iv(legs, snap["quotes"]),
                     "exit_reason": reason,
                     "closed_at": now.timestamp(),
@@ -880,7 +881,7 @@ def cmd_settle_expired(args) -> dict:
             "strategy": trade["strategy"],
             "settled_as": reason,
             "exit_debit": round(debit, 2),
-            "gross_pnl": round(management.unrealized_pnl(trade, debit) * (trade.get("quantity") or 1), 2),
+            "gross_pnl": round(management.unrealized_pnl(trade, debit), 2),
         }
         if not args.apply:
             settled.append(row)

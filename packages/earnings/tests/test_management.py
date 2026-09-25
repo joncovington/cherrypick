@@ -386,6 +386,12 @@ def test_the_unrealized_mark_uses_the_same_arithmetic_as_the_realised_close():
     assert management.unrealized_pnl({"entry_credit": 5.0}, 3.5) == pytest.approx(150.0)
 
 
+def test_unrealized_pnl_counts_every_contract():
+    """Per share x 100 x quantity. The quantity was missing until 2026-09-25, so a two-contract
+    position would have been marked and closed at half its P&L."""
+    assert management.unrealized_pnl({"entry_credit": 5.0, "quantity": 2}, 3.5) == pytest.approx(300.0)
+
+
 # --------------------------------------------------------------------------- the expiry close
 def test_every_position_is_closed_at_1530_on_its_expiration_day():
     """Physically settled single names are traded out, never settled: from 15:30 on a leg's

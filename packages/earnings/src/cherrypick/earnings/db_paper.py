@@ -404,6 +404,12 @@ _MIGRATIONS = [
     # NULL on historical rows deliberately (never backfilled from order_id parsing): a NULL says
     # "recorded before the stamp existed", where a parsed guess would assert provenance it lacks.
     ("management_events", "arm", "ALTER TABLE management_events ADD COLUMN arm TEXT"),
+    # The part of `exit_cost` that is the exercise/assignment charge on legs that settled rather
+    # than traded out ($5 per ITM strike, `settlement.settlement_fee`), recorded beside it
+    # (2026-09-25) so the suite's trade tables can show trading fees, settlement and slippage as
+    # separate columns. `exit_cost` stays the total. 0 when every leg traded out; NULL where it was
+    # never recorded.
+    ("trades", "settlement_fees", "ALTER TABLE trades ADD COLUMN settlement_fees REAL"),
 ]
 
 # Backfills that run once, when their column is first added. Keyed by "table.column" so a fresh
@@ -636,14 +642,15 @@ def cmd_save_close(args) -> dict:
             hold_days = session_span(opened["opened_at"], closed_at)
         cur = conn.execute(
             "UPDATE trades SET exit_debit = ?, pnl = ?, closed_at = ?, exit_cost = ?, "
-            "exit_slippage = ?, exit_iv = ?, status = 'closed', exit_reason = ?, hold_days = ? "
-            "WHERE order_id = ?",
+            "exit_slippage = ?, settlement_fees = ?, exit_iv = ?, status = 'closed', exit_reason = ?, "
+            "hold_days = ? WHERE order_id = ?",
             (
                 spec.get("exit_debit"),
                 spec.get("pnl"),
                 closed_at,
                 spec.get("exit_cost"),
                 spec.get("exit_slippage"),
+                spec.get("settlement_fees"),
                 spec.get("exit_iv"),
                 spec.get("exit_reason"),
                 hold_days,

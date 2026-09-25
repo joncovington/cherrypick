@@ -83,7 +83,7 @@ def plan(conn: sqlite3.Connection, config: dict) -> dict:
         fee = settlement.settlement_fee([leg["symbol"] for leg in expired], quotes)
         itm_strikes += int(round(fee / 5.0))
         new = round((r["exit_cost"] or 0.0) - charged + fee, 2)
-        changes.append((r["order_id"], r["exit_cost"], new))
+        changes.append((r["order_id"], r["exit_cost"], new, round(fee, 2)))
     return {"rows": len(rows), "changes": changes, "skipped": skipped, "itm_strikes": itm_strikes}
 
 
@@ -117,8 +117,8 @@ def main() -> int:
     conn.row_factory = sqlite3.Row
     p = plan(conn, config)
     conn.close()
-    moved = [(oid, old, new) for oid, old, new in p["changes"] if abs((old or 0.0) - new) >= 0.005]
-    delta = round(sum(new - (old or 0.0) for _, old, new in p["changes"]), 2)
+    moved = [(oid, old, new) for oid, old, new, _ in p["changes"] if abs((old or 0.0) - new) >= 0.005]
+    delta = round(sum(new - (old or 0.0) for _, old, new, _ in p["changes"]), 2)
     print(f"{ledger.name}: {p['rows']} rows closed by settlement")
     print(
         f"  {len(moved)} exit_cost values move, net {delta:+,.2f};"
@@ -137,6 +137,13 @@ def main() -> int:
         conn.executemany(
             "UPDATE trades SET exit_cost = ? WHERE order_id = ?", [(new, oid) for oid, _, new in moved]
         )
+        # The settlement part of each re-costed exit_cost, recorded beside it (2026-09-25) when the
+        # ledger has the column -- the same fee, from the same computation, in the same transaction.
+        if any(c[1] == "settlement_fees" for c in conn.execute("PRAGMA table_info(trades)")):
+            conn.executemany(
+                "UPDATE trades SET settlement_fees = ? WHERE order_id = ?",
+                [(fee, oid) for oid, _, _, fee in p["changes"]],
+            )
     conn.close()
     marker.write_text(
         json.dumps(
