@@ -322,7 +322,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
 
   // Weekly double calendars. No `mode` here either, and for the same structural reason as PMCC's.
   app.get("/api/calendars", async () => readCalendars(config));
-  app.get("/api/calendars/weeks", async () => ({ rows: readCalendarsWeeks(config) }));
+  app.get("/api/calendars/weeks", async () => readCalendarsWeeks(config));
   app.get("/api/calendars/week", async (req) => {
     const week = (req.query as Record<string, unknown> | undefined)?.["week"];
     if (typeof week !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(week)) return { rows: [] };

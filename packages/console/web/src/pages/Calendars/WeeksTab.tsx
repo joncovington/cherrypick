@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { CalendarsPayload } from "@console/shared";
 import { useCalendarsWeek, useCalendarsWeeks } from "../../lib/api";
-import { DataCard, fmtMoney, fmtNum, fmtPct, PnlCell } from "../../components/DataTable";
+import { DataCard, fmtNum, fmtPct } from "../../components/DataTable";
+import { TRADE_MONEY_HEADERS, TradeMoneyCells, TradeTotalsChip } from "../../components/TradeMoney";
 
 /**
  * Every week on file, per arm, with the week's legs one click down.
@@ -78,7 +79,7 @@ export function WeeksTab({ data }: { data: CalendarsPayload | undefined }) {
     <div className="cards cards-wide">
       <DataCard
         title="weeks"
-        headers={["week", "structure", "arm", "positions", "entry debit", "entry spot", "settled", "gross", "fees", "net"]}
+        headers={["week", "structure", "arm", "positions", "entry spot", "settled", ...TRADE_MONEY_HEADERS]}
         loading={isLoading}
         isError={isError}
         rowCount={rows.length}
@@ -86,6 +87,7 @@ export function WeeksTab({ data }: { data: CalendarsPayload | undefined }) {
         empty="no week has been entered yet"
         updatedAt={dataUpdatedAt}
         className="view-fade"
+        footer={<TradeTotalsChip totals={weeks?.totals} noun="finished weeks" />}
       >
         {rows.map((r) => {
           const key = `${r.weekOf}-${r.arm}`;
@@ -103,19 +105,16 @@ export function WeeksTab({ data }: { data: CalendarsPayload | undefined }) {
                   </span>
                 )}
               </td>
-              <td>{fmtNum(r.entryDebit, 2)}</td>
               <td>{fmtNum(r.entrySpot, 2)}</td>
               <td>{fmtNum(r.settlementSpot, 2)}</td>
-              <td>{fmtMoney(r.grossPnl)}</td>
-              <td>{fmtMoney(r.fees)}</td>
-              <td>{r.netPnl === null ? <span className="muted">—</span> : <PnlCell v={r.netPnl} />}</td>
+              <TradeMoneyCells row={r} priceTitle="the week's call and put calendar debits together, per share" />
             </tr>,
             // The detail is the whole WEEK, every arm of it, because the arms are only
             // interesting against each other -- they share the entry, so a single arm's legs in
             // isolation say nothing the row above does not.
             open === key ? (
               <tr key={`${key}-detail`} className="cal-detail-row">
-                <td colSpan={10}>
+                <td colSpan={16}>
                   <WeekDetail week={r.weekOf} />
                 </td>
               </tr>

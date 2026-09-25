@@ -32,6 +32,7 @@ import type {
   CalendarsPoliciesPayload,
   CalendarsPosition,
   CalendarsWeekRow,
+  CalendarsWeeks,
   DeskPayload,
 } from "@console/shared";
 
@@ -476,9 +477,9 @@ export function useCalendars() {
 }
 
 export function useCalendarsWeeks() {
-  return useQuery<{ rows: CalendarsWeekRow[] }>({
+  return useQuery<CalendarsWeeks>({
     queryKey: ["calendars-weeks"],
-    queryFn: () => getJson<{ rows: CalendarsWeekRow[] }>("/api/calendars/weeks"),
+    queryFn: () => getJson<CalendarsWeeks>("/api/calendars/weeks"),
     // A week finishes once a week. Polling this hard would be noise.
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,

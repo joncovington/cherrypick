@@ -184,6 +184,27 @@ export const PMCC_SLIDES = [
 
 export type PmccSlideId = (typeof PMCC_SLIDES)[number]["id"];
 
+/**
+ * calendars' tabs, on the frame since 2026-09-25. `now` → `session`; its cards became pages: `plan`
+ * (the week's entry plan and window), `decisions` (the collapsed journal), `arms` and `positions`
+ * (this week's structures and anything carried). `weeks` → `history`: every week per arm in the
+ * suite's standard trade layout, each still expanding to its legs.
+ */
+export const CALENDARS_SLIDES = [
+  { id: "session", label: "session" },
+  { id: "plan", label: "plan" },
+  { id: "decisions", label: "decisions" },
+  { id: "arms", label: "arms" },
+  { id: "policies", label: "policies" },
+  { id: "performance", label: "performance" },
+  { id: "advisor", label: "advisor" },
+  { id: "positions", label: "positions" },
+  { id: "history", label: "history" },
+  { id: "guide", label: "help" },
+] as const satisfies readonly NavSlide[];
+
+export type CalendarsSlideId = (typeof CALENDARS_SLIDES)[number]["id"];
+
 export const NAV_DECL: Partial<Record<ModuleId, ModuleNavDecl>> = {
   flies: {
     slides: FLIES_SLIDES,
@@ -245,6 +266,17 @@ export const NAV_DECL: Partial<Record<ModuleId, ModuleNavDecl>> = {
       { label: "help", ids: ["guide"] },
     ],
     legacy: { now: "session" },
+  },
+  calendars: {
+    slides: CALENDARS_SLIDES,
+    groups: [
+      { label: "today", ids: ["session", "plan"] },
+      { label: "evidence", ids: ["decisions", "arms", "policies"] },
+      { label: "study", ids: ["performance", "advisor"] },
+      { label: "tables", ids: ["positions", "history"] },
+      { label: "help", ids: ["guide"] },
+    ],
+    legacy: { now: "session", weeks: "history" },
   },
   pmcc: {
     slides: PMCC_SLIDES,

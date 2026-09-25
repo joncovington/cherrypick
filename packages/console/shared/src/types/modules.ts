@@ -718,6 +718,8 @@ export interface CalendarsPosition {
   strike: number | null;
   quantity: number | null;
   entryDebit: number | null;
+  /** The opening debit in whole-position dollars, signed (negative: paid). The standard's `entry`. */
+  entryCash: number | null;
   entrySpot: number | null;
   entryEm: number | null;
   entryEmPct: number | null;
@@ -893,7 +895,13 @@ export interface CalendarsPoliciesPayload {
 }
 
 /** One row per week in the ledger, per arm — the history tab's index. */
-export interface CalendarsWeekRow {
+/**
+ * One week of one arm: its call and put calendars, in the trade table standard (`TradeMoney`).
+ * `quantity` is the contracts per structure (null if they differ), `price` the week's combined
+ * debit per share (signed negative); exit and net stay null until every position -- delivered shares
+ * included -- has closed, so a partial week never reads as a finished one.
+ */
+export interface CalendarsWeekRow extends TradeMoney {
   weekOf: string;
   structure: string;
   entrySession: string;
@@ -903,9 +911,12 @@ export interface CalendarsWeekRow {
   entryDebit: number | null;
   entrySpot: number | null;
   settlementSpot: number | null;
-  grossPnl: number | null;
-  fees: number | null;
-  netPnl: number | null;
+}
+
+export interface CalendarsWeeks {
+  rows: CalendarsWeekRow[];
+  /** Over FINISHED weeks only: an open week's result is not a result yet. */
+  totals: TradeTotals;
 }
 
 // ---- curve (VXX term-structure roll-yield harvest) ----

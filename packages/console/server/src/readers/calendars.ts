@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { EMPTY_TRADE_TOTALS, positionCash, positionCashColumns, tradeTotals } from "./positionCash.js";
 import type {
   CalendarsArmCell,
   CalendarsEmRow,
@@ -9,6 +10,7 @@ import type {
   CalendarsPayload,
   CalendarsPosition,
   CalendarsWeekRow,
+  CalendarsWeeks,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { num, obj, readJson, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
@@ -262,6 +264,10 @@ function toPosition(
     strike: num(r["strike"]),
     quantity: num(r["quantity"]),
     entryDebit: num(r["entry_debit"]),
+    entryCash:
+      num(r["entry_debit"]) === null
+        ? null
+        : Math.round(-Number(r["entry_debit"]) * 100 * (num(r["quantity"]) ?? 1) * 100) / 100,
     entrySpot: num(r["entry_spot"]),
     entryEm: num(r["entry_em"]),
     entryEmPct: num(r["entry_em_pct"]),
@@ -657,40 +663,70 @@ export function readCalendars(config: ConsoleConfig): CalendarsPayload {
  * `closed` rides beside `positions` because a week does not finish while its delivered shares are
  * outstanding, and a partial week must not read as a finished one with a small net.
  */
-export function readCalendarsWeeks(config: ConsoleConfig): CalendarsWeekRow[] {
-  return withReadOnlyDb<CalendarsWeekRow[]>(dbPath(config), [], (db) =>
-    db
+export function readCalendarsWeeks(config: ConsoleConfig): CalendarsWeeks {
+  return withReadOnlyDb<CalendarsWeeks>(dbPath(config), { rows: [], totals: EMPTY_TRADE_TOTALS }, (db) => {
+    // Each position through the shared standard (`positionCash`), then summed per week and arm, so a
+    // week's columns are the same arithmetic as every other module's rows -- not a second SQL sum.
+    const positions = db
       .prepare<[], Record<string, unknown>>(
-        `SELECT week_of, arm, MIN(structure) AS structure, MIN(entry_session) AS entry_session,
-                COUNT(*) AS n, SUM(status = 'closed') AS closed, SUM(entry_debit) AS entry_debit,
-                MIN(entry_spot) AS entry_spot, MAX(settlement_spot) AS settlement_spot,
-                SUM(gross_pnl) AS gross, SUM(fees) AS fees
-           FROM dc_positions GROUP BY week_of, arm ORDER BY week_of DESC, arm`,
+        `SELECT week_of, arm, structure, entry_session, entry_debit, entry_spot, settlement_spot,
+                ${positionCashColumns(db, "dc_")}
+           FROM dc_positions ORDER BY week_of DESC, arm, id`,
       )
-      .all()
-      .map((r) => {
-        const gross = num(r["gross"]);
-        const fees = num(r["fees"]);
-        const n = Number(r["n"] ?? 0);
-        const closed = Number(r["closed"] ?? 0);
-        return {
-          weekOf: str(r["week_of"]) ?? "",
-          structure: str(r["structure"]) ?? "",
-          entrySession: str(r["entry_session"]) ?? "",
-          arm: str(r["arm"]) ?? "",
-          positions: n,
-          closed,
-          entryDebit: num(r["entry_debit"]),
-          entrySpot: num(r["entry_spot"]),
-          settlementSpot: num(r["settlement_spot"]),
-          grossPnl: gross,
-          fees,
-          // An unfinished week has no net. Reporting the closed half's number under the week's name
-          // would read as the week's result.
-          netPnl: closed < n || gross === null || fees === null ? null : Math.round((gross - fees) * 100) / 100,
-        };
-      }),
-  );
+      .all();
+    const weeks = new Map<string, { head: Record<string, unknown>; parts: Array<Record<string, unknown>> }>();
+    for (const p of positions) {
+      const key = `${str(p["week_of"]) ?? ""}\u0000${str(p["arm"]) ?? ""}`;
+      const w = weeks.get(key) ?? { head: p, parts: [] };
+      w.parts.push(p);
+      weeks.set(key, w);
+    }
+    const sum = (xs: Array<number | null>): number | null =>
+      xs.some((x) => x === null) ? null : Math.round(xs.reduce<number>((a, x) => a + (x ?? 0), 0) * 100) / 100;
+    const rows = [...weeks.values()].map(({ head, parts }) => {
+      const cash = parts.map((p) => positionCash(p, num(p["entry_debit"]) === null ? null : -Number(p["entry_debit"])));
+      const n = parts.length;
+      const closed = parts.filter((p) => str(p["status"]) === "closed").length;
+      const finished = closed === n;
+      const kinds = cash.map((c) => c.exitKind);
+      const entryDebit = sum(parts.map((p) => num(p["entry_debit"])));
+      return {
+        weekOf: str(head["week_of"]) ?? "",
+        structure: str(head["structure"]) ?? "",
+        entrySession: str(head["entry_session"]) ?? "",
+        arm: str(head["arm"]) ?? "",
+        positions: n,
+        closed,
+        entryDebit,
+        entrySpot: num(head["entry_spot"]),
+        settlementSpot: parts.reduce<number | null>((m, p) => num(p["settlement_spot"]) ?? m, null),
+        // Contracts per structure, so qty x price x 100 = entry reads straight across the row: the
+        // price is the week's COMBINED debit, and summing the structures' quantities would count
+        // the pairing twice. Null when the structures were sized differently.
+        quantity: new Set(cash.map((c) => c.quantity)).size === 1 ? cash[0]!.quantity : null,
+        price: entryDebit === null ? null : -entryDebit,
+        entryCash: sum(cash.map((c) => c.entryCash)),
+        // An unfinished week has no exit and no net. Reporting the closed half's number under the
+        // week's name would read as the week's result.
+        exitCash: finished ? sum(cash.map((c) => c.exitCash)) : null,
+        exitKind: !finished
+          ? null
+          : kinds.includes("assigned")
+            ? ("assigned" as const)
+            : kinds.includes("settled")
+              ? ("settled" as const)
+              : kinds.every((k) => k === "expired")
+                ? ("expired" as const)
+                : ("closed" as const),
+        grossPnl: sum(cash.map((c) => c.grossPnl)),
+        fees: sum(cash.map((c) => c.fees)),
+        settlementFees: sum(cash.map((c) => c.settlementFees)),
+        slippage: sum(cash.map((c) => c.slippage)),
+        netPnl: finished ? sum(cash.map((c) => c.netPnl)) : null,
+      };
+    });
+    return { rows, totals: tradeTotals(rows.filter((r) => r.closed === r.positions)) };
+  });
 }
 
 /** Mirrors `analytics.week_detail()` — everything on file for one week, legs included. */

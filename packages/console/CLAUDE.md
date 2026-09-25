@@ -506,6 +506,14 @@ calendars, pmcc and curve share one accounting, so they share `readers/positionC
 (`positionCash`, `positionCashColumns`, `tradeTotals`) and `components/TradeMoney.tsx` (the ten
 money headers and cells, and the totals chip); `server/test/position-trade-standard.test.ts` pins
 it through curve. Their exit kinds add `assigned`: a physically settled leg delivers shares.
+pmcc and calendars have their own tests on schema fixtures generated from the modules' own
+`db.connect` (`pmcc-trade-standard`, `calendars-trade-standard`). calendars' history is its weeks:
+each position through `positionCash`, summed per week and arm, with exit and net null until every
+position -- delivered shares included -- has closed, and totals over finished weeks only.
+
+All seven trading modules are on the module frame and the standard as of 2026-09-25. The suite
+surfaces (Live, Reports, Advisor, GEX, Config) are still lightboxes; a card that would link to one
+(the flies live-pilot tile) has no link until it moves, since a card opens pages, never overlays.
 
 ## Suite guardrails (apply here too)
 

@@ -17,7 +17,7 @@ import type { ModuleId } from "./moduleOrder";
  * Lazy per entry, as before: a session only ever opens one module at a time, so the Overview's
  * first load should not pay for twelve manifests' worth of analytics queries and chart cards.
  */
-export const FRAME_MODULE_IDS = ["flies", "meic", "bwb", "earnings", "curve", "pmcc"] as const;
+export const FRAME_MODULE_IDS = ["flies", "meic", "bwb", "earnings", "curve", "pmcc", "calendars"] as const;
 
 export type FrameModuleId = (typeof FRAME_MODULE_IDS)[number];
 export type LightboxModuleId = Exclude<ModuleId, FrameModuleId>;
@@ -33,10 +33,10 @@ export const MODULE_FRAMES: Record<FrameModuleId, ComponentType<{ slide: string 
   earnings: lazy(() => import("./manifests/EarningsLightbox").then((m) => ({ default: m.EarningsLightbox }))),
   curve: lazy(() => import("./manifests/CurveLightbox").then((m) => ({ default: m.CurveLightbox }))),
   pmcc: lazy(() => import("./manifests/PmccLightbox").then((m) => ({ default: m.PmccLightbox }))),
+  calendars: lazy(() => import("./manifests/CalendarsLightbox").then((m) => ({ default: m.CalendarsLightbox }))),
 };
 
 export const MODULE_LIGHTBOXES: Record<LightboxModuleId, ComponentType<{ slide: string }>> = {
-  calendars: lazy(() => import("./manifests/CalendarsLightbox").then((m) => ({ default: m.CalendarsLightbox }))),
   gex: lazy(() => import("./manifests/GexLightbox").then((m) => ({ default: m.GexLightbox }))),
   live: lazy(() => import("./manifests/LiveLightbox").then((m) => ({ default: m.LiveLightbox }))),
   reports: lazy(() => import("./manifests/ReportsLightbox").then((m) => ({ default: m.ReportsLightbox }))),

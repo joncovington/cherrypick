@@ -1,6 +1,7 @@
 import type { CalendarsPayload, CalendarsPosition } from "@console/shared";
 import { Card, DataCard, fmtMoney, fmtNum, fmtPct, PnlCell } from "../../components/DataTable";
 import { UnrealisedPnlCell } from "../../components/UnrealisedPnlCell";
+import { fmtCash, fmtPrice } from "../../lib/format";
 
 /**
  * The module's own refusal vocabulary, each in one plain sentence.
@@ -243,7 +244,7 @@ export function PositionsCard({
   return (
     <DataCard
       title={title}
-      headers={["symbol", "arm", "entry", "expiry (front/back)", "side", "debit", "spot at entry", "EM", "front IV", "back IV", "term", "status", "net"]}
+      headers={["symbol", "arm", "opened", "expiry (front/back)", "side", "qty", "price", "entry", "spot at entry", "EM", "front IV", "back IV", "term", "status", "net"]}
       loading={loading}
       rowCount={positions.length}
       numFrom={5}
@@ -282,7 +283,9 @@ export function PositionsCard({
             {sideLabel(p)}
             <span className="muted"> · {p.structure}</span>
           </td>
-          <td>{fmtNum(p.entryDebit, 2)}</td>
+          <td>{p.quantity ?? "—"}</td>
+          <td title="the calendar's net debit, per share">{fmtPrice(p.entryDebit === null ? null : -p.entryDebit)}</td>
+          <td>{fmtCash(p.entryCash)}</td>
           <td>{fmtNum(p.entrySpot, 2)}</td>
           <td>
             {fmtNum(p.entryEm, 2)}
