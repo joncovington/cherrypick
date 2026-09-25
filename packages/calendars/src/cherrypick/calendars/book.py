@@ -229,7 +229,7 @@ def settle_expiring_legs(
     for pid, info in by_position.items():
         # Only the CASH-settled ITM legs pay here; a physical one pays at disposal.
         fee = engine.settlement_fee(info["itm"] - info["assigned"])
-        _accumulate_exit_costs(conn, pid, fee=fee, slippage=0.0)
+        _accumulate_exit_costs(conn, pid, fee=fee, slippage=0.0, settlement=True)
         prev_itm = conn.execute(
             "SELECT itm_settlements FROM dc_positions WHERE position_id = ?", (pid,)
         ).fetchone()
@@ -251,19 +251,23 @@ def settle_expiring_legs(
     return results
 
 
-def _accumulate_exit_costs(conn, pid: str, *, fee: float, slippage: float) -> None:
+def _accumulate_exit_costs(conn, pid: str, *, fee: float, slippage: float, settlement: bool = False) -> None:
+    """Add an exit's costs to the position's running totals. A settlement or assignment charge
+    (`settlement=True`) is also added to `settlement_fees`, the part of `fees` it is -- recorded
+    beside the total, never an extra cost."""
     row = conn.execute(
-        "SELECT exit_cost, exit_slippage, fees FROM dc_positions WHERE position_id = ?", (pid,)
+        "SELECT exit_cost, exit_slippage, fees, settlement_fees FROM dc_positions WHERE position_id = ?",
+        (pid,),
     ).fetchone()
-    db.save_position(
-        conn,
-        {
-            "position_id": pid,
-            "exit_cost": round((row["exit_cost"] or 0.0) + fee, 2),
-            "exit_slippage": round((row["exit_slippage"] or 0.0) + slippage, 2),
-            "fees": round((row["fees"] or 0.0) + fee + slippage, 2),
-        },
-    )
+    update = {
+        "position_id": pid,
+        "exit_cost": round((row["exit_cost"] or 0.0) + fee, 2),
+        "exit_slippage": round((row["exit_slippage"] or 0.0) + slippage, 2),
+        "fees": round((row["fees"] or 0.0) + fee + slippage, 2),
+    }
+    if settlement:
+        update["settlement_fees"] = round((row["settlement_fees"] or 0.0) + fee, 2)
+    db.save_position(conn, update)
 
 
 def _position_quantity(conn, pid: str) -> int:
@@ -333,6 +337,6 @@ def dispose_assignment(conn, assignment: dict, price: float, *, session_date: st
             "fees": fee,
         },
     )
-    _accumulate_exit_costs(conn, assignment["position_id"], fee=fee, slippage=0.0)
+    _accumulate_exit_costs(conn, assignment["position_id"], fee=fee, slippage=0.0, settlement=True)
     finalize_if_done(conn, assignment["position_id"], reason="shares_disposed", session_date=session_date)
     return {"position_id": assignment["position_id"], "share_pnl": pnl, "fee": fee, "price": price}

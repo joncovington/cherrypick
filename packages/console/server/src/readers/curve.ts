@@ -50,6 +50,9 @@ interface CurveParams {
  */
 const KNOWN_COLUMNS: Record<string, string[]> = {
   curve_positions: [
+    // The advisor stamps (2026-09-16/17, missing here until 2026-09-25, so every ledger reported
+    // them as drift) and the settlement part of `fees` (2026-09-25).
+    "experiment_id", "advice_base", "settlement_fees",
     "id", "position_id", "symbol", "arm", "entry_session", "quantity", "expiration", "short_strike",
     "long_strike", "entry_time", "entry_spot", "entry_short_mid", "entry_long_mid", "entry_credit",
     "entry_width", "entry_max_loss", "entry_credit_pct_of_width", "entry_short_delta",

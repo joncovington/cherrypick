@@ -81,6 +81,11 @@ def test_both_legs_assigned_pay_the_settlement_event_once_each(conn):
         disposal += engine.assignment_fee(a, 60.5)
     final = conn.execute("SELECT fees FROM curve_positions WHERE position_id = ?", (pid,)).fetchone()[0]
     assert final == pytest.approx(entry_fees + disposal, abs=0.01)
+    # The disposal charges are the settlement part of that total, recorded beside it.
+    settlement = conn.execute(
+        "SELECT settlement_fees FROM curve_positions WHERE position_id = ?", (pid,)
+    ).fetchone()[0]
+    assert settlement == pytest.approx(disposal, abs=0.01)
     # ...and that disposal total holds exactly one $5 event per assigned leg.
     share_side = disposal - 2 * core_fees.ASSIGNMENT_FEE_PER_SETTLEMENT
     assert 0 <= share_side < 1.0

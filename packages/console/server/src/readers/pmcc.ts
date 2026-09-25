@@ -83,6 +83,9 @@ interface PmccParams {
  */
 const KNOWN_COLUMNS: Record<string, string[]> = {
   pmcc_positions: [
+    // The advisor stamps (2026-09-16/17, missing here until 2026-09-25, so every ledger reported
+    // them as drift) and the settlement part of `fees` (2026-09-25).
+    "experiment_id", "advice_base", "settlement_fees",
     "id", "position_id", "symbol", "arm", "entry_session", "quantity", "long_expiration", "long_strike",
     "short_expiration", "short_strike", "entry_time", "entry_spot", "long_entry_mid", "short_entry_mid",
     "net_debit", "entry_cost", "entry_slippage", "entry_short_dte", "entry_long_dte", "entry_total_premium",

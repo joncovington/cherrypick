@@ -550,6 +550,8 @@ def test_disposal_books_the_weekend_move_and_then_the_week_closes(conn):
     assert position["status"] == "closed"
     # Options: short put 20 -> 6 (+14), long put 25 -> 8 (-17) = -3.00/share = -300, plus +450.
     assert position["gross_pnl"] == 150.0
+    # The assignment's disposal fee is the settlement part of the position's fees, recorded beside it.
+    assert position["settlement_fees"] == pytest.approx(row["fees"])
 
 
 def test_shares_delivered_tonight_are_not_disposable_tonight(conn):

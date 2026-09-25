@@ -54,6 +54,9 @@ const DIVIDEND_WARN_DAYS = 30;
  */
 const KNOWN_COLUMNS: Record<string, string[]> = {
   dc_positions: [
+    // The advisor stamps (2026-09-16/17, missing here until 2026-09-25, so every ledger reported
+    // them as drift) and the settlement part of `fees` (2026-09-25).
+    "experiment_id", "advice_base", "settlement_fees",
     "id", "position_id", "week_of", "entry_session", "arm", "side", "symbol", "structure",
     "front_expiration", "back_expiration", "strike", "quantity", "entry_time", "entry_debit",
     "entry_cost", "entry_slippage", "entry_spot", "entry_em", "entry_em_pct",
