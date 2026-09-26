@@ -46,7 +46,24 @@ const COLUMNS: ColumnDef<BwbCycleRow>[] = [
     ),
   },
   {
-    id: "addon",
+    id: "addonStrikes",
+    header: "add-on short/long",
+    title: "the add-on put credit spread's strikes, short then long — blank when it never fired",
+    kind: "describe",
+    numeric: true,
+    render: (r) =>
+      r.addonShortStrike === null ? (
+        <span className="muted">—</span>
+      ) : (
+        <>
+          {fmtStrike(r.addonShortStrike)}
+          <span className="muted"> / </span>
+          {fmtStrike(r.addonLongStrike)}
+        </>
+      ),
+  },
+  {
+    id: "addonPrice",
     header: "add-on",
     title: "the add-on's own credit, per share, when its trigger fired",
     kind: "describe",
@@ -73,9 +90,16 @@ const COLUMNS: ColumnDef<BwbCycleRow>[] = [
   {
     id: "entry",
     header: "entry",
-    title: "opening cash flow, whole position: + received, − paid",
+    title: "the fly's opening credit, whole position: + received, − paid",
     kind: "money",
     render: (r) => fmtCash(r.entryCash),
+  },
+  {
+    id: "addon",
+    header: "add-on $",
+    title: "the add-on credit spread's credit, whole position, on the session its trigger fired — blank when it never fired",
+    kind: "money",
+    render: (r) => (r.addOnCash === null ? <span className="muted">—</span> : fmtCash(r.addOnCash)),
   },
   { id: "exit", header: "exit", title: "the close or the settlement, whole position", kind: "money", render: (r) => fmtCash(r.exitCash) },
   { id: "gross", header: "gross", title: "entry + exit, before any cost", kind: "money", render: (r) => fmtMoney(r.grossPnl) },

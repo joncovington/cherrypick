@@ -137,6 +137,7 @@ function readOpenPositions(db: DatabaseHandle): BwbOpenPosition[] {
         entryMaxLoss: num(p["entry_max_loss"]),
         quantity: num(p["quantity"]),
         entryCash: bwbEntryCash(p),
+        addOnCash: bwbAddOnCash(p),
         peakAbsDelta: num(p["peak_abs_delta"]),
         belowFlipSeen: p["below_flip_seen"] === 1,
         armedAt: str(p["armed_at"]),
@@ -423,10 +424,22 @@ function round2(v: number): number {
 }
 
 /** The opening cash flows, signed: the fly's credit plus the add-on's once it fired, x100 x qty. */
+/** The fly's own opening credit, whole position -- the add-on is its own column (2026-09-26). */
 function bwbEntryCash(p: Record<string, unknown>): number | null {
   const credit = num(p["entry_credit"]);
   if (credit === null) return null;
-  return round2((credit + (num(p["addon_credit"]) ?? 0)) * 100 * (num(p["quantity"]) ?? 1));
+  return round2(credit * 100 * (num(p["quantity"]) ?? 1));
+}
+
+/**
+ * The add-on put credit spread's credit, whole position, once its trigger has fired; null while it
+ * has not. A separate entry because it is a separate decision on a later session: `entry + add-on +
+ * exit = gross`, and an arm-vs-control reading needs to see what the add-on brought in on its own.
+ */
+function bwbAddOnCash(p: Record<string, unknown>): number | null {
+  const credit = num(p["addon_credit"]);
+  if (credit === null) return null;
+  return round2(credit * 100 * (num(p["quantity"]) ?? 1));
 }
 
 /** A `bwb_positions` column, or NULL on a ledger that predates it. */
@@ -452,7 +465,7 @@ export function bwbExitKind(exitReason: string | null, itmSettlements: number | 
  */
 function bwbTradeCash(r: Record<string, unknown>): Pick<
   BwbCycleRow,
-  "quantity" | "entryCash" | "exitCash" | "exitKind" | "grossPnl" | "fees" | "settlementFees" | "slippage" | "netPnl"
+  "quantity" | "entryCash" | "addOnCash" | "exitCash" | "exitKind" | "grossPnl" | "fees" | "settlementFees" | "slippage" | "netPnl"
 > {
   const gross = num(r["gross_pnl"]);
   const total = num(r["fees"]);
@@ -464,10 +477,12 @@ function bwbTradeCash(r: Record<string, unknown>): Pick<
   const slipParts = [num(r["entry_slippage"]), num(r["addon_slippage"])];
   const slippage = live || slipParts[0] === null ? null : round2((slipParts[0] ?? 0) + (slipParts[1] ?? 0));
   const entryCash = bwbEntryCash(r);
+  const addOnCash = bwbAddOnCash(r);
   return {
     quantity: num(r["quantity"]),
     entryCash,
-    exitCash: gross !== null && entryCash !== null ? round2(gross - entryCash) : null,
+    addOnCash,
+    exitCash: gross !== null && entryCash !== null ? round2(gross - entryCash - (addOnCash ?? 0)) : null,
     exitKind: bwbExitKind(str(r["exit_reason"]), num(r["itm_settlements"])),
     grossPnl: gross,
     fees: total === null ? null : round2(total - (settlementFees ?? 0) - (slippage ?? 0)),
@@ -505,6 +520,8 @@ export function readBwbHistory(
                   body_strike, near_strike, far_strike, expiration, entry_spot, entry_credit,
                   armed_at, addon_fired_at, addon_credit, gross_pnl, fees, quantity, itm_settlements,
                   entry_slippage, addon_slippage,
+                  ${bwbCol(db, "addon_short_strike")} AS addon_short_strike,
+                  ${bwbCol(db, "addon_long_strike")} AS addon_long_strike,
                   ${bwbCol(db, "settlement_fees")} AS settlement_fees,
                   ${bwbCol(db, "fees_source")} AS fees_source`;
     // Totals from the same rows through the same arithmetic as each row, so the chip and the
@@ -551,6 +568,8 @@ export function readBwbHistory(
           entryCredit: num(r["entry_credit"]),
           armedAt: str(r["armed_at"]),
           addonFiredAt: str(r["addon_fired_at"]),
+          addonShortStrike: num(r["addon_short_strike"]),
+          addonLongStrike: num(r["addon_long_strike"]),
           addonCredit: num(r["addon_credit"]),
           ...bwbTradeCash(r),
         };

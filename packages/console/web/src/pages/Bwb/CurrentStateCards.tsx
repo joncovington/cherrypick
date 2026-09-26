@@ -68,7 +68,10 @@ function PositionRows({ rows }: { rows: BwbOpenPosition[] }) {
           <td>{strikeSet(p.nearStrike, p.bodyStrike, p.farStrike)}</td>
           <td>{p.quantity ?? "—"}</td>
           <td title="the fly's own net credit, per share">{fmtPrice(p.entryCredit)}</td>
-          <td title="the fly's credit plus the add-on's once fired, whole position">{fmtCash(p.entryCash)}</td>
+          <td title="the fly's opening credit, whole position">{fmtCash(p.entryCash)}</td>
+          <td title="the add-on credit spread's credit, whole position, once its trigger fired">
+            {p.addOnCash === null ? <span className="muted">—</span> : fmtCash(p.addOnCash)}
+          </td>
           <td>
             <UnrealisedPnlCell
               gross={p.unrealisedGross}
@@ -93,7 +96,7 @@ function PositionRows({ rows }: { rows: BwbOpenPosition[] }) {
 export function OpenTradesCard({ data, updatedAt }: { data: BwbPayload | undefined; updatedAt?: number }) {
   if (data === undefined) return null;
   const empty = data.openPositions.length === 0;
-  const headers = ["symbol", "arm", "opened", "expiry", "near/body x2/far", "qty", "price", "entry", "mark (net of costs to date)", "spot", "peak |delta|", "below flip", "add-on (short/long)"];
+  const headers = ["symbol", "arm", "opened", "expiry", "near/body x2/far", "qty", "price", "entry", "add-on $", "mark (net of costs to date)", "spot", "peak |delta|", "below flip", "add-on (short/long)"];
   if (empty) {
     return (
       <DataCard

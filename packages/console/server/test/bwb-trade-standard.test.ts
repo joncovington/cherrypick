@@ -32,7 +32,8 @@ beforeAll(() => {
       near_strike REAL, far_strike REAL, expiration TEXT, entry_spot REAL, entry_credit REAL,
       armed_at TEXT, addon_fired_at TEXT, addon_credit REAL, gross_pnl REAL, fees REAL,
       quantity INTEGER, itm_settlements INTEGER, entry_cost REAL, entry_slippage REAL,
-      addon_cost REAL, addon_slippage REAL, settlement_fees REAL, fees_source TEXT
+      addon_cost REAL, addon_slippage REAL, settlement_fees REAL, fees_source TEXT,
+      addon_short_strike REAL, addon_long_strike REAL
     );
   `);
   const ins = db.prepare(
@@ -43,9 +44,10 @@ beforeAll(() => {
      VALUES (?, 'SPX', ?, '2026-09-15', '2026-09-22', 'closed', ?, 6600, 6620, 6560, '2026-09-22',
              ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
   );
-  // Settled through the body with the add-on fired: entry (0.85 + 0.40) x100 = +125, gross -300
-  // so exit -425; fees 3.44 + 1.20 slip + 2.30 add-on + 0.80 add-on slip + 10 settlement = 17.74.
+  // Settled through the body with the add-on fired: entry 0.85 x100 = +85, add-on 0.40 x100 = +40,
+  // gross -300 so exit -425; fees 3.44 + 1.20 slip + 2.30 add-on + 0.80 add-on slip + 10 settlement = 17.74.
   ins.run("p-itm", "delta", "expired", 0.85, "2026-09-18T11:00", 0.4, -300, 17.74, 2, 3.44, 1.2, 2.3, 0.8, 10, null);
+  db.prepare("UPDATE bwb_positions SET addon_short_strike = 6590, addon_long_strike = 6570 WHERE position_id = 'p-itm'").run();
   // Expired worthless, never fired: keeps its credit.
   ins.run("p-otm", "control", "expired", 0.85, null, null, 85, 4.64, 0, 3.44, 1.2, null, null, 0, null);
   // Broker-reconciled: fees is the broker's total, slippage is inside the real fills.
@@ -71,14 +73,24 @@ describe("bwb's completed positions", () => {
     expect(history().total).toBe(5);
   });
 
-  it("sign the opening cash flows, the add-on's included, in whole-position dollars", () => {
-    expect(row("p-itm")?.entryCash).toBe(125);
+  it("sign the fly's entry and the add-on's as separate whole-position cash flows", () => {
+    // 0.85 fly credit and 0.40 add-on credit, one lot.
+    expect(row("p-itm")?.entryCash).toBe(85);
+    expect(row("p-itm")?.addOnCash).toBe(40);
     expect(row("p-itm")?.exitCash).toBe(-425);
   });
 
-  it("add up: entry + exit = gross, gross - fees - settlement - slippage = net", () => {
+  it("carry the add-on's strikes, and leave the add-on blank where it never fired", () => {
+    expect(row("p-itm")?.addonShortStrike).toBe(6590);
+    expect(row("p-itm")?.addonLongStrike).toBe(6570);
+    expect(row("p-otm")?.addonShortStrike).toBeNull();
+    expect(row("p-otm")?.addOnCash).toBeNull();
+    expect(row("p-otm")?.entryCash).toBe(85);
+  });
+
+  it("add up: entry + add-on + exit = gross, gross - fees - settlement - slippage = net", () => {
     for (const r of history().rows) {
-      expect((r.entryCash ?? 0) + (r.exitCash ?? 0)).toBeCloseTo(r.grossPnl ?? NaN, 2);
+      expect((r.entryCash ?? 0) + (r.addOnCash ?? 0) + (r.exitCash ?? 0)).toBeCloseTo(r.grossPnl ?? NaN, 2);
       expect((r.grossPnl ?? 0) - (r.fees ?? 0) - (r.settlementFees ?? 0) - (r.slippage ?? 0)).toBeCloseTo(r.netPnl ?? NaN, 2);
     }
   });

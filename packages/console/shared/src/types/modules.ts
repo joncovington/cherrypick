@@ -1078,9 +1078,10 @@ export interface BwbOpenPosition {
   entryMaxLoss: number | null;
   /** Contracts of the structure -- what a per-share debit or max loss is multiplied by (x100). */
   quantity: number | null;
-  /** The opening cash flows in whole-position dollars, signed (credit +): the fly's credit, plus
-   *  the add-on's once it has fired. The trade table standard's `entry`. */
+  /** The fly's opening credit in whole-position dollars, signed (credit +). */
   entryCash: number | null;
+  /** The add-on's credit, whole position, once its trigger has fired; null until then. */
+  addOnCash: number | null;
   /** Persisted trigger latches -- never held only in loop memory (a supervisor restart mid-session
    * must not amnesia a morning touch). */
   peakAbsDelta: number | null;
@@ -1203,13 +1204,18 @@ export interface BwbCycleRow {
   entryCredit: number | null;
   armedAt: string | null;
   addonFiredAt: string | null;
+  /** The add-on put credit spread's strikes; null where it never fired (2026-09-26). */
+  addonShortStrike: number | null;
+  addonLongStrike: number | null;
   addonCredit: number | null;
   quantity: number | null;
   /** The trade table standard (root CLAUDE.md): whole-position dollars, signed cash flow.
-   *  entry + exit = gross; gross − fees − settlement − slippage = net. bwb prices fills at mid and
-   *  CHARGES slippage as a cost, so here it is subtracted -- except on a broker-reconciled row,
-   *  whose real fills already carry it (`slippage` null there). */
+   *  entry + add-on + exit = gross; gross − fees − settlement − slippage = net. bwb prices fills at
+   *  mid and CHARGES slippage as a cost, so here it is subtracted -- except on a broker-reconciled
+   *  row, whose real fills already carry it (`slippage` null there). */
   entryCash: number | null;
+  /** The add-on's credit, whole position, when it fired; null when it never did (2026-09-26). */
+  addOnCash: number | null;
   exitCash: number | null;
   exitKind: "closed" | "settled" | "expired" | null;
   grossPnl: number | null;
