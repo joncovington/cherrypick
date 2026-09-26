@@ -532,7 +532,9 @@ definition tooltip, cell, and kind. The controls come from that list, not from h
   shows a column declared since the layout was saved (`web/test/tableColumns.test.ts`).
 - **Layout storage:** the prefs store (`lib/prefs.ts`) under `columns:<table>`. It's a per-viewer
   preference that follows to the desktop shell. It is never in the URL.
-- **Date range** (`DateRangeBar`, `useUrlDateRange`): `?from=&to=` in the page address, written with
+- **Date range** (`DateRangeBar`, `useUrlDateRange`): presets plus a calendar picker
+  (`DatePicker.tsx`, 2026-09-26; it replaced two native date inputs that made you type MM/DD/YYYY) --
+  first click the start, second the end, weeks Monday-first, nothing after today. `?from=&to=` in the page address, written with
   `replace`, so a filtered view reloads and shares. Presets end today in New York time. The server
   applies it (`readers/dateRange.ts`: one parser, one clause builder), so the match count and the
   totals chip describe the range. Each module bounds the date its history is ABOUT, and the bar

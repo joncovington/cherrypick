@@ -3214,6 +3214,107 @@ select.text-input {
 .data-table td.num {
   text-align: right;
 }
+/* The history tables' date-range calendar (components/table/DatePicker.tsx): a panel dropped from
+   its button, on the columns menu's terms. Selection is neutral, never the accent red -- a picked day
+   is not a loss. */
+.dp {
+  position: relative;
+  display: inline-block;
+}
+.dp-button {
+  white-space: nowrap;
+}
+.dp-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  padding: 0.6rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.dp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+.dp-month {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.dp-nav {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text);
+  width: 1.8rem;
+  height: 1.6rem;
+  cursor: pointer;
+}
+.dp-nav:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.dp-grid {
+  border-collapse: collapse;
+}
+.dp-grid th {
+  font-size: 10px;
+  font-weight: normal;
+  color: var(--text-muted);
+  padding: 0 0 0.25rem;
+  text-align: center;
+}
+.dp-grid td {
+  padding: 1px 0;
+}
+.dp-day {
+  width: 2rem;
+  height: 1.8rem;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-family: var(--num-face);
+  font-size: 12px;
+  cursor: pointer;
+}
+.dp-day:hover:not(:disabled) {
+  background: var(--row-hover);
+  outline: 1px solid var(--border);
+}
+.dp-day:disabled {
+  opacity: 0.2;
+  cursor: default;
+}
+.dp-weekend {
+  color: var(--text-muted);
+}
+.dp-day.dp-weekend {
+  opacity: 0.55;
+}
+.dp-day.dp-inside {
+  background: var(--row-hover);
+  opacity: 1;
+}
+.dp-day.dp-edge {
+  background: var(--text);
+  color: var(--bg);
+  opacity: 1;
+}
+.dp-day.dp-today:not(.dp-edge) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.dp-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+  font-size: 11px;
+}
 .history-controls {
   display: flex;
   align-items: center;

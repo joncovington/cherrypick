@@ -1,4 +1,5 @@
 import { useSearchParams } from "react-router-dom";
+import { DateRangePicker } from "./DatePicker";
 
 /**
  * A history table's date range, kept in the page address (`?from=YYYY-MM-DD&to=YYYY-MM-DD`) so a
@@ -107,28 +108,7 @@ export function DateRangeBar({
           {allLabel}
         </button>
       </div>
-      <label className="muted">
-        from
-        <input
-          className="text-input"
-          type="date"
-          value={from ?? ""}
-          max={to ?? undefined}
-          onChange={(e) => setRange(e.target.value || null, to)}
-          aria-label="from date"
-        />
-      </label>
-      <label className="muted">
-        to
-        <input
-          className="text-input"
-          type="date"
-          value={to ?? ""}
-          min={from ?? undefined}
-          onChange={(e) => setRange(from, e.target.value || null)}
-          aria-label="to date"
-        />
-      </label>
+      <DateRangePicker from={from} to={to} today={today} onChange={setRange} />
     </div>
   );
 }
