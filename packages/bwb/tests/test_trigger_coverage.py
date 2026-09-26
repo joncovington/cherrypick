@@ -234,3 +234,59 @@ def test_the_addon_root_defaults_to_the_symbol_only_when_none_is_given(cache, co
         cache.option("TNA", "2026-08-28", strike, right="P", bid=1.0, ask=1.2)
     position = {"expiration": "2026-08-28", "far_strike": 67.0, "symbol": "TNA"}
     assert paper_loop._addon_snapshot(cache.path, "TNA", position, now_et(), 86400)["ok"] is True
+
+
+def test_every_tick_records_the_addon_brackets_own_quotes(cache, config):
+    """The replay's honesty rail says a hypothetical fire is priceable because the bracket's bid/ask
+    ride every tick. They did not: the four columns were written as NULL on all 53,410 ticks until
+    2026-09-26, so no replayed fire was ever priceable and the add-on could not be scored on its own.
+    """
+    from datetime import datetime
+
+    from cherrypick.bwb import paper_loop
+
+    cache.spot("SPX", 7700.0)
+    near = cache.option("SPX", "2026-08-28", 7650.0, root="SPXW", bid=3.0, ask=3.2)
+    cache.option("SPX", "2026-08-28", 7505.0, root="SPXW", bid=1.10, ask=1.30)  # far + 5: the short
+    cache.option("SPX", "2026-08-28", 7495.0, root="SPXW", bid=0.80, ask=0.95)  # far - 5: the long
+    conn = db.connect(str(cache.path) + ".ledger.db")
+    db.save_position(
+        conn,
+        {
+            "position_id": "p1",
+            "symbol": "SPX",
+            "arm": "delta",
+            "entry_session": "2026-08-28",
+            "structure_signature": "sig",
+            "expiration": "2026-08-28",
+            "status": "open",
+            "quantity": 1,
+            "body_strike": 7600.0,
+            "near_strike": 7650.0,
+            "far_strike": 7500.0,
+            "below_flip_seen": 0,
+        },
+    )
+    db.save_leg(
+        conn,
+        {
+            "position_id": "p1",
+            "leg_role": "near_long",
+            "streamer_symbol": near,
+            "occ_symbol": "x",
+            "expiration": "2026-08-28",
+            "strike": 7650.0,
+            "option_type": "P",
+            "action": "BUY",
+            "quantity": 1,
+            "status": "open",
+        },
+    )
+    conn.commit()
+
+    paper_loop._record_trigger_ticks(
+        config, conn, cache_path=str(cache.path), when=datetime.now(), day="2026-08-28"
+    )
+    tick = db.trigger_ticks_for_cohort(conn, "2026-08-28", "sig")[0]
+    assert (tick["addon_short_bid"], tick["addon_short_ask"]) == (1.10, 1.30)
+    assert (tick["addon_long_bid"], tick["addon_long_ask"]) == (0.80, 0.95)

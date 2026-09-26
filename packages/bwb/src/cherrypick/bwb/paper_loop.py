@@ -409,6 +409,10 @@ def _record_trigger_ticks(config: dict, conn, *, cache_path: str, when: datetime
         key = (position["entry_session"], position["structure_signature"])
         cohorts.setdefault(key, position)  # any position in the cohort carries the shared strikes
 
+    # One chain read per expiration per tick, not per cohort: the ladder's cohorts share Fridays.
+    chains: dict[str, dict] = {}
+    params = engine.merged_params(config, "delta")
+
     for (entry_session, sig), position in cohorts.items():
         legs = _legs_with_symbol(conn, position)
         near_leg = next((leg for leg in legs if leg["leg_role"] == "near_long"), None)
@@ -428,6 +432,19 @@ def _record_trigger_ticks(config: dict, conn, *, cache_path: str, when: datetime
         spot_measured = mark.get("spot") is not None
         flip_measured = bool(flip.get("ok"))
         measured = spot_measured and flip_measured
+        # The add-on bracket's own quotes, so a replayed fire is priceable and not only timeable.
+        # These four columns were written as NULL on every row from the table's creation until
+        # 2026-09-26 -- the replay's `priceable` was false on all 53,410 ticks, and nothing said so.
+        exp = position["expiration"]
+        if exp not in chains:
+            chains[exp] = _addon_snapshot(cache_path, symbol, position, when, max_age, root=root)
+        bracket = (
+            engine.addon_bracket(chains[exp], position["far_strike"], params)
+            if chains[exp].get("ok") and chains[exp].get("chain") is not None
+            else None  # an unplaceable bracket records NULL quotes; it never costs the tick
+        )
+        short_q = (bracket or {}).get("short", {}).get("quote") or {}
+        long_q = (bracket or {}).get("long", {}).get("quote") or {}
         row = {
             "entry_session": entry_session,
             "structure_signature": sig,
@@ -440,10 +457,10 @@ def _record_trigger_ticks(config: dict, conn, *, cache_path: str, when: datetime
             "gamma_flip": flip.get("gamma_flip") if flip.get("ok") else None,
             "gamma_flip_basis": provider.GAMMA_FLIP_BASIS if flip.get("ok") else None,
             "below_flip_seen": 1 if position.get("below_flip_seen") else 0,
-            "addon_short_bid": None,
-            "addon_short_ask": None,
-            "addon_long_bid": None,
-            "addon_long_ask": None,
+            "addon_short_bid": short_q.get("bid"),
+            "addon_short_ask": short_q.get("ask"),
+            "addon_long_bid": long_q.get("bid"),
+            "addon_long_ask": long_q.get("ask"),
             "measured": 1 if measured else 0,
             "spot_measured": 1 if spot_measured else 0,
             "flip_measured": 1 if flip_measured else 0,

@@ -457,24 +457,37 @@ def bwb_metrics(
 
 
 # --------------------------------------------------------------------------- the add-on vertical
+def addon_bracket(snapshot: dict, far_strike: float, params: dict) -> dict | None:
+    """The add-on's two legs on this snapshot: the listed puts nearest one increment above and one
+    below the far wing, each with its quote. None when the chain cannot place both. One rule for the
+    add-on's fire (`plan_addon`) and for the bracket quotes every trigger tick records, so a replayed
+    fire prices the strikes a real one would have bought."""
+    increment = params.get("strike_increment", STRIKE_INCREMENT)
+    put_book = _puts(snapshot["chain"], snapshot["quotes"])
+    listed = sorted(put_book)
+    short_strike = _nearest_strike(listed, far_strike + increment)
+    long_strike = _nearest_strike(listed, far_strike - increment)
+    if short_strike is None or long_strike is None or not (long_strike < short_strike):
+        return None
+    return {
+        "short_strike": short_strike,
+        "long_strike": long_strike,
+        "short": put_book[short_strike],
+        "long": put_book[long_strike],
+    }
+
+
 def plan_addon(snapshot: dict, far_strike: float, params: dict) -> dict:
     """A put credit spread bracketing the far wing: SELL one increment above it, BUY one increment
     below it. Refuses `addon_not_credit` (never simply skips) when it does not price as a credit —
     the caller keeps the trigger armed on that refusal."""
-    increment = params.get("strike_increment", STRIKE_INCREMENT)
-    quotes = snapshot["quotes"]
     greeks = snapshot.get("greeks") or {}
-    put_book = _puts(snapshot["chain"], quotes)
-    listed = sorted(put_book)
-
-    short_target = far_strike + increment
-    long_target = far_strike - increment
-    short_strike = _nearest_strike(listed, short_target)
-    long_strike = _nearest_strike(listed, long_target)
-    if short_strike is None or long_strike is None or not (long_strike < short_strike):
+    bracket = addon_bracket(snapshot, far_strike, params)
+    if bracket is None:
         return {"ok": False, "reason": "no_strikes_in_window"}
 
-    short_e, long_e = put_book[short_strike], put_book[long_strike]
+    short_strike, long_strike = bracket["short_strike"], bracket["long_strike"]
+    short_e, long_e = bracket["short"], bracket["long"]
     credit = round(short_e["quote"]["mid"] - long_e["quote"]["mid"], 4)
     addon_floor = params.get("addon_credit_floor", 0.0)
     if credit <= addon_floor:

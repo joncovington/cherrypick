@@ -147,6 +147,33 @@ read-side threshold replay (`replay.py`, a fast-follow, not required for v1) bec
 data this module itself recorded — the calendars `exit_policies` pattern, forward-recorded, then
 replayed, never vendor-imagined.
 
+**The add-on bracket's own quotes were never recorded until 2026-09-26.** The four `addon_*_bid/ask`
+columns were written as NULL on every row (53,410 ticks, 2026-08-24..09-25) while the docs above and
+`replay.py`'s own honesty rail said they rode every tick -- so no replayed fire was ever priceable,
+and nothing said so. Fixed 2026-09-26: the tick picks the bracket by `engine.addon_bracket`, the one
+rule `plan_addon` also uses, from one chain read per expiration. Recording, not measurement: no arm
+does anything differently. Anything priced off tick quotes starts at 2026-09-28.
+
+## The add-on as its own trade (`addon_replay.py`, 2026-09-26)
+
+A read-side question, no new loop: over 08-24..09-25 the delta arm's add-on made 73% of its gross on
+19% of its buying power over time, so is it worth trading WITHOUT the BWB? `bwb addon-replay` answers
+it three ways, all paired to delta's own cohorts:
+
+- **`addon-only`** -- delta's add-on scored alone, from the legs the loop actually filled (entry mids,
+  settled values, its own recorded fee and slippage, the $5 settlement fee on its ITM legs). Exact,
+  because it IS that trade. The trigger's timing is replayed from the recorded near-wing deltas and
+  must land on the session the real arm armed (`validation`; 23 of 23 at the build).
+- **`same_spread_other_timing`** -- bounce's and flip's add-ons: the same bracket on the same cohorts,
+  sold at a different moment. What timing alone is worth.
+- **`spread-daily`** -- the comparator: the same bracket sold at the cohort's entry tick, no trigger.
+  It is priced from tick quotes, so it has history only from 2026-09-28 (above); `unpriced_cohorts`
+  lists the sessions it cannot score.
+
+Count results by settlement Friday, never by fire: every fire expiring one Friday shares one print.
+A paper `addon-only` arm (and a `spread-daily` twin) is the next step only if the replay holds up,
+and adding arms is measurement-affecting -- a declared boundary, not a mid-week landing.
+
 ## Honesty rules
 
 1. **Net of the full modeled fee and slippage stack.** Entry is 4 legs/2 sells, the add-on 2
@@ -184,7 +211,8 @@ next business day.
 | `paper_loop.py` | session driver: entry tick, 60s trigger/mark loop, expiry settle. |
 | `analytics.py` | the one query layer: per-book nets, fire counts, trigger-tick coverage. |
 | `replay.py` | the read-side threshold replay over `bwb_trigger_ticks` — a FAST-FOLLOW, not built in v1. |
-| `db.py`, `stream_request.py`, `cli.py` | the standard trio (`status` / `worksheet` / `fires` / `triggers` / `headline` / `replay`). `db.live_db_path()` is the live ledger; `stream_request.register(live=True)` writes `bwb-live`'s own request file. |
+| `addon_replay.py` | the add-on scored as its own trade, with no fly, beside a no-trigger comparator (`bwb addon-replay`). |
+| `db.py`, `stream_request.py`, `cli.py` | the standard trio (`status` / `worksheet` / `fires` / `triggers` / `headline` / `replay` / `addon-replay`). `db.live_db_path()` is the live ledger; `stream_request.register(live=True)` writes `bwb-live`'s own request file. |
 | `live_loop.py` | The LIVE tick (2026-09-18): dead-man's switch, orphan sweep, fill confirmation, resting-order management (the bounded walk-down), official-print settlement, ONE gated entry attempt, then the paper trigger/mark/manage pass over the live ledger with the fire seam swapped for order placement. `--once` is the dry-run smoke; `--once --live` the real tick; `--status`; `--settle --price`; `--install-task`/`--uninstall-task` are what `/live-bwb-start` calls. |
 | `live_orders.py` | Pure: the order specs (the body sold once at double quantity), the cost-derived live floor, the walk-down's next limit, worst-case payoffs and the margin caps with the add-on reserve. |
 | `broker_cli.py`, `credentials.py` | The `connect`/`account`-facing seam (keyring service `bwbagent`, falling back to the shared login) and `live_gates`. Serializer, tick rounding, settlement price and the arm record are `cherrypick.core` imports, not copies. |

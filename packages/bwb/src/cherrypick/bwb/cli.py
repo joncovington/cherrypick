@@ -7,6 +7,7 @@ Subcommands (all read-only):
     triggers    trigger-tick coverage for a session
     headline    per-arm results through the analytics layer
     replay      the read-side threshold replay over bwb_trigger_ticks (see replay.py)
+    addon-replay  the add-on scored as its own trade, with no fly (see addon_replay.py)
 
 The paper loop's own argv (`python -m cherrypick.bwb.paper_loop --once|--interval|--settle|
 --status`) is what the orchestrator drives; this CLI is the human read side.
@@ -96,6 +97,17 @@ def cmd_replay(args) -> int:
     return 0
 
 
+def cmd_addon_replay(args) -> int:
+    from cherrypick.bwb import addon_replay, db
+
+    conn = db.connect(args.db)
+    result = addon_replay.run(conn, load_config(args.config))
+    if not args.trades:
+        result.pop("trades")
+    print(json.dumps({"ok": True, **result}, indent=2, default=str))
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="bwb", description="SPX daily-laddered BWB / 1-3-2 paper module")
     ap.add_argument("--config")
@@ -119,6 +131,9 @@ def main(argv=None) -> int:
         "--validate", action="store_true", help="also validate base thresholds against reality"
     )
     p_replay.set_defaults(func=cmd_replay)
+    p_addon = sub.add_parser("addon-replay", help="the add-on scored as its own trade, with no fly")
+    p_addon.add_argument("--trades", action="store_true", help="include every trade, not just the totals")
+    p_addon.set_defaults(func=cmd_addon_replay)
 
     args = ap.parse_args(argv)
     return args.func(args)

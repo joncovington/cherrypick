@@ -21,7 +21,8 @@ Two honesty rails, both load-bearing (the calendars precedent):
   live loop.
 - **A hypothetical fire is priceable, not just timeable.** The add-on bracket's own bid/ask are
   carried on every trigger-tick row for exactly this reason; a fire tick whose bracket quotes are
-  incomplete reports `priceable: False` rather than inventing a credit.
+  incomplete reports `priceable: False` rather than inventing a credit. (They were recorded as NULL
+  on every row until 2026-09-26, so every fire before then reports `priceable: False`.)
 
 `validate_against_real` checks the replay's base-threshold (`TRIGGER_DEFAULTS`) reconstruction
 against what the real arms actually recorded for this cohort. It compares ARM outcome (whether the
