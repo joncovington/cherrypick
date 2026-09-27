@@ -388,6 +388,24 @@ reversal is a different measure and worth carrying beside it, but at a constant 
 interpolating total variance between the two expirations either side of 30 days — rather than on
 the nearest expiration as the recorder does now.
 
+## Charting sources, and what each one is for
+
+More than one charting source can be used, as long as each does a different job. Mixing them up —
+scoring our engine against another tool's levels, say — would measure agreement with the wrong
+thing.
+
+| Source | Role | Why |
+|---|---|---|
+| The vendor's chart pages | **The fixture.** The only place its levels, 1–10 score, trend grades and named signals exist. | Collected daily (Phase 0b). Everything we build is scored against these. |
+| Dolt bars (Phase 2) | **The input.** Every indicator and level of ours is computed from them. | Deterministic, rebuildable, covers the universe. |
+| tastytrade (DXLink daily candles) | **A cross-check of the input.** The streamer already backfills daily candles for its own symbols. | Confirms Dolt's bars and adjustment on a small panel. Not a universe source: the streamer can't carry hundreds of names. Its in-app charts are pictures of the same bars and add nothing. |
+| TradingView (the website) | **A one-off sanity check,** by eye. | Its CCI(20) and RSI(14) on a named ticker confirm our formulas: typical price, mean deviation and the 0.015 constant are easy to get subtly wrong. Its automatic support/resistance tools are community scripts with rules of their own, so they'd be a third opinion, not the vendor's; its scripts only run inside TradingView; and scripted access to the site is against its terms. It is not a data source. |
+| TradingView's `lightweight-charts` library | **The render.** Apache-2.0, and already the console's chart library (`packages/console/package.json`). | Phase 7 draws our rebuilt chart — candles, our levels, the CCI panel, our signal marker — beside the vendor's values for the same name, so a disagreement is visible, not just a number in a table. |
+
+RSI and CCI never need a chart: they are pure functions over daily bars, computed in the engine.
+Charts are for the two things that are not formulas: the vendor's levels (the fixture) and a
+human looking at where ours differ.
+
 ## Prior art on GitHub
 
 Searched 2026-09-27. Only MIT, BSD and Apache code can be copied; GPL, AGPL and unlicensed code is
@@ -495,6 +513,21 @@ collection doesn't depend on someone remembering to save a page. So the collecto
 - **Scheduled by the supervisor** after the edition is published (the editions say "as of" about
   6:00–6:20 AM ET), with one later retry, the way `refresh_dolt_data.py` is scheduled. It fetches
   only the current day's edition, plus any missing recent days the site still lists, once each.
+- **The chart pages are collected too, by the same job, in the evening.** A chart page shows the
+  latest close, so a capture taken after that session's close (the data is delayed 20 minutes;
+  17:00 ET is safe) pairs with the *next* morning's edition — the same-session pairing the
+  directional-score and 1–10-score questions need. The panel is fixed plus variable: the 22 names
+  already captured, SPY / QQQ / RSP / IWM, and every name the day's edition mentions (stacked
+  signals, top relative strength, the eight largest trades, the earnings trade), capped at about
+  forty and fetched one at a time with a pause. For each name it saves **the page's values as
+  data** — last price, 52-week range, 1M and 6M trend, 1–10 score, IV rank, liquidity class,
+  earnings date, dividend, every support and resistance price, the named signal and the
+  price-action sentence — as `vendor-charts/YYYY-MM-DD/<TICKER>.json`, plus a screenshot on the
+  longest view for the levels' starting bars. The first run records the page's network traffic:
+  if the chart loads its levels, trends or bars as JSON, that response is kept instead of reading
+  the page text, since it carries exact numbers rather than rounded display. A capture that
+  doesn't parse (a missing price, a level that isn't a number, the wrong ticker) is rejected like
+  an edition that fails its checks.
 - **Check the subscription's terms first.** Automated download of one's own subscription for
   personal use is usually fine, but the terms decide it, and a "no automated access" clause means
   staying manual.
@@ -574,6 +607,8 @@ producer — the rule `packages/overview/CLAUDE.md` already states.
 ### Phase 7 — the render
 
 - The new sections in the pack and on the console's Morning tab.
+- A chart view per name in `lightweight-charts`: our candles, levels, CCI and signal marker, with
+  the vendor's captured values for the same date beside them.
 - A headline feed to `scripts/morning_narrative.py` for sections 3 and 8's prose.
 
 ## Fixtures from the 2026-09-21 to 09-25 editions
