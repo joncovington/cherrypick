@@ -199,3 +199,9 @@ def test_edition_symbols_skip_the_breadth_table_but_keep_names_discussed_elsewhe
         + link.format(s="NVDA")
     )
     assert fve.edition_symbols(page) == ["AMD", "NVDA"]
+
+
+def test_the_user_agent_is_regular_chrome_of_the_installed_version():
+    ua = fve.chrome_user_agent("151.0.7922.34", "win32")
+    assert "Headless" not in ua
+    assert "Chrome/151.0.0.0 " in ua and "Windows NT 10.0; Win64; x64" in ua

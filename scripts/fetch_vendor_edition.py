@@ -268,11 +268,39 @@ class NeedsPerson(RuntimeError):
 # ------------------------------------------------------------------------------------------------
 
 
+def chrome_user_agent(version: str, platform: str = sys.platform) -> str:
+    """The user-agent a regular (headed) Chrome of this version sends: major version only, the
+    rest zeroed, as Chrome itself reports it. Headless Chromium says "HeadlessChrome"; the user
+    asked (2026-09-27) for the collector to present as Chrome instead. Only the user-agent is
+    changed — `navigator.webdriver` is left as the browser sets it."""
+    major = version.split(".")[0]
+    os_part = {
+        "win32": "Windows NT 10.0; Win64; x64",
+        "darwin": "Macintosh; Intel Mac OS X 10_15_7",
+    }.get(platform, "X11; Linux x86_64")
+    return (
+        f"Mozilla/5.0 ({os_part}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{major}.0.0.0 Safari/537.36"
+    )
+
+
+def _installed_chrome_version(pw) -> str:
+    """Read from the bundled browser itself (a local launch, no network), so the user-agent keeps
+    matching the engine after a Playwright upgrade."""
+    browser = pw.chromium.launch(headless=True)
+    try:
+        return browser.version
+    finally:
+        browser.close()
+
+
 def _open_browser(pw, headed: bool):
     profile = store_dir() / "browser-profile"
     profile.mkdir(parents=True, exist_ok=True)
     return pw.chromium.launch_persistent_context(
-        str(profile), headless=not headed, viewport={"width": 1400, "height": 1000}
+        str(profile),
+        headless=not headed,
+        viewport={"width": 1400, "height": 1000},
+        user_agent=chrome_user_agent(_installed_chrome_version(pw)),
     )
 
 
