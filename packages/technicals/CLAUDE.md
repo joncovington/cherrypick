@@ -136,6 +136,15 @@ bearish counter-trend rule to 40/55 on bullish trend-following. The CCI rules ru
 (the list states it), and a dip is yesterday's CCI below -100 with today's back above. One day of
 list is one day: the rules are declared and re-scored as the nightly captures add lists.
 
+**Out of sample (2026-09-28, a second capture of 39 scan-list names never used in fitting; 79
+names in all):** bars match the vendor's at 99%+ on 73 (ENB and ILMN join the foreign misses); the
+level grid places all 375 levels on those 73; trend labels agree on 79.8% (short) and 76.0% (long)
+of ~97,000 daily scores. **Which grid points the vendor draws is still unsolved, and it is not
+approximated here:** a rule of nearest snapped swing points plus the extremes matches ~40% of the
+vendor's levels, nearly all of them the extremes. Level dates are mostly swing highs, and a level
+can sit above, inside or well away from its dated bar, so the vendor evidently selects from
+something these fields do not show. The report can place levels exactly; it cannot yet pick them.
+
 ## Scheduling
 
 One supervisor job, `technicals-land` (06:15 ET daily, after the 05:30 Dolt pull; config block
