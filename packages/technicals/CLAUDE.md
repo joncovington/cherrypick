@@ -115,6 +115,20 @@ term, within one step 85% and 78% -- while no moving-average combination gets th
 past ~50%. `score-trends` keeps re-scoring against every capture. Levels, the 1-10 rank and the
 named signals come next.
 
+**The level grid is solved** (`levels.py`, `score-levels`). Every one of the vendor's 192 levels on
+the 35 names captured is either the high or the low of the last 250 sessions, as printed, or a
+point on a grid anchored at that low with a step of the "nice" number nearest -- by ratio -- to
+(high - low) / 100. Both details came from misses: the window is 250 sessions, not 252 (three
+names' lows sat on the 252nd), and ADI's range/100 of 2.24 takes 2.50, nearer by ratio. On our own
+bars the grid places all 186 levels on the names whose bars agree with the vendor's. Which grid
+points become levels is still open: 83% of level dates are swing highs, supports included, but the
+price is not simply that high snapped.
+
+**The 1-10 rank** (`score-rank`) is the decile of a ~6-month (125-session) return percentile:
+Spearman 0.95 against the vendor's over 34 names, within one step on 31-33 depending on the
+universe it is ranked in, exact on about 40%. The vendor ranks within its own universe, which 34
+names cannot pin down.
+
 ## Scheduling
 
 One supervisor job, `technicals-land` (06:15 ET daily, after the 05:30 Dolt pull; config block
@@ -140,4 +154,6 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-rotation` | The rotation rule against every saved edition. |
 | `python -m cherrypick.technicals breadth [--sessions N]` | Daily leaders, laggards, net and bullish share. |
 | `python -m cherrypick.technicals score-trends` | The trend baseline against every vendor chart capture: exact, label and within-one agreement. |
+| `python -m cherrypick.technicals score-levels` | How many of the vendor's levels our grid places, on names whose bars agree to the cent. |
+| `python -m cherrypick.technicals score-rank` | Our 1-10 rank against the vendor's. |
 | `python -m cherrypick.technicals score-stages` | The stage rule against every saved edition: side recall, stage agreement, extra rate, counts. |

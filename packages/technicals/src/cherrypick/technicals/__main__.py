@@ -175,6 +175,20 @@ def cmd_score_trends(_args) -> int:
     return 0
 
 
+def cmd_score_levels(_args) -> int:
+    from . import chart_score
+
+    print(json.dumps(chart_score.score_levels(), indent=1))
+    return 0
+
+
+def cmd_score_rank(_args) -> int:
+    from . import chart_score
+
+    print(json.dumps(chart_score.score_rank(), indent=1))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m cherrypick.technicals", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -209,6 +223,10 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("score-trends", help="the trend baseline against every vendor chart capture").set_defaults(
         fn=cmd_score_trends
     )
+    sub.add_parser("score-levels", help="how many vendor levels our grid places").set_defaults(
+        fn=cmd_score_levels
+    )
+    sub.add_parser("score-rank", help="our 1-10 rank against the vendor's").set_defaults(fn=cmd_score_rank)
     args = ap.parse_args(argv)
     return args.fn(args)
 

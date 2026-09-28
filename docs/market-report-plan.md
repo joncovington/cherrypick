@@ -725,6 +725,15 @@ named signals. The collector saves up to 40 names a night from 2026-09-28; each 
 of trend scores and every level with its source bar, so the fitting resumes after about a week of
 captures, with agreement reported as a rate as below.
 
+**Advanced the same night on 40 captures** (a paced hand run of the collector). Three results:
+the **level grid is solved** -- all 192 levels are a 250-session extreme or a point on a grid
+anchored at the 250-session low, stepping by the nice number nearest by ratio to the range / 100
+(which grid points are drawn is still open; their dates are swing highs); the **1-10 rank** is the
+decile of a ~6-month return percentile (Spearman 0.95, within one step on 31-33 of 34); and the
+trend baseline holds out of sample (label agreement 79% short, 75% long). On the way, Dolt's
+dividends proved wrong for several names (86.8% of prices matched the vendor's), and reconciling
+them with tastytrade's history brought 36 of 40 names to 99% or better.
+
 - Dividend-adjusted daily bars first: the level placement depends on them (see "What the
   platform's charts show"). Phase 2 supplies them.
 - The 1M and 6M trends on the five-step scale, from a triple moving average; CCI; RSI; the 1–10
