@@ -686,7 +686,10 @@ def _check_earnings_calendar(cfg: dict[str, Any]) -> list[Finding]:
                 WARN,
                 "Earnings calendar unreadable",
                 "The last pull could not read earnings_calendar; a calendar nothing can query is "
-                "as useless to the scanner as an empty one.",
+                "as useless to the scanner as an empty one."
+                + (f" Error: {raw['earnings_calendar_error']}." if raw.get("earnings_calendar_error") else "")
+                + " If it reads fine now, `python scripts/refresh_dolt_data.py --recheck` clears this "
+                "without waiting for the next pull.",
             )
         ]
     try:
