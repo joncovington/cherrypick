@@ -94,3 +94,19 @@ declared pair needs its own reason of the same kind. `partial_session` breaks ar
 the era rather than excluded from it; excluding those dates would touch the shared
 `_period_clause`, and none falls inside the current era. Curve is the natural third writer (one
 dimension, `entry_regime`/`entry_ratio` already on the row) once its fee floor lets it enter.
+
+## Staged salvage completion on a wider wing
+
+`scripts/flies_stranded_replay.py` replays a completion limit that relaxes from `credit − fee_buffer`
+to `credit + x` after T minutes. On the 5-wide it is dead by construction (experiment-log
+2026-09-28: the best completing debit comes ~3 minutes after entry, so relaxing buys ATM flies for a
+debit). On the 10-wide `advised:narrow-wing-vs-control` it beat the base in 11 of 24 cells, on 11
+sessions, now retired, with pessimistic accounting in both directions.
+
+- **Reopens when** a 10-wide (or wider) legged arm is back on the roster for its own reasons and has
+  15+ sessions of its own — the salvage is then a replay over its rows, not a reason to run the arm.
+- **Then:** re-run the script on that arm, and replay the best cell under the live one-incomplete
+  and margin-cap rules before any live question; the replay's charge on late completions is a
+  bound, so a positive result is a floor on the benefit, and a negative one is not.
+- **Never on the 5-wide.** Rule 6's limits apply: this completes at a known negative floor, which is
+  a choice between two held positions, never a licence for an entry.

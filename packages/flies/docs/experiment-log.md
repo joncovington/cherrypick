@@ -298,3 +298,71 @@ that too. 2026-09-23's stored book `pnl` ($201.04) is stale against its own reco
 Consequences for reads of the band classifier (`python run.py bands`) and any `floor_holds` rate:
 re-run them; figures taken before today rest on the old floors. Backups sit beside each ledger as
 `*.bak-pre-floor-recompute-20260924-*`.
+
+## 2026-09-28 — the stranded edge spreads: five rules replayed, none adopted (a negative result)
+
+Asked after live control's 09-28 book (+$166.11 at 7683.69): five flies and one 7670/7675 call
+spread sold at 10:49 near the session low, which never completed and settled −$253.44 as SPX rallied
+back into the forest. The question was whether a rule could stop an uncompleted spread at the edge
+of the forest ending as a full loss. Nothing was changed. The replay is
+`scripts/flies_stranded_replay.py` (read-only; `--arm`, `--all`, `--ledger live`), so every figure
+below can be re-run on later sessions rather than re-derived.
+
+**The shape, paper control 08-11..09-28 (33 sessions, 238 legged entries).** 53 stranded: 48 settled
+fully through the long wing (avg −$284), 5 partially, **none** out of the money. That is structural —
+a spread whose short strike ends out of the money had its completion on the way there — so the
+stranded branch is close to a binary −$285 against +$88 per completed fly: break-even completion
+74.8% against 77.7% observed. Live since 09-17 is the same shape: 5 of 5 full.
+
+**What was replayed, all on 5-wide control unless named:**
+
+- **A stop (spot or mark).** Every entry is sold at the money, so it starts at its short strike; the
+  stranded spreads crossed the long wing a median **6 minutes** after entry, and **85 of the 185
+  completed flies went past their long wing before completing**. The two branches are
+  indistinguishable for the first half hour, and past the wing the loss is already taken. No stop
+  threshold separates them. Nothing further to test here.
+- **Completion at a small loss** (limit `credit − fee_buffer` for T minutes, then `credit + x`).
+  Every stranded spread's best completing debit came within +1.00 of its credit and 25 within
+  +0.25, which looks like a near miss. It is not: the best debit came a median **3.0 minutes after
+  entry**, when the completing half of an ATM fly costs about what the first half sold for, by
+  construction. Relaxing the limit buys ATM flies for a debit and gives up the drift the legging is
+  for. Charged pessimistically (a late completion fills at `credit + x`; a stranding is rescued only
+  if its best debit came after T), **0 of 24** (x, T) cells beat the base; the best, x=0 T=90, is
+  +$1,072 against +$2,416.
+- **The hedge overlay** (`run.py hedge-overlay`, 45 tracked entries since 09-19): stranded
+  −$2,514 → +$326, completed +$2,707 → +$90, net +$223, all of it from two paid hedges. Insurance
+  priced at its payout.
+- **Entry location** (spot's position in the running session range, distance to the running extreme
+  in the completing direction): no separation; the sign flips between call and put entries.
+- **`miss_stop_minutes`** (`run.py replay-gates`, 08-21 era): 45 min +$3,526 → +$3,847 and a better
+  worst day, but losing days 6 → 11 and 21 of 36 strandings still happen.
+- **Refusing a second entry on a side with an uncompleted spread open** (the stranded runs are
+  same-side: five calls on 09-21, four puts on 08-11). Control 08-11 era: +$2,416 → +$2,641, worst
+  day −$836 → −$396, losing days 11 → 13. The 08-21 era alone: **+$3,526 → +$2,100**. Across the
+  paper arms it helps sharply on every arm that traded **only** 08-11..08-20 (gex-intrinsic −$182 →
+  +$1,241, time_window, floor-must-hold, the width sweep) and hurts or does nothing on every arm
+  that traded after 08-21 (no-entry-on-up-trend +$520 → −$84, forecast-range-gate +$736 → −$566,
+  callwall flat). Those August arms shared eight sessions, so that is one tape counted six times, not
+  six confirmations.
+
+**The other paper arms.** Every 5-wide legged arm (gex, gex-intrinsic, control-drift, time_window,
+callwall, and the advised twins) shows control's shape: strandings almost all full, the wing crossed
+within minutes (callwall's 30 is the exception — it sells at the call wall, away from spot), the best
+completing debit within a few minutes of entry, and 0–1 of 24 salvage cells beating the base
+(callwall 4/24). `debit-first-atm` does not escape it: its uncompleted long vertical averages −$258,
+the same size, since an ATM debit spread costs about half the width. The delta-placed
+`debit-first-up`/`-down` do bound the branch (−$82 / −$70) at a completion cost (62% / 41%), on six
+sessions — that is the pair's own read at 15–20 sessions, not this one's.
+
+**The one place the salvage conclusion does not hold: the 10-wide wing.** On
+`advised:narrow-wing-vs-control` (wing 10, 11 sessions 08-21..09-04) strandings are not binary (19
+full, 9 partial, 5 out of the money), the wing is crossed a median 23 minutes after entry, the best
+completing debit comes a median 21 minutes after entry, and **11 of 24** salvage cells beat the base
+(best x=0.5 T=15: +$3,019 → +$4,307, 9 rescued). `width-2` (the same 10-wide, four sessions of the
+August tape) shows 9 of 24. So "the near miss is an entry artefact" is a statement about the 5-wide
+structure, where the whole wing is one strike, not about legged flies. Recorded as a lead in
+[backlog.md](backlog.md); not re-run as an arm here.
+
+**No conclusion is drawn from the 10-wide lead, and nothing is gated.** The finding that stands:
+on the 5-wide the stranded loss is the price of the completions, not a leak a rule can plug, and
+the uncompleted branch is shrunk only by a different construction.
