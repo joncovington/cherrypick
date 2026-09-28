@@ -69,6 +69,8 @@ CATCHUP_MINUTES = {
     "technicals-dividends": 12 * 60,
     "market-files": 600,
     "market-files-retry": 40,
+    # Priced at the close for the next morning's pack; a late run still prices that close.
+    "earnings-moves": 600,
     # A light checkpoint describes the session as it stands, so catching one up past the next slot
     # would produce two checkpoints describing nearly the same afternoon. The deep slot is
     # different: it issues the next session's advice, so it stays worth firing until late evening.
@@ -761,6 +763,21 @@ def derive_jobs(
                 enabled_reason="" if files_on else "disabled in config (morning.files)",
             ),
         )
+    em_on = mv["enabled"] and mv["earnings_moves"]
+    add(
+        "earnings-moves",
+        lambda: JobSpec(
+            id="earnings-moves",
+            # A script: it prices straddles through the broker (read-only); the pack reads its file.
+            argv=(pythonw, _suite_script(launcher, "fetch_earnings_moves.py")),
+            kind=KIND_DAILY,
+            at_et=mv["earnings_moves_at"],
+            catchup_minutes=CATCHUP_MINUTES["earnings-moves"],
+            trading_days_only=True,
+            enabled=em_on,
+            enabled_reason="" if em_on else "disabled in config (morning.earnings_moves)",
+        ),
+    )
     add(
         "morning-factpack",
         lambda: JobSpec(

@@ -750,6 +750,12 @@ them with tastytrade's history brought 36 of 40 names to 99% or better.
 
 ### Phase 5 — calendar and trade ideas
 
+**Done 2026-09-28.** `scripts/fetch_earnings_moves.py` prices, each evening, the post-event straddle
+of every stock the report covers with an announcement in the next seven days (the earnings module's
+expiration rule, the suite's 0.85 x straddle expected move, the session close as spot), and the
+morning pack lists them beside the release calendar. The first week: MTN ±8.5%, CCL ±6.3%, MU ±7.3%,
+ACN ±6.7%, NKE ±6.9%. No trade ideas, per Phase 0.
+
 - Earnings in the next week with implied move (the earnings module already computes it) and the
   release calendar from Phase 1.
 - No income trade ideas (Phase 0: not for now).

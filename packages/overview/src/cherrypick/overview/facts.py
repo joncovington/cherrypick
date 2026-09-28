@@ -761,6 +761,10 @@ def _calendar_block(session: str) -> dict:
         # BEA always; FRED's (CPI, jobs, PPI) only once a FRED key is stored. No consensus
         # estimates: no free source gives them.
         "releases": _files.releases(session, 7),
+        # The week's announcements among the stocks the market report covers, each with the move its
+        # post-event straddle implies (scripts/fetch_earnings_moves.py; the suite's one definition,
+        # 0.85 x the ATM straddle). Priced at the prior close; no trade ideas (Phase 0).
+        "earnings": _files.earnings_week(session, 7),
     }
 
 

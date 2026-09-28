@@ -308,6 +308,10 @@ def morning_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "files": mv.get("files", True),
         "files_at": mv.get("files_at", "18:45"),
         "files_retry_at": mv.get("files_retry_at", "07:45"),
+        # Next week's earnings with their implied moves (scripts/fetch_earnings_moves.py): reads the
+        # broker (chains and quotes, read-only), so after the close, before the pack reads it.
+        "earnings_moves": mv.get("earnings_moves", True),
+        "earnings_moves_at": mv.get("earnings_moves_at", "18:40"),
     }
 
 

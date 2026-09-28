@@ -565,7 +565,10 @@
     "_comment_files": "The daily market files the pack reads (scripts/fetch_market_files.py): Cboe's SKEW/VIX/VVIX/VXN histories, Treasury's par yield curve and BEA's release dates, into data/market-files/. Credential-free, so ON with the pack: 'files_at' after Treasury posts (~18:00 ET), 'files_retry_at' before the pack builds. A download that parses to less than the file on disk is refused, so a failed fetch leaves yesterday's files. CPI, jobs and PPI dates need a free FRED API key, stored once with `python scripts/fetch_market_files.py fred-key`; without one the calendar carries BEA's releases and the FOMC dates only.",
     "files": true,
     "files_at": "18:45",
-    "files_retry_at": "07:45"
+    "files_retry_at": "07:45",
+    "_comment_earnings_moves": "Next week's earnings among the stocks the market report covers, each with the move its post-event straddle implies (scripts/fetch_earnings_moves.py; 0.85 x the ATM straddle, the suite's one definition), priced at the close into data/market-report/earnings/week.json for the next morning's pack. Reads the shared broker credential, read-only, one chain a second.",
+    "earnings_moves": true,
+    "earnings_moves_at": "18:40"
   },
   "technicals": {
     "_comment": "packages/technicals - the market report's end-of-day store. Lands raw daily bars, splits, dividends and IV history for the universe candidates, the 35 rotation ETFs and the benchmarks from the LOCAL Dolt clones into data/technicals/eod.db, at 'land_at' ET after the 05:30 Dolt pull. Adjusted bars are computed from raw on read. Read-only against Dolt; needs the earnings module on, since its job keeps the dolt sql-server alive. ON by default.",

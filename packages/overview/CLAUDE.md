@@ -95,6 +95,12 @@ The same run found an older fault in the prior-close reader: with the prior sess
 it took the newest row it could find, and IWM's Friday (+0.11%) printed as -1.83% against a close
 two sessions back. The base is now only the print's own session row or the one exactly before it.
 
+- **`calendar.earnings`**: the next seven days' announcements among the stocks the market report
+  covers, each with the move its post-event straddle implies (`scripts/fetch_earnings_moves.py`,
+  priced at the close; the suite's one definition, 0.85 x the ATM straddle, on the first expiration
+  the market can trade the print on -- the earnings module's own rule, copied and pinned equal by a
+  test). A file more than four days older than the session is refused, not shown as this week's.
+
 None of these feed a gate or the deployment score. They are fact-pack v4 additions; a v3 pack
 still renders.
 

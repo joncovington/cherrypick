@@ -309,6 +309,7 @@ def test_derive_full_suite_job_table():
         "market-files-retry",
         "technicals-land",
         "technicals-dividends",
+        "earnings-moves",
         "review-provisional",
         "review-final",
         "review-narrative",
@@ -958,3 +959,16 @@ def test_the_dividend_fetch_is_a_script_on_by_default():
     cfg = suite_cfg()
     cfg["technicals"] = {"dividends": False}
     assert not {j.id: j for j in derive(cfg)[0]}["technicals-dividends"].enabled
+
+
+def test_earnings_moves_are_priced_after_the_close_and_before_the_pack():
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    job, pack = by_id["earnings-moves"], by_id["morning-factpack"]
+
+    def minutes(at):
+        h, m = (int(x) for x in at.split(":"))
+        return h * 60 + m
+
+    assert job.enabled and job.trading_days_only and minutes(job.at_et) >= 16 * 60 + 15
+    assert job.argv[-1].endswith("fetch_earnings_moves.py")
+    assert minutes(pack.at_et) < minutes(job.at_et), "an evening job the next morning's pack reads"

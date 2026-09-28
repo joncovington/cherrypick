@@ -277,6 +277,33 @@ def risk_reversal_before(session: str) -> dict | None:
     return rows[days[-1]] if days else None
 
 
+def earnings_week_path() -> Path:
+    """Written by scripts/fetch_earnings_moves.py; read-only here."""
+    return _home.data_dir("market-report") / "earnings" / "week.json"
+
+
+def earnings_week(session: str, days: int = 7) -> dict:
+    """Announcements from the session through `days` calendar days on, each with its implied move,
+    from the file the evening fetch writes. `as_of` is when the straddles were priced -- the prior
+    session's close for a morning pack -- and a file older than the session before is refused
+    rather than shown as this week's."""
+    raw = _read(earnings_week_path())
+    if not raw:
+        return {"rows": [], "as_of": None, "reason": "no_earnings_file"}
+    try:
+        doc = json.loads(raw)
+    except ValueError:
+        return {"rows": [], "as_of": None, "reason": "unreadable_earnings_file"}
+    start = date.fromisoformat(session)
+    generated = str(doc.get("generated_at") or "")[:10]
+    if not generated or (start - date.fromisoformat(generated)).days > 4:
+        return {"rows": [], "as_of": generated or None, "reason": "stale_earnings_file"}
+    end = start + timedelta(days=days)
+    rows = [r for r in doc.get("rows") or [] if start.isoformat() <= str(r.get("date")) <= end.isoformat()]
+    rows.sort(key=lambda r: (r["date"], r.get("when") != "Before market open", r["symbol"]))
+    return {"rows": rows, "as_of": doc.get("generated_at"), "reason": None}
+
+
 def releases(session: str, days: int = 7) -> list[dict]:
     """Scheduled releases from the session's date through `days` calendar days after it, oldest
     first, each with its ET date and time. BEA always; FRED's (CPI, jobs, PPI and more) when a

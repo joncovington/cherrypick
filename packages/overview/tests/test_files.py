@@ -226,3 +226,35 @@ def test_the_pack_reads_the_risk_reversal_from_the_session_before():
     assert files.risk_reversal_before("2026-09-25")["rr_vol_pts"] == -3.0
     assert files.risk_reversal_before("2026-09-28")["rr_vol_pts"] == -3.5
     assert files.risk_reversal_before("2026-09-24") is None
+
+
+# --------------------------------------------------------------------------- the earnings week
+
+
+def _week(rows, generated="2026-09-27T22:40:00+00:00"):
+    _write(files.earnings_week_path(), json.dumps({"generated_at": generated, "rows": rows}))
+
+
+def test_the_earnings_week_is_the_next_seven_days_in_date_and_timing_order():
+    _week(
+        [
+            {"symbol": "NKE", "date": "2026-10-01", "when": "After market close", "expected_move": 2.47},
+            {"symbol": "ACN", "date": "2026-10-01", "when": "Before market open", "expected_move": 11.81},
+            {"symbol": "MU", "date": "2026-09-30", "when": "After market close", "expected_move": 79.37},
+            {"symbol": "OLD", "date": "2026-09-25", "when": "After market close", "expected_move": 1.0},
+            {"symbol": "FAR", "date": "2026-10-09", "when": "After market close", "expected_move": 1.0},
+        ]
+    )
+    week = files.earnings_week("2026-09-28", 7)
+    assert [r["symbol"] for r in week["rows"]] == ["MU", "ACN", "NKE"]
+    assert week["reason"] is None
+
+
+def test_a_stale_earnings_file_is_refused_not_shown_as_this_week():
+    _week([{"symbol": "MU", "date": "2026-09-30"}], generated="2026-09-18T22:40:00+00:00")
+    week = files.earnings_week("2026-09-28", 7)
+    assert week["rows"] == [] and week["reason"] == "stale_earnings_file"
+
+
+def test_no_earnings_file_is_reported():
+    assert files.earnings_week("2026-09-28")["reason"] == "no_earnings_file"

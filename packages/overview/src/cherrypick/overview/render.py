@@ -272,6 +272,25 @@ def render(session: str) -> str | None:
             )
     elif releases == []:
         lines.append("- Scheduled releases, next seven days: none on file")
+    earnings = cal.get("earnings") or {}
+    if earnings.get("rows"):
+        lines.append("- Earnings, next seven days (implied move from the post-event straddle, prior close):")
+        for r in earnings["rows"]:
+            when = (
+                "before open"
+                if r.get("when") == "Before market open"
+                else "after close"
+                if r.get("when")
+                else "time n/a"
+            )
+            move = (
+                f"±${r['expected_move']:,.2f} (±{r['expected_move_pct']:.1f}%) to {r['expiration']}"
+                if r.get("expected_move") is not None
+                else f"move not priced ({r.get('reason')})"
+            )
+            lines.append(f"  - {r['date']} {when} — {r['symbol']}: {move}")
+    elif earnings.get("reason"):
+        lines.append(f"- Earnings, next seven days: not available ({earnings['reason']})")
     lines.append("")
 
     lines.append("---")
