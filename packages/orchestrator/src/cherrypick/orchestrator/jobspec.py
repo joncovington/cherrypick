@@ -69,6 +69,13 @@ CATCHUP_MINUTES = {
     # but one caught up at 20:00 still serves the console and the next pack; past that the next
     # session rewrites it.
     "regime-cuts": 240,
+    # The vendor-edition collector (the market-report fixture feed). An edition fetched late is
+    # still the same edition, so the morning pair catches up to mid-morning; the retry is the
+    # second chance, not a second request (a day already saved is skipped). The evening chart
+    # capture keys its files by the session of the latest bar, so a late one still files right.
+    "report-edition": 180,
+    "report-edition-retry": 180,
+    "report-charts": 300,
     # Broker-cash reconciliation of a settled live session. Generous, because the whole point is
     # that it must not depend on anyone arming the live loop: a box asleep until mid-afternoon
     # should still reconcile that morning's pending dates, and an unreconciled date is only
@@ -307,6 +314,10 @@ def _futures_contracts_script(launcher: str) -> str:
 
 def _dolt_data_script(launcher: str) -> str:
     return _suite_script(launcher, "refresh_dolt_data.py")
+
+
+def _vendor_collector_script(launcher: str) -> str:
+    return _suite_script(launcher, "fetch_vendor_edition.py")
 
 
 def _module_tick_argv(paper: dict[str, Any]) -> list[str] | None:
@@ -729,6 +740,29 @@ def derive_jobs(
             ),
         ),
     )
+    mr = cfgmod.market_report_settings(cfg)
+    mr_reason = "" if mr["collector"] else "disabled in config (market_report.collector)"
+    for job_id, at, sub in (
+        ("report-edition", mr["edition_at"], "edition"),
+        ("report-edition-retry", mr["edition_retry_at"], "edition"),
+        ("report-charts", mr["charts_at"], "charts"),
+    ):
+        add(
+            job_id,
+            lambda job_id=job_id, at=at, sub=sub: JobSpec(
+                id=job_id,
+                # A script, not a package: it signs in to a third-party site. It paces itself (one
+                # session, 20-60 s between pages, a 24-hour cooldown after any 429/403) and stops at
+                # a challenge rather than retrying, so this schedule is the only thing that repeats it.
+                argv=(pythonw, _vendor_collector_script(launcher), sub),
+                kind=KIND_DAILY,
+                at_et=at,
+                catchup_minutes=CATCHUP_MINUTES[job_id],
+                trading_days_only=True,
+                enabled=mr["collector"],
+                enabled_reason=mr_reason,
+            ),
+        )
     add(
         "futures-contracts",
         lambda: JobSpec(

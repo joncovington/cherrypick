@@ -563,6 +563,13 @@
     "narrative": false,
     "narrative_at": "09:00"
   },
+  "market_report": {
+    "_comment": "The vendor-edition collector (scripts/fetch_vendor_edition.py) - the fixture feed for docs/market-report-plan.md. Fetches the vendor's pre-open report after it is published ('edition_at', with a second chance at 'edition_retry_at'; a day already saved is skipped) and, after the close, the data behind its chart pages ('charts_at'), into data/market-report/. Paced on purpose: one browser session, 20-60 s between pages, at most 40 chart pages, and a 24-hour cooldown after any 429/403. Stops at a captcha or refused login and notifies. OFF by default: store the login first (`python scripts/fetch_vendor_edition.py credentials` then `login`), put the dashboard address in data/market-report/collector.json, then set collector=true and re-run `install`. Times are ET.",
+    "collector": false,
+    "edition_at": "07:00",
+    "edition_retry_at": "08:15",
+    "charts_at": "17:15"
+  },
   "data_header": "x",
   "data_epoch": {
     "_comment": "Optional restatement marker. Declare when a correctness fix RESTATES what recorded paper history means (e.g. the phase-0 leg-ratio / fee-count / win-definition fixes): set 'date' to the first session traded on fixed code. `report` stays descriptive (totals still cover all history, plus a pre_epoch_trades count per module); `calibrate` ENFORCES it - promotion readings use only sessions on/after the date, so a rung can never graduate on numbers produced by retired code. Remove or leave date null when no restatement is in effect.",

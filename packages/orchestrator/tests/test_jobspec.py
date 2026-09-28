@@ -298,6 +298,9 @@ def test_derive_full_suite_job_table():
         "log-archive",
         "futures-contracts",
         "earnings-dolt-pull",
+        "report-edition",
+        "report-edition-retry",
+        "report-charts",
         "review-provisional",
         "review-final",
         "review-narrative",
@@ -803,3 +806,36 @@ def test_fee_reconcile_job_is_absent_when_a_module_does_not_declare_it():
     cfg["modules"]["flies"]["paper"]["fee_reconcile_at"] = "09:15"
     jobs, _ = derive(cfg)
     assert "flies-fee-reconcile" not in {j.id for j in jobs}
+
+
+# --------------------------------------------------------------------------- vendor collector (2026-09-27)
+def test_vendor_collector_jobs_are_off_until_a_login_is_stored():
+    """Each job signs in to a third-party site; on by default they would fail every morning on a
+    fresh box and notify about a login nobody has stored."""
+    jobs, _ = derive(suite_cfg())
+    by_id = {j.id: j for j in jobs}
+    for job_id in ("report-edition", "report-edition-retry", "report-charts"):
+        assert not by_id[job_id].enabled
+        assert "market_report.collector" in by_id[job_id].enabled_reason
+
+
+def test_vendor_collector_runs_after_publication_and_after_the_close():
+    """The edition is published ~06:00-06:20 ET; a fetch before 06:30 finds yesterday's at the top
+    and saves nothing. The chart data runs 20 minutes behind, so a capture before 16:20 files the
+    previous session under today's panel."""
+    cfg = suite_cfg()
+    cfg["market_report"] = {"collector": True}
+    jobs, errors = derive(cfg)
+    assert errors == {}
+    by_id = {j.id: j for j in jobs}
+
+    def minutes(job_id):
+        h, m = (int(x) for x in by_id[job_id].at_et.split(":"))
+        return h * 60 + m
+
+    assert all(by_id[j].enabled and by_id[j].trading_days_only for j in ("report-edition", "report-charts"))
+    assert minutes("report-edition") >= 6 * 60 + 30
+    assert minutes("report-edition-retry") > minutes("report-edition")
+    assert minutes("report-charts") >= 16 * 60 + 20
+    assert by_id["report-edition"].argv[-1] == "edition"
+    assert by_id["report-charts"].argv[-1] == "charts"
