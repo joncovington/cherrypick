@@ -109,10 +109,11 @@ period), each undefined until its window is full. `trend.py` is a **declared bas
 1M and 6M trend scores (-4..+4) and their five-step labels: the sum of four price-versus-average
 signs. The vendor's captures carry both scores daily, and on the two names on file (ANET, MSFT)
 no simple construction reproduces the exact number (55-58% of days), while the label agrees on
-about 80% (short) and 79% (long). Two names, both mostly bullish, are too few to fit further, so
-`score-trends` re-scores against every capture and the construction is refit once a week of
-captures (up to 40 names a night) is in. Levels, the 1-10 rank and the named signals wait on the
-same captures.
+about 80% (short) and 79% (long). Re-scored on 36 names (~25,000 short-term and ~20,000 long-term
+daily scores; 2026-09-27) it holds out of sample -- label agreement 79% short term and 75% long
+term, within one step 85% and 78% -- while no moving-average combination gets the exact number
+past ~50%. `score-trends` keeps re-scoring against every capture. Levels, the 1-10 rank and the
+named signals come next.
 
 ## Scheduling
 
