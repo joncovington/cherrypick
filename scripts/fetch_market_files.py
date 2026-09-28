@@ -149,6 +149,40 @@ def fred_releases(body: dict) -> list[dict]:
     return sorted(out, key=lambda r: (r["at"], r["name"]))
 
 
+FRED_PAGE = 1000  # the API's own ceiling per request
+FRED_MAX_PAGES = 6
+
+
+def fred_release_pages(key: str, today: date, get=None) -> list[dict]:
+    """Every release date FRED lists from today through 45 days out, oldest first, one page at a
+    time. FRED tracks ~40 releases a day, so the window runs to ~1,800 rows: one page of 1,000 in
+    its default newest-first order silently dropped the nearest two weeks -- this week's jobs report
+    and jobless claims included (found 2026-09-27). Paging oldest-first until `count` is reached is
+    the fix; running past `FRED_MAX_PAGES` raises rather than returning a partial calendar."""
+    get = get or (lambda url: json.loads(_get(url)))
+    params = {
+        "api_key": key,
+        "file_type": "json",
+        "realtime_start": today.isoformat(),
+        "realtime_end": (today + timedelta(days=45)).isoformat(),
+        "include_release_dates_with_no_data": "true",
+        "sort_order": "asc",
+        "limit": str(FRED_PAGE),
+    }
+    pages: list[dict] = []
+    seen = 0
+    for page in range(FRED_MAX_PAGES):
+        if page:
+            _pause()
+        body = get(FRED_RELEASES_URL + "?" + urllib.parse.urlencode({**params, "offset": str(seen)}))
+        rows = body.get("release_dates") or []
+        pages.append(body)
+        seen += len(rows)
+        if not rows or seen >= int(body.get("count") or 0):
+            return pages
+    raise RuntimeError(f"more than {FRED_MAX_PAGES} pages of release dates; not writing a partial calendar")
+
+
 def fetch_fred(report: dict, today: date) -> None:
     try:
         from cherrypick.core.auth.credentials import CredentialStore
@@ -159,20 +193,16 @@ def fetch_fred(report: dict, today: date) -> None:
     if not key:
         report["calendar"]["fred"] = "no key stored (run `fred-key`); CPI, jobs and PPI dates are absent"
         return
-    params = {
-        "api_key": key,
-        "file_type": "json",
-        "realtime_start": today.isoformat(),
-        "realtime_end": (today + timedelta(days=45)).isoformat(),
-        "include_release_dates_with_no_data": "true",
-        "limit": "1000",
-    }
     try:
-        body = json.loads(_get(FRED_RELEASES_URL + "?" + urllib.parse.urlencode(params)))
+        pages = fred_release_pages(key, today)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         # The key rides in the URL; never let it reach a report or a log line.
         report["problems"].append(f"FRED: {str(exc).replace(key, '****')}")
         return
+    except RuntimeError as exc:
+        report["problems"].append(f"FRED: {exc}")
+        return
+    body = {"release_dates": [row for page in pages for row in page.get("release_dates") or []]}
     rows = fred_releases(body)
     _write(
         files.fred_releases_path(),
