@@ -56,6 +56,9 @@ USERNAME, PASSWORD = "username", "password"
 # Pacing. Chosen to look like a person reading, not a crawler: the vendor's terms are silent on
 # automated access, and silence is not an invitation to hurry.
 PAUSE_RANGE_S = (20.0, 45.0)
+# A chart page load makes ~50 requests of its own (the app, its settings, the symbol list), so
+# chart pages are spaced further apart than report cards, which open inside a loaded page.
+CHART_PAUSE_RANGE_S = (30.0, 60.0)
 MAX_BACKFILL = 3
 COOLDOWN = timedelta(hours=24)
 CARD_READY_CHARS = 5000
@@ -235,8 +238,21 @@ def _warn(title: str, message: str) -> None:
         pass
 
 
-def _pause() -> None:
-    time.sleep(random.uniform(*PAUSE_RANGE_S))
+def _snapshot(page) -> Path | str:
+    """Keep what the page looked like when a run failed: a screenshot and the HTML, so the next
+    fix is made from evidence instead of another visit to the vendor."""
+    try:
+        out = store_dir() / "failures" / f"{datetime.now():%Y%m%d-%H%M%S}"
+        out.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(out / "page.png"), full_page=True)
+        (out / "page.html").write_text(page.content(), encoding="utf-8")
+        return out
+    except Exception:  # noqa: BLE001
+        return "unavailable"
+
+
+def _pause(bounds: tuple[float, float] = PAUSE_RANGE_S) -> None:
+    time.sleep(random.uniform(*bounds))
 
 
 class Throttled(RuntimeError):
@@ -272,6 +288,26 @@ def _login_needed(page) -> bool:
     return page.locator("input[type=password]").count() > 0
 
 
+def _research_tab(page):
+    """The Insights panel's Research category: a toolbar div labelled "Research", not a tab role
+    (seen 2026-09-27)."""
+    return page.locator(".ins-categories [aria-label='Research']")
+
+
+def _open_dashboard(page, url: str) -> None:
+    """Load the dashboard and wait for it to show either a login form or the Research tab.
+
+    Never waits for network idle: the dashboard holds a live connection open for streaming quotes,
+    so the network never goes quiet (the first live run timed out on exactly that)."""
+    page.goto(url, wait_until="domcontentloaded", timeout=90_000)
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        if _login_needed(page) or _research_tab(page).count():
+            return
+        time.sleep(2)
+    raise RuntimeError("the dashboard showed neither a login form nor the Research tab in 90 s")
+
+
 def _challenge_visible(page) -> bool:
     frames = page.locator(
         "iframe[src*='captcha'], iframe[src*='hcaptcha'], "
@@ -296,23 +332,35 @@ def _auto_login(page) -> None:
     page.locator("input[type=email], input[type=text], input[name*=user i]").first.fill(user)
     page.locator("input[type=password]").first.fill(pwd)
     page.locator("input[type=password]").first.press("Enter")
-    page.wait_for_load_state("networkidle", timeout=60_000)
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline and _login_needed(page) and not _challenge_visible(page):
+        time.sleep(2)
     if _challenge_visible(page) or _login_needed(page):
         raise NeedsPerson("the login did not complete (challenge, second factor or refusal)")
 
 
 def _research_headers(page):
-    tab = page.get_by_role("tab", name=re.compile(r"^\s*Research\s*$"))
-    if tab.count() == 0:
-        tab = page.get_by_text("Research", exact=True)
-    tab.first.click()
-    headers = page.locator("button", has_text=HEADER_RE)
+    """Switch the Insights panel to Research and return its report headers.
+
+    The dashboard renders its elements before it wires their click handlers, so a click the moment
+    the tab appears does nothing (the second live run clicked and stayed on DailyPlay). Settle,
+    click, and confirm the switch; the retries are clicks on the same page, never reloads."""
+    tab = _research_tab(page).first
+    time.sleep(5)
+    for _ in range(3):
+        tab.click()
+        time.sleep(4)
+        if tab.get_attribute("aria-selected") == "true":
+            break
+    else:
+        raise RuntimeError("the Research tab did not become active after three clicks")
+    headers = page.locator("button.ins-card-header", has_text=HEADER_RE)
     headers.first.wait_for(timeout=60_000)
     return headers
 
 
 _BUILD_PAGE_JS = """
-([card, title]) => {
+(card, title) => {
   const c = card.cloneNode(true);
   for (const b of c.querySelectorAll('button')) {
     if (b.textContent.includes(title)) { b.remove(); break; }
@@ -344,7 +392,7 @@ def _capture_card(page, header) -> tuple[str, date]:
             raise RuntimeError(f"{title}: content never finished loading")
         time.sleep(2)
     time.sleep(3)  # lazy content settles in more than one pass
-    return card.evaluate(_BUILD_PAGE_JS, [card.element_handle(), title]), when
+    return card.evaluate(_BUILD_PAGE_JS, title), when
 
 
 def save_edition(page_html: str, when: date, out_dir: Path) -> tuple[bool, list[str]]:
@@ -413,10 +461,10 @@ def cmd_edition(args) -> int:
         page = ctx.new_page()
         _watch_for_throttling(page, hits)
         try:
-            page.goto(cfg["dashboard_url"], wait_until="networkidle", timeout=90_000)
+            _open_dashboard(page, cfg["dashboard_url"])
             if _login_needed(page):
                 _auto_login(page)
-                page.goto(cfg["dashboard_url"], wait_until="networkidle", timeout=90_000)
+                _open_dashboard(page, cfg["dashboard_url"])
             headers = _research_headers(page)
             opened = 0
             for i in range(min(headers.count(), wanted)):
@@ -451,6 +499,15 @@ def cmd_edition(args) -> int:
             _warn(
                 "Report collector needs a person",
                 f"{exc}.\nRun: python scripts/fetch_vendor_edition.py login",
+            )
+            return 1
+        except Exception as exc:  # noqa: BLE001 -- anything else is a page that changed shape
+            where = _snapshot(page)
+            _warn(
+                "Report collector failed",
+                f"{type(exc).__name__}: {(str(exc).splitlines() or [''])[0]}\n"
+                f"Nothing was saved. Page snapshot: {where}\n"
+                "Fetch today's edition by hand if it matters.",
             )
             return 1
         finally:
@@ -510,8 +567,8 @@ def cmd_probe_chart(args) -> int:
             responses.append(entry)
 
         page.on("response", on_response)
-        page.goto(url, wait_until="networkidle", timeout=90_000)
-        time.sleep(8)
+        page.goto(url, wait_until="domcontentloaded", timeout=90_000)
+        time.sleep(20)  # the page streams; give its data calls time to land, then read once
         (out / "page.txt").write_text(page.inner_text("body"), encoding="utf-8")
         (out / "page.html").write_text(page.content(), encoding="utf-8")
         page.screenshot(path=str(out / "page.png"), full_page=True)
@@ -523,6 +580,201 @@ def cmd_probe_chart(args) -> int:
         + (f"\nWARNING: {len(throttled)} throttled/refused responses" if throttled else "")
     )
     return 0
+
+
+# ------------------------------------------------------------------------------------------------
+# Chart pages: the data behind them, not pictures of them.
+# ------------------------------------------------------------------------------------------------
+
+# The fixed half of the chart panel: the 22 names captured by hand on 2026-09-27 (they span every
+# state the reports name) plus the index funds the headline read sits on. The other half is every
+# name the latest edition mentions outside its big leaders/laggards table.
+DEFAULT_PANEL = (
+    "ANET KEYS AME ETN AMD META MSFT ISRG MGM ORCL DTE MS AVGO ARE MTN SPY QQQ IWM IGV XLI XLE TLT RSP"
+).split()
+MAX_CHARTS = 40
+
+
+def edition_symbols(page_html: str) -> list[str]:
+    """Names the edition discusses, in order: everything linked outside the leaders/laggards table
+    (164 names, the breadth screen, not a discussion) and the rotation fund list."""
+    i = page_html.find(">Sector</th>")
+    j = page_html.find("The three shades", i)
+    a = page_html.find("Sector Rotation")
+    b = page_html.find("Relative Strength Leadership", a)
+    if i < 0 or j < 0:
+        keep = page_html
+    elif 0 <= a < b <= i:
+        keep = page_html[:a] + page_html[b:i] + page_html[j:]
+    else:
+        keep = page_html[:i] + page_html[j:]
+    return list(dict.fromkeys(re.findall(r'\?symbol=([A-Z][A-Z.]*)"', keep)))
+
+
+def chart_base_url(page_html: str) -> str | None:
+    m = re.search(r'href="([^"]*\?symbol=)[A-Z.]+"', page_html)
+    return m.group(1) if m else None
+
+
+def validate_chart_capture(why: dict, ticker: str) -> list[str]:
+    """Every reason a chart capture is not usable; empty means it is."""
+    problems = []
+    quotes = why.get("historicalQuotes") or []
+    if not quotes:
+        problems.append("no daily bars")
+    elif str(quotes[-1].get("symbol", "")).split(".")[0] != ticker:
+        problems.append(f"bars are for {quotes[-1].get('symbol')}, not {ticker}")
+    sr = why.get("supportAndResistance")
+    if not isinstance(sr, dict) or not isinstance(sr.get("support"), list):
+        problems.append("no support/resistance block")
+    else:
+        for side in ("support", "resistance"):
+            for lvl in sr.get(side) or []:
+                if not isinstance(lvl.get("value"), (int, float)):
+                    problems.append(f"a {side} level is not a number: {lvl!r}")
+    if not isinstance(why.get("technicalRank"), (int, float)):
+        problems.append("no 1-10 technical rank")
+    return problems
+
+
+def session_of(why: dict) -> str | None:
+    quotes = why.get("historicalQuotes") or []
+    return str(quotes[-1].get("date", ""))[:10] or None if quotes else None
+
+
+def charts_dir() -> Path:
+    return store_dir() / "vendor-charts"
+
+
+def cmd_charts(args) -> int:
+    """Capture the data behind the chart pages for the panel, one page at a time, paced."""
+    until = cooldown_until()
+    if until and until > datetime.now(UTC):
+        print(f"cooling down until {until:%Y-%m-%d %H:%M} UTC; skipping this run")
+        return 0
+    from playwright.sync_api import sync_playwright
+
+    latest = sorted(editions_dir().glob("????-??-??.html"))
+    if not latest:
+        raise SystemExit("no saved edition to take the chart-page address and names from")
+    edition_html = latest[-1].read_text(encoding="utf-8")
+    base = chart_base_url(edition_html)
+    if not base:
+        raise SystemExit("no chart-page link found in the latest edition")
+    cfg = load_config()
+    panel = [t.upper() for t in (args.tickers or cfg.get("chart_panel") or DEFAULT_PANEL)]
+    if not args.tickers:
+        panel += edition_symbols(edition_html)
+    panel = list(dict.fromkeys(panel))[:MAX_CHARTS]
+
+    hits: list[str] = []
+    captured: dict[str, dict] = {}
+    saved, failed, visited = [], [], 0
+    with sync_playwright() as pw:
+        ctx = _open_browser(pw, headed=args.headed)
+        page = ctx.new_page()
+        _watch_for_throttling(page, hits)
+
+        def on_response(resp):
+            url = resp.url
+            if resp.status != 200 or "json" not in resp.headers.get("content-type", ""):
+                return
+            for kind in ("/why/", "/ranks/", "/tradeIdeas"):
+                if kind in url:
+                    try:
+                        captured[f"{kind}|{url}"] = json.loads(resp.text())
+                    except Exception:  # noqa: BLE001
+                        pass
+
+        page.on("response", on_response)
+        try:
+            for ticker in panel:
+                if hits:
+                    raise Throttled("; ".join(hits[:3]))
+                if visited:
+                    _pause(CHART_PAUSE_RANGE_S)
+                captured.clear()
+                page.goto(base + ticker, wait_until="domcontentloaded", timeout=90_000)
+                visited += 1
+                deadline = time.monotonic() + 60
+                why = ranks = None
+                while time.monotonic() < deadline and why is None:
+                    page.wait_for_timeout(2000)  # not time.sleep: events only arrive inside Playwright calls
+                    for key, body in list(captured.items()):
+                        if key.startswith("/why/") and f"/{ticker}." in key:
+                            why = body
+                page.wait_for_timeout(2000)  # not time.sleep: events only arrive inside Playwright calls
+                for key, body in list(captured.items()):
+                    if key.startswith("/ranks/") and f"/{ticker}." in key:
+                        ranks = body
+                    if key.startswith("/tradeIdeas"):
+                        _save_trade_ideas(body)
+                if why is None:
+                    failed.append((ticker, ["the chart page never loaded its data"]))
+                    print(f"{ticker}: no data")
+                    continue
+                problems = validate_chart_capture(why, ticker)
+                session = session_of(why) or datetime.now().date().isoformat()
+                out = charts_dir() / session
+                out.mkdir(parents=True, exist_ok=True)
+                target = out / f"{ticker}.json"
+                if target.exists():
+                    print(f"{ticker} {session}: already saved")
+                    continue
+                dest = out / f"{ticker}.rejected.json" if problems else target
+                record = {
+                    "ticker": ticker,
+                    "fetched_at": datetime.now(UTC).isoformat(),
+                    "why": why,
+                    "ranks": ranks,
+                }
+                dest.write_text(json.dumps(record), encoding="utf-8")
+                (failed if problems else saved).append((ticker, problems))
+                sr = why.get("supportAndResistance") or {}
+                print(
+                    f"{ticker} {session}: {'saved' if not problems else 'REJECTED'} "
+                    f"rank={why.get('technicalRank')} support={len(sr.get('support') or [])} "
+                    f"resistance={len(sr.get('resistance') or [])}" + "".join(f"\n  - {p}" for p in problems)
+                )
+            if hits:
+                raise Throttled("; ".join(hits[:3]))
+        except Throttled as exc:
+            start_cooldown(str(exc))
+            _warn(
+                "Chart collector: vendor throttled or refused a request",
+                f"{exc}\nNo further requests for 24 hours.",
+            )
+            return 1
+        except Exception as exc:  # noqa: BLE001
+            where = _snapshot(page)
+            _warn(
+                "Chart collector failed",
+                f"{type(exc).__name__}: {(str(exc).splitlines() or [''])[0]}\n"
+                f"Captured {len(saved)} before it stopped. Page snapshot: {where}",
+            )
+            return 1
+        finally:
+            ctx.close()
+    print(f"{len(saved)} saved, {len(failed)} rejected, {visited} pages visited")
+    if failed:
+        _warn("Chart collector rejected some captures", "\n".join(f"{t}: {'; '.join(p)}" for t, p in failed))
+    return 0
+
+
+def _save_trade_ideas(body: dict) -> None:
+    """The scanner's whole signal list for a day arrives with any chart page; keep one per scan
+    date."""
+    ideas = body.get("tradeIdeas") or []
+    if not ideas:
+        return
+    day = str(ideas[0].get("dateOfScan", ""))[:10]
+    if not day:
+        return
+    out = charts_dir() / day
+    out.mkdir(parents=True, exist_ok=True)
+    target = out / "trade-ideas.json"
+    if not target.exists():
+        target.write_text(json.dumps(body), encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -542,6 +794,10 @@ def main(argv: list[str] | None = None) -> int:
     va = sub.add_parser("validate")
     va.add_argument("files", nargs="+")
     va.set_defaults(fn=cmd_validate)
+    ch = sub.add_parser("charts")
+    ch.add_argument("tickers", nargs="*", help="override the panel (default: fixed + edition names)")
+    ch.add_argument("--headed", action="store_true")
+    ch.set_defaults(fn=cmd_charts)
     pr = sub.add_parser("probe-chart")
     pr.add_argument("ticker")
     pr.add_argument("--headed", action="store_true")

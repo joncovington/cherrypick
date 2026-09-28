@@ -473,15 +473,36 @@ Each phase ends with something that runs and a test that has been shown to fail.
 Every edition saved is another scored day for every engine, and the fixture only grows if
 collection doesn't depend on someone remembering to save a page. So the collector comes first.
 
-**Built:** `scripts/fetch_vendor_edition.py` (`credentials`, `login`, `edition`, `validate`,
-`probe-chart`), with its checks tested in `packages/orchestrator/tests/test_vendor_edition_script.py`
-— each check shown to fail on a deliberately broken edition, and all five saved editions passing.
-Still to do: the first live run, the chart-page parser (designed from a `probe-chart` recording),
-and the supervisor schedule.
+**Built and run live (2026-09-27):** `scripts/fetch_vendor_edition.py` (`credentials`, `login`,
+`edition`, `charts`, `validate`, `probe-chart`), with its checks tested in
+`packages/orchestrator/tests/test_vendor_edition_script.py` — each check shown to fail on a
+deliberately broken input, the pacing floors pinned, and all five saved editions passing. A live
+`edition` run re-fetched Sept 25 byte-identical to the hand-saved copy; a live `charts` run
+captured ANET and MSFT. Still to do: the supervisor schedule.
+
+**The chart pages are backed by JSON, and that is what `charts` saves.** Loading a chart page makes
+the app fetch, per symbol, a response carrying: the vendor's own daily bars (about three years);
+**every** support and resistance level with the date of the bar it was taken from (ANET: six
+supports, where the chart draws two — 114.52 included), plus gap support/resistance; the
+price-action sentence; the 1–10 `technicalRank`; IV rank and liquidity rank; and a daily history of
+the 1M and 6M trends as an integer score from −4 to +4, back to October 2024. The same page load also
+returns the day's whole scanner list — 185 names on Sept 25, each with its rule
+(`BullishTrendFollowing`, `BearishTrendFollowing`, `BullishCounterTrend`, `BearishCounterTrend`,
+`CciDipInBullishTrend`, `CciRallyInBearishTrend`, period 14), its 1–10 rank, sector and market cap.
+`charts` saves these as `vendor-charts/<session>/<TICKER>.json` and `trade-ideas.json`, keyed by
+the session of the latest bar. Nothing is called directly: the pages are loaded as a person would,
+and the responses the app already makes are recorded.
+
+**This settles the adjustment question outright.** The vendor's MSFT bars put the 52-week low at
+348.54 on 2026-06-25 and the high at 549.20 on 2025-10-28 — exactly the support and resistance
+prices, against the header's raw 349.20 and 553.72. The bars are dividend-adjusted, and the
+extreme levels are those bars' extremes on the dates given. The level engine can now be scored on
+every level and its source bar, not just the two drawn.
 
 **Pacing is a requirement, not a tuning knob.** The vendor must never see fast consecutive
 requests: one browser session per run, at most one login attempt, a randomized 20–45 second pause
-between opening one report or chart page and the next, a backfill of at most three editions per
+between report cards and 30–60 seconds between chart pages (a chart page load makes ~50 requests
+of its own), at most 40 chart pages per run, a backfill of at most three editions per
 run, and chart pages one at a time with the same pause. Any 429 or 403 response ends the run and
 starts a 24-hour cooldown that later runs honour.
 

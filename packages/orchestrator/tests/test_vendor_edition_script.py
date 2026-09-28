@@ -142,3 +142,60 @@ def test_every_saved_edition_passes_its_own_checks():
     for path in sorted(REAL.glob("????-??-??.html")):
         when = fve.date_from_filename(path)
         assert fve.validate_edition(path.read_text(encoding="utf-8"), when) == [], path.name
+
+
+# --- pacing: the vendor must never see fast consecutive requests -------------------------------
+
+
+def test_pacing_limits_are_not_loosened():
+    """The user's standing instruction: never request fast enough to risk throttling or a block.
+    These floors fail loudly if anyone shortens a pause or raises a cap."""
+    assert fve.PAUSE_RANGE_S[0] >= 20
+    assert fve.CHART_PAUSE_RANGE_S[0] >= 30
+    assert fve.MAX_BACKFILL <= 3
+    assert fve.MAX_CHARTS <= 40
+    assert fve.COOLDOWN.total_seconds() >= 24 * 3600
+
+
+# --- chart captures --------------------------------------------------------------------------
+
+
+def _why(symbol="ANET.XNYS", support=(202.52,), rank=10):
+    return {
+        "historicalQuotes": [{"symbol": symbol, "date": "2026-09-25", "close": 206.55}],
+        "supportAndResistance": {
+            "support": [{"value": v, "date": "2026-08-12T00:00:00"} for v in support],
+            "resistance": [{"value": 214.89, "date": "2026-08-05T00:00:00"}],
+        },
+        "technicalRank": rank,
+    }
+
+
+def test_a_complete_chart_capture_passes():
+    assert fve.validate_chart_capture(_why(), "ANET") == []
+    assert fve.session_of(_why()) == "2026-09-25"
+
+
+def test_a_capture_for_the_wrong_ticker_fails():
+    assert any("not ANET" in p for p in fve.validate_chart_capture(_why(symbol="MSFT.XNAS"), "ANET"))
+
+
+def test_a_level_that_is_not_a_number_fails():
+    assert any("not a number" in p for p in fve.validate_chart_capture(_why(support=("n/a",)), "ANET"))
+
+
+def test_a_capture_without_a_rank_fails():
+    assert any("rank" in p for p in fve.validate_chart_capture(_why(rank=None), "ANET"))
+
+
+def test_edition_symbols_skip_the_breadth_table_but_keep_names_discussed_elsewhere():
+    link = '<a href="x?symbol={s}">{s}</a>'
+    page = (
+        link.format(s="AMD")
+        + "<th>Sector</th>"
+        + link.format(s="AMD")
+        + link.format(s="PEP")
+        + "The three shades"
+        + link.format(s="NVDA")
+    )
+    assert fve.edition_symbols(page) == ["AMD", "NVDA"]
