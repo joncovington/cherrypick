@@ -145,6 +145,21 @@ vendor's levels, nearly all of them the extremes. Level dates are mostly swing h
 can sit above, inside or well away from its dated bar, so the vendor evidently selects from
 something these fields do not show. The report can place levels exactly; it cannot yet pick them.
 
+## The chart files (Phase 7)
+
+`chart.py` writes `data/technicals/charts/<SYMBOL>.json` for every stock the store holds, plus an
+`index.json`, from the same `report` run: the last 250 sessions of adjusted bars, the level grid
+those sessions define, CCI 14 and 5, RSI 14, both trend scores, and the scan-rule matches for every
+session drawn. The console's `/reports/chart` page draws them. Where the vendor's chart has been
+captured, the file carries its levels too, each marked with whether our grid can produce it (gap
+levels are not asked), its trend grades and rank, and how many of its bars agree with ours to the
+cent. The page draws our grid's extremes, not a set of levels we claim are the vendor's: selection
+is unsolved, and the view is built to show where we differ.
+
+The per-session scan matches come from `signal_days`, one pass over whole-history series rather
+than `signals.readings` on every prefix; a test pins the two equal on every day, and fails when
+the CCI-5 lag is broken. Files are overwritten each session (about 15 MB for ~470 names).
+
 ## The report artifact, and two data defects it exposed (Phase 7)
 
 `report.py` gathers one session's readings -- stages by sector, the 10-session breadth history,
@@ -187,5 +202,5 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-levels` | How many of the vendor's levels our grid places, on names whose bars agree to the cent. |
 | `python -m cherrypick.technicals score-rank` | Our 1-10 rank against the vendor's. |
 | `python -m cherrypick.technicals score-signals` | Our six scan rules against every scan list the collector has saved. |
-| `python -m cherrypick.technicals report [--session D]` | Write one session's market-report readings for the console. |
+| `python -m cherrypick.technicals report [--session D]` | Write one session's market-report readings and the per-name chart files for the console. |
 | `python -m cherrypick.technicals score-stages` | The stage rule against every saved edition: side recall, stage agreement, extra rate, counts. |

@@ -8,6 +8,7 @@ export * from "./types/config.js";
 export * from "./types/advisor.js";
 export * from "./types/desk.js";
 export * from "./types/morning.js";
+export * from "./types/technicals.js";
 export * from "./types/performance.js";
 export * from "./types/live.js";
 export * from "./types/regimeCuts.js";

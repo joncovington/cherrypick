@@ -1,4 +1,5 @@
 import type { TechnicalsReport, TechnicalsStageMember } from "@console/shared";
+import { Link } from "react-router-dom";
 import { BarChart, SignedBar } from "../../components/Charts";
 
 /**
@@ -188,7 +189,9 @@ function LeadersCard({ t }: { t: TechnicalsReport }) {
           <tbody>
             {t.leaders.map((l) => (
               <tr key={l.symbol}>
-                <td>{l.symbol}</td>
+                <td>
+                  <Link to={`/reports/chart?symbol=${encodeURIComponent(l.symbol)}`}>{l.symbol}</Link>
+                </td>
                 <td className="muted">{l.sector ?? "—"}</td>
                 <td className={l.return6mPct === null ? "muted" : l.return6mPct >= 0 ? "pnl-pos" : "pnl-neg"}>
                   {pct(l.return6mPct)}

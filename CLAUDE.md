@@ -71,8 +71,10 @@ One workspace for the trading-tool suite. Work in the package for your area — 
   LOCAL Dolt clones for the universe candidates, the rotation ETFs and the benchmarks; adjusted bars
   are a pure function over raw, computed on read, and match the vendor's own adjusted bars to the
   cent. Credential-free and network-free: the clones are pulled by `scripts/refresh_dolt_data.py`,
-  and the universe and vendor captures it reads are written by scripts. The stage, rotation and
-  chart engines land here in later phases.
+  and the universe and vendor captures it reads are written by scripts. Its engines -- the level
+  grid, the rank, trend, stage, rotation and the scan rules -- are fitted against the vendor's
+  output and scored out of sample; a daily report and a per-name chart file are what the console
+  reads. Level SELECTION is not yet reproduced, and the docs say so.
 - **packages/console** — the reactive web UI (Node + TypeScript, React SPA on 127.0.0.1:5070) and the
   suite's **only** read surface: every module's read models in one app. The research/screening
   surfaces inherited from scout (watchlist, screener, builder, payoff, staged tickets) have been

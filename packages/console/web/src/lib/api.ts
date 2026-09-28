@@ -15,6 +15,7 @@ import type {
   ReviewPayload,
   AdvisorPayload,
   MorningPayload,
+  TechnicalsChartPayload,
   PmccPayload,
   PmccCycleRow,
   PmccHistory,
@@ -107,6 +108,18 @@ export function useMorningReport(session?: string) {
     // The pack is written once before the open (the narrative may land a little later) — a minute
     // is already far finer than the data.
     refetchInterval: 60_000,
+  });
+}
+
+export function useTechnicalsChart(symbol?: string) {
+  return useQuery<TechnicalsChartPayload>({
+    queryKey: ["technicals-chart", symbol ?? ""],
+    queryFn: () =>
+      getJson<TechnicalsChartPayload>(
+        `/api/technicals/chart${symbol ? `?symbol=${encodeURIComponent(symbol)}` : ""}`,
+      ),
+    // Written once a session by the report job.
+    refetchInterval: 300_000,
   });
 }
 

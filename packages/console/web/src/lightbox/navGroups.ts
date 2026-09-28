@@ -211,7 +211,8 @@ export type CalendarsSlideId = (typeof CALENDARS_SLIDES)[number]["id"];
  *
  * - GEX keeps its four former page tabs.
  * - Live is one page: the flies live pilot's day, read-only.
- * - Reports keeps its two artifacts, `morning` and `eod`, written by separate packages.
+ * - Reports keeps its two artifacts, `morning` and `eod`, written by separate packages, plus
+ *   `chart`: one name at a time from the technicals package's chart files.
  * - Advisor stays ONE page holding its own internal tabs (today / proposals / experiments /
  *   history). It carries the console's only two write actions besides Config's, wired through
  *   session and tab state that spans the page, and splitting that across frame pages is a change
@@ -233,6 +234,7 @@ export const LIVE_SLIDES = [{ id: "today", label: "today" }] as const satisfies 
 export const REPORTS_SLIDES = [
   { id: "morning", label: "morning" },
   { id: "eod", label: "eod" },
+  { id: "chart", label: "chart" },
 ] as const satisfies readonly NavSlide[];
 
 export const ADVISOR_SLIDES = [{ id: "advisor", label: "advisor" }] as const satisfies readonly NavSlide[];

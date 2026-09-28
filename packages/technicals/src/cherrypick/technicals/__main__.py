@@ -197,14 +197,20 @@ def cmd_score_signals(_args) -> int:
 
 
 def cmd_report(args) -> int:
-    from . import report
+    from . import chart, report
 
     doc = report.build(args.session)
     if not doc.get("ok"):
         print(json.dumps(doc))
         return 1
     path = report.write(doc)
-    print(json.dumps({"ok": True, "path": path, "session": doc["session"], "universe": doc["universe"]}))
+    # The per-name chart files the console's chart page reads, for the same session.
+    charts = chart.write_all(doc["session"])
+    print(
+        json.dumps(
+            {"ok": True, "path": path, "session": doc["session"], "universe": doc["universe"], **charts}
+        )
+    )
     return 0
 
 

@@ -42,6 +42,11 @@ session**: the pack is written before the open from the prior close, and a repor
 own day was written after that day's close — pairing them would show a morning what it could not
 have known. A test pins the `<`, and was shown to fail at `<=`.
 
+`/reports/chart?symbol=X` draws one name from `data/technicals/charts/<X>.json`
+(`readers/technicals.ts`, `pages/Morning/ChartPage.tsx`; the Morning tab's leaders link there). The
+symbol becomes a file name, so the reader accepts only ticker characters — a test sends `../` and
+was shown to fail with the pattern loosened.
+
 Unlike the rest of the suite this package is **Node + TypeScript**, not Python:
 
 - `shared/` — types shared by server and web (`@console/shared`).
