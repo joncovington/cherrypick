@@ -444,10 +444,15 @@ The suite's fences decide most of this:
 - **Overview remains the pre-open pack.** It gains readings (Phase 1) and reads the engines'
   end-of-day output; it does not grow a stock universe of its own.
 
-Open decision: whether the engines and their end-of-day store become a new package or a module in
-`cherrypick.core`. A new package gets its own store, CLAUDE.md and tests, which suits a job that
-runs after the close and writes several hundred rows a day; core suits a library that several
-packages call. Leaning new package, decided at Phase 2.
+**Decided 2026-09-27: a new package, `packages/technicals`** (`cherrypick.technicals`, store
+`~/.cherrypick/data/technicals/`), rather than a module in `cherrypick.core`. A package gets its
+own store, CLAUDE.md and tests, which suits a job that runs after the close and writes several
+hundred rows a day; core suits a library several packages call. The name says what the engines are
+— technical readings over daily bars — and keeps it distinct from `overview`, which assembles the
+morning pack and reads this package's output. The collected inputs stay where their scripts write
+them (`~/.cherrypick/data/market-report/`: the vendor editions and charts, the universe and
+sectors), and the package reads them from there: the writers stay in `scripts/`, and moving live
+stores under running jobs buys nothing.
 
 ## Plan
 
@@ -512,11 +517,13 @@ Each phase ends with something that runs and a test that has been shown to fail.
   prices. The case for VBINX rests on one 2020 search result. The difference to know: AOR's stock
   sleeve is global, VBINX's is US-only; a US-only 60/40 could be computed exactly from Dolt's SPY
   and AGG bars if that ever matters.
-- Whether the report proposes trades. The vendor's income trade ideas (short puts and put
-  spreads on leaders, expiring before the next earnings date) are the part closest to a trade ticket; the suite's only
-  discretionary order path is `packages/desk`, and a read-side report should say so if it suggests
-  one.
-- The engine's home (above).
+- **Trade ideas: not for now (decided 2026-09-27).** The vendor's income trade ideas (short puts
+  and put spreads on leaders, expiring before the next earnings date) are the part closest to a
+  trade ticket, and the report leaves them out. If that is revisited, the suite's only
+  discretionary order path is `packages/desk`, and a read-side report that suggests a trade should
+  say so.
+- **The engines' home: a new package, `packages/technicals` (decided 2026-09-27).** See "Where the
+  code goes".
 
 ### Phase 0b — collecting the vendor's editions automatically
 
@@ -682,7 +689,7 @@ producer — the rule `packages/overview/CLAUDE.md` already states.
 
 - Earnings in the next week with implied move (the earnings module already computes it) and the
   release calendar from Phase 1.
-- Income trade ideas only if Phase 0 says yes.
+- No income trade ideas (Phase 0: not for now).
 
 ### Phase 6 — paid inputs (deferred)
 
