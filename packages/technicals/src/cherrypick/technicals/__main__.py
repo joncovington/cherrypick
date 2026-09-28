@@ -189,6 +189,13 @@ def cmd_score_rank(_args) -> int:
     return 0
 
 
+def cmd_score_signals(_args) -> int:
+    from . import chart_score
+
+    print(json.dumps(chart_score.score_signals(), indent=1))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m cherrypick.technicals", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -227,6 +234,9 @@ def main(argv: list[str] | None = None) -> int:
         fn=cmd_score_levels
     )
     sub.add_parser("score-rank", help="our 1-10 rank against the vendor's").set_defaults(fn=cmd_score_rank)
+    sub.add_parser("score-signals", help="our scan rules against every saved scan list").set_defaults(
+        fn=cmd_score_signals
+    )
     args = ap.parse_args(argv)
     return args.fn(args)
 

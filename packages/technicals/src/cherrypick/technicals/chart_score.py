@@ -142,3 +142,51 @@ def score_rank() -> dict:
         "exact": sum(a == b for a, b in pairs),
         "within_one": sum(abs(a - b) <= 1 for a, b in pairs),
     }
+
+
+def score_signals() -> dict:
+    """Our scan rules against every scan list the collector has saved: per rule, the vendor's flagged
+    names we catch, and the stocks we flag that it did not (among those the store holds)."""
+    from . import signals, symbols
+
+    root = paths.market_report_dir() / "vendor-charts"
+    conn = store.connect()
+    stocks = store.stocks(conn, symbols.candidates())
+    per_rule = {r: {"flagged": 0, "caught": 0, "false": 0} for r in signals.RULES}
+    sessions = []
+    for path in sorted(root.glob("????-??-??/trade-ideas.json")):
+        try:
+            ideas = json.loads(path.read_text(encoding="utf-8")).get("tradeIdeas") or []
+        except (OSError, ValueError):
+            continue
+        day = path.parent.name
+        theirs: dict[str, set] = {}
+        for t in ideas:
+            sym = str(t.get("symbol", "")).split(".")[0]
+            for rule in t.get("rules") or []:
+                theirs.setdefault(sym, set()).add(rule.get("ruleMatch"))
+        ours: dict[str, set] = {}
+        for sym in sorted(set(theirs) | set(stocks)):
+            bars = [b for b in store.adjusted_bars(conn, sym) if b.date <= day]
+            if not bars or bars[-1].date != day:
+                continue
+            r = signals.readings([b.high for b in bars], [b.low for b in bars], [b.close for b in bars])
+            if r is not None:
+                ours[sym] = set(signals.matches(r))
+        for rule in signals.RULES:
+            flagged = {s for s, rs in theirs.items() if rule in rs and s in ours}
+            mine = {s for s, rs in ours.items() if rule in rs}
+            per_rule[rule]["flagged"] += len(flagged)
+            per_rule[rule]["caught"] += len(flagged & mine)
+            per_rule[rule]["false"] += len(mine - {s for s, rs in theirs.items() if rule in rs})
+        sessions.append(day)
+    conn.close()
+    flagged = sum(v["flagged"] for v in per_rule.values())
+    caught = sum(v["caught"] for v in per_rule.values())
+    return {
+        "sessions": sessions,
+        "caught": caught,
+        "flagged": flagged,
+        "rate": round(caught / flagged, 3) if flagged else None,
+        "by_rule": per_rule,
+    }

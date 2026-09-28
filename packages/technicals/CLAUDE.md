@@ -130,6 +130,12 @@ Spearman 0.95 against the vendor's over 34 names, within one step on 31-33 depen
 universe it is ranked in, exact on about 40%. The vendor ranks within its own universe, which 34
 names cannot pin down.
 
+**The six scan rules** (`signals.py`, `score-signals`) reproduce the vendor's scan list from our
+trend scores, CCI and RSI: 153 of 182 flagged names on the 2026-09-25 list (84%), from 8/8 on the
+bearish counter-trend rule to 40/55 on bullish trend-following. The CCI rules run on a 5-period CCI
+(the list states it), and a dip is yesterday's CCI below -100 with today's back above. One day of
+list is one day: the rules are declared and re-scored as the nightly captures add lists.
+
 ## Scheduling
 
 One supervisor job, `technicals-land` (06:15 ET daily, after the 05:30 Dolt pull; config block
@@ -157,4 +163,5 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-trends` | The trend baseline against every vendor chart capture: exact, label and within-one agreement. |
 | `python -m cherrypick.technicals score-levels` | How many of the vendor's levels our grid places, on names whose bars agree to the cent. |
 | `python -m cherrypick.technicals score-rank` | Our 1-10 rank against the vendor's. |
+| `python -m cherrypick.technicals score-signals` | Our six scan rules against every scan list the collector has saved. |
 | `python -m cherrypick.technicals score-stages` | The stage rule against every saved edition: side recall, stage agreement, extra rate, counts. |
