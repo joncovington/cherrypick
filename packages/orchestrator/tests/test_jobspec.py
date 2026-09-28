@@ -308,6 +308,7 @@ def test_derive_full_suite_job_table():
         "market-files",
         "market-files-retry",
         "technicals-land",
+        "technicals-dividends",
         "review-provisional",
         "review-final",
         "review-narrative",
@@ -948,3 +949,12 @@ def test_the_technicals_landing_follows_the_dolt_pull_and_needs_the_dolt_server(
     cfg.setdefault("modules", {}).setdefault("earnings", {})["enabled"] = False
     off = {j.id: j for j in derive(cfg)[0]}["technicals-land"]
     assert not off.enabled and "dolt" in off.enabled_reason
+
+
+def test_the_dividend_fetch_is_a_script_on_by_default():
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    job = by_id["technicals-dividends"]
+    assert job.enabled and job.argv[-1].endswith("fetch_dividends.py")
+    cfg = suite_cfg()
+    cfg["technicals"] = {"dividends": False}
+    assert not {j.id: j for j in derive(cfg)[0]}["technicals-dividends"].enabled

@@ -110,16 +110,42 @@ def raw_bars(conn, symbol: str) -> list[_adjust.Bar]:
     ]
 
 
+_TASTY: dict = {"mtime": None, "symbols": {}}
+
+
+def tastytrade_dividends(symbol: str) -> list[_adjust.Dividend]:
+    """Tastytrade's history for `symbol` from scripts/fetch_dividends.py's file, re-read only when
+    the file changes. Empty when the file or the symbol is absent: Dolt alone then decides."""
+    path = paths.tastytrade_dividends()
+    try:
+        stamp = (str(path), path.stat().st_mtime)  # the path too: two files can share a timestamp
+        if stamp != _TASTY["mtime"]:
+            _TASTY.update(
+                mtime=stamp, symbols=json.loads(path.read_text(encoding="utf-8")).get("symbols") or {}
+            )
+    except (OSError, ValueError):
+        return []
+    rows = (_TASTY["symbols"].get(symbol) or {}).get("dividends") or []
+    return [_adjust.Dividend(d, float(a)) for d, a in rows]
+
+
+def dividends(conn, symbol: str) -> tuple[list[_adjust.Dividend], list[dict]]:
+    """The dividends adjusted bars use: Dolt's reconciled with tastytrade's (`dividends.reconcile`)."""
+    from .dividends import reconcile
+
+    dolt = [
+        _adjust.Dividend(r["ex_date"], r["amount"])
+        for r in conn.execute("SELECT * FROM dividends WHERE symbol = ?", (symbol,))
+    ]
+    return reconcile(dolt, tastytrade_dividends(symbol))
+
+
 def adjusted_bars(conn, symbol: str) -> list[_adjust.AdjustedBar]:
     splits = [
         _adjust.Split(r["ex_date"], r["to_factor"], r["for_factor"])
         for r in conn.execute("SELECT * FROM splits WHERE symbol = ?", (symbol,))
     ]
-    dividends = [
-        _adjust.Dividend(r["ex_date"], r["amount"])
-        for r in conn.execute("SELECT * FROM dividends WHERE symbol = ?", (symbol,))
-    ]
-    return _adjust.adjust(raw_bars(conn, symbol), splits, dividends)
+    return _adjust.adjust(raw_bars(conn, symbol), splits, dividends(conn, symbol)[0])
 
 
 def iv_rank(conn, symbol: str, on: str | None = None) -> dict | None:

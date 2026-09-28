@@ -570,7 +570,10 @@
   "technicals": {
     "_comment": "packages/technicals - the market report's end-of-day store. Lands raw daily bars, splits, dividends and IV history for the universe candidates, the 35 rotation ETFs and the benchmarks from the LOCAL Dolt clones into data/technicals/eod.db, at 'land_at' ET after the 05:30 Dolt pull. Adjusted bars are computed from raw on read. Read-only against Dolt; needs the earnings module on, since its job keeps the dolt sql-server alive. ON by default.",
     "enabled": true,
-    "land_at": "06:15"
+    "land_at": "06:15",
+    "_comment_dividends": "scripts/fetch_dividends.py: tastytrade's dividend history, which the landing reconciles Dolt's against (Dolt alone has gaps and zeros; reconciled, adjusted bars match the vendor's on 36 of 40 names). Reads the shared broker credential, read-only, one symbol a second, refetching only symbols older than a week.",
+    "dividends": true,
+    "dividends_at": "19:30"
   },
   "market_report": {
     "_comment": "The vendor-edition collector (scripts/fetch_vendor_edition.py) - the fixture feed for docs/market-report-plan.md. Fetches the vendor's pre-open report after it is published ('edition_at', with a second chance at 'edition_retry_at'; a day already saved is skipped) and, after the close, the data behind its chart pages ('charts_at'), into data/market-report/. Paced on purpose: one browser session, 20-60 s between pages, at most 40 chart pages, and a 24-hour cooldown after any 429/403. Stops at a captcha or refused login and notifies. OFF by default: store the login first (`python scripts/fetch_vendor_edition.py credentials` then `login`), put the dashboard address in data/market-report/collector.json, then set collector=true and re-run `install`. Times are ET.",

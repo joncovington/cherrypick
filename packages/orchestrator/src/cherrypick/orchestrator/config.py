@@ -316,7 +316,16 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     the local Dolt clones and writes only its own store. `land_at` follows the 05:30 Dolt pull
     (`earnings-dolt-pull`), so the previous session's bars are always there."""
     tc = cfg.get("technicals", {}) or {}
-    return {"enabled": bool(tc.get("enabled", True)), "land_at": tc.get("land_at", "06:15")}
+    # `dividends_at`: scripts/fetch_dividends.py, tastytrade's dividend history that the landing
+    # reconciles Dolt's against (Dolt alone agreed with the vendor's adjusted bars on 86.8% of
+    # prices; reconciled, 93.3%). It refetches only symbols older than a week, so a daily run is
+    # light after the first.
+    return {
+        "enabled": bool(tc.get("enabled", True)),
+        "land_at": tc.get("land_at", "06:15"),
+        "dividends": bool(tc.get("dividends", True)),
+        "dividends_at": tc.get("dividends_at", "19:30"),
+    }
 
 
 def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:

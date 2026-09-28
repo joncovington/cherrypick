@@ -29,6 +29,19 @@ comparison over every capture on file; a handful of OPEN prices differ by tens o
 sources disagree about which print is the open), which is a known source difference, not a defect
 in the adjustment.
 
+## Dividends: two sources, reconciled
+
+Checked against the vendor's own adjusted bars for 40 names (2026-09-27), Dolt's `dividend` table
+alone agreed on only 86.8% of prices: it has gaps (CSCO's and CHT's July 2024 dividends), zeros
+(BAP's September 2024 is 0.0) and wrong amounts (BAP's May 2024 is 0.939 for a 9.2875 payout).
+`scripts/fetch_dividends.py` fetches tastytrade's per-symbol history (paced, a week between
+refreshes) and `dividends.reconcile` merges the two: same event within three days, gaps filled
+from either side, tastytrade's amount when the two are within 3x, and a gross outlier on either
+side losing to the name's usual payout -- tastytrade has errors too (BAP's May 2026 as 50.00). With
+it, 36 of the 40 names match the vendor at 99% or better (93.3% of all prices). The four that do
+not are foreign issuers (BAP, ALC, CCJ, AU), where the vendor evidently uses amounts neither
+source carries; fits that need exact cents leave them out.
+
 ## Reading Dolt: the query shape is the whole cost
 
 `ohlcv` and `volatility_history` lead their primary keys with `date`. A query filtered by a list of

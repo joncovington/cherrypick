@@ -28,5 +28,10 @@ def market_report_dir() -> Path:
     return _home.data_dir("market-report")
 
 
+def tastytrade_dividends() -> Path:
+    """Tastytrade's dividend history, written by scripts/fetch_dividends.py. Read-only here."""
+    return market_report_dir() / "dividends" / "tastytrade.json"
+
+
 def universe_candidates() -> Path:
     return market_report_dir() / "universe" / "candidates.json"

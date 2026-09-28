@@ -65,6 +65,8 @@ CATCHUP_MINUTES = {
     # The end-of-day landing reads the local Dolt clones; a late one is the same landing, and the
     # stage and rotation engines read it after the close, so it catches up well into the day.
     "technicals-land": 12 * 60,
+    # Dividend histories change weekly at most; a late fetch is the same fetch.
+    "technicals-dividends": 12 * 60,
     "market-files": 600,
     "market-files-retry": 40,
     # A light checkpoint describes the session as it stands, so catching one up past the next slot
@@ -722,6 +724,23 @@ def derive_jobs(
                 if not tc["enabled"]
                 else "earnings module disabled (no dolt sql-server to read)"
             ),
+        ),
+    )
+    div_on = tc["enabled"] and tc["dividends"]
+    add(
+        "technicals-dividends",
+        lambda: JobSpec(
+            id="technicals-dividends",
+            # A script, not package code: it reads the broker (tastytrade's dividend history) with the
+            # shared credential, read-only, one symbol a second. technicals stays network-free and
+            # reads the file this writes.
+            argv=(pythonw, _suite_script(launcher, "fetch_dividends.py")),
+            kind=KIND_DAILY,
+            at_et=tc["dividends_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-dividends"],
+            trading_days_only=False,
+            enabled=div_on,
+            enabled_reason="" if div_on else "disabled in config (technicals.dividends)",
         ),
     )
     mv = cfgmod.morning_settings(cfg)
