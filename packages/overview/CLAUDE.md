@@ -45,8 +45,10 @@ strongest/weakest sectors are computed once, in this package, and displayed ever
   mid-experiment; one in code has a commit explaining it. The free-form "risk monitor" — whatever
   macro theme is currently live — belongs to the narrative and is labeled interpretation; it never
   feeds the phase.
-- **Proxies are labeled proxies.** The streamer has no futures path, so crude and gold ride on USO
-  and GLD, and no surface ever prints them as a WTI or gold spot price. The credit signal's HYG/TLT
+- **Proxies are labeled proxies.** Gold rides on GLD and the Russell 2000's cash read on IWM (the
+  stream delivers nothing for the RUT index), and no surface prints either as the index or spot
+  price. Crude has real futures in the pre-market tape (/CL, /BZ) since 2026-09-27; USO stays as
+  the labelled proxy the deployment score was built on. The credit signal's HYG/TLT
   and the breadth signal's eleven sector ETFs carry the same label for the same reason.
 
 ## The daily market files
@@ -69,6 +71,29 @@ and a download that parses to less than the file on disk is refused. Every reade
   tenor's one-day change in basis points.
 - **`calendar.releases`**: the next seven days' scheduled releases, with ET times where the source
   gives them. No consensus estimates: no free source has them.
+
+- **`vol_regime.risk_reversal_25d_30d`**: the 30-day constant-maturity 25-delta risk reversal from
+  Cboe's delayed SPX chain, reduced to one row a session by the fetcher. Near-the-money skew, never
+  shown as SKEW.
+
+## The pre-market tape
+
+`premarket` carries /ES /NQ /YM /RTY /CL /BZ against their prior settle, and NDX, DJX and IWM's
+prior-session moves. Three rules, each learned on the first live run (2026-09-27):
+
+- **The contract comes from `state/futures_contracts.json`, never assembled here**, and a map older
+  than five days is no futures legs at all — the gex recorder's rule, for the same reason.
+- **A leg only gets daily rows if it declares `history_days`.** The producer writes live Summary
+  rows for underlyings alone; a quote-only leg's rows come solely from the connect-time candle
+  backfill. All nine new legs printed within seconds and none had a settle until the request
+  declared 30 days for them.
+- **The change is measured against a settle, never a trade.** For a live contract with no settle
+  on file, the last trade is the live print itself, and a change against it reads a confident
+  0.00%. It is unmeasured instead.
+
+The same run found an older fault in the prior-close reader: with the prior session's row missing,
+it took the newest row it could find, and IWM's Friday (+0.11%) printed as -1.83% against a close
+two sessions back. The base is now only the print's own session row or the one exactly before it.
 
 None of these feed a gate or the deployment score. They are fact-pack v4 additions; a v3 pack
 still renders.

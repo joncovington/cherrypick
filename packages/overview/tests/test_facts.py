@@ -108,6 +108,33 @@ def test_without_todays_row_the_last_trade_is_the_prior_value():
     assert round(spx["prior_change_pct"], 2) == 0.69
 
 
+def test_a_row_older_than_the_previous_session_is_never_the_base():
+    """IWM on 2026-09-27: its rows stopped two sessions short, the reader took the newest row it
+    could find, and Friday's close was measured against the close two sessions earlier -- -1.83%
+    printed for a +0.11% day. Missing is unmeasured, never a longer move labelled as one day's."""
+    _make_cache(
+        rows_summary=[("SPX", "2026-08-12", 7600.00, NOW_TS - 90000)],  # a Wednesday row, nothing after
+        rows_trades=[("SPX", 7798.50, FRIDAY_CLOSE_TS)],
+    )
+    spx = facts.build(SESSION, now=NOW)["readings"]["spx"]
+    assert spx["value"] == 7798.50 and spx["session"] == PRIOR
+    assert spx["prior_change_pct"] is None
+
+
+def test_the_previous_sessions_own_close_is_a_valid_base():
+    """With no row for Friday, Thursday's own day_close is exactly the base Friday's change needs."""
+    _make_cache(rows_trades=[("SPX", 7798.50, FRIDAY_CLOSE_TS)])
+    conn = sqlite3.connect(paths.stream_cache_db())
+    conn.execute(
+        "INSERT INTO stream_summary (symbol, trade_date, day_close, updated_at) "
+        "VALUES ('SPX', '2026-08-13', 7744.90, 1)"
+    )
+    conn.commit()
+    conn.close()
+    spx = facts.build(SESSION, now=NOW)["readings"]["spx"]
+    assert round(spx["prior_change_pct"], 2) == 0.69
+
+
 # 05:20 UTC on Monday 2026-08-17 = 01:20 ET the SAME morning: an overnight print carrying Friday's
 # close. This is what production actually holds when overview runs, and nothing covered it — the
 # test above stamps its trade inside the PRIOR session's ET date, where the lookup happened to work.

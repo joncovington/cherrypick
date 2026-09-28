@@ -37,7 +37,14 @@ from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 # VX1/VX2 spread and the VIX-to-VX1 basis are the object `packages/curve` harvests through VXX, and
 # one contract cannot express either. ZN takes one because the rates read only needs a liquid
 # tenor, not a curve.
-PRODUCTS = {"VX": 2, "ZN": 1}
+#
+# ES/NQ/YM/RTY/CL/BZ (added 2026-09-27) are the morning pack's pre-market tape: one contract each,
+# the ACTIVE month, for the same reason as ZN -- liquidity leaves an expiring contract before it
+# expires, and the pre-market read wants the contract the market is actually trading.
+PRODUCTS = {"VX": 2, "ZN": 1, "ES": 1, "NQ": 1, "YM": 1, "RTY": 1, "CL": 1, "BZ": 1}
+
+# Products read as a curve (consecutive expirations); every other product takes its active month.
+CURVE_PRODUCTS = {"VX"}
 
 OUT_PATH_NAME = "futures_contracts.json"
 
@@ -66,11 +73,11 @@ async def resolve(session) -> dict:
         # the nearest — on 2026-08-24 September still traded while December was the active contract,
         # because liquidity leaves a Treasury future ahead of first notice. Taking "nearest" there
         # would record the illiquid tail of an expiring contract as though it were the rates market.
-        if code == "ZN":
+        if code in CURVE_PRODUCTS:
+            rows = rows[:want]
+        else:
             active = [r for r in rows if r["active_month"]]
             rows = (active or rows)[:want]
-        else:
-            rows = rows[:want]
         out[code] = rows
     return out
 

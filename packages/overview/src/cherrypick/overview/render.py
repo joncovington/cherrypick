@@ -142,6 +142,28 @@ def render(session: str) -> str | None:
         )
         lines.append("")
 
+    pre = pack.get("premarket") or {}
+    if pre:
+        lines.append("## Pre-market tape")
+        lines.append("")
+        lines.append("| Market | Last | vs prior settle | Basis |")
+        lines.append("|---|---|---|---|")
+        for f in (pre.get("futures") or {}).values():
+            chg = f.get("change_vs_prior_close_pct")
+            val = f.get("value")
+            lines.append(
+                f"| {f.get('label', DASH)} | {f'{val:,.2f}' if isinstance(val, (int, float)) else DASH} | "
+                f"{_pct(chg) if isinstance(chg, (int, float)) else DASH} | {f.get('basis') or 'unmeasured'} |"
+            )
+        for i in (pre.get("indexes") or {}).values():
+            val, chg = i.get("value"), i.get("prior_change_pct")
+            lines.append(
+                f"| {i.get('label', DASH)} | {f'{val:,.2f}' if isinstance(val, (int, float)) else DASH} | "
+                f"{_pct(chg) if isinstance(chg, (int, float)) else DASH} (prior session) | "
+                f"{i.get('basis') or 'unmeasured'} |"
+            )
+        lines.append("")
+
     rr = (pack.get("vol_regime") or {}).get("risk_reversal_25d_30d")
     if rr:
         lines.append(

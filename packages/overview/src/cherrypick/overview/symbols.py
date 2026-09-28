@@ -68,9 +68,74 @@ ALL_SYMBOLS = tuple(sorted({*INDEX_SYMBOLS, *SECTOR_ETFS, *COMMODITY_PROXIES, *C
 #
 # SPX stays an underlying because it genuinely is one for half the suite; the union means this
 # package's entry costs nothing extra.
+# The other cash indexes beside SPX (added 2026-09-27): quote-only legs, each a few subscriptions.
+# RUT is not here on purpose: the stream delivers nothing for it (no trade, no quote, and "no
+# candles" on backfill, 2026-09-27) although tastytrade's REST quotes it, so the Russell 2000's cash
+# read rides on IWM, labelled a proxy exactly as USO and GLD are. /RTY carries the pre-market.
+INDEX_LEGS = {
+    "ndx": ("NDX", "Nasdaq-100 (NDX)"),
+    "djx": ("DJX", "Dow Jones / 100 (DJX)"),
+    "iwm": ("IWM", "Russell 2000 proxy (IWM ETF, not the RUT index)"),
+}
+
 QUOTE_ONLY_SYMBOLS = tuple(
-    sorted({*SECTOR_ETFS, *COMMODITY_PROXIES, *CREDIT_PROXIES, "VIX", "VIX1D", "VIX3M", "VVIX"})
+    sorted(
+        {
+            *SECTOR_ETFS,
+            *COMMODITY_PROXIES,
+            *CREDIT_PROXIES,
+            "VIX",
+            "VIX1D",
+            "VIX3M",
+            "VVIX",
+            *(symbol for symbol, _ in INDEX_LEGS.values()),
+        }
+    )
 )
+
+# The pre-market tape (added 2026-09-27): reading -> (product code, label). The CONTRACT is never
+# assembled here -- it comes from `state/futures_contracts.json`, written by
+# scripts/refresh_futures_contracts.py from the broker's instruments endpoint, exactly as the gex
+# recorder reads it. Crude (CL) and Brent (BZ) are real futures, so unlike USO they are not proxies.
+PREMARKET_FUTURES = {
+    "es": ("ES", "S&P 500 e-mini (/ES)"),
+    "nq": ("NQ", "Nasdaq-100 e-mini (/NQ)"),
+    "ym": ("YM", "Dow e-mini (/YM)"),
+    "rty": ("RTY", "Russell 2000 e-mini (/RTY)"),
+    "cl": ("CL", "WTI crude (/CL)"),
+    "bz": ("BZ", "Brent crude (/BZ)"),
+}
+
+# A map older than this names contracts that may have rolled; the same bound the gex recorder uses.
+# Stale or missing is simply no futures legs and no futures readings -- a legible gap, never a
+# rolled-off contract read as the market.
+FUTURES_MAP_MAX_AGE_DAYS = 5
+
+
+def futures_legs(now=None) -> dict[str, str]:
+    """`{reading: streamer_symbol}` for the pre-market futures, or `{}` when the map is missing,
+    unreadable or stale."""
+    import json
+    from datetime import datetime
+
+    from cherrypick.core import home as _home
+    from cherrypick.core.clock import ET
+
+    try:
+        raw = json.loads((_home.state_dir() / "futures_contracts.json").read_text(encoding="utf-8"))
+        refreshed = datetime.fromisoformat(str(raw["refreshed_at"]))
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+    if ((now or datetime.now(ET)) - refreshed).days > FUTURES_MAP_MAX_AGE_DAYS:
+        return {}
+    out = {}
+    for reading, (product, _label) in PREMARKET_FUTURES.items():
+        rows = (raw.get("contracts") or {}).get(product) or []
+        if rows and rows[0].get("streamer_symbol"):
+            out[reading] = str(rows[0]["streamer_symbol"])
+    return out
+
+
 UNDERLYING_SYMBOLS = ("SPX",)
 
 # Completed daily rows the deployment score needs stream_summary to hold. 270 covers a trailing
@@ -90,6 +155,19 @@ HISTORY_LOOKBACK = 270
 # the live score takes it from a current quote, but a historical day needs its close.
 HISTORY_DAYS = {symbol: HISTORY_LOOKBACK for symbol in ("VIX", "VIX3M", "HYG", "TLT", "SPX", *SECTOR_ETFS)}
 
+# The pre-market legs need only their LAST settle, but the producer writes live Summary rows for
+# underlyings alone: a leg's daily rows come solely from the connect-time candle backfill, and only
+# for a leg that declares `history_days`. Found on the first live run (2026-09-27): all nine new legs
+# printed within seconds and none ever got a settle row. Thirty sessions keeps the last settle on
+# file across a long weekend or a missed connect, at ~270 candles once -- small beside the 270-day
+# requests above.
+PREMARKET_HISTORY_DAYS = 30
+
+
+def _history_days(now=None) -> dict[str, int]:
+    premarket = [*futures_legs(now).values(), *(symbol for symbol, _ in INDEX_LEGS.values())]
+    return {**{symbol: PREMARKET_HISTORY_DAYS for symbol in premarket}, **HISTORY_DAYS}
+
 
 def register() -> str | None:
     """Write ``state/stream_requests/overview.json``. Returns the path written, or None.
@@ -104,8 +182,8 @@ def register() -> str | None:
             _requests.write_request(
                 MODULE,
                 UNDERLYING_SYMBOLS,
-                legs=QUOTE_ONLY_SYMBOLS,
-                history_days=HISTORY_DAYS,
+                legs=tuple(sorted({*QUOTE_ONLY_SYMBOLS, *futures_legs().values()})),
+                history_days=_history_days(),
             )
         )
     except OSError:

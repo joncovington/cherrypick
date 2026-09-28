@@ -45,7 +45,8 @@ from . import symbols as _symbols
 # Every prior key keeps its meaning, so a v1 pack still renders -- readers must tolerate the block
 # being absent on packs built before this version.
 # 4: + SKEW and VXN percentiles from Cboe's daily files, the `moves` and `yields` blocks, and the
-# calendar's `releases` (2026-09-27). Additive: every v3 key keeps its meaning.
+# calendar's `releases`, and the `premarket` futures/index block (2026-09-27). Additive: every v3 key
+# keeps its meaning.
 FACT_VERSION = 4
 PACK = "overview.morning"
 
@@ -157,6 +158,34 @@ def _latest_summary_before(conn, symbol: str, before: str):
     return rows[0] if rows else None
 
 
+def _print_session(trade_day: str | None, session: str) -> str | None:
+    """The session a last print belongs to: its own ET date when that is before the pack's session,
+    otherwise (an overnight or pre-open print stamped today) the last trading day before it."""
+    if not trade_day:
+        return None
+    if trade_day < session:
+        return trade_day
+    return _calendar.previous_trading_day(date.fromisoformat(session)).isoformat()
+
+
+def _session_base(conn, symbol: str, print_session: str) -> float | None:
+    """The close of the session before `print_session`: that session's own `prev_day_close`, else
+    the day_close (or, failing that, the prev_day_close carried by the row after it) of exactly the
+    previous trading day. None when neither row exists -- never an older row's close."""
+    own = _summary_row(conn, symbol, print_session)
+    if own is not None and own["prev_day_close"] is not None:
+        return float(own["prev_day_close"])
+    before = _calendar.previous_trading_day(date.fromisoformat(print_session)).isoformat()
+    rows = _rows(
+        conn,
+        "SELECT day_close FROM stream_summary WHERE symbol = ? AND trade_date = ?",
+        (symbol, before),
+    )
+    if rows and _column(rows[0], "day_close") is not None:
+        return float(rows[0]["day_close"])
+    return None
+
+
 def _prior_close_info(conn, symbol: str, session: str) -> dict | None:
     """The prior session's confirmed close and its own daily change, from wherever it actually
     lives (see the module docstring): today's summary row first, the last recorded trade second."""
@@ -190,15 +219,17 @@ def _prior_close_info(conn, symbol: str, session: str) -> dict | None:
         # `_et_date` calls it today, so the same lookup mislabelled the prior session as the current
         # one. Falling back to the newest completed session's row fixes both — and the session that
         # row names IS the session the print belongs to, in either branch.
-        base_row = _summary_row(conn, symbol, trade_day) if trade_day else None
-        if base_row is None:
-            base_row = _latest_summary_before(conn, symbol, session)
-        base = (
-            float(base_row["prev_day_close"]) if base_row and base_row["prev_day_close"] is not None else None
-        )
+        #
+        # The base must be the close of the session IMMEDIATELY before the print's own session, and
+        # nothing older. The fallback above used to accept the newest row it could find, whatever its
+        # date: on 2026-09-27 IWM's rows stopped at Sept 23, so Friday's close was measured against
+        # Sept 22's and the pack printed -1.83% for a +0.11% day. A row the wrong distance back is
+        # now refused and the change is unmeasured -- a gap, not a two-day move labelled as one.
+        print_session = _print_session(trade_day, session)
+        base = _session_base(conn, symbol, print_session) if print_session else None
         return {
             "close": close,
-            "session": base_row["trade_date"] if base_row else trade_day,
+            "session": print_session or trade_day,
             "as_of": _iso(ts),
             "change_pct": ((close - base) / base * 100.0) if base else None,
             "via": "last_trade",
@@ -636,6 +667,76 @@ def _yields(session: str) -> dict:
     }
 
 
+def _prior_settle(conn, symbol: str, session: str) -> dict | None:
+    """A future's last settle before `session`, from Summary rows only: today's row's
+    `prev_day_close` when the producer has written it, else the newest completed session's own
+    `day_close`. Never a trade -- for a contract printing live, the last trade IS the live value,
+    and a change measured against it reads a false 0.00%."""
+    if conn is None:
+        return None
+    today = _rows(
+        conn,
+        "SELECT prev_day_close FROM stream_summary WHERE symbol = ? AND trade_date = ?",
+        (symbol, session),
+    )
+    if today and today[0]["prev_day_close"] is not None:
+        prior = _latest_summary_before(conn, symbol, session)
+        return {
+            "settle": float(today[0]["prev_day_close"]),
+            "session": prior["trade_date"] if prior else None,
+        }
+    rows = _rows(
+        conn,
+        "SELECT trade_date, day_close FROM stream_summary WHERE symbol = ? AND trade_date < ? "
+        "AND day_close IS NOT NULL ORDER BY trade_date DESC LIMIT 1",
+        (symbol, session),
+    )
+    if rows:
+        return {"settle": float(rows[0]["day_close"]), "session": rows[0]["trade_date"]}
+    return None
+
+
+def _premarket(cache, session: str, now_ts: float) -> dict:
+    """The pre-market tape: each index future's live print against its prior settle, and the other
+    cash indexes' prior-session moves. A future with no fresh print is `prior` like every other
+    reading, and its change is then None -- a settle compared with itself is not a move."""
+    futures = {}
+    legs = _symbols.futures_legs()
+    for reading, (product, label) in _symbols.PREMARKET_FUTURES.items():
+        symbol = legs.get(reading)
+        if symbol is None:
+            futures[reading] = {
+                **_unmeasured("futures_contracts.json", label),
+                "reason": "no_contract_mapped",
+            }
+            continue
+        r = _symbol_reading(cache, symbol, session, now_ts, label=label)
+        settle = _prior_settle(cache, symbol, session)
+        r["product"] = product
+        r["prior_settle"] = settle["settle"] if settle else None
+        r["prior_settle_session"] = settle["session"] if settle else None
+        r["change_vs_prior_close_pct"] = (
+            round((r["value"] - settle["settle"]) / settle["settle"] * 100.0, 2)
+            if r.get("basis") == "live" and r.get("value") is not None and settle and settle["settle"]
+            else None
+        )
+        if r["change_vs_prior_close_pct"] is None:
+            r["change_reason"] = "no_live_print" if r.get("basis") != "live" else "no_prior_settle"
+        futures[reading] = r
+    indexes = {
+        reading: _symbol_reading(cache, symbol, session, now_ts, label=label)
+        for reading, (symbol, label) in _symbols.INDEX_LEGS.items()
+    }
+    return {
+        "futures": futures,
+        "indexes": indexes,
+        "measured_futures": sum(
+            1 for f in futures.values() if f.get("change_vs_prior_close_pct") is not None
+        ),
+        "record_only": True,
+    }
+
+
 def _calendar_block(session: str) -> dict:
     day = date.fromisoformat(session)
     year_known = _calendar.fomc_year_known(day.year)
@@ -715,6 +816,7 @@ def build(session: str | None = None, now: datetime | None = None) -> dict:
         )
 
         sectors = _sectors(cache, session)
+        premarket = _premarket(cache, session, now_ts)
         # The live score reads the tail of a longer stored series -- only a year of it. The vol
         # complex rides along for the percentile block; the union is deliberate rather than two
         # reads, so one series can never disagree with itself between two consumers.
@@ -742,6 +844,7 @@ def build(session: str | None = None, now: datetime | None = None) -> dict:
         "phase": _gates.phase(gate_list),
         "deployment": _score.evaluate(readings, history, _symbols.SECTOR_ETFS),
         "vol_regime": _vol_regime(readings, history, session),
+        "premarket": premarket,
         "moves": _moves(readings, history),
         "yields": _yields(session),
         "calendar": _calendar_block(session),

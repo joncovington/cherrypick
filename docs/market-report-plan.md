@@ -634,9 +634,17 @@ pack (v4) reads them: SKEW and VXN percentiles from Cboe's files, the weekly exp
 10-session realized volatility, the prior session's Treasury curve with spreads and changes, and
 the coming week's releases. FRED's keyless CSV hangs from here, so FRED is reached only through
 its API, whose free key also brings CPI, jobs and PPI dates (BLS refuses scripts); until a key is
-stored the calendar carries BEA and FOMC only. Still to do: the new stream legs (futures, NDX /
-DJX / RUT) and the 30-day 25-delta risk reversal, both subscription decisions made together,
-outside market hours, watching the producer.
+stored the calendar carries BEA and FOMC only (a key was stored the same evening, bringing CPI,
+jobs, PPI and claims).
+
+**Landed the same evening: the rest of Phase 1, at 27 subscriptions.** The 30-day 25-delta risk
+reversal needs no subscription at all: Cboe's delayed SPX chain carries IV and delta for every
+strike, and the evening fetch reduces it to one row (Friday: -3.49 vol points). The pre-market tape
+is nine quote-only legs — /ES /NQ /YM /RTY /CL /BZ (active months, resolved by
+`refresh_futures_contracts.py`) and NDX, DJX, IWM — and the producer went from 6,025 to 6,052
+subscriptions, with no reconnects across three restarts watched live. RUT is replaced by IWM,
+labelled a proxy: the stream delivers nothing for the RUT index though REST quotes it. **Phase 1 is
+done.**
 
 - Futures legs for /ES, /NQ, /YM, /RTY, /CL and /BZ, extending `scripts/refresh_futures_contracts.py`
   the way it already resolves VX and ZN; overview reads them as the pre-market tape. The producer
