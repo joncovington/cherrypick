@@ -717,6 +717,14 @@ counts run higher, for the universe reason above. **Phase 3 is done.**
 
 ### Phase 4 — the chart layer
 
+**Started 2026-09-27; waiting on captures.** The indicators (SMA, EMA, Wilder's RSI, CCI-14) and a
+declared trend baseline landed in `packages/technicals`, with `score-trends` scoring it against
+every capture. On the two captures on file the vendor's 1M/6M trend labels agree on ~80% of days,
+but two mostly-bullish names cannot settle the construction, the level rule, the 1-10 rank or the
+named signals. The collector saves up to 40 names a night from 2026-09-28; each carries ~700 days
+of trend scores and every level with its source bar, so the fitting resumes after about a week of
+captures, with agreement reported as a rate as below.
+
 - Dividend-adjusted daily bars first: the level placement depends on them (see "What the
   platform's charts show"). Phase 2 supplies them.
 - The 1M and 6M trends on the five-step scale, from a triple moving average; CCI; RSI; the 1–10

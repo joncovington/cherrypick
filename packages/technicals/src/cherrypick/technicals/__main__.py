@@ -167,6 +167,14 @@ def cmd_breadth(args) -> int:
     return 0
 
 
+def cmd_score_trends(_args) -> int:
+    from . import chart_score
+
+    result = chart_score.score_trends()
+    print(json.dumps({k: v for k, v in result.items() if k != "by_symbol"}, indent=1))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m cherrypick.technicals", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -198,6 +206,9 @@ def main(argv: list[str] | None = None) -> int:
     br = sub.add_parser("breadth", help="daily leaders/laggards/net/bullish share over recent sessions")
     br.add_argument("--sessions", type=int, default=10)
     br.set_defaults(fn=cmd_breadth)
+    sub.add_parser("score-trends", help="the trend baseline against every vendor chart capture").set_defaults(
+        fn=cmd_score_trends
+    )
     args = ap.parse_args(argv)
     return args.fn(args)
 

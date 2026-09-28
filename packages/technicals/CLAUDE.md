@@ -89,6 +89,18 @@ reads off the vendor's charts (Sept 2-24), eleven of them never used in fitting,
 correlates at 0.93 (leaders 0.78, laggards 0.90) -- the out-of-sample evidence that the stage rule
 is the vendor's rule and not a fit to five days. Our counts run higher, as the stage section says.
 
+## The chart layer (Phase 4, started)
+
+`indicators.py` holds SMA, EMA, Wilder's RSI and Lambert's CCI (period 14, the vendor's scanner
+period), each undefined until its window is full. `trend.py` is a **declared baseline** for the
+1M and 6M trend scores (-4..+4) and their five-step labels: the sum of four price-versus-average
+signs. The vendor's captures carry both scores daily, and on the two names on file (ANET, MSFT)
+no simple construction reproduces the exact number (55-58% of days), while the label agrees on
+about 80% (short) and 79% (long). Two names, both mostly bullish, are too few to fit further, so
+`score-trends` re-scores against every capture and the construction is refit once a week of
+captures (up to 40 names a night) is in. Levels, the 1-10 rank and the named signals wait on the
+same captures.
+
 ## Scheduling
 
 One supervisor job, `technicals-land` (06:15 ET daily, after the 05:30 Dolt pull; config block
@@ -113,4 +125,5 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals rotation [--session D]` | Every rotation fund's state on a session. |
 | `python -m cherrypick.technicals score-rotation` | The rotation rule against every saved edition. |
 | `python -m cherrypick.technicals breadth [--sessions N]` | Daily leaders, laggards, net and bullish share. |
+| `python -m cherrypick.technicals score-trends` | The trend baseline against every vendor chart capture: exact, label and within-one agreement. |
 | `python -m cherrypick.technicals score-stages` | The stage rule against every saved edition: side recall, stage agreement, extra rate, counts. |
