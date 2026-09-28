@@ -329,11 +329,11 @@ Two known reliability facts shape the plan:
    interest change (OCC per series, or Cboe's delayed chain) flags new positioning but cannot tell
    bought from sold, so put sales and put buys — two of the four categories — are
    indistinguishable. It can feed an "unusual open-interest build" list, not the vendor's filter.
-   Feeds section 7 and three multi-signal tags.
+   Feeds section 7 and three multi-signal tags. **Deferred** with the other paid data (Phase 0).
 2. **Analyst revisions — medium, paid.** No free source gives firm and price-target change.
    Benzinga's ratings through Massive ($99 add-on) carry firm, old and new rating, and old and new
    target back to 2011 — the report's fields exactly. FMP's $19 Starter has rating changes but no
-   per-firm target change, and needs a separate licence for display.
+   per-firm target change, and needs a separate licence for display. **Deferred** (Phase 0).
 3. **The stock universe and sector map — medium, definitional.** The report's universe is not the
    S&P 500 — the Sept 25 tables include TWLO, OKTA, NET, DDOG, ZS, CLS and a dozen ADRs (TSM, SONY,
    INFY, NMR, MFG, SMFG, ITUB, KB, SHG, TD, BN, DB). Nor is it screened on option volume alone: OCC's
@@ -454,9 +454,16 @@ Each phase ends with something that runs and a test that has been shown to fail.
 
 ### Phase 0 — decisions, before code
 
-- Budget for paid data — flow (ThetaData, $80/month) and analyst revisions (Benzinga via Massive,
-  $99) — and whether a vendor's pre-classified flow is acceptable or the buy/sell rule must be
-  ours. Check each vendor's storage and redistribution terms before building on it.
+- **Paid data: deferred (decided 2026-09-27).** Flow (ThetaData, $80/month) and analyst revisions
+  (Benzinga via Massive, $99) are not bought for now, so the first build runs on free inputs only.
+  What that rules out: the flow section (section 7) entirely, and four of the nine multi-signal
+  methods — call buying, put selling, put buying and analyst revisions. What stays comparable
+  against the vendor: the relative-strength stage, sector rotation, the two fundamental checks and
+  the trade scan. Our multi-signal score is therefore built over those methods only, and scored
+  against the vendor **per tag** rather than as a total, since a total over five methods cannot be
+  compared with one over nine. Phase 6 waits on this decision. If it is revisited: whether a
+  vendor's pre-classified flow is acceptable or the buy/sell rule must be ours, and each vendor's
+  storage and redistribution terms, are checked before building on it.
 - The stock universe: a liquidity-screened optionable list, its size, and how often it is rebuilt.
   The vendor's includes names with almost no option volume, so volume alone won't reproduce it.
 - The sector taxonomy: match theirs (Yahoo/Morningstar, via a hand-kept file) or use our own and
@@ -478,7 +485,8 @@ collection doesn't depend on someone remembering to save a page. So the collecto
 `packages/orchestrator/tests/test_vendor_edition_script.py` — each check shown to fail on a
 deliberately broken input, the pacing floors pinned, and all five saved editions passing. A live
 `edition` run re-fetched Sept 25 byte-identical to the hand-saved copy; a live `charts` run
-captured ANET and MSFT. Still to do: the supervisor schedule.
+captured ANET and MSFT. The supervisor schedules it (`report-edition`, `report-edition-retry`,
+`report-charts`), off unless `market_report.collector` is set.
 
 **The chart pages are backed by JSON, and that is what `charts` saves.** Loading a chart page makes
 the app fetch, per symbol, a response carrying: the vendor's own daily bars (about three years);
@@ -539,10 +547,9 @@ starts a 24-hour cooldown that later runs honour.
   colour-decoded leader and laggard totals must equal its stated counts — the check that
   validated the first five. A file that fails is kept aside as `.rejected`, never as the day's
   fixture.
-- **Until the job exists,** a browser-based Claude session follows the same steps by hand-off
-  instruction and saves to the same folder. That is the interim route, not the design: the suite
-  prefers the deterministic script, and the manual route stays as the fallback when the script
-  stops at a challenge.
+- **When the script stops at a challenge** (a captcha, a changed login, a check it cannot pass), a
+  browser-based session follows the same steps by hand and saves to the same folder. That is the
+  fallback, not the design: the suite prefers the deterministic script.
 - **Scheduled by the supervisor** after the edition is published (the editions say "as of" about
   6:00–6:20 AM ET), with one later retry, the way `refresh_dolt_data.py` is scheduled. It fetches
   only the current day's edition, plus any missing recent days the site still lists, once each.
@@ -558,10 +565,10 @@ starts a 24-hour cooldown that later runs honour.
   name. For each name it saves **the page's values as
   data** — last price, 52-week range, 1M and 6M trend, 1–10 score, IV rank, liquidity class,
   earnings date, dividend, every support and resistance price, the named signal and the
-  price-action sentence — as `vendor-charts/YYYY-MM-DD/<TICKER>.json`, plus a screenshot on the
-  longest view for the levels' starting bars. The first run records the page's network traffic:
-  if the chart loads its levels, trends or bars as JSON, that response is kept instead of reading
-  the page text, since it carries exact numbers rather than rounded display. A capture that
+  price-action sentence — as `vendor-charts/YYYY-MM-DD/<TICKER>.json`. The page loads all of this
+  as JSON (see "The chart pages are backed by JSON" above), so that response is what is kept: exact
+  numbers rather than rounded display, and each level with the date of its source bar, which makes
+  a screenshot unnecessary. A capture that
   doesn't parse (a missing price, a level that isn't a number, the wrong ticker) is rejected like
   an edition that fails its checks.
 - **Check the subscription's terms first.** Automated download of one's own subscription for
@@ -604,8 +611,8 @@ producer — the rule `packages/overview/CLAUDE.md` already states.
 
 - The stage rule over 1/2/3-month relative performance against SPX. **Validated against the Sept 25
   fixture below**: same universe, same session, the same 33 and 131. Each saved report adds a day.
-  The fixture records a stage for only five names, so it checks counts and membership; the three
-  stages themselves are checked only once a capture with legible shading exists.
+  The saved editions carry every name's stage in its ticker colour (decoded totals match each
+  edition's stated counts), so the check covers counts, membership and all three stages per name.
 - Rotation over the ETF list, daily and weekly relative-strength trend (RS-Ratio and RS-Momentum
   as trailing z-scores; see "Prior art"), four states plus none; Asset entries against a
   stock-and-bond benchmark (AOR or VBINX, decided in Phase 0). The trend definition is ours and is
@@ -625,7 +632,8 @@ producer — the rule `packages/overview/CLAUDE.md` already states.
 - The two named signals (Bullish Trend Following on CCI, reversal on RSI) and the price-action events (level break,
   gap on high volume, large move); the directional score from trends × strength per the tentative
   rule.
-- Scored against the 22-chart fixture. Agreement is reported as a rate, not assumed.
+- Scored against the collected chart captures: every level with its source bar's date, the 1–10
+  rank, and the 1M/6M trends with their history. Agreement is reported as a rate, not assumed.
 
 ### Phase 5 — calendar and trade ideas
 
@@ -633,7 +641,10 @@ producer — the rule `packages/overview/CLAUDE.md` already states.
   release calendar from Phase 1.
 - Income trade ideas only if Phase 0 says yes.
 
-### Phase 6 — paid inputs
+### Phase 6 — paid inputs (deferred)
+
+Not scheduled: paid data was deferred on 2026-09-27 (Phase 0). The report ships without it; this
+is the work if that changes.
 
 - Flow: the filter as defined above, per sector and fund lean, the eight largest trades, the
   session totals, and the three multi-signal tags as per-name session sums (see the multi-signal
