@@ -473,6 +473,18 @@ Each phase ends with something that runs and a test that has been shown to fail.
 Every edition saved is another scored day for every engine, and the fixture only grows if
 collection doesn't depend on someone remembering to save a page. So the collector comes first.
 
+**Built:** `scripts/fetch_vendor_edition.py` (`credentials`, `login`, `edition`, `validate`,
+`probe-chart`), with its checks tested in `packages/orchestrator/tests/test_vendor_edition_script.py`
+— each check shown to fail on a deliberately broken edition, and all five saved editions passing.
+Still to do: the first live run, the chart-page parser (designed from a `probe-chart` recording),
+and the supervisor schedule.
+
+**Pacing is a requirement, not a tuning knob.** The vendor must never see fast consecutive
+requests: one browser session per run, at most one login attempt, a randomized 20–45 second pause
+between opening one report or chart page and the next, a backfill of at most three editions per
+run, and chart pages one at a time with the same pause. Any 429 or 403 response ends the run and
+starts a 24-hour cooldown that later runs honour.
+
 - **A `scripts/` job, `fetch_vendor_edition.py`**, outside every package like the other network
   fetchers. It logs in, opens the day's edition and saves the report's HTML to
   `~/.cherrypick/data/market-report/vendor-editions/YYYY-MM-DD.html`. The site's address and page
