@@ -34,8 +34,9 @@ Three steps, each its own subcommand and its own schedule:
 - **watchlist**: mirrors the members to a private tastytrade watchlist, `cherrypick universe`. It
   is the one step that writes to the account — a watchlist, never an order — so it shows its plan
   and writes nothing without `--apply`, has its own schedule switch, and only ever replaces the
-  list it created (marked by its group). It refuses to empty the list or to cut more than half of
-  it in one sync.
+  list it created (marked by its group). SPX, NDX, SPY, QQQ and IWM are pinned: on the list from
+  the first sync and never removed. It refuses to strip the list to those or to cut more than half
+  of the universe's names in one sync.
 
 Pacing: the follow feed gets one request per trader and OCC one per missing session, 5-10
 seconds apart; tastytrade gets batched calls and one chain request per name a day (cached), a
@@ -462,13 +463,22 @@ WATCHLIST_GROUP = "cherrypick"
 MAX_SHRINK = 0.5
 
 
+# The major index symbols, pinned to the list for good (decided 2026-09-27): they are put on first,
+# kept whether or not they pass the universe's rule, and never removed by a sync. Symbol ->
+# tastytrade instrument type; SPX and NDX are cash indexes, not equities.
+PINNED = {"SPX": "Index", "NDX": "Index", "SPY": "Equity", "QQQ": "Equity", "IWM": "Equity"}
+
+
 def watchlist_plan(members: list[str], existing: dict | None, *, allow_shrink: bool = False) -> dict:
     """What a sync would do: `create`, `replace`, `none` or `refuse`, with the symbols it adds and
-    removes. `existing` is the account's list of that name ({group_name, symbols}) or None."""
-    want = sorted({to_tastytrade(s) for s in members})
+    removes. `existing` is the account's list of that name ({group_name, symbols}) or None.
+
+    The list is the pinned symbols first, then the universe's members. The pinned ones are in every
+    list this sends, so no sync can remove them; the empty and shrink guards count only the
+    universe's part, since the pinned part never moves."""
+    universe = sorted({to_tastytrade(s) for s in members} - set(PINNED))
+    want = [*PINNED, *universe]
     if existing is None:
-        if not want:
-            return {"action": "none", "reason": "the universe has no members yet", "add": [], "remove": []}
         return {"action": "create", "add": want, "remove": [], "entries": want}
     if existing.get("group_name") != WATCHLIST_GROUP:
         return {
@@ -482,19 +492,24 @@ def watchlist_plan(members: list[str], existing: dict | None, *, allow_shrink: b
         }
     have = set(existing.get("symbols") or [])
     add, remove = sorted(set(want) - have), sorted(have - set(want))
+    assert not set(remove) & set(PINNED), "a pinned symbol must never be removed"
     if not add and not remove:
         return {"action": "none", "add": [], "remove": [], "entries": want}
-    if not want:
+    have_universe = have - set(PINNED)
+    if not universe and have_universe:
         return {
             "action": "refuse",
-            "reason": "the universe is empty; not emptying the list",
+            "reason": "the universe is empty; not stripping the list to its pinned symbols",
             "add": [],
             "remove": remove,
         }
-    if have and not allow_shrink and len(remove) > MAX_SHRINK * len(have):
+    if have_universe and not allow_shrink and len(remove) > MAX_SHRINK * len(have_universe):
         return {
             "action": "refuse",
-            "reason": f"would remove {len(remove)} of {len(have)} names at once (more than {MAX_SHRINK:.0%})",
+            "reason": (
+                f"would remove {len(remove)} of {len(have_universe)} universe names at once "
+                f"(more than {MAX_SHRINK:.0%})"
+            ),
             "add": add,
             "remove": remove,
         }
@@ -505,7 +520,7 @@ def watchlist_body(entries: list[str]) -> dict:
     return {
         "name": WATCHLIST_NAME,
         "group-name": WATCHLIST_GROUP,
-        "watchlist-entries": [{"symbol": s, "instrument-type": "Equity"} for s in entries],
+        "watchlist-entries": [{"symbol": s, "instrument-type": PINNED.get(s, "Equity")} for s in entries],
     }
 
 

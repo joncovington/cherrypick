@@ -318,18 +318,49 @@ def test_thin_is_only_decided_on_enough_sessions():
 
 # --- the tastytrade watchlist -------------------------------------------------------------------
 
-
-def _ours(*symbols):
-    return {"group_name": bsu.WATCHLIST_GROUP, "symbols": list(symbols)}
+PINNED = ["SPX", "NDX", "SPY", "QQQ", "IWM"]
 
 
-def test_the_first_sync_creates_the_list():
-    plan = bsu.watchlist_plan(["MSFT", "BRK.B", "AAPL"], None)
-    assert plan["action"] == "create" and plan["entries"] == ["AAPL", "BRK/B", "MSFT"]
+def _ours(*symbols, pinned=True):
+    return {"group_name": bsu.WATCHLIST_GROUP, "symbols": (PINNED if pinned else []) + list(symbols)}
 
 
-def test_no_members_and_no_list_is_a_quiet_no_op():
-    assert bsu.watchlist_plan([], None)["action"] == "none"
+def test_the_first_sync_creates_the_list_with_the_pinned_symbols_first():
+    plan = bsu.watchlist_plan(["MSFT", "BRK.B", "AAPL", "SPY"], None)
+    assert plan["action"] == "create"
+    assert plan["entries"] == PINNED + ["AAPL", "BRK/B", "MSFT"]
+
+
+def test_with_no_members_yet_the_list_starts_with_the_pinned_symbols():
+    plan = bsu.watchlist_plan([], None)
+    assert plan["action"] == "create" and plan["entries"] == PINNED
+
+
+def test_the_pinned_symbols_are_never_removed():
+    """SPX, NDX, SPY, QQQ and IWM stay whether or not the universe holds them."""
+    plan = bsu.watchlist_plan(["AAPL", "MSFT"], _ours("AAPL", "MSFT", "INTC"))
+    assert plan["action"] == "replace" and not set(plan["remove"]) & set(PINNED)
+    assert plan["entries"][:5] == PINNED
+
+
+def test_a_list_missing_a_pinned_symbol_gets_it_back():
+    have = {"group_name": bsu.WATCHLIST_GROUP, "symbols": ["SPX", "SPY", "AAPL"]}
+    plan = bsu.watchlist_plan(["AAPL"], have)
+    assert plan["action"] == "replace" and plan["add"] == ["IWM", "NDX", "QQQ"]
+
+
+def test_indexes_go_in_as_indexes():
+    body = bsu.watchlist_body(PINNED + ["AAPL"])
+    types = {e["symbol"]: e["instrument-type"] for e in body["watchlist-entries"]}
+    assert types == {
+        "SPX": "Index",
+        "NDX": "Index",
+        "SPY": "Equity",
+        "QQQ": "Equity",
+        "IWM": "Equity",
+        "AAPL": "Equity",
+    }
+    assert body["group-name"] == bsu.WATCHLIST_GROUP and body["name"] == bsu.WATCHLIST_NAME
 
 
 def test_a_same_named_list_the_script_did_not_make_is_never_replaced():
@@ -342,26 +373,20 @@ def test_a_sync_replaces_with_the_adds_and_removes_it_reports():
     plan = bsu.watchlist_plan(["AAPL", "MSFT", "NVDA"], _ours("AAPL", "MSFT", "INTC"))
     assert plan["action"] == "replace"
     assert (plan["add"], plan["remove"]) == (["NVDA"], ["INTC"])
-    assert plan["entries"] == ["AAPL", "MSFT", "NVDA"]
 
 
 def test_an_unchanged_universe_sends_nothing():
     assert bsu.watchlist_plan(["AAPL", "MSFT"], _ours("MSFT", "AAPL"))["action"] == "none"
 
 
-def test_an_empty_universe_never_empties_the_list():
-    """Not even when a large cut is allowed: an empty list is never what a sync should leave."""
+def test_an_empty_universe_never_strips_the_list_to_its_pins():
+    """Not even when a large cut is allowed."""
     assert bsu.watchlist_plan([], _ours("AAPL", "MSFT"), allow_shrink=True)["action"] == "refuse"
 
 
 def test_a_collapse_of_more_than_half_is_refused_unless_allowed():
+    """Counted over the universe's names only: the five pins must not dilute the cut."""
     have = _ours(*"ABCDEFGHIJ")
     assert bsu.watchlist_plan(list("ABCD"), have)["action"] == "refuse"
     assert bsu.watchlist_plan(list("ABCD"), have, allow_shrink=True)["action"] == "replace"
     assert bsu.watchlist_plan(list("ABCDEF"), have)["action"] == "replace"
-
-
-def test_the_body_marks_the_list_as_ours():
-    body = bsu.watchlist_body(["AAPL"])
-    assert body["group-name"] == bsu.WATCHLIST_GROUP and body["name"] == bsu.WATCHLIST_NAME
-    assert body["watchlist-entries"] == [{"symbol": "AAPL", "instrument-type": "Equity"}]

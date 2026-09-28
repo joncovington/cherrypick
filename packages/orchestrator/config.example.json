@@ -573,7 +573,7 @@
     "universe": false,
     "universe_measure_at": ["11:00", "14:00"],
     "universe_daily_at": "18:00",
-    "_comment_universe_watchlist": "Mirror the universe's members to a private tastytrade watchlist named 'cherrypick universe' (scripts/build_stock_universe.py watchlist --apply) at 'universe_watchlist_at', after the daily rebuild. The suite's one scheduled write to the broker account - a watchlist, never an order - so it is its own switch, OFF by default even with universe=true. It only replaces the list it created (group 'cherrypick'), and refuses to empty the list or remove more than half of it in one sync. Preview any time with `python scripts/build_stock_universe.py watchlist`.",
+    "_comment_universe_watchlist": "Mirror the universe's members to a private tastytrade watchlist named 'cherrypick universe' (scripts/build_stock_universe.py watchlist --apply) at 'universe_watchlist_at', after the daily rebuild. The suite's one scheduled write to the broker account - a watchlist, never an order - so it is its own switch, OFF by default even with universe=true. SPX, NDX, SPY, QQQ and IWM are pinned to the list and never removed. It only replaces the list it created (group 'cherrypick'), and refuses to strip the list to its pins or remove more than half of the universe's names in one sync. Preview any time with `python scripts/build_stock_universe.py watchlist`.",
     "universe_watchlist": false,
     "universe_watchlist_at": "18:30"
   },

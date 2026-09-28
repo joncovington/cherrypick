@@ -486,7 +486,9 @@ Each phase ends with something that runs and a test that has been shown to fail.
   script's `watchlist` step — the suite's one scheduled write to the broker account, a watchlist
   and never an order. It previews unless `--apply`, has its own switch
   (`market_report.universe_watchlist`, off by default), replaces only the list it created (marked
-  by the `cherrypick` group), and refuses to empty the list or cut more than half of it at once.
+  by the `cherrypick` group), and refuses to strip it to its pins or cut more than half of the
+  universe's names at once. SPX, NDX, SPY, QQQ and IWM are pinned: on the list since it was created
+  on 2026-09-27, whether or not they pass the rule, and never removed by a sync.
 - The sector taxonomy: match theirs (Yahoo/Morningstar, via a hand-kept file) or use our own and
   accept different counts.
 - The asset-class benchmark: AOR or VBINX.
