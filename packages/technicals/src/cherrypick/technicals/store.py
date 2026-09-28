@@ -145,7 +145,9 @@ def adjusted_bars(conn, symbol: str) -> list[_adjust.AdjustedBar]:
         _adjust.Split(r["ex_date"], r["to_factor"], r["for_factor"])
         for r in conn.execute("SELECT * FROM splits WHERE symbol = ?", (symbol,))
     ]
-    return _adjust.adjust(raw_bars(conn, symbol), splits, dividends(conn, symbol)[0])
+    raw = raw_bars(conn, symbol)
+    adjusted = _adjust.adjust(raw, _adjust.dedupe_splits(raw, splits), dividends(conn, symbol)[0])
+    return adjusted[_adjust.series_break(adjusted) :]
 
 
 def iv_rank(conn, symbol: str, on: str | None = None) -> dict | None:

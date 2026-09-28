@@ -67,3 +67,41 @@ def test_prices_are_returned_unrounded():
     """Rounding is a display decision: a pre-split division can land on a half cent."""
     out = adjust(_bars(292.66, 73.0), splits=[Split("2026-09-02", 4, 1)])
     assert out[0].close == 292.66 / 4
+
+
+# --- data defects corrected before adjustment -----------------------------------------------------
+from cherrypick.technicals.adjust import dedupe_splits, series_break  # noqa: E402
+
+
+def test_a_split_recorded_twice_is_applied_once_on_the_day_the_price_jumped():
+    """APH's 2-for-1 sits in Dolt on 2024-05-31 AND 2024-06-12; only the second has the jump."""
+    bars = [
+        Bar(d, c, c, c, c, 1)
+        for d, c in (
+            ("2024-05-30", 133.0),
+            ("2024-05-31", 132.4),
+            ("2024-06-11", 130.0),
+            ("2024-06-12", 65.2),
+        )
+    ]
+    kept = dedupe_splits(bars, [Split("2024-05-31", 2, 1), Split("2024-06-12", 2, 1)])
+    assert kept == [Split("2024-06-12", 2, 1)]
+    out = adjust(bars, kept)
+    assert all(abs(b.close - a.close) / a.close < 0.05 for a, b in zip(out, out[1:], strict=False))
+
+
+def test_distinct_splits_and_bad_rows_are_handled():
+    bars = _bars(10.0, 5.0)
+    assert dedupe_splits(
+        bars, [Split("2020-01-01", 2, 1), Split("2026-09-02", 2, 1), Split("2026-09-02", 0, 1)]
+    ) == [
+        Split("2020-01-01", 2, 1),
+        Split("2026-09-02", 2, 1),
+    ]
+
+
+def test_a_ticker_that_changed_hands_starts_its_series_over():
+    """BNY: 10.20 to 138.98 in a day on 2026-05-21 -- another security's history before it."""
+    out = adjust(_bars(10.0, 10.2, 138.98, 140.0))
+    assert series_break(out) == 2
+    assert series_break(adjust(_bars(100.0, 174.0, 170.0))) == 0, "a real +74% day (GME) is kept"

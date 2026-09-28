@@ -196,6 +196,18 @@ def cmd_score_signals(_args) -> int:
     return 0
 
 
+def cmd_report(args) -> int:
+    from . import report
+
+    doc = report.build(args.session)
+    if not doc.get("ok"):
+        print(json.dumps(doc))
+        return 1
+    path = report.write(doc)
+    print(json.dumps({"ok": True, "path": path, "session": doc["session"], "universe": doc["universe"]}))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m cherrypick.technicals", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -237,6 +249,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("score-signals", help="our scan rules against every saved scan list").set_defaults(
         fn=cmd_score_signals
     )
+    rp = sub.add_parser("report", help="write one session's market-report readings for the console")
+    rp.add_argument("--session", help="ISO date (default: the latest session stored)")
+    rp.set_defaults(fn=cmd_report)
     args = ap.parse_args(argv)
     return args.fn(args)
 

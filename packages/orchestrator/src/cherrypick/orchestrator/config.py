@@ -327,6 +327,9 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     return {
         "enabled": bool(tc.get("enabled", True)),
         "land_at": tc.get("land_at", "06:15"),
+        # The market-report readings the console shows (stages by sector, breadth, rotation,
+        # signals, leaders), written once from the bars the landing just refreshed.
+        "report_at": tc.get("report_at", "06:30"),
         "dividends": bool(tc.get("dividends", True)),
         "dividends_at": tc.get("dividends_at", "19:30"),
     }

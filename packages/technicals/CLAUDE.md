@@ -145,6 +145,20 @@ vendor's levels, nearly all of them the extremes. Level dates are mostly swing h
 can sit above, inside or well away from its dated bar, so the vendor evidently selects from
 something these fields do not show. The report can place levels exactly; it cannot yet pick them.
 
+## The report artifact, and two data defects it exposed (Phase 7)
+
+`report.py` gathers one session's readings -- stages by sector, the 10-session breadth history,
+rotation states, scan-rule signals and the relative-strength leaders -- into
+`data/technicals/report-<session>.json`, the console's source. Nothing downstream recomputes them.
+
+Its first leaders list put BNY at +1,490% over six months, which exposed two defects in Dolt's
+data, both now corrected before adjustment (`adjust.dedupe_splits`, `adjust.series_break`):
+some splits are recorded twice a week or two apart (APH, CNQ), and applying both faked a jump; and a
+ticker that changed hands carries another security's history (BNY x13.6 in a day, SPCX x8.8, HUT
+x4.6). Of two same-ratio splits within 20 days only the one the raw prices jump on is kept, and a
+one-day move beyond 3x either way starts the series over. Real large moves (GME, MRNA) are kept.
+Every scorer was re-run after: no regressions, stage agreement up slightly.
+
 ## Scheduling
 
 One supervisor job, `technicals-land` (06:15 ET daily, after the 05:30 Dolt pull; config block
@@ -173,4 +187,5 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-levels` | How many of the vendor's levels our grid places, on names whose bars agree to the cent. |
 | `python -m cherrypick.technicals score-rank` | Our 1-10 rank against the vendor's. |
 | `python -m cherrypick.technicals score-signals` | Our six scan rules against every scan list the collector has saved. |
+| `python -m cherrypick.technicals report [--session D]` | Write one session's market-report readings for the console. |
 | `python -m cherrypick.technicals score-stages` | The stage rule against every saved edition: side recall, stage agreement, extra rate, counts. |

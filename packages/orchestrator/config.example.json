@@ -574,6 +574,7 @@
     "_comment": "packages/technicals - the market report's end-of-day store. Lands raw daily bars, splits, dividends and IV history for the universe candidates, the 35 rotation ETFs and the benchmarks from the LOCAL Dolt clones into data/technicals/eod.db, at 'land_at' ET after the 05:30 Dolt pull. Adjusted bars are computed from raw on read. Read-only against Dolt; needs the earnings module on, since its job keeps the dolt sql-server alive. ON by default.",
     "enabled": true,
     "land_at": "06:15",
+    "report_at": "06:30",
     "_comment_dividends": "scripts/fetch_dividends.py: tastytrade's dividend history, which the landing reconciles Dolt's against (Dolt alone has gaps and zeros; reconciled, adjusted bars match the vendor's on 36 of 40 names). Reads the shared broker credential, read-only, one symbol a second, refetching only symbols older than a week.",
     "dividends": true,
     "dividends_at": "19:30"

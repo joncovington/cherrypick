@@ -65,6 +65,7 @@ CATCHUP_MINUTES = {
     # The end-of-day landing reads the local Dolt clones; a late one is the same landing, and the
     # stage and rotation engines read it after the close, so it catches up well into the day.
     "technicals-land": 12 * 60,
+    "technicals-report": 12 * 60,
     # Dividend histories change weekly at most; a late fetch is the same fetch.
     "technicals-dividends": 12 * 60,
     "market-files": 600,
@@ -726,6 +727,22 @@ def derive_jobs(
                 if not tc["enabled"]
                 else "earnings module disabled (no dolt sql-server to read)"
             ),
+        ),
+    )
+    add(
+        "technicals-report",
+        lambda: JobSpec(
+            id="technicals-report",
+            # Reads only the technicals store and the market-report files; writes report-<session>.json.
+            argv=(pythonw, "-m", "cherrypick.technicals", "report"),
+            kind=KIND_DAILY,
+            at_et=tc["report_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-report"],
+            trading_days_only=False,
+            enabled=tc_on,
+            enabled_reason=""
+            if tc_on
+            else "disabled with technicals-land (it reads what the landing writes)",
         ),
     )
     div_on = tc["enabled"] and tc["dividends"]

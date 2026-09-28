@@ -309,6 +309,7 @@ def test_derive_full_suite_job_table():
         "market-files-retry",
         "technicals-land",
         "technicals-dividends",
+        "technicals-report",
         "earnings-moves",
         "review-provisional",
         "review-final",
@@ -972,3 +973,10 @@ def test_earnings_moves_are_priced_after_the_close_and_before_the_pack():
     assert job.enabled and job.trading_days_only and minutes(job.at_et) >= 16 * 60 + 15
     assert job.argv[-1].endswith("fetch_earnings_moves.py")
     assert minutes(pack.at_et) < minutes(job.at_et), "an evening job the next morning's pack reads"
+
+
+def test_the_technicals_report_follows_the_landing():
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    land, rep = by_id["technicals-land"], by_id["technicals-report"]
+    assert rep.argv[1:] == ("-m", "cherrypick.technicals", "report")
+    assert rep.at_et > land.at_et and rep.enabled == land.enabled
