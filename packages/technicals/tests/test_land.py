@@ -138,3 +138,14 @@ def test_the_landing_records_which_symbols_are_funds_so_breadth_counts_stocks_on
     conn = store.connect()
     conn.execute("UPDATE listings SET is_etf = 1 WHERE symbol = 'ETF1'")
     assert store.stocks(conn, ["AAA", "ETF1", "UNLANDED"]) == ["AAA", "UNLANDED"]
+
+
+def test_every_captured_name_is_landed_so_its_capture_can_be_scored():
+    from cherrypick.technicals import paths, symbols
+
+    folder = paths.market_report_dir() / "vendor-charts" / "2026-09-25"
+    folder.mkdir(parents=True)
+    for name in ("SGOV.json", "LOGC.rejected.json", "trade-ideas.json"):
+        (folder / name).write_text("{}", encoding="utf-8")
+    assert symbols.captured() == ["LOGC", "SGOV"]
+    assert {"LOGC", "SGOV"} <= set(symbols.all_symbols())

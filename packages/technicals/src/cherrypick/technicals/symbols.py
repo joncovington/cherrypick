@@ -1,8 +1,9 @@
 """Which symbols the store holds.
 
-Three sets, unioned: every universe CANDIDATE (not only the members -- the stage engine is scored
+Four sets, unioned: every universe CANDIDATE (not only the members -- the stage engine is scored
 against the vendor's own table, whose names are mostly not liquid enough to be members), the
-rotation ETFs, and the benchmarks the engines measure against.
+rotation ETFs, the benchmarks the engines measure against, and every name the vendor collector has
+captured (the chart engines' answer key).
 """
 
 from __future__ import annotations
@@ -43,5 +44,15 @@ def candidates() -> list[str]:
     return sorted((body.get("names") or {}).keys())
 
 
+def captured() -> list[str]:
+    """Every name the vendor collector has saved a chart capture for. They are the answer key the
+    chart engines are scored against, and a capture of a name the store does not hold cannot be
+    scored at all -- many scan-list names are not universe candidates."""
+    root = paths.market_report_dir() / "vendor-charts"
+    names = {p.stem.replace(".rejected", "") for p in root.glob("????-??-??/*.json")}
+    names.discard("trade-ideas")
+    return sorted(names)
+
+
 def all_symbols() -> list[str]:
-    return sorted({*candidates(), *ROTATION_ETFS, *BENCHMARKS})
+    return sorted({*candidates(), *ROTATION_ETFS, *BENCHMARKS, *captured()})
