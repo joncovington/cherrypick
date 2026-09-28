@@ -568,7 +568,11 @@
     "collector": false,
     "edition_at": "07:00",
     "edition_retry_at": "08:15",
-    "charts_at": "17:15"
+    "charts_at": "17:15",
+    "_comment_universe": "The stock-universe builder (scripts/build_stock_universe.py): candidates from every saved vendor edition and the tastylive follow feed, kept only when tastytrade's REST quotes show them very liquid (rating 4, tight stock and ATM option spreads, median over at least 3 sessions). 'universe_measure_at' are two regular-hours measurements (the script refuses outside 10:00 ET to 30 minutes before the close); 'universe_daily_at' harvests and rebuilds data/market-report/universe/universe.json. Read-only against the broker. OFF by default: it reads the shared tastytrade credential. Times are ET.",
+    "universe": false,
+    "universe_measure_at": ["11:00", "14:00"],
+    "universe_daily_at": "18:00"
   },
   "data_header": "x",
   "data_epoch": {

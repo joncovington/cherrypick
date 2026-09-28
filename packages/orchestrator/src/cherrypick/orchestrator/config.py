@@ -314,6 +314,11 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     The edition is published around 06:00-06:20 ET, so `edition_at` sits after it and
     `edition_retry_at` catches a late one (the script skips a day already saved). `charts_at` sits
     after the close plus the vendor's 20-minute data delay, so a capture describes that session.
+
+    The stock-universe builder (scripts/build_stock_universe.py) is its own switch, `universe`,
+    also OFF by default: it reads the shared broker credential. `universe_measure_at` are two
+    regular-hours slots inside the script's own 10:00-to-30-minutes-before-the-close window (it
+    refuses outside it); `universe_daily_at` harvests and rebuilds after the vendor's chart capture.
     """
     mr = cfg.get("market_report", {}) or {}
     return {
@@ -321,6 +326,9 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "edition_at": mr.get("edition_at", "07:00"),
         "edition_retry_at": mr.get("edition_retry_at", "08:15"),
         "charts_at": mr.get("charts_at", "17:15"),
+        "universe": bool(mr.get("universe", False)),
+        "universe_measure_at": list(mr.get("universe_measure_at", ["11:00", "14:00"])),
+        "universe_daily_at": mr.get("universe_daily_at", "18:00"),
     }
 
 

@@ -464,8 +464,20 @@ Each phase ends with something that runs and a test that has been shown to fail.
   compared with one over nine. Phase 6 waits on this decision. If it is revisited: whether a
   vendor's pre-classified flow is acceptable or the buy/sell rule must be ours, and each vendor's
   storage and redistribution terms, are checked before building on it.
-- The stock universe: a liquidity-screened optionable list, its size, and how often it is rebuilt.
-  The vendor's includes names with almost no option volume, so volume alone won't reproduce it.
+- **The stock universe: decided 2026-09-27, being built.** Candidates are every ticker the saved
+  vendor editions link (454 over Sept 21-25, the breadth table included) and every underlying the
+  tastylive follow feed trades (110 from the first harvest; futures dropped). A candidate is kept
+  only when tastytrade's own REST data shows it **very liquid** — the strict bar: liquidity rating
+  4 of 4, not flagged illiquid, the stock's spread within 0.05% of mid or one cent, and the worse
+  of its at-the-money call and put about 30 days out within 3% of mid or five cents — on the
+  median of at least three sessions measured inside regular hours. Fewer sessions is *pending*,
+  never a pass. `scripts/build_stock_universe.py` (`harvest`, `measure`, `build`) writes
+  `universe/universe.json` with every name's reasons, in or out; the supervisor runs it twice a
+  session and after the close (`market_report.universe`, off by default). **Consequence to watch:**
+  only 83 of the 490 listed candidates carry rating 4 (2026-09-27: 148 rate 3, 224 rate 2), so the
+  strict bar caps the universe well below the vendor's breadth table. This deliberately differs from
+  the vendor's universe, which includes names with almost no option volume, so the stage counts are
+  compared as rates, not as totals.
 - The sector taxonomy: match theirs (Yahoo/Morningstar, via a hand-kept file) or use our own and
   accept different counts.
 - The asset-class benchmark: AOR or VBINX.
@@ -600,7 +612,7 @@ producer — the rule `packages/overview/CLAUDE.md` already states.
 - Bars from the Dolt `stocks` clone, which passed the assessment (ADRs present, last night's bar
   committed by 05:30). Split and proportional dividend adjustment applied by us from its own
   tables, as a pure function, so the adjusted series can be rebuilt from raw at any time.
-- The universe file (Cboe's optionable list, screened on OCC volume) and the sector map
+- The universe file (built by `scripts/build_stock_universe.py`, see Phase 0) and the sector map
   (hand-kept, Yahoo/Morningstar taxonomy), both versioned.
 - IV rank from Dolt's `volatility_history` where it covers a name; for the rest, record ATM IV
   daily from Cboe's delayed chain and rank it once a year has built up.

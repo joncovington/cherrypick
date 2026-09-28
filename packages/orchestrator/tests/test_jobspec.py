@@ -301,6 +301,9 @@ def test_derive_full_suite_job_table():
         "report-edition",
         "report-edition-retry",
         "report-charts",
+        "universe-measure-1",
+        "universe-measure-2",
+        "universe-daily",
         "review-provisional",
         "review-final",
         "review-narrative",
@@ -839,3 +842,39 @@ def test_vendor_collector_runs_after_publication_and_after_the_close():
     assert minutes("report-charts") >= 16 * 60 + 20
     assert by_id["report-edition"].argv[-1] == "edition"
     assert by_id["report-charts"].argv[-1] == "charts"
+
+
+# --------------------------------------------------------------------------- stock universe (2026-09-27)
+UNIVERSE_JOBS = ("universe-measure-1", "universe-measure-2", "universe-daily")
+
+
+def test_universe_jobs_are_off_until_switched_on():
+    jobs, _ = derive(suite_cfg())
+    by_id = {j.id: j for j in jobs}
+    for job_id in UNIVERSE_JOBS:
+        assert not by_id[job_id].enabled
+        assert "market_report.universe" in by_id[job_id].enabled_reason
+
+
+def test_universe_measurements_sit_inside_regular_hours_and_the_harvest_after_the_charts():
+    """A measurement outside 10:00-15:30 ET is refused by the script, so a slot out there is a job
+    that runs every day and records nothing. The harvest reads the day's editions and feed, so it
+    runs after the vendor's evening chart capture."""
+    cfg = suite_cfg()
+    cfg["market_report"] = {"universe": True}
+    jobs, errors = derive(cfg)
+    assert errors == {}
+    by_id = {j.id: j for j in jobs}
+
+    def minutes(job_id):
+        h, m = (int(x) for x in by_id[job_id].at_et.split(":"))
+        return h * 60 + m
+
+    assert all(by_id[j].enabled and by_id[j].trading_days_only for j in UNIVERSE_JOBS)
+    for job_id in ("universe-measure-1", "universe-measure-2"):
+        assert (
+            10 * 60 <= minutes(job_id) and minutes(job_id) + jobspec.CATCHUP_MINUTES[job_id] <= 15 * 60 + 30
+        )
+        assert by_id[job_id].argv[-1] == "measure"
+    assert minutes("universe-daily") > minutes("report-charts")
+    assert by_id["universe-daily"].argv[-1] == "daily"

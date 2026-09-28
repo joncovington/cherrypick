@@ -76,6 +76,12 @@ CATCHUP_MINUTES = {
     "report-edition": 180,
     "report-edition-retry": 180,
     "report-charts": 300,
+    # The stock-universe builder. A measurement must land inside regular hours, and the script
+    # refuses outside its window, so a missed slot catches up only while the window is still open;
+    # the evening harvest is idempotent (orders merge by id) and good any time before the next day.
+    "universe-measure-1": 90,
+    "universe-measure-2": 60,
+    "universe-daily": 300,
     # Broker-cash reconciliation of a settled live session. Generous, because the whole point is
     # that it must not depend on anyone arming the live loop: a box asleep until mid-afternoon
     # should still reconcile that morning's pending dates, and an unreconciled date is only
@@ -318,6 +324,10 @@ def _dolt_data_script(launcher: str) -> str:
 
 def _vendor_collector_script(launcher: str) -> str:
     return _suite_script(launcher, "fetch_vendor_edition.py")
+
+
+def _universe_script(launcher: str) -> str:
+    return _suite_script(launcher, "build_stock_universe.py")
 
 
 def _module_tick_argv(paper: dict[str, Any]) -> list[str] | None:
@@ -761,6 +771,27 @@ def derive_jobs(
                 trading_days_only=True,
                 enabled=mr["collector"],
                 enabled_reason=mr_reason,
+            ),
+        )
+    uv_reason = "" if mr["universe"] else "disabled in config (market_report.universe)"
+    uv_jobs = [
+        (f"universe-measure-{i}", at, "measure") for i, at in enumerate(mr["universe_measure_at"][:2], 1)
+    ]
+    for job_id, at, sub in (*uv_jobs, ("universe-daily", mr["universe_daily_at"], "daily")):
+        add(
+            job_id,
+            lambda job_id=job_id, at=at, sub=sub: JobSpec(
+                id=job_id,
+                # A script, not a package: it reads the broker (REST snapshots, never the streamer,
+                # whose budget cannot carry several hundred names) and the tastylive follow feed.
+                # Read-only; it paces itself and refuses to measure outside regular hours.
+                argv=(pythonw, _universe_script(launcher), sub),
+                kind=KIND_DAILY,
+                at_et=at,
+                catchup_minutes=CATCHUP_MINUTES[job_id],
+                trading_days_only=True,
+                enabled=mr["universe"],
+                enabled_reason=uv_reason,
             ),
         )
     add(
