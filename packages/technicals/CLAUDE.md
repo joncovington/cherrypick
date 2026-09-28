@@ -54,6 +54,26 @@ the 35 rotation ETFs (the union of every fund the vendor's rotation section plac
 across Sept 21-25, plus XLK, XLV and XLC), and the benchmarks (SPY, AOR, AGG, RSP, QQQ, DIA, IWM).
 Dolt carries no SPX; SPY stands in for it until an engine needs the index itself.
 
+## The stage rule (Phase 3)
+
+`stage.py` is the vendor's leaders/laggards screen as a pure function, and `score-stages` holds it
+against every saved edition, whose stages are decoded from the ticker colours (`editions.py`). The
+footnote's definition — early on the one-month screen only, building when one and two months agree,
+confirmed when all three do — is only part of it. Fitting the five editions of Sept 21-25 found:
+
+- **The one-day move is a fourth condition.** A name is listed only on a day its own move against
+  the index is on the same side: BKNG trailed by 16-26% on every window and was a confirmed laggard
+  four days running, then absent the one day it beat the index. That condition alone cut the names
+  wrongly listed from 859 to about 295.
+- **The rule's numbers are parameters, fitted on five days.** 10/30/63 sessions with margins of 1%,
+  2% and 2% against dividend-adjusted SPY: 955 of the vendor's 980 listings on the same side (97%),
+  the same stage on 82% of those. That is a large grid on a small sample, so the declared
+  `StageRule` is re-scored as editions accumulate rather than tuned further now.
+- **About 30% extra is structural.** The ~295 names the rule lists that the vendor does not are not
+  removed by any margin: the vendor's universe itself varies by day in a way prices cannot show. So
+  our counts run higher than the vendor's stated ones, and the two are compared as rates, never
+  as totals.
+
 ## Scheduling
 
 One supervisor job, `technicals-land` (06:15 ET daily, after the 05:30 Dolt pull; config block
@@ -74,3 +94,5 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals status` | What the store holds, and the last landing. |
 | `python -m cherrypick.technicals bars SYMBOL [--raw] [--last N]` | A symbol's adjusted (or raw) bars and its IV rank. |
 | `python -m cherrypick.technicals check-vendor [--all]` | Our adjusted bars against every vendor chart capture; exits non-zero on any disagreement. |
+| `python -m cherrypick.technicals stages [--session D]` | Every candidate's relative-strength stage on a session. |
+| `python -m cherrypick.technicals score-stages` | The stage rule against every saved edition: side recall, stage agreement, extra rate, counts. |

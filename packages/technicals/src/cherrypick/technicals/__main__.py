@@ -81,6 +81,39 @@ def cmd_check_vendor(args) -> int:
     return 0 if result["prices"] and result["agree"] == result["prices"] else 1
 
 
+def cmd_score_stages(_args) -> int:
+    from . import stage_score
+
+    print(json.dumps(stage_score.score(), indent=1))
+    return 0
+
+
+def cmd_stages(args) -> int:
+    from . import stage, symbols
+
+    conn = store.connect()
+    rule = stage.DEFAULT_RULE
+    bench = {b.date: b.close for b in store.adjusted_bars(conn, rule.benchmark)}
+    day = args.session or max(bench)
+    closes = {s: {b.date: b.close for b in store.adjusted_bars(conn, s)} for s in symbols.candidates()}
+    result = stage.stages_on(day, {s: c for s, c in closes.items() if c}, bench, rule)
+    leaders = sorted(s for s, v in result.items() if v.side == "leader")
+    laggards = sorted(s for s, v in result.items() if v.side == "laggard")
+    print(
+        json.dumps(
+            {
+                "session": day,
+                "rule": rule.name,
+                "leaders": len(leaders),
+                "laggards": len(laggards),
+                "stages": {s: f"{v.side}/{v.stage}" for s, v in sorted(result.items())},
+            },
+            indent=1,
+        )
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m cherrypick.technicals", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -98,6 +131,12 @@ def main(argv: list[str] | None = None) -> int:
     cv = sub.add_parser("check-vendor", help="our adjusted bars against every vendor chart capture")
     cv.add_argument("--all", action="store_true", help="list every symbol, not only disagreements")
     cv.set_defaults(fn=cmd_check_vendor)
+    st = sub.add_parser("stages", help="the relative-strength stage of every candidate on a session")
+    st.add_argument("--session", help="ISO date (default: the latest session stored)")
+    st.set_defaults(fn=cmd_stages)
+    sub.add_parser("score-stages", help="score the stage rule against every saved edition").set_defaults(
+        fn=cmd_score_stages
+    )
     args = ap.parse_args(argv)
     return args.fn(args)
 

@@ -686,6 +686,17 @@ chain for the names Dolt's IV history lacks, ranked once a year has built up.
 
 ### Phase 3 — the stage and rotation engines
 
+**The stage rule landed 2026-09-27** (`packages/technicals`, `stage.py`, scored by `score-stages`).
+The footnote's definition was not the whole rule: **a name is listed only on a day its own one-day
+move against the index agrees with its side** (BKNG, a confirmed laggard on every window, was absent
+the one day it beat the index), and adding that condition cut wrongly listed names from 859 to ~295
+over the five editions. Fitted on those five: 10/30/63 sessions, margins 1%/2%/2%, against
+dividend-adjusted SPY — 97% of the vendor's 980 listings on the same side, the same stage on 82% of
+those. The remaining ~30% extra is not reachable by any margin, which says the vendor's universe
+varies by day; so the sharp test below ("the same 33 and 131") cannot hold as totals and is replaced
+by per-name side and stage agreement, with counts compared as rates. The rule is declared and
+re-scored as editions accumulate, not tuned further on five days.
+
 - The stage rule over 1/2/3-month relative performance against SPX. **Validated against the Sept 25
   fixture below**: same universe, same session, the same 33 and 131. Each saved report adds a day.
   The saved editions carry every name's stage in its ticker colour (decoded totals match each
