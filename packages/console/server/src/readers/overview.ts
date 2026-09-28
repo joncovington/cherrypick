@@ -30,6 +30,19 @@ import type {
   MorningVolCurvePoint,
   MorningVolPercentile,
   MorningVolSeasonality,
+  MorningRiskReversal,
+  MorningRelease,
+  MorningEarningsRow,
+  MorningEarningsWeek,
+  MorningFuture,
+  MorningPremarket,
+  MorningMoves,
+  MorningYields,
+  TechnicalsReport,
+  TechnicalsBreadthDay,
+  TechnicalsSectorStages,
+  TechnicalsStageMember,
+  TechnicalsLeader,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { num, str } from "./db.js";
@@ -208,6 +221,7 @@ function shapeVolPercentile(raw: unknown): MorningVolPercentile {
     // floor, and a console that filled one in would be quietly overriding that refusal.
     percentile: num(p["percentile"]),
     reason: str(p["reason"]),
+    source: str(p["source"]),
   };
 }
 
@@ -219,6 +233,28 @@ function shapeVolSeasonality(raw: unknown): MorningVolSeasonality {
     years: num(s["years"]),
     reason: str(s["reason"]),
     vixVsNormPct: num(s["vix_vs_norm_pct"]),
+  };
+}
+
+function shapeRiskReversal(raw: unknown): MorningRiskReversal | null {
+  // The pack writes null when no chain was on file.
+  if (!raw || typeof raw !== "object") return null;
+  const r = rec(raw);
+  return {
+    session: str(r["session"]),
+    spot: num(r["spot"]),
+    targetDte: num(r["target_dte"]),
+    call25dIvPct: num(r["call_25d_iv_pct"]),
+    put25dIvPct: num(r["put_25d_iv_pct"]),
+    rrVolPts: num(r["rr_vol_pts"]),
+    expirations: Array.isArray(r["expirations"])
+      ? (r["expirations"] as unknown[]).flatMap((e) => {
+          const x = rec(e);
+          const expiration = str(x["expiration"]);
+          return expiration === null ? [] : [{ expiration, dte: num(x["dte"]) }];
+        })
+      : [],
+    source: str(r["source"]),
   };
 }
 
@@ -244,21 +280,133 @@ function shapeVolRegime(raw: unknown): MorningVolRegime {
     shapeReason: str(v["shape_reason"]),
     percentiles,
     seasonality: v["seasonality"] !== undefined ? shapeVolSeasonality(v["seasonality"]) : null,
+    riskReversal: shapeRiskReversal(v["risk_reversal_25d_30d"]),
     measuredPoints: num(v["measured_points"]),
     totalPoints: num(v["total_points"]),
     recordOnly: bool(v["record_only"]),
   };
 }
 
+function shapeRelease(raw: unknown): MorningRelease | null {
+  const r = rec(raw);
+  const name = str(r["name"]);
+  const date = str(r["date"]);
+  if (name === null || date === null) return null;
+  return { name, date, timeEt: str(r["time_et"]), source: str(r["source"]), today: bool(r["today"]) };
+}
+
+function shapeEarningsRow(raw: unknown): MorningEarningsRow | null {
+  const r = rec(raw);
+  const symbol = str(r["symbol"]);
+  const date = str(r["date"]);
+  if (symbol === null || date === null) return null;
+  return {
+    symbol,
+    date,
+    when: str(r["when"]),
+    expiration: str(r["expiration"]),
+    spot: num(r["spot"]),
+    strike: num(r["strike"]),
+    straddle: num(r["straddle"]),
+    expectedMove: num(r["expected_move"]),
+    expectedMovePct: num(r["expected_move_pct"]),
+    reason: str(r["reason"]),
+  };
+}
+
+function shapeEarningsWeek(raw: unknown): MorningEarningsWeek {
+  const e = rec(raw);
+  return {
+    rows: Array.isArray(e["rows"])
+      ? (e["rows"] as unknown[]).map(shapeEarningsRow).filter((r): r is MorningEarningsRow => r !== null)
+      : [],
+    asOf: str(e["as_of"]),
+    reason: str(e["reason"]),
+  };
+}
+
 function shapeCalendar(raw: unknown): MorningCalendar {
   const c = rec(raw);
   return {
+    // Fact version 4. Absent on older packs: null, so the page omits the table rather than
+    // saying "none scheduled", which would be a claim the pack never made.
+    releases: Array.isArray(c["releases"])
+      ? (c["releases"] as unknown[]).map(shapeRelease).filter((r): r is MorningRelease => r !== null)
+      : null,
+    earnings: c["earnings"] !== undefined && c["earnings"] !== null ? shapeEarningsWeek(c["earnings"]) : null,
     isFomcDay: bool(c["is_fomc_day"]),
     nextFomc: str(c["next_fomc"]),
     fomcYearKnown: bool(c["fomc_year_known"]),
     isTripleWitching: bool(c["is_triple_witching"]),
     isQuarterlyExpiry: bool(c["is_quarterly_expiry"]),
     nextTradingDay: str(c["next_trading_day"]),
+  };
+}
+
+function shapeFuture(raw: unknown): MorningFuture {
+  const f = rec(raw);
+  return {
+    ...shapeReading(raw),
+    product: str(f["product"]),
+    priorSettle: num(f["prior_settle"]),
+    priorSettleSession: str(f["prior_settle_session"]),
+    changeVsPriorClosePct: num(f["change_vs_prior_close_pct"]),
+    changeReason: str(f["change_reason"]),
+  };
+}
+
+function shapePremarket(raw: unknown): MorningPremarket {
+  const p = rec(raw);
+  const futures: Record<string, MorningFuture> = {};
+  for (const [key, entry] of Object.entries(rec(p["futures"]))) futures[key] = shapeFuture(entry);
+  const indexes: Record<string, MorningReading> = {};
+  for (const [key, entry] of Object.entries(rec(p["indexes"]))) indexes[key] = shapeReading(entry);
+  return {
+    futures,
+    indexes,
+    measuredFutures: num(p["measured_futures"]),
+    recordOnly: bool(p["record_only"]),
+  };
+}
+
+function shapeMoves(raw: unknown): MorningMoves {
+  const m = rec(raw);
+  const w = rec(m["weekly_expected_move"]);
+  const rv = rec(m["realized_vol"]);
+  return {
+    weeklyExpectedMove: {
+      pct: num(w["pct"]),
+      points: num(w["points"]),
+      vix: num(w["vix"]),
+      basis: str(w["basis"]),
+      reason: str(w["reason"]),
+    },
+    realizedVol: {
+      pct: num(rv["pct"]),
+      sessions: num(rv["sessions"]),
+      through: str(rv["through"]),
+      reason: str(rv["reason"]),
+    },
+    vixMinusRealized: num(m["vix_minus_realized"]),
+  };
+}
+
+function numMap(raw: unknown): Record<string, number | null> {
+  const out: Record<string, number | null> = {};
+  for (const [key, v] of Object.entries(rec(raw))) out[key] = num(v);
+  return out;
+}
+
+function shapeYields(raw: unknown): MorningYields {
+  const y = rec(raw);
+  return {
+    session: str(y["session"]),
+    source: str(y["source"]),
+    yields: numMap(y["yields"]),
+    changeBp: numMap(y["change_bp"]),
+    spread2s10sBp: num(y["spread_2s10s_bp"]),
+    spread3m10yBp: num(y["spread_3m10y_bp"]),
+    reason: str(y["reason"]),
   };
 }
 
@@ -282,7 +430,123 @@ function shapePack(session: string, facts: Record<string, unknown>): MorningPack
     // empty curve, which would read as a measured flat one.
     volRegime: facts["vol_regime"] !== undefined ? shapeVolRegime(facts["vol_regime"]) : null,
     calendar: facts["calendar"] !== undefined ? shapeCalendar(facts["calendar"]) : null,
+    // Fact version 4. Absent on older packs; null so the page omits the card.
+    premarket: facts["premarket"] !== undefined ? shapePremarket(facts["premarket"]) : null,
+    moves: facts["moves"] !== undefined ? shapeMoves(facts["moves"]) : null,
+    yields: facts["yields"] !== undefined ? shapeYields(facts["yields"]) : null,
   };
+}
+
+// --------------------------------------------------------------------------- technicals report
+// `packages/technicals`' report artifact, passed through the same way: stages, breadth, rotation,
+// signals and leaders are that package's answers, and nothing here re-derives or re-sorts them.
+
+function strList(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
+function strListMap(raw: unknown): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const [key, v] of Object.entries(rec(raw))) out[key] = strList(v);
+  return out;
+}
+
+function members(v: unknown): TechnicalsStageMember[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((raw) => {
+    const m = rec(raw);
+    const symbol = str(m["symbol"]);
+    return symbol === null ? [] : [{ symbol, stage: str(m["stage"]) }];
+  });
+}
+
+function shapeBreadthDay(raw: unknown): TechnicalsBreadthDay[] {
+  const b = rec(raw);
+  const session = str(b["session"]);
+  if (session === null) return [];
+  return [
+    {
+      session,
+      leaders: num(b["leaders"]),
+      laggards: num(b["laggards"]),
+      net: num(b["net"]),
+      bullishShare: num(b["bullish_share"]),
+    },
+  ];
+}
+
+function shapeSectorStages(raw: unknown): TechnicalsSectorStages[] {
+  const s = rec(raw);
+  const sector = str(s["sector"]);
+  if (sector === null) return [];
+  return [{ sector, net: num(s["net"]), leaders: members(s["leaders"]), laggards: members(s["laggards"]) }];
+}
+
+function shapeLeader(raw: unknown): TechnicalsLeader[] {
+  const l = rec(raw);
+  const symbol = str(l["symbol"]);
+  if (symbol === null) return [];
+  return [
+    {
+      symbol,
+      sector: str(l["sector"]),
+      rank: num(l["rank"]),
+      return6mPct: num(l["return_6m_pct"]),
+      trendShort: str(l["trend_short"]),
+      trendLong: str(l["trend_long"]),
+      stage: str(l["stage"]),
+    },
+  ];
+}
+
+function list(v: unknown): unknown[] {
+  return Array.isArray(v) ? v : [];
+}
+
+function shapeTechnicals(doc: Record<string, unknown>): TechnicalsReport | null {
+  const session = str(doc["session"]);
+  if (doc["ok"] !== true || session === null) return null;
+  const rules: Record<string, string> = {};
+  for (const [key, v] of Object.entries(rec(doc["rules"]))) if (typeof v === "string") rules[key] = v;
+  return {
+    session,
+    reportVersion: num(doc["report_version"]),
+    generatedAt: str(doc["generated_at"]),
+    universe: num(doc["universe"]),
+    rules,
+    breadth: list(doc["breadth"]).flatMap(shapeBreadthDay),
+    stages: list(doc["stages"]).flatMap(shapeSectorStages),
+    rotation: strListMap(doc["rotation"]),
+    signals: strListMap(doc["signals"]),
+    leaders: list(doc["leaders"]).flatMap(shapeLeader),
+  };
+}
+
+/**
+ * The newest technicals report dated strictly before `session`. A morning pack is written before
+ * the open from the prior close; a report dated the pack's own day was written after that day's
+ * close, and pairing the two would show the morning something it could not have known.
+ */
+export function readTechnicals(config: ConsoleConfig, session: string): TechnicalsReport | null {
+  let days: string[];
+  try {
+    days = fs
+      .readdirSync(config.paths.technicalsDir)
+      .filter((f) => /^report-\d{4}-\d{2}-\d{2}\.json$/.test(f))
+      .map((f) => f.slice(7, -5))
+      .filter((d) => d < session)
+      .sort();
+  } catch {
+    return null;
+  }
+  const day = days[days.length - 1];
+  if (day === undefined) return null;
+  try {
+    const doc = JSON.parse(fs.readFileSync(path.join(config.paths.technicalsDir, `report-${day}.json`), "utf-8"));
+    return shapeTechnicals(rec(doc));
+  } catch {
+    return null;
+  }
 }
 
 export function readMorning(config: ConsoleConfig, session?: string): MorningPayload {
@@ -292,11 +556,13 @@ export function readMorning(config: ConsoleConfig, session?: string): MorningPay
 
   let current: MorningPack | null = null;
   let note: string | null = null;
+  let technicals: TechnicalsReport | null = null;
   if (chosen) {
     const facts = readPack(dir, chosen);
     if (facts) current = shapePack(chosen, facts);
     note = readNote(dir, chosen);
+    technicals = readTechnicals(config, chosen);
   }
 
-  return { sessions, current, note };
+  return { sessions, current, note, technicals };
 }

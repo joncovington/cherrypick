@@ -34,6 +34,14 @@ own page component unchanged, so neither report gains a second place where its s
 tab lives in the URL (`?tab=eod`) because a report is a thing you send someone, and the old
 `/morning` and `/review` routes redirect rather than 404 — both appear in the suite's own docs.
 
+The Morning tab carries a second artifact beside the pack: `packages/technicals`' report
+(`data/technicals/report-<session>.json` — breadth, stages by sector, rotation, leaders, scan
+signals), read by `readTechnicals` in `readers/overview.ts` and rendered by
+`pages/Morning/TechnicalsCards.tsx`. **It is the last report dated strictly before the pack's
+session**: the pack is written before the open from the prior close, and a report dated the pack's
+own day was written after that day's close — pairing them would show a morning what it could not
+have known. A test pins the `<`, and was shown to fail at `<=`.
+
 Unlike the rest of the suite this package is **Node + TypeScript**, not Python:
 
 - `shared/` — types shared by server and web (`@console/shared`).

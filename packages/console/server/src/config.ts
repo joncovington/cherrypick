@@ -34,6 +34,8 @@ export interface ConsoleConfig {
     /** `data/overview/` — the morning fact packs (`morning-<session>.json`) and their narratives. */
     overviewDir: string;
     advisorDir: string;
+    /** `data/technicals/` — the technicals report (`report-<session>.json`) the Morning tab shows. */
+    technicalsDir: string;
     /** `state/advice/` — the artifacts the advisor issues and every module's loop reads. */
     adviceDir: string;
     /** packages/meic/config.risk.json (source tree) -- profiles.<tag>.enabled is the literal
@@ -80,6 +82,7 @@ export function loadConfig(): ConsoleConfig {
       reviewDir: path.join(data, "review"),
       overviewDir: path.join(data, "overview"),
       advisorDir: path.join(data, "advisor"),
+      technicalsDir: path.join(data, "technicals"),
       adviceDir: path.join(CHERRYPICK, "state", "advice"),
       meicRiskConfig: path.join(REPO_ROOT, "packages", "meic", "config.risk.json"),
       fliesConfig: path.join(CHERRYPICK, "config", "flies.json"),

@@ -75,6 +75,7 @@ beforeEach(() => {
       gexDir: path.join(tmp, "gex"),
       reviewDir: path.join(tmp, "review"),
       overviewDir: path.join(tmp, "overview"),
+      technicalsDir: path.join(tmp, "technicals"),
       advisorDir: path.join(tmp, "advisor"),
       adviceDir: path.join(tmp, "state", "advice"),
       meicRiskConfig: path.join(tmp, "config.risk.json"),
@@ -100,7 +101,7 @@ describe("session resolution", () => {
   });
 
   it("an empty or missing store is an empty list, not a throw", () => {
-    expect(readMorning(config)).toEqual({ sessions: [], current: null, note: null });
+    expect(readMorning(config)).toEqual({ sessions: [], current: null, note: null, technicals: null });
     fs.rmSync(path.join(tmp, "overview"), { recursive: true });
     expect(listMorningSessions(config)).toEqual([]);
   });
@@ -223,5 +224,132 @@ describe("malformed packs", () => {
     const current = readMorning(config).current;
     expect(current).toMatchObject({ session: "2026-08-17", gates: [], phase: null });
     expect(current?.readings).toEqual({});
+  });
+});
+
+describe("fact version 4 blocks", () => {
+  function v4(session: string): Record<string, unknown> {
+    const pack = minimalPack(session);
+    pack["fact_version"] = 4;
+    pack["premarket"] = {
+      futures: {
+        es: {
+          value: 7774.25, basis: "prior", session: "2026-09-27", as_of: null, source: "stream_cache:/ESZ26:XCME",
+          label: "S&P 500 e-mini (/ES)", prior_close: 7774.25, prior_change_pct: -0.4, product: "ES",
+          prior_settle: 7805.75, prior_settle_session: "2026-09-25", change_vs_prior_close_pct: null, change_reason: "no_live_print",
+        },
+      },
+      indexes: { ndx: { value: 30608.13, basis: "prior", session: "2026-09-25", label: "Nasdaq-100 (NDX)" } },
+      measured_futures: 0,
+      record_only: true,
+    };
+    pack["moves"] = {
+      weekly_expected_move: { pct: 2.06, points: 159.5, vix: 14.87, basis: "prior", reason: null },
+      realized_vol: { pct: 12.11, sessions: 10, through: "2026-09-24", reason: null },
+      vix_minus_realized: 2.76,
+    };
+    pack["yields"] = {
+      session: "2026-09-25", source: "treasury_par_curve", yields: { "2y": 4.81, "10y": 5.17 },
+      change_bp: { "2y": -6, "10y": null }, spread_2s10s_bp: 36, spread_3m10y_bp: 93, reason: null,
+    };
+    pack["vol_regime"] = {
+      curve: [], slope: {}, percentiles: { vxn: { value: 20.87, samples: 252, percentile: 23, reason: null, source: "cboe_file_prior_close" } },
+      risk_reversal_25d_30d: { session: "2026-09-25", target_dte: 30, call_25d_iv_pct: 11.18, put_25d_iv_pct: 14.67, rr_vol_pts: -3.49, expirations: [{ expiration: "2026-10-23", dte: 28 }], source: "cboe_delayed_spx_chain" },
+    };
+    (pack["calendar"] as Record<string, unknown>)["releases"] = [
+      { name: "Gross Domestic Product", date: "2026-09-30", time_et: "08:30", source: "BEA", today: false },
+      { name: "Employment Situation", date: "2026-10-02", time_et: null, source: "FRED", today: false },
+    ];
+    (pack["calendar"] as Record<string, unknown>)["earnings"] = {
+      rows: [
+        { symbol: "MU", date: "2026-09-30", when: "After market close", expiration: "2026-10-02", spot: 1082.28, strike: 1082.5, straddle: 93.38, expected_move: 79.37, expected_move_pct: 7.33, reason: null },
+        { symbol: "X", date: "2026-10-01", when: null, expiration: "2026-10-02", spot: 10, strike: null, expected_move: null, expected_move_pct: null, reason: "straddle not two-sided" },
+      ],
+      as_of: "2026-09-27T22:40:00+00:00",
+      reason: null,
+    };
+    return pack;
+  }
+
+  it("a future with no live print keeps a null change and says why — never 0.00%", () => {
+    writePack("2026-09-28", v4("2026-09-28"));
+    const es = readMorning(config).current?.premarket?.futures["es"];
+    expect(es).toMatchObject({ value: 7774.25, priorSettle: 7805.75, changeVsPriorClosePct: null, changeReason: "no_live_print" });
+  });
+
+  it("moves, yields, the risk reversal and a percentile's source pass through", () => {
+    writePack("2026-09-28", v4("2026-09-28"));
+    const c = readMorning(config).current;
+    expect(c?.moves?.weeklyExpectedMove).toMatchObject({ pct: 2.06, points: 159.5 });
+    expect(c?.yields?.changeBp).toEqual({ "2y": -6, "10y": null });
+    expect(c?.volRegime?.riskReversal).toMatchObject({ rrVolPts: -3.49, expirations: [{ expiration: "2026-10-23", dte: 28 }] });
+    expect(c?.volRegime?.percentiles["vxn"]?.source).toBe("cboe_file_prior_close");
+  });
+
+  it("an unpriced earnings row is kept with its reason, and an untimed release stays untimed", () => {
+    writePack("2026-09-28", v4("2026-09-28"));
+    const cal = readMorning(config).current?.calendar;
+    expect(cal?.earnings?.rows.map((r) => [r.symbol, r.expectedMove, r.reason])).toEqual([
+      ["MU", 79.37, null],
+      ["X", null, "straddle not two-sided"],
+    ]);
+    expect(cal?.releases?.[1]).toMatchObject({ name: "Employment Situation", timeEt: null });
+  });
+
+  it("an older pack has none of them — null, not empty blocks that would read as measured", () => {
+    writePack("2026-08-17", minimalPack("2026-08-17"));
+    const c = readMorning(config).current;
+    expect(c).toMatchObject({ premarket: null, moves: null, yields: null });
+    expect(c?.calendar).toMatchObject({ releases: null, earnings: null });
+  });
+});
+
+describe("the technicals report", () => {
+  function writeReport(session: string, extra: Record<string, unknown> = {}): void {
+    fs.mkdirSync(path.join(tmp, "technicals"), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmp, "technicals", `report-${session}.json`),
+      JSON.stringify({
+        ok: true, report_version: 1, session, universe: 445, rules: { stage: "fit" },
+        breadth: [{ session, leaders: 37, laggards: 203, net: -166, bullish_share: 0.154 }],
+        stages: [
+          { sector: "Technology", net: 3, leaders: [{ symbol: "MSFT", stage: "confirmed" }], laggards: [] },
+          { sector: "Energy", net: -33, leaders: [], laggards: [{ symbol: "XOM", stage: "early" }] },
+        ],
+        rotation: { leading: ["IGV"], none: ["XLK"] },
+        signals: { CciDipInBullishTrend: ["DELL"] },
+        leaders: [{ symbol: "MRNA", sector: "Healthcare", rank: 10, return_6m_pct: 301.3, trend_short: "Bullish", trend_long: "Bullish", stage: "leader/confirmed" }],
+        ...extra,
+      }),
+    );
+  }
+
+  it("pairs a morning with the last report BEFORE it — never the one its own close wrote", () => {
+    writePack("2026-09-28", minimalPack("2026-09-28"));
+    writeReport("2026-09-24");
+    writeReport("2026-09-25");
+    writeReport("2026-09-28");
+    expect(readMorning(config).technicals?.session).toBe("2026-09-25");
+  });
+
+  it("passes the report through in its own order", () => {
+    writePack("2026-09-28", minimalPack("2026-09-28"));
+    writeReport("2026-09-25");
+    const t = readMorning(config).technicals;
+    expect(t?.stages.map((s) => s.sector)).toEqual(["Technology", "Energy"]);
+    expect(t?.leaders[0]).toMatchObject({ symbol: "MRNA", return6mPct: 301.3, stage: "leader/confirmed" });
+    expect(t?.breadth[0]).toMatchObject({ net: -166, bullishShare: 0.154 });
+    expect(t?.rotation["leading"]).toEqual(["IGV"]);
+  });
+
+  it("no report, a failed one, or an unreadable one is null — the rest of the page is untouched", () => {
+    writePack("2026-09-28", minimalPack("2026-09-28"));
+    expect(readMorning(config).technicals).toBeNull();
+    writeReport("2026-09-25", { ok: false });
+    expect(readMorning(config).technicals).toBeNull();
+    fs.writeFileSync(path.join(tmp, "technicals", "report-2026-09-25.json"), "{not json");
+    const payload = readMorning(config);
+    expect(payload.technicals).toBeNull();
+    expect(payload.current?.session).toBe("2026-09-28");
   });
 });

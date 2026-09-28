@@ -7,9 +7,11 @@ import type {
   MorningSectorRow,
   MorningVolCurvePoint,
   MorningVolPercentile,
+  MorningFuture,
 } from "@console/shared";
 import { NoteMarkdown } from "../Review/NoteMarkdown";
 import { AXIS_FONT, SERIES_COLORS, LevelStrip } from "../../components/Charts";
+import { TechnicalsCards } from "./TechnicalsCards";
 
 /**
  * The morning report. Renders the fact pack and computes nothing.
@@ -283,7 +285,9 @@ function PercentileRow({ id, p }: { id: string; p: MorningVolPercentile }) {
           : (p.reason ?? "unavailable");
   return (
     <div className="pct-row">
-      <span className="stat-label">{id.toUpperCase()}</span>
+      <span className="stat-label" title={p.source ?? undefined}>
+        {id.toUpperCase()}
+      </span>
       <span className="stat-value">{fmt(p.value, 2)}</span>
       {p.percentile === null ? (
         <span className="muted pct-refusal">{refusal}</span>
@@ -294,6 +298,8 @@ function PercentileRow({ id, p }: { id: string; p: MorningVolPercentile }) {
           </span>
           <span className="stat-label muted">
             {fmt(p.percentile, 0)}th pctile of {p.samples ?? 0}
+            {/* The Cboe file's prior close is a different fact from a live read; say so. */}
+            {p.source === "cboe_file_prior_close" && " · prior close"}
           </span>
         </>
       )}
@@ -344,6 +350,31 @@ function VolRegimeCard({ pack }: { pack: MorningPack }) {
 
       {v.shape === null && (
         <p className="muted">No regime label — {v.shapeReason ?? "the ratio could not be measured."}</p>
+      )}
+
+      {v.riskReversal && (
+        <div className="stats-grid">
+          <div className="stat-tile">
+            <span className="stat-label">25Δ risk reversal, {v.riskReversal.targetDte ?? 30}D</span>
+            <span className="stat-value">
+              {v.riskReversal.rrVolPts === null
+                ? "—"
+                : `${v.riskReversal.rrVolPts > 0 ? "+" : ""}${fmt(v.riskReversal.rrVolPts, 2)} pts`}
+            </span>
+            <span className="stat-label muted">call IV − put IV · SPX, close of {v.riskReversal.session ?? "—"}</span>
+          </div>
+          <div className="stat-tile">
+            <span className="stat-label">25Δ call IV</span>
+            <span className="stat-value">{fmt(v.riskReversal.call25dIvPct, 2)}%</span>
+          </div>
+          <div className="stat-tile">
+            <span className="stat-label">25Δ put IV</span>
+            <span className="stat-value">{fmt(v.riskReversal.put25dIvPct, 2)}%</span>
+            <span className="stat-label muted">
+              {v.riskReversal.expirations.map((e) => `${e.expiration} (${e.dte ?? "?"}D)`).join(" / ")}
+            </span>
+          </div>
+        </div>
       )}
 
       <div className="pct-list">
@@ -398,6 +429,258 @@ function CalendarCard({ pack }: { pack: MorningPack }) {
           </div>
         </div>
       )}
+
+      {c?.releases && (
+        <>
+          <h3>Scheduled releases, next seven days</h3>
+          {c.releases.length === 0 ? (
+            <p className="muted">None on file.</p>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Time (ET)</th>
+                  <th>Release</th>
+                  <th>Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {c.releases.map((r) => (
+                  <tr key={`${r.date}-${r.name}`}>
+                    <td>
+                      {r.date}
+                      {r.today && <span className="chip"> today</span>}
+                    </td>
+                    {/* FRED publishes dates without times; an em dash, never a guessed 08:30. */}
+                    <td className={r.timeEt === null ? "muted" : ""}>{r.timeEt ?? "—"}</td>
+                    <td>{r.name}</td>
+                    <td className="muted">{r.source ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+
+      {c?.earnings && (
+        <>
+          <h3>Earnings, next seven days</h3>
+          {c.earnings.reason !== null ? (
+            <p className="muted">Not available ({c.earnings.reason}).</p>
+          ) : c.earnings.rows.length === 0 ? (
+            <p className="muted">No announcements among the covered stocks.</p>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>When</th>
+                  <th>Symbol</th>
+                  <th>Implied move</th>
+                  <th>Expiration</th>
+                  <th>Spot</th>
+                </tr>
+              </thead>
+              <tbody>
+                {c.earnings.rows.map((r) => (
+                  <tr key={`${r.date}-${r.symbol}`}>
+                    <td>{r.date}</td>
+                    <td className="muted">
+                      {r.when === "Before market open" ? "before open" : r.when === "After market close" ? "after close" : "—"}
+                    </td>
+                    <td>{r.symbol}</td>
+                    {r.expectedMove === null ? (
+                      <td className="muted">not priced ({r.reason ?? "no reason recorded"})</td>
+                    ) : (
+                      <td>
+                        ±${fmt(r.expectedMove)} (±{fmt(r.expectedMovePct, 1)}%)
+                      </td>
+                    )}
+                    <td className="muted">{r.expiration ?? "—"}</td>
+                    <td>{fmt(r.spot)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="muted">
+            Implied move = 0.85 × the at-the-money straddle on the first expiration after the print, priced at the
+            close{c.earnings.asOf !== null ? ` (${c.earnings.asOf.slice(0, 16).replace("T", " ")} UTC)` : ""}.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
+const FUTURES_ORDER = ["es", "nq", "ym", "rty", "cl", "bz"];
+
+/** Why a future shows no change — the pack's reason codes, in words. */
+function changeReason(f: MorningFuture): string {
+  if (f.changeReason === "no_live_print") return "no live print yet";
+  if (f.changeReason === "no_prior_settle") return "no settle on file";
+  return f.changeReason ?? "—";
+}
+
+/**
+ * Futures and the indexes the scorecard does not front. The change is against the prior SETTLE and
+ * is only shown for a live print: over a weekend the "last" is Friday's own close, and a change of
+ * a price against itself read 0.00% — a measured-looking figure that measured nothing.
+ */
+function PremarketCard({ pack }: { pack: MorningPack }) {
+  const p = pack.premarket;
+  if (!p) return null;
+  const futures = [
+    ...FUTURES_ORDER.filter((k) => p.futures[k] !== undefined),
+    ...Object.keys(p.futures).filter((k) => !FUTURES_ORDER.includes(k)),
+  ];
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h2>Pre-market</h2>
+        <span className="chip">record-only</span>
+        {p.measuredFutures !== null && (
+          <span className="card-asof">
+            {p.measuredFutures} of {futures.length} futures live
+          </span>
+        )}
+      </div>
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Contract</th>
+            <th>Last</th>
+            <th>vs settle</th>
+            <th>Prior settle</th>
+          </tr>
+        </thead>
+        <tbody>
+          {futures.map((k) => {
+            const f = p.futures[k]!;
+            return (
+              <tr key={k}>
+                <td>{f.label ?? k}</td>
+                <td className={f.basis === "live" ? "" : "muted"}>
+                  {fmt(f.value)}
+                  {f.basis !== "live" && <span className="muted"> ({f.session ?? "prior"})</span>}
+                </td>
+                {f.changeVsPriorClosePct === null ? (
+                  <td className="muted">{changeReason(f)}</td>
+                ) : (
+                  <td className={pnlClass(f.changeVsPriorClosePct)}>{signedPct(f.changeVsPriorClosePct)}</td>
+                )}
+                <td className="muted">
+                  {fmt(f.priorSettle)}
+                  {f.priorSettleSession !== null && ` (${f.priorSettleSession})`}
+                </td>
+              </tr>
+            );
+          })}
+          {Object.entries(p.indexes).map(([k, r]) => (
+            <tr key={k}>
+              <td>{r.label ?? k}</td>
+              <td className={r.basis === "live" ? "" : "muted"}>
+                {fmt(r.value)}
+                {r.basis !== "live" && <span className="muted"> ({r.session ?? "prior"})</span>}
+              </td>
+              <td className={pnlClass(r.priorChangePct)}>{signedPct(r.priorChangePct)}</td>
+              <td className="muted">session change</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+const TENORS = ["3m", "2y", "5y", "10y", "30y"];
+
+function bp(v: number | null | undefined): string {
+  if (v === null || v === undefined) return "—";
+  return `${v > 0 ? "+" : ""}${v} bp`;
+}
+
+function MovesYieldsCard({ pack }: { pack: MorningPack }) {
+  const m = pack.moves;
+  const y = pack.yields;
+  if (!m && !y) return null;
+  const tenors = y ? [...TENORS.filter((t) => t in y.yields), ...Object.keys(y.yields).filter((t) => !TENORS.includes(t))] : [];
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h2>Expected move and yields</h2>
+        <span className="chip">record-only</span>
+        {y?.session && <span className="card-asof">Treasury curve, {y.session}</span>}
+      </div>
+      {m && (
+        <div className="stats-grid">
+          <div className="stat-tile">
+            <span className="stat-label">SPX weekly expected move</span>
+            <span className="stat-value">
+              {m.weeklyExpectedMove.pct === null ? "—" : `±${fmt(m.weeklyExpectedMove.pct)}%`}
+            </span>
+            <span className="stat-label muted">
+              {m.weeklyExpectedMove.pct === null
+                ? (m.weeklyExpectedMove.reason ?? "unmeasured")
+                : `±${fmt(m.weeklyExpectedMove.points, 1)} pts · VIX ${fmt(m.weeklyExpectedMove.vix)} ÷ √52`}
+            </span>
+          </div>
+          <div className="stat-tile">
+            <span className="stat-label">SPX realized vol</span>
+            <span className="stat-value">{m.realizedVol.pct === null ? "—" : `${fmt(m.realizedVol.pct)}%`}</span>
+            <span className="stat-label muted">
+              {m.realizedVol.pct === null
+                ? (m.realizedVol.reason ?? "unmeasured")
+                : `${m.realizedVol.sessions ?? "?"} sessions through ${m.realizedVol.through ?? "—"}`}
+            </span>
+          </div>
+          <div className="stat-tile">
+            <span className="stat-label">VIX − realized</span>
+            <span className="stat-value">
+              {m.vixMinusRealized === null ? "—" : `${m.vixMinusRealized > 0 ? "+" : ""}${fmt(m.vixMinusRealized)} pts`}
+            </span>
+            <span className="stat-label muted">implied over realized</span>
+          </div>
+        </div>
+      )}
+      {y &&
+        (y.reason !== null ? (
+          <p className="muted">No Treasury curve ({y.reason}).</p>
+        ) : (
+          <>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Tenor</th>
+                  {tenors.map((t) => (
+                    <th key={t}>{t}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Yield</td>
+                  {tenors.map((t) => (
+                    <td key={t}>{y.yields[t] === null || y.yields[t] === undefined ? "—" : `${fmt(y.yields[t])}%`}</td>
+                  ))}
+                </tr>
+                <tr>
+                  <td>Change</td>
+                  {tenors.map((t) => (
+                    <td key={t} className="muted">
+                      {bp(y.changeBp[t])}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+            <p className="muted">
+              2s10s {bp(y.spread2s10sBp)} · 3m10y {bp(y.spread3m10yBp)} — Treasury par curve, the prior session.
+            </p>
+          </>
+        ))}
     </section>
   );
 }
@@ -459,6 +742,8 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
               })}
             </div>
           </section>
+
+          <PremarketCard pack={current} />
 
           <div className="cards cards-wide">
             <section className="card">
@@ -581,7 +866,10 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
             )}
           </section>
 
+          <TechnicalsCards t={data?.technicals} />
+
           <VolRegimeCard pack={current} />
+          <MovesYieldsCard pack={current} />
           <DeploymentCard pack={current} />
 
           <CalendarCard pack={current} />

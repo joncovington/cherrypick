@@ -772,7 +772,14 @@ is the work if that changes.
 
 ### Phase 7 — the render
 
-- The new sections in the pack and on the console's Morning tab.
+- The new sections in the pack and on the console's Morning tab. **Done 2026-09-28.** The
+  technicals package writes one report per session (`technicals report`, the `technicals-report`
+  job at 06:30 ET after the landing): breadth, stages by sector, rotation, leaders and the scan
+  signals. The Morning tab shows it beside the pack's v4 blocks (pre-market futures and indexes,
+  expected move and realized vol, the Treasury curve, the 25-delta risk reversal, the VXN/SKEW
+  percentiles with their source, the week's releases and earnings with implied moves). Building
+  the leaders list exposed two data defects in Dolt, fixed before adjustment: duplicate splits
+  (APH, CNQ) and tickers carrying another security's history (BNY, SPCX, HUT).
 - A chart view per name in `lightweight-charts`: our candles, levels, CCI and signal marker, with
   the vendor's captured values for the same date beside them.
 - A headline feed to `scripts/morning_narrative.py` for sections 3 and 8's prose.

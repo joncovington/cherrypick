@@ -127,6 +127,8 @@ export interface MorningVolPercentile {
   samples: number | null;
   percentile: number | null;
   reason: string | null;
+  /** Where the value came from: `stream_cache`, `cboe_file`, `cboe_file_prior_close` (fact v4). */
+  source: string | null;
 }
 
 export interface MorningVolSeasonality {
@@ -162,9 +164,58 @@ export interface MorningVolRegime {
   /** Keyed by reading id (vix9d, vix, vix3m, vix6m, vix1y, vvix, skew). */
   percentiles: Record<string, MorningVolPercentile>;
   seasonality: MorningVolSeasonality | null;
+  /** 30-day 25-delta SPX risk reversal from the prior session's chain (fact v4); null when absent. */
+  riskReversal: MorningRiskReversal | null;
   measuredPoints: number | null;
   totalPoints: number | null;
   recordOnly: boolean | null;
+}
+
+/**
+ * Call 25-delta IV minus put 25-delta IV, interpolated to a 30-day tenor between the two bracketing
+ * expirations. Negative is the normal put skew; the sign is the pack's, not recomputed here.
+ */
+export interface MorningRiskReversal {
+  session: string | null;
+  spot: number | null;
+  targetDte: number | null;
+  call25dIvPct: number | null;
+  put25dIvPct: number | null;
+  rrVolPts: number | null;
+  expirations: { expiration: string; dte: number | null }[];
+  source: string | null;
+}
+
+/** One scheduled economic release. `timeEt` is null where the source publishes no time (FRED). */
+export interface MorningRelease {
+  name: string;
+  date: string;
+  timeEt: string | null;
+  source: string | null;
+  today: boolean | null;
+}
+
+/** One announcement with the move its post-event straddle implies (0.85 x the ATM straddle). */
+export interface MorningEarningsRow {
+  symbol: string;
+  date: string;
+  /** "Before market open" | "After market close" | null — the calendar's own words. */
+  when: string | null;
+  expiration: string | null;
+  spot: number | null;
+  strike: number | null;
+  straddle: number | null;
+  expectedMove: number | null;
+  expectedMovePct: number | null;
+  /** Why the move is missing; the row is listed, never dropped. */
+  reason: string | null;
+}
+
+export interface MorningEarningsWeek {
+  rows: MorningEarningsRow[];
+  /** When the straddles were priced — the prior session's close, not this morning. */
+  asOf: string | null;
+  reason: string | null;
 }
 
 export interface MorningCalendar {
@@ -174,6 +225,54 @@ export interface MorningCalendar {
   isTripleWitching: boolean | null;
   isQuarterlyExpiry: boolean | null;
   nextTradingDay: string | null;
+  /** Absent before fact version 4 — null, so the page omits the table rather than saying "none". */
+  releases: MorningRelease[] | null;
+  earnings: MorningEarningsWeek | null;
+}
+
+/**
+ * A futures leg: a reading plus its settle. The change is measured against a SETTLE only — a
+ * change against the last trade of an overnight book read 0.00% all weekend — so it is null with
+ * `changeReason` whenever there is no live print to compare.
+ */
+export interface MorningFuture extends MorningReading {
+  product: string | null;
+  priorSettle: number | null;
+  priorSettleSession: string | null;
+  changeVsPriorClosePct: number | null;
+  changeReason: string | null;
+}
+
+export interface MorningPremarket {
+  futures: Record<string, MorningFuture>;
+  /** NDX, DJX, IWM (a proxy for the Russell, labelled as one) at their last print. */
+  indexes: Record<string, MorningReading>;
+  measuredFutures: number | null;
+  recordOnly: boolean | null;
+}
+
+export interface MorningMoves {
+  /** VIX / sqrt(52): the week's one-sigma move implied by the 30-day vol. */
+  weeklyExpectedMove: {
+    pct: number | null;
+    points: number | null;
+    vix: number | null;
+    basis: string | null;
+    reason: string | null;
+  };
+  realizedVol: { pct: number | null; sessions: number | null; through: string | null; reason: string | null };
+  vixMinusRealized: number | null;
+}
+
+/** The Treasury par curve at the prior session. Yields in percent; changes and spreads in bp. */
+export interface MorningYields {
+  session: string | null;
+  source: string | null;
+  yields: Record<string, number | null>;
+  changeBp: Record<string, number | null>;
+  spread2s10sBp: number | null;
+  spread3m10yBp: number | null;
+  reason: string | null;
 }
 
 export interface MorningPack {
@@ -191,6 +290,64 @@ export interface MorningPack {
   /** Absent before fact version 3; null so the page omits the panel rather than drawing an empty curve. */
   volRegime: MorningVolRegime | null;
   calendar: MorningCalendar | null;
+  /** Absent before fact version 4, like the two below. */
+  premarket: MorningPremarket | null;
+  moves: MorningMoves | null;
+  yields: MorningYields | null;
+}
+
+// --------------------------------------------------------------------------- Technicals report
+// Shapes mirror `packages/technicals`' report artifact (data/technicals/report-<session>.json):
+// stages, breadth, rotation, scan-rule signals and leaders, all computed by that package's engines.
+// Record-only, like everything on this page — it feeds no gate, no sizing and no order.
+
+export interface TechnicalsBreadthDay {
+  session: string;
+  leaders: number | null;
+  laggards: number | null;
+  net: number | null;
+  /** leaders / (leaders + laggards); null when neither side has a member. */
+  bullishShare: number | null;
+}
+
+export interface TechnicalsStageMember {
+  symbol: string;
+  /** early | building | confirmed */
+  stage: string | null;
+}
+
+export interface TechnicalsSectorStages {
+  sector: string;
+  net: number | null;
+  leaders: TechnicalsStageMember[];
+  laggards: TechnicalsStageMember[];
+}
+
+export interface TechnicalsLeader {
+  symbol: string;
+  sector: string | null;
+  /** The 1–10 decile of the 125-session return. */
+  rank: number | null;
+  return6mPct: number | null;
+  trendShort: string | null;
+  trendLong: string | null;
+  /** "leader/confirmed" and the like; null when the name has no stage today. */
+  stage: string | null;
+}
+
+export interface TechnicalsReport {
+  session: string;
+  reportVersion: number | null;
+  generatedAt: string | null;
+  universe: number | null;
+  rules: Record<string, string>;
+  breadth: TechnicalsBreadthDay[];
+  stages: TechnicalsSectorStages[];
+  /** leading | improving | weakening | lagging | none -> fund symbols. */
+  rotation: Record<string, string[]>;
+  /** Scan-rule name -> the symbols it matched on the session. */
+  signals: Record<string, string[]>;
+  leaders: TechnicalsLeader[];
 }
 
 export interface MorningPayload {
@@ -198,4 +355,9 @@ export interface MorningPayload {
   current: MorningPack | null;
   /** The AI-written narrative, if one has been written. Interpretation — never mixed into the facts. */
   note: string | null;
+  /**
+   * The technicals report for the last session BEFORE the pack's — what the morning could know.
+   * Null when none is on file; a report dated the pack's own day was written after that open.
+   */
+  technicals: TechnicalsReport | null;
 }

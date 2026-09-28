@@ -3325,3 +3325,19 @@ select.text-input {
 .history-controls-spacer {
   flex: 1;
 }
+
+/* Morning tab, technicals report: long symbol lists wrap inside their cell rather than widening
+   the table past the card, and the rotation tiles hold a list rather than one big figure. */
+.data-table td.tech-members {
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.tech-funds {
+  font-family: Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
