@@ -5,14 +5,18 @@ Same fence as `eod_narrative.py`, for the same reasons: `packages/*` is what the
 import, so a script the scheduler runs cannot be imported by a loop, no package acquires an API key
 or a network dependency, and deleting this file costs a note and nothing else.
 
-One deliberate deviation from the EOD fence: **WebSearch and WebFetch stay allowed.** The morning
-report's macro calendar (CPI/PPI/retail-sales times, notable earnings) has no deterministic source
-in the suite, and the decision was to have the narrative agent look it up at render time rather
-than maintain a curated file that goes stale. The fence still holds where it matters — the agent
-gets no Bash, no Edit, no Write, so it can read the web but can only ever *return prose*; the
-script, never the agent, puts anything on disk. Numbers about the market itself must still come
-from the pack: the prompt is explicit that web results may inform the calendar and the editorial
-risk monitor only.
+One deliberate deviation from the EOD fence: **WebSearch and WebFetch stay allowed.** The calendar
+no longer needs them -- since fact version 4 the pack carries the week's releases and earnings with
+their implied moves -- but the prose over the movers and the risk monitor does: the headline file
+gives titles, not reasons. The fence still holds where it matters — the agent gets no Bash, no
+Edit, no Write, so it can read the web but can only ever *return prose*; the script, never the
+agent, puts anything on disk. Numbers about the market itself must still come from the inputs.
+
+Three inputs, all read-only, all written by deterministic jobs before this runs: the fact pack
+(`packages/overview`), the technicals report for the last session before it (`packages/technicals`:
+movers, breadth, stages, rotation, leaders -- the same pairing rule the console uses), and the
+morning's headlines (`scripts/fetch_headlines.py`: title, link, source, time). A missing input is
+passed as null and the prompt says so; it never stops the note.
 
 The other constraints carry over unchanged. The pack is the only market input. The note is written
 once and frozen unless `--force`. And every exit path can only ever fail to write a note — nothing
@@ -42,10 +46,11 @@ CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 # Deliberately not imported from cherrypick.overview: this script must run even if the package is
 # not installed, and the artifact path is a published contract rather than an implementation detail.
-STORE = Path(
-    os.environ.get("OVERVIEW_DATA_DIR")
-    or Path(os.environ.get("CHERRYPICK_HOME") or (Path.home() / ".cherrypick")) / "data" / "overview"
-)
+_HOME = Path(os.environ.get("CHERRYPICK_HOME") or (Path.home() / ".cherrypick"))
+STORE = Path(os.environ.get("OVERVIEW_DATA_DIR") or _HOME / "data" / "overview")
+TECHNICALS = _HOME / "data" / "technicals"
+HEADLINES = _HOME / "data" / "market-report" / "headlines"
+MAX_HEADLINES = 60
 
 # No acting tools. WebSearch/WebFetch are deliberately absent from this list -- see the module
 # docstring -- which is the one difference from eod_narrative.py's fence.
@@ -77,17 +82,33 @@ Things about this data that will mislead you if you do not know them:
 - `wti_proxy` and `gold_proxy` are ETF proxies (USO, GLD), not futures prices. Say "the crude
   proxy", never a WTI dollar price the pack does not contain.
 
-Write, in this order, in plain prose, no more than roughly 600 words:
+You are also given, when they exist:
+
+- `technicals`: the market report for the last completed session -- `movers` (the largest
+  single-stock moves, with volume against each name's own 50-session average), `breadth` (net
+  leaders minus laggards against the S&P 500, ten sessions), `stages` by sector, `rotation` states
+  and the relative-strength `leaders`. Computed, not opinions; cite them as the suite's readings.
+- `headlines`: titles, sources and times from a handful of news feeds over the last day and a half.
+  Titles only -- never quote a headline as a fact about a number the pack or report contains.
+
+Either may be null (not fetched, or not yet written); say so rather than working around it.
+
+Write, in this order, in plain prose, no more than roughly 700 words:
 
 1. A single-sentence bolded headline for the morning.
 2. **Stance** — one short paragraph: the phase, what is driving it, what would change it.
-3. **What happened / What's next** — the prior session from the pack's prior readings and sector
-   board; the coming session from the calendar you looked up.
+3. **Prior session** — what the tape did (the pack's prior readings and sector board, the
+   technicals breadth), then **movers**: yields (the pack's `yields`), oil (its futures and proxy),
+   and the technicals `movers` -- for each mover worth naming, the number from the report and, where
+   a headline or a search explains it, why, labelled as the reason reported rather than as fact.
+   A mover you cannot explain is named as unexplained, not given a guessed cause.
 4. **Risk monitor** — the editorial section: whatever macro theme is currently live, clearly
    labeled as interpretation. This section never feeds the phase.
-5. **Macro & earnings calendar** — today's releases with times ET, the week's headliners.
+5. **Week ahead** — from the pack's `calendar`: the releases (times ET where the pack has them;
+   say "time not published" where it has none), the earnings with their implied moves as the pack
+   states them, the next FOMC. Do not look the calendar up on the web.
 6. **Session drivers** — three or four bullets: Bullish / Bearish / Watch / Risk, each tied to a
-   pack number or a calendar item.
+   pack or report number or a calendar item.
 7. A footer line: the date, the phase, and a WATCH: list of the levels and events named above.
 
 Be direct where the numbers are clear, explicitly uncertain where they are thin, and honest about
@@ -116,6 +137,57 @@ def _trend_context(session: str, count: int = TREND_SESSIONS) -> list[dict]:
     return out
 
 
+def _technicals(session: str) -> dict | None:
+    """The last technicals report dated BEFORE the pack's session -- the close the morning saw.
+    Trimmed to what the note uses: the full stage lists would only be noise in the prompt."""
+    days = sorted(
+        p.stem.removeprefix("report-")
+        for p in TECHNICALS.glob("report-????-??-??.json")
+        if p.stem.removeprefix("report-") < session
+    )
+    if not days:
+        return None
+    try:
+        doc = json.loads((TECHNICALS / f"report-{days[-1]}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not doc.get("ok"):
+        return None
+    return {
+        "session": doc.get("session"),
+        "movers": doc.get("movers"),
+        "breadth": doc.get("breadth"),
+        "stages": [
+            {
+                "sector": s.get("sector"),
+                "net": s.get("net"),
+                "leaders": len(s.get("leaders") or []),
+                "laggards": len(s.get("laggards") or []),
+            }
+            for s in doc.get("stages") or []
+        ],
+        "rotation": doc.get("rotation"),
+        "leaders": doc.get("leaders"),
+        "signal_counts": {k: len(v) for k, v in (doc.get("signals") or {}).items()},
+    }
+
+
+def _headlines(session: str) -> dict | None:
+    """The morning's headline file: the session's own, else the day before's (an early run)."""
+    try:
+        day = date.fromisoformat(session)
+    except ValueError:
+        return None
+    for d in (day, day - timedelta(days=1)):
+        try:
+            doc = json.loads((HEADLINES / f"{d.isoformat()}.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        items = [{k: i.get(k) for k in ("title", "source", "published")} for i in doc.get("items") or []]
+        return {"generated_at": doc.get("generated_at"), "items": items[:MAX_HEADLINES]}
+    return None
+
+
 def _run_claude(payload: str) -> tuple[str | None, str | None]:
     exe = shutil.which("claude")
     if not exe:
@@ -130,7 +202,8 @@ def _run_claude(payload: str) -> tuple[str | None, str | None]:
             # Windows), which bakes mojibake into the note. Same lesson as eod_narrative.py.
             encoding="utf-8",
             errors="replace",
-            timeout=TIMEOUT_SECONDS, creationflags=CREATE_NO_WINDOW,
+            timeout=TIMEOUT_SECONDS,
+            creationflags=CREATE_NO_WINDOW,
         )
     except subprocess.TimeoutExpired:
         return None, f"claude timed out after {TIMEOUT_SECONDS}s"
@@ -167,7 +240,15 @@ def main() -> int:
         print(json.dumps({"ok": True, "session": session, "skipped": "note already written (frozen)"}))
         return 0
 
-    payload = json.dumps({"today": facts, "prior_sessions": _trend_context(session)}, indent=2)
+    payload = json.dumps(
+        {
+            "today": facts,
+            "prior_sessions": _trend_context(session),
+            "technicals": _technicals(session),
+            "headlines": _headlines(session),
+        },
+        indent=2,
+    )
     note, error = _run_claude(payload)
     if note is None:
         print(json.dumps({"ok": False, "session": session, "error": error}))
@@ -175,12 +256,15 @@ def main() -> int:
 
     header = (
         f"# Morning note — {session}\n\n"
-        f"_Written from `morning-{session}.json` (fact pack v{facts.get('fact_version')}). Market\n"
-        f"numbers come from that artifact and nowhere else; the macro calendar and the risk-monitor\n"
-        f"section are the agent's own render-time research. Where a market number here disagrees\n"
-        f"with the artifact, the artifact is right._\n\n---\n\n"
+        f"_Written from `morning-{session}.json` (fact pack v{facts.get('fact_version')}), the\n"
+        f"technicals report for the session before it, and the morning's headlines. Market numbers\n"
+        f"come from those artifacts and nowhere else; why a stock moved, and the risk monitor, are\n"
+        f"the agent's reading of the headlines and its own research. Where a number here disagrees\n"
+        f"with an artifact, the artifact is right._\n\n---\n\n"
     )
     if args.dry_run:
+        # A redirected stdout on Windows is cp1252, and a note carries "−" and "±".
+        sys.stdout.reconfigure(encoding="utf-8")
         print(header + note)
         return 0
 

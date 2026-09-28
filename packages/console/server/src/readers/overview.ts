@@ -43,6 +43,7 @@ import type {
   TechnicalsSectorStages,
   TechnicalsStageMember,
   TechnicalsLeader,
+  TechnicalsMover,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { num, str } from "./db.js";
@@ -499,6 +500,22 @@ function shapeLeader(raw: unknown): TechnicalsLeader[] {
   ];
 }
 
+function shapeMover(raw: unknown): TechnicalsMover[] {
+  const m = rec(raw);
+  const symbol = str(m["symbol"]);
+  if (symbol === null) return [];
+  return [
+    {
+      symbol,
+      sector: str(m["sector"]),
+      changePct: num(m["change_pct"]),
+      close: num(m["close"]),
+      volumeRatio: num(m["volume_ratio"]),
+      stage: str(m["stage"]),
+    },
+  ];
+}
+
 function list(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
 }
@@ -519,6 +536,10 @@ function shapeTechnicals(doc: Record<string, unknown>): TechnicalsReport | null 
     rotation: strListMap(doc["rotation"]),
     signals: strListMap(doc["signals"]),
     leaders: list(doc["leaders"]).flatMap(shapeLeader),
+    movers: {
+      gainers: list(rec(doc["movers"])["gainers"]).flatMap(shapeMover),
+      losers: list(rec(doc["movers"])["losers"]).flatMap(shapeMover),
+    },
   };
 }
 

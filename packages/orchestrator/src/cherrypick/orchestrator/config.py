@@ -312,6 +312,10 @@ def morning_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # broker (chains and quotes, read-only), so after the close, before the pack reads it.
         "earnings_moves": mv.get("earnings_moves", True),
         "earnings_moves_at": mv.get("earnings_moves_at", "18:40"),
+        # The morning's headlines for the narrative (scripts/fetch_headlines.py): titles and links
+        # from a few RSS feeds, one request each, before the narrative reads them.
+        "headlines": mv.get("headlines", True),
+        "headlines_at": mv.get("headlines_at", "08:45"),
     }
 
 

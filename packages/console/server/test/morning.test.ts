@@ -319,6 +319,7 @@ describe("the technicals report", () => {
         rotation: { leading: ["IGV"], none: ["XLK"] },
         signals: { CciDipInBullishTrend: ["DELL"] },
         leaders: [{ symbol: "MRNA", sector: "Healthcare", rank: 10, return_6m_pct: 301.3, trend_short: "Bullish", trend_long: "Bullish", stage: "leader/confirmed" }],
+        movers: { gainers: [{ symbol: "TSEM", change_pct: 6.07, close: 150.1, volume_ratio: 1.08 }], losers: [{ symbol: "ZS", change_pct: -10.06, volume_ratio: null }] },
         ...extra,
       }),
     );
@@ -340,11 +341,16 @@ describe("the technicals report", () => {
     expect(t?.leaders[0]).toMatchObject({ symbol: "MRNA", return6mPct: 301.3, stage: "leader/confirmed" });
     expect(t?.breadth[0]).toMatchObject({ net: -166, bullishShare: 0.154 });
     expect(t?.rotation["leading"]).toEqual(["IGV"]);
+    expect(t?.movers.gainers[0]).toMatchObject({ symbol: "TSEM", changePct: 6.07, volumeRatio: 1.08 });
+    expect(t?.movers.losers[0]).toMatchObject({ symbol: "ZS", volumeRatio: null });
   });
 
   it("no report, a failed one, or an unreadable one is null — the rest of the page is untouched", () => {
     writePack("2026-09-28", minimalPack("2026-09-28"));
     expect(readMorning(config).technicals).toBeNull();
+    writeReport("2026-09-24", { movers: undefined });
+    expect(readMorning(config).technicals?.movers).toEqual({ gainers: [], losers: [] });
+    fs.rmSync(path.join(tmp, "technicals", "report-2026-09-24.json"));
     writeReport("2026-09-25", { ok: false });
     expect(readMorning(config).technicals).toBeNull();
     fs.writeFileSync(path.join(tmp, "technicals", "report-2026-09-25.json"), "{not json");

@@ -335,6 +335,17 @@ export interface TechnicalsLeader {
   stage: string | null;
 }
 
+/** One of the session's largest single-stock moves. */
+export interface TechnicalsMover {
+  symbol: string;
+  sector: string | null;
+  changePct: number | null;
+  close: number | null;
+  /** The session's volume over the name's own prior 50-session average. */
+  volumeRatio: number | null;
+  stage: string | null;
+}
+
 export interface TechnicalsReport {
   session: string;
   reportVersion: number | null;
@@ -348,6 +359,8 @@ export interface TechnicalsReport {
   /** Scan-rule name -> the symbols it matched on the session. */
   signals: Record<string, string[]>;
   leaders: TechnicalsLeader[];
+  /** Report version 2 and on; empty lists on an older report, never invented. */
+  movers: { gainers: TechnicalsMover[]; losers: TechnicalsMover[] };
 }
 
 export interface MorningPayload {

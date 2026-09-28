@@ -1,4 +1,4 @@
-import type { TechnicalsReport, TechnicalsStageMember } from "@console/shared";
+import type { TechnicalsMover, TechnicalsReport, TechnicalsStageMember } from "@console/shared";
 import { Link } from "react-router-dom";
 import { BarChart, SignedBar } from "../../components/Charts";
 
@@ -211,6 +211,54 @@ function LeadersCard({ t }: { t: TechnicalsReport }) {
   );
 }
 
+function MoverRows({ rows }: { rows: TechnicalsMover[] }) {
+  return (
+    <>
+      {rows.map((m) => (
+        <tr key={m.symbol}>
+          <td>
+            <Link to={`/reports/chart?symbol=${encodeURIComponent(m.symbol)}`}>{m.symbol}</Link>
+          </td>
+          <td className="muted">{m.sector ?? "—"}</td>
+          <td className={m.changePct === null ? "muted" : m.changePct >= 0 ? "pnl-pos" : "pnl-neg"}>
+            {m.changePct === null ? "—" : `${m.changePct > 0 ? "+" : ""}${m.changePct.toFixed(2)}%`}
+          </td>
+          <td className={m.volumeRatio === null ? "muted" : ""}>
+            {m.volumeRatio === null ? "—" : `${m.volumeRatio.toFixed(2)}×`}
+          </td>
+          <td className={m.stage === null ? "muted" : ""}>{m.stage?.replace("/", " · ") ?? "—"}</td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
+function MoversCard({ t }: { t: TechnicalsReport }) {
+  const { gainers, losers } = t.movers;
+  if (gainers.length + losers.length === 0) return null; // a version-1 report carries none
+  return (
+    <section className="card">
+      <Head title="Session movers" t={t} />
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Sector</th>
+            <th>Change</th>
+            <th>Volume vs 50-day</th>
+            <th>Stage</th>
+          </tr>
+        </thead>
+        <tbody>
+          <MoverRows rows={gainers} />
+          <MoverRows rows={losers} />
+        </tbody>
+      </table>
+      <p className="muted">The largest one-session moves in the universe. Why they moved is the narrative's to say.</p>
+    </section>
+  );
+}
+
 function SignalsCard({ t }: { t: TechnicalsReport }) {
   const rules = Object.entries(t.signals);
   return (
@@ -252,6 +300,7 @@ export function TechnicalsCards({ t }: { t: TechnicalsReport | null | undefined 
   }
   return (
     <>
+      <MoversCard t={t} />
       <BreadthCard t={t} />
       <StagesCard t={t} />
       <div className="cards cards-wide">

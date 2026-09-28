@@ -18,9 +18,11 @@ from typing import Any
 
 from . import levels, paths, rotation, signals, stage, store, symbols, trend
 
-REPORT_VERSION = 1
+REPORT_VERSION = 2  # 2: `movers`
 BREADTH_SESSIONS = 10
 TOP_LEADERS = 10
+TOP_MOVERS = 8
+MOVER_VOLUME_SESSIONS = 50
 
 
 def _sectors() -> dict[str, str]:
@@ -89,6 +91,31 @@ def build(session: str | None = None, conn=None) -> dict[str, Any]:
         if len(bs) > levels.RANK_SESSIONS:
             returns[sym] = bs[-1].close / bs[-1 - levels.RANK_SESSIONS].close - 1
     ranks = levels.rank(returns)
+
+    # The session's single-stock movers: the report's "prior-session movers" are data, and only the
+    # prose over them is the narrative's. Volume is against the name's own prior 50-session average,
+    # so a move on no volume reads differently from one on three times it.
+    moves = []
+    for sym, bs in bars.items():
+        if bs[-1].date != day or len(bs) < 2 or bs[-2].close <= 0:
+            continue
+        prior = [b.volume for b in bs[-1 - MOVER_VOLUME_SESSIONS : -1]]
+        avg = sum(prior) / len(prior) if prior else 0
+        moves.append(
+            {
+                "symbol": sym,
+                "sector": sector_of.get(sym),
+                "change_pct": round(100 * (bs[-1].close / bs[-2].close - 1), 2),
+                "close": round(bs[-1].close, 2),
+                "volume_ratio": round(bs[-1].volume / avg, 2) if avg > 0 else None,
+                "stage": f"{today[sym].side}/{today[sym].stage}" if sym in today else None,
+            }
+        )
+    moves.sort(key=lambda m: -m["change_pct"])
+    movers = {
+        "gainers": [m for m in moves[:TOP_MOVERS] if m["change_pct"] > 0],
+        "losers": [m for m in reversed(moves[-TOP_MOVERS:]) if m["change_pct"] < 0],
+    }
     top = sorted(returns, key=lambda s: -returns[s])[:TOP_LEADERS]
     leaders = []
     for sym in top:
@@ -118,6 +145,7 @@ def build(session: str | None = None, conn=None) -> dict[str, Any]:
         "rotation": rot,
         "signals": sig,
         "leaders": leaders,
+        "movers": movers,
         "record_only": True,
     }
 

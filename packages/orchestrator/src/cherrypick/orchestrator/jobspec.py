@@ -72,6 +72,8 @@ CATCHUP_MINUTES = {
     "market-files-retry": 40,
     # Priced at the close for the next morning's pack; a late run still prices that close.
     "earnings-moves": 600,
+    # Only worth fetching while the morning's narrative is still to be written.
+    "fetch-headlines": 10,
     # A light checkpoint describes the session as it stands, so catching one up past the next slot
     # would produce two checkpoints describing nearly the same afternoon. The deep slot is
     # different: it issues the next session's advice, so it stays worth firing until late evening.
@@ -780,6 +782,21 @@ def derive_jobs(
                 enabled_reason="" if files_on else "disabled in config (morning.files)",
             ),
         )
+    hl_on = mv["enabled"] and mv["headlines"]
+    add(
+        "fetch-headlines",
+        lambda: JobSpec(
+            id="fetch-headlines",
+            # A script: it reads public RSS feeds (titles and links only); the narrative reads its file.
+            argv=(pythonw, _suite_script(launcher, "fetch_headlines.py")),
+            kind=KIND_DAILY,
+            at_et=mv["headlines_at"],
+            catchup_minutes=CATCHUP_MINUTES["fetch-headlines"],
+            trading_days_only=True,
+            enabled=hl_on,
+            enabled_reason="" if hl_on else "disabled in config (morning.headlines)",
+        ),
+    )
     em_on = mv["enabled"] and mv["earnings_moves"]
     add(
         "earnings-moves",

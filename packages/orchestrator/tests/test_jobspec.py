@@ -311,6 +311,7 @@ def test_derive_full_suite_job_table():
         "technicals-dividends",
         "technicals-report",
         "earnings-moves",
+        "fetch-headlines",
         "review-provisional",
         "review-final",
         "review-narrative",
@@ -980,3 +981,11 @@ def test_the_technicals_report_follows_the_landing():
     land, rep = by_id["technicals-land"], by_id["technicals-report"]
     assert rep.argv[1:] == ("-m", "cherrypick.technicals", "report")
     assert rep.at_et > land.at_et and rep.enabled == land.enabled
+
+
+def test_headlines_are_fetched_before_the_narrative_reads_them():
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    job, note = by_id["fetch-headlines"], by_id["morning-narrative"]
+    assert job.enabled and job.trading_days_only
+    assert job.argv[-1].endswith("fetch_headlines.py")
+    assert job.at_et < note.at_et, "the narrative must find this morning's file"

@@ -568,7 +568,10 @@
     "files_retry_at": "07:45",
     "_comment_earnings_moves": "Next week's earnings among the stocks the market report covers, each with the move its post-event straddle implies (scripts/fetch_earnings_moves.py; 0.85 x the ATM straddle, the suite's one definition), priced at the close into data/market-report/earnings/week.json for the next morning's pack. Reads the shared broker credential, read-only, one chain a second.",
     "earnings_moves": true,
-    "earnings_moves_at": "18:40"
+    "earnings_moves_at": "18:40",
+    "_comment_headlines": "The morning's headlines for the narrative (scripts/fetch_headlines.py): titles, links, sources and times from the Fed, CNBC, MarketWatch and WSJ RSS feeds, one request each, into data/market-report/headlines/<date>.json. No article bodies. Only scripts/morning_narrative.py reads it.",
+    "headlines": true,
+    "headlines_at": "08:45"
   },
   "technicals": {
     "_comment": "packages/technicals - the market report's end-of-day store. Lands raw daily bars, splits, dividends and IV history for the universe candidates, the 35 rotation ETFs and the benchmarks from the LOCAL Dolt clones into data/technicals/eod.db, at 'land_at' ET after the 05:30 Dolt pull. Adjusted bars are computed from raw on read. Read-only against Dolt; needs the earnings module on, since its job keeps the dolt sql-server alive. ON by default.",

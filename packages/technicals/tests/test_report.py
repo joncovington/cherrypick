@@ -38,5 +38,12 @@ def test_the_report_gathers_stages_by_sector_breadth_rotation_and_leaders():
         "bullish_share": 0.5,
     }
     assert doc["leaders"][0]["symbol"] == "UP"
+    # The session's movers: gainers up only, losers down only, volume against the name's own average.
+    assert [m["symbol"] for m in doc["movers"]["gainers"]] == ["UP"]
+    assert [m["symbol"] for m in doc["movers"]["losers"]] == ["DOWN"]
+    assert (
+        doc["movers"]["gainers"][0]["change_pct"] == 1.0
+        and doc["movers"]["gainers"][0]["volume_ratio"] == 1.0
+    )
     path = report.write(doc)
     assert json.loads(open(path, encoding="utf-8").read())["session"] == days[-1]

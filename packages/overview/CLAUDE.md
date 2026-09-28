@@ -177,16 +177,26 @@ trap `facts._close_history` exists to handle: `day_close` belongs to its own row
 `scripts/morning_narrative.py` writes `morning-<day>.note.md` beside the pack — the same fence as
 `scripts/eod_narrative.py`, for the same reasons: a script the scheduler runs cannot be imported by
 a loop, no package gains an API key or a network dependency, and deleting it costs a note and
-nothing else. **One documented deviation:** WebSearch/WebFetch stay allowed, because the macro
-calendar (CPI/PPI times, notable earnings) has no deterministic source in the suite and is fetched
-at render time instead of curated. The fence holds where it matters — no Bash, no Edit, no Write,
-so the agent can only ever return prose, and market numbers must come from the pack alone.
+nothing else. **One documented deviation:** WebSearch/WebFetch stay allowed. The calendar no
+longer needs them — the pack carries the week's releases and earnings since v4, and the prompt
+forbids looking it up — but why a stock moved does: the headline file holds titles, not reasons.
+The fence holds where it matters — no Bash, no Edit, no Write, so the agent can only ever return
+prose, and market numbers must come from its inputs alone.
+
+Those inputs are three deterministic artifacts: the pack; the technicals report for the last
+session BEFORE the pack's (movers, breadth, stages, rotation, leaders — the console's pairing
+rule, pinned by a test that fails at `<=`); and the morning's headlines from
+`scripts/fetch_headlines.py` (title, source and time from the Fed, CNBC, MarketWatch and WSJ RSS
+feeds; no article bodies). A missing one reaches the prompt as null and never stops the note. The
+prompt asks for a mover's number from the report and its reason only as reported, and for an
+unexplained mover to be named as unexplained.
 
 ## Scheduling
 
 Two supervisor jobs (see `cfgmod.morning_settings`; config block `morning`): `morning-factpack`
 (08:30 ET, on by default) runs `python run.py morning` → `python -m cherrypick.overview build`;
-`morning-narrative` (09:00 ET, off by default, tag `ai`) runs the script. Both trading-days-only
+`morning-narrative` (09:00 ET, off by default, tag `ai`) runs the script, and `fetch-headlines`
+(08:45 ET, on by default, `morning.headlines`) fetches what it reads. All trading-days-only
 with a deliberately tight 90-minute catch-up — a pre-open pack caught up at 11:00 describes a
 market that already opened.
 

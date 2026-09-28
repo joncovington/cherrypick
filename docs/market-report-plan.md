@@ -787,7 +787,12 @@ is the work if that changes.
   placed 343 of the 358 support and resistance levels across 69 captured names. All 15 misses are
   on four names (ALC, BAP, CCJ, ENB) whose bars agree with the vendor's on under 30% of prices -- a
   bar problem, not a grid one.
-- A headline feed to `scripts/morning_narrative.py` for sections 3 and 8's prose.
+- A headline feed to `scripts/morning_narrative.py` for sections 3 and 8's prose. **Done
+  2026-09-28.** Section 3's movers are now data (`movers` in the technicals report, version 2: the
+  session's eight largest gains and losses with volume against each name's 50-session average);
+  `scripts/fetch_headlines.py` (08:45 ET) stores titles from six verified RSS feeds; the narrative
+  reads both beside the pack and takes section 8 from the pack's own calendar rather than the web.
+  The first dry run named reasons for five movers from reporting and marked eleven unexplained.
 
 ## Fixtures from the 2026-09-21 to 09-25 editions
 

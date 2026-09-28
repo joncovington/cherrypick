@@ -163,7 +163,8 @@ the CCI-5 lag is broken. Files are overwritten each session (about 15 MB for ~47
 ## The report artifact, and two data defects it exposed (Phase 7)
 
 `report.py` gathers one session's readings -- stages by sector, the 10-session breadth history,
-rotation states, scan-rule signals and the relative-strength leaders -- into
+rotation states, scan-rule signals, the relative-strength leaders and (version 2) the session's
+largest single-stock movers with volume against each name's 50-session average -- into
 `data/technicals/report-<session>.json`, the console's source. Nothing downstream recomputes them.
 
 Its first leaders list put BNY at +1,490% over six months, which exposed two defects in Dolt's
