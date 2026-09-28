@@ -5,7 +5,8 @@ week's jobs report and jobless claims included -- because FRED lists ~40 release
 newest-first page of 1,000 dropped the nearest two weeks. These tests pin the fix with a fake FRED
 that holds more rows than a page, so a return to one page fails here rather than in a pack.
 
-Beside the other script tests because the orchestrator schedules it.
+Here rather than beside the orchestrator's script tests because the script imports this package's
+parsers, and each package's CI installs only that package.
 """
 
 from __future__ import annotations
