@@ -82,6 +82,7 @@ CATCHUP_MINUTES = {
     "universe-measure-1": 90,
     "universe-measure-2": 60,
     "universe-daily": 300,
+    "universe-watchlist": 300,
     # Broker-cash reconciliation of a settled live session. Generous, because the whole point is
     # that it must not depend on anyone arming the live loop: a box asleep until mid-afternoon
     # should still reconcile that morning's pending dates, and an unreconciled date is only
@@ -794,6 +795,23 @@ def derive_jobs(
                 enabled_reason=uv_reason,
             ),
         )
+    wl_on = mr["universe"] and mr["universe_watchlist"]
+    add(
+        "universe-watchlist",
+        lambda: JobSpec(
+            id="universe-watchlist",
+            # The suite's one scheduled write to the broker account: the universe mirrored to a
+            # private watchlist, never an order. Its own switch on top of `universe`; the script
+            # only replaces the list it created and refuses to empty or halve it in one sync.
+            argv=(pythonw, _universe_script(launcher), "watchlist", "--apply"),
+            kind=KIND_DAILY,
+            at_et=mr["universe_watchlist_at"],
+            catchup_minutes=CATCHUP_MINUTES["universe-watchlist"],
+            trading_days_only=True,
+            enabled=wl_on,
+            enabled_reason="" if wl_on else "disabled in config (market_report.universe_watchlist)",
+        ),
+    )
     add(
         "futures-contracts",
         lambda: JobSpec(

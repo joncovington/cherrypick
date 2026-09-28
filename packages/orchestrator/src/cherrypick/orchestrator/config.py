@@ -319,6 +319,10 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     also OFF by default: it reads the shared broker credential. `universe_measure_at` are two
     regular-hours slots inside the script's own 10:00-to-30-minutes-before-the-close window (it
     refuses outside it); `universe_daily_at` harvests and rebuilds after the vendor's chart capture.
+
+    `universe_watchlist` mirrors the members to a private tastytrade watchlist at
+    `universe_watchlist_at`. A separate switch, OFF by default even with `universe` on, because it
+    is the suite's one scheduled write to the broker account (a watchlist, never an order).
     """
     mr = cfg.get("market_report", {}) or {}
     return {
@@ -329,6 +333,8 @@ def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "universe": bool(mr.get("universe", False)),
         "universe_measure_at": list(mr.get("universe_measure_at", ["11:00", "14:00"])),
         "universe_daily_at": mr.get("universe_daily_at", "18:00"),
+        "universe_watchlist": bool(mr.get("universe_watchlist", False)),
+        "universe_watchlist_at": mr.get("universe_watchlist_at", "18:30"),
     }
 
 

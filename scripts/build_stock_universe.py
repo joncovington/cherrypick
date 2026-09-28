@@ -9,10 +9,10 @@ trading tightly, measured, not by being mentioned.
 
 A script rather than package code, for the same reason as the vendor collector: it reaches the
 network. It writes only its own folder, `~/.cherrypick/data/market-report/universe/`, and is
-read-only against the broker: it asks for instruments, metrics, chains and quotes, and places
-nothing. It uses REST snapshots, never the streamer: several hundred names would blow the stream
-budget (the plan's "The streamer cannot carry a stock universe"), and the stream cache has one
-writer.
+read-only against the broker apart from the `watchlist` step: it asks for instruments, metrics,
+chains and quotes, and places nothing. It uses REST snapshots, never the streamer: several hundred
+names would blow the stream budget (the plan's "The streamer cannot carry a stock universe"), and
+the stream cache has one writer.
 
 Three steps, each its own subcommand and its own schedule:
 
@@ -31,16 +31,22 @@ Three steps, each its own subcommand and its own schedule:
   when its stock spread, option spread and option volume all hold on medians over at least
   `MIN_SESSIONS` sessions; fewer sessions is **pending**, never a pass. Every name gets its
   reasons, in or out, with tastytrade's rating beside them as a guide.
+- **watchlist**: mirrors the members to a private tastytrade watchlist, `cherrypick universe`. It
+  is the one step that writes to the account — a watchlist, never an order — so it shows its plan
+  and writes nothing without `--apply`, has its own schedule switch, and only ever replaces the
+  list it created (marked by its group). It refuses to empty the list or to cut more than half of
+  it in one sync.
 
 Pacing: the follow feed gets one request per trader and OCC one per missing session, 5-10
-seconds apart; tastytrade gets batched
-calls and one chain request per name a day (cached), a second apart. A throttling response ends
+seconds apart; tastytrade gets batched calls and one chain request per name a day (cached), a
+second apart. A throttling response ends
 the step with what it has.
 
     python scripts/build_stock_universe.py harvest [--no-follow]
     python scripts/build_stock_universe.py measure [--force] [--limit N]
     python scripts/build_stock_universe.py build
     python scripts/build_stock_universe.py daily        # harvest, then build
+    python scripts/build_stock_universe.py watchlist [--apply] [--allow-shrink]
 """
 
 from __future__ import annotations
@@ -441,6 +447,68 @@ def build_universe(
     }
 
 
+# ------------------------------------------------------------------------------------------------
+# The tastytrade watchlist: the universe mirrored where a person trades from. Pure planning here;
+# the write is `cmd_watchlist`.
+
+WATCHLIST_NAME = "cherrypick universe"
+# The mark that says this script made the list. A replace sends the whole entry list and drops
+# everything left out, so a same-named list a person made by hand would be wiped; without this
+# group the script refuses to touch it.
+WATCHLIST_GROUP = "cherrypick"
+# A sync that would remove more than this share of the list in one go is refused unless told
+# otherwise: a universe that collapses overnight is far likelier a broken build (a missing OCC file,
+# a failed measurement) than a market in which half the names stopped trading.
+MAX_SHRINK = 0.5
+
+
+def watchlist_plan(members: list[str], existing: dict | None, *, allow_shrink: bool = False) -> dict:
+    """What a sync would do: `create`, `replace`, `none` or `refuse`, with the symbols it adds and
+    removes. `existing` is the account's list of that name ({group_name, symbols}) or None."""
+    want = sorted({to_tastytrade(s) for s in members})
+    if existing is None:
+        if not want:
+            return {"action": "none", "reason": "the universe has no members yet", "add": [], "remove": []}
+        return {"action": "create", "add": want, "remove": [], "entries": want}
+    if existing.get("group_name") != WATCHLIST_GROUP:
+        return {
+            "action": "refuse",
+            "reason": (
+                f"a watchlist named {WATCHLIST_NAME!r} exists without the {WATCHLIST_GROUP!r} group, "
+                "so this script did not make it and will not replace it"
+            ),
+            "add": [],
+            "remove": [],
+        }
+    have = set(existing.get("symbols") or [])
+    add, remove = sorted(set(want) - have), sorted(have - set(want))
+    if not add and not remove:
+        return {"action": "none", "add": [], "remove": [], "entries": want}
+    if not want:
+        return {
+            "action": "refuse",
+            "reason": "the universe is empty; not emptying the list",
+            "add": [],
+            "remove": remove,
+        }
+    if have and not allow_shrink and len(remove) > MAX_SHRINK * len(have):
+        return {
+            "action": "refuse",
+            "reason": f"would remove {len(remove)} of {len(have)} names at once (more than {MAX_SHRINK:.0%})",
+            "add": add,
+            "remove": remove,
+        }
+    return {"action": "replace", "add": add, "remove": remove, "entries": want}
+
+
+def watchlist_body(entries: list[str]) -> dict:
+    return {
+        "name": WATCHLIST_NAME,
+        "group-name": WATCHLIST_GROUP,
+        "watchlist-entries": [{"symbol": s, "instrument-type": "Equity"} for s in entries],
+    }
+
+
 def merge_candidates(vendor: dict[str, dict], follow: dict[str, dict]) -> dict[str, dict]:
     out: dict[str, dict] = {}
     for sym, row in vendor.items():
@@ -834,6 +902,54 @@ def cmd_build(_args) -> int:
     return 0
 
 
+def cmd_watchlist(args) -> int:
+    """Mirror the universe's members to the account's tastytrade watchlist. Shows the plan and writes
+    nothing unless `--apply`. Only ever touches the one list it made (see `WATCHLIST_GROUP`)."""
+    from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
+    from tastytrade.watchlists import PrivateWatchlist
+
+    universe = _read_json(store_dir() / "universe.json", None)
+    if not universe:
+        print(json.dumps({"ok": False, "reason": "no universe.json; run build first"}))
+        return 1
+    store = CredentialStore(SHARED_SERVICE)
+    if store.missing_secrets():
+        print(json.dumps({"ok": False, "reason": "credentials_missing"}))
+        return 1
+
+    async def run() -> dict:
+        session = SessionManager(store).get_session()
+        found = next((w for w in await PrivateWatchlist.get(session) if w.name == WATCHLIST_NAME), None)
+        existing = None
+        if found is not None:
+            existing = {
+                "group_name": found.group_name,
+                "symbols": [e.get("symbol") for e in found.watchlist_entries or [] if e.get("symbol")],
+            }
+        plan = watchlist_plan(universe.get("members") or [], existing, allow_shrink=args.allow_shrink)
+        plan["applied"] = False
+        if args.apply and plan["action"] in ("create", "replace"):
+            body = watchlist_body(plan["entries"])
+            if plan["action"] == "create":
+                await session._post("/watchlists", json=body)
+            else:
+                await session._put(f"/watchlists/{urllib.parse.quote(WATCHLIST_NAME)}", json=body)
+            plan["applied"] = True
+        return plan
+
+    try:
+        plan = asyncio.run(run())
+    except Exception as exc:  # noqa: BLE001 — a refused or failed write changes nothing; say so
+        _warn("Universe watchlist sync failed", f"{type(exc).__name__}: {exc}")
+        print(json.dumps({"ok": False, "reason": f"{type(exc).__name__}: {exc}"}))
+        return 1
+    plan.pop("entries", None)
+    if plan["action"] == "refuse":
+        _warn("Universe watchlist not synced", plan["reason"])
+    print(json.dumps({"ok": plan["action"] != "refuse", "watchlist": WATCHLIST_NAME, **plan}, indent=1))
+    return 0 if plan["action"] != "refuse" else 1
+
+
 def cmd_daily(args) -> int:
     rc = cmd_harvest(args)
     return rc or cmd_build(args)
@@ -851,6 +967,12 @@ def main(argv: list[str] | None = None) -> int:
     me.add_argument("--limit", type=int, help="fetch at most this many new chains")
     me.set_defaults(fn=cmd_measure)
     sub.add_parser("build").set_defaults(fn=cmd_build)
+    wl = sub.add_parser("watchlist")
+    wl.add_argument("--apply", action="store_true", help="write to tastytrade (default: show the plan)")
+    wl.add_argument(
+        "--allow-shrink", action="store_true", help=f"allow removing over {MAX_SHRINK:.0%} at once"
+    )
+    wl.set_defaults(fn=cmd_watchlist)
     args = ap.parse_args(argv)
     return args.fn(args)
 

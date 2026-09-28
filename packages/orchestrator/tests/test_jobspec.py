@@ -304,6 +304,7 @@ def test_derive_full_suite_job_table():
         "universe-measure-1",
         "universe-measure-2",
         "universe-daily",
+        "universe-watchlist",
         "review-provisional",
         "review-final",
         "review-narrative",
@@ -878,3 +879,25 @@ def test_universe_measurements_sit_inside_regular_hours_and_the_harvest_after_th
         assert by_id[job_id].argv[-1] == "measure"
     assert minutes("universe-daily") > minutes("report-charts")
     assert by_id["universe-daily"].argv[-1] == "daily"
+
+
+def test_the_watchlist_sync_needs_its_own_switch():
+    """The one scheduled write to the broker account: switching the universe on must not also
+    switch this on."""
+    cfg = suite_cfg()
+    cfg["market_report"] = {"universe": True}
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    assert not by_id["universe-watchlist"].enabled
+    assert "market_report.universe_watchlist" in by_id["universe-watchlist"].enabled_reason
+
+    cfg["market_report"] = {"universe_watchlist": True}
+    assert not {j.id: j for j in derive(cfg)[0]}["universe-watchlist"].enabled
+
+
+def test_the_watchlist_sync_runs_after_the_rebuild_and_applies():
+    cfg = suite_cfg()
+    cfg["market_report"] = {"universe": True, "universe_watchlist": True}
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    job = by_id["universe-watchlist"]
+    assert job.enabled and job.argv[-2:] == ("watchlist", "--apply")
+    assert job.at_et > by_id["universe-daily"].at_et

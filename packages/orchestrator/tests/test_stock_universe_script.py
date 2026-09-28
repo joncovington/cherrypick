@@ -314,3 +314,54 @@ def test_thin_is_only_decided_on_enough_sessions():
     assert not bsu.volume_too_thin([50, 50])
     assert bsu.volume_too_thin([50, 50, 50])
     assert not bsu.volume_too_thin([50, 20_000, 20_000])
+
+
+# --- the tastytrade watchlist -------------------------------------------------------------------
+
+
+def _ours(*symbols):
+    return {"group_name": bsu.WATCHLIST_GROUP, "symbols": list(symbols)}
+
+
+def test_the_first_sync_creates_the_list():
+    plan = bsu.watchlist_plan(["MSFT", "BRK.B", "AAPL"], None)
+    assert plan["action"] == "create" and plan["entries"] == ["AAPL", "BRK/B", "MSFT"]
+
+
+def test_no_members_and_no_list_is_a_quiet_no_op():
+    assert bsu.watchlist_plan([], None)["action"] == "none"
+
+
+def test_a_same_named_list_the_script_did_not_make_is_never_replaced():
+    """A replace drops every entry left out, so a person's own list of that name would be wiped."""
+    plan = bsu.watchlist_plan(["AAPL"], {"group_name": "default", "symbols": ["TSLA", "F"]})
+    assert plan["action"] == "refuse" and "will not replace it" in plan["reason"]
+
+
+def test_a_sync_replaces_with_the_adds_and_removes_it_reports():
+    plan = bsu.watchlist_plan(["AAPL", "MSFT", "NVDA"], _ours("AAPL", "MSFT", "INTC"))
+    assert plan["action"] == "replace"
+    assert (plan["add"], plan["remove"]) == (["NVDA"], ["INTC"])
+    assert plan["entries"] == ["AAPL", "MSFT", "NVDA"]
+
+
+def test_an_unchanged_universe_sends_nothing():
+    assert bsu.watchlist_plan(["AAPL", "MSFT"], _ours("MSFT", "AAPL"))["action"] == "none"
+
+
+def test_an_empty_universe_never_empties_the_list():
+    """Not even when a large cut is allowed: an empty list is never what a sync should leave."""
+    assert bsu.watchlist_plan([], _ours("AAPL", "MSFT"), allow_shrink=True)["action"] == "refuse"
+
+
+def test_a_collapse_of_more_than_half_is_refused_unless_allowed():
+    have = _ours(*"ABCDEFGHIJ")
+    assert bsu.watchlist_plan(list("ABCD"), have)["action"] == "refuse"
+    assert bsu.watchlist_plan(list("ABCD"), have, allow_shrink=True)["action"] == "replace"
+    assert bsu.watchlist_plan(list("ABCDEF"), have)["action"] == "replace"
+
+
+def test_the_body_marks_the_list_as_ours():
+    body = bsu.watchlist_body(["AAPL"])
+    assert body["group-name"] == bsu.WATCHLIST_GROUP and body["name"] == bsu.WATCHLIST_NAME
+    assert body["watchlist-entries"] == [{"symbol": "AAPL", "instrument-type": "Equity"}]

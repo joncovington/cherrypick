@@ -572,7 +572,10 @@
     "_comment_universe": "The stock-universe builder (scripts/build_stock_universe.py): candidates from every saved vendor edition and the tastylive follow feed, kept only when measured very liquid: tight stock and ATM option spreads from tastytrade REST quotes, and at least 10,000 option contracts a day from OCC's daily volume file, each a median over at least 3 sessions. tastytrade's liquidity rating is recorded as a guide and never decides. 'universe_measure_at' are two regular-hours measurements (the script refuses outside 10:00 ET to 30 minutes before the close); 'universe_daily_at' harvests and rebuilds data/market-report/universe/universe.json. Read-only against the broker. OFF by default: it reads the shared tastytrade credential. Times are ET.",
     "universe": false,
     "universe_measure_at": ["11:00", "14:00"],
-    "universe_daily_at": "18:00"
+    "universe_daily_at": "18:00",
+    "_comment_universe_watchlist": "Mirror the universe's members to a private tastytrade watchlist named 'cherrypick universe' (scripts/build_stock_universe.py watchlist --apply) at 'universe_watchlist_at', after the daily rebuild. The suite's one scheduled write to the broker account - a watchlist, never an order - so it is its own switch, OFF by default even with universe=true. It only replaces the list it created (group 'cherrypick'), and refuses to empty the list or remove more than half of it in one sync. Preview any time with `python scripts/build_stock_universe.py watchlist`.",
+    "universe_watchlist": false,
+    "universe_watchlist_at": "18:30"
   },
   "data_header": "x",
   "data_epoch": {

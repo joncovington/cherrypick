@@ -482,6 +482,11 @@ Each phase ends with something that runs and a test that has been shown to fail.
   2026-09-27). On the first build, volume alone put 306 of the 493 candidates out and left 187 to
   be measured. The universe deliberately differs from the vendor's, which includes names with
   almost no option volume (NMR, KB, SHG), so the stage counts are compared as rates, not totals.
+  The members are mirrored to a private tastytrade watchlist, `cherrypick universe`, by the
+  script's `watchlist` step — the suite's one scheduled write to the broker account, a watchlist
+  and never an order. It previews unless `--apply`, has its own switch
+  (`market_report.universe_watchlist`, off by default), replaces only the list it created (marked
+  by the `cherrypick` group), and refuses to empty the list or cut more than half of it at once.
 - The sector taxonomy: match theirs (Yahoo/Morningstar, via a hand-kept file) or use our own and
   accept different counts.
 - The asset-class benchmark: AOR or VBINX.
