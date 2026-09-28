@@ -519,7 +519,10 @@ collection doesn't depend on someone remembering to save a page. So the collecto
   directional-score and 1–10-score questions need. The panel is fixed plus variable: the 22 names
   already captured, SPY / QQQ / RSP / IWM, and every name the day's edition mentions (stacked
   signals, top relative strength, the eight largest trades, the earnings trade), capped at about
-  forty and fetched one at a time with a pause. For each name it saves **the page's values as
+  forty and fetched one at a time with a pause. The chart pages sit on a different host from the
+  dashboard but open under the same login (confirmed 2026-09-27), so one stored credential and one
+  browser session cover both; the edition's own ticker links give the chart page's address per
+  name. For each name it saves **the page's values as
   data** — last price, 52-week range, 1M and 6M trend, 1–10 score, IV rank, liquidity class,
   earnings date, dividend, every support and resistance price, the named signal and the
   price-action sentence — as `vendor-charts/YYYY-MM-DD/<TICKER>.json`, plus a screenshot on the
