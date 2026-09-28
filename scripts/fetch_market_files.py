@@ -1,5 +1,6 @@
 """Fetch the daily market files the morning pack reads: Cboe's index histories (SKEW, VIX, VVIX,
-VXN), Treasury's par yield curve, and the release calendars (BEA always, FRED when a key is stored).
+VXN), Cboe's delayed SPX chain (reduced to the 30-day 25-delta risk reversal), Treasury's par yield
+curve, and the release calendars (BEA always, FRED when a key is stored).
 
 Why a script: these are network fetches, and `packages/overview` is network-free by rule. It writes
 only `~/.cherrypick/data/market-files/`, and a failure leaves every file already there untouched.
@@ -101,6 +102,31 @@ def fetch_cboe(report: dict) -> None:
         else:
             rows = files.parse_cboe(text)
             report["cboe"][symbol] = {"rows": len(rows), "last": rows[-1][0].isoformat()}
+
+
+def fetch_risk_reversal(report: dict) -> None:
+    """Cboe's delayed SPX chain (~13 MB, every strike with IV and delta) reduced to one row: the
+    30-day 25-delta risk reversal for the chain's session. Only the row is kept, in a file keyed by
+    session, so a re-run replaces that session's row and never touches another's."""
+    try:
+        text = _get(files.SPX_CHAIN_URL).decode("utf-8", errors="replace")
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        report["problems"].append(f"Cboe SPX chain: {exc}")
+        return
+    row = files.risk_reversal(text)
+    if row is None:
+        report["problems"].append("Cboe SPX chain: no 25-delta risk reversal could be read from it")
+        return
+    path = files.risk_reversal_path()
+    try:
+        rows = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except ValueError:
+        rows = {}
+    rows[row["session"]] = row
+    _write(path, json.dumps(dict(sorted(rows.items())), indent=1))
+    report["risk_reversal"] = {
+        k: row[k] for k in ("session", "rr_vol_pts", "call_25d_iv_pct", "put_25d_iv_pct")
+    }
 
 
 def fetch_treasury(report: dict, today: date) -> None:
@@ -226,6 +252,8 @@ def cmd_fetch(_args) -> int:
     today = datetime.now(files.ET).date()
     report: dict = {"cboe": {}, "treasury": {}, "calendar": {}, "problems": []}
     fetch_cboe(report)
+    _pause()
+    fetch_risk_reversal(report)
     _pause()
     fetch_treasury(report, today)
     _pause()

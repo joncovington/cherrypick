@@ -567,6 +567,9 @@ def _vol_regime(readings: dict, history: dict[str, list[dict]], session: str) ->
         "shape": shape,
         "shape_reason": shape_reason,
         "percentiles": percentiles,
+        # Near-the-money skew at a constant 30 days, from Cboe's delayed chain of the last session
+        # before this one. NOT Cboe's SKEW index (a tail measure), and never shown under that name.
+        "risk_reversal_25d_30d": _files.risk_reversal_before(session),
         "seasonality": seasonal,
         "measured_points": sum(1 for c in curve if c["value"] is not None),
         "total_points": len(curve),

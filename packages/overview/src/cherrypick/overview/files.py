@@ -16,6 +16,7 @@ import csv
 import io
 import json
 import math
+import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -36,6 +37,10 @@ TREASURY_URL = (
 # The tenors the pack reports, by Treasury's own column names.
 TENORS = {"3m": "3 Mo", "2y": "2 Yr", "5y": "5 Yr", "10y": "10 Yr", "30y": "30 Yr"}
 
+# Cboe's delayed SPX option chain: every strike of every expiration with IV and delta, as of the
+# last close. ~13 MB; only the derived risk-reversal row is kept.
+SPX_CHAIN_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/_SPX.json"
+
 # BEA's release schedule, keyless: GDP, Personal Income and Outlays (PCE), trade, and others.
 BEA_URL = "https://apps.bea.gov/API/signup/release_dates.json"
 
@@ -50,6 +55,10 @@ def cboe_path(symbol: str) -> Path:
 
 def treasury_path(year: int) -> Path:
     return store_dir() / "treasury" / f"{year}.csv"
+
+
+def risk_reversal_path() -> Path:
+    return store_dir() / "cboe" / "spx_rr_25d_30d.json"
 
 
 def bea_path() -> Path:
@@ -147,6 +156,88 @@ def history_problems(old: list, new: list) -> list[str]:
     return problems
 
 
+_OPTION_RE = re.compile(r"^SPXW(\d{6})([CP])(\d{8})$")
+RR_TARGET_DTE = 30
+RR_DELTA = 0.25
+
+
+def _wing_iv(options: list[dict], target: float) -> float | None:
+    """IV at `target` delta, interpolated linearly in delta between the two out-of-the-money strikes
+    that bracket it. Only two-sided quotes with a positive IV count; no bracket is None, never an
+    extrapolation."""
+    pts = sorted(
+        (o["delta"], o["iv"])
+        for o in options
+        if o["iv"] > 0 and o["bid"] > 0 and o["ask"] >= o["bid"] and abs(o["delta"]) < 0.5
+    )
+    for (d0, v0), (d1, v1) in zip(pts, pts[1:], strict=False):
+        if d0 <= target <= d1 and d1 > d0:
+            return v0 + (v1 - v0) * (target - d0) / (d1 - d0)
+    return None
+
+
+def risk_reversal(chain_text: str, target_dte: int = RR_TARGET_DTE) -> dict | None:
+    """The constant-maturity 25-delta risk reversal from Cboe's delayed SPX chain: the 25-delta
+    call's IV minus the 25-delta put's, in vol points, at `target_dte` calendar days. Negative is
+    the normal SPX state (puts cost more). It is a near-the-money skew measure, not Cboe's SKEW
+    index (a tail measure), and is never shown under that name.
+
+    Each wing is interpolated in delta within an expiration (PM-settled SPXW only, one root for
+    every date); the two expirations bracketing the target are then interpolated in total variance
+    (sigma^2 * t, linear in t), the standard way to put a smile on a constant maturity. None when
+    the chain cannot be read or no pair of expirations brackets the target."""
+    try:
+        data = json.loads(chain_text)["data"]
+        as_of = date.fromisoformat(str(data["last_trade_time"])[:10])
+        spot = float(data["current_price"])
+    except (ValueError, KeyError, TypeError):
+        return None
+    by_exp: dict[date, dict[str, list[dict]]] = {}
+    for o in data.get("options") or []:
+        m = _OPTION_RE.match(str(o.get("option", "")))
+        if not m:
+            continue
+        try:
+            row = {k: float(o[k]) for k in ("iv", "delta", "bid", "ask")}
+        except (KeyError, TypeError, ValueError):
+            continue
+        exp = datetime.strptime(m.group(1), "%y%m%d").date()
+        by_exp.setdefault(exp, {"C": [], "P": []})[m.group(2)].append(row)
+    wings = []
+    for exp in sorted(by_exp):
+        dte = (exp - as_of).days
+        if dte <= 0:
+            continue
+        call = _wing_iv(by_exp[exp]["C"], RR_DELTA)
+        put = _wing_iv(by_exp[exp]["P"], -RR_DELTA)
+        if call is not None and put is not None:
+            wings.append((dte, exp, call, put))
+    below = [w for w in wings if w[0] <= target_dte]
+    above = [w for w in wings if w[0] >= target_dte]
+    if not below or not above:
+        return None
+    lo, hi = below[-1], above[0]
+
+    def at_target(i: int) -> float:
+        if hi[0] == lo[0]:
+            return lo[i]
+        w_lo, w_hi = lo[i] ** 2 * lo[0], hi[i] ** 2 * hi[0]
+        w = w_lo + (w_hi - w_lo) * (target_dte - lo[0]) / (hi[0] - lo[0])
+        return math.sqrt(max(w, 0.0) / target_dte)
+
+    call_iv, put_iv = at_target(2), at_target(3)
+    return {
+        "session": as_of.isoformat(),
+        "spot": spot,
+        "target_dte": target_dte,
+        "call_25d_iv_pct": round(call_iv * 100, 2),
+        "put_25d_iv_pct": round(put_iv * 100, 2),
+        "rr_vol_pts": round((call_iv - put_iv) * 100, 2),
+        "expirations": [{"expiration": w[1].isoformat(), "dte": w[0]} for w in dict.fromkeys((lo, hi))],
+        "source": "cboe_delayed_spx_chain",
+    }
+
+
 # --------------------------------------------------------------------------- readers
 
 
@@ -174,6 +265,16 @@ def treasury_curve(session: str) -> list[tuple[date, dict[str, float]]]:
         if text:
             rows.extend(parse_treasury(text))
     return sorted(r for r in rows if r[0] < day)
+
+
+def risk_reversal_before(session: str) -> dict | None:
+    """The stored risk reversal for the last session before `session`, or None."""
+    try:
+        rows = json.loads(_read(risk_reversal_path()) or "{}")
+    except ValueError:
+        return None
+    days = sorted(d for d in rows if d < session)
+    return rows[days[-1]] if days else None
 
 
 def releases(session: str, days: int = 7) -> list[dict]:

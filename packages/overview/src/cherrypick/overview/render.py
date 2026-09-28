@@ -142,6 +142,16 @@ def render(session: str) -> str | None:
         )
         lines.append("")
 
+    rr = (pack.get("vol_regime") or {}).get("risk_reversal_25d_30d")
+    if rr:
+        lines.append(
+            f"_30-day 25-delta risk reversal ({rr.get('session')} close): "
+            f"**{rr.get('rr_vol_pts'):+.2f} vol pts** "
+            f"(call {rr.get('call_25d_iv_pct')}% vs put {rr.get('put_25d_iv_pct')}%) — near-the-money skew, "
+            "not the SKEW index._"
+        )
+        lines.append("")
+
     moves = pack.get("moves") or {}
     if moves:
         lines.append("## Expected and realized moves")
