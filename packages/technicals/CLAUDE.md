@@ -120,8 +120,9 @@ the 35 names captured is either the high or the low of the last 250 sessions, as
 point on a grid anchored at that low with a step of the "nice" number nearest -- by ratio -- to
 (high - low) / 100. Both details came from misses: the window is 250 sessions, not 252 (three
 names' lows sat on the 252nd), and ADI's range/100 of 2.24 takes 2.50, nearer by ratio. On our own
-bars the grid places all 186 levels on the names whose bars agree with the vendor's. Which grid
-points become levels is still open: 83% of level dates are swing highs, supports included, but the
+bars, with dividends reconciled, the grid places all 192 levels on the 36 names whose bars agree
+with the vendor's. Which grid points become levels is still open: 83% of level dates are swing
+highs, supports included, and most levels sit within about one ATR of that swing high, but the
 price is not simply that high snapped.
 
 **The 1-10 rank** (`score-rank`) is the decile of a ~6-month (125-session) return percentile:
