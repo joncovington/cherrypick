@@ -63,8 +63,14 @@ def _measurements(sym="AAA", days=DAYS, **kw) -> list[dict]:
     return out
 
 
-def _status(measurements, sym="AAA") -> dict:
-    return bsu.build_universe({sym: {"vendor": {}}}, measurements)["names"][sym]
+def _volumes(contracts=50_000, sym="AAA", days=DAYS) -> dict:
+    """OCC volume by session, keyed the way OCC writes the underlying."""
+    return {day: {bsu.to_occ(sym): contracts} for day in days}
+
+
+def _status(measurements, sym="AAA", volumes=None) -> dict:
+    volumes = _volumes(sym=sym) if volumes is None else volumes
+    return bsu.build_universe({sym: {"vendor": {}}}, measurements, volumes)["names"][sym]
 
 
 def test_a_tight_name_measured_in_enough_sessions_is_in():
@@ -96,13 +102,55 @@ def test_a_one_tick_low_priced_stock_passes():
     assert name["status"] == "in", name["reasons"]
 
 
-def test_a_rating_below_the_top_is_out():
-    name = _status(_measurements(rating=3))
-    assert name["status"] == "out" and "liquidity rating 3 < 4" in name["reasons"]
+def test_the_rating_is_a_guide_not_a_gate():
+    """DELL traded 266k contracts on 2026-09-25 rated 2; LYG traded 22 rated 4. The rating is
+    noted beside the verdict and never decides it."""
+    name = _status(_measurements(rating=2))
+    assert name["status"] == "in", name["reasons"]
+    assert "tastytrade liquidity rating 2 of 4" in name["guides"]
 
 
-def test_a_name_tastytrade_flags_illiquid_is_out():
-    assert _status(_measurements(is_illiquid=True))["status"] == "out"
+def test_a_top_rating_does_not_rescue_a_name_nobody_trades():
+    name = _status(_measurements(rating=4), volumes=_volumes(22))
+    assert name["status"] == "out"
+    assert any(r.startswith("option volume 22 contracts/day") for r in name["reasons"])
+
+
+def test_the_illiquid_flag_is_a_guide_too():
+    name = _status(_measurements(is_illiquid=True))
+    assert name["status"] == "in" and "tastytrade flags it illiquid" in name["guides"]
+
+
+def test_thin_option_volume_keeps_a_name_out():
+    name = _status(_measurements(), volumes=_volumes(9_999))
+    assert name["status"] == "out"
+
+
+def test_option_volume_known_for_too_few_sessions_is_pending():
+    name = _status(_measurements(), volumes=_volumes(days=DAYS[:2]))
+    assert name["status"] == "pending"
+    assert "option volume known for 2 of 3 sessions" in name["reasons"]
+
+
+def test_a_session_whose_file_lacks_the_name_counts_as_zero_volume():
+    vols = _volumes()
+    vols[DAYS[1]] = {"OTHER": 1}
+    vols[DAYS[2]] = {"OTHER": 1}
+    assert _status(_measurements(), volumes=vols)["status"] == "out"
+
+
+def test_occ_counts_both_sides_so_contracts_are_half_the_total():
+    csv_text = (
+        "quantity,underlying,symbol,actype,porc,exchange,actdate\n"
+        "1000,AAPL,AAPL,C,C,CBOE,09/25/2026\n"
+        "40,AAPL,2AAPL,F,P,CBOE,09/25/2026\n"
+        "1040,AAPL,AAPL,M,C,CBOE,09/25/2026\n"
+        "8,BRKB,BRKB,C,C,CBOE,09/25/2026\n"
+        "8,BRKB,BRKB,M,C,CBOE,09/25/2026\n"
+        "x,BAD,BAD,C,C,CBOE,09/25/2026\n"
+    )
+    assert bsu.occ_volume(csv_text) == {"AAPL": 1040, "BRKB": 8}
+    assert bsu.to_occ("BRK.B") == "BRKB"
 
 
 def test_an_index_or_retired_symbol_is_out():
@@ -125,7 +173,8 @@ def test_two_readings_in_one_session_count_as_one_session():
 
 
 def test_an_unmeasured_candidate_is_pending():
-    doc = bsu.build_universe({"AAA": {}, "BBB": {}}, _measurements())
+    vols = {d: {"AAA": 50_000, "BBB": 50_000} for d in DAYS}
+    doc = bsu.build_universe({"AAA": {}, "BBB": {}}, _measurements(), vols)
     assert doc["names"]["BBB"]["status"] == "pending"
     assert doc["members"] == ["AAA"]
 
@@ -245,11 +294,23 @@ def test_the_strict_bar_is_not_loosened():
     """The strict bar was chosen on 2026-09-27. Loosening it is a decision to write down, not an
     edit to slip in, so these fail loudly if any limit moves the permissive way."""
     r = bsu.RULE
-    assert r["min_liquidity_rating"] >= 4
+    assert r["min_option_volume"] >= 10_000
     assert r["stock_max_spread_pct"] <= 0.0005 and r["stock_max_spread_abs"] <= 0.01
     assert r["option_max_spread_pct"] <= 0.03 and r["option_max_spread_abs"] <= 0.05
     assert r["min_sessions"] >= 3
 
 
 def test_the_follow_feed_is_asked_slowly():
-    assert bsu.FOLLOW_PAUSE_RANGE_S[0] >= 5 and bsu.TT_PAUSE_S >= 1.0
+    assert bsu.FOLLOW_PAUSE_RANGE_S[0] >= 5 and bsu.OCC_PAUSE_RANGE_S[0] >= 5 and bsu.TT_PAUSE_S >= 1.0
+
+
+def test_a_name_never_measured_is_out_once_its_volume_is_known_to_be_thin():
+    doc = bsu.build_universe({"THIN": {}, "BUSY": {}}, [], {d: {"THIN": 50, "BUSY": 90_000} for d in DAYS})
+    assert doc["names"]["THIN"]["status"] == "out"
+    assert doc["names"]["BUSY"]["status"] == "pending"
+
+
+def test_thin_is_only_decided_on_enough_sessions():
+    assert not bsu.volume_too_thin([50, 50])
+    assert bsu.volume_too_thin([50, 50, 50])
+    assert not bsu.volume_too_thin([50, 20_000, 20_000])

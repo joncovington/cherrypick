@@ -20,15 +20,20 @@ Three steps, each its own subcommand and its own schedule:
   feed. The feed returns only its 50 newest orders, about a day's worth, so it is asked once per
   trader (about a week each) and the orders are kept, merged by id, so the history grows. Futures
   are dropped here; indexes are dropped by tastytrade, which does not list them as equities.
+  It also lands OCC's daily option volume by underlying for each recent session it lacks (one
+  CSV a session covers every name, ~4,400 underlyings), kept as `{underlying: contracts}`.
 - **measure** (twice a session, inside regular hours only): for each candidate, tastytrade's
-  liquidity rating, the stock's bid/ask, and the bid/ask of its at-the-money call and put about 30
-  days out. A quote not stamped inside that day's regular session is discarded rather than
-  measured — a weekend snapshot of NMR read 9.55/10.98, the overnight book, not the market.
-- **build**: a pure function over every saved measurement. A name is **in** only when all of the
-  rule holds on the median of its per-session readings over at least `MIN_SESSIONS` sessions;
-  fewer sessions is **pending**, never a pass. Every name gets its reasons, in or out.
+  liquidity rating (recorded as a guide), the stock's bid/ask, and the bid/ask of its at-the-money
+  call and put about 30 days out. A quote not stamped inside that day's regular session is
+  discarded rather than measured — a weekend snapshot of NMR read 9.55/10.98, the overnight book,
+  not the market.
+- **build**: a pure function over every saved measurement and OCC session. A name is **in** only
+  when its stock spread, option spread and option volume all hold on medians over at least
+  `MIN_SESSIONS` sessions; fewer sessions is **pending**, never a pass. Every name gets its
+  reasons, in or out, with tastytrade's rating beside them as a guide.
 
-Pacing: the follow feed gets one request per trader, 5-10 seconds apart; tastytrade gets batched
+Pacing: the follow feed gets one request per trader and OCC one per missing session, 5-10
+seconds apart; tastytrade gets batched
 calls and one chain request per name a day (cached), a second apart. A throttling response ends
 the step with what it has.
 
@@ -42,6 +47,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import csv
+import io
 import json
 import random
 import re
@@ -57,11 +64,14 @@ from zoneinfo import ZoneInfo
 
 ET = ZoneInfo("America/New_York")
 
-# The rule. "Very liquid, tight bid/ask" (the strict bar, chosen 2026-09-27). A spread passes on
-# EITHER its percentage of mid OR its absolute width, because a one-cent-wide $10 stock is 0.1% wide
-# and cannot get tighter: the absolute leg stops a price-level artefact from failing a liquid name.
+# The rule. "Very liquid, tight bid/ask" (the strict bar, chosen 2026-09-27), decided by what is
+# measured: spreads and option volume. tastytrade's rating is a guide only (see `judge`). A spread
+# passes on EITHER its percentage of mid OR its absolute width, because a one-cent-wide $10 stock is
+# 0.1% wide and cannot get tighter: the absolute leg stops a price-level artefact failing a liquid
+# name.
 RULE = {
-    "min_liquidity_rating": 4,  # tastytrade's 0-4 rating; 4 is the top
+    "guide_liquidity_rating": 4,  # below this is noted beside the verdict, never decides it
+    "min_option_volume": 10_000,  # contracts a day, median of the recent OCC sessions
     "stock_max_spread_pct": 0.0005,  # 0.05% of mid
     "stock_max_spread_abs": 0.01,  # or one tick
     "option_max_spread_pct": 0.03,  # 3% of mid, worse of the ATM call and put
@@ -83,6 +93,14 @@ FOLLOW_PAUSE_RANGE_S = (5.0, 10.0)
 TT_PAUSE_S = 1.0
 TT_BATCH = 50  # instruments and metrics per call
 TT_QUOTE_BATCH = 100  # the market-data endpoint's own limit
+
+OCC_PAUSE_RANGE_S = (5.0, 10.0)
+OCC_URL = (
+    "https://marketdata.theocc.com/volume-query?reportDate={yyyymmdd}&format=csv&volumeQueryType=O"
+    "&symbolType=ALL&symbol=&reportType=D&accountType=ALL&productKind=ALL&porc=BOTH"
+)
+# An OCC reply this small is a "no data" page, not a session: a real day runs to ~4 MB.
+OCC_MIN_BYTES = 100_000
 
 FOLLOW_BASE = "https://follow.tastylive.com"
 FOLLOW_UA = "cherrypick-universe/1.0"
@@ -243,23 +261,43 @@ def reading(row: dict, measured_at: datetime, rule: dict = RULE) -> dict:
     return out
 
 
-def judge(name: dict, sessions: dict[str, list[dict]], rule: dict = RULE) -> tuple[str, list[str], dict]:
-    """(status, reasons, medians) for one name. `name` is its instrument facts ({listed, is_etf,
-    is_illiquid, rating}); `sessions` maps ISO session date -> that session's readings.
+def occ_volume(csv_text: str) -> dict[str, int]:
+    """{underlying: contracts traded} from one OCC daily volume-query CSV. OCC counts each side of a
+    trade (customer + firm on one side roughly equals market maker on the other: AAPL 1.53M C +
+    0.05M F against 1.56M M on 2026-09-25), so contracts traded is half the file's total. Rows for
+    every option root of an underlying (`AAPL`, `2AAPL` after an adjustment) add to it."""
+    totals: dict[str, int] = {}
+    for row in csv.DictReader(io.StringIO(csv_text)):
+        try:
+            q = int(row["quantity"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        und = (row.get("underlying") or "").strip()
+        if und:
+            totals[und] = totals.get(und, 0) + q
+    return {und: q // 2 for und, q in totals.items()}
 
-    Status is `in`, `out` or `pending`. A disqualifying fact (not listed, flagged illiquid, below
-    the rating) is `out` at once; spreads need `min_sessions` sessions with a usable reading of each
-    kind before they can pass, and until then the name is `pending`."""
-    reasons: list[str] = []
+
+def to_occ(symbol: str) -> str:
+    """OCC writes a share class with no separator: BRK.B is `BRKB`."""
+    return symbol.replace(".", "").replace("/", "")
+
+
+def judge(
+    name: dict, sessions: dict[str, list[dict]], volumes: list[int], rule: dict = RULE
+) -> tuple[str, list[str], dict]:
+    """(status, reasons, medians) for one name. `name` is its instrument facts ({listed, is_etf,
+    is_illiquid, rating}); `sessions` maps ISO session date -> that session's readings; `volumes`
+    is its daily option contract volume over the recent OCC sessions, oldest first.
+
+    Status is `in`, `out` or `pending`. Only a name tastytrade does not list is `out` at once.
+    tastytrade's liquidity rating and illiquid flag are **guides, never gates** (decided
+    2026-09-27): on 2026-09-25 DELL (266k contracts), COST (121k) and ARM (113k) rated 2 while LYG
+    rated 4 on 22 contracts. What decides is measured: the stock spread, the at-the-money option
+    spread, and option volume, each on a median over at least `min_sessions` sessions, and until
+    each has that many the name is `pending`."""
     if not name.get("listed"):
         return "out", ["not a listed equity on tastytrade (an index, a future, or a retired symbol)"], {}
-    if name.get("is_illiquid"):
-        reasons.append("tastytrade flags it illiquid")
-    rating = name.get("rating")
-    if rating is None:
-        reasons.append("no liquidity rating")
-    elif rating < rule["min_liquidity_rating"]:
-        reasons.append(f"liquidity rating {rating} < {rule['min_liquidity_rating']}")
 
     recent = sorted(sessions)[-rule["lookback_sessions"] :]
     medians: dict = {}
@@ -283,10 +321,14 @@ def judge(name: dict, sessions: dict[str, list[dict]], rule: dict = RULE) -> tup
                 else {}
             ),
         }
-    if reasons:
-        return "out", reasons, medians
+    vols = volumes[-rule["lookback_sessions"] :]
+    medians["option_volume"] = {
+        "sessions": len(vols),
+        **({"contracts": statistics.median(vols)} if vols else {}),
+    }
 
-    pending = []
+    reasons: list[str] = []
+    pending: list[str] = []
     for kind, pct_key, abs_key in (
         ("stock", "stock_max_spread_pct", "stock_max_spread_abs"),
         ("option", "option_max_spread_pct", "option_max_spread_abs"),
@@ -299,16 +341,52 @@ def judge(name: dict, sessions: dict[str, list[dict]], rule: dict = RULE) -> tup
                 f"{kind} spread {m['pct']:.2%} / ${m['width']:.2f} wider than "
                 f"{rule[pct_key]:.2%} or ${rule[abs_key]:.2f}"
             )
+    v = medians["option_volume"]
+    minimum = rule["min_option_volume"]
+    if v["sessions"] < rule["min_sessions"]:
+        pending.append(f"option volume known for {v['sessions']} of {rule['min_sessions']} sessions")
+    elif v["contracts"] < minimum:
+        reasons.append(f"option volume {v['contracts']:,.0f} contracts/day < {minimum:,}")
     if reasons:
         return "out", reasons + pending, medians
     if pending:
         return "pending", pending, medians
-    return "in", ["rating, stock spread and option spread all within the rule"], medians
+    return "in", ["stock spread, option spread and option volume all within the rule"], medians
 
 
-def build_universe(candidates: dict[str, dict], measurements: list[dict], rule: dict = RULE) -> dict:
-    """The universe document from the candidate list and every saved measurement. Pure: the same
-    files give the same universe, so it can be rebuilt after any rule change."""
+def volume_series(sym: str, volumes: dict[str, dict[str, int]]) -> list[int]:
+    """A name's daily option contracts over the stored OCC sessions, oldest first. A session's file
+    that lacks the name means no options traded in it, which is a zero, not a gap."""
+    return [volumes[d].get(to_occ(sym), 0) for d in sorted(volumes)]
+
+
+def volume_too_thin(vols: list[int], rule: dict = RULE) -> bool:
+    """True only when enough sessions are known AND their median is under the bar — the one fact
+    that settles a name before any quote is taken."""
+    recent = vols[-rule["lookback_sessions"] :]
+    return len(recent) >= rule["min_sessions"] and statistics.median(recent) < rule["min_option_volume"]
+
+
+def guides(name: dict, rule: dict = RULE) -> list[str]:
+    """tastytrade's own view, recorded beside the verdict and never deciding it."""
+    out = []
+    if name.get("rating") is not None and name["rating"] < rule["guide_liquidity_rating"]:
+        out.append(f"tastytrade liquidity rating {name['rating']} of 4")
+    if name.get("is_illiquid"):
+        out.append("tastytrade flags it illiquid")
+    return out
+
+
+def build_universe(
+    candidates: dict[str, dict],
+    measurements: list[dict],
+    volumes: dict[str, dict[str, int]] | None = None,
+    rule: dict = RULE,
+) -> dict:
+    """The universe document from the candidate list, every saved measurement, and the OCC volume
+    by session (`{ISO date: {OCC underlying: contracts}}`). Pure: the same files give the same
+    universe, so it can be rebuilt after any rule change."""
+    volumes = volumes or {}
     facts: dict[str, dict] = {}
     sessions: dict[str, dict[str, list[dict]]] = {}
     for m in sorted(measurements, key=lambda m: m["measured_at"]):
@@ -323,23 +401,36 @@ def build_universe(candidates: dict[str, dict], measurements: list[dict], rule: 
             }
             if row.get("listed"):
                 sessions.setdefault(sym, {}).setdefault(day, []).append(reading(row, at, rule))
-    names = {}
+    days = sorted(volumes)
+    names: dict[str, dict] = {}
     for sym in sorted(candidates):
+        vols = volume_series(sym, volumes)
         if sym not in facts:
-            names[sym] = {"status": "pending", "reasons": ["not measured yet"], "sources": candidates[sym]}
+            if volume_too_thin(vols, rule):
+                median = statistics.median(vols[-rule["lookback_sessions"] :])
+                reasons = [f"option volume {median:,.0f} contracts/day < {rule['min_option_volume']:,}"]
+                names[sym] = {"status": "out", "reasons": reasons, "sources": candidates[sym]}
+            else:
+                names[sym] = {
+                    "status": "pending",
+                    "reasons": ["not measured yet"],
+                    "sources": candidates[sym],
+                }
             continue
-        status, reasons, medians = judge(facts[sym], sessions.get(sym, {}), rule)
+        status, reasons, medians = judge(facts[sym], sessions.get(sym, {}), vols, rule)
         names[sym] = {
             "status": status,
             "kind": "etf" if facts[sym].get("is_etf") else "stock",
             "rating": facts[sym].get("rating"),
             "reasons": reasons,
+            "guides": guides(facts[sym], rule),
             "medians": medians,
             "sources": candidates[sym],
         }
     members = [s for s, n in names.items() if n["status"] == "in"]
     return {
         "rule": {k: list(v) if isinstance(v, tuple) else v for k, v in rule.items()},
+        "volume_sessions": days[-rule["lookback_sessions"] :],
         "counts": {
             st: sum(1 for n in names.values() if n["status"] == st) for st in ("in", "out", "pending")
         },
@@ -433,6 +524,57 @@ def harvest_follow(kept: dict[str, dict]) -> tuple[dict[str, str], int, list[str
     return names, new, problems
 
 
+def _occ_dir() -> Path:
+    return store_dir() / "occ-volume"
+
+
+def load_volumes() -> dict[str, dict[str, int]]:
+    return {p.stem: v for p in sorted(_occ_dir().glob("????-??-??.json")) if (v := _read_json(p, None))}
+
+
+def harvest_occ(sessions: int) -> tuple[int, list[str]]:
+    """Land OCC's daily volume for each of the last `sessions` trading sessions not yet stored, one
+    request each, paced. A session OCC has not published yet (a tiny "no data" reply) is left for
+    the next run rather than stored as a day of zeros."""
+    from cherrypick.core import calendar as cal
+
+    today = datetime.now(ET).date()
+    day = today if cal.is_trading_day(today) else cal.previous_trading_day(today)
+    wanted = []
+    while len(wanted) < sessions:
+        wanted.append(day)
+        day = cal.previous_trading_day(day)
+    landed, problems = 0, []
+    first = True
+    for d in sorted(wanted):
+        path = _occ_dir() / f"{d.isoformat()}.json"
+        if path.exists():
+            continue
+        if not first:
+            time.sleep(random.uniform(*OCC_PAUSE_RANGE_S))
+        first = False
+        url = OCC_URL.format(yyyymmdd=d.strftime("%Y%m%d"))
+        req = urllib.request.Request(url, headers={"User-Agent": FOLLOW_UA})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                body = resp.read()
+        except urllib.error.HTTPError as exc:
+            problems.append(f"OCC {d}: HTTP {exc.code}")
+            if exc.code in (403, 429):
+                break
+            continue
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            problems.append(f"OCC {d}: {exc}")
+            continue
+        if len(body) < OCC_MIN_BYTES:
+            continue  # not published yet
+        volumes = occ_volume(body.decode("utf-8", errors="replace"))
+        if volumes:
+            _write_json(path, volumes)
+            landed += 1
+    return landed, problems
+
+
 def cmd_harvest(args) -> int:
     from cherrypick.core import home
 
@@ -450,6 +592,8 @@ def cmd_harvest(args) -> int:
         feed["harvested_at"] = datetime.now(UTC).isoformat()
         _write_json(feed_path, feed)
     follow = follow_candidates(feed["orders"], feed["traders"])
+    occ_landed, occ_problems = harvest_occ(RULE["lookback_sessions"])
+    problems += occ_problems
 
     candidates = merge_candidates(vendor, follow)
     _write_json(
@@ -466,6 +610,8 @@ def cmd_harvest(args) -> int:
                 "follow_new": new,
                 "follow_names": len(follow),
                 "candidates": len(candidates),
+                "occ_sessions_landed": occ_landed,
+                "occ_sessions_stored": len(load_volumes()),
                 "problems": problems,
             },
             indent=1,
@@ -489,7 +635,12 @@ def _iso(value) -> str | None:
     return value.isoformat() if isinstance(value, datetime) else None
 
 
-async def _measure(session, symbols: list[str], chain_cache: dict, limit_chains: int | None) -> dict:
+async def _measure(
+    session, symbols: list[str], chain_cache: dict, limit_chains: int | None, thin: set[str]
+) -> dict:
+    """Instruments, metrics and stock quotes for every candidate; chains and option quotes only for
+    names whose option volume has not already ruled them out (`thin`), so the per-name chain calls
+    are spent where a spread can still decide."""
     from tastytrade.instruments import Equity, NestedOptionChain
     from tastytrade.market_data import get_market_data_by_type
     from tastytrade.metrics import get_market_metrics
@@ -526,9 +677,14 @@ async def _measure(session, symbols: list[str], chain_cache: dict, limit_chains:
                 }
         await asyncio.sleep(TT_PAUSE_S)
 
+    for sym in listed:
+        if sym in thin:
+            names[sym]["options_skipped"] = "option volume already below the bar"
+    optionable = [s for s in listed if s not in thin]
+
     fetched = 0
     lo, hi = RULE["option_dte_range"]
-    for sym in listed:
+    for sym in optionable:
         if sym in chain_cache:
             continue
         if limit_chains is not None and fetched >= limit_chains:
@@ -558,7 +714,7 @@ async def _measure(session, symbols: list[str], chain_cache: dict, limit_chains:
         await asyncio.sleep(TT_PAUSE_S)
 
     wanted: dict[str, tuple[str, str]] = {}
-    for sym in listed:
+    for sym in optionable:
         q = names[sym].get("quote") or {}
         s = spread(q.get("bid"), q.get("ask"))
         spot = (q["bid"] + q["ask"]) / 2 if s else None
@@ -617,7 +773,9 @@ def cmd_measure(args) -> int:
     problem = None
     try:
         session = SessionManager(store).get_session()
-        names = asyncio.run(_measure(session, sorted(cands), chain_cache, args.limit))
+        volumes = load_volumes()
+        thin = {s for s in cands if volume_too_thin(volume_series(s, volumes))}
+        names = asyncio.run(_measure(session, sorted(cands), chain_cache, args.limit, thin))
     except Exception as exc:  # noqa: BLE001 — keep the chains gathered so far; warn and stop
         names, problem = None, f"{type(exc).__name__}: {exc}"
     _write_json(chain_path, chain_cache)
@@ -655,7 +813,7 @@ def cmd_build(_args) -> int:
     measurements = [
         m for p in sorted((store_dir() / "measurements").glob("*/*.json")) if (m := _read_json(p, None))
     ]
-    universe = build_universe(cands, measurements)
+    universe = build_universe(cands, measurements, load_volumes())
     universe["built_at"] = datetime.now(UTC).isoformat()
     universe["measurements"] = len(measurements)
     day = datetime.now(ET).date().isoformat()

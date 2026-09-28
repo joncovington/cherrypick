@@ -467,17 +467,21 @@ Each phase ends with something that runs and a test that has been shown to fail.
 - **The stock universe: decided 2026-09-27, being built.** Candidates are every ticker the saved
   vendor editions link (454 over Sept 21-25, the breadth table included) and every underlying the
   tastylive follow feed trades (110 from the first harvest; futures dropped). A candidate is kept
-  only when tastytrade's own REST data shows it **very liquid** — the strict bar: liquidity rating
-  4 of 4, not flagged illiquid, the stock's spread within 0.05% of mid or one cent, and the worse
-  of its at-the-money call and put about 30 days out within 3% of mid or five cents — on the
-  median of at least three sessions measured inside regular hours. Fewer sessions is *pending*,
-  never a pass. `scripts/build_stock_universe.py` (`harvest`, `measure`, `build`) writes
-  `universe/universe.json` with every name's reasons, in or out; the supervisor runs it twice a
-  session and after the close (`market_report.universe`, off by default). **Consequence to watch:**
-  only 83 of the 490 listed candidates carry rating 4 (2026-09-27: 148 rate 3, 224 rate 2), so the
-  strict bar caps the universe well below the vendor's breadth table. This deliberately differs from
-  the vendor's universe, which includes names with almost no option volume, so the stage counts are
-  compared as rates, not as totals.
+  only when it is **very liquid by measurement**: the stock's spread within 0.05% of mid or one
+  cent; the worse of its at-the-money call and put about 30 days out within 3% of mid or five
+  cents (both read from tastytrade REST quotes inside regular hours); and a median of at least
+  10,000 option contracts a day over the last ten sessions, from OCC's daily volume file (one CSV a
+  session covers every underlying; OCC counts both sides of each trade, so contracts are half its
+  total). Each needs at least three sessions; fewer is *pending*, never a pass.
+  **tastytrade's liquidity rating is a guide, not a gate** (same day): it is recorded beside each
+  verdict and decides nothing, because it and actual volume disagree too often to screen on — on
+  Sept 25 DELL (266k contracts), COST (121k), ARM (113k), GS and LLY all rated 2 while LYG rated 4
+  on 22 contracts. `scripts/build_stock_universe.py` (`harvest`, `measure`, `build`) writes
+  `universe/universe.json` with every name's reasons, in or out; the supervisor runs it at 11:00 and
+  14:00 ET and after the close (`market_report.universe`, off by default; on locally since
+  2026-09-27). On the first build, volume alone put 306 of the 493 candidates out and left 187 to
+  be measured. The universe deliberately differs from the vendor's, which includes names with
+  almost no option volume (NMR, KB, SHG), so the stage counts are compared as rates, not totals.
 - The sector taxonomy: match theirs (Yahoo/Morningstar, via a hand-kept file) or use our own and
   accept different counts.
 - The asset-class benchmark: AOR or VBINX.
