@@ -31,6 +31,9 @@ Three steps, each its own subcommand and its own schedule:
   when its stock spread, option spread and option volume all hold on medians over at least
   `MIN_SESSIONS` sessions; fewer sessions is **pending**, never a pass. Every name gets its
   reasons, in or out, with tastytrade's rating beside them as a guide.
+  It also rebuilds `sectors.json`, the vendor's own sectors read from every edition's
+  leaders/laggards table under the Sept 25 labels, with `sectors.manual.json` for names no edition
+  has listed yet, and warns when the vendor renames a sector or moves a name.
 - **watchlist**: mirrors the members to a private tastytrade watchlist, `cherrypick universe`. It
   is the one step that writes to the account — a watchlist, never an order — so it shows its plan
   and writes nothing without `--apply`, has its own schedule switch, and only ever replaces the
@@ -524,6 +527,89 @@ def watchlist_body(entries: list[str]) -> dict:
     }
 
 
+# ------------------------------------------------------------------------------------------------
+# Sectors: the vendor's own, read from the editions (decided 2026-09-27: match the Sept 25 edition,
+# and re-evaluate if the vendor changes). Each edition's leaders/laggards table is grouped by
+# sector, so every name it lists carries the vendor's sector for that day.
+
+# The Sept 25 labels, the canonical set. That edition is a hybrid: three sectors took GICS names
+# while Technology, Healthcare and Basic Materials kept Yahoo/Morningstar's.
+SECTORS = (
+    "Technology",
+    "Healthcare",
+    "Communication Services",
+    "Consumer Staples",
+    "Industrials",
+    "Real Estate",
+    "Energy",
+    "Basic Materials",
+    "Consumer Discretionary",
+    "Utilities",
+    "Financials",
+)
+# Earlier labels for the same sectors. Across Sept 21-25, 48 names changed label this way and none
+# changed sector, so these are renames, not reclassifications.
+RELABEL = {
+    "Consumer Cyclical": "Consumer Discretionary",
+    "Consumer Defensive": "Consumer Staples",
+    "Financial Services": "Financials",
+}
+_SECTOR_CELL_RE = re.compile(r"<td[^>]*>\s*(?:<[^>]+>\s*)*([A-Z][A-Za-z &]+?)\s*<")
+
+
+def edition_sectors(page_html: str) -> dict[str, str]:
+    """{symbol: sector label as printed} from one edition's leaders/laggards table."""
+    i = page_html.find(">Sector</th>")
+    j = page_html.find("The three shades", i)
+    if i < 0 or j < 0:
+        return {}
+    out: dict[str, str] = {}
+    for row in re.findall(r"<tr.*?</tr>", page_html[i:j], re.S):
+        m = _SECTOR_CELL_RE.search(row)
+        if not m:
+            continue
+        for sym in _TICKER_RE.findall(row):
+            out[sym] = m.group(1)
+    return out
+
+
+def sector_map(editions: dict[str, str], manual: dict[str, str] | None = None) -> dict:
+    """The sector file from every edition (ISO date -> HTML), plus hand-set sectors for names no
+    edition has listed yet. The latest edition's sector wins; labels are mapped onto the Sept 25 set.
+
+    `changes` is what calls for re-evaluating the decision: a label that is neither canonical nor a
+    known rename (the vendor renamed again), or a name whose sector differs between editions after
+    mapping (the vendor reclassified). A hand-set sector an edition later contradicts is one too."""
+    manual = manual or {}
+    by_name: dict[str, dict[str, str]] = {}
+    unknown: dict[str, list[str]] = {}
+    for day in sorted(editions):
+        for sym, label in edition_sectors(editions[day]).items():
+            canon = RELABEL.get(label, label)
+            if canon not in SECTORS:
+                unknown.setdefault(label, []).append(day)
+            by_name.setdefault(sym, {})[day] = canon
+    sectors: dict[str, dict] = {}
+    changes: list[str] = [
+        f"new sector label {label!r} (first seen {days[0]}): not in the Sept 25 set or a known rename"
+        for label, days in sorted(unknown.items())
+    ]
+    for sym, days in sorted(by_name.items()):
+        latest = days[max(days)]
+        sectors[sym] = {"sector": latest, "source": "edition", "last_seen": max(days), "editions": len(days)}
+        if len(set(days.values())) > 1:
+            history = ", ".join(f"{d} {v}" for d, v in sorted(days.items()))
+            changes.append(f"{sym} changed sector between editions: {history}")
+        if sym in manual and manual[sym] != latest:
+            changes.append(f"{sym} is hand-set to {manual[sym]} but the {max(days)} edition says {latest}")
+    for sym, sector in sorted(manual.items()):
+        if sym not in sectors:
+            sectors[sym] = {"sector": sector, "source": "manual"}
+            if sector not in SECTORS:
+                changes.append(f"{sym} is hand-set to {sector!r}, not a Sept 25 sector")
+    return {"canonical": list(SECTORS), "relabel": RELABEL, "sectors": sectors, "changes": changes}
+
+
 def merge_candidates(vendor: dict[str, dict], follow: dict[str, dict]) -> dict[str, dict]:
     out: dict[str, dict] = {}
     for sym, row in vendor.items():
@@ -891,6 +977,25 @@ def cmd_measure(args) -> int:
 # build
 
 
+def build_sectors() -> dict:
+    """Rebuild `sectors.json` from the editions and the hand-kept `sectors.manual.json`, and warn
+    when the changes list grows — the signal to re-evaluate matching the vendor's sectors."""
+    from cherrypick.core import home
+
+    editions_dir = home.data_dir("market-report") / "vendor-editions"
+    editions = {p.stem: p.read_text(encoding="utf-8") for p in sorted(editions_dir.glob("????-??-??.html"))}
+    manual = _read_json(store_dir() / "sectors.manual.json", {})
+    path = store_dir() / "sectors.json"
+    before = set(_read_json(path, {}).get("changes") or [])
+    doc = sector_map(editions, {k: v for k, v in manual.items() if not k.startswith("_")})
+    doc["built_at"] = datetime.now(UTC).isoformat()
+    _write_json(path, doc)
+    new = [c for c in doc["changes"] if c not in before]
+    if new:
+        _warn("Vendor sectors changed: re-evaluate the sector decision", "\n".join(new))
+    return doc
+
+
 def cmd_build(_args) -> int:
     cands = _read_json(store_dir() / "candidates.json", {}).get("names") or {}
     measurements = [
@@ -898,6 +1003,11 @@ def cmd_build(_args) -> int:
     ]
     universe = build_universe(cands, measurements, load_volumes())
     universe["built_at"] = datetime.now(UTC).isoformat()
+    sectors = build_sectors()
+    for sym, row in universe["names"].items():
+        row["sector"] = (sectors["sectors"].get(sym) or {}).get("sector")
+    # ETFs and indexes have no sector: the breadth table the sectors serve holds stocks only.
+    universe["members_without_sector"] = [s for s in universe["stocks"] if not universe["names"][s]["sector"]]
     universe["measurements"] = len(measurements)
     day = datetime.now(ET).date().isoformat()
     _write_json(store_dir() / f"universe-{day}.json", universe)
@@ -910,6 +1020,7 @@ def cmd_build(_args) -> int:
                 "stocks": len(universe["stocks"]),
                 "etfs": len(universe["etfs"]),
                 "measurements": len(measurements),
+                "members_without_sector": len(universe["members_without_sector"]),
             },
             indent=1,
         )

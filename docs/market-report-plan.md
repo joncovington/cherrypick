@@ -379,9 +379,10 @@ means documentation or search results only.
 | Fundamentals | SEC EDGAR `data.sec.gov/api/xbrl/companyfacts/CIK##########.json`, nightly `companyfacts.zip` | Fetched | See gap 4. |
 | Flow, analyst ratings | ThetaData, Benzinga via Massive, FMP | Docs | Prices and fields from their pricing and docs pages; see gaps 1 and 2. |
 
-**The asset-class benchmark is still open.** AOR (iShares' 60/40 allocation fund) is a fair
-stand-in; the creator of relative-rotation charts is reported to have used VBINX (Vanguard's 60/40
-fund) for asset classes, but that rests on a single 2020 search result. Pick one and write it down.
+**The asset-class benchmark: AOR is recommended** (see Phase 0). AOR (iShares' 60/40 allocation
+fund) is in the Dolt clone and VBINX is not; the creator of relative-rotation charts is reported to
+have used VBINX (Vanguard's 60/40 fund) for asset classes, but that rests on a single 2020 search
+result.
 
 **A near-the-money skew reading, labelled as such.** Cboe's file supplies SKEW. The 25-delta risk
 reversal is a different measure and worth carrying beside it, but at a constant 30 days — by
@@ -489,9 +490,28 @@ Each phase ends with something that runs and a test that has been shown to fail.
   by the `cherrypick` group), and refuses to strip it to its pins or cut more than half of the
   universe's names at once. SPX, NDX, SPY, QQQ and IWM are pinned: on the list since it was created
   on 2026-09-27, whether or not they pass the rule, and never removed by a sync.
-- The sector taxonomy: match theirs (Yahoo/Morningstar, via a hand-kept file) or use our own and
-  accept different counts.
-- The asset-class benchmark: AOR or VBINX.
+- **The sector taxonomy: match the vendor's, as labelled in the Sept 25 edition (decided
+  2026-09-27), and re-evaluate if the vendor changes it.** The editions carry the answer
+  themselves: their leaders/laggards table is grouped by sector, so every name listed there
+  has the vendor's sector for that day — 387 names across Sept 21-25, no hand file needed for them.
+  Sept 25 turned out to be a relabel already: three sectors took GICS names (Consumer Cyclical to
+  Consumer Discretionary, Consumer Defensive to Consumer Staples, Financial Services to Financials)
+  while Technology, Healthcare and Basic Materials kept Yahoo/Morningstar's; 48 names changed label
+  and none changed sector. So the canonical labels are Sept 25's, the older ones are mapped onto
+  them, and `build_stock_universe.py build` rebuilds `universe/sectors.json` from every edition each
+  evening, warning when a label appears that is neither canonical nor a known rename, or when a
+  name moves sector — the trigger to re-evaluate. Stocks no edition has listed yet (AAPL, NVDA,
+  GOOGL, LLY and ~40 others on 2026-09-27) fill in as editions accumulate, or by hand in
+  `universe/sectors.manual.json`, which an edition overrides and flags when it disagrees. The
+  vendor's scanner data carries a third, unrelated taxonomy ("Electronic Technology", "Retail
+  Trade") and is not used.
+- **The asset-class benchmark: AOR recommended, awaiting a decision.** Everything in Phase 2 is
+  computed from Dolt's daily bars, and Dolt carries AOR (269 sessions to 2026-09-25) but not
+  VBINX, a mutual fund priced once a day that tastytrade does not quote as it does an ETF; every
+  other entry in the rotation section is an ETF, so AOR keeps the benchmark on the same kind of
+  prices. The case for VBINX rests on one 2020 search result. The difference to know: AOR's stock
+  sleeve is global, VBINX's is US-only; a US-only 60/40 could be computed exactly from Dolt's SPY
+  and AGG bars if that ever matters.
 - Whether the report proposes trades. The vendor's income trade ideas (short puts and put
   spreads on leaders, expiring before the next earnings date) are the part closest to a trade ticket; the suite's only
   discretionary order path is `packages/desk`, and a read-side report should say so if it suggests
@@ -594,9 +614,9 @@ starts a 24-hour cooldown that later runs honour.
   a screenshot unnecessary. A capture that
   doesn't parse (a missing price, a level that isn't a number, the wrong ticker) is rejected like
   an edition that fails its checks.
-- **Check the subscription's terms first.** Automated download of one's own subscription for
-  personal use is usually fine, but the terms decide it, and a "no automated access" clause means
-  staying manual.
+- **The subscription's terms were checked (2026-09-27):** they say nothing about automated
+  access. The pacing rules above are the answer to that silence: the collector reads as a person
+  would, never faster.
 
 ### Phase 1 — quick wins inside the existing posture
 
@@ -623,8 +643,8 @@ producer — the rule `packages/overview/CLAUDE.md` already states.
 - Bars from the Dolt `stocks` clone, which passed the assessment (ADRs present, last night's bar
   committed by 05:30). Split and proportional dividend adjustment applied by us from its own
   tables, as a pure function, so the adjusted series can be rebuilt from raw at any time.
-- The universe file (built by `scripts/build_stock_universe.py`, see Phase 0) and the sector map
-  (hand-kept, Yahoo/Morningstar taxonomy), both versioned.
+- The universe file and the sector map, both built by `scripts/build_stock_universe.py` (see
+  Phase 0); the sector map comes from the editions themselves, with a hand-kept file for gaps.
 - IV rank from Dolt's `volatility_history` where it covers a name; for the rest, record ATM IV
   daily from Cboe's delayed chain and rank it once a year has built up.
 - A `scripts/` job that pulls the clone and lands one day's bars for the universe and the ~35

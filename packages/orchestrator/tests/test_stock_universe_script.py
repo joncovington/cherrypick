@@ -390,3 +390,56 @@ def test_a_collapse_of_more_than_half_is_refused_unless_allowed():
     assert bsu.watchlist_plan(list("ABCD"), have)["action"] == "refuse"
     assert bsu.watchlist_plan(list("ABCD"), have, allow_shrink=True)["action"] == "replace"
     assert bsu.watchlist_plan(list("ABCDEF"), have)["action"] == "replace"
+
+
+# --- sectors ------------------------------------------------------------------------------------
+
+
+def _table(*rows):
+    link = '<a href="x?symbol={s}">{s}</a>'
+    body = "".join(
+        f'<tr><td style="x" valign="top">{sector}</td><td>+1</td><td>'
+        + ", ".join(link.format(s=s) for s in syms)
+        + "</td></tr>"
+        for sector, syms in rows
+    )
+    head = '<table><tr><th style="x">Sector</th><th>Net</th></tr>'
+    return head + body + "</table><p>The three shades show...</p>"
+
+
+def test_the_first_row_of_the_table_is_read():
+    assert bsu.edition_sectors(_table(("Technology", ["AAPL"]), ("Energy", ["XOM"]))) == {
+        "AAPL": "Technology",
+        "XOM": "Energy",
+    }
+
+
+def test_old_labels_map_onto_the_sept_25_set_without_counting_as_a_change():
+    eds = {
+        "2026-09-24": _table(("Financial Services", ["GS"]), ("Consumer Cyclical", ["HD"])),
+        "2026-09-25": _table(("Financials", ["GS"]), ("Consumer Discretionary", ["HD"])),
+    }
+    doc = bsu.sector_map(eds)
+    assert doc["sectors"]["GS"]["sector"] == "Financials"
+    assert doc["sectors"]["HD"]["sector"] == "Consumer Discretionary"
+    assert doc["changes"] == []
+
+
+def test_a_name_moving_sector_is_a_change():
+    eds = {"2026-09-24": _table(("Technology", ["UBER"])), "2026-09-25": _table(("Industrials", ["UBER"]))}
+    doc = bsu.sector_map(eds)
+    assert doc["sectors"]["UBER"]["sector"] == "Industrials"
+    assert any(c.startswith("UBER changed sector") for c in doc["changes"])
+
+
+def test_a_new_label_is_a_change():
+    doc = bsu.sector_map({"2026-10-01": _table(("Information Technology", ["AAPL"]))})
+    assert any("new sector label 'Information Technology'" in c for c in doc["changes"])
+
+
+def test_hand_set_sectors_fill_gaps_and_an_edition_that_contradicts_one_is_a_change():
+    eds = {"2026-09-25": _table(("Technology", ["MSFT"]))}
+    doc = bsu.sector_map(eds, {"AAPL": "Technology", "MSFT": "Communication Services"})
+    assert doc["sectors"]["AAPL"] == {"sector": "Technology", "source": "manual"}
+    assert doc["sectors"]["MSFT"]["sector"] == "Technology"
+    assert any(c.startswith("MSFT is hand-set") for c in doc["changes"])
