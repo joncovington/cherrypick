@@ -35,6 +35,7 @@ from cherrypick.core import db as _db
 # One ET for the suite — see cherrypick.core.clock.
 from cherrypick.core.clock import ET as _ET
 
+from . import files as _files
 from . import gates as _gates
 from . import paths as _paths
 from . import score as _score
@@ -43,7 +44,9 @@ from . import symbols as _symbols
 # v2 adds the record-only `deployment` block (and the HYG/TLT credit-proxy readings it reads).
 # Every prior key keeps its meaning, so a v1 pack still renders -- readers must tolerate the block
 # being absent on packs built before this version.
-FACT_VERSION = 3  # 3: + vol_regime block and its readings (2026-08-25)
+# 4: + SKEW and VXN percentiles from Cboe's daily files, the `moves` and `yields` blocks, and the
+# calendar's `releases` (2026-09-27). Additive: every v3 key keeps its meaning.
+FACT_VERSION = 4
 PACK = "overview.morning"
 
 # A pre-open quote older than this is not "live". Two hours spans the 07:00 producer start the
@@ -402,6 +405,11 @@ _VOL_HISTORY_SYMBOLS = frozenset({"VIX1D", "VIX9D", "VIX6M", "VIX1Y", "VVIX", "S
 # temporary is the thing that teaches a reader to skim the row.
 _NO_DAILY_SERIES = frozenset({"skew"})
 
+# Readings whose daily series comes from Cboe's own history file (fetched by
+# scripts/fetch_market_files.py) rather than the stream. SKEW is the reason this exists; VXN has no
+# stream leg at all, so its value is the file's latest close and says it is prior.
+_FILE_SERIES = {"skew": "SKEW", "vxn": "VXN"}
+
 _PERCENTILE_READINGS = (
     ("vix1d", "VIX1D"),
     ("vix9d", "VIX9D"),
@@ -411,6 +419,7 @@ _PERCENTILE_READINGS = (
     ("vix1y", "VIX1Y"),
     ("vvix", "VVIX"),
     ("skew", "SKEW"),
+    ("vxn", "VXN"),
 )
 
 # The window, the floor and the formula all come from `score`, which already ranks VIX against its
@@ -516,11 +525,25 @@ def _vol_regime(readings: dict, history: dict[str, list[dict]], session: str) ->
     percentiles = {}
     for key, symbol in _PERCENTILE_READINGS:
         value = (readings.get(key) or {}).get("value")
-        series = [row["close"] for row in history.get(symbol, [])][-_PERCENTILE_LOOKBACK:]
-        entry = {"value": value, "samples": len(series), "percentile": None, "reason": None}
+        source = "stream_cache"
+        if key in _FILE_SERIES:
+            series = [close for _, close in _files.cboe_series(_FILE_SERIES[key], session)][
+                -_PERCENTILE_LOOKBACK:
+            ]
+            source = "cboe_file"
+            if value is None and series:
+                value = series[-1]  # the file's latest close, before the session: a prior value
+                source = "cboe_file_prior_close"
+        else:
+            series = [row["close"] for row in history.get(symbol, [])][-_PERCENTILE_LOOKBACK:]
+        entry = {"value": value, "samples": len(series), "percentile": None, "reason": None, "source": source}
         if value is None:
             entry["reason"] = "reading_unmeasured"
-        elif key in _NO_DAILY_SERIES:
+        elif key in _FILE_SERIES and not series:
+            # Not "too few closes": the file is absent (fetcher not run, or failed), which a fetch
+            # fixes at once, not a series still filling.
+            entry["reason"] = "no_cboe_file"
+        elif key in _NO_DAILY_SERIES and key not in _FILE_SERIES:
             entry["reason"] = "no_daily_series"
         elif len(series) < _PERCENTILE_MIN_SAMPLES:
             entry["reason"] = "too_few_closes"
@@ -551,6 +574,65 @@ def _vol_regime(readings: dict, history: dict[str, list[dict]], session: str) ->
     }
 
 
+# The realized-vol window. Ten sessions is the report's own ("10-session realized volatility").
+_REALIZED_SESSIONS = 10
+
+
+def _moves(readings: dict, history: dict[str, list[dict]]) -> dict:
+    """What the options market expects for the week, and what the index has actually done.
+
+    The weekly expected move is VIX / sqrt(52): VIX is a 30-day implied vol in annual percent, and a
+    week is 1/52 of a year. It is a one-sigma band, about two weeks in three, not a bound. Realized
+    vol is SPX's own close-to-close volatility over the last ten sessions, annualized, so the two
+    can be read against each other: VIX well above realized is the market paying for protection it
+    has not needed lately."""
+    vix = readings.get("vix") or {}
+    spx = readings.get("spx") or {}
+    weekly = {"pct": None, "points": None, "vix": vix.get("value"), "basis": vix.get("basis"), "reason": None}
+    if vix.get("value") is None:
+        weekly["reason"] = "vix_unmeasured"
+    else:
+        weekly["pct"] = round(_files.weekly_expected_move_pct(float(vix["value"])), 2)
+        if spx.get("value") is not None:
+            weekly["points"] = round(float(spx["value"]) * weekly["pct"] / 100.0, 1)
+    closes = [row["close"] for row in history.get("SPX", [])]
+    rv = _files.realized_vol(closes, _REALIZED_SESSIONS)
+    realized = {
+        "pct": round(rv, 2) if rv is not None else None,
+        "sessions": _REALIZED_SESSIONS,
+        "through": history["SPX"][-1]["session"] if history.get("SPX") else None,
+        "reason": None if rv is not None else "too_few_closes",
+    }
+    spread = None
+    if rv is not None and vix.get("value") is not None:
+        spread = round(float(vix["value"]) - rv, 2)
+    return {"weekly_expected_move": weekly, "realized_vol": realized, "vix_minus_realized": spread}
+
+
+def _yields(session: str) -> dict:
+    """The Treasury par curve for the last session before this one, from Treasury's own daily file,
+    with the two spreads a morning read uses and the one-day change of each tenor. Yields are
+    percent; spreads and changes are basis points."""
+    rows = _files.treasury_curve(session)
+    if not rows:
+        return {"session": None, "reason": "no_treasury_file"}
+    day, curve = rows[-1]
+    prev = rows[-2][1] if len(rows) > 1 else {}
+
+    def _bp(a, b):
+        return round((a - b) * 100.0) if a is not None and b is not None else None
+
+    return {
+        "session": day.isoformat(),
+        "source": "treasury_par_curve",
+        "yields": curve,
+        "change_bp": {k: _bp(v, prev.get(k)) for k, v in curve.items()},
+        "spread_2s10s_bp": _bp(curve.get("10y"), curve.get("2y")),
+        "spread_3m10y_bp": _bp(curve.get("10y"), curve.get("3m")),
+        "reason": None,
+    }
+
+
 def _calendar_block(session: str) -> dict:
     day = date.fromisoformat(session)
     year_known = _calendar.fomc_year_known(day.year)
@@ -572,6 +654,9 @@ def _calendar_block(session: str) -> dict:
         "is_triple_witching": _calendar.is_triple_witching(day),
         "is_quarterly_expiry": _calendar.is_quarterly_expiry(day),
         "next_trading_day": _calendar.next_trading_day(day).isoformat(),
+        # BEA always; FRED's (CPI, jobs, PPI) only once a FRED key is stored. No consensus
+        # estimates: no free source gives them.
+        "releases": _files.releases(session, 7),
     }
 
 
@@ -654,6 +739,8 @@ def build(session: str | None = None, now: datetime | None = None) -> dict:
         "phase": _gates.phase(gate_list),
         "deployment": _score.evaluate(readings, history, _symbols.SECTOR_ETFS),
         "vol_regime": _vol_regime(readings, history, session),
+        "moves": _moves(readings, history),
+        "yields": _yields(session),
         "calendar": _calendar_block(session),
     }
 

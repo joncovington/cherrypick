@@ -10,8 +10,9 @@ package — modelled on the daily "Market Overview" research-report format, but 
 auditable because every number is ours.
 
 **It is read-only over everything it touches.** It reads the shared stream cache (the streamer is
-that cache's single producer), the GEX engine's regime history, and — as a VIX fallback only —
-MEIC's `market_context` table. It writes only into its own home (`~/.cherrypick/data/overview`).
+that cache's single producer), the GEX engine's regime history, the daily market files in
+`~/.cherrypick/data/market-files/` (fetched by `scripts/fetch_market_files.py`, outside the
+package), and — as a VIX fallback only — MEIC's `market_context` table. It writes only into its own home (`~/.cherrypick/data/overview`).
 No broker credentials, no network, no chains: a pure stream-cache consumer in the calendars/pmcc
 posture. Its market breadth (VIX/VIX3M/VVIX, the eleven sector ETFs, USO/GLD as labeled commodity
 proxies) is declared through `state/stream_requests/overview.json` like any module's symbols; the
@@ -47,6 +48,30 @@ strongest/weakest sectors are computed once, in this package, and displayed ever
 - **Proxies are labeled proxies.** The streamer has no futures path, so crude and gold ride on USO
   and GLD, and no surface ever prints them as a WTI or gold spot price. The credit signal's HYG/TLT
   and the breadth signal's eleven sector ETFs carry the same label for the same reason.
+
+## The daily market files
+
+Some readings have no good stream source, so they come from files a script fetches each evening:
+Cboe's SKEW, VIX, VVIX and VXN histories, Treasury's par yield curve, and the release calendars
+(BEA always; FRED's CPI, jobs and PPI dates once a FRED key is stored). `files.py` holds the
+parsers, and the fetcher imports them, so a file is validated on arrival by the code that reads it
+and a download that parses to less than the file on disk is refused. Every reader takes values
+**strictly before** the session: pre-open, a close dated today has not happened.
+
+- **SKEW's percentile comes from Cboe's file, not the stream.** The stream's SKEW backfill returned
+  five scattered rows in 270 days, so the row said "no daily series" from the start. With the file
+  it ranks; without the file it says `no_cboe_file`, never "too few closes", which would promise a
+  gap that fills by itself. VXN has no stream leg at all: its value is the file's latest close,
+  labelled as that.
+- **`moves`**: the weekly expected move (VIX / √52, and in SPX points) beside SPX's 10-session
+  realized volatility, both record-only.
+- **`yields`**: the last curve before the session, with the 2s10s and 3m10y spreads and each
+  tenor's one-day change in basis points.
+- **`calendar.releases`**: the next seven days' scheduled releases, with ET times where the source
+  gives them. No consensus estimates: no free source has them.
+
+None of these feed a gate or the deployment score. They are fact-pack v4 additions; a v3 pack
+still renders.
 
 ## The deployment score is a measurement, not a gate
 

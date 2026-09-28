@@ -561,7 +561,11 @@
     "enabled": true,
     "factpack_at": "08:30",
     "narrative": false,
-    "narrative_at": "09:00"
+    "narrative_at": "09:00",
+    "_comment_files": "The daily market files the pack reads (scripts/fetch_market_files.py): Cboe's SKEW/VIX/VVIX/VXN histories, Treasury's par yield curve and BEA's release dates, into data/market-files/. Credential-free, so ON with the pack: 'files_at' after Treasury posts (~18:00 ET), 'files_retry_at' before the pack builds. A download that parses to less than the file on disk is refused, so a failed fetch leaves yesterday's files. CPI, jobs and PPI dates need a free FRED API key, stored once with `python scripts/fetch_market_files.py fred-key`; without one the calendar carries BEA's releases and the FOMC dates only.",
+    "files": true,
+    "files_at": "18:45",
+    "files_retry_at": "07:45"
   },
   "market_report": {
     "_comment": "The vendor-edition collector (scripts/fetch_vendor_edition.py) - the fixture feed for docs/market-report-plan.md. Fetches the vendor's pre-open report after it is published ('edition_at', with a second chance at 'edition_retry_at'; a day already saved is skipped) and, after the close, the data behind its chart pages ('charts_at'), into data/market-report/. Paced on purpose: one browser session, 20-60 s between pages, at most 40 chart pages, and a 24-hour cooldown after any 429/403. Stops at a captcha or refused login and notifies. OFF by default: store the login first (`python scripts/fetch_vendor_edition.py credentials` then `login`), put the dashboard address in data/market-report/collector.json, then set collector=true and re-run `install`. Times are ET.",

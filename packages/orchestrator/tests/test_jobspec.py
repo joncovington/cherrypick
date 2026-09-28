@@ -305,6 +305,8 @@ def test_derive_full_suite_job_table():
         "universe-measure-2",
         "universe-daily",
         "universe-watchlist",
+        "market-files",
+        "market-files-retry",
         "review-provisional",
         "review-final",
         "review-narrative",
@@ -901,3 +903,28 @@ def test_the_watchlist_sync_runs_after_the_rebuild_and_applies():
     job = by_id["universe-watchlist"]
     assert job.enabled and job.argv[-2:] == ("watchlist", "--apply")
     assert job.at_et > by_id["universe-daily"].at_et
+
+
+# --------------------------------------------------------------------------- market files (2026-09-27)
+def test_market_files_are_fetched_after_treasury_posts_and_retried_before_the_pack():
+    """Treasury posts its curve by ~18:00 ET, so an evening fetch before that reads yesterday's; the
+    retry exists to land a missed fetch before the 08:30 pack, so it must run before the pack and
+    stop catching up once the pack has been built."""
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+
+    def minutes(at):
+        h, m = (int(x) for x in at.split(":"))
+        return h * 60 + m
+
+    evening, retry, pack = by_id["market-files"], by_id["market-files-retry"], by_id["morning-factpack"]
+    assert evening.enabled and retry.enabled, "credential-free: on with the pack"
+    assert minutes(evening.at_et) >= 18 * 60
+    assert minutes(retry.at_et) + retry.catchup_minutes <= minutes(pack.at_et)
+    assert evening.argv[-1] == "fetch" and evening.trading_days_only
+
+
+def test_market_files_follow_the_morning_switch():
+    cfg = suite_cfg()
+    cfg["morning"] = {"enabled": False}
+    by_id = {j.id: j for j in derive(cfg)[0]}
+    assert not by_id["market-files"].enabled

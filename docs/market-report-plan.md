@@ -627,6 +627,17 @@ starts a 24-hour cooldown that later runs honour.
 
 ### Phase 1 — quick wins inside the existing posture
 
+**Landed 2026-09-27: the daily files and the readings built on them.**
+`scripts/fetch_market_files.py` fetches Cboe's SKEW/VIX/VVIX/VXN histories, Treasury's par curve
+and BEA's release dates each evening (job `market-files`, 18:45 ET, with a 07:45 retry), and the
+pack (v4) reads them: SKEW and VXN percentiles from Cboe's files, the weekly expected move and
+10-session realized volatility, the prior session's Treasury curve with spreads and changes, and
+the coming week's releases. FRED's keyless CSV hangs from here, so FRED is reached only through
+its API, whose free key also brings CPI, jobs and PPI dates (BLS refuses scripts); until a key is
+stored the calendar carries BEA and FOMC only. Still to do: the new stream legs (futures, NDX /
+DJX / RUT) and the 30-day 25-delta risk reversal, both subscription decisions made together,
+outside market hours, watching the producer.
+
 - Futures legs for /ES, /NQ, /YM, /RTY, /CL and /BZ, extending `scripts/refresh_futures_contracts.py`
   the way it already resolves VX and ZN; overview reads them as the pre-market tape. The producer
   starts at 07:00 and the pack builds at 08:30, so these are live readings.

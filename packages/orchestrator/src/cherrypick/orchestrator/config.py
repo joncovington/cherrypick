@@ -302,6 +302,12 @@ def morning_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "factpack_at": mv.get("factpack_at", "08:30"),
         "narrative": mv.get("narrative", False),
         "narrative_at": mv.get("narrative_at", "09:00"),
+        # The daily market files the pack reads (scripts/fetch_market_files.py): Cboe's index
+        # histories, Treasury's curve (posted by ~18:00 ET), the release calendars. Credential-free,
+        # so on with the pack. The evening run is the fetch; the pre-pack run catches a missed one.
+        "files": mv.get("files", True),
+        "files_at": mv.get("files_at", "18:45"),
+        "files_retry_at": mv.get("files_retry_at", "07:45"),
     }
 
 

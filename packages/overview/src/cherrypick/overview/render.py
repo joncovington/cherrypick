@@ -142,6 +142,54 @@ def render(session: str) -> str | None:
         )
         lines.append("")
 
+    moves = pack.get("moves") or {}
+    if moves:
+        lines.append("## Expected and realized moves")
+        lines.append("")
+        wk = moves.get("weekly_expected_move") or {}
+        if isinstance(wk.get("pct"), (int, float)):
+            pts = f" (±{wk['points']:.0f} SPX points)" if isinstance(wk.get("points"), (int, float)) else ""
+            lines.append(
+                f"- Weekly expected move: **±{wk['pct']:.2f}%**{pts}, VIX {wk.get('vix')} "
+                f"({wk.get('basis') or 'unknown basis'}) ÷ √52 — a one-sigma band, not a bound"
+            )
+        else:
+            lines.append(f"- Weekly expected move: not measured ({wk.get('reason', DASH)})")
+        rv = moves.get("realized_vol") or {}
+        if isinstance(rv.get("pct"), (int, float)):
+            gap = moves.get("vix_minus_realized")
+            gap_text = f"; VIX {gap:+.2f} points over it" if isinstance(gap, (int, float)) else ""
+            lines.append(
+                f"- SPX realized volatility, {rv.get('sessions')} sessions to {rv.get('through')}: "
+                f"**{rv['pct']:.2f}%**{gap_text}"
+            )
+        else:
+            lines.append(f"- SPX realized volatility: not measured ({rv.get('reason', DASH)})")
+        lines.append("")
+
+    yields = pack.get("yields") or {}
+    if yields:
+        lines.append(f"## Treasury yields ({yields.get('session') or 'not measured'})")
+        lines.append("")
+        if yields.get("session"):
+            ys, ch = yields.get("yields") or {}, yields.get("change_bp") or {}
+            lines.append("| Tenor | Yield | 1-day change |")
+            lines.append("|---|---|---|")
+            for tenor in ("3m", "2y", "5y", "10y", "30y"):
+                if tenor in ys:
+                    c = ch.get(tenor)
+                    lines.append(
+                        f"| {tenor} | {ys[tenor]:.2f}% | {f'{c:+d} bp' if isinstance(c, int) else DASH} |"
+                    )
+            lines.append("")
+            lines.append(
+                f"2s10s {yields.get('spread_2s10s_bp', DASH)} bp · "
+                f"3m10y {yields.get('spread_3m10y_bp', DASH)} bp _(Treasury par curve, prior session)_"
+            )
+        else:
+            lines.append(f"Not measured ({yields.get('reason', DASH)}).")
+        lines.append("")
+
     lines.append("## Sector board (prior session)")
     lines.append("")
     strongest, weakest = sectors.get("strongest"), sectors.get("weakest")
@@ -182,6 +230,16 @@ def render(session: str) -> str | None:
     if cal.get("next_fomc"):
         lines.append(f"- Next FOMC: {cal['next_fomc']}")
     lines.append(f"- Next trading day: {cal.get('next_trading_day', DASH)}")
+    releases = cal.get("releases")
+    if releases:
+        lines.append("- Scheduled releases, next seven days (no consensus estimates):")
+        for r in releases:
+            when = f"{r['date']} {r['time_et']} ET" if r.get("time_et") else r["date"]
+            lines.append(
+                f"  - {'**today** ' if r.get('today') else ''}{when} — {r.get('name')} ({r.get('source')})"
+            )
+    elif releases == []:
+        lines.append("- Scheduled releases, next seven days: none on file")
     lines.append("")
 
     lines.append("---")

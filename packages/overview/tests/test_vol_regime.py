@@ -138,21 +138,54 @@ def test_the_block_feeds_no_gate():
     assert facts._vol_regime(_readings(), {}, "2026-08-25")["record_only"] is True
 
 
-def test_a_reading_with_no_obtainable_daily_series_says_so(monkeypatch):
-    """ "No history yet" and "no history ever" are different messages, and nothing in the data tells
-    them apart -- so the second is declared.
-
-    SKEW's 270-day backfill returned five scattered rows across seven months on the same connection
-    that delivered a clean ~378 for every other vol reading. Reporting that as "only 5 closes on
-    file" promises a gap that fills, and it never will; a permanent refusal dressed as a temporary
-    one is exactly what teaches a reader to stop looking at the row.
-    """
-    block = facts._vol_regime(_readings(), _history("SKEW", [140.0] * 5), "2026-08-25")
+def test_skew_without_the_cboe_file_says_the_file_is_missing(monkeypatch):
+    """SKEW's stream backfill returned five scattered rows across seven months, so its series comes
+    from Cboe's daily file instead. Without that file the row must say so -- not "too few closes",
+    which promises a gap that fills on its own and never would."""
+    block = facts._vol_regime(_readings(), _history("SKEW", [140.0] * 300), "2026-08-25")
 
     entry = block["percentiles"]["skew"]
     assert entry["percentile"] is None
-    assert entry["reason"] == "no_daily_series"
+    assert entry["reason"] == "no_cboe_file"
     assert entry["value"] == 145.6, "the LIVE quote is fine and still reported"
+
+
+def _cboe_file(symbol, closes, last="2026-08-24"):
+    from datetime import date, timedelta
+
+    from cherrypick.overview import files
+
+    end = date.fromisoformat(last)
+    rows = [f"DATE,{symbol}"] + [
+        f"{(end - timedelta(days=len(closes) - 1 - i)):%m/%d/%Y},{c:.6f}" for i, c in enumerate(closes)
+    ]
+    path = files.cboe_path(symbol)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+
+def test_skew_ranks_against_cboes_file_not_the_stream():
+    """The stream's SKEW series is ignored even when it has rows; the file is the series."""
+    _cboe_file("SKEW", [120.0 + (i % 40) for i in range(300)])
+    block = facts._vol_regime(_readings(), _history("SKEW", [999.0] * 300), "2026-08-25")
+    entry = block["percentiles"]["skew"]
+    assert entry["reason"] is None and entry["source"] == "cboe_file"
+    assert 0.0 < entry["percentile"] < 100.0
+
+
+def test_vxn_has_no_stream_leg_so_its_value_is_the_files_prior_close():
+    _cboe_file("VXN", [20.0 + (i % 10) for i in range(300)])
+    entry = facts._vol_regime(_readings(), {}, "2026-08-25")["percentiles"]["vxn"]
+    assert entry["source"] == "cboe_file_prior_close"
+    assert entry["value"] == 20.0 + (299 % 10)
+    assert entry["percentile"] is not None
+
+
+def test_a_file_close_dated_on_the_session_itself_is_never_used():
+    """Pre-open, a close stamped today has not happened; the reader takes closes before the session."""
+    _cboe_file("VXN", [20.0] * 299 + [99.0], last="2026-08-25")
+    entry = facts._vol_regime(_readings(), {}, "2026-08-25")["percentiles"]["vxn"]
+    assert entry["value"] == 20.0
 
 
 def test_the_declaration_does_not_leak_onto_readings_that_have_a_series():

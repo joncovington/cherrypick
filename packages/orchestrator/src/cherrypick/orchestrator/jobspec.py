@@ -60,6 +60,10 @@ CATCHUP_MINUTES = {
     # that already opened. Late enough to still fire after a 09:00 wake, dead by mid-morning.
     "morning-factpack": 90,
     "morning-narrative": 90,
+    # The market files: the evening fetch is good until the pack builds at 08:30, and the pre-pack
+    # retry is worth nothing after it.
+    "market-files": 600,
+    "market-files-retry": 40,
     # A light checkpoint describes the session as it stands, so catching one up past the next slot
     # would produce two checkpoints describing nearly the same afternoon. The deep slot is
     # different: it issues the next session's advice, so it stays worth firing until late evening.
@@ -317,6 +321,10 @@ def _morning_narrative_script(launcher: str) -> str:
 
 def _futures_contracts_script(launcher: str) -> str:
     return _suite_script(launcher, "refresh_futures_contracts.py")
+
+
+def _market_files_script(launcher: str) -> str:
+    return _suite_script(launcher, "fetch_market_files.py")
 
 
 def _dolt_data_script(launcher: str) -> str:
@@ -688,6 +696,23 @@ def derive_jobs(
         ),
     )
     mv = cfgmod.morning_settings(cfg)
+    files_on = mv["enabled"] and mv["files"]
+    for job_id, at in (("market-files", mv["files_at"]), ("market-files-retry", mv["files_retry_at"])):
+        add(
+            job_id,
+            lambda job_id=job_id, at=at: JobSpec(
+                id=job_id,
+                # A script, not a package: overview is network-free, so the files it reads are
+                # fetched out here and a failed fetch leaves yesterday's files, never a broken one.
+                argv=(pythonw, _market_files_script(launcher), "fetch"),
+                kind=KIND_DAILY,
+                at_et=at,
+                catchup_minutes=CATCHUP_MINUTES[job_id],
+                trading_days_only=True,
+                enabled=files_on,
+                enabled_reason="" if files_on else "disabled in config (morning.files)",
+            ),
+        )
     add(
         "morning-factpack",
         lambda: JobSpec(
