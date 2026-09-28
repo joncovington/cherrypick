@@ -62,6 +62,9 @@ CATCHUP_MINUTES = {
     "morning-narrative": 90,
     # The market files: the evening fetch is good until the pack builds at 08:30, and the pre-pack
     # retry is worth nothing after it.
+    # The end-of-day landing reads the local Dolt clones; a late one is the same landing, and the
+    # stage and rotation engines read it after the close, so it catches up well into the day.
+    "technicals-land": 12 * 60,
     "market-files": 600,
     "market-files-retry": 40,
     # A light checkpoint describes the session as it stands, so catching one up past the next slot
@@ -693,6 +696,32 @@ def derive_jobs(
                 "" if (rv["enabled"] and rv["narrative"]) else "disabled in config (review.narrative)"
             ),
             tags=("ai",),
+        ),
+    )
+    tc = cfgmod.technicals_settings(cfg)
+    dolt_on = bool((cfg.get("modules", {}).get("earnings") or {}).get("enabled"))
+    tc_on = tc["enabled"] and dolt_on
+    add(
+        "technicals-land",
+        lambda: JobSpec(
+            id="technicals-land",
+            # A package command, not a script: it reads the LOCAL dolt sql-server only (the
+            # clones are pulled by the 05:30 earnings-dolt-pull script) and writes its own store.
+            # That server is kept alive by the earnings module's own job, so without earnings
+            # there is nothing to read and the job would fail every morning.
+            argv=(pythonw, "-m", "cherrypick.technicals", "land"),
+            kind=KIND_DAILY,
+            at_et=tc["land_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-land"],
+            trading_days_only=False,
+            enabled=tc_on,
+            enabled_reason=(
+                ""
+                if tc_on
+                else "disabled in config (technicals)"
+                if not tc["enabled"]
+                else "earnings module disabled (no dolt sql-server to read)"
+            ),
         ),
     )
     mv = cfgmod.morning_settings(cfg)

@@ -1,0 +1,10 @@
+{
+  "_comment": "cherrypick-technicals. Copy to ~/.cherrypick/config/technicals.json to override. 'dolt' is the LOCAL dolt sql-server that serves the stocks and options clones (the one the earnings module reads; kept alive by the earnings-dolt job and pulled at 05:30 by scripts/refresh_dolt_data.py).",
+  "dolt": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "user": "root",
+    "stocks_db": "stocks",
+    "options_db": "options"
+  }
+}

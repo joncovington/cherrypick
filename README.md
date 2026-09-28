@@ -107,6 +107,9 @@ suite once collected $4.00 of credit against $4.96 of fees.
 - **Overview** — the pre-open morning market overview: one deterministic fact pack per session with a
   mechanical GREEN/YELLOW/RED phase from five declared gates; missing data can never produce RED and
   always blocks GREEN. See [packages/overview](packages/overview).
+- **Technicals** — the market report's end-of-day store: adjusted daily bars and IV history for the
+  stock universe and the rotation ETFs, from the local Dolt clones. See
+  [packages/technicals](packages/technicals).
 
 ## Where you look at the results
 
@@ -188,6 +191,7 @@ read them:
 | [packages/gex](packages/gex) | The GEX engine and spot-trail recorder; the console renders it. |
 | [packages/console](packages/console) | The unified web console (`127.0.0.1:5070`) — every module's read models plus research and screening, in one app. Read-only. |
 | [packages/overview](packages/overview) | The pre-open morning market overview: one deterministic fact pack per session with a mechanical GREEN/YELLOW/RED phase. Read-only over everything it touches. |
+| [packages/technicals](packages/technicals) | The market report's end-of-day store and technical engines: adjusted daily bars and IV for the universe and rotation ETFs, from the local Dolt clones. |
 | [packages/review](packages/review) | The cross-module end-of-day review: one versioned fact set per session over every engine, plus the renders of it. Read-only over every other package. |
 | [packages/advisor](packages/advisor) | The deterministic half of the AI advisor — fact packs, reply validation, and paper A/B experiments. Contains no AI itself; off by default. |
 | [packages/desk](packages/desk) | ⚠️ **Experimental.** The manual trading desk — the only *discretionary* live-order path, driven by you per order. [Read the warning](#before-you-go-anywhere-near-live-trading). |

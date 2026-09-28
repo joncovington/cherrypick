@@ -307,6 +307,7 @@ def test_derive_full_suite_job_table():
         "universe-watchlist",
         "market-files",
         "market-files-retry",
+        "technicals-land",
         "review-provisional",
         "review-final",
         "review-narrative",
@@ -928,3 +929,22 @@ def test_market_files_follow_the_morning_switch():
     cfg["morning"] = {"enabled": False}
     by_id = {j.id: j for j in derive(cfg)[0]}
     assert not by_id["market-files"].enabled
+
+
+# --------------------------------------------------------------------------- technicals (2026-09-27)
+def test_the_technicals_landing_follows_the_dolt_pull_and_needs_the_dolt_server():
+    """It reads the local dolt sql-server, which only the earnings module keeps alive, and the
+    clones it reads are pulled at 05:30 -- a landing before the pull lands yesterday's data."""
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    land, pull = by_id["technicals-land"], by_id["earnings-dolt-pull"]
+
+    def minutes(at):
+        h, m = (int(x) for x in at.split(":"))
+        return h * 60 + m
+
+    assert minutes(land.at_et) > minutes(pull.at_et)
+    assert land.argv[1:] == ("-m", "cherrypick.technicals", "land")
+    cfg = suite_cfg()
+    cfg.setdefault("modules", {}).setdefault("earnings", {})["enabled"] = False
+    off = {j.id: j for j in derive(cfg)[0]}["technicals-land"]
+    assert not off.enabled and "dolt" in off.enabled_reason

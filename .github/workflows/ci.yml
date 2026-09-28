@@ -39,7 +39,7 @@ jobs:
         # five of them were never added: bwb, curve, advisor, review and overview carried 553
         # passing tests between them that CI had never once run. Adding a package here is part of
         # landing it, not a follow-up.
-        package: [core, orchestrator, meic, earnings, gex, flies, calendars, pmcc, streamer, desk, bwb, curve, advisor, review, overview]
+        package: [core, orchestrator, meic, earnings, gex, flies, calendars, pmcc, streamer, desk, bwb, curve, advisor, review, overview, technicals]
     defaults:
       run:
         working-directory: packages/${{ matrix.package }}

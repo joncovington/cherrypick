@@ -311,6 +311,14 @@ def morning_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved scheduling for packages/technicals' end-of-day landing. ON by default: it reads only
+    the local Dolt clones and writes only its own store. `land_at` follows the 05:30 Dolt pull
+    (`earnings-dolt-pull`), so the previous session's bars are always there."""
+    tc = cfg.get("technicals", {}) or {}
+    return {"enabled": bool(tc.get("enabled", True)), "land_at": tc.get("land_at", "06:15")}
+
+
 def market_report_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved scheduling for the vendor-edition collector (scripts/fetch_vendor_edition.py), the
     fixture feed for docs/market-report-plan.md. OFF by default: it needs a subscription login

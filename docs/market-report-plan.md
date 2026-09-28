@@ -666,6 +666,14 @@ producer — the rule `packages/overview/CLAUDE.md` already states.
 
 ### Phase 2 — the end-of-day store
 
+**Landed 2026-09-27 as `packages/technicals`.** Raw bars, splits, dividends and Dolt's IV history for
+the 497 candidates, ETFs and benchmarks Dolt carries (368,904 bars back to 2023-09-25; SPX, NDX and
+VIX are not in Dolt), landed at 06:15 ET after the Dolt pull, in ~13 s a morning. Adjusted bars are a
+pure function over raw and reproduce the vendor's MSFT closes on all 753 sessions exactly (ANET to a
+cent, pre-split); `check-vendor` repeats that over every capture. IV rank reads Dolt's
+`volatility_history` where it covers a name. Still to do from this phase: ATM IV from Cboe's delayed
+chain for the names Dolt's IV history lacks, ranked once a year has built up.
+
 - Bars from the Dolt `stocks` clone, which passed the assessment (ADRs present, last night's bar
   committed by 05:30). Split and proportional dividend adjustment applied by us from its own
   tables, as a pure function, so the adjusted series can be rebuilt from raw at any time.
