@@ -379,7 +379,7 @@ means documentation or search results only.
 | Fundamentals | SEC EDGAR `data.sec.gov/api/xbrl/companyfacts/CIK##########.json`, nightly `companyfacts.zip` | Fetched | See gap 4. |
 | Flow, analyst ratings | ThetaData, Benzinga via Massive, FMP | Docs | Prices and fields from their pricing and docs pages; see gaps 1 and 2. |
 
-**The asset-class benchmark: AOR is recommended** (see Phase 0). AOR (iShares' 60/40 allocation
+**The asset-class benchmark is AOR** (decided 2026-09-27; see Phase 0). AOR (iShares' 60/40 allocation
 fund) is in the Dolt clone and VBINX is not; the creator of relative-rotation charts is reported to
 have used VBINX (Vanguard's 60/40 fund) for asset classes, but that rests on a single 2020 search
 result.
@@ -505,7 +505,7 @@ Each phase ends with something that runs and a test that has been shown to fail.
   `universe/sectors.manual.json`, which an edition overrides and flags when it disagrees. The
   vendor's scanner data carries a third, unrelated taxonomy ("Electronic Technology", "Retail
   Trade") and is not used.
-- **The asset-class benchmark: AOR recommended, awaiting a decision.** Everything in Phase 2 is
+- **The asset-class benchmark: AOR (decided 2026-09-27).** Everything in Phase 2 is
   computed from Dolt's daily bars, and Dolt carries AOR (269 sessions to 2026-09-25) but not
   VBINX, a mutual fund priced once a day that tastytrade does not quote as it does an ETF; every
   other entry in the rotation section is an ETF, so AOR keeps the benchmark on the same kind of
@@ -658,7 +658,7 @@ producer — the rule `packages/overview/CLAUDE.md` already states.
   edition's stated counts), so the check covers counts, membership and all three stages per name.
 - Rotation over the ETF list, daily and weekly relative-strength trend (RS-Ratio and RS-Momentum
   as trailing z-scores; see "Prior art"), four states plus none; Asset entries against a
-  stock-and-bond benchmark (AOR or VBINX, decided in Phase 0). The trend definition is ours and is
+  stock-and-bond benchmark (AOR, decided in Phase 0). The trend definition is ours and is
   written down.
 - The 2-week breadth history falls out of a backfill, since it is price-derived.
 
