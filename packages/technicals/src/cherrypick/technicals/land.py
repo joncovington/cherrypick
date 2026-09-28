@@ -98,8 +98,10 @@ def land(
         # Symbols Dolt does not list (SPX, NDX and VIX are indexes; a retired ticker) can never land,
         # and left in the plan they looked new on every run -- a three-year backfill window each
         # morning for nothing. They are reported instead.
-        cur.execute("SELECT act_symbol FROM symbol")
-        listed = {row[0] for row in cur.fetchall()}
+        cur.execute("SELECT act_symbol, is_etf FROM symbol")
+        listing = {row[0]: int(row[1] or 0) for row in cur.fetchall()}
+        listed = set(listing)
+        store.upsert_listings(conn, ((s, listing[s]) for s in wanted if s in listing))
         report["not_in_dolt"] = sorted(s for s in wanted if s not in listed)
         starts = {s: d for s, d in starts.items() if s in listed}
         if not starts:

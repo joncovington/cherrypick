@@ -95,7 +95,8 @@ def cmd_stages(args) -> int:
     rule = stage.DEFAULT_RULE
     bench = {b.date: b.close for b in store.adjusted_bars(conn, rule.benchmark)}
     day = args.session or max(bench)
-    closes = {s: {b.date: b.close for b in store.adjusted_bars(conn, s)} for s in symbols.candidates()}
+    names = store.stocks(conn, symbols.candidates())
+    closes = {s: {b.date: b.close for b in store.adjusted_bars(conn, s)} for s in names}
     result = stage.stages_on(day, {s: c for s, c in closes.items() if c}, bench, rule)
     leaders = sorted(s for s, v in result.items() if v.side == "leader")
     laggards = sorted(s for s, v in result.items() if v.side == "laggard")
@@ -111,6 +112,58 @@ def cmd_stages(args) -> int:
             indent=1,
         )
     )
+    return 0
+
+
+def cmd_score_rotation(_args) -> int:
+    from . import stage_score
+
+    print(json.dumps(stage_score.score_rotation(), indent=1))
+    return 0
+
+
+def cmd_rotation(args) -> int:
+    from . import rotation, symbols
+
+    conn = store.connect()
+    rule = rotation.DEFAULT_RULE
+    names = sorted({*symbols.ROTATION_ETFS, rule.benchmark, rule.asset_benchmark})
+    closes = {s: {b.date: b.close for b in store.adjusted_bars(conn, s)} for s in names}
+    day = args.session or max(closes[rule.benchmark])
+    states = rotation.states_on(day, closes, symbols.ASSET_ETFS, rule)
+    by_state = {st: sorted(f for f, v in states.items() if v == st) for st in rotation.STATES}
+    by_state["none"] = sorted(f for f, v in states.items() if v is None)
+    print(json.dumps({"session": day, "rule": rule.name, **by_state}, indent=1))
+    return 0
+
+
+def cmd_breadth(args) -> int:
+    """The daily breadth history: leaders, laggards, net and bullish share per session, over the
+    candidates -- the report's 2-week chart, rebuilt from prices."""
+    from . import stage, symbols
+
+    conn = store.connect()
+    rule = stage.DEFAULT_RULE
+    bench = {b.date: b.close for b in store.adjusted_bars(conn, rule.benchmark)}
+    names = store.stocks(conn, symbols.candidates())
+    closes = {s: {b.date: b.close for b in store.adjusted_bars(conn, s)} for s in names}
+    closes = {s: c for s, c in closes.items() if c}
+    rows = []
+    for day in sorted(bench)[-args.sessions :]:
+        result = stage.stages_on(day, closes, bench, rule)
+        leaders = sum(v.side == "leader" for v in result.values())
+        laggards = sum(v.side == "laggard" for v in result.values())
+        both = leaders + laggards
+        rows.append(
+            {
+                "session": day,
+                "leaders": leaders,
+                "laggards": laggards,
+                "net": leaders - laggards,
+                "bullish_share": round(leaders / both, 3) if both else None,
+            }
+        )
+    print(json.dumps({"rule": rule.name, "universe": len(closes), "sessions": rows}, indent=1))
     return 0
 
 
@@ -137,6 +190,14 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("score-stages", help="score the stage rule against every saved edition").set_defaults(
         fn=cmd_score_stages
     )
+    ro = sub.add_parser("rotation", help="every rotation fund's state on a session")
+    ro.add_argument("--session", help="ISO date (default: the latest session stored)")
+    ro.set_defaults(fn=cmd_rotation)
+    sr = sub.add_parser("score-rotation", help="score the rotation rule against every saved edition")
+    sr.set_defaults(fn=cmd_score_rotation)
+    br = sub.add_parser("breadth", help="daily leaders/laggards/net/bullish share over recent sessions")
+    br.add_argument("--sessions", type=int, default=10)
+    br.set_defaults(fn=cmd_breadth)
     args = ap.parse_args(argv)
     return args.fn(args)
 

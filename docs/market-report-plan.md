@@ -697,6 +697,14 @@ varies by day; so the sharp test below ("the same 33 and 131") cannot hold as to
 by per-name side and stage agreement, with counts compared as rates. The rule is declared and
 re-scored as editions accumulate, not tuned further on five days.
 
+**Rotation and the breadth history landed the same day.** Rotation is the relative-rotation quadrant
+of a slow (63-session) and fast (10-session) relative trend, against SPY or, for the nine
+"Asset" funds, AOR, with 3%/1% neutral bands: the vendor's exact state for 91 of 119 placements
+(76%). The breadth history is the stage rule run per session: against the sixteen sessions read off
+the vendor's charts (Sept 2-24), eleven never used in fitting, the bullish share correlates at 0.93
+(leaders 0.78, laggards 0.90) — the out-of-sample check that the stage rule is the vendor's. Our
+counts run higher, for the universe reason above. **Phase 3 is done.**
+
 - The stage rule over 1/2/3-month relative performance against SPX. **Validated against the Sept 25
   fixture below**: same universe, same session, the same 33 and 131. Each saved report adds a day.
   The saved editions carry every name's stage in its ticker colour (decoded totals match each

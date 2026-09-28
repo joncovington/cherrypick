@@ -24,6 +24,10 @@ ROTATION_ETFS = (
     "EFA", "IWM", "LQD", "PDBC", "SPY", "TIP", "TLT", "UUP", "VNQ",
 )  # fmt: skip
 
+# The rotation funds the vendor types "Asset" (every edition, Sept 21-25). They are measured against
+# the stock-and-bond benchmark (AOR); the sector and industry funds against the S&P 500 (SPY).
+ASSET_ETFS = ("EFA", "IWM", "LQD", "PDBC", "SPY", "TIP", "TLT", "UUP", "VNQ")
+
 # What the engines measure against. AOR is the asset-class benchmark (decided 2026-09-27); AGG with
 # SPY gives a US-only 60/40 should that ever be wanted. SPY also stands in for SPX, which Dolt does
 # not carry.

@@ -54,3 +54,46 @@ def load() -> dict[str, dict[str, Stage]]:
         if stages:
             out[session_of(path.stem)] = stages
     return out
+
+
+# The rotation section's four headings, in the vendor's words, and the state each names.
+ROTATION_HEADINGS = (
+    ("Confirmed Leadership", "leading"),
+    ("Early Rotation", "improving"),
+    ("Maturing Leadership", "weakening"),
+    ("Confirmed Weakness", "lagging"),
+)
+_FUND = re.compile(r'symbol=([A-Z]+)"[^>]*>\s*[A-Z]+\s*(?:</a>)?\s*,\s*(Industry|Sector|Asset)')
+
+
+def decode_rotation(page_html: str) -> dict[str, str]:
+    """{fund: state} from an edition's rotation section. Headings are found by their own markup
+    (">Confirmed Weakness<"), never by the phrase: the paragraph above them uses the same words
+    ("climbed out of Confirmed Weakness"), and matching the phrase put funds in the wrong state."""
+    a = page_html.find("Sector Rotation")
+    b = page_html.find("Relative Strength Leadership", a)
+    if a < 0 or b < 0:
+        return {}
+    seg = page_html[a:b]
+    marks = sorted(
+        (m.start(), state)
+        for heading, state in ROTATION_HEADINGS
+        for m in [re.search(r">\s*" + heading + r"[^<]*<", seg)]
+        if m
+    )
+    out = {}
+    for i, (start, state) in enumerate(marks):
+        end = marks[i + 1][0] if i + 1 < len(marks) else len(seg)
+        for fund, _kind in _FUND.findall(seg[start:end]):
+            out[fund] = state
+    return out
+
+
+def load_rotation() -> dict[str, dict[str, str]]:
+    """{session described: {fund: state}} for every saved edition."""
+    out = {}
+    for path in sorted((paths.market_report_dir() / "vendor-editions").glob("????-??-??.html")):
+        states = decode_rotation(path.read_text(encoding="utf-8"))
+        if states:
+            out[session_of(path.stem)] = states
+    return out

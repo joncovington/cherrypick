@@ -74,6 +74,21 @@ confirmed when all three do — is only part of it. Fitting the five editions of
   our counts run higher than the vendor's stated ones, and the two are compared as rates, never
   as totals.
 
+## The rotation rule and the breadth history (Phase 3)
+
+`rotation.py` places each of the 35 funds in the relative-rotation quadrant its slow (63-session)
+and fast (10-session) relative trends put it in, against SPY, or against AOR for the nine funds the
+vendor types "Asset"; inside either neutral band (3% slow, 1% fast) it is in no state. Fitted on
+the five editions: the vendor's exact state for 91 of 119 placements (76%), 26 funds placed where
+the vendor had none. `editions.decode_rotation` finds the four headings by their markup, never by
+the phrase -- the paragraph above them uses the same words, and matching the phrase put funds in
+the wrong state.
+
+`breadth` rebuilds the report's daily chart from prices. Held against the sixteen sessions the plan
+reads off the vendor's charts (Sept 2-24), eleven of them never used in fitting, the bullish share
+correlates at 0.93 (leaders 0.78, laggards 0.90) -- the out-of-sample evidence that the stage rule
+is the vendor's rule and not a fit to five days. Our counts run higher, as the stage section says.
+
 ## Scheduling
 
 One supervisor job, `technicals-land` (06:15 ET daily, after the 05:30 Dolt pull; config block
@@ -95,4 +110,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals bars SYMBOL [--raw] [--last N]` | A symbol's adjusted (or raw) bars and its IV rank. |
 | `python -m cherrypick.technicals check-vendor [--all]` | Our adjusted bars against every vendor chart capture; exits non-zero on any disagreement. |
 | `python -m cherrypick.technicals stages [--session D]` | Every candidate's relative-strength stage on a session. |
+| `python -m cherrypick.technicals rotation [--session D]` | Every rotation fund's state on a session. |
+| `python -m cherrypick.technicals score-rotation` | The rotation rule against every saved edition. |
+| `python -m cherrypick.technicals breadth [--sessions N]` | Daily leaders, laggards, net and bullish share. |
 | `python -m cherrypick.technicals score-stages` | The stage rule against every saved edition: side recall, stage agreement, extra rate, counts. |

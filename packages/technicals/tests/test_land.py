@@ -23,7 +23,7 @@ class FakeCursor:
         self.calls.append((sql, params))
         s = sql.lower()
         if "from symbol" in s:
-            self.rows = [(sym,) for sym in self.db.listed]
+            self.rows = [(sym, 1 if sym == "ZZZ" else 0) for sym in self.db.listed]
         elif "from ohlcv" in s:
             lo, hi = (date.fromisoformat(p) for p in params)
             self.rows = [r for r in self.db.ohlcv if lo <= r[1] < hi]
@@ -129,3 +129,12 @@ def test_the_vendor_check_counts_a_cent_as_agreement_and_more_as_a_miss():
     result = vendor_check.compare(ours, vendor)
     assert (result["prices"], result["agree"]) == (4, 3)
     assert result["worst"][0][1] == "close"
+
+
+def test_the_landing_records_which_symbols_are_funds_so_breadth_counts_stocks_only(dolt):
+    dolt.listed.append("ETF1")
+    dolt.ohlcv.append(("ETF1", date(2026, 9, 25), 1, 1, 1, 1, 1))
+    land.land(wanted=["AAA", "ETF1"], today=TODAY)
+    conn = store.connect()
+    conn.execute("UPDATE listings SET is_etf = 1 WHERE symbol = 'ETF1'")
+    assert store.stocks(conn, ["AAA", "ETF1", "UNLANDED"]) == ["AAA", "UNLANDED"]

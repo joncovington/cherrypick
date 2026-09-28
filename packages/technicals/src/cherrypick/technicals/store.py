@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS iv (
     symbol TEXT NOT NULL, date TEXT NOT NULL,
     iv REAL, iv_year_high REAL, iv_year_low REAL, hv REAL,
     PRIMARY KEY (symbol, date));
+CREATE TABLE IF NOT EXISTS listings (
+    symbol TEXT PRIMARY KEY, is_etf INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS landings (
     landed_at REAL NOT NULL, through TEXT, symbols INTEGER, bars INTEGER, report TEXT);
 """
@@ -67,6 +69,19 @@ def upsert_iv(conn, rows) -> int:
     rows = list(rows)
     conn.executemany("INSERT OR REPLACE INTO iv VALUES (?, ?, ?, ?, ?, ?)", rows)
     return len(rows)
+
+
+def upsert_listings(conn, rows) -> int:
+    rows = list(rows)
+    conn.executemany("INSERT OR REPLACE INTO listings VALUES (?, ?)", rows)
+    return len(rows)
+
+
+def stocks(conn, symbols: list[str]) -> list[str]:
+    """The given symbols Dolt lists as operating companies, not funds. Breadth is a stock measure:
+    the vendor's table holds no ETFs, and counting the rotation funds in it would move the share."""
+    etf = {r["symbol"] for r in conn.execute("SELECT symbol FROM listings WHERE is_etf = 1")}
+    return [s for s in symbols if s not in etf]
 
 
 def record_landing(conn, through: str | None, symbols: int, bars: int, report: dict) -> None:

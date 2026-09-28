@@ -66,3 +66,46 @@ def score(rule: stage.StageRule = stage.DEFAULT_RULE, conn=None) -> dict:
         "totals": totals,
         "sessions": sessions,
     }
+
+
+def score_rotation(rule=None, conn=None) -> dict:
+    """The rotation rule against every saved edition: exact state agreement over the vendor's
+    placements, and `extra` -- funds we place in a state the vendor left empty that day."""
+    from . import rotation, symbols
+
+    rule = rule or rotation.DEFAULT_RULE
+    vendor = editions.load_rotation()
+    own = conn is None
+    conn = conn or store.connect()
+    names = sorted({*symbols.ROTATION_ETFS, rule.benchmark, rule.asset_benchmark})
+    closes = {s: {b.date: b.close for b in store.adjusted_bars(conn, s)} for s in names}
+    if own:
+        conn.close()
+    sessions, placed, agree, extra = {}, 0, 0, 0
+    for day, theirs in sorted(vendor.items()):
+        ours = rotation.states_on(day, closes, symbols.ASSET_ETFS, rule)
+        row = {
+            "placed": len(theirs),
+            "agree": sum(1 for f, st in theirs.items() if ours.get(f) == st),
+            "extra": sum(1 for f in symbols.ROTATION_ETFS if ours.get(f) and f not in theirs),
+            "disagree": {f: [ours.get(f), st] for f, st in theirs.items() if ours.get(f) != st},
+        }
+        sessions[day] = row
+        placed += row["placed"]
+        agree += row["agree"]
+        extra += row["extra"]
+    return {
+        "rule": {
+            "name": rule.name,
+            "fast": rule.fast,
+            "slow": rule.slow,
+            "fast_margin": rule.fast_margin,
+            "slow_margin": rule.slow_margin,
+        },
+        "editions": len(vendor),
+        "agreement": round(agree / placed, 4) if placed else None,
+        "placed": placed,
+        "agree": agree,
+        "extra": extra,
+        "sessions": sessions,
+    }
