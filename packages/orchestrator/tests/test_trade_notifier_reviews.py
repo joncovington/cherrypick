@@ -160,3 +160,107 @@ def test_review_with_no_figures_still_produces_a_valid_card():
     """Discord rejects an empty field value, so a review with nothing recorded needs a placeholder."""
     conn = _conn_with_reviews([_row(symbol="AAPL", selected=0, reason=None)])
     assert tn._embed_earnings_review(tn._earnings_new_reviews(conn, set())[0])["fields"][0]["value"]
+
+
+# --- chosen pushed, rejected summarised ---
+class _Recorder:
+    """A notifier double: `notify` is a push, `record` is the log floor only."""
+
+    def __init__(self):
+        self.pushed, self.recorded = [], []
+
+    def notify(self, level, key, title, message, embed=None):
+        self.pushed.append((key, title, message))
+
+    def record(self, level, key, title, message):
+        self.recorded.append((key, title, message))
+
+
+def _process(rows, monkeypatch):
+    conn = _conn_with_reviews(rows)
+    # Only the review path is under test; entries and exits read tables this DB does not have.
+    monkeypatch.setattr(tn, "_earnings_new_entries", lambda conn, seen: [])
+    monkeypatch.setattr(tn, "_earnings_new_exits", lambda conn, seen: [])
+    rec = _Recorder()
+    st = {"notified_entry_ids": [], "notified_exit_ids": [], "notified_review_ids": []}
+    result = tn._earnings_process(conn, st, rec, "earnings")
+    return rec, result
+
+
+def test_a_chosen_review_is_pushed_and_a_rejection_is_only_recorded(monkeypatch):
+    """1,054 of 1,103 review notices in two months were rejections, each its own push."""
+    rec, result = _process(
+        [
+            _row(symbol="DHI", selected=1, reason="opened atm_calendar"),
+            _row(symbol="IVA", selected=0, reason="avg_volume_below_minimum", volume=1216800.0),
+            _row(symbol="GNS", selected=0, reason="no_listed_options"),
+        ],
+        monkeypatch,
+    )
+    pushed_titles = [t for _, t, _ in rec.pushed]
+    assert pushed_titles.count("Earnings review") == 1 and "DHI" in rec.pushed[0][2]
+    assert [k.split(".")[-1] for k, _, _ in rec.recorded] == ["2", "3"], "every rejection kept in the log"
+    assert (
+        result["reviews_notified"] == 1
+        and result["reviews_recorded"] == 2
+        and result["review_summaries"] == 1
+    )
+
+
+def _rows(*rows):
+    return [dict(zip(("id", *_COLS), (i, *r), strict=True)) for i, r in enumerate(rows, 1)]
+
+
+BARS = {"near_miss_min_avg_volume": 1_000_000.0}
+
+
+def test_one_summary_per_scan_counts_checks_and_names_only_real_near_misses():
+    rows = _rows(
+        _row(symbol="DHI", selected=1, reason="opened atm_calendar"),
+        _row(
+            symbol="IVA",
+            selected=0,
+            reason="avg_volume_below_minimum (6 strategies evaluated)",
+            volume=1216800.0,
+        ),
+        _row(symbol="RGS", selected=0, reason="avg_volume_below_minimum", volume=5833.0),
+        _row(symbol="GNS", selected=0, reason="no_listed_options (6 strategies evaluated)"),
+        _row(symbol="ZZZ", selected=0, reason="price_below_minimum; avg_volume_below_minimum", volume=2e6),
+        _row(symbol="NEXT", scan_date="2026-07-17", selected=0, reason="no_listed_options"),
+    )
+    summaries = tn.review_summaries(rows, BARS)
+    assert sorted(summaries) == ["2026-07-16", "2026-07-17"]
+    text = summaries["2026-07-16"]
+    assert "5 reviewed, 1 chosen, 4 rejected" in text
+    assert "avg_volume_below_minimum 3" in text, "the 'strategies evaluated' tail must not split a count"
+    near = text.split("Near misses:")[1]
+    assert "IVA (volume 1,216,800" in near
+    assert "RGS" not in near, "one failed check far below its near-miss bar is not a near miss"
+    assert "GNS" not in near, "a hard check is never a near miss"
+    assert "ZZZ" not in near, "two failed checks is not a near miss"
+
+
+def test_without_the_earnings_config_a_summary_gives_counts_only():
+    rows = _rows(_row(symbol="IVA", selected=0, reason="avg_volume_below_minimum", volume=1216800.0))
+    assert "Near misses" not in tn.review_summaries(rows, {})["2026-07-16"]
+
+
+def test_a_scan_that_rejected_nothing_sends_no_summary():
+    assert (
+        tn.review_summaries(
+            [dict(zip(("id", *_COLS), (1, *_row(symbol="DHI", selected=1, reason="opened")), strict=True))]
+        )
+        == {}
+    )
+
+
+def test_a_name_with_no_data_is_counted_once_not_once_per_check():
+    rows = _rows(
+        _row(
+            symbol="X",
+            selected=0,
+            reason="price_unverified; avg_volume_unverified; chain_complete_unverified",
+        )
+    )
+    text = tn.review_summaries(rows, BARS)["2026-07-16"]
+    assert "data_unavailable 1" in text and "price_unverified" not in text

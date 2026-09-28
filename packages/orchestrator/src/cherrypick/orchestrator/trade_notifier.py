@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -601,6 +602,93 @@ def _earnings_review_bullets(r) -> list[str]:
     return lines
 
 
+# How many near misses a summary names before it just counts the rest.
+_NEAR_MISS_SHOWN = 8
+
+# The earnings module's own soft criteria that a review row carries a figure for: the reject reason,
+# the row's column, and the config key of the near-miss bar. A near miss is the module's definition,
+# not a looser one: failed exactly one of these, while still clearing its near-miss bar -- the names
+# a threshold change would actually admit. "Failed one check" alone listed RGS at 5,833 shares.
+_SOFT = {
+    "avg_volume_below_minimum": ("volume", "near_miss_min_avg_volume"),
+    "winrate_below_minimum": ("winrate", "near_miss_min_winrate"),
+    "iv_rv_ratio_below_minimum": ("iv_rv_ratio", "near_miss_min_iv_rv_ratio"),
+    "market_cap_below_minimum": ("market_cap", "near_miss_min_market_cap"),
+}
+_EVALUATED = re.compile(r"\s*\(\d+ strateg(?:y|ies) evaluated\)\s*$")
+
+
+def _reasons(r) -> list[str]:
+    """The failed checks, without the "(6 strategies evaluated)" tail the last one carries -- left
+    on, it split one check into two counts."""
+    return [_EVALUATED.sub("", p).strip() for p in str(r["reason"] or "").split(";") if p.strip()]
+
+
+def _near_miss_bars() -> dict[str, float]:
+    """The earnings module's near-miss bars from its config's strategy defaults; empty when the
+    config cannot be read, in which case a summary gives counts only."""
+    try:
+        from cherrypick.core import home as _home
+
+        cfg = json.loads(_home.config_path("earnings").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    defaults = cfg.get("strategy_defaults") or {}
+    return {
+        key: float(defaults[key]) for _, key in _SOFT.values() if isinstance(defaults.get(key), (int, float))
+    }
+
+
+def _near_miss(r, bars: dict[str, float]) -> str | None:
+    reasons = _reasons(r)
+    if len(reasons) != 1 or reasons[0] not in _SOFT:
+        return None
+    column, key = _SOFT[reasons[0]]
+    value = r[column]
+    if value is None or key not in bars or value < bars[key]:
+        return None
+    shown = f"{int(value):,}" if column in ("volume", "market_cap") else f"{value:.2f}"
+    return f"{r['symbol']} ({column} {shown}, {reasons[0]})"
+
+
+def review_summaries(reviews, bars: dict[str, float] | None = None) -> dict[str, str]:
+    """{scan_date: summary text} for the scans in this pass that rejected anything: how many were
+    reviewed and chosen, the rejections counted by the check that failed, and the near misses in the
+    earnings module's own sense (see `_SOFT`). Chosen names are pushed on their own and only counted
+    here."""
+    bars = _near_miss_bars() if bars is None else bars
+    by_scan: dict[str, list] = {}
+    for r in reviews:
+        by_scan.setdefault(str(r["scan_date"] or "unknown"), []).append(r)
+    out = {}
+    for scan_date, rows in sorted(by_scan.items()):
+        rejected = [r for r in rows if not r["selected"]]
+        if not rejected:
+            continue
+        chosen = len(rows) - len(rejected)
+        counts: dict[str, int] = {}
+        for r in rejected:
+            reasons = _reasons(r) or ["unrecorded"]
+            # A name whose data could not be fetched fails every check as "..._unverified" -- eleven
+            # entries in the counts for one missing chain. It is one fact: count it once.
+            if all(x.endswith("_unverified") for x in reasons):
+                reasons = ["data_unavailable"]
+            for reason in reasons:
+                counts[reason] = counts.get(reason, 0) + 1
+        near = [m for m in (_near_miss(r, bars) for r in rejected) if m]
+        lines = [
+            f"Earnings scan {scan_date}: {len(rows)} reviewed, {chosen} chosen, {len(rejected)} rejected.",
+            "Rejected by check: "
+            + ", ".join(f"{k} {v}" for k, v in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))),
+        ]
+        if near:
+            more = f" and {len(near) - _NEAR_MISS_SHOWN} more" if len(near) > _NEAR_MISS_SHOWN else ""
+            lines.append("Near misses: " + "; ".join(near[:_NEAR_MISS_SHOWN]) + more)
+        lines.append("Each rejection is in the notification log in full.")
+        out[scan_date] = "\n".join(lines)
+    return out
+
+
 def _fmt_earnings_review(r) -> str:
     """Per-symbol review summary — the data reviewed for entry plus the chosen/rejected decision, in the
     bullet layout the account owner asked for."""
@@ -663,21 +751,35 @@ def _earnings_process(conn, st: dict, notifier: Notifier, name: str) -> dict:
     st["notified_exit_ids"] = list(notified)[-_ID_CAP:]
 
     # Per-symbol entry reviews: the data reviewed for each symbol during the entry scan + the
-    # chosen/rejected decision. One push per symbol, id-watermarked like entries/exits.
+    # chosen/rejected decision, id-watermarked like entries/exits. A CHOSEN review is pushed on its
+    # own; a REJECTED one is written whole to the log floor and folded into one summary per scan.
+    # Until 2026-09-27 every rejection was its own push: 1,054 of 1,103 review notices in two months
+    # (up to 87 a day), burying the 49 that opened trades.
     reviewed = set(st.get("notified_review_ids", []))
     reviews = _earnings_new_reviews(conn, reviewed)
+    rejected = []
     for r in reviews:
-        notifier.notify(
-            "INFO",
-            f"trade.{name}.review.{r['id']}",
-            "Earnings review",
-            _fmt_earnings_review(r),
-            embed=_embed_earnings_review(r),
-        )
+        key = f"trade.{name}.review.{r['id']}"
+        if r["selected"]:
+            notifier.notify(
+                "INFO", key, "Earnings review", _fmt_earnings_review(r), embed=_embed_earnings_review(r)
+            )
+        else:
+            notifier.record("INFO", key, "Earnings review", _fmt_earnings_review(r))
+            rejected.append(r)
         reviewed.add(r["id"])
     st["notified_review_ids"] = list(reviewed)[-_ID_CAP:]
+    summaries = review_summaries(reviews)
+    for scan_date, text in summaries.items():
+        notifier.notify("INFO", f"trade.{name}.review_summary.{scan_date}", "Earnings scan", text)
 
-    return {"entries_notified": len(entries), "exits_notified": len(exits), "reviews_notified": len(reviews)}
+    return {
+        "entries_notified": len(entries),
+        "exits_notified": len(exits),
+        "reviews_notified": len(reviews) - len(rejected),
+        "reviews_recorded": len(rejected),
+        "review_summaries": len(summaries),
+    }
 
 
 # --------------------------------------------------------------------------- flies fly_positions schema

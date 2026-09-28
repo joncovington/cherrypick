@@ -85,6 +85,13 @@ class Notifier:
         with _LOG.open("a", encoding="utf-8") as fh:
             fh.write(line + "\n")
 
+    def record(self, level: str, key: str, title: str, message: str) -> dict[str, Any]:
+        """Write the log floor and push nothing -- for a record worth keeping whole but not worth a
+        push of its own (an earnings rejection, which is summarised instead)."""
+        level = level.upper()
+        self._write_log(level, key, title, message)
+        return {"log": {"ok": True}}
+
     # -- push channels (best-effort) -----------------------------------------------
     def _push_desktop(self, level: str, title: str, message: str) -> dict[str, Any]:
         if os.name != "nt":
