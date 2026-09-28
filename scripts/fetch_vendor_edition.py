@@ -660,9 +660,17 @@ def validate_chart_capture(why: dict, ticker: str) -> list[str]:
             for lvl in sr.get(side) or []:
                 if not isinstance(lvl.get("value"), (int, float)):
                     problems.append(f"a {side} level is not a number: {lvl!r}")
-    if not isinstance(why.get("technicalRank"), (int, float)):
-        problems.append("no 1-10 technical rank")
     return problems
+
+
+def chart_capture_notes(why: dict) -> list[str]:
+    """Gaps worth recording with a capture that do not make it unusable. The vendor sends no 1-10
+    rank for some names (A, AU, ITW, PYPL, UMC and XLU on 2026-09-27) while their bars, trend
+    histories and levels are complete; rejecting the capture for it threw that data away every night."""
+    notes = []
+    if not isinstance(why.get("technicalRank"), (int, float)):
+        notes.append("no 1-10 technical rank")
+    return notes
 
 
 def session_of(why: dict) -> str | None:
@@ -753,6 +761,7 @@ def cmd_charts(args) -> int:
                 record = {
                     "ticker": ticker,
                     "fetched_at": datetime.now(UTC).isoformat(),
+                    "notes": chart_capture_notes(why),
                     "why": why,
                     "ranks": ranks,
                 }

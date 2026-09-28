@@ -184,8 +184,12 @@ def test_a_level_that_is_not_a_number_fails():
     assert any("not a number" in p for p in fve.validate_chart_capture(_why(support=("n/a",)), "ANET"))
 
 
-def test_a_capture_without_a_rank_fails():
-    assert any("rank" in p for p in fve.validate_chart_capture(_why(rank=None), "ANET"))
+def test_a_capture_without_a_rank_is_kept_with_a_note():
+    """The vendor sends no rank for some names while the rest of the page is complete; the rank is a
+    gap to note, never a reason to throw the bars, trends and levels away."""
+    assert fve.validate_chart_capture(_why(rank=None), "ANET") == []
+    assert fve.chart_capture_notes(_why(rank=None)) == ["no 1-10 technical rank"]
+    assert fve.chart_capture_notes(_why()) == []
 
 
 def test_edition_symbols_skip_the_breadth_table_but_keep_names_discussed_elsewhere():
