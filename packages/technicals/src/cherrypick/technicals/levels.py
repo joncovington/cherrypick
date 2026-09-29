@@ -14,8 +14,8 @@ by ratio: ADI's range / 100 is 2.24, nearer 2.00 by difference but 2.50 by ratio
 
 **Which grid points become levels is still open.** 83% of level dates are swing highs (the bar's
 high beats the two either side), supports included, and most levels sit within about one ATR of
-that high, but the level's price is not simply that high snapped to the grid. That is the next fit,
-on more captures.
+that high, but the level's price is not simply that high snapped to the grid. `level_selection.py`
+measures what a selection rule would have to reproduce.
 
 **The 1-10 rank** is the decile of the name's ~6-month return percentile: Spearman 0.95 against the
 vendor's rank over 34 names, within one step on 33, exact on about 40% -- the vendor ranks within its

@@ -182,6 +182,13 @@ def cmd_score_levels(_args) -> int:
     return 0
 
 
+def cmd_score_level_selection(_args) -> int:
+    from . import chart_score
+
+    print(json.dumps(chart_score.score_level_selection(), indent=1))
+    return 0
+
+
 def cmd_score_rank(_args) -> int:
     from . import chart_score
 
@@ -251,6 +258,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("score-levels", help="how many vendor levels our grid places").set_defaults(
         fn=cmd_score_levels
     )
+    sub.add_parser(
+        "score-level-selection", help="where the vendor's levels sit among the grid points, against chance"
+    ).set_defaults(fn=cmd_score_level_selection)
     sub.add_parser("score-rank", help="our 1-10 rank against the vendor's").set_defaults(fn=cmd_score_rank)
     sub.add_parser("score-signals", help="our scan rules against every saved scan list").set_defaults(
         fn=cmd_score_signals

@@ -80,14 +80,12 @@ def _captures() -> dict:
     return out
 
 
-def score_levels(min_bar_agreement: float = 0.99) -> dict:
-    """How many of the vendor's levels our grid can produce, on the names whose adjusted bars agree
-    with the vendor's to the cent (a grid is only as exact as the bars under it). Levels not yet
-    reproduced as a SET -- this checks placement, not selection."""
-    from . import levels, vendor_check
+def _agreeing(conn, min_bar_agreement: float, skipped: list):
+    """(symbol, capture, our bars through the capture) for each name whose adjusted bars agree with
+    the vendor's to the cent -- a grid is only as exact as the bars under it. The rest go to
+    `skipped`."""
+    from . import vendor_check
 
-    conn = store.connect()
-    names, placed, total, skipped = 0, 0, 0, []
     for sym, why in sorted(_captures().items()):
         bars = [
             b for b in store.adjusted_bars(conn, sym) if b.date <= why["historicalQuotes"][-1]["date"][:10]
@@ -97,6 +95,18 @@ def score_levels(min_bar_agreement: float = 0.99) -> dict:
         if not agreement["prices"] or agreement["agree"] / agreement["prices"] < min_bar_agreement:
             skipped.append(sym)
             continue
+        yield sym, why, bars
+
+
+def score_levels(min_bar_agreement: float = 0.99) -> dict:
+    """How many of the vendor's levels our grid can produce, on the names whose adjusted bars agree
+    with the vendor's to the cent. Levels not yet reproduced as a SET -- this checks placement, not
+    selection; `score_level_selection` measures selection."""
+    from . import levels
+
+    conn = store.connect()
+    names, placed, total, skipped = 0, 0, 0, []
+    for _sym, why, bars in _agreeing(conn, min_bar_agreement, skipped):
         g = levels.grid([b.high for b in bars], [b.low for b in bars])
         sr = why.get("supportAndResistance") or {}
         values = [x["value"] for k in ("support", "resistance") for x in sr.get(k) or []]
@@ -113,6 +123,39 @@ def score_levels(min_bar_agreement: float = 0.99) -> dict:
         "rate": round(placed / total, 4) if total else None,
         "skipped_bars_disagree": skipped,
     }
+
+
+def score_level_selection(min_bar_agreement: float = 0.99) -> dict:
+    """The properties of the grid points the vendor draws, each beside its chance baseline, over the
+    same names `score_levels` places levels on (`level_selection` says what each measure means)."""
+    from . import level_selection, levels
+
+    conn = store.connect()
+    tally, names, skipped = level_selection.Tally(), 0, []
+    for _sym, why, bars in _agreeing(conn, min_bar_agreement, skipped):
+        window = bars[-levels.WINDOW :]
+        g = levels.grid([b.high for b in bars], [b.low for b in bars])
+        sr = why.get("supportAndResistance") or {}
+        vendor = [
+            (x["value"], str(x.get("date") or "")[:10])
+            for k in ("support", "resistance")
+            for x in sr.get(k) or []
+        ]
+        if g is None or not vendor:
+            continue
+        names += 1
+        level_selection.measure(
+            [b.date for b in window],
+            [b.high for b in window],
+            [b.low for b in window],
+            [b.close for b in window],
+            [b.volume for b in window],
+            g,
+            vendor,
+            tally,
+        )
+    conn.close()
+    return {"names": names, **level_selection.summary(tally), "skipped_bars_disagree": skipped}
 
 
 def score_rank() -> dict:

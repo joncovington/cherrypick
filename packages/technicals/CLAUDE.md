@@ -145,6 +145,22 @@ vendor's levels, nearly all of them the extremes. Level dates are mostly swing h
 can sit above, inside or well away from its dated bar, so the vendor evidently selects from
 something these fields do not show. The report can place levels exactly; it cannot yet pick them.
 
+**Selection is measured, not solved** (`level_selection.py`, `score-level-selection`; 2026-09-29,
+108 names, 309 interior levels). Each measure is shown beside its chance baseline:
+
+- **Levels sit where price spent little time.** Count the sessions crossing each grid point: the
+  vendor's levels average the 35th percentile (chance 50), and are local minima of that profile two
+  to three times as often as a random grid point (61% vs 36% at +-1 step, 35% vs 14% at +-5). Volume
+  at price agrees. Touch and close counts -- the textbook construction -- point the wrong way.
+- **Given a level's date, the price is half-found.** 81% of dated bars are swing highs. Of the ~14
+  grid points within 0.75 ATR of that bar, the least-crossed one is the level 28% of the time against
+  8% by chance, the bar's high rounded up to the grid 26%; within one step, about 55%.
+- **Which swing highs get dated is barely separated.** The rise into the high, prominence and volume
+  rank picked highs at about the 57th-60th percentile; older highs are slightly favoured.
+
+So a rule needs a date-picking half that nothing here yet supplies. The 24 names captured on more
+than one night are not yet compared night to night; whether a level persists is the next question.
+
 ## The chart files (Phase 7)
 
 `chart.py` writes `data/technicals/charts/<SYMBOL>.json` for every stock the store holds, plus an
@@ -201,6 +217,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals breadth [--sessions N]` | Daily leaders, laggards, net and bullish share. |
 | `python -m cherrypick.technicals score-trends` | The trend baseline against every vendor chart capture: exact, label and within-one agreement. |
 | `python -m cherrypick.technicals score-levels` | How many of the vendor's levels our grid places, on names whose bars agree to the cent. |
+| `python -m cherrypick.technicals score-level-selection` | Where the vendor's levels sit among the grid points (crossing profile, price given the date, which swing highs), each against chance. |
 | `python -m cherrypick.technicals score-rank` | Our 1-10 rank against the vendor's. |
 | `python -m cherrypick.technicals score-signals` | Our six scan rules against every scan list the collector has saved. |
 | `python -m cherrypick.technicals report [--session D]` | Write one session's market-report readings and the per-name chart files for the console. |
