@@ -283,29 +283,31 @@ function SignalsCard({ c }: { c: TechnicalsChart }) {
 export function ChartPage() {
   const [params, setParams] = useSearchParams();
   const symbol = params.get("symbol")?.toUpperCase() || undefined;
-  const [draft, setDraft] = useState(symbol ?? "");
   const { data, isLoading, isError } = useTechnicalsChart(symbol);
   const c = data?.chart ?? null;
   const index = data?.index;
-
-  useEffect(() => setDraft(symbol ?? ""), [symbol]);
+  const known = new Set((index?.symbols ?? []).map((s) => s.symbol));
+  // The box is for picking the next name, so it empties on every navigation; the name being
+  // shown is the heading above the chart.
+  const [draft, setDraft] = useState("");
 
   const go = (s: string) => {
     const next = new URLSearchParams(params);
     if (s) next.set("symbol", s.toUpperCase());
     else next.delete("symbol");
     setParams(next);
+    setDraft("");
   };
   const last = c ? c.bars[c.bars.length - 1] : undefined;
 
   return (
     <div className="page">
       <div className="page-title-row">
-        <h1>Chart {c ? `· ${c.symbol}` : ""}</h1>
+        <h1>Chart</h1>
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            go(draft.trim());
+            if (draft.trim()) go(draft.trim());
           }}
         >
           <input
@@ -314,7 +316,16 @@ export function ChartPage() {
             value={draft}
             placeholder="symbol"
             aria-label="Symbol"
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value;
+              // A pick from the suggestions arrives as a replacement (or, in some browsers, as a
+              // plain Event); a keystroke arrives as insertText. Only a pick navigates, or typing
+              // "A" on the way to "AAPL" would open A's chart.
+              const inputType = (e.nativeEvent as InputEvent).inputType;
+              const picked = inputType === undefined || inputType === "insertReplacementText";
+              if (picked && known.has(v.toUpperCase())) go(v);
+              else setDraft(v);
+            }}
           />
           <datalist id="technicals-symbols">
             {(index?.symbols ?? []).map((s) => (
@@ -341,6 +352,7 @@ export function ChartPage() {
 
       {c && (
         <>
+          <h2 className="chart-symbol">{c.symbol}</h2>
           <Card title="Price, CCI and trend" asOf={last ? `close ${fmt(last.close)}` : undefined}>
             <PriceChart c={c} />
             <p className="muted">
