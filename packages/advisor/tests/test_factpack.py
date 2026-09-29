@@ -1042,10 +1042,24 @@ def test_regime_cuts_marks_fragile_cells_and_lists_only_significant_pairs(tmp_ho
     diffuse["fragile"] = True
     diffuse["history"] = {"snapshots": 6, "first_net": -100.0, "sign_changes": 2}
     gex["paired"] = [
-        {"a": "diffuse", "b": "pinning", "sessions": 12, "a_better_sessions": 8,
-         "b_better_sessions": 4, "mean_diff_per_trade": 17.3, "sign_test_p": 0.3877},
-        {"a": "diffuse", "b": "clustered", "sessions": 25, "a_better_sessions": 3,
-         "b_better_sessions": 22, "mean_diff_per_trade": -23.0, "sign_test_p": 0.0002},
+        {
+            "a": "diffuse",
+            "b": "pinning",
+            "sessions": 12,
+            "a_better_sessions": 8,
+            "b_better_sessions": 4,
+            "mean_diff_per_trade": 17.3,
+            "sign_test_p": 0.3877,
+        },
+        {
+            "a": "diffuse",
+            "b": "clustered",
+            "sessions": 25,
+            "a_better_sessions": 3,
+            "b_better_sessions": 22,
+            "mean_diff_per_trade": -23.0,
+            "sign_test_p": 0.0002,
+        },
     ]
     doc["multiplicity"] = {"paired_tests": 2, "paired_below_alpha": 1, "paired_expected_by_chance": 0.2}
     _write_regime_doc(tmp_home, "flies", doc)
@@ -1062,8 +1076,15 @@ def test_regime_cuts_caps_the_paired_list_strongest_first_and_counts_the_rest(tm
     doc = _regime_doc()
     gex = doc["arms"][0]["dimensions"]["gex"]
     gex["paired"] = [
-        {"a": f"k{i}", "b": "z", "sessions": 20, "a_better_sessions": 18, "b_better_sessions": 2,
-         "mean_diff_per_trade": 1.0, "sign_test_p": round(0.001 * (20 - i), 4)}
+        {
+            "a": f"k{i}",
+            "b": "z",
+            "sessions": 20,
+            "a_better_sessions": 18,
+            "b_better_sessions": 2,
+            "mean_diff_per_trade": 1.0,
+            "sign_test_p": round(0.001 * (20 - i), 4),
+        }
         for i in range(factpack.REGIME_CUTS_LIST_MAX + 3)
     ]
     _write_regime_doc(tmp_home, "flies", doc)
@@ -1078,12 +1099,21 @@ def test_regime_cuts_carries_the_flies_gate_replay_one_line_per_rule(tmp_home):
     bound note asks for, because the advisor reads only the pack."""
 
     def block(net, kept=184, losing=6, worst=-836.05):
-        return {"entries": 184, "kept": kept, "completion_rate": 0.7935, "net_pnl": net,
-                "days": 25, "losing_days": losing, "worst_day": worst}
+        return {
+            "entries": 184,
+            "kept": kept,
+            "completion_rate": 0.7935,
+            "net_pnl": net,
+            "days": 25,
+            "losing_days": losing,
+            "worst_day": worst,
+        }
 
     doc = _regime_doc()
     doc["gate_replay"] = {
-        "arm": "control", "start": "2026-08-21", "end": SESSION,
+        "arm": "control",
+        "start": "2026-08-21",
+        "end": SESSION,
         "base": block(3690.39),
         "miss_stop": {"90": block(2593.78, kept=155, losing=9, worst=-817.85)},
         "trend_bucket": {"up_from_open": block(5109.84, kept=134, worst=-438.17)},
@@ -1213,10 +1243,20 @@ def test_regime_cuts_thinned_sections_fit_the_attention_budget(tmp_home):
         ["vol", "gex", "time", "skew", "center_offset", "trend", "drift_alignment"],
         [("gex", "trend"), ("gex", "drift_alignment")],
     )
-    replay_block = {"entries": 184, "kept": 150, "completion_rate": 0.8, "net_pnl": -12345.67,
-                    "days": 25, "losing_days": 11, "worst_day": -1234.56}
+    replay_block = {
+        "entries": 184,
+        "kept": 150,
+        "completion_rate": 0.8,
+        "net_pnl": -12345.67,
+        "days": 25,
+        "losing_days": 11,
+        "worst_day": -1234.56,
+    }
     flies_doc["gate_replay"] = {
-        "arm": "control", "start": "2026-08-21", "end": SESSION, "base": replay_block,
+        "arm": "control",
+        "start": "2026-08-21",
+        "end": SESSION,
+        "base": replay_block,
         "miss_stop": {str(m): replay_block for m in (15, 30, 45, 60, 90)},
         "trend_bucket": {b: replay_block for b in ("up_from_open", "down_from_open")},
         "entry_windows": {f"10:00-1{i}:00,13:00-14:30": replay_block for i in range(4)},

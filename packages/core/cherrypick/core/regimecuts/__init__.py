@@ -468,7 +468,7 @@ def stamp_history(doc: dict, priors: list[dict]) -> dict:
         cell["history"] = {
             "snapshots": len(seq),
             "first_net": seq[0] if seq else None,
-            "sign_changes": sum(1 for x, y in zip(signs, signs[1:]) if x != y),
+            "sign_changes": sum(1 for x, y in zip(signs, signs[1:], strict=False) if x != y),
         }
 
     for arm in doc.get("arms") or []:

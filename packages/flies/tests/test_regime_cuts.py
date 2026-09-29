@@ -324,8 +324,14 @@ def test_regime_cuts_stamps_robustness_and_paired(conn):
 
 # --------------------------------------------------------------------------- gate replay (2026-09-28)
 def _replay_row(hhmm, pnl, day="2026-09-15"):
-    return {"trade_date": day, "kind": "fly", "entry_time": f"{day}T{hhmm}:00-04:00",
-            "completed_at": f"{day}T15:00:00-04:00", "pnl": pnl, "entry_trend_bucket": "flat"}
+    return {
+        "trade_date": day,
+        "kind": "fly",
+        "entry_time": f"{day}T{hhmm}:00-04:00",
+        "completed_at": f"{day}T15:00:00-04:00",
+        "pnl": pnl,
+        "entry_trend_bucket": "flat",
+    }
 
 
 def test_entry_window_replay_keeps_what_the_engine_window_admits():
@@ -333,8 +339,12 @@ def test_entry_window_replay_keeps_what_the_engine_window_admits():
     11:00 entry drops out of the first choice."""
     from cherrypick.flies import replay_gates
 
-    rows = [_replay_row("10:05", 50.0), _replay_row("11:00", 20.0), _replay_row("12:10", -90.0),
-            _replay_row("13:40", 70.0)]
+    rows = [
+        _replay_row("10:05", 50.0),
+        _replay_row("11:00", 20.0),
+        _replay_row("12:10", -90.0),
+        _replay_row("13:40", 70.0),
+    ]
     skip_midday = replay_gates.replay_entry_windows(rows, [["10:00", "11:00"], ["13:00", "14:30"]])
     assert skip_midday["kept"] == 3 and skip_midday["net_pnl"] == 140.0
     # a window wider than anything recorded can only replay as the base, never add entries
@@ -342,7 +352,11 @@ def test_entry_window_replay_keeps_what_the_engine_window_admits():
     assert wide["kept"] == 4 and wide["net_pnl"] == 50.0
     out = replay_gates.without_per_day(replay_gates.sweep(rows, [[["10:00", "11:00"], ["13:00", "14:30"]]]))
     assert set(out["entry_windows"]) == {"10:00-11:00,13:00-14:30"}
-    assert all("per_day" not in b for fam in ("miss_stop", "trend_bucket", "entry_windows") for b in out[fam].values())
+    assert all(
+        "per_day" not in b
+        for fam in ("miss_stop", "trend_bucket", "entry_windows")
+        for b in out[fam].values()
+    )
     assert "per_day" not in out["base"]
 
 
@@ -351,13 +365,19 @@ def test_regime_cuts_carries_gate_replay_only_when_asked(conn):
     plain = analytics.regime_cuts(conn, session=DAY, generated_at="t")
     assert "gate_replay" not in plain
     doc = analytics.regime_cuts(
-        conn, session=DAY, generated_at="t", replay_arm="control",
+        conn,
+        session=DAY,
+        generated_at="t",
+        replay_arm="control",
         replay_windows=[[["10:00", "11:00"]]],
     )
     g = doc["gate_replay"]
     assert (g["arm"], g["start"], g["end"]) == ("control", "2026-08-21", DAY)
-    assert g["base"]["entries"] == 5 and g["base"]["net_pnl"] == analytics.regime_cuts(
-        conn, session=DAY, generated_at="t")["arms"][0]["net_pnl"]
+    assert (
+        g["base"]["entries"] == 5
+        and g["base"]["net_pnl"]
+        == analytics.regime_cuts(conn, session=DAY, generated_at="t")["arms"][0]["net_pnl"]
+    )
     assert g["entry_windows"]["10:00-11:00"]["kept"] == 0  # the fixture's entries are at 12:00
 
 

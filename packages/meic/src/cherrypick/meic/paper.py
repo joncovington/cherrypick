@@ -907,7 +907,10 @@ def evaluate_entry(
             )
             continue
 
-        if bp_cap and open_bp + ic_buying_power({"wing_width": wing_width, "net_credit": net_credit}) > bp_cap:
+        if (
+            bp_cap
+            and open_bp + ic_buying_power({"wing_width": wing_width, "net_credit": net_credit}) > bp_cap
+        ):
             last_reason = "max_open_bp_reached"
             continue
 

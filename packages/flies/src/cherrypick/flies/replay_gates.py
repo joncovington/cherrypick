@@ -129,7 +129,4 @@ def sweep(rows: list[dict], entry_windows: list | tuple = ()) -> dict:
 def without_per_day(out: dict) -> dict:
     """The sweep with every block's `per_day` map dropped -- the shape the artifact carries."""
     strip = lambda b: {k: v for k, v in b.items() if k != "per_day"}  # noqa: E731
-    return {
-        k: strip(v) if k == "base" else {name: strip(b) for name, b in v.items()}
-        for k, v in out.items()
-    }
+    return {k: strip(v) if k == "base" else {name: strip(b) for name, b in v.items()} for k, v in out.items()}

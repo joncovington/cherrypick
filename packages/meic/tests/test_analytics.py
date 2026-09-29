@@ -175,15 +175,24 @@ def test_gex_signed_rows_are_re_derived_sign_first_whatever_their_stored_tag(con
     sign-first rule disagrees with. Shown to fail with the re-derivation limited to `unknown`
     (the pre-09-28 form): `wrong-deep` stays deep_positive and `wrong-neg` stays negative."""
     _insert(
-        conn, ic_order_id="wrong-deep", entry_gex_bucket="deep_positive", entry_gex_value=0.011,
+        conn,
+        ic_order_id="wrong-deep",
+        entry_gex_bucket="deep_positive",
+        entry_gex_value=0.011,
         gex_positive_at_entry=0,
     )
     _insert(
-        conn, ic_order_id="wrong-neg", entry_gex_bucket="negative", entry_gex_value=-0.009,
+        conn,
+        ic_order_id="wrong-neg",
+        entry_gex_bucket="negative",
+        entry_gex_value=-0.009,
         gex_positive_at_entry=1,
     )
     _insert(
-        conn, ic_order_id="near", entry_gex_bucket="negative", entry_gex_value=-0.004,
+        conn,
+        ic_order_id="near",
+        entry_gex_bucket="negative",
+        entry_gex_value=-0.004,
         gex_positive_at_entry=1,
     )
     _insert(conn, ic_order_id="legacy", entry_gex_bucket="deep_positive", entry_gex_value=0.01)

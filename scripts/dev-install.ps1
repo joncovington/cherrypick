@@ -27,19 +27,12 @@ function Install-Editable($relativePath, $label) {
 
 Install-Editable "packages\core[dev]" "packages/core (must be first)"
 
-Install-Editable "packages\orchestrator[dev]" "packages/orchestrator"
-Install-Editable "packages\meic[dev]"         "packages/meic"
-Install-Editable "packages\earnings[dev]"     "packages/earnings"
-Install-Editable "packages\gex[dev]"          "packages/gex"
-Install-Editable "packages\flies[dev]"        "packages/flies"
-Install-Editable "packages\calendars[dev]"    "packages/calendars"
-Install-Editable "packages\pmcc[dev]"         "packages/pmcc"
-Install-Editable "packages\overview[dev]"     "packages/overview"
-Install-Editable "packages\technicals[dev]"   "packages/technicals"
-Install-Editable "packages\streamer[dev]"     "packages/streamer"
-Install-Editable "packages\desk[dev]"         "packages/desk"
-Install-Editable "packages\review[dev]"       "packages/review"
-Install-Editable "packages\advisor[dev]"      "packages/advisor"
+# Every Python package in the tree, found by its pyproject.toml rather than listed: the hand-kept
+# list this replaced had quietly missed bwb and curve.
+Get-ChildItem "$root\packages" -Directory |
+    Where-Object { $_.Name -ne "core" -and (Test-Path "$($_.FullName)\pyproject.toml") } |
+    Sort-Object Name |
+    ForEach-Object { Install-Editable "packages\$($_.Name)[dev]" "packages/$($_.Name)" }
 
 # The console UI is the one Node package. Optional: skipped with a notice when pnpm is absent,
 # so the Python-only setup stays one command with no new required toolchain.

@@ -772,7 +772,9 @@ def regime_cuts(
         from cherrypick.flies import replay_gates
 
         start, _ = _rc.arm_start(era, replay_arm)
-        rows = replay_gates.load_rows(conn, start=start or "0000-00-00", end=session, arm=replay_arm, symbol=symbol)
+        rows = replay_gates.load_rows(
+            conn, start=start or "0000-00-00", end=session, arm=replay_arm, symbol=symbol
+        )
         doc["gate_replay"] = {
             "arm": replay_arm,
             "start": start,

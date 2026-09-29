@@ -15,7 +15,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 echo "==> packages/core (must be first)"
 "$PYTHON" -m pip install -e "$ROOT/packages/core[dev]"
 
-for pkg in orchestrator meic earnings gex flies calendars pmcc streamer desk review advisor overview technicals; do
+# Every Python package in the tree, found by its pyproject.toml rather than listed: the hand-kept
+# list this replaced had quietly missed bwb and curve.
+for proj in "$ROOT"/packages/*/pyproject.toml; do
+    pkg="$(basename "$(dirname "$proj")")"
+    [ "$pkg" = core ] && continue
     echo "==> packages/$pkg"
     "$PYTHON" -m pip install -e "$ROOT/packages/$pkg[dev]"
 done

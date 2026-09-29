@@ -121,8 +121,13 @@ def test_live_shadow_resolves_to_exactly_the_params_live_trades(sample_risk_prof
     assert {k for k in set(shadow) | set(live) if shadow.get(k) != live.get(k)} <= {"enabled"}
 
 
-_BP_KEYS = {"max_open_bp_dollars", "min_seconds_between_entries", "overlap_scope",
-            "paper_entry_window_start", "entry_window_end"}
+_BP_KEYS = {
+    "max_open_bp_dollars",
+    "min_seconds_between_entries",
+    "overlap_scope",
+    "paper_entry_window_start",
+    "entry_window_end",
+}
 
 
 def test_bp_arms_are_control_plus_only_the_sizing_keys(sample_risk_profiles):

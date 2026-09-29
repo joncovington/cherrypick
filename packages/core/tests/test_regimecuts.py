@@ -386,7 +386,13 @@ def _stamped_doc():
         "arms": [
             {
                 "arm": "control",
-                "cells": [{**_row("_", 5, trades=6, net=400.0), "buckets": ["a", "flat"], "session_nets": _nets(80, 90, 70, 85, 75)}],
+                "cells": [
+                    {
+                        **_row("_", 5, trades=6, net=400.0),
+                        "buckets": ["a", "flat"],
+                        "session_nets": _nets(80, 90, 70, 85, 75),
+                    }
+                ],
             }
         ],
     }
@@ -414,8 +420,18 @@ def test_a_document_without_per_session_totals_carries_no_multiplicity():
 def test_history_counts_sign_changes_across_prior_snapshots_of_either_spelling():
     """A cut_version-1 prior spells arms `books`/`book`. Shown to fail by reading only `arms`: the
     first prior is dropped and the +1 -> -1 change is missed."""
-    old = {"session": "2026-09-17", "books": [{"book": "control", "dimensions": {"trend": {"buckets": [{"bucket": "up", "net_pnl": 200.0}]}}}]}
-    mid = {"session": "2026-09-18", "arms": [{"arm": "control", "dimensions": {"trend": {"buckets": [{"bucket": "up", "net_pnl": -100.0}]}}}]}
+    old = {
+        "session": "2026-09-17",
+        "books": [
+            {"book": "control", "dimensions": {"trend": {"buckets": [{"bucket": "up", "net_pnl": 200.0}]}}}
+        ],
+    }
+    mid = {
+        "session": "2026-09-18",
+        "arms": [
+            {"arm": "control", "dimensions": {"trend": {"buckets": [{"bucket": "up", "net_pnl": -100.0}]}}}
+        ],
+    }
     doc = rc.stamp_history(_stamped_doc(), [old, mid])
     by = {b["bucket"]: b for b in doc["arms"][0]["dimensions"]["trend"]["buckets"]}
     assert by["up"]["history"] == {"snapshots": 2, "first_net": 200.0, "sign_changes": 1}
@@ -434,7 +450,12 @@ def test_history_never_stamps_a_thin_cell():
 
 def test_write_artifact_stamps_history_from_earlier_dated_snapshots_only(tmp_path):
     def snap(session, net):
-        return {"session": session, "arms": [{"arm": "control", "dimensions": {"trend": {"buckets": [{"bucket": "up", "net_pnl": net}]}}}]}
+        return {
+            "session": session,
+            "arms": [
+                {"arm": "control", "dimensions": {"trend": {"buckets": [{"bucket": "up", "net_pnl": net}]}}}
+            ],
+        }
 
     rc.write_json_atomic(tmp_path / rc.dated_name("2026-09-16"), snap("2026-09-16", 50.0))
     rc.write_json_atomic(tmp_path / rc.dated_name("2026-09-17"), snap("2026-09-17", -40.0))

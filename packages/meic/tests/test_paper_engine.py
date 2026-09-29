@@ -2872,8 +2872,17 @@ def test_an_otm_settlement_still_costs_nothing(paper_db_path):
 
 def _open_ic(width=10, credit=3.0, put_strike=500.0, call_strike=700.0):
     """An open IC far from the test candidates' strikes, so only its buying power interacts."""
-    return {"ic_order_id": "IC-open", "symbol": "XSP", "expiration": "2026-07-09", "put_strike": put_strike,
-            "call_strike": call_strike, "wing_width": width, "net_credit": credit, "quantity": 1, "status": "open"}
+    return {
+        "ic_order_id": "IC-open",
+        "symbol": "XSP",
+        "expiration": "2026-07-09",
+        "put_strike": put_strike,
+        "call_strike": call_strike,
+        "wing_width": width,
+        "net_credit": credit,
+        "quantity": 1,
+        "status": "open",
+    }
 
 
 def test_ic_buying_power_is_width_less_credit_per_contract():
@@ -2898,4 +2907,7 @@ def test_bp_cap_refuses_when_nothing_fits():
     params = {**_params({**CONSERVATIVE, **WIDEST_FIRST}), "max_open_bp_dollars": 750}
     entered, reason, chosen = paper.evaluate_entry(snap, params, [_open_ic()])
     assert (entered, reason, chosen) == (False, "max_open_bp_reached", None)
-    assert paper._ATTEMPT_OUTCOMES["max_open_bp_reached"] == paper._ATTEMPT_OUTCOMES["max_concurrent_ics_reached"]
+    assert (
+        paper._ATTEMPT_OUTCOMES["max_open_bp_reached"]
+        == paper._ATTEMPT_OUTCOMES["max_concurrent_ics_reached"]
+    )
