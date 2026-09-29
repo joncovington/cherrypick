@@ -366,3 +366,38 @@ structure, where the whole wing is one strike, not about legged flies. Recorded 
 **No conclusion is drawn from the 10-wide lead, and nothing is gated.** The finding that stands:
 on the 5-wide the stranded loss is the price of the completions, not a leak a rule can plug, and
 the uncompleted branch is shrunk only by a different construction.
+
+## 2026-09-29 — the 10-wide's own case, checked before re-proposing it (a negative result)
+
+Asked whether the 10-wide wing deserved another run. The salvage lead above is not a reason to run
+an arm (backlog), and `exp-2026-08-20-flies-1` failed its primary (smaller worst book) and was killed
+on band containment, so the only case left was the one the width sweep was revived for on
+2026-07-27: completions arrive after spot has drifted past a 5-point wing, so the book collects its
+floor and little else, and a wider wing should catch that drift. That was checked on the rows we
+already hold before anything was proposed. Nothing was changed.
+
+Paper `fly_positions`, settled rows, each 10-wide arm paired with `control` on the same sessions.
+"Risk" is `(wing_width − credit) × 100 × quantity` summed over entries — the uncompleted branch's
+defined loss, a like-for-like measure across widths, not a margin figure.
+
+| Window | Arm | Entries | Completion | Completed inside wings | Avg completed | Avg stranded | Net | Net ÷ risk |
+|---|---|---|---|---|---|---|---|---|
+| 08-21..09-04 (11) | `advised:narrow-wing-vs-control` | 82 | 60% | 25/49 (51%) | +$258.44 | −$292.25 | +$3,019.27 | +6.4% |
+| | `control` | 79 | 78% | 18/62 (29%) | +$105.58 | −$255.94 | +$2,194.99 | +10.5% |
+| 08-17..08-20 (4) | `width-2` | 27 | 63% | 5/17 (29%) | +$141.95 | −$547.75 | −$3,064.41 | −19.6% |
+| | `control` | 26 | 77% | 2/20 (10%) | +$41.81 | −$311.15 | −$1,030.68 | −14.7% |
+
+**The mechanism holds.** In both windows more completed flies settle inside the wider wing and each
+earns more than twice as much.
+
+**It does not survive the completion rate.** A wider completion costs more, so fewer complete, and
+each entry carries about twice the risk (credit 4.29 on 10 against 2.35 on 5). The 10-wide's higher
+raw net in the advisor window is entirely the larger risk: per dollar at risk it trailed control in
+both windows, and on 5 of 15 paired sessions only. Both widths clear their break-even completion by
+about the same margin (10-wide 53% needed against 60% observed; control 71% against 78%) — the same
+strategy at double the size, not a more efficient one.
+
+**Conclusion: not re-proposed.** The drift argument is answered on its own terms; what remains is the
+salvage replay, which is not a reason to run the arm, and the band-containment objection, which is
+untouched. Fifteen sessions from one late-summer tape — enough to retire an argument, not to settle
+width for good. [backlog.md](backlog.md)'s reopen condition now says what would change this.

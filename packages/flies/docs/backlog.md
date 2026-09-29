@@ -105,6 +105,13 @@ sessions, now retired, with pessimistic accounting in both directions.
 
 - **Reopens when** a 10-wide (or wider) legged arm is back on the roster for its own reasons and has
   15+ sessions of its own — the salvage is then a replay over its rows, not a reason to run the arm.
+- **The obvious "own reason" is already spent** (experiment-log 2026-09-29): the drift argument —
+  a wider wing catches more of the post-completion drift — holds on the rows (51% of completed flies
+  inside the wings against control's 29%) and still loses per dollar at risk (+6.4% against +10.5%;
+  5 of 15 paired sessions), because completion falls 78% → 60%. Re-running the arm on that argument
+  alone repeats a checked negative. A new case has to say why width would help risk-adjusted P&L
+  where it did not — a different tape, or a completion rule that holds the 10-wide's completion rate
+  up — and be scored on net ÷ risk, never raw net, since the 10-wide carries about twice the risk.
 - **Then:** re-run the script on that arm, and replay the best cell under the live one-incomplete
   and margin-cap rules before any live question; the replay's charge on late completions is a
   bound, so a positive result is a floor on the benefit, and a negative one is not.
