@@ -176,14 +176,25 @@ def _bucket_expr(dimension: str) -> str:
     to measure from, see that docstring), while the sign flag recorded beside it on the same row
     read correctly. Rather than rewrite a month of rows, the read side re-derives: an `unknown`
     with a recorded sign becomes the bucket the classifier would tag today. Rows with no sign flag
-    are left `unknown` -- GEX genuinely was not measured for them."""
-    bucket_col, _ = REGIME_DIMENSIONS[dimension]
+    are left as stored -- GEX genuinely was not measured for an `unknown` one.
+
+    **Every signed row is re-derived, not only `unknown` (2026-09-28).** The 09-16 change also made
+    the classifier sign-first where it had been distance-first, and re-deriving only the `unknown`
+    rows left two definitions of `deep_positive`/`negative` pooled in one era: 131 control rows on
+    08-21 tagged `deep_positive` on a flag that read negative, and 168 across 08-26..09-04 tagged
+    `negative` on a flag that read positive (467 over every advisor-era arm). The stored float is the same
+    signed flip distance the classifier thresholds, so `regime.gex_bucket_from_sign` applies
+    exactly; rows since 09-16 re-derive to their stored tag."""
+    bucket_col, value_col = REGIME_DIMENSIONS[dimension]
     if dimension != "gex":
         return bucket_col
+    from cherrypick.meic.regime import GEX_NEAR_FLIP_PCT
+
     return (
-        f"CASE WHEN {bucket_col} = 'unknown' AND gex_positive_at_entry = 0 THEN 'negative'"
-        f" WHEN {bucket_col} = 'unknown' AND gex_positive_at_entry = 1 THEN 'deep_positive'"
-        f" ELSE {bucket_col} END"
+        f"CASE WHEN gex_positive_at_entry IS NULL THEN {bucket_col}"
+        f" WHEN {value_col} IS NOT NULL AND abs({value_col}) < {GEX_NEAR_FLIP_PCT!r} THEN 'near_flip'"
+        f" WHEN gex_positive_at_entry = 1 THEN 'deep_positive'"
+        f" ELSE 'negative' END"
     )
 
 
@@ -257,6 +268,7 @@ def by_regime(
     era=CURRENT_ERA,
     arm=None,
     bucket_edges: list[float] | None = None,
+    with_sessions: bool = False,
 ) -> list[dict]:
     """Outcomes grouped by the regime the entry was tagged with. Same stat bundle as `by_arm`,
     deliberately — a regime slice and an arm slice have to be read against each other.
@@ -273,6 +285,9 @@ def by_regime(
 
     **Read `regime_coverage` before trusting this table.** A dimension whose tagged rows all land
     in one bucket is reporting no contrast, not no effect.
+
+    `with_sessions` adds `session_nets` (`{session: [trades, net]}`, net of fees) to each row, for
+    the regime-cuts writer's robustness stamps; off for every printing caller.
     """
     if dimension not in REGIME_DIMENSIONS:
         raise ValueError(f"by_regime: unknown dimension {dimension!r} (have {sorted(REGIME_DIMENSIONS)})")
@@ -305,7 +320,16 @@ def by_regime(
                 **_summarize(rs),
             }
         )
+        if with_sessions:
+            out[-1]["session_nets"] = _session_nets(rs)
     return sorted(out, key=lambda x: x["net_pnl"] or 0, reverse=True)
+
+
+def _session_nets(rows) -> dict:
+    """`{session: [trades, net]}` with this module's net (`pnl - fees`) for the regime-cuts writer."""
+    from cherrypick.core import regimecuts as _rc
+
+    return _rc.session_totals((r["trade_date"], (r["pnl"] or 0.0) - (r["fees"] or 0.0)) for r in rows)
 
 
 def regime_coverage(conn, start=None, end=None, symbol=None, era=CURRENT_ERA, arm=None) -> dict:
@@ -380,7 +404,10 @@ def _cross_tab(conn, dims, *, start, end, symbol, era, arm) -> list[dict]:
     grouped: dict[tuple[str, str], list] = {}
     for r in rows:
         grouped.setdefault((r["a"] or "untagged", r["b"] or "untagged"), []).append(r)
-    return [{"buckets": [a, b], **_summarize(rs)} for (a, b), rs in grouped.items()]
+    return [
+        {"buckets": [a, b], **_summarize(rs), "session_nets": _session_nets(rs)}
+        for (a, b), rs in grouped.items()
+    ]
 
 
 def regime_cuts(
@@ -427,7 +454,8 @@ def regime_cuts(
         rows = conn.execute(f"SELECT pnl, fees, trade_date FROM ic_trades WHERE {w}", p).fetchall()
         coverage = regime_coverage(conn, start, session, symbol, era, arm=profile)["dimensions"]
         regimes = {
-            dim: by_regime(conn, dim, start, session, symbol, era, arm=profile) for dim in REGIME_DIMENSIONS
+            dim: by_regime(conn, dim, start, session, symbol, era, arm=profile, with_sessions=True)
+            for dim in REGIME_DIMENSIONS
         }
         arms_out.append(
             {

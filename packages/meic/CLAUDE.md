@@ -107,6 +107,10 @@ opened through `cli._connect`, read-only. `analytics.regime_cuts` builds it; the
 the two can be seen to agree rather than assumed to. Completion fields are null: a condor
 resolves, it does not complete. Nightly under the supervisor at `paper.regime_cuts_at`; the
 console's "regime cuts" slide and the advisor's deep pack read it without recomputing a cell.
+Since 2026-09-28 it also carries the core's robustness stamps (`fragile`, `paired`, `history`,
+`multiplicity`), from `by_regime(..., with_sessions=True)`; the per-session totals are net of fees
+(`pnl - fees`) and `test_regime_cuts.py` pins that they add up to each cell's published net -- the
+09-28 read pooled gross by hand and was $55k off before it noticed.
 
 **Deliberately NOT here: anything that runs or writes**, and `tests/test_cli.py` pins that. The paper
 loop, the streamer, the ledger writer and the broker client keep their own argv: `paper_loop` shells
@@ -449,6 +453,49 @@ maps an `unknown` with a recorded `gex_positive_at_entry` to the bucket the clas
 today, and the advisor's pack does the same over `iteration_regime` — which, lacking the flag
 before this date, still reads `unknown` for those sessions. A label correction, not a measurement
 break: no gate, fill or P&L changed.
+
+**The live configuration had no paper twin until 2026-09-28, and now has `live-shadow`.**
+`live_loop.run_once` trades `paper._merged_params(config, {})` -- config.json's top level with no
+profile -- and that top level differs from `control` on sixteen settings: `min_iv_rank` 0.3, the
+negative-GEX block (on by `paper.py`'s code default, since config.json never sets it), OTM floors
+0.0035/0.003, the VIX / VIX1D-ratio / ATR pauses, per-side stops, a 14:30 entry end, overlap_scope
+`shorts`, late-entry bias, a 200/day target. The IV floor plus the GEX block is the retired
+`control-gated` book, dark by construction with 0 fills in the sample era, so control's era result
+describes a configuration live does not run. `live-shadow` is an EMPTY profile in config.risk.json
+-- it merges to exactly the dict live trades, and keeps doing so when config.json changes;
+`test_risk_profiles.py` pins it override-free and equal to the live merge. It is arm-scoped
+(`arm_added` break at its first session, 2026-09-29), so no other arm's clock moved. Live stays
+disabled; enabling it, and what it should trade, is a decision this arm's rows inform. Flies
+avoids the gap structurally -- its live pilot names a paper arm (`live.arm`) -- and a `live.profile`
+seam here was considered and deferred until that decision is on the table.
+
+**Three live-sizable arms, `bp-5k` / `bp-10k` / `bp-25k` (2026-09-28).** Control's own gates and
+hold-to-expiry exits under what a live account would impose: `max_open_bp_dollars` (new; the open
+ICs' (width - credit) x100 plus the candidate's must fit, checked per candidate so a 10-wide that
+does not fit falls through to a narrower one -- `paper.ic_buying_power`), `overlap_scope: sign`,
+entries 10:00-14:30, and spacing that scales with the cap: 20 / 10 / 3 minutes. The spacing had to
+scale: at a flat 15 minutes the window admits ~18 entries, so the $25k cap never bound in replay and
+the two larger arms would have been one arm; `test_every_bp_arm_can_reach_its_own_cap` pins that.
+Built on a replay of control's 26 era sessions (sign rule, window, held to expiry): ~6 / 10 / 22 ICs a
+day, +$9.9k / +$18.8k / +$52.7k, worst days -$2.3k / -$5.0k / -$10.5k. The same replay scored every
+stop rule on the same entries: holding to expiry won on total at every size, stops only shrank the
+worst day -- and unspaced, a cap fills in the first minutes on one market, losing ~100% of itself
+on the worst day. Arm-scoped, `arm_added` 2026-09-29; the siblings differ from control only in the
+five sizing keys, which a test pins.
+`max_open_bp_dollars` is also an advice bound (2,500-50,000). An advised twin is control plus that ONE
+key -- the cap without the sign rule, window or spacing -- so it measures the unspaced cap the replay
+warned about, and the bound's note says so for the model.
+
+**The re-derivation covered only half the change until 2026-09-28.** The 09-16 classifier also
+went sign-first where it had been distance-first, and re-deriving only `unknown` rows left two
+definitions pooled in the advisor era: 299 control rows (467 across arms) tagged `deep_positive` on
+a negative flag or `negative` on a positive one. `_bucket_expr` now re-derives every row with a
+sign flag through `regime.gex_bucket_from_sign` over the stored flip distance -- every row since
+09-16 re-derives to its own stored tag, which is the check that the rule is the classifier's.
+Control's `deep_positive` moved from -$37.5k/11 sessions to -$68.0k/14, and the killed
+`gex-gate-earns-its-keep` arm, which blocked negative GEX, stopped showing 168 negative-GEX trades.
+The advisor's `iteration_regime` re-derivation was left as it is: it reads one session, and every
+session since 09-16 already carries sign-first tags.
 
 **The settlement convention was audited 2026-08-26, and the answer is a settled question.** The
 advisor asked for this five times (08-17 through 08-21), escalating to "upstream of the era's

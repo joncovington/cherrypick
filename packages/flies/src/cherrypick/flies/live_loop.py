@@ -238,7 +238,14 @@ def _merged_live_params(config: dict, arm: str) -> dict:
     minutes to complete -- sits on the slot through 10:15 and 10:30, the two slots that made the
     money (34 entries, 88% completion, +$2,730). Replaying control's era entries under the live
     rule: start 10:00 +$1,749 on 42 structures, 10:30 +$2,283 on 29 with half the losing days.
-    Paper keeps 10:00 as the comparison baseline. The engine's `before_open_gate` reads this key,
+    Paper keeps 10:00 as the comparison baseline.
+
+    **10:15 since 2026-09-29.** The argument above was made for the one-incomplete rule, removed
+    2026-09-25; under the margin cap that replaced it, the weak 10:00-10:14 slot still crowds the
+    good ones -- it just does so through the cap. `scripts/flies_live_start_replay.py` over the
+    same 25 era sessions: 10:15 +$4,758 against 10:30's +$2,735 (19 of 21 differing days better,
+    sign p 0.0002) and 10:00's +$3,614. Journaled as a live `entry_rules` break. The engine's
+    `before_open_gate` reads this key,
     so the override is refused ahead of the arm's own windows like any other blackout floor; it
     can only ever move the start LATER than the arm's (the later of the two wins).
     """

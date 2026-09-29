@@ -170,6 +170,43 @@ def test_gex_unknown_with_a_recorded_negative_sign_reads_negative(conn):
     assert "gex_positive_at_entry" not in analytics._bucket_expr("vol_implied")
 
 
+def test_gex_signed_rows_are_re_derived_sign_first_whatever_their_stored_tag(conn):
+    """Before 2026-09-16 the classifier was distance-first, so a signed row could carry a tag the
+    sign-first rule disagrees with. Shown to fail with the re-derivation limited to `unknown`
+    (the pre-09-28 form): `wrong-deep` stays deep_positive and `wrong-neg` stays negative."""
+    _insert(
+        conn, ic_order_id="wrong-deep", entry_gex_bucket="deep_positive", entry_gex_value=0.011,
+        gex_positive_at_entry=0,
+    )
+    _insert(
+        conn, ic_order_id="wrong-neg", entry_gex_bucket="negative", entry_gex_value=-0.009,
+        gex_positive_at_entry=1,
+    )
+    _insert(
+        conn, ic_order_id="near", entry_gex_bucket="negative", entry_gex_value=-0.004,
+        gex_positive_at_entry=1,
+    )
+    _insert(conn, ic_order_id="legacy", entry_gex_bucket="deep_positive", entry_gex_value=0.01)
+    by = {r["bucket"]: r["trades"] for r in analytics.by_regime(conn, "gex")}
+    assert by == {"negative": 1, "deep_positive": 2, "near_flip": 1}
+
+
+def test_gex_re_derivation_agrees_with_the_classifier_rule():
+    """The SQL and `regime.gex_bucket_from_sign` must be one rule; pinned on the threshold edges."""
+    import sqlite3
+
+    from cherrypick.meic import regime
+
+    c = sqlite3.connect(":memory:")
+    c.execute(
+        "CREATE TABLE ic_trades (entry_gex_bucket TEXT, entry_gex_value REAL, gex_positive_at_entry INTEGER)"
+    )
+    cases = [(p, v) for p in (0, 1) for v in (None, -0.02, -0.005, -0.0049, 0.0, 0.0049, 0.005, 0.02)]
+    c.executemany("INSERT INTO ic_trades VALUES ('stored', ?, ?)", [(v, p) for p, v in cases])
+    got = [r[0] for r in c.execute(f"SELECT {analytics._bucket_expr('gex')} FROM ic_trades")]
+    assert got == [regime.gex_bucket_from_sign(p, v) for p, v in cases]
+
+
 def test_regime_coverage_not_degenerate_with_two_buckets(conn):
     _insert(conn, ic_order_id="1", entry_gex_bucket="deep_positive", entry_gex_value=0.01)
     _insert(conn, ic_order_id="2", entry_gex_bucket="negative", entry_gex_value=-0.01)

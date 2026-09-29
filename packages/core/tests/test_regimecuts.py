@@ -290,3 +290,158 @@ def test_latest_session_is_none_when_absent_or_unreadable(tmp_path):
     (tmp_path / rc.LATEST_NAME).write_text("not json", encoding="utf-8")
     assert rc.latest_session(tmp_path) is None
     assert rc.dated_sessions(tmp_path / "missing") == []
+
+
+# --------------------------------------------------------------------------- robustness (2026-09-28)
+def _nets(*values, trades=1):
+    return {f"2026-09-{i + 1:02d}": [trades, float(v)] for i, v in enumerate(values)}
+
+
+def _stamped(session_nets):
+    return rc._cell({"bucket": "x", "sessions": len(session_nets), "session_nets": session_nets})
+
+
+def test_one_dominant_session_stamps_a_cell_fragile():
+    """MEIC's deep_positive shape: eleven sessions, half the flow in one. Shown to fail with the
+    share test removed from `_is_fragile`: nothing else here marks it."""
+    cell = _stamped(_nets(-600, -50, -40, 30, 20))
+    assert cell["fragile"] is True
+    assert cell["robustness"]["largest_session_share"] >= rc.CONCENTRATED_SHARE
+    assert cell["robustness"]["sign_flips_dropping_one"] == 0
+    assert _stamped(_nets(100, 90, 110, 95, 105))["fragile"] is False
+
+
+def test_a_cell_whose_sign_one_session_decides_is_fragile_even_when_no_day_dominates():
+    """Shown to fail with the flip count removed from `_is_fragile`: the largest share is 36%."""
+    cell = _stamped(_nets(60, 10, 10, 10, 10, 10, 10, 10, 10, -80))
+    assert cell["robustness"]["largest_session_share"] < rc.CONCENTRATED_SHARE
+    assert cell["robustness"]["sign_flips_dropping_one"] == 1
+    assert cell["fragile"] is True
+
+
+def test_the_interval_is_deterministic_and_resamples_sessions():
+    nets = _nets(120, 80, 150, 60, 90, 110)
+    a, b = rc.robustness(nets), rc.robustness(dict(reversed(list(nets.items()))))
+    assert a == b  # seeded, and independent of input order
+    assert a["interval_excludes_zero"] is True and a["net_interval"][0] > 0
+    mixed = rc.robustness(_nets(300, -250, 280, -260, 20))
+    assert mixed["interval_excludes_zero"] is False
+
+
+def test_below_three_sessions_there_is_nothing_to_stamp_beyond_thin():
+    cell = _stamped(_nets(500, -20))
+    assert cell["thin"] is True and cell["fragile"] is None and cell["robustness"] is None
+
+
+def test_a_writer_without_per_session_totals_emits_no_stamp_keys():
+    cell = rc._cell({"bucket": "x", "sessions": 9})
+    assert "fragile" not in cell and "robustness" not in cell
+
+
+def test_sign_test_is_exact_and_two_sided():
+    assert rc.sign_test_p(8, 0) == round(2 / 256, 4)
+    assert rc.sign_test_p(4, 4) == 1.0
+    assert rc.sign_test_p(0, 0) is None
+
+
+def test_paired_contrasts_compare_per_trade_on_shared_sessions_only():
+    """`a` makes more per DAY but less per TRADE on every shared day. Shown to fail by dropping the
+    per-trade division: a_better_sessions reads 3."""
+    a = {"bucket": "a", "session_nets": {"d1": [4, 100.0], "d2": [4, 120.0], "d3": [4, 80.0], "d9": [1, 9.0]}}
+    b = {"bucket": "b", "session_nets": {"d1": [1, 60.0], "d2": [1, 70.0], "d3": [1, 50.0]}}
+    (p,) = rc.paired_contrasts([a, b])
+    assert (p["a"], p["b"], p["sessions"]) == ("a", "b", 3)
+    assert p["a_better_sessions"] == 0 and p["b_better_sessions"] == 3
+    assert p["mean_diff_per_trade"] == round(((25 - 60) + (30 - 70) + (20 - 50)) / 3, 2)
+
+
+def test_paired_contrasts_skip_unread_buckets_and_pairs_with_too_few_shared_days():
+    three = {"d1": [1, 1.0], "d2": [1, 1.0], "d3": [1, 1.0]}
+    rows = [
+        {"bucket": "a", "session_nets": three},
+        {"bucket": "b", "session_nets": {"d1": [1, 1.0], "d2": [1, 1.0]}},
+        {"bucket": "unknown", "session_nets": three},
+    ]
+    assert rc.paired_contrasts(rows) == []
+
+
+def _stamped_doc():
+    arms = [
+        {
+            "arm": "control",
+            "era_start": "2026-08-21",
+            "era_break": None,
+            "summary": {"sessions": 5, "trades": 10, "net_pnl": 100.0},
+            "coverage": {"trend": {"coverage_pct": 100.0}},
+            "regimes": {
+                "trend": [
+                    {**_row("flat", 5, trades=6, net=400.0), "session_nets": _nets(80, 90, 70, 85, 75)},
+                    {**_row("up", 5, trades=4, net=-300.0), "session_nets": _nets(-50, -70, -60, -65, -55)},
+                ]
+            },
+        }
+    ]
+    tab = {
+        "dims": ["gex", "trend"],
+        "arms": [
+            {
+                "arm": "control",
+                "cells": [{**_row("_", 5, trades=6, net=400.0), "buckets": ["a", "flat"], "session_nets": _nets(80, 90, 70, 85, 75)}],
+            }
+        ],
+    }
+    return _doc(arms=arms, cross_tabs=[tab])
+
+
+def test_assemble_stamps_paired_and_multiplicity_and_publishes_no_per_session_map():
+    doc = _stamped_doc()
+    trend = doc["arms"][0]["dimensions"]["trend"]
+    (p,) = trend["paired"]
+    assert (p["a"], p["b"], p["a_better_sessions"]) == ("flat", "up", 5)
+    m = doc["multiplicity"]
+    assert m["intervals"] == 3 and m["intervals_excluding_zero"] == 3
+    assert m["paired_tests"] == 1 and m["paired_below_alpha"] == 1  # 5-0 is p = 0.0625
+    assert m["paired_expected_by_chance"] == 0.1
+    # Two bars, published separately: a reader dimming paired rows must not borrow the interval's.
+    assert m["paired_alpha"] == rc.PAIRED_ALPHA and m["alpha"] == round(1 - rc.INTERVAL_LEVEL, 4)
+    assert "session_nets" not in json.dumps(doc)
+
+
+def test_a_document_without_per_session_totals_carries_no_multiplicity():
+    assert "multiplicity" not in _doc()
+
+
+def test_history_counts_sign_changes_across_prior_snapshots_of_either_spelling():
+    """A cut_version-1 prior spells arms `books`/`book`. Shown to fail by reading only `arms`: the
+    first prior is dropped and the +1 -> -1 change is missed."""
+    old = {"session": "2026-09-17", "books": [{"book": "control", "dimensions": {"trend": {"buckets": [{"bucket": "up", "net_pnl": 200.0}]}}}]}
+    mid = {"session": "2026-09-18", "arms": [{"arm": "control", "dimensions": {"trend": {"buckets": [{"bucket": "up", "net_pnl": -100.0}]}}}]}
+    doc = rc.stamp_history(_stamped_doc(), [old, mid])
+    by = {b["bucket"]: b for b in doc["arms"][0]["dimensions"]["trend"]["buckets"]}
+    assert by["up"]["history"] == {"snapshots": 2, "first_net": 200.0, "sign_changes": 1}
+    assert by["flat"]["history"] == {"snapshots": 0, "first_net": None, "sign_changes": 0}
+    assert doc["history"]["sessions"] == ["2026-09-17", "2026-09-18"]
+    cross = doc["cross_tabs"][0]["arms"][0]["cells"][0]
+    assert cross["history"]["snapshots"] == 0
+
+
+def test_history_never_stamps_a_thin_cell():
+    doc = rc.stamp_history(_doc(), [])
+    advised = next(b for b in doc["arms"] if b["arm"] == "advised:x")
+    by = {b["bucket"]: b for b in advised["dimensions"]["gex"]["buckets"]}
+    assert "history" not in by["a"] and "history" in by["b"]
+
+
+def test_write_artifact_stamps_history_from_earlier_dated_snapshots_only(tmp_path):
+    def snap(session, net):
+        return {"session": session, "arms": [{"arm": "control", "dimensions": {"trend": {"buckets": [{"bucket": "up", "net_pnl": net}]}}}]}
+
+    rc.write_json_atomic(tmp_path / rc.dated_name("2026-09-16"), snap("2026-09-16", 50.0))
+    rc.write_json_atomic(tmp_path / rc.dated_name("2026-09-17"), snap("2026-09-17", -40.0))
+    rc.write_json_atomic(tmp_path / rc.dated_name("2026-09-20"), snap("2026-09-20", 999.0))  # later
+    doc = _stamped_doc()
+    rc.write_artifact(tmp_path, doc)
+    written = json.loads((tmp_path / rc.dated_name("2026-09-18")).read_text())
+    up = next(b for b in written["arms"][0]["dimensions"]["trend"]["buckets"] if b["bucket"] == "up")
+    assert up["history"] == {"snapshots": 2, "first_net": 50.0, "sign_changes": 1}
+    assert written["history"]["sessions"] == ["2026-09-16", "2026-09-17"]

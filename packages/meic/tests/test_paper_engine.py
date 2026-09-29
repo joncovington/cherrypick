@@ -2466,10 +2466,17 @@ def test_every_configured_profile_has_no_clock_based_pacing():
     """
     profiles = paper.load_profiles()
     for name, spec in profiles.items():
-        if name.startswith("_"):
+        if name.startswith("_") or name == "live-shadow":
             continue
         assert spec.get("min_minutes_between_entries") == 0, name
         assert spec.get("stagger_entries") is True, name  # keeps the cap hard, no floor drift
+    # live-shadow is override-free by design (test_risk_profiles pins that), so it inherits the
+    # pacing keys from the base config -- which must therefore carry the same contract.
+    import json
+    import pathlib
+
+    base = json.loads((pathlib.Path(__file__).parents[1] / "config.example.json").read_text(encoding="utf-8"))
+    assert base.get("min_minutes_between_entries") == 0 and base.get("stagger_entries") is True
 
 
 def test_uncapped_sampling_streams_share_the_same_caps():
@@ -2858,3 +2865,37 @@ def test_an_otm_settlement_still_costs_nothing(paper_db_path):
     assert fees == pytest.approx(6.89)
     # Settled, and it cost nothing: a recorded zero, not an unknown.
     assert settlement == 0
+
+
+# ── Buying-power cap (2026-09-28, the bp-* arms) ─────────────────────────────
+
+
+def _open_ic(width=10, credit=3.0, put_strike=500.0, call_strike=700.0):
+    """An open IC far from the test candidates' strikes, so only its buying power interacts."""
+    return {"ic_order_id": "IC-open", "symbol": "XSP", "expiration": "2026-07-09", "put_strike": put_strike,
+            "call_strike": call_strike, "wing_width": width, "net_credit": credit, "quantity": 1, "status": "open"}
+
+
+def test_ic_buying_power_is_width_less_credit_per_contract():
+    assert paper.ic_buying_power({"wing_width": 10, "net_credit": 1.6, "quantity": 1}) == pytest.approx(840.0)
+    assert paper.ic_buying_power({"wing_width": 5, "net_credit": 1.0, "quantity": 2}) == pytest.approx(800.0)
+    assert paper.ic_buying_power({"wing_width": None, "net_credit": 1.0}) == 0.0
+
+
+def test_bp_cap_falls_through_to_a_narrower_candidate_that_fits():
+    """Shown to fail with the cap check removed: the 5-wide is chosen past the cap."""
+    snap = _base_snapshot(now_et="13:00")
+    params = {**_params({**CONSERVATIVE, **WIDEST_FIRST}), "max_open_bp_dollars": 1000}
+    uncapped = paper.evaluate_entry(snap, {**params, "max_open_bp_dollars": None}, [_open_ic()])
+    assert uncapped[0] is True and uncapped[2]["wing_width"] == 5
+    entered, reason, chosen = paper.evaluate_entry(snap, params, [_open_ic()])  # 700 already open
+    assert entered is True and chosen["wing_width"] == 2
+    assert 700 + paper.ic_buying_power(chosen) <= 1000
+
+
+def test_bp_cap_refuses_when_nothing_fits():
+    snap = _base_snapshot(now_et="13:00")
+    params = {**_params({**CONSERVATIVE, **WIDEST_FIRST}), "max_open_bp_dollars": 750}
+    entered, reason, chosen = paper.evaluate_entry(snap, params, [_open_ic()])
+    assert (entered, reason, chosen) == (False, "max_open_bp_reached", None)
+    assert paper._ATTEMPT_OUTCOMES["max_open_bp_reached"] == paper._ATTEMPT_OUTCOMES["max_concurrent_ics_reached"]

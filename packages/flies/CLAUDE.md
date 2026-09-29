@@ -175,8 +175,22 @@ until it passes, and a `partial_session` break never bounds anything -- it is a 
 cell carries `sessions` with `thin` stamped when there are fewer than three, because a cut by hand
 on 2026-09-18 made net-GEX sign look predictive of completion (84% against 75%) until the trend
 cross-tab showed the whole effect sat in one seven-session cell, positive gamma on up-from-open
-days. That cell is why the cross-tab exists. `by_regime` gained `arm=` and `completed` /
-`completion_rate` for this; `_summarize`'s shape is untouched.
+days. That cell is why the cross-tab exists. **`gate_replay` (2026-09-28):** with
+`--write` the artifact also carries `replay_gates.sweep` over the advice base arm's era rows --
+the miss stop at 15..90 minutes, both trend-bucket refusals, and every choice of the
+`entry_windows` advice bound, read off the config's own bound -- because the advisor reads only
+its pack, and `miss-stop-90` was proposed from latency quantiles while the replay its bound note
+asks for said 90 minutes would have cost $1,097 and three losing days over the era. The same
+landing added `entry_windows` as an advice bound with three fixed choices (control's own
+10:00-14:30, a midday skip, and 10:30, live's start until 2026-09-29, when it moved to 10:15); a test pins that control's own window is one of
+them. `by_regime` gained `arm=` and `completed` /
+`completion_rate` for this; `_summarize`'s shape is untouched. Since 2026-09-28 the writer also
+stamps the core's robustness fields (`fragile`, `paired`, `history`, `multiplicity`) from
+`by_regime(..., with_sessions=True)`. The first read with them: 1 of 46 same-day paired contrasts
+under p 0.10 across every arm, where chance alone puts about 4.6 -- this module's regime dimensions
+show no more same-day contrast than noise yet, and the pooled cells that look like findings
+(control's `trend=flat` +$4.0k, `up_from_open` -$1.4k) are what a refusal gate would be read
+against, not evidence that the regime itself decides the entry.
 
 **A seventh dimension, `drift_alignment`, and two outcome distributions (2026-09-21).** The
 dimension is derived at read time, not stored: `with` / `flat` / `against` from
@@ -432,8 +446,9 @@ comparison measures one variable rather than a bundle of confounded changes.
   `center_offset` — a dimension the GEX arms already sweep (measured **−22..+23** points, against the
   ATM arms' **−2.5..+2.5**) and which is stored as a continuous float precisely so it can be re-cut
   with `by_regime(bucket_edges=...)` rather than cost an arm. A fixed offset would also bake in a
-  direction, and this module's sharpest finding is that what matters is placement *relative to the
-  drift* (89% vs 7% completion on the opposing-drift cut), not raw distance — which is exactly why
+  direction, and this module's sharpest early finding was that what matters is placement *relative to
+  the drift* (89% vs 7% completion on the opposing-drift cut, pre-era; the advisor era reads 73%
+  against vs 67% with -- see the drift-alignment note below), not raw distance — which is exactly why
   `center_offset` is kept signed and side-neutral rather than collapsed to a "lagging" boolean. Read
   the offset curve off the GEX arms first; build a placement arm only if it shows something, and make
   it drift-aware.
@@ -530,6 +545,13 @@ direction opposes a committed drift from the open splits completion **89% vs 7%*
 separation any dimension here has produced, and notably it is *completion* that moves (every other
 candidate gate shifted P&L while leaving completion flat, which means it was not touching the
 mechanism). Tagged, not gated: 15 opposing trades over 3 sessions.
+
+**It did not survive the advisor era (2026-09-28).** Over control's 25 era sessions the opposing
+(`against`) entries completed **73%** and netted **+$324**, the `with` entries **67%** and **-$682**;
+on the same day `with` beat `against` 7 times in 19 (sign test p 0.36), and `against` is stamped
+fragile (dropping any of three sessions flips it). The 89%/7% split was 15 trades on 3 sessions,
+and `refuse_completion_against_trend` stays retired on this evidence -- do not revive it from the
+paragraph above.
 
 **The band is 20 points, and it was 5 for exactly one day (corrected 2026-08-05).** 5 was one SPX
 strike — the resolution the *centre* moves in, which says nothing about how far a session must

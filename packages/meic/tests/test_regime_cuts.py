@@ -137,3 +137,31 @@ def test_writer_entry_point_writes_dated_and_latest_and_reads_the_ledger_read_on
     out = json.loads(capsys.readouterr().out)
     assert out["sessions"] == ["2026-09-15", "2026-09-16", "2026-09-17"]
     assert rc.latest_session(tmp_path / "out") == DAY  # a backfill never overtakes the newer latest
+
+
+def test_session_totals_are_the_cells_own_net_of_fees(ledger):
+    """The robustness stamps are only as good as their input: each bucket's per-session totals must
+    add up to the net the cell publishes. Shown to fail by pooling `pnl` alone -- MEIC's `pnl` is
+    gross, and the 2026-09-28 read made exactly that mistake by hand."""
+    conn = sqlite3.connect(ledger)
+    conn.row_factory = sqlite3.Row
+    for dim in analytics.REGIME_DIMENSIONS:
+        for r in analytics.by_regime(conn, dim, arm="control", with_sessions=True):
+            assert round(sum(v[1] for v in r["session_nets"].values()), 2) == r["net_pnl"], (dim, r["bucket"])
+            assert sum(v[0] for v in r["session_nets"].values()) == r["trades"]
+    assert "session_nets" not in analytics.by_regime(conn, "gex", arm="control")[0]
+    conn.close()
+
+
+def test_regime_cuts_stamps_robustness_and_paired_from_the_ledger(ledger):
+    conn = sqlite3.connect(ledger)
+    conn.row_factory = sqlite3.Row
+    doc = analytics.regime_cuts(conn, session=DAY, generated_at="t")
+    control = next(b for b in doc["arms"] if b["arm"] == "control")
+    diffuse = next(b for b in control["dimensions"]["gex"]["buckets"] if b["bucket"] == "diffuse")
+    # three sessions, one of them carrying the -500 condor: fragile by concentration
+    assert diffuse["fragile"] is True and diffuse["robustness"]["largest_session_net"] == -413.78
+    assert control["dimensions"]["trend"]["paired"] == []  # flat and up share one session only
+    assert doc["multiplicity"]["intervals"] >= 1
+    assert "session_nets" not in json.dumps(doc)
+    conn.close()

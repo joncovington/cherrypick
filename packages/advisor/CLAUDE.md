@@ -475,6 +475,26 @@ the real section beside it, as here.
 checkpoint that reads it) were made on different evidence.** Same rule as the 2026-08-26 budget
 break.
 
+**Robustness stamps in the pack (2026-09-28), and a measurement break for the advisor at the
+first deep checkpoint that reads them.** The artifact gained writer-stamped `fragile`, `paired`,
+`history` and `multiplicity` (see `cherrypick.core.regimecuts`). The pack carries them as: a
+trailing ` fragile` on a single-dimension cell's string (cross-tab cells stay plain), a per-module
+`paired` list of same-day contrasts under p 0.10 and a `sign_changed` list of cells whose net
+changed sign over the prior snapshots -- both strongest first, capped at `REGIME_CUTS_LIST_MAX`
+with the rest counted -- and the document's `multiplicity` verbatim, so a contrast that clears the
+bar is read against how many would by chance. Listed per dimension the two lists cost the far case
+24 KB; as capped module lists, plus emitting `underpowered` only when true (it was `false` on
+nearly every dimension), the far case measured **69.8 KB** under the unchanged 72 KB guard, from
+67.2 KB. The bound did not move. The real section measured **38.3 KB** on 2026-09-28 (six flies
+books, five MEIC), of which the new lists and marks are 3.2 KB.
+
+**flies' `gate_replay` rides the same section (2026-09-28)**, one string per replayable gate rule
+(`miss_stop:90`, `trend_bucket:up_from_open`, `entry_windows:<choice>`) with its net change against
+the base arm -- the replay the `miss_stop_minutes` bound note always asked for and the pack never
+carried, so `miss-stop-90` went in without it. Landed with the stamps above, inside the same
+advisor measurement break rather than as a second one. **The far case now measures 71.9 KB of its
+72 KB guard**: the next addition to this section cuts something first.
+
 **Two additive book keys, flies only (2026-09-21):** `completion_latency_min` (p25/p50/p75/max
 minutes over the book's completed rows) and `miss_gap` (credit minus the best completing debit
 ever seen, over its uncompleted short verticals; negative = never within reach, and the gate needs

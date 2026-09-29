@@ -16,6 +16,9 @@ function cell(buckets: string[], over: Partial<RegimeCrossCell> = {}): RegimeCro
     completed: 16,
     completionRate: 0.8,
     thin: false,
+    fragile: null,
+    robustness: null,
+    history: null,
     ...over,
   };
 }
@@ -69,5 +72,43 @@ describe("CrossTabGrid", () => {
     );
     expect(html).toContain("rgba(67, 181, 122, 0.575"); // 0.15 + 0.85 * 0.5
     expect(html).toContain("Colour is win rate");
+  });
+  it("prints the writer's fragile and sign-change stamps, with their numbers in the title", () => {
+    const html = text(
+      <CrossTabGrid
+        tab={tab([
+          cell(["diffuse", "with"], {
+            fragile: true,
+            robustness: {
+              positiveSessions: 5,
+              largestSessionNet: -900,
+              largestSessionShare: 0.52,
+              signFlipsDroppingOne: 1,
+              netInterval: [-1200, 400],
+              intervalLevel: 0.9,
+              intervalExcludesZero: false,
+            },
+            history: { snapshots: 6, firstNet: 300, signChanges: 2 },
+          }),
+        ])}
+        thinBelowSessions={3}
+      />,
+    );
+    expect(html).toContain(">fragile<");
+    expect(html).toContain("52%");
+    expect(html).toContain("90% interval -$1200.00 to $400.00");
+    expect(html).toContain(">±2<");
+    expect(html).toContain("over 6 prior snapshots");
+  });
+
+  it("shows no stamp on a cell the writer did not stamp, or stamped sound", () => {
+    const html = text(
+      <CrossTabGrid
+        tab={tab([cell(["diffuse", "with"]), cell(["diffuse", "against"], { fragile: false, history: { snapshots: 4, firstNet: 10, signChanges: 0 } })])}
+        thinBelowSessions={3}
+      />,
+    );
+    expect(html).not.toContain("var(--warn)");
+    expect(html).not.toContain("changed sign");
   });
 });

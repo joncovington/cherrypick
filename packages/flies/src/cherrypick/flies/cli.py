@@ -206,6 +206,16 @@ def regime_cuts_dir() -> str:
     return paper_loop._paper_data_dir()
 
 
+def _gate_replay_scope(config: dict) -> dict:
+    """What the artifact's `gate_replay` replays, read off what the config itself declares: the
+    advisor's base arm, and the window choices of the `entry_windows` advice bound -- never a
+    second hand-kept list of them."""
+    advice = config.get("advice") or {}
+    base = _cfg.first_present(advice, *_cfg.BASE_ARM_KEYS) or "control"
+    rule = (advice.get("bounds") or {}).get("entry_windows") or {}
+    return {"replay_arm": base, "replay_windows": list(rule.get("choices") or [])}
+
+
 def cmd_regime_cuts(args) -> int:
     """Print (and with --write, persist) the regime-cuts artifact. `--backfill --since D` writes one
     dated artifact per settled session from D; the latest copy is only replaced by a newer session
@@ -215,6 +225,7 @@ def cmd_regime_cuts(args) -> int:
     from cherrypick.flies import analytics, clock
 
     conn = dbmod.connect(args.db)
+    replay = _gate_replay_scope(load_config(args.config))
     if args.backfill:
         if not args.write:
             print(json.dumps({"ok": False, "error": "--backfill needs --write"}))
@@ -230,12 +241,12 @@ def cmd_regime_cuts(args) -> int:
         ]
         written = []
         for day in sessions:
-            doc = analytics.regime_cuts(conn, session=day, symbol=args.symbol)
+            doc = analytics.regime_cuts(conn, session=day, symbol=args.symbol, **replay)
             written.append(_rc.write_artifact(regime_cuts_dir(), doc))
         print(json.dumps({"ok": True, "sessions": sessions, "written": written}, indent=2))
         return 0
     session = args.session or clock.today_iso()
-    doc = analytics.regime_cuts(conn, session=session, symbol=args.symbol)
+    doc = analytics.regime_cuts(conn, session=session, symbol=args.symbol, **replay)
     out = {"ok": True, "written": _rc.write_artifact(regime_cuts_dir(), doc) if args.write else None, **doc}
     print(json.dumps(out, indent=2, default=str))
     return 0

@@ -270,6 +270,126 @@ describe("readRegimeCuts", () => {
     expect(v1.cuts.armColumn).toBe("arm");
   });
 
+  /**
+   * The 2026-09-28 robustness stamps are additive (no cut_version bump), so both halves are pinned:
+   * a stamped artifact maps every key, and one written before them reads null / [] -- never a
+   * derived value, and never `fragile: false`, which would read as "checked and found sound".
+   */
+  it("maps the writer's robustness, history, paired and multiplicity stamps", () => {
+    const doc = minimal() as Record<string, unknown> & { arms: Array<Record<string, unknown>> };
+    const gex = (doc.arms[0]!["dimensions"] as Record<string, Record<string, unknown>>)["gex"]!;
+    const buckets = gex["buckets"] as Array<Record<string, unknown>>;
+    // fragile:true beside a 0.2 share and no sign flips is a pair the writer's own rule never emits --
+    // there so a reader that re-derived fragility from the robustness numbers would read false.
+    buckets[1] = {
+      ...buckets[1],
+      fragile: true,
+      robustness: {
+        positive_sessions: 7,
+        largest_session_net: -412.5,
+        largest_session_share: 0.2,
+        sign_flips_dropping_one: 0,
+        net_interval: [-150.25, 2200.0],
+        interval_level: 0.9,
+        interval_excludes_zero: false,
+      },
+      history: { snapshots: 6, first_net: -300.0, sign_changes: 2 },
+    };
+    gex["paired"] = [
+      {
+        a: "diffuse",
+        b: "clustered",
+        sessions: 8,
+        a_better_sessions: 6,
+        b_better_sessions: 2,
+        mean_diff_per_trade: 12.5,
+        median_diff_per_trade: 9.75,
+        sign_test_p: 0.2891,
+      },
+    ];
+    const tabs = doc["cross_tabs"] as Array<{ arms: Array<{ cells: Array<Record<string, unknown>> }> }>;
+    tabs[0]!.arms[0]!.cells[0] = {
+      ...tabs[0]!.arms[0]!.cells[0],
+      fragile: false,
+      robustness: { positive_sessions: 4, largest_session_net: 100, largest_session_share: 0.1, sign_flips_dropping_one: 0, net_interval: [5, 50], interval_level: 0.9, interval_excludes_zero: true },
+      history: { snapshots: 0, first_net: null, sign_changes: 0 },
+    };
+    doc["multiplicity"] = {
+      alpha: 0.1,
+      // Distinct from alpha on purpose: a reader that borrowed the interval bar would fail.
+      paired_alpha: 0.05,
+      intervals: 81,
+      intervals_excluding_zero: 36,
+      intervals_expected_by_chance: 8.1,
+      paired_tests: 32,
+      paired_below_alpha: 6,
+      paired_expected_by_chance: 3.2,
+    };
+    doc["history"] = { window: 10, sessions: ["2026-09-25", "2026-09-26"] };
+    write("flies", "regime_cuts.json", doc);
+
+    const out = readRegimeCuts(config, "flies");
+    if (out.status !== "ok") throw new Error(out.status);
+    const d = out.cuts.arms[0]!.dimensions["gex"]!;
+    const clustered = d.buckets.find((b) => b.bucket === "clustered")!;
+    expect(clustered.fragile).toBe(true);
+    expect(clustered.robustness).toEqual({
+      positiveSessions: 7,
+      largestSessionNet: -412.5,
+      largestSessionShare: 0.2,
+      signFlipsDroppingOne: 0,
+      netInterval: [-150.25, 2200.0],
+      intervalLevel: 0.9,
+      intervalExcludesZero: false,
+    });
+    expect(clustered.history).toEqual({ snapshots: 6, firstNet: -300.0, signChanges: 2 });
+    expect(d.paired).toEqual([
+      {
+        a: "diffuse",
+        b: "clustered",
+        sessions: 8,
+        aBetterSessions: 6,
+        bBetterSessions: 2,
+        meanDiffPerTrade: 12.5,
+        medianDiffPerTrade: 9.75,
+        signTestP: 0.2891,
+      },
+    ]);
+    const cross = out.cuts.crossTabs[0]!.arms[0]!.cells[0]!;
+    expect(cross.fragile).toBe(false);
+    expect(cross.robustness?.netInterval).toEqual([5, 50]);
+    expect(cross.robustness?.intervalExcludesZero).toBe(true);
+    expect(cross.history).toEqual({ snapshots: 0, firstNet: null, signChanges: 0 });
+    expect(out.cuts.multiplicity).toEqual({
+      alpha: 0.1,
+      pairedAlpha: 0.05,
+      intervals: 81,
+      intervalsExcludingZero: 36,
+      intervalsExpectedByChance: 8.1,
+      pairedTests: 32,
+      pairedBelowAlpha: 6,
+      pairedExpectedByChance: 3.2,
+    });
+    expect(out.cuts.history).toEqual({ window: 10, sessions: ["2026-09-25", "2026-09-26"] });
+  });
+
+  it("an artifact written before the stamps reads null and [], never a derived value", () => {
+    write("flies", "regime_cuts.json", minimal());
+    const out = readRegimeCuts(config, "flies");
+    if (out.status !== "ok") throw new Error(out.status);
+    const d = out.cuts.arms[0]!.dimensions["gex"]!;
+    for (const b of d.buckets) {
+      expect(b.fragile).toBeNull();
+      expect(b.robustness).toBeNull();
+      expect(b.history).toBeNull();
+    }
+    expect(d.paired).toEqual([]);
+    const cross = out.cuts.crossTabs[0]!.arms[0]!.cells[0]!;
+    expect([cross.fragile, cross.robustness, cross.history]).toEqual([null, null, null]);
+    expect(out.cuts.multiplicity).toBeNull();
+    expect(out.cuts.history).toBeNull();
+  });
+
   it("dated artifacts are listed and selectable by session", () => {
     write("flies", "regime_cuts-2026-09-17.json", minimal({ session: "2026-09-17" }));
     write("flies", "regime_cuts-2026-09-18.json", minimal());

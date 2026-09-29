@@ -11,6 +11,67 @@
 
 export type RegimeCutsModule = "flies" | "meic";
 
+/**
+ * How much a cell's net rests on any one session (2026-09-28), stamped by the writer from the
+ * cell's per-session totals. null on a thin cell (nothing more to read) and on any artifact written
+ * before 2026-09-28. `netInterval` is a seeded session-level bootstrap of the cell's TOTAL net at
+ * `intervalLevel`; `largestSessionShare` is that session's share of the cell's absolute flow.
+ */
+export interface RegimeRobustness {
+  positiveSessions: number | null;
+  largestSessionNet: number | null;
+  largestSessionShare: number | null;
+  signFlipsDroppingOne: number | null;
+  netInterval: [number, number] | null;
+  intervalLevel: number | null;
+  intervalExcludesZero: boolean | null;
+}
+
+/**
+ * How the cell's net read over the prior nightly snapshots (2026-09-28), stamped by the writer.
+ * null on a thin cell and on any artifact written before 2026-09-28. `firstNet` is null when there
+ * were no prior snapshots; `signChanges` counts zero-crossings along prior..current.
+ */
+export interface RegimeCellHistory {
+  snapshots: number;
+  firstNet: number | null;
+  signChanges: number;
+}
+
+/**
+ * Two buckets compared on the SAME sessions, per trade, with an exact two-sided sign test
+ * (2026-09-28) -- what separates "that kind of day was good" from "entering in that regime was
+ * good". Writer-stamped; the dimension's list is [] on artifacts written before 2026-09-28.
+ */
+export interface RegimePair {
+  a: string;
+  b: string;
+  sessions: number;
+  aBetterSessions: number;
+  bBetterSessions: number;
+  meanDiffPerTrade: number | null;
+  medianDiffPerTrade: number | null;
+  signTestP: number | null;
+}
+
+/**
+ * How much of what clears the bar would clear it by chance (2026-09-28), stamped by the writer
+ * over the whole document. null on artifacts written before 2026-09-28.
+ */
+export interface RegimeMultiplicity {
+  /** The interval bar (1 - interval level). */
+  alpha: number | null;
+  /** The paired sign-test bar, published separately; null on the first 09-28 artifacts, which
+   *  carried only `alpha` -- equal to it then, and read in its place. */
+  pairedAlpha: number | null;
+  intervals: number;
+  intervalsExcludingZero: number;
+  intervalsExpectedByChance: number | null;
+  pairedTests: number;
+  pairedBelowAlpha: number;
+  pairedExpectedByChance: number | null;
+}
+
 export interface RegimeCell {
   bucket: string;
   valueMin: number | null;
@@ -26,6 +87,11 @@ export interface RegimeCell {
   completionRate: number | null;
   /** Fewer than `thinBelowSessions` sessions -- stamped by the writer. */
   thin: boolean;
+  /** One session carries >= 40% of the cell's absolute flow, or dropping any one flips the sign
+   *  of its net -- stamped by the writer. null when thin, and on artifacts written before 2026-09-28. */
+  fragile: boolean | null;
+  robustness: RegimeRobustness | null;
+  history: RegimeCellHistory | null;
 }
 
 export interface RegimeDimension {
@@ -38,6 +104,8 @@ export interface RegimeDimension {
   degenerate: boolean;
   underpowered: boolean;
   buckets: RegimeCell[];
+  /** Same-day bucket comparisons, in the writer's order -- [] on artifacts written before 2026-09-28. */
+  paired: RegimePair[];
 }
 
 export interface RegimeBreak {
@@ -74,6 +142,11 @@ export interface RegimeCrossCell {
   completed: number | null;
   completionRate: number | null;
   thin: boolean;
+  /** One session carries >= 40% of the cell's absolute flow, or dropping any one flips the sign
+   *  of its net -- stamped by the writer. null when thin, and on artifacts written before 2026-09-28. */
+  fragile: boolean | null;
+  robustness: RegimeRobustness | null;
+  history: RegimeCellHistory | null;
 }
 
 export interface RegimeCrossTab {
@@ -108,6 +181,11 @@ export interface RegimeCuts {
   crossTabs: RegimeCrossTab[];
   /** Union of dimension keys across arms, first-seen order -- the only thing this console derives. */
   dimensions: string[];
+  /** Writer-stamped document-level chance baseline; null before 2026-09-28. */
+  multiplicity: RegimeMultiplicity | null;
+  /** The prior snapshots the cells' `history` was read over (oldest first); null when the writer
+   *  did not stamp history (a stdout re-cut, or an artifact written before 2026-09-28). */
+  history: { window: number | null; sessions: string[] } | null;
 }
 
 export type RegimeCutsPayload =

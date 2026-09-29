@@ -483,6 +483,16 @@ and the ledger holds a session newer than the artifact's (an `ok` payload carryi
 one `readOnlyDb` `MAX(trade_date)` against a declared per-module table). The earnings JSON reader
 collapses the first two; this one does not. Dated artifacts are listed for a session picker.
 
+**The robustness stamps (2026-09-28)** ride the same rule. `fragile` / `robustness` / `history` on
+every cell, `paired` on every dimension and `multiplicity` on the document are the writer's, shown
+as a `fragile` mark (tooltip: the largest session's share, the sign flips, the interval), a `±n`
+sign-change mark, a same-day comparisons table under each dimension and one multiplicity line in
+the header. `fragile` is read as the writer's boolean or null and never defaulted to false the way
+`thin` is: a missing stamp is "not stamped", and false would read as "checked and found sound".
+Paired rows are dimmed at the writer's `paired_alpha`, never a console copy of 0.10 and never the
+interval `alpha` it happens to equal today; the reader test's fixture sets the two apart so a
+reader that borrowed one for the other fails.
+
 Verify in the browser after `pnpm --filter @console/shared build && pnpm build` and a console
 restart: `MSYS_NO_PATHCONV=1 pnpm ui-check --route /flies/regime --expect "era since"`, and the
 same with `--route /meic/regime`. Every slide is addressable, so prefer `--route` over

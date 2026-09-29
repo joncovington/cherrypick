@@ -4,12 +4,16 @@ import type {
   RegimeArm,
   RegimeBreak,
   RegimeCell,
+  RegimeCellHistory,
   RegimeCrossCell,
   RegimeCrossTab,
   RegimeCuts,
   RegimeCutsModule,
   RegimeCutsPayload,
   RegimeDimension,
+  RegimeMultiplicity,
+  RegimePair,
+  RegimeRobustness,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { num, obj, readOnlyDb, str } from "./db.js";
@@ -62,6 +66,77 @@ function brk(v: unknown): RegimeBreak | null {
   return { breakDate: date, scope: str(o["scope"]) ?? "*", kind: str(o["kind"]) ?? "", reason: str(o["reason"]) };
 }
 
+// The 2026-09-28 robustness stamps. Additive keys with no cut_version bump, so every one may be
+// absent (an older artifact, or a dated copy that is never rewritten) and reads as null / [] --
+// never as a derived value. A missing `fragile` is "not stamped", not "checked and found sound".
+function bool(v: unknown): boolean | null {
+  return typeof v === "boolean" ? v : null;
+}
+
+function robustness(v: unknown): RegimeRobustness | null {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
+  const o = obj(v);
+  const iv = o["net_interval"];
+  const lo = Array.isArray(iv) ? num(iv[0]) : null;
+  const hi = Array.isArray(iv) ? num(iv[1]) : null;
+  return {
+    positiveSessions: num(o["positive_sessions"]),
+    largestSessionNet: num(o["largest_session_net"]),
+    largestSessionShare: num(o["largest_session_share"]),
+    signFlipsDroppingOne: num(o["sign_flips_dropping_one"]),
+    netInterval: lo !== null && hi !== null ? [lo, hi] : null,
+    intervalLevel: num(o["interval_level"]),
+    intervalExcludesZero: bool(o["interval_excludes_zero"]),
+  };
+}
+
+function cellHistory(v: unknown): RegimeCellHistory | null {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
+  const o = obj(v);
+  return { snapshots: num(o["snapshots"]) ?? 0, firstNet: num(o["first_net"]), signChanges: num(o["sign_changes"]) ?? 0 };
+}
+
+/** The three per-cell stamps, shared by single-dimension buckets and cross-tab cells. */
+function stamps(o: Record<string, unknown>): Pick<RegimeCell, "fragile" | "robustness" | "history"> {
+  return { fragile: bool(o["fragile"]), robustness: robustness(o["robustness"]), history: cellHistory(o["history"]) };
+}
+
+function pair(v: unknown): RegimePair {
+  const o = obj(v);
+  return {
+    a: str(o["a"]) ?? "?",
+    b: str(o["b"]) ?? "?",
+    sessions: num(o["sessions"]) ?? 0,
+    aBetterSessions: num(o["a_better_sessions"]) ?? 0,
+    bBetterSessions: num(o["b_better_sessions"]) ?? 0,
+    meanDiffPerTrade: num(o["mean_diff_per_trade"]),
+    medianDiffPerTrade: num(o["median_diff_per_trade"]),
+    signTestP: num(o["sign_test_p"]),
+  };
+}
+
+function multiplicity(v: unknown): RegimeMultiplicity | null {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
+  const o = obj(v);
+  return {
+    alpha: num(o["alpha"]),
+    pairedAlpha: num(o["paired_alpha"]) ?? num(o["alpha"]),
+    intervals: num(o["intervals"]) ?? 0,
+    intervalsExcludingZero: num(o["intervals_excluding_zero"]) ?? 0,
+    intervalsExpectedByChance: num(o["intervals_expected_by_chance"]),
+    pairedTests: num(o["paired_tests"]) ?? 0,
+    pairedBelowAlpha: num(o["paired_below_alpha"]) ?? 0,
+    pairedExpectedByChance: num(o["paired_expected_by_chance"]),
+  };
+}
+
+function docHistory(v: unknown): RegimeCuts["history"] {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
+  const o = obj(v);
+  const sessions = Array.isArray(o["sessions"]) ? o["sessions"].map(str).filter((s): s is string => s !== null) : [];
+  return { window: num(o["window"]), sessions };
+}
+
 function cell(v: unknown): RegimeCell {
   const o = obj(v);
   return {
@@ -79,6 +154,7 @@ function cell(v: unknown): RegimeCell {
     // The writer's flag, verbatim. A renderer that re-derived `sessions < 3` here would be a
     // second implementation of the threshold, and the two would drift.
     thin: o["thin"] === true,
+    ...stamps(o),
   };
 }
 
@@ -94,6 +170,7 @@ function dimension(v: unknown): RegimeDimension {
     degenerate: o["degenerate"] === true,
     underpowered: o["underpowered"] === true,
     buckets: Array.isArray(o["buckets"]) ? o["buckets"].map(cell) : [],
+    paired: Array.isArray(o["paired"]) ? o["paired"].map(pair) : [],
   };
 }
 
@@ -135,6 +212,7 @@ function crossCell(v: unknown): RegimeCrossCell {
     completed: num(o["completed"]),
     completionRate: num(o["completion_rate"]),
     thin: o["thin"] === true,
+    ...stamps(o),
   };
 }
 
@@ -181,6 +259,8 @@ export function shapeRegimeCuts(raw: Record<string, unknown>): RegimeCuts {
     arms,
     crossTabs: Array.isArray(raw["cross_tabs"]) ? raw["cross_tabs"].map(crossTab) : [],
     dimensions,
+    multiplicity: multiplicity(raw["multiplicity"]),
+    history: docHistory(raw["history"]),
   };
 }
 

@@ -17,7 +17,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 # its _disabled_note) — plus every retired profile kept for historical record. sign/control-drift/
 # width-5/width-10 retired at the cutover with written verdicts; the advisor's advised book is
 # synthesized per-session and never lives in this registry.
-ACTIVE_STREAMS = {"control"}
+# live-shadow (2026-09-28): the live configuration measured on paper -- an EMPTY profile, so it
+# trades config.json's top level exactly as live_loop.run_once would.
+# bp-5k / bp-10k / bp-25k (2026-09-28): control's gates and exits under a buying-power cap, the
+# sign rule, 10:00-14:30 and cap-scaled spacing -- a live-sizable book at three sizes.
+BP_ARMS = {"bp-5k": 5000, "bp-10k": 10000, "bp-25k": 25000}
+ACTIVE_STREAMS = {"control", "live-shadow", *BP_ARMS}
 LADDER = {"conservative", "moderate", "aggressive", "very-aggressive"}
 RETIRED_STUDY_ARMS = {
     "gex-open",
@@ -97,6 +102,53 @@ def test_only_the_active_streams_are_enabled(sample_risk_profiles):
         assert profiles[name].get("enabled", True) is True, f"{name} must be enabled"
     for name in LADDER | RETIRED_STUDY_ARMS:
         assert profiles[name].get("enabled") is False, f"{name} must be disabled"
+
+
+def test_live_shadow_carries_no_overrides(sample_risk_profiles):
+    """One override and the arm stops being live's twin while keeping the name. Shown to fail by
+    adding `min_iv_rank: 0.0` to the profile."""
+    spec = sample_risk_profiles["profiles"]["live-shadow"]
+    assert {k for k in spec if not k.startswith("_")} == {"enabled"}
+
+
+def test_live_shadow_resolves_to_exactly_the_params_live_trades(sample_risk_profiles, sample_config):
+    """live_loop.run_once trades `paper._merged_params(config, {})`; the shadow must merge to the
+    same dict apart from its own `enabled` flag."""
+    from cherrypick.meic import paper
+
+    shadow = paper._merged_params(sample_config, sample_risk_profiles["profiles"]["live-shadow"])
+    live = paper._merged_params(sample_config, {})
+    assert {k for k in set(shadow) | set(live) if shadow.get(k) != live.get(k)} <= {"enabled"}
+
+
+_BP_KEYS = {"max_open_bp_dollars", "min_seconds_between_entries", "overlap_scope",
+            "paper_entry_window_start", "entry_window_end"}
+
+
+def test_bp_arms_are_control_plus_only_the_sizing_keys(sample_risk_profiles):
+    """What the siblings are read against control FOR is the sizing; a sixth differing key would be a
+    second variable. Shown to fail by setting per_side_stop_management true on one of them."""
+    profiles = sample_risk_profiles["profiles"]
+    control = {k: v for k, v in profiles["control"].items() if not k.startswith("_")}
+    for name, cap in BP_ARMS.items():
+        arm = {k: v for k, v in profiles[name].items() if not k.startswith("_")}
+        assert {k for k in set(arm) | set(control) if arm.get(k) != control.get(k)} == _BP_KEYS, name
+        assert arm["max_open_bp_dollars"] == cap and arm["overlap_scope"] == "sign"
+        assert (arm["paper_entry_window_start"], arm["entry_window_end"]) == ("10:00", "14:30")
+
+
+def test_every_bp_arm_can_reach_its_own_cap(sample_risk_profiles):
+    """The spacing bounds entries per day, so it bounds buying power too: at a flat 15 minutes the
+    10:00-14:30 window admits ~18 entries, and a $25k cap is unreachable -- bp-25k and bp-10k were
+    one arm until the spacing scaled. Assert the window's entry ceiling x ~$1,000 per 10-wide IC
+    covers the cap. Shown to fail by setting bp-25k's spacing back to 900 seconds."""
+    profiles = sample_risk_profiles["profiles"]
+    for name, cap in BP_ARMS.items():
+        arm = profiles[name]
+        h0, m0 = map(int, arm["paper_entry_window_start"].split(":"))
+        h1, m1 = map(int, arm["entry_window_end"].split(":"))
+        window_s = ((h1 * 60 + m1) - (h0 * 60 + m0)) * 60
+        assert window_s // arm["min_seconds_between_entries"] * 1000 >= cap, name
 
 
 # --------------------------------------------------------------------------- control (the reference book)
@@ -467,9 +519,11 @@ def test_profile_gate_values_in_reasonable_ranges(sample_risk_profiles):
             assert profile["regime_vix_pause_threshold"] > 0
 
         # Max concurrent ICs: 1-99 for a book-semantics profile (the retired ladder/GEX arms and
-        # `control`), up to 999 for the deliberately-uncapped sampling streams.
+        # `control`), up to 999 for the deliberately-uncapped sampling streams -- and for a profile
+        # capped by buying power instead of by count (the bp-* arms), whose cap is the real limit.
         if "max_concurrent_ics" in profile:
-            ceiling = 999 if name in UNCAPPED_SAMPLING_STREAMS else 99
+            bp_capped = bool(profile.get("max_open_bp_dollars"))
+            ceiling = 999 if name in UNCAPPED_SAMPLING_STREAMS or bp_capped else 99
             assert 1 <= profile["max_concurrent_ics"] <= ceiling, name
 
         if "daily_ic_trade_target" in profile:

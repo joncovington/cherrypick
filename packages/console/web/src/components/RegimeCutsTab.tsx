@@ -1,5 +1,14 @@
 import { Fragment, useState } from "react";
-import type { RegimeArm, RegimeCell, RegimeCrossCell, RegimeCrossTab, RegimeCuts, RegimeCutsModule } from "@console/shared";
+import type {
+  RegimeArm,
+  RegimeCell,
+  RegimeCrossCell,
+  RegimeCrossTab,
+  RegimeCuts,
+  RegimeCutsModule,
+  RegimeMultiplicity,
+  RegimePair,
+} from "@console/shared";
 import { useRegimeCuts } from "../lib/api";
 import { Card, PnlCell, SkeletonRows, fmtMoney } from "./DataTable";
 
@@ -9,7 +18,9 @@ import { Card, PnlCell, SkeletonRows, fmtMoney } from "./DataTable";
  * (one small multiple per arm), rendered as written. This component derives nothing: `thin` is
  * the writer's flag, the era and every number come off the file, and the only layout decision
  * made here is which rows and columns to draw, from the buckets present. Absent, failed and
- * stale are shown as three different things.
+ * stale are shown as three different things. The 2026-09-28 stamps -- `fragile`, `robustness`,
+ * `history`, `paired`, `multiplicity` -- are the writer's too and are printed, never recomputed;
+ * an artifact written before them simply shows no markers.
  */
 
 const WRITE_COMMAND: Record<RegimeCutsModule, string> = {
@@ -45,6 +56,50 @@ function ThinMark() {
     >
       thin
     </span>
+  );
+}
+
+/** The writer's `fragile` stamp, with the numbers behind it. Same family as ThinMark. */
+function FragileMark({ c }: { c: RegimeCell | RegimeCrossCell }) {
+  const r = c.robustness;
+  const parts = ["Fragile, stamped by the module"];
+  if (r !== null) {
+    if (r.largestSessionShare !== null)
+      parts.push(`largest session ${fmtMoney(r.largestSessionNet)} is ${pct(r.largestSessionShare)} of the cell's absolute flow`);
+    if (r.signFlipsDroppingOne !== null)
+      parts.push(`dropping one session flips the sign in ${r.signFlipsDroppingOne} case${r.signFlipsDroppingOne === 1 ? "" : "s"}`);
+    if (r.netInterval !== null)
+      parts.push(
+        `${r.intervalLevel === null ? "" : `${pct(r.intervalLevel)} `}interval ${fmtMoney(r.netInterval[0])} to ${fmtMoney(r.netInterval[1])}`,
+      );
+  }
+  return (
+    <span style={{ fontSize: 10, marginLeft: 4, color: "var(--warn)" }} title={parts.join(" · ")}>
+      fragile
+    </span>
+  );
+}
+
+/** The writer's history stamp, shown only when the cell's net has changed sign over its snapshots. */
+function SignChangeMark({ c }: { c: RegimeCell | RegimeCrossCell }) {
+  const h = c.history;
+  if (h === null || h.signChanges <= 0) return null;
+  return (
+    <span
+      style={{ fontSize: 10, marginLeft: 4, color: "var(--warn)" }}
+      title={`Net has changed sign ${h.signChanges}× — first ${fmtMoney(h.firstNet)} → now ${fmtMoney(c.netPnl)}, over ${h.snapshots} prior snapshot${h.snapshots === 1 ? "" : "s"}. Stamped by the module.`}
+    >
+      ±{h.signChanges}
+    </span>
+  );
+}
+
+function StampMarks({ c }: { c: RegimeCell | RegimeCrossCell }) {
+  return (
+    <>
+      {c.fragile === true && <FragileMark c={c} />}
+      <SignChangeMark c={c} />
+    </>
   );
 }
 
@@ -125,6 +180,7 @@ export function CrossTabGrid({ tab, thinBelowSessions }: { tab: RegimeCrossTab; 
                         >
                           <span>{c.sessions}s</span>
                           {c.thin ? <ThinMark /> : rate !== null && <span>{pct(rate)}</span>}
+                          <StampMarks c={c} />
                         </div>
                       );
                     })}
@@ -138,7 +194,65 @@ export function CrossTabGrid({ tab, thinBelowSessions }: { tab: RegimeCrossTab; 
       <p className="muted" style={{ fontSize: 11, marginTop: "0.5rem", marginBottom: 0 }}>
         Colour is {rateLabel} rate (darker = higher); the cell prints sessions and {rateLabel} %. Rows are{" "}
         {tab.dims[0]}, columns {tab.dims[1]}. A grey cell is one the writer flagged thin (fewer than{" "}
-        {thinBelowSessions ?? "the writer's floor of"} sessions); hover for trades, completed, win and avg.
+        {thinBelowSessions ?? "the writer's floor of"} sessions); <em>fragile</em> and <em>±n</em> (sign changes over
+        prior snapshots) are the writer's stamps. Hover for trades, completed, win and avg.
+      </p>
+    </>
+  );
+}
+
+/**
+ * The dimension's same-day comparisons, as the writer listed them: bucket a against bucket b on the
+ * sessions both traded, per trade. A row at or above the writer's alpha is dimmed, never hidden;
+ * with no alpha on the artifact nothing is dimmed, rather than using a console copy of the bar.
+ */
+function PairedTable({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
+  const rows: Array<{ arm: string; p: RegimePair }> = [];
+  for (const b of cuts.arms) for (const p of b.dimensions[dim]?.paired ?? []) rows.push({ arm: b.arm, p });
+  if (rows.length === 0) return null;
+  const alpha = cuts.multiplicity?.pairedAlpha ?? null;
+  return (
+    <>
+      <h3 style={{ fontSize: 12, margin: "0.9rem 0 0.3rem" }}>same-day comparisons</h3>
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>a vs b</th>
+              <th title="Sessions a beat b per trade – sessions b beat a, of the sessions both traded">W–L of days</th>
+              <th title="Mean per-trade net difference, a minus b, over the shared sessions (hover a value for the median)">
+                per trade
+              </th>
+              <th title="Exact two-sided sign test">p</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ arm, p }) => {
+              const weak = alpha !== null && (p.signTestP === null || p.signTestP >= alpha);
+              return (
+                <tr key={`${arm}-${p.a}-${p.b}`} style={weak ? { opacity: 0.55 } : undefined}>
+                  <td>{arm}</td>
+                  <td>
+                    {p.a} vs {p.b}
+                  </td>
+                  <td>
+                    {p.aBetterSessions}–{p.bBetterSessions} of {p.sessions}
+                  </td>
+                  <td title={p.medianDiffPerTrade === null ? undefined : `median ${fmtMoney(p.medianDiffPerTrade)}`}>
+                    <PnlCell v={p.meanDiffPerTrade} />
+                  </td>
+                  <td>{p.signTestP === null ? "—" : p.signTestP.toFixed(p.signTestP < 0.01 ? 3 : 2)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted" style={{ fontSize: 11, marginTop: "0.5rem", marginBottom: 0 }}>
+        Two buckets on the same days, per trade: a bucket that wins the table above but not here is a kind of day,
+        not a kind of entry. Tied days are left out of W–L, and pairs sharing too few sessions are omitted by the
+        writer.{alpha !== null && ` Rows at p ≥ ${alpha} are dimmed.`}
       </p>
     </>
   );
@@ -187,6 +301,7 @@ function DimensionCard({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
                       <td key={col} style={c.thin ? { opacity: 0.55 } : undefined} title={cellTitle(c)}>
                         {cellText(c)}
                         {c.thin && <ThinMark />}
+                        <StampMarks c={c} />
                       </td>
                     );
                   })}
@@ -199,8 +314,10 @@ function DimensionCard({ cuts, dim }: { cuts: RegimeCuts; dim: string }) {
       <p className="muted" style={{ fontSize: 11, marginTop: "0.5rem", marginBottom: 0 }}>
         Each cell reads {rateLabel} % · net · sessions. A dash means no rows in that bucket for that arm. A dimmed
         cell is one the writer flagged thin (fewer than {cuts.thinBelowSessions ?? "the writer's floor of"} sessions); an arm's suffix is the
-        writer's coverage and power reading for this dimension.
+        writer's coverage and power reading for this dimension. <em>fragile</em> marks a cell one session dominates or
+        whose sign one session decides; <em>±n</em> one whose net changed sign over the prior snapshots.
       </p>
+      <PairedTable cuts={cuts} dim={dim} />
     </Card>
   );
 }
@@ -214,6 +331,19 @@ function CrossTabCard({ cuts, tab }: { cuts: RegimeCuts; tab: RegimeCrossTab }) 
         until the trend bucket showed the whole effect sat in one seven-session cell. Read sessions first.
       </p>
     </Card>
+  );
+}
+
+/** The writer's chance baseline for the whole document, printed as one line. */
+function MultiplicityLine({ m }: { m: RegimeMultiplicity }) {
+  const bar = m.pairedAlpha === null ? "the writer's bar" : `p ${m.pairedAlpha}`;
+  const chance = (v: number | null): string => (v === null ? "" : `; about ${v} expected by chance`);
+  return (
+    <p className="muted" style={{ margin: "0.4rem 0 0" }}>
+      {m.pairedBelowAlpha} of {m.pairedTests} same-day comparisons below {bar}
+      {chance(m.pairedExpectedByChance)}. {m.intervalsExcludingZero} of {m.intervals} cell intervals exclude zero
+      {chance(m.intervalsExpectedByChance)}.
+    </p>
   );
 }
 
@@ -338,6 +468,7 @@ export function RegimeCutsTab({ module }: { module: RegimeCutsModule }) {
           The console renders this artifact and computes nothing from it: thin cells, coverage, era and every number
           are the writer's. Sessions are the unit of independence; read them before the net.
         </p>
+        {cuts.multiplicity !== null && <MultiplicityLine m={cuts.multiplicity} />}
       </Card>
       <EraCard cuts={cuts} stale={stale} />
       {cuts.dimensions.map((dim) => (

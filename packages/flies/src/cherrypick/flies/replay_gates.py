@@ -72,6 +72,25 @@ def replay_trend_bucket(rows: list[dict], bucket: str) -> dict:
     return summarize(rows, [r for r in rows if r.get("entry_trend_bucket") != bucket])
 
 
+def window_label(windows: list) -> str:
+    """`10:00-11:00,13:00-14:30` -- the key a window choice is reported under."""
+    return ",".join(f"{w[0]}-{w[1]}" for w in windows)
+
+
+def replay_entry_windows(rows: list[dict], windows: list) -> dict:
+    """Keep the entries whose fill minute the engine's own `in_entry_window` admits under
+    `windows` (2026-09-28, for the `entry_windows` advice bound). Only ever NARROWS what was
+    recorded: a window reaching past the arm's own admits nothing that was never entered, so a
+    choice wider than control's replays as control."""
+    from cherrypick.flies import engine
+
+    def admitted(r: dict) -> bool:
+        t = _t(r["entry_time"])
+        return t is not None and engine.in_entry_window(t.hour * 60 + t.minute, windows)[0]
+
+    return summarize(rows, [r for r in rows if admitted(r)])
+
+
 def summarize(rows: list[dict], kept: list[dict]) -> dict:
     days = _by_day(rows)
     kept_days = _by_day(kept)
@@ -93,10 +112,24 @@ def summarize(rows: list[dict], kept: list[dict]) -> dict:
     }
 
 
-def sweep(rows: list[dict]) -> dict:
+def sweep(rows: list[dict], entry_windows: list | tuple = ()) -> dict:
+    """Every replayable gate over the same rows. `entry_windows` are the window CHOICES to replay
+    (the advice bound's own list); the key is absent when none are given."""
     base = summarize(rows, rows)
-    return {
+    out = {
         "base": base,
         "miss_stop": {str(m): replay_miss_stop(rows, m) for m in MISS_STOP_SWEEP},
         "trend_bucket": {b: replay_trend_bucket(rows, b) for b in TREND_BUCKETS},
+    }
+    if entry_windows:
+        out["entry_windows"] = {window_label(w): replay_entry_windows(rows, w) for w in entry_windows}
+    return out
+
+
+def without_per_day(out: dict) -> dict:
+    """The sweep with every block's `per_day` map dropped -- the shape the artifact carries."""
+    strip = lambda b: {k: v for k, v in b.items() if k != "per_day"}  # noqa: E731
+    return {
+        k: strip(v) if k == "base" else {name: strip(b) for name, b in v.items()}
+        for k, v in out.items()
     }

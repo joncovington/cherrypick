@@ -1033,6 +1033,84 @@ def test_regime_cuts_carries_flies_outcome_distributions_and_omits_them_for_meic
     assert "miss_gap" in out["_note"]
 
 
+def test_regime_cuts_marks_fragile_cells_and_lists_only_significant_pairs(tmp_home):
+    """Shown to fail by dropping the p filter: the p=0.39 pair is listed beside the p=0.0002 one,
+    and a model reading both as findings is the multiplicity problem the stamps exist to name."""
+    doc = _regime_doc()
+    gex = doc["arms"][0]["dimensions"]["gex"]
+    diffuse = next(c for c in gex["buckets"] if c["bucket"] == "diffuse")
+    diffuse["fragile"] = True
+    diffuse["history"] = {"snapshots": 6, "first_net": -100.0, "sign_changes": 2}
+    gex["paired"] = [
+        {"a": "diffuse", "b": "pinning", "sessions": 12, "a_better_sessions": 8,
+         "b_better_sessions": 4, "mean_diff_per_trade": 17.3, "sign_test_p": 0.3877},
+        {"a": "diffuse", "b": "clustered", "sessions": 25, "a_better_sessions": 3,
+         "b_better_sessions": 22, "mean_diff_per_trade": -23.0, "sign_test_p": 0.0002},
+    ]
+    doc["multiplicity"] = {"paired_tests": 2, "paired_below_alpha": 1, "paired_expected_by_chance": 0.2}
+    _write_regime_doc(tmp_home, "flies", doc)
+    out = factpack._regime_cuts(SESSION, ("flies",))["flies"]
+    dim = out["arms"][0]["dimensions"]["gex"]
+    assert dim["buckets"]["diffuse"] == "sessions=13 trades=70 completion=80% net=+861 fragile"
+    assert out["paired"] == ["control/gex: diffuse>clustered 3-22/25 per_trade=-23 p=0.0002"]
+    assert out["sign_changed"] == ["control/gex/diffuse: 2x over 6 snapshots, first -100.0 now 861.0"]
+    assert "paired_more" not in out and out["multiplicity"] == doc["multiplicity"]
+    assert "fragile" in factpack._REGIME_CUTS_NOTE and "paired" in factpack._REGIME_CUTS_NOTE
+
+
+def test_regime_cuts_caps_the_paired_list_strongest_first_and_counts_the_rest(tmp_home):
+    doc = _regime_doc()
+    gex = doc["arms"][0]["dimensions"]["gex"]
+    gex["paired"] = [
+        {"a": f"k{i}", "b": "z", "sessions": 20, "a_better_sessions": 18, "b_better_sessions": 2,
+         "mean_diff_per_trade": 1.0, "sign_test_p": round(0.001 * (20 - i), 4)}
+        for i in range(factpack.REGIME_CUTS_LIST_MAX + 3)
+    ]
+    _write_regime_doc(tmp_home, "flies", doc)
+    out = factpack._regime_cuts(SESSION, ("flies",))["flies"]
+    assert len(out["paired"]) == factpack.REGIME_CUTS_LIST_MAX and out["paired_more"] == 3
+    last = factpack.REGIME_CUTS_LIST_MAX + 2
+    assert out["paired"][0].startswith(f"control/gex: k{last}>z")  # lowest p first
+
+
+def test_regime_cuts_carries_the_flies_gate_replay_one_line_per_rule(tmp_home):
+    """Shown to fail with the copy removed: miss-stop-90 was proposed without the replay its own
+    bound note asks for, because the advisor reads only the pack."""
+
+    def block(net, kept=184, losing=6, worst=-836.05):
+        return {"entries": 184, "kept": kept, "completion_rate": 0.7935, "net_pnl": net,
+                "days": 25, "losing_days": losing, "worst_day": worst}
+
+    doc = _regime_doc()
+    doc["gate_replay"] = {
+        "arm": "control", "start": "2026-08-21", "end": SESSION,
+        "base": block(3690.39),
+        "miss_stop": {"90": block(2593.78, kept=155, losing=9, worst=-817.85)},
+        "trend_bucket": {"up_from_open": block(5109.84, kept=134, worst=-438.17)},
+    }
+    _write_regime_doc(tmp_home, "flies", doc)
+    out = factpack._regime_cuts(SESSION, ("flies",))["flies"]["gate_replay"]
+    assert out["arm"] == "control" and out["start"] == "2026-08-21"
+    assert out["rules"]["miss_stop:90"] == (
+        "kept=155/184 completion=79% net=+2594 (-1097) losing_days=9/25 worst_day=-817.85"
+    )
+    assert out["rules"]["base"].startswith("kept=184/184") and "(" not in out["rules"]["base"]
+    assert set(out["rules"]) == {"base", "miss_stop:90", "trend_bucket:up_from_open"}
+    assert "gate_replay" in factpack._REGIME_CUTS_NOTE
+
+
+def test_regime_cuts_underpowered_is_emitted_only_when_true(tmp_home):
+    doc = _regime_doc()
+    doc["arms"][0]["dimensions"]["gex"]["underpowered"] = True
+    _write_regime_doc(tmp_home, "flies", doc)
+    out = factpack._regime_cuts(SESSION, ("flies",))["flies"]
+    assert out["arms"][0]["dimensions"]["gex"]["underpowered"] is True
+    doc["arms"][0]["dimensions"]["gex"]["underpowered"] = False
+    _write_regime_doc(tmp_home, "flies", doc)
+    out = factpack._regime_cuts(SESSION, ("flies",))["flies"]
+    assert "underpowered" not in out["arms"][0]["dimensions"]["gex"]
+
+
 def test_regime_cuts_unknown_cut_version_is_absent_not_misread(tmp_home):
     _write_regime_doc(tmp_home, "meic", _regime_doc(module="meic", cut_version=3))
     out = factpack._regime_cuts(SESSION, ("meic",))["meic"]
@@ -1085,8 +1163,25 @@ def test_regime_cuts_thinned_sections_fit_the_attention_budget(tmp_home):
                             "fee_drag_pct": 38.3,
                             "profit_factor": 1.5,
                             "thin": False,
+                            "fragile": True,
+                            "robustness": {"net_interval": [-1.0, 1.0], "largest_session_share": 0.5},
+                            "history": {"snapshots": 10, "first_net": 1.0, "sign_changes": 3},
                         }
                         for j in range(4)
+                    ],
+                    "paired": [
+                        {
+                            "a": f"k{a}",
+                            "b": f"k{b}",
+                            "sessions": 20,
+                            "a_better_sessions": 16,
+                            "b_better_sessions": 4,
+                            "mean_diff_per_trade": -123.45,
+                            "median_diff_per_trade": -100.0,
+                            "sign_test_p": 0.0118,
+                        }
+                        for a in range(4)
+                        for b in range(a + 1, 4)
                     ],
                 }
             arm_rows.append(book)
@@ -1112,16 +1207,21 @@ def test_regime_cuts_thinned_sections_fit_the_attention_budget(tmp_home):
             ],
         )
 
-    _write_regime_doc(
-        tmp_home,
+    flies_doc = big(
         "flies",
-        big(
-            "flies",
-            12,
-            ["vol", "gex", "time", "skew", "center_offset", "trend", "drift_alignment"],
-            [("gex", "trend"), ("gex", "drift_alignment")],
-        ),
+        12,
+        ["vol", "gex", "time", "skew", "center_offset", "trend", "drift_alignment"],
+        [("gex", "trend"), ("gex", "drift_alignment")],
     )
+    replay_block = {"entries": 184, "kept": 150, "completion_rate": 0.8, "net_pnl": -12345.67,
+                    "days": 25, "losing_days": 11, "worst_day": -1234.56}
+    flies_doc["gate_replay"] = {
+        "arm": "control", "start": "2026-08-21", "end": SESSION, "base": replay_block,
+        "miss_stop": {str(m): replay_block for m in (15, 30, 45, 60, 90)},
+        "trend_bucket": {b: replay_block for b in ("up_from_open", "down_from_open")},
+        "entry_windows": {f"10:00-1{i}:00,13:00-14:30": replay_block for i in range(4)},
+    }
+    _write_regime_doc(tmp_home, "flies", flies_doc)
     _write_regime_doc(tmp_home, "meic", big("meic", 3, [f"d{i}" for i in range(8)], [("gex", "trend")]))
     out = factpack._regime_cuts(SESSION, ("flies", "meic"))
     assert len(json.dumps(out, indent=2)) < 72_000

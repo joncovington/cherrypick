@@ -76,6 +76,7 @@
   ],
   "_cash_settled_symbols_note": "Symbols that settle in cash at expiration (SPX/XSP/NDX/RUT). Membership drives the end-of-day exit: cash-settled positions are LEFT TO EXPIRE (settled at expiration_settlement_time) rather than force-closed, since there is no assignment risk; symbols NOT listed (QQQ/IWM/equities/futures) are physically settled and force-closed before the bell to avoid assignment. It also controls whether a missed non-cash force-close is escalated as a critical assignment-risk failure. Leave any equity or physically-settled symbol you add to 'symbols' out of this list.",
   "trading_window_and_caps_header": "===== Trading Window & Daily Caps =====",
+  "_live_baseline_note": "2026-09-28: this top level IS the live configuration -- live_loop.run_once trades paper._merged_params(config, {}), no profile -- and it differs from the paper `control` profile on sixteen settings (min_iv_rank 0.3, the negative-GEX block on by code default because this file never sets it, OTM floors 0.0035/0.003, VIX / VIX1D-ratio / ATR pauses, per-side stops, a 14:30 entry end, overlap_scope shorts, late-entry bias, a 200/day target). Control's paper result does not describe it; the `live-shadow` profile in config.risk.json (from 2026-09-29) is its measurement. Change nothing here to go live without reading that arm first.",
   "enable_live_trading": false,
   "_enable_live_trading_note": "Set to true to allow execute_trade/adjust_order/close_position to submit real orders. Requires tastytrade OAuth credentials in the OS keyring (via `python src/tt.py secrets_set`). Left false in this example so a fresh setup starts in dry-run.",
   "advice": {
@@ -95,6 +96,11 @@
         "min": 0.0001,
         "max": 0.006,
         "_note": "One-directional by construction, which is what makes it safe to grant: `control` runs 0.0001, so the floor of this range IS the baseline, and every admissible value pushes the short call further out of the money. It can only make the advised book refuse more than its control, never take a trade the control would not. The ceiling sits above the deployed default (0.0035) and below the quarterly-expiry override (0.0067)."
+      },
+      "max_open_bp_dollars": {
+        "min": 2500,
+        "max": 50000,
+        "_note": "Added 2026-09-28. The buying-power cap (paper.evaluate_entry, per candidate: the open ICs' (width - credit) x100 plus the candidate's must fit). `control` runs uncapped, so every value here can only make the advised book refuse entries its control takes -- one-directional, like min_call_otm_pct. READ BEFORE PROPOSING: an advised twin is control plus this ONE key, so it runs the cap WITHOUT the sign rule, the 10:00-14:30 window or the spacing the bp-5k / bp-10k / bp-25k arms carry. Unspaced, the cap fills in the first minutes of the session on one market: in a replay of control's 26 era sessions a $5k-$10k cap lost ~100% of itself on the worst day, where the spaced arms lost 35-50%. Those three arms already measure the spaced shape; a proposal here measures the cap alone. Range: ~3 ICs a day at the floor, ~60 at the ceiling."
       },
       "_removed_entry_price_strategy_note": "REMOVED 2026-08-26. It was a bound over a parameter the paper engine never reads -- `entry_price_strategy` is consumed only by the agent-driven live path (.claude/commands/execute-entry.md), and the advisor only ever influences paper. A proposal on it would validate, be admitted, and produce an advised book byte-identical to its control: a spent experiment slot that could not have measured anything. That is the `sign` arm's failure (100% decision-agreement with control, retired as redundant), reachable here by configuration. tests/test_advice_bounds.py now refuses a bound the engine does not read."
     }

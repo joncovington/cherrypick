@@ -198,7 +198,7 @@ def _classify_gex(snapshot: dict, params: dict) -> tuple[str, float | None]:
         return "unknown", None
     flip, spot = gex.get("gamma_flip"), gex.get("spot") or snapshot.get("underlying_price")
     dist = (spot - flip) / spot if flip is not None and spot else None
-    threshold = params.get("regime_gex_min_flip_distance_pct") or 0.005
+    threshold = params.get("regime_gex_min_flip_distance_pct") or GEX_NEAR_FLIP_PCT
     positive = gex.get("gex_positive")
     if positive is None:
         # A snapshot with no sign flag (pre-2026-09-16 fixtures, a foreign GEX payload): the
@@ -210,9 +210,20 @@ def _classify_gex(snapshot: dict, params: dict) -> tuple[str, float | None]:
         if dist <= -threshold:
             return "negative", dist
         return "near_flip", dist
+    return gex_bucket_from_sign(positive, dist, threshold), dist
+
+
+# The near/deep boundary when `regime_gex_min_flip_distance_pct` is off (null), which is how every
+# shipped config and every arm has run. analytics._bucket_expr re-derives stored rows with it.
+GEX_NEAR_FLIP_PCT = 0.005
+
+
+def gex_bucket_from_sign(positive, dist: float | None, threshold: float = GEX_NEAR_FLIP_PCT) -> str:
+    """The sign-first rule, on its own so the read side can apply it to stored rows: `near_flip`
+    inside the threshold, else the side of the flag."""
     if dist is not None and abs(dist) < threshold:
-        return "near_flip", dist
-    return ("deep_positive" if positive else "negative"), dist
+        return "near_flip"
+    return "deep_positive" if positive else "negative"
 
 
 def gex_sign_flag(snapshot: dict) -> int | None:

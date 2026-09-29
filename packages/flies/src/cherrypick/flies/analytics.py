@@ -450,6 +450,7 @@ def by_regime(
     bucket_edges: list[float] | None = None,
     phase: str = "entry",
     arm=None,
+    with_sessions: bool = False,
 ) -> list[dict]:
     """Outcomes grouped by the regime the position was ENTERED into (or completed into, via
     `phase`). `arm` scopes to one book (2026-09-19, for the regime-cuts artifact); None blends
@@ -471,6 +472,10 @@ def by_regime(
     dimension whose rows all land in one bucket is reporting no contrast rather than no effect. The
     `unknown` bucket is carried rather than dropped: a regime we could not read is itself a fact
     about the session, and hiding it would make coverage look better than it was.
+
+    `with_sessions` adds `session_nets` (`{session: [trades, net]}`) to each row -- the input the
+    regime-cuts writer stamps robustness and same-day contrasts from. Off by default: every other
+    caller prints this table, and a per-day map in every row is noise there.
     """
     if dimension not in REGIME_DIMENSIONS:
         raise ValueError(f"by_regime: unknown dimension {dimension!r} (have {sorted(REGIME_DIMENSIONS)})")
@@ -512,6 +517,8 @@ def by_regime(
                 **_completion(rs),
             }
         )
+        if with_sessions:
+            out[-1]["session_nets"] = _rc.session_totals((r["trade_date"], r["pnl"]) for r in rs)
     return sorted(out, key=lambda x: x["net_pnl"] or 0, reverse=True)
 
 
@@ -660,6 +667,7 @@ def _cross_tab(conn, dims: tuple[str, str], *, start, end, symbol, entry_modes, 
             "sessions": len({r["trade_date"] for r in rs if r["trade_date"]}),
             **_summarize(rs),
             **_completion(rs),
+            "session_nets": _rc.session_totals((r["trade_date"], r["pnl"]) for r in rs),
         }
         for (a, b), rs in grouped.items()
     ]
@@ -675,10 +683,19 @@ def regime_cuts(
     cross_tabs=CROSS_TABS,
     breaks: list[dict] | None = None,
     generated_at: str | None = None,
+    replay_arm: str | None = None,
+    replay_windows: list | tuple = (),
 ) -> dict:
     """The regime-cuts artifact for `session`: every arm with settled rows inside the era, cut by
     every regime dimension and by the declared cross-tabs, with the era scoped by this ledger's
     `measurement_breaks` journal (see `cherrypick.core.regimecuts` for the rules and the reason).
+
+    With `replay_arm`, the document also carries `gate_replay` (2026-09-28): `replay_gates.sweep`
+    over that arm's era rows -- every replayable gate bound (miss stop, trend bucket, and the
+    `replay_windows` entry-window choices) as the base arm would have fared under it. A flies-only
+    key like the outcome distributions. It exists because miss-stop-90 was proposed from latency
+    quantiles while the replay its own bound note asks for said 90 minutes would have cost $1,097
+    over the era: the advisor reads only the pack, and the replay was not in it.
 
     Read-only over the ledger. `breaks` and `generated_at` are injectable so a test can pin the
     document byte for byte; the CLI passes neither."""
@@ -711,7 +728,9 @@ def regime_cuts(
         }
         coverage = regime_coverage(conn, start, session, symbol=symbol, arm=arm)["dimensions"]
         regimes = {
-            dim: by_regime(conn, dim, start, session, entry_modes, symbol, phase=phase, arm=arm)
+            dim: by_regime(
+                conn, dim, start, session, entry_modes, symbol, phase=phase, arm=arm, with_sessions=True
+            )
             for dim in REGIME_DIMENSIONS
         }
         arms_out.append(
@@ -736,7 +755,7 @@ def regime_cuts(
             entries.append({"arm": arm, "cells": cells})
         tabs.append({"dims": list(dims), "arms": entries})
 
-    return _rc.assemble(
+    doc = _rc.assemble(
         module="flies",
         session=session,
         symbol=symbol,
@@ -749,6 +768,18 @@ def regime_cuts(
         generated_at=generated_at or clock.now_iso(),
         min_effective_n=MIN_EFFECTIVE_N,
     )
+    if replay_arm:
+        from cherrypick.flies import replay_gates
+
+        start, _ = _rc.arm_start(era, replay_arm)
+        rows = replay_gates.load_rows(conn, start=start or "0000-00-00", end=session, arm=replay_arm, symbol=symbol)
+        doc["gate_replay"] = {
+            "arm": replay_arm,
+            "start": start,
+            "end": session,
+            **replay_gates.without_per_day(replay_gates.sweep(rows, replay_windows)),
+        }
+    return doc
 
 
 def by_entry_mode(conn, start=None, end=None, symbol=None) -> list[dict]:
@@ -792,6 +823,10 @@ def by_drift_alignment(
 
     Buckets are `with` / `flat` / `against`, where `flat` is any |drift| inside `band` — a
     fraction of spot at entry, so the split means the same thing on a 750 underlying as a 7710 one.
+
+    **Did not hold in the advisor era (2026-09-28): over control's 25 sessions `against` completed
+    73% for +$324 and `with` 67% for -$682** -- the regime cuts' `drift_alignment` dimension, with
+    the same-day comparison at 7-12 over 19 sessions. The pre-era measurement follows, as history.
 
     **Measured 2026-08-07, 97 SPX positions over 4 sessions: `with` completed 82%, `against` 7%.**
     The 15 `against` entries lost $3,129 — more than the era's entire −$2,973 — and the split holds

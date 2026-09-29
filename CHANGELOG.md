@@ -9,7 +9,14 @@ file tracks the *suite*, not any one package.
 ## [Unreleased]
 Since v0.9.0: flies' delta-arm rollout (six arms plus the ATM twins, landing 2026-09-21), the
 nightly per-book x per-regime "regime cuts" artifact for flies/MEIC, and a CLAUDE.md consolidation
-cutting suite-wide guardrail duplication across every package.
+cutting suite-wide guardrail duplication across every package. The regime cuts now stamp how much
+each cell rests on one session, same-day paired contrasts, snapshot-to-snapshot sign changes and a
+multiplicity count; and MEIC's GEX bucket is re-derived sign-first on every signed row, ending two
+definitions pooled in one era. flies' regime cuts carry a replay of every gate bound for the
+advisor, `entry_windows` became an advice bound, the callwall arm retired, and MEIC gained a
+`live-shadow` paper arm measuring the live configuration it had never run on paper. The flies live pilot now starts at
+10:15 rather than 10:30, on a replay of control's era under the live margin cap. MEIC gained a
+buying-power cap and three arms that trade control under it at $5k, $10k and $25k.
 
 ## v0.9.0 — 2026-09-18 — bwb's live path
 `58ebad48` wired bwb's narrow live pilot into the guards, the supervisor, and the arm command — the

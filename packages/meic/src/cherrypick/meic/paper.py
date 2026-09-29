@@ -550,6 +550,17 @@ def drift_skewed_otm_floors(
     return otm_floor_call * multiple, otm_floor_put, drift
 
 
+def ic_buying_power(ic: dict) -> float:
+    """What one iron condor ties up: (width - net credit) x100 x quantity -- only one side can
+    finish in the money, so the widest single-side loss net of the whole credit is the requirement.
+    Counted at full size until the IC leaves the open list, stopped side or not: the cap sizes
+    worst case, and a half-closed condor's remaining side still carries its own."""
+    width, credit = ic.get("wing_width"), ic.get("net_credit")
+    if width is None or credit is None:
+        return 0.0
+    return max(0.0, (float(width) - float(credit)) * 100 * float(ic.get("quantity") or 1))
+
+
 def evaluate_entry(
     snapshot: dict,
     params: dict,
@@ -824,6 +835,13 @@ def evaluate_entry(
     underlying = snapshot["underlying_price"]
     last_reason = "no_candidate_cleared_all_gates"
 
+    # Buying-power cap (2026-09-28, the bp-* arms; off when unset). The open ICs' requirement plus
+    # the candidate's own must fit. Checked PER CANDIDATE like every hard stop in this loop, so a
+    # 10-wide that does not fit falls through to a 5-wide that does -- what an account at its limit
+    # would do. Sized on the same (width - credit) x100 the flies live pilot caps.
+    bp_cap = params.get("max_open_bp_dollars")
+    open_bp = sum(ic_buying_power(ic) for ic in open_ics) if bp_cap else 0.0
+
     for cand in candidates:
         sp, lp, sc, lc = cand["short_put"], cand["long_put"], cand["short_call"], cand["long_call"]
         wing_width = cand["wing_width"]
@@ -887,6 +905,10 @@ def evaluate_entry(
             last_reason = (
                 "over_target_credit_below_floor" if over_target else "credit_below_fee_adjusted_floor"
             )
+            continue
+
+        if bp_cap and open_bp + ic_buying_power({"wing_width": wing_width, "net_credit": net_credit}) > bp_cap:
+            last_reason = "max_open_bp_reached"
             continue
 
         chosen = dict(cand)
@@ -1421,6 +1443,7 @@ _ATTEMPT_OUTCOMES = {
     "fomc_blackout": "window_blocked",
     "daily_target_reached": "window_blocked",
     "max_concurrent_ics_reached": "window_blocked",
+    "max_open_bp_reached": "window_blocked",
     "no_candidate_cleared_all_gates": "no_candidate",
     "no_0dte_expiration": "no_candidate",
 }

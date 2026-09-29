@@ -1497,8 +1497,17 @@ REGIME_CUTS_MIN_COVERAGE_PCT = 50.0
 REGIME_CUTS_CROSS_CELLS = 6
 _REGIME_CELL_FORMAT = (
     "one string per cell: sessions=S trades=N completion=P% (or win=P% where the module has no "
-    "completion concept) net=+D; a thin cell reads sessions=S trades=N thin and carries no P&L"
+    "completion concept) net=+D; a thin cell reads sessions=S trades=N thin and carries no P&L. "
+    "A trailing `fragile` means one session carries at least 40% of the cell's movement or "
+    "dropping any single session flips its sign -- read it as one day's story, not a regime's. "
+    "Cross-tab cells carry no mark"
 )
+# The paired contrasts and the sign-changed cells ride as two capped per-module lists rather than
+# inside every dimension: listed per dimension they overran the pack's worst case by 24 KB, and a
+# per-module list sorted by strength is also the better read -- what the model should look at
+# first, with how many more there were. Only paired contrasts under the artifact's own alpha.
+REGIME_CUTS_PAIRED_P = 0.10
+REGIME_CUTS_LIST_MAX = 8
 _REGIME_CUTS_NOTE = (
     "Per-book outcomes by the regime each entry was tagged with, written nightly by the module "
     "itself (data/<module>/regime_cuts.json; contract in cherrypick.core.regimecuts) and thinned "
@@ -1507,18 +1516,56 @@ _REGIME_CUTS_NOTE = (
     "thin_below_sessions sessions) carries NO P&L on purpose -- a seven-session cell once made "
     "net-GEX sign look predictive of flies completion until the trend cross-tab showed where the "
     "effect sat. Read `sessions` before anything else; same-day entries share a regime. Dimensions "
-    "under 50% coverage or degenerate are dropped and named under _dropped. Cells are "
+    "under 50% coverage or degenerate are dropped and named under _dropped; `underpowered: true` "
+    "(absent when false) marks a dimension under min_effective_n sessions. Cells are "
     + _REGIME_CELL_FORMAT
     + ". A flies book may also carry completion_latency_min (quantiles in minutes over its "
     "completed rows) and miss_gap (credit minus the best completing debit ever seen, over its "
     "uncompleted short verticals; negative = the completion never came within reach, and the gate "
-    "needs it under credit minus fee_buffer). Absent for MEIC, which has neither concept."
+    "needs it under credit minus fee_buffer). Absent for MEIC, which has neither concept. "
+    "`paired` lists, strongest first, two buckets of one book compared on the SAME sessions, per "
+    "trade (`arm/dim: a>b W-L/S` = a did better on W of S shared days, b on L), with an exact "
+    "sign-test p; only p < 0.10, capped, the rest counted in paired_more. A bucket that wins the "
+    "pooled table but not the paired one is a kind of day, not a kind of entry. `sign_changed` "
+    "lists cells whose net changed sign over the prior nightly snapshots. `multiplicity` says how "
+    "many intervals and paired tests the whole artifact carries and how many would clear the bar "
+    "by chance: compare against it before citing one. flies also carries `gate_replay`: every "
+    "replayable gate bound (miss_stop_minutes, refuse_trend_bucket, entry_windows) replayed over "
+    "the base arm's era rows by dropping the entries the rule would have refused -- exact, because "
+    "paper structures are independent. One line per rule, with its net change against the base. "
+    "It is in-sample by construction: a rule that wins it is a hypothesis for the forward twin, and "
+    "a rule that loses it needs a reason the replay cannot see before it is proposed."
 )
 
 
-def _cell_text(cell: dict[str, Any]) -> str:
+def _replay_line(block: dict[str, Any], base_net: float | None) -> str:
+    net = block.get("net_pnl")
+    delta = "" if net is None or base_net is None else f" ({net - base_net:+.0f})"
+    rate = block.get("completion_rate")
+    comp = "?" if rate is None else f"{rate * 100:.0f}%"
+    return (
+        f"kept={block.get('kept')}/{block.get('entries')} completion={comp} "
+        f"net={'?' if net is None else f'{net:+.0f}'}{delta} losing_days={block.get('losing_days')}/"
+        f"{block.get('days')} worst_day={block.get('worst_day')}"
+    )
+
+
+def _thin_gate_replay(replay: dict[str, Any]) -> dict[str, Any]:
+    """flies' `gate_replay` as one string per rule, keyed `family:value` (`miss_stop:90`)."""
+    base = replay.get("base") or {}
+    base_net = base.get("net_pnl")
+    rules = {"base": _replay_line(base, None)}
+    for family in ("miss_stop", "trend_bucket", "entry_windows"):
+        for value, block in (replay.get(family) or {}).items():
+            rules[f"{family}:{value}"] = _replay_line(block, base_net)
+    return {"arm": replay.get("arm"), "start": replay.get("start"), "end": replay.get("end"), "rules": rules}
+
+
+def _cell_text(cell: dict[str, Any], *, stamps: bool = True) -> str:
     """One line per cell. A cell is a contrast, not a ledger row, and the pack is an attention
-    budget: the dict form cost seven lines a cell and 48 KB for seven books."""
+    budget: the dict form cost seven lines a cell and 48 KB for seven books. `stamps=False` for
+    cross-tab cells: six per book already chosen by size, and the mark belongs to the
+    single-dimension cell the model reads first."""
     sessions, trades = cell.get("sessions"), cell.get("trades")
     if cell.get("thin"):
         return f"sessions={sessions} trades={trades} thin"
@@ -1529,7 +1576,32 @@ def _cell_text(cell: dict[str, Any]) -> str:
     pct = "?" if rate is None else f"{rate * 100:.0f}%"
     net = cell.get("net_pnl")
     net_s = "?" if net is None else f"{net:+.0f}"
-    return f"sessions={sessions} trades={trades} {label}={pct} net={net_s}"
+    text = f"sessions={sessions} trades={trades} {label}={pct} net={net_s}"
+    if stamps and cell.get("fragile"):
+        text += " fragile"
+    return text
+
+
+def _paired_text(arm: Any, dim: str, pair: dict[str, Any]) -> str:
+    diff = pair.get("mean_diff_per_trade")
+    diff_s = "?" if diff is None else f"{diff:+.0f}"
+    return (
+        f"{arm}/{dim}: {pair.get('a')}>{pair.get('b')} "
+        f"{pair.get('a_better_sessions')}-{pair.get('b_better_sessions')}/{pair.get('sessions')} "
+        f"per_trade={diff_s} p={pair.get('sign_test_p')}"
+    )
+
+
+def _changed_text(arm: Any, dim: str, cell: dict[str, Any], hist: dict[str, Any]) -> str:
+    return (
+        f"{arm}/{dim}/{cell.get('bucket')}: {hist['sign_changes']}x over {hist.get('snapshots')} "
+        f"snapshots, first {hist.get('first_net')} now {cell.get('net_pnl')}"
+    )
+
+
+def _capped(items: list, key, render) -> tuple[list, int]:
+    ranked = sorted(items, key=key)
+    return [render(*i) for i in ranked[:REGIME_CUTS_LIST_MAX]], max(0, len(ranked) - REGIME_CUTS_LIST_MAX)
 
 
 def _arm_rows(container: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1565,6 +1637,12 @@ def _thin_regime_cuts(doc: dict[str, Any], session: str) -> dict[str, Any]:
         "_thin_arms": [],
         "cross_tabs": [],
     }
+    if doc.get("multiplicity"):
+        out["multiplicity"] = doc["multiplicity"]
+    if isinstance(doc.get("gate_replay"), dict):
+        out["gate_replay"] = _thin_gate_replay(doc["gate_replay"])
+    paired: list[tuple] = []
+    changed: list[tuple] = []
     if doc.get("session") != session:
         out["_stale"] = {"artifact_session": doc.get("session"), "pack_session": session}
     thin_below = int(doc.get("thin_below_sessions") or 3)
@@ -1600,17 +1678,35 @@ def _thin_regime_cuts(doc: dict[str, Any], session: str) -> dict[str, Any]:
             entry["dimensions"][dim] = {
                 "sessions": d.get("sessions"),
                 "effective_n": d.get("effective_n"),
-                "underpowered": d.get("underpowered"),
                 "buckets": {str(c.get("bucket")): _cell_text(c) for c in d.get("buckets") or []},
             }
+            if d.get("underpowered"):
+                entry["dimensions"][dim]["underpowered"] = True
+            for p in d.get("paired") or []:
+                if p.get("sign_test_p") is not None and p["sign_test_p"] < REGIME_CUTS_PAIRED_P:
+                    paired.append((entry["arm"], dim, p))
+            for c in d.get("buckets") or []:
+                hist = c.get("history") or {}
+                if not c.get("thin") and hist.get("sign_changes"):
+                    changed.append((entry["arm"], dim, c, hist))
         out["arms"].append(entry)
+    if paired:
+        out["paired"], more = _capped(paired, lambda t: t[2]["sign_test_p"], _paired_text)
+        if more:
+            out["paired_more"] = more
+    if changed:
+        out["sign_changed"], more = _capped(
+            changed, lambda t: (-t[3]["sign_changes"], -abs(t[2].get("net_pnl") or 0)), _changed_text
+        )
+        if more:
+            out["sign_changed_more"] = more
     for tab in doc.get("cross_tabs") or []:
         tab_arms = []
         for b in _arm_rows(tab):
             live = [c for c in b.get("cells") or [] if not c.get("thin")]
             live.sort(key=lambda c: -int(c.get("trades") or 0))
             cells = {
-                "/".join(map(str, c.get("buckets") or [])): _cell_text(c)
+                "/".join(map(str, c.get("buckets") or [])): _cell_text(c, stamps=False)
                 for c in live[:REGIME_CUTS_CROSS_CELLS]
             }
             item: dict[str, Any] = {"arm": _arm_name(b), "cells": cells}
