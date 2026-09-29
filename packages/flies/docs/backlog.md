@@ -117,3 +117,25 @@ sessions, now retired, with pessimistic accounting in both directions.
   bound, so a positive result is a floor on the benefit, and a negative one is not.
 - **Never on the 5-wide.** Rule 6's limits apply: this completes at a known negative floor, which is
   a choice between two held positions, never a licence for an entry.
+
+## An expected-move debit-spread pair as a hedge on the base book
+
+Proposed 2026-09-29: just before the window, buy a call and a put debit spread at the expected move,
+both as a breakout hedge and as first legs to build flies from. The companion idea -- selling an iron
+condor there instead -- was dropped: it loses on the same breakout days the book does, its 5-wide
+wings fail `min_credit_pct_of_width`, and it is MEIC's trade in a flies book. No arm is needed for the
+debit version: `debit-first-up`/`-down` buy those spreads at 0.15 delta, and
+`scripts/flies_em_pair_replay.py` scores each session's first pair against the base book, as traded
+and held to settlement.
+
+- **The two goals conflict.** Completion caps the spread at a fly's payoff, so on the day spot runs
+  through it the hedge is gone: 2026-09-21, control −$836, the call spread completed at +$2 where
+  held it was worth +$329. A proposal has to pick one.
+- **First read, 7 sessions (09-21..09-29):** control +$800; pair traded −$165, held −$66. Held cut
+  the worst day −$836 → −$507 and added a losing day. One control losing day in the window, so
+  nothing is readable yet.
+- **Reopens when** the base book has five or more losing days in the window (the script says when it
+  has fewer) -- about when the debit-first pair reaches its own 15–20 session read. Then: if `held`
+  pays on losing days more than it costs on the others, the held version is the proposal, as
+  telemetry on the hedge overlay's pattern before any arm; if `traded` does, the debit-first pair's
+  own verdict already answers it.
