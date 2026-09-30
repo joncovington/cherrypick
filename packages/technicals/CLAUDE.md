@@ -182,6 +182,25 @@ gap level against our gap edges (`chart_version` 2).
 So a rule needs a date-picking half that nothing here yet supplies. The 24 names captured on more
 than one night are not yet compared night to night; whether a level persists is the next question.
 
+Three more results (2026-09-29), from the names captured on more than one night:
+
+- **A level's identity is its date; its price is re-derived nightly.** TLT's 250-day low moved
+  overnight, the grid's anchor with it, and the levels dated 09-21 and 07-28 came back re-snapped to
+  the new grid (81.47 -> 81.44) while three dates rotated out and two in. A day's churn is mostly the
+  grid moving, not the selection changing its mind.
+- **The vendor does not recompute every name every night.** On 2026-09-29 AMD's levels fit the grid
+  of the bars one day earlier and MU's two days earlier (the day's own window cannot produce them);
+  TLT's were that day's. So any selection feature measured "from the level's date to the last bar"
+  must stop at the day the set was computed, which is not always the capture's last bar. The 250
+  window itself stands: over every capture on every night it explains 737 of 743 levels on the
+  vendor's own bars; 251 or 252 sessions, or a calendar year, explain fewer. The six misses are AMD
+  and MU (staleness) and one ZS level no lag up to 40 sessions explains.
+- **Polarity is not the selector.** Old resistance becoming support was the natural reading of
+  supports dated at swing highs, but a swing high below the price has been broken by definition;
+  tested as a confirmed role reversal (a close above, a retest, a hold), picked swing highs rank at
+  the 52nd-53rd percentile -- chance. Published S/R methods (touch counts, clustering on pivots,
+  density peaks) all place levels at heavily traded prices, which the crossing profile rules out.
+
 ## The chart files (Phase 7)
 
 `chart.py` writes `data/technicals/charts/<SYMBOL>.json` for every stock the store holds, plus an
