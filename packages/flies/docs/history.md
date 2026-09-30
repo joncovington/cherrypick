@@ -6,7 +6,7 @@
 this file keeps the full text each rule was argued in, verbatim as it stood on 2026-09-29, so a
 reader about to change a rule can see why it was set. Section references inside the quoted text
 ("rule 5", "see below", "the arms above") point at CLAUDE.md's sections of the same names, and
-relative links resolve from the package root (`docs/x.md` means [x.md](x.md) here). New findings
+relative links resolve from the package root (`docs/x.md` means `x.md` here). New findings
 still go in [experiment-log.md](experiment-log.md), not here.
 
 # Flies: history behind the rules
