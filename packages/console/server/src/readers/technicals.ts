@@ -84,6 +84,15 @@ function datedValues(raw: unknown): { date: string; value: number }[] {
   });
 }
 
+function shapeIvRank(raw: unknown): TechnicalsChart["ivRank"] {
+  if (!raw || typeof raw !== "object") return null;
+  const r = rec(raw);
+  const date = str(r["date"]);
+  const value = num(r["iv_rank"]);
+  const source = str(r["source"]);
+  return date === null || value === null || source === null ? null : { date, value, source };
+}
+
 function shapeVendor(raw: unknown): TechnicalsVendorChart | null {
   if (!raw || typeof raw !== "object") return null;
   const v = rec(raw);
@@ -95,6 +104,8 @@ function shapeVendor(raw: unknown): TechnicalsVendorChart | null {
     through: str(v["through"]),
     levels: list(v["levels"]).flatMap(shapeLevel),
     rank: num(v["rank"]),
+    sentiment: str(v["sentiment"]),
+    ivRank: num(v["iv_rank"]),
     trendShort: datedValues(v["trend_short"]),
     trendLong: datedValues(v["trend_long"]),
     barsCompared: num(v["bars_compared"]),
@@ -137,6 +148,8 @@ function shapeChart(doc: Record<string, unknown>): TechnicalsChart | null {
     rsi14: aligned("rsi14"),
     trendShort: aligned("trend_short"),
     trendLong: aligned("trend_long"),
+    sentiment: str(doc["sentiment"]),
+    ivRank: shapeIvRank(doc["iv_rank"]),
     signals: list(doc["signals"]).flatMap((raw) => {
       const s = rec(raw);
       const date = str(s["date"]);

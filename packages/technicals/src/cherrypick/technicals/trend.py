@@ -35,6 +35,12 @@ cause is that the vendor stores each day's score as computed then, before later 
 moved the history.
 
 On our own bars the rate depends on the bars agreeing with the vendor's; `score-trends` measures it.
+
+**The overall sentiment label is two of the same lines** (solved 2026-09-29, 149 of 149 captures on
+the vendor's bars): Bullish when the close is above both the 50-session SMA and the 200-session WMA,
+Bearish when below both, Neutral when between them. It is the "trend" the vendor's one-line
+`sentence` names ("is in a bullish trend..."). It looked unrelated to the trend scores only because
+the captures list those scores newest-first, so reading the last element read the OLDEST day.
 """
 
 from __future__ import annotations
@@ -63,6 +69,23 @@ def label(score: float | None) -> str | None:
     if score is None:
         return None
     return LABELS[2 if score >= 3 else 1 if score >= 1 else 0 if score == 0 else -1 if score >= -2 else -2]
+
+
+SENTIMENT_SMA = 50
+SENTIMENT_WMA = 200
+
+
+def sentiment(closes: list[float]) -> str | None:
+    """The vendor's overall label for the last close: "Bullish" above both the SMA 50 and the WMA 200,
+    "Bearish" below both, "Neutral" between them; None until the WMA 200 is defined."""
+    s, w = (
+        sma(closes, SENTIMENT_SMA)[-1] if closes else None,
+        wma(closes, SENTIMENT_WMA)[-1] if closes else None,
+    )
+    if s is None or w is None:
+        return None
+    above = (closes[-1] > s) + (closes[-1] > w)
+    return ("Bearish", "Neutral", "Bullish")[above]
 
 
 def scores(closes: list[float], spec: TrendSpec = SHORT_TERM) -> list[int | None]:

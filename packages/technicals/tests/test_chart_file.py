@@ -117,3 +117,22 @@ def test_the_index_funds_are_charted_although_breadth_leaves_funds_out():
     chart.write_all(conn=conn)
     index = json.loads((chart.charts_dir() / "index.json").read_text(encoding="utf-8"))
     assert [s["symbol"] for s in index["symbols"]] == ["SPY", "ABC"]  # QQQ and IWM hold no bars here
+
+
+def test_the_chart_carries_the_iv_rank_as_of_its_own_session():
+    """(iv - low) / (high - low): (0.30 - 0.20) / (0.40 - 0.20) = 50. A reading dated after the
+    session drawn is not used -- the chart of a past session shows that session's rank."""
+    conn = store.connect()
+    days = _land(conn, "ABC")
+    store.upsert_iv(
+        conn, [("ABC", days[-2], 0.30, 0.40, 0.20, 0.25), ("ABC", days[-1], 0.39, 0.40, 0.20, 0.25)]
+    )
+    conn.commit()
+    assert chart.build(conn, "ABC", days[-2])["iv_rank"] == {
+        "date": days[-2],
+        "iv": 0.30,
+        "iv_rank": 50.0,
+        "source": "dolt",
+    }
+    assert chart.build(conn, "ABC")["iv_rank"]["iv_rank"] == 95.0
+    assert chart.build(conn, "XYZ") is None or chart.build(conn, "XYZ")["iv_rank"] is None

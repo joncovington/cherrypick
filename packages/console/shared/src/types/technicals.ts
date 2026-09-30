@@ -26,7 +26,7 @@ export interface TechnicalsVendorLevel {
   kind: string;
   value: number;
   date: string | null;
-  /** Whether our grid can produce it; null for gap levels, which the grid is not asked about. */
+  /** Whether we can produce it: support/resistance on our grid, gap levels as one of our gap edges. */
   onOurGrid: boolean | null;
 }
 
@@ -37,6 +37,10 @@ export interface TechnicalsVendorChart {
   through: string | null;
   levels: TechnicalsVendorLevel[];
   rank: number | null;
+  /** The vendor's overall label as captured: Bullish | Neutral | Bearish. */
+  sentiment: string | null;
+  /** The vendor's IV rank as captured, 0-100. */
+  ivRank: number | null;
   trendShort: { date: string; value: number }[];
   trendLong: { date: string; value: number }[];
   barsCompared: number | null;
@@ -55,6 +59,10 @@ export interface TechnicalsChart {
   rsi14: (number | null)[];
   trendShort: (number | null)[];
   trendLong: (number | null)[];
+  /** Our overall label on the last session (close vs SMA 50 and WMA 200): Bullish | Neutral | Bearish. */
+  sentiment: string | null;
+  /** IV rank on or before the session, 0-100: ours from Dolt's IV, or tastytrade's where Dolt has none. */
+  ivRank: { date: string; value: number; source: string } | null;
   signals: { date: string; rules: string[] }[];
   vendor: TechnicalsVendorChart | null;
 }

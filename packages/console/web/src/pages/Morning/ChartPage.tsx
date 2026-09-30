@@ -14,6 +14,7 @@ import {
 import type { TechnicalsChart, TechnicalsVendorLevel } from "@console/shared";
 import { useTechnicalsChart } from "../../lib/api";
 import { SERIES_COLORS } from "../../components/Charts";
+import { fmtIvr } from "../../lib/format";
 
 /**
  * One name's chart: our bars, our level grid, CCI and the trend scores, with the vendor's levels
@@ -228,6 +229,13 @@ function VendorCard({ c }: { c: TechnicalsChart }) {
           <span className="stat-value">{v.rank ?? "—"}</span>
           <span className="stat-label muted">1–10</span>
         </div>
+        <div className="stat-tile">
+          <span className="stat-label">vendor IV rank</span>
+          <span className="stat-value">{v.ivRank === null ? "—" : fmtIvr(v.ivRank / 100)}</span>
+          <span className="stat-label muted">
+            ours {c.ivRank ? fmtIvr(c.ivRank.value / 100) : "—"}; a different IV series
+          </span>
+        </div>
       </div>
       {v.levels.length === 0 ? (
         <p className="muted">The capture carries no levels.</p>
@@ -369,7 +377,33 @@ export function ChartPage() {
 
       {c && (
         <>
-          <h2 className="chart-symbol">{c.symbol}</h2>
+          <div className="chart-symbol-row">
+            <h2 className="chart-symbol">{c.symbol}</h2>
+            {c.sentiment && (
+              <span
+                className={`chip ${c.sentiment === "Bullish" ? "pnl-pos" : c.sentiment === "Bearish" ? "pnl-neg" : ""}`}
+                title="Close against the 50-session SMA and the 200-session WMA: above both Bullish, below both Bearish, between them Neutral -- the vendor's own rule, matched on every capture."
+              >
+                {c.sentiment}
+              </span>
+            )}
+            {c.ivRank && (
+              <span
+                className="chip"
+                title={`IV rank as of ${c.ivRank.date}, ${
+                  c.ivRank.source === "dolt" ? "ranked from Dolt's IV history" : "tastytrade's (Dolt has no IV for this name)"
+                }. Neither source is the vendor's IV, so the two can differ by several points.`}
+              >
+                IVR {fmtIvr(c.ivRank.value / 100)}
+                {c.ivRank.source !== "dolt" && <span className="muted"> · tastytrade</span>}
+              </span>
+            )}
+            {c.vendor?.sentiment && c.vendor.sentiment !== c.sentiment && (
+              <span className="chip muted" title={`The vendor's label as captured ${c.vendor.capture}`}>
+                vendor: {c.vendor.sentiment}
+              </span>
+            )}
+          </div>
           <Card title="Price, CCI and trend" asOf={last ? `close ${fmt(last.close)}` : undefined}>
             <PriceChart c={c} />
             <p className="muted">

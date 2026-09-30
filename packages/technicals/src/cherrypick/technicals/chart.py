@@ -103,6 +103,8 @@ def _vendor(symbol: str, bars) -> dict | None:
         "through": through,
         "levels": lv,
         "rank": why.get("technicalRank"),
+        "sentiment": why.get("sentiment"),
+        "iv_rank": why.get("impliedVolatilityRank"),
         "trend_short": series("syrahSentimentShortTerm"),
         "trend_long": series("syrahSentimentLongTerm"),
         "bars_compared": agreement.get("prices"),
@@ -156,6 +158,9 @@ def build(conn, symbol: str, session: str | None = None) -> dict[str, Any] | Non
         "rsi14": tail(indicators.rsi(closes, 14)),
         "trend_short": tail(trend.scores(closes, trend.SHORT_TERM), 0),
         "trend_long": tail(trend.scores(closes, trend.LONG_TERM), 0),
+        "sentiment": trend.sentiment(closes),
+        # Ours from Dolt's IV where it covers the name, else tastytrade's; `source` says which.
+        "iv_rank": store.iv_rank(conn, symbol, bars[-1].date),
         "signals": [
             {"date": bars[s["index"]].date, "rules": s["rules"]}
             for s in signal_days(highs, lows, closes, start)

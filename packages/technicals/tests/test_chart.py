@@ -108,3 +108,17 @@ def test_rsi_matches_wilders_smoothing_worked_by_hand():
     """n=2 over 1,2,1,2,3: gains 1,0,1,1 and losses 0,1,0,0. Seed 0.5/0.5 -> 50; then Wilder's
     (prev x (n-1) + today) / n: 0.75/0.25 -> 75; 0.875/0.125 -> 87.5."""
     assert indicators.rsi([1.0, 2.0, 1.0, 2.0, 3.0], 2) == [None, None, 50.0, 75.0, 87.5]
+
+
+def test_sentiment_is_the_close_against_the_sma50_and_the_wma200():
+    """150 sessions at 120, 50 at 100, then the last close. At 105: SMA 50 = (49 x 100 + 105) / 50 =
+    100.1 and the WMA 200 still leans on the 120s (111.17) -- above one, below the other: Neutral.
+    At 125 above both: Bullish. At 95 below both: Bearish."""
+    base = [120.0] * 150 + [100.0] * 50
+    assert trend.sentiment(base + [105.0]) == "Neutral"
+    assert trend.sentiment(base + [125.0]) == "Bullish"
+    assert trend.sentiment(base + [95.0]) == "Bearish"
+    # It is the WEIGHTED 200: at 113 the close is above the WMA 200 (111.25) but below the plain
+    # SMA 200 (114.97), so an SMA would call it Neutral; the vendor's rule says Bullish.
+    assert trend.sentiment(base + [113.0]) == "Bullish"
+    assert trend.sentiment([100.0] * 199) is None  # the WMA 200 is not defined yet

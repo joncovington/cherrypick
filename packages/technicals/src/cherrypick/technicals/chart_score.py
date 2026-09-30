@@ -1,7 +1,8 @@
 """The chart layer scored against the vendor's own chart data: every capture on file.
 
 Each capture carries the vendor's daily 1M and 6M trend scores for its name. This compares ours day
-by day over the whole overlap: the exact score, the five-step label, and within one step. Captures
+by day over the whole overlap: the exact score, the five-step label, and within one step -- and the
+capture's overall sentiment label against ours on the same bars. Captures
 grow nightly (the collector saves up to 40 names), so the same command re-checks the solved
 construction (`trend.py`) on a widening set of names without any change here.
 """
@@ -26,6 +27,7 @@ def score_trends() -> dict:
             newest[path.stem] = path
     conn = store.connect()
     totals = {k: {"days": 0, "exact": 0, "label": 0, "within1": 0} for k, _, _ in SERIES}
+    sentiment = {"names": 0, "agree": 0, "misses": []}
     by_symbol = {}
     for sym, path in sorted(newest.items()):
         try:
@@ -55,6 +57,16 @@ def score_trends() -> dict:
             row[key] = t
             for k in t:
                 totals[key][k] += t[k]
+        # The overall label, on our bars through the capture's own last session.
+        through = str((why.get("historicalQuotes") or [{}])[-1].get("date", ""))[:10]
+        theirs_label = why.get("sentiment")
+        upto = [c for d, c in zip(dates, closes, strict=True) if d <= through]
+        ours_label = trend.sentiment(upto) if upto else None
+        if theirs_label and ours_label:
+            sentiment["names"] += 1
+            sentiment["agree"] += ours_label == theirs_label
+            if ours_label != theirs_label:
+                sentiment["misses"].append(f"{sym}: ours {ours_label}, vendor {theirs_label}")
         by_symbol[sym] = row
     conn.close()
 
@@ -62,7 +74,13 @@ def score_trends() -> dict:
         days = t["days"] or 1
         return {"days": t["days"], **{k: round(t[k] / days, 3) for k in ("exact", "label", "within1")}}
 
-    return {"symbols": len(by_symbol), **{k: rates(v) for k, v in totals.items()}, "by_symbol": by_symbol}
+    sentiment["rate"] = round(sentiment["agree"] / sentiment["names"], 3) if sentiment["names"] else None
+    return {
+        "symbols": len(by_symbol),
+        **{k: rates(v) for k, v in totals.items()},
+        "sentiment": sentiment,
+        "by_symbol": by_symbol,
+    }
 
 
 def _captures() -> dict:

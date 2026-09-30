@@ -227,6 +227,12 @@ a.chip:hover {
   border-bottom: 1px solid var(--border);
 }
 
+.chart-symbol-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .chart-symbol {
   margin: 0.6rem 0 0.5rem;
   font-size: 1.5rem;

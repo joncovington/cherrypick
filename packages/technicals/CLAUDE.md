@@ -120,6 +120,15 @@ price-vs-average terms; the mixed rows split by exactly 2 on a WEIGHTED average 
 centred where a WMA 50 is, which is why the first fits kept finding 36); and the -4s are a band
 break. `trend.py` records each step so none is re-litigated.
 
+**The overall sentiment label is solved** (`trend.sentiment`, scored by `score-trends`; 2026-09-29):
+Bullish when the close is above both the 50-session SMA and the 200-session WMA, Bearish below both,
+Neutral between -- 149 of 149 captures on the vendor's bars, 115 of 116 names on ours (XLE the one
+miss, not yet looked at). It is the "trend" the capture's one-line `sentence` names, and the chart
+page shows it beside the symbol. **A trap worth knowing:** the captures list their daily trend
+scores NEWEST-first (105 of 121), so `series[-1]` is the oldest day. Read that way the label looked
+unrelated to the trend scores -- +4/+4 names labelled Bearish -- and it was the read that was wrong.
+Sort by date first (`chart.py` does).
+
 **The level grid is solved** (`levels.py`, `score-levels`). Every one of the vendor's 192 levels on
 the 35 names captured is either the high or the low of the last 250 sessions, as printed, or a
 point on a grid anchored at that low with a step of the "nice" number nearest -- by ratio -- to
