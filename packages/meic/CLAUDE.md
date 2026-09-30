@@ -311,7 +311,8 @@ sample to get an answer is the same error as reading a structural identity as a 
   `wing_width` in ONE place. Option type is part of leg identity (a short put and long call at one
   strike never net).
 - **Adopting either on an existing arm is an experiment-design decision, not a config tidy-up.**
-  `control` is pinned by test to its role; changing its overlap rule changes what it measures.
+  `control` is the permissive sampling arm, not a copy of the live defaults (since 2026-08-21);
+  changing its overlap rule changes what it measures.
 
 **`entry_attempts` records what the gates refused, and why**: one uncollapsed row per evaluated
 opportunity per (arm × symbol) per tick — outcome, binding gate, regime state. `no_fill` is its own

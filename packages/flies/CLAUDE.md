@@ -9,11 +9,9 @@ a negative answer is a usable result rather than something to tune away.
 and append-only. Work deliberately set down, with the condition that reopens each item, is
 [docs/backlog.md](docs/backlog.md). The full narrative behind each rule below — incidents, sweeps,
 how a number was found — is [docs/history.md](docs/history.md). This file keeps the rules, each
-written as *rule plus the measurement that set it*, so a live parameter (the 20-point trend band, the
-stale-GEX limits, `min_floor_dollars`) sits next to the evidence for its value. The working
-assumption (2026-08-20, asserted rather than measured) is that separating a rule from its number
-makes it easier to "fix" it without knowing why it was set; if a rule is ever shown to survive fine
-without its evidence beside it, revisit this.
+with the number that set it (the 20-point trend band, the stale-GEX limits, `min_floor_dollars`);
+the evidence behind that number lives in the history, not beside the rule. Before changing a
+parameter, read its history entry: the number is only as good as the measurement behind it.
 
 **The 2026-08-01 SPX switch.** XSP fees were eating the result: 1-wide XSP collected a median $12.00
 against $4.97 of fees (41.4% drag), 5-wide SPX $63.12 against $6.89 (10.9%) — credit scales with the
