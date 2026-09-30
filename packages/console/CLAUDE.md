@@ -112,7 +112,8 @@ alone):
     `RESUME LIVE`, checked on the server as well as the browser. Clearing arms nothing, and the page
     says so.
   - What the page offers is an allow-list (`web/src/pages/Config/fieldMeta.ts`); the suite has no JSON
-    schema, so that map is the form's schema. Writes are gated like the orchestrator's settings server
+    schema, so that map is the form's schema. Every field must edit a key some code reads
+    (`configFieldsAreRead.test.ts`; "MEIC loop interval" edited a dead key until 2026-09-29). Writes are gated like the orchestrator's settings server
     (loopback Host, CSRF, JSON content type), deliberately **not** on the broker credential scope — a
     config file is not the broker.
 - **The Advisor page's two buttons are the second bounded exception, and hold no logic either.** Kill

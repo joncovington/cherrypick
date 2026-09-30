@@ -114,16 +114,6 @@ export const FIELDS: FieldMeta[] = [
   { target: "meic", pointer: "/entry_window_end", label: "MEIC entry closes", type: "time", section: "timing" },
   {
     target: "meic",
-    pointer: "/loop_interval_minutes",
-    label: "MEIC loop interval",
-    help: "Minutes between entry evaluations.",
-    type: "number",
-    min: 1,
-    max: 60,
-    section: "timing",
-  },
-  {
-    target: "meic",
     pointer: "/daily_ic_trade_target",
     label: "MEIC daily IC target",
     type: "number",
