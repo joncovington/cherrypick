@@ -237,6 +237,20 @@ Three more results (2026-09-29), from the names captured on more than one night:
   opens or typical prices per cell barely above 1x, a 63- or 125-session window about 1x. Levels
   also sit on a cell holding a swing high's snapped high about twice as often as chance. None of
   these is a rule; they are what one would have to reproduce.
+- **Price and date do not determine each other by any simple rule** (2026-09-29, 441 interior
+  levels). Given the price, the best date rule -- the nearest swing high within two grid steps -- is
+  right 37% of the time; the last or first bar to trade at the price, 1-13%. Given the date, the best
+  price rule -- the least-crossed cell (bars overlapping [p, p+step)) within the bar's range and a
+  step either side, ties to the nearest its high -- is right 35%; the bar's high rounded up to the
+  grid 26%, rounded 24%. Half the levels sit on the grid point just above or below the dated bar's
+  high or low; the other half up to ten steps away, and no price from the surrounding bars (the
+  five-bar pivot's extremes, closes, opens, bodies, the bar's week) does better. Dated bars are swing
+  highs 82% of the time and swing LOWS 0.5% -- so a support is still dated at a high -- and one bar
+  can carry two levels (AME's 2025-10-31: one at its high, one at its low).
+- **What would settle it is watching levels change, not fitting more.** A name captured night after
+  night shows which levels appear or vanish when one bar is added; the captures so far give one to
+  three nights per name. A fixed panel re-captured every evening would turn this into a
+  differential problem.
 - **Polarity is not the selector.** Old resistance becoming support was the natural reading of
   supports dated at swing highs, but a swing high below the price has been broken by definition;
   tested as a confirmed role reversal (a close above, a retest, a hold), picked swing highs rank at
