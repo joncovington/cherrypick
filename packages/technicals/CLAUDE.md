@@ -1,297 +1,145 @@
 # cherrypick-technicals — Operational Instructions
 
 > Operating contract for the market report's **end-of-day store and technical engines**. The plan
-> it belongs to is [`docs/market-report-plan.md`](../../docs/market-report-plan.md); suite-wide
-> context is in the root [documentation index](../../docs/README.md).
+> is [`docs/market-report-plan.md`](../../docs/market-report-plan.md); the dated fitting record is
+> [docs/fitting-record.md](docs/fitting-record.md); suite-wide context is the root
+> [documentation index](../../docs/README.md).
 
-This package answers one question: **what did every name in the universe do, session by session,
-on prices adjusted the way the vendor adjusts them.** Phase 2 of the plan is the store; the stage,
-rotation and chart engines (Phases 3 and 4) land here as pure functions over it.
+One question: **what did every name in the universe do, session by session, on prices adjusted the
+way the vendor adjusts them.** The store (Phase 2) and the stage, rotation and chart engines
+(Phases 3-4) are pure functions over it.
 
-**Credential-free and network-free.** It reads the LOCAL `dolt sql-server` (the `stocks` and
-`options` clones the earnings module also reads; pulled at 05:30 by `scripts/refresh_dolt_data.py`,
-outside every package) and, read-only, the market-report store the scripts write (the universe
-candidates, the vendor's chart captures). It writes only `~/.cherrypick/data/technicals/eod.db`.
+**Credential-free and network-free.** Reads the LOCAL `dolt sql-server` (the `stocks` and `options`
+clones, pulled at 05:30 by `scripts/refresh_dolt_data.py`, outside every package) and, read-only,
+the market-report store the scripts write (universe candidates, vendor chart captures). Writes only
+`~/.cherrypick/data/technicals/eod.db` and its report/chart files.
 
 ## The store holds raw; adjusted is computed
 
-`bars`, `splits`, `dividends` and `iv` hold what Dolt now states, upserted wholesale so a correction
-upstream replaces the old row. The adjusted series is `adjust.adjust` over them, on read, so it can
-be rebuilt from raw at any time and a restated dividend changes every reading at once.
+`bars`, `splits`, `dividends` and `iv` hold what Dolt now states, upserted wholesale so an upstream
+correction replaces the old row. Adjusted is `adjust.adjust` on read, so it rebuilds from raw and a
+restated dividend changes every reading at once.
 
-**The adjustment is the vendor's, and was matched, not assumed.** Proportional dividends (every bar
-before an ex-date scaled by `1 - D / prior raw close`) and splits (`for / to` on price, the inverse
-on volume). Against the vendor's 2026-09-25 chart data: MSFT's adjusted closes on all 753 sessions
-exactly; ANET's to within a cent on the 21 of 3,012 prices where a pre-split division lands on a half
-cent, because the vendor's raw prices carry more precision than Dolt's. So adjusted prices are
-stored and returned unrounded; rounding is a display decision. `check-vendor` repeats the
-comparison over every capture on file; a handful of OPEN prices differ by tens of cents (the two
-sources disagree about which print is the open), which is a known source difference, not a defect
-in the adjustment.
+**The adjustment is the vendor's, matched not assumed**: proportional dividends (bars before an
+ex-date scaled by `1 - D / prior raw close`) and splits (`for / to` on price, inverse on volume).
+MSFT matches on all 753 sessions; ANET within a cent where a pre-split division lands on a half
+cent. So adjusted prices are stored and returned **unrounded**; rounding is a display decision.
+`check-vendor` repeats the comparison; a few OPEN prices differ by tens of cents (the sources
+disagree on which print is the open) — a known source difference, not a defect.
 
-## Dividends: two sources, reconciled
+**Two Dolt defects are corrected before adjustment** (`adjust.dedupe_splits`,
+`adjust.series_break`): of two same-ratio splits within 20 days only the one the raw prices jump on
+is kept; a one-day move beyond 3x either way (a ticker that changed hands) starts the series over.
+Real large moves (GME, MRNA) are kept.
 
-Checked against the vendor's own adjusted bars for 40 names (2026-09-27), Dolt's `dividend` table
-alone agreed on only 86.8% of prices: it has gaps (CSCO's and CHT's July 2024 dividends), zeros
-(BAP's September 2024 is 0.0) and wrong amounts (BAP's May 2024 is 0.939 for a 9.2875 payout).
-`scripts/fetch_dividends.py` fetches tastytrade's per-symbol history (paced, a week between
-refreshes) and `dividends.reconcile` merges the two: same event within three days, gaps filled
-from either side, tastytrade's amount when the two are within 3x, and a gross outlier on either
-side losing to the name's usual payout -- tastytrade has errors too (BAP's May 2026 as 50.00). With
-it, 36 of the 40 names match the vendor at 99% or better (93.3% of all prices). The four that do
-not are foreign issuers (BAP, ALC, CCJ, AU), where the vendor evidently uses amounts neither
-source carries; fits that need exact cents leave them out.
+**Dividends: two sources, reconciled.** Dolt alone matched only 86.8% of prices (gaps, zeros, wrong
+amounts). `scripts/fetch_dividends.py` fetches tastytrade's per-symbol history (paced, a week
+between refreshes); `dividends.reconcile` merges: same event within three days, gaps filled from
+either side, tastytrade's amount when within 3x, and a gross outlier on either side losing to the
+name's usual payout. 36 of 40 then match at 99%+. The four foreign issuers that do not (BAP, ALC,
+CCJ, AU) are left out of fits that need exact cents.
 
 ## Reading Dolt: the query shape is the whole cost
 
-`ohlcv` and `volatility_history` lead their primary keys with `date`. A query filtered by a list of
-symbols walks the table — one month for 200 symbols took 27.5 s, the same month for all ~13,000
-symbols 4.4 s — and the first landing written the obvious way ran past ten minutes. So data is read
-in month-wide date windows with **no symbol filter**, and the wanted symbols are kept in Python.
+`ohlcv` and `volatility_history` lead their keys with `date`, so a symbol-filtered query walks the
+table. Read in **month-wide date windows with no symbol filter**, keep wanted symbols in Python.
 
-Two more rules, both learned on the first landing (2026-09-27):
+- **A symbol Dolt does not list is reported (`not_in_dolt`), never planned** — otherwise it looks
+  new every run and re-reads three years each morning.
+- **Every read is incremental**: ten days behind a symbol's newest bar (so restatements land), three
+  years for a new symbol (the vendor chart's depth), IV likewise over a year.
 
-- **A symbol Dolt does not list is reported, never planned.** SPX, NDX and VIX (indexes) came in
-  through the universe candidates, never landed, and so looked new on every run: each morning read
-  three years for nothing (3 min 24 s). They are now `not_in_dolt` in the report, and a steady-state
-  landing takes ~13 s.
-- **Every read is incremental.** A symbol's bars re-read ten days behind its newest stored bar (so a
-  restatement lands), a new symbol backfills three years (the depth of the vendor's own chart
-  data), and IV works the same way over a year.
+**What it lands** (`symbols.all_symbols()`): every universe **candidate** (not only members — the
+stage engine is scored against the vendor's whole table), the 35 rotation ETFs (every fund the
+vendor's rotation placed across Sept 21-25, plus XLK, XLV, XLC), and the benchmarks (SPY, AOR, AGG,
+RSP, QQQ, DIA, IWM). Dolt carries no SPX; SPY stands in until an engine needs the index.
 
-## What it lands
+## Solved rules (keep the numbers; re-score, do not re-litigate)
 
-`symbols.all_symbols()`: every universe **candidate** (not only the members — the stage engine is
-scored against the vendor's own table, most of whose names are not liquid enough to be members),
-the 35 rotation ETFs (the union of every fund the vendor's rotation section placed in a state
-across Sept 21-25, plus XLK, XLV and XLC), and the benchmarks (SPY, AOR, AGG, RSP, QQQ, DIA, IWM).
-Dolt carries no SPX; SPY stands in for it until an engine needs the index itself.
+- **Stage** (`stage.py`, `score-stages`; stages decoded from ticker colours by `editions.py`): early
+  on the one-month screen only, building when one and two months agree, confirmed when all three do,
+  **plus a fourth condition — the one-day move against the index is on the same side**. Parameters
+  10/30/63 sessions, margins 1%/2%/2%, against dividend-adjusted SPY: 955 of 980 vendor listings on
+  the same side (97%), same stage on 82%. Fitted on five days, so the declared `StageRule` is
+  re-scored as editions accumulate, not tuned further. About 30% extra listings are structural (the
+  vendor's universe varies by day), so counts are compared **as rates, never totals**.
+- **Rotation** (`rotation.py`, `score-rotation`): the quadrant from slow (63) and fast (10) relative
+  trends against SPY, or AOR for the nine funds the vendor types "Asset"; inside either neutral band
+  (3% slow, 1% fast) no state. 91 of 119 placements exact (76%), 26 placed where the vendor had none.
+  `editions.decode_rotation` finds headings **by markup, never by phrase** (the paragraph above
+  uses the same words).
+- **Breadth** rebuilds the daily chart from prices: over sixteen sessions (Sept 2-24, eleven unused
+  in fitting) bullish share correlates 0.93 (leaders 0.78, laggards 0.90) — the out-of-sample
+  evidence the stage rule is the vendor's.
+- **Indicators** (`indicators.py`): SMA, EMA, WMA, sd, Wilder's RSI, Lambert's CCI (period 14),
+  each undefined until its window is full.
+- **Trend scores** (`trend.py`, `score-trends`): `2[close > short SMA] + 2[close > long SMA] +
+  [short SMA > long SMA] + 2[close > long WMA] - 3`, 20/50 short-term and 50/200 long, and -4
+  outright when the close is below both SMAs and under the lower 20-session Bollinger band
+  (population sd, 2 wide). Exact on 99.7% of ~81,000 short-term and 99.6% of ~64,000 long-term days,
+  label 99.8%.
+- **Sentiment** (`trend.sentiment`): Bullish above both the 50 SMA and 200 WMA, Bearish below both,
+  Neutral between — 149/149 on vendor bars, 82/82 on ours. `score-trends` counts a capture whose
+  session our store has not landed as not yet landed, never scores it.
+  **Trap: captures list daily trend scores NEWEST-first (105 of 121), so `series[-1]` is the oldest
+  day. Sort by date first** (`chart.py` does).
+- **Level grid** (`levels.py`, `score-levels`): every vendor level is the high or low of the last
+  **250** sessions as printed, or a point on a grid anchored at that low with step = the "nice"
+  number nearest **by ratio** to (high - low) / 100. All 192 levels placed on names whose bars agree.
+- **Gap levels** (`levels.gap_edges`): every vendor gap level is an edge of a true two-bar gap in the
+  same 250-session window, dated on the edge's own bar; the TOP edge is gap support and the BOTTOM
+  gap resistance, whichever way it gapped. 221/221 on our bars (SGOV excepted).
+- **Rank 1-10** (`levels.rank_score`, `score-rank`): the decile of a name's percentile, across the
+  **WHOLE US-listed market** (~8,500 names trading $100k a day, split-affected dropped), of
+  `0.5 x 21-session return + 126-session return`. 52 of 62 exact, all within one. The landing stores
+  only nine cut-offs per session (`rank_cutoffs`, last 15 sessions); report, chart files and
+  `score-rank` all use them, and a session without cut-offs falls back to ranking within the store.
+  Not dividend-adjusted across the market (a point or so on six months).
+- **Scan rules** (`signals.py`, `score-signals`): 245 of 278 flagged names (88%). Trend rules use whole
+  labels (Bullish 3..4, Bearish -3..-4), never "trend = -4"; bullish trend-following is RSI(14)
+  40..50; CCI rules run on CCI-5; a dip is yesterday's CCI below -100 with today's back above. Both
+  saved lists were used in the refit, so there is no unseen day yet; re-score as lists accrue.
+- **Out of sample** (2026-09-28): bars 99%+ on 73 of 79 names; the grid places all 375 levels.
 
-## The stage rule (Phase 3)
+## Unsolved — measured, not approximated
 
-`stage.py` is the vendor's leaders/laggards screen as a pure function, and `score-stages` holds it
-against every saved edition, whose stages are decoded from the ticker colours (`editions.py`). The
-footnote's definition — early on the one-month screen only, building when one and two months agree,
-confirmed when all three do — is only part of it. Fitting the five editions of Sept 21-25 found:
+- **IV rank does not match, and the formula is not why.** The vendor ranks an IV series neither Dolt
+  nor tastytrade carries (correlation ~0.65 either way). `store.iv_rank` is ours first, tastytrade's
+  where Dolt has no IV (ADRs), naming which in `source` — **a coverage fallback agreed with the
+  user, not a claim to match the vendor**. Fetched by the `technicals-iv-rank` job after the close,
+  one reading per symbol per session, liquidity rating included for a later `liquidityRank` look.
+- **Level selection** (`level_selection.py`, `score-level-selection`): the report can place levels
+  exactly but **cannot pick them, and does not approximate it**. Known: levels sit where price spent
+  little time (crossing-profile minima, 2-3x chance; touch counts point the wrong way); dated bars
+  are swing highs ~82% (supports included), swing lows 0.5%; a level's identity is its date and its
+  price is re-derived nightly on the grid (a histogram of bars overlapping each cell fits best);
+  the vendor does not recompute every name every night, so any "date to last bar" feature must stop
+  at the day the set was computed; polarity/role reversal is at chance. Price and date do not
+  determine each other by any rule tried (~35-37%). **What would settle it is a fixed panel
+  re-captured every evening**, turning it into a differential problem; not more fitting.
+- **Which gaps are drawn**: an unfilled gap mostly needs to be near one current ATR wide (F1 0.91),
+  both edges when wider; a crossed gap keeps at most its POST-gap edge; no feature tried says which.
+  TradingView's "closed once entered" convention does not fit.
 
-- **The one-day move is a fourth condition.** A name is listed only on a day its own move against
-  the index is on the same side: BKNG trailed by 16-26% on every window and was a confirmed laggard
-  four days running, then absent the one day it beat the index. That condition alone cut the names
-  wrongly listed from 859 to about 295.
-- **The rule's numbers are parameters, fitted on five days.** 10/30/63 sessions with margins of 1%,
-  2% and 2% against dividend-adjusted SPY: 955 of the vendor's 980 listings on the same side (97%),
-  the same stage on 82% of those. That is a large grid on a small sample, so the declared
-  `StageRule` is re-scored as editions accumulate rather than tuned further now.
-- **About 30% extra is structural.** The ~295 names the rule lists that the vendor does not are not
-  removed by any margin: the vendor's universe itself varies by day in a way prices cannot show. So
-  our counts run higher than the vendor's stated ones, and the two are compared as rates, never
-  as totals.
+## Outputs (Phase 7)
 
-## The rotation rule and the breadth history (Phase 3)
-
-`rotation.py` places each of the 35 funds in the relative-rotation quadrant its slow (63-session)
-and fast (10-session) relative trends put it in, against SPY, or against AOR for the nine funds the
-vendor types "Asset"; inside either neutral band (3% slow, 1% fast) it is in no state. Fitted on
-the five editions: the vendor's exact state for 91 of 119 placements (76%), 26 funds placed where
-the vendor had none. `editions.decode_rotation` finds the four headings by their markup, never by
-the phrase -- the paragraph above them uses the same words, and matching the phrase put funds in
-the wrong state.
-
-`breadth` rebuilds the report's daily chart from prices. Held against the sixteen sessions the plan
-reads off the vendor's charts (Sept 2-24), eleven of them never used in fitting, the bullish share
-correlates at 0.93 (leaders 0.78, laggards 0.90) -- the out-of-sample evidence that the stage rule
-is the vendor's rule and not a fit to five days. Our counts run higher, as the stage section says.
-
-## The chart layer (Phase 4, started)
-
-`indicators.py` holds SMA, EMA, WMA, standard deviation, Wilder's RSI and Lambert's CCI (period 14,
-the vendor's scanner period), each undefined until its window is full.
-
-**The trend scores are solved** (`trend.py`, `score-trends`; 2026-09-29). Each is
-`2[close > short SMA] + 2[close > long SMA] + [short SMA > long SMA] + 2[close > long WMA] - 3`,
-with 20/50 sessions for the short term and 50/200 for the long, and -4 outright when the close is
-below both SMAs and under the lower 20-session Bollinger band (population sd, 2 wide). On our bars
-over 116 captured names: the exact score on 99.7% of ~81,000 short-term days and 99.6% of ~64,000
-long-term days, the label on 99.8%. The old baseline, a sum of four +-1 signs, was right on about
-half, and could never have been more -- a sum of four signs is always even, and the vendor's score
-is odd on 37% of short-term days and 32% of long-term. What cracked it, in order: the capture's own score history starts on
-the 50th and 200th bars, which bounds every lookback; a free fit put integer weights on the
-price-vs-average terms; the mixed rows split by exactly 2 on a WEIGHTED average (an SMA 36 is
-centred where a WMA 50 is, which is why the first fits kept finding 36); and the -4s are a band
-break. `trend.py` records each step so none is re-litigated.
-
-**The overall sentiment label is solved** (`trend.sentiment`, scored by `score-trends`; 2026-09-29):
-Bullish when the close is above both the 50-session SMA and the 200-session WMA, Bearish below both,
-Neutral between -- 149 of 149 captures on the vendor's bars, and every capture on ours whose session
-our store has landed (82 of 82; XLE's apparent miss was a 09-29 capture scored against 09-28 bars, so
-`score-trends` now counts such captures as not yet landed instead of scoring them). It is the "trend" the capture's one-line `sentence` names, and the chart
-page shows it beside the symbol. **A trap worth knowing:** the captures list their daily trend
-scores NEWEST-first (105 of 121), so `series[-1]` is the oldest day. Read that way the label looked
-unrelated to the trend scores -- +4/+4 names labelled Bearish -- and it was the read that was wrong.
-Sort by date first (`chart.py` does).
-
-**The level grid is solved** (`levels.py`, `score-levels`). Every one of the vendor's 192 levels on
-the 35 names captured is either the high or the low of the last 250 sessions, as printed, or a
-point on a grid anchored at that low with a step of the "nice" number nearest -- by ratio -- to
-(high - low) / 100. Both details came from misses: the window is 250 sessions, not 252 (three
-names' lows sat on the 252nd), and ADI's range/100 of 2.24 takes 2.50, nearer by ratio. On our own
-bars, with dividends reconciled, the grid places all 192 levels on the 36 names whose bars agree
-with the vendor's. Which grid points become levels is still open: 83% of level dates are swing
-highs, supports included, and most levels sit within about one ATR of that swing high, but the
-price is not simply that high snapped.
-
-**The 1-10 rank is solved** (`levels.rank_score`, `score-rank`; 2026-09-29) up to noise at the
-decile edges: the decile of a name's percentile, across the WHOLE US-listed market, of `0.5 x its
-21-session return + its 126-session return`. The vendor's help pages call it "a summary of short,
-medium, and long term indicators"; the fit found the blend (a single ~6-month return, the old
-reading, leaves 20 of ~1,500 pairs of captured names out of order, the blend 4; adding the trend
-scores helps nothing). The universe was the other half: ranked within our ~500 candidates it
-matched half the captures and ran one decile LOW on the rest, never high -- a curated liquid list is
-stronger than the vendor's -- while ranked across Dolt's whole market (~8,500 names trading $100k a
-day, split-affected names dropped) it matches 52 of 62 exactly and all 62 within one, misses falling
-both ways. The landing reads three dates' closes for the whole market per session and stores only
-nine cut-offs (`rank_cutoffs` table; the last 15 sessions, each once), so a rank is one comparison;
-the report, the chart files and `score-rank` all use them, and a session without cut-offs falls back
-to ranking within the store's own names. Not adjusted for dividends across the market -- a
-quarter's dividend moves a six-month return by a point or so.
-
-**IV rank does not match, and the formula is not why** (2026-09-29). Dolt's min-max IV rank
-(`store.iv_rank`, the definition the vendor's help pages state) against the vendor's
-`impliedVolatilityRank` on the 49 captures where our IV is dated the capture's own day: correlation
-0.66, median gap 4.6 points, ours about 6 higher on average, within 3 points on a third, DTE 79 apart.
-A min-max over our own 252-day IV history gives the same answer, so the difference is the IV series
-itself -- the vendor ranks an implied vol Dolt does not carry. tastytrade's rank is no closer
-(`scripts/fetch_iv_rank.py`, 32 captures on 2026-09-29: correlation 0.64, median gap 6 points, and
-no variant of it -- headline, `tw`, `tos`, percentile -- does better). So `store.iv_rank` is ours
-first and tastytrade's where Dolt has no IV for a name (the ADRs, among others), and says which in
-`source`: a fallback for coverage, agreed with the user, not a claim to match the vendor. The
-fetch runs as the `technicals-iv-rank` job after the close on trading days, one reading per symbol
-per session, liquidity rating included for a later look at the vendor's `liquidityRank`.
-
-**The six scan rules** (`signals.py`, `score-signals`) reproduce the vendor's scan list from our
-trend scores, CCI and RSI: 245 of 278 flagged names on the two lists saved (88%). They were first
-fitted on the old trend baseline (84%) and refitted when the trend was solved: its -4 had meant
-"below every average" and now means a band break, so rules written as "trend = -4" caught 55% until
-they moved to whole labels (Bullish 3..4, Bearish -3..-4). Bullish trend-following turned out to be
-an RSI(14) band of 40..50, not a CCI cut. The CCI rules run on a 5-period CCI (the list states it),
-and a dip is yesterday's CCI below -100 with today's back above. Both lists were used in the refit,
-so there is no unseen day yet; `score-signals` re-scores as the nightly captures add lists.
-
-**Out of sample (2026-09-28, a second capture of 39 scan-list names never used in fitting; 79
-names in all):** bars match the vendor's at 99%+ on 73 (ENB and ILMN join the foreign misses); the
-level grid places all 375 levels on those 73; the trend baseline of the day agreed on 79.8% (short)
-and 76.0% (long) of ~97,000 daily labels -- since superseded by the solved trend, above. **Which
-grid points the vendor draws is still unsolved, and it is not approximated here:** a rule of nearest snapped swing points plus the extremes matches ~40% of the
-vendor's levels, nearly all of them the extremes. Level dates are mostly swing highs, and a level
-can sit above, inside or well away from its dated bar, so the vendor evidently selects from
-something these fields do not show. The report can place levels exactly; it cannot yet pick them.
-
-**Gap levels are solved as prices** (`levels.gap_edges`, scored by `score-levels`; 2026-09-29).
-Every vendor gap level is an edge of a true two-bar gap -- a bar's low above the prior high, or its
-high below the prior low -- inside the same 250-session window, dated on the bar the edge belongs
-to: the gap's TOP edge is gap support and its BOTTOM edge gap resistance, whichever way it gapped.
-221 of 221 on our bars; SGOV, a T-bill fund with 72 gap levels, is the only name with misses (2),
-and its bars do not agree with ours anyway. Which gaps are drawn is open: an unfilled gap mostly
-needs to be close to one current ATR wide (F1 0.91 on that alone), both edges when it is wider;
-a gap price has crossed keeps at most its POST-gap edge (2 of 2,444 pre-gap edges survive a
-fill), and no feature tried -- size on any scale, fill by close or by range, depth, time since
-fill, a regular level nearby -- says which. TradingView's convention (a gap closes once any bar
-enters it) does not fit: most drawn gaps have been entered. The chart files now mark each vendor
-gap level against our gap edges (`chart_version` 2).
-
-**Selection is measured, not solved** (`level_selection.py`, `score-level-selection`; 2026-09-29,
-108 names, 309 interior levels). Each measure is shown beside its chance baseline:
-
-- **Levels sit where price spent little time.** Count the sessions crossing each grid point: the
-  vendor's levels average the 35th percentile (chance 50), and are local minima of that profile two
-  to three times as often as a random grid point (61% vs 36% at +-1 step, 35% vs 14% at +-5). Volume
-  at price agrees. Touch and close counts -- the textbook construction -- point the wrong way.
-- **Given a level's date, the price is half-found.** 81% of dated bars are swing highs. Of the ~14
-  grid points within 0.75 ATR of that bar, the least-crossed one is the level 28% of the time against
-  8% by chance, the bar's high rounded up to the grid 26%; within one step, about 55%.
-- **Which swing highs get dated is barely separated.** The rise into the high, prominence and volume
-  rank picked highs at about the 57th-60th percentile; older highs are slightly favoured.
-
-So a rule needs a date-picking half that nothing here yet supplies. The 24 names captured on more
-than one night are not yet compared night to night; whether a level persists is the next question.
-
-Three more results (2026-09-29), from the names captured on more than one night:
-
-- **A level's identity is its date; its price is re-derived nightly.** TLT's 250-day low moved
-  overnight, the grid's anchor with it, and the levels dated 09-21 and 07-28 came back re-snapped to
-  the new grid (81.47 -> 81.44) while three dates rotated out and two in. A day's churn is mostly the
-  grid moving, not the selection changing its mind.
-- **The vendor does not recompute every name every night.** On 2026-09-29 AMD's levels fit the grid
-  of the bars one day earlier and MU's two days earlier (the day's own window cannot produce them);
-  TLT's were that day's. So any selection feature measured "from the level's date to the last bar"
-  must stop at the day the set was computed, which is not always the capture's last bar. The 250
-  window itself stands: over every capture on every night it explains 737 of 743 levels on the
-  vendor's own bars; 251 or 252 sessions, or a calendar year, explain fewer. The six misses are AMD
-  and MU (staleness) and one ZS level no lag up to 40 sessions explains.
-- **A level's price depends on the grid beyond snapping.** TLT's bars were identical on both nights,
-  yet its 07-28 level went 83.17 -> 83.04 while the anchor moved 0.43: re-snapping one fixed price
-  moves it at most a step (0.10). So the price is chosen ON the grid (a histogram over its cells,
-  most likely), not computed from the bar and then snapped. Histograms tried, as the rate a level is
-  a local minimum against the rate for any grid point: bars overlapping the cell [p, p+step) is the
-  best (2.7x chance within +-2 cells), bars covering the point 2.3x, volume at price 2.0x, closes,
-  opens or typical prices per cell barely above 1x, a 63- or 125-session window about 1x. Levels
-  also sit on a cell holding a swing high's snapped high about twice as often as chance. None of
-  these is a rule; they are what one would have to reproduce.
-- **Price and date do not determine each other by any simple rule** (2026-09-29, 441 interior
-  levels). Given the price, the best date rule -- the nearest swing high within two grid steps -- is
-  right 37% of the time; the last or first bar to trade at the price, 1-13%. Given the date, the best
-  price rule -- the least-crossed cell (bars overlapping [p, p+step)) within the bar's range and a
-  step either side, ties to the nearest its high -- is right 35%; the bar's high rounded up to the
-  grid 26%, rounded 24%. Half the levels sit on the grid point just above or below the dated bar's
-  high or low; the other half up to ten steps away, and no price from the surrounding bars (the
-  five-bar pivot's extremes, closes, opens, bodies, the bar's week) does better. Dated bars are swing
-  highs 82% of the time and swing LOWS 0.5% -- so a support is still dated at a high -- and one bar
-  can carry two levels (AME's 2025-10-31: one at its high, one at its low).
-- **What would settle it is watching levels change, not fitting more.** A name captured night after
-  night shows which levels appear or vanish when one bar is added; the captures so far give one to
-  three nights per name. A fixed panel re-captured every evening would turn this into a
-  differential problem.
-- **Polarity is not the selector.** Old resistance becoming support was the natural reading of
-  supports dated at swing highs, but a swing high below the price has been broken by definition;
-  tested as a confirmed role reversal (a close above, a retest, a hold), picked swing highs rank at
-  the 52nd-53rd percentile -- chance. Published S/R methods (touch counts, clustering on pivots,
-  density peaks) all place levels at heavily traded prices, which the crossing profile rules out.
-
-## The chart files (Phase 7)
-
-`chart.py` writes `data/technicals/charts/<SYMBOL>.json` for every stock the store holds, plus an
-`index.json`, from the same `report` run: the last 250 sessions of adjusted bars, the level grid
-those sessions define, CCI 14 and 5, RSI 14, both trend scores, and the scan-rule matches for every
-session drawn. The console's `/reports/chart` page draws them. Where the vendor's chart has been
-captured, the file carries its levels too, each marked with whether our grid can produce it (gap
-levels are not asked), its trend grades and rank, and how many of its bars agree with ours to the
-cent. The page draws our grid's extremes, not a set of levels we claim are the vendor's: selection
-is unsolved, and the view is built to show where we differ.
-
-The per-session scan matches come from `signal_days`, one pass over whole-history series rather
-than `signals.readings` on every prefix; a test pins the two equal on every day, and fails when
-the CCI-5 lag is broken. Files are overwritten each session (about 15 MB for ~470 names).
-
-## The report artifact, and two data defects it exposed (Phase 7)
-
-`report.py` gathers one session's readings -- stages by sector, the 10-session breadth history,
-rotation states, scan-rule signals, the relative-strength leaders and (version 2) the session's
-largest single-stock movers with volume against each name's 50-session average -- into
-`data/technicals/report-<session>.json`, the console's source. Nothing downstream recomputes them.
-
-Its first leaders list put BNY at +1,490% over six months, which exposed two defects in Dolt's
-data, both now corrected before adjustment (`adjust.dedupe_splits`, `adjust.series_break`):
-some splits are recorded twice a week or two apart (APH, CNQ), and applying both faked a jump; and a
-ticker that changed hands carries another security's history (BNY x13.6 in a day, SPCX x8.8, HUT
-x4.6). Of two same-ratio splits within 20 days only the one the raw prices jump on is kept, and a
-one-day move beyond 3x either way starts the series over. Real large moves (GME, MRNA) are kept.
-Every scorer was re-run after: no regressions, stage agreement up slightly.
+- **Chart files** (`chart.py`): `data/technicals/charts/<SYMBOL>.json` plus `index.json`, written by
+  `report`: last 250 sessions of adjusted bars, the level grid, CCI 14 and 5, RSI 14, both trend
+  scores, scan matches per session. Where the vendor chart was captured the file carries its levels
+  (each marked whether our grid produces it; gap levels marked against our gap edges,
+  `chart_version` 2), trend grades, rank and bar agreement. The console's `/reports/chart` page draws
+  **our grid's extremes, never levels claimed as the vendor's** — it is built to show where we
+  differ. Per-session matches come from `signal_days` (one pass); a test pins it equal to
+  `signals.readings` on every day and fails when the CCI-5 lag breaks. ~15 MB per session, overwritten.
+- **Report** (`report.py`): one session's stages by sector, 10-session breadth, rotation, scan
+  signals, RS leaders and (v2) largest movers with volume against the 50-session average, into
+  `data/technicals/report-<session>.json`. **Nothing downstream recomputes them.**
 
 ## Scheduling
 
-One supervisor job, `technicals-land` (06:15 ET daily, after the 05:30 Dolt pull; config block
-`technicals`). It is enabled only while the earnings module is, because that module's job is what
-keeps the dolt sql-server alive — without it the landing has nothing to read.
+`technicals-land` (06:15 ET daily, after the 05:30 Dolt pull; config block `technicals`), enabled
+only while the earnings module is, since that job keeps the dolt sql-server alive.
+`technicals-iv-rank` runs after the close on trading days.
 
 ---
 CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
@@ -305,16 +153,16 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 |---|---|
 | `python -m cherrypick.technicals land [--symbols ...]` | Land bars, splits, dividends and IV from the local Dolt clones. Incremental; idempotent. |
 | `python -m cherrypick.technicals status` | What the store holds, and the last landing. |
-| `python -m cherrypick.technicals bars SYMBOL [--raw] [--last N]` | A symbol's adjusted (or raw) bars and its IV rank (ours, or tastytrade's where Dolt has no IV). |
-| `python -m cherrypick.technicals check-vendor [--all]` | Our adjusted bars against every vendor chart capture; exits non-zero on any disagreement. |
-| `python -m cherrypick.technicals stages [--session D]` | Every candidate's relative-strength stage on a session. |
+| `python -m cherrypick.technicals bars SYMBOL [--raw] [--last N]` | Adjusted (or raw) bars and IV rank (ours, or tastytrade's where Dolt has none). |
+| `python -m cherrypick.technicals check-vendor [--all]` | Our adjusted bars against every vendor capture; non-zero exit on any disagreement. |
+| `python -m cherrypick.technicals stages [--session D]` | Every candidate's stage on a session. |
+| `python -m cherrypick.technicals score-stages` | Stage rule against every saved edition: side recall, stage agreement, extra rate, counts. |
 | `python -m cherrypick.technicals rotation [--session D]` | Every rotation fund's state on a session. |
-| `python -m cherrypick.technicals score-rotation` | The rotation rule against every saved edition. |
+| `python -m cherrypick.technicals score-rotation` | Rotation rule against every saved edition. |
 | `python -m cherrypick.technicals breadth [--sessions N]` | Daily leaders, laggards, net and bullish share. |
-| `python -m cherrypick.technicals score-trends` | Our trend scores against every vendor chart capture: exact, label and within-one agreement. |
-| `python -m cherrypick.technicals score-levels` | How many of the vendor's levels we place -- support and resistance on our grid, gap levels as our gap edges -- on names whose bars agree to the cent. |
-| `python -m cherrypick.technicals score-level-selection` | Where the vendor's levels sit among the grid points (crossing profile, price given the date, which swing highs), each against chance. |
-| `python -m cherrypick.technicals score-rank` | Our 1-10 rank (a decile of the whole market, from the landing's stored cut-offs) against the vendor's, on every capture. |
-| `python -m cherrypick.technicals score-signals` | Our six scan rules against every scan list the collector has saved. |
-| `python -m cherrypick.technicals report [--session D]` | Write one session's market-report readings and the per-name chart files for the console. |
-| `python -m cherrypick.technicals score-stages` | The stage rule against every saved edition: side recall, stage agreement, extra rate, counts. |
+| `python -m cherrypick.technicals score-trends` | Trend scores vs every capture: exact, label, within-one. |
+| `python -m cherrypick.technicals score-levels` | Vendor levels we place (grid and gap edges) on names whose bars agree to the cent. |
+| `python -m cherrypick.technicals score-level-selection` | Where vendor levels sit among grid points, each measure against chance. |
+| `python -m cherrypick.technicals score-rank` | Our 1-10 rank (stored whole-market cut-offs) vs the vendor's. |
+| `python -m cherrypick.technicals score-signals` | Our six scan rules vs every saved scan list. |
+| `python -m cherrypick.technicals report [--session D]` | Write one session's report readings and per-name chart files. |
