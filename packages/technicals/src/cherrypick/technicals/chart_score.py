@@ -27,7 +27,7 @@ def score_trends() -> dict:
             newest[path.stem] = path
     conn = store.connect()
     totals = {k: {"days": 0, "exact": 0, "label": 0, "within1": 0} for k, _, _ in SERIES}
-    sentiment = {"names": 0, "agree": 0, "misses": []}
+    sentiment = {"names": 0, "agree": 0, "misses": [], "session_not_landed": 0}
     by_symbol = {}
     for sym, path in sorted(newest.items()):
         try:
@@ -61,6 +61,9 @@ def score_trends() -> dict:
         through = str((why.get("historicalQuotes") or [{}])[-1].get("date", ""))[:10]
         theirs_label = why.get("sentiment")
         upto = [c for d, c in zip(dates, closes, strict=True) if d <= through]
+        if through not in dates:  # our bars stop short of the capture's session: not comparable yet
+            sentiment["session_not_landed"] += 1
+            upto = []
         ours_label = trend.sentiment(upto) if upto else None
         if theirs_label and ours_label:
             sentiment["names"] += 1

@@ -122,8 +122,9 @@ break. `trend.py` records each step so none is re-litigated.
 
 **The overall sentiment label is solved** (`trend.sentiment`, scored by `score-trends`; 2026-09-29):
 Bullish when the close is above both the 50-session SMA and the 200-session WMA, Bearish below both,
-Neutral between -- 149 of 149 captures on the vendor's bars, 115 of 116 names on ours (XLE the one
-miss, not yet looked at). It is the "trend" the capture's one-line `sentence` names, and the chart
+Neutral between -- 149 of 149 captures on the vendor's bars, and every capture on ours whose session
+our store has landed (82 of 82; XLE's apparent miss was a 09-29 capture scored against 09-28 bars, so
+`score-trends` now counts such captures as not yet landed instead of scoring them). It is the "trend" the capture's one-line `sentence` names, and the chart
 page shows it beside the symbol. **A trap worth knowing:** the captures list their daily trend
 scores NEWEST-first (105 of 121), so `series[-1]` is the oldest day. Read that way the label looked
 unrelated to the trend scores -- +4/+4 names labelled Bearish -- and it was the read that was wrong.
