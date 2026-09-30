@@ -59,6 +59,7 @@ than any command on this page — see [strategy-engines.md](strategy-engines.md#
 | `review` | Suite end-of-day review (`packages/review`): build one session's cross-module fact set and render it. `--final` marks the session final and re-runs reconciliation; without it the pass is provisional. Read-only over every module's ledger. What the two daily supervisor jobs run. | `--final` |
 | `morning` | Build the pre-open morning fact pack (`packages/overview`): index/vol/sector readings from the stream cache, gamma flip and walls from the suite's own GEX history, and the mechanical GREEN/YELLOW/RED phase. What the daily morning-factpack job runs; a pure stream-cache + GEX consumer writing only into its own home, so a bad pass costs a report, never a trade. The session it describes is overview's own contract (today's ET trading day, resolved internally). | — |
 | `archive` | End-of-month rotation: zip each finished month's dated reports + rotated log backups into `logs/archive/<YYYY-MM>/<scope>.zip` and remove the originals (idempotent; never touches the current month or an active `.log`). | `--month YYYY-MM`, `--dry-run` |
+| `backup` | Nightly backup of the suite's own data -- configs, `state/`, every ledger (copied through SQLite's online backup API and quick_checked) and every artifact under `data/` -- into ONE zip at `backup.dest/cherrypick-backup.zip` (default `~/.cherrypick/backups`), replaced each night. A night with a problem lands as `cherrypick-backup.failed.zip`, never replaces the good backup, and notifies. Skips the Dolt stores, stream caches, logs, the vendor browser profile and backup/archive copies. What the daily `suite-backup` job (01:30 ET) runs; `doctor` warns past 36h. | `--dry-run`, `--list`, `--verify`, `--restore-to DIR` (never into the live home) |
 
 There is no `dashboard` command. The suite's read surface is the **console** (`packages/console`, on
 127.0.0.1:5070), which the supervisor keeps running as an always-on resident job; the orchestrator's
@@ -90,7 +91,7 @@ deliberately separate path calibrate can never reach) · `--fast` (doctor) ·
 `--host` / `--port` / `--no-browser` (settings) · `--apply` (migrate-home,
 settings --organize) · `--organize [target]` (settings) · `--stop` (supervise — ask a running
 supervisor to exit) · `--detail` / `--account <last4>` / `--json` (positions) · `--scheduled` (reconcile — the daily job's mode; notifies on any non-FLAT
-verdict) · `--month` / `--dry-run` (archive) · `--channel` / `--url` (secrets) · `--force` (init).
+verdict) · `--month` / `--dry-run` (archive) · `--dry-run` / `--list` / `--verify` / `--restore-to DIR` (backup) · `--channel` / `--url` (secrets) · `--force` (init).
 
 ## Slash-command equivalents (Claude Code)
 
