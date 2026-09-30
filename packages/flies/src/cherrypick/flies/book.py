@@ -384,6 +384,35 @@ def process_snapshot(
         except Exception:  # noqa: BLE001 - telemetry must never break the loop
             pass
 
+    def entry_row_base(mode, kind, position_id, plan):
+        """The ledger keys every entry mode writes identically: identity, the plan's shared
+        geometry and cost, the clock and the regime tags. Deliberately nothing else -- the fields
+        that ARE the trade (`net`, `credit`/`debit`, `far_width`, the centre deltas,
+        `completing_direction`, the leg symbols, the floor and its rationale) stay in each mode's
+        block, because they differ by mode and sit next to live-order construction."""
+        return {
+            "position_id": position_id,
+            "book_id": book_id,
+            "trade_date": trade_date,
+            "arm": arm,
+            "experiment_id": experiment_id,
+            "entry_mode": mode,
+            "symbol": symbol,
+            "kind": kind,
+            "side": plan["side"],
+            "center": plan["center"],
+            "wing_width": plan["wing_width"],
+            "quantity": plan["quantity"],
+            "fees": plan["open_fee"],
+            "slippage_dollars": _entry_slippage(plan),
+            "entry_time": now,
+            "entry_window": plan["entry_window"],
+            "center_reason": plan["center_reason"],
+            "underlying_at_entry": snapshot.get("underlying_price"),
+            **regime_columns("entry", snapshot, params, center=plan["center"]),
+            "status": "open",
+        }
+
     # What this arm WANTED this iteration, recorded before any gate can veto it. Written even when
     # nothing trades, because arm divergence is measured over intentions, not fills.
     wanted_center, wanted_reason = engine.select_center(snapshot, params)
@@ -766,29 +795,11 @@ def process_snapshot(
             dbmod.save_position(
                 conn,
                 {
-                    "position_id": position_id,
-                    "book_id": book_id,
-                    "trade_date": trade_date,
-                    "arm": arm,
-                    "experiment_id": experiment_id,
-                    "entry_mode": "legged",
-                    "symbol": symbol,
-                    "kind": "short_vertical",
-                    "side": plan["side"],
-                    "center": plan["center"],
-                    "wing_width": plan["wing_width"],
-                    "quantity": plan["quantity"],
+                    **entry_row_base("legged", "short_vertical", position_id, plan),
                     "net": plan["credit"],
                     "credit": plan["credit"],
-                    "fees": plan["open_fee"],
-                    "slippage_dollars": _entry_slippage(plan),
-                    "entry_time": now,
-                    "entry_window": plan["entry_window"],
-                    "center_reason": plan["center_reason"],
                     "entry_center_delta": plan.get("center_delta"),
                     "completing_direction": plan["completing_direction"],
-                    "underlying_at_entry": snapshot.get("underlying_price"),
-                    **regime_columns("entry", snapshot, params, center=plan["center"]),
                     **leg_symbol_columns(
                         snapshot,
                         plan["side"],
@@ -801,7 +812,6 @@ def process_snapshot(
                     # not left blank until (if ever) it completes into a fly.
                     "floor_dollars": fly.position_floor(pos),
                     "risk_free": 0,
-                    "status": "open",
                     **hedge_columns,
                 },
             )
@@ -860,29 +870,11 @@ def process_snapshot(
             dbmod.save_position(
                 conn,
                 {
-                    "position_id": position_id,
-                    "book_id": book_id,
-                    "trade_date": trade_date,
-                    "arm": arm,
-                    "experiment_id": experiment_id,
-                    "entry_mode": "debit_first",
-                    "symbol": symbol,
-                    "kind": "long_vertical",
-                    "side": plan["side"],
-                    "center": plan["center"],
-                    "wing_width": plan["wing_width"],
-                    "quantity": plan["quantity"],
+                    **entry_row_base("debit_first", "long_vertical", position_id, plan),
                     "net": -plan["debit"],
                     "debit": plan["debit"],
-                    "fees": plan["open_fee"],
-                    "slippage_dollars": _entry_slippage(plan),
-                    "entry_time": now,
-                    "entry_window": plan["entry_window"],
-                    "center_reason": plan["center_reason"],
                     "entry_center_delta": plan.get("center_delta"),
                     "completing_direction": plan["completing_direction"],
-                    "underlying_at_entry": snapshot.get("underlying_price"),
-                    **regime_columns("entry", snapshot, params, center=plan["center"]),
                     **leg_symbol_columns(
                         snapshot,
                         plan["side"],
@@ -896,7 +888,6 @@ def process_snapshot(
                     # assignment-fee reserve this also carries.
                     "floor_dollars": fly.position_floor(pos),
                     "risk_free": 0,
-                    "status": "open",
                 },
             )
             record_attempt("debit_first", "entered", accepted=True, plan=plan, position_id=position_id)
@@ -955,30 +946,12 @@ def process_snapshot(
             dbmod.save_position(
                 conn,
                 {
-                    "position_id": position_id,
-                    "book_id": book_id,
-                    "trade_date": trade_date,
-                    "arm": arm,
-                    "experiment_id": experiment_id,
-                    "entry_mode": "bwb_roll",
-                    "symbol": symbol,
-                    "kind": "bwb",
-                    "side": plan["side"],
-                    "center": plan["center"],
-                    "wing_width": plan["wing_width"],
+                    **entry_row_base("bwb_roll", "bwb", position_id, plan),
                     "far_width": plan["far_width"],
-                    "quantity": plan["quantity"],
                     "net": plan["credit"],
                     "credit": plan["credit"],
-                    "fees": plan["open_fee"],
-                    "slippage_dollars": _entry_slippage(plan),
-                    "entry_time": now,
-                    "entry_window": plan["entry_window"],
-                    "center_reason": plan["center_reason"],
                     "entry_center_delta": plan.get("center_delta"),
                     "entry_far_wing_delta": plan.get("far_wing_delta"),
-                    "underlying_at_entry": snapshot.get("underlying_price"),
-                    **regime_columns("entry", snapshot, params, center=plan["center"]),
                     **leg_symbol_columns(
                         snapshot,
                         plan["side"],
@@ -991,7 +964,6 @@ def process_snapshot(
                     # floor; see fly.position_floor's bwb branch.
                     "floor_dollars": fly.position_floor(pos),
                     "risk_free": int(fly.is_risk_free(pos)),
-                    "status": "open",
                 },
             )
             record_attempt("bwb_roll", "entered", accepted=True, plan=plan, position_id=position_id)
@@ -1056,30 +1028,11 @@ def process_snapshot(
             dbmod.save_position(
                 conn,
                 {
-                    "position_id": position_id,
-                    "book_id": book_id,
-                    "trade_date": trade_date,
-                    "arm": arm,
-                    "experiment_id": experiment_id,
-                    "entry_mode": "outright",
-                    "symbol": symbol,
-                    "kind": "fly",
-                    "side": plan["side"],
-                    "center": plan["center"],
-                    "wing_width": plan["wing_width"],
-                    "quantity": plan["quantity"],
+                    **entry_row_base("outright", "fly", position_id, plan),
                     "net": -plan["debit"],
                     "debit": plan["debit"],
-                    "fees": plan["open_fee"],
-                    "slippage_dollars": _entry_slippage(plan),
-                    "entry_time": now,
-                    "entry_window": plan["entry_window"],
-                    "center_reason": plan["center_reason"],
-                    "underlying_at_entry": snapshot.get("underlying_price"),
-                    **regime_columns("entry", snapshot, params, center=plan["center"]),
                     "floor_dollars": fly.position_floor(pos),
                     "risk_free": int(fly.is_risk_free(pos)),
-                    "status": "open",
                 },
             )
             record_attempt("outright", "entered", accepted=True, plan=plan, position_id=position_id)

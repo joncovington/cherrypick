@@ -66,6 +66,7 @@ from pathlib import Path
 from typing import Any
 
 from cherrypick.core import config as _cfg
+from cherrypick.core.jsonio import write_json_atomic
 
 ADVICE_DIR = "advice"
 
@@ -352,8 +353,6 @@ def write(
     proposals, rejected}`); when given, the top-level `proposals`/`rejected`/`experiment_id` are
     overwritten with the FIRST entry's so the mirror can never disagree with the list. Without it
     the artifact is written in the legacy single-overlay shape."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
     if experiments:
         first = experiments[0]
         proposals = list(first.get("proposals") or [])
@@ -381,10 +380,10 @@ def write(
             }
             for e in experiments
         ]
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    tmp.replace(path)
-    return path
+    # default=None: a non-JSON value raises rather than being written as its str() -- this
+    # artifact is re-validated by every loop that reads it, and a stringified value would reach
+    # that validation looking like a legitimate one.
+    return write_json_atomic(path, payload, indent=2, default=None)
 
 
 def load(

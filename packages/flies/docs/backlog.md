@@ -4,24 +4,17 @@ Not a to-do list. Each item here was considered and set down with a reason, and 
 what would have to be true before it is picked up. Findings go in [experiment-log.md](experiment-log.md);
 rules go in [../CLAUDE.md](../CLAUDE.md); this file holds the things that are neither yet.
 
-## Measure `book.py`'s four entry-construction blocks before folding them
+## `book.py`'s four entry-construction blocks -- DONE 2026-09-29 (shared keys only)
 
-The legged, debit_first, bwb_roll and outright entry blocks in `book.process_snapshot` share a
-~12-key row shape (`position_id`, `book_id`, `trade_date`, `arm`, `experiment_id`, `symbol`,
-`entry_time`, `entry_window`, `center_reason`, `underlying_at_entry`, the regime and leg columns)
-and differ in the fields that are the trade — `credit` vs `debit`, `far_width` on one,
-`completing_direction` on two of four, a different floor rationale on each. Each block also
-builds the in-memory `pos` dict the same tick's entry gates read, so a shared builder has to get
-every mode's live fields right, not just the row.
-
-- **Do:** compare the four with the mode name normalized out, per the root file's dedup rule, and
-  read the call sites back individually. Expected result: the shared part is the boilerplate, and
-  a small `_entry_row_base(...)` for those keys alone is the most that is safe — roughly 40 lines,
-  no behaviour change. Expected non-result: the per-mode fields stay copied, the
-  `_wing_width_multiple` posture, because they shape an order.
-- **When:** next time someone is in that file for another reason. Not on its own.
-- **Deferred 2026-09-19** because it is pre-existing code, larger than the session that noticed
-  it, and downstream of live-order construction.
+The legged, debit_first, bwb_roll and outright entry rows now build the keys they share verbatim
+(identity, the plan's shared geometry and cost, the clock, the regime tags, `status`) through one
+`entry_row_base(mode, kind, position_id, plan)` closure in `process_snapshot`, beside `journal`
+and `record_attempt`. Everything that is the trade stays in each block: `net`, `credit`/`debit`,
+`far_width`, the centre deltas, `completing_direction`, the leg symbols, the floor and its
+rationale, the hedge columns. The in-memory `pos` dicts the entry gates read were left as they were.
+Parity: the row dicts all four paths build, over eleven fixture cases, were captured before and
+compared after -- equal, and a deliberate over-fold (`entry_center_delta` into the shared keys)
+failed on the outright rows.
 
 ## Two open spreads at once in the live pilot -- DONE 2026-09-25 (cap only, no count limit)
 
@@ -73,14 +66,16 @@ drift — needs a per-tick mark path this ledger does not keep. Record one only 
 first shows the hedge recovering more than it costs on some branch; if it never does, the path
 would be measuring a rule for a position not worth holding.
 
-## Four atomic-JSON writers, measured and left
+## Four atomic-JSON writers -- DONE 2026-09-29
 
-`core.advice`, `core.streamrequests`, `advisor/store.write_json` and `review/facts.write` each
-carry the same three-line write-then-rename. Measured on 2026-09-19 when the regime-cuts artifact
-needed a fifth: the bodies differ only in tmp naming and whether they mkdir. The fifth is the
-first shared one (`core.home.write_json_atomic`, used by `core.regimecuts`); folding the four onto
-it is a change across four packages with four test files and was not worth carrying in the same
-landing. Reopens when any of the four is next touched.
+`core.advice`, `core.streamrequests`, `advisor/store.write_json` and `review/facts.write` now write
+through `cherrypick.core.jsonio.write_json_atomic` -- the helper that was `core.regimecuts`'s (not
+`core.home`'s, as this note used to say); `regimecuts` re-exports it. The copies differed in
+formatting, and those differences are the helper's two knobs: stream requests stay compact
+(`indent=None`), and advice and stream requests keep refusing a non-JSON value (`default=None`)
+rather than writing its `str()`. File bytes are identical before and after for every writer. The
+one visible change is advice's tmp name (`flies-<date>.tmp` became `flies-<date>.json.tmp`); every
+reader of that directory matches `.json` or an exact name, so neither form was ever read.
 
 ## Regime cuts: the sweep and the partial sessions
 

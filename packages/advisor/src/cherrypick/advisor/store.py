@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from cherrypick.core import db as _db
+from cherrypick.core.jsonio import write_json_atomic
 
 from cherrypick.advisor import paths as _paths
 
@@ -277,12 +278,7 @@ def rows_or_none(
 def write_json(path: Path | str, payload: Any) -> Path:
     """Atomic tmp + replace — a half-written pack must never be readable, by the script or the
     console."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-    tmp.replace(path)
-    return path
+    return write_json_atomic(path, payload)
 
 
 def read_json_text(text: Any, default: Any = None) -> Any:

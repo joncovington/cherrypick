@@ -36,6 +36,7 @@ from datetime import UTC, date, datetime
 
 from cherrypick.core import calendar as _calendar
 from cherrypick.core import ledgers as _ledgers
+from cherrypick.core.jsonio import write_json_atomic
 from cherrypick.core.profiles import group_by_tag as _group_by_tag
 
 from cherrypick.review import paths as _paths
@@ -773,12 +774,7 @@ def build(session: str, status: str = STATUS_PROVISIONAL, modules=None) -> dict:
 
 def write(facts: dict) -> object:
     """Write the fact set atomically. A reader must never see a half-written artifact."""
-    target = _paths.facts_path(facts["session"])
-    target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(facts, indent=2, default=str), encoding="utf-8")
-    tmp.replace(target)
-    return target
+    return write_json_atomic(_paths.facts_path(facts["session"]), facts)
 
 
 def read(session: str) -> dict | None:

@@ -48,6 +48,8 @@ import statistics
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core.jsonio import write_json_atomic
+
 CUT_VERSION = 2
 THIN_BELOW_SESSIONS = 3
 DEFAULT_CROSS_TABS: tuple[tuple[str, str], ...] = (("gex", "trend"),)
@@ -499,18 +501,8 @@ def load_priors(directory: Path | str, session: str, window: int = STABILITY_WIN
 
 
 # --------------------------------------------------------------------------- files
-def write_json_atomic(path: Path | str, payload: Any, *, indent: int = 2) -> Path:
-    """Write `payload` as JSON via a temp file beside the target and `os.replace`, so a reader never
-    sees a half-written document. The fifth copy of this three-line pattern in the suite would
-    have been in a module; this is the first shared one (the other four are noted in flies'
-    docs/backlog.md as a measured, not yet folded, duplication)."""
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_name(target.name + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=indent, default=str)
-    os.replace(tmp, target)
-    return target
+# `write_json_atomic` lived here first, as the suite's first shared copy of the write-then-rename;
+# it is `cherrypick.core.jsonio`'s now, and stays importable from here (marketregime and tests do).
 
 
 def latest_session(directory: Path | str) -> str | None:
