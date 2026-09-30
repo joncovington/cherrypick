@@ -13,7 +13,8 @@ tick knows what to do from the time and the database alone.
     pre_open      09:00-09:30, refresh the producer's subscription request
     open_window   09:30 to the execution window, MARK but never act
     management    the execution window to 15:40, mark, decide, and act
-    entry         15:45, the forced-sampling entry scan, once per day
+    entry         `entry_scan_at` (15:35 by default), the forced-sampling entry scan, once per day;
+                  it takes precedence over management and may start until `entry_window_end` (15:55)
     eod           16:00-16:30, write the session's reports
 
 The open window is a phase of its own because the first ten minutes of an earnings name's options
@@ -22,7 +23,7 @@ the morning's path survives; decisions reached there are recorded with the gate 
 taken on the first tick that clears.
 
 **The entry scan holds the lock for up to twenty-five minutes**, so positions go unmarked roughly
-15:45-16:10. That is accepted: the morning is where management matters, the EOD write still lands
+15:35-16:00. That is accepted: the morning is where management matters, the EOD write still lands
 before the digest deadline, and the alternative -- a second writer against the same SQLite book --
 trades a documented gap for a class of bug that is much harder to see.
 """
@@ -280,7 +281,7 @@ def refresh_stream_request(positions: list[dict]) -> None:
     **Only safe to GROW this set outside the session**, which is why the entry phase does not call
     it and `pre_open` does. A producer binds its underlyings once, at startup, so the watchdog
     recycles it when the union grows — and a recycle costs a settling window during which NOTHING is
-    streaming. Growing the set at 15:45 would therefore blind the 0DTE modules trading into their
+    streaming. Growing the set at the entry scan would therefore blind the 0DTE modules trading into their
     own close, to make symbols available fourteen hours before this module needs them. Shrinking is
     always safe: an over-subscribed producer serves everyone correctly and never triggers a recycle.
     """
@@ -748,7 +749,7 @@ def run_iteration(config: dict | None = None, now: datetime | None = None) -> di
         #
         # It used to grow the `symbols` union, which a producer binds once at startup -- so the
         # watchdog recycled it, and a recycle costs a settling window during which NOTHING streams.
-        # Doing that at 15:45 would have blinded the 0DTE modules trading into their own close, to
+        # Doing that at the entry scan would have blinded the 0DTE modules trading into their own close, to
         # make symbols available fourteen hours before this module marked anything. Plainly a bad
         # trade, so `pre_open` picked them up the next morning instead.
         #
