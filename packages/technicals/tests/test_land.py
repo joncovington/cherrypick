@@ -75,6 +75,38 @@ def test_a_landing_keeps_only_wanted_symbols_and_reports_what_dolt_lacks(dolt):
     assert store.iv_rank(conn, "AAA")["iv_rank"] == pytest.approx(33.3, abs=0.1)
 
 
+def test_iv_rank_is_ours_where_dolt_has_it_and_tastytrades_where_it_does_not(dolt):
+    """The fallback the user allowed: tastytrade's rank only where we cannot calculate one."""
+    import json
+
+    from cherrypick.technicals import paths
+
+    land.land(wanted=["AAA"], today=TODAY)
+    f = paths.tastytrade_iv_rank()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(
+        json.dumps(
+            {
+                "days": {
+                    "2026-09-24": {"AAA": {"iv_rank": 90.0}, "ZZZ": {"iv_rank": 41.26, "iv_index": 0.31}},
+                    "2026-09-25": {"ZZZ": {"iv_rank": 55.0}},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    conn = store.connect()
+    assert store.iv_rank(conn, "AAA")["source"] == "dolt"  # ours wins where we have it
+    assert store.iv_rank(conn, "ZZZ") == {
+        "date": "2026-09-25",
+        "iv": None,
+        "iv_rank": 55.0,
+        "source": "tastytrade",
+    }
+    assert store.iv_rank(conn, "ZZZ", "2026-09-24")["iv_rank"] == 41.3  # never a reading after `on`
+    assert store.iv_rank(conn, "NONE") is None
+
+
 def test_a_symbol_dolt_does_not_list_never_drags_the_read_back_to_a_full_backfill(dolt):
     """SPX, NDX and VIX made every morning a three-year read (3m 24s) until they were dropped."""
     land.land(wanted=["AAA"], today=TODAY)  # first landing backfills AAA

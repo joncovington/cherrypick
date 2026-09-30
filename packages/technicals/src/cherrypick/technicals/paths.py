@@ -33,5 +33,10 @@ def tastytrade_dividends() -> Path:
     return market_report_dir() / "dividends" / "tastytrade.json"
 
 
+def tastytrade_iv_rank() -> Path:
+    """Tastytrade's IV rank by session, written by scripts/fetch_iv_rank.py. Read-only here."""
+    return market_report_dir() / "iv" / "tastytrade.json"
+
+
 def universe_candidates() -> Path:
     return market_report_dir() / "universe" / "candidates.json"

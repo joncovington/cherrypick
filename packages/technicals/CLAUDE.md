@@ -135,6 +135,19 @@ Spearman 0.95 against the vendor's over 34 names, within one step on 31-33 depen
 universe it is ranked in, exact on about 40%. The vendor ranks within its own universe, which 34
 names cannot pin down.
 
+**IV rank does not match, and the formula is not why** (2026-09-29). Dolt's min-max IV rank
+(`store.iv_rank`, the definition the vendor's help pages state) against the vendor's
+`impliedVolatilityRank` on the 49 captures where our IV is dated the capture's own day: correlation
+0.66, median gap 4.6 points, ours about 6 higher on average, within 3 points on a third, DTE 79 apart.
+A min-max over our own 252-day IV history gives the same answer, so the difference is the IV series
+itself -- the vendor ranks an implied vol Dolt does not carry. tastytrade's rank is no closer
+(`scripts/fetch_iv_rank.py`, 32 captures on 2026-09-29: correlation 0.64, median gap 6 points, and
+no variant of it -- headline, `tw`, `tos`, percentile -- does better). So `store.iv_rank` is ours
+first and tastytrade's where Dolt has no IV for a name (the ADRs, among others), and says which in
+`source`: a fallback for coverage, agreed with the user, not a claim to match the vendor. The
+fetch runs as the `technicals-iv-rank` job after the close on trading days, one reading per symbol
+per session, liquidity rating included for a later look at the vendor's `liquidityRank`.
+
 **The six scan rules** (`signals.py`, `score-signals`) reproduce the vendor's scan list from our
 trend scores, CCI and RSI: 245 of 278 flagged names on the two lists saved (88%). They were first
 fitted on the old trend baseline (84%) and refitted when the trend was solved: its -4 had meant
@@ -249,7 +262,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 |---|---|
 | `python -m cherrypick.technicals land [--symbols ...]` | Land bars, splits, dividends and IV from the local Dolt clones. Incremental; idempotent. |
 | `python -m cherrypick.technicals status` | What the store holds, and the last landing. |
-| `python -m cherrypick.technicals bars SYMBOL [--raw] [--last N]` | A symbol's adjusted (or raw) bars and its IV rank. |
+| `python -m cherrypick.technicals bars SYMBOL [--raw] [--last N]` | A symbol's adjusted (or raw) bars and its IV rank (ours, or tastytrade's where Dolt has no IV). |
 | `python -m cherrypick.technicals check-vendor [--all]` | Our adjusted bars against every vendor chart capture; exits non-zero on any disagreement. |
 | `python -m cherrypick.technicals stages [--session D]` | Every candidate's relative-strength stage on a session. |
 | `python -m cherrypick.technicals rotation [--session D]` | Every rotation fund's state on a session. |

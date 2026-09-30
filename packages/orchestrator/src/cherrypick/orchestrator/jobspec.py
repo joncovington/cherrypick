@@ -68,6 +68,9 @@ CATCHUP_MINUTES = {
     "technicals-report": 12 * 60,
     # Dividend histories change weekly at most; a late fetch is the same fetch.
     "technicals-dividends": 12 * 60,
+    # A reading of the day's close: a run after the next open would record the next session instead,
+    # which the file keys correctly but is not the day that was missed.
+    "technicals-iv-rank": 600,
     "market-files": 600,
     "market-files-retry": 40,
     # Priced at the close for the next morning's pack; a late run still prices that close.
@@ -762,6 +765,22 @@ def derive_jobs(
             trading_days_only=False,
             enabled=div_on,
             enabled_reason="" if div_on else "disabled in config (technicals.dividends)",
+        ),
+    )
+    ivr_on = tc["enabled"] and tc["iv_rank"]
+    add(
+        "technicals-iv-rank",
+        lambda: JobSpec(
+            id="technicals-iv-rank",
+            # A script, not package code: it reads the broker (tastytrade's market metrics) with the
+            # shared credential, read-only, 50 symbols a request. technicals reads the file it writes.
+            argv=(pythonw, _suite_script(launcher, "fetch_iv_rank.py")),
+            kind=KIND_DAILY,
+            at_et=tc["iv_rank_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-iv-rank"],
+            trading_days_only=True,
+            enabled=ivr_on,
+            enabled_reason="" if ivr_on else "disabled in config (technicals.iv_rank)",
         ),
     )
     mv = cfgmod.morning_settings(cfg)

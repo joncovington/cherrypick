@@ -336,6 +336,11 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "report_at": tc.get("report_at", "06:30"),
         "dividends": bool(tc.get("dividends", True)),
         "dividends_at": tc.get("dividends_at", "19:30"),
+        # `iv_rank_at`: scripts/fetch_iv_rank.py, tastytrade's IV rank for every stored name -- the
+        # fallback `store.iv_rank` reads where Dolt has no IV for a name. After the close, once the
+        # day's IV has posted.
+        "iv_rank": bool(tc.get("iv_rank", True)),
+        "iv_rank_at": tc.get("iv_rank_at", "18:50"),
     }
 
 

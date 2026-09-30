@@ -151,21 +151,48 @@ def adjusted_bars(conn, symbol: str) -> list[_adjust.AdjustedBar]:
 
 
 def iv_rank(conn, symbol: str, on: str | None = None) -> dict | None:
-    """Where the latest IV (on or before `on`) sits between its one-year low and high, 0-100, as
-    Dolt's volatility_history states them. None when there is no row or the range is empty."""
+    """Where the latest IV (on or before `on`) sits between its one-year low and high, 0-100.
+
+    Ours first: Dolt's volatility_history, ranked by its own one-year high and low. Where Dolt has no
+    usable row for the name, tastytrade's rank as `scripts/fetch_iv_rank.py` recorded it, and the
+    result says so in `source`. Neither is the vendor's number -- both run about 6 points from it
+    with a correlation near 0.65, because the vendor ranks an IV series neither carries -- so this
+    is a fallback for coverage, not a match. None when neither source has a reading."""
     q = "SELECT * FROM iv WHERE symbol = ? AND iv IS NOT NULL"
     args: list = [symbol]
     if on:
         q += " AND date <= ?"
         args.append(on)
     row = conn.execute(q + " ORDER BY date DESC LIMIT 1", args).fetchone()
-    if row is None or row["iv_year_high"] is None or row["iv_year_low"] is None:
+    span = (
+        None
+        if row is None or row["iv_year_high"] is None or row["iv_year_low"] is None
+        else (row["iv_year_high"] - row["iv_year_low"])
+    )
+    if span is not None and span > 0:
+        return {
+            "date": row["date"],
+            "iv": row["iv"],
+            "iv_rank": round(100.0 * (row["iv"] - row["iv_year_low"]) / span, 1),
+            "source": "dolt",
+        }
+    return _tastytrade_iv_rank(symbol, on)
+
+
+def _tastytrade_iv_rank(symbol: str, on: str | None) -> dict | None:
+    try:
+        days = json.loads(paths.tastytrade_iv_rank().read_text(encoding="utf-8")).get("days") or {}
+    except (OSError, ValueError):
         return None
-    span = row["iv_year_high"] - row["iv_year_low"]
-    if span <= 0:
-        return None
-    return {
-        "date": row["date"],
-        "iv": row["iv"],
-        "iv_rank": round(100.0 * (row["iv"] - row["iv_year_low"]) / span, 1),
-    }
+    for day in sorted(days, reverse=True):
+        if on and day > on:
+            continue
+        r = (days[day] or {}).get(symbol)
+        if r and r.get("iv_rank") is not None:
+            return {
+                "date": day,
+                "iv": r.get("iv_index"),
+                "iv_rank": round(r["iv_rank"], 1),
+                "source": "tastytrade",
+            }
+    return None

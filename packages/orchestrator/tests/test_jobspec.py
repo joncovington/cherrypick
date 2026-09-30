@@ -309,6 +309,7 @@ def test_derive_full_suite_job_table():
         "market-files-retry",
         "technicals-land",
         "technicals-dividends",
+        "technicals-iv-rank",
         "technicals-report",
         "earnings-moves",
         "fetch-headlines",
