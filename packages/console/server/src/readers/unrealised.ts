@@ -64,14 +64,21 @@ export function unrealisedByPosition(
   }
   if (meta.size === 0) return out;
 
+  // Only the positions in `meta` are ever priced, so every marks read is restricted to them in SQL:
+  // aggregating the whole marks table -- closed positions included, 221k rows on calendars --
+  // cost ~350 ms a poll on the thread the heartbeat watches, for the same result.
+  const openIds = `SELECT position_id FROM ${opts.positionsTable} WHERE status != 'closed'`;
+
   // The latest USABLE mark per (position, leg). A refused mark is a recorded row, not a price.
   const marks = new Map<string, number>();
   for (const r of db
     .prepare<[], Record<string, unknown>>(
       `SELECT m.position_id, m.leg_role, m.mid FROM ${opts.marksTable} m
        JOIN (SELECT position_id, leg_role, MAX(marked_at) AS t FROM ${opts.marksTable}
-             WHERE usable = 1 AND mid IS NOT NULL GROUP BY position_id, leg_role) x
-         ON x.position_id = m.position_id AND x.leg_role = m.leg_role AND x.t = m.marked_at`,
+             WHERE usable = 1 AND mid IS NOT NULL AND position_id IN (${openIds})
+             GROUP BY position_id, leg_role) x
+         ON x.position_id = m.position_id AND x.leg_role = m.leg_role AND x.t = m.marked_at
+       WHERE m.position_id IN (${openIds})`,
     )
     .all()) {
     const mid = num(r["mid"]);
@@ -113,9 +120,9 @@ export function unrealisedByPosition(
       .prepare<[], Record<string, unknown>>(
         `SELECT m.position_id, m.spot FROM ${opts.marksTable} m
          JOIN (SELECT position_id, MAX(marked_at) AS t FROM ${opts.marksTable}
-               WHERE spot IS NOT NULL GROUP BY position_id) x
+               WHERE spot IS NOT NULL AND position_id IN (${openIds}) GROUP BY position_id) x
            ON x.position_id = m.position_id AND x.t = m.marked_at
-         WHERE m.spot IS NOT NULL`,
+         WHERE m.spot IS NOT NULL AND m.position_id IN (${openIds})`,
       )
       .all() : [];
     for (const r of spotRows) {
