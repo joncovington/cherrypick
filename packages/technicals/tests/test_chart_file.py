@@ -94,3 +94,18 @@ def test_write_all_writes_a_file_per_name_and_an_index():
     index = json.loads((chart.charts_dir() / "index.json").read_text(encoding="utf-8"))
     assert "ABC" in [s["symbol"] for s in index["symbols"]]
     assert json.loads((chart.charts_dir() / "ABC.json").read_text(encoding="utf-8"))["symbol"] == "ABC"
+
+
+def test_the_index_funds_are_charted_although_breadth_leaves_funds_out():
+    conn = store.connect()
+    _land(conn, "SPY")
+    _land(conn, "ABC")
+    store.upsert_listings(conn, [("SPY", 1), ("ABC", 0)])
+    conn.commit()
+    cands = paths.universe_candidates()
+    cands.parent.mkdir(parents=True, exist_ok=True)
+    cands.write_text(json.dumps({"names": {"ABC": {}}}), encoding="utf-8")
+    assert store.stocks(conn, ["SPY", "ABC"]) == ["ABC"]  # still out of breadth
+    chart.write_all(conn=conn)
+    index = json.loads((chart.charts_dir() / "index.json").read_text(encoding="utf-8"))
+    assert [s["symbol"] for s in index["symbols"]] == ["SPY", "ABC"]  # QQQ and IWM hold no bars here

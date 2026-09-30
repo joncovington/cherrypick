@@ -28,6 +28,9 @@ from . import indicators, levels, paths, signals, store, symbols, trend, vendor_
 
 CHART_VERSION = 1
 DISPLAY = levels.WINDOW  # the sessions the grid is built on, and so the ones worth drawing
+# The index funds charted beside the stocks. Named, not taken from `store.stocks`: that filter
+# drops funds on purpose, because breadth counts stocks only, and the chart page is not breadth.
+INDEX_FUNDS = ("SPY", "QQQ", "IWM")
 
 
 def _r(v: float | None, digits: int = 4) -> float | None:
@@ -177,11 +180,12 @@ def _write(path, doc) -> None:
 
 
 def write_all(session: str | None = None, conn=None) -> dict:
-    """Every stock the store holds, plus an index the console's picker reads."""
+    """Every stock the store holds and the `INDEX_FUNDS`, plus an index the console's picker reads."""
     own = conn is None
     conn = conn or store.connect()
     written, sessions = [], set()
-    for sym in store.stocks(conn, symbols.all_symbols()):
+    names = store.stocks(conn, symbols.all_symbols())
+    for sym in [*INDEX_FUNDS, *(s for s in names if s not in INDEX_FUNDS)]:
         doc = build(conn, sym, session)
         if doc is None:
             continue
