@@ -21,13 +21,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from cherrypick.core.redact import mask_account  # noqa: F401 -- re-exported: cli/journal import it here
+
 from .order import RiskProfile
-
-
-def mask_account(number: str | None) -> str:
-    """`****1234`, the suite-wide masked form. Never emit a full account number."""
-    s = str(number or "")
-    return f"****{s[-4:]}" if len(s) >= 4 else "****"
 
 
 def _undefined_text(risk: RiskProfile) -> str:

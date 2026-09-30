@@ -32,3 +32,20 @@ def test_mask_account():
     assert mask_account("5WT99991") == "****9991"
     assert mask_account("12") == "****"
     assert mask_account(None) == "****"
+
+
+def test_mask_account_strips_before_taking_the_last_four():
+    """A value read from a file or a prompt can carry a newline; unstripped, the mask would show three
+    digits and the blank. The orchestrator's copy stripped and core's did not until they were folded."""
+    assert mask_account("5WX19991\n") == "****9991"
+    assert mask_account("  5WX19991  ") == "****9991"
+    assert mask_account("  23  ") == "****"
+
+
+def test_the_orchestrator_and_the_desk_mask_with_cores_rule():
+    from cherrypick.desk import policy
+    from cherrypick.orchestrator import util
+
+    from cherrypick.core import redact
+
+    assert util.mask_account is redact.mask_account and policy.mask_account is redact.mask_account

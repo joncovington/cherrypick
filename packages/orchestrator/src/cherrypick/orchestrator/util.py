@@ -7,6 +7,9 @@ import os
 from typing import Any
 
 from cherrypick.core import looplock
+from cherrypick.core.redact import (
+    mask_account,  # noqa: F401 -- re-exported: accounts/liveops/reconcile import it here
+)
 
 # Windows: launch a *console* child (schtasks, git, dolt, …) without popping a console window when the
 # parent is windowless (pythonw, as the scheduled tasks run). Pass as `subprocess.run(..., creationflags=
@@ -40,14 +43,6 @@ def first_json(text: str | None) -> dict[str, Any]:
         except json.JSONDecodeError:
             continue
     return {}
-
-
-def mask_account(value: Any) -> str:
-    """Mask an account number to its last 4 digits (`****1234`) — the suite-wide rule for anything that
-    surfaces in logs/output. `****` when there are fewer than 4 characters (or the value is empty/None),
-    so a full account number is never emitted."""
-    s = str(value or "").strip()
-    return f"****{s[-4:]}" if len(s) >= 4 else "****"
 
 
 def rotate_if_large(path, max_bytes: int = 5_000_000, keep: int = 3) -> bool:

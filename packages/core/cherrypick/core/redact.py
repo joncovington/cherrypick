@@ -23,8 +23,10 @@ _KV = re.compile(rf"""(\b(?:{_KEY})=)([A-Za-z0-9-]{{5,}})\b""")
 
 
 def mask_account(value: Any) -> str:
-    """`****` plus the last four characters, or `****` alone for anything shorter."""
-    s = "" if value is None else str(value)
+    """`****` plus the last four characters, or `****` alone for anything shorter -- the one masking
+    rule (orchestrator and desk import it). Stripped first: an account number read from a file or a
+    prompt with a trailing newline would otherwise show three digits and a blank."""
+    s = "" if value is None else str(value).strip()
     return f"****{s[-4:]}" if len(s) >= 4 else "****"
 
 
