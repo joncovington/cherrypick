@@ -14,10 +14,10 @@ AI pass is the orchestrator's `eod_insight`, which reads these files.
 
 from __future__ import annotations
 
-import os
 import sqlite3
 from pathlib import Path
 
+from cherrypick.core import home as _home
 from cherrypick.core import viz  # noqa: E402
 
 from cherrypick.flies import analytics  # noqa: E402
@@ -26,7 +26,7 @@ from cherrypick.flies import analytics  # noqa: E402
 def logs_dir() -> Path:
     """`~/.cherrypick/logs/flies` — the same path `cfgmod.module_logs_dir("flies")` derives, so both
     sides agree without importing each other."""
-    home = os.environ.get("CHERRYPICK_HOME") or os.path.join(os.path.expanduser("~"), ".cherrypick")
+    home = str(_home.home())
     return Path(home) / "logs" / "flies"
 
 

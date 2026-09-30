@@ -171,3 +171,21 @@ def test_halt_flag_path_lives_under_state_and_expands_the_home(monkeypatch, tmp_
     assert home.halt_flag_path() == tmp_path / "cp" / "state" / home.HALT_FLAG_NAME
     assert home.halt_flag_path().parent == home.state_dir()
     assert home.HALT_FLAG_NAME == "halt-live.flag"
+
+
+def test_no_package_reads_cherrypick_home_raw():
+    """`os.environ.get("CHERRYPICK_HOME") or ~/.cherrypick` was copied into five packages and skipped
+    the `~`/`$VAR` expansion `home()` does, so a `CHERRYPICK_HOME=~/x` split those modules from the
+    rest of the suite. Resolve through `cherrypick.core.home` instead."""
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    raw = re.compile(r'os\.environ\.get\("CHERRYPICK_HOME"\)\s*or\b|Path\(os\.environ\["CHERRYPICK_HOME"\]\)')
+    hits = [
+        f"{p.relative_to(root)}:{i}"
+        for p in (root / "packages").glob("*/src/**/*.py")
+        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+        if raw.search(line)
+    ]
+    assert hits == []

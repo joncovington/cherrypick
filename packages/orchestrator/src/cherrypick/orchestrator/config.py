@@ -30,9 +30,8 @@ def _source_root() -> Path:
     logs) now live under the per-user home, so an in-place `path: ../meic` keeps resolving into the repo
     regardless of where config.json physically lives. CHERRYPICK_HOME overrides it for an installed copy
     (where modules come from MODULES_HOME, not a relative checkout)."""
-    env = os.environ.get("CHERRYPICK_HOME")
-    if env:
-        return Path(env)
+    if os.environ.get("CHERRYPICK_HOME"):
+        return _home.home()  # expands ~ and $VARS, as every other package's resolver does
     repo_root = Path(__file__).resolve().parents[3]
     if (repo_root / "run.py").exists() or (repo_root / "pyproject.toml").exists():
         return repo_root

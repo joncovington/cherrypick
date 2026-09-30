@@ -15,6 +15,7 @@ import os
 import sqlite3
 
 from cherrypick.core import db as _core_db
+from cherrypick.core import home as _home
 
 from cherrypick.flies import clock  # noqa: E402
 
@@ -273,7 +274,7 @@ CREATE INDEX IF NOT EXISTS idx_fly_measurement_breaks_date ON measurement_breaks
 
 
 def default_db_path() -> str:
-    home = os.environ.get("CHERRYPICK_HOME") or os.path.join(os.path.expanduser("~"), ".cherrypick")
+    home = str(_home.home())
     return os.path.join(home, "data", "flies", "paper_trades.db")
 
 
@@ -281,7 +282,7 @@ def live_db_path() -> str:
     """The LIVE ledger -- a separate file, same schema, never read by paper surfaces. The
     orchestrator's `live_db` config key should point here so it appears in `report --live`
     (and nowhere else)."""
-    home = os.environ.get("CHERRYPICK_HOME") or os.path.join(os.path.expanduser("~"), ".cherrypick")
+    home = str(_home.home())
     return os.path.join(home, "data", "flies", "live_trades.db")
 
 

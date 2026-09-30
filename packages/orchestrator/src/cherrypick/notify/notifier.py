@@ -25,6 +25,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core import home as _home
+
 from . import secrets
 
 
@@ -34,8 +36,7 @@ def _default_log_dir() -> Path:
     stays free of a config import. Previously this wrote notify.log *inside the source tree*, which both
     leaked logs into the repo and put them where the dashboard (which reads config.LOGS_DIR) never
     looked; anchoring both at the user home fixes that mismatch."""
-    env = os.environ.get("CHERRYPICK_HOME")
-    return (Path(env) if env else (Path.home() / ".cherrypick")) / "logs"
+    return _home.home() / "logs"  # core.home is stdlib-only, so the reliability path stays light
 
 
 _LOG = _default_log_dir() / "notify.log"

@@ -24,6 +24,7 @@ import os
 import sqlite3
 
 from cherrypick.core import db as _core_db
+from cherrypick.core import home as _home
 from cherrypick.core import ledgerstore as _ledgerstore
 
 _SCHEMA = """
@@ -345,7 +346,7 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
 
 
 def default_db_path() -> str:
-    home = os.environ.get("CHERRYPICK_HOME") or os.path.join(os.path.expanduser("~"), ".cherrypick")
+    home = str(_home.home())
     return os.path.join(home, "data", "pmcc", "paper_trades.db")
 
 

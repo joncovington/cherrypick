@@ -57,7 +57,7 @@ def stream_cache_path(config: dict) -> str:
     configured = (config.get("source") or {}).get("stream_cache_db")
     if configured:
         return os.path.expanduser(os.path.expandvars(configured))
-    home = os.environ.get("CHERRYPICK_HOME") or os.path.join(os.path.expanduser("~"), ".cherrypick")
+    home = str(_home.home())
     return os.path.join(home, "data", "marketdata", "stream_cache.db")
 
 

@@ -23,6 +23,8 @@ from __future__ import annotations
 import os
 import sqlite3
 
+from cherrypick.core import home as _home
+
 # Long enough to outlast any writer's burst (the daemon commits one small row at a time), short
 # enough that a reader never wedges a tick. WAL means readers don't block on the writer at all;
 # this only covers writer-vs-writer, which should never happen given the single-writer contract.
@@ -43,7 +45,7 @@ CREATE INDEX IF NOT EXISTS idx_order_alerts_received ON order_alerts(received_at
 
 
 def alerts_db_path() -> str:
-    home = os.environ.get("CHERRYPICK_HOME") or os.path.join(os.path.expanduser("~"), ".cherrypick")
+    home = str(_home.home())
     return os.path.join(home, "data", "flies", "live_alerts.db")
 
 

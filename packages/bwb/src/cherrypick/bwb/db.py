@@ -19,6 +19,7 @@ import os
 import sqlite3
 
 from cherrypick.core import db as _core_db
+from cherrypick.core import home as _home
 from cherrypick.core import ledgerstore as _ledgerstore
 
 _SCHEMA = """
@@ -314,7 +315,7 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
 
 
 def default_db_path() -> str:
-    home = os.environ.get("CHERRYPICK_HOME") or os.path.join(os.path.expanduser("~"), ".cherrypick")
+    home = str(_home.home())
     return os.path.join(home, "data", "bwb", "paper_trades.db")
 
 
@@ -323,7 +324,7 @@ def live_db_path() -> str:
     paper reader resolves `paper_trades.db` by name). Never resolved from `BWB_DB_PATH`: that
     override points paper somewhere else, and a live loop that honoured it could be told to write
     real fills into a paper file. The orchestrator's `live_db` key points here for `report --live`."""
-    home = os.environ.get("CHERRYPICK_HOME") or os.path.join(os.path.expanduser("~"), ".cherrypick")
+    home = str(_home.home())
     return os.path.join(home, "data", "bwb", "live_trades.db")
 
 
