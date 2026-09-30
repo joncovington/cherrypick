@@ -93,10 +93,10 @@ function usePerformance(mode: TradingMode, granularity: string, filter: FliesFil
   });
 }
 
-function Tile({ label, value, tone }: { label: string; value: string; tone?: "pos" | "neg" | "dim" }) {
+export function Tile({ label, value, tone, title }: { label: string; value: string; tone?: "pos" | "neg" | "dim"; title?: string }) {
   const cls = tone === "pos" ? "pnl-pos" : tone === "neg" ? "pnl-neg" : tone === "dim" ? "muted" : "";
   return (
-    <div className="stat-tile">
+    <div className="stat-tile" title={title}>
       <span className="stat-label">{label}</span>
       <span className={`stat-value ${cls}`}>{value}</span>
     </div>
@@ -104,11 +104,11 @@ function Tile({ label, value, tone }: { label: string; value: string; tone?: "po
 }
 
 /** A ratio, or an em-dash where it is undefined. Never 0 — see riskMetrics.ts on why. */
-function fmtRatio(v: number | null): string {
+export function fmtRatio(v: number | null): string {
   return v === null ? "—" : v.toFixed(2);
 }
 
-function tone(v: number | null): "pos" | "neg" | "dim" | undefined {
+export function tone(v: number | null): "pos" | "neg" | "dim" | undefined {
   if (v === null) return "dim";
   return v >= 0 ? "pos" : "neg";
 }
@@ -165,7 +165,7 @@ function PnlBars({ series, cumulative }: { series: Performance["series"]; cumula
 }
 
 /** Per-session completion rate — the number that decides whether the strategy is real, on a trend. */
-function CompletionTrend({ trend }: { trend: Performance["completionTrend"] }) {
+export function CompletionTrend({ trend }: { trend: Performance["completionTrend"] }) {
   if (trend.length === 0) return <p className="muted">no legged sessions yet</p>;
   const width = 1150;
   const height = 130;
@@ -196,6 +196,105 @@ function CompletionTrend({ trend }: { trend: Performance["completionTrend"] }) {
       <text x={m.l} y={height - 4} fontSize={9} fill="#82878f" fontFamily="Consolas, monospace">{trend[0]!.day}</text>
       <text x={width - m.r} y={height - 4} fontSize={9} fill="#82878f" textAnchor="end" fontFamily="Consolas, monospace">{trend[trend.length - 1]!.day}</text>
     </svg>
+  );
+}
+
+// The cards below are shared with the Live page, which carries this tab's live-mode figures for
+// the pilot's arm: one rendering, so the two pages cannot word the same number differently.
+export function CompletionCard({ c }: { c: Performance["completion"] | undefined }) {
+  return (
+    <section className="card">
+      <h2>Completion (legged — the number that decides if this is real)</h2>
+      {c !== undefined && (
+        <table className="data-table">
+          <tbody>
+            <tr><td className="muted">legged entries</td><td>{c.leggedEntries}</td></tr>
+            <tr><td className="muted">completed into flies</td><td>{c.completed}</td></tr>
+            <tr><td className="muted">completion rate</td><td>{c.completionRatePct !== null ? `${c.completionRatePct.toFixed(1)}%` : "—"}</td></tr>
+            <tr><td className="muted">median latency</td><td>{c.medianLatencyMin !== null ? `${c.medianLatencyMin.toFixed(0)}m` : "—"}</td></tr>
+            <tr>
+              <td className="muted">latency range</td>
+              <td>{c.minLatencyMin !== null ? `${c.minLatencyMin.toFixed(0)}–${c.maxLatencyMin?.toFixed(0)}m` : "—"}</td>
+            </tr>
+            <tr><td className="muted">median spot move to complete</td><td>{c.medianSpotMove !== null ? c.medianSpotMove.toFixed(2) : "—"}</td></tr>
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+export function MissesCard({ c }: { c: Performance["completion"] | undefined }) {
+  return (
+    <section className="card">
+      <h2>Why misses missed (opposite remedies — do not lump)</h2>
+      {c !== undefined && (
+        <table className="data-table">
+          <tbody>
+            <tr>
+              <td className="muted" title="the best debit ever seen was still above the credit — no buffer would have helped">market never offered it</td>
+              <td>{c.neverOffered}</td>
+            </tr>
+            <tr>
+              <td className="muted" title="the debit beat the credit but not fee_buffer — our price gate cost us the fly">blocked by fee_buffer</td>
+              <td>{c.bufferBlocked}</td>
+            </tr>
+            <tr>
+              <td className="muted" title="cleared the buffer but the post-fee floor missed min_floor_dollars — read from the decisions journal">blocked by min_floor_dollars</td>
+              <td>{c.floorBlocked}</td>
+            </tr>
+            <tr><td className="muted">never priced</td><td>{c.unknown}</td></tr>
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+export function LiveVsPaperCard({ lvp }: { lvp: NonNullable<Performance["liveVsPaper"]> }) {
+  return (
+    <section className="card">
+      <h2>
+        Live vs paper — {lvp.arm} arm (contemporaneous){" "}
+        {lvp.abort.triggered ? (
+          <span className="chain-badge chain-badge-short">ABORT RULE TRIGGERED</span>
+        ) : lvp.abort.armed ? (
+          <span className="chain-badge">abort rule armed</span>
+        ) : (
+          <span className="chain-badge">{lvp.live.entries}/{lvp.abort.minLiveEntries} entries to arm abort rule</span>
+        )}
+      </h2>
+      <table className="data-table">
+        <thead>
+          <tr><th></th><th>live</th><th>paper (same sessions)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td className="muted">entries</td><td>{lvp.live.entries}</td><td>{lvp.paper.entries}</td></tr>
+          <tr><td className="muted">completed</td><td>{lvp.live.completed}</td><td>{lvp.paper.completed}</td></tr>
+          <tr>
+            <td className="muted">completion rate</td>
+            <td>{lvp.live.completionRatePct !== null ? `${lvp.live.completionRatePct.toFixed(0)}%` : "—"}</td>
+            <td>{lvp.paper.completionRatePct !== null ? `${lvp.paper.completionRatePct.toFixed(0)}%` : "—"}</td>
+          </tr>
+          <tr>
+            <td className="muted">median latency</td>
+            <td>{lvp.live.medianLatencyMin !== null ? `${lvp.live.medianLatencyMin.toFixed(0)}m` : "—"}</td>
+            <td>{lvp.paper.medianLatencyMin !== null ? `${lvp.paper.medianLatencyMin.toFixed(0)}m` : "—"}</td>
+          </tr>
+          <tr>
+            <td className="muted">avg credit</td>
+            <td>{lvp.live.avgCredit !== null ? lvp.live.avgCredit.toFixed(2) : "—"}</td>
+            <td>{lvp.paper.avgCredit !== null ? lvp.paper.avgCredit.toFixed(2) : "—"}</td>
+          </tr>
+          <tr>
+            <td className="muted">completion gap</td>
+            <td colSpan={2} className={lvp.completionGapPct !== null && lvp.completionGapPct > lvp.abort.gapLimitPct ? "pnl-neg" : ""}>
+              {lvp.completionGapPct !== null ? `${lvp.completionGapPct.toFixed(1)}pp (halt if > ${lvp.abort.gapLimitPct.toFixed(0)}pp with ≥${lvp.abort.minLiveEntries} live entries)` : "—"}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
   );
 }
 
@@ -280,24 +379,7 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
       </section>
 
       <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(22rem, 1fr))" }}>
-        <section className="card">
-          <h2>Completion (legged — the number that decides if this is real)</h2>
-          {c !== undefined && (
-            <table className="data-table">
-              <tbody>
-                <tr><td className="muted">legged entries</td><td>{c.leggedEntries}</td></tr>
-                <tr><td className="muted">completed into flies</td><td>{c.completed}</td></tr>
-                <tr><td className="muted">completion rate</td><td>{c.completionRatePct !== null ? `${c.completionRatePct.toFixed(1)}%` : "—"}</td></tr>
-                <tr><td className="muted">median latency</td><td>{c.medianLatencyMin !== null ? `${c.medianLatencyMin.toFixed(0)}m` : "—"}</td></tr>
-                <tr>
-                  <td className="muted">latency range</td>
-                  <td>{c.minLatencyMin !== null ? `${c.minLatencyMin.toFixed(0)}–${c.maxLatencyMin?.toFixed(0)}m` : "—"}</td>
-                </tr>
-                <tr><td className="muted">median spot move to complete</td><td>{c.medianSpotMove !== null ? c.medianSpotMove.toFixed(2) : "—"}</td></tr>
-              </tbody>
-            </table>
-          )}
-        </section>
+        <CompletionCard c={c} />
 
         {/* The bwb arm has no completion rate: it is entered WHOLE for a credit and converted by a
             ROLL, not legged in and completed. Its own panel rather than a row in the one above, so
@@ -393,73 +475,9 @@ export function PerformanceTab({ mode, filter }: { mode: TradingMode; filter: Fl
           </section>
         )}
 
-        <section className="card">
-          <h2>Why misses missed (opposite remedies — do not lump)</h2>
-          {c !== undefined && (
-            <table className="data-table">
-              <tbody>
-                <tr>
-                  <td className="muted" title="the best debit ever seen was still above the credit — no buffer would have helped">market never offered it</td>
-                  <td>{c.neverOffered}</td>
-                </tr>
-                <tr>
-                  <td className="muted" title="the debit beat the credit but not fee_buffer — our price gate cost us the fly">blocked by fee_buffer</td>
-                  <td>{c.bufferBlocked}</td>
-                </tr>
-                <tr>
-                  <td className="muted" title="cleared the buffer but the post-fee floor missed min_floor_dollars — read from the decisions journal">blocked by min_floor_dollars</td>
-                  <td>{c.floorBlocked}</td>
-                </tr>
-                <tr><td className="muted">never priced</td><td>{c.unknown}</td></tr>
-              </tbody>
-            </table>
-          )}
-        </section>
+        <MissesCard c={c} />
 
-        {lvp !== null && (
-          <section className="card">
-            <h2>
-              Live vs paper — {lvp.arm} arm (contemporaneous){" "}
-              {lvp.abort.triggered ? (
-                <span className="chain-badge chain-badge-short">ABORT RULE TRIGGERED</span>
-              ) : lvp.abort.armed ? (
-                <span className="chain-badge">abort rule armed</span>
-              ) : (
-                <span className="chain-badge">{lvp.live.entries}/{lvp.abort.minLiveEntries} entries to arm abort rule</span>
-              )}
-            </h2>
-            <table className="data-table">
-              <thead>
-                <tr><th></th><th>live</th><th>paper (same sessions)</th></tr>
-              </thead>
-              <tbody>
-                <tr><td className="muted">entries</td><td>{lvp.live.entries}</td><td>{lvp.paper.entries}</td></tr>
-                <tr><td className="muted">completed</td><td>{lvp.live.completed}</td><td>{lvp.paper.completed}</td></tr>
-                <tr>
-                  <td className="muted">completion rate</td>
-                  <td>{lvp.live.completionRatePct !== null ? `${lvp.live.completionRatePct.toFixed(0)}%` : "—"}</td>
-                  <td>{lvp.paper.completionRatePct !== null ? `${lvp.paper.completionRatePct.toFixed(0)}%` : "—"}</td>
-                </tr>
-                <tr>
-                  <td className="muted">median latency</td>
-                  <td>{lvp.live.medianLatencyMin !== null ? `${lvp.live.medianLatencyMin.toFixed(0)}m` : "—"}</td>
-                  <td>{lvp.paper.medianLatencyMin !== null ? `${lvp.paper.medianLatencyMin.toFixed(0)}m` : "—"}</td>
-                </tr>
-                <tr>
-                  <td className="muted">avg credit</td>
-                  <td>{lvp.live.avgCredit !== null ? lvp.live.avgCredit.toFixed(2) : "—"}</td>
-                  <td>{lvp.paper.avgCredit !== null ? lvp.paper.avgCredit.toFixed(2) : "—"}</td>
-                </tr>
-                <tr>
-                  <td className="muted">completion gap</td>
-                  <td colSpan={2} className={lvp.completionGapPct !== null && lvp.completionGapPct > lvp.abort.gapLimitPct ? "pnl-neg" : ""}>
-                    {lvp.completionGapPct !== null ? `${lvp.completionGapPct.toFixed(1)}pp (halt if > ${lvp.abort.gapLimitPct.toFixed(0)}pp with ≥${lvp.abort.minLiveEntries} live entries)` : "—"}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </section>
-        )}
+        {lvp !== null && <LiveVsPaperCard lvp={lvp} />}
       </div>
 
       <section className="card">

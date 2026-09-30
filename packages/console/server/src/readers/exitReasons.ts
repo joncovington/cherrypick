@@ -91,17 +91,22 @@ const SPECS: Partial<Record<ExitReasonsModule, Spec>> = {
 };
 
 const NO_CONCEPT = "flies has no exit_reason column and no management-events table — 0DTE legs settle or stop, with no single exit-reason concept a multi-day structure has";
-const NO_LEDGER = (module: string) => `${module} exit reasons unavailable — its paper ledger has no readable position table yet`;
+const NO_LEDGER = (module: string, file: string) =>
+  `${module} exit reasons unavailable — its ${file === "paper_trades.db" ? "paper" : "live"} ledger has no readable position table yet`;
 
-export function readExitReasons(config: ConsoleConfig, module: ExitReasonsModule): ExitReasonsResult {
+export function readExitReasons(
+  config: ConsoleConfig,
+  module: ExitReasonsModule,
+  file: string = "paper_trades.db",
+): ExitReasonsResult {
   const spec = SPECS[module];
   // Flies genuinely has no concept to read, not merely an absent/unreadable ledger -- a distinct
   // message from the fallback below, so "this module doesn't have exit reasons" and "this
   // module's ledger isn't there yet" don't look like the same finding.
   if (spec === undefined) return { exitReasons: { unavailable: NO_CONCEPT }, heldBack: [] };
 
-  const empty: ExitReasonsResult = { exitReasons: { unavailable: NO_LEDGER(module) }, heldBack: [] };
-  const dbPath = path.join(spec.dir(config), "paper_trades.db");
+  const empty: ExitReasonsResult = { exitReasons: { unavailable: NO_LEDGER(module, file) }, heldBack: [] };
+  const dbPath = path.join(spec.dir(config), file);
 
   return withReadOnlyDb<ExitReasonsResult>(dbPath, empty, (db) => {
     if (!hasTable(db, spec.positionsTable) || !hasColumn(db, spec.positionsTable, "exit_reason")) {

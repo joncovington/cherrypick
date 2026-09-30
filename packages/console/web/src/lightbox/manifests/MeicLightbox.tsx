@@ -209,7 +209,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
       label: MEIC_LABEL.calibration,
       render: () => <MeicPerformanceTab mode={mode} symbol={symbol} profile={profile} era={resolvedEra} />,
     },
-    { id: "performance", label: MEIC_LABEL.performance, render: () => <PerformanceSlide module="meic" /> },
+    { id: "performance", label: MEIC_LABEL.performance, render: () => <PerformanceSlide module="meic" mode={mode} /> },
     { id: "advisor", label: MEIC_LABEL.advisor, render: () => <AdvisorSlide module="meic" /> },
     { id: "positions", label: MEIC_LABEL.positions, render: () => <MeicPositionsTable mode={mode} scope={scopeArgs} /> },
     {

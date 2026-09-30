@@ -717,10 +717,14 @@ import type { OpeningRangePayload, RegimeCutsModule, RegimeCutsPayload } from "@
  * request (`GET /api/performance/:module`). `era="current"` (the default) bounds to the suite's own
  * data_epoch, matching every other era-scoped surface's default (`readers/meic.ts::CURRENT_ERA`,
  * ...); `era="ALL"` pools every session on file. */
-export function useModulePerformance(module: PerformanceModuleId, era: "current" | "ALL" = "current") {
+export function useModulePerformance(
+  module: PerformanceModuleId,
+  era: "current" | "ALL" = "current",
+  mode: TradingMode = "paper",
+) {
   return useQuery<ModulePerformanceResult>({
-    queryKey: ["performance", module, era],
-    queryFn: () => getJson<ModulePerformanceResult>(`/api/performance/${module}?era=${era}`),
+    queryKey: ["performance", module, era, mode],
+    queryFn: () => getJson<ModulePerformanceResult>(`/api/performance/${module}?era=${era}&mode=${mode}`),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   });

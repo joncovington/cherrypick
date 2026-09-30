@@ -7,7 +7,7 @@ function isPerformanceModule(v: string): v is PerformanceModuleId {
 }
 
 export function registerPerformanceRoutes(app: FastifyInstance, config: ConsoleConfig): void {
-  app.get<{ Params: { module: string }; Querystring: { era?: string } }>(
+  app.get<{ Params: { module: string }; Querystring: { era?: string; mode?: string } }>(
     "/api/performance/:module",
     async (req, reply) => {
       const { module } = req.params;
@@ -16,7 +16,8 @@ export function registerPerformanceRoutes(app: FastifyInstance, config: ConsoleC
         return { ok: false, error: `unknown module ${JSON.stringify(module)}` };
       }
       const era = req.query.era === "ALL" ? "ALL" : "current";
-      return readModulePerformance(config, module, era);
+      const mode = req.query.mode === "live" ? "live" : "paper";
+      return readModulePerformance(config, module, era, mode);
     },
   );
 }

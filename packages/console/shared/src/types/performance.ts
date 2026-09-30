@@ -5,6 +5,7 @@
 // JSON verbatim, rather than a ~20-key hand mapping to camelCase.
 
 import type { MeasurementBreak } from "./modules.js";
+import type { TradingMode } from "./status.js";
 
 export const PERFORMANCE_MODULE_SCHEMA = {
   meic: "meic_ic",
@@ -98,6 +99,8 @@ export interface ExcursionsResult {
 export interface ModulePerformanceResult {
   ok: boolean;
   module: PerformanceModuleId;
+  /** Which ledger this reads: paper (the promotion evidence) or the module's live book. */
+  mode: TradingMode;
   schema: string;
   era: { key: "current" | "ALL"; from: string | null; note: string | null };
   nRecords: number;

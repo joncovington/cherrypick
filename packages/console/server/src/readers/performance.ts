@@ -9,6 +9,7 @@ import {
   type ModulePerformanceGroup,
   type ModulePerformanceResult,
   type PerformanceModuleId,
+  type TradingMode,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { suiteEra, withReadOnlyDb } from "./db.js";
@@ -26,8 +27,11 @@ import { readExcursions } from "../services/excursionsBridge.js";
  * page.
  *
  * Every module here trades paper as its evidence source (`calibrate`'s own "paper only" rule --
- * live-tagged ledgers never feed a promotion reading), so the db path is always that module's
- * `paper_trades.db`.
+ * live-tagged ledgers never feed a promotion reading), so the default read is that module's
+ * `paper_trades.db`. `mode="live"` reads the live ledger instead, for the modules whose page has a
+ * paper/live toggle: until 2026-09-30 this slide ignored the toggle and showed paper under a live
+ * badge. A live reading is a measurement of the live book, never a promotion input, and carries no
+ * advised pairs -- advised books exist only on paper.
  */
 
 export const MODULE_SCHEMA = PERFORMANCE_MODULE_SCHEMA;
@@ -48,6 +52,26 @@ export function performanceDbPath(config: ConsoleConfig, module: PerformanceModu
   return path.join(config.paths[MODULE_DIR_KEY[module]], "paper_trades.db");
 }
 
+/**
+ * The live ledger of each module whose page carries a paper/live toggle -- the same file that
+ * module's own readers open in live mode. A module absent here has no live book to read.
+ */
+export const LIVE_LEDGER = {
+  meic: "meic_trades.db",
+  flies: "live_trades.db",
+  earnings: "earnings_trades.db",
+} as const satisfies Partial<Record<PerformanceModuleId, string>>;
+
+function hasLiveLedger(module: PerformanceModuleId): module is keyof typeof LIVE_LEDGER {
+  return module in LIVE_LEDGER;
+}
+
+/** The ledger file for `mode`, or null when the module has no live book. */
+export function ledgerFile(module: PerformanceModuleId, mode: TradingMode): string | null {
+  if (mode === "paper") return "paper_trades.db";
+  return hasLiveLedger(module) ? LIVE_LEDGER[module] : null;
+}
+
 function readBreaks(dbPath: string): MeasurementBreak[] {
   return withReadOnlyDb<MeasurementBreak[]>(dbPath, [], (db) => readMeasurementBreaks(db));
 }
@@ -65,16 +89,35 @@ export function readModulePerformance(
   config: ConsoleConfig,
   module: PerformanceModuleId,
   era: "current" | "ALL" = "current",
+  mode: TradingMode = "paper",
 ): ModulePerformanceResult {
   const schema = MODULE_SCHEMA[module];
-  const dbPath = performanceDbPath(config, module);
   const suite = suiteEra(config.paths.orchestratorConfig);
   const start = era === "current" ? suite.from : null;
+  const file = ledgerFile(module, mode);
+  if (file === null) {
+    return {
+      ok: false,
+      module,
+      mode,
+      schema,
+      era: { key: era, from: start, note: suite.note },
+      nRecords: 0,
+      groups: [],
+      exitReasons: { unavailable: `${module} has no live ledger` },
+      heldBack: [],
+      pairs: [],
+      breaks: [],
+      excursions: { ok: false, data: null, error: `${module} has no live ledger` },
+      error: `${module} has no live ledger — its performance reading is paper only`,
+    };
+  }
+  const dbPath = path.join(config.paths[MODULE_DIR_KEY[module]], file);
 
   // Independent of the metrics reading -- a query straight off the ledger, not through
   // metricsBridge -- so it's read whether or not the calibration reading itself succeeds; a
   // module whose ledger schema `core.metrics` doesn't yet know should still show its exit reasons.
-  const exits = readExitReasons(config, module);
+  const exits = readExitReasons(config, module, file);
   const breaks = readBreaks(dbPath);
   const excursions = readExcursions(module, dbPath);
 
@@ -83,6 +126,7 @@ export function readModulePerformance(
     return {
       ok: false,
       module,
+      mode,
       schema,
       era: { key: era, from: start, note: suite.note },
       nRecords: 0,
@@ -104,13 +148,15 @@ export function readModulePerformance(
   return {
     ok: true,
     module,
+    mode,
     schema,
     era: { key: era, from: start, note: suite.note },
     nRecords: res.metrics.n_records,
     groups,
     exitReasons: exits.exitReasons,
     heldBack: exits.heldBack,
-    pairs: readAdvisedPairs(config, module, groups),
+    // Advised books are paper-only by construction: a live book shadows no experiment.
+    pairs: mode === "paper" ? readAdvisedPairs(config, module, groups) : [],
     breaks,
     excursions,
     error: null,

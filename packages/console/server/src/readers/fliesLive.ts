@@ -17,9 +17,21 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { ConsoleConfig } from "../config.js";
-import type { LiveFeedRow, LiveFliesPayload, LiveGap, LivePeriod, LivePoint, LivePosition } from "@console/shared";
-import { readOnlyDb, withReadOnlyDb, num, str, readJson } from "./db.js";
-import { readFliesAnalytics, readFliesJournal, readFliesLoopStatus } from "./flies.js";
+import type {
+  LiveFeedRow,
+  LiveFliesPayload,
+  LiveGap,
+  LiveOnRisk,
+  LivePerformance,
+  LivePeriod,
+  LivePoint,
+  LivePosition,
+  LiveRiskSession,
+} from "@console/shared";
+import { PERFORMANCE_MODULE_SCHEMA } from "@console/shared";
+import { readOnlyDb, withReadOnlyDb, num, str, readJson, suiteEra } from "./db.js";
+import { readModuleMetrics } from "../services/metricsBridge.js";
+import { readFliesAnalytics, readFliesJournal, readFliesLoopStatus, readFliesPerformance } from "./flies.js";
 import { readLockStatus, sessionDateEt } from "../services/liveLock.js";
 import { readBrokerAccount } from "../services/brokerBridge.js";
 
@@ -54,7 +66,7 @@ export function periodBounds(session: string): Record<"today" | "week" | "month"
 /** core.ledgers `_flies_closed`: closed = `status = 'settled'`, net = `(gross_pnl or 0) - (fees or 0)`,
  *  session = `trade_date`. Mirrored here rather than bridged because it is a query, not a
  *  derivation; `server/test/flies-live-reader.test.ts` pins it against fixture rows. */
-function settledNet(db: Database.Database, bounds: [string, string], arm: string | null): Omit<LivePeriod, "paperNet"> {
+function settledNet(db: Database.Database, bounds: [string, string], arm: string | null): Omit<LivePeriod, "paperNet" | "onRisk"> {
   const armClause = arm !== null ? " AND arm = ?" : "";
   const params: Array<string> = [bounds[0], bounds[1], ...(arm !== null ? [arm] : [])];
   const row = db
@@ -70,6 +82,119 @@ function settledNet(db: Database.Database, bounds: [string, string], arm: string
     trades: Number(row?.["trades"] ?? 0),
     sessions: Number(row?.["sessions"] ?? 0),
   };
+}
+
+// --------------------------------------------------------------------------- which session
+function hasTable(db: Database.Database, name: string): boolean {
+  return db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name) !== undefined;
+}
+
+/** Has `day`'s session opened? Evidence, not a calendar -- the same rule `sessionPeakWorst` holds
+ *  its figure by: a `fly_snapshots` row dated `day` at or past 09:30 ET in either ledger (the paper
+ *  loop runs every session; the live loop only when armed), or any live position dated `day`. */
+function sessionOpened(liveDb: string, paperDb: string, day: string): boolean {
+  const snapshotAfterOpen = (db: Database.Database): boolean =>
+    hasTable(db, "fly_snapshots") &&
+    db
+      .prepare<[string], Record<string, unknown>>(
+        "SELECT 1 FROM fly_snapshots WHERE trade_date = ? AND substr(iteration_ts, 12, 5) >= '09:30' LIMIT 1",
+      )
+      .get(day) !== undefined;
+  const live = withReadOnlyDb(liveDb, false, (db) =>
+    snapshotAfterOpen(db) || db.prepare<[string], unknown>("SELECT 1 FROM fly_positions WHERE trade_date = ? LIMIT 1").get(day) !== undefined,
+  );
+  return live || withReadOnlyDb(paperDb, false, snapshotAfterOpen);
+}
+
+/**
+ * The session the page shows when none is asked for. Once today's session has opened, today. Before
+ * that -- overnight, pre-open, a weekend or a holiday -- the last session the pilot settled, so the
+ * page carries the numbers it just finished instead of an empty day that reads as nothing traded.
+ */
+export function resolveLiveSession(
+  config: ConsoleConfig,
+  requested: string | null,
+  today: string = sessionDateEt(),
+): { session: string; basis: LiveFliesPayload["sessionBasis"] } {
+  if (requested !== null) return { session: requested, basis: "requested" };
+  const liveDb = path.join(config.paths.fliesDir, "live_trades.db");
+  const paperDb = path.join(config.paths.fliesDir, "paper_trades.db");
+  if (sessionOpened(liveDb, paperDb, today)) return { session: today, basis: "today" };
+  const last = withReadOnlyDb<string | null>(liveDb, null, (db) =>
+    str(
+      db
+        .prepare<[string], Record<string, unknown>>(
+          "SELECT MAX(trade_date) AS d FROM fly_positions WHERE status = 'settled' AND trade_date < ?",
+        )
+        .get(today)?.["d"],
+    ),
+  );
+  return last !== null ? { session: last, basis: "last_completed" } : { session: today, basis: "today" };
+}
+
+// --------------------------------------------------------------------------- return on session peak risk
+/**
+ * Every session the arm has rows for, newest first: settled net (the `settledNet` rule) against
+ * the day's largest `fly_live_marks.open_margin`. The marks table is the loop's whole book, not one
+ * arm's -- the pilot runs one arm a day, and a session only appears here when this arm traded it.
+ */
+export function riskSessions(db: Database.Database, arm: string | null): LiveRiskSession[] {
+  const armClause = arm !== null ? " AND arm = ?" : "";
+  const armParams: string[] = arm !== null ? [arm] : [];
+  const days = new Map<string, LiveRiskSession>();
+  const at = (d: string): LiveRiskSession => {
+    let s = days.get(d);
+    if (s === undefined) {
+      s = { session: d, trades: 0, net: 0, peakRisk: null, peakAt: null, onRisk: null, complete: true };
+      days.set(d, s);
+    }
+    return s;
+  };
+  for (const r of db
+    .prepare<string[], Record<string, unknown>>(
+      `SELECT trade_date, COUNT(*) AS trades, SUM(COALESCE(gross_pnl, 0) - COALESCE(fees, 0)) AS net
+         FROM fly_positions WHERE status = 'settled'${armClause} GROUP BY trade_date`,
+    )
+    .all(...armParams)) {
+    const s = at(String(r["trade_date"] ?? ""));
+    s.trades = Number(r["trades"] ?? 0);
+    s.net = Number(r["net"] ?? 0);
+  }
+  for (const r of db
+    .prepare<string[], Record<string, unknown>>(
+      `SELECT DISTINCT trade_date FROM fly_positions
+        WHERE COALESCE(status, '') NOT IN ('settled', 'closed', 'cancelled', 'voided')${armClause}`,
+    )
+    .all(...armParams)) {
+    at(String(r["trade_date"] ?? "")).complete = false;
+  }
+  if (hasTable(db, "fly_live_marks")) {
+    // One row per day: SQLite returns the bare `iteration_ts` from the row MAX() chose.
+    for (const r of db
+      .prepare<[], Record<string, unknown>>(
+        "SELECT trade_date, iteration_ts, MAX(open_margin) AS peak FROM fly_live_marks GROUP BY trade_date",
+      )
+      .all()) {
+      const s = days.get(String(r["trade_date"] ?? ""));
+      const peak = num(r["peak"]);
+      if (s === undefined || peak === null || !(peak > 0)) continue;
+      s.peakRisk = peak;
+      s.peakAt = str(r["iteration_ts"]);
+    }
+  }
+  const out = [...days.values()].filter((s) => s.session !== "");
+  for (const s of out) s.onRisk = s.complete && s.peakRisk !== null ? s.net / s.peakRisk : null;
+  return out.sort((a, b) => b.session.localeCompare(a.session));
+}
+
+/** Σ net / Σ peak over the finished sessions in `bounds` that recorded a peak. The numerator is
+ *  matched to the denominator: a session with no recorded peak is counted in `of`, never in either. */
+export function onRiskOver(sessions: LiveRiskSession[], bounds: [string, string] | null = null): LiveOnRisk {
+  const inScope = sessions.filter((s) => s.trades > 0 && (bounds === null || (s.session >= bounds[0] && s.session <= bounds[1])));
+  const covered = inScope.filter((s) => s.complete && s.peakRisk !== null);
+  const net = covered.reduce((a, s) => a + s.net, 0);
+  const peakRisk = covered.reduce((a, s) => a + (s.peakRisk ?? 0), 0);
+  return { net, peakRisk, ratio: peakRisk > 0 ? net / peakRisk : null, sessions: covered.length, of: inScope.length };
 }
 
 // --------------------------------------------------------------------------- the day's rows
@@ -240,9 +365,43 @@ function prevClose(config: ConsoleConfig, symbol: string, session: string): numb
   }
 }
 
+// --------------------------------------------------------------------------- performance
+/** The flies completion tab's live-mode read (`readFliesPerformance`) and the performance slide's
+ *  calibration reading, both for the pilot's arm in their own default scopes -- the whole live
+ *  record, not bounded by `?session` -- carried, not recomputed. */
+function livePerformance(config: ConsoleConfig, arm: string | null, sessions: LiveRiskSession[]): LivePerformance {
+  const p = readFliesPerformance(config, "live", "daily", { arm, date: null, symbol: null, era: null });
+  const from = suiteEra(config.paths.orchestratorConfig).from;
+  // Memoised in the bridge (120 s), so the page's 15 s poll does not spawn a process per poll.
+  const metrics = readModuleMetrics(path.join(config.paths.fliesDir, "live_trades.db"), PERFORMANCE_MODULE_SCHEMA.flies, from, null);
+  const group = arm !== null ? metrics.metrics?.groups[arm] : undefined;
+  return {
+    arm,
+    tiles: {
+      trades: p.tiles.trades,
+      sessions: p.tiles.sessions,
+      netPnl: p.tiles.netPnl,
+      winRatePct: p.tiles.winRatePct,
+      profitFactor: p.tiles.profitFactor,
+      feeDragPct: p.tiles.feeDragPct,
+      completionRatePct: p.tiles.completionRatePct,
+    },
+    risk: p.risk,
+    maxDrawdown: p.equity.length > 0 ? Math.max(...p.equity.map((e) => e.drawdown), 0) : null,
+    equity: p.equity,
+    completion: p.completion,
+    completionTrend: p.completionTrend,
+    liveVsPaper: p.liveVsPaper,
+    onRisk: onRiskOver(sessions),
+    sessions,
+    calibration: { reading: group?.reading ?? null, from, error: metrics.ok ? null : metrics.error },
+  };
+}
+
 // --------------------------------------------------------------------------- the payload
 export function readFliesLive(config: ConsoleConfig, session: string | null = null): LiveFliesPayload {
-  const day = session ?? sessionDateEt();
+  const resolved = resolveLiveSession(config, session);
+  const day = resolved.session;
   const liveDb = path.join(config.paths.fliesDir, "live_trades.db");
   const paperDb = path.join(config.paths.fliesDir, "paper_trades.db");
   const lock = readLockStatus(config);
@@ -266,8 +425,9 @@ export function readFliesLive(config: ConsoleConfig, session: string | null = nu
   const bounds = periodBounds(day);
   const fliesModule = lock.modules.find((m) => m.id === "flies");
 
-  const empty = (): Omit<LivePeriod, "paperNet"> => ({ net: 0, trades: 0, sessions: 0 });
+  const empty = (): Omit<LivePeriod, "paperNet" | "onRisk"> => ({ net: 0, trades: 0, sessions: 0 });
   const ledger = readOnlyDb(liveDb, (db) => ({
+    risk: riskSessions(db, armName),
     periods: {
       today: settledNet(db, bounds.today, armName),
       week: settledNet(db, bounds.week, armName),
@@ -286,10 +446,13 @@ export function readFliesLive(config: ConsoleConfig, session: string | null = nu
   }));
 
   const value = ledger.status === "ok" ? ledger.value : null;
+  const risk = value?.risk ?? [];
   const period = (k: "today" | "week" | "month" | "year"): LivePeriod => ({
     ...(value?.periods[k] ?? empty()),
     paperNet: paper?.[k] ?? null,
+    onRisk: onRiskOver(risk, bounds[k]),
   });
+  const performance = livePerformance(config, armName, risk);
   const positions = value?.positions ?? [];
   const marks = value?.marks ?? { markPnl: [], openMargin: [], latest: null };
   const dd = drawdownOf(marks.markPnl);
@@ -313,6 +476,7 @@ export function readFliesLive(config: ConsoleConfig, session: string | null = nu
   return {
     generatedAt: new Date().toISOString(),
     session: day,
+    sessionBasis: resolved.basis,
     ledger: ledger.status,
     ledgerError: ledger.status === "failed" ? ledger.error : null,
     arm: {
@@ -347,6 +511,7 @@ export function readFliesLive(config: ConsoleConfig, session: string | null = nu
     },
     positions,
     feed,
+    performance,
     series: {
       spx,
       spxBaseline: base !== null ? { value: base, source: baseline !== null ? "prev_close" : "first_tick" } : null,

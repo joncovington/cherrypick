@@ -146,6 +146,37 @@ describe("readModulePerformance", () => {
     expect(seen).toEqual([[null, null]]);
   });
 
+  it("mode='live' reads each toggled module's own live ledger, and paper by default", () => {
+    // Shown to fail before 2026-09-30: the slide ignored the page's paper/live toggle and always
+    // read paper_trades.db, so a live-badged flies page showed the paper book's numbers.
+    const seen: string[] = [];
+    setMetricsCaller((db) => {
+      seen.push(path.basename(db));
+      return READING;
+    });
+    const config = fakeConfig(null);
+    readModulePerformance(config, "flies", "ALL");
+    readModulePerformance(config, "flies", "ALL", "live");
+    readModulePerformance(config, "meic", "ALL", "live");
+    readModulePerformance(config, "earnings", "ALL", "live");
+    expect(seen).toEqual(["paper_trades.db", "live_trades.db", "meic_trades.db", "earnings_trades.db"]);
+    const live = readModulePerformance(config, "flies", "ALL", "live");
+    expect(live.mode).toBe("live");
+    expect(live.pairs).toEqual([]); // advised books are paper-only
+  });
+
+  it("mode='live' on a module with no live book refuses, rather than reading paper", () => {
+    const seen: string[] = [];
+    setMetricsCaller((db) => {
+      seen.push(db);
+      return READING;
+    });
+    const out = readModulePerformance(fakeConfig(null), "curve", "ALL", "live");
+    expect(out.ok).toBe(false);
+    expect(out.error).toMatch(/no live ledger/);
+    expect(seen).toEqual([]);
+  });
+
   it("reports a refused read as an error, never an empty groups array", () => {
     setMetricsCaller(() => ({ ok: false, metrics: null, error: "unknown schema" }));
     const out = readModulePerformance(fakeConfig(null), "curve", "ALL");

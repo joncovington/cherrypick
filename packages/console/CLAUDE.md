@@ -165,7 +165,10 @@ alone):
   reconciled once per session via `usePrefsSync`), never a react-query hook. A `?mode=` in the URL
   always outranks the preference; `useMode` states both directions.
 - **Paper/live isolation**: every trade payload carries `mode` from its source DB (`paper_trades.db`
-  vs the live DB). Mode is never merged across sources or inferred client-side.
+  vs the live DB). Mode is never merged across sources or inferred client-side. **Every slide under
+  a page's paper/live toggle follows it** — the shared performance slide included
+  (`readers/performance.ts::LIVE_LEDGER`); a module with no live book refuses a live read rather
+  than showing paper under a live badge.
 - **A module's own evidence window is the default.** Reads default to the module's era/study window
   (MEIC's `CURRENT_ERA`, flies' era model); modules with no era column (earnings, suite report and
   review totals) bound to the suite `data_epoch` via `readers/db.ts::suiteEra`, the lever `calibrate`
@@ -258,6 +261,20 @@ net per period, the intraday series and the broker account. Rules, stated on the
   return what the memo holds and start a refresh; a synchronous spawn skeletons the page for 10–20s.
 - `readOnlyDb`, not `withReadOnlyDb`, for the live ledger: "no live ledger here" and "the read threw"
   are different facts and the page shows which. No button here touches an order.
+- **Before today's session opens, the page is the last session the pilot settled** (`sessionBasis`,
+  `resolveLiveSession`), and says so. "Opened" is evidence, not a calendar — the rule
+  `sessionPeakWorst` holds by: a `fly_snapshots` row at or past 09:30 ET in either ledger, or a live
+  position dated today.
+- **Return on session peak risk** is settled net over the session's peak
+  `fly_live_marks.open_margin` — the gate's own figure, so a day that recycles its budget can exceed
+  100%. Never call it "max risk": that reads as the buying-power cap, which is a limit, not a use. Only finished sessions that
+  recorded a peak count, and the numerator is matched to them: a session before the marks table is
+  `n/r` and counted in `of`, never in the ratio.
+- The performance block carries both flies study tabs for the configured `live.arm`, never
+  recomputed: the **completion** slide (`readFliesPerformance` in live mode, rendered through
+  `PerformanceTab.tsx`'s own exported cards) and the **performance** slide's calibration reading
+  (`core.metrics` over `live_trades.db`, rendered by `MetricTiles`). Their two max drawdowns differ on
+  purpose — daily against per trade — and the page labels which is which.
 
 **Regime-cuts slide** (flies and MEIC) — `components/RegimeCutsTab.tsx` over
 `GET /api/<module>/regime-cuts[?session=YYYY-MM-DD]` (`routes/modules.ts` → `readers/regimeCuts.ts`).

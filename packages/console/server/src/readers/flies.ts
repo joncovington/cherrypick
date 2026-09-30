@@ -2,7 +2,7 @@ import { NO_RANGE, rangeClauses, type DateRange } from "./dateRange.js";
 import path from "node:path";
 import type { FliesPayload, FliesBookRow, FliesPositionRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { hasColumn, memoOnStore, readOnlyDb, withReadOnlyDb, num, str, type DatabaseHandle } from "./db.js";
+import { hasColumn, memoOnStore, readJson, readOnlyDb, withReadOnlyDb, num, str, type DatabaseHandle } from "./db.js";
 import {
   EMPTY_RISK,
   equityCurve,
@@ -1774,13 +1774,17 @@ export function readFliesPerformance(
     };
   });
 
-  // live vs paper: CONTEMPORANEOUS — paper restricted to the live arm's sessions.
+  // live vs paper: CONTEMPORANEOUS — paper restricted to the live arm's sessions. The arm is the
+  // pilot's configured `live.arm`: until 2026-09-30 this read 'gex' literally, so once the pilot
+  // moved to control on 2026-09-18 the panel and its abort rule measured only the July sessions.
+  const liveCfg = ((readJson(config.paths.fliesConfig) ?? {})["live"] ?? {}) as Record<string, unknown>;
+  const pilotArm = str(liveCfg["arm"]) ?? "gex";
   result.liveVsPaper = withReadOnlyDb(path.join(config.paths.fliesDir, "live_trades.db"), null, (liveDb) => {
     const days = liveDb
-      .prepare<[], { d: string }>(
-        "SELECT DISTINCT trade_date AS d FROM fly_positions WHERE arm = 'gex' AND entry_mode = 'legged' AND status != 'cancelled' ORDER BY trade_date",
+      .prepare<[string], { d: string }>(
+        "SELECT DISTINCT trade_date AS d FROM fly_positions WHERE arm = ? AND entry_mode = 'legged' AND status != 'cancelled' ORDER BY trade_date",
       )
-      .all()
+      .all(pilotArm)
       .map((r) => r.d);
     if (days.length === 0) return null;
     const marks = days.map(() => "?").join(",");
@@ -1788,9 +1792,9 @@ export function readFliesPerformance(
       const rows = db
         .prepare<string[], Record<string, unknown>>(
           `SELECT kind, credit, completion_latency_min FROM fly_positions
-            WHERE arm = 'gex' AND entry_mode = 'legged' AND status != 'cancelled' AND trade_date IN (${marks})`,
+            WHERE arm = ? AND entry_mode = 'legged' AND status != 'cancelled' AND trade_date IN (${marks})`,
         )
-        .all(...days);
+        .all(pilotArm, ...days);
       const done = rows.filter((r) => r["kind"] === "fly");
       const lat = done.map((r) => num(r["completion_latency_min"])).filter((v): v is number => v !== null && v !== 0);
       const credits = rows.map((r) => num(r["credit"])).filter((v): v is number => v !== null);
@@ -1811,7 +1815,7 @@ export function readFliesPerformance(
         : null;
     const armed = live.entries >= ABORT_MIN_LIVE_ENTRIES;
     return {
-      arm: "gex",
+      arm: pilotArm,
       live,
       paper,
       completionGapPct: gap !== null ? gap * 100 : null,

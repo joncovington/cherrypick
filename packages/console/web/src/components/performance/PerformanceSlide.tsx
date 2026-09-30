@@ -1,4 +1,5 @@
 import { Card } from "../DataTable";
+import type { TradingMode } from "@console/shared";
 import { useModulePerformance, type PerformanceModuleId } from "../../lib/api";
 import { MetricTiles } from "./MetricTiles";
 import { ExcursionsCard } from "./ExcursionsCard";
@@ -18,8 +19,8 @@ import { PairedABCard } from "./PairedABCard";
  * own book), so the base's chip says "every paired experiment" only when all of them are below
  * the gate.
  */
-export function PerformanceSlide({ module }: { module: PerformanceModuleId }) {
-  const { data, isLoading, dataUpdatedAt } = useModulePerformance(module, "current");
+export function PerformanceSlide({ module, mode = "paper" }: { module: PerformanceModuleId; mode?: TradingMode }) {
+  const { data, isLoading, dataUpdatedAt } = useModulePerformance(module, "current", mode);
 
   if (isLoading || data === undefined) {
     return (
@@ -51,6 +52,12 @@ export function PerformanceSlide({ module }: { module: PerformanceModuleId }) {
 
   return (
     <div className="cards cards-wide">
+      {data.mode === "live" && (
+        <p className="muted" style={{ fontSize: 12 }}>
+          the <strong>live</strong> ledger — a measurement of the live book, not a promotion reading (those are
+          paper only, and so are advised A/B pairs)
+        </p>
+      )}
       {data.era.note !== null && (
         <p className="muted" style={{ fontSize: 12 }}>
           scoped to the suite's current evidence window ({data.era.from ?? "all time"}) — {data.era.note}

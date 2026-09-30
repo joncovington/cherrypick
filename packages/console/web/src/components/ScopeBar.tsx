@@ -130,12 +130,12 @@ export function TabStrip<T extends string>({
  * One table's page state, with the reset every filter change needs: an offset
  * into a result set that no longer exists points nowhere.
  */
-export function usePage(resetKeys: unknown[] = []): {
+export function usePage(resetKeys: unknown[] = [], initialLimit: number = FIRST_PAGE.limit): {
   page: PageState;
   setOffset: (v: number) => void;
   setLimit: (v: number) => void;
 } {
-  const [page, setPage] = useState<PageState>(FIRST_PAGE);
+  const [page, setPage] = useState<PageState>({ ...FIRST_PAGE, limit: initialLimit });
   const key = JSON.stringify(resetKeys);
   const seen = useRef(key);
   if (seen.current !== key) {

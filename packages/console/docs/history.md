@@ -93,6 +93,17 @@ whole page on skeletons for the broker's 10–20s round-trip; the bridge became 
 recorder also samples the frozen pre-open spot, which drew a flat line ramping into the open — hence
 clipping to regular hours.
 
+On 2026-09-30 the page gained return on session peak risk (per session and per period tile) and the live
+figures of both flies study tabs (completion and performance), and began showing the last settled session until the next one opens
+— overnight it had read the new calendar day, which is empty. Carrying the tab's live-vs-paper panel
+found it hard-coded to arm `'gex'`: the pilot moved to `control` on 2026-09-18, so the panel and its
+abort rule had measured only the four July–August sessions. It now reads `live.arm`; the abort rule
+armed at 30 live entries, and the gap was 1.3pp against a 15pp limit.
+
+The same day the shared performance slide was found ignoring the paper/live toggle on flies, MEIC
+and earnings: it always read `paper_trades.db`, so a live-badged page showed the paper book. It now
+reads each module's live ledger in live mode, with no advised pairs (they exist only on paper).
+
 ## Trade table standard rollout (2026-09-24 → 2026-09-25)
 
 Flies first (2026-09-24), then meic, bwb, earnings, calendars, pmcc and curve on 2026-09-25 — all seven

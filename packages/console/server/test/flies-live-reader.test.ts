@@ -7,9 +7,10 @@ import Fastify from "fastify";
 import type { ConsoleConfig } from "../src/config.js";
 import { registerSecurity } from "../src/security.js";
 import { registerLiveRoutes } from "../src/routes/live.js";
-import { drawdownOf, periodBounds, readFliesLive } from "../src/readers/fliesLive.js";
+import { drawdownOf, periodBounds, readFliesLive, resolveLiveSession } from "../src/readers/fliesLive.js";
 import { FETCHING, setBrokerCaller, settleBrokerRead, shape } from "../src/services/brokerBridge.js";
 import { closePooledDbs } from "../src/readers/db.js";
+import { resetMetricsCache, setMetricsCaller } from "../src/services/metricsBridge.js";
 
 /**
  * The Live page's payload. What is pinned: the settled-net rule (core.ledgers `_flies_closed`:
@@ -93,11 +94,14 @@ beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "console-live-"));
   config = cfg(tmp);
   setBrokerCaller(async () => ({ ok: false, account: null, error: "no broker in tests" }));
+  setMetricsCaller(() => ({ ok: true, metrics: { schema: "fly_book", n_records: 0, groups: {} }, error: null }));
 });
 
 afterEach(() => {
   closePooledDbs();
   setBrokerCaller();
+  setMetricsCaller();
+  resetMetricsCache();
 });
 
 describe("period bounds", () => {
@@ -123,7 +127,10 @@ describe("the live payload", () => {
   it("reports an absent live ledger as absent, not as an empty day", async () => {
     const first = readFliesLive(config, "2026-09-17");
     expect(first.ledger).toBe("absent");
-    expect(first.periods.today).toEqual({ net: 0, trades: 0, sessions: 0, paperNet: null });
+    expect(first.periods.today).toEqual({
+      net: 0, trades: 0, sessions: 0, paperNet: null,
+      onRisk: { net: 0, peakRisk: 0, ratio: null, sessions: 0, of: 0 },
+    });
     expect(first.buyingPower.cap).toBe(1000);
     // the broker read never gates the page: a cold start answers "fetching", the next poll has it
     expect(first.buyingPower.account).toBeNull();
@@ -152,7 +159,7 @@ describe("the live payload", () => {
 
     const out = readFliesLive(config, "2026-09-17");
     expect(out.ledger).toBe("ok");
-    expect(out.periods.today).toEqual({ net: 23.11, trades: 1, sessions: 1, paperNet: 100 });
+    expect(out.periods.today).toMatchObject({ net: 23.11, trades: 1, sessions: 1, paperNet: 100 });
     expect(out.periods.week.net).toBeCloseTo(23.11 - 313.44, 6);
     expect(out.periods.week.trades).toBe(2);
     expect(out.periods.month.net).toBeCloseTo(23.11 - 313.44 + 90, 6);
@@ -192,6 +199,141 @@ describe("the live payload", () => {
     const a = out.positions.find((p) => p.positionId === "A")!;
     expect(a.mark).toEqual({ at: "2026-09-17T10:32:00-04:00", structureMid: -2.0, markPnl: -103.44, restingLimit: 0.9 });
     expect(a.entryFillStatus).toBe("filled");
+  });
+});
+
+describe("return on session peak risk", () => {
+  function marks(db: Database.Database, day: string, margins: number[]) {
+    const mk = db.prepare("INSERT INTO fly_live_marks (iteration_ts, trade_date, position_id, open_margin) VALUES (?,?,?,?)");
+    margins.forEach((m, i) => mk.run(`${day}T10:3${i}:00-04:00`, day, "X", m));
+  }
+
+  it("divides each finished session's settled net by its peak open margin, and matches the numerator", () => {
+    const live = new Database(path.join(tmp, "flies", "live_trades.db"));
+    live.exec(DDL);
+    pos(live, "A1", "2026-09-15", { gross_pnl: 110, fees: 10 }); // +100
+    pos(live, "A2", "2026-09-15", { gross_pnl: -10, fees: 10 }); // -20
+    pos(live, "G1", "2026-09-15", { arm: "gex", gross_pnl: 999, fees: 0 }); // another arm: not in net
+    marks(live, "2026-09-15", [200, 300, 250]); // peak 300, second tick
+    pos(live, "B1", "2026-09-16", { gross_pnl: -140, fees: 10 }); // -150, no marks: not recorded
+    pos(live, "C1", "2026-09-17", { gross_pnl: 60, fees: 10 }); // +50 settled...
+    pos(live, "C2", "2026-09-17", { status: "open", gross_pnl: null, pnl: null }); // ...one still open
+    marks(live, "2026-09-17", [100]);
+    live.close();
+
+    const out = readFliesLive(config, "2026-09-17");
+    expect(out.performance.sessions.map((s) => [s.session, s.complete, s.peakRisk])).toEqual([
+      ["2026-09-17", false, 100],
+      ["2026-09-16", true, null],
+      ["2026-09-15", true, 300],
+    ]);
+    const s15 = out.performance.sessions[2]!;
+    expect(s15.net).toBeCloseTo(80, 6);
+    expect(s15.onRisk).toBeCloseTo(80 / 300, 9);
+    expect(s15.peakAt).toBe("2026-09-15T10:31:00-04:00");
+    expect(out.performance.sessions[0]!.onRisk).toBeNull(); // open: the settled +50 is not the day's result
+    expect(out.performance.sessions[1]!.onRisk).toBeNull(); // no peak recorded: never a zero denominator
+
+    // Only 09-15 is both finished and recorded, so the -150 and the +50 stay out of the numerator
+    // too -- counted in `of`, never in the ratio.
+    const want = { net: 80, peakRisk: 300, sessions: 1, of: 3 };
+    expect(out.performance.onRisk).toMatchObject(want);
+    expect(out.performance.onRisk.ratio).toBeCloseTo(80 / 300, 9);
+    expect(out.periods.week.onRisk).toMatchObject(want);
+    expect(out.periods.today.onRisk).toEqual({ net: 0, peakRisk: 0, ratio: null, sessions: 0, of: 1 });
+  });
+});
+
+describe("which session the page shows", () => {
+  function snapshot(file: string, ts: string) {
+    const db = new Database(path.join(tmp, "flies", file));
+    db.exec("CREATE TABLE IF NOT EXISTS fly_snapshots (id INTEGER PRIMARY KEY, iteration_ts TEXT, trade_date TEXT, status TEXT)");
+    db.prepare("INSERT INTO fly_snapshots (iteration_ts, trade_date, status) VALUES (?,?,'ok')").run(ts, ts.slice(0, 10));
+    db.close();
+  }
+
+  it("is the last settled session until today's opens, then today", () => {
+    const live = new Database(path.join(tmp, "flies", "live_trades.db"));
+    live.exec(DDL);
+    pos(live, "A", "2026-09-16");
+    pos(live, "B", "2026-09-17");
+    live.close();
+    // Overnight / pre-open: yesterday's numbers, not an empty day.
+    expect(resolveLiveSession(config, null, "2026-09-18")).toEqual({ session: "2026-09-17", basis: "last_completed" });
+    // A pre-open paper tick is not the open.
+    snapshot("paper_trades.db", "2026-09-18T09:25:00-04:00");
+    closePooledDbs();
+    expect(resolveLiveSession(config, null, "2026-09-18").basis).toBe("last_completed");
+    // The paper loop's 09:30 tick is.
+    snapshot("paper_trades.db", "2026-09-18T09:30:00-04:00");
+    closePooledDbs();
+    expect(resolveLiveSession(config, null, "2026-09-18")).toEqual({ session: "2026-09-18", basis: "today" });
+    // An asked-for session is always that session.
+    expect(resolveLiveSession(config, "2026-09-16", "2026-09-18")).toEqual({ session: "2026-09-16", basis: "requested" });
+  });
+
+  it("is today once the pilot has a row for it, and today when nothing was ever settled", () => {
+    const live = new Database(path.join(tmp, "flies", "live_trades.db"));
+    live.exec(DDL);
+    pos(live, "A", "2026-09-17");
+    pos(live, "B", "2026-09-18", { status: "open", gross_pnl: null, pnl: null });
+    live.close();
+    expect(resolveLiveSession(config, null, "2026-09-18").basis).toBe("today");
+    expect(resolveLiveSession(config, null, "2026-09-10")).toEqual({ session: "2026-09-10", basis: "today" });
+  });
+});
+
+describe("the calibration reading", () => {
+  it("is the performance slide's core.metrics read of the LIVE ledger, for the pilot's arm", () => {
+    const asked: string[] = [];
+    setMetricsCaller((dbPath, schema) => {
+      asked.push(`${path.basename(dbPath)}|${schema}`);
+      return {
+        ok: true,
+        metrics: {
+          schema,
+          n_records: 3,
+          groups: {
+            control: { reading: { sample: 2, expectancy: 11.5 }, session_nets: [], trade_nets: [] },
+            gex: { reading: { sample: 1, expectancy: -4 }, session_nets: [], trade_nets: [] },
+          },
+        },
+        error: null,
+      };
+    });
+    const out = readFliesLive(config, "2026-09-17");
+    expect(asked).toEqual(["live_trades.db|fly_book"]);
+    expect(out.performance.calibration.reading).toEqual({ sample: 2, expectancy: 11.5 });
+    expect(out.performance.calibration.error).toBeNull();
+
+    setMetricsCaller(() => ({ ok: false, metrics: null, error: "calibration metrics unavailable" }));
+    resetMetricsCache();
+    const refused = readFliesLive(config, "2026-09-17").performance.calibration;
+    expect(refused).toMatchObject({ reading: null, error: "calibration metrics unavailable" });
+  });
+});
+
+describe("live vs paper", () => {
+  it("measures the pilot's configured arm, not a hard-coded one", () => {
+    const live = new Database(path.join(tmp, "flies", "live_trades.db"));
+    live.exec(DDL);
+    live.exec("ALTER TABLE fly_positions ADD COLUMN completion_latency_min REAL");
+    pos(live, "C1", "2026-09-17", { credit: 2.4, completion_latency_min: 30 });
+    pos(live, "C2", "2026-09-17", { kind: "short_vertical", credit: 2.2 });
+    pos(live, "G1", "2026-08-03", { arm: "gex", credit: 1.3, completion_latency_min: 50 });
+    live.close();
+    const paper = new Database(path.join(tmp, "flies", "paper_trades.db"));
+    paper.exec(DDL);
+    paper.exec("ALTER TABLE fly_positions ADD COLUMN completion_latency_min REAL");
+    pos(paper, "P1", "2026-09-17", { credit: 2.3, completion_latency_min: 20 });
+    pos(paper, "P2", "2026-08-03", { credit: 2.3, completion_latency_min: 20 }); // not a live control session
+    paper.close();
+
+    // Shown to fail before 2026-09-30: the arm was the literal 'gex', so this read G1 alone.
+    const lvp = readFliesLive(config, "2026-09-17").performance.liveVsPaper!;
+    expect(lvp.arm).toBe("control");
+    expect(lvp.live).toMatchObject({ sessions: 1, entries: 2, completed: 1, completionRatePct: 50 });
+    expect(lvp.paper).toMatchObject({ sessions: 1, entries: 1, completed: 1, completionRatePct: 100 });
   });
 });
 
