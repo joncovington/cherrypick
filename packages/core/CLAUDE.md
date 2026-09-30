@@ -1,133 +1,105 @@
 # cherrypick-core
 
-Shared library for the Cherrypick trading suite — auth, broker, calendar, dxfeed, fees, gex, risk, db,
-and profiles primitives, consumed by every module under `../` as `cherrypick.core.*`. See
-[README.md](README.md) for the design invariants and package layout; [CUTOVER.md](CUTOVER.md) is the
-historical record of the original submodule cutover from the pre-monorepo, multi-repo world.
+Shared library for the suite, consumed by every package as `cherrypick.core.*`. See
+[README.md](README.md) for the design invariants and layout; [CUTOVER.md](CUTOVER.md) is the frozen
+record of the original submodule cutover.
 
-## This monorepo is the source of truth
-
-`packages/core` was landed from the standalone `cherrypick-core` GitHub repo via `git subtree add`,
-full history preserved. That standalone repo is now archived, read-only. Core is developed here from
-now on; there is no separate repo to keep in sync.
-
-The one out-of-repo consumer, `tastytrade-mcp`, is not part of this monorepo and does not get an
-in-place update — it pins the last SHA from the standalone repo, or vendors a copy.
+**This monorepo is the source of truth.** Core was landed from the standalone `cherrypick-core` repo
+by `git subtree add` (history preserved); that repo is archived read-only and there is nothing to keep
+in sync. The one out-of-repo consumer, `tastytrade-mcp`, pins the standalone repo's last SHA or
+vendors a copy — it gets no in-place update.
 
 ## Stay import-self-contained
 
-Per README.md's own invariant: **the core imports nothing from a consumer's `src/`.** Everything a
-consumer supplies is injected or parameterized, never reached back into. This is not just a design
-preference here — it is what keeps `git subtree split --prefix=packages/core` a byte-identical
-reproduction of the standalone repo, the escape hatch if core ever needs to be split back out (e.g. for
-`tastytrade-mcp`, or if the suite's structure changes again). A reach-back into a consumer's `src/`
-would make that split lossy or impossible.
+**The core imports nothing from a consumer.** Everything a consumer supplies is injected or
+parameterized, never reached back into; a new core module imports only `cherrypick.core.*` and the
+standard library. This keeps `git subtree split --prefix=packages/core` a byte-identical reproduction
+of the standalone repo — the escape hatch if core ever has to be split out again.
 
-**Do not rely on running that split as the check — it segfaults on this machine.** `git subtree` is
-a large shell script and it exits 139 under Git Bash (git 2.44.0.windows.1), verified pre-existing:
-it fails identically at commits from before any of this work, so a failure there says nothing about
-your change. Check the invariant directly instead, which is what it was standing in for:
+**Do not use that split as the check — it segfaults on this machine** (exit 139 under Git Bash, git
+2.44.0.windows.1, at commits predating any change), so a failure there says nothing about yours. Check
+the invariant directly:
 
 ```bash
 test -f packages/core/cherrypick/__init__.py && echo VIOLATION || echo "PEP 420 intact"
 grep -rn "cherrypick\.\(meic\|flies\|calendars\|pmcc\|gex\|earnings\|orchestrator\|streamer\|console\|review\|advisor\|desk\|overview\)"   packages/core/cherrypick/ --include=*.py    # must print nothing
 ```
 
-Plus the obvious one: a new core module should import from `cherrypick.core.*` and the standard
-library, nothing else. If the split ever needs to run for real, do it somewhere `git subtree` works
-rather than treating a segfault here as a finding.
+If the split must ever run for real, run it where `git subtree` works.
 
 ## Layout stays flat, not src-layout
 
-`packages/core/cherrypick/` sits directly under the package root (no `src/` prefix), unlike the other
-six packages. This is deliberate, not an oversight:
-- It matches the standalone repo's original layout exactly, so the subtree split above stays
-  byte-identical with zero path rewriting.
-- `tests/conftest.py` bootstraps `parents[1]` (the package root) onto `sys.path`, which depends on
-  this layout — moving to `src/` would break it.
-- **`cherrypick/` must never gain an `__init__.py`.** It is a native PEP 420 namespace package so it
-  composes with `cherrypick.orchestrator` (and, eventually, every other module's own
-  `cherrypick.<module>` namespace) under one `cherrypick.*` import root in the same interpreter. An
-  `__init__.py` here would break that composition for every consumer at once.
-
-One cost of staying flat: `tests/` is a top-level importable name if `packages/core` ever lands
-directly on `sys.path`. Nothing in the suite does that — core is always reached through an installed
-`cherrypick-core` distribution — so this is accepted, not a bug to fix.
+`packages/core/cherrypick/` sits directly under the package root, unlike the other packages, on
+purpose: it matches the standalone repo so the split needs no path rewriting, and `tests/conftest.py`
+bootstraps `parents[1]` onto `sys.path`, which depends on it. **`cherrypick/` must never gain an
+`__init__.py`** — it is a PEP 420 namespace package that composes with every module's
+`cherrypick.<module>` under one import root, and an `__init__.py` would break that for every consumer
+at once. Accepted cost: `tests/` would be a top-level importable name if `packages/core` ever landed
+directly on `sys.path`; nothing does that (core is always reached as an installed distribution).
 
 ## The module map
 
-What lives here and who leans on it. Deliberately one line each and no signatures — an API listing over
-this much code would drift within a sprint and nothing could verify it. The docstring at the top of each
-module is the real reference; this is the index that tells you which one to open.
+One line each, no signatures — the docstring at the top of each module is the reference; this is the
+index that tells you which one to open.
 
 | Module | What it owns |
 |---|---|
-| `home` | The one resolver for the per-user cherrypick home. Everything else derives paths from it. Since 2026-09-18 also `halt_flag_path()`, the suite's live kill switch, beside `heartbeat_path()` and for the same reason: the orchestrator writes it, every live loop polls it, and none of them can import each other — two loops had drifted recomputing it by hand. |
+| `home` | The one resolver for the per-user cherrypick home; every path derives from it. Also `heartbeat_path()` and `halt_flag_path()` — the suite's live kill switch, written by the orchestrator and polled by every live loop, none of which may import each other. |
 | `db` | SQLite connection mechanics + additive migrations, including the shared read-only opener. |
-| `logs` | One line format for every module log in the suite. |
-| `calendar` | The shared market calendar. The suite's single source of trading days, holidays and early closes (`session_close_hhmm`: 13:00 on July 3, the day after Thanksgiving and Christmas Eve when each trades, 16:00 otherwise). |
-| `fees` | The tastytrade cost model — one home for the fee schedule. Every "net" figure in the suite goes through it. |
-| `auth` | Keyring credentials + a lazy OAuth session, parameterized per consumer. `CredentialStore.designated_account()` (2026-09-18) is the one reading of the live account: unset and unreadable both None, three modules spelled it before. The one session factory stamps `User-Agent: cherrypick/<version>` on the session's HTTP client (2026-09-17), which is the client every token mint and refresh goes through -- tastytrade asks every product to identify itself on those calls, and the SDK sends only httpx's own string. |
-| `broker` | Shared tastytrade primitives: account resolution, option-chain helpers, and the live write path with its governor. `serialize` (2026-09-18) is the one SDK-object flattener and the seam's default — three byte-identical module copies before, and the identity default was the trap flies' docstring recorded. | Since 2026-09-17 `replace_order` sits beside `place_order` on the one shared `_preflight_then_submit` path (governor included) -- meic's adjust-order had been replacing through the SDK directly -- and `tests/test_broker.py` scans every package for a `dry_run=False` outside this module.
-| `execution` | The one live broker ADAPTER and the fill primitives every live loop shares (2026-09-17): `Broker` holds one session/account on one process-wide event loop, re-checks the module's injected `live_gates` on every live submit, and fails closed in the shape each caller can act on -- the flies adapter hoisted verbatim, because its three docstrings each record a live incident the next module to go live would have re-learned; `order_id_of` and `fill_state` are the one reading of a placement result and a status row (three copies before); `orphans` is broker truth against ledger belief; `watch` is the cache-gated fill-watch loop with the touch predicate and alert source injected. **Every live submission carries an `external_identifier` and an uncertain outcome is recovered by it** (2026-09-17, from tastytrade's own guidance): the broker does not deduplicate retries and has no idempotency header, so a timeout after acceptance looks like a failure before it; `Broker.place` stamps the module's identity (flies: the position id) or mints one, and when the submit raises it reads `broker.orders_today` -- terminal orders included, since the order may already have filled -- and returns the order it finds as `recovered: True` rather than a failure a caller would retry into a duplicate. **Absent and unreadable are different answers**: when that read-back itself fails the outcome is `uncertain: True` and the adapter HOLDS -- it refuses every later live submission until a read of today's orders succeeds, lifting the hold if the identity is absent and, if the order is found (placed, recorded nowhere), naming it and refusing until `acknowledge()`; a dry run is never held. That is tastytrade's retry protocol (developer.tastytrade.com/docs/guides/idempotency-and-retries) applied to the one place every module submits from. The meic and earnings CLIs, which call the seam directly, do the same recovery. Cancel-and-replace paths re-fetch the order and branch on its status first, and never place a second order over one they could not cancel. Modules keep their spec builders, gates, ledgers and loops; nothing here imports a module. The desk is deliberately not built on it. Two loops deliberately keep their own fill-watch rather than adopting `watch`: flies' burst watcher (the alert-daemon inbox and the natural-price touch predicate are its own, and it is incident-tested) and the orchestrator's desk notifier (poll-first, alerts as an accelerator); `watch` exists so the NEXT module never copies either. Fenced off from the advisor beside `broker`. |
+| `logs` | One line format for every module log. |
+| `calendar` | The suite's single source of trading days, holidays and early closes (`session_close_hhmm`: 13:00 on July 3, the day after Thanksgiving and Christmas Eve when each trades, else 16:00). |
+| `fees` | The tastytrade cost model. Every "net" figure in the suite goes through it. |
+| `auth` | Keyring credentials + a lazy OAuth session, parameterized per consumer. `CredentialStore.designated_account()` is the one reading of the live account (unset and unreadable are both None). The session factory stamps `User-Agent: cherrypick/<version>` on the HTTP client every token mint and refresh uses, as tastytrade requires. |
+| `broker` | Account resolution, option-chain helpers, and the live write path with its governor. `place_order` and `replace_order` share one `_preflight_then_submit` path (governor included); `tests/test_broker.py` scans every package for a `dry_run=False` outside this module. `serialize` is the one SDK-object flattener and the seam's default. |
+| `execution` | The one live broker ADAPTER and the fill primitives every live loop shares: `Broker` holds one session/account on one process-wide event loop and re-checks the module's injected `live_gates` on every live submit, failing closed; `order_id_of`/`fill_state` read a placement result and a status row; `orphans` is broker truth against ledger belief; `watch` is the cache-gated fill-watch loop. **Every live submission carries an `external_identifier`, and an uncertain outcome is recovered by it** — the broker does not deduplicate retries, so after a raised submit `Broker.place` reads `broker.orders_today` (terminal orders included) and returns a found order as `recovered: True` rather than a failure a caller would retry into a duplicate. **Absent and unreadable are different answers**: if that read-back fails the outcome is `uncertain: True` and the adapter HOLDS, refusing every later live submission until a read succeeds; an order found placed but recorded nowhere is named and refused until `acknowledge()`. A dry run is never held. The meic and earnings CLIs, which call the seam directly, do the same recovery (tastytrade's idempotency-and-retries guide). Cancel-and-replace re-fetches the order and branches on its status, and never places a second order over one it could not cancel. Modules keep their spec builders, gates, ledgers and loops. The desk is deliberately not built on it; flies' burst watcher and the orchestrator's desk notifier keep their own fill-watch, and `watch` exists so the next module copies neither. Fenced off from the advisor beside `broker`. |
 | `risk` | Account-level risk primitives. Fail-closed and opt-in. |
-| `live` | The per-day arm record and dead-man's switch a live loop runs under (2026-09-18, hoisted from flies when bwb became the second module to arm this way): the filename convention the supervisor mirrors, what a record contains, the two disarm reasons, the supervisor-heartbeat read, and the rule that under a supervisor arming is a record write and nothing else. |
-| `settlement` | American physical settlement's share arithmetic (calendars/pmcc), and since 2026-09-18 the official index close (`official_index_close`, tastytrade → Yahoo → Barchart, with `OFFICIAL_SOURCES` saying which answers a cash-settled ledger may settle on) — flies' chain, hoisted for bwb. |
+| `live` | The per-day arm record and dead-man's switch a live loop runs under: the filename convention the supervisor mirrors, the record's contents, the two disarm reasons, the supervisor-heartbeat read, and the rule that under a supervisor arming is a record write and nothing else. |
+| `settlement` | American physical settlement's share arithmetic (calendars/pmcc) and the official index close (`official_index_close`: tastytrade → Yahoo → Barchart, with `OFFICIAL_SOURCES` saying which answers a cash-settled ledger may settle on). |
 | `entry` | Entry-permission rules MEIC and flies must apply identically: cadence and the leg-sign rule. |
-| `structures` | Shared option-structure arithmetic — pure formulas (the straddle-based expected move) earnings and calendars must agree on. Also the nickel tick rounding every live order builder uses (`tick_floor`/`tick_ceil`, 2026-09-18; meic's and flies' copies). |
-| `streamer` | The generic persistent DXLink streaming engine. `packages/streamer` is the daemon around this. |
-| `streamcache` | The shared stream-cache schema and its SQLite helpers — the contract between producer and every reader. |
-| `streamrequests` | The subscription registry: how a module declares the symbols it needs, plus the union read the streamer subscribes from and the orchestrator checks staleness against. |
-| `dxfeed` | On-demand DXLink event collectors, for callers that want a snapshot rather than a stream. |
-| `gex` | The GEX engine: a pure function over an option-chain snapshot. Copying this once let the math drift ~75×. |
+| `structures` | Pure option-structure formulas earnings and calendars must agree on (the straddle-based expected move), and the nickel tick rounding every live order builder uses (`tick_floor`/`tick_ceil`). |
+| `streamer` | The generic persistent DXLink streaming engine; `packages/streamer` is the daemon around it. |
+| `streamcache` | The shared stream-cache schema and its SQLite helpers — the producer/reader contract. |
+| `streamrequests` | The subscription registry: how a module declares its symbols, plus the union read the streamer subscribes from and the orchestrator checks staleness against. |
+| `dxfeed` | On-demand DXLink event collectors, for a snapshot rather than a stream. |
+| `gex` | The GEX engine: a pure function over an option-chain snapshot. Copying it once let the math drift ~75×. |
 | `profiles` | The named risk-profile registry and merge engine — how a partial override becomes an effective config. |
-| `metrics` | The shared calibration metric bundle: one vocabulary for promotion evidence. Its CLI (`python -m cherrypick.core.metrics read`) groups a stamped advised row under `<tag>@<experiment_id>` and an unstamped one under the bare tag (2026-09-16) — display grouping only; `profile` on the record is untouched. |
-| `advice` | Bounded, expiring, deterministically-validated parameter advice. Both the orchestrator and the module loop validate through this same code. `session_decision` is the read-once rule all seven consuming modules share; a **baseline** decision is deliberately never persisted, so a process reaching it with an advice-less config cannot fix the day for the loop that comes after it (2026-08-25: meic and earnings each lost their most informative session to exactly that). Since 2026-09-16 the artifact carries `experiment_id` (with a fallback parse of the advisor stamp for older files), the decision record carries it, and `stamp_for` is the ONE rule every module uses to put it on an advised row and never on a control's. Since 2026-09-17 the artifact carries an `experiments` list — one entry per concurrent experiment, each validated on its own and each naming its own book `advised:<experiment name>` (`advised_tag`, `slug`) — and the decision carries the same list; `advised_books(decision)` is what every consumer opens one book per, `experiment_for`/`stamp_for(book, decision)` resolve the stamp per book, and an artifact or decision written before the list existed reads as one legacy `advised:<base>` entry. |
-| `regimecuts` | The regime-cuts artifact contract (2026-09-19): per book x per regime dimension x bucket outcomes, era-scoped by a module's `measurement_breaks` journal. Pure functions over rows a module has already computed -- `era_bounds` (the latest book-wide break on or before the session starts the era, a book added later starts at its own break, future-dated breaks are listed and ignored, `partial_session` never bounds), `assemble` (one document shape, `thin` stamped on every cell below three sessions, deterministic ordering), `write_artifact` (dated file always, latest copy only for a newer session) and the suite's first shared `write_json_atomic`. flies and MEIC each keep their own `by_regime` and hand the rows here; the console and the advisor's deep pack read the document and recompute nothing. Exists because a by-hand cut made a seven-session cell look like a finding. **Robustness stamps (2026-09-28)**, from the per-session totals a writer hands in as `session_nets` (`session_totals`): `fragile` + `robustness` on every cell (largest session's share of the cell's absolute flow >= `CONCENTRATED_SHARE`, or dropping any one session flips the sign; a seeded session-level bootstrap interval), `paired` on every dimension (buckets compared per trade on the sessions both traded, exact sign test -- a bucket that wins pooled but not paired is a kind of day, not a kind of entry), `history` on every non-thin cell from the prior dated snapshots (`write_artifact` stamps it, `load_priors`/`stamp_history`), and a document-level `multiplicity` count of what would clear the bar by chance. Exists because MEIC's `deep_positive` cell was eleven sessions -- not thin -- and half one day. `session_nets` itself is never published. |
-| `ledgers` | Per-schema readers for every module's ledger — the one home for the net, cost, capital and session rules. `concentration` answers, over those normalised records, how much of a module net rests on a single arm and whether removing it flips the sign; a total that changes sign without its largest contributor is a measurement of that arm, not of the module. Every closed record carries `experiment_id` (2026-09-16; sniffed, so an older ledger reads None) — the advisor experiment an advised row was entered under, the key that split one `advised:<base>` tag back into the experiments that used it before each experiment had its own `advised:<name>` book (2026-09-17). |
-| `regime` | The one at-or-before, staleness-bounded join against the recorded market-regime series (gex's history DB). Derived ratios/dispersion are computed here at read time, never stored. |
+| `metrics` | The shared calibration metric bundle. Its CLI (`python -m cherrypick.core.metrics read`) groups a stamped advised row under `<tag>@<experiment_id>` — display only; `profile` on the record is untouched. |
+| `advice` | Bounded, expiring, deterministically-validated parameter advice; see the next section. |
+| `regimecuts` | The regime-cuts artifact contract: per book × regime dimension × bucket, era-scoped by a module's `measurement_breaks`. `era_bounds` (latest book-wide break on or before the session starts the era; a later book starts at its own break; future-dated breaks listed and ignored; `partial_session` never bounds), `assemble` (`thin` on every cell under three sessions, deterministic order), `write_artifact` (dated file always, latest copy only for a newer session), `write_json_atomic`. Robustness stamps from the writer's per-session `session_nets` (never published): `fragile` + `robustness` per cell (one session ≥ `CONCENTRATED_SHARE` of flow, or dropping any session flips the sign; seeded session bootstrap), `paired` per dimension (same-session exact sign test — a bucket that wins pooled but not paired is a kind of day, not a kind of entry), `history` from prior snapshots, and a document-level `multiplicity` count. Modules keep their own `by_regime`; readers recompute nothing. Exists because a seven-session cell, and later an eleven-session cell that was half one day, each looked like a finding. |
+| `ledgers` | Per-schema readers for every module's ledger — the one home for net, cost, capital and session rules. `concentration` says how much of a module net rests on one arm and whether removing it flips the sign (if so, it measures that arm, not the module). Every closed record carries `experiment_id` (None on older ledgers). |
+| `regime` | The one at-or-before, staleness-bounded join against the recorded market-regime series (gex's history DB). Derived ratios are computed at read time, never stored. |
 | `viz` | A declarative dashboard-section contract plus one generic renderer. |
 
-The reason to put something here is that **two packages would otherwise disagree** — on what a fee is,
-what a trading day is, or what "net" means. That is the bar; a helper only one package uses belongs in
-that package.
+**The bar for putting something here is that two packages would otherwise disagree** — on what a fee
+is, what a trading day is, what "net" means. A helper only one package uses belongs in that package.
 
 ## The `advised:<experiment>` mechanism
 
-`cherrypick.core.advice` is the shared contract behind the AI advisor's one loop back into the
-trading modules. **`packages/advisor`** reads a module's own facts up to four times a trading day and,
-when it has a validated parameter proposal, writes a small **bounded, expiring paper-advice
-artifact** naming one or more experiments. Every module that wants to run one of these experiments
-opens a synthetic **`advised:<experiment name>` book** — a full paper position stream, planned from
-the same entry as its `control` book, that runs BESIDE `control` under the proposed parameters rather
-than replacing it. This is how the suite lets the advisor influence a paper result without ever
-letting it touch a control book, an order, or the live path.
+`cherrypick.core.advice` is the contract behind the AI advisor's one loop back into the trading
+modules. `packages/advisor` reads a module's facts up to four times a trading day and, with a
+validated proposal, writes a **bounded, expiring paper-advice artifact** naming one or more
+experiments. Each consuming module opens a synthetic **`advised:<experiment name>` book** — a full
+paper position stream planned from the same entry as `control`, running BESIDE it under the proposed
+parameters. The advisor can influence a paper result; it never touches a control book, an order, or
+the live path. Both the orchestrator and the module loop validate through this same code.
 
-Load-bearing properties every module shares:
+- **Off by default, twice over.** The suite must schedule the advisor (`scripts/advisor_checkpoint.py`)
+  and the module must declare `advice.enabled` plus its own `advice.bounds` — closed ranges the
+  proposal is validated against. A bound over a parameter the module doesn't read, or a range that
+  can't move the book from control, is a spent experiment slot, not a safe default.
+- **Every module's `advice` block is its own**, never inherited from another module's bounds.
+- **One book per experiment.** The artifact and decision carry an `experiments` list; each validated
+  entry opens its own slug-safe `advised:<experiment name>` book (`advised_tag`, `slug`). An artifact
+  or decision from before 2026-09-17 reads as one legacy `advised:<base>` entry, and modules still
+  read that tag by name for history.
+- **`advised_books(decision)`** is what every consumer opens one book per; **`stamp_for(book,
+  decision)`** is the one rule that puts `experiment_id` on an advised row and never on control's
+  (`experiment_for` resolves it per book; older artifacts fall back to parsing the advisor stamp).
+- **`session_decision` is the read-once rule, and a baseline decision is never persisted** — a process
+  reaching the day with an advice-less config must not fix that day for the loop that runs after it
+  (meic and earnings each once lost their most informative session that way).
 
-- **Off by default, twice over.** The suite has to schedule the advisor (`scripts/advisor_checkpoint.py`,
-  outside every package) and the consuming module has to declare `advice.enabled` plus its own
-  `advice.bounds` — the closed parameter ranges the advisor's proposal is validated against. A bound
-  over a parameter the module doesn't read, or a range that can't move the book away from control, is
-  a spent experiment slot, not a safe default.
-- **One book per experiment (since 2026-09-17).** The artifact carries an `experiments` list, one
-  entry per concurrent experiment; each validated entry opens its own `advised:<experiment name>`
-  book (slug-safe tag). Before that date one overlay produced one `advised:<base>` twin, so a second
-  experiment on the same base queued behind the first — modules still read the old tag by name for
-  history.
-- **`experiment_id`/`stamp_for`/`advised_books()` are the shared plumbing.** `advised_books(decision)`
-  is what every consumer opens one book per; `stamp_for(book, decision)` is the one rule that puts the
-  day's `experiment_id` on an advised row and never on control's, so the ledger, the advisor's
-  verdicts and the console's paired cards can tell one experiment's rows from the next's without
-  guessing from dates.
-- **A baseline decision is never persisted.** A process reaching a day with no valid advice cannot
-  retroactively fix that day for the loop that runs after it — an unstamped, un-advised session stays
-  that way.
-- **Every module's `advice` block is its own**, declared in that module's own config, not inherited
-  from another module's bounds — an advisor experiment is scoped to the module that opted in.
-
-The module-specific detail — which experiment names a module has run, what its own `advice.bounds`
-declare, and what its book is actually called — lives in that module's own CLAUDE.md, not here.
+A module's own experiment names, `advice.bounds` and book naming live in that module's CLAUDE.md.
 
 ## Commands
 
@@ -139,7 +111,6 @@ pytest
 
 ## Guardrails
 
-Suite-wide guardrails apply — see root `CLAUDE.md`. Worth restating here since `auth`/`broker` are
-the one place account numbers and credentials flow through: account numbers masked to `****1234`
-anywhere they surface (logs, docs, commit messages), and no AI attribution in commits — this module
-is imported by every package, so a slip here surfaces everywhere.
+`auth` and `broker` are where account numbers and credentials flow, and every package imports this
+one, so a slip here surfaces everywhere: mask account numbers to `****1234` in logs, docs and commit
+messages without exception.
