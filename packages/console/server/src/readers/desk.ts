@@ -11,7 +11,7 @@ import { readCurve, resolveCurveSession } from "./curve.js";
 import { readBwb } from "./bwb.js";
 import { readCalendars, readCalendarsEntryAttempts } from "./calendars.js";
 import { readEarningsDetail } from "./earnings.js";
-import { buildSuiteReport, readFactSet } from "../services/report.js";
+import { buildSuiteReport, readFactSet, readModuleBreaks } from "../services/report.js";
 import { sessionDateEt } from "../services/liveLock.js";
 import { readScreenMetrics } from "../services/screenBridge.js";
 
@@ -314,25 +314,27 @@ export function readDesk(config: ConsoleConfig): DeskPayload {
     }
   }
 
-  const breakByModule: Record<string, { date: string; note: string | null } | undefined> = {
-    calendars: calendars.integrity.measurementBreaks[0]
-      ? { date: calendars.integrity.measurementBreaks[0].date, note: calendars.integrity.measurementBreaks[0].note }
-      : undefined,
-    pmcc: pmcc.integrity.measurementBreaks[0]
-      ? { date: pmcc.integrity.measurementBreaks[0].date, note: pmcc.integrity.measurementBreaks[0].note }
-      : undefined,
-    curve: curve.integrity.measurementBreaks[0]
-      ? { date: curve.integrity.measurementBreaks[0].date, note: curve.integrity.measurementBreaks[0].note }
-      : undefined,
-    bwb: bwb.integrity.measurementBreaks[0]
-      ? { date: bwb.integrity.measurementBreaks[0].date, note: bwb.integrity.measurementBreaks[0].note }
-      : undefined,
-  };
+  // Every module's journaled breaks (both ledger shapes, up to today). This used to read only calendars/pmcc/curve/bwb, so meic, flies and earnings
+  // showed "no break" while their ledgers recorded several. The clock restarts on a WHOLE-BOOK break
+  // only: an arm-scoped one (an arm added) changes that arm's evidence, not the others'.
+  const breakByModule: Record<string, { date: string; note: string | null; armScoped: number } | undefined> = {};
+  // Unbounded below: a module's last break can predate the era the curve starts at, and "no break"
+  // would then be false.
+  for (const [mod, rows] of Object.entries(readModuleBreaks(config, Object.keys(suite.modules), null))) {
+    const whole = rows.find((r) => r.scope === null || r.scope === "*");
+    const armScoped = rows.filter((r) => r.scope !== null && r.scope !== "*").length;
+    breakByModule[mod] = whole
+      ? { date: whole.date, note: whole.note ?? whole.key, armScoped }
+      : armScoped > 0
+        ? { date: "", note: null, armScoped }
+        : undefined;
+  }
 
   const evidence: DeskEvidenceRow[] = Object.keys(suite.modules).map((mod) => {
     const b = breakByModule[mod];
-    const lastBreakDate = b?.date ?? null;
-    const lastBreakReason = b?.note ?? null;
+    const lastBreakDate = b?.date ? b.date : null;
+    const scoped = b && b.armScoped > 0 ? ` (+${b.armScoped} arm-scoped break${b.armScoped === 1 ? "" : "s"} since the era began)` : "";
+    const lastBreakReason = b ? `${b.note ?? ""}${scoped}` || null : null;
     const sessionsSince =
       lastBreakDate !== null
         ? suite.daily.filter((d) => mod in d.byModule && d.session > lastBreakDate).length

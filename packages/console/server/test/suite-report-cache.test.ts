@@ -91,3 +91,69 @@ describe("the suite report's cache", () => {
     expect(buildSuiteReport(config)).toEqual(buildSuiteReport(config));
   });
 });
+
+describe("the suite report's measurement breaks", () => {
+  it("carries each drawn module's breaks inside the curve's range, read past the cache", async () => {
+    const Database = (await import("better-sqlite3")).default;
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "console-report-breaks-"));
+    const config = configFor(tmp);
+    writeFactSet(config.paths.reviewDir, "2026-08-19", 100);
+    writeFactSet(config.paths.reviewDir, "2026-08-20", 40);
+
+    fs.mkdirSync(config.paths.meicDir, { recursive: true });
+    const db = new Database(path.join(config.paths.meicDir, "paper_trades.db"));
+    db.exec(`CREATE TABLE measurement_breaks (id INTEGER PRIMARY KEY, break_date TEXT, scope TEXT, kind TEXT,
+             reason TEXT, detail TEXT, created_at TEXT)`);
+    const add = db.prepare("INSERT INTO measurement_breaks (break_date, scope, kind, reason) VALUES (?, ?, ?, ?)");
+    add.run("2026-08-01", "*", "entry_rules", "before the curve starts"); // outside the range drawn
+    add.run("2026-08-20", "control", "cadence", "tick cadence 30s -> 60s");
+    add.run("2999-01-01", "*", "entry_rules", "scheduled, not yet happened"); // after today: not drawn
+
+    const first = buildSuiteReport(config);
+    expect(first.breaks["meic"]?.map((b) => [b.date, b.key, b.scope])).toEqual([["2026-08-20", "cadence", "control"]]);
+
+    // A break journaled after the report was cached still shows: the fact sets did not move.
+    add.run("2026-08-19", "*", "gate", "a new gate");
+    db.close();
+    expect(buildSuiteReport(config).breaks["meic"]?.map((b) => b.date)).toEqual(["2026-08-20", "2026-08-19"]);
+  });
+});
+
+describe("the evidence clock", () => {
+  it("knows every module's breaks, restarts only on whole-book ones, and never says 'no break' falsely", async () => {
+    const Database = (await import("better-sqlite3")).default;
+    const { readDesk } = await import("../src/readers/desk.js");
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "console-evidence-"));
+    // readDesk reads every module, so it needs every module's home; all but meic's stay empty.
+    const base = configFor(tmp);
+    const config = {
+      ...base,
+      paths: {
+        ...base.paths,
+        calendarsDir: path.join(tmp, "calendars"),
+        pmccDir: path.join(tmp, "pmcc"),
+        curveDir: path.join(tmp, "curve"),
+        bwbDir: path.join(tmp, "bwb"),
+        pmccConfigCandidates: [],
+        calendarsConfigCandidates: [],
+        curveConfigCandidates: [],
+      },
+    } as ConsoleConfig;
+    for (const s of ["2026-08-19", "2026-08-20", "2026-08-21"]) writeFactSet(config.paths.reviewDir, s, 10);
+
+    fs.mkdirSync(config.paths.meicDir, { recursive: true });
+    const db = new Database(path.join(config.paths.meicDir, "paper_trades.db"));
+    db.exec(`CREATE TABLE measurement_breaks (id INTEGER PRIMARY KEY, break_date TEXT, scope TEXT, kind TEXT,
+             reason TEXT, detail TEXT, created_at TEXT)`);
+    const add = db.prepare("INSERT INTO measurement_breaks (break_date, scope, kind, reason) VALUES (?, ?, ?, ?)");
+    add.run("2026-08-01", "*", "era", "before the curve starts"); // predates every session drawn
+    add.run("2026-08-20", "bp-5k", "arm_added", "an arm added"); // arm-scoped: not the module's clock
+    db.close();
+
+    const meic = readDesk(config).evidence.find((r) => r.module === "meic");
+    // The whole-book break predates the curve, and is still the clock's anchor -- not "no break".
+    expect(meic?.lastBreakDate).toBe("2026-08-01");
+    expect(meic?.sessionsSince).toBe(3);
+    expect(meic?.lastBreakReason).toContain("1 arm-scoped break");
+  });
+});

@@ -671,8 +671,10 @@ the 497 candidates, ETFs and benchmarks Dolt carries (368,904 bars back to 2023-
 VIX are not in Dolt), landed at 06:15 ET after the Dolt pull, in ~13 s a morning. Adjusted bars are a
 pure function over raw and reproduce the vendor's MSFT closes on all 753 sessions exactly (ANET to a
 cent, pre-split); `check-vendor` repeats that over every capture. IV rank reads Dolt's
-`volatility_history` where it covers a name. Still to do from this phase: ATM IV from Cboe's delayed
-chain for the names Dolt's IV history lacks, ranked once a year has built up.
+`volatility_history` where it covers a name. **Where it does not, tastytrade's rank is the fallback**
+(2026-09-29, `scripts/fetch_iv_rank.py`, the `technicals-iv-rank` job): no source reproduces the
+vendor's own IV rank (Dolt correlates 0.66, tastytrade 0.64), so building our own ATM IV from Cboe's
+chain -- the plan here before -- would buy coverage, not agreement, and tastytrade already gives that.
 
 - Bars from the Dolt `stocks` clone, which passed the assessment (ADRs present, last night's bar
   committed by 05:30). Split and proportional dividend adjustment applied by us from its own

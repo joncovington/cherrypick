@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { createChart, LineSeries, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
+import {
+  createChart,
+  createSeriesMarkers,
+  LineSeries,
+  type IChartApi,
+  type ISeriesApi,
+  type ISeriesMarkersPluginApi,
+  type Time,
+  type UTCTimestamp,
+} from "lightweight-charts";
 import { fmtMoney } from "../../components/DataTable";
 import { useFlashOnChange } from "../../lib/useFlashOnChange";
 
@@ -9,6 +18,23 @@ interface SuiteReport {
   suite: { net: number; trades: number; wins: number; losses: number; winRatePct: number | null; avg: number | null };
   daily: Array<{ session: string; net: number; cumulative: number; byModule: Record<string, number> }>;
   modules: Record<string, { net: number; trades: number; wins: number; losses: number }>;
+  /** Journaled measurement breaks per module, inside the curve's range, newest first. */
+  breaks?: Record<string, Array<{ date: string; key: string; note: string | null; scope: string | null }>>;
+}
+
+/** The lines the chart draws: the three largest books by |net|. The breaks line lists these only,
+ *  so it never names a square that is not on the chart. */
+function drawnModules(modules: SuiteReport["modules"]): string[] {
+  return Object.entries(modules)
+    .sort((a, b) => Math.abs(b[1].net) - Math.abs(a[1].net))
+    .slice(0, 3)
+    .map(([mod]) => mod);
+}
+
+/** The session a break is drawn at: the first one on or after its date (a break can land on a day
+ *  with no fact set -- a weekend config change -- and still bound the line from the next session). */
+function breakSession(sessions: string[], date: string): string | null {
+  return sessions.find((s) => s >= date) ?? null;
 }
 
 export function useSuiteReport() {
@@ -38,6 +64,7 @@ export function EquityCard({ children }: { children?: ReactNode }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
+  const markersRef = useRef<Map<string, ISeriesMarkersPluginApi<Time>>>(new Map());
 
   // Chart mount/teardown, once — separate from the data effect below so a 60s refetch (a new
   // object reference every time, even when values are unchanged) updates the existing series in
@@ -58,6 +85,7 @@ export function EquityCard({ children }: { children?: ReactNode }) {
       chart.remove();
       chartRef.current = null;
       seriesRef.current.clear();
+      markersRef.current.clear();
     };
   }, []);
 
@@ -71,7 +99,7 @@ export function EquityCard({ children }: { children?: ReactNode }) {
     // No combined "suite" line: these books differ in scale by more than an order of magnitude
     // (see Review's own note), so a summed line would describe the largest one and imply it
     // described all three. Per-module lines only.
-    const totals = Object.entries(data.modules).sort((a, b) => Math.abs(b[1].net) - Math.abs(a[1].net)).slice(0, 3);
+    const totals = drawnModules(data.modules).map((mod) => [mod] as const);
     const wantedMods = new Set(totals.map(([mod]) => mod));
 
     // The top-3-by-|net| set can change membership between polls -- drop a line that fell out.
@@ -79,6 +107,7 @@ export function EquityCard({ children }: { children?: ReactNode }) {
       if (!wantedMods.has(mod)) {
         chart.removeSeries(line);
         series.delete(mod);
+        markersRef.current.delete(mod);
       }
     }
 
@@ -100,6 +129,19 @@ export function EquityCard({ children }: { children?: ReactNode }) {
         series.set(mod, line);
       }
       line.setData(running);
+
+      // Where this line stops being one experiment: the module's own measurement breaks.
+      const sessions = data.daily.map((d) => d.session);
+      const marks = (data.breaks?.[mod] ?? []).flatMap((b) => {
+        const at = breakSession(sessions, b.date);
+        return at === null
+          ? []
+          : [{ time: t(at), position: "aboveBar" as const, shape: "square" as const, size: 0.6, color: MODULE_COLORS[mod] ?? "#82878f", text: "" }];
+      });
+      const unique = [...new Map(marks.map((m) => [m.time, m])).values()].sort((a, b) => a.time - b.time);
+      const plugin = markersRef.current.get(mod);
+      if (plugin === undefined) markersRef.current.set(mod, createSeriesMarkers(line, unique));
+      else plugin.setMarkers(unique);
     }
     // Only fit the view the first time data arrives -- on every later poll, an already-open chart
     // keeps whatever pan/zoom the viewer set rather than snapping back to fitContent().
@@ -143,8 +185,32 @@ export function EquityCard({ children }: { children?: ReactNode }) {
         {data === undefined && <span className="skeleton skeleton-text" style={{ width: "40%" }} />}
         {data !== undefined && data.daily.length === 0 && <p className="muted">no closed paper sessions yet</p>}
       </div>
+      <BreaksLine breaks={data?.breaks} drawn={drawnModules(data?.modules ?? {})} />
       {children}
     </section>
+  );
+}
+
+/** The breaks the markers stand for, named: a square on a line is a question until this says what. */
+function BreaksLine({ breaks, drawn }: { breaks: SuiteReport["breaks"]; drawn: string[] }) {
+  const items = Object.entries(breaks ?? {})
+    .filter(([mod]) => drawn.includes(mod))
+    .flatMap(([mod, rows]) => rows.map((b) => ({ mod, ...b })))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  if (items.length === 0) return null;
+  const shown = items.slice(0, 6);
+  return (
+    <p className="muted" style={{ fontSize: "0.8rem", margin: "0.4rem 0 0" }}>
+      measurement breaks (squares):{" "}
+      {shown.map((b, i) => (
+        <span key={`${b.mod}-${b.date}-${b.key}-${i}`} title={b.note ?? b.key}>
+          {i > 0 && " · "}
+          {b.mod} {b.date.slice(5)} {b.key}
+          {b.scope && b.scope !== "*" ? ` (${b.scope})` : ""}
+        </span>
+      ))}
+      {items.length > shown.length && ` · +${items.length - shown.length} more`}
+    </p>
   );
 }
 

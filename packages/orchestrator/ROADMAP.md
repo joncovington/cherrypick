@@ -326,8 +326,9 @@ silently interrupted: any failure is **notified**, or at an absolute floor **war
       `netplwiz` (password stays an LSA secret cherrypick never touches). Tasks stay `/IT`; the screen may
       still lock. **Later:** a proper server/service mode (whether-logged-on with a managed credential, or
       a Windows service) so no interactive session is required at all.
-- [ ] **Populate the holiday calendar.** `doctor` shows `holidays_loaded=0`; entry/exit trading-day
-      gating currently trusts weekday-only logic. Load a market-holiday source before the next holiday.
+- [x] **Populate the holiday calendar.** Done: `timeutil.load_holidays` computes the NYSE holidays per
+      year from the shared calendar (`cherrypick.core.calendar`), so there is no list to keep topped
+      up; `doctor` reports `holidays_loaded=20` (this year and next). Confirmed 2026-09-29.
 - [ ] **Retire the legacy dirs.** `EarningsAgent` (+ its ~14GB `dolt-data`) and the pre-fresh-install
       in-place `../cherrypick-{meic,earnings}` checkouts are unused runtime-wise; kept only as the
       revert path. Delete once the managed-home setup is trusted.

@@ -13,6 +13,9 @@ import path from "node:path";
 import type { ConsoleConfig } from "../config.js";
 import { suiteEra, withReadOnlyDb } from "../readers/db.js";
 import { listSessions } from "../readers/review.js";
+import { MODULE_SCHEMA, performanceDbPath } from "../readers/performance.js";
+import { readMeasurementBreaks } from "../readers/integrity.js";
+import type { MeasurementBreak, PerformanceModuleId } from "@console/shared";
 
 interface TradeNet {
   session: string;
@@ -118,6 +121,9 @@ export interface SuiteReport {
   /** Sessions ascending; cumulative suite equity plus per-module cumulative lines. */
   daily: Array<{ session: string; net: number; cumulative: number; byModule: Record<string, number> }>;
   modules: Record<string, { net: number; trades: number; wins: number; losses: number }>;
+  /** Each module's journaled measurement breaks inside the curve's range, newest first -- where a
+   *  line stops being one experiment. A module whose ledger records none (or has no ledger) is absent. */
+  breaks: Record<string, MeasurementBreak[]>;
 }
 
 /**
@@ -225,7 +231,36 @@ export function buildSuiteReportUncached(config: ConsoleConfig): SuiteReport {
     },
     daily,
     modules,
+    breaks: {},
   };
+}
+
+/**
+ * The measurement breaks of each named module, from its own ledger (both shapes), newest first,
+ * bounded below by `from` (null: no bound) and above by today. A break journaled ahead of its date
+ * (flies schedules its entry_rules boundaries) has not happened yet, so it is never returned.
+ */
+export function readModuleBreaks(
+  config: ConsoleConfig,
+  modules: string[],
+  from: string | null,
+  today: string = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }),
+): Record<string, MeasurementBreak[]> {
+  const out: Record<string, MeasurementBreak[]> = {};
+  for (const mod of modules) {
+    if (!(mod in MODULE_SCHEMA)) continue;
+    const rows = withReadOnlyDb<MeasurementBreak[]>(performanceDbPath(config, mod as PerformanceModuleId), [], (db) =>
+      readMeasurementBreaks(db),
+    ).filter((b) => b.date !== "" && (from === null || b.date >= from) && b.date <= today);
+    if (rows.length > 0) out[mod] = rows;
+  }
+  return out;
+}
+
+/** The breaks on the curve: every module in the report, from the curve's first session. Read on every
+ *  request rather than cached with the fact sets: a module journals a break when it lands one. */
+export function readSuiteBreaks(config: ConsoleConfig, report: SuiteReport, today?: string): Record<string, MeasurementBreak[]> {
+  return readModuleBreaks(config, Object.keys(report.modules), report.daily[0]?.session ?? null, today);
 }
 
 /**
@@ -236,8 +271,12 @@ export function buildSuiteReportUncached(config: ConsoleConfig): SuiteReport {
  */
 export function buildSuiteReport(config: ConsoleConfig): SuiteReport {
   const stamp = factSetStamp(config);
-  if (suiteReportCache !== null && suiteReportCache.stamp === stamp) return suiteReportCache.report;
-  const report = buildSuiteReportUncached(config);
-  suiteReportCache = { stamp, report };
-  return report;
+  let report: SuiteReport;
+  if (suiteReportCache !== null && suiteReportCache.stamp === stamp) {
+    report = suiteReportCache.report;
+  } else {
+    report = buildSuiteReportUncached(config);
+    suiteReportCache = { stamp, report };
+  }
+  return { ...report, breaks: readSuiteBreaks(config, report) };
 }
