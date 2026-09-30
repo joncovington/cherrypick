@@ -1,70 +1,40 @@
 # console (unified web UI)
 
-The suite's unified reactive web UI: one app covering every module's read models — overview/watchdog,
-MEIC, flies, earnings, PMCC-99, calendars, curve, BWB, GEX — plus the advisor and the reports. It
-**replaced** the old surfaces on 2026-08-12: the suite dashboard, the MEIC/flies/GEX dashboards, the
-earnings strategy dashboard and scout's web app were deleted, and this is the suite's only read
-surface. It touches none of their code — every module remains a producer this package reads.
-`pre-console-only` is the tag that still has them.
-
-**The research surfaces are gone too, as of 2026-08-31**: watchlist, screener, builder, payoff/POP
-and the staged dry-run tickets, inherited from scout in the 2026-08-12 port and retired in turn. So
-this is now a read surface for the TRADING MODULES only, and it no longer holds a path that touches
-an order at all — `dry-run-only.test.ts` pins `postOrderDryRun` to the scope probe alone. See
-`docs/parity.md` for what deliberately survived the teardown and why.
+The suite's only read surface: one app over every module's read models — overview/watchdog, MEIC,
+flies, earnings, PMCC-99, calendars, curve, BWB, GEX — plus the advisor and the reports. Every module
+remains a producer this package reads; it touches none of their code. The dashboards it replaced
+survive only at the `pre-console-only` tag, and the scout research surfaces are retired too, so **no
+path here touches an order** — `dry-run-only.test.ts` pins `postOrderDryRun` to the scope probe alone
+and scans every reader. See `docs/parity.md` for what survived the teardown and why, and
+[docs/history.md](docs/history.md) for the dated stories behind the rules below.
 
 **The supervisor keeps this running** as an always-on resident job (`console` in
-`state/supervisor-jobs.json`): no clock window and no trading-day gate, since a read surface you can
-only open during RTH cannot be used to read the session that just ended. Two things follow that are
-easy to break:
+`state/supervisor-jobs.json`), with no clock window or trading-day gate — a read surface only open in
+RTH cannot read the session that just ended. Two things are easy to break:
 
 - **The heartbeat is load-bearing.** `services/heartbeat.ts` rewrites `state/console.heartbeat` every
-  ~15s and the supervisor restarts this process if that mtime goes stale. It is how a *wedged* event
-  loop gets caught, which process-liveness cannot see. Do not make it conditional, and do not move it
-  before `app.listen` — a heartbeat written before a failed bind reports a console that never came up.
-- **`run.py` is a launcher, so node is the supervisor's GRANDchild.** Anything that stops the console
-  must kill the process **tree**; terminating only the tracked PID leaves node holding :5070, and every
-  supervised restart then dies on `EADDRINUSE`.
+  ~15s and the supervisor restarts the process when it goes stale — the only way a *wedged* event loop
+  gets caught. Never make it conditional, and never move it before `app.listen` (a heartbeat written
+  before a failed bind reports a console that never came up).
+- **`run.py` is a launcher, so node is the supervisor's grandchild.** Anything that stops the console
+  must kill the process **tree**; killing only the tracked PID leaves node holding :5070 and every
+  supervised restart dies on `EADDRINUSE`.
 
-**The two session reports share one page.** `/reports` holds the pre-open morning pack
-(`packages/overview`) and the end-of-day review (`packages/review`) as tabs — the same question
-asked at two ends of a session, and two nav links each leading to half of it made the nav longer
-without making either easier to find. The page holds the tab and nothing else: each tab renders its
-own page component unchanged, so neither report gains a second place where its shape is decided. The
-tab lives in the URL (`?tab=eod`) because a report is a thing you send someone, and the old
-`/morning` and `/review` routes redirect rather than 404 — both appear in the suite's own docs.
-
-The Morning tab carries a second artifact beside the pack: `packages/technicals`' report
-(`data/technicals/report-<session>.json` — breadth, stages by sector, rotation, leaders, scan
-signals), read by `readTechnicals` in `readers/overview.ts` and rendered by
-`pages/Morning/TechnicalsCards.tsx`. **It is the last report dated strictly before the pack's
-session**: the pack is written before the open from the prior close, and a report dated the pack's
-own day was written after that day's close — pairing them would show a morning what it could not
-have known. A test pins the `<`, and was shown to fail at `<=`.
-
-`/reports/chart?symbol=X` draws one name from `data/technicals/charts/<X>.json`
-(`readers/technicals.ts`, `pages/Morning/ChartPage.tsx`; the Morning tab's leaders link there). The
-symbol becomes a file name, so the reader accepts only ticker characters — a test sends `../` and
-was shown to fail with the pattern loosened.
-
-Unlike the rest of the suite this package is **Node + TypeScript**, not Python:
+Unlike the rest of the suite this package is **Node + TypeScript**:
 
 - `shared/` — types shared by server and web (`@console/shared`).
-- `server/` — Fastify backend, binds **127.0.0.1:5070** (loopback hard-coded; port via `serve.port`
-  in `~/.cherrypick/config/console.json`). Serves the built SPA, `/api/*`, and (from M3) `/ws`.
+- `server/` — Fastify, binds **127.0.0.1:5070** (loopback hard-coded; port via `serve.port` in
+  `~/.cherrypick/config/console.json`). Serves the built SPA, `/api/*` and `/ws`.
 - `web/` — React + Vite SPA.
-- `desktop/` — Electron shell (`@console/desktop`), a **window only**: it never starts the server, so
-  it can never contend with the supervisor for the port. See its README; the short version is that
-  home/port resolution lives in `shared/src/paths.ts` precisely so the shell and the server cannot
-  disagree, and that no native module is ever loaded inside Electron (the server is its own process),
-  which is what keeps `electron-rebuild` out of the package.
-- `run.py` — thin launcher (`python run.py dashboard --serve`) so the supervisor and `/console` never
-  need to know about the Node toolchain. Spawns node with `CREATE_NO_WINDOW`, or every restart under
-  `pythonw` pops a terminal window.
+- `desktop/` — Electron shell, a **window only**: it never starts the server, so it can never contend
+  for the port. Home/port resolution lives in `shared/src/paths.ts` so shell and server cannot
+  disagree, and no native module is loaded inside Electron (which keeps `electron-rebuild` out).
+- `run.py` — thin launcher (`python run.py dashboard --serve`) so the supervisor never needs the Node
+  toolchain. Spawns node with `CREATE_NO_WINDOW`, or every restart under `pythonw` pops a terminal.
 
 ## Commands
 
-The one package with a Node toolchain — `pip`/`pytest`/`ruff` do not apply here. From this directory:
+The one package with a Node toolchain — `pip`/`pytest`/`ruff` do not apply. From this directory:
 
 ```bash
 pnpm install
@@ -78,506 +48,311 @@ pnpm --filter @console/desktop start   # the desktop window
 pnpm ui-check --route /flies/performance --expect "drawdown"   # drive the REAL browser
 ```
 
-**Confirming a change actually reached the page.** The suite's rule is that a front-end change is
-confirmed in a browser, not by tests alone. Three things make that non-obvious here:
+**Confirming a change reached the page** (a front-end change is confirmed in a browser, not by tests
+alone):
 
-- **The running server is `server/dist/index.js`, not your source.** The supervisor launches the
-  built artifact, so a source edit changes nothing until `pnpm build` AND the process restarts.
-  Editing, re-running the tests and reloading the page will show you the OLD build behaving
-  perfectly. (A shared-type change also needs `pnpm --filter @console/shared build` before the
-  server typechecks against it.)
-- **`pnpm ui-check` drives real Chrome** — clicks, expectations, screenshots, and console errors —
-  which is what reaches anything behind a tab held in component state. `--dump <file>` writes the
-  rendered DOM when you want to read it rather than assert on it.
-- **Under Git Bash, prefix it with `MSYS_NO_PATHCONV=1`** or a route is rewritten into a filesystem
-  path: `--route /flies` arrives as `C:/Program Files/Git/flies` and the check silently targets
-  nothing useful.
-
-The reliable recipe for a reader or endpoint change: capture the affected endpoints from the
-RUNNING build first, then build, restart, and re-capture. Every data field should be identical and
-only clock-derived ones (`now`, `ageSeconds`) should move. That is what caught this session's
-changes as safe, and it is the only check that sees past the fallback below.
+- **The running server is `server/dist/index.js`, not your source.** A source edit changes nothing
+  until `pnpm build` AND a restart; otherwise you are watching the old build behave perfectly. A
+  shared-type change also needs `pnpm --filter @console/shared build` first.
+- **`pnpm ui-check` drives real Chrome** — clicks, expectations, screenshots, console errors;
+  `--dump <file>` writes the rendered DOM. Prefer `--route` over `--click`: every slide is
+  addressable, and on the frame `--click` cannot reach a tab (it skips anything inside a `<nav>`, and
+  the rail is one).
+- **Under Git Bash, prefix it with `MSYS_NO_PATHCONV=1`**, or `--route /flies` arrives as
+  `C:/Program Files/Git/flies` and silently checks nothing.
+- **For a reader or endpoint change:** capture the affected endpoints from the RUNNING build, then
+  build, restart and re-capture. Every data field should be identical and only clock-derived ones
+  (`now`, `ageSeconds`) should move. This is the only check that sees past the `withReadOnlyDb`
+  fallback below.
 
 ## Data rules
 
-- **Read-only over every other package's data.** Module SQLite stores are opened with
-  better-sqlite3 `readonly: true`; JSON state is only ever read. The console's sole writable store is
-  `~/.cherrypick/data/console/`. Handles are POOLED per path and recycled on the file's stamp
-  (`readers/db.ts`), so a module's write — a migration included — is picked up on the next request;
-  idle handles hold an open file, never an open read transaction, so they cannot starve WAL
-  checkpointing.
-- **⚠️ `withReadOnlyDb` swallows EVERY throw into its fallback, and the request still returns
-  HTTP 200.** That is deliberate — a module store may legitimately be absent because the module has
-  never run here — but it means **a broken reader is indistinguishable from an empty one**, on the
-  wire and on the page. It also means a green `vitest` run is NOT sufficient evidence that a reader
-  change works: the tests exercise the query, and the fallback hides the query failing.
-  This has produced two real defects. `/api/flies/meta` once returned `{arms: [], dates: [],
-  symbols: []}` with no log line, from one bad column in a UNION. And a day resolver that named a
-  journal table an older ledger lacks read as "no latest session", so a tab meant to show one day
-  answered for every day in its era. Both looked healthy.
-  So: after changing a reader, **hit the endpoint against a rebuilt, restarted server** (the recipe
-  under Commands) and check the payload is populated, not merely 200. Where a reader can be handed
-  a store whose shape varies — an older paper book, a live book, a test fixture — ask
+- **Read-only over every other package's data.** Module SQLite stores open with better-sqlite3
+  `readonly: true`; JSON state is only read. The sole writable store is `~/.cherrypick/data/console/`.
+  Handles are pooled per path and recycled on the file's stamp (`readers/db.ts`), so a module's write
+  (a migration included) is seen on the next request; idle handles hold an open file, never an open
+  read transaction, so they cannot starve WAL checkpointing.
+- **⚠️ `withReadOnlyDb` swallows EVERY throw into its fallback and the request still returns 200.**
+  Deliberate (a store may be absent because the module never ran here), but **a broken reader is
+  indistinguishable from an empty one**, and a green `vitest` run is not evidence a reader change
+  works. It has produced two real defects that both looked healthy. So: after changing a reader, hit
+  the endpoint on a rebuilt, restarted server and check the payload is populated, not merely 200; and
+  where a reader can meet a store whose shape varies (older paper book, live book, fixture), ask
   `sqlite_master` which tables exist rather than naming one and relying on the catch.
-  (`withReadOnlyDb` still collapses "store absent" and "query threw" into one return value, and that
-  is fine — ~65 call sites are written against it and it is unchanged. **`readOnlyDb` is the opt-in
-  form beside it** (2026-08-26), returning `{status: "ok" | "absent" | "failed"}`, for a reader whose
-  EMPTINESS IS MEANINGFUL. It is the single implementation and `withReadOnlyDb` is a thin wrapper
-  over it: two copies of the pooling, stamping and eviction logic would be two chances to disagree
-  about when a handle is recycled, which is the bug the stamp exists to prevent. Migration is per
-  call site and needs no sweep. `readFliesMeta` is migrated — the documented incident — and now
-  returns the same empty lists plus an optional `degraded: {reason}`, absent on both healthy reads
-  and legitimately absent stores, so a consumer that ignores it is right in every case that is not a
-  defect.
-
-  **The day resolver is migrated too, and its failure is not symmetric with the others.** `null`
-  from `latestTradeDate` means "latest day", and `filterSql` turns that into NO date clause — right
-  for "this ledger has no rows", wrong for "the query threw", because the second WIDENS the answer
-  to every session in the era. That is the recorded incident: 289 rows beside a 34-position day,
-  both correctly labelled and irreconcilable. A thrown resolve now scopes to a day that matches
-  nothing instead, because showing nothing is visibly wrong while showing the whole era looks
-  plausible. Note the existing `sqlite_master` guard already covers a MISSING day-source table; what
-  remained was schema drift inside a present one — `fly_positions` without `trade_date` — which
-  passes that guard and then throws. **What changed 2026-08-26 is that the second case is no longer
-  invisible.** A throw is recorded per store (path, message, count, last seen), logged once per
-  distinct message — repeats are counted, not re-logged, since the SPA polls every few seconds and a
-  wedged reader logging each poll buries itself as effectively as logging nothing — and surfaced by
-  `/api/health` as a `readers` array. An absent store is deliberately NOT recorded: a fresh machine
-  would otherwise warn about every module it has not installed.
-
-  `/api/health`'s `ok` still means "the server is up" and is unchanged, so a watchdog reading it does
-  not start failing because one ledger has a bad column. Read `readers` for that; an empty array is
-  the healthy case. This does not remove the need for the recipe above — a reader can still return a
-  structurally empty result without throwing at all, which is what the day-resolver defect did.)
-- **The Config page is the one bounded exception, and it holds no write logic of its own.** Every
-  config edit and the halt toggle go out through the orchestrator's own surface as a subprocess
-  (`python -m cherrypick.orchestrator.configcli`, JSON in/out — `services/configBridge.ts`, the same
-  bridging pattern and the same reason as `auth/suiteBridge.ts`). That is what makes the exception
-  narrow: the guarded-pointer table, the byte-span splicing that preserves each config's
-  `_note`/`_header` documentation and key order, the timestamped backup and the atomic write all stay
-  in `configedit.py`, where they are already tested. **Never port any of that into this package** —
-  a second copy of a live-safety rule is a second copy free to drift. It follows that this surface
-  **still cannot touch `enable_live_trading`, flies' `live.enabled`/`gate0_confirmed`, or the live
-  loss/deploy limits** in either direction: `configedit.GUARDED` refuses them, and the page renders
-  them as locked rows carrying that table's own hint. The halt flag (`state/halt-live.flag`) is
-  reachable, because its whole design is that a click may toggle it — via `liveops.set_halt`, with
-  **asymmetric friction**: setting it is one click (a stop that takes two steps arrives late),
-  clearing it requires the typed `RESUME LIVE` confirmation, checked on the server and not only in
-  the browser. Clearing it arms nothing by itself, and the page says so. What the page *offers* to
-  edit is an allow-list (`web/src/pages/Config/fieldMeta.ts`) covering the settings that actually
-  change between sessions; the suite has no JSON schema anywhere, so that map is the form's schema.
-  Config writes are gated exactly as the orchestrator's settings server gates its own (loopback Host,
-  CSRF, JSON content type) and deliberately **not** on the broker credential scope — that describes
-  what a token may do at the broker, and a config file is not the broker.
-- **The Advisor page's two buttons are the second bounded exception, and they hold no logic either.**
-  Kill an experiment, dismiss a proposal — both POST to `routes/advisorOps.ts`, which invokes
-  `python -m cherrypick.advisor <verb>` as a subprocess (`services/advisorBridge.ts`, the same
-  shape and the same reason as `configBridge.ts`). Killing an experiment journals a reason, stops
-  tonight's artifact being issued for it, and lets a queued experiment take its slot; that
-  lifecycle lives in one place in Python, and the scheduled runs and the browser go through the
-  same door. Both actions only ever make the advisor do LESS — there is deliberately no way to
-  start, tune or enact anything from the browser, because those are the directions that add
-  exposure and they belong to the validated, scheduled path. Everything else on the page is a
-  read of `data/advisor/advisor.db` (read-only) plus the advice artifacts, and it **computes no
-  verdicts**: those come from `packages/advisor`, through the suite's own
-  ledger-readers → `compare_profiles` → `qualify_readings` chain. A TypeScript re-derivation would
-  be a second opinion free to drift, which is the mistake `services/report.ts` already made once.
-  **"Did the loop apply this artifact" is one of those verdicts**, and it is read from the
-  `enactment` table rather than recomputed by comparing an artifact's params to a decision file
-  here — same rule, and the comparison is genuinely subtle (a reject-all artifact beside a baseline
-  decision IS enacted). Rows are absent on a store that predates the table, which the page renders
-  as "not scored yet"; an unscored session and a dropped artifact are different facts and only the
-  second gets a warning chip.
-
-  The apply banner is worth knowing the history of. It used to show tomorrow's artifact beside
-  **today's** decision — two different sessions, which can never agree — so on 2026-08-25 meic and
-  earnings sat in it reading "written" next to "advice_disabled" with no warning anywhere, and the
-  card is collapsed by default so the closed head was all anyone saw. Two columns now: what is
-  queued for the next session, and whether THIS session's artifact landed, with the count of
-  failures on the head. If you touch that table, keep the signal on the head.
-- **Where a module already classifies its own data, ask it — don't re-derive it.** `services/
-  screenBridge.ts` reads the earnings screening metrics by invoking
-  `python -m cherrypick.earnings.screen_report --json` (same bridging pattern and the same reason as
-  `configBridge.ts`), memoised ~2 min because classifying the whole scan history costs a subprocess
-  and the answer moves only when a scan runs. The card it feeds used to build its own histogram
-  straight off `scan_log` and got the answer wrong in a way that looked authoritative — naming gates
-  that have never blocked a candidate **alone**, which a threshold change cannot rescue. Two
-  structural causes, neither fixable in a SQL query here: `scan_log` pools four incompatible reason
-  vocabularies, and a raw count has no sole-blocker column. `screen_metrics` already solves both, so
-  the authority stays there and this package renders it.
+  - **`readOnlyDb`** returns `{status: "ok" | "absent" | "failed"}` for a reader whose emptiness is
+    meaningful. It is the single implementation and `withReadOnlyDb` a thin wrapper over it — never
+    two copies of the pooling/stamping/eviction logic. Migrate per call site; no sweep. Migrated
+    readers return their usual empty shape plus an optional `degraded: {reason}` (absent on healthy
+    reads and on legitimately absent stores), so a consumer that ignores it is right unless there is a
+    defect.
+  - **A failed day resolve must narrow, never widen.** `null` from `latestTradeDate` means "latest
+    day" and becomes NO date clause — right for an empty ledger, wrong for a throw, which would widen
+    the answer to the whole era (once: 289 rows beside a 34-position day). A thrown resolve now scopes
+    to a day that matches nothing: showing nothing is visibly wrong, showing the era looks plausible.
+    The `sqlite_master` guard covers a missing table; this covers schema drift inside a present one.
+  - **Reader throws are audible.** Each is recorded per store (path, message, count, last seen),
+    logged once per distinct message (repeats counted, not re-logged — the SPA polls every few
+    seconds), and surfaced in `/api/health`'s `readers` array; empty is healthy. An absent store is
+    not recorded, or a fresh machine would warn about every uninstalled module. `/api/health`'s `ok`
+    still means only "server is up", so a watchdog reading it does not fail on one bad column. None of
+    this replaces the rebuild-and-capture recipe: a reader can return a structurally empty result
+    without throwing.
+- **The Config page is the one bounded write exception, and holds no write logic.** Every config edit
+  and the halt toggle go through the orchestrator as a subprocess (`python -m
+  cherrypick.orchestrator.configcli`, JSON in/out, via `services/configBridge.ts` — the same pattern
+  and reason as `auth/suiteBridge.ts`). The guarded-pointer table, byte-span splicing that preserves
+  `_note`/`_header` and key order, the timestamped backup and the atomic write all stay in
+  `configedit.py`. **Never port any of that here** — a second copy of a live-safety rule is free to
+  drift.
+  - This surface **cannot touch `enable_live_trading`, flies' `live.enabled`/`gate0_confirmed`, or the
+    live loss/deploy limits** in either direction: `configedit.GUARDED` refuses them, and the page
+    shows them as locked rows with that table's hint.
+  - The halt flag (`state/halt-live.flag`) is reachable via `liveops.set_halt`, with **asymmetric
+    friction**: setting it is one click (a two-step stop arrives late); clearing it needs the typed
+    `RESUME LIVE`, checked on the server as well as the browser. Clearing arms nothing, and the page
+    says so.
+  - What the page offers is an allow-list (`web/src/pages/Config/fieldMeta.ts`); the suite has no JSON
+    schema, so that map is the form's schema. Writes are gated like the orchestrator's settings server
+    (loopback Host, CSRF, JSON content type), deliberately **not** on the broker credential scope — a
+    config file is not the broker.
+- **The Advisor page's two buttons are the second bounded exception, and hold no logic either.** Kill
+  an experiment and dismiss a proposal POST to `routes/advisorOps.ts`, which runs `python -m
+  cherrypick.advisor <verb>` via `services/advisorBridge.ts`; the lifecycle lives in Python, and
+  scheduled runs and the browser use the same door. Both only make the advisor do LESS — there is
+  deliberately no way to start, tune or enact anything from the browser. The rest of the page reads
+  `data/advisor/advisor.db` (read-only) and the artifacts, and **computes no verdicts**: they come from
+  `packages/advisor` via ledger-readers → `compare_profiles` → `qualify_readings`. "Did the loop apply
+  this artifact" is one of those verdicts, read from the `enactment` table, never recomputed here (a
+  reject-all artifact beside a baseline decision IS enacted). No rows on an older store renders as
+  "not scored yet"; only a dropped artifact gets a warning chip. The apply banner compares like with
+  like — what is queued for the next session, and whether THIS session's artifact landed — with the
+  failure count on the collapsed head; keep the signal on the head.
+- **Where a module classifies its own data, ask it — don't re-derive.** `services/screenBridge.ts`
+  reads earnings screening metrics via `python -m cherrypick.earnings.screen_report --json`, memoised
+  ~2 min. A histogram built here off `scan_log` once named gates that never blocked a candidate alone:
+  `scan_log` pools four reason vocabularies and has no sole-blocker column, which `screen_metrics`
+  already solves.
+- **Mirror a query, bridge a derivation.** A query can be checked against its source by reading both;
+  a derivation with its own validation can only be checked by being the one that was validated. Where a
+  module states read semantics but no callable surface for them, mirror them in TypeScript, name the
+  module function each answers for, keep the module's rules (pmcc: `None` never means zero — a null
+  renders as an em dash, never `$0.00`), and **pin the mirror with a test against the module itself**:
+  - `server/test/pmcc-mirror.test.ts` — open count, book set and each book's net vs `run.py headline`,
+    to the cent. Compares empty against empty until pmcc opens a position under its current design, so
+    treat it as armed, not as evidence.
+  - `server/test/meic-mirror.test.ts` — `readers/meic.ts` (the largest mirror) per-arm trades,
+    sessions, gross, fees and net vs `python run.py headline --era ALL`. Resolved rows are an
+    allow-list (`pnl IS NOT NULL`), never a deny-list of statuses, or open rows leak fees with no gross.
+  - `server/test/flies-mirror.test.ts` — `analytics/fliesPayoff.ts` is a port of `fly.py`'s payoff
+    core, pinned against `fly.py`'s own fixtures (run unconditionally) and against
+    `fly.position_pnl`/`position_floor`/`book_floor` over the ledger to the cent. The floor is computed
+    on the module's strike-anchored scan (`scanPrices`/`bookFloor`), never the 120-point display grid.
+    One thing is deliberately not equalised: which zone is "the band" on an exact peak tie is the
+    module's recorded pick (`fly_books.band_low/high`), and changing that rule is a declared-boundary
+    change for flies; the test tolerates a different pick only when both peaks agree to the cent. The
+    forest sentence says what the floor knows and no more ("from 7659 upward", "at or below 7645",
+    "locked").
+  - Mirror tests skip cleanly and **visibly** when the ledger or Python is unavailable.
+  - **Bridged, not mirrored:** calendars' exit-policy table and week anchors go through
+    `services/calendarsBridge.ts` (memoised 5–10 min) — the policy replay is validated to the cent
+    against the real books, and a TypeScript copy would be validating the wrong derivation; the
+    anchors are NYSE holiday arithmetic whose structure tag keys every result.
 - **Console preferences are read synchronously, from a local mirror.** The server store
-  (`/api/config/prefs`) is the source of truth — it is what makes a preference follow you to the
-  desktop shell — but a preference that only arrives after a fetch cannot decide what the FIRST
-  render looks like. Defaulting the paper/live toggle is the sharp case: reading it late paints the
-  paper book and flips to live a moment later, which on a trading surface is worse than having no
-  preference at all. So `web/src/lib/prefs.ts` keeps a localStorage mirror (hydrated at import,
-  written through on change, reconciled from the server once per session via `usePrefsSync`), the
-  same shape the card-collapse state already uses. Preferences deliberately do **not** live in a
-  react-query hook. A `?mode=` in the URL always outranks the preference — a link to a page is a link
-  to the mode it names — so `useMode` states both directions explicitly.
-- **Paper/live isolation**: every trade payload carries `mode` taken from its source DB
-  (`paper_trades.db` vs the live DB). Mode is never merged across sources or inferred client-side.
-- **Where a module states its read semantics but not a callable surface for them, MIRROR them and
-  say so.** `packages/pmcc` declares `analytics.py` "the one query layer every read surface goes
-  through", but its CLI exposes only part of what a page needs (no per-cycle legs or rolls, no
-  attempts/events), and a subprocess per request at a 15s refetch is not what that layer was built
-  to carry. So `readers/pmcc.ts` re-implements those queries in TypeScript, names the analytics
-  function each one answers for, and keeps that module's stated rule that `None` never means zero —
-  a null time value renders as an em-dash, never `$0.00`, because "not recorded" and "was zero" are
-  different facts. This is a deliberate exception to the bridging rule above and it is only safe
-  while the mirror is checked: the page's headline must equal `python run.py headline`. Verified when
-  the page landed (2026-08-17); an earlier version of this check also compared a drawn Keltner band
-  against the gate's own stamped measures, which caught a real off-by-one-bar error before it
-  shipped — that half retired with the 2026-08-23 redesign (see `packages/pmcc/CLAUDE.md`'s
-  measurement-break note), which dropped the module to one symbol, one book, and no Keltner gate at
-  all. **MEIC has the same arrangement and, since 2026-08-26, the same check.** `readers/meic.ts` is the
-  largest mirror in this package, over the module with the most data and the only live sibling, and
-  it had nothing to compare against because meic was the one package without a `run.py`. It has one
-  now, and `server/test/meic-mirror.test.ts` compares the page's per-arm trades, sessions, gross,
-  fees and net against `python run.py headline --era ALL`. It failed on its first run and the page
-  was wrong: `RESOLVED` here is a deny-list (`NOT IN ('cancelled','pending','partial_entry')`) and
-  this ledger contains none of those, so it admitted still-open rows, which contribute fees with no
-  gross — every arm reported down by exactly what it had paid so far. The module uses an allow-list.
-  `readMeicAnalytics` already guarded the identical case in SQL and its comment names it ("a number
-  that looks like a result"); `readMeicPerformance` did not. Both now filter `pnl IS NOT NULL`.
+  (`/api/config/prefs`) is the source of truth (it follows you to the desktop shell), but a preference
+  fetched late cannot decide the first render — the paper/live default would paint paper and flip to
+  live. So `web/src/lib/prefs.ts` keeps a localStorage mirror (hydrated at import, written through,
+  reconciled once per session via `usePrefsSync`), never a react-query hook. A `?mode=` in the URL
+  always outranks the preference; `useMode` states both directions.
+- **Paper/live isolation**: every trade payload carries `mode` from its source DB (`paper_trades.db`
+  vs the live DB). Mode is never merged across sources or inferred client-side.
+- **A module's own evidence window is the default.** Reads default to the module's era/study window
+  (MEIC's `CURRENT_ERA`, flies' era model); modules with no era column (earnings, suite report and
+  review totals) bound to the suite `data_epoch` via `readers/db.ts::suiteEra`, the lever `calibrate`
+  enforces. Earlier eras stay reachable through a visible scope control using the shared `"ALL"`
+  convention; widening is a stated choice, never the default. Filtering to nothing is reported as a
+  filtered-out result, not an empty page. calendars/pmcc need no bound until a second era exists.
+- **Market data**: the console opens its own DXLink session via the official `@tastytrade/api` SDK
+  (`quoteStreamer`). The Python streamer and `stream_cache.db` are untouched; the cache is read
+  read-only as the off-hours / disconnected fallback.
+- **Single source of broker auth.** The console reads THE suite credential (`production:client_secret`
+  / `production:refresh_token` under the `cherrypick-broker` keyring service) through Python
+  (`auth/suiteBridge.ts`), since Python-keyring targets aren't addressable from Node. **It never writes
+  credentials** — the one setting path is `python -m cherrypick.core.auth setup`; the console CLI's
+  `set` prints that pointer, `probe` re-validates, `clear` touches only the pre-unification Node
+  slots. Scope is detected per process by a dry-run probe, never persisted; a **read-only** refresh
+  token gets a loud warning, a read-only header chip, and every write-oriented function disables
+  itself. **No order-placement code path exists here**, and it never touches any module's
+  `enable_live_trading`.
 
-  **The headline half is automated** — `server/test/pmcc-mirror.test.ts` invokes the module's
-  own `run.py headline` and compares open-position count, book set and each book's net to the cent,
-  skipping cleanly (and visibly) where the ledger or Python is unavailable. Note it compares empty
-  against empty until this module opens a position under the new design, so treat it as armed rather
-  than as evidence.
+## Pages
 
-  **The flies profit forest is a mirrored derivation, and it went a month unchecked.**
-  `analytics/fliesPayoff.ts` is a port of `fly.py`'s payoff core (per-position P&L, the assignment
-  fee per ITM strike, the floor) rather than a query, and from the day it landed (2026-08-09) it
-  priced a `long_vertical` — debit_first's opening trade — as the mirror of a short vertical, a full
-  wing width away from where `fly.position_pnl` puts it. No test touched the port, so every stranded
-  debit-first vertical on the forest and every debit-first fly's pre-completion window on the
-  timeline was drawn wrong (27 stranded rows in the paper ledger on 2026-09-12; one real row off by
-  $250 at its own centre). Fixed 2026-09-12, and `server/test/flies-mirror.test.ts` now pins the port
-  two ways: `fly.py`'s own hand-computed fixtures run unconditionally (these fail on the old code —
-  the guard was shown to fail), and a ledger suite hands every `long_vertical` row plus the latest
-  session to `fly.position_pnl`/`position_floor` over a price grid and compares to the cent,
-  skipping visibly when the ledger or Python is absent. The floor was never wrong — both sides
-  bottom the kind at zero — which is why the max-possible-loss tile never gave it away.
+**Module frame.** Every page renders a persistent left rail and a content pane inside the shell.
+`registry.ts`'s `MODULE_FRAMES` and `navGroups.ts`'s `NAV_DECL` are full `Record`s over `ModuleId`, so
+a page added to `moduleOrder.ts` without both does not compile. Advisor stays one page with its own
+four tabs, because its write actions are wired through page-spanning state (`navGroups.ts` says why).
 
-  The same check then found a second, smaller drift the same day: the port computed the FLOOR
-  (worst, band, holds) on its 120-point display grid, where the module computes it on a separate
-  strike-anchored scan (`fly._scan_prices`: a point one cent either side of every strike, padded a
-  strike span). On a display grid the assignment-fee step just past a strike is invisible (worst
-  understated by up to $5 per event on an unsettled day) and band edges land up to a grid step
-  off. `scanPrices`/`bookFloor` in `analytics/fliesPayoff.ts` now port the scan, the curve stays on
-  the display grid, and the mirror test compares worst, holds, tails and every zone against
-  `fly.book_floor` over the last 15 sessions. One thing is deliberately NOT equalised: which zone is
-  "the band" when two tents peak at the same net is an exact tie that float summation order
-  decides, and the module's pick is recorded on `fly_books.band_low/high` and read by a
-  classifier — so changing that rule is a declared-boundary change for the module, and the test
-  tolerates a different pick only when both zones' peaks agree to the cent. The forest sentence
-  now says what the floor knows and no more: a band that runs off the scan grid is "from 7659
-  upward", not "between 7659 and 7715"; a flat worst case is "at or below 7645"; and a book whose
-  worst equals its best is "locked" — 2026-09-11 control was one, two stranded verticals whose
-  loss four adjacent 5-wide flies cancel exactly at every price.
-- **Each module carries an `advisor` page; the Advisor page is the cross-module
-  roll-up (2026-09-12).** A reader looking at a module asks "is my A/B working", and the advisor
-  page answered that only after expanding one collapsed card per experiment — its at-a-glance
-  signals were a status chip, an `underpowered` chip every active experiment carries, and a
-  session count. `readers/advisor.ts`'s `readAdvisorModule` serves one module's view on
-  `/api/advisor/module/:module`: the active experiment with its progress against both its length
-  and the stall budget, the session-by-session strip from the advisor's own `enactment` table
-  (applied / carried / not applied / nothing issued — read, never re-derived), the paired
-  comparison as of the last evening pass with the gate distance in words, tomorrow's artifact, the
-  queue in activation order, and the last concluded. `components/advisor/AdvisorSlide.tsx` renders
-  it in all seven module manifests; the page's experiments tab opens with a roll-up table of the
-  same numbers across modules. The two write actions (kill, dismiss) stay on the advisor page and
-  only there; the module slides are read-only like every other module slide.
-- **A tab change is a handoff, not a remount.** The old `LightboxFrame` used to key the whole
-  scroll body on the slide id with the route fade on it, so every tab change unmounted the module's
-  content and replayed a fade from opacity 0 — the module vanished and faded back. The body now
-  stays mounted, the slide's own subtree is keyed with a 120ms settle from mostly-visible, and the
-  scroll position resets explicitly (the remount used to do that for free). **The same rule bit
-  again one level up (2026-09-22):** `Shell` keyed its outlet on the whole pathname, so a tab
-  change remounted the module and refetched everything it had. It keys on the module segment now.
-- **Every page is on the module frame (2026-09-22 to 2026-09-25).** A page renders a persistent
-  left rail and a content pane inside the shell. The pages moved one at a time -- flies first, the
-  seven trading modules, then the suite surfaces (GEX, Live, Reports, Advisor, Config) last -- with
-  the lightbox (a dialog portalled over the Overview) shipping beside the frame until the last one
-  moved; then it, its carousel ring and its CSS were removed. `registry.ts`'s `MODULE_FRAMES` and
-  `navGroups.ts`'s `NAV_DECL` are both full `Record`s over `ModuleId`, so a page added to
-  `moduleOrder.ts` without a manifest and a declaration does not compile. GEX moved as a reparent
-  only: its chart, its `OI vs vol` default, its spot trail and its walls did not change. Advisor
-  stays one page holding its own four tabs, because it carries write actions wired through state
-  that spans the page (`navGroups.ts` says why).
-  - **The rail is static data (`lightbox/navGroups.ts`), not the manifest.** Manifests are `lazy()`
-    and React's server renderer emits the Suspense fallback rather than resolving them, so nothing
-    inside a manifest is visible to `renderToString` — which is every test this package has. The
-    rail and the breadcrumb live outside the boundary, which is the only reason `routes.test.tsx`
-    can assert which tab a URL resolved to. Keeping the tab list twice is the cost: the manifest's
-    ids are typed against the declaration, and `ModuleFrame` compares the two at runtime and says
-    so **on the page**, because a tab missing from the rail otherwise reads as a tab that was
-    removed on purpose.
-  - **A renamed tab keeps its old id as an alias**, resolved before the first-tab fallback.
-    `/flies/exits` must reach `divergence`; falling through to the first tab would look like a
-    working link while showing the wrong page, which is worse than a 404.
-  - **Nothing on a frame module opens an overlay; cards link to the module's own pages.** A card
-    whose number has a denser form sets `to` (`GridCard`/`StatTile`): its title and its ⤢ both
-    link to that page, carrying the current query string, because mode, date, arm and era live
-    there and a link that dropped them would open the right page on the wrong session. The dense
-    tables are pages in the rail (flies' `tables` group: books, positions, history), not overlay
-    sheets -- they were `DetailSheet`s from 2026-09-22 until 2026-09-24, when every place a reader
-    can go became a page that can be reloaded, shared and reached from the rail. Two checks:
-    `routes.test.tsx` reads every `to="/<page>/<tab>"` in the web source -- links across pages
-    included, like flies' live-pilot tile to `/live/today` -- and requires each to resolve to that
-    tab (a link to an undeclared tab silently lands on the first one), and
-    `pnpm ui-check --route /flies/session --links` follows every card link in real Chrome.
-  - **A card's tone comes only from the sign of a number or a flag a writer already set.** This is
-    the read-surface rule (the console computes no verdicts) applied to pixels, and it matters more
-    on a chart than in a table: `withReadOnlyDb` collapses "store absent", "query threw" and
-    "genuinely empty" into one return value, and a chart renders all three as a flat line at zero
-    while a table renders them as "no rows". Hence `StatTile` renders a null as an em dash with no
-    tone and `Spark` refuses to draw under two points. The `dragPct > 30` tint that lived in three
-    files did not survive the sweep; `thin` did, because the module stamps it.
-  - **A chart in a grid cell measures itself** (`lib/useMeasure.ts`). The hand-rolled SVGs are
-    written at `width = 1150` and scale with `viewBox`; scaling is not reflowing, and a 9px axis
-    label at a third of the width is 3px. The fallback stays 1150, which is what SSR and the first
-    paint get.
-  - **Animations are deferred, not removed.** Motion in the console is its own piece of work; the
-    frame components ship with none of their own so that work starts from a neutral baseline.
-- **The calendars page is the same question answered the other way, and the split is the point.**
-  `readers/calendars.ts` reads that ledger directly like every other reader here, but two things it
-  will not compute go out through `services/calendarsBridge.ts` as a subprocess: the exit-policy
-  table and the week's calendar anchors. Not because they are expensive — both are memoised at 5–10
-  minutes and neither moves on a poll's timescale — but because both would be *re-derivations*
-  rather than reads. The policy table is a tick-by-tick replay welded to a validation that
-  reproduces the real books to the cent, and a TypeScript second implementation is the one kind of
-  drift that validation could not catch: it would be validating the wrong derivation. The anchors
-  are NYSE holiday arithmetic whose structure tag is the key every result is grouped by, and a
-  second calendar is a second calendar free to disagree. The rule that separates the two pages:
-  **mirror a query, bridge a derivation.** A query can be checked against its source by reading
-  both; a derivation with its own validation can only be checked by being the one that was
-  validated.
+- **The rail is static data (`lightbox/navGroups.ts`), not the manifest.** Manifests are `lazy()`, and
+  `renderToString` (every test here) emits the Suspense fallback, so the rail and breadcrumb live
+  outside the boundary — that is what lets `routes.test.tsx` assert which tab a URL resolves to.
+  `ModuleFrame` compares the two tab lists at runtime and says so **on the page** on a mismatch.
+- **A renamed tab keeps its old id as an alias**, resolved before the first-tab fallback
+  (`/flies/exits` → `divergence`); a fall-through looks like a working link showing the wrong page.
+- **A tab change is a handoff, not a remount.** The frame body stays mounted, the slide subtree is
+  keyed with a 120ms settle, scroll resets explicitly, and `Shell` keys its outlet on the module
+  segment, not the whole pathname (or every tab change refetches the module).
+- **Nothing opens an overlay; cards link to pages.** A card with a denser form sets `to`
+  (`GridCard`/`StatTile`): title and ⤢ link there **carrying the current query string** (mode, date,
+  arm, era). Dense tables are rail pages (flies' `tables` group), reloadable and shareable.
+  `routes.test.tsx` requires every `to="/<page>/<tab>"` in the web source to resolve to a declared tab;
+  `pnpm ui-check --route /flies/session --links` follows every card link in Chrome.
+- **A card's tone comes only from the sign of a number or a flag a writer already set** — the
+  no-verdicts rule applied to pixels. Since a chart draws absent/threw/empty alike as a flat zero,
+  `StatTile` renders a null as an em dash with no tone and `Spark` refuses to draw under two points.
+  (`thin` is used because the module stamps it; console-side thresholds like `dragPct > 30` are not.)
+- **A chart in a grid cell measures itself** (`lib/useMeasure.ts`): hand-rolled SVGs are written at
+  `width = 1150` and scaling is not reflowing. The fallback stays 1150 for SSR and first paint.
+- **Animations are deferred, not removed**; frame components ship with none so that work starts
+  neutral.
 
-- **A module's own evidence window is the default.** Where a module narrows its analytics to a
-  current era or study window, the console's reads default to the same narrowing rather than
-  showing every row it can reach — MEIC's `CURRENT_ERA` is the case in hand. Earlier eras stay
-  reachable through a visible scope control, so widening is a stated choice and never the quiet
-  default. Filtering to nothing is reported as a filtered-out result, not an empty page.
-  Since 2026-08-21 this applies to EVERY history/performance/reporting surface: meic and flies
-  scope on their own era models, and the modules with no era column (earnings, plus the suite
-  report and review totals) bound to the suite's `data_epoch` via `readers/db.ts::suiteEra` —
-  one source, the same lever `calibrate` enforces, widened per-surface with the shared `"ALL"`
-  convention. calendars/pmcc need no bound: their ledgers were empty before the era began, so
-  current-era and all-history are the same set until a second era exists.
-- **Market data**: the console opens its own DXLink session via the official `@tastytrade/api` npm
-  SDK (`quoteStreamer`). The Python streamer and its `stream_cache.db` are untouched; the cache is
-  read read-only as the off-hours / disconnected fallback.
-- **Single source of broker auth**: the console reads THE suite credential — the
-  `production:client_secret` / `production:refresh_token` entries under the `cherrypick-broker`
-  keyring service, the same entries every Python module reads through and onboarding manages.
-  Python-keyring targets aren't addressable from Node, so reads bridge through Python
-  (`auth/suiteBridge.ts`). **The console never writes credentials** — there is exactly one setting
-  path suite-wide, `python -m cherrypick.core.auth setup`; the console CLI's `set` prints that
-  pointer, `probe` re-validates on demand, and `clear` touches only the pre-unification Node
-  slots. Scope is detected via a dry-run probe (per-process, never persisted): a
-  **read-only** refresh token gets a loud warning and every write-oriented function disables
-  itself (staged tickets save without broker dry-run validation; the header shows a read-only
-  chip). Scope rides on the refresh token.
-  **This package contains no order-placement code paths** — staged tickets are dry-run records in the
-  console's own store. It never touches any module's `enable_live_trading`.
+**Reports** (`/reports`) holds the morning pack (`packages/overview`) and the EOD review
+(`packages/review`) as tabs; each tab renders its own page component unchanged, so neither report gains
+a second place its shape is decided. The tab is in the URL (`?tab=eod`) because reports get sent, and
+`/morning` and `/review` redirect rather than 404.
 
-## Advised books are per experiment, and a module can run several (2026-09-17)
+- The Morning tab also shows `packages/technicals`' report (`data/technicals/report-<session>.json`,
+  `readTechnicals` in `readers/overview.ts`, `pages/Morning/TechnicalsCards.tsx`). **It is the last
+  report dated strictly before the pack's session** — a same-day report was written after that
+  close and would show the morning what it could not have known. A test pins the `<` and was shown to
+  fail at `<=`.
+- `/reports/chart?symbol=X` draws `data/technicals/charts/<X>.json` (`readers/technicals.ts`,
+  `pages/Morning/ChartPage.tsx`). The symbol becomes a file name, so the reader accepts only ticker
+  characters; a test sends `../` and was shown to fail with the pattern loosened.
 
-Until 2026-09-17 each module ran ONE advisor experiment at a time and wrote ONE synthetic book,
-`advised:<base>`; experiments on the same base reused the tag in turn and were told apart only by
-the `experiment_id` stamped on rows (the 2026-09-16 fix, which made the paired card one pair per
-stamp). Now any number of experiments run per module at once and **each writes its own book,
-`advised:<experiment name>`** (earnings `advised:<name>:<strategy>`; the name is a slug, lowercase
-`[a-z0-9-]`). The tag no longer names the base: the base is on the advisor's `experiments` row
-(`base_profile`), beside a `tag` column the advisor stamps as it creates the row.
+**Module advisor slides.** `readers/advisor.ts`'s `readAdvisorModule` serves
+`/api/advisor/module/:module`: active experiments with progress against length and stall budget, the
+session strip from the advisor's `enactment` table (read, never re-derived), the paired comparison as
+of the last evening pass, tomorrow's artifact, the queue and the last concluded.
+`components/advisor/AdvisorSlide.tsx` renders it in all seven module manifests; the Advisor page's
+experiments tab opens with the cross-module roll-up. Module slides are read-only; kill/dismiss stay on
+the Advisor page only.
 
-Every surface here that meets an advised tag therefore resolves it through ONE place,
-`readers/experimentIndex.ts`, in one order: the experiment id stamped on the rows (`core.metrics`
-groups stamped rows as `<tag>@<experiment id>`), then the tag against the experiment's own `tag`
-(or `advised:` + slug(name) on a store whose table predates the column — `slugExperimentName`
-mirrors `cherrypick.core.advice.slug` exactly, and the advice-decl test pins it), then the legacy
-reading of `advised:<base>` for rows no experiment claims. The reason it is one place: prefix
-stripping was the rule in four files (`pairs.ts`, `adviceDecl.ts`, `experimentGuide.ts`, the flies
-forest) and each would have needed the same three-step lookup, which is four chances to disagree
-about which base a book shadows.
+**Live** (`/live`, `lightbox/manifests/LiveLightbox.tsx`, `pages/Live/`) — the flies live pilot's day
+over `GET /api/live/flies` (`routes/live.ts` → `readers/fliesLive.ts`), composing existing readers
+(`services/liveLock`, `readFliesLoopStatus`, `readFliesJournal`, `readFliesAnalytics`) plus settled
+net per period, the intraday series and the broker account. Rules, stated on the page:
 
-What that means per surface:
+- **Period tiles are settled net only** — the core.ledgers flies rule (`gross_pnl - fees` over
+  `status = 'settled'`, by `trade_date`), mirrored and pinned by
+  `server/test/flies-live-reader.test.ts`; today reads zero until the bell, with the paper control's
+  figure beside each tile.
+- **A mark is a mid, not a fill.** The intraday curve and "now" tile are the loop's own
+  `fly_live_marks`, summed per tick with peak-to-trough drawdown; an unpriced tick is a named gap,
+  never interpolated.
+- Market series are read-only from other stores: SPX from `gex_spot_history` (baselined on
+  `prev_day_close`, else the first tick, and the payload says which), VIX/VIX3M from
+  `market_regime_history` (`usable` rows only), clipped to regular hours. Buying power is the loop's
+  own gate figure against `live.max_open_margin_dollars`, so page and gate cannot disagree.
+- The broker account rides `services/brokerBridge`, a memoised subprocess over the orchestrator's
+  `positions` verb (masking and mid-is-not-a-fill flags stay in Python), and is **non-blocking**:
+  return what the memo holds and start a refresh; a synchronous spawn skeletons the page for 10–20s.
+- `readOnlyDb`, not `withReadOnlyDb`, for the live ledger: "no live ledger here" and "the read threw"
+  are different facts and the page shows which. No button here touches an order.
 
-- **Paired card** (`readers/pairs.ts`, `PairedABCard`): one pair per experiment, two experiments
-  on one base being two pairs against the same control. A legacy tag with a stamp pairs to THAT
-  experiment's base (the row's, not the tag's); an unmatched legacy tag pairs against the base its
-  tag names, or the module's declared base when that book has no rows in the window, flagged
-  `unstamped` — the Advisor page's stored verdicts are the per-experiment read for that history.
-  Deliberately no date inference here — a second attribution rule free to drift from the advisor's.
-- **Active / retired** (`adviceDecl.ts::advisedTagStatus`): a tag is active while the experiment
-  it resolves to is `active` in advisor.db and the module's advice layer is on — so a module can
-  show several active advised tags. A legacy tag no experiment claims is history once a store
-  exists; without a store at all the pre-change rule (advice on, declared base) still applies, and
-  a nameless active row keeps its legacy book alive. The experiment guide labels each book
-  "advised twin of `<base>: <experiment name>`", and attributes a legacy tag to an experiment only
-  when EVERY row is stamped with the same one (MEIC's advised:control held 2079 unstamped rows
-  beside 421 stamped with one experiment on the day this landed — history, not that experiment's).
-- **Advisor reader** (`readers/advisor.ts`): `readAdvisorModule.active` is a list, each entry
-  carrying its own `calendarSessions` and `stallBudget`; the session strip returns every enactment
-  row over the last 15 scored sessions (the advisor's `enactment` table now keys on
-  `(session, module, experiment_id)`), and the slide draws one strip per experiment.
-  `AdvisorApplyStatus.enactments` is a list for the same reason, and the banner's "not applied"
-  count is per experiment. Artifacts and each module's `advice_active.json` carry an `experiments`
-  list whose first entry the legacy top-level fields mirror — the reader exposes the list
-  (`artifactExperiments`, `decisionExperiments`) and synthesises one entry from the legacy fields
-  when it is absent; reading both would count the first experiment twice.
+**Regime-cuts slide** (flies and MEIC) — `components/RegimeCutsTab.tsx` over
+`GET /api/<module>/regime-cuts[?session=YYYY-MM-DD]` (`routes/modules.ts` → `readers/regimeCuts.ts`).
+The module writes the artifact nightly (contract: `cherrypick.core.regimecuts`); the reader derives
+only the union of dimension keys for layout. Every number, the era and `thin` come off the file —
+`server/test/regime-cuts.test.ts` uses a cell whose `sessions` and `thin` disagree on purpose.
 
-## The Live page: the flies live pilot's day (2026-09-17)
+- Absent (slide names the command), failed (malformed, or an unread `cut_version` — shown as a
+  failure, not an empty day) and stale (ledger `MAX(trade_date)` newer than the artifact, via one
+  `readOnlyDb`) are three payloads. Dated artifacts feed a session picker.
+- Robustness stamps (`fragile`/`robustness`/`history` per cell, `paired` per dimension,
+  `multiplicity` per document) are the writer's. **`fragile` is never defaulted to false** (missing =
+  "not stamped"); paired rows dim at the writer's `paired_alpha`, never a console constant or the
+  interval `alpha`. The fixture sets the two alphas apart so borrowing one for the other fails.
+- Verify: after `pnpm --filter @console/shared build && pnpm build` and a restart,
+  `MSYS_NO_PATHCONV=1 pnpm ui-check --route /flies/regime --expect "era since"`, and `/meic/regime`.
 
-`/live` is a suite-level page on the frame (`lightbox/manifests/LiveLightbox.tsx`, page `pages/Live/`) over
-one endpoint, `GET /api/live/flies` (`routes/live.ts` -> `readers/fliesLive.ts`). It composes
-readers that already existed -- the arming strip from `services/liveLock`, the loop pill from
-`readFliesLoopStatus`, the feed from `readFliesJournal`, the at-risk figure from
-`readFliesAnalytics` -- plus three reads that did not: settled net per period, the intraday
-series, and the broker account.
+## Advised books are per experiment
 
-Two honesty rules, stated on the page itself. **The period tiles are settled net only**: the
-core.ledgers flies rule (`gross_pnl - fees` over `status = 'settled'` rows, by `trade_date`)
-mirrored as a query and pinned by `server/test/flies-live-reader.test.ts` against fixture rows;
-flies settles at expiry, so today reads zero until the bell, and the paper control's same-period
-figure sits beside every tile for the pilot's comparison. **A mark is a mid, not a fill**: the
-intraday curve and the "now" tile are the live loop's own `fly_live_marks`, written off the
-cached leg mids every tick, summed per tick here with the peak-to-trough drawdown; a tick the
-loop refused to price is a named gap on the chart, never an interpolation.
+Each experiment writes its own book, `advised:<experiment name>` (earnings
+`advised:<name>:<strategy>`; name slugged to `[a-z0-9-]`), and a module can run several. The tag no
+longer names the base: that is the advisor `experiments` row's `base_profile`, beside its `tag` column.
+Older rows carry the legacy `advised:<base>`, told apart only by the stamped `experiment_id`.
 
-The market series come from other packages' stores, read-only: SPX from the gex recorder's
-`gex_spot_history` (baselined on the stream cache's `prev_day_close`, else the first tick, and
-the payload says which), VIX/VIX3M from its `market_regime_history` with only `usable` rows.
-Clipped to regular hours: the recorder also samples the frozen pre-open spot, which drew a flat
-line ramping into the open. Buying power is the loop's own gate -- the latest tick's open
-worst-case exposure against `live.max_open_margin_dollars` -- so the page and the gate can never
-disagree. The broker account rides on `services/brokerBridge`, a memoised subprocess over the
-orchestrator's `positions` verb (masking, mid-is-not-a-fill flags and unpriced accounting stay in
-Python), **non-blocking**: the payload returns what the memo holds and starts a refresh; a cold
-start says "fetching" once and the next poll has it. The first cut used a synchronous spawn and
-the first browser check found the whole page on skeletons for the broker's 10-20s round-trip.
+**Every surface resolves an advised tag through ONE place, `readers/experimentIndex.ts`**, in order:
+the stamped experiment id (`core.metrics` groups stamped rows as `<tag>@<experiment id>`); then the tag
+against the experiment's `tag` (or `advised:` + slug(name) on an older store — `slugExperimentName`
+mirrors `cherrypick.core.advice.slug` exactly, pinned by the advice-decl test); then the legacy
+`advised:<base>` reading for rows no experiment claims. Prefix stripping in several files would be
+several chances to disagree about which base a book shadows.
 
-`readOnlyDb`, not `withReadOnlyDb`, for the live ledger: "no live ledger on this machine" and "the
-read threw" are different facts and the page shows which. There is no button here that touches an
-order, and `dry-run-only.test.ts` still scans this reader like every other file.
+- **Paired card** (`readers/pairs.ts`, `PairedABCard`): one pair per experiment. A stamped legacy tag
+  pairs to that experiment's base; an unmatched legacy tag pairs against the base its tag names (or the
+  declared base if that book has no rows in the window), flagged `unstamped`. **No date inference** —
+  a second attribution rule free to drift from the advisor's.
+- **Active / retired** (`adviceDecl.ts::advisedTagStatus`): a tag is active while its experiment is
+  `active` in advisor.db and the module's advice layer is on. A legacy tag no experiment claims is
+  history once a store exists; with no store, the old rule (advice on, declared base) applies. The
+  experiment guide attributes a legacy tag to an experiment only when EVERY row carries the same stamp.
+- **Advisor reader**: `readAdvisorModule.active` is a list (each with `calendarSessions`,
+  `stallBudget`); the strip returns every enactment row over the last 15 scored sessions (`enactment`
+  keys on `(session, module, experiment_id)`), one strip per experiment; the "not applied" count is
+  per experiment. Artifacts and `advice_active.json` carry an `experiments` list whose first entry the
+  legacy top-level fields mirror — read the list (`artifactExperiments`, `decisionExperiments`),
+  synthesising one entry only when it is absent; reading both counts the first experiment twice.
 
-## The regime-cuts slide (flies and MEIC, 2026-09-19)
+## The trade table standard
 
-One component, `components/RegimeCutsTab.tsx`, registered as the `regime` slide on both module
-pages, over `GET /api/<module>/regime-cuts[?session=YYYY-MM-DD]` (`routes/modules.ts` ->
-`readers/regimeCuts.ts`). The module writes the artifact nightly (`data/<module>/regime_cuts.json`,
-contract in `cherrypick.core.regimecuts`); this package renders it and computes nothing from it.
-The reader derives exactly one thing, the union of dimension keys across books, so the slide can
-lay out columns; every number, the era, and the `thin` flag come off the file. A reader that
-re-derived `sessions < 3` here would be a second implementation of the writer's threshold, and
-`server/test/regime-cuts.test.ts` pins that with a fixture cell whose `sessions` and `thin`
-disagree on purpose.
-
-Absent, failed and stale are three different facts and three different payloads: the file is not
-there (the nightly job has not run on this machine; the slide names the command), the file is
-malformed or a `cut_version` this console does not read (shown as a failure, not an empty day),
-and the ledger holds a session newer than the artifact's (an `ok` payload carrying `stale`, from
-one `readOnlyDb` `MAX(trade_date)` against a declared per-module table). The earnings JSON reader
-collapses the first two; this one does not. Dated artifacts are listed for a session picker.
-
-**The robustness stamps (2026-09-28)** ride the same rule. `fragile` / `robustness` / `history` on
-every cell, `paired` on every dimension and `multiplicity` on the document are the writer's, shown
-as a `fragile` mark (tooltip: the largest session's share, the sign flips, the interval), a `±n`
-sign-change mark, a same-day comparisons table under each dimension and one multiplicity line in
-the header. `fragile` is read as the writer's boolean or null and never defaulted to false the way
-`thin` is: a missing stamp is "not stamped", and false would read as "checked and found sound".
-Paired rows are dimmed at the writer's `paired_alpha`, never a console copy of 0.10 and never the
-interval `alpha` it happens to equal today; the reader test's fixture sets the two apart so a
-reader that borrowed one for the other fails.
-
-Verify in the browser after `pnpm --filter @console/shared build && pnpm build` and a console
-restart: `MSYS_NO_PATHCONV=1 pnpm ui-check --route /flies/regime --expect "era since"`, and the
-same with `--route /meic/regime`. Every slide is addressable, so prefer `--route` over
-`--click`: it needs no text match and no settle delay, and on the frame `--click` cannot reach a
-tab at all (it skips anything inside a `<nav>`, and the rail is one).
-
-## The trade table standard (2026-09-24)
-
-The suite rule (root CLAUDE.md, "Trade histories and reports") applied here. Flies is the reference
-implementation: `readers/flies.ts` `tradeCash`/`bookCash` derive the columns, `fmtCash` (signed,
-`+$178.75`) and `fmtPrice` (`1.25 cr`) in `lib/format.ts` render them, and the books / positions /
-history slides show them. Header order: identity and structure, then qty, price, entry, exit, how
-it ended, gross, fees, settle, slip, net — with each money header's `title` stating its definition.
+The root money layout applied here. Flies is the reference: `readers/flies.ts` `tradeCash`/`bookCash`
+derive the columns, `lib/format.ts` `fmtCash` (`+$178.75`) and `fmtPrice` (`1.25 cr`) render them.
+Header order: identity and structure, qty, price, entry, exit, how it ended, gross, fees, settle, slip,
+net — each money header's `title` stating its definition.
 
 - Money is derived on the server, never in a component, so every surface of a module agrees.
-- A cost column added recently is read as optional (`NULL` when the ledger predates it): a missing
-  column must read as "not recorded", and `withReadOnlyDb` would otherwise turn it into an empty
-  table that looks like a quiet day.
+- A recently added cost column is read as optional (`NULL` on an older ledger), so a missing column
+  reads "not recorded" rather than `withReadOnlyDb` turning it into an empty table.
 - A totals chip carries gross, fees, settlement and net over every matching row, and says how many
-  rows a partially-recorded measure (slippage) covers.
+  rows a partially recorded measure (slippage) covers.
+- Each module on the standard has its own trade-standard test against its own fixture, shown to fail
+  (the flies one by removing the subtraction and the filter):
 
-`server/test/flies-trade-standard.test.ts` pins the identities, the single subtraction and the
-held-only rule; it was checked by removing the subtraction and the filter and watching it fail.
-Each module that moves onto the standard gets the same test against its own fixture.
+| Module | Derivation | Test | Notes |
+|---|---|---|---|
+| flies | `readers/flies.ts` `tradeCash`/`bookCash` | `flies-trade-standard` | slippage inside gross |
+| meic | `readers/meic.ts` `meicTradeCash`, `pages/Meic/MeicTables.tsx` | `meic-trade-standard` | entry summed from the two side credits, rounded per side as the write path does |
+| bwb | `readers/bwb.ts` `bwbTradeCash` | `bwb-trade-standard` | slippage charged inside `fees`; each part subtracted once; a broker-reconciled row takes none out |
+| earnings | `readers/earnings.ts` `earningsTradeCash` | `earnings-trade-standard` | `entry_cost`/`exit_cost` carry slippage and (exit) settlement fee; history is closed trades across both books |
+| calendars, pmcc, curve | `readers/positionCash.ts`, `components/TradeMoney.tsx` | `position-trade-standard` (via curve), `pmcc-`/`calendars-trade-standard` on fixtures from each module's `db.connect` | exit kinds add `assigned`; calendars' history is per week and arm, net null until every position (shares included) has closed, totals over finished weeks only |
 
-Modules on the standard (and on the module frame): flies, meic (2026-09-25; `readers/meic.ts`
-`meicTradeCash`, `pages/Meic/MeicTables.tsx`, `server/test/meic-trade-standard.test.ts`). MEIC's
-entry is summed from its two side credits, rounded per side as its write path rounds each side's
-P&L; from the rounded `net_credit` instead, 1,798 worthless expiries showed a one-cent exit.
-bwb (2026-09-25; `readers/bwb.ts` `bwbTradeCash`, `server/test/bwb-trade-standard.test.ts`) is
-the first module on the other slippage model: charged as a cost inside `fees`, so each part (entry
-and add-on fees, their slippage, settlement) comes out of the total once, and a broker-reconciled
-row takes out none, since its real fills already carry it.
-earnings (2026-09-25; `readers/earnings.ts` `earningsTradeCash`,
-`server/test/earnings-trade-standard.test.ts`) is on the same charged model: entry_cost and
-exit_cost carry the slippage charge and, on exit_cost, any settlement fee. Its history is the closed
-trades across both books; open positions are the positions page.
-calendars, pmcc and curve share one accounting, so they share `readers/positionCash.ts`
-(`positionCash`, `positionCashColumns`, `tradeTotals`) and `components/TradeMoney.tsx` (the ten
-money headers and cells, and the totals chip); `server/test/position-trade-standard.test.ts` pins
-it through curve. Their exit kinds add `assigned`: a physically settled leg delivers shares.
-pmcc and calendars have their own tests on schema fixtures generated from the modules' own
-`db.connect` (`pmcc-trade-standard`, `calendars-trade-standard`). calendars' history is its weeks:
-each position through `positionCash`, summed per week and arm, with exit and net null until every
-position -- delivered shares included -- has closed, and totals over finished weeks only.
+## History-table controls
 
-All seven trading modules are on the module frame and the standard as of 2026-09-25, and the
-suite surfaces joined them the same day, so the flies live-pilot tile links to `/live/today`.
+A history table declares its columns once (`components/table/columns.ts`, `ColumnDef`: header,
+definition tooltip, cell, kind); the controls come from that list.
 
-## History-table controls (2026-09-25, every trade module)
+- **Columns menu** (`ColumnsMenu`): a dropdown panel, not a dialog. `describe` columns can be hidden
+  and reordered; `money` columns can be hidden but stay one block in the standard's order at the end,
+  and `net` (`pinned`) is always shown and always last. `resolveColumns` enforces that against any
+  stored layout, drops unknown ids and shows newly declared columns (`web/test/tableColumns.test.ts`).
+- **Layout storage:** the prefs store under `columns:<table>` — per viewer, follows to the desktop
+  shell, never in the URL.
+- **Date range** (`DateRangeBar`, `useUrlDateRange`, `DatePicker.tsx`): presets plus a two-click
+  picker (Monday-first, nothing after today); `?from=&to=` written with `replace`; presets end today in
+  New York time. **The server applies it** (`readers/dateRange.ts`: one parser, one clause builder), so
+  counts and totals describe the range. Each module bounds the date its history is ABOUT, and the bar
+  names it: trade date for flies and meic, close date for bwb/pmcc/curve/earnings (an open position is
+  outside any range), week for calendars.
+- **`HistoryTable`** (`components/table/HistoryTable.tsx`) is the card for every module but flies.
+  Money and `numeric` columns right-align per column (`td.num`), since a reorderable table cannot align
+  by position. `tradeMoneyColumns` holds calendars/pmcc/curve's shared columns.
+- **Deliberate differences:** flies' range sits at the top of its History tab and bounds the summaries
+  too, so a narrowed tab never sets one table beside cards answering for the era. MEIC's history is one
+  session by default; a range replaces the header's day, and the no-range button reads `session`.
+  Earnings' range bounds its history and totals only.
 
-A history table declares its columns once (`components/table/columns.ts`, `ColumnDef`): header,
-definition tooltip, cell, and kind. The controls come from that list, not from hand-written rows:
+## Package guardrails
 
-- **Columns menu** (`ColumnsMenu`): a panel dropped from a button in the table's controls row, not
-  a dialog -- the table stays visible and updates behind it. `describe` columns can be hidden and
-  dragged (or moved with arrow buttons) into any order. `money` columns can be hidden, but stay one
-  block in the standard's order at the end, and `net` (`pinned`) is always shown and always last.
-  `resolveColumns` enforces that against any stored layout, drops ids the table no longer has, and
-  shows a column declared since the layout was saved (`web/test/tableColumns.test.ts`).
-- **Layout storage:** the prefs store (`lib/prefs.ts`) under `columns:<table>`. It's a per-viewer
-  preference that follows to the desktop shell. It is never in the URL.
-- **Date range** (`DateRangeBar`, `useUrlDateRange`): presets plus a calendar picker
-  (`DatePicker.tsx`, 2026-09-26; it replaced two native date inputs that made you type MM/DD/YYYY) --
-  first click the start, second the end, weeks Monday-first, nothing after today. `?from=&to=` in the page address, written with
-  `replace`, so a filtered view reloads and shares. Presets end today in New York time. The server
-  applies it (`readers/dateRange.ts`: one parser, one clause builder), so the match count and the
-  totals chip describe the range. Each module bounds the date its history is ABOUT, and the bar
-  names it: the trade date for flies and meic, the close for bwb/pmcc/curve/earnings (a result
-  belongs to the day it was realised, so an open position is outside any range), the week for
-  calendars.
-- **`HistoryTable`** (`components/table/HistoryTable.tsx`) is the card every module but flies uses:
-  columns menu, the table's own filters, the date range, and an optional detail row per row. Money
-  and `numeric` describe columns right-align per column (`td.num`), because a reorderable table
-  cannot align by position the way `num-from-N` does. `tradeMoneyColumns` holds calendars/pmcc/
-  curve's shared columns.
-- **Two deliberate differences.** Flies' range sits at the top of its History tab and bounds the
-  summaries (calendar, by-arm, by-hour, completion matrix) as well as the log, so a narrowed tab
-  never sets one table beside cards still answering for the era. MEIC's history is one session by
-  default; a range REPLACES the header's day there, and the bar's no-range button reads `session`.
-  Earnings' range bounds its history and totals only -- the other pages ride the same query but
-  not the range.
-
-## Suite guardrails (apply here too)
-
-Suite-wide guardrails apply — see root CLAUDE.md. Package-specific: **loopback-only serving**. This
-package computes no verdicts of its own — it renders what the modules decided, and where it mirrors
-a module's queries it says so and is checked against them.
+Suite guardrails apply (root CLAUDE.md). Package-specific: **loopback-only serving**; the console
+**computes no verdicts** — it renders what the modules decided, and where it mirrors a module's queries
+it says so and is checked against them.

@@ -27,6 +27,7 @@ agent follows lives in [`../CLAUDE.md`](../CLAUDE.md); the full entry-gate catal
 |---|---|
 | [operating.md](operating.md) | Day-to-day operation: sessions, the streamer, the dashboard, and routine checks. |
 | [0dtespx-api.md](0dtespx-api.md) | Notes on the 0DTE SPX data/API specifics the engine depends on. |
+| [history.md](history.md) | Dated incidents, audits and arm changes behind the rules in `../CLAUDE.md`, with the numbers. |
 
 ## How MEIC relates to the rest of the suite
 
