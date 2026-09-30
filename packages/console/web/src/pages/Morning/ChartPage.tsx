@@ -7,7 +7,13 @@ import {
   LineSeries,
   LineStyle,
   type IChartApi,
+  type IPrimitivePaneRenderer,
+  type IPrimitivePaneView,
+  type ISeriesApi,
+  type ISeriesPrimitive,
+  type SeriesAttachedParameter,
   type SeriesMarker,
+  type SeriesType,
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
@@ -89,6 +95,87 @@ function line(dates: string[], values: (number | null)[]) {
   });
 }
 
+const CHIP_H = 17;
+const CHIP_PAD = 5;
+
+/** Black or white text over a chip, by the chip colour's luminance. */
+function chipInk(hex: string): string {
+  const n = Number.parseInt(hex.slice(1), 16);
+  const lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  return lum > 160 ? "#000000" : "#ffffff";
+}
+
+interface LevelTitle {
+  price: number;
+  title: string;
+  color: string;
+}
+
+/** A series' last drawn value, for its chip; null when it has none. */
+function lastValue(values: readonly (number | null)[]): number | null {
+  for (let i = values.length - 1; i >= 0; i--) {
+    const v = values[i];
+    if (v !== null && v !== undefined) return v;
+  }
+  return null;
+}
+
+/**
+ * Titles and values drawn as chips at the pane's LEFT edge: a price line's, or a series' at its last
+ * value. The library draws them against the price axis, where they sit over the latest bars and the
+ * scale's own numbers; the lines and series here carry neither. Every entry is placed on the scale of
+ * the series the primitive is attached to, so each pane gets one primitive on one of its series.
+ */
+class LeftTitles implements ISeriesPrimitive<Time> {
+  private series: ISeriesApi<SeriesType> | null = null;
+  private readonly views: readonly IPrimitivePaneView[];
+
+  constructor(private readonly titles: LevelTitle[]) {
+    const renderer: IPrimitivePaneRenderer = { draw: (target) => this.draw(target) };
+    this.views = [{ zOrder: () => "top", renderer: () => renderer }];
+  }
+
+  attached(param: SeriesAttachedParameter<Time>): void {
+    this.series = param.series;
+  }
+
+  detached(): void {
+    this.series = null;
+  }
+
+  paneViews(): readonly IPrimitivePaneView[] {
+    return this.views;
+  }
+
+  private draw(target: Parameters<IPrimitivePaneRenderer["draw"]>[0]): void {
+    const series = this.series;
+    if (series === null) return;
+    target.useMediaCoordinateSpace(({ context }) => {
+      context.font = "11px -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif";
+      context.textBaseline = "middle";
+      // A chip centred on its line, as the library draws a title. A vendor level on the grid's high
+      // or low shares its line; chips that would overlap sit side by side instead.
+      const placed: { y: number; right: number }[] = [];
+      for (const l of this.titles) {
+        const y = series.priceToCoordinate(l.price);
+        if (y === null) continue;
+        let x = Math.max(0, ...placed.filter((p) => Math.abs(p.y - y) < CHIP_H).map((p) => p.right + 4));
+        for (const text of [l.title, fmt(l.price)]) {
+          const w = context.measureText(text).width + 2 * CHIP_PAD;
+          context.fillStyle = l.color;
+          context.beginPath();
+          context.roundRect(x, Math.round(y - CHIP_H / 2), w, CHIP_H, 2);
+          context.fill();
+          context.fillStyle = chipInk(l.color);
+          context.fillText(text, x + CHIP_PAD, y + 0.5);
+          x += w + 1;
+        }
+        placed.push({ y, right: x - 1 });
+      }
+    });
+  }
+}
+
 function PriceChart({ c }: { c: TechnicalsChart }) {
   const hostRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -113,24 +200,29 @@ function PriceChart({ c }: { c: TechnicalsChart }) {
       priceLineVisible: false,
     });
     candles.setData(c.bars.map((b) => ({ time: t(b.date), open: b.open, high: b.high, low: b.low, close: b.close })));
+    const titles: LevelTitle[] = [];
     if (c.grid) {
       for (const [price, title] of [
         [c.grid.high, "grid high"],
         [c.grid.low, "grid low"],
       ] as const) {
-        candles.createPriceLine({ price, color: GRID_INK, lineWidth: 1, lineStyle: LineStyle.LargeDashed, axisLabelVisible: true, title });
+        candles.createPriceLine({ price, color: GRID_INK, lineWidth: 1, lineStyle: LineStyle.LargeDashed, axisLabelVisible: false, title: "" });
+        titles.push({ price, title, color: GRID_INK });
       }
     }
     for (const l of c.vendor?.levels ?? []) {
+      const color = levelColor(l);
       candles.createPriceLine({
         price: l.value,
-        color: levelColor(l),
+        color,
         lineWidth: 1,
         lineStyle: levelStyle(l),
-        axisLabelVisible: true,
-        title: `vendor ${KIND_LABEL[l.kind] ?? l.kind}`,
+        axisLabelVisible: false,
+        title: "",
       });
+      titles.push({ price: l.value, title: `vendor ${KIND_LABEL[l.kind] ?? l.kind}`, color });
     }
+    candles.attachPrimitive(new LeftTitles(titles));
     const inRange = new Set(dates);
     const markers: SeriesMarker<Time>[] = c.signals
       .filter((s) => inRange.has(s.date))
@@ -147,22 +239,36 @@ function PriceChart({ c }: { c: TechnicalsChart }) {
     createSeriesMarkers(candles, markers);
 
     // Pane 1: CCI 14 (the scan rules' trend-following input) and CCI 5 (their dip/rally input).
-    const cci14 = chart.addSeries(LineSeries, { color: OURS, lineWidth: 2, title: "CCI 14", priceLineVisible: false }, 1);
+    // Series titles and last values are chips at the left (LeftTitles), not on the axis.
+    const seriesChip = (values: readonly (number | null)[], title: string, color: string): LevelTitle[] => {
+      const price = lastValue(values);
+      return price === null ? [] : [{ price, title, color }];
+    };
+    const unlabelled = { title: "", lastValueVisible: false, priceLineVisible: false } as const;
+
+    // Pane 1: CCI 14 (the scan rules' trend-following input) and CCI 5 (their dip/rally input).
+    const cci5Color = SERIES_COLORS[3]!;
+    const cci14 = chart.addSeries(LineSeries, { color: OURS, lineWidth: 2, ...unlabelled }, 1);
     cci14.setData(line(dates, c.cci14));
-    const cci5 = chart.addSeries(LineSeries, { color: SERIES_COLORS[3]!, lineWidth: 1, title: "CCI 5", priceLineVisible: false }, 1);
+    const cci5 = chart.addSeries(LineSeries, { color: cci5Color, lineWidth: 1, ...unlabelled }, 1);
     cci5.setData(line(dates, c.cci5));
     for (const price of [100, -100]) {
       cci14.createPriceLine({ price, color: GRID_INK, lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: "" });
     }
+    cci14.attachPrimitive(new LeftTitles([...seriesChip(c.cci14, "CCI 14", OURS), ...seriesChip(c.cci5, "CCI 5", cci5Color)]));
 
     // Pane 2: the short-term trend score, ours against the vendor's grade for the same day.
-    const ours = chart.addSeries(LineSeries, { color: OURS, lineWidth: 2, lineType: 1, title: "trend (ours)", priceLineVisible: false }, 2);
+    const ours = chart.addSeries(LineSeries, { color: OURS, lineWidth: 2, lineType: 1, ...unlabelled }, 2);
     ours.setData(line(dates, c.trendShort));
+    const trendTitles = seriesChip(c.trendShort, "trend (ours)", OURS);
     if (c.vendor && c.vendor.trendShort.length > 0) {
       const first = dates[0]!;
-      const theirs = chart.addSeries(LineSeries, { color: VENDOR, lineWidth: 2, lineType: 1, lineStyle: LineStyle.Dashed, title: "trend (vendor)", priceLineVisible: false }, 2);
-      theirs.setData(c.vendor.trendShort.filter((p) => p.date >= first).map((p) => ({ time: t(p.date), value: p.value })));
+      const vendorTrend = c.vendor.trendShort.filter((p) => p.date >= first);
+      const theirs = chart.addSeries(LineSeries, { color: VENDOR, lineWidth: 2, lineType: 1, lineStyle: LineStyle.Dashed, ...unlabelled }, 2);
+      theirs.setData(vendorTrend.map((p) => ({ time: t(p.date), value: p.value })));
+      trendTitles.push(...seriesChip(vendorTrend.map((p) => p.value), "trend (vendor)", VENDOR));
     }
+    ours.attachPrimitive(new LeftTitles(trendTitles));
 
     // Relative, not pixel, heights: a pixel height set before the first layout is overridden.
     const panes = chart.panes();
