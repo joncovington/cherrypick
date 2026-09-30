@@ -13,6 +13,7 @@ the file.
 |---|---|---|
 | [onboarding-redesign.md](onboarding-redesign.md) | The proposal that collapsed the suite's secrets-and-account workflow into one shared login (`cherrypick-broker`) and one no-module `connect` wizard. Every step shipped. | 2026-07-28 |
 | [streamer-package-plan.md](streamer-package-plan.md) | The design for splitting the market-data streamer out of MEIC into its own package, making it the suite's single producer. Shipped. | 2026-08-02 |
+| [root-claude-md-2026-09-29.md](root-claude-md-2026-09-29.md) | The suite-root `CLAUDE.md` in full, just before it was consolidated: the long package descriptions and the rationale behind the vocabulary, spelling and money-layout conventions. Every rule survives in the current file. | 2026-09-29 |
 
 For what is true today, start at the [documentation index](../README.md).
 
