@@ -7,10 +7,11 @@ all from this package's engines, so the console draws them and computes nothing.
 
 Where the vendor's chart for the name has been captured, the file also carries what the vendor
 drew: its support, resistance and gap levels, each marked with whether OUR grid can produce it,
-its trend grades by day and its rank, and how many of its bars agree with ours to the cent. That
-comparison is the point of the view: level SELECTION is unsolved (`levels.py`), so this draws our
-grid, not a set of levels we claim are the vendor's, and a disagreement is visible rather than a
-number in a scorer's table.
+its trend grades by day and its rank, and how many of its bars agree with ours to the cent. Each
+vendor level is marked with whether we can produce it: support and resistance against our grid, gap
+levels against the edges of our own gaps. That comparison is the point of the view: level SELECTION
+is unsolved (`levels.py`), so this draws our grid, not a set of levels we claim are the vendor's, and
+a disagreement is visible rather than a number in a scorer's table.
 
 The file is overwritten each session (it names its own session); the capture keeps its own date,
 because a capture from last week is still last week's levels.
@@ -26,7 +27,7 @@ from typing import Any
 
 from . import indicators, levels, paths, signals, store, symbols, trend, vendor_check
 
-CHART_VERSION = 1
+CHART_VERSION = 2  # 2: gap levels are asked against our gap edges, no longer null
 DISPLAY = levels.WINDOW  # the sessions the grid is built on, and so the ones worth drawing
 # The index funds charted beside the stocks. Named, not taken from `store.stocks`: that filter
 # drops funds on purpose, because breadth counts stocks only, and the chart page is not breadth.
@@ -74,24 +75,20 @@ def _vendor(symbol: str, bars) -> dict | None:
     agreement = vendor_check.compare(ours, quotes)
     # The grid as of the capture's own last bar -- the one the vendor's levels were drawn on.
     g = levels.grid([b.high for b in upto], [b.low for b in upto])
+    gaps = levels.gap_edges([b.date for b in upto], [b.high for b in upto], [b.low for b in upto])
     sr = why.get("supportAndResistance") or {}
     lv = []
     for kind in ("support", "resistance", "gapSupport", "gapResistance"):
         for x in sr.get(kind) or []:
             if x.get("value") is None:
                 continue
-            lv.append(
-                {
-                    "kind": kind,
-                    "value": x["value"],
-                    "date": str(x.get("date") or "")[:10] or None,
-                    # Gap levels are a different construction (a gap's edge); the grid is only
-                    # asked about the drawn support and resistance.
-                    "on_our_grid": g.explains(x["value"])
-                    if g and kind in ("support", "resistance")
-                    else None,
-                }
-            )
+            date = str(x.get("date") or "")[:10] or None
+            if kind in ("support", "resistance"):
+                placed = g.explains(x["value"]) if g else None
+            else:  # a gap level is asked whether it is an edge of one of our gaps, on the same bar
+                placed = levels.places_gap(gaps, kind, x["value"], date) if upto else None
+            # "on_our_grid" keeps its name for the file's readers; for a gap it means our gap edges.
+            lv.append({"kind": kind, "value": x["value"], "date": date, "on_our_grid": placed})
 
     def series(key):
         rows = why.get(key) or []

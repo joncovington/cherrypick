@@ -99,17 +99,22 @@ def _agreeing(conn, min_bar_agreement: float, skipped: list):
 
 
 def score_levels(min_bar_agreement: float = 0.99) -> dict:
-    """How many of the vendor's levels our grid can produce, on the names whose adjusted bars agree
-    with the vendor's to the cent. Levels not yet reproduced as a SET -- this checks placement, not
-    selection; `score_level_selection` measures selection."""
+    """How many of the vendor's levels we can produce, on the names whose adjusted bars agree with the
+    vendor's to the cent: support and resistance on our grid, gap levels as edges of our own gaps.
+    This checks placement, not selection; `score_level_selection` measures selection."""
     from . import levels
 
     conn = store.connect()
-    names, placed, total, skipped = 0, 0, 0, []
+    names, placed, total, gap_placed, gap_total, skipped = 0, 0, 0, 0, 0, []
     for _sym, why, bars in _agreeing(conn, min_bar_agreement, skipped):
         g = levels.grid([b.high for b in bars], [b.low for b in bars])
         sr = why.get("supportAndResistance") or {}
         values = [x["value"] for k in ("support", "resistance") for x in sr.get(k) or []]
+        edges = levels.gap_edges([b.date for b in bars], [b.high for b in bars], [b.low for b in bars])
+        for k in ("gapSupport", "gapResistance"):
+            for x in sr.get(k) or []:
+                gap_total += 1
+                gap_placed += levels.places_gap(edges, k, x["value"], str(x.get("date") or "")[:10])
         if g is None or not values:
             continue
         names += 1
@@ -121,6 +126,9 @@ def score_levels(min_bar_agreement: float = 0.99) -> dict:
         "levels": total,
         "placed": placed,
         "rate": round(placed / total, 4) if total else None,
+        "gap_levels": gap_total,
+        "gap_placed": gap_placed,
+        "gap_rate": round(gap_placed / gap_total, 4) if gap_total else None,
         "skipped_bars_disagree": skipped,
     }
 

@@ -21,11 +21,12 @@ import { SERIES_COLORS } from "../../components/Charts";
  *
  * Everything drawn is `packages/technicals`' chart file (`data/technicals/charts/<SYMBOL>.json`);
  * the page computes nothing. The comparison is the point: level SELECTION is unsolved, so the page
- * draws our grid's extremes and the vendor's levels, and marks each vendor level with whether our
- * grid can produce it — a disagreement you can see, not a claim that we draw the vendor's levels.
+ * draws our grid's extremes and the vendor's levels, and marks each vendor level with whether we can
+ * produce it -- support and resistance on our grid, gap levels as an edge of one of our own gaps. A
+ * disagreement you can see, not a claim that we draw the vendor's levels.
  *
- * Styling carries that distinction: a vendor level our grid places is a solid line, one it cannot
- * is dashed, and a gap level (a different construction the grid is not asked about) is dotted.
+ * Styling carries that distinction: a support or resistance we place is a solid line, a gap level we
+ * place is dotted, and any level we cannot produce is dashed.
  */
 
 const UP = "#43b57a";
@@ -66,9 +67,17 @@ function levelColor(l: TechnicalsVendorLevel): string {
   return l.kind === "support" || l.kind === "gapSupport" ? UP : DOWN;
 }
 
+const GAP_KINDS = new Set(["gapSupport", "gapResistance"]);
+
 function levelStyle(l: TechnicalsVendorLevel): LineStyle {
-  if (l.onOurGrid === null) return LineStyle.Dotted;
-  return l.onOurGrid ? LineStyle.Solid : LineStyle.Dashed;
+  if (l.onOurGrid === false) return LineStyle.Dashed;
+  return GAP_KINDS.has(l.kind) ? LineStyle.Dotted : LineStyle.Solid;
+}
+
+/** "Placed / asked" over one family of levels; null placements (a capture with no grid) are left out. */
+function placement(levels: TechnicalsVendorLevel[]): { placed: number; asked: number } {
+  const asked = levels.filter((l) => l.onOurGrid !== null);
+  return { placed: asked.filter((l) => l.onOurGrid === true).length, asked: asked.length };
 }
 
 /** A line series from an aligned array; a null is whitespace (a gap), never a zero. */
@@ -189,8 +198,8 @@ function VendorCard({ c }: { c: TechnicalsChart }) {
       </Card>
     );
   }
-  const asked = v.levels.filter((l) => l.onOurGrid !== null);
-  const placed = asked.filter((l) => l.onOurGrid === true).length;
+  const onGrid = placement(v.levels.filter((l) => !GAP_KINDS.has(l.kind)));
+  const onGaps = placement(v.levels.filter((l) => GAP_KINDS.has(l.kind)));
   const agree = v.barsCompared ? v.barsAgree ?? 0 : null;
   return (
     <Card title="Against the vendor" asOf={`captured ${v.capture}, bars through ${v.through ?? "—"}`}>
@@ -198,9 +207,14 @@ function VendorCard({ c }: { c: TechnicalsChart }) {
         <div className="stat-tile">
           <span className="stat-label">levels our grid places</span>
           <span className="stat-value">
-            {placed} of {asked.length}
+            {onGrid.placed} of {onGrid.asked}
           </span>
-          <span className="stat-label muted">support and resistance; gaps not asked</span>
+          <span className="stat-label muted">support and resistance</span>
+        </div>
+        <div className="stat-tile">
+          <span className="stat-label">gap levels we place</span>
+          <span className="stat-value">{onGaps.asked === 0 ? "—" : `${onGaps.placed} of ${onGaps.asked}`}</span>
+          <span className="stat-label muted">an edge of one of our gaps, on its bar</span>
         </div>
         <div className="stat-tile">
           <span className="stat-label">bars agreeing to the cent</span>
@@ -224,7 +238,9 @@ function VendorCard({ c }: { c: TechnicalsChart }) {
               <th>Level</th>
               <th>Price</th>
               <th>Dated</th>
-              <th>On our grid</th>
+              <th title="Support and resistance: a point on our grid. Gap levels: an edge of one of our own gaps, on the same bar.">
+                We place it
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -236,7 +252,7 @@ function VendorCard({ c }: { c: TechnicalsChart }) {
                   <td>{fmt(l.value)}</td>
                   <td className="muted">{l.date ?? "—"}</td>
                   <td className={l.onOurGrid === false ? "pnl-neg" : l.onOurGrid === null ? "muted" : ""}>
-                    {l.onOurGrid === null ? "not asked (gap)" : l.onOurGrid ? "yes" : "no"}
+                    {l.onOurGrid === null ? "—" : l.onOurGrid ? (GAP_KINDS.has(l.kind) ? "gap edge" : "on grid") : "no"}
                   </td>
                 </tr>
               ))}
@@ -244,8 +260,9 @@ function VendorCard({ c }: { c: TechnicalsChart }) {
         </table>
       )}
       <p className="muted">
-        On the chart: solid, a vendor level our grid places; dashed, one it cannot; dotted, a gap level. Which grid
-        points the vendor chooses to draw is not yet reproduced.
+        On the chart: solid, a support or resistance our grid places; dotted, a gap level that is an edge of one
+        of our gaps; dashed, a level we cannot produce. Which of those candidates the vendor chooses to draw is
+        not yet reproduced.
       </p>
     </Card>
   );

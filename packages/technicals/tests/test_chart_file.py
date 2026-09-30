@@ -48,9 +48,13 @@ def test_signal_days_agree_with_the_scan_engine_on_every_day():
     assert fast, "the fixture should match some rule, or this test proves nothing"
 
 
-def test_a_vendor_capture_carries_its_levels_marked_against_our_grid():
+def test_a_vendor_capture_carries_its_levels_marked_against_our_grid_and_gaps():
     conn = store.connect()
     days = _land(conn, "ABC")
+    # A gap up into the second-to-last bar: its low (top edge, gap support) sits above the prior high.
+    top = round(store.adjusted_bars(conn, "ABC")[-3].high + 4.0, 2)
+    store.upsert_bars(conn, [("ABC", days[-2], top + 1, top + 2, top, top + 1, 1000)])
+    conn.commit()
     bars = store.adjusted_bars(conn, "ABC")
     lo = min(b.low for b in bars[-250:])
     root = paths.market_report_dir() / "vendor-charts" / days[-1]
@@ -65,7 +69,10 @@ def test_a_vendor_capture_carries_its_levels_marked_against_our_grid():
                     "supportAndResistance": {
                         "support": [{"value": round(lo, 4), "date": days[-5]}],
                         "resistance": [{"value": round(lo + 0.123, 4), "date": days[-3]}],
-                        "gapSupport": [{"value": 1.0, "date": days[-2]}],
+                        "gapSupport": [
+                            {"value": top, "date": days[-2]},  # our gap's top edge, on its bar
+                            {"value": top, "date": days[-3]},  # the same price on the wrong bar
+                        ],
                     },
                     "technicalRank": 7,
                     "syrahSentimentShortTerm": [{"date": days[-1], "value": 2.0}],
@@ -79,7 +86,8 @@ def test_a_vendor_capture_carries_its_levels_marked_against_our_grid():
     assert [(x["kind"], x["on_our_grid"]) for x in v["levels"]] == [
         ("support", True),
         ("resistance", False),
-        ("gapSupport", None),
+        ("gapSupport", True),
+        ("gapSupport", False),
     ]
 
 

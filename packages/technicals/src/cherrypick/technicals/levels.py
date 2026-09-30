@@ -17,6 +17,15 @@ high beats the two either side), supports included, and most levels sit within a
 that high, but the level's price is not simply that high snapped to the grid. `level_selection.py`
 measures what a selection rule would have to reproduce.
 
+**Gap levels are solved as prices** (2026-09-29): each of the vendor's gap levels is an edge of a
+true two-bar gap (a bar's low above the prior high, or its high below the prior low) inside the same
+250-session window, dated on the bar that edge belongs to. The gap's TOP edge is gap support and its
+BOTTOM edge gap resistance, whichever way the gap went -- the low of the bar after a gap up is
+support, the high of the bar after a gap down is resistance, and the bars before a gap give the other
+edge. 168 of 168 on the stocks and index funds; 70 of 72 on SGOV, a T-bill fund. WHICH gaps are drawn
+is open: an unfilled gap mostly needs to be close to an ATR wide, and a gap price has crossed keeps at
+most its post-gap edge, but no rule yet says which.
+
 **The 1-10 rank** is the decile of the name's ~6-month return percentile: Spearman 0.95 against the
 vendor's rank over 34 names, within one step on 33, exact on about 40% -- the vendor ranks within its
 own universe, which is not ours, and 34 names cannot pin it.
@@ -49,6 +58,36 @@ class Grid:
     def explains(self, price: float, tol: float = 0.006) -> bool:
         """Whether a level at `price` is one this grid can produce: an extreme, or a grid point."""
         return abs(price - self.low) < tol or abs(price - self.high) < tol or self.on_grid(price)
+
+
+@dataclass(frozen=True)
+class GapEdge:
+    kind: str  # "gapSupport" (a gap's top edge) or "gapResistance" (its bottom edge)
+    price: float
+    date: str  # the bar the edge belongs to
+
+
+def gap_edges(dates: list[str], highs: list[float], lows: list[float], window: int = WINDOW) -> list[GapEdge]:
+    """Both edges of every two-bar gap whose later bar is inside the last `window` sessions -- the
+    candidates the vendor's gap levels are drawn from, not a selection of them."""
+    out = []
+    for i in range(max(1, len(dates) - window), len(dates)):
+        if lows[i] > highs[i - 1]:  # gap up: the prior high is the bottom, this low the top
+            out += [
+                GapEdge("gapResistance", highs[i - 1], dates[i - 1]),
+                GapEdge("gapSupport", lows[i], dates[i]),
+            ]
+        elif highs[i] < lows[i - 1]:  # gap down: this high is the bottom, the prior low the top
+            out += [
+                GapEdge("gapResistance", highs[i], dates[i]),
+                GapEdge("gapSupport", lows[i - 1], dates[i - 1]),
+            ]
+    return out
+
+
+def places_gap(edges: list[GapEdge], kind: str, price: float, date: str | None, tol: float = 0.006) -> bool:
+    """Whether a vendor gap level is one of `edges`: same side, same bar, same price to the cent."""
+    return any(e.kind == kind and e.date == date and abs(e.price - price) < tol for e in edges)
 
 
 def nice_step(raw: float) -> float:

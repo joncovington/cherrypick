@@ -153,6 +153,19 @@ vendor's levels, nearly all of them the extremes. Level dates are mostly swing h
 can sit above, inside or well away from its dated bar, so the vendor evidently selects from
 something these fields do not show. The report can place levels exactly; it cannot yet pick them.
 
+**Gap levels are solved as prices** (`levels.gap_edges`, scored by `score-levels`; 2026-09-29).
+Every vendor gap level is an edge of a true two-bar gap -- a bar's low above the prior high, or its
+high below the prior low -- inside the same 250-session window, dated on the bar the edge belongs
+to: the gap's TOP edge is gap support and its BOTTOM edge gap resistance, whichever way it gapped.
+221 of 221 on our bars; SGOV, a T-bill fund with 72 gap levels, is the only name with misses (2),
+and its bars do not agree with ours anyway. Which gaps are drawn is open: an unfilled gap mostly
+needs to be close to one current ATR wide (F1 0.91 on that alone), both edges when it is wider;
+a gap price has crossed keeps at most its POST-gap edge (2 of 2,444 pre-gap edges survive a
+fill), and no feature tried -- size on any scale, fill by close or by range, depth, time since
+fill, a regular level nearby -- says which. TradingView's convention (a gap closes once any bar
+enters it) does not fit: most drawn gaps have been entered. The chart files now mark each vendor
+gap level against our gap edges (`chart_version` 2).
+
 **Selection is measured, not solved** (`level_selection.py`, `score-level-selection`; 2026-09-29,
 108 names, 309 interior levels). Each measure is shown beside its chance baseline:
 
@@ -224,7 +237,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-rotation` | The rotation rule against every saved edition. |
 | `python -m cherrypick.technicals breadth [--sessions N]` | Daily leaders, laggards, net and bullish share. |
 | `python -m cherrypick.technicals score-trends` | Our trend scores against every vendor chart capture: exact, label and within-one agreement. |
-| `python -m cherrypick.technicals score-levels` | How many of the vendor's levels our grid places, on names whose bars agree to the cent. |
+| `python -m cherrypick.technicals score-levels` | How many of the vendor's levels we place -- support and resistance on our grid, gap levels as our gap edges -- on names whose bars agree to the cent. |
 | `python -m cherrypick.technicals score-level-selection` | Where the vendor's levels sit among the grid points (crossing profile, price given the date, which swing highs), each against chance. |
 | `python -m cherrypick.technicals score-rank` | Our 1-10 rank against the vendor's. |
 | `python -m cherrypick.technicals score-signals` | Our six scan rules against every scan list the collector has saved. |

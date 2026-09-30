@@ -44,3 +44,34 @@ def test_the_rank_is_the_decile_of_the_return_percentile():
     returns = {f"S{i}": i / 100 for i in range(1, 101)}
     r = levels.rank(returns)
     assert r["S100"] == 10 and r["S1"] == 1 and r["S50"] == 5 and r["S51"] == 6
+
+
+def test_a_gap_gives_its_top_edge_as_support_and_its_bottom_as_resistance_either_way():
+    """AMD 2025-10-03/06: a gap up from a 170.68 high to a 203.01 low -- resistance 170.68 dated on the
+    bar before, support 203.01 on the bar after. ARE 2025-10-27/28: a gap down from a 73.65 low to a
+    66.82 high -- support 73.65 on the bar before, resistance 66.82 on the bar after."""
+    up = levels.gap_edges(["d0", "d1"], [170.68, 226.71], [163.14, 203.01])
+    assert up == [
+        levels.GapEdge("gapResistance", 170.68, "d0"),
+        levels.GapEdge("gapSupport", 203.01, "d1"),
+    ]
+    down = levels.gap_edges(["d0", "d1"], [74.69, 66.82], [73.65, 59.90])
+    assert down == [
+        levels.GapEdge("gapResistance", 66.82, "d1"),
+        levels.GapEdge("gapSupport", 73.65, "d0"),
+    ]
+    assert levels.places_gap(down, "gapSupport", 73.65, "d0")
+    assert not levels.places_gap(down, "gapSupport", 73.65, "d1"), "the date is part of the level"
+    assert not levels.places_gap(down, "gapResistance", 73.65, "d0"), "the side is part of the level"
+
+
+def test_touching_ranges_are_not_a_gap_and_the_window_bounds_the_gaps():
+    assert levels.gap_edges(["a", "b"], [10.0, 11.0], [9.0, 10.0]) == []  # low equals prior high
+    dates = [f"d{i}" for i in range(300)]
+    highs = [10.0] * 300
+    lows = [9.0] * 300
+    lows[10], highs[10] = 12.0, 13.0  # a gap 290 sessions back: outside the 250 window
+    lows[11], highs[11] = 12.0, 13.0
+    lows[12], highs[12] = 9.0, 10.0  # and one gapping back down, also outside
+    assert levels.gap_edges(dates, highs, lows) == []
+    assert len(levels.gap_edges(dates, highs, lows, window=295)) == 4
