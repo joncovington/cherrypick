@@ -1,159 +1,134 @@
 # cherrypick-curve
 
-> **Vocabulary.** What this module calls a **book** is what the suite calls an **arm** — one
-> configured variant run as its own portfolio (see the root `CLAUDE.md`). The word `book` is
-> reserved suite-wide for flies' per-session P&L roll-up (`fly_books`) and for the paper-vs-live
-> ledger designation, so it is the odd one out here rather than the standard. The column
-> (`curve_positions.book`) moves with the rest of the schema; prose and the console already
-> say `arm`.
+> **Vocabulary.** This module's **book** is the suite's **arm** (root `CLAUDE.md`). The column
+> (`curve_positions.book`) moves with the rest of the schema; prose and the console already say `arm`.
 
-curve: **VXX call credit spreads** harvesting the VIX term-structure roll yield, gated by a daily
-VIX/VIX3M regime read — **paper-only and credential-free**, a pure stream-cache consumer in the
-calendars/pmcc posture. Every book trades the same shape (short call ~30-delta, long wing a
-declared width higher, same monthly-cycle expiration); the books differ only in their declared
-entry gate and exit rule, never in what is traded. Ledger schema: **`curve_vx`**.
+VXX call credit spreads harvesting the VIX term-structure roll yield, gated by a daily VIX/VIX3M
+regime read (posture: root file). Every book trades the same shape — short call ~30-delta, long wing
+a declared width higher, same monthly-cycle expiration — and differs only in declared entry gate and
+exit rule. Ledger schema: **`curve_vx`**. Calibration history: [docs/history.md](docs/history.md).
+Suite-wide context: the root [documentation index](../../docs/README.md).
 
-Suite-wide context is the root [documentation index](../../docs/README.md).
+## The structure's calibration (never pool across these breaks)
 
-**The structure was re-scaled to VXX on 2026-08-27, with zero recorded trades on the books.** The
-module had refused entry on every attempt since it began evaluating — 62 `spread_too_wide`, 31
-`no_hook_signal`, no position ever opened — for two independent reasons, both measured against the
-live 50-DTE chain:
-
-- **`quantity` 1 → 2 (2026-09-16, journaled on the ledger as `defaults.quantity`).** At one
-  contract the fixed round-trip cost (~$2.24 fee plus ~$2 modelled slippage a side) consumed the
-  whole ~$15–18 gross credit of a 1-wide spread, and the fee-adjusted floor refused every entry
-  after the single 09-02 fill. Two contracts amortise the fixed part; the floor itself is
-  unchanged, so it still refuses genuinely uneconomic entries. Width was deliberately NOT
-  changed with it: measured 2026-09-15 on the 2026-10-16 chain, credit-of-width FALLS as width
-  grows (13.0% at 1-wide, 11.75% at 2-wide, 9.3% at 3-wide) because the credit is capped by the
-  short's premium — the same ceiling argument as the 08-27 cut below. Sizing stays a human
-  decision outside the advice bounds. Books either side must never be pooled.
-- **`spread_width` 5.0 → 1.0.** A credit spread's credit can never exceed the short's own premium,
-  so `credit / width` has a hard ceiling of `short_mid / width` that no wing price can lift. At the
-  declared ~30-delta short (worth ~$0.88 on VXX near $18) a 5-wide spread ceilings at **17.6%**
-  against a **15%** floor, leaving under $0.13 for a wing that actually cost $0.435 — it landed at
-  8.9%. Across every strike, 5-wide cleared 15% only at delta 0.46+, an essentially at-the-money
-  short and a different strategy from the one above. $5 on an $18 underlying is 27.6% of spot;
-  MEIC's 5-point SPX wings are 0.06% of spot, and the 5.0 read as an index-scale number never
-  rescaled here. At 1-wide the same short pays **17.0%** of width. Max loss per spread moves
-  $500 → $100, and VXX's monthly chain carries $1 strike increments so this is a real structure.
-- **`max_leg_spread_pct` 0.25 → 0.30.** The ~30-delta short itself quotes 0.27–0.28 wide on VXX, so
-  0.25 sat just inside the instrument's normal book and refused the very leg the module sells.
-
-`tests/test_structure_coherence.py` pins the first one off the shipped config, so a width and a
-floor that cannot coexist fail at declaration time rather than after a month of silent refusals.
-Both numbers are calibrated against one session's chain — the ceiling argument is structural and
-holds at any prices; the exact figures are that day's.
-
-**A wing's spread is money, not a ratio.** The long leg is refused only when its spread is wide in
-percent AND in absolute dollars (`max_wing_spread_abs`). Far-OTM VXX calls are routinely bid-less,
-and a zero bid makes `spread_pct` exactly 2.0 whatever the option costs — 56 of those 62 refusals
-were precisely that. Two cents of spread is two cents of risk however it reads as a ratio. The
-SHORT leg keeps the plain percentage test: its premium is the entire credit, and paying up there is
-what the gate exists to prevent.
+- **`spread_width` 1.0** (was 5.0 until 2026-08-27). A credit spread's credit cannot exceed the
+  short's premium, so `credit / width` is capped at `short_mid / width` whatever the wing costs; at
+  5-wide the cap sat barely above the 15% floor. At 1-wide the short pays ~17% of width.
+  `tests/test_structure_coherence.py` pins width against floor off the shipped config, so a pair
+  that cannot coexist fails at declaration, not after a month of silent refusals.
+- **`max_leg_spread_pct` 0.30** (was 0.25): the short itself quotes 0.27–0.28 wide on VXX.
+- **A wing's spread is money, not a ratio.** The long leg is refused only when wide in percent AND
+  in dollars (`max_wing_spread_abs`) — a zero bid makes `spread_pct` 2.0 whatever the option costs.
+  The SHORT leg keeps the plain percentage test: its premium is the whole credit, and paying up there
+  is what the gate prevents.
+- **Fee-adjusted credit floor** (2026-09-02): `engine.plan_entry` nets modelled entry commission
+  AND slippage against the dollar floor and refuses `credit_below_fee_adjusted_floor`, with or
+  without a config passed. A percentage floor is a ratio of mids and cannot see opening cost (the
+  first trade lost $6.49 of $18 to it, 72% slippage). Unlike MEIC's, it nets slippage too, since
+  this credit metric has none haircut out. Only the entry side is netted — the exit's cost depends
+  on a close path not yet decided.
+- **`quantity` 2** (2026-09-16, journaled as `defaults.quantity`): two contracts amortise the fixed
+  round-trip cost; the floor is unchanged, so it still refuses genuinely uneconomic entries. Width was
+  deliberately NOT widened with it — credit-of-width falls as width grows. **Sizing is a human
+  decision outside the advice bounds.**
 
 ## The experiment design
 
-Three books, one variable each, plus the advisor's synthetic twin:
+- **`control`** — enter on a contango day (`ratio < contango_max`, a buffer below 1.0), close at
+  `profit_take_pct` of entry credit, OR the **regime-flip hard exit** (a MEASURED ratio crossing
+  >= 1.0 mid-trade closes next tick regardless of P&L — never on an unmeasured or stale read), OR
+  `close_dte`.
+- **`noflip`** — control's entry EXACTLY (same tick, same fills), minus the flip exit. Until a flip
+  fires the two are byte-identical — an expected `find_identical_readings` collision. Every read
+  surface shows `flip_divergence_count` beside the pair: that, not trade count, is the effective
+  sample. A season of contango with zero flips proves nothing about the flip rule.
+- **`hook`** — enters ONLY on the two-day-confirmed hook (`ratio > hook_threshold` AND below
+  yesterday's), its own tick; exits by control's rules. **Nearly always idle** — honest, not a
+  failure (~16% of days are backwardation, the hook rarer still); read surfaces must say so and carry
+  sample-size warnings from day one.
+- **`advised:<experiment name>`** (paper, off by default; mechanism in `packages/core/CLAUDE.md`).
+  A twin is gated and planned as its base book (a `hook` twin waits for the hook), and its
+  `base_book` is what the flip exit keys on (a `noflip` twin never flips). Pre-2026-09-17 tags
+  `advised:control` / `advised:hook` still resolve. **`advice.enabled` stays false by design.**
 
-- **`control`** — the strategy as pitched: enter on a contango day (`ratio < contango_max`, a
-  buffer below 1.0 so a knife-edge 0.999 day doesn't count), close at `profit_take_pct` of the
-  entry credit, OR the **regime-flip hard exit** (a MEASURED ratio crossing >= 1.0 mid-trade
-  closes next tick regardless of P&L — never on an unmeasured or stale read), OR `close_dte`.
-- **`noflip`** — control's entry EXACTLY, same tick, same fills (the exact-pairing property); its
-  exit is control's MINUS the flip rule, so it holds through backwardation to target or
-  `close_dte`. **Until a flip actually fires, control and noflip are byte-identical by
-  construction** — an expected `find_identical_readings` collision, not a defect. Every read
-  surface presents `flip_divergence_count` beside the pair (positions where control's flip fired
-  while noflip held): that count, not the trade count, is the noflip comparison's effective
-  sample. A season of pure contango with zero flips proves nothing about the flip rule.
-- **`hook`** — enters ONLY on the two-day-confirmed hook signal (`ratio > hook_threshold` AND
-  below yesterday's — a deep-backwardation spike that has started to mean-revert), its own tick,
-  its own variable; exits by control's rules. Expected to be **nearly always idle** — the pmcc
-  keltner precedent: the idleness is the honest state, not a failure, and its read surface must
-  say so.
-- **`advised:<experiment name>`** (paper, off by default) — the admitted params frozen on each row
-  at entry and restated through one choke point (`management.effective_params`) every tick.
+**Pairing is partial, deliberately**: `control`/`noflip` share one plan and tick; `hook` enters on
+its own. Never treat the three as a fully paired grid.
 
-The `advised:<experiment name>` mechanism itself is explained in `packages/core/CLAUDE.md`. This
-module's own detail: a twin is gated and planned as the base book its experiment names — a twin of
-`hook` waits for the hook signal, a twin of `control` for contango — and the base carried on its
-params (`base_book`) is what the regime-flip exit keys on (a twin of `noflip` never flips). Legacy
-tags from before the 2026-09-17 one-book-per-experiment cutover read `advised:control` /
-`advised:hook`, still resolved by name for history. **`advice.enabled` stays false here by
-design**; none of this changes that.
-
-**curve is a structurally slow advisor target, stated honestly in config.** One position per book
-at ~30-45 DTE with 50% takes closes maybe 2-4 trades a month; a 15-session advised experiment is
-`underpowered` by construction against the promotion gate's min-14-days/min-sample-20 floor. The
-bounds ship anyway (the contract is cheap) but `hook_threshold` and `close_dte` are deliberately
-**not** advisable — the hook book's value is a fixed rare-event definition accruing a sample, and
-`close_dte` bounds the settlement path; both are journaled-break territory, not overlay territory.
-
-**Pairing is partial, and deliberately so** (the pmcc precedent): `control`/`noflip` enter from the
-SAME plan on the same tick; `hook` enters on its own rare tick because its variable IS the entry
-condition. Read surfaces must not treat the three as a fully paired grid.
+**A structurally slow advisor target**: ~2-4 closes a month, so a 15-session experiment is
+`underpowered` against the promotion gate's min-14-days/min-sample-20 floor. Bounds ship anyway, but
+`hook_threshold` and `close_dte` are **not advisable** — the hook's value is a fixed rare-event
+definition, and `close_dte` bounds the settlement path; both are journaled-break territory.
 
 ## The regime series is the module's second product
 
-The daily VIX/VIX3M ratio, its contango/backwardation classification, and the hook flag are
-written to `curve_regime` **every session, whether or not any book trades** — the series' value is
-its continuity. It is **RTH-gated and basis-stamped from day one**: the advisor's GEX-counts lesson
-(2026-08-21) is the reason — a recorder that freezes on the last streamed value overnight
-double-weights whatever sign the session ended on. A stale or missing VIX/VIX3M read writes a row
-marked unusable (`curve_regime.usable = 0` with the refusal), never a frozen ratio. Note: this is
-NOT `overview`'s binary contango gate — that stays the pre-open Met/Not-met read; this is the
-richer record (ratio value, trend, hook detection, replayable history). Consumption by
-`overview`/`advisor` is future wiring, off by default, its own journal entry.
+The daily VIX/VIX3M ratio, its classification and the hook flag are written to `curve_regime`
+**every session, traded or not** — the series' value is its continuity. **RTH-gated and
+basis-stamped**: a recorder that freezes on the last value overnight double-weights the session's
+closing sign (the advisor's GEX-counts lesson). A stale or missing read writes an unusable row
+(`usable = 0` with the refusal), never a frozen ratio. This is NOT `overview`'s binary contango gate;
+consumption by `overview`/`advisor` is future wiring, off by default, its own journal entry.
 
 ## The honesty rules
 
-1. **Every result is net of the modeled fee and slippage stack.** Gross is not a result.
-2. **Early assignment is unmodelled but MEASURED, and the paper result is therefore an UPPER
-   BOUND.** VXX pays no dividend (no ex-div calendar needed — one real simplification vs. pmcc),
-   but a VXX spike still puts the short call ITM. Every mark where the short's extrinsic sits
-   under `assignment_exposure_tv` is flagged `assignment_exposed` (`curve_marks`, aggregated by
-   `analytics.exposure`).
-3. **VXX reverse splits are unmodelled.** VXX reverse-splits on a roughly biennial cadence as
-   contango grinds it down; a split mid-position is a manual `--settle` plus a journaled
-   measurement break, and the OCC-root filter admits only the standard root (adjusted roots like
-   `VXX1` are refused) — the pmcc split posture verbatim.
-4. **ETN plumbing risk is declared, not modelled.** VXX is an ETN; the 2022 Barclays creation-halt
-   precedent showed shares can decouple from the index (premium to indicative value). This module
-   cannot detect that; the risk register says so, and it is one more reason the paper result is a
-   bound, not a forecast.
-5. **A hole in the mark path is refused, never zero** (`curve_marks.usable = 0` with the refusal).
-   A stalled feed and a quiet vol market must never look identical — this module exists partly
-   because of the 2026-07-01 lesson.
-6. **Missing regime data blocks entry and can never force an exit.** No ratio -> no new position
-   (recorded refusal `regime_unmeasured`); an open position with no ratio holds its last verdict.
-   The flip-exit fires only on a MEASURED crossing.
+1. **Net of the modelled fee and slippage stack.** Gross is not a result.
+2. **Early assignment is unmodelled but MEASURED; the paper result is an UPPER BOUND.** VXX pays no
+   dividend (no ex-div calendar), but a spike still puts the short ITM. Marks with extrinsic under
+   `assignment_exposure_tv` are flagged `assignment_exposed` (`curve_marks`, `analytics.exposure`).
+3. **VXX reverse splits are unmodelled** (roughly biennial): a mid-position split is a manual
+   `--settle` plus a journaled break; the OCC-root filter refuses adjusted roots like `VXX1`.
+4. **ETN plumbing risk is declared, not modelled** (the 2022 Barclays creation halt decoupled shares
+   from the index). Undetectable here; one more reason the result is a bound, not a forecast.
+5. **A hole in the mark path is refused, never zero** (`curve_marks.usable = 0`) — a stalled feed
+   and a quiet vol market must never look identical.
+6. **Missing regime data blocks entry and can never force an exit.** No ratio → no position
+   (`regime_unmeasured`); an open position with no ratio holds its last verdict.
 7. **The regime row is written every session**, traded or not.
+8. **Short-delta selection degrades to a computed delta, never a moneyness guess.** Missing feed
+   delta → `engine.bs_call_delta` (Black-Scholes from spot, strike, DTE and the feed's own IV), and
+   the row records `short_selected_by = "delta_computed"` so it stays excludable. Only a chain with
+   neither refuses `no_delta_for_selection`.
 
-## Settlement
+**Settlement**: American physical delivery, the calendars/pmcc decomposition verbatim (intrinsic
+plus 100 shares per contract at the settlement spot, disposed next session). `close_dte = 7` makes
+expiry the exception path, but it is built because `noflip` can ride deep into backwardation.
 
-American physical delivery, the calendars/pmcc decomposition verbatim: an ITM leg at expiry books
-intrinsic and delivers/receives 100 shares per contract at the settlement spot; the next session's
-combined disposal covers/sells them. In practice `close_dte = 7` makes expiry settlement the
-exception path, not the plan — but it is built, because `noflip` can ride deep into backwardation
-and the row must still book honestly.
+## Data source and backtesting
 
-## Layout (mirrors pmcc)
+Its one target expiration comes from the `expirations` request field; VIX and VIX3M ride as
+quote-only `legs`, **never `symbols`** (which would make the producer maintain chains nothing reads —
+the overview 2026-08-17 incident). No `window_hints` needed. The provider refuses rather than guesses,
+including on an unmeasured regime.
+
+**The signal backtests; the trade does not.** `regime-history` replays the classification over
+stored `stream_summary` closes with no look-ahead (a session's regime from the PRIOR session's
+closes), benchmarked against VXX's next-session move — a **separation benchmark, never suite P&L**;
+it schedules and decides nothing. The spread P&L cannot be backtested (no historical VXX chains, and
+the advisor contract rules out a replay engine); instead every position's per-tick mark path is
+recorded so a read-side exit-policy replay is possible later — forward-recorded, never
+vendor-imagined.
+
+## Live-trading prerequisites (none built)
+
+No live path, no order code, no keyring, no live account. Before any live rung: (a) post-assignment
+management; (b) VXX reverse-split detection and a halt procedure; (c) the exposure telemetry read as
+the paper-to-live gap. **`live.enabled` is an inert placeholder** (the pmcc pattern): nothing checks
+it and it is `configedit.GUARDED`.
+
+## Layout
 
 | file | role |
 |---|---|
-| `src/cherrypick/curve/regime.py` | the ratio/regime/hook computation over cached quotes + stored history. Pure. |
-| `src/cherrypick/curve/clock.py` | ET clock, the monthly-cycle target-expiration plan. Pure. |
-| `src/cherrypick/curve/engine.py` | spread selection (delta-target short, width wing), worksheet math, the settlement decomposition, the fee stack. Pure. |
-| `src/cherrypick/curve/provider.py` | snapshots from the shared stream cache; refuses rather than guesses. |
-| `src/cherrypick/curve/management.py` | per-book verdicts (profit-take, regime-flip, close_dte) + the advised-params choke point + the exposure flag. Pure. |
-| `src/cherrypick/curve/book.py` | engine decisions -> ledger rows: entries, closes, settlement, share disposal. |
-| `src/cherrypick/curve/paper_loop.py` | the session driver: regime write, mark, manage, enter, settle. |
-| `src/cherrypick/curve/analytics.py` | the one query layer every read surface goes through, including `flip_divergence_count`. |
-| `src/cherrypick/curve/regime_history.py` | the read-side regime replay (`regime-history`) — a separation benchmark, never suite P&L. |
-| `src/cherrypick/curve/db.py` | schema (`curve_positions`, `curve_marks`, `curve_regime`, `curve_snapshots`, attempts/refusals), additive migrations, the stale-writer guard. |
-| `src/cherrypick/curve/stream_request.py` | declares VXX as the underlying, VIX/VIX3M as quote-only legs, the target expiration, and history_days. |
+| `src/cherrypick/curve/regime.py` | ratio/regime/hook over cached quotes + stored history. Pure. |
+| `src/cherrypick/curve/clock.py` | ET clock, monthly-cycle target expiration. Pure. |
+| `src/cherrypick/curve/engine.py` | spread selection, worksheet math, settlement decomposition, fee stack. Pure. |
+| `src/cherrypick/curve/provider.py` | cache snapshots; refuses rather than guesses. |
+| `src/cherrypick/curve/management.py` | per-book verdicts + advised-params choke point + exposure flag. Pure. |
+| `src/cherrypick/curve/book.py` | decisions -> ledger rows: entries, closes, settlement, share disposal. |
+| `src/cherrypick/curve/paper_loop.py` | regime write, mark, manage, enter, settle. |
+| `src/cherrypick/curve/analytics.py` | the one query layer, including `flip_divergence_count`. |
+| `src/cherrypick/curve/regime_history.py` | the read-side regime replay — a benchmark, never P&L. |
+| `src/cherrypick/curve/db.py` | schema (`curve_positions`, `curve_marks`, `curve_regime`, `curve_snapshots`, attempts/refusals), migrations, stale-writer guard. |
+| `src/cherrypick/curve/stream_request.py` | VXX underlying, VIX/VIX3M quote-only legs, target expiration, `history_days`. |
 | `src/cherrypick/curve/cli.py` | `status` / `regime` / `worksheet` / `exposure` / `headline` / `regime-history`. |
 
 ## Commands
@@ -165,106 +140,20 @@ python -m cherrypick.curve.paper_loop --status      # one JSON health object (wa
 python -m cherrypick.curve.paper_loop --settle --date 2026-09-18 --price 42.10  # official print
 python run.py status                                # open positions + target expiration + today's regime
 python run.py regime                                # the stored daily regime series
-python run.py worksheet                              # the live per-position worksheet
-python run.py exposure                               # the early-assignment-exposure telemetry
-python run.py regime-history                         # the VIX/VIX3M signal replay over stored history
-python -m pytest                                     # temp CHERRYPICK_HOME; no broker, no streamer needed
-ruff check . && ruff format .                        # line-length 110
+python run.py worksheet                             # the live per-position worksheet
+python run.py exposure                              # the early-assignment-exposure telemetry
+python run.py regime-history                        # the VIX/VIX3M signal replay over stored history
+python -m pytest                                    # temp CHERRYPICK_HOME; no broker, no streamer needed
+ruff check . && ruff format .                       # line-length 110
 ```
 
-Config: copy `config.example.json` -> `config.json` (git-ignored), or place
-`~/.cherrypick/config/curve.json`. The example file is the design document — read its `_note` keys
-before changing a value.
+Config: `config.example.json` -> `config.json` (git-ignored) or `~/.cherrypick/config/curve.json`;
+the example is the design document — read its `_note` keys first.
 
-## Data source
+## Guardrails
 
-This module runs no streamer and holds **no broker credentials at all**. Its one target expiration
-exists in the shared cache because `stream_request.py` declares it via the registry's
-`expirations` field every tick; VIX and VIX3M ride as quote-only `legs` (never `symbols` — that
-would have the producer maintain 0DTE chains for two symbols nothing here reads, the overview
-2026-08-17 incident this module's plan explicitly avoids repeating). No `window_hints`: a
-~30-delta short and a wing a few dollars out both sit inside any default ATM window.
-
-The provider refuses rather than guesses: stale or crossed quotes, a missing chain, a spot that
-won't print, an unmeasured regime — each is a recorded refusal the loop steps past. The OCC-root
-filter admits only the configured root: VXX splits periodically, and a post-split adjusted root
-shares expiration dates with the standard one. A split mid-position is unmodelled — manual
-`--settle` plus a measurement break.
-
-## Backtesting — what can and cannot be replayed
-
-**The signal backtests; the trade does not.** `regime-history` replays the contango/backwardation/
-hook classification over stored `stream_summary` history (VIX/VIX3M closes, no look-ahead — a
-session's regime comes from the PRIOR session's closes) and reports VXX's own next-session move
-per regime as the benchmark. It is a **separation benchmark, not suite P&L** — no trade was taken
-on any of those sessions, and it schedules nothing and decides nothing.
-
-The credit-spread P&L cannot be honestly backtested in-suite: it would need historical VXX option
-chains, which exist nowhere in the suite's data, and the advisor's own contract already settled
-this — there is no replay engine and there will not be one; a proposal's test is a next-session
-paper arm beside its control. The accepted middle path is the calendars pattern: every open
-position's per-tick mark path is recorded (`curve_marks`), so a read-side exit-policy replay
-(different profit takes, different flip thresholds, exact pairing) becomes possible later over
-data this module itself recorded — forward-recorded, then replayed, never vendor-imagined.
-
-## Live-trading prerequisites (none built; gates any future live plan here)
-
-This module has **no live path** — no order code, no keyring, no live account designation. Before
-any live rung: (a) post-assignment management — detecting a surprise early assignment and a
-defined cover/repair procedure; (b) a VXX-reverse-split detection and halt procedure (unmodelled
-here on purpose); (c) the paper exposure telemetry (rule 2) read as the gap between the paper
-result and a live expectation.
-
-**The config's `live.enabled` field is an inert placeholder, not a rung** — the pmcc pattern
-verbatim. It lets the suite's config/console surfaces show this module as "paper only" instead of
-"unknown"; no code anywhere checks it, and it is `configedit.GUARDED` so the settings surface
-can't touch it.
-
-## Guardrails (suite-wide)
-
-Suite-wide guardrails apply — see root CLAUDE.md.
-
-- **Paper only. There is no live path.** `live.enabled` in config is a documented placeholder only.
-- **The decision path is deterministic.** `regime.py`, `engine.py`, `clock.py` and `management.py`
-  are pure functions over pre-fetched data — no model, no MCP, no network in the decision itself.
-- Declared settlement only (VXX is always `physical`); a symbol this module is not built for is
-  out of scope by construction (it trades exactly one underlying).
-- Credentials in the OS keyring only (this module holds none).
-- Tests isolate by an **autouse** temp-home fixture (`tests/conftest.py`), never opt-in — the
-  flies 2026-07-20 lesson.
-
-## Known risks, stated up front
-
-1. **The short-call delta selection degrades to a computed delta, never to a moneyness guess.**
-   When the feed's own delta is missing, `engine.bs_call_delta` computes one via Black-Scholes
-   from quantities the chain already publishes (spot, strike, DTE, the feed's own IV) — a
-   computation, not a heuristic — and the row records `short_selected_by = "delta_computed"` so
-   degraded entries stay excludable read-side (the pmcc `long_selected_by` pattern). Only a chain
-   with no strike offering either a real or computable delta (IV also missing) refuses
-   `no_delta_for_selection`.
-2. **Early assignment** — rule 2. The paper result is an upper bound.
-3. **VXX reverse splits** — unmodelled; manual settle + break.
-4. **ETN plumbing risk** — rule 4; undetectable by this module.
-5. **The hook book's sample accrues slowly by design** — ~16% of days are backwardation and the
-   hook is rarer still. Read surfaces must carry sample-size warnings from day one.
-
-## Status
-
-Built 2026-08-22, no paper data yet. First paper session begins with the first scheduled run; the
-regime series accumulates value immediately regardless of whether any book has traded. The module
-appears in the generic Review page from day one via the `curve_vx` schema registration, and the
-dedicated `/curve` console page has since landed (verified 2026-09-02) — its "deferred until first
-real positions exist" condition was met by the 2026-09-02 session, which opened and closed one
-VXX spread in `control` and `noflip`.
-
-**The entry gate carries a fee-adjusted credit floor as of 2026-09-02.** That first trade cleared
-`min_credit_pct_of_width` at 0.18 on a 1.00-wide spread (18% against a 15% floor) and then paid
-$2.24 open commission plus $4.25 open slippage against $18.00 of gross credit — $11.51 before the
-position had been marked once. The percentage floor is a ratio of two mid prices; it cannot see
-what opening the trade costs, and slippage was 72% of that trade's total modeled cost, not
-commission — unlike MEIC's own fee-adjusted floor, which nets only commission because its credit
-metric already has slippage haircut out of it. `engine.plan_entry` now nets modeled entry
-commission AND slippage against the same dollar floor and refuses
-`credit_below_fee_adjusted_floor` if the net falls short, applying whether or not a config is
-passed. Only the entry side is netted — the exit's cost depends on a close path not yet decided
-at entry time.
+- **Paper only; no live path.**
+- **Deterministic decision path**: `regime.py`, `engine.py`, `clock.py`, `management.py` are pure.
+- Settlement is always `physical`; the module trades exactly one underlying.
+- Tests isolate by an **autouse** temp-home fixture (`tests/conftest.py`), never opt-in.
+- The module appears in the Review page via `curve_vx`; the `/curve` console page is live.

@@ -1,222 +1,204 @@
 # cherrypick-bwb
 
-> **Vocabulary.** What this module calls a **book** is what the suite calls an **arm** — one
-> configured variant run as its own portfolio (see the root `CLAUDE.md`). The word `book` is
-> reserved suite-wide for flies' per-session P&L roll-up (`fly_books`) and for the paper-vs-live
-> ledger designation, so it is the odd one out here rather than the standard. The column
-> (`bwb_positions.book`) moves with the rest of the schema; prose and the console already
-> say `arm`.
+> **Vocabulary.** This module's **book** is the suite's **arm** (root `CLAUDE.md`). The column
+> (`bwb_positions.book`) moves with the rest of the schema; prose and the console already say `arm`.
 
-bwb: a **daily-laddered SPX put broken-wing butterfly** entered at the expected move for a net
-credit, ~7 DTE, held to expiry — **paper by default**, its paper loop credential-free, a pure
-stream-cache consumer in the calendars/pmcc/curve posture. Every book enters the IDENTICAL BWB
-from the same plan on the same tick; the books differ only in whether/when a reversal-triggered
-put credit spread add-on fires, turning the fly into a 1-3-2. Ledger schema: **`bwb_132`**. Since
-2026-09-18 there is also a narrow **live path** (the "Live" section below): one arm, armed per
-day, writing its own ledger, changing nothing about what the paper books measure.
-
-Lineage note: this module absorbs and supersedes the "1-3-2 put condor" idea briefly floated as a
-fourth book for `packages/ratios` (2026-08-22). The condor variant is retired; `ratios` stays jade
-lizard / backratio / LT112. What survived: the 1-3-2 shape, the add-on-as-plain-matched-vertical
-insight (keeps the combined position defined-risk by construction), and the reversal-not-falling-
-knife entry philosophy.
-
-Suite-wide context is the root [documentation index](../../docs/README.md).
+A daily-laddered SPX put broken-wing butterfly; the root file gives the posture. Every book enters
+the IDENTICAL BWB from the same plan on the same tick and differs only in whether/when the add-on
+fires. Ledger schema: **`bwb_132`**. The narrow live path (2026-09-18) is one arm, armed per day,
+writing its own ledger. History and incident narratives: [docs/history.md](docs/history.md).
+Suite-wide context: the root [documentation index](../../docs/README.md).
 
 ## The base structure (every book, identical)
 
-Put broken-wing butterfly on SPX, entered every session at a single fixed tick (`entry_time`,
-default 10:00 ET — entries after the open settles, matching the suite's SPX timing research, and
-doubly here because the credit gate has no floor to screen out an illusory opening-quote credit).
+Entered every session at one fixed tick, `entry_time` (default 10:00 ET — after the open settles,
+doubly so here because a zero credit floor cannot screen out an illusory opening-quote credit).
 
 - **Expected move**: `cherrypick.core.structures.expected_move()` on the target expiration's ATM
-  straddle mids, read from the stream cache at the entry tick.
-- **Body (short x2)**: the nearest listed strike to `spot - expected_move`.
-- **Near wing (long x1)**: one strike increment ABOVE the body (toward spot) — $5 on SPX.
-- **Far wing (long x1)**: two strike increments BELOW the body — $10. Fixed shape; no wider search.
-- **Entry gate**: the whole structure must price as a net credit at mid. Any positive credit
-  qualifies — a deliberate departure from the suite's `min_credit_pct_of_width` convention;
-  `credit_floor` is a declared zero. Not a credit -> recorded refusal `no_credit`.
-- **Expiration**: the NEXT PM-settled weekly Friday strictly after today (root `occ_root`, SPXW):
-  Monday through Thursday enter for that week's Friday, Friday enters for the following one, so the
-  ladder runs 1-7 DTE. The third-Friday date is traded like any other, on its PM weekly; the
-  AM-settled SPX monthly that shares the date is kept out by the root filter, never by the
-  calendar. Computed from the calendar, asserted against the cache — never nearest-matched from
-  the chain. A missing ATM straddle quote refuses `no_expected_move`. This is the rule the ledger
-  has always recorded, and until 2026-09-12 it was not the rule the code described: the code said
-  "nearest `dte_target` (7), ties to the longer date", but a week-walk defect only ever offered the
-  very next Friday, so "nearest" never had a second candidate — and the third-Friday DATE was
-  excluded outright, which left Friday 2026-09-11 with no plan at all (`no_expiration_plan` on
-  every book). Both were corrected and the rule restated as it ran, so nothing either side of the
-  fix needs separating; the plan now flags `am_monthly_date` so monthly-date weeks, which begin
-  here, can be told apart. **Deferred (backlog, not ready as a break):** nearest-to-`dte_target`
-  selection with a minimum-DTE floor (the rule the old docstring described) as an experiment, once
-  the ladder has a comparable stretch behind it; `dte_target` stays in `defaults`, reserved and
-  unused, and is NOT in the advisable bounds — it was, and an advised value would have done
-  nothing (removed from the example and the deployed config 2026-09-12).
-- **Cadence**: daily ladder — a new BWB every session per enabled book, so ~5-7 positions ride
-  concurrently per book at steady state. Position identity is `(symbol, book, entry_session)`.
+  straddle mids from the stream cache. A missing straddle quote refuses `no_expected_move`.
+- **Body (short x2)**: nearest listed strike to `spot - expected_move`. **Near wing (long x1)**:
+  one increment above ($5). **Far wing (long x1)**: two increments below ($10). Fixed shape.
+- **Entry gate**: must price as a net credit at mid; any positive credit qualifies. `credit_floor`
+  is a declared zero, a deliberate departure from `min_credit_pct_of_width`. Else `no_credit`.
+- **Expiration**: the NEXT PM-settled weekly Friday strictly after today (root `occ_root`, SPXW),
+  so Mon–Thu enter that week's Friday, Friday enters the next: a 1-7 DTE ladder. The third Friday
+  trades on its PM weekly; the AM-settled monthly is kept out by the root filter, never by the
+  calendar. Computed from the calendar, asserted against the cache, never nearest-matched from the
+  chain. Plans flag `am_monthly_date`. **Deferred (backlog, not a break yet):** nearest-to-
+  `dte_target` with a minimum-DTE floor; `dte_target` stays in `defaults`, reserved and unused, and
+  must NOT be advisable (an advised value would do nothing).
+- **Cadence**: a new BWB every session per enabled book, ~5-7 concurrent per book. Position
+  identity is `(symbol, book, entry_session)`.
 
 ## The experiment design — four books, one variable each
 
 | book | add-on trigger |
 |---|---|
 | `control` | never — the BWB rides alone to expiry |
-| `delta` | the near wing's \|delta\| reaches `delta_trigger` (50Δ default) — raw proximity |
-| `bounce` | peak \|delta\| since entry >= `delta_trigger` AND current <= `delta_trigger - bounce_pullback` (45Δ at defaults). No separate `bounce_peak` key: the qualifying bar is `delta_trigger` itself, so delta/bounce differ by exactly one condition by construction |
-| `flip` | spot has traded below `gamma_flip` at some point since entry AND reclaimed to >= `flip * flip_buffer` (1.001, the curve `contango_max` precedent) |
+| `delta` | the near wing's \|delta\| reaches `delta_trigger` (50Δ) — raw proximity |
+| `bounce` | peak \|delta\| since entry >= `delta_trigger` AND current <= `delta_trigger - bounce_pullback` (45Δ). No `bounce_peak` key: delta and bounce differ by exactly one condition |
+| `flip` | spot traded below `gamma_flip` since entry AND reclaimed to >= `flip * flip_buffer` (1.001) |
 
-The `advised:<experiment name>` mechanism is explained in `packages/core/CLAUDE.md`. This module's
-own declarations:
+Advised twins follow `packages/core/CLAUDE.md`. bwb specifics: **deliberately UNBOUNDED** (no
+`advice.bounds` at all); the pre-2026-09-17 tags `advised:control` / `advised:delta` still resolve
+by name in `engine.base_book` and `management.effective_params`; the `wall` book is never an advised
+base.
 
-- **Deliberately UNBOUNDED** — see config's `advice` block; unlike most modules here, bwb declares no
-  `advice.bounds` at all.
-- Legacy tags from before the 2026-09-17 one-book-per-experiment cutover: `advised:control` /
-  `advised:delta` — still resolved by name in `engine.base_book` and `management.effective_params`
-  for history, alongside the opt-in `wall` book (never an advised base itself).
-- `base_book`/`advice_base` resolution and the every-tick decision recording follow the shared rule
-  in core; nothing bwb-specific beyond the tags above.
+**The add-on** (identical for all three arms): a put credit spread bracketing the far wing — SELL
+one increment above, BUY one below — which must itself price as a credit (`addon_credit_floor`, a
+declared zero). Once triggered the position is `armed`; every tick re-prices, a non-credit tick is
+`addon_not_credit` and the arm stays live until the first credit tick fires it. An armed add-on that
+cannot price at all is recorded as a collapsed `addon_blocked:<reason>` decision (one counted row per
+session), so "waiting for a credit" and "cannot read the chain" never share a silence. **One add-on
+per position**, then the trigger disarms for good. Armed until expiry, no cutoff. After firing,
+**hold everything to expiry** on every book — early exit is reserved for a future experiment.
 
-**The add-on** (identical construction for all three arms): a put credit spread bracketing the far
-wing — SELL one increment above it, BUY one increment below. Must itself price as a credit
-(`addon_credit_floor`, also a declared zero). **Trigger latching**: once met, the position is
-`armed`; every tick re-prices the add-on — a non-credit tick is `addon_not_credit` and the arm
-stays live — until the first credit tick fires it. **One add-on maximum per position**; after
-firing, the trigger disarms permanently. **Armed until expiry, no cutoff.** **After firing: hold
-everything to expiry** — no profit-take, no stop, on any book; early exit is reserved as a future
-advisor experiment.
-
-**Trigger cadence**: evaluated on the in-session 60s resident loop, NOT the daily entry tick — a
-reversal at 1pm must not wait for tomorrow. Triggers are defined on the 60s SAMPLED series, not the
-continuous path: a 50Δ touch between ticks does not exist by definition, which makes the loop
-cadence part of the measurement instrument — changing it is a journaled measurement break, same as
-flies' 60s→15s precedent.
+**Trigger cadence**: the in-session 60s resident loop, not the entry tick. Triggers are defined on
+the 60s SAMPLED series, so the loop cadence is part of the instrument — changing it is a journaled
+measurement break (flies' 60s→15s precedent).
 
 **Latch state persists on the position row** (`peak_abs_delta`, `below_flip_seen`, `armed_at`),
-updated on every measured tick — never held only in loop memory, so a supervisor restart mid-
-session cannot amnesia a morning touch. `bwb_trigger_ticks` can re-derive the latches
-independently (`triggers.derive_latches_from_ticks`), which doubles as the integrity cross-check.
+updated every measured tick, so a supervisor restart cannot amnesia a morning touch.
+`triggers.derive_latches_from_ticks` re-derives them from `bwb_trigger_ticks` as the integrity
+cross-check.
 
-**gamma_flip basis**: recomputed fresh each tick from the stream cache via `cherrypick.core.gex` —
-the same basis MEIC's own gate reads, NOT the GEX recorder's ~5-min history, so a stalled recorder
-can never silently freeze this module's trigger. The basis read is stamped on every trigger row.
+**gamma_flip basis**: recomputed each tick from the stream cache via `cherrypick.core.gex` — MEIC's
+basis, NOT the GEX recorder's ~5-min history, so a stalled recorder cannot freeze the trigger. The
+basis is stamped on every trigger row. A chain with no OI cached yet refuses `insufficient_gex_data`,
+so `flip` cannot arm until OI accumulates.
 
-### The `wall` book (opt-in, 2026-08-31) — outside the paired design on purpose
+### The `wall` book (opt-in, 2026-08-31) — outside the paired design
 
-A fifth book, `books.wall`, trades a CALL-side BWB with the body at the GEX call wall (read off the
-same `gamma_flip_reading` compute the flip trigger uses — one basis, one provenance): +1 near
-(one increment below, toward spot) / −2 body / +1 far (two increments above), net credit required.
-Origin: the gex module's pin study over 23 recorded sessions — a BOUND bet (the close finished at
-or below the morning wall 19–21/23), never a pin bet (the tent captured 2/23). At ~7 DTE it asks a
-question that study did not answer — does the wall bound price over a WEEK? — so its result stands
-on its own evidence and must never pool with the four base books.
+`books.wall` trades a CALL-side BWB with the body at the GEX call wall (read off the same
+`gamma_flip_reading` as the flip trigger): +1 near (one increment below) / −2 body / +1 far (two
+above), net credit required. It tests whether the wall BOUNDS price over a week (the gex pin study:
+close at or below the morning wall 19–21 of 23 sessions; a pin bet captured 2/23), so its result
+**never pools** with the four base books.
 
-It is deliberately NOT in `engine.BOOKS`: the four base books' contract ("every book enters the
-IDENTICAL BWB") stays true because the wall book is additive and opt-in. It never arms
-(`triggers.evaluate` returns fired=False for an unknown book) and has no add-on in phase one; its
-trigger-tick cohort records the call-side candidates (near-long call delta, spot, flip, wall) the
-same way the put books earned their triggers — a future add-on is a read-side replay away, and its
-own journaled break. Its entry spread gate is percent AND absolute money (`max_leg_spread_abs`,
-the curve/calendars rule — OTM calls zero-bid routinely); the put books' percentage-only gate is
-deliberately untouched, because changing what THEY admit would be its own measurement break.
-Settlement is option-type aware (`engine.settle_intrinsic` takes the leg's own type); a transposed
-call intrinsic would book the wall book's max-loss case as a win, and a test pins the mirror.
+It is NOT in `engine.BOOKS`, so "every book enters the identical BWB" stays true. It never arms
+(`triggers.evaluate` returns fired=False for an unknown book) and has no add-on yet; its trigger-tick
+cohort records the call-side candidates so a future add-on is a replay away (and its own break).
+Its spread gate is percent AND absolute money (`max_leg_spread_abs`, since OTM calls zero-bid); the
+put books' percent-only gate is deliberately untouched, since changing what they admit is a break.
+Settlement is option-type aware (`engine.settle_intrinsic`); a test pins the call mirror, because a
+transposed intrinsic would book the wall book's max loss as a win.
 
-## Pairing, collisions, and effective sample
+## Pairing, samples and the trigger tick path
 
-Until an arm's add-on actually fires, that arm's positions are byte-identical to control's — an
-expected `find_identical_readings` collision, not a defect. Each arm-vs-control comparison's
-effective sample is that arm's **fire count** (`analytics.fire_counts`), not its trade count. The
-three arms will NOT fire equally often: `delta` fires most, `bounce` needs the move plus a turn,
-`flip` needs spot to have entered negative-gamma territory at all and come back. A quiet `flip`
-book is the honest state, not a broken one (the pmcc keltner precedent).
+Until an arm fires, its positions are byte-identical to control's — an expected
+`find_identical_readings` collision. Each arm-vs-control comparison's effective sample is its
+**fire count** (`analytics.fire_counts`), not its trade count. `delta` fires most, `flip` least; a
+quiet `flip` book is the honest state (pmcc keltner precedent). **Ladder rows are correlated**: one
+selloff can fire a trigger across several overlapping positions, so read fires by distinct
+*episode*, not by position, and surface that beside the counts.
 
-**Daily-ladder correlation caveat:** concurrent positions share regime context — one sharp selloff
-can fire the same trigger across several overlapping positions in one session. Rows are not
-independent samples; the honest unit for "how often does this trigger help" is closer to distinct
-fire *episodes* than fired positions. Recorded as an honesty rule, surfaced beside the counts.
+`bwb_trigger_ticks` is the module's second product: every tick, per open COHORT
+(`entry_session, structure_signature`), it records near-wing delta, peak delta, spot, gamma_flip and
+the below-flip latch — identical across the four base books. That keeps "when would each trigger
+have fired on control" answerable, and makes a forward-recorded read-side replay possible (the
+calendars `exit_policies` pattern — never vendor-imagined). `trigger_coverage()` splits `measured`
+into `spot_measured` / `flip_measured` and carries a `total_failure` flag: ticks recorded with none
+measured is a defect, not thin data (four such sessions went unnoticed; see history).
 
-## The trigger tick path is the module's second product
+**The add-on bracket's own quotes are recorded only from 2026-09-26** (`engine.addon_bracket`, the
+one rule `plan_addon` also uses). Anything priced off tick quotes starts at 2026-09-28.
 
-Every loop tick, for every open COHORT — `(entry_session, structure_signature)`, not per position —
-`bwb_trigger_ticks` records the near-wing delta, peak delta, spot, gamma_flip (and the
-below-flip-since-entry latch), byte-identical across the four base books that share one signature.
-Two reasons: (1) counterfactual on control — control's cohort rows carry the same measures, so
-"when would each trigger have fired on the untouched book" stays answerable read-side; (2) a
-read-side threshold replay (`replay.py`, a fast-follow, not required for v1) becomes possible over
-data this module itself recorded — the calendars `exit_policies` pattern, forward-recorded, then
-replayed, never vendor-imagined.
+### The add-on as its own trade (`addon_replay.py`, `bwb addon-replay`)
 
-**The add-on bracket's own quotes were never recorded until 2026-09-26.** The four `addon_*_bid/ask`
-columns were written as NULL on every row (53,410 ticks, 2026-08-24..09-25) while the docs above and
-`replay.py`'s own honesty rail said they rode every tick -- so no replayed fire was ever priceable,
-and nothing said so. Fixed 2026-09-26: the tick picks the bracket by `engine.addon_bracket`, the one
-rule `plan_addon` also uses, from one chain read per expiration. Recording, not measurement: no arm
-does anything differently. Anything priced off tick quotes starts at 2026-09-28.
+Read-side, no new loop: over 08-24..09-25 delta's add-on made 73% of its gross on 19% of its
+buying power over time. Three views, paired to delta's cohorts:
 
-## The add-on as its own trade (`addon_replay.py`, 2026-09-26)
+- **`addon-only`** — delta's add-on alone, from the legs actually filled (entry mids, settled
+  values, its own fee and slippage, the $5 settlement fee on ITM legs). Trigger timing is replayed
+  from recorded deltas and must land on the session the real arm armed (`validation`; 23/23 at build).
+- **`same_spread_other_timing`** — bounce's and flip's add-ons: what timing alone is worth.
+- **`spread-daily`** — the same bracket sold at the cohort's entry tick, no trigger; priced from
+  tick quotes, so history only from 2026-09-28 (`unpriced_cohorts` lists the rest).
 
-A read-side question, no new loop: over 08-24..09-25 the delta arm's add-on made 73% of its gross on
-19% of its buying power over time, so is it worth trading WITHOUT the BWB? `bwb addon-replay` answers
-it three ways, all paired to delta's own cohorts:
-
-- **`addon-only`** -- delta's add-on scored alone, from the legs the loop actually filled (entry mids,
-  settled values, its own recorded fee and slippage, the $5 settlement fee on its ITM legs). Exact,
-  because it IS that trade. The trigger's timing is replayed from the recorded near-wing deltas and
-  must land on the session the real arm armed (`validation`; 23 of 23 at the build).
-- **`same_spread_other_timing`** -- bounce's and flip's add-ons: the same bracket on the same cohorts,
-  sold at a different moment. What timing alone is worth.
-- **`spread-daily`** -- the comparator: the same bracket sold at the cohort's entry tick, no trigger.
-  It is priced from tick quotes, so it has history only from 2026-09-28 (above); `unpriced_cohorts`
-  lists the sessions it cannot score.
-
-Count results by settlement Friday, never by fire: every fire expiring one Friday shares one print.
-A paper `addon-only` arm (and a `spread-daily` twin) is the next step only if the replay holds up,
-and adding arms is measurement-affecting -- a declared boundary, not a mid-week landing.
+Count results by settlement Friday, never by fire. A paper `addon-only` arm (and `spread-daily`
+twin) follows only if the replay holds up, at a declared boundary — adding arms is measurement-
+affecting.
 
 ## Honesty rules
 
-1. **Net of the full modeled fee and slippage stack.** Entry is 4 legs/2 sells, the add-on 2
-   legs/1 sell, and each distinct ITM leg at settlement pays the $5 cash-settlement event fee.
-2. **Settlement fidelity is a stated caveat, not a bias**: paper settles each leg at intrinsic
-   against the last cached tick, not the official closing/SET print — uniform across arms. The
-   live ledger settles on the official print only (a hand-supplied `--price`, or the broker
-   chain's posted close), and waits rather than guess.
+1. **Net of the full fee and slippage stack.** Entry 4 legs/2 sells, add-on 2 legs/1 sell, and the
+   $5 cash-settlement event fee per DISTINCT ITM symbol (the doubled body is one).
+2. **Settlement fidelity is a stated caveat**: paper settles at intrinsic against the last cached
+   tick, not the official print — uniform across arms. The live ledger settles on the official
+   print only (hand-supplied `--price` or the broker chain's posted close) and waits rather than guess.
 3. **A hole in the mark path is refused, never zero** (`usable = 0` with the refusal).
-4. **A trigger can only fire on a measured tick.** Missing/stale greeks for the near wing, or
-   unavailable GEX inputs, mean the trigger cannot evaluate that tick — never a guess, never
-   carried forward. Peak-delta tracking also only advances on measured ticks.
-5. **Correlated ladder rows** — the pairing section's rule; surfaced, not buried.
-6. **Zero credit floors are a declared design choice**, stated in config `_note`s.
-7. **No fallback paths in v1** — the delta triggers refuse-on-missing rather than degrade.
-8. **Measurement breaks are journaled rows** (`measurement_breaks`, the shared table shape).
+4. **A trigger fires only on a measured tick.** Missing/stale near-wing greeks or GEX inputs mean no
+   evaluation that tick — never guessed, never carried forward; peak delta advances only on
+   measured ticks.
+5. **Correlated ladder rows** are surfaced, not buried.
+6. **Zero credit floors are declared** in config `_note`s.
+7. **No fallback paths in v1** — triggers refuse on missing data rather than degrade.
+8. **Measurement breaks are journaled rows** (`measurement_breaks`).
+9. **`bounce_pullback` must stay above zero** — config-lint guards it; at zero bounce equals delta.
+10. **Never pool across a journaled break.** `trigger_ticks_unmeasured` (2026-08-24..27, every row
+    `measured = 0`) must not pool with later rows; rows before 2026-09-18 carry an overstated
+    `entry_max_loss` and a doubled body settlement fee, derivable and not rewritten (history doc).
 
-## Settlement
+SPX is cash-settled and European: an expiring leg books intrinsic against the settlement print; no
+shares, no assignment, no dividend calendar. The event fee lands the next business day.
 
-SPX is cash-settled, European-style — the cleanest settlement model in the suite. An expiring leg
-books intrinsic (`max(0, strike - spot)` for a put) against the settlement print; no shares, no
-assignment, no dividend calendar. Every distinct ITM settlement symbol pays the $5 event fee the
-next business day.
+## Live (2026-09-18) — one arm, per-day armed, every fill the broker's word
 
-## Layout (mirrors curve/pmcc)
+Built to test whether the paper result survives a fill without disturbing the paper books.
+
+- **Gating** (guardrail): `live.enabled`, `live.gate0_confirmed`, a per-day arm record
+  (`/live-bwb-start`, a literal YES each day), a designated account, no suite halt flag, and
+  `live.arm` naming a base book — every one re-checked on every tick and every submission, all
+  guarded from the settings surface. Never run `--install-task` outside `/live-bwb-start`.
+- **The structure is the paper structure.** `engine.plan_entry` plans it; `live_orders.entry_spec`
+  only collapses the body into one sell leg at double quantity with a limit (mid minus
+  `entry_concession`, floored to the nickel). Live-only rules REFUSE, never reshape: the
+  cost-derived floor (fees plus `min_net_credit_dollars` per contract, the broker's dry-run fee
+  estimate replacing the schedule when given; modelled slippage deliberately excluded — a limit fill
+  IS the credit); `max_structures_per_day` (1; a cancelled entry spends nothing); total and
+  per-expiration worst-case margin caps from expiry payoffs, RESERVING an unfired position's future
+  add-on whenever the arm can fire; the settled-net breaker; and the mark-drawdown breaker, which
+  blocks the NEXT entry only, never an exit.
+- **Every fill is the broker's word.** An entry row is born `pending` (not marked or managed); the
+  actual credit overwrites the modelled one on confirmation, realised slippage is measured against
+  the mid at submission, and a terminal order leaves a `cancelled` row. The add-on records only a
+  pending marker; its legs are written (through the paper writer, actual credit) only on broker
+  confirmation. A dead add-on clears the marker and may re-fire with a new attempt suffix. One
+  add-on order per tick across the ladder.
+- **A resting order walks down, bounded**: one tick every `reprice_after_minutes` from the fresh
+  mid's limit, never under the row's live floor, lifting with a rising mid (only the step count is
+  monotonic); cancelled at `entry_cutoff`, `entry_cancel_after_minutes`, or when strikes move. A
+  refused cancel waits for the next poll — never a second order over one that could not be cancelled.
+- **No closing orders.** Settlement on an official print or not at all. Costs are estimates until
+  `fee_reconcile.py` replaces them with real transactions (exact matching, modelled values
+  snapshotted once, unmatched rows left alone).
+- **Identity travels with the order**: the ledger key is the order's external identifier, so an
+  uncertain submission is recovered by it (`cherrypick.core.execution`); an unreadable outcome HOLDS
+  the adapter (`broker_held` in `--status`).
+- **The paper books are untouched.** `paper_loop._manage_positions` has a `fire` seam defaulting to
+  the old behaviour (a test pins it). The live ledger is a separate file paper surfaces never read,
+  its own evidence with the same correlated-ladder caveat. Switching `live.arm` is a live
+  measurement break — journal it.
+
+## Layout
 
 | file | role |
 |---|---|
-| `clock.py` | ET clock; PM-settled target-expiration selection with the AM-monthly shift. Pure. |
-| `engine.py` | expected-move read, BWB construction + credit gate, add-on construction + credit check, worksheet math, cash-settlement intrinsics, fee stack. Pure. |
-| `triggers.py` | the three trigger conditions over (tick telemetry, position state) — pure, the module's core IP. |
-| `provider.py` | entry/mark/trigger snapshots from the stream cache; the gamma_flip read; refuses rather than guesses. |
+| `clock.py` | ET clock; PM-settled expiration selection with the AM-monthly shift. Pure. |
+| `engine.py` | expected move, BWB and add-on construction and credit checks, worksheet, intrinsics, fee stack. Pure. |
+| `triggers.py` | the three trigger conditions — pure, the module's core IP. |
+| `provider.py` | entry/mark/trigger snapshots from the cache; the gamma_flip read; refuses rather than guesses. |
 | `management.py` | per-book verdicts (arm/fire/hold) + advised-params choke point. Pure. |
-| `book.py` | decisions -> ledger rows; add-on leg append; cash settlement. |
-| `paper_loop.py` | session driver: entry tick, 60s trigger/mark loop, expiry settle. |
-| `analytics.py` | the one query layer: per-book nets, fire counts, trigger-tick coverage. |
-| `replay.py` | the read-side threshold replay over `bwb_trigger_ticks` — a FAST-FOLLOW, not built in v1. |
-| `addon_replay.py` | the add-on scored as its own trade, with no fly, beside a no-trigger comparator (`bwb addon-replay`). |
-| `db.py`, `stream_request.py`, `cli.py` | the standard trio (`status` / `worksheet` / `fires` / `triggers` / `headline` / `replay` / `addon-replay`). `db.live_db_path()` is the live ledger; `stream_request.register(live=True)` writes `bwb-live`'s own request file. |
-| `live_loop.py` | The LIVE tick (2026-09-18): dead-man's switch, orphan sweep, fill confirmation, resting-order management (the bounded walk-down), official-print settlement, ONE gated entry attempt, then the paper trigger/mark/manage pass over the live ledger with the fire seam swapped for order placement. `--once` is the dry-run smoke; `--once --live` the real tick; `--status`; `--settle --price`; `--install-task`/`--uninstall-task` are what `/live-bwb-start` calls. |
-| `live_orders.py` | Pure: the order specs (the body sold once at double quantity), the cost-derived live floor, the walk-down's next limit, worst-case payoffs and the margin caps with the add-on reserve. |
-| `broker_cli.py`, `credentials.py` | The `connect`/`account`-facing seam (keyring service `bwbagent`, falling back to the shared login) and `live_gates`. Serializer, tick rounding, settlement price and the arm record are `cherrypick.core` imports, not copies. |
-| `fee_reconcile.py` | Replaces a settled live row's estimated costs with the broker's real cash flow; exact matching, modeled values snapshotted once, unmatched rows left alone. Run by the live tick for pending expirations, and by hand. |
+| `book.py` | decisions -> ledger rows; add-on legs; cash settlement. |
+| `paper_loop.py` | entry tick, 60s trigger/mark loop, expiry settle. |
+| `analytics.py` | the one query layer: nets, fire counts, trigger-tick coverage. |
+| `replay.py` | read-side threshold replay over `bwb_trigger_ticks` — a stubbed fast-follow. |
+| `addon_replay.py` | the add-on scored as its own trade (`bwb addon-replay`). |
+| `db.py`, `stream_request.py`, `cli.py` | the standard trio (`status`/`worksheet`/`fires`/`triggers`/`headline`/`replay`/`addon-replay`). `db.live_db_path()` is the live ledger; `stream_request.register(live=True)` writes `bwb-live`'s request file. |
+| `live_loop.py` | the LIVE tick: dead-man's switch, orphan sweep, fill confirmation, the walk-down, official-print settlement, ONE gated entry attempt, then the paper pass over the live ledger with the fire seam swapped for order placement. |
+| `live_orders.py` | pure: order specs, the live floor, the walk-down's next limit, worst-case payoffs, margin caps with the add-on reserve. |
+| `broker_cli.py`, `credentials.py` | keyring service `bwbagent` (falling back to the shared login) and `live_gates`. Serializer, tick rounding, settlement price and arm record come from `cherrypick.core`, not copies. |
+| `fee_reconcile.py` | replaces a settled live row's estimated costs with the broker's cash flow; run by the live tick and by hand. |
 
 ## Commands
 
@@ -225,157 +207,29 @@ python -m cherrypick.bwb.paper_loop --once        # one gated tick
 python -m cherrypick.bwb.paper_loop --interval 60 # the in-session resident loop
 python -m cherrypick.bwb.paper_loop --status      # one JSON health object (watchdog contract)
 python -m cherrypick.bwb.paper_loop --settle --date 2026-09-18 --price 6400.10  # official print
-python run.py status                              # open positions + target expiration
-python run.py worksheet                           # the live per-position worksheet
-python run.py fires                               # per-book add-on fire counts
-python -m pytest                                  # temp CHERRYPICK_HOME; no broker, no streamer needed
+python run.py status | worksheet | fires          # positions + expiration / worksheet / fire counts
+python -m pytest                                  # temp CHERRYPICK_HOME; no broker, no streamer
 ruff check . && ruff format .                     # line-length 110
 
-python -m cherrypick.bwb.live_loop --once         # LIVE dry-run smoke: preflights against the real account, places nothing
-python -m cherrypick.bwb.live_loop --status       # armed_for / pending orders / orphans / breaker / broker_held
-python -m cherrypick.bwb.live_loop --settle --price 6400.10 --date 2026-09-18   # the official print, by hand
-python -m cherrypick.bwb.fee_reconcile            # reconcile settled live rows against broker transactions
+python -m cherrypick.bwb.live_loop --once         # LIVE dry-run smoke: preflights, places nothing
+python -m cherrypick.bwb.live_loop --status       # armed_for / pending / orphans / breaker / broker_held
+python -m cherrypick.bwb.live_loop --settle --price 6400.10 --date 2026-09-18   # official print
+python -m cherrypick.bwb.fee_reconcile            # settled live rows vs broker transactions
 ```
 
-Arming is `/live-bwb-start` (a fresh literal YES each day); never run `--install-task` outside it.
+`--once --live` is the real tick; `--install-task`/`--uninstall-task` are what `/live-bwb-start`
+calls. Config: `config.example.json` -> `config.json` (git-ignored) or `~/.cherrypick/config/bwb.json`;
+the example is the design document — read its `_note` keys first.
 
-Config: copy `config.example.json` -> `config.json` (git-ignored), or place
-`~/.cherrypick/config/bwb.json`. The example file is the design document — read its `_note` keys
-before changing a value.
+## Data source and guardrails
 
-## Data source
-
-This module runs no streamer. Its **paper loop holds no broker credentials at all**; the live loop
-reads the `bwbagent` keyring service (falling back to the suite's shared login) and nothing else
-imports `credentials.py`. Its held expirations exist in the shared cache because
-`stream_request.py` declares them via the registry's `expirations` field every tick. `window_hints` is load-bearing: the body sits a full expected move below spot, at
-or beyond a default ATM window's edge, and the window must also cover the add-on bracket two
-increments below the far wing — escalated on recorded `no_strikes_in_window` refusals, the
-flies/pmcc pattern.
-
-## Known risks, stated up front
-
-1. **The trigger tick path depends on a live `gamma_flip` read every 60s**, computed from the
-   stream cache's own chain + greeks + OI. A chain with no OI cached yet (a symbol just requested)
-   refuses `insufficient_gex_data` rather than guessing — the `flip` book simply cannot arm until
-   OI accumulates.
-2. **Settlement fidelity** — rule 2 above; a stated caveat, not modelled bias.
-3. **Correlated ladder rows** — rule 5; read fire counts by episode, not by position, when the
-   sample is small.
-4. **The `bounce`/`delta` distinction depends on `bounce_pullback` staying above zero** —
-   config-lint guards this; at exactly zero the two arms are mathematically identical.
-
-## Live (2026-09-18) — one arm, per-day armed, every fill the broker's word
-
-The live path exists to find out whether the paper result survives contact with a fill, and is
-built so that question can be answered without disturbing the paper books:
-
-- **The structure is the paper structure.** `engine.plan_entry` plans it; `live_orders.entry_spec`
-  only collapses the body's two rows into one sell leg at double quantity and puts a limit on it
-  (mid minus `entry_concession`, floored to the nickel). What is live-only is sizing and admission,
-  and every one of those rules REFUSES rather than reshapes: the cost-derived floor (fees plus
-  `min_net_credit_dollars`, per contract, with the broker's own dry-run fee estimate replacing the
-  schedule when it gives one — modeled slippage is deliberately NOT in it, a limit fill IS the
-  credit); `max_structures_per_day` (1; a cancelled entry spends nothing); the total and
-  per-expiration worst-case caps, computed from the legs' expiry payoffs with an unfired position's
-  future add-on RESERVED whenever the arm can fire; the settled-net breaker (weekly latency on a
-  hold-to-expiry ladder) and the mark-drawdown breaker (blocks the NEXT entry only, never an exit).
-- **Every fill is the broker's word.** An entry row is born `pending` (not open: nothing marks or
-  manages it), the actual credit overwrites the modeled one on confirmation and the realized
-  slippage is measured against the mid at submission, a terminal order leaves a `cancelled` row.
-  The add-on is one step stricter: placing it records only a pending marker, and the legs are
-  written — through the paper writer, with the actual credit — only when the broker confirms. A
-  dead add-on clears the marker; the arm stays live and may re-fire with a new attempt suffix.
-  One add-on order per tick across the ladder (a flip reclaim can arm several positions in one
-  second).
-- **A resting order walks down, bounded.** One tick every `reprice_after_minutes` from the fresh
-  mid's limit, never under the row's live floor, lifting with a rising mid (only the step count is
-  monotonic), cancelled at `entry_cutoff`, at `entry_cancel_after_minutes`, or when the strikes
-  move. A refused cancel is left for the next poll — never a second order over one that could not
-  be cancelled.
-- **No closing orders.** SPX cash-settles; the live ledger settles on an official print or waits.
-  Costs are estimates until `fee_reconcile.py` replaces them with real transactions (the $5
-  settlement event fee per DISTINCT ITM symbol — the doubled body is one — is the number it
-  checks per symbol).
-- **Identity travels with the order.** The ledger key is the order's external identifier, so an
-  uncertain submission is recovered by it (`cherrypick.core.execution`); an outcome that could not
-  be read back HOLDS the adapter, and `--status` shows it as `broker_held`.
-- **The paper books are untouched.** `paper_loop._manage_positions` gained a `fire` seam whose
-  default is the old behaviour (a test pins it); nothing about tick cadence, entry pacing, gate
-  semantics or what a book's net means changed, so paper's evidence clock does not restart. The
-  live ledger is its own evidence, with the same correlated-ladder caveat: several open positions
-  settle on one Friday print. Switching `live.arm` is a live measurement break — journal it.
-- **Two recorded numbers were corrected the day this landed**, both found by the live work and
-  both landing immediately per the suite rule: `entry_max_loss` had overstated the worst case by the
-  narrow width on every row (`wide - narrow - credit` is the payoff; the 2026-09-04 settlement was
-  the proof), and settlement had charged the $5 event fee per ITM leg ROW, so the doubled body paid
-  twice. Rows before 2026-09-18 carry the old values; both are derivable and neither is rewritten.
-
-## Guardrails (suite-wide)
-
-Suite-wide guardrails apply — see root CLAUDE.md. On top of those:
-
-- **Paper by default; the live path is narrow and separately gated.** `live.enabled`,
-  `live.gate0_confirmed`, a per-day arm record (`/live-bwb-start`, a literal YES), a designated
-  account, the absence of the suite halt flag, and `live.arm` naming a base book — every one
-  re-checked on every tick and on every submission, all guarded from the settings surface. The
-  live ledger is a separate file the paper surfaces never read. See "Live" below.
-- **The decision path is deterministic.** `clock.py`, `engine.py`, `triggers.py`, `management.py`
-  are pure functions over pre-fetched data — no model, no MCP, no network in the decision itself.
-- Declared settlement only (SPX is always `cash`); a symbol this module is not built for is out of
-  scope by construction (it trades exactly one underlying).
-- Credentials in the OS keyring only (this module holds none). Scratch work in `.tmp/`.
-- Tests isolate by an **autouse** temp-home fixture (`tests/conftest.py`), never opt-in — the
-  flies 2026-07-20 lesson.
-
-## Status
-
-Built 2026-08-23; trading paper since 2026-08-24, four open cohorts across the four base books.
-`replay.py` is a stubbed fast-follow (the trigger-tick substrate is recorded from day one; the
-reader over it is not).
-
-**The trigger-tick substrate recorded nothing usable for its first four sessions
-(2026-08-24..27) — 2,337 rows, every one `measured = 0`.** Journaled as a measurement break
-(`trigger_ticks_unmeasured`); those rows must never be pooled with corrected ones. Two independent
-defects, both fixed 2026-08-27:
-
-- **`core.streamcache.greeks_for` never selected `gamma`.** `core.gex.compute_gex` skips any strike
-  whose gamma is None, so the gamma-flip read failed on every tick and reported
-  `insufficient_gex_data` — while the cache held gamma AND open interest for every symbol involved.
-  **The `flip` book could not fire by construction for four sessions.** Three other modules call
-  the same reader and were unaffected because they read only delta/iv/vega, which is why this
-  surfaced here and nowhere else.
-- **`_record_trigger_ticks` did not set `position_symbol` on its legs.** `bwb_legs` has no symbol
-  column, so `build_mark_snapshot` resolved no underlying and wrote a NULL `spot` on every row. The
-  marks path set it and the tick path did not; both now go through `paper_loop._legs_with_symbol`.
-
-Worth keeping from how this hid. `trigger_coverage()` reported `refusal_share = 1.00` for four
-consecutive sessions and it read as a number rather than an alarm — the same shape as the GEX
-regime-history `LIMIT 60`, where a reader could not tell a quiet session from a truncated one. The
-reading now separates the two halves of `measured` (`spot_measured` / `flip_measured`, with the
-refusal naming both), and carries a `total_failure` flag, because *ticks recorded and none measured*
-is a defect and not thin data. `near_abs_delta` was recorded correctly throughout and stayed in
-0.05–0.39 against a 0.50 trigger, so `delta` and `bounce` were legitimately quiet — a book that
-CANNOT fire and a book with no reason to fire looked identical in the ledger, which is the more
-dangerous half of this.
-
-**The add-on could never price, and that was a third defect found the same day.**
-`_addon_snapshot` resolved `root = symbol`, so every lookup asked the cache for `SPX`-rooted
-contracts while SPX's weeklies are listed as `SPXW` — `not_root_listed`, on every tick, for every
-armed position. Every other snapshot in this module already resolved
-`config.get("occ_root") or symbol`; this was the one that did not. The moment the gamma flip became
-measurable the `flip` book armed all four of its positions (`arm` / `flip_trigger_met`, 10:39 ET)
-and then sat unable to price a single one. With the root fixed, three of the four price a real
-credit (0.25 / 0.45 / 1.05) and the fourth refuses `addon_not_credit` at −0.075 — the designed
-refusal path, previously unreachable.
-
-It hid for the same reason the trigger substrate did: **an armed position that cannot price
-produces a `hold`, and holds are not recorded.** "Waiting for a credit" and "cannot read the chain
-at all" were the same silence. An armed-but-unpriceable add-on is now written as a collapsed
-`addon_blocked:<reason>` decision — one counted row per session, not one per tick — so the module
-says what stopped it. `addon_not_credit` was always meant to be recorded; the path that reached it
-was simply never taken.
-
-Both of this section's former fast-follows have landed (verified 2026-09-02): the module runs as
-the supervisor's `bwb-paper` job on a 60s interval, and `packages/console` serves a dedicated
-`/bwb` page beside the integrity reading it already mirrored.
+- **The paper loop holds no credentials**; only the live loop reads `bwbagent`, and nothing else
+  imports `credentials.py`. Held expirations come from the `expirations` request field.
+  **`window_hints` is load-bearing**: the body sits a full expected move below spot and the window
+  must also cover the add-on bracket two increments below the far wing — escalated on recorded
+  `no_strikes_in_window` refusals.
+- **The decision path is deterministic**: `clock.py`, `engine.py`, `triggers.py`, `management.py`
+  are pure over pre-fetched data.
+- Settlement is always `cash`; the module trades exactly one underlying.
+- Scratch work in `.tmp/`. Tests isolate by an **autouse** temp-home fixture (`tests/conftest.py`),
+  never opt-in.
