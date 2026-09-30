@@ -41,6 +41,7 @@ from cherrypick.core import dxfeed as _dx
 
 # One ET for the suite — see cherrypick.core.clock.
 from cherrypick.core.clock import ET as _ET
+from cherrypick.core.dxfeed import num as _dxfeed_num
 
 from cherrypick.meic import credentials as _creds
 from cherrypick.meic import gex_math
@@ -388,13 +389,7 @@ def _error(exc: Exception) -> dict:
 _serialize = _broker.serialize  # the suite's one SDK-object flattener (core.broker default)
 
 
-def _num(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+_num = _dxfeed_num
 
 
 async def _get_account(account_number: str | None = None):

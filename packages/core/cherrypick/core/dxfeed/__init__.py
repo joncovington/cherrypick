@@ -26,14 +26,18 @@ StreamerFactory = Callable[[Any], Any]
 Extract = Callable[[Any], Any]
 
 
-def _num(value: Any) -> float | None:
-    """Coerce to float, or None if not numeric. (Byte-for-byte the `_num` both repos already use.)"""
+def num(value: Any) -> float | None:
+    """Coerce to float, or None if not numeric -- the one copy (core.gex and the earnings/meic broker
+    helpers alias it as `_num`)."""
     if value is None:
         return None
     try:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+_num = num
 
 
 def _default_streamer_factory(session: Any) -> Any:

@@ -37,6 +37,8 @@ from __future__ import annotations
 from statistics import fmean, pstdev
 from typing import Any
 
+from cherrypick.core import marketregime as _regime
+
 # Declared blend weights. Deliberately sum to 0.90: the missing 0.10 is the deferred
 # factor-crowding signal's seat, kept visible here rather than quietly redistributed.
 WEIGHTS = {
@@ -146,9 +148,7 @@ def percentile_rank(closes: list[float], value: float) -> float:
     erodes trust in every other number on the page. The strict-below convention is this function's,
     and callers inherit it rather than choosing their own.
     """
-    if not closes:
-        return 0.0
-    return sum(1 for c in closes if c < value) / len(closes) * 100.0
+    return _regime.percentile_rank(closes, value) * 100.0
 
 
 def _vix_level(readings: dict[str, Any], history: dict[str, list[dict]]) -> dict:

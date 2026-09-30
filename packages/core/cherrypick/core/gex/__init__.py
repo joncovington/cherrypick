@@ -15,16 +15,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from cherrypick.core import dxfeed as _dx
+
 DEFAULT_MULTIPLIER = 100
 
 
-def _num(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+_num = _dx.num
 
 
 def dollar_gamma(gamma: float, quantity: float, multiplier: float, spot: float) -> float:

@@ -92,8 +92,8 @@ def _mean(values: list[float | None], end: int, window: int) -> float | None:
 
 
 def percentile_rank(values: list[float], value: float) -> float:
-    """Share of `values` strictly below `value`. The convention `overview.score.percentile_rank`
-    uses; twins to fold when either is next touched."""
+    """Share of `values` strictly below `value`, 0-1. The one strict-below rule;
+    `overview.score.percentile_rank` is this x 100."""
     if not values:
         return 0.0
     return sum(1 for v in values if v < value) / len(values)

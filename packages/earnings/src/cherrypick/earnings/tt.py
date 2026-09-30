@@ -84,13 +84,7 @@ def _error(exc: Exception) -> dict:
 _serialize = _broker.serialize  # the suite's one SDK-object flattener (core.broker default)
 
 
-def _num(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+_num = _dx.num
 
 
 async def _get_account(account_number: str | None = None):
