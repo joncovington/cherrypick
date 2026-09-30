@@ -252,7 +252,7 @@ def main(argv: list[str] | None = None) -> int:
     br = sub.add_parser("breadth", help="daily leaders/laggards/net/bullish share over recent sessions")
     br.add_argument("--sessions", type=int, default=10)
     br.set_defaults(fn=cmd_breadth)
-    sub.add_parser("score-trends", help="the trend baseline against every vendor chart capture").set_defaults(
+    sub.add_parser("score-trends", help="our trend scores against every vendor chart capture").set_defaults(
         fn=cmd_score_trends
     )
     sub.add_parser("score-levels", help="how many vendor levels our grid places").set_defaults(

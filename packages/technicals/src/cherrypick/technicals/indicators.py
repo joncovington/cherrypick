@@ -33,6 +33,25 @@ def ema(values: list[float], n: int) -> list[float | None]:
     return out
 
 
+def wma(values: list[float], n: int) -> list[float | None]:
+    """Linearly weighted: the newest value weighs n, the oldest 1."""
+    out: list[float | None] = [None] * len(values)
+    denom = n * (n + 1) / 2
+    for i in range(n - 1, len(values)):
+        out[i] = sum(values[i - n + 1 + k] * (k + 1) for k in range(n)) / denom
+    return out
+
+
+def stdev(values: list[float], n: int) -> list[float | None]:
+    """The population standard deviation of the last `n` values (divide by n, as Bollinger bands do)."""
+    out: list[float | None] = [None] * len(values)
+    for i in range(n - 1, len(values)):
+        window = values[i - n + 1 : i + 1]
+        m = sum(window) / n
+        out[i] = (sum((v - m) ** 2 for v in window) / n) ** 0.5
+    return out
+
+
 def rsi(closes: list[float], n: int = 14) -> list[float | None]:
     """Wilder's RSI: average gain and loss seeded with a simple mean, then Wilder-smoothed."""
     out: list[float | None] = [None] * len(closes)

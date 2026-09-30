@@ -2,8 +2,8 @@
 
 Each capture carries the vendor's daily 1M and 6M trend scores for its name. This compares ours day
 by day over the whole overlap: the exact score, the five-step label, and within one step. Captures
-grow nightly (the collector saves up to 40 names), so the same command measures the baseline on a
-widening set of names without any change here.
+grow nightly (the collector saves up to 40 names), so the same command re-checks the solved
+construction (`trend.py`) on a widening set of names without any change here.
 """
 
 from __future__ import annotations

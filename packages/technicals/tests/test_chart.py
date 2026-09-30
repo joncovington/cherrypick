@@ -30,11 +30,10 @@ def test_cci_is_zero_on_a_flat_series_and_positive_above_its_mean():
     assert indicators.cci(rising, rising, rising, 14)[-1] > 100
 
 
-def test_the_trend_score_is_the_sum_of_signs_and_the_label_is_five_steps():
+def test_the_trend_score_is_the_vendors_and_the_label_is_five_steps():
     closes = [100.0] * 260 + [150.0]
     assert trend.scores(closes, trend.SHORT_TERM)[-1] == 4
     assert trend.scores(closes, trend.LONG_TERM)[-1] == 4
-    assert trend.scores([100.0] * 10, trend.SHORT_TERM) == [None] * 10
     assert [trend.label(v) for v in (4, 3, 2, 1, 0, -1, -2, -3, -4)] == [
         "Bullish",
         "Bullish",
@@ -46,6 +45,40 @@ def test_the_trend_score_is_the_sum_of_signs_and_the_label_is_five_steps():
         "Bearish",
         "Bearish",
     ]
+
+
+def test_the_scores_start_where_the_vendors_do():
+    """The vendor's short history starts on the 50th bar and its long on the 200th, on every name."""
+    short = trend.scores([100.0] * 60, trend.SHORT_TERM)
+    assert short[48] is None and short[49] is not None
+    long_ = trend.scores([100.0] * 210, trend.LONG_TERM)
+    assert long_[198] is None and long_[199] is not None
+
+
+SMALL = trend.TrendSpec(2, 4)  # short and long small enough to work by hand; the band stays 20
+
+
+def test_an_odd_score_which_a_sum_of_signs_could_never_give():
+    """Last four 100, 100, 90, 110: SMA2 100, SMA4 100, WMA4 (100+200+270+440)/10 = 101. Close 110 is
+    above all three and SMA2 is not above SMA4: 2 + 2 + 0 + 2 - 3 = 3."""
+    assert trend.scores([100.0] * 21 + [90.0, 110.0], SMALL)[-1] == 3
+
+
+def test_the_weighted_average_alone_moves_a_mixed_score_by_two():
+    """Last four 100, 120, 90, X. X = 101: SMA2 95.5, SMA4 102.75, WMA4 101.4 -> above the short,
+    below the long, below the WMA: -1. X = 102: WMA4 101.8, now above it, nothing else changes: +1."""
+    assert trend.scores([100.0] * 21 + [120.0, 90.0, 101.0], SMALL)[-1] == -1
+    assert trend.scores([100.0] * 21 + [120.0, 90.0, 102.0], SMALL)[-1] == 1
+
+
+def test_minus_four_is_a_close_below_both_averages_and_the_lower_band():
+    """Twelve 90/110 pairs, then the last close. Its last four are 110, 90, 110, X. X = 85: SMA2 97.5,
+    SMA4 98.75, WMA4 96 -- below all three, SMA2 below SMA4, so the terms give -3. The 20-bar band
+    (ten 110s, nine 90s and 85) has mean 99.75 and population sd 10.3, lower 79.1: 85 is above it,
+    so -3 stands. X = 75 is under the band: -4."""
+    swinging = [90.0, 110.0] * 12
+    assert trend.scores(swinging + [85.0], SMALL)[-1] == -3
+    assert trend.scores(swinging + [75.0], SMALL)[-1] == -4
 
 
 def test_score_trends_compares_day_by_day_against_the_capture():

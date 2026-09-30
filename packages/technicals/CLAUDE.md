@@ -104,16 +104,21 @@ is the vendor's rule and not a fit to five days. Our counts run higher, as the s
 
 ## The chart layer (Phase 4, started)
 
-`indicators.py` holds SMA, EMA, Wilder's RSI and Lambert's CCI (period 14, the vendor's scanner
-period), each undefined until its window is full. `trend.py` is a **declared baseline** for the
-1M and 6M trend scores (-4..+4) and their five-step labels: the sum of four price-versus-average
-signs. The vendor's captures carry both scores daily, and on the two names on file (ANET, MSFT)
-no simple construction reproduces the exact number (55-58% of days), while the label agrees on
-about 80% (short) and 79% (long). Re-scored on 36 names (~25,000 short-term and ~20,000 long-term
-daily scores; 2026-09-27) it holds out of sample -- label agreement 79% short term and 75% long
-term, within one step 85% and 78% -- while no moving-average combination gets the exact number
-past ~50%. `score-trends` keeps re-scoring against every capture. Levels, the 1-10 rank and the
-named signals come next.
+`indicators.py` holds SMA, EMA, WMA, standard deviation, Wilder's RSI and Lambert's CCI (period 14,
+the vendor's scanner period), each undefined until its window is full.
+
+**The trend scores are solved** (`trend.py`, `score-trends`; 2026-09-29). Each is
+`2[close > short SMA] + 2[close > long SMA] + [short SMA > long SMA] + 2[close > long WMA] - 3`,
+with 20/50 sessions for the short term and 50/200 for the long, and -4 outright when the close is
+below both SMAs and under the lower 20-session Bollinger band (population sd, 2 wide). On our bars
+over 116 captured names: the exact score on 99.7% of ~81,000 short-term days and 99.6% of ~64,000
+long-term days, the label on 99.8%. The old baseline, a sum of four +-1 signs, was right on about
+half, and could never have been more -- a sum of four signs is always even, and the vendor's score
+is odd on 37% of short-term days and 32% of long-term. What cracked it, in order: the capture's own score history starts on
+the 50th and 200th bars, which bounds every lookback; a free fit put integer weights on the
+price-vs-average terms; the mixed rows split by exactly 2 on a WEIGHTED average (an SMA 36 is
+centred where a WMA 50 is, which is why the first fits kept finding 36); and the -4s are a band
+break. `trend.py` records each step so none is re-litigated.
 
 **The level grid is solved** (`levels.py`, `score-levels`). Every one of the vendor's 192 levels on
 the 35 names captured is either the high or the low of the last 250 sessions, as printed, or a
@@ -131,16 +136,19 @@ universe it is ranked in, exact on about 40%. The vendor ranks within its own un
 names cannot pin down.
 
 **The six scan rules** (`signals.py`, `score-signals`) reproduce the vendor's scan list from our
-trend scores, CCI and RSI: 153 of 182 flagged names on the 2026-09-25 list (84%), from 8/8 on the
-bearish counter-trend rule to 40/55 on bullish trend-following. The CCI rules run on a 5-period CCI
-(the list states it), and a dip is yesterday's CCI below -100 with today's back above. One day of
-list is one day: the rules are declared and re-scored as the nightly captures add lists.
+trend scores, CCI and RSI: 245 of 278 flagged names on the two lists saved (88%). They were first
+fitted on the old trend baseline (84%) and refitted when the trend was solved: its -4 had meant
+"below every average" and now means a band break, so rules written as "trend = -4" caught 55% until
+they moved to whole labels (Bullish 3..4, Bearish -3..-4). Bullish trend-following turned out to be
+an RSI(14) band of 40..50, not a CCI cut. The CCI rules run on a 5-period CCI (the list states it),
+and a dip is yesterday's CCI below -100 with today's back above. Both lists were used in the refit,
+so there is no unseen day yet; `score-signals` re-scores as the nightly captures add lists.
 
 **Out of sample (2026-09-28, a second capture of 39 scan-list names never used in fitting; 79
 names in all):** bars match the vendor's at 99%+ on 73 (ENB and ILMN join the foreign misses); the
-level grid places all 375 levels on those 73; trend labels agree on 79.8% (short) and 76.0% (long)
-of ~97,000 daily scores. **Which grid points the vendor draws is still unsolved, and it is not
-approximated here:** a rule of nearest snapped swing points plus the extremes matches ~40% of the
+level grid places all 375 levels on those 73; the trend baseline of the day agreed on 79.8% (short)
+and 76.0% (long) of ~97,000 daily labels -- since superseded by the solved trend, above. **Which
+grid points the vendor draws is still unsolved, and it is not approximated here:** a rule of nearest snapped swing points plus the extremes matches ~40% of the
 vendor's levels, nearly all of them the extremes. Level dates are mostly swing highs, and a level
 can sit above, inside or well away from its dated bar, so the vendor evidently selects from
 something these fields do not show. The report can place levels exactly; it cannot yet pick them.
@@ -215,7 +223,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals rotation [--session D]` | Every rotation fund's state on a session. |
 | `python -m cherrypick.technicals score-rotation` | The rotation rule against every saved edition. |
 | `python -m cherrypick.technicals breadth [--sessions N]` | Daily leaders, laggards, net and bullish share. |
-| `python -m cherrypick.technicals score-trends` | The trend baseline against every vendor chart capture: exact, label and within-one agreement. |
+| `python -m cherrypick.technicals score-trends` | Our trend scores against every vendor chart capture: exact, label and within-one agreement. |
 | `python -m cherrypick.technicals score-levels` | How many of the vendor's levels our grid places, on names whose bars agree to the cent. |
 | `python -m cherrypick.technicals score-level-selection` | Where the vendor's levels sit among the grid points (crossing profile, price given the date, which swing highs), each against chance. |
 | `python -m cherrypick.technicals score-rank` | Our 1-10 rank against the vendor's. |

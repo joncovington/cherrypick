@@ -1,21 +1,25 @@
 """The vendor's six scan rules, as declared rules over our trend scores, CCI and RSI.
 
-The vendor's scan list (`trade-ideas.json`, saved with every chart capture) flags ~185 names a day,
-each with its rule. Fitted on the 2026-09-25 list against the ~370 other stocks the store holds:
+The vendor's scan list (`trade-ideas.json`, saved with every chart capture) flags ~140 names a day,
+each with its rule. Refitted 2026-09-29 once `trend.py` reproduced the vendor's exact trend scores,
+on the two lists saved (2026-09-25 and 09-28) against the ~370 other stocks the store holds:
 
-| Rule                    | Ours                                                        | Caught | False |
-|-------------------------|-------------------------------------------------------------|--------|-------|
-| BearishCounterTrend     | both trends +4, RSI(14) >= 72                                | 8/8    | 3     |
-| CciRallyInBearishTrend  | short trend -4, CCI(5) > 100 yesterday and lower today       | 4/4    | 2     |
-| CciDipInBullishTrend    | short trend +4, CCI(5) < -100 yesterday and back above today | 15/16  | 5     |
-| BullishCounterTrend     | both trends -4, RSI(14) <= 32                                | 52/58  | 31    |
-| BullishTrendFollowing   | long trend >= 2, short trend 0..2, CCI(14) < 0               | 40/55  | 10    |
-| BearishTrendFollowing   | short trend -3..2, CCI(14) > 50                              | 33/39  | 7     |
+| Rule                    | Ours                                                          | Caught  | False |
+|-------------------------|---------------------------------------------------------------|---------|-------|
+| BearishCounterTrend     | both trends >= 3, RSI(14) >= 72                                | 16/16   | 6     |
+| CciRallyInBearishTrend  | short trend <= -2, CCI(5) > 100 yesterday and lower today      | 6/6     | 4     |
+| CciDipInBullishTrend    | short trend >= 3, CCI(5) < -100 yesterday and back above today | 19/19   | 4     |
+| BullishCounterTrend     | short trend <= -3, long <= 0, RSI(14) <= 32                    | 99/106  | 68    |
+| BullishTrendFollowing   | long trend >= -1, short trend 0..2, RSI(14) 40..50             | 63/78   | 18    |
+| BearishTrendFollowing   | short trend -1..1, CCI(14) > 50                                | 42/53   | 15    |
 
-The CCI rules run on a 5-period CCI -- the list says so -- where the plan had assumed 14. The trends
-are `trend.py`'s baseline, itself right on ~3 days in 4, which caps how well any rule built on them
-can do. One day is one day: these are declared, and `score-signals` re-scores them on every scan
-list the collector saves, rather than being tuned further on this one.
+245 of 278 (88%), against 234 (84%) for the rules as first fitted on the old trend baseline. Those
+rules were written against a baseline whose -4 meant "below every average"; on the true scores -4
+means a close under the lower Bollinger band, so they had to move -- on the true scores unchanged
+they caught 55%. The thresholds are whole labels where the lists allow (Bullish is 3..4, Bearish
+-3..-4). Both lists were used in fitting, so there is no out-of-sample day yet; `score-signals`
+re-scores on every list the collector saves. Most false flags are BullishCounterTrend, the same
+structural excess the stage rule shows: the vendor lists fewer names than prices alone would.
 """
 
 from __future__ import annotations
@@ -65,16 +69,16 @@ def readings(highs: list[float], lows: list[float], closes: list[float]) -> Read
 def matches(r: Readings) -> list[str]:
     """Every rule the readings satisfy, in `RULES` order (a name can match more than one)."""
     out = []
-    if r.short == 4 and r.long == 4 and r.rsi14 >= 72:
+    if r.short >= 3 and r.long >= 3 and r.rsi14 >= 72:
         out.append("BearishCounterTrend")
-    if r.short == -4 and r.cci5_prev > 100 and r.cci5 < r.cci5_prev:
+    if r.short <= -2 and r.cci5_prev > 100 and r.cci5 < r.cci5_prev:
         out.append("CciRallyInBearishTrend")
-    if r.short == 4 and r.cci5_prev < -100 and r.cci5 > -100:
+    if r.short >= 3 and r.cci5_prev < -100 and r.cci5 > -100:
         out.append("CciDipInBullishTrend")
-    if r.short == -4 and r.long == -4 and r.rsi14 <= 32:
+    if r.short <= -3 and r.long <= 0 and r.rsi14 <= 32:
         out.append("BullishCounterTrend")
-    if r.long >= 2 and 0 <= r.short <= 2 and r.cci14 < 0:
+    if r.long >= -1 and 0 <= r.short <= 2 and 40 <= r.rsi14 <= 50:
         out.append("BullishTrendFollowing")
-    if -3 <= r.short <= 2 and r.cci14 > 50:
+    if -1 <= r.short <= 1 and r.cci14 > 50:
         out.append("BearishTrendFollowing")
     return out

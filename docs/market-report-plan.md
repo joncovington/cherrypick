@@ -734,6 +734,12 @@ trend baseline holds out of sample (label agreement 79% short, 75% long). On the
 dividends proved wrong for several names (86.8% of prices matched the vendor's), and reconciling
 them with tastytrade's history brought 36 of 40 names to 99% or better.
 
+**The trend scores solved 2026-09-29** on 116 captures: `2[close > short SMA] + 2[close > long SMA]
++ [short > long] + 2[close > long WMA] - 3` over 20/50 and 50/200 sessions, -4 on a close below both
+and under the lower 20-day Bollinger band. Exact on 99.7% (short) and 99.6% (long) of days on our
+own bars, against ~51% for the baseline. The scan rules were refitted on the true scores: 88% of
+flagged names, from 84%. Level selection is measured (`score-level-selection`) but not solved.
+
 - Dividend-adjusted daily bars first: the level placement depends on them (see "What the
   platform's charts show"). Phase 2 supplies them.
 - The 1M and 6M trends on the five-step scale, from a triple moving average; CCI; RSI; the 1–10
