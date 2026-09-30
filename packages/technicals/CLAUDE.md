@@ -228,6 +228,15 @@ Three more results (2026-09-29), from the names captured on more than one night:
   window itself stands: over every capture on every night it explains 737 of 743 levels on the
   vendor's own bars; 251 or 252 sessions, or a calendar year, explain fewer. The six misses are AMD
   and MU (staleness) and one ZS level no lag up to 40 sessions explains.
+- **A level's price depends on the grid beyond snapping.** TLT's bars were identical on both nights,
+  yet its 07-28 level went 83.17 -> 83.04 while the anchor moved 0.43: re-snapping one fixed price
+  moves it at most a step (0.10). So the price is chosen ON the grid (a histogram over its cells,
+  most likely), not computed from the bar and then snapped. Histograms tried, as the rate a level is
+  a local minimum against the rate for any grid point: bars overlapping the cell [p, p+step) is the
+  best (2.7x chance within +-2 cells), bars covering the point 2.3x, volume at price 2.0x, closes,
+  opens or typical prices per cell barely above 1x, a 63- or 125-session window about 1x. Levels
+  also sit on a cell holding a swing high's snapped high about twice as often as chance. None of
+  these is a rule; they are what one would have to reproduce.
 - **Polarity is not the selector.** Old resistance becoming support was the natural reading of
   supports dated at swing highs, but a swing high below the price has been broken by definition;
   tested as a confirmed role reversal (a close above, a retest, a hold), picked swing highs rank at
