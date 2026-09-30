@@ -370,6 +370,7 @@ def process_snapshot(
                 mode=mode,
                 outcome="filled" if accepted else _OUTCOMES.get(reason, "gate_blocked"),
                 block_detail=None if accepted else reason,
+                proposed_legs=(detail or {}).get("proposed_legs"),
                 center=center if center is not None else (plan or {}).get("center"),
                 wing_width=(plan or {}).get("wing_width"),
                 spot=snapshot.get("underlying_price"),
@@ -841,6 +842,9 @@ def process_snapshot(
 
     # --- 2.5. debit-first entry: buy a debit vertical, complete later by SELLING a credit spread
     if "debit_first" in params.get("entry_modes", []):
+        # One out-dict serves every mode in the tick, so each mode starts it empty: an earlier
+        # mode's refused credit or legs must never land on this mode's attempt row.
+        gate_detail.clear()
         enter, reason, plan = engine.evaluate_debit_vertical_entry(
             snapshot, params, open_positions, positions, gate_detail
         )
@@ -916,6 +920,7 @@ def process_snapshot(
 
     # --- 2.75. bwb_roll entry: buy a broken-wing butterfly whole for a net credit
     if "bwb_roll" in params.get("entry_modes", []):
+        gate_detail.clear()
         enter, reason, plan = engine.evaluate_bwb_entry(
             snapshot, params, open_positions, positions, gate_detail
         )
@@ -966,7 +971,10 @@ def process_snapshot(
                     "risk_free": int(fly.is_risk_free(pos)),
                 },
             )
-            record_attempt("bwb_roll", "entered", accepted=True, plan=plan, position_id=position_id)
+            # The fill carries its legs too, so a floor replay reads fills and refusals off one table.
+            record_attempt(
+                "bwb_roll", "entered", accepted=True, plan=plan, position_id=position_id, detail=gate_detail
+            )
             journal(
                 "bwb_roll",
                 "entered",
@@ -992,6 +1000,7 @@ def process_snapshot(
 
     # --- 3. outright entry: buy a cheap fly, funded only by premium already taken in
     if "outright" in params.get("entry_modes", []):
+        gate_detail.clear()
         cash = fly.book_cash(positions)
         # Whether an OPEN credit spread's premium counts as funding is a real choice, not a detail.
         # The reference book did fund flies from a still-open iron condor, so this defaults on to stay

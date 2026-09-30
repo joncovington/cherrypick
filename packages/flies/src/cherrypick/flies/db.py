@@ -217,7 +217,9 @@ CREATE TABLE IF NOT EXISTS fly_entry_attempts (
                                           --   | duplicate_blocked | gate_blocked | window_blocked
                                           --   | no_candidate | no_fill
     block_detail                TEXT,     -- the specific engine reason, e.g. 'credit_below_floor'
-    proposed_legs               TEXT,     -- JSON [{strike, sign, type}], the structure that was offered
+    proposed_legs               TEXT,     -- JSON [{strike, sign, qty, type, bid, ask, delta}], the
+                                          --   structure that was offered; bwb_roll only, from
+                                          --   2026-09-30 (NULL on every earlier row, every mode)
     center                      REAL,
     wing_width                  REAL,
     blocking_strike             REAL,     -- populated for sign_rule_blocked

@@ -1,5 +1,7 @@
 """End-to-end tests for a session book: engine decisions landing in the paper database."""
 
+import json
+
 import pytest
 from test_engine import BASE_CONFIG, bwb_snapshot, cheap_fly_snapshot, delta_snapshot, dq, q, snapshot
 
@@ -474,6 +476,53 @@ def test_freshly_opened_bwb_records_its_real_negative_tail_floor(conn):
     assert row["kind"] == "bwb"
     assert row["floor_dollars"] is not None
     assert row["floor_dollars"] < -400  # tail = -(10-5) * 100 = -500, less fees/reserve
+
+
+def _bwb_attempts(conn):
+    rows = conn.execute(
+        "SELECT mode, outcome, block_detail, proposed_legs, would_be_credit FROM fly_entry_attempts "
+        "ORDER BY id"
+    ).fetchall()
+    return [dict(zip(("mode", "outcome", "block_detail", "legs", "credit"), r, strict=True)) for r in rows]
+
+
+def test_a_bwb_floor_refusal_row_carries_the_structure_its_quotes_and_its_credit(conn):
+    """Everything a floor replay needs, off one row: the strikes to settle it against the print,
+    the quotes to re-price it, the credit it was refused at."""
+    config = one_arm_config(
+        entry_modes=["bwb_roll"], max_bwb_tail_dollars=1000, min_bwb_credit_pct_of_tail=0.59
+    )
+    bookmod.process_snapshot(bwb_snapshot(), config, conn, "control")
+    (row,) = _bwb_attempts(conn)
+    assert row["block_detail"] == "bwb_credit_below_floor"
+    assert row["credit"] is not None and row["credit"] > 0
+    legs = json.loads(row["legs"])
+    assert [(leg["sign"], leg["qty"]) for leg in legs] == [(1, 1), (-1, 2), (1, 1)]
+    assert all(leg["bid"] is not None and leg["ask"] is not None for leg in legs)
+    assert {leg["type"] for leg in legs} == {"call"}
+    near, center, far = (leg["strike"] for leg in legs)
+    assert center - near == 5.0 and far - center == 10.0
+
+
+def test_a_bwb_fill_row_carries_its_legs_too(conn):
+    config = one_arm_config(entry_modes=["bwb_roll"], max_bwb_tail_dollars=1000)
+    bookmod.process_snapshot(bwb_snapshot(), config, conn, "control")
+    (row,) = _bwb_attempts(conn)
+    assert row["outcome"] == "filled"
+    assert len(json.loads(row["legs"])) == 3
+
+
+def test_one_modes_telemetry_never_lands_on_the_next_modes_row(conn):
+    """The out-dict is shared across a tick's modes; a refused bwb's legs and credit written onto
+    the outright row after it would describe a structure that mode never offered."""
+    config = one_arm_config(
+        entry_modes=["bwb_roll", "outright"], max_bwb_tail_dollars=1000, min_bwb_credit_pct_of_tail=0.59
+    )
+    bookmod.process_snapshot(bwb_snapshot(), config, conn, "control")
+    bwb_row, outright_row = _bwb_attempts(conn)
+    assert bwb_row["mode"] == "bwb_roll" and bwb_row["legs"] is not None
+    assert outright_row["mode"] == "outright"
+    assert outright_row["legs"] is None and outright_row["credit"] is None
 
 
 # --------------------------------------------------------------------------- stale-checkout guard

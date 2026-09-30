@@ -1685,6 +1685,21 @@ def _bwb_lower_upper(side: str, near_wing: float, far_wing: float) -> tuple[floa
     return (far_wing, near_wing) if side == PUT else (near_wing, far_wing)
 
 
+def _leg_record(snapshot: dict, side: str, strike: float, sign: int, qty: int) -> dict:
+    """One leg of a proposed structure as `fly_entry_attempts.proposed_legs` stores it. `delta` is
+    None when the feed carried none fresh, never a guess."""
+    leg = quote(snapshot, side, strike) or {}
+    return {
+        "strike": float(strike),
+        "sign": sign,
+        "qty": qty,
+        "type": side,
+        "bid": leg.get("bid"),
+        "ask": leg.get("ask"),
+        "delta": None if leg.get("delta") is None else float(leg["delta"]),
+    }
+
+
 def evaluate_bwb_entry(
     snapshot: dict,
     params: dict,
@@ -1744,6 +1759,17 @@ def evaluate_bwb_entry(
     if not _have(snapshot, side, [near_wing, center, far_wing]):
         return False, _miss_reason(snapshot, [near_wing, center, far_wing]), None
 
+    # The structure on offer, with the quotes and deltas it was judged on, for every refusal from
+    # here on. The strikes let a read-side replay settle a refused bwb against the session's print
+    # (what the arm makes at any floor, or none); the quotes re-price it under another slippage
+    # model; the deltas re-derive the floor against P(tail) x tail. None of this is kept anywhere
+    # else, since the ledger holds no chain.
+    if gate_detail is not None:
+        gate_detail["proposed_legs"] = [
+            _leg_record(snapshot, side, strike, sign, qty)
+            for strike, sign, qty in ((near_wing, 1, 1), (center, -1, 2), (far_wing, 1, 1))
+        ]
+
     # Per-arm portfolio rules -- see `evaluate_credit_spread_entry`. A bwb is entered complete, so
     # unlike the two legged modes its proposed legs ARE the whole structure: both wings plus the
     # doubled centre. `far_width` is part of the structure key here and None for every other kind,
@@ -1788,6 +1814,13 @@ def evaluate_bwb_entry(
         quote(snapshot, side, upper_wing),
         slippage_frac=slip,
     )
+    # Every return below this point is a price-gate refusal or the entry itself, so record the
+    # credit now -- the legged ceiling's 2026-08-11 fix, for the same blind spot. The delta-placed
+    # pairs were refused ~28k times over 2026-09-21..29 by `bwb_credit_below_floor` with no record
+    # of how far short they fell, so "refusal rows are the result" could say that they failed but
+    # not by how much. On entry the plan's own credit wins in `record_attempt`.
+    if gate_detail is not None:
+        gate_detail["would_be_credit"] = round(credit, 4)
 
     tail = far_width - width
     min_credit = params.get("min_bwb_credit_pct_of_tail", 0.15) * tail

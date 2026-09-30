@@ -2177,6 +2177,33 @@ def test_an_otm_bwb_at_the_default_credit_floor_is_refused_and_that_is_the_measu
     assert not enter and reason == "bwb_credit_below_floor"
 
 
+def test_a_bwb_floor_refusal_records_the_credit_it_refused():
+    """The refusal is the measurement only if it says how far short it fell: the same credit the
+    entry would have booked, below 0.75 and above zero here."""
+    p = bwb_delta_params("up", min_bwb_credit_pct_of_tail=0.15)
+    detail: dict = {}
+    enter, reason, _ = engine.evaluate_bwb_entry(bwb_delta_snapshot(), p, [], None, detail)
+    assert not enter and reason == "bwb_credit_below_floor"
+    _, _, plan = engine.evaluate_bwb_entry(bwb_delta_snapshot(), bwb_delta_params("up"), [])
+    assert detail["would_be_credit"] == round(plan["credit"], 4)
+    assert 0 < detail["would_be_credit"] <= 0.15 * 5
+    # The body's and the far wing's deltas ride on the legs: the placement it landed on inside the
+    # tolerance, and the P(tail) the floor would be re-derived against.
+    near, body, far = detail["proposed_legs"]
+    assert body["delta"] == plan["center_delta"] and far["delta"] == plan["far_wing_delta"]
+    assert (body["strike"], body["sign"], body["qty"]) == (plan["center"], -1, 2)
+
+
+def test_a_bwb_refused_before_pricing_records_no_credit():
+    """No quote read, no number: a refusal ahead of pricing must not carry a credit."""
+    detail: dict = {}
+    enter, reason, _ = engine.evaluate_bwb_entry(
+        bwb_snapshot(), params(bwb_far_width_ratio=1.0), [], None, detail
+    )
+    assert not enter and reason == "far_width_not_wider_than_wing"
+    assert "would_be_credit" not in detail and "proposed_legs" not in detail
+
+
 def test_the_delta_rule_direction_key_is_center_direction_with_the_old_name_still_read():
     p = delta_params("up")
     p["debit_direction"] = p.pop("center_direction")

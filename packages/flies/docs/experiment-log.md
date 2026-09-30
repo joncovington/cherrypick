@@ -401,3 +401,36 @@ strategy at double the size, not a more efficient one.
 salvage replay, which is not a reason to run the arm, and the band-containment objection, which is
 untouched. Fifteen sessions from one late-summer tape — enough to retire an argument, not to settle
 width for good. [backlog.md](backlog.md)'s reopen condition now says what would change this.
+
+## 2026-09-30 — the delta bwb pairs, first seven sessions: refused as expected, but not by how much
+
+The 09-19 entry predicted refusals, and that is what arrived. Paper `fly_entry_attempts`,
+2026-09-21..09-29 (7 sessions):
+
+| Arm | Floor | Fills | `bwb_credit_below_floor` | `no_delta_quotes_beyond_spot` |
+|---|---|---|---|---|
+| `bwb-up` (5/10) | 0.75 | 3 (1.06, 0.82, 0.87 credit) | 6,521 | 236 |
+| `bwb-down` (5/10) | 0.75 | 0 | 7,292 | 236 |
+| `bwb-up-w2` (10/20) | 1.50 | 0 | 7,268 | 236 |
+| `bwb-down-w2` (10/20) | 1.50 | 0 | 7,278 | 236 |
+
+`bwb-atm` filled 43 times over the same days, so the entry path works; the delta pairs are held by
+their own floor. The call side clears it now and then at 15Δ. The put side never has; put skew making
+the far put dear is the likely reason, but nothing stored shows it. The w2 floor doubles with the
+tail while the credit cannot, because the far wing 20 points past a 15Δ 0DTE body is worth close to
+nothing.
+
+**The gap.** None of the ~28,000 floor refusals recorded the credit it refused: `plan` is `None` on a
+refusal, so `would_be_credit` was NULL, and the ledger keeps no chain quotes to rebuild it. The rows
+said *that* the arms failed the floor, not by how much, which is the number a retune against
+`P(tail) × tail` needs. The `proposed_legs` column meant to hold the offered structure had never been
+written by any mode (NULL on all 325,476 rows).
+
+From today every bwb attempt row, refused or filled, carries `proposed_legs` (each leg's strike,
+sign, quantity, bid, ask and delta) and, once priced, `would_be_credit` (the legged ceiling's
+2026-08-11 fix). That is enough to settle a refused bwb against the session's print, so a read-side
+replay can give each arm's P&L at any floor, or none, and re-price it at mid to separate "the market
+never paid it" from "the slippage model ate it". The body's delta shows where in the 0.10–0.20
+tolerance each attempt landed. The tick's shared `gate_detail` is now cleared before each entry mode,
+so one mode's legs or credit cannot land on another's row. Telemetry only: no gate moved, not a
+break. Build the replay after a few sessions; read it before touching the floor.
