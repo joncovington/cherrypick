@@ -3,7 +3,7 @@ import path from "node:path";
 import type { MeicDivergence, MeicPayload, MeicTradeRow, MeicTradeTotals, MeicSummaryRow, Paged, TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import type { DatabaseHandle } from "./db.js";
-import { withReadOnlyDb, hasColumn, hasTable, num, str, armColumnOf, findArmColumn } from "./db.js";
+import { readOnlyDb, withReadOnlyDb, hasColumn, hasTable, num, str, armColumnOf, findArmColumn } from "./db.js";
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { emptyPage, pagedQuery, FIRST_PAGE, type PageRequest } from "./paging.js";
 import { payoffAt, type Leg } from "../analytics/payoff.js";
@@ -118,6 +118,52 @@ export const NO_TRADE_QUERY: MeicTradeQuery = {
 export type MeicTradeView = "positions" | "history";
 
 /**
+ * Where "the loop ran this session" is written, each as (table, date column). "Latest session" is
+ * the newest date across all of them -- the loop's last RUN, not the trade log's last ROW.
+ *
+ * It was `MAX(trade_date)` over `ic_trades`, which cannot name a session with no trades. On
+ * 2026-09-30 every paper arm was refused all day (a quarterly-expiry morning, then the call-side
+ * floor), so the session page showed 2026-09-29's 538 trades beside 2026-09-30's 3,128 refusals --
+ * the attempts reader resolves its own day off `entry_attempts` -- and the live page showed the
+ * live ledger's last trade, from 2026-06-30, under the same "latest session" label as today.
+ * pmcc's `resolvePmccSession` is the same fix for the same shape.
+ */
+const MEIC_SESSION_SOURCES: ReadonlyArray<readonly [table: string, column: string]> = [
+  ["daily_summary", "summary_date"],
+  ["loop_log", "loop_date"],
+  ["entry_attempts", "trade_date"],
+  ["ic_trades", "trade_date"],
+];
+
+/** A date that cannot match any row: a THROWN resolve narrows to nothing rather than widening to
+ * the era (readers/flies.ts' UNRESOLVABLE_DAY, same reasoning). */
+const UNRESOLVABLE_DAY = "unresolved";
+
+function latestMeicSessionIn(db: DatabaseHandle): string | null {
+  // Only what this ledger has: a live book, an older paper book and a fixture differ in which
+  // journal tables exist, and naming a missing one throws.
+  const usable = MEIC_SESSION_SOURCES.filter(([t, c]) => hasTable(db, t) && hasColumn(db, t, c));
+  if (usable.length === 0) return null;
+  const sql = usable.map(([t, c]) => `SELECT MAX(${c}) AS d FROM ${t}`).join(" UNION ALL ");
+  return db.prepare<[], { d: string | null }>(`SELECT MAX(d) AS d FROM (${sql})`).get()?.d ?? null;
+}
+
+function meicDbPath(config: ConsoleConfig, mode: TradingMode): string {
+  return path.join(config.paths.meicDir, mode === "live" ? "meic_trades.db" : "paper_trades.db");
+}
+
+/**
+ * The session every MEIC card names when the request names none. Exported for the shared
+ * attempts/occupancy readers, which otherwise resolve their own day off one table.
+ */
+export function resolveMeicSession(config: ConsoleConfig, mode: TradingMode): string | null {
+  const outcome = readOnlyDb<string | null>(meicDbPath(config, mode), latestMeicSessionIn);
+  if (outcome.status === "ok") return outcome.value;
+  if (outcome.status === "absent") return null;
+  return UNRESOLVABLE_DAY;
+}
+
+/**
  * The log's filters run in SQL rather than over the fetched page. Filtering a
  * single page would make the match count a statement about that page and not
  * about the data — "3 losses" when the scope holds two hundred.
@@ -133,14 +179,8 @@ function tradeFilterSql(db: DatabaseHandle, q: MeicTradeQuery): { where: string;
     clauses.push(...r.clauses);
     params.push(...r.params);
   }
-  // Resolved within the same scope the forest uses, so the two cards can never name different days.
-  const day = hasRange(range)
-    ? null
-    : q.day ??
-    db
-      .prepare<string[], { d: string | null }>(`SELECT MAX(trade_date) AS d FROM ic_trades WHERE 1=1${sc.and}`)
-      .get(...sc.params)?.d ??
-    null;
+  // The loop's last session, the one every other card resolves, so no two can name different days.
+  const day = hasRange(range) ? null : (q.day ?? latestMeicSessionIn(db));
   if (day !== null) {
     clauses.push("trade_date = ?");
     params.push(day);
@@ -363,7 +403,11 @@ export function readMeic(config: ConsoleConfig, mode: TradingMode, query: MeicTr
     }),
   );
 
-  return { mode, trades, totals, summaries, integrity };
+  // The day the log is scoped to, named so the picker can say which day "latest session" is.
+  const session = hasRange({ from: query.from ?? null, to: query.to ?? null })
+    ? null
+    : (query.day ?? resolveMeicSession(config, mode));
+  return { mode, trades, totals, summaries, integrity, session };
 }
 
 /** Columns this build knows about, so a ledger written by a NEWER checkout is visible as drift
@@ -1275,14 +1319,7 @@ export function readMeicForest(
 
   return withReadOnlyDb<MeicForest>(dbPath, empty, (db) => {
     const { and, params: scopeParams } = scopeSql(db, scope);
-    const dayRow = day
-      ? { d: day }
-      : db
-          .prepare<string[], { d: string }>(
-            `SELECT MAX(trade_date) AS d FROM ic_trades WHERE 1=1${and}`,
-          )
-          .get(...scopeParams);
-    const tradeDate = dayRow?.d ?? null;
+    const tradeDate = day ?? latestMeicSessionIn(db);
     if (tradeDate === null) return empty;
 
     const rows = db
@@ -1423,10 +1460,7 @@ export function readMeicDivergence(config: ConsoleConfig, mode: TradingMode, day
   const empty: MeicDivergence = { date: null, ticks: 0, allAgreeRatePct: null, pairs: [], outcomes: [] };
   return withReadOnlyDb<MeicDivergence>(dbPath, empty, (db) => {
     if (!hasTable(db, "entry_attempts")) return empty;
-    const date =
-      day ??
-      db.prepare<[], { d: string | null }>("SELECT MAX(trade_date) AS d FROM entry_attempts").get()?.d ??
-      null;
+    const date = day ?? latestMeicSessionIn(db);
     if (date === null) return empty;
 
     const rows = db

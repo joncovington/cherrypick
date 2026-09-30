@@ -280,7 +280,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
       slide={slide}
       slides={slides}
       badge={<PaperLiveBadge mode={mode} />}
-      session={null}
+      session={data?.session ?? null}
       loopPill={
         <LoopPill
           state={l?.state}
@@ -298,7 +298,9 @@ export function MeicLightbox({ slide }: { slide: string }) {
               aria-label="session"
               title="Governs every page with a session in it -- session, forest, attempts, positions and history -- so no two can describe different days side by side."
             >
-              <option value="">latest session</option>
+              <option value="">
+                latest session{day === null && data?.session != null ? ` (${data.session})` : ""}
+              </option>
               {data?.summaries.map((sm) => (
                 <option key={sm.summaryDate} value={sm.summaryDate}>{sm.summaryDate}</option>
               ))}

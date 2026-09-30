@@ -115,6 +115,14 @@ The Overview's order-alert daemon chip followed the morning of 2026-09-30, when 
 at arming (01:43 ET), stopped heartbeating at 02:33 with nothing in its log, and was found only
 because someone asked whether live flies was armed.
 
+That evening MEIC's session page was read as a live trade on an unarmed day. It was the live
+ledger's last trade, from 2026-06-30, under a "latest session" label that named no date. Paper had the
+same fault the other way round: every arm was refused all day, so "latest session" (`MAX(trade_date)`
+over `ic_trades`) fell back to the 29th's 538 trades, beside the 30th's 3,128 refusals, which the
+attempts card resolves off its own table. `resolveMeicSession` now takes the loop's last run
+(`daily_summary`, `loop_log`, `entry_attempts`, `ic_trades`) for every MEIC card, pmcc's
+`resolvePmccSession` fix for the same shape, and the header and picker name the date.
+
 ## Trade table standard rollout (2026-09-24 → 2026-09-25)
 
 Flies first (2026-09-24), then meic, bwb, earnings, calendars, pmcc and curve on 2026-09-25 — all seven

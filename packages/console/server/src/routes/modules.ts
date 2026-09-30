@@ -2,7 +2,7 @@ import { isoDate, parseDateRange } from "../readers/dateRange.js";
 import type { FastifyInstance } from "fastify";
 import type { TradingMode } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
-import { readMeicForest } from "../readers/meic.js";
+import { readMeicForest, resolveMeicSession } from "../readers/meic.js";
 import { readEntryAttempts } from "../readers/attempts.js";
 import { readDecisions } from "../readers/decisions.js";
 import { readFliesArmGuide, readMeicProfileGuide } from "../readers/experimentGuide.js";
@@ -111,7 +111,7 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     readMeicAnalytics(config, parseMode(req.query), parseMeicScope(req.query)),
   );
   // `date` is not part of MeicScopeFilter (symbol/profile/era), so it is read on its own here --
-  // null means "the latest session", which the reader resolves from entry_attempts.
+  // null means "the latest session", which the reader resolves as every meic card does.
   app.get("/api/meic/divergence", async (req) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     const raw = q["date"];
@@ -126,13 +126,18 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     const f = parseFliesFilter(req.query);
     return readMeicForest(config, parseMode(req.query), f.date);
   });
+  // Both take meic's resolved session when no date is asked for, not their own one-table
+  // MAX(trade_date): on a no-trade day the attempts table and the trade log name different days
+  // (see resolveMeicSession).
   app.get("/api/meic/attempts", async (req) => {
     const f = parseFliesFilter(req.query);
-    return readEntryAttempts(config, "meic", parseMode(req.query), f.date);
+    const mode = parseMode(req.query);
+    return readEntryAttempts(config, "meic", mode, f.date ?? resolveMeicSession(config, mode));
   });
   app.get("/api/meic/occupancy", async (req) => {
     const f = parseFliesFilter(req.query);
-    return readOccupancy(config, "meic", parseMode(req.query), f.date);
+    const mode = parseMode(req.query);
+    return readOccupancy(config, "meic", mode, f.date ?? resolveMeicSession(config, mode));
   });
   app.get("/api/flies/occupancy", async (req) => {
     const f = parseFliesFilter(req.query);

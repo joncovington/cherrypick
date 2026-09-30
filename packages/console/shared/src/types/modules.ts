@@ -97,6 +97,9 @@ export interface MeicPayload {
   totals: MeicTradeTotals;
   summaries: MeicSummaryRow[];
   integrity: ModuleIntegrity;
+  /** The session the log is scoped to: the requested day, else the loop's last session (which can
+   *  be a day with no trades). Null under a date range, or with no ledger. */
+  session: string | null;
 }
 
 // ---- Flies ----
