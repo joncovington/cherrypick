@@ -41,6 +41,14 @@ export function fmtNum(v: number | null, digits = 2): string {
   return v === null ? "—" : v.toFixed(digits);
 }
 
+/**
+ * IV rank, stored as a 0-1 fraction, shown on its own scale: `45/100`. Never a percentage -- that is
+ * how IV itself is shown, and a rank of 45 beside an IV of 45% reads as the same number.
+ */
+export function fmtIvr(v: number | null | undefined): string {
+  return v === null || v === undefined ? "—" : `${Math.round(v * 100)}/100`;
+}
+
 export function fmtPct(v: number | null, digits = 0): string {
   return v === null ? "—" : `${v.toFixed(digits)}%`;
 }

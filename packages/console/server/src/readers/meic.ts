@@ -838,10 +838,10 @@ export function readMeicPerformance(
       bySession: breakdown("COALESCE(session_quality, 'untagged')"),
       byIvRank: breakdown(
         `CASE WHEN iv_rank_at_entry IS NULL THEN 'unknown'
-              WHEN iv_rank_at_entry < 0.25 THEN '<25%'
-              WHEN iv_rank_at_entry < 0.50 THEN '25-50%'
-              WHEN iv_rank_at_entry < 0.75 THEN '50-75%'
-              ELSE '>75%' END`,
+              WHEN iv_rank_at_entry < 0.25 THEN 'under 25/100'
+              WHEN iv_rank_at_entry < 0.50 THEN '25-50/100'
+              WHEN iv_rank_at_entry < 0.75 THEN '50-75/100'
+              ELSE '75/100 and over' END`,
       ),
       regimeCoverage,
     };

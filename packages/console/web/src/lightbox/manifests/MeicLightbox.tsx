@@ -23,6 +23,7 @@ import { RegimeCutsTab } from "../../components/RegimeCutsTab";
 import { ModuleFrame } from "../ModuleFrame";
 import { MEIC_SLIDES, type MeicSlideId } from "../navGroups";
 import type { SlideDef } from "../types";
+import { fmtIvr } from "../../lib/format";
 
 interface MeicAnalytics {
   periods: Array<{ label: string; net: number; trades: number; wins: number; losses: number }>;
@@ -306,7 +307,7 @@ export function MeicLightbox({ slide }: { slide: string }) {
           <ScopeSelect label="symbol" value={symbol} options={scope.data?.symbols} onChange={setSymbol} allLabel="all symbols" />
           <ScopeSelect label="arm" value={profile} options={scope.data?.profiles} onChange={setProfile} allLabel="all arms" />
           <EraSelect value={era} eras={scope.data?.eras} currentEra={scope.data?.currentEra} onChange={setEra} />
-          {l?.ivRank != null && <span className="chip">IV rank {(l.ivRank * 100).toFixed(0)}%</span>}
+          {l?.ivRank != null && <span className="chip">IV rank {fmtIvr(l.ivRank)}</span>}
           {l?.underlyingPrice != null && <span className="chip">{l.underlyingPrice.toFixed(2)}</span>}
           <ModeToggle mode={mode} onChange={setMode} />
         </>

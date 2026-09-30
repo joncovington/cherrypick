@@ -3,7 +3,7 @@ import type { MeicTradeRow, TradingMode } from "@console/shared";
 import { useMeic } from "../../lib/api";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
-import { fmtCash, fmtPrice } from "../../lib/format";
+import { fmtCash, fmtIvr, fmtPrice } from "../../lib/format";
 import { HistoryTable } from "../../components/table/HistoryTable";
 import { useUrlDateRange } from "../../components/table/DateRange";
 import type { ColumnDef } from "../../components/table/columns";
@@ -83,7 +83,7 @@ export function MeicPositionsTable({ mode, scope }: { mode: TradingMode; scope: 
           <td>{fmtNum(t.quantity, 0)}</td>
           <td>{fmtPrice(t.netCredit)}</td>
           <td>{fmtCash(t.entryCash)}</td>
-          <td className="muted">{t.ivRankAtEntry !== null ? `${(t.ivRankAtEntry * 100).toFixed(0)}%` : "—"}</td>
+          <td className="muted">{fmtIvr(t.ivRankAtEntry)}</td>
           <td><StatusBadge status={t.status} /></td>
         </tr>
       ))}

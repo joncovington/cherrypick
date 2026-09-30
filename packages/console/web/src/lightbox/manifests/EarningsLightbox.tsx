@@ -8,7 +8,7 @@ import { IntegrityStrip } from "../../pages/Earnings/IntegrityStrip";
 import { PaperLiveBadge } from "../../components/shell/PaperLiveBadge";
 import { DataCard, PnlCell, fmtMoney, fmtNum } from "../../components/DataTable";
 import { Pager, usePage } from "../../components/ScopeBar";
-import { fmtCash, fmtPrice } from "../../lib/format";
+import { fmtCash, fmtIvr, fmtPrice } from "../../lib/format";
 import { EarningsDetailCards } from "../../pages/Earnings/EarningsDetail";
 import { EarningsHistory } from "../../pages/Earnings/EarningsHistory";
 import { useUrlDateRange } from "../../components/table/DateRange";
@@ -221,7 +221,7 @@ export function EarningsLightbox({ slide }: { slide: string }) {
               <td>{fmtNum(r.ivRvRatio, 2)}</td>
               <td>{fmtNum(r.termStructure, 2)}</td>
               <td>{r.winrate !== null ? `${(r.winrate * 100).toFixed(0)}%` : "—"}</td>
-              <td>{r.ivRank !== null ? (r.ivRank * 100).toFixed(0) : "—"}</td>
+              <td>{fmtIvr(r.ivRank)}</td>
               <td>
                 <span className={`chip ${tierClass(r.tier)}`} title={r.tierReasons.join("; ")}>
                   {r.tier.replace("_", " ")}
