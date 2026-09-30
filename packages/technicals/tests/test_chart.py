@@ -122,3 +122,21 @@ def test_sentiment_is_the_close_against_the_sma50_and_the_wma200():
     # SMA 200 (114.97), so an SMA would call it Neutral; the vendor's rule says Bullish.
     assert trend.sentiment(base + [113.0]) == "Bullish"
     assert trend.sentiment([100.0] * 199) is None  # the WMA 200 is not defined yet
+
+
+def test_last_score_is_exactly_the_full_histories_last_value():
+    """The report reads only the last score; it must be the full computation's last value to the bit,
+    on every length from too-short to long, and on paths that sit on the band and the averages."""
+    import random
+
+    rng = random.Random(11)
+    for trial in range(60):
+        n = rng.choice([1, 19, 20, 49, 50, 51, 199, 200, 201, 260])
+        closes = [100.0]
+        for _ in range(n - 1):
+            closes.append(round(closes[-1] * (1 + rng.gauss(0, 0.02)), 2))
+        for spec in (trend.SHORT_TERM, trend.LONG_TERM):
+            assert trend.last_score(closes, spec) == trend.scores(closes, spec)[-1], (trial, n, spec)
+    flat = [100.0] * 250  # every comparison a tie
+    assert trend.last_score(flat, trend.LONG_TERM) == trend.scores(flat, trend.LONG_TERM)[-1]
+    assert trend.last_score([], trend.SHORT_TERM) is None

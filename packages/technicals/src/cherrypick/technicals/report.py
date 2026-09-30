@@ -136,8 +136,8 @@ def build(session: str | None = None, conn=None) -> dict[str, Any]:
                 "sector": sector_of.get(sym),
                 "rank": ranks.get(sym),
                 "return_6m_pct": round(100 * returns[sym], 1),
-                "trend_short": trend.label(trend.scores(c, trend.SHORT_TERM)[-1]),
-                "trend_long": trend.label(trend.scores(c, trend.LONG_TERM)[-1]),
+                "trend_short": trend.label(trend.last_score(c, trend.SHORT_TERM)),
+                "trend_long": trend.label(trend.last_score(c, trend.LONG_TERM)),
                 "stage": f"{today[sym].side}/{today[sym].stage}" if sym in today else None,
             }
         )

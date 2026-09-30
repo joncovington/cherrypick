@@ -47,7 +47,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .indicators import sma, stdev, wma
+from .indicators import sma, stdev, stdev_at, wma, wma_at
 
 
 @dataclass(frozen=True)
@@ -88,18 +88,35 @@ def sentiment(closes: list[float]) -> str | None:
     return ("Bearish", "Neutral", "Bullish")[above]
 
 
+def _combine(c: float, s, lng, w, mid, sd) -> int | None:
+    """The score from one session's inputs -- the single formula both `scores` and `last_score` use."""
+    if s is None or lng is None or w is None or mid is None:
+        return None
+    above_s, above_l = c > s, c > lng
+    if not above_s and not above_l and c < mid - BAND_WIDTH * sd:
+        return -4
+    return 2 * above_s + 2 * above_l + (s > lng) + 2 * (c > w) - 3
+
+
 def scores(closes: list[float], spec: TrendSpec = SHORT_TERM) -> list[int | None]:
     """The score for every close; None until the long average is defined (the vendor's own start)."""
     s, lng, w = sma(closes, spec.short), sma(closes, spec.long), wma(closes, spec.long)
     mid, sd = sma(closes, BAND_PERIOD), stdev(closes, BAND_PERIOD)
-    out: list[int | None] = []
-    for i, c in enumerate(closes):
-        if s[i] is None or lng[i] is None or w[i] is None or mid[i] is None:
-            out.append(None)
-            continue
-        above_s, above_l = c > s[i], c > lng[i]
-        if not above_s and not above_l and c < mid[i] - BAND_WIDTH * sd[i]:
-            out.append(-4)
-            continue
-        out.append(2 * above_s + 2 * above_l + (s[i] > lng[i]) + 2 * (c > w[i]) - 3)
-    return out
+    return [_combine(c, s[i], lng[i], w[i], mid[i], sd[i]) for i, c in enumerate(closes)]
+
+
+def last_score(closes: list[float], spec: TrendSpec = SHORT_TERM) -> int | None:
+    """`scores(closes, spec)[-1]` without computing the whole history: the SMAs are one cheap pass
+    (kept, so their running-sum arithmetic is identical), the WMA and the band only at the last
+    index. The report reads ~470 names' last score and paid ~80% of its build for the rest."""
+    if not closes:
+        return None
+    i = len(closes) - 1
+    return _combine(
+        closes[i],
+        sma(closes, spec.short)[i],
+        sma(closes, spec.long)[i],
+        wma_at(closes, spec.long, i),
+        sma(closes, BAND_PERIOD)[i],
+        stdev_at(closes, BAND_PERIOD, i),
+    )

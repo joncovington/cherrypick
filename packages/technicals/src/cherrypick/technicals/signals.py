@@ -52,8 +52,8 @@ def readings(highs: list[float], lows: list[float], closes: list[float]) -> Read
     """The last session's inputs; None when there is not enough history for every one of them."""
     if len(closes) < 2:
         return None
-    short = trend.scores(closes, trend.SHORT_TERM)[-1]
-    long_ = trend.scores(closes, trend.LONG_TERM)[-1]
+    short = trend.last_score(closes, trend.SHORT_TERM)
+    long_ = trend.last_score(closes, trend.LONG_TERM)
     cci5 = indicators.cci(highs, lows, closes, 5)
     r = Readings(
         short,
