@@ -13,7 +13,6 @@ strikes_with_data, per_strike.
 
 from __future__ import annotations
 
-
 from cherrypick.core import dxfeed as _dx
 
 DEFAULT_MULTIPLIER = 100
