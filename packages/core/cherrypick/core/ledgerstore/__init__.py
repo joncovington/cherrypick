@@ -276,6 +276,33 @@ class LedgerStore:
             )
         ]
 
+    def mark_coverage(self, conn, session_date: str) -> dict:
+        """How good the day's mark substrate is: marks written, refusal share, and per-refusal
+        counts -- a barren session should be explicable as "the data was thin", never mistaken for
+        a market. Was an identical `analytics.mark_coverage` in calendars, pmcc and curve."""
+        table = self.table("marks")
+        row = conn.execute(
+            f"SELECT COUNT(*) AS total, SUM(usable = 0) AS refused FROM {table} WHERE session_date = ?",
+            (session_date,),
+        ).fetchone()
+        refusals = {
+            r["refusal"]: r["n"]
+            for r in conn.execute(
+                f"SELECT refusal, COUNT(*) AS n FROM {table} WHERE session_date = ? AND usable = 0 "
+                "GROUP BY refusal",
+                (session_date,),
+            )
+            if r["refusal"]
+        }
+        total = row["total"] or 0
+        return {
+            "session": session_date,
+            "marks": total,
+            "refused": row["refused"] or 0,
+            "refusal_share": round((row["refused"] or 0) / total, 4) if total else None,
+            "refusals": refusals,
+        }
+
     def open_assignment_count(self, conn, position_id: str) -> int:
         return int(
             conn.execute(

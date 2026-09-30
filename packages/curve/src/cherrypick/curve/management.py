@@ -26,6 +26,8 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from cherrypick.core import spreadbook as _spreadbook
+
 PARAM_DEFAULTS = {
     "profit_take_pct": 0.50,
     "close_dte": 7,
@@ -156,21 +158,7 @@ def execution_gate(mark_snapshot: dict, params: dict, *, now) -> str | None:
     return None
 
 
-def _spread_blocks(mark_snapshot: dict, params: dict) -> bool:
-    """Whether any leg is too wide to act on -- wide in PERCENT and in MONEY, both, per leg.
-
-    The zero-bid arithmetic, pre-empted rather than measured here: a short held to the end of its
-    life quotes 0.00/0.01 -- a one-cent buyback and, as a ratio, exactly a 200% spread -- and a
-    percentage-only gate refuses precisely the scheduled exit the arm is built around. earnings
-    measured 32 profit-target exits refused that way before its 2026-08-31 fix, and calendars lost
-    a Friday close to it; this module's gate had not fired yet only because no position had aged
-    into the state. A leg is refused only when both readings say wide; an older snapshot with no
-    per-leg detail falls back to the percentage alone, so nothing widens silently.
-    """
-    max_pct = params.get("max_leg_spread_pct", 0.25)
-    legs = mark_snapshot.get("leg_spreads")
-    if not legs:
-        widest = mark_snapshot.get("max_spread_pct")
-        return widest is not None and widest > max_pct
-    max_abs = params.get("max_leg_spread_abs", 0.05)
-    return any(leg["pct"] > max_pct and leg["abs"] > max_abs for leg in legs)
+# The exit spread gate (percent AND money, per leg) is `cherrypick.core.spreadbook.exit_spread_blocks`:
+# calendars, pmcc and curve carried identical copies. Its docstring holds why a percentage alone
+# refused penny-wide exits.
+_spread_blocks = _spreadbook.exit_spread_blocks

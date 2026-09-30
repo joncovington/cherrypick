@@ -55,6 +55,7 @@ index that tells you which one to open.
 | `risk` | Account-level risk primitives. Fail-closed and opt-in. |
 | `live` | The per-day arm record and dead-man's switch a live loop runs under: the filename convention the supervisor mirrors, the record's contents, the two disarm reasons, the supervisor-heartbeat read, and the rule that under a supervisor arming is a record write and nothing else. |
 | `settlement` | American physical settlement's share arithmetic (calendars/pmcc) and the official index close (`official_index_close`: tastytrade → Yahoo → Barchart, with `OFFICIAL_SOURCES` saying which answers a cash-settled ledger may settle on). |
+| `spreadbook` | The ledger writes calendars, pmcc and curve share over their `LedgerStore`: the traded close, share disposal, exit-cost accumulation and finalization (`SpreadBook`), plus the exit spread gate (`exit_spread_blocks`). Entry and `settle_expiring_legs` stay in the modules because they genuinely differ; bwb keeps its own four-leg writer. |
 | `entry` | Entry-permission rules MEIC and flies must apply identically: cadence and the leg-sign rule. |
 | `structures` | Pure option-structure formulas earnings and calendars must agree on (the straddle-based expected move), and the nickel tick rounding every live order builder uses (`tick_floor`/`tick_ceil`). |
 | `streamer` | The generic persistent DXLink streaming engine; `packages/streamer` is the daemon around it. |
