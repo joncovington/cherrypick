@@ -119,7 +119,7 @@ def test_write_then_load_round_trip(tmp_path):
         advisor="test",
         expires_at=(NOW + timedelta(hours=8)).isoformat(),
     )
-    assert not path.with_suffix(".tmp").exists()  # atomic: no half-written leftover
+    assert sorted(p.name for p in path.parent.iterdir()) == [path.name]  # atomic: no tmp leftover
     v = advice.load(tmp_path, "meic", SESSION, BOUNDS, now=NOW)
     assert v["ok"] is True and v["proposals"][0]["value"] == 0.9
     # The same artifact the next day is stale by construction.

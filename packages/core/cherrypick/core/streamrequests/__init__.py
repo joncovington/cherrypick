@@ -55,6 +55,7 @@ from cherrypick.core import streamcache
 
 # One ET for the suite — see cherrypick.core.clock.
 from cherrypick.core.clock import ET as _ET
+from cherrypick.core.jsonio import write_json_atomic
 
 _log = logging.getLogger(__name__)
 
@@ -202,10 +203,7 @@ def write_request(
         "expirations": clean_expirations(expirations),
         "history_days": clean_history_days(history_days),
     }
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(payload), encoding="utf-8")
-    tmp.replace(path)
-    return path
+    return write_json_atomic(path, payload, indent=None, default=None)
 
 
 def read_all() -> list[dict]:
