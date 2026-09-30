@@ -17,6 +17,7 @@ from __future__ import annotations
 from cherrypick.core import advice as _core_advice
 from cherrypick.core import config as _cfg
 from cherrypick.core import fees as _fees
+from cherrypick.core import settlement as _settlement
 from cherrypick.core import structures as _structures
 
 ARMS = ("control", "delta", "bounce", "flip")
@@ -544,17 +545,6 @@ def settle_intrinsic(strike: float, spot: float, option_type: str = "put") -> fl
     return round(max(0.0, strike - spot), 4)
 
 
-def leg_pnl(leg: dict) -> float | None:
-    """One closed/settled leg's per-share P&L. None while the leg is open or unpriced."""
-    close = leg.get("close_value")
-    entry = leg.get("entry_mid")
-    if close is None or entry is None:
-        return None
-    if leg.get("action") == "Sell to Open":
-        return round(entry - close, 4)
-    return round(close - entry, 4)
-
-
 # --------------------------------------------------------------------------- the fee stack
 def _slippage_dollars(leg_quotes: list[dict], config: dict) -> float:
     """The suite's slippage model (12.5% of each leg's spread, capped at 15% of its mid)."""
@@ -588,3 +578,8 @@ def addon_entry_cost(symbol: str, leg_quotes: list[dict], quantity: int, config:
 def settlement_fee(itm_settlements: int) -> float:
     """$5 per DISTINCT ITM settlement symbol (never per contract), the next business day."""
     return _fees.ic_expire_fee(itm_settlements)
+
+
+# The two-leg spread books' cost and leg-P&L rules live once in core; calendars, curve and pmcc
+# carried identical copies (and bwb its own leg_pnl). Kept under the old names for every caller.
+leg_pnl = _settlement.leg_pnl

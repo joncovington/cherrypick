@@ -206,3 +206,30 @@ def test_an_etf_pays_no_index_exchange_fee():
     already correct — `ic_open_fee` falls through to the plain equity/ETF stack."""
     assert fees.ic_open_fee("SPY") == fees.ic_open_fee("__unlisted__")
     assert fees.ic_open_fee("SPY") < fees.ic_open_fee("SPX")
+
+
+def test_spread_book_slippage_is_the_suite_model_in_dollars():
+    """12.5% of each leg's spread, capped at 15% of its mid, x quantity x 100, to the cent. A leg quoted
+    1.00/1.40: 0.05 of spread, cap 0.18 -- 0.05. A junk wing 0.00/0.40: 0.05 of spread, cap 0.03 -- 0.03.
+    At quantity 2: (0.05 + 0.03) x 2 x 100 = 16.00."""
+    from cherrypick.core import fees
+
+    assert fees.slippage_dollars([{"bid": 1.00, "ask": 1.40}, {"bid": 0.00, "ask": 0.40}], 2, {}) == 16.00
+
+
+def test_spread_book_costs_tolerate_a_missing_quote_and_a_null_override():
+    """The spread books read a missing bid as 0 and `tastytrade_costs: null` as no override; the older
+    private helper would have raised on either. 0.00/0.40 with a None bid is the junk wing above: 3.00."""
+    from cherrypick.core import fees
+
+    assert fees.slippage_dollars([{"bid": None, "ask": 0.40}], 1, {"tastytrade_costs": None}) == 3.00
+    cost = fees.spread_entry_cost("SPY", [{"bid": 1.00, "ask": 1.40}, {"ask": 0.40}], 1, {})
+    assert cost["slippage"] == 8.00 and cost["total"] == round(cost["fee"] + 8.00, 2)
+
+
+def test_leg_pnl_is_sold_entry_minus_close_bought_close_minus_entry():
+    from cherrypick.core.settlement import leg_pnl
+
+    assert leg_pnl({"action": "Sell to Open", "entry_mid": 2.5, "close_value": 0.4}) == 2.1
+    assert leg_pnl({"action": "Buy to Open", "entry_mid": 2.5, "close_value": 0.4}) == -2.1
+    assert leg_pnl({"action": "Sell to Open", "entry_mid": 2.5, "close_value": None}) is None

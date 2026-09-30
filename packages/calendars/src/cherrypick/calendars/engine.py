@@ -365,49 +365,7 @@ def assignment_from(leg: dict, spot: float, quantity: int) -> dict | None:
 share_pnl = _settlement.share_pnl  # noqa: F401
 
 
-def leg_pnl(leg: dict) -> float | None:
-    """One closed/settled leg's per-share P&L: sold legs earn entry minus close, bought legs earn
-    close minus entry. None while the leg is open or unpriced."""
-    close = leg.get("close_value")
-    entry = leg.get("entry_mid")
-    if close is None or entry is None:
-        return None
-    if leg.get("action") == "Sell to Open":
-        return round(entry - close, 4)
-    return round(close - entry, 4)
-
-
 # --------------------------------------------------------------------------- the fee stack
-def _slippage_dollars(leg_quotes: list[dict], quantity: int, config: dict) -> float:
-    """The suite's slippage model (12.5% of each leg's spread, capped at 15% of its mid), in
-    dollars — the same knobs `cherrypick.core.fees.DEFAULT_COSTS` carries, read from the same
-    config block, so a recalibration there reaches this module through config rather than drift."""
-    costs = {**_fees.DEFAULT_COSTS, **(config.get("tastytrade_costs") or {})}
-    frac = costs["slippage_frac_of_spread"]
-    cap = costs.get("slippage_cap_frac_of_mid")
-    total = 0.0
-    for q in leg_quotes:
-        bid, ask = q.get("bid", 0.0) or 0.0, q.get("ask", 0.0) or 0.0
-        slip = max(ask - bid, 0.0) * frac
-        if cap is not None:
-            slip = min(slip, cap * max((bid + ask) / 2.0, 0.0))
-        total += slip * quantity
-    return round(total * 100, 2)
-
-
-def entry_cost(symbol: str, leg_quotes: list[dict], quantity: int, config: dict) -> dict:
-    """Cost of opening ONE side (2 legs, 1 sell) — the index fee schedule (commission, clearing,
-    ORF, the SPX $0.60 exchange fee, TAF on the sell) plus modeled slippage."""
-    fee = _fees.ic_open_fee(symbol, quantity, legs=2, sell_legs=1, ndigits=4)
-    slippage = _slippage_dollars(leg_quotes, quantity, config)
-    return {"fee": round(fee, 2), "slippage": slippage, "total": round(fee + slippage, 2)}
-
-
-def close_cost(symbol: str, leg_quotes: list[dict], quantity: int, config: dict, *, sell_legs: int) -> dict:
-    """Cost of actively closing `len(leg_quotes)` legs, `sell_legs` of them sold to close."""
-    fee = _fees.ic_close_fee(symbol, quantity, legs=len(leg_quotes), sell_legs=sell_legs, ndigits=4)
-    slippage = _slippage_dollars(leg_quotes, quantity, config)
-    return {"fee": round(fee, 2), "slippage": slippage, "total": round(fee + slippage, 2)}
 
 
 def settlement_fee(itm_settlements: int) -> float:
@@ -415,12 +373,10 @@ def settlement_fee(itm_settlements: int) -> float:
     return _fees.ic_expire_fee(itm_settlements)
 
 
-def assignment_fee(assignment: dict, dispose_price: float) -> float:
-    """Everything one physical assignment costs from delivery to disposal: the same $5 event charge
-    a cash settlement pays, plus the equity pass-throughs on whichever share fill is a sell."""
-    return _fees.assignment_round_trip_fee(
-        assignment["shares"],
-        assignment["basis"],
-        dispose_price,
-        direction=assignment["direction"],
-    )
+# The two-leg spread books' cost and leg-P&L rules live once in core; calendars, curve and pmcc
+# carried identical copies (and bwb its own leg_pnl). Kept under the old names for every caller.
+_slippage_dollars = _fees.slippage_dollars
+entry_cost = _fees.spread_entry_cost
+close_cost = _fees.spread_close_cost
+assignment_fee = _fees.assignment_fee
+leg_pnl = _settlement.leg_pnl

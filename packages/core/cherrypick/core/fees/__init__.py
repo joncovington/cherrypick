@@ -263,3 +263,52 @@ def assignment_round_trip_fee(
     else:
         share_side = stock_trade_fee(shares, assign_price, side="sell", ndigits=4)
     return round(ASSIGNMENT_FEE_PER_SETTLEMENT + share_side, ndigits)
+
+
+# --------------------------------------------------------------------------- 4. spread books
+# calendars, curve and pmcc price their two-leg sides identically and used to carry three copies of
+# these (identical once the table prefix was normalised out). bwb's differ on purpose -- four legs,
+# two sells, an add-on -- and keep their own.
+
+
+def slippage_dollars(leg_quotes: list[dict], quantity: int, config: dict) -> float:
+    """The suite's slippage model in dollars for `quantity` of each quoted leg, rounded to the cent:
+    `_slippage` with every leg at `quantity` contracts, reading the knobs from the config's
+    `tastytrade_costs` over `DEFAULT_COSTS`. A missing bid or ask counts as 0, and a
+    `tastytrade_costs: null` as no override -- the spread books' historical behaviour."""
+    costs = {**DEFAULT_COSTS, **(config.get("tastytrade_costs") or {})}
+    quotes = [{"bid": q.get("bid", 0.0) or 0.0, "ask": q.get("ask", 0.0) or 0.0} for q in leg_quotes]
+    return round(
+        _slippage(
+            quotes,
+            [quantity] * len(quotes),
+            costs["slippage_frac_of_spread"],
+            costs.get("slippage_cap_frac_of_mid"),
+        ),
+        2,
+    )
+
+
+def spread_entry_cost(symbol: str, leg_quotes: list[dict], quantity: int, config: dict) -> dict:
+    """Cost of opening ONE two-leg side (1 sell) -- the index fee schedule (commission, clearing, ORF,
+    the per-symbol index exchange fee, TAF on the sell) plus modelled slippage."""
+    fee = ic_open_fee(symbol, quantity, legs=2, sell_legs=1, ndigits=4)
+    slippage = slippage_dollars(leg_quotes, quantity, config)
+    return {"fee": round(fee, 2), "slippage": slippage, "total": round(fee + slippage, 2)}
+
+
+def spread_close_cost(
+    symbol: str, leg_quotes: list[dict], quantity: int, config: dict, *, sell_legs: int
+) -> dict:
+    """Cost of actively closing `len(leg_quotes)` legs, `sell_legs` of them sold to close."""
+    fee = ic_close_fee(symbol, quantity, legs=len(leg_quotes), sell_legs=sell_legs, ndigits=4)
+    slippage = slippage_dollars(leg_quotes, quantity, config)
+    return {"fee": round(fee, 2), "slippage": slippage, "total": round(fee + slippage, 2)}
+
+
+def assignment_fee(assignment: dict, dispose_price: float) -> float:
+    """Everything one physical assignment costs from delivery to disposal, for an assignment row
+    carrying `shares`, `basis` and `direction`."""
+    return assignment_round_trip_fee(
+        assignment["shares"], assignment["basis"], dispose_price, direction=assignment["direction"]
+    )

@@ -41,6 +41,19 @@ def share_pnl(direction: str, shares: int, basis: float, price: float) -> float:
     return round(move * shares, 2)
 
 
+def leg_pnl(leg: dict) -> float | None:
+    """One closed or settled leg's per-share P&L: sold legs earn entry minus close, bought legs earn
+    close minus entry. None while the leg is open or unpriced. The one rule calendars, curve, pmcc and
+    bwb book legs by."""
+    close = leg.get("close_value")
+    entry = leg.get("entry_mid")
+    if close is None or entry is None:
+        return None
+    if leg.get("action") == "Sell to Open":
+        return round(entry - close, 4)
+    return round(close - entry, 4)
+
+
 _HTTP_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; cherrypick settlement fetch)"}
 _HTTP_TIMEOUT_SECONDS = 8
 
