@@ -24,6 +24,24 @@ export interface ModulePerformanceGroup {
   reading: Record<string, unknown>;
   sessionNets: Array<[string, number]>;
   tradeNets: number[];
+  /**
+   * Flies only: return on peak risk, standing in for `return_on_capital`, which flies cannot have
+   * (its ledger carries no per-trade capital -- a legged book's risk depends on completion).
+   * Absent for every other module.
+   */
+  peakRisk?: OnPeakRisk;
+}
+
+/** Σ settled net / Σ session peak risk over the finished sessions that have a peak. */
+export interface OnPeakRisk {
+  net: number;
+  peakRisk: number;
+  ratio: number | null;
+  /** Sessions the ratio covers, out of `of` settled sessions in scope. */
+  sessions: number;
+  of: number;
+  /** How many of `sessions` had their peak replayed from positions rather than recorded live. */
+  replayed: number;
 }
 
 export interface ExitReasonRow {

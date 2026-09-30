@@ -11,8 +11,10 @@ export function Tile({
   value,
   tone,
   n,
+  nUnit,
   afterFees,
   underpowered,
+  title,
 }: {
   label: string;
   value: string;
@@ -20,17 +22,19 @@ export function Tile({
   /** Sample size the value is computed over. Omitted (not 0) when the metric carries no count of
    * its own -- distinct from `n={0}`, which is a real empty sample. */
   n?: number | null;
+  /** What `n` counts when it is not trades, e.g. "sessions": the footer then reads "8 sessions". */
+  nUnit?: string;
   /** Every net figure in this suite is already net of the modeled fee/slippage stack
    * (core.fees) -- stated on the tile so "after fees" never has to be inferred from context. */
   afterFees?: boolean;
   underpowered?: boolean;
+  title?: string;
 }) {
   const cls = tone === "pos" ? "pnl-pos" : tone === "neg" ? "pnl-neg" : tone === "dim" ? "muted" : "";
-  const footer = [n !== undefined && n !== null ? `n=${n}` : null, afterFees ? "after fees" : null].filter(
-    (s): s is string => s !== null,
-  );
+  const count = n === undefined || n === null ? null : nUnit === undefined ? `n=${n}` : `${n} ${nUnit}`;
+  const footer = [count, afterFees ? "after fees" : null].filter((s): s is string => s !== null);
   return (
-    <div className="stat-tile">
+    <div className="stat-tile" title={title}>
       <span className="stat-label">
         {label}
         {underpowered && (

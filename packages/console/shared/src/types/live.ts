@@ -7,6 +7,8 @@
  * settled figure is zero until the bell; the intraday number is the mark, labelled as such.
  */
 
+import type { OnPeakRisk } from "./performance.js";
+
 export type LiveLedgerState = "ok" | "absent" | "failed";
 
 export interface LivePeriod {
@@ -23,32 +25,26 @@ export interface LivePeriod {
 
 /**
  * One finished-or-running session's settled net against the most it had at stake at once: the
- * largest `fly_live_marks.open_margin` of the day, the loop's own open worst-case exposure (the
- * figure the buying-power cap reads). A completed fly that can no longer lose drops out of it, so
- * a day that recycles the same budget can return more than 100%.
+ * largest open worst-case exposure of the day (the figure the buying-power cap reads) -- recorded
+ * by the live loop in `fly_live_marks.open_margin`, or replayed from the positions where nothing
+ * recorded it (`server/src/analytics/fliesPeakRisk.ts`). A completed fly that can no longer lose
+ * drops out of it, so a day that recycles the same budget can return more than 100%.
  */
 export interface LiveRiskSession {
   session: string;
   trades: number;
   net: number;
-  /** Null before `fly_live_marks` existed (2026-09-17) -- not recorded, never zero. */
+  /** Null when the book never carried risk (only risk-free structures) -- never a zero denominator. */
   peakRisk: number | null;
   peakAt: string | null;
+  peakSource: "recorded" | "replayed" | null;
   /** net / peakRisk, only once nothing is left open (a running day's settled net is not its result). */
   onRisk: number | null;
   /** Nothing open or working: the day's settled net is final. */
   complete: boolean;
 }
 
-/** Σ net / Σ daily peak risk over the sessions that have both, and how many of the sessions did. */
-export interface LiveOnRisk {
-  net: number;
-  peakRisk: number;
-  ratio: number | null;
-  /** Sessions the ratio covers, out of `of` settled sessions in scope. */
-  sessions: number;
-  of: number;
-}
+export type LiveOnRisk = OnPeakRisk;
 
 export interface LiveCompletion {
   leggedEntries: number;

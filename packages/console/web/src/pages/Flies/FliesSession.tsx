@@ -39,6 +39,7 @@ export interface SessionAnalytics {
     completed: number;
     maxPossibleLoss: number;
     sessionPeakWorst: { worst: number; at: string } | null;
+    dailyPeakRisk?: { peak: number; at: string | null; source: "recorded" | "replayed" | null } | null;
     settlement?: { price: number; source: string | null; at: string | null } | null;
     medianCompletionMin?: number | null;
   };
@@ -92,11 +93,12 @@ export function FliesSession({
   const refusalRows = [...refusals.entries()].sort((x, y) => y[1] - x[1]);
   const refusedTotal = refusalRows.reduce((n, [, c]) => n + c, 0);
 
-  // After the live book settles, "worst case at expiry" would read $0 over a day that carried real
-  // risk. The server hands back the session's peak until the next session opens; open positions
-  // always win, because while anything is open the live figure is the one that matters.
-  const heldPeak = today !== undefined && today.open === 0 ? today.sessionPeakWorst : null;
-  const worstValue = heldPeak !== null ? heldPeak.worst : today?.maxPossibleLoss;
+  // The session's peak risk, not the risk still open: "worst case at expiry" summed only open
+  // positions, so it fell to $0 the moment a book settled over a day that carried real risk. The
+  // peak is the session's own, so it stands through settlement until the next session's first tick
+  // moves this page on. What is still open now rides in the foot while anything is.
+  const peak = today?.dailyPeakRisk ?? null;
+  const openRisk = today !== undefined && today.open > 0 ? Math.abs(today.maxPossibleLoss) : null;
 
   // Completed, open and stranded partition `entered`; naming only the open count read "0 still open
   // of 4 entered" beside 75% on a settled day, which says nothing about where the other 25% went.
@@ -167,20 +169,27 @@ export function FliesSession({
       </StatTile>
 
       <StatTile
-        label="worst case at expiry"
-        value={worstValue !== undefined ? fmtMoney(worstValue) : null}
-        tone={worstValue !== undefined && worstValue < 0 ? "neg" : "dim"}
+        label="daily peak risk"
+        value={peak !== null ? fmtMoney(peak.peak) : null}
+        tone={peak !== null && peak.peak > 0 ? "neg" : "dim"}
         title={
-          heldPeak !== null
-            ? "the live book is settled: this is the largest worst case it carried during the session, from the loop's own per-tick exposure — shown until the next session opens"
-            : "every open position's own worst case, net of fees and the worst-case assignment fee — zero means nothing open can still lose"
+          "the largest worst case the book carried at any moment this session — every open position's own " +
+          "worst case net of fees and the worst-case assignment fee, summed — " +
+          (peak?.source === "recorded"
+            ? "recorded by the live loop each tick, the figure its buying-power cap reads"
+            : "replayed from the positions' entries and completions (it equals the live loop's recorded peak to the cent wherever both exist)") +
+          "; it stands after settlement until the next session starts"
         }
         foot={
-          today === undefined
-            ? "—"
-            : heldPeak !== null
-              ? `session peak at ${heldPeak.at.slice(11, 16)} ET · settled · until the next open`
-              : `${String(today.riskFree)} of ${String(today.positions)} positions are risk-free`
+          today === undefined || peak === null
+            ? "nothing entered on this session"
+            : [
+                peak.at !== null ? `peak at ${peak.at.slice(11, 16)} ET` : "no position could lose",
+                openRisk !== null ? `${fmtMoney(openRisk)} still at risk now` : today.open === 0 && today.positions > 0 ? "settled · until the next session" : null,
+                `${String(today.riskFree)} of ${String(today.positions)} risk-free`,
+              ]
+                .filter((s): s is string => s !== null)
+                .join(" · ")
         }
       />
 

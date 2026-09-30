@@ -31,6 +31,7 @@ import type {
 import { PERFORMANCE_MODULE_SCHEMA } from "@console/shared";
 import { readOnlyDb, withReadOnlyDb, num, str, readJson, suiteEra } from "./db.js";
 import { readModuleMetrics } from "../services/metricsBridge.js";
+import { onPeakRiskOver, peakRiskSessions } from "./fliesPeakRisk.js";
 import { readFliesAnalytics, readFliesJournal, readFliesLoopStatus, readFliesPerformance } from "./flies.js";
 import { readLockStatus, sessionDateEt } from "../services/liveLock.js";
 import { readBrokerAccount } from "../services/brokerBridge.js";
@@ -132,70 +133,8 @@ export function resolveLiveSession(
   return last !== null ? { session: last, basis: "last_completed" } : { session: today, basis: "today" };
 }
 
-// --------------------------------------------------------------------------- return on session peak risk
-/**
- * Every session the arm has rows for, newest first: settled net (the `settledNet` rule) against
- * the day's largest `fly_live_marks.open_margin`. The marks table is the loop's whole book, not one
- * arm's -- the pilot runs one arm a day, and a session only appears here when this arm traded it.
- */
-export function riskSessions(db: Database.Database, arm: string | null): LiveRiskSession[] {
-  const armClause = arm !== null ? " AND arm = ?" : "";
-  const armParams: string[] = arm !== null ? [arm] : [];
-  const days = new Map<string, LiveRiskSession>();
-  const at = (d: string): LiveRiskSession => {
-    let s = days.get(d);
-    if (s === undefined) {
-      s = { session: d, trades: 0, net: 0, peakRisk: null, peakAt: null, onRisk: null, complete: true };
-      days.set(d, s);
-    }
-    return s;
-  };
-  for (const r of db
-    .prepare<string[], Record<string, unknown>>(
-      `SELECT trade_date, COUNT(*) AS trades, SUM(COALESCE(gross_pnl, 0) - COALESCE(fees, 0)) AS net
-         FROM fly_positions WHERE status = 'settled'${armClause} GROUP BY trade_date`,
-    )
-    .all(...armParams)) {
-    const s = at(String(r["trade_date"] ?? ""));
-    s.trades = Number(r["trades"] ?? 0);
-    s.net = Number(r["net"] ?? 0);
-  }
-  for (const r of db
-    .prepare<string[], Record<string, unknown>>(
-      `SELECT DISTINCT trade_date FROM fly_positions
-        WHERE COALESCE(status, '') NOT IN ('settled', 'closed', 'cancelled', 'voided')${armClause}`,
-    )
-    .all(...armParams)) {
-    at(String(r["trade_date"] ?? "")).complete = false;
-  }
-  if (hasTable(db, "fly_live_marks")) {
-    // One row per day: SQLite returns the bare `iteration_ts` from the row MAX() chose.
-    for (const r of db
-      .prepare<[], Record<string, unknown>>(
-        "SELECT trade_date, iteration_ts, MAX(open_margin) AS peak FROM fly_live_marks GROUP BY trade_date",
-      )
-      .all()) {
-      const s = days.get(String(r["trade_date"] ?? ""));
-      const peak = num(r["peak"]);
-      if (s === undefined || peak === null || !(peak > 0)) continue;
-      s.peakRisk = peak;
-      s.peakAt = str(r["iteration_ts"]);
-    }
-  }
-  const out = [...days.values()].filter((s) => s.session !== "");
-  for (const s of out) s.onRisk = s.complete && s.peakRisk !== null ? s.net / s.peakRisk : null;
-  return out.sort((a, b) => b.session.localeCompare(a.session));
-}
-
-/** Σ net / Σ peak over the finished sessions in `bounds` that recorded a peak. The numerator is
- *  matched to the denominator: a session with no recorded peak is counted in `of`, never in either. */
-export function onRiskOver(sessions: LiveRiskSession[], bounds: [string, string] | null = null): LiveOnRisk {
-  const inScope = sessions.filter((s) => s.trades > 0 && (bounds === null || (s.session >= bounds[0] && s.session <= bounds[1])));
-  const covered = inScope.filter((s) => s.complete && s.peakRisk !== null);
-  const net = covered.reduce((a, s) => a + s.net, 0);
-  const peakRisk = covered.reduce((a, s) => a + (s.peakRisk ?? 0), 0);
-  return { net, peakRisk, ratio: peakRisk > 0 ? net / peakRisk : null, sessions: covered.length, of: inScope.length };
-}
+// Return on session peak risk lives in `readers/fliesPeakRisk.ts`, shared with the flies session
+// tile and the performance slide: one peak, whichever page reads it.
 
 // --------------------------------------------------------------------------- the day's rows
 function positionsFor(db: Database.Database, session: string): LivePosition[] {
@@ -392,7 +331,7 @@ function livePerformance(config: ConsoleConfig, arm: string | null, sessions: Li
     completion: p.completion,
     completionTrend: p.completionTrend,
     liveVsPaper: p.liveVsPaper,
-    onRisk: onRiskOver(sessions),
+    onRisk: onPeakRiskOver(sessions),
     sessions,
     calibration: { reading: group?.reading ?? null, from, error: metrics.ok ? null : metrics.error },
   };
@@ -427,7 +366,7 @@ export function readFliesLive(config: ConsoleConfig, session: string | null = nu
 
   const empty = (): Omit<LivePeriod, "paperNet" | "onRisk"> => ({ net: 0, trades: 0, sessions: 0 });
   const ledger = readOnlyDb(liveDb, (db) => ({
-    risk: riskSessions(db, armName),
+    risk: peakRiskSessions(db, { arm: armName }),
     periods: {
       today: settledNet(db, bounds.today, armName),
       week: settledNet(db, bounds.week, armName),
@@ -450,7 +389,7 @@ export function readFliesLive(config: ConsoleConfig, session: string | null = nu
   const period = (k: "today" | "week" | "month" | "year"): LivePeriod => ({
     ...(value?.periods[k] ?? empty()),
     paperNet: paper?.[k] ?? null,
-    onRisk: onRiskOver(risk, bounds[k]),
+    onRisk: onPeakRiskOver(risk, bounds[k]),
   });
   const performance = livePerformance(config, armName, risk);
   const positions = value?.positions ?? [];

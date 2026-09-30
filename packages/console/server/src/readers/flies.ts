@@ -15,6 +15,7 @@ import {
 import { emptyPage, pagedQuery, pageArray, FIRST_PAGE, type PageRequest } from "./paging.js";
 import { readMeasurementBreaks, readSchemaDrift } from "./integrity.js";
 import { readRegimeCuts } from "./regimeCuts.js";
+import { peakRiskSessions } from "./fliesPeakRisk.js";
 
 /**
  * The era this module counts as evidence — the SPX 5-wide books from 2026-08-01.
@@ -1852,6 +1853,14 @@ export interface FliesAnalytics {
      * next session opens, then null -- see `sessionPeakWorst`.
      */
     sessionPeakWorst: { worst: number; at: string } | null;
+    /**
+     * The largest open worst-case exposure this session's book carried at any moment (a positive
+     * dollar figure), and when -- recorded by the live loop, or replayed from the positions
+     * (`readers/fliesPeakRisk.ts`). It is the session's own, so it holds through settlement and
+     * until the next session's first tick moves the page to that session. Zero when nothing
+     * entered could lose; null when nothing entered at all.
+     */
+    dailyPeakRisk: { peak: number; at: string | null; source: "recorded" | "replayed" | null } | null;
     /** The print this session's books settled against, where it came from, and when the book was
      *  written — null until a book has settled. The latest if books disagree, which they should not. */
     settlement: { price: number; source: string | null; at: string | null } | null;
@@ -1953,6 +1962,7 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
       completed: 0,
       maxPossibleLoss: 0,
       sessionPeakWorst: null,
+      dailyPeakRisk: null,
       settlement: null,
       medianCompletionMin: null,
     },
@@ -2011,6 +2021,10 @@ export function readFliesAnalytics(config: ConsoleConfig, mode: TradingMode, fil
         completed: Number(t["completed"] ?? 0),
         maxPossibleLoss,
         sessionPeakWorst: mode === "live" ? sessionPeakWorst(config, db, tradeDate) : null,
+        dailyPeakRisk: (() => {
+          const s = peakRiskSessions(db, { arm: filter.arm, start: tradeDate, end: tradeDate })[0];
+          return s === undefined ? null : { peak: s.peakRisk ?? 0, at: s.peakAt, source: s.peakSource };
+        })(),
         settlement: sessionSettlement(db, tradeDate),
         medianCompletionMin: medianCompletion(db, tradeDate, armClause, armParams),
       };

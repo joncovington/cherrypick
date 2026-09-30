@@ -104,6 +104,17 @@ The same day the shared performance slide was found ignoring the paper/live togg
 and earnings: it always read `paper_trades.db`, so a live-badged page showed the paper book. It now
 reads each module's live ledger in live mode, with no advised pairs (they exist only on paper).
 
+Also 2026-09-30: flies' performance slide swapped its always-empty return on capital for return on
+peak risk, and the session page's "worst case at expiry" — which summed open positions only, so it
+read $0 once a book settled — became "daily peak risk", held until the next session. Paper records
+no exposure, so the peak is replayed from positions; the first replay priced completed flies off
+their settled `fees` and overstated two live sessions by $1.88 and $6.89 against the recorded
+peaks, until final states took their recorded `floor_dollars`.
+
+The Overview's order-alert daemon chip followed the morning of 2026-09-30, when the daemon started
+at arming (01:43 ET), stopped heartbeating at 02:33 with nothing in its log, and was found only
+because someone asked whether live flies was armed.
+
 ## Trade table standard rollout (2026-09-24 → 2026-09-25)
 
 Flies first (2026-09-24), then meic, bwb, earnings, calendars, pmcc and curve on 2026-09-25 — all seven

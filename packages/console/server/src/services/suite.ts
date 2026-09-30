@@ -8,7 +8,9 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ConsoleConfig } from "../config.js";
 import { buildSuiteReport } from "./report.js";
+import type { AlertDaemonHealth } from "@console/shared";
 import { readModuleGate } from "./liveLock.js";
+import { readAlertDaemonHealth } from "./alertDaemon.js";
 import { readJson } from "../readers/db.js";
 
 export interface SystemPanel {
@@ -38,6 +40,8 @@ export interface SystemPanel {
   notify: { channels: string[]; tradeChannels: string[]; webhookStatus: string | null };
   /** Halt flag presence — the suite's global stop. */
   halted: { active: boolean; path: string };
+  /** The flies order-alert daemon's health; null when `live.use_order_alert_daemon` is off. */
+  alertDaemon: AlertDaemonHealth | null;
 }
 
 export function readSystemPanel(config: ConsoleConfig): SystemPanel {
@@ -135,6 +139,7 @@ export function readSystemPanel(config: ConsoleConfig): SystemPanel {
       webhookStatus: typeof secrets["status"] === "string" ? secrets["status"] : null,
     },
     halted: { active: fs.existsSync(haltPath), path: haltPath },
+    alertDaemon: readAlertDaemonHealth(config),
   };
 }
 

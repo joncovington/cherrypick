@@ -1,3 +1,4 @@
+import type { OnPeakRisk } from "@console/shared";
 import { fmtMoney, fmtNum, fmtPct } from "../../lib/format";
 import { Tile } from "./Tile";
 
@@ -46,7 +47,12 @@ function pctFraction(v: number | null): number | null {
   return v === null ? null : v * 100;
 }
 
-export function MetricTiles({ reading }: { reading: Record<string, unknown> }) {
+/**
+ * `peakRisk` is flies' stand-in for return on capital, which its ledger cannot carry (a legged
+ * book's risk depends on completion): Σ net over Σ session peak risk. Passed, it takes that tile's
+ * place; every other module passes nothing and keeps return on capital.
+ */
+export function MetricTiles({ reading, peakRisk }: { reading: Record<string, unknown>; peakRisk?: OnPeakRisk }) {
   const sample = count(reading, "sample");
   const netPnl = num(reading, "net_pnl");
   const winRate = num(reading, "win_rate");
@@ -66,7 +72,24 @@ export function MetricTiles({ reading }: { reading: Record<string, unknown> }) {
       <Tile label="profit factor" value={fmtNum(profitFactor)} tone={tone(profitFactor === null ? null : profitFactor - 1)} n={sample} />
       <Tile label="sharpe / trade" value={fmtNum(sharpe)} tone={tone(sharpe)} n={sample} />
       <Tile label="max drawdown" value={fmtMoney(maxDrawdown === null ? null : -maxDrawdown)} tone={maxDrawdown === null || maxDrawdown === 0 ? "dim" : "neg"} afterFees />
-      <Tile label="return on capital" value={fmtPct(pctFraction(returnOnCapital), 1)} tone={tone(returnOnCapital)} n={sample} />
+      {peakRisk !== undefined ? (
+        <Tile
+          label="return on peak risk"
+          value={fmtPct(pctFraction(peakRisk.ratio), 1)}
+          tone={tone(peakRisk.ratio)}
+          n={peakRisk.sessions}
+          nUnit="sessions"
+          afterFees
+          title={
+            `settled net ${fmtMoney(peakRisk.net)} over the sum of each session's peak worst-case exposure ` +
+            `${fmtMoney(peakRisk.peakRisk)}; ${String(peakRisk.sessions)} of ${String(peakRisk.of)} sessions ` +
+            `(a session counts once finished and once it carried risk)` +
+            (peakRisk.replayed > 0 ? `; ${String(peakRisk.replayed)} replayed from positions, the rest recorded live` : "; every peak recorded live")
+          }
+        />
+      ) : (
+        <Tile label="return on capital" value={fmtPct(pctFraction(returnOnCapital), 1)} tone={tone(returnOnCapital)} n={sample} />
+      )}
       <Tile label="capture rate" value={fmtPct(pctFraction(captureRate.v), 1)} tone={tone(captureRate.v)} n={captureRate.n} />
     </div>
   );

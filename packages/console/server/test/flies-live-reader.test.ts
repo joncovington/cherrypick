@@ -129,7 +129,7 @@ describe("the live payload", () => {
     expect(first.ledger).toBe("absent");
     expect(first.periods.today).toEqual({
       net: 0, trades: 0, sessions: 0, paperNet: null,
-      onRisk: { net: 0, peakRisk: 0, ratio: null, sessions: 0, of: 0 },
+      onRisk: { net: 0, peakRisk: 0, ratio: null, sessions: 0, of: 0, replayed: 0 },
     });
     expect(first.buyingPower.cap).toBe(1000);
     // the broker read never gates the page: a cold start answers "fetching", the next poll has it
@@ -240,7 +240,7 @@ describe("return on session peak risk", () => {
     expect(out.performance.onRisk).toMatchObject(want);
     expect(out.performance.onRisk.ratio).toBeCloseTo(80 / 300, 9);
     expect(out.periods.week.onRisk).toMatchObject(want);
-    expect(out.periods.today.onRisk).toEqual({ net: 0, peakRisk: 0, ratio: null, sessions: 0, of: 1 });
+    expect(out.periods.today.onRisk).toEqual({ net: 0, peakRisk: 0, ratio: null, sessions: 0, of: 1, replayed: 0 });
   });
 });
 

@@ -18,6 +18,7 @@ import { readExitReasons } from "./exitReasons.js";
 import { readAdvisedPairs } from "./pairs.js";
 import { readMeasurementBreaks } from "./integrity.js";
 import { readExcursions } from "../services/excursionsBridge.js";
+import { onPeakRiskOver, peakRiskSessions } from "./fliesPeakRisk.js";
 
 /**
  * The shared performance read: one module's calibration reading, per profile, via
@@ -70,6 +71,13 @@ function hasLiveLedger(module: PerformanceModuleId): module is keyof typeof LIVE
 export function ledgerFile(module: PerformanceModuleId, mode: TradingMode): string | null {
   if (mode === "paper") return "paper_trades.db";
   return hasLiveLedger(module) ? LIVE_LEDGER[module] : null;
+}
+
+/** A calibration group's tag back to its rows: `core.metrics` names a group `<arm>@<experiment id>`
+ *  for rows stamped with an experiment and `<arm>` for the rest. */
+export function flyTagScope(tag: string): { arm: string; experimentId: string | null } {
+  const at = tag.indexOf("@");
+  return at < 0 ? { arm: tag, experimentId: null } : { arm: tag.slice(0, at), experimentId: tag.slice(at + 1) };
 }
 
 function readBreaks(dbPath: string): MeasurementBreak[] {
@@ -139,12 +147,20 @@ export function readModulePerformance(
       error: res.error,
     };
   }
-  const groups = Object.entries(res.metrics.groups).map(([tag, g]: [string, ModuleMetricsGroup]) => ({
+  const plain: ModulePerformanceGroup[] = Object.entries(res.metrics.groups).map(([tag, g]: [string, ModuleMetricsGroup]) => ({
     tag,
     reading: g.reading,
     sessionNets: g.session_nets,
     tradeNets: g.trade_nets,
   }));
+  // Flies has no per-trade capital, so `return_on_capital` is always empty for it; return on peak
+  // risk stands in, per group, over the same window the reading covers.
+  const groups =
+    module === "flies"
+      ? withReadOnlyDb(dbPath, plain, (db) =>
+          plain.map((g) => ({ ...g, peakRisk: onPeakRiskOver(peakRiskSessions(db, { ...flyTagScope(g.tag), start })) })),
+        )
+      : plain;
   return {
     ok: true,
     module,

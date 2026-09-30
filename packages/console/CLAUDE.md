@@ -265,11 +265,20 @@ net per period, the intraday series and the broker account. Rules, stated on the
   `resolveLiveSession`), and says so. "Opened" is evidence, not a calendar — the rule
   `sessionPeakWorst` holds by: a `fly_snapshots` row at or past 09:30 ET in either ledger, or a live
   position dated today.
-- **Return on session peak risk** is settled net over the session's peak
-  `fly_live_marks.open_margin` — the gate's own figure, so a day that recycles its budget can exceed
-  100%. Never call it "max risk": that reads as the buying-power cap, which is a limit, not a use. Only finished sessions that
-  recorded a peak count, and the numerator is matched to them: a session before the marks table is
-  `n/r` and counted in `of`, never in the ratio.
+- **The flies order-alert daemon's health** is a chip on the Overview title row beside the live
+  chip (`services/alertDaemon.ts`, on `/api/system`), read off the daemon's own pid and status
+  files: ok, stale (alive but no heartbeat for three 30 s slices — the silent-websocket case), down
+  (dead on an armed day) or off. Amber at worst, never red: a dead daemon costs fill latency only.
+- **Return on session peak risk** is settled net over the session's peak open worst case — the
+  gate's own figure, so a day that recycles its budget can exceed 100%. Never call it "max risk":
+  that reads as the buying-power cap, which is a limit, not a use. One implementation,
+  `readers/fliesPeakRisk.ts`, serves the Live page, the flies session tile ("daily peak risk") and
+  the flies performance slide (in place of return on capital, which flies cannot carry). The peak
+  is the live loop's recorded `fly_live_marks.open_margin` where one exists, else replayed from the
+  positions (`analytics/fliesPeakRisk.ts`) — equal to the recorded peak to the cent on all eight
+  live sessions that have both. A replay prices a position in its final state at its recorded
+  `floor_dollars`, never off its `fees`, which by then include settlement. Only finished sessions
+  that carried risk count, with the numerator matched to them.
 - The performance block carries both flies study tabs for the configured `live.arm`, never
   recomputed: the **completion** slide (`readFliesPerformance` in live mode, rendered through
   `PerformanceTab.tsx`'s own exported cards) and the **performance** slide's calibration reading

@@ -27,3 +27,16 @@ export interface StatusPayload {
 }
 
 export type TradingMode = "live" | "paper";
+
+/** The flies order-alert daemon, as `server/src/services/alertDaemon.ts` reads it off its own files. */
+export interface AlertDaemonHealth {
+  /** ok: running, fresh heartbeat. stale: running, no heartbeat for three 30 s slices. down: not
+   *  running while flies is armed today. off: not running and not armed -- its normal idle state. */
+  state: "ok" | "stale" | "down" | "off";
+  armed: boolean;
+  pid: number | null;
+  heartbeatAt: string | null;
+  ageSeconds: number | null;
+  alertsSeen: number | null;
+  lastAlertAt: string | null;
+}

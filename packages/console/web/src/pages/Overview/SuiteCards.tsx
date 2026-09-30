@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { AlertDaemonHealth } from "@console/shared";
 import { useQuery } from "@tanstack/react-query";
 import { Card, fmtMoney, fmtPct } from "../../components/DataTable";
 import { CalendarHeatmap } from "../../components/CalendarHeatmap";
@@ -21,6 +22,7 @@ interface SystemPanel {
   watchdog: { intervalMinutes: number | null; renotifyMinutes: number | null; drawdownGuard: boolean | null };
   notify: { channels: string[]; tradeChannels: string[]; webhookStatus: string | null };
   halted: { active: boolean; path: string };
+  alertDaemon: AlertDaemonHealth | null;
 }
 
 /** Shared with the page-title row's halt/live chips, so both read one fetch of the same data. */

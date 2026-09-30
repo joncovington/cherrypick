@@ -79,7 +79,7 @@ export function PerformanceSlide({ module, mode = "paper" }: { module: Performan
               collapseKey={`performance-${module}-${g.tag}`}
               updatedAt={dataUpdatedAt}
             >
-              <MetricTiles reading={g.reading} />
+              <MetricTiles reading={g.reading} peakRisk={g.peakRisk} />
               {underpoweredByBase.get(g.tag) === true && (
                 <p className="muted" style={{ fontSize: 11, marginTop: "0.4rem" }}>
                   <span className="chip chip-warn">underpowered</span> every experiment paired against this

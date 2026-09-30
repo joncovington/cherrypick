@@ -126,16 +126,16 @@ function PerformanceSection({ perf }: { perf: LivePerformance }) {
           </span>
         </div>
         {perf.calibration.reading !== null ? (
-          <MetricTiles reading={perf.calibration.reading} />
+          <MetricTiles reading={perf.calibration.reading} peakRisk={perf.onRisk} />
         ) : (
           <p className={perf.calibration.error !== null ? "pnl-neg" : "muted"}>
             {perf.calibration.error ?? "no closed live trades for this arm in the window"}
           </p>
         )}
         <p className="muted lbl" style={{ marginTop: "0.5rem" }}>
-          Return on capital and capture rate read — for flies: the ledger carries no per-trade capital or
-          ceiling, because a legged book's risk depends on completion. Return on session peak risk above is the
-          stand-in, off the loop's own per-tick exposure.
+          Flies has no return on capital or capture rate: the ledger carries no per-trade capital or ceiling,
+          because a legged book's risk depends on completion. Return on peak risk takes return on capital's
+          place; capture rate reads —.
         </p>
       </section>
 
