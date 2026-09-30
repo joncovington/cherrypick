@@ -101,45 +101,6 @@ function useNow(active: boolean): number {
   return now;
 }
 
-const HAS_ZONE = /(?:Z|[+-]\d{2}:?\d{2})$/;
-
-/** How far ahead of ET wall clock UTC runs at a given instant — +4h on EDT, +5h on EST. */
-function etOffsetMs(atMs: number): number {
-  // "sv-SE" renders as "YYYY-MM-DD HH:MM:SS", which parses straight back.
-  const wall = new Date(atMs).toLocaleString("sv-SE", { timeZone: "America/New_York" });
-  const asUtc = Date.parse(`${wall.replace(" ", "T")}Z`);
-  return Number.isNaN(asUtc) ? 0 : atMs - asUtc;
-}
-
-/**
- * A suite timestamp as a real instant.
- *
- * Two formats arrive here and they must not be read alike: flies writes an offset
- * (`2026-08-13T09:30:15-04:00`), MEIC writes a bare ET wall clock (`09:30`, which the server dates
- * but cannot zone). An offset-naive stamp is ET by construction — the whole suite is — but
- * `Date.parse` calls it browser-local, which silently shifts it by the viewer's distance from New
- * York. Reading the two formats with one rule is what put MEIC's session two hours off its own axis.
- */
-function parseTs(ts: string | null): number | null {
-  if (ts === null) return null;
-  const s = ts.trim();
-  if (HAS_ZONE.test(s)) {
-    const ms = Date.parse(s);
-    return Number.isNaN(ms) ? null : ms;
-  }
-  const f = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(s);
-  if (f === null) return null;
-  const wallAsUtc = Date.UTC(
-    Number(f[1]),
-    Number(f[2]) - 1,
-    Number(f[3]),
-    Number(f[4]),
-    Number(f[5]),
-    Number(f[6] ?? 0),
-  );
-  // Offset at the guessed instant; RTH data is never near a DST boundary.
-  return wallAsUtc + etOffsetMs(wallAsUtc);
-}
 
 function fmtGap(seconds: number): string {
   if (seconds < 0) return "0s";
@@ -149,17 +110,6 @@ function fmtGap(seconds: number): string {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
-/** ET, like the axis and like every other time the suite prints — never the viewer's local clock. */
-function clockOf(ts: string | null): string {
-  const ms = parseTs(ts);
-  if (ms === null) return "—";
-  return new Date(ms).toLocaleTimeString("en-US", {
-    timeZone: "America/New_York",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
 
 /**
  * How long until this arm may enter again, derived from the LEDGER rather than
@@ -179,7 +129,7 @@ function cadenceRemaining(rows: AttemptRow[], arm: string, now: number): number 
     // Only the arm's LATEST attempt speaks to its state right now; anything
     // earlier has been superseded by whatever it did next.
     if (row.outcome !== "cadence_blocked" || row.secondsUntilCadenceClear === null) return null;
-    const at = parseTs(row.ts);
+    const at = parseSuiteTs(row.ts);
     if (at === null) return null;
     return Math.max(row.secondsUntilCadenceClear - (now - at) / 1000, 0);
   }
@@ -247,7 +197,7 @@ export function ArmRail({
         >
           {arms.map((a) => {
             const remaining = cadenceRemaining(data?.timeline ?? [], a.arm, now);
-            const lastFill = parseTs(a.lastFillTs);
+            const lastFill = parseSuiteTs(a.lastFillTs);
             const refusals = Object.entries(a.refusals).sort((x, y) => y[1] - x[1]);
             return (
               <div
@@ -290,7 +240,7 @@ export function ArmRail({
 
                 <div className="muted" style={{ fontSize: 11, marginTop: "0.15rem" }}>
                   {lastFill !== null
-                    ? `last fill ${clockOf(a.lastFillTs)} · ${fmtGap((now - lastFill) / 1000)} ago`
+                    ? `last fill ${etClock(a.lastFillTs)} · ${fmtGap((now - lastFill) / 1000)} ago`
                     : "no fill yet today"}
                 </div>
 
@@ -391,31 +341,6 @@ const SESSION_END_MIN = 16 * 60;
  * the day's 34 fills outside the canvas and 11 more underneath the labels, which reads exactly like
  * an arm that barely traded.
  */
-const ET_CLOCK = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/New_York",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hour12: false,
-});
-
-function etParts(ms: number): { h: number; m: number; s: number } | null {
-  const parts = ET_CLOCK.formatToParts(new Date(ms));
-  const of = (type: string) => Number(parts.find((p) => p.type === type)?.value);
-  const h = of("hour");
-  const m = of("minute");
-  const s = of("second");
-  if (!Number.isFinite(h) || !Number.isFinite(m) || !Number.isFinite(s)) return null;
-  // hourCycle h23 reports midnight as 24 in some engines.
-  return { h: h === 24 ? 0 : h, m, s };
-}
-
-function minuteOfDay(ts: string | null): number | null {
-  const ms = parseTs(ts);
-  if (ms === null) return null;
-  const p = etParts(ms);
-  return p === null ? null : p.h * 60 + p.m + p.s / 60;
-}
 
 /**
  * One lane per arm across the session, every evaluated entry marked by outcome.
@@ -505,7 +430,7 @@ export function AttemptTimeline({
                     // within each group.
                     .sort((x, y) => Number(x.outcome === "filled") - Number(y.outcome === "filled"))
                     .map((r, j) => {
-                      const min = minuteOfDay(r.ts);
+                      const min = etMinuteOfDay(r.ts);
                       if (min === null) return null;
                       const filled = r.outcome === "filled";
                       return (
@@ -537,7 +462,7 @@ export function AttemptTimeline({
 
           <p className="muted" style={{ fontSize: 12, minHeight: "1.2em", margin: "0.35rem 0 0" }}>
             {hover !== null
-              ? `${clockOf(hover.ts)} ${hover.arm} — ${LABEL_OF[hover.outcome] ?? hover.outcome}` +
+              ? `${etClock(hover.ts)} ${hover.arm} — ${LABEL_OF[hover.outcome] ?? hover.outcome}` +
                 (hover.blockDetail !== null ? ` (${hover.blockDetail})` : "") +
                 (hover.blockingStrike !== null ? ` at ${hover.blockingStrike}` : "") +
                 (hover.secondsUntilCadenceClear !== null
