@@ -1,0 +1,433 @@
+# cherrypick-advisor — history
+
+> The dated narratives behind the rules in [`../CLAUDE.md`](../CLAUDE.md), moved here verbatim
+> when that file was consolidated on 2026-09-29. CLAUDE.md is authoritative for the rules; this
+> file keeps the incidents and the numbers they were measured on.
+
+## A session counts when a loop applied it, not when an artifact was written
+
+`sessions_run` used to increment at issue time. Issuing an artifact is not evidence that a loop read
+it, and the counter could not tell the two apart — so an experiment could spend its whole length on
+sessions that bought it nothing and still be scored as though they had.
+
+That is the 2026-08-25 incident. Five artifacts went out in one batch with zero rejections; three
+were applied and two were not, and the two were meic and earnings — the modules whose experiments
+had their most informative session available. meic's control filled 215 entries; earnings broke a
+thirteen-session drought with four iron_condors. Both loops recorded `advice_disabled` against live,
+valid artifacts, and both experiments recorded the session as spent. Earnings carries a
+kill-at-session-6 rule, so on the old counter "the parameter produced nothing" and "the parameter
+was never applied to a session that had trades" would have concluded identically.
+
+So `enactment.py` reconciles the two sides, and the evening pass scores the session that just ended
+before it issues the next one:
+
+* **enacted** — the loop's recorded decision matches the artifact's admitted params. A reject-all
+  artifact counts: the bounds refused it, which is a real outcome the experiment paid for.
+* **carried** — an artifact was issued, the loop recorded no NEW decision, and the params it
+  admitted are nonetheless in force: frozen onto positions an earlier session opened and this module
+  still holds. Costs the experiment nothing either — a session it never re-decided bought no new
+  evidence — but it is not a defect and is reported silently.
+* **not_enacted** — an artifact was issued and the loop's record disagrees with it or is absent.
+  It costs the experiment nothing, because it bought it nothing.
+* **carried, the scanning case (2026-09-16, a declared break for the advisor's counter)** — the
+  loop applied the params, and its scan accepted no candidate that session, so the advice had
+  nothing to decide. Through the mid-September lull the earnings condor experiment spent fifteen
+  sessions reaching six paired events, every empty session counted as if the parameter had been
+  tested; its iron-fly successor activated 2026-09-15 into the same lull. The rule is discovered
+  from the schema — a `scan_log` table with an `outcome` column (`factpack.candidates_accepted`) —
+  so it reaches earnings and no module that keeps no scan. `sessions_run` either side of this date
+  must not be pooled for earnings experiments.
+* **no_artifact** — nothing was issued; nothing to reconcile.
+
+**`carried` exists because the first three states assumed every module decides every session, and
+half of them do not** (added 2026-08-27). calendars enters once a WEEK and earnings only when a name
+reports; both spend most sessions with nothing to decide while the advice they already applied stays
+stamped on their open rows and governs them every tick — `calendars.management.effective_params`
+reads that stamp back deliberately, so advice lapsing mid-week can never hand an open position to
+rules nobody chose. Scored as `not_enacted`, calendars alone raised the watchdog's WARN four days in
+five, forever, and a check that cries wolf 80% of the time cannot catch the case it was built for.
+
+Two properties worth not breaking:
+
+- **The discriminator is the module's own schema, not a list.** A module that freezes
+  `advice_params` onto its position rows CAN carry; one that does not CANNOT. meic and flies are
+  flat overnight and stamp nothing, so `not_enacted` keeps its full force there — if either quietly
+  stopped recording decisions it is still reported. A blanket "a missing decision is sometimes fine"
+  rule would have thrown that away.
+- **Carry is only ever claimed for the CURRENT session.** The evidence is the ledger's OPEN rows,
+  which describe now and prove nothing about last week; an artifact whose params happen to match
+  what is open today would otherwise be scored `carried` for every past session it was issued for,
+  on evidence that post-dates them. A past session that cannot be proved keeps the conservative
+  verdict and stays out of the count, erring the same direction `recount`'s `unknown` bucket does.
+
+**Exits of pinned positions carry too (2026-09-01).** earnings closed 13 advised condors at 09:45 —
+every one managed under the frozen params the artifact admitted — then held nothing open, so the
+open-row read alone raised the WARN hourly from 10:31 until the 15:35 entry pass recorded a
+decision. A session whose only advised activity so far is closing positions dated to THIS session,
+each stamped with params covering the artifact's, is `carried`: the advice governed every decision
+the module actually made. The close date is discovered from the schema (`closed_session`, else
+epoch `closed_at` read with 'localtime'); an undated close proves nothing and does not carry. This
+cannot weaken the 2026-08-25 case — a module reaches an exit-only morning with no decision only
+when no entry pass has run, and the moment a recorded decision disagrees, the params comparison
+wins. Exit carry stays current-session-only like open carry, deliberately: for counting the
+distinction is moot (neither `carried` nor `not_enacted` advances the counter).
+
+The live read this rests on is `factpack.carried_advice_params` — in `factpack.py` because every
+live read of another package's ledger is fenced there by contract. `enactment` forms the verdict;
+factpack only reports what the rows say.
+
+Counting is idempotent (the evening pass is re-runnable by design) and attributed by the experiment
+id stamped on the artifact, so a session issued under one experiment and scored after it was
+replaced lands on the one that paid for it. `advice_enacted` rides on every slot's pack, not just
+the evening one, so a dropped artifact is visible at 10am rather than in the verdict that scores it.
+
+History is re-derivable because the fact packs are write-once and already snapshot each module's
+`advice_active`. `recount` reads them. Where a session has neither a pack nor a surviving decision
+file, nothing is provable and it is reported `unknown` and **kept** in the count — dropping it would
+shorten an experiment on the strength of missing evidence, the same error in the other direction.
+
+## Kill verdicts are actioned (2026-09-15)
+
+**A `kill` recommendation is actioned; `keep` and `promote` are recorded (2026-09-15,
+`advisor.kill_on_verdict`, on by default).** Until then a model kill waited for a human to run
+`kill`, and nobody did: three kill verdicts (bwb, flies, calendars) sat admitted for up to four
+sessions, the dead experiments' artifacts were enacted every morning, four queued successors
+starved at zero sessions, and the model reaffirmed each kill nightly until it flagged the situation
+critical. Now admitting a kill verdict takes the same path a human `kill` takes: status `killed`,
+verdict computed and stored with the model's block on it, the queue moves up, and the next
+session's artifact is **re-issued on the spot** for the successor — or **retracted** when nothing
+succeeds it, so the loop runs baseline rather than a concluded experiment's params. The
+retraction touches only an artifact stamped with this advisor's tag. `kill` from the CLI or the
+console re-issues the same way, which closes the other gap: a kill after the 17:00 pass used to
+leave that pass's artifact on disk for the morning. The numbers under a kill are still computed
+here; what the model decides is only whether its own experiment continues. Off, the knob restores
+record-only verdicts.
+
+## The pack has a budget, and it is now enforced against the real pack (2026-08-26)
+
+**Measurement break for the advisor: proposals either side of 2026-08-26 were made on different
+evidence.** The journal the model reads is tapered from this date, so a thread it could previously
+re-read in full now reaches it as a title beyond two sessions, and an aged non-critical flag reaches
+it as a 120-character stub. Nothing about the ledgers changed — this is a change to the advisor's
+INPUT, and its output should be read with that in mind.
+
+Both taper passes — the age taper and the severity taper that corrects it — land on **this same
+date**, deliberately, per the suite's rule that measurement-affecting changes batch to a declared
+boundary. The second was written the same session the first was measured; landing it a week later
+would have split one input change into two breaks and left a stretch of evidence comparable to
+neither side.
+
+The deep pack had grown from 250KB (2026-08-17) to **731KB** (2026-08-26), about +65KB a session,
+against a stated ceiling of 150KB. Nothing caught it because `tests/test_factpack.py` measures a
+seeded fixture — a pack nobody reads — so the check was green the whole way.
+
+Where it was: `advisor_journal` at 466KB of the 690KB, being 46 checkpoints and 76 proposals carried
+verbatim. The ten-session window was never the problem; the prose per session was. A creative
+proposal runs ~7.7KB.
+
+What changed:
+
+- **The journal tapers by age.** The most recent `JOURNAL_FULL_SESSIONS` (2) keep full payloads and
+  observations; older entries keep identity — title, module, kind, fate, reason. That is what "do
+  not re-propose what was dismissed" actually needs.
+- **Flags taper by SEVERITY, and the first attempt at this cut the wrong half.** Flags were
+  originally exempt at every age, on the reasoning that a flag is a standing caveat about a module
+  and must not age out of view. That is right about `critical` and wrong about the rest, and it went
+  unmeasured: flags were **97.6KB of the checkpoints section's 120KB**, while observations — the
+  half the taper did cut — were 12.3KB. Twelve `critical` flags cost 8.3KB; 113 `warn` and 97 `info`
+  cost 86.5KB. So `critical` is now carried verbatim at any age and the rest keep module, severity
+  and a 120-character stub past the window. Two things were measured before the fix was written:
+  the flags are **not** repetition (222 instances are 222 distinct texts, so the dedup fix drafted
+  first would have saved nothing), and the per-flag elision marker was itself ~13KB of the same
+  sentence repeated, so the rule is stated once on `_taper` instead.
+- **Concluded experiments are carried once**, by `experiments_full.concluded`, not also by the
+  journal. The same seven were appearing twice in two shapes.
+- **`pending_proposals` is deep-slot-only elided**, since the journal already carries this session
+  in full there. The light slots keep it: they have no journal, and compounding earlier slots is
+  the whole reason it exists.
+- **`cmd_factpack` returns a `budget` block** that `scripts/advisor_checkpoint.py` already reads.
+  Reported, never fatal: a size check must not cost a session its advice.
+- Measured the way `store.write_json` serialises — indent=2 — because that is the file handed to
+  the model. A compact measure understates it by about a quarter.
+
+Result: **731KB → 472KB → 425KB deep.** Still 2.1x the ceiling, and that is recorded rather than
+papered over.
+
+### The budget is an ATTENTION budget (correction, 2026-08-26)
+
+The ceilings were originally derived from token targets and the warning was worded like a resource
+overrun. That framing was wrong, and it is probably why nobody acted on the warning for nine
+sessions: **neither thing a size limit usually protects was ever at risk.** Both were checked rather
+than assumed. The deep pack is ~130–160k tokens against a **1M-token context window** — about 15%,
+so it could quadruple and still fit. And at list rates the schedule costs on the order of **$1 a
+day** — the deep slot dominates it, and the light slots that were dropped the same day were about
+$0.20 of that.
+
+What a 425KB pack actually costs is that a finding inside it goes unread, which is the same failure
+as not recording it. `pack_size`'s warning says so now, and says "cut the largest section; do not
+raise the ceiling."
+
+**Prompt caching does not apply as invoked, and was checked before being ruled out.** `cache_control`
+is a Messages API request parameter; the checkpoint shells out to `claude -p` with the pack on
+stdin. Each run is a fresh process with no prior turn, and caching is strict prefix-match while the
+pack changes every slot. There was a structural opportunity while several light slots shared a day's
+stable prefix, but harvesting it meant reordering the pack stable-first and moving onto the SDK,
+which hands `advisor_checkpoint.py` an API key — not worth a network credential on the one path the
+fence keeps thin. **It is moot as of the deep-only schedule below**: one run a day has no prefix to
+share with anything.
+
+## The schedule is deep-only (2026-08-26)
+
+`advisor-deep` at 17:00 is the whole schedule. Seven light intraday checkpoints were cut to one on
+08-21 and to none on 08-26, on this package's own record rather than on preference.
+
+Light slots **cannot issue anything** — the only loop-facing output is the artifact `enact` writes
+in the deep slot, for the next session — and empirically they did not draft much either. Across 36
+light checkpoints: **4 proposals, all `creative`** (the kind a human pastes or ignores, which no
+code path acts on), **zero** `experiment_spec`/`tune`/`verdict`, and **one** critical flag, which
+that evening's deep slot re-derived more precisely off the settled numbers rather than a mid-session
+mark. `midday`, the last one standing, produced **zero proposals across its entire history**. Deep,
+over the same four sessions, produced 30 proposals and 4 criticals.
+
+They also cost the deep slot directly: light checkpoints were ~43KB, about **10% of the deep pack**,
+which is more than the flag taper above saved.
+
+The one thing they were nominally for — `advice_enacted` visible at 10am rather than in the evening
+verdict — is deterministic, and no light checkpoint ever caught one. It is now the orchestrator's
+`_check_advice_enactment`, which invokes `python -m cherrypick.advisor enactment` by subprocess
+between 10:30 and 16:30. That is strictly better than a model checking it: it is free, it reports
+the same way twice, and it fires on the exact incident (2026-08-25) that motivated the verb.
+
+**This is a measurement break on the same declared 2026-08-26 boundary as the taper above.** The
+deep slot no longer reads a day's intraday observations as compounding context, so its input changed
+again — batched deliberately rather than landed as a second break a week later.
+
+**The ceilings moved once, deliberately: light 32,000 → 48,000, deep 120,000 → 200,000.**
+`test_the_ceilings_are_pinned_so_a_raise_is_a_deliberate_act` failed when they moved, which is what
+made it deliberate rather than quiet. Its companion,
+`test_the_deep_ceiling_stays_below_the_pack_it_is_meant_to_constrain`, is the anti-drift half: a
+ceiling raised until it clears the artifact reports success forever, so the deep bar must stay under
+the real pack and keep reporting over-budget.
+
+The light move was made against measured evidence, not to clear the artifact. Across 35 stored light
+packs the median is 28.6KB and the **maximum is 42,707** — the old bar was breached by honest packs,
+because the ~8k-token light target predated the suite having seven modules. (An earlier note here
+claimed a 108KB light pack. That number was a midday pack rebuilt at end of day, with a full day of
+`pending_proposals` compounded into it — not a pack any slot ever sent.) Light bulk is `paper`
+(~23KB), the module facts themselves, which is what the pack exists to carry.
+
+`arm_readings` looks like an easy 14KB — meic carries 17 arms of which 15 are retired. It is
+deliberately NOT cut: the advisor cited retired arms this week, and the twelve-session gate
+retrospective rests entirely on them. A retired arm's reading is evidence, not dead weight.
+
+## The module list is derived, not restated (2026-08-26)
+
+`bounds._BASE_KEY` is the source of truth for which modules the advisor may act on. `MODULES` is
+`tuple(_BASE_KEY)`, `enactment.MODULES` derives from it, and `factpack.MODULES` now does too — it
+was a separate literal until 2026-08-26, which is how the package came to hold three hand-kept
+module lists that disagreed.
+
+**bwb and curve were missing from all of them.** Both consume advice through the same
+`core.advice.session_decision` every other module uses, both declare an `advice` block, bwb declares
+**twelve bounds** and the suite config already had `advisor.modules.bwb.enabled: true` — and no
+artifact has ever been written for either, because the advisor's own map did not list them. The
+module sat reading for advice that could not arrive, and the config granted the advisor a module no
+code path could act on.
+
+Two consequences worth keeping straight. A module in `_BASE_KEY` still needs its own `advice.enabled`
+to be true before anything happens — curve is listed and disabled, which is a state that reports
+itself, where being absent is not. And a module in `_BASE_KEY` **must** have a `factpack`
+section: without one the pack can reconcile its enactment while carrying no facts about it, and the
+model would be asked to design an experiment for a module it cannot see. `tests/test_factpack.py`
+pins both directions.
+
+## The 2026-09-12 review, and the 2026-09-14 pack boundary
+
+A read-only review of this package on 2026-09-12 (its store, its packs and its code) found a
+set of defects at the margins of the fence, none of which the fence itself had let through. Each
+fix landed with a guard shown to fail first. What changed, and why a reader of the record should
+know:
+
+- **The model now gets no tools at all.** `scripts/advisor_checkpoint.py` passed a deny-list of
+  seven tools, which left Read/Glob/Grep and every configured MCP server available — the prompt
+  said "the fact pack is everything you have" and nothing enforced it. The invocation is now
+  `--tools ""`, `--strict-mcp-config` with an empty server list, and no skills, and the test shim
+  records the argv so the fence is asserted, not assumed.
+- **The exact model id is recorded beside the alias.** `--output-format json` returns which model
+  answered; `checkpoints.model_id` (additive migration) keeps it. The alias in config still floats
+  by design; a change under a fixed config is now visible in the record.
+- **A slot whose model call produced no reply is a failed checkpoint row**, via the new
+  `checkpoint-failed` verb — it used to leave no row at all, so the ok-rate could not see the
+  more common failure. The slot stays re-runnable. And the `admit` verb carries the freeze itself
+  (`--force` to override), because the console reaches it directly; re-admitting the same reply
+  resolves to the same experiment rather than queuing a duplicate.
+- **Stored verdicts are recomputed every time a recommendation is attached.** They were reused
+  once stored, so every nightly recommendation sat on the first night's numbers — the bwb
+  experiment at nine sessions still carried a session-one body with null pairs, and the pack
+  handed that body back to the model. The `experiments` section also applied the library default
+  qualification rule where every other surface applies the module's — the 2026-08-14 two-gate
+  disagreement, back in a section added later. Both now use the module rule.
+- **An active experiment has a calendar exit.** `sessions_run` only advances on enacted sessions,
+  so a module whose loop stopped recording decisions held its slot forever and starved the queue.
+  After twice its length in calendar sessions an experiment concludes as `stalled`, verdict
+  computed and `underpowered` on its face, and the queued one activates.
+- **One module's issue failure no longer truncates the others'.** A malformed bounds rule raised
+  out of the shared validator and out of `enact.run` before the remaining modules were reached.
+  The validator now rejects a malformed rule with a reason, and `enact` isolates each module.
+  The enactment counter and its `counted` journal row commit together; `kill` writes verdict and
+  status in one statement.
+- **"Could not measure" is no longer rendered as zero.** `store.rows` records every refused query
+  and the pack lists them as `query_errors`; the two facts whose zero is a claim —
+  `settled_with_no_price_today` (the settlement guard held) and `control_fired` (the control was
+  gated out) — read `null` when their query was refused. An unreadable module config in the live
+  posture block reads `null` with `config_read: false`, never "live trading off". The regime block
+  is read at the session's close rather than at wall-clock now, so a pack rebuilt for a past date
+  describes that date.
+- **The regime block is read AT THE CLOSE, and MEIC's regime is a distribution (2026-09-16).**
+  Two defects the model reported nightly as one "wiring gap". The canonical regime read clamped to
+  end-of-day (23:59:59) while the recorder's last sample lands seconds before the bell and the
+  deep slot runs at 17:00, so every nightly read was past the 15-minute staleness window and every
+  deep pack carried the VIX-only fallback — structural, not an outage. It now clamps to the
+  calendar's RTH close (`clock.rth_close_iso`, 13:00 on a half day), 25 seconds old at 17:00.
+  Separately, `latest_regime` handed the model MEIC's final `iteration_regime` row, and for a 0DTE
+  module that is the post-bell tick where the expiring chain finally shows a flip: on 09-15 the
+  gex tag read one way for 376 of 384 ticks and the opposite way for the last 8, and the pack
+  reported the 8. `regime_session` replaces it: bucket counts over 09:30–close ticks only,
+  `post_close_ticks` counted and excluded, the gex bucket re-derived from the sign flag beside it
+  where the stored tag reads `unknown` (see meic's CLAUDE.md for the month of rows that covers).
+- **An experiment's rows are stamped, and its verdict window has a far end (2026-09-16).** The
+  `advised:<base>` tag names a BOOK, and every experiment on that base reuses it in turn — three
+  meic experiments shared one `advised:control` line from 08-26 to 09-15, and every read surface
+  attributed the whole line to whichever was most recent. Two changes, neither to the tag (a new
+  tag per experiment would be a new arm, a measurement break, and would break the pairing every
+  consumer does on the bare tag): the artifact carries `experiment_id`, the session decision
+  carries it, and each module stamps it on the advised rows it writes (`core.advice.stamp_for`,
+  never a control row); and `verdicts.reading_pair` now takes `end` and `experiment_id` —
+  `for_experiment` passes the concluding session from the journal (inclusive: the successor's
+  first artifact targets the next session) and keeps on the advised side only rows stamped with
+  this experiment or unstamped, so a closing verdict attached after a successor has started can
+  no longer pool the successor's rows. The console's performance slide pairs each stamped
+  experiment separately (`core.metrics` groups them as `<tag>@<experiment_id>`) and shows
+  pre-stamp rows as one pair flagged unstamped, pointing at this page's stored verdicts for that
+  history rather than inferring experiments from dates in a second place.
+- **`settings.DEFAULTS["modules"]` derives from `bounds.MODULES`** — it was the fourth hand-kept
+  copy the 2026-08-26 note said had been eliminated, and it was missing bwb and curve. bwb and
+  curve now plan their advised twin from the base book its tag names rather than from control
+  regardless. The guardrail set adds `core.dxfeed`, `core.streamer` and `core.streamrequests`,
+  and `packages/core/tests/test_no_model_client_in_packages.py` now scans EVERY package's source
+  and declared dependencies for an AI client — this package's own scan covered the package least
+  likely to need it.
+- **Measured duplications folded.** The advice-stamp table discovery and stamp decoding (two
+  byte-identical copies), the closed-by-exit-reason query (calendars, bwb, curve; pmcc keeps its
+  era pooling on purpose), the management-events query (three copies), the artifact literal
+  (`check_params` and `enact._issue` now build it through one `artifact_for`), and the
+  proposals-to-map fold (`core.advice.params_map`). `bounds.resolve` takes its disabled reason
+  from `core.advice.disabled_reason` — the two sides had checked the same conditions in different
+  orders. Left as they are, because the difference is the point: the dotted-param split
+  (`bounds` takes the first dot for earnings' strategy prefix, `enactment` the last for the
+  stamped leaf) and the two atomic-write helpers in two packages.
+- **The frozen-params rule is pinned per module.** bwb, curve, pmcc, calendars and earnings each
+  keep applying admitted params to an OPEN advised row after the artifact expires, by design —
+  exit continuity — and nothing asserted that intent. One test per module now does, beside the
+  validator's refusal of the same artifact for a new entry.
+
+**Measurement break for the advisor, 2026-09-14 — the first deep pack on the new
+`experiments_full`.** That section dumped raw store rows: every past verdict body, the bounds
+snapshot, and the model's own hypothesis and success-metric prose in full, at 110KB of a 439KB
+pack, the largest section, beside an 11KB `experiments` section carrying the same experiments with
+fresh readings. It now carries identity, the overlay, a 240-character stub of the prose, and ONE
+verdict per experiment: computed fresh for an active one, the stored final body for a concluded
+one, compacted to its conclusion, deltas and which side qualified — the full advised and base
+readings were ~85% of each brief and `arm_readings.<module>` already carries every arm's reading
+with every qualification check. Measured on the real 2026-09-11 pack: **439KB → 369KB deep,
+`experiments_full` 110KB → 31KB.** Still 1.8x the ceiling, recorded rather than papered over; the
+next largest sections are `arm_readings` (101KB, deliberately kept) and the journal (67KB). Same
+ledgers, smaller and truer input; read proposals either side of 2026-09-14 with that in mind, as
+with 2026-08-26.
+
+## The cap is one per module, by construction
+
+Each module's consumer builds **one book per experiment** (2026-09-17): the artifact carries an
+`experiments` entry for every active experiment, each validated on its own, each naming its own
+`advised:<experiment name>` book (the row's `tag`, fixed at admission and unique per module, `-2`
+suffixed on a duplicate name; a nameless experiment keeps the legacy `advised:<base>`). So any number
+run at once, each paired against the same control by its own tag, and `max_experiments_per_module`
+is **null = unlimited** by default. Set a number to cap a module's advised roster: over-cap specs
+are admitted as `queued` and activate FIFO when a slot frees, exactly as before. The `enactment`
+table is keyed `(session, module, experiment_id)` — one outcome per experiment, `''` for a
+module-session with no artifact — and `_count_enacted` scores each entry on its own.
+
+Before this date the cap was one by construction (one `advised:<base>` book per module), and every
+experiment on a base reused that tag in turn, told apart only by the `experiment_id` stamp; the
+retag on 2026-09-17 moved every historical advised row onto its experiment's own tag.
+
+## `regime_cuts` in the deep pack (2026-09-19)
+
+A deep-only key carrying, per module that writes one (flies and MEIC), that module's own nightly
+regime-cuts artifact thinned: per-book outcomes by the regime each entry was tagged with, era-
+scoped by the module's `measurement_breaks` journal (`cherrypick.core.regimecuts` holds the
+rules). Read through `store.read_json` from `data/<module>/regime_cuts.json`; absent, or a
+`cut_version` this pack does not read, is `{"_absent": ...}` per module, and an artifact for
+another session carries `_stale`. The thinning is the point: books under three sessions collapse
+to `_thin_books`, dimensions under 50% coverage or degenerate are dropped and named under
+`_dropped`, cross-tab cells keep only the six largest non-thin ones, every cell is ONE string
+(`sessions=13 trades=70 completion=80% net=+861`; sessions first, deliberately), and **a thin cell
+reads `sessions=2 trades=4 thin` with no P&L at all** -- because on 2026-09-18 a two-dimension cut
+by hand made net-GEX sign look predictive of flies completion until the trend cross-tab showed the
+effect sat in one seven-session cell. The pack should not be able to make that mistake. Measured
+the day it landed: 23 KB for the real pair (four flies books, three MEIC), 0.12 of the ceiling;
+the dict form of the same cells was 48 KB, which is why they are strings. `test_factpack.py` pins
+a synthetic far case (twelve mature flies books x **seven** dimensions and **two** cross-tabs,
+plus three MEIC x eight and one) under **72 KB**. The deep pack itself measured 372 KB without
+this section against its 200 KB ceiling.
+
+**Why that bound moved from 64 KB to 72 KB on 2026-09-22, and why it is not drift.** The far case
+grew because flies' artifact genuinely did: `drift_alignment` made it seven dimensions on 09-21
+and `gex x drift_alignment` made it two cross-tabs on 09-22. The old fixture still modelled six
+and one, so it was understating the shape it exists to bound, and correcting it measured 67.2 KB.
+The real section measured **15.3 KB** at the same moment (five flies books, four mature), up from
+13.2 KB -- the second cross-tab costs about 2 KB of a 200 KB ceiling. Cutting
+`REGIME_CUTS_CROSS_CELLS` from 6 to 4 was measured as the alternative and rejected: it saves
+0.6 KB on the real section, because the bulk is dimensions, not cross cells, and it would degrade
+the read being added. "Cut the largest section; do not raise the ceiling" governs the pack
+ceilings above, not this synthetic guard -- but raise this one only with a fresh measurement of
+the real section beside it, as here.
+
+**Measurement break for the advisor: proposals either side of 2026-09-22 (the first deep
+checkpoint that reads it) were made on different evidence.** Same rule as the 2026-08-26 budget
+break.
+
+**Robustness stamps in the pack (2026-09-28), and a measurement break for the advisor at the
+first deep checkpoint that reads them.** The artifact gained writer-stamped `fragile`, `paired`,
+`history` and `multiplicity` (see `cherrypick.core.regimecuts`). The pack carries them as: a
+trailing ` fragile` on a single-dimension cell's string (cross-tab cells stay plain), a per-module
+`paired` list of same-day contrasts under p 0.10 and a `sign_changed` list of cells whose net
+changed sign over the prior snapshots -- both strongest first, capped at `REGIME_CUTS_LIST_MAX`
+with the rest counted -- and the document's `multiplicity` verbatim, so a contrast that clears the
+bar is read against how many would by chance. Listed per dimension the two lists cost the far case
+24 KB; as capped module lists, plus emitting `underpowered` only when true (it was `false` on
+nearly every dimension), the far case measured **69.8 KB** under the unchanged 72 KB guard, from
+67.2 KB. The bound did not move. The real section measured **38.3 KB** on 2026-09-28 (six flies
+books, five MEIC), of which the new lists and marks are 3.2 KB.
+
+**flies' `gate_replay` rides the same section (2026-09-28)**, one string per replayable gate rule
+(`miss_stop:90`, `trend_bucket:up_from_open`, `entry_windows:<choice>`) with its net change against
+the base arm -- the replay the `miss_stop_minutes` bound note always asked for and the pack never
+carried, so `miss-stop-90` went in without it. Landed with the stamps above, inside the same
+advisor measurement break rather than as a second one. **The far case now measures 71.9 KB of its
+72 KB guard**: the next addition to this section cuts something first.
+
+**Two additive book keys, flies only (2026-09-21):** `completion_latency_min` (p25/p50/p75/max
+minutes over the book's completed rows) and `miss_gap` (credit minus the best completing debit
+ever seen, over its uncompleted short verticals; negative = never within reach, and the gate needs
+it under credit minus `fee_buffer`). Copied by `_thin_regime_cuts` when the writer set them,
+absent for MEIC; `cut_version` stays 1 because every reader takes them with `.get`. The same
+landing added a `drift_alignment` dimension to flies' artifact (with / flat / against -- whether
+the leg needed the day to reverse), which arrives through the ordinary dimension path. The
+2026-09-22 deep pack is the first to carry all three — and also flies' second declared cross-tab,
+`gex x drift_alignment` (declared in `flies.analytics.CROSS_TABS`, not in the shared default,
+since MEIC has no drift dimension; the thinning was already N-tab general, so it arrives with no
+advisor change). The break above covers them: the pack
+now shows the split behind the `refuse_trend_bucket` bound and the distribution behind
+`miss_stop_minutes`, which no earlier proposal could have seen. No bound was added -- the
+leg-level `refuse_completion_against_trend` gate stays out of `advice.bounds` on purpose.
