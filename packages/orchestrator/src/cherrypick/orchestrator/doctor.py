@@ -229,6 +229,28 @@ def _supervisor_checks(cfg: dict[str, Any], fast: bool) -> list[Check]:
     return checks
 
 
+BACKUP_STALE_HOURS = 36  # one missed night, plus the slack a late catch-up run needs
+
+
+def _backup_check(cfg: dict[str, Any]) -> Check:
+    """How old the newest nightly backup is. A backup job that silently stops running looks exactly
+    like one that works until the night it is needed, so its age is a readiness row, not a log line."""
+    from . import backup
+
+    s = backup.settings(cfg)
+    if not s["enabled"]:
+        return Check("backup", WARN, "nightly backup disabled in config (backup.enabled)")
+    dest = cfgmod.portable_path(s["dest"])
+    age = backup.newest_age_hours(cfg)
+    if age is None:
+        return Check(
+            "backup", WARN, f"no backup yet in {dest} (first runs at {s['at']} ET; or: cherrypick backup)"
+        )
+    if age > BACKUP_STALE_HOURS:
+        return Check("backup", WARN, f"backup is {age:.0f}h old (> {BACKUP_STALE_HOURS}h) in {dest}")
+    return Check("backup", OK, f"backup {age:.0f}h old in {dest}")
+
+
 def _suite_task_checks(cfg: dict[str, Any]) -> list[Check]:
     """The orchestrator's own recurring tasks — the ones `install` registers that are not a module's.
 
@@ -547,6 +569,7 @@ def run(cfg: dict[str, Any] | None = None, fast: bool = False) -> list[Check]:
 
     checks.extend(_supervisor_checks(cfg, fast))
     checks.extend(_suite_task_checks(cfg))
+    checks.append(_backup_check(cfg))
 
     # notify reachability — can the walk-away user actually be told?
     channels = cfg.get("notify", {}).get("channels", ["log"])

@@ -33,6 +33,7 @@ python run.py report             # cross-module paper P&L; --eod / --date YYYY-M
 python run.py calibrate          # per-arm calibration readings + promotion recommendations
 python run.py positions          # live P/L of the REAL broker account (read-only, on demand); --detail / --account <last4> / --json
 python run.py archive            # monthly rotation of finished months' reports + logs to logs/archive/ (--dry-run / --month YYYY-MM)
+python run.py backup             # nightly suite backup (the suite-backup job, 01:30 ET): ONE verified zip, rewritten; a bad night never replaces it (--dry-run / --list / --verify / --restore-to DIR)
 python run.py settings           # local config editor + secrets manager on loopback:8804; --organize [target] [--apply] reorders configs instead
 python run.py migrate-home       # dry-run move of config into ~/.cherrypick (--apply to perform)
 python -m pytest                 # default lane `-m "not live" -q`; markers unit, live, windows
@@ -84,6 +85,10 @@ ledger readers in **`cherrypick.core.ledgers`**. Read-only and file-only. The co
 that composes it; this package serves nothing of its own. `logrotate.py` (`archive`, the monthly
 `cherrypick-log-archive` task) zips finished months into `logs/archive/<YYYY-MM>/<scope>.zip`,
 idempotent, never touching the current month or an active `.log`, off the reliability path.
+`backup.py` (the `suite-backup` job) keeps ONE zip of the suite's own data, rewritten nightly: live
+ledgers copy through SQLite's online backup API and are quick_checked, a night with a problem lands as
+`.failed.zip` and never replaces the good one, `restore` refuses the live home, and `doctor` warns past
+36h. Only `.dolt/` is skipped, never its parent: `data/earnings` holds ledgers beside one.
 
 **This package holds no AI and no review or advisor logic; it only schedules them.**
 - The end-of-day review is `packages/review`: jobs `review-provisional` (16:30 ET) and `review-final`

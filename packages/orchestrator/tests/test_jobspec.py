@@ -296,6 +296,7 @@ def test_derive_full_suite_job_table():
         "symbol-watch",
         "reconcile",
         "log-archive",
+        "suite-backup",
         "futures-contracts",
         "earnings-dolt-pull",
         "report-edition",

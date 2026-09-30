@@ -44,6 +44,9 @@ CATCHUP_MINUTES = {
     "symbol-watch": 150,  # 06:30 scheduled; still useful until ~09:00
     "reconcile": 240,
     "log-archive": 7 * 24 * 60,
+    # A missed night is worth running late in the day rather than not at all; the online backup API
+    # makes a copy under a writing loop safe.
+    "suite-backup": 20 * 60,
     # Generous: the map only changes when a contract rolls (monthly), and a missed refresh
     # degrades safely -- the recorder drops its futures readings rather than sampling a
     # rolled-off contract -- so catching one up late is strictly better than skipping it.
@@ -1048,6 +1051,21 @@ def derive_jobs(
             catchup_minutes=CATCHUP_MINUTES["reconcile"],
             enabled=rs["enabled"],
             enabled_reason="" if rs["enabled"] else "disabled in config (reconcile.schedule)",
+        ),
+    )
+    bk = cfgmod.backup_settings(cfg)
+    add(
+        "suite-backup",
+        lambda: JobSpec(
+            id="suite-backup",
+            # Local files only (orchestrator.backup): one verified zip of the suite's own data a night.
+            argv=_run_py(pythonw, launcher, "backup"),
+            kind=KIND_DAILY,
+            at_et=bk["at"],
+            catchup_minutes=CATCHUP_MINUTES["suite-backup"],
+            trading_days_only=False,
+            enabled=bk["enabled"],
+            enabled_reason="" if bk["enabled"] else "disabled in config (backup.enabled)",
         ),
     )
     la = cfgmod.archive_settings(cfg)

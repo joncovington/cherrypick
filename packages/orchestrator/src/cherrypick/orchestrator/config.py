@@ -463,6 +463,20 @@ def archive_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def backup_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved nightly-backup settings (`orchestrator.backup`). ON by default (opt out with
+    `"backup": {"enabled": false}`). `dest` defaults to <home>/backups -- the same disk, which covers a
+    bad write or a corrupted ledger but not a lost drive; point it at another drive or a synced folder
+    for that. `at` is ET. One backup is kept, the latest, rewritten nightly (orchestrator.backup)."""
+    b = cfg.get("backup", {}) or {}
+    dest = b.get("dest")
+    return {
+        "enabled": bool(b.get("enabled", True)),
+        "at": b.get("at", "01:30"),
+        "dest": Path(os.path.expandvars(os.path.expanduser(dest))) if dest else _home.home() / "backups",
+    }
+
+
 def data_epoch(cfg: dict[str, Any]) -> dict[str, Any] | None:
     """The active data-epoch marker, or None when unset. An epoch is declared when a
     correctness fix RESTATES what recorded paper history means (e.g. the phase-0

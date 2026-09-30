@@ -36,6 +36,12 @@ Subcommands:
   archive              End-of-month rotation: zip each finished month's dated reports + rotated log
                        backups into logs/archive/<YYYY-MM>/<scope>.zip and remove the originals (the
                        scheduled cherrypick-log-archive task runs this). --month YYYY-MM; --dry-run.
+  backup               Nightly backup of the suite's own data (configs, state, every ledger and artifact;
+                       not the Dolt clones, stream caches or logs) into one verified zip under
+                       backup.dest (default ~/.cherrypick/backups). Only the latest is kept, rewritten
+                       nightly; a night with problems never replaces it. The suite-backup job (01:30
+                       ET) runs this. --dry-run lists what it would hold; --list; --verify re-checks
+                       it; --restore-to DIR extracts it into DIR (never into the live home).
   restart-console      Dev convenience: kill the console's process tree so the supervisor replaces
                        it on its next tick, picking up whatever the checkout currently builds to.
                        Never scheduled, never called from the watchdog.
@@ -77,6 +83,7 @@ from cherrypick.notify import Notifier
 from cherrypick.notify import secrets as notify_secrets
 from cherrypick.orchestrator import (
     accounts,
+    backup,
     calibrate,
     configedit,
     connect,
@@ -1124,6 +1131,36 @@ def cmd_archive(cfg, args) -> None:
     _emit(logrotate.run(cfg, month=args.month, dry_run=args.dry_run))
 
 
+def cmd_backup(cfg, args) -> None:
+    """The nightly backup (orchestrator.backup). A failed night -- a copy that errored or a ledger copy
+    that failed quick_check -- notifies, because the supervisor records a job's exit code but tells no
+    one, and a backup that fails quietly is found out on the day it is needed."""
+    if args.list:
+        _emit(backup.listing(cfg))
+        return
+    if args.verify:
+        _emit(backup.verify(cfg))
+        return
+    if args.restore_to:
+        _emit(backup.restore(cfg, args.restore_to))
+        return
+    try:
+        res = backup.run(cfg, dry_run=args.dry_run)
+    except Exception as exc:  # noqa: BLE001 -- a crash is a failed night, and must be heard
+        res = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    if not res.get("ok") and not args.dry_run:
+        detail = res.get("error") or "; ".join(res.get("problems", [])[:5])
+        try:
+            Notifier(cfg.get("notify")).notify(
+                "WARNING", "backup", "Nightly backup FAILED (previous backup kept)", detail
+            )
+        except Exception:  # noqa: BLE001 -- best effort; the exit code still says so
+            pass
+    _emit(res)
+    if not res.get("ok"):
+        sys.exit(1)
+
+
 def cmd_settings(cfg, args) -> None:
     """The settings surface: a loopback web editor for the suite's configs + keyring secrets (the one
     mutating HTTP server in the suite — see settings_serve). With --organize it instead reorders live
@@ -1231,6 +1268,7 @@ def build_parser() -> argparse.ArgumentParser:
             "ensure-supervisor",
             "report",
             "archive",
+            "backup",
             "reconcile",
             "positions",
             "connect",
@@ -1354,8 +1392,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "For archive: report what would be archived without writing or deleting. "
-            "For notify-trades: format every pending event and report it, sending and saving nothing"
+            "For notify-trades: format every pending event and report it, sending and saving nothing. "
+            "For backup: report what tonight's backup would hold, writing nothing"
         ),
+    )
+    parser.add_argument("--list", action="store_true", help="For backup: show the backup on hand")
+    parser.add_argument("--verify", action="store_true", help="For backup: re-check the backup on hand")
+    parser.add_argument(
+        "--restore-to",
+        dest="restore_to",
+        default=None,
+        help="For backup: extract the backup into this directory",
     )
     parser.add_argument(
         "--stop",
@@ -1401,6 +1448,7 @@ def main() -> None:
         "ensure-supervisor": lambda: cmd_ensure_supervisor(cfg),
         "report": lambda: cmd_report(cfg, args),
         "archive": lambda: cmd_archive(cfg, args),
+        "backup": lambda: cmd_backup(cfg, args),
         "reconcile": lambda: cmd_reconcile(cfg, scheduled=args.scheduled),
         "positions": lambda: cmd_positions(cfg, args),
         "connect": lambda: cmd_connect(cfg, args),
