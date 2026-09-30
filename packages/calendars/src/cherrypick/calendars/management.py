@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 from cherrypick.core import calendar as _cal
+from cherrypick.core import spreadbook as _spreadbook
 
 from cherrypick.calendars import clock, engine
 
@@ -171,32 +172,7 @@ def execution_gate(mark_snapshot: dict, params: dict, *, now: datetime) -> str |
     return None
 
 
-def _spread_blocks(mark_snapshot: dict, params: dict) -> bool:
-    """Whether any leg is too wide to act on -- wide in PERCENT and in MONEY, both.
-
-    A percentage alone is the wrong instrument for a cheap leg, and on the way OUT that is the
-    common case rather than an edge one. A short that has done its job is worth almost nothing:
-    `bid 0.00 / ask 0.01` is a one-cent buyback and, read as a ratio, exactly a 200% spread. On
-    2026-08-28 that refused the control put's scheduled Friday exit on all THIRTY ticks of its
-    window, at 2.000 every time, while the call side closed normally at 0.222. The position missed
-    its exit entirely, its front expired instead, and the longs went on Monday for a different
-    result -- which is what the exit-policy replay then reported as a $1.30 disagreement with the
-    arms it is validated against.
-
-    curve reached the same rule from the entry side (`_wing_spread_blocks`, 56 of 62 refusals in one
-    session at exactly 2.000), and it made an exception there: the SHORT leg keeps the plain
-    percentage test, because its premium is the whole credit and paying up is what the gate exists
-    to prevent. That exception belongs to entry only. On exit there is no premium being protected --
-    every leg is being closed, and a penny is a penny whichever one it is -- so the absolute floor
-    applies to all of them.
-
-    An older snapshot with no per-leg detail falls back to the percentage test alone, so a stored
-    mark cannot silently widen what this admits.
-    """
-    max_pct = params.get("max_leg_spread_pct", 0.25)
-    legs = mark_snapshot.get("leg_spreads")
-    if not legs:
-        widest = mark_snapshot.get("max_spread_pct")
-        return widest is not None and widest > max_pct
-    max_abs = params.get("max_leg_spread_abs", 0.05)
-    return any(leg["pct"] > max_pct and leg["abs"] > max_abs for leg in legs)
+# The exit spread gate (percent AND money, per leg) is `cherrypick.core.spreadbook.exit_spread_blocks`:
+# calendars, pmcc and curve carried identical copies. Its docstring holds why a percentage alone
+# refused penny-wide exits.
+_spread_blocks = _spreadbook.exit_spread_blocks

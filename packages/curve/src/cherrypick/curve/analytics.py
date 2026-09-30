@@ -10,6 +10,8 @@ import statistics
 
 from cherrypick.core.metrics import excursions as _mae_mfe
 
+from cherrypick.curve import db
+
 
 def headline(conn) -> dict:
     """Per-arm, per-symbol results over CLOSED positions, plus what is still open."""
@@ -176,27 +178,6 @@ def excursions(conn) -> dict:
     }
 
 
-def mark_coverage(conn, session_date: str) -> dict:
-    """How good the day's mark substrate is — a barren session should read as thin data, never as
-    a market."""
-    row = conn.execute(
-        "SELECT COUNT(*) AS total, SUM(usable = 0) AS refused FROM curve_marks WHERE session_date = ?",
-        (session_date,),
-    ).fetchone()
-    refusals = {
-        r["refusal"]: r["n"]
-        for r in conn.execute(
-            "SELECT refusal, COUNT(*) AS n FROM curve_marks WHERE session_date = ? AND usable = 0 "
-            "GROUP BY refusal",
-            (session_date,),
-        )
-        if r["refusal"]
-    }
-    total = row["total"] or 0
-    return {
-        "session": session_date,
-        "marks": total,
-        "refused": row["refused"] or 0,
-        "refusal_share": round((row["refused"] or 0) / total, 4) if total else None,
-        "refusals": refusals,
-    }
+# How good the day's mark substrate is (marks, refusal share, per-refusal counts) -- the ledger
+# store's reader, which calendars, pmcc and curve had each copied over their own prefix.
+mark_coverage = db._store.mark_coverage
