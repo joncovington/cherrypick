@@ -59,6 +59,8 @@ export interface TechnicalsChart {
   rsi14: (number | null)[];
   trendShort: (number | null)[];
   trendLong: (number | null)[];
+  /** Our 1-10 rank on the session: a decile of the whole market; null before the landing stored cut-offs. */
+  rank: number | null;
   /** Our overall label on the last session (close vs SMA 50 and WMA 200): Bullish | Neutral | Bearish. */
   sentiment: string | null;
   /** IV rank on or before the session, 0-100: ours from Dolt's IV, or tastytrade's where Dolt has none. */

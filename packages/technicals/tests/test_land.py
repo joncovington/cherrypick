@@ -24,6 +24,9 @@ class FakeCursor:
         s = sql.lower()
         if "from symbol" in s:
             self.rows = [(sym, 1 if sym == "ZZZ" else 0) for sym in self.db.listed]
+        elif "from ohlcv" in s and "date = %s" in s:  # one session, the whole market: the rank's read
+            (d,) = params
+            self.rows = [(r[0], r[5], r[6]) for r in self.db.ohlcv if r[1].isoformat() == d]
         elif "from ohlcv" in s:
             lo, hi = (date.fromisoformat(p) for p in params)
             self.rows = [r for r in self.db.ohlcv if lo <= r[1] < hi]
@@ -181,3 +184,48 @@ def test_every_captured_name_is_landed_so_its_capture_can_be_scored():
         (folder / name).write_text("{}", encoding="utf-8")
     assert symbols.captured() == ["LOGC", "SGOV"]
     assert {"LOGC", "SGOV"} <= set(symbols.all_symbols())
+
+
+def test_the_landing_stores_the_whole_markets_rank_cutoffs_for_recent_sessions(dolt):
+    """The rank is a decile across every name Dolt carries, not just the wanted ones: 200 unwanted
+    names with rising scores set the cut-offs; a split inside the window and a name trading under
+    $100k a day are left out; a session that already has cut-offs is not re-read."""
+    from datetime import timedelta
+
+    from cherrypick.technicals import levels
+
+    days = [date(2026, 1, 1) + timedelta(days=i) for i in range(140)]
+    dolt.listed = ["SPY"]
+    dolt.ohlcv = [("SPY", d, 1, 1, 1, 1, 1) for d in days]
+    for k in range(200):  # name k gains k% over the long window, flat over the short one
+        dolt.ohlcv += [
+            (f"M{k}", d, 0, 0, 0, 100.0 if i <= 139 - 126 else 100.0 + k, 10_000) for i, d in enumerate(days)
+        ]
+    dolt.ohlcv += [("SPLIT", d, 0, 0, 0, 1.0 if i < 130 else 1000.0, 1e9) for i, d in enumerate(days)]
+    dolt.ohlcv += [("THIN", d, 0, 0, 0, 1.0 if i < 130 else 1000.0, 1) for i, d in enumerate(days)]
+    dolt.splits = [("SPLIT", days[130], 1, 10)]
+    land.land(wanted=["SPY"], today=days[-1] + timedelta(days=1))
+    conn = store.connect()
+    cut = store.rank_cutoffs(conn, days[-1].isoformat())
+    assert cut is not None and len(cut) == 9
+    assert levels.rank_from_cutoffs(1.99, cut) == 10  # M199: +199%, the top decile of 200 names
+    assert levels.rank_from_cutoffs(0.0, cut) == 1
+    universe = conn.execute(
+        "SELECT universe FROM rank_cutoffs WHERE session = ?", (days[-1].isoformat(),)
+    ).fetchone()[0]
+    assert universe == 200, (
+        "SPLIT (a split inside the window) and THIN (under $100k a day) are not the market"
+    )
+    reads = sum("date = %s" in sql for sql, _ in dolt.calls)
+    land.land(wanted=["SPY"], today=days[-1] + timedelta(days=1))
+    assert sum("date = %s" in sql for sql, _ in dolt.calls) == reads, "sessions with cut-offs are not re-read"
+
+
+def test_a_thin_market_day_stores_no_rank_cutoffs(dolt):
+    from datetime import timedelta
+
+    days = [date(2026, 1, 1) + timedelta(days=i) for i in range(140)]
+    dolt.listed = ["SPY"]
+    dolt.ohlcv = [("SPY", d, 1, 1, 1, 1, 1e9) for d in days]  # one name is not a market
+    land.land(wanted=["SPY"], today=days[-1] + timedelta(days=1))
+    assert store.rank_cutoffs(store.connect(), days[-1].isoformat()) is None

@@ -227,7 +227,7 @@ function VendorCard({ c }: { c: TechnicalsChart }) {
         <div className="stat-tile">
           <span className="stat-label">vendor rank</span>
           <span className="stat-value">{v.rank ?? "—"}</span>
-          <span className="stat-label muted">1–10</span>
+          <span className="stat-label muted">1–10; ours {c.rank ?? "—"}</span>
         </div>
         <div className="stat-tile">
           <span className="stat-label">vendor IV rank</span>

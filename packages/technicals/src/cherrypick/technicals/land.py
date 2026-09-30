@@ -20,7 +20,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any
 
-from . import store, symbols
+from . import levels, store, symbols
 
 # Three years of bars for a new symbol: the depth of the vendor's own chart data (753 sessions),
 # which is what the level engine is scored against.
@@ -45,6 +45,49 @@ def _connect(cfg: dict, database: str):
 
 def _f(value) -> float | None:
     return float(value) if value is not None else None
+
+
+RANK_BACKFILL = 15  # sessions back the landing fills market rank cut-offs for, when missing
+
+
+def land_rank_cutoffs(cur, conn, split_rows) -> list[str]:
+    """Store the whole market's 1-10 rank cut-offs for each recent session that has none.
+
+    The rank is a decile across every US-listed name Dolt carries, not the ~550 the store lands, so
+    this reads three dates' closes for the whole market per session -- `date` leads the key, so a
+    date filter is the cheap query -- and keeps only the nine cut-offs. A name with a split inside
+    the window is left out rather than adjusted (raw closes would fake its return), and so is one
+    trading under `RANK_MIN_DOLLAR_VOLUME`. Dividends are not adjusted for: a quarter's dividend
+    moves a six-month return by a point or so. Sessions come from the store's own SPY bars."""
+    dates = [b.date for b in store.raw_bars(conn, "SPY")]
+    have = store.rank_sessions(conn)
+    done = []
+    for i in range(max(levels.RANK_LONG, len(dates) - RANK_BACKFILL), len(dates)):
+        day = dates[i]
+        if day in have:
+            continue
+        d_short, d_long = dates[i - levels.RANK_SHORT], dates[i - levels.RANK_LONG]
+        closes: dict[str, dict[str, float]] = {}
+        volume: dict[str, float] = {}
+        for d in (day, d_short, d_long):
+            cur.execute("SELECT act_symbol, close, volume FROM ohlcv WHERE date = %s", (d,))
+            for s, c, v in cur.fetchall():
+                if c is not None:
+                    closes.setdefault(s, {})[d] = float(c)
+                    if d == day:
+                        volume[s] = float(v or 0)
+        split = {s for s, d, *_ in split_rows if d_long < d.isoformat() <= day}
+        scores = [
+            levels.RANK_SHORT_WEIGHT * (c[day] / c[d_short] - 1) + (c[day] / c[d_long] - 1)
+            for s, c in closes.items()
+            if s not in split
+            and all(c.get(d, 0) > 0 for d in (day, d_short, d_long))
+            and c[day] * volume.get(s, 0) >= levels.RANK_MIN_DOLLAR_VOLUME
+        ]
+        if len(scores) >= 100:  # a thin day (a half-landed Dolt pull) is not a market
+            store.put_rank_cutoffs(conn, day, len(scores), levels.rank_cutoffs(scores))
+            done.append(day)
+    return done
 
 
 def plan_starts(wanted: list[str], latest: dict[str, str], today: date) -> dict[str, str]:
@@ -122,9 +165,11 @@ def land(
                 ),
             )
         cur.execute("SELECT act_symbol, ex_date, to_factor, for_factor FROM split")
+        split_rows = cur.fetchall()
         report["splits"] += store.upsert_splits(
-            conn, ((s, d.isoformat(), float(t), float(f)) for s, d, t, f in cur.fetchall() if s in want)
+            conn, ((s, d.isoformat(), float(t), float(f)) for s, d, t, f in split_rows if s in want)
         )
+        report["rank_sessions"] = land_rank_cutoffs(cur, conn, split_rows)
         cur.execute("SELECT act_symbol, ex_date, amount FROM dividend")
         report["dividends"] += store.upsert_dividends(
             conn, ((s, d.isoformat(), float(a)) for s, d, a in cur.fetchall() if s in want)

@@ -185,31 +185,48 @@ def score_level_selection(min_bar_agreement: float = 0.99) -> dict:
 
 
 def score_rank() -> dict:
-    """Our 1-10 rank against the vendor's, ranked across the stocks the store holds."""
-    from . import levels, symbols
+    """Our 1-10 rank against the vendor's on every capture whose session has market cut-offs: the
+    capture's own score (our adjusted bars through its last session) placed against the cut-offs
+    the landing stored. Captures on a session without cut-offs are counted, not scored."""
+    from collections import Counter
 
-    caps = _captures()
+    from . import levels
+
+    root = paths.market_report_dir() / "vendor-charts"
     conn = store.connect()
-    names = set(store.stocks(conn, symbols.candidates())) | set(caps)
-    session = max(why["historicalQuotes"][-1]["date"][:10] for why in caps.values()) if caps else None
-    returns = {}
-    for sym in names:
-        closes = [b.close for b in store.adjusted_bars(conn, sym) if session and b.date <= session]
-        if len(closes) > levels.RANK_SESSIONS:
-            returns[sym] = closes[-1] / closes[-1 - levels.RANK_SESSIONS] - 1
+    names = exact = within = 0
+    diff: Counter = Counter()
+    no_cutoffs: set[str] = set()
+    for path in sorted(root.glob("????-??-??/*.json")):
+        if path.name == "trade-ideas.json" or path.name.endswith(".rejected.json"):
+            continue
+        try:
+            why = json.loads(path.read_text(encoding="utf-8"))["why"]
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        theirs = why.get("technicalRank")
+        if not isinstance(theirs, (int, float)):
+            continue
+        session = why["historicalQuotes"][-1]["date"][:10]
+        cutoffs = store.rank_cutoffs(conn, session)
+        if not cutoffs:
+            no_cutoffs.add(session)
+            continue
+        sc = levels.rank_score([b.close for b in store.adjusted_bars(conn, path.stem) if b.date <= session])
+        if sc is None:
+            continue
+        ours = levels.rank_from_cutoffs(sc, cutoffs)
+        names += 1
+        exact += ours == int(theirs)
+        within += abs(ours - int(theirs)) <= 1
+        diff[int(theirs) - ours] += 1
     conn.close()
-    ours = levels.rank(returns)
-    pairs = [
-        (ours[s], int(w["technicalRank"]))
-        for s, w in caps.items()
-        if s in ours and isinstance(w.get("technicalRank"), (int, float))
-    ]
     return {
-        "session": session,
-        "ranked_universe": len(returns),
-        "names": len(pairs),
-        "exact": sum(a == b for a, b in pairs),
-        "within_one": sum(abs(a - b) <= 1 for a, b in pairs),
+        "captures": names,
+        "exact": exact,
+        "within_one": within,
+        "vendor_minus_ours": dict(sorted(diff.items())),
+        "sessions_without_cutoffs": sorted(no_cutoffs),
     }
 
 

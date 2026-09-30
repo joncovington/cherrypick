@@ -90,7 +90,17 @@ def build(session: str | None = None, conn=None) -> dict[str, Any]:
                 sig[rule].append(sym)
         if len(bs) > levels.RANK_SESSIONS:
             returns[sym] = bs[-1].close / bs[-1 - levels.RANK_SESSIONS].close - 1
-    ranks = levels.rank(returns)
+    # The 1-10 rank across the whole market, from the cut-offs the landing stored for the session;
+    # a session without them falls back to ranking within these names (the old, biased-low reading).
+    cutoffs = store.rank_cutoffs(conn, day)
+    if cutoffs:
+        ranks = {}
+        for sym, bs in bars.items():
+            sc = levels.rank_score([b.close for b in bs]) if bs[-1].date == day else None
+            if sc is not None:
+                ranks[sym] = levels.rank_from_cutoffs(sc, cutoffs)
+    else:
+        ranks = levels.rank(returns)
 
     # The session's single-stock movers: the report's "prior-session movers" are data, and only the
     # prose over them is the narrative's. Volume is against the name's own prior 50-session average,
@@ -124,7 +134,7 @@ def build(session: str | None = None, conn=None) -> dict[str, Any]:
             {
                 "symbol": sym,
                 "sector": sector_of.get(sym),
-                "rank": ranks[sym],
+                "rank": ranks.get(sym),
                 "return_6m_pct": round(100 * returns[sym], 1),
                 "trend_short": trend.label(trend.scores(c, trend.SHORT_TERM)[-1]),
                 "trend_long": trend.label(trend.scores(c, trend.LONG_TERM)[-1]),

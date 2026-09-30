@@ -139,10 +139,20 @@ with the vendor's. Which grid points become levels is still open: 83% of level d
 highs, supports included, and most levels sit within about one ATR of that swing high, but the
 price is not simply that high snapped.
 
-**The 1-10 rank** (`score-rank`) is the decile of a ~6-month (125-session) return percentile:
-Spearman 0.95 against the vendor's over 34 names, within one step on 31-33 depending on the
-universe it is ranked in, exact on about 40%. The vendor ranks within its own universe, which 34
-names cannot pin down.
+**The 1-10 rank is solved** (`levels.rank_score`, `score-rank`; 2026-09-29) up to noise at the
+decile edges: the decile of a name's percentile, across the WHOLE US-listed market, of `0.5 x its
+21-session return + its 126-session return`. The vendor's help pages call it "a summary of short,
+medium, and long term indicators"; the fit found the blend (a single ~6-month return, the old
+reading, leaves 20 of ~1,500 pairs of captured names out of order, the blend 4; adding the trend
+scores helps nothing). The universe was the other half: ranked within our ~500 candidates it
+matched half the captures and ran one decile LOW on the rest, never high -- a curated liquid list is
+stronger than the vendor's -- while ranked across Dolt's whole market (~8,500 names trading $100k a
+day, split-affected names dropped) it matches 52 of 62 exactly and all 62 within one, misses falling
+both ways. The landing reads three dates' closes for the whole market per session and stores only
+nine cut-offs (`rank_cutoffs` table; the last 15 sessions, each once), so a rank is one comparison;
+the report, the chart files and `score-rank` all use them, and a session without cut-offs falls back
+to ranking within the store's own names. Not adjusted for dividends across the market -- a
+quarter's dividend moves a six-month return by a point or so.
 
 **IV rank does not match, and the formula is not why** (2026-09-29). Dolt's min-max IV rank
 (`store.iv_rank`, the definition the vendor's help pages state) against the vendor's
@@ -280,7 +290,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.technicals score-trends` | Our trend scores against every vendor chart capture: exact, label and within-one agreement. |
 | `python -m cherrypick.technicals score-levels` | How many of the vendor's levels we place -- support and resistance on our grid, gap levels as our gap edges -- on names whose bars agree to the cent. |
 | `python -m cherrypick.technicals score-level-selection` | Where the vendor's levels sit among the grid points (crossing profile, price given the date, which swing highs), each against chance. |
-| `python -m cherrypick.technicals score-rank` | Our 1-10 rank against the vendor's. |
+| `python -m cherrypick.technicals score-rank` | Our 1-10 rank (a decile of the whole market, from the landing's stored cut-offs) against the vendor's, on every capture. |
 | `python -m cherrypick.technicals score-signals` | Our six scan rules against every scan list the collector has saved. |
 | `python -m cherrypick.technicals report [--session D]` | Write one session's market-report readings and the per-name chart files for the console. |
 | `python -m cherrypick.technicals score-stages` | The stage rule against every saved edition: side recall, stage agreement, extra rate, counts. |

@@ -26,9 +26,15 @@ edge. 168 of 168 on the stocks and index funds; 70 of 72 on SGOV, a T-bill fund.
 is open: an unfilled gap mostly needs to be close to an ATR wide, and a gap price has crossed keeps at
 most its post-gap edge, but no rule yet says which.
 
-**The 1-10 rank** is the decile of the name's ~6-month return percentile: Spearman 0.95 against the
-vendor's rank over 34 names, within one step on 33, exact on about 40% -- the vendor ranks within its
-own universe, which is not ours, and 34 names cannot pin it.
+**The 1-10 rank** (solved 2026-09-29, up to noise at the decile edges): the decile of a name's
+percentile, across the WHOLE US-listed market, of `0.5 x its 21-session return + its 126-session
+return`. On the vendor's own bars that score orders its ranks with 4 pairs out of ~1,500 inverted
+(a single 125-session return, the old reading, leaves 20; trend scores add nothing). Ranked within
+our ~500 candidates it matched on half and ran one decile low on the rest -- the vendor's universe
+is weaker than a curated liquid list -- while ranked across Dolt's whole market (~8,500 names
+trading $100k a day, split-affected names dropped) it matches exactly on 52 of 62 captures and
+within one on all 62, misses falling both ways. The landing stores each session's nine market
+cut-offs (`store.rank_cutoffs`), so a rank is one comparison and needs no market-wide bars.
 """
 
 from __future__ import annotations
@@ -38,7 +44,9 @@ from dataclasses import dataclass
 
 WINDOW = 250
 NICE_STEPS = (0.01, 0.02, 0.05, 0.1, 0.2, 0.25, 0.5, 1.0, 2.0, 2.5, 5.0, 10.0, 20.0, 25.0, 50.0, 100.0)
-RANK_SESSIONS = 125
+RANK_SESSIONS = 125  # the old single-return rank, kept for a session with no market cut-offs
+RANK_SHORT, RANK_LONG, RANK_SHORT_WEIGHT = 21, 126, 0.5
+RANK_MIN_DOLLAR_VOLUME = 100_000.0  # the market the rank is taken across: names trading at least this
 
 
 @dataclass(frozen=True)
@@ -102,6 +110,27 @@ def grid(highs: list[float], lows: list[float], window: int = WINDOW) -> Grid | 
     if hi <= lo:
         return None
     return Grid(lo, hi, nice_step((hi - lo) / 100.0))
+
+
+def rank_score(closes: list[float]) -> float | None:
+    """0.5 x the 21-session return + the 126-session return, on the last close; None when too short."""
+    if len(closes) <= RANK_LONG or closes[-1 - RANK_LONG] <= 0 or closes[-1 - RANK_SHORT] <= 0:
+        return None
+    return RANK_SHORT_WEIGHT * (closes[-1] / closes[-1 - RANK_SHORT] - 1) + (
+        closes[-1] / closes[-1 - RANK_LONG] - 1
+    )
+
+
+def rank_cutoffs(scores: list[float]) -> list[float]:
+    """The nine scores that separate the deciles of `scores`, chosen so `rank_from_cutoffs` gives
+    exactly ceil(10 x (how many scores are <= x) / n) -- the percentile decile -- without the list."""
+    vals = sorted(scores)
+    n = len(vals)
+    return [vals[(j * n) // 10] for j in range(1, 10)] if n >= 10 else []
+
+
+def rank_from_cutoffs(score: float, cutoffs: list[float]) -> int:
+    return min(10, max(1, 1 + sum(score >= c for c in cutoffs)))
 
 
 def rank(returns: dict[str, float]) -> dict[str, int]:

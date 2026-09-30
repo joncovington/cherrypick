@@ -113,6 +113,13 @@ def _vendor(symbol: str, bars) -> dict | None:
     }
 
 
+def _rank(conn, closes: list[float], session: str) -> int | None:
+    """Our 1-10 rank on the session, against the market cut-offs the landing stored; None without them."""
+    cutoffs = store.rank_cutoffs(conn, session)
+    score = levels.rank_score(closes)
+    return None if not cutoffs or score is None else levels.rank_from_cutoffs(score, cutoffs)
+
+
 def build(conn, symbol: str, session: str | None = None) -> dict[str, Any] | None:
     bars = [b for b in store.adjusted_bars(conn, symbol) if session is None or b.date <= session]
     if len(bars) < 2:
@@ -159,6 +166,7 @@ def build(conn, symbol: str, session: str | None = None) -> dict[str, Any] | Non
         "trend_short": tail(trend.scores(closes, trend.SHORT_TERM), 0),
         "trend_long": tail(trend.scores(closes, trend.LONG_TERM), 0),
         "sentiment": trend.sentiment(closes),
+        "rank": _rank(conn, closes, bars[-1].date),
         # Ours from Dolt's IV where it covers the name, else tastytrade's; `source` says which.
         "iv_rank": store.iv_rank(conn, symbol, bars[-1].date),
         "signals": [

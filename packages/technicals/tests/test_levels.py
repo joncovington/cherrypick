@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import math
+
+import pytest
+
 from cherrypick.technicals import levels
 
 
@@ -75,3 +79,24 @@ def test_touching_ranges_are_not_a_gap_and_the_window_bounds_the_gaps():
     lows[12], highs[12] = 9.0, 10.0  # and one gapping back down, also outside
     assert levels.gap_edges(dates, highs, lows) == []
     assert len(levels.gap_edges(dates, highs, lows, window=295)) == 4
+
+
+def test_rank_cutoffs_give_exactly_the_decile_of_the_percentile():
+    """Nine stored numbers must reproduce ceil(10 x #(scores <= x) / n) for ANY x, market name or not."""
+    import random
+
+    rng = random.Random(7)
+    for n in (10, 11, 99, 1000, 8461):
+        scores = [rng.gauss(0.1, 0.4) for _ in range(n)]
+        cut = levels.rank_cutoffs(scores)
+        for x in (
+            scores[:300] + [rng.gauss(0.1, 0.5) for _ in range(300)] + [min(scores) - 1, max(scores) + 1]
+        ):
+            brute = min(10, max(1, math.ceil(10 * sum(v <= x for v in scores) / n)))
+            assert levels.rank_from_cutoffs(x, cut) == brute, (n, x)
+
+
+def test_rank_score_is_half_the_month_plus_the_half_year():
+    closes = [100.0] * 105 + [80.0] * 21 + [88.0]  # 127 closes: 126 back is 100, 21 back is 80
+    assert levels.rank_score(closes) == pytest.approx(0.5 * (88 / 80 - 1) + (88 / 100 - 1))
+    assert levels.rank_score(closes[1:]) is None  # one short of the 126-session return

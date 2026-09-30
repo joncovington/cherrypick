@@ -148,6 +148,7 @@ function shapeChart(doc: Record<string, unknown>): TechnicalsChart | null {
     rsi14: aligned("rsi14"),
     trendShort: aligned("trend_short"),
     trendLong: aligned("trend_long"),
+    rank: num(doc["rank"]),
     sentiment: str(doc["sentiment"]),
     ivRank: shapeIvRank(doc["iv_rank"]),
     signals: list(doc["signals"]).flatMap((raw) => {

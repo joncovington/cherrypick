@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS iv (
     PRIMARY KEY (symbol, date));
 CREATE TABLE IF NOT EXISTS listings (
     symbol TEXT PRIMARY KEY, is_etf INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS rank_cutoffs (
+    session TEXT PRIMARY KEY, universe INTEGER NOT NULL, cutoffs TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS landings (
     landed_at REAL NOT NULL, through TEXT, symbols INTEGER, bars INTEGER, report TEXT);
 """
@@ -148,6 +150,22 @@ def adjusted_bars(conn, symbol: str) -> list[_adjust.AdjustedBar]:
     raw = raw_bars(conn, symbol)
     adjusted = _adjust.adjust(raw, _adjust.dedupe_splits(raw, splits), dividends(conn, symbol)[0])
     return adjusted[_adjust.series_break(adjusted) :]
+
+
+def put_rank_cutoffs(conn, session: str, universe: int, cutoffs: list[float]) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO rank_cutoffs VALUES (?, ?, ?)", (session, universe, json.dumps(cutoffs))
+    )
+
+
+def rank_cutoffs(conn, session: str) -> list[float] | None:
+    """The market's nine decile cut-offs for the 1-10 rank on `session`, or None if never landed."""
+    row = conn.execute("SELECT cutoffs FROM rank_cutoffs WHERE session = ?", (session,)).fetchone()
+    return json.loads(row["cutoffs"]) if row else None
+
+
+def rank_sessions(conn) -> set[str]:
+    return {r["session"] for r in conn.execute("SELECT session FROM rank_cutoffs")}
 
 
 def iv_rank(conn, symbol: str, on: str | None = None) -> dict | None:
