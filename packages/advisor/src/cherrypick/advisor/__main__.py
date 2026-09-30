@@ -7,6 +7,8 @@
     python -m cherrypick.advisor enact [--session YYYY-MM-DD]
     python -m cherrypick.advisor verdicts [--session YYYY-MM-DD]
     python -m cherrypick.advisor status [--session YYYY-MM-DD]
+    python -m cherrypick.advisor propose --module M --name N --param KEY=VALUE [--param ...]
+                                         --hypothesis TEXT --success-metric TEXT [--sessions N]
     python -m cherrypick.advisor kill <experiment_id>
     python -m cherrypick.advisor dismiss <proposal_id>
 
@@ -122,6 +124,57 @@ def cmd_admit(args) -> dict[str, Any]:
             pack_path=str(_paths.pack_path(session, args.slot)),
             raw_path=args.raw,
         )
+    finally:
+        conn.close()
+
+
+def _parse_param(text: str) -> tuple[str, Any]:
+    """`KEY=VALUE`, the value read as JSON when it parses (`true`, `0.95`, `"13:30"`), else as text."""
+    key, sep, raw = text.partition("=")
+    if not sep or not key.strip():
+        raise ValueError(f"--param must be KEY=VALUE, got {text!r}")
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        value = raw
+    return key.strip(), value
+
+
+def cmd_propose(args) -> dict[str, Any]:
+    """A person proposes an experiment, through the SAME admission a model proposal takes.
+
+    Until 2026-09-29 only the model could start one (a reply admitted at a checkpoint), so a person
+    with a question had to hand-write a model-shaped reply and `admit` it -- which recorded a
+    checkpoint row with no model behind it and skewed the checkpoint ok-rate and the attribution of
+    every experiment to a model. This calls `admit_spec` directly, so the bounds, the cap/queue, the
+    dedup and the experiment's own book are exactly a model proposal's; it writes no checkpoint row,
+    and journals `proposed_by_human` so the experiment's record says who asked. It can never reach
+    past the module's declared `advice.bounds` -- the validator is the one enact uses.
+    """
+    session = _session(args)
+    params = dict(_parse_param(p) for p in args.param)
+    conn = _store.connect()
+    try:
+        result = _experiments.admit_spec(
+            conn,
+            session=session,
+            module=args.module,
+            params=params,
+            name=args.name,
+            hypothesis=args.hypothesis,
+            success_metric=args.success_metric,
+            sessions=args.sessions,
+            dedup=True,
+        )
+        if result.get("ok") and not result.get("already_admitted"):
+            _store.journal(
+                conn,
+                result["experiment_id"],
+                "proposed_by_human",
+                session=session,
+                detail={"params": params, "note": args.note} if args.note else {"params": params},
+            )
+        return {"session": session, "module": args.module, **result}
     finally:
         conn.close()
 
@@ -271,6 +324,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_admit.add_argument("--force", action="store_true", help="re-admit a slot that is already recorded")
     p_admit.set_defaults(func=cmd_admit)
+
+    p_propose = sub.add_parser(
+        "propose", help="a person proposes an experiment (same bounds and admission as a model's)"
+    )
+    p_propose.add_argument("--module", required=True)
+    p_propose.add_argument("--name", required=True, help="the experiment's name; its book is advised:<slug>")
+    p_propose.add_argument(
+        "--param", action="append", required=True, help="KEY=VALUE (JSON value when it parses); repeatable"
+    )
+    p_propose.add_argument("--hypothesis", required=True)
+    p_propose.add_argument("--success-metric", dest="success_metric", required=True)
+    p_propose.add_argument("--sessions", type=int, help="length; clamped to the advisor's min/max")
+    p_propose.add_argument("--note", help="why a person proposed it (journaled)")
+    p_propose.add_argument("--session", help="ISO date; defaults to today (ET)")
+    p_propose.set_defaults(func=cmd_propose)
 
     p_failed = sub.add_parser("checkpoint-failed", help="record a slot whose model call produced no reply")
     p_failed.add_argument("--slot", required=True, choices=list(_factpack.SLOTS))

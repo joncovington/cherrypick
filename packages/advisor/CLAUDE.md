@@ -237,6 +237,7 @@ CRITICAL_GUARDRAIL: DO NOT WRITE CODE IN THIS FILE
 | `python -m cherrypick.advisor init-db` | Create/migrate `data/advisor/advisor.db`. Idempotent. |
 | `python -m cherrypick.advisor factpack --slot {open,am1,am2,midday,pm1,pm2,close,deep} [--session D]` | Build one deterministic fact pack and print its path. |
 | `python -m cherrypick.advisor admit --slot S [--session D] --raw <path> [--force]` | Parse a raw model reply, validate every proposal against module bounds, record admissions and rejections. |
+| `python -m cherrypick.advisor propose --module M --name N --param K=V [...] --hypothesis T --success-metric T [--sessions N] [--note T]` | A person proposes an experiment. Same admission as a model proposal (`admit_spec`: bounds, cap/queue, dedup, its own book), no checkpoint row, journaled `proposed_by_human`. Cannot reach past the module's `advice.bounds`. Added 2026-09-29; before it, a human had to hand-feed `admit` a model-shaped reply, which skewed checkpoint stats and attribution. |
 | `python -m cherrypick.advisor checkpoint-failed --slot S [--session D] --error <text> [--model A] [--model-id M]` | Record a slot whose model call produced no reply as a failed checkpoint row. |
 | `python -m cherrypick.advisor enact [--session D]` | Issue the next session's advice artifact for every active experiment. Runs nightly, unconditionally. |
 | `python -m cherrypick.advisor enactment [--session D]` | Did each module apply the artifact issued for a session? Per module, with the reason when it did not. |
