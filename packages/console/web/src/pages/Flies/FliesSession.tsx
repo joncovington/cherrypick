@@ -4,9 +4,9 @@ import { useAttempts } from "../../components/Attempts";
 import { useAdvisorModule, STATUS_LABEL } from "../../components/advisor/AdvisorSlide";
 import { Bullet } from "../../components/grid/Bullet";
 import { DivergingBars } from "../../components/grid/DivergingBars";
-import { GridCard, StatTile } from "../../components/grid/GridCard";
+import { GridCard, StatTile, type CardSpan } from "../../components/grid/GridCard";
 import { fmtMoney } from "../../lib/format";
-import { useOpeningRange, type FliesFilter } from "../../lib/api";
+import { fliesQuery, useOpeningRange, type FliesFilter } from "../../lib/api";
 import { ForestCard } from "./ForestCard";
 import { SpotPathCard } from "./SpotPathCard";
 
@@ -44,6 +44,64 @@ export interface SessionAnalytics {
     medianCompletionMin?: number | null;
   };
   byArm: Array<{ arm: string; trades: number; net: number }>;
+}
+
+/** One session's analytics. Shares the flies page's query key, so the two never fetch it twice. */
+export function useSessionAnalytics(mode: TradingMode, filter: FliesFilter, enabled = true) {
+  return useQuery<SessionAnalytics>({
+    queryKey: ["flies-analytics", mode, filter],
+    enabled,
+    queryFn: async () => {
+      const res = await fetch(`/api/flies/analytics?${fliesQuery(mode, filter)}`);
+      if (!res.ok) throw new Error(`flies analytics: HTTP ${res.status}`);
+      return (await res.json()) as SessionAnalytics;
+    },
+    refetchInterval: 30_000,
+  });
+}
+
+type Today = SessionAnalytics["today"];
+
+/** Net on the session, after fees. */
+export function NetTodayTile({ today, label = "net today", to = "/flies/history", span }: { today: Today | undefined; label?: string; to?: string; span?: CardSpan }) {
+  return (
+    <StatTile
+      label={label}
+      value={today !== undefined ? fmtMoney(today.netPnl) : null}
+      tone={today !== undefined && today.netPnl >= 0 ? "pos" : "neg"}
+      to={to}
+      toLabel="the session history behind this net"
+      span={span}
+      foot={today === undefined ? "—" : `after fees · ${String(today.positions)} positions · fees ${fmtMoney(today.fees)}`}
+    />
+  );
+}
+
+/** Completed, open and stranded partition `entered`; naming only the open count read "0 still
+ *  open of 4 entered" beside 75% on a settled day, which says nothing about where the other 25% went. */
+function completionFoot(today: Today | undefined): string {
+  if (today === undefined) return "—";
+  const stranded = today.positions - today.completed - today.open;
+  const parts = [`${String(today.completed)} of ${String(today.positions)} completed`];
+  if (today.open > 0) parts.push(`${String(today.open)} still open`);
+  if (stranded > 0) parts.push(`${String(stranded)} settled uncompleted`);
+  if (today.medianCompletionMin != null) parts.push(`median ${today.medianCompletionMin.toFixed(0)}m to complete`);
+  return parts.join(" · ");
+}
+
+export function CompletionTile({ today, to = "/flies/completion", span }: { today: Today | undefined; to?: string; span?: CardSpan }) {
+  return (
+    <StatTile
+      label="completion"
+      value={today?.completionPct != null ? `${today.completionPct.toFixed(0)}%` : null}
+      foot={completionFoot(today)}
+      to={to}
+      toLabel="completion across the era"
+      span={span}
+    >
+      <Bullet min={0} max={100} value={today?.completionPct ?? null} label="completion rate on this session" />
+    </StatTile>
+  );
 }
 
 /** The live pilot's view of one session — the Live page's own payload, asked for that date. */
@@ -100,18 +158,6 @@ export function FliesSession({
   const peak = today?.dailyPeakRisk ?? null;
   const openRisk = today !== undefined && today.open > 0 ? Math.abs(today.maxPossibleLoss) : null;
 
-  // Completed, open and stranded partition `entered`; naming only the open count read "0 still open
-  // of 4 entered" beside 75% on a settled day, which says nothing about where the other 25% went.
-  const completionFoot = (() => {
-    if (today === undefined) return "—";
-    const stranded = today.positions - today.completed - today.open;
-    const parts = [`${String(today.completed)} of ${String(today.positions)} completed`];
-    if (today.open > 0) parts.push(`${String(today.open)} still open`);
-    if (stranded > 0) parts.push(`${String(stranded)} settled uncompleted`);
-    if (today.medianCompletionMin != null) parts.push(`median ${today.medianCompletionMin.toFixed(0)}m to complete`);
-    return parts.join(" · ");
-  })();
-
   // Advice in force: the advisor's own enactment rows for this session, one per experiment. Names
   // and params come off the experiment records; nothing here judges whether the advice helped.
   const adv = advisor.data;
@@ -144,29 +190,9 @@ export function FliesSession({
 
   return (
     <div className="grid-12">
-      <StatTile
-        label="net today"
-        value={today !== undefined ? fmtMoney(today.netPnl) : null}
-        tone={today !== undefined && today.netPnl >= 0 ? "pos" : "neg"}
-        to="/flies/history"
-        toLabel="the session history behind net today"
-        foot={today === undefined ? "—" : `after fees · ${String(today.positions)} positions · fees ${fmtMoney(today.fees)}`}
-      />
+      <NetTodayTile today={today} />
 
-      <StatTile
-        label="completion"
-        value={today?.completionPct != null ? `${today.completionPct.toFixed(0)}%` : null}
-        foot={completionFoot}
-        to="/flies/completion"
-        toLabel="completion across the era"
-      >
-        <Bullet
-          min={0}
-          max={100}
-          value={today?.completionPct ?? null}
-          label="completion rate on this session"
-        />
-      </StatTile>
+      <CompletionTile today={today} />
 
       <StatTile
         label="daily peak risk"

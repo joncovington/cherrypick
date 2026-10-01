@@ -10,7 +10,7 @@ import { niceTicks } from "../../components/chart/scales";
 import { SpotMarker, HoverReadout } from "../../components/chart/Tooltip";
 import { useHoverX } from "../../components/chart/useHoverX";
 import { useMeasure } from "../../lib/useMeasure";
-import { GridCard } from "../../components/grid/GridCard";
+import { GridCard, type CardHeight, type CardSpan } from "../../components/grid/GridCard";
 
 interface StructureCurve {
   kind: string;
@@ -197,6 +197,8 @@ export function ForestCard({
   variant = "full",
   height = 320,
   to,
+  span = 8,
+  h = 304,
 }: {
   mode: TradingMode;
   filter: FliesFilter;
@@ -205,6 +207,9 @@ export function ForestCard({
   height?: number;
   /** The page that holds this payoff's detail (the hero links to the books). */
   to?: string;
+  /** The hero's cell: the session tab's 8×304 unless a page places it elsewhere. */
+  span?: CardSpan;
+  h?: CardHeight;
 }) {
   const { data, isLoading } = useForest(mode, filter);
   const [xwidth, setXwidth] = useState<(typeof X_WIDTHS)[number]>("auto");
@@ -535,8 +540,8 @@ export function ForestCard({
     return (
       <GridCard
         label={`payoff at expiry${data?.tradeDate != null ? ` — ${data.tradeDate}` : ""}`}
-        span={8}
-        h={304}
+        span={span}
+        h={h}
         to={to}
         toLabel="the books behind this payoff"
         foot={

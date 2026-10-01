@@ -2642,6 +2642,23 @@ select.text-input {
   display: flex;
 }
 
+/* The live flies panel fills the column and scrolls inside it if a short window cannot fit it. */
+.live-flies-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.live-flies-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  font-size: 12px;
+}
+
 .overview-right .card {
   flex: 1;
   min-height: 0;

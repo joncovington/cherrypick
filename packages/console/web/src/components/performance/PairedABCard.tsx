@@ -8,7 +8,7 @@ import { Card } from "../DataTable";
  * difference (advised minus base, positive = the overlay is ahead) -- the paired-experiment
  * counterpart to
  * `CumulativeCard.tsx`'s per-tag view. Same mount-once/update-via-setData pattern as
- * `Overview/EquityCard.tsx` and `CumulativeCard.tsx`.
+ * `CumulativeCard.tsx`.
  *
  * The difference line is defined only on sessions BOTH books actually recorded a net for --
  * `pair.sessionsPaired`'s own definition (`readers/pairs.ts`), not every session either book has

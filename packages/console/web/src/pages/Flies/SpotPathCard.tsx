@@ -1,6 +1,6 @@
 import type { TradingMode } from "@console/shared";
 import type { FliesFilter } from "../../lib/api";
-import { GridCard } from "../../components/grid/GridCard";
+import { GridCard, type CardHeight, type CardSpan } from "../../components/grid/GridCard";
 import { ARM_COLORS, SPOT_COLOR } from "../../components/chart/tokens";
 import { niceTicks } from "../../components/chart/scales";
 import { minuteOf, hhmm } from "../../components/chart/time";
@@ -15,14 +15,32 @@ import { useTimeline } from "./TimelineCard";
  * (wanted centres, leg-in bars, the replayed book, named gaps) stays on the tab it links to; a gap in
  * the record still breaks the line here rather than being drawn as a calm stretch.
  */
-export function SpotPathCard({ mode, filter, arm }: { mode: TradingMode; filter: FliesFilter; arm: string | null }) {
+export function SpotPathCard({
+  mode,
+  filter,
+  arm,
+  span = 8,
+  h = 304,
+  chartHeight = 236,
+  to = "/flies/timeline",
+}: {
+  mode: TradingMode;
+  filter: FliesFilter;
+  arm: string | null;
+  /** The cell: the session tab's 8×304 unless a page places it elsewhere. */
+  span?: CardSpan;
+  h?: CardHeight;
+  /** The drawing's height in viewBox units at its fixed 760 width; a shorter cell wants less. */
+  chartHeight?: number;
+  to?: string;
+}) {
   const { data, isLoading } = useTimeline(mode, filter);
   const ticks = (data?.ticks ?? []).filter((t) => t.spot !== null);
   const arms = data?.arms ?? [];
   const events = (data?.events ?? []).filter((e) => (arm === null || e.arm === arm) && e.spot !== null);
 
   const width = 760;
-  const height = 236;
+  const height = chartHeight;
   const pad = { l: 44, r: 8, t: 8, b: 20 };
 
   let body = null;
@@ -98,9 +116,9 @@ export function SpotPathCard({ mode, filter, arm }: { mode: TradingMode; filter:
   return (
     <GridCard
       label="spot path"
-      span={8}
-      h={304}
-      to="/flies/timeline"
+      span={span}
+      h={h}
+      to={to}
       toLabel="the full session timeline"
       foot={
         data === undefined

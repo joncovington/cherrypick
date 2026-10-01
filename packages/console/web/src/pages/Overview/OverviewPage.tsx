@@ -1,14 +1,14 @@
 import type { AlertDaemonHealth } from "@console/shared";
 import { useMorningReport, useOverview } from "../../lib/api";
-import { EquityCard } from "./EquityCard";
-import { EquityBottomRow } from "./EquityBottomRow";
+import { LiveFliesPanel } from "./LiveFliesPanel";
 import { useSystem } from "./SuiteCards";
 import { ExposureCard, EntriesCard } from "./DeskCards";
 
 /**
  * The suite's morning-to-close picture, redesigned (2026-09) to fit 1440×900 with no page
- * scroll: the suite matrix (exposure + entries) on the left, equity + session heatmap +
- * end-of-day on the right. Logs, watchdog, morning phase and the per-producer liveness strip are
+ * scroll: the suite matrix (exposure + entries) on the left, and on the right the flies live
+ * pilot's latest session (`LiveFliesPanel`), which replaced the suite equity curve, the session
+ * heatmap and the end-of-day table on 2026-10-01. Logs, watchdog, morning phase and the per-producer liveness strip are
  * in the shell's status bar (`components/shell/StatusBar`), on every page since 2026-10-01, when
  * the evidence-clock chip row also went. See `docs/history/` for what the taller card-stack
  * layout it replaces looked like.
@@ -105,9 +105,7 @@ export function OverviewPage() {
           <EntriesCard />
         </div>
         <div className="overview-right">
-          <EquityCard>
-            <EquityBottomRow />
-          </EquityCard>
+          <LiveFliesPanel />
         </div>
       </div>
 
