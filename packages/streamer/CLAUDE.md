@@ -51,6 +51,13 @@ Config: copy `config.example.json` → `config.json` (git-ignored, machine-local
     `{"down": N, "up": M}` is directional. Both normalise through `streamcache.window_span`, the union
     takes the max **per side**, and `window_strike_count` floors both sides, so a directional hint can
     only ask for more on one side, never narrow the other (see `docs/streamer-subscription-budget.md`).
+  - **A window carries only the events its symbol's declarers need.** `window_events` (`Quote`,
+    `Greeks`, `Summary` = open interest, `Trade` = option volume) and `nearest_window: false` narrow a
+    symbol only when EVERY module declaring it opts down; a silent declarer keeps all four events and
+    the nearest window, so SPX (GEX reads gamma × OI) stays whole. Both are fixed at launch — a
+    window's unsubscribe must match its subscribe — so growth recycles the producer
+    (`streamrequests.subscription_snapshot`) and a reduction waits for the next restart. With the
+    nearest window declined, a requested date equal to it is still served as an extra window.
   - **A confirmed session value is never erased by a later event that omits it.** The `stream_summary`
     upsert COALESCEs every OHLC field against what is stored; a bare overwrite once let late Summary
     events null out 22 sessions of SPX/XSP closes. A value only gets more known through a session.

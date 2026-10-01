@@ -199,6 +199,10 @@ def test_stream_request_carries_expirations_and_leg_source(tmp_path, managed_hom
     assert payload["symbols"] == ["SPX"]
     assert payload["expirations"] == {"SPX": [FRONT, BACK]}
     assert "dc_legs" in payload["leg_sources"][0]["query"]
+    # The module reads quotes+greeks on its own dates only. If its provider ever starts reading open
+    # interest, option trades or the nearest window, this declaration must change with it.
+    assert payload["window_events"] == {"SPX": ["Quote", "Greeks"]}
+    assert payload["nearest_window"] == {"SPX": False}
 
 
 # ---------------------------------------------------------------- the ex-dividend week guards

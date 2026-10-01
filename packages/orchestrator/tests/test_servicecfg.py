@@ -478,6 +478,60 @@ def test_shortfall_is_silent_on_a_window_that_only_narrows():
     assert sc.subscription_shortfall(stamped, current) == {}
 
 
+_ALL = ["Quote", "Greeks", "Summary", "Trade"]
+
+
+def test_an_event_a_symbol_now_needs_is_a_shortfall_and_recycles_at_once():
+    """A producer launched with SPY on quotes+greeks cannot serve a module that now reads SPY open
+    interest: that reader is blind, so it recycles now rather than waiting out the hint cooldown."""
+    stamped = {
+        "symbols": ["SPY"],
+        "window_hints": {},
+        "window_events": {"SPY": ["Quote", "Greeks"]},
+        "nearest_window": {"SPY": False},
+    }
+    current = {**stamped, "window_events": {"SPY": ["Quote", "Greeks", "Summary"]}}
+    short = sc.subscription_shortfall(stamped, current)
+    assert short == {"window_events": {"SPY": ["Summary"]}}
+    assert sc.hint_recycle_deferred(short, {"stamped_at": 1e18}) is None
+    assert "SPY+Summary" in sc.describe_shortfall(short)
+
+
+def test_a_nearest_window_a_module_now_reads_is_a_shortfall():
+    stamped = {
+        "symbols": ["XSP"],
+        "window_hints": {},
+        "window_events": {"XSP": _ALL},
+        "nearest_window": {"XSP": False},
+    }
+    current = {**stamped, "nearest_window": {"XSP": True}}
+    assert sc.subscription_shortfall(stamped, current) == {"nearest_window": ["XSP"]}
+
+
+def test_opting_down_is_never_a_shortfall():
+    """Less is served by what is running; it takes effect at the next restart, not by forcing one."""
+    stamped = {
+        "symbols": ["SPY"],
+        "window_hints": {},
+        "window_events": {"SPY": _ALL},
+        "nearest_window": {"SPY": True},
+    }
+    current = {**stamped, "window_events": {"SPY": ["Quote", "Greeks"]}, "nearest_window": {"SPY": False}}
+    assert sc.subscription_shortfall(stamped, current) == {}
+
+
+def test_a_stamp_from_before_event_sets_reads_as_having_everything():
+    """That producer subscribed every event and every nearest window, so nothing can exceed it."""
+    stamped = {"symbols": ["SPY"], "window_hints": {}}
+    current = {
+        "symbols": ["SPY"],
+        "window_hints": {},
+        "window_events": {"SPY": _ALL},
+        "nearest_window": {"SPY": True},
+    }
+    assert sc.subscription_shortfall(stamped, current) == {}
+
+
 def test_describe_shortfall_names_the_side_when_a_window_is_directional():
     assert "TQQQ=163v/12^" in sc.describe_shortfall({"window_hints": {"TQQQ": [163, 12]}})
     assert "XSP=90" in sc.describe_shortfall({"window_hints": {"XSP": [90, 90]}})

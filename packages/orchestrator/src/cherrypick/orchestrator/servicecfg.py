@@ -194,11 +194,35 @@ def subscription_shortfall(stamped: dict[str, Any] | None, current: dict[str, An
         had = streamcache.window_span(was_hints.get(symbol, 0))
         if want[0] > had[0] or want[1] > had[1]:
             widened[symbol] = list(want)
+    # Event sets and nearest windows are fixed at launch. A stamp written before they existed holds
+    # neither, and that producer subscribed the full shape -- every event, every nearest window -- so
+    # a missing key reads as "had everything" and can never be a shortfall.
+    had_events = stamped.get("window_events")
+    more_events = {}
+    if isinstance(had_events, dict):
+        for symbol, events in (current.get("window_events") or {}).items():
+            if symbol not in had_events:
+                continue  # a new symbol is already a shortfall above
+            gained = sorted(set(events) - set(had_events.get(symbol) or []))
+            if gained:
+                more_events[symbol] = gained
+    had_nearest = stamped.get("nearest_window")
+    nearest_back = []
+    if isinstance(had_nearest, dict):
+        nearest_back = sorted(
+            s
+            for s, on in (current.get("nearest_window") or {}).items()
+            if on and had_nearest.get(s, True) is False
+        )
     out: dict[str, Any] = {}
     if new_symbols:
         out["symbols"] = new_symbols
     if widened:
         out["window_hints"] = widened
+    if more_events:
+        out["window_events"] = more_events
+    if nearest_back:
+        out["nearest_window"] = nearest_back
     return out
 
 
@@ -213,8 +237,8 @@ def hint_recycle_deferred(
         the old behaviour stands rather than an invented one;
       * the cooldown has elapsed.
     """
-    if short.get("symbols"):
-        return None
+    if short.get("symbols") or short.get("window_events") or short.get("nearest_window"):
+        return None  # a reader without its events or window is blind, like one without its symbol
     if not short.get("window_hints"):
         return None
     stamped_at = stamp.get("stamped_at")
@@ -241,6 +265,11 @@ def describe_shortfall(short: dict[str, Any]) -> str:
         parts.append(
             "wider windows " + ", ".join(f"{s}={_describe_span(widened[s])}" for s in sorted(widened))
         )
+    if short.get("window_events"):
+        gained = short["window_events"]
+        parts.append("window events " + ", ".join(f"{s}+{'/'.join(gained[s])}" for s in sorted(gained)))
+    if short.get("nearest_window"):
+        parts.append("nearest windows " + ", ".join(short["nearest_window"]))
     return " and ".join(parts) or "nothing"
 
 

@@ -83,6 +83,14 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
         leg_sources=leg_sources,
         window_hints=hints,
         expirations=wanted_expirations(conn, symbols, today, defaults),
+        # What the loop reads off its windows (audited 2026-09-30): call quotes and greeks on the
+        # plan's short and long dates -- the ATM short and the delta-band deep-ITM long. Never the
+        # nearest expiration as such (a plan date that coincides with it is served as a requested
+        # date), never option trades. Open interest is read only by the `calibrate` CLI's ladder
+        # (`provider.ladder_snapshot`), an informational column, which now reads empty for these
+        # symbols; that is the price of ~2,900 fewer subscriptions across TQQQ and XSP.
+        window_events={s: ["Quote", "Greeks"] for s in symbols},
+        nearest_window={s: False for s in symbols},
     )
 
 

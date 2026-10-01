@@ -19,6 +19,9 @@ def test_request_payload_shape(cache, config, tmp_path):
     assert payload["expirations"] == {"TQQQ": ["2026-09-04", "2026-09-11"]}
     assert payload["leg_sources"][0]["db"] == db_path
     assert "streamer_symbol" in payload["leg_sources"][0]["query"]
+    # Quotes+greeks on the plan dates only; see the declaration's comment for what that costs.
+    assert payload["window_events"] == {"TQQQ": ["Quote", "Greeks"]}
+    assert payload["nearest_window"] == {"TQQQ": False}
 
 
 def test_open_leg_expirations_stay_requested(cache, config, tmp_path):

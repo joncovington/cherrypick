@@ -52,11 +52,19 @@ def write(config: dict, conn, db_path: str, *, today: date | None = None) -> Pat
             "WHERE l.status = 'open' AND p.status != 'closed'",
         )
     ]
+    upper = [s.strip().upper() for s in symbols]
     return _sr.write_request(
         _MODULE,
         symbols,
         leg_sources=leg_sources,
-        expirations=wanted_expirations(conn, [s.strip().upper() for s in symbols], today),
+        expirations=wanted_expirations(conn, upper, today),
+        # What this module actually reads off its windows (audited 2026-09-30): quotes for the
+        # front/back strikes within `strike_window_pct` and greeks for the chosen legs, on its
+        # declared front/back dates only. Never open interest, never option trades, never the
+        # nearest expiration as such -- on a Friday the front IS the nearest, and the producer then
+        # serves it as a requested date. That cut SPY from ~2,440 subscriptions to ~980.
+        window_events={s: ["Quote", "Greeks"] for s in upper},
+        nearest_window={s: False for s in upper},
     )
 
 

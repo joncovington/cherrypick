@@ -35,6 +35,14 @@ Payload shape (see ``packages/streamer/src/registry.py``, the reader):
     file; the streamer re-reads the union every window pass, so a newly requested date is served with no
     restart. Dates already past (ET) are dropped at union time, so a file nobody rewrote over a weekend
     cannot pin dead subscriptions.
+  - ``window_events``: optional ``{symbol: [event types]}`` — which DXLink events this module needs on
+    its window options (``Quote``, ``Greeks``, ``Summary`` = open interest, ``Trade`` = per-option
+    volume). A module that does NOT declare a symbol here needs all four, which is the historical
+    behaviour, so the union per symbol can only narrow when EVERY module declaring the symbol says
+    so: one silent module keeps the full set. See `union_window_events`.
+  - ``nearest_window``: optional ``{symbol: false}`` — this module never reads the nearest-expiration
+    window of that symbol (only its declared ``expirations``). Skipped only when every module
+    declaring the symbol says false; see `union_nearest_window`.
   - ``history_days``: optional ``{symbol: days}`` — how many COMPLETED daily OHLC rows the module needs
     ``stream_summary`` to hold for a symbol (e.g. a daily-bar-driven indicator needing several weeks
     of history). The producer backfills a deficit once from DXLink daily candles — filling only dates the live
@@ -132,6 +140,35 @@ def clean_expirations(expirations) -> dict[str, list[str]]:
     return out
 
 
+# The event types a window option can be subscribed to, in the order the producer sends them.
+WINDOW_EVENTS = ("Quote", "Greeks", "Summary", "Trade")
+
+
+def clean_window_events(window_events) -> dict[str, list[str]]:
+    """Validated ``{symbol: [event types]}`` in canonical order. Unknown event names are dropped; a
+    symbol whose list cleans to nothing is dropped too -- an empty declaration would read as "no
+    events", and the safe reading of junk is "this module said nothing", which means all four."""
+    out: dict[str, list[str]] = {}
+    for symbol, events in (window_events or {}).items():
+        if not (isinstance(symbol, str) and symbol.strip()) or not isinstance(events, (list, tuple)):
+            continue
+        wanted = {str(e).strip() for e in events if isinstance(e, str)}
+        kept = [e for e in WINDOW_EVENTS if e in wanted]
+        if kept:
+            out[symbol.strip().upper()] = kept
+    return out
+
+
+def clean_nearest_window(nearest_window) -> dict[str, bool]:
+    """``{symbol: False}`` entries only. True is the default and needs no declaring, and anything
+    that is not literally False (a typo, a string) is ignored, so junk keeps the window."""
+    out: dict[str, bool] = {}
+    for symbol, wanted in (nearest_window or {}).items():
+        if isinstance(symbol, str) and symbol.strip() and wanted is False:
+            out[symbol.strip().upper()] = False
+    return out
+
+
 def leg_source(db, query: str) -> dict:
     """One `leg_sources` spec: the DB the producer opens read-only and the SELECT it re-runs.
 
@@ -186,7 +223,15 @@ def register_best_effort(write, *args, log=None, **kwargs):
 
 
 def write_request(
-    module: str, symbols, legs=(), leg_sources=(), window_hints=None, expirations=None, history_days=None
+    module: str,
+    symbols,
+    legs=(),
+    leg_sources=(),
+    window_hints=None,
+    expirations=None,
+    history_days=None,
+    window_events=None,
+    nearest_window=None,
 ) -> Path:
     """Atomically (over)write a module's request file and return its path.
 
@@ -202,6 +247,8 @@ def write_request(
         "window_hints": clean_window_hints(window_hints),
         "expirations": clean_expirations(expirations),
         "history_days": clean_history_days(history_days),
+        "window_events": clean_window_events(window_events),
+        "nearest_window": clean_nearest_window(nearest_window),
     }
     return write_json_atomic(path, payload, indent=None, default=None)
 
@@ -281,6 +328,32 @@ def union_expirations(*, today: date | None = None) -> dict[str, list[str]]:
     return {symbol: sorted(dates) for symbol, dates in out.items() if dates}
 
 
+def union_window_events(seed_symbols=None) -> dict[str, list[str]]:
+    """Per underlying, the window event types the producer must subscribe: the UNION over every
+    module that declares the symbol, where a module that does not declare its events needs all
+    four. So a symbol narrows only when every one of its declarers says so -- SPX, declared by six
+    modules and read for gamma x OI by four of them, keeps everything unless all six opt down.
+
+    Seed symbols (the operator's base set) count as an undeclared declarer: full events."""
+    out: dict[str, set[str]] = {s: set(WINDOW_EVENTS) for s in clean_symbols(seed_symbols)}
+    for data in read_all():
+        declared = clean_window_events(data.get("window_events"))
+        for symbol in clean_symbols(data.get("symbols")):
+            out.setdefault(symbol, set()).update(declared.get(symbol, WINDOW_EVENTS))
+    return {s: [e for e in WINDOW_EVENTS if e in events] for s, events in sorted(out.items())}
+
+
+def union_nearest_window(seed_symbols=None) -> dict[str, bool]:
+    """Per underlying, whether the producer keeps its nearest-expiration window: False only when
+    every module declaring the symbol says it never reads that window. A seed symbol keeps it."""
+    out: dict[str, bool] = {s: True for s in clean_symbols(seed_symbols)}
+    for data in read_all():
+        declined = clean_nearest_window(data.get("nearest_window"))
+        for symbol in clean_symbols(data.get("symbols")):
+            out[symbol] = out.get(symbol, False) or symbol not in declined
+    return dict(sorted(out.items()))
+
+
 def subscription_snapshot(seed_symbols=None) -> dict:
     """The half of the registry union that only a producer **restart** can change.
 
@@ -291,8 +364,18 @@ def subscription_snapshot(seed_symbols=None) -> dict:
     to look like a reason for one. ``expirations`` are absent for the same reason — the engine re-reads
     the union every window pass, and a calendar module's request *rolls forward every week by design*,
     so tracking it here would recycle a healthy producer once a week for nothing.
+
+    ``window_events`` and ``nearest_window`` ARE here: the producer fixes both at launch, because a
+    window's event set must not change under it (its unsubscribe has to match what it subscribed).
+    Only growth recycles -- an event a symbol now needs, or a nearest window a module now reads --
+    so a module opting DOWN takes effect at the next restart rather than causing one.
     """
-    return {"symbols": union_symbols(seed_symbols), "window_hints": union_window_hints()}
+    return {
+        "symbols": union_symbols(seed_symbols),
+        "window_hints": union_window_hints(),
+        "window_events": union_window_events(seed_symbols),
+        "nearest_window": union_nearest_window(seed_symbols),
+    }
 
 
 # --------------------------------------------------------------------------- the subscription budget
@@ -310,9 +393,9 @@ def subscription_snapshot(seed_symbols=None) -> dict:
 # window asks for. Its job is a change in ORDER OF MAGNITUDE, not a reconciliation.
 DEFAULT_SUBSCRIPTION_BUDGET = 12_000
 
-# A window is `below + above + 1` strikes, both rights, subscribed across Quote/Greeks/Summary and
-# (for the nearest window) Trade.
-_EVENTS_PER_OPTION = 4
+# A window is `below + above + 1` strikes, both rights, each subscribed to its symbol's declared
+# event set (`union_window_events`) -- all four unless every declarer of the symbol opted down.
+_EVENTS_PER_OPTION = len(WINDOW_EVENTS)
 _RIGHTS = 2
 
 
@@ -324,10 +407,11 @@ def estimate_subscriptions(
 ) -> dict:
     """What the declared registry would cost a producer, per symbol and in total.
 
-    The model: each underlying gets one nearest-expiration window plus one per declared extra
-    expiration; each window spans `max(default, hint_below) + max(default, hint_above) + 1` strikes
-    across both rights; each option symbol is subscribed to four event types. Underlyings and legs
-    are rounding error beside the windows and are not modelled.
+    The model: each underlying gets one nearest-expiration window (unless every declarer opted out,
+    `union_nearest_window`) plus one per declared extra expiration; each window spans
+    `max(default, hint_below) + max(default, hint_above) + 1` strikes across both rights; each option
+    symbol is subscribed to its symbol's event set (`union_window_events`, four by default).
+    Underlyings and legs are rounding error beside the windows and are not modelled.
 
     Returns `{"total", "by_symbol", "windows", "budget_basis"}`. Every input is read from the
     registry union rather than passed in, so this can never describe a different world than the one
@@ -336,6 +420,8 @@ def estimate_subscriptions(
     symbols = union_symbols(seed_symbols)
     hints = union_window_hints()
     expirations = union_expirations(today=today)
+    events = union_window_events(seed_symbols)
+    nearest = union_nearest_window(seed_symbols)
     by_symbol: dict[str, dict] = {}
     total = 0
     windows = 0
@@ -343,8 +429,8 @@ def estimate_subscriptions(
         hint_down, hint_up = hints.get(symbol, (0, 0))
         below = max(int(default_strike_count), hint_down)
         above = max(int(default_strike_count), hint_up)
-        per_window = (below + above + 1) * _RIGHTS * _EVENTS_PER_OPTION
-        n_windows = 1 + len(expirations.get(symbol, []))
+        per_window = (below + above + 1) * _RIGHTS * len(events.get(symbol, WINDOW_EVENTS))
+        n_windows = (1 if nearest.get(symbol, True) else 0) + len(expirations.get(symbol, []))
         cost = per_window * n_windows
         by_symbol[symbol] = {
             # `strike_count` stays the widest side, so a reader that only wants "how deep is this
@@ -352,6 +438,7 @@ def estimate_subscriptions(
             "strike_count": max(below, above),
             "span": [below, above],
             "windows": n_windows,
+            "events": list(events.get(symbol, WINDOW_EVENTS)),
             "per_window": per_window,
             "subscriptions": cost,
             "hinted": symbol in hints,

@@ -156,6 +156,15 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
         down, up = _registry.union_window_hints().get(symbol, (0, 0))
         return (max(default_strike_count, down), max(default_strike_count, up))
 
+    # Which events each symbol's window options carry, and whether it keeps a nearest window --
+    # resolved ONCE, here, for the life of the process. A window's unsubscribe must match what it
+    # subscribed, so the set cannot move under a running window; a module that later needs MORE is
+    # growth, which the watchdog recycles on (`streamrequests.subscription_snapshot`), and one that
+    # needs less takes effect at the next restart. Both default to the historical full shape for any
+    # symbol a module declares without opting down.
+    window_events = _registry.union_window_events(seed_symbols=seed)
+    nearest_window = _registry.union_nearest_window(seed_symbols=seed)
+
     def _expirations_for(symbol: str) -> list[str]:
         # Extra expirations (e.g. the calendars module's 4DTE/7DTE legs) are dynamic like the legs:
         # the engine re-reads this every window pass, so a request that rolls to next week's dates
@@ -180,6 +189,8 @@ def build_streamer(cfg: dict, symbols: list[str] | None = None) -> ChainStreamer
         history_days_for=_history_days_for,
         window_strike_count=default_strike_count,
         window_strike_count_for=_window_strike_count_for,
+        window_events_for=lambda symbol: window_events.get(symbol),
+        nearest_window_for=lambda symbol: nearest_window.get(symbol, True),
         logger=logger,
     )
 

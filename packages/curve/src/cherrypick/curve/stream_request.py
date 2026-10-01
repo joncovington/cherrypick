@@ -62,6 +62,11 @@ def write(config: dict, conn, db_path: str, *, cache_path: str, today: date | No
         leg_sources=leg_sources,
         expirations=wanted_expirations(conn, symbol, today, defaults),
         history_days={symbol: _HISTORY_DAYS, "VIX": _HISTORY_DAYS, "VIX3M": _HISTORY_DAYS},
+        # What this module reads off its window (audited 2026-09-30): call quotes and greeks on the
+        # one monthly target date -- the 0.30-delta short and its wing. Never the VXX weekly that the
+        # nearest window serves, never open interest, never option trades.
+        window_events={symbol: ["Quote", "Greeks"]},
+        nearest_window={symbol: False},
     )
 
 

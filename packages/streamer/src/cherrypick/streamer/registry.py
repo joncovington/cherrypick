@@ -107,6 +107,8 @@ union_symbols = _streamrequests.union_symbols
 union_window_hints = _streamrequests.union_window_hints
 union_expirations = _streamrequests.union_expirations
 union_history_days = _streamrequests.union_history_days
+union_window_events = _streamrequests.union_window_events
+union_nearest_window = _streamrequests.union_nearest_window
 
 
 def union_legs() -> list[str]:

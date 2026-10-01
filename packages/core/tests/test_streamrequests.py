@@ -21,6 +21,8 @@ def test_write_request_shape_and_cleaning(tmp_path, monkeypatch):
         "window_hints": {},
         "expirations": {},
         "history_days": {},
+        "window_events": {},
+        "nearest_window": {},
     }
 
 
@@ -148,7 +150,63 @@ def test_subscription_snapshot_excludes_expirations(tmp_path, monkeypatch):
     streamrequests.write_request("a", ["SPX"], expirations={"SPX": ["2099-01-15"]})
     # Expirations are served dynamically (re-read every window pass) and roll forward weekly by
     # design — like legs/leg_sources they must never look like a reason to recycle the producer.
-    assert streamrequests.subscription_snapshot() == {"symbols": ["SPX"], "window_hints": {}}
+    assert streamrequests.subscription_snapshot() == {
+        "symbols": ["SPX"],
+        "window_hints": {},
+        "window_events": {"SPX": list(streamrequests.WINDOW_EVENTS)},
+        "nearest_window": {"SPX": True},
+    }
+
+
+# --------------------------------------------------------------------------- window events / nearest
+
+
+def test_window_events_narrow_only_when_every_declarer_opts_down(tmp_path, monkeypatch):
+    """SPY is declared by calendars alone, which reads quotes and greeks; SPX by six modules, four
+    of which read gamma x OI. One silent declarer must keep the full set -- a union that took the
+    narrowest answer would starve GEX of open interest the first time any SPX module opted down."""
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    streamrequests.write_request("calendars", ["SPY"], window_events={"SPY": ["Greeks", "Quote", "Bogus"]})
+    streamrequests.write_request("flies", ["SPX"])  # silent: needs everything
+    streamrequests.write_request("thin", ["SPX"], window_events={"SPX": ["Quote"]})
+
+    events = streamrequests.union_window_events()
+
+    assert events["SPY"] == ["Quote", "Greeks"]  # canonical order, junk dropped
+    assert events["SPX"] == list(streamrequests.WINDOW_EVENTS)
+
+
+def test_window_events_for_a_symbol_the_module_does_not_declare_are_ignored(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    streamrequests.write_request("a", ["SPY"], window_events={"SPX": ["Quote"]})
+    assert "SPX" not in streamrequests.union_window_events()
+
+
+def test_nearest_window_is_dropped_only_when_every_declarer_declines_it(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    streamrequests.write_request("pmcc", ["TQQQ", "XSP"], nearest_window={"TQQQ": False, "XSP": False})
+    streamrequests.write_request("other", ["XSP"])  # reads the XSP 0DTE window
+    streamrequests.write_request("junk", ["SPY"], nearest_window={"SPY": "false"})  # not literally False
+
+    nearest = streamrequests.union_nearest_window()
+
+    assert nearest == {"SPY": True, "TQQQ": False, "XSP": True}
+
+
+def test_budget_counts_each_symbols_events_and_windows(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path))
+    streamrequests.write_request(
+        "calendars",
+        ["SPY"],
+        expirations={"SPY": ["2099-01-15", "2099-01-22"]},
+        window_events={"SPY": ["Quote", "Greeks"]},
+        nearest_window={"SPY": False},
+    )
+    est = streamrequests.estimate_subscriptions(default_strike_count=30)
+    spy = est["by_symbol"]["SPY"]
+    # Two requested dates, no nearest window; 61 strikes x 2 rights x 2 events each.
+    assert spy["windows"] == 2 and spy["events"] == ["Quote", "Greeks"]
+    assert spy["subscriptions"] == 2 * 61 * 2 * 2
 
 
 # --------------------------------------------------------------------------- leg_source / validation

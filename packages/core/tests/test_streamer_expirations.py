@@ -53,7 +53,14 @@ FRI = "2099-01-15"
 MON = "2099-01-18"
 
 
-def _engine_and_state(tmp_path, expirations_for=None, protected_symbols=None, full_chain=None):
+def _engine_and_state(
+    tmp_path,
+    expirations_for=None,
+    protected_symbols=None,
+    full_chain=None,
+    window_events_for=None,
+    nearest_window_for=None,
+):
     engine = ChainStreamer(
         session_factory=lambda: None,
         db_path=tmp_path / "cache.db",
@@ -61,6 +68,8 @@ def _engine_and_state(tmp_path, expirations_for=None, protected_symbols=None, fu
         window_strike_count=10,
         expirations_for=expirations_for,
         protected_symbols=protected_symbols,
+        window_events_for=window_events_for,
+        nearest_window_for=nearest_window_for,
     )
     conn = streamcache.connect(tmp_path / "cache.db")
     conn.execute(
@@ -219,6 +228,87 @@ def test_junk_from_the_hook_costs_the_pass_not_the_task(tmp_path, monkeypatch):
     asyncio.run(_run_one_pass(engine, state, streamer, monkeypatch))
     # The nearest window still built; nothing raised out of the refresher.
     assert len(state.window_syms["XSP"]) == 2 * 10 + 1
+
+
+def _events_sent(streamer, symbol_prefix):
+    """Which event types the fake streamer was asked to subscribe for symbols with this prefix."""
+    return {etype for etype, syms in streamer.subscribed if any(s.startswith(symbol_prefix) for s in syms)}
+
+
+def test_without_a_hook_every_window_carries_all_four_events(tmp_path, monkeypatch):
+    full = {NEAREST: _slice(NEAREST, "N"), FRI: _slice(FRI, "F")}
+    engine, state = _engine_and_state(tmp_path, expirations_for=lambda sym: [FRI], full_chain=full)
+    streamer = _FakeStreamer()
+    asyncio.run(_run_one_pass(engine, state, streamer, monkeypatch))
+    assert _events_sent(streamer, "N") == {"Quote", "Greeks", "Summary", "Trade"}
+    assert _events_sent(streamer, "F") == {"Quote", "Greeks", "Summary", "Trade"}
+
+
+def test_a_declared_event_set_is_all_a_window_subscribes(tmp_path, monkeypatch):
+    """2026-09-30: no loop reads open interest or option trades off SPY/TQQQ/XSP/VXX windows, which
+    paid for both on every strike -- about half of the non-SPX subscription load."""
+    full = {NEAREST: _slice(NEAREST, "N"), FRI: _slice(FRI, "F")}
+    engine, state = _engine_and_state(
+        tmp_path,
+        expirations_for=lambda sym: [FRI],
+        full_chain=full,
+        window_events_for=lambda sym: ["Quote", "Greeks"],
+    )
+    streamer = _FakeStreamer()
+    asyncio.run(_run_one_pass(engine, state, streamer, monkeypatch))
+    assert _events_sent(streamer, "N") == {"Quote", "Greeks"}
+    assert _events_sent(streamer, "F") == {"Quote", "Greeks"}
+
+
+def test_a_broken_event_hook_falls_back_to_all_four(tmp_path, monkeypatch):
+    def bad(sym):
+        raise OSError("registry unreadable")
+
+    engine, state = _engine_and_state(tmp_path, window_events_for=bad)
+    streamer = _FakeStreamer()
+    asyncio.run(_run_one_pass(engine, state, streamer, monkeypatch))
+    assert _events_sent(streamer, "N") == {"Quote", "Greeks", "Summary", "Trade"}
+
+
+def test_a_declined_nearest_window_is_not_subscribed_but_requested_dates_are(tmp_path, monkeypatch):
+    full = {NEAREST: _slice(NEAREST, "N"), FRI: _slice(FRI, "F")}
+    engine, state = _engine_and_state(
+        tmp_path,
+        expirations_for=lambda sym: [FRI],
+        full_chain=full,
+        nearest_window_for=lambda sym: False,
+    )
+    streamer = _FakeStreamer()
+    asyncio.run(_run_one_pass(engine, state, streamer, monkeypatch))
+    assert state.window_syms["XSP"] == []
+    assert _events_sent(streamer, "N") == set()
+    assert len(state.window_syms[f"XSP@{FRI}"]) == 2 * 10 + 1
+
+
+def test_a_requested_date_equal_to_the_nearest_is_served_when_the_nearest_window_is_declined(
+    tmp_path, monkeypatch
+):
+    """The dedupe that skips a requested date the nearest window already serves (a 0DTE Friday)
+    must not fire when there IS no nearest window: calendars' Friday front is that date, and
+    skipping it would leave the one date the module asked for unsubscribed."""
+    nearest_slice = _slice(NEAREST, "N")
+    full = {NEAREST: nearest_slice}
+    engine, state = _engine_and_state(
+        tmp_path,
+        expirations_for=lambda sym: [NEAREST],
+        full_chain=full,
+        nearest_window_for=lambda sym: False,
+    )
+    streamer = _FakeStreamer()
+    asyncio.run(_run_one_pass(engine, state, streamer, monkeypatch))
+    assert len(state.window_syms[f"XSP@{NEAREST}"]) == 2 * 10 + 1
+    assert _events_sent(streamer, "N") != set()
+
+
+def test_total_subscribed_counts_each_windows_own_events(tmp_path):
+    engine, state = _engine_and_state(tmp_path, window_events_for=lambda sym: ["Quote", "Greeks"])
+    state.window_syms = {"XSP": ["A", "B"], f"XSP@{FRI}": ["C"]}
+    assert engine._total_subscribed(state) == 3 * 2  # three options x Quote and Greeks only
 
 
 def test_window_syms_except_unions_all_other_windows(tmp_path):

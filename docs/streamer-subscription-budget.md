@@ -159,6 +159,20 @@ the freshness check only warns. The cost is a false WARN whenever such a module 
 idle, which for a hold-to-expiry book is most of the session. Fix is small: beat at the top of each
 tick through `cherrypick.core.home.heartbeat_path`, the way flies' `paper_loop._beat` already does.
 
+## 2026-09-30: windows carry only what their readers read
+
+An audit of every reader found that half the load bought nothing. Every window option was
+subscribed to Quote, Greeks, Summary (open interest) and Trade, but open interest and option trades
+are read only by GEX, which reads SPX alone. Calendars (SPY), pmcc (TQQQ, XSP) and curve (VXX) read
+quotes and greeks, on their declared dates only, and none of them ever reads its symbol's
+nearest-expiration window. The one off-loop reader lost is pmcc's `calibrate` ladder, whose
+open-interest column now reads empty for its symbols.
+
+Two request keys now say so: `window_events` and `nearest_window`. A symbol narrows only when every
+module declaring it opts down, so SPX is untouched. Estimate **9,752 → 4,628**; the producer's own
+count **8,848 → 4,436** after a restart, with 0 reconnects and no chain errors. Both keys are fixed
+at launch and recycle the producer on growth, never on a reduction.
+
 ## What was re-derived afterwards (settled 2026-08-24, after the close)
 
 - **`window_strike_count` stays at 30 — now by measurement, not by incident.** It serves only the
