@@ -1,6 +1,7 @@
 import { Outlet, useLocation } from "react-router-dom";
 import { StatusHeader } from "./StatusHeader";
 import { StatusBar } from "./StatusBar";
+import { PageErrorBoundary } from "./PageErrorBoundary";
 import { ToastStack } from "./ToastStack";
 import { isModuleId } from "../../lightbox/moduleOrder";
 import { useBoolPref, usePrefsSync } from "../../lib/prefs";
@@ -31,7 +32,9 @@ export function Shell() {
             staying mounted and handing off, and keying here undid it one level up. A tab change
             now reconciles; a module change still remounts and fades. */}
         <div key={seg} className={framed ? "view-fade view-fill" : "view-fade"}>
-          <Outlet />
+          <PageErrorBoundary resetKey={location.pathname}>
+            <Outlet />
+          </PageErrorBoundary>
         </div>
       </main>
       <StatusBar />

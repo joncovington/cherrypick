@@ -68,7 +68,10 @@ const webDist = path.resolve(here, "..", "..", "web", "dist");
 if (fs.existsSync(webDist)) {
   await app.register(fastifyStatic, { root: webDist });
   app.setNotFoundHandler((req, reply) => {
-    if (req.raw.url?.startsWith("/api/")) {
+    // A missing BUILD FILE is a 404, never the app shell: a tab opened before a rebuild asks for the
+    // old build's chunk names, and answering with index.html as a 200 made the browser's import
+    // fail on a page that looked served (see web/src/components/shell/PageErrorBoundary.tsx).
+    if (req.raw.url?.startsWith("/api/") || req.raw.url?.startsWith("/assets/")) {
       void reply.code(404).send({ error: "not found" });
     } else {
       void reply.sendFile("index.html");
