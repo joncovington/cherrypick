@@ -196,6 +196,13 @@ alone):
 **Shell.** A top bar (menu, the futures ticker, the clock) and a bottom status bar (health chips,
 watchdog/session/morning phase, logs) are on every page; only the content between them scrolls.
 
+**System page** (`/system`): the suite's own health, read-only, from the files the suite writes
+(supervisor registry and heartbeat, watchdog and its renotify memory, holds, pid files, stamps).
+A tile's level is the suite's verdict (a watchdog finding, or the supervisor's own heartbeat rule),
+never a second opinion. Two reads go beyond a file, both cached and read-only: `git` (what the
+checkout holds; which processes predate their package's newest commit) and one `python -c`
+(interpreter and package versions). No control path: restarts and holds stay with `run.py`.
+
 **Module frame.** Every page renders a left rail and a content pane inside the shell. The rail
 starts collapsed to its toggle; open or shut is the `navExpanded` console preference.
 `registry.ts`'s `MODULE_FRAMES` and `navGroups.ts`'s `NAV_DECL` are full `Record`s over `ModuleId`, so

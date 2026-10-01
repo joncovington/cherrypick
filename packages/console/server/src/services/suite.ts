@@ -44,6 +44,23 @@ export interface SystemPanel {
   alertDaemon: AlertDaemonHealth | null;
 }
 
+/** Where each service writes its pid; a service not listed here has none the console knows of. */
+const SERVICE_PID_FILES: Record<string, string[]> = {
+  streamer: ["data", "marketdata", "streamer.pid"],
+  "gex-recorder": ["data", "gex", "recorder.pid"],
+};
+
+function readPidFile(config: ConsoleConfig, id: string): number | null {
+  const rel = SERVICE_PID_FILES[id];
+  if (rel === undefined) return null;
+  try {
+    const n = Number.parseInt(fs.readFileSync(path.join(config.paths.cherrypick, ...rel), "utf-8").trim(), 10);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
 export function readSystemPanel(config: ConsoleConfig): SystemPanel {
   const cfg = readJson(config.paths.orchestratorConfig) ?? {};
   const modulesRaw = cfg["modules"];
@@ -104,8 +121,10 @@ export function readSystemPanel(config: ConsoleConfig): SystemPanel {
         id,
         enabled: s["enabled"] === true,
         autoRestart: s["auto_restart"] === true,
-        launched: typeof launch?.["launched_at"] === "string" ? launch["launched_at"] : null,
-        pid: typeof launch?.["pid"] === "number" ? launch["pid"] : null,
+        // The launch stamp records WHEN (`stamped_at`, epoch seconds) but not the pid; the daemon's
+        // own pid file has that. Reading `launched_at`/`pid` off the stamp left both always null.
+        launched: typeof launch?.["stamped_at"] === "number" ? new Date(launch["stamped_at"] * 1000).toISOString() : null,
+        pid: readPidFile(config, id),
         health: finding?.status ?? null,
         note,
         detail: finding?.message ?? null,

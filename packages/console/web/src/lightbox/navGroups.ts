@@ -239,6 +239,19 @@ export const REPORTS_SLIDES = [
 
 export const ADVISOR_SLIDES = [{ id: "advisor", label: "advisor" }] as const satisfies readonly NavSlide[];
 
+/**
+ * System (2026-10-01): the suite's own health, read-only. `health` is the verdict at a glance; the
+ * rest are the detail behind it, one subsystem a tab.
+ */
+export const SYSTEM_SLIDES = [
+  { id: "health", label: "health" },
+  { id: "supervisor", label: "supervisor" },
+  { id: "modules", label: "modules" },
+  { id: "data", label: "data" },
+  { id: "environment", label: "environment" },
+  { id: "logs", label: "logs" },
+] as const satisfies readonly NavSlide[];
+
 export const CONFIG_SLIDES: readonly NavSlide[] = [
   ...SECTIONS.map((s) => ({ id: s.id, label: s.title.toLowerCase() })),
   { id: "prefs", label: "prefs" },
@@ -337,6 +350,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   live: { slides: LIVE_SLIDES },
   reports: { slides: REPORTS_SLIDES },
   advisor: { slides: ADVISOR_SLIDES },
+  system: { slides: SYSTEM_SLIDES },
   config: { slides: CONFIG_SLIDES },
 };
 

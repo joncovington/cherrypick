@@ -24,6 +24,7 @@ export const SUITE_LINKS: readonly NavLinkDef[] = [
   { to: "/reports", label: "Reports", key: "r" },
   { to: "/advisor", label: "Advisor", key: "a" },
   { to: "/live", label: "Live", key: "l" },
+  { to: "/system", label: "System", key: "s" },
 ];
 
 /** The eight module pages, in the order the suite lists them everywhere. */

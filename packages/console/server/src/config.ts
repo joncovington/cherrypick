@@ -8,11 +8,12 @@ const CHERRYPICK = cherrypickHome();
 
 // This file lives at packages/console/server/{src,dist}/config.{ts,js} -- "src" and "dist" sit at
 // the same depth under server/, so the walk up to the monorepo root is four levels either way,
-// in a dev checkout or a built one. Used only to reach a sibling module's SOURCE tree (its own
-// declared arms/profiles, not runtime data) for the one thing this package has no other way to
-// know: whether a calibration tag is currently active or retired. Everything else this package
-// reads stays under ~/.cherrypick; this is the one exception, and it stays read-only.
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
+// in a dev checkout or a built one. Used to reach a sibling module's SOURCE tree (its own declared
+// arms/profiles, not runtime data) for the one thing this package has no other way to know:
+// whether a calibration tag is currently active or retired; and by the System page, which asks
+// git (read-only) what code the checkout holds. Everything else this package reads stays under
+// ~/.cherrypick; these are the exceptions, and they stay read-only.
+export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 
 export interface ConsoleConfig {
   port: number;

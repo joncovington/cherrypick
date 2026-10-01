@@ -187,6 +187,8 @@ describe("the suite surfaces are on the frame", () => {
     ["/reports/eod", "Reports / eod"],
     ["/reports", "Reports / morning"],
     ["/advisor", "Advisor / advisor"],
+    ["/system", "System / health"],
+    ["/system/supervisor", "System / supervisor"],
     ["/config/prefs", "Config / prefs"],
     ["/config", "Config / arms"], // "arms & profiles": the ampersand is escaped in markup
   ];

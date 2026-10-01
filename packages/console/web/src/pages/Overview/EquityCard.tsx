@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   createChart,
@@ -211,66 +211,5 @@ function BreaksLine({ breaks, drawn }: { breaks: SuiteReport["breaks"]; drawn: s
       ))}
       {items.length > shown.length && ` · +${items.length - shown.length} more`}
     </p>
-  );
-}
-
-interface LogLine {
-  source: string;
-  level: string;
-  ts: string | null;
-  text: string;
-}
-
-const LOG_LEVELS = ["ALL", "CRITICAL", "WARN", "INFO", "NOTIFY", "OK"] as const;
-
-export function LogsCard() {
-  const [level, setLevel] = useState<(typeof LOG_LEVELS)[number]>("ALL");
-  const { data } = useQuery<{ lines: LogLine[] }>({
-    queryKey: ["logs"],
-    queryFn: async () => {
-      const res = await fetch("/api/logs");
-      if (!res.ok) throw new Error(`logs: HTTP ${res.status}`);
-      return (await res.json()) as { lines: LogLine[] };
-    },
-    refetchInterval: 15_000,
-  });
-  const all = data?.lines ?? [];
-  const lines = all.filter((l) => {
-    if (level === "ALL") return true;
-    if (level === "CRITICAL") return l.level === "CRITICAL" || l.level === "ERROR";
-    if (level === "WARN") return l.level === "WARN" || l.level === "WARNING";
-    return l.level === level;
-  });
-  return (
-    <section className="card">
-      <div className="card-head">
-        <h2>recent logs (watchdog · notify · module paper logs)</h2>
-        <div className="mode-toggle" style={{ marginLeft: "auto" }} role="group" aria-label="log level filter">
-          {LOG_LEVELS.map((lv) => (
-            <button key={lv} type="button" className={level === lv ? "mode-btn active" : "mode-btn"} onClick={() => setLevel(lv)}>
-              {lv}
-            </button>
-          ))}
-        </div>
-      </div>
-      {data === undefined ? (
-        <span className="skeleton skeleton-text" style={{ width: "60%" }} />
-      ) : lines.length === 0 ? (
-        <p className="muted">no log lines found</p>
-      ) : (
-        <div>
-          {[...lines].reverse().map((l, i) => (
-            <div key={i} className="log-line">
-              <span className={`log-level lvl-${l.level}`}>{l.level}</span>
-              <span className="log-source">{l.source}</span>
-              <span className="log-text" title={l.text}>
-                {l.ts !== null ? `${l.ts.slice(11, 19)} ` : ""}
-                {l.text}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
   );
 }

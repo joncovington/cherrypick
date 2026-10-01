@@ -3415,3 +3415,126 @@ select.text-input {
   font-size: 13px;
   line-height: 1.6;
 }
+
+/* ---- System page (2026-10-01) ---- */
+.system-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.system-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 0.6rem;
+}
+
+/* A tile's level is a left rule, so the value keeps the text colour and stays readable. */
+.system-check {
+  border-left: 3px solid var(--border);
+}
+.system-ok {
+  border-left-color: var(--ok);
+}
+.system-warn {
+  border-left-color: var(--warn);
+}
+.system-critical {
+  border-left-color: var(--err);
+}
+
+.system-check-value {
+  font-family: var(--num-face);
+  font-size: 14px;
+  margin: 0.15rem 0 0.2rem;
+}
+
+.system-check-line {
+  display: block;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.system-note {
+  font-size: 11px;
+  margin: 0.5rem 0 0;
+}
+
+.system-wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* A job's last error is a stderr tail: one line in the table, the whole of it on hover. */
+.system-error {
+  max-width: 28rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--err);
+}
+
+.system-mini {
+  font-size: 11px;
+  padding: 0 0.4rem;
+  margin: 0 0.25rem 0.15rem 0;
+  display: inline-block;
+}
+
+.system-dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1rem;
+  margin: 0;
+  font-size: 13px;
+}
+.system-dl dt {
+  color: var(--text-muted);
+}
+.system-dl dd {
+  margin: 0;
+}
+
+.system-list {
+  margin: 0;
+  padding-left: 1rem;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.system-disk {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.6rem;
+  font-size: 12px;
+}
+.system-disk-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--row-line);
+  overflow: hidden;
+}
+.system-disk-bar > div {
+  height: 100%;
+  background: var(--warn);
+}
+
+.system-log-controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.system-log-controls .mode-toggle {
+  margin-left: 0 !important;
+}
+.system-log-controls select {
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.2rem 0.4rem;
+  font-size: 12px;
+}

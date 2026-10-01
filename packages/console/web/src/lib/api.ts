@@ -36,6 +36,12 @@ import type {
   CalendarsWeeks,
   DeskPayload,
   FuturesTickerPayload,
+  SystemDataPayload,
+  SystemEnvironmentPayload,
+  SystemHealthPayload,
+  SystemLogSource,
+  SystemModulesPayload,
+  SystemSupervisorPayload,
 } from "@console/shared";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -109,6 +115,72 @@ export function useFuturesTicker() {
     queryKey: ["futures-ticker"],
     queryFn: () => getJson<FuturesTickerPayload>("/api/futures-ticker"),
     refetchInterval: 300_000,
+  });
+}
+
+/** The System page, one query per tab at the cadence its data changes. */
+export function useSystemHealth() {
+  return useQuery<SystemHealthPayload>({
+    queryKey: ["system", "health"],
+    queryFn: () => getJson<SystemHealthPayload>("/api/system/health"),
+    refetchInterval: 10_000,
+  });
+}
+
+export function useSystemSupervisor() {
+  return useQuery<SystemSupervisorPayload>({
+    queryKey: ["system", "supervisor"],
+    queryFn: () => getJson<SystemSupervisorPayload>("/api/system/supervisor"),
+    refetchInterval: 5_000,
+  });
+}
+
+export function useSystemModules() {
+  return useQuery<SystemModulesPayload>({
+    queryKey: ["system", "modules"],
+    queryFn: () => getJson<SystemModulesPayload>("/api/system/modules"),
+    refetchInterval: 15_000,
+  });
+}
+
+export function useSystemData() {
+  return useQuery<SystemDataPayload>({
+    queryKey: ["system", "data"],
+    queryFn: () => getJson<SystemDataPayload>("/api/system/data"),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useSystemEnvironment() {
+  return useQuery<SystemEnvironmentPayload>({
+    queryKey: ["system", "environment"],
+    queryFn: () => getJson<SystemEnvironmentPayload>("/api/system/environment"),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useLogSources() {
+  return useQuery<{ sources: SystemLogSource[] }>({
+    queryKey: ["system", "log-sources"],
+    queryFn: () => getJson<{ sources: SystemLogSource[] }>("/api/system/log-sources"),
+    refetchInterval: 300_000,
+  });
+}
+
+export interface LogLine {
+  source: string;
+  level: string;
+  ts: string | null;
+  text: string;
+}
+
+/** One log, or (no source) the merged view of watchdog, notify and the trading loops. */
+export function useLogs(source: string | null, limit: number) {
+  const qs = new URLSearchParams({ limit: String(limit), ...(source !== null ? { source } : {}) });
+  return useQuery<{ lines: LogLine[] }>({
+    queryKey: ["logs", source ?? "merged", limit],
+    queryFn: () => getJson<{ lines: LogLine[] }>(`/api/logs?${qs.toString()}`),
+    refetchInterval: 10_000,
   });
 }
 

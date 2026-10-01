@@ -390,7 +390,10 @@ export function registerModuleRoutes(app: FastifyInstance, config: ConsoleConfig
     return buildGexProfile(config, wanted);
   });
   app.get("/api/report", async () => buildSuiteReport(config));
-  app.get("/api/logs", async () => ({ lines: readLogTail(config) }));
+  app.get<{ Querystring: { source?: string; limit?: string } }>("/api/logs", async (req) => {
+    const limit = Math.min(Math.max(Number.parseInt(req.query.limit ?? "", 10) || 50, 1), 1000);
+    return { lines: readLogTail(config, limit, req.query.source || undefined) };
+  });
   app.get("/api/system", async () => readSystemPanel(config));
   app.get("/api/eod", async () => readEod(config));
   app.get("/api/eod/report", async (req, reply) => {
