@@ -693,7 +693,7 @@ export function EnvironmentTab() {
 
       <Section
         title={`processes · ${stale.length === 0 ? "all current" : `${String(stale.length)} running older code`}`}
-        note="A process loads its code when it starts, so one started before the newest commit to its own packages runs the older code until it restarts. The console runs its build: it is current only if built after that commit and started after the build."
+        note="A process loads its code when it starts, so one whose packages' source changed on disk after that runs the older code until it restarts. Judged by the files, not by commits: committing after a restart changes nothing. The console runs its build, so for it the comparison is with the build it started on."
       >
         <table className="data-table">
           <thead>
@@ -701,7 +701,8 @@ export function EnvironmentTab() {
               <th>process</th>
               <th>started</th>
               <th>code</th>
-              <th>newest commit to it</th>
+              <th>code last changed</th>
+              <th>newest commit</th>
               <th />
             </tr>
           </thead>
@@ -713,6 +714,9 @@ export function EnvironmentTab() {
                   {p.startedAt !== null ? `${agoIso(p.startedAt)} ago` : "—"}
                 </td>
                 <td className="muted">{p.packages.map((x) => x.replace("packages/", "")).join(" + ")}</td>
+                <td className="muted" title={p.codeChangedFile ?? undefined}>
+                  {p.codeChangedAt !== null ? `${agoIso(p.codeChangedAt)} ago` : "—"}
+                </td>
                 <td className="muted">
                   {p.latestCommit !== null ? (
                     <>

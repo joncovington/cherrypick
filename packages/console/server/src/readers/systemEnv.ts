@@ -311,7 +311,32 @@ async function lastCommitTouching(paths: string[]): Promise<{ at: string; sha: s
   }
 }
 
-/** Which running processes started before the newest commit to the code they run. */
+const SOURCE_FILE = /\.(py|ts|tsx|js|mjs)$/;
+const TEST_PATH = /(^|\/)(tests?|__tests__)\//;
+
+/** The newest modification time among a package set's tracked source files, tests excluded. */
+async function newestSourceChange(paths: string[]): Promise<{ at: string; file: string } | null> {
+  let files: string[];
+  try {
+    files = (await run("git", ["ls-files", "--", ...paths]))
+      .split("\n")
+      .filter((f) => SOURCE_FILE.test(f) && !TEST_PATH.test(f));
+  } catch {
+    return null;
+  }
+  let best: { ms: number; file: string } | null = null;
+  for (const f of files) {
+    try {
+      const ms = fs.statSync(path.join(REPO_ROOT, f)).mtimeMs;
+      if (best === null || ms > best.ms) best = { ms, file: f };
+    } catch {
+      /* deleted in the working tree */
+    }
+  }
+  return best === null ? null : { at: new Date(best.ms).toISOString(), file: best.file };
+}
+
+/** Which running processes loaded code that has changed on disk since. */
 async function processAges(config: ConsoleConfig, consoleBuiltAt: string | null): Promise<SystemProcessAge[]> {
   const home = config.paths.cherrypick;
   const reg = readJson(path.join(home, "state", "supervisor-jobs.json"));
@@ -333,21 +358,30 @@ async function processAges(config: ConsoleConfig, consoleBuiltAt: string | null)
     specs.push({ name: id, startedAt: epoch(row["pid_started_at"]), packages: pkgs });
   }
 
+  // One walk per distinct package set: the jobs share a handful.
+  const changes = new Map<string, Promise<{ at: string; file: string } | null>>();
   const out: SystemProcessAge[] = [];
   for (const s of specs) {
-    const commit = await lastCommitTouching(s.packages);
-    // The console runs its BUILD, so for it the code's age is the build's: a commit it was built
-    // after is in it, and a build it started before is not.
-    const codeAt = s.name === "console" && consoleBuiltAt !== null && s.startedAt !== null
-      ? (Date.parse(consoleBuiltAt) < Date.parse(s.startedAt) ? consoleBuiltAt : null)
-      : s.startedAt;
+    const key = s.packages.join("|");
+    if (!changes.has(key)) changes.set(key, newestSourceChange(s.packages));
+    const [commit, change] = await Promise.all([lastCommitTouching(s.packages), changes.get(key)!]);
+    // The console runs its BUILD: the code it holds is as of the build, provided it started after
+    // that build. Started before the build, it holds an older one.
+    const loadedAt =
+      s.name === "console" && consoleBuiltAt !== null && s.startedAt !== null
+        ? Date.parse(consoleBuiltAt) <= Date.parse(s.startedAt)
+          ? consoleBuiltAt
+          : null
+        : s.startedAt;
     out.push({
       name: s.name,
       startedAt: s.startedAt,
       packages: s.packages,
       latestCommitAt: commit?.at ?? null,
       latestCommit: commit?.sha ?? null,
-      stale: commit === null || s.startedAt === null ? null : codeAt === null ? true : Date.parse(codeAt) < Date.parse(commit.at),
+      codeChangedAt: change?.at ?? null,
+      codeChangedFile: change?.file ?? null,
+      stale: change === null || s.startedAt === null ? null : loadedAt === null ? true : Date.parse(loadedAt) < Date.parse(change.at),
     });
   }
   return out;

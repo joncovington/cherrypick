@@ -12,7 +12,7 @@ import { readBwb } from "./bwb.js";
 import { readCalendars, readCalendarsEntryAttempts } from "./calendars.js";
 import { readEarningsDetail } from "./earnings.js";
 import { buildSuiteReport, readFactSet, readModuleBreaks } from "../services/report.js";
-import { sessionDateEt } from "../services/liveLock.js";
+import { readModuleGate, sessionDateEt } from "../services/liveLock.js";
 import { readScreenMetrics } from "../services/screenBridge.js";
 
 /**
@@ -390,6 +390,7 @@ export function readFliesLiveEntries(config: ConsoleConfig, session: string | nu
 /** Calendars, pmcc and curve are paper-only by design: they have no live book to show. */
 const PAPER_ONLY = ["calendars", "pmcc", "curve"] as const;
 const PAPER_ONLY_NOTE = "paper-only · no live path";
+const LIVE_OFF_NOTE = "live trading off";
 
 /**
  * The live book's exposure and entries, for the Overview's cards to rotate to. The same readers as
@@ -484,5 +485,22 @@ export function readDeskLive(config: ConsoleConfig): DeskBookPayload {
     ...PAPER_ONLY.map(paperOnlyEntries),
     { module: "bwb", ...bwbCounts, sessionNet: null, available: true, note: null },
   ];
-  return { mode: "live", exposure, entries };
+  // A module whose live gate is off has no live loop to report on: its last mark is however long
+  // ago the gate was shut (meic's was 84 days on 2026-10-01), which reads as a stalled loop. It says
+  // "live trading off" instead -- unless its live book still holds something, which stays visible.
+  const off = new Set(
+    exposure
+      .filter((r) => r.available && readModuleGate(config, r.module).liveEnabled !== true)
+      .filter((r) => (r.open ?? 0) === 0)
+      .map((r) => r.module),
+  );
+  const offExposure = exposure.map((r): DeskExposureRow =>
+    off.has(r.module)
+      ? { ...r, open: null, atRisk: null, unrealisedNet: null, markAgeSeconds: null, available: false, note: LIVE_OFF_NOTE }
+      : r,
+  );
+  const offEntries = entries.map((r): DeskEntriesRow =>
+    off.has(r.module) && r.filled + r.refused + r.noFill === 0 ? { ...r, available: false, note: LIVE_OFF_NOTE } : r,
+  );
+  return { mode: "live", exposure: offExposure, entries: offEntries };
 }

@@ -170,10 +170,14 @@ export interface SystemProcessAge {
   startedAt: string | null;
   /** The packages whose code it runs. */
   packages: string[];
-  /** The newest commit touching any of them. */
+  /** The newest commit touching any of them, for reference. */
   latestCommitAt: string | null;
   latestCommit: string | null;
-  /** Started before that commit: it is running older code until restarted. */
+  /** The newest change on disk to a tracked source file in them (tests excluded), and which. */
+  codeChangedAt: string | null;
+  codeChangedFile: string | null;
+  /** That change is newer than the code the process loaded: it runs older code until restarted.
+   *  Judged by the files, not by commits: committing after a restart changes no file. */
   stale: boolean | null;
 }
 

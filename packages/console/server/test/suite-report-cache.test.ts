@@ -186,7 +186,25 @@ describe("the live desk", () => {
     }
     // The four with a live path are rows, in the paper card's order.
     expect(live.exposure.map((r) => r.module)).toEqual(["meic", "flies", "earnings", "calendars", "pmcc", "curve", "bwb"]);
-    expect(live.exposure.filter((r) => r.available).map((r) => r.module)).toEqual(["meic", "flies", "earnings", "bwb"]);
+    // No module config here, so no live gate is on: each says so instead of a stalled loop's age.
+    for (const m of ["meic", "flies", "earnings", "bwb"]) {
+      expect(live.exposure.find((r) => r.module === m)).toMatchObject({ available: false, note: "live trading off", markAgeSeconds: null });
+    }
+  });
+
+  it("a module with its live gate on keeps its live row", async () => {
+    const { readDeskLive } = await import("../src/readers/desk.js");
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "console-desk-live-on-"));
+    const base = configFor(tmp);
+    const config = {
+      ...base,
+      paths: { ...base.paths, calendarsDir: path.join(tmp, "calendars"), pmccDir: path.join(tmp, "pmcc"), curveDir: path.join(tmp, "curve"), bwbDir: path.join(tmp, "bwb"), pmccConfigCandidates: [], calendarsConfigCandidates: [], curveConfigCandidates: [] },
+    } as ConsoleConfig;
+    fs.mkdirSync(path.join(tmp, "config"), { recursive: true });
+    fs.writeFileSync(path.join(tmp, "config", "flies.json"), JSON.stringify({ live: { enabled: true } }));
+    const live = readDeskLive(config);
+    expect(live.exposure.find((r) => r.module === "flies")).toMatchObject({ available: true, note: null });
+    expect(live.exposure.find((r) => r.module === "meic")).toMatchObject({ available: false, note: "live trading off" });
   });
 });
 
