@@ -42,9 +42,15 @@ Subcommands:
                        nightly; a night with problems never replaces it. The suite-backup job (01:30
                        ET) runs this. --dry-run lists what it would hold; --list; --verify re-checks
                        it; --restore-to DIR extracts it into DIR (never into the live home).
-  restart-console      Dev convenience: kill the console's process tree so the supervisor replaces
-                       it on its next tick, picking up whatever the checkout currently builds to.
-                       Never scheduled, never called from the watchdog.
+  ps                   Every job and daemon by name: running PID, held or not, last exit and whether
+                       it was asked for. Read-only.
+  restart NAME         Restart a job or daemon by name. The supervisor stops the old process,
+                       confirms it gone by PID and creation time, then starts one; the command waits
+                       for that answer. Never kills anything itself.
+  stop NAME | --all    Hold a job or daemon (state/holds.json) so nothing starts it, and stop it.
+                       --all is the full stop after uninstall, refused while anything could restart.
+  start NAME           Release a hold; the supervisor (or ensure) starts it again.
+  restart-console      Alias for `restart console`. Never scheduled, never called from the watchdog.
   reconcile            Paper↔live isolation guard: query the real broker account (read-only) and flag
                        any open positions/BP a paper-only suite shouldn't have. On-demand; never trades.
   positions            Live P/L by underlying for the REAL broker account: positions priced from the
@@ -97,7 +103,6 @@ from cherrypick.orchestrator import (
     servicecfg,
     settings_serve,
     status_digest,
-    supervisor,
     tasks,
     timeutil,
     trade_notifier,
@@ -107,7 +112,8 @@ from cherrypick.orchestrator import config as cfgmod
 from cherrypick.orchestrator import (
     positions as positions_mod,
 )
-from cherrypick.orchestrator.util import CREATE_NO_WINDOW, first_json, pid_alive, read_json
+from cherrypick.orchestrator import proc as _proc
+from cherrypick.orchestrator.util import CREATE_NO_WINDOW, first_json
 
 # The OS scheduler invokes the in-place launcher `pythonw <repo>/run.py <cmd>`. This module is
 # <repo>/src/cherrypick/cli.py, so the repo-root launcher is two parents up. (Renamed from
@@ -194,6 +200,13 @@ def cmd_install(cfg, force: bool = False) -> None:
                 }
             )
             sys.exit(1)
+
+    # "Turn the suite on" means everything: a process someone stopped (`run.py stop`) is started
+    # again here, and the report says which, so a hold is never silently carried into a fresh install.
+    from cherrypick.orchestrator import holds as _holds
+
+    released = _holds.release_all()
+    results["holds"] = {"ok": True, "detail": f"released: {', '.join(released)}" if released else "none held"}
 
     for name, mcfg in modules.items():
         # Materialize the module checkout; the supervisor spawns its ticks from this path.
@@ -812,56 +825,73 @@ def _find_listening_pid(port: int) -> int | None:
 
 
 def cmd_restart_console(cfg) -> None:
-    """Kill the console's process tree so the supervisor replaces it on its next tick (~60s),
-    picking up whatever the checkout currently builds to.
+    """`run.py restart console`, kept under its old name (it is in the /console skill and in
+    people's hands). Writes `state/restart_console.last.json`, as it always has.
 
-    A manual dev convenience for iterating on the console -- never invoked from the watchdog or any
-    scheduled path, and the only place in this file that reaches for a raw kill rather than the
-    supervisor's own spawn/reap loop. Writes `state/restart_console.last.json` alongside the usual
-    `_emit`, the same breadcrumb-on-disk convention every other command here leaves.
-
-    Kills the TREE, via `supervisor._terminate_tree`, for the exact reason that function's own
-    docstring gives: `run.py` is a launcher and Node is its CHILD, so terminating only the tracked
-    PID leaves Node alive and still bound to the port -- the supervisor's replacement then dies on
-    `EADDRINUSE`, and what was meant as a restart becomes a permanent outage.
-
-    Finds the PID to kill two ways, in order. First, the supervisor's own registry
-    (`state/supervisor-jobs.json`) -- the normal case, and the same PID the supervisor itself would
-    act on. Second, whoever is actually LISTENING on the console's configured port, if the
-    registry's PID is stale, unset, or dead -- the registry can lose track of a resident child
-    across an unrelated restart (observed live 2026-08-13: the registry held one PID while a
-    different process was the real listener, and killing only the registry's PID would have left
-    the old build still serving).
-    """
-    jobs = read_json(supervisor.jobs_path(), {}) or {}
-    console_job = (jobs.get("jobs") or {}).get("console") or {}
-    tracked = console_job.get("running_pid")
-
-    pid = tracked if pid_alive(tracked) else None
-    source = "supervisor registry" if pid else None
-    if pid is None:
-        port = _console_port(cfg)
-        found = _find_listening_pid(port)
-        if found:
-            pid, source = found, f"port {port}"
-
-    if pid is None:
-        rec = {"ok": True, "skipped": "console is not running (nothing tracked, nothing listening)"}
-    else:
-        # Say so first: the kill exits the child 1, which without this reads as a crash -- the
-        # failure ladder, a churn WARN, and on 2026-09-30 nine "crashes" that were all requests.
-        supervisor.request_restart("console", by="restart-console")
-        ok = supervisor._terminate_tree(pid)
-        rec = {
-            "ok": ok,
-            "killed_pid": pid,
-            "found_via": source,
-            "next": "the supervisor respawns it on its next tick (~60s)" if ok else None,
-            "error": None if ok else "terminate failed -- see logs/supervisor.log",
-        }
-
+    It used to find a PID itself -- the registry, else whoever listened on the port -- and kill it,
+    with the supervisor learning afterwards. Now the supervisor does it (see `orchestrator.proc`):
+    stop the tree, confirm it gone, relaunch. The port is still read, but only to REPORT a stray
+    listener that is not the new console (the 2026-08-13 case: a registry PID and a different real
+    listener). Reclaiming that port is the supervisor's job (`_reclaim_stuck_port`), which kills an
+    untracked holder only after its own launches keep failing to bind -- never on a guess here."""
+    rec = _proc.restart_job("console")
+    port = _console_port(cfg)
+    listener = _find_listening_pid(port)
+    tree = {rec.get("new_pid")}
+    if listener and listener not in tree and rec.get("ok"):
+        # node is the launcher's CHILD, so the listener is normally not new_pid itself; say what is
+        # on the port and let `ps` / the duplicate check judge it rather than guessing here.
+        rec["port_listener"] = {"port": port, "pid": listener}
     cfgmod.state_file("restart_console.last.json").write_text(json.dumps(rec, indent=2), encoding="utf-8")
     _emit(rec)
+    if not rec.get("ok"):
+        sys.exit(1)
+
+
+# --------------------------------------------------------------------------- process control
+def cmd_ps(cfg) -> None:
+    _emit(_proc.ps(cfg))
+
+
+def _named(cfg, name: str | None):
+    if not name:
+        _emit({"ok": False, "error": "name a process: `run.py ps` lists them"})
+        sys.exit(2)
+    found = _proc.resolve(cfg, name)
+    if isinstance(found, dict):
+        _emit(found)
+        sys.exit(2)
+    return found
+
+
+def cmd_restart(cfg, name: str | None) -> None:
+    kind, name = _named(cfg, name)
+    rec = _proc.restart_job(name) if kind == "job" else _proc.restart_daemon(cfg, name, _ensure_daemon)
+    _emit(rec)
+    sys.exit(0 if rec.get("ok") else 1)
+
+
+def cmd_stop(cfg, name: str | None, everything: bool = False) -> None:
+    if everything:
+        rec = _proc.stop_all(cfg, anchor_registered=tasks.exists(supersnap_anchor()))
+    else:
+        kind, name = _named(cfg, name)
+        rec = _proc.stop_job(name) if kind == "job" else _proc.stop_daemon(cfg, name)
+    _emit(rec)
+    sys.exit(0 if rec.get("ok") else 1)
+
+
+def cmd_start(cfg, name: str | None) -> None:
+    kind, name = _named(cfg, name)
+    rec = _proc.start_job(name) if kind == "job" else _proc.start_daemon(cfg, name, _ensure_daemon)
+    _emit(rec)
+    sys.exit(0 if rec.get("ok") else 1)
+
+
+def supersnap_anchor() -> str:
+    from cherrypick.orchestrator import supersnap
+
+    return supersnap.ANCHOR_TASK
 
 
 # --------------------------------------------------------------------------- misc
@@ -1284,6 +1314,10 @@ def build_parser() -> argparse.ArgumentParser:
             "review",
             "morning",
             "restart-console",
+            "ps",
+            "restart",
+            "stop",
+            "start",
             "ensure-dolt",
             "notify-test",
             "notify-trades",
@@ -1417,6 +1451,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="For notify-status: post the day's CLOSE card (what the daily status-digest-close job passes)",
     )
+    parser.add_argument(
+        "name",
+        nargs="?",
+        default=None,
+        help="For restart/stop/start: a supervisor job (console, flies-paper, ...), `streamer`, or a "
+        "service id -- `ps` lists them",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="For stop: every daemon and every job still running (after `uninstall`; refused before)",
+    )
     return parser
 
 
@@ -1467,6 +1513,10 @@ def main() -> None:
         "review": lambda: _run_review(cfg, final="--final" in sys.argv),
         "morning": lambda: _run_morning(cfg),
         "restart-console": lambda: cmd_restart_console(cfg),
+        "ps": lambda: cmd_ps(cfg),
+        "restart": lambda: cmd_restart(cfg, args.name),
+        "stop": lambda: cmd_stop(cfg, args.name, everything=args.all),
+        "start": lambda: cmd_start(cfg, args.name),
         "ensure-dolt": lambda: _ensure_dolt(cfg),
         "notify-test": lambda: cmd_notify_test(cfg),
         "secrets-set": lambda: cmd_secrets_set(args.channel, args.url),

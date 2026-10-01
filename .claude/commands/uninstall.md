@@ -24,19 +24,15 @@ Do this:
    **the streamer is why the next step exists.**
 
 2. **Stop what uninstall leaves behind** (each is best-effort — "not running" is a fine result):
-   - **Streamer** (the standalone producer, `packages/streamer` — the suite's single market-data
-     daemon): `python packages/streamer/run.py --stop`, then confirm with
-     `python packages/streamer/run.py --status` (`"running": false`).
+   - **Streamer, services, console and any job child still running:**
+     `python packages/orchestrator/run.py stop --all`. It stops the streamer and every managed
+     service through their own stop paths, and kills each supervisor child the registry still records
+     (the console outlives the supervisor: `run.py` is a launcher and node its grandchild) — as a
+     tree, and only if the PID's creation time still matches, so a reused PID is never touched. It
+     refuses while the supervisor or its anchor task is still up, which means step 1 did not finish.
+     Confirm with `python packages/orchestrator/run.py ps` (nothing running).
      (Only if this box was rolled back to MEIC-as-producer — `modules.meic.streamer.enabled` true —
-     stop that one instead: `python -m cherrypick.meic.streamer --stop`. Exactly one producer ever
-     runs.)
-   - **Console** (`packages/console`, port **5070** — the suite's one read surface). Step 1 stopped
-     the supervisor, which owned it, but the console is the supervisor's *grandchild* (`run.py` is a
-     launcher, node is the server), so it outlives the daemon rather than dying with it. Find the
-     listener, confirm it is `node` running `packages/console/server/dist/index.js`, then kill the
-     **tree**:
-     `Get-NetTCPConnection -LocalPort 5070 -State Listen -EA SilentlyContinue | Select-Object -Expand OwningProcess -Unique | ForEach-Object { taskkill /T /F /PID $_ }`
-     (`/T`, not `Stop-Process`: without it the node process survives and keeps the port.)
+     stop that one too: `python -m cherrypick.meic.streamer --stop`. Exactly one producer ever runs.)
      The settings editor (8804) needs nothing — it is foreground-only and stops when you close it.
    - **Dolt sql-server** (earnings' local market-data DB; its keep-alive task was removed in step 1):
      stop the process serving port **3306**:

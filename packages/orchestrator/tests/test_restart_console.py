@@ -1,11 +1,9 @@
-"""`cherrypick restart-console` — the dev convenience for killing the console's process tree so the
-supervisor replaces it on its next tick.
+"""`cherrypick restart-console` — `restart console` under its old name.
 
-The one fact everything here protects: the supervisor's registry can lose track of the console's
-real listener (observed live 2026-08-13 — the registry held one PID, a different process was
-actually bound to the port), so killing only the registry's PID is not enough. The command must fall
-back to whoever is genuinely listening, and it must kill the TREE either way, never just the tracked
-PID, or a restart turns into a permanent EADDRINUSE outage.
+It used to find a PID itself (the registry, else the port's listener) and kill the tree. Since
+2026-10-01 the supervisor restarts the console (`orchestrator.proc`): this asks, waits and reports,
+and kills nothing. The port is read only to REPORT a stray listener -- the 2026-08-13 case, a
+registry PID and a different real listener -- whose reclaim is the supervisor's own stuck-port path.
 """
 
 from __future__ import annotations
@@ -17,6 +15,7 @@ import pytest
 
 from cherrypick import cli
 from cherrypick.orchestrator import config as cfgmod
+from cherrypick.orchestrator import supervisor
 
 
 def _state():
@@ -27,78 +26,46 @@ def _state():
 def killed(monkeypatch):
     """Records what cmd_restart_console tried to terminate, without touching a real process."""
     calls: list[int] = []
-    monkeypatch.setattr(cli.supervisor, "_terminate_tree", lambda pid: calls.append(pid) or True)
+    monkeypatch.setattr(supervisor, "_terminate_tree", lambda pid: calls.append(pid) or True)
     return calls
 
 
-def test_kills_the_registrys_tracked_pid_when_it_is_alive(killed, monkeypatch):
-    jobs = {"jobs": {"console": {"running_pid": 111}}}
-    monkeypatch.setattr(cli, "read_json", lambda path, default=None: jobs)
-    monkeypatch.setattr(cli, "pid_alive", lambda pid: pid == 111)
-
-    def _no_scan(port):
-        raise AssertionError("should not scan the port when the registry pid is alive")
-
-    monkeypatch.setattr(cli, "_find_listening_pid", _no_scan)
-
-    cli.cmd_restart_console({})
-
-    assert killed == [111]
-    rec = _state()
-    assert rec["ok"] is True and rec["killed_pid"] == 111 and rec["found_via"] == "supervisor registry"
-
-
-def test_falls_back_to_a_port_scan_when_the_registry_pid_is_stale(killed, monkeypatch):
-    """The exact scenario this command exists for: the registry's PID is not the real listener."""
-    jobs = {"jobs": {"console": {"running_pid": 26964}}}
-    monkeypatch.setattr(cli, "read_json", lambda path, default=None: jobs)
-    monkeypatch.setattr(cli, "pid_alive", lambda pid: False)  # the registry's process is gone
-    monkeypatch.setattr(cli, "_console_port", lambda cfg: 5070)
-    monkeypatch.setattr(cli, "_find_listening_pid", lambda port: 12868 if port == 5070 else None)
-
-    cli.cmd_restart_console({})
-
-    assert killed == [12868]
-    rec = _state()
-    assert rec["killed_pid"] == 12868 and rec["found_via"] == "port 5070"
-
-
-def test_falls_back_when_the_registry_has_no_pid_at_all(killed, monkeypatch):
-    """running_pid is simply absent -- not stale, never recorded (e.g. right after a supervisor
-    restart wiped the registry)."""
-    monkeypatch.setattr(cli, "read_json", lambda path, default=None: {"jobs": {"console": {}}})
-    monkeypatch.setattr(cli, "pid_alive", lambda pid: False)
-    monkeypatch.setattr(cli, "_console_port", lambda cfg: 5070)
-    monkeypatch.setattr(cli, "_find_listening_pid", lambda port: 99)
-
-    cli.cmd_restart_console({})
-
-    assert killed == [99]
-
-
-def test_reports_nothing_to_kill_rather_than_guessing(killed, monkeypatch):
-    monkeypatch.setattr(cli, "read_json", lambda path, default=None: {"jobs": {}})
-    monkeypatch.setattr(cli, "pid_alive", lambda pid: False)
+def test_restart_console_asks_the_supervisor_and_never_kills_itself(killed, monkeypatch):
+    """Since 2026-10-01 the supervisor stops and relaunches; this command only asks and reports."""
+    asked = []
+    monkeypatch.setattr(
+        cli._proc, "restart_job", lambda name: asked.append(name) or {"ok": True, "old_pid": 1, "new_pid": 2}
+    )
     monkeypatch.setattr(cli, "_console_port", lambda cfg: 5070)
     monkeypatch.setattr(cli, "_find_listening_pid", lambda port: None)
 
     cli.cmd_restart_console({})
 
-    assert killed == []
+    assert asked == ["console"] and killed == []
     rec = _state()
-    assert rec["ok"] is True and "skipped" in rec
+    assert rec["ok"] is True and rec["new_pid"] == 2
 
 
-def test_a_failed_terminate_is_reported_not_raised(monkeypatch):
-    monkeypatch.setattr(cli.supervisor, "_terminate_tree", lambda pid: False)
-    jobs = {"jobs": {"console": {"running_pid": 5}}}
-    monkeypatch.setattr(cli, "read_json", lambda path, default=None: jobs)
-    monkeypatch.setattr(cli, "pid_alive", lambda pid: True)
+def test_a_stray_port_listener_is_reported_never_killed(killed, monkeypatch):
+    """The 2026-08-13 case -- a different process on the port than the registry's. Reported, so `ps`
+    and the duplicate check can judge it; reclaiming the port is the supervisor's, not a guess here."""
+    monkeypatch.setattr(cli._proc, "restart_job", lambda name: {"ok": True, "old_pid": 1, "new_pid": 2})
+    monkeypatch.setattr(cli, "_console_port", lambda cfg: 5070)
+    monkeypatch.setattr(cli, "_find_listening_pid", lambda port: 12868)
 
     cli.cmd_restart_console({})
 
-    rec = _state()
-    assert rec["ok"] is False and rec["killed_pid"] == 5 and rec["error"]
+    assert killed == []
+    assert _state()["port_listener"] == {"port": 5070, "pid": 12868}
+
+
+def test_a_refused_restart_is_reported_and_exits_nonzero(killed, monkeypatch):
+    monkeypatch.setattr(cli._proc, "restart_job", lambda name: {"ok": False, "error": "supervisor down"})
+    monkeypatch.setattr(cli, "_console_port", lambda cfg: 5070)
+    monkeypatch.setattr(cli, "_find_listening_pid", lambda port: None)
+    with pytest.raises(SystemExit) as exit_:
+        cli.cmd_restart_console({})
+    assert exit_.value.code == 1 and _state()["ok"] is False and killed == []
 
 
 # --------------------------------------------------------------------------- _console_port

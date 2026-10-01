@@ -192,6 +192,17 @@ Five commands; what "good" looks like is quoted from real runs (2026-07-29).
    nothing).
 5. **`~/.cherrypick/state/watchdog.last.json`** — recent (≤ interval) with `"overall": "OK"`.
 
+## Stopping and restarting one thing
+
+By name, never by PID: `python packages/orchestrator/run.py ps` lists every job and daemon;
+`restart <name>`, `stop <name>` and `start <name>` act on one
+([orchestrator-cli.md](orchestrator-cli.md)). The supervisor stops the old process and confirms it
+gone before starting another, so a restart never leaves two running; a stopped name is **held**
+(`state/holds.json`) until `start` or the next `install`. None of these raise an alert or count as a
+failure. Two things still warn on purpose: a held live loop during the session, and any hold left
+over 12 hours. The watchdog also reports two running copies of any job (CRITICAL for a live loop),
+whoever started them.
+
 ## Normal vs. real warnings
 
 Expected — do not chase:

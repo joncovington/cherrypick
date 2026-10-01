@@ -60,27 +60,24 @@ Answer "is it up, and if not, why" in this order — each step explains a differ
 
 ## Restart
 
-The supervisor is the restart mechanism — kill the tree and let it come back:
+The supervisor is the restart mechanism; ask it by name:
 
-1. `python packages/orchestrator/run.py restart-console`. It finds the console (the supervisor's
-   registry, else whoever listens on the port), **marks the restart as requested**, then kills the
-   whole tree. Use it rather than a bare `taskkill`: a kill exits the child 1, and without the mark
-   the supervisor cannot tell it from a crash — it climbs the failure ladder and counts the start as
-   churn (nine "crashes" on 2026-09-30 were all deliberate restarts). If you must kill by hand,
-   `taskkill /T /F /PID <pid>` — **`/T` matters**: `run.py` is a launcher and node is its grandchild,
-   so killing only the tracked PID leaves node holding the port and every replacement dies on
-   `EADDRINUSE`.
-2. Wait for the supervisor's next pass (~1s), then run Status. A requested restart comes straight
-   back; an unmarked kill backs off 30s after the first failure, doubling to a 10-minute cap.
-3. To pick up a **code change** the build must come first: from `packages/console`, `pnpm build`,
+1. `python packages/orchestrator/run.py restart console`. The supervisor stops the whole tree,
+   confirms the old process is gone, starts a new one, and the command prints the old and new PIDs.
+   It is not a failure, not churn and not an alert. Do not `taskkill` it by hand: an unmarked kill
+   reads as a crash (backoff, churn count), and a stray listener left on the port makes every
+   replacement die on `EADDRINUSE` — if the command reports a `port_listener`, look at that process
+   before doing anything to it.
+2. To pick up a **code change** the build must come first: from `packages/console`, `pnpm build`,
    then restart.
 
 ## Stop
 
-Rarely what you want: the supervisor restarts it within a pass. To keep it down, set
-`"console": {"enabled": false}` in `~/.cherrypick/config.json` — the supervisor re-derives its job
-table from config every pass, so the job goes disabled-with-a-reason on the next one — and only then
-kill the tree as in Restart. `/uninstall` stops it along with everything else.
+`python packages/orchestrator/run.py stop console` holds it (the supervisor stops it and will not
+start it again, and the watchdog stays quiet about it); `start console` releases it. A hold left
+over 12 hours is a watchdog WARN, and `install` clears it. To turn it off for good, set
+`"console": {"enabled": false}` in `~/.cherrypick/config.json` instead. `/uninstall` stops it along
+with everything else.
 
 ## Logs
 

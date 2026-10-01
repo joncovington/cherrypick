@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 from dataclasses import dataclass
@@ -42,6 +41,7 @@ from pathlib import Path
 
 from cherrypick.core import calendar as _calendar
 from cherrypick.core import home as _home
+from cherrypick.core import looplock as _looplock
 
 from cherrypick.earnings import (
     advice,
@@ -60,7 +60,8 @@ ET = management.ET
 
 # A tick that cannot get the lock exits OK with a "busy" status. It must never look like a failure:
 # the entry scan legitimately holds it for many ticks, and a supervisor logging twenty-five minutes
-# of errors for expected behaviour teaches everyone to ignore the log.
+# of errors for expected behaviour teaches everyone to ignore the log. The age only governs a lock
+# whose holder cannot be read (`core.looplock`): a live holder is never stolen, a dead one at once.
 LOCK_STALE_SECONDS = 1800
 
 PHASE_OFF_HOURS = "off_hours"
@@ -178,26 +179,21 @@ class Lock:
 
 
 def acquire_lock() -> Lock:
-    """One writer at a time. A stale lock (a tick killed mid-run) is broken after LOCK_STALE_SECONDS
-    so a crash cannot wedge the loop until someone notices."""
+    """One writer at a time, through `core.looplock`: an atomic create, a LIVE holder never stolen
+    whatever its age (the entry scan holds this for ~25 minutes), a dead or recycled-PID holder
+    reclaimed at once, and LOCK_STALE_SECONDS only for a holder whose PID cannot be read.
+
+    Until 2026-10-01 this was its own lock: mtime-only, so a scan running past 30 minutes handed the
+    ledger to a second writer -- the weaker design `core.looplock` warns about -- and
+    check-then-write, so two ticks starting together could both take it. Every other loop in the
+    suite was already on the shared one."""
     path = lock_path()
-    try:
-        if path.exists():
-            age = time.time() - path.stat().st_mtime
-            if age < LOCK_STALE_SECONDS:
-                return Lock(path, False)
-        path.write_text(json.dumps({"pid": os.getpid(), "at": time.time()}), encoding="utf-8")
-        return Lock(path, True)
-    except OSError:
-        return Lock(path, False)
+    return Lock(path, _looplock.acquire(path, LOCK_STALE_SECONDS))
 
 
 def release_lock(lock: Lock) -> None:
     if lock.acquired:
-        try:
-            lock.path.unlink(missing_ok=True)
-        except OSError:
-            pass
+        _looplock.release(lock.path)
 
 
 # --------------------------------------------------------------------------- heartbeats

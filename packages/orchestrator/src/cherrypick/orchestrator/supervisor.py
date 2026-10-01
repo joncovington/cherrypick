@@ -41,8 +41,10 @@ from pathlib import Path
 from typing import Any
 
 from cherrypick.core import live as _live
+from cherrypick.core import looplock as _looplock
 
 from . import config as cfgmod
+from . import holds as _holds
 from . import jobspec, timeutil
 from .util import CREATE_NO_WINDOW, atomic_write_json, pid_alive, port_owner_pid, read_json, rotate_if_large
 
@@ -131,6 +133,27 @@ def stderr_tail(job_id: str, offset: int | None) -> str | None:
     return redact_accounts("\n".join(lines[-_STDERR_TAIL_LINES:]))
 
 
+# ------------------------------------------------------------------ process identity
+_SAME_PROCESS_TOLERANCE_S = 2.0
+_STOP_CHILD_TIMEOUT_S = 10.0
+
+
+def same_process(pid: int | None, started_at: float | None) -> bool:
+    """Is `pid` still the process the supervisor launched? Alive, AND -- when its creation time was
+    recorded at launch -- created at that same moment. Windows hands a dead process's number to the
+    next thing that starts, so a bare PID is not an identity: on 2026-09-13 the supervisor's own
+    lock PID came back as NordVPN.exe. Where either time is unknown, liveness alone answers (the
+    `core.looplock` posture: never decide "gone" on a guess)."""
+    if not pid or not pid_alive(pid):
+        return False
+    if started_at is None:
+        return True
+    now = _looplock.process_start_time(pid)
+    if now is None:
+        return True
+    return abs(float(now) - float(started_at)) <= _SAME_PROCESS_TOLERANCE_S
+
+
 # ------------------------------------------------------------------ requested restarts
 _RESTART_REQUEST_MAX_AGE_S = 600
 
@@ -139,12 +162,16 @@ def restart_request_path(job_id: str) -> Path:
     return cfgmod.state_file(f"restart-requested.{job_id}.json")
 
 
-def request_restart(job_id: str, by: str) -> None:
-    """Mark the NEXT exit of `job_id` as asked for. Written before anything kills the job (the
-    `restart-console` command, a rebuild-and-restart), so the supervisor logs it as a restart, not a
-    crash, and does not count it toward churn. A kill without one still looks like a crash -- which
-    is right: the supervisor cannot tell a deliberate taskkill from anything else."""
-    atomic_write_json(restart_request_path(job_id), {"requested_at": time.time(), "by": by})
+def request_restart(job_id: str, by: str, request_id: str | None = None) -> None:
+    """Ask the supervisor to restart `job_id`. It acts on its next pass (`_apply_restart_request`):
+    a running child is stopped -- tree and all, confirmed gone by PID AND creation time -- before
+    anything is launched, so a restart can never leave two. The exit is logged as requested: no
+    failure, no backoff, no churn. `request_id` lets the asker match the supervisor's answer
+    (`last_restart` in the registry) to its own request.
+
+    The same file still marks an exit someone ELSE caused as requested (a kill already in flight),
+    but nobody should need to kill by hand any more: `run.py restart <job>` writes this and waits."""
+    atomic_write_json(restart_request_path(job_id), {"requested_at": time.time(), "by": by, "id": request_id})
 
 
 def consume_restart_request(job_id: str) -> dict | None:
@@ -153,7 +180,7 @@ def consume_restart_request(job_id: str) -> dict | None:
     hours later)."""
     path = restart_request_path(job_id)
     req = read_json(path)
-    if req is None:
+    if not isinstance(req, dict) or not req:  # read_json answers a missing file with {}
         return None
     try:
         path.unlink()
@@ -413,7 +440,7 @@ class Supervisor:
         self._state = dict((data or {}).get("jobs") or {})
         for jid, st in self._state.items():
             pid = st.get("running_pid")
-            if pid and pid_alive(pid):
+            if pid and same_process(pid, st.get("pid_started_at")):
                 st["orphaned"] = True
                 _log(f"{jid}: adopted running child pid {pid} from a prior supervisor")
             elif pid:
@@ -429,8 +456,10 @@ class Supervisor:
             del self._handles[spec.id]
             return False
         pid = st.get("running_pid")
-        if pid and pid_alive(pid):
-            return True  # adopted orphan still going
+        if pid and same_process(pid, st.get("pid_started_at")):
+            # Adopted orphan still going. By identity, not a bare PID: a reused number would read as
+            # "still running" forever and the job would silently never run again.
+            return True
         if pid and self._at_window_end(spec, now):
             # ...except when it went at its window's end. A windowed resident's module loop closes
             # its own gate on the window's last minute and exits, so an adopted child gone by then
@@ -460,18 +489,14 @@ class Supervisor:
 
     def _record_exit(self, spec: jobspec.JobSpec, st: dict[str, Any], code: int) -> None:
         st["running_pid"] = None
+        st.pop("pid_started_at", None)
         st["last_exit_code"] = code
         st["last_exit_at"] = _utc_iso()
+        st.pop("last_exit_requested", None)  # set again below only if this exit was asked for
         req = consume_restart_request(spec.id)
         if req is not None:
-            # Asked for: not a failure, not churn, and back as soon as the loop gets to it.
-            st["backoff_until"] = None
-            st["skip_start_count"] = True
-            st["module_stopped"] = False
-            st.pop("last_error", None)
-            _log(
-                f"{spec.id}: restart requested by {req.get('by') or 'unknown'} (exit {code}) — not a failure"
-            )
+            self._mark_requested(spec, st, code, f"restart requested by {req.get('by') or 'unknown'}")
+            st["last_restart"] = {"id": req.get("id"), "at": time.time(), "result": "restarted"}
             return
         # A WINDOWED resident exiting 0 is a statement -- "my own gate closed", or "another instance
         # holds my lock" -- not "the run finished, go again". Reading it as the latter is what
@@ -513,6 +538,108 @@ class Supervisor:
                 _log(f"{spec.id}: stderr (last lines):\n    " + tail.replace("\n", "\n    "))
             else:
                 st.pop("last_error", None)
+
+    # ----------------------------------------------------------------- restarts and holds
+    def _mark_requested(self, spec: jobspec.JobSpec, st: dict[str, Any], code: int, why: str) -> None:
+        """An exit someone asked for: not a failure, not churn, nothing to back off from -- and
+        `last_exit_requested`, so a reader of the exit code (the live-loop freshness check) does
+        not alarm on a kill's code."""
+        st["last_exit_requested"] = True
+        st["backoff_until"] = None
+        st["skip_start_count"] = True
+        st["module_stopped"] = False
+        st.pop("last_error", None)
+        _log(f"{spec.id}: {why} (exit {code}) — not a failure")
+
+    def _child_alive(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> bool:
+        """Is this job's child running -- by the handle this supervisor holds, or else by the
+        registry's PID AND creation time (an adopted child)?"""
+        handle = self._handles.get(spec.id)
+        if handle is not None:
+            return handle.poll() is None
+        return same_process(st.get("running_pid"), st.get("pid_started_at"))
+
+    def _stop_child(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> tuple[bool, int]:
+        """End this job's child -- the TREE, since a launcher's real server is its child -- and wait
+        until it is provably gone. Returns (gone, exit code). Nothing may be launched in its place
+        until this says gone: that wait is what makes a restart unable to leave two running."""
+        pid = st.get("running_pid")
+        started = st.get("pid_started_at")
+        handle = self._handles.get(spec.id)
+        if pid:
+            _terminate_tree(int(pid))
+        if handle is not None and handle.poll() is None:
+            handle.terminate()
+        deadline = time.time() + _STOP_CHILD_TIMEOUT_S
+        while True:
+            if handle is not None:
+                code = handle.poll()
+                if code is not None:
+                    self._handles.pop(spec.id, None)
+                    return True, code
+            elif not same_process(pid, started):
+                return True, _EXIT_UNKNOWN
+            if time.time() >= deadline:
+                return False, _EXIT_UNKNOWN
+            time.sleep(0.25)
+
+    def _apply_restart_request(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> None:
+        """Act on `run.py restart <job>`: stop the running child (confirmed gone) and let this same
+        pass launch it again; a job not running is simply launched now. A child that will not exit
+        is NOT replaced -- the request is dropped and the failure reported, and the overlap guard
+        keeps anything new from starting beside it."""
+        req = read_json(restart_request_path(spec.id))
+        if not isinstance(req, dict) or not req:  # read_json answers a missing file with {}
+            return
+        if self._child_alive(spec, st):
+            by = req.get("by") or "unknown"
+            _log(f"{spec.id}: restart requested by {by} — stopping pid {st.get('running_pid')}")
+            gone, code = self._stop_child(spec, st)
+            if not gone:
+                consume_restart_request(spec.id)
+                st["last_restart"] = {
+                    "id": req.get("id"),
+                    "at": time.time(),
+                    "result": "old process did not exit",
+                }
+                pid, wait = st.get("running_pid"), _STOP_CHILD_TIMEOUT_S
+                _log(f"{spec.id}: pid {pid} did not exit in {wait:.0f}s — not restarted")
+                return
+            self._record_exit(spec, st, code)  # consumes the request and marks the exit requested
+        elif self._handles.get(spec.id) is not None or st.get("running_pid"):
+            # It has already exited -- a kill already in flight. That exit IS the requested one:
+            # settle it here, where the request is still on file, not later as a crash.
+            handle = self._handles.pop(spec.id, None)
+            code = handle.poll() if handle is not None else None
+            self._record_exit(spec, st, _EXIT_UNKNOWN if code is None else code)
+        else:
+            consume_restart_request(spec.id)
+            self._mark_requested(
+                spec, st, 0, f"restart requested by {req.get('by') or 'unknown'} while not running"
+            )
+            st["last_restart"] = {"id": req.get("id"), "at": time.time(), "result": "started"}
+        if spec.kind == jobspec.KIND_INTERVAL:
+            st["next_run_epoch"] = 0  # "restart" of a periodic job means: run it now
+
+    def _apply_hold(self, spec: jobspec.JobSpec, st: dict[str, Any], hold: dict[str, Any]) -> None:
+        """A held job must not run: stop its child if it has one, as a requested exit. Retried on the
+        next pass if the child will not go."""
+        st["held"] = hold
+        if spec.kind == jobspec.KIND_RESIDENT:
+            st["resident_state"] = "held"
+        if not self._child_alive(spec, st):
+            if st.get("running_pid"):
+                self._record_exit(spec, st, _EXIT_UNKNOWN)  # gone already: settle the registry
+            return
+        gone, code = self._stop_child(spec, st)
+        if gone:
+            st["running_pid"] = None
+            st.pop("pid_started_at", None)
+            st["last_exit_code"] = code
+            st["last_exit_at"] = _utc_iso()
+            self._mark_requested(spec, st, code, f"stopped: held by {hold.get('by') or 'unknown'}")
+        else:
+            _log(f"{spec.id}: held, but pid {st.get('running_pid')} did not exit — retrying next pass")
 
     def _known_pids(self) -> set[int]:
         """PIDs this supervisor spawned or adopted this run — its own, plus every job's tracked
@@ -605,6 +732,8 @@ class Supervisor:
                 err.close()
         self._handles[spec.id] = handle
         st["running_pid"] = handle.pid
+        # The other half of the child's identity: a PID alone can be reused (see `same_process`).
+        st["pid_started_at"] = _looplock.process_start_time(handle.pid)
         st["last_start"] = _utc_iso()
         st.pop("orphaned", None)
         return True
@@ -629,6 +758,7 @@ class Supervisor:
         self._prune_retired(jobs, errors)
 
         started: list[str] = []
+        held = _holds.all_holds()
         for spec in jobs:
             st = self._state.setdefault(spec.id, {})
             st.update(
@@ -640,6 +770,13 @@ class Supervisor:
                     "schedule": spec.describe(),
                 }
             )
+            # Asked-for stops and restarts first, so nothing below can launch beside a child that
+            # is being replaced or that someone has stopped (`run.py stop|restart <job>`).
+            if spec.id in held:
+                self._apply_hold(spec, st, held[spec.id])
+                continue
+            st.pop("held", None)
+            self._apply_restart_request(spec, st)
             if spec.kind == jobspec.KIND_RESIDENT:
                 # What this job's liveness is judged against, recorded so a reader does not have to
                 # re-derive the whole job table to find out. `heartbeat_seen` false means the module

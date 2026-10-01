@@ -94,6 +94,9 @@ def job_run_info(job_id: str, snap: dict[str, Any] | None = None) -> dict[str, A
         "last_run_time": st.get("last_start"),
         "last_exit_code": st.get("last_exit_code"),
         "last_exit_at": st.get("last_exit_at"),
+        # A stop or restart someone asked for: its exit code is a kill's, not a failure's.
+        "last_exit_requested": bool(st.get("last_exit_requested")),
+        "held": st.get("held"),
         "still_running": bool(st.get("running_pid") and pid_alive(st.get("running_pid"))),
     }
 

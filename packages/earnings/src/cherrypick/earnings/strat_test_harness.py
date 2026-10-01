@@ -1176,7 +1176,30 @@ def main() -> None:
         "run_entries": cmd_run_entries,
         "run_closes": cmd_run_closes,
     }
-    result = dispatch[args.command](args)
+    # The command line takes the paper loop's own lock: `run-earnings-entry/-exit` and the older
+    # entry/exit jobs call this directly, and until 2026-10-01 nothing stopped one running beside the
+    # loop's own entry scan, two writers on one ledger. Here and not in the cmd_* functions, because
+    # the loop calls those in-process while it already holds the lock. Imported here because
+    # paper_loop imports this module.
+    from cherrypick.earnings import paper_loop as _paper_loop
+
+    lock = _paper_loop.acquire_lock()
+    if not lock.acquired:
+        # Not ok: a run asked for by name that did nothing must say so, unlike the loop's own
+        # every-minute tick, for which "busy" is the expected answer.
+        json.dump(
+            {
+                "ok": False,
+                "status": "busy",
+                "detail": "the earnings loop lock is held; another run is writing",
+            },
+            sys.stdout,
+        )
+        sys.exit(1)
+    try:
+        result = dispatch[args.command](args)
+    finally:
+        _paper_loop.release_lock(lock)
     json.dump(result, sys.stdout, default=str)
 
 

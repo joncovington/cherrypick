@@ -405,6 +405,55 @@ def test_a_stale_lock_does_not_wedge_the_loop(wired, monkeypatch):
     assert paper_loop.acquire_lock().acquired is True
 
 
+def test_a_live_holder_is_never_stolen_however_old_its_lock(wired, monkeypatch):
+    """The entry scan holds the lock for ~25 minutes. The old mtime-only lock handed it to the next
+    tick once it was LOCK_STALE_SECONDS old, whoever was still running -- two writers on one ledger."""
+    import os
+
+    from cherrypick.core import looplock
+
+    lock = paper_loop.lock_path()
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text(str(os.getpid()), encoding="utf-8")  # a live holder: this process
+    # Written just after the holder started -- the real order. (A lock dated BEFORE its holder
+    # existed reads, correctly, as a recycled PID.) Then make the timeout shorter than its age.
+    started = looplock.process_start_time(os.getpid()) or (__import__("time").time() - 10)
+    os.utime(lock, (started + 1, started + 1))
+    monkeypatch.setattr(paper_loop, "LOCK_STALE_SECONDS", 0)
+    assert paper_loop.acquire_lock().acquired is False
+
+
+def test_a_dead_holder_is_reclaimed_at_once(wired):
+    """A tick killed mid-run must not wedge the loop for half an hour."""
+    lock = paper_loop.lock_path()
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text("999999999", encoding="utf-8")  # no such process
+    assert paper_loop.acquire_lock().acquired is True
+
+
+def test_the_harness_command_line_refuses_while_the_loop_holds_the_lock(wired, monkeypatch, capsys):
+    """`run-earnings-entry` runs the harness directly; it used to write beside the loop's own scan."""
+    called = []
+    monkeypatch.setattr(harness, "cmd_run_entries", lambda args: called.append(1) or {"ok": True})
+    monkeypatch.setattr("sys.argv", ["strat_test_harness", "run_entries", "--date", "08/12/2026"])
+    held = paper_loop.acquire_lock()
+    try:
+        with pytest.raises(SystemExit) as exit_:
+            harness.main()
+    finally:
+        paper_loop.release_lock(held)
+    assert exit_.value.code == 1 and called == []
+    assert json.loads(capsys.readouterr().out)["status"] == "busy"
+
+
+def test_the_harness_command_line_runs_and_releases_when_the_lock_is_free(wired, monkeypatch, capsys):
+    monkeypatch.setattr(harness, "cmd_run_entries", lambda args: {"ok": True, "opened": 0})
+    monkeypatch.setattr("sys.argv", ["strat_test_harness", "run_entries", "--date", "08/12/2026"])
+    harness.main()
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+    assert not paper_loop.lock_path().exists()
+
+
 def test_the_lock_is_released_even_when_a_tick_raises(wired, monkeypatch):
     monkeypatch.setattr(paper_loop, "run_iteration", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
     with pytest.raises(RuntimeError):

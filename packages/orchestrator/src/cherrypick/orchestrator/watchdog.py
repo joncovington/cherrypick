@@ -29,6 +29,7 @@ from cherrypick.notify import Notifier
 
 from . import config as cfgmod
 from . import eval_activity, jobspec, servicecfg, tasks, timeutil, util
+from . import holds as _holds
 from .util import CREATE_NO_WINDOW, first_json
 
 _WATCHDOG_LOG = cfgmod.LOGS_DIR / "watchdog.log"
@@ -559,7 +560,13 @@ def _check_streamer_health(label: str, root: Path, spec: dict[str, Any]) -> list
     stale_warning=false (that flag only trips at 600s). Nothing restarted it; MEIC degraded to REST and
     the flies module refused every iteration on stale quotes. This is the load-bearing bit of the
     walk-away guarantee, so it lives in one place both producers share (a copy would drift).
+
+    A HELD streamer (`run.py stop streamer`) is left alone: restarting what someone stopped on
+    purpose undid every stop, and alarming on it fired for a shutdown nobody needed told about.
     """
+    held = _holds.is_held(label)
+    if held:
+        return [Finding(label, OK, "Streamer", f"stopped on purpose: {_holds.describe(label, held)}")]
     findings: list[Finding] = []
     running = None
     status: dict[str, Any] = {}
@@ -1751,6 +1758,19 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
                 )
             elif info["still_running"]:
                 findings.append(Finding(f"{name}.live_fresh", OK, f"{label} live loop", "tick running"))
+            elif info.get("held"):
+                # Stopped on purpose (`run.py stop`). Not a crash, so not the CRITICAL below -- but
+                # live is armed and in session, so it is still worth one line: nothing is watching
+                # whatever this loop left resting.
+                findings.append(
+                    Finding(
+                        f"{name}.live_fresh",
+                        WARN,
+                        f"{label} LIVE loop stopped on purpose",
+                        f"{_holds.describe(f'{name}-live', info['held'])} while live is armed and the market "
+                        f"is open — check the broker for resting orders, or `run.py start {name}-live`.",
+                    )
+                )
             else:
                 try:
                     started = datetime.fromisoformat(str(info["last_run_time"]))
@@ -1759,7 +1779,7 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
                     age_min = (now_et.astimezone(timezone.utc) - started).total_seconds() / 60
                 except ValueError:
                     age_min = None
-                failed = info.get("last_exit_code") not in (0, None)
+                failed = _tick_failed(info)
                 if age_min is None or age_min > fresh_minutes or failed:
                     if age_min is None:
                         shown = "unparseable last-start time"
@@ -1890,6 +1910,140 @@ def _log_findings(findings: list[Finding], overall: str) -> None:
         )
 
 
+def _norm_cmd(text: str) -> str:
+    return " ".join(str(text).lower().replace("\\", "/").replace('"', "").split())
+
+
+def _duplicate_groups(processes: list[dict[str, Any]], signatures: dict[str, str]) -> dict[str, list[int]]:
+    """{job_id: [pid, ...]} for every job more than one OS process is running as.
+
+    A process belongs to a job when its command line ENDS with the job's argv (interpreter dropped,
+    normalized) -- an ending, not a substring, so `notify-status` is not `notify-status --close`. A
+    match whose parent also matched is the same instance seen twice (a launcher and its child), so
+    only the top of each chain counts."""
+    matched: dict[str, list[dict[str, Any]]] = {}
+    for proc in processes:
+        cmd = _norm_cmd(proc.get("cmd") or "")
+        for jid, sig in signatures.items():
+            if sig and cmd.endswith(sig):
+                matched.setdefault(jid, []).append(proc)
+    out: dict[str, list[int]] = {}
+    for jid, procs in matched.items():
+        pids = {p.get("pid") for p in procs}
+        top = [p for p in procs if p.get("ppid") not in pids]
+        if len(top) > 1:
+            out[jid] = sorted(int(p["pid"]) for p in top)
+    return out
+
+
+def _list_processes() -> list[dict[str, Any]] | None:
+    """[{pid, ppid, cmd}] for every python and node process, from the OS itself; None when it cannot
+    say (not Windows, PowerShell failed). One CIM query: stdlib and the OS shell, as the watchdog's
+    reliability path requires."""
+    if os.name != "nt":
+        return None
+    query = (
+        "Get-CimInstance Win32_Process -Filter \"Name like 'python%' or Name like 'node%'\" | "
+        "Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress"
+    )
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", query],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        data = json.loads(r.stdout or "[]")
+    except Exception:  # noqa: BLE001 -- "cannot say" is an answer, never a crash on this path
+        return None
+    rows = data if isinstance(data, list) else [data]
+    return [
+        {"pid": d.get("ProcessId"), "ppid": d.get("ParentProcessId"), "cmd": d.get("CommandLine") or ""}
+        for d in rows
+        if isinstance(d, dict) and d.get("ProcessId")
+    ]
+
+
+def _check_duplicate_processes(cfg: dict[str, Any]) -> list[Finding]:
+    """Every layer that should prevent a second copy of a job -- one supervisor, its overlap guard,
+    each loop's lock, ports -- checked against the one thing that cannot be wrong about it: the OS
+    process list (2026-10-01). Two copies of anything with `--live` in its argv could double an order,
+    so that is CRITICAL; any other duplicate is a WARN."""
+    from . import supervisor
+
+    processes = _list_processes()
+    if processes is None:
+        return []
+    jobs, _ = jobspec.derive_jobs(
+        cfg,
+        pythonw=cfgmod.pythonw_exe(),
+        launcher=str(supervisor._LAUNCHER),
+        now=timeutil.now_et(cfg.get("timezone", "America/New_York")),
+        arm_records=supervisor.read_arm_records(cfg),
+    )
+    signatures = {spec.id: _norm_cmd(" ".join(str(a) for a in spec.argv[1:])) for spec in jobs}
+    live = {spec.id for spec in jobs if "--live" in spec.argv}
+    dupes = _duplicate_groups(processes, signatures)
+    if not dupes:
+        return [
+            Finding(
+                "duplicates", OK, "No duplicate processes", f"{len(processes)} python/node processes checked"
+            )
+        ]
+    findings = []
+    for jid, pids in sorted(dupes.items()):
+        findings.append(
+            Finding(
+                f"duplicates.{jid}",
+                CRITICAL if jid in live else WARN,
+                f"{jid} is running {len(pids)} times",
+                f"pids {', '.join(map(str, pids))}. `run.py ps` shows which one the supervisor owns; "
+                f"`run.py restart {jid}` leaves exactly one.",
+            )
+        )
+    return findings
+
+
+def _tick_failed(info: dict[str, Any]) -> bool:
+    """Did a job's last run FAIL? A non-zero exit, unless that exit was a stop or restart someone
+    asked for -- its code is the kill's, not a failure's, and alarming on it is what made every
+    deliberate restart of a live loop read as a CRITICAL (2026-10-01)."""
+    return info.get("last_exit_code") not in (0, None) and not info.get("last_exit_requested")
+
+
+# A hold this old was not a deliberate pause any more; it was forgotten.
+_HOLD_FORGOTTEN_HOURS = 12
+
+
+def _check_holds() -> list[Finding]:
+    """Everything stopped on purpose (`run.py stop`). Listed at OK -- a stop someone asked for is not
+    news, and alarming on it is what this replaced -- until it outlives `_HOLD_FORGOTTEN_HOURS`, when
+    a forgotten stop could cost a session nobody meant to skip."""
+    held = _holds.all_holds()
+    if not held:
+        return []
+    now = datetime.now(timezone.utc).timestamp()  # `time` here is datetime.time, not the module
+    stale = []
+    for name, h in held.items():
+        try:
+            if now - float(h.get("at")) > _HOLD_FORGOTTEN_HOURS * 3600:
+                stale.append(name)
+        except (TypeError, ValueError):
+            stale.append(name)
+    listed = "; ".join(_holds.describe(n, h) for n, h in sorted(held.items()))
+    if stale:
+        return [
+            Finding(
+                "holds",
+                WARN,
+                f"Stopped for over {_HOLD_FORGOTTEN_HOURS}h: {', '.join(sorted(stale))}",
+                f"{listed}. `run.py start <name>` resumes one; `install` resumes all.",
+            )
+        ]
+    return [Finding("holds", OK, "Stopped on purpose", listed)]
+
+
 def _check_services(cfg: dict[str, Any]) -> list[Finding]:
     """Keep the generic background services (e.g. the gex spot-trail recorder) alive: check each one's
     `status_argv` and, if down and `auto_restart`, relaunch it detached. Benign, non-trading remediation
@@ -1899,6 +2053,12 @@ def _check_services(cfg: dict[str, Any]) -> list[Finding]:
     for svc in cfgmod.enabled_services(cfg):
         sid = svc["id"]
         root = cfgmod.module_root(svc, sid)
+        held = _holds.is_held(sid)
+        if held:  # stopped on purpose: neither restarted nor alarmed on (see _check_streamer_health)
+            findings.append(
+                Finding(f"service.{sid}", OK, sid, f"stopped on purpose: {_holds.describe(sid, held)}")
+            )
+            continue
         if not root.exists():
             msg = f"not found at {cfgmod.portable_path(root)}"
             findings.append(Finding(f"service.{sid}", WARN, f"{sid} checkout missing", msg))
@@ -2221,6 +2381,15 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
 
     # Keep generic background services (e.g. the gex spot-trail recorder) alive.
     findings += _check_services(cfg)
+    findings += _check_holds()
+    try:
+        findings += _check_duplicate_processes(cfg)
+    except Exception as exc:
+        findings.append(
+            Finding(
+                "duplicates.error", WARN, "Duplicate-process check failed", f"{type(exc).__name__}: {exc}"
+            )
+        )
     # Declared-cost check: the next expensive declaration should announce itself here rather than
     # at an open (see _check_subscription_budget).
     findings += _check_subscription_budget(cfg)

@@ -9,7 +9,6 @@ is not a failure and not churn.
 from __future__ import annotations
 
 import json
-import os
 import time
 
 from test_supervisor import MONDAY_NOON, base_cfg, flies_cfg, spawned  # noqa: F401 -- the fixture
@@ -161,14 +160,5 @@ def test_a_stale_request_does_not_excuse_a_later_crash(spawned):  # noqa: F811
     assert not path.exists()  # and it is cleared, not left to excuse the next one
 
 
-def test_restart_console_marks_the_restart_before_it_kills(monkeypatch):
-    from cherrypick import cli
-
-    order = []
-    monkeypatch.setattr(cli, "read_json", lambda *a, **k: {"jobs": {"console": {"running_pid": os.getpid()}}})
-    monkeypatch.setattr(cli, "pid_alive", lambda pid: True)
-    monkeypatch.setattr(supervisor, "request_restart", lambda job, by: order.append(("mark", job, by)))
-    monkeypatch.setattr(supervisor, "_terminate_tree", lambda pid: order.append(("kill", pid)) or True)
-    monkeypatch.setattr(cli, "_emit", lambda rec: None)
-    cli.cmd_restart_console({})
-    assert order[0] == ("mark", "console", "restart-console") and order[1][0] == "kill"
+# (restart-console's own behaviour -- it now asks the supervisor and kills nothing -- is covered in
+# test_restart_console.py and test_holds_and_restarts.py.)

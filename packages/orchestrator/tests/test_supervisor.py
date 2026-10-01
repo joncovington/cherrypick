@@ -63,6 +63,18 @@ def spawned(monkeypatch, tmp_path):
         return p
 
     monkeypatch.setattr(supervisor.subprocess, "Popen", fake_popen)
+
+    # Never a real taskkill: a fake PID can be a real process's number on this machine. A tree kill
+    # here ends only the fake child with that PID. Tests that need a different kill re-patch it.
+    def fake_tree(pid):
+        for p in procs:
+            if p.pid == pid and p.poll() is None:
+                p.terminate()
+        return True
+
+    monkeypatch.setattr(supervisor, "_terminate_tree", fake_tree)
+    # Fake PIDs have no creation time; identity tests set one explicitly.
+    monkeypatch.setattr(supervisor._looplock, "process_start_time", lambda pid: None)
     logs = tmp_path / "logs"
     logs.mkdir()
     monkeypatch.setattr(cfgmod, "LOGS_DIR", logs, raising=False)

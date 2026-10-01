@@ -54,6 +54,18 @@ def _nothing(*_args, **_kwargs):
     return None
 
 
+def _always_false(*_args, **_kwargs):
+    return False
+
+
+def _gone_at_once(_self, _spec, _st):
+    return True, 0
+
+
+def _no_groups(*_args, **_kwargs):
+    return {}
+
+
 REPLACEMENTS = {
     "always_true": lambda: _always_true,
     "whole_day": lambda: _whole_day,
@@ -61,6 +73,9 @@ REPLACEMENTS = {
     "all_window_events": lambda: _all_window_events,
     "devnull_stderr": lambda: _devnull_stderr,
     "nothing": lambda: _nothing,
+    "always_false": lambda: _always_false,
+    "gone_at_once": lambda: _gone_at_once,
+    "no_groups": lambda: _no_groups,
 }
 
 
@@ -152,6 +167,42 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.orchestrator.supervisor",
         attr="consume_restart_request",
         replacement="nothing",
+    ),
+    Mutant(
+        id="supervisor-overlap-guard",
+        breaks="the supervisor launches a job whose previous run is still alive",
+        package="orchestrator",
+        tests=("tests/test_supervisor.py::test_overlap_guard_never_double_fires",),
+        module="cherrypick.orchestrator.supervisor",
+        attr="Supervisor._job_running",
+        replacement="always_false",
+    ),
+    Mutant(
+        id="supervisor-wait-before-relaunch",
+        breaks="a restart relaunches before the old process is gone",
+        package="orchestrator",
+        tests=("tests/test_holds_and_restarts.py::test_a_child_that_will_not_die_is_not_replaced",),
+        module="cherrypick.orchestrator.supervisor",
+        attr="Supervisor._stop_child",
+        replacement="gone_at_once",
+    ),
+    Mutant(
+        id="watchdog-duplicate-processes",
+        breaks="the watchdog no longer sees two copies of a job",
+        package="orchestrator",
+        tests=("tests/test_duplicate_processes.py::test_two_copies_of_a_job_are_found",),
+        module="cherrypick.orchestrator.watchdog",
+        attr="_duplicate_groups",
+        replacement="no_groups",
+    ),
+    Mutant(
+        id="looplock-live-holder",
+        breaks="a loop lock is taken from a holder that is still running",
+        package="earnings",
+        tests=("tests/test_paper_loop.py::test_a_live_holder_is_never_stolen_however_old_its_lock",),
+        module="cherrypick.core.looplock",
+        attr="pid_alive",
+        replacement="always_false",
     ),
 )
 

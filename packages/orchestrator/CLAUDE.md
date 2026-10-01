@@ -62,10 +62,29 @@ stdlib + local files only — no broker, network or AI — and every registratio
 **A child's stderr goes to `logs/jobs/<job-id>.stderr.log`** (a file, never a pipe: a child that
 outlives a supervisor restart keeps writing). On a failed exit the supervisor masks the run's last
 lines through `core.redact` and puts them in `supervisor.log` and the registry as `last_error`, which
-`status` shows and the churn and live-loop findings quote. **Restart a job with a marker, not a bare
-kill**: `restart-console` writes `state/restart-requested.<job>.json` before killing, and the
-supervisor logs that exit as requested — no failure, no backoff, no churn count. A marker older than
-10 minutes is ignored, so a request whose kill never came cannot excuse a later crash.
+`status` shows and the churn and live-loop findings quote.
+
+**Stops and restarts go by name, and the supervisor does the killing** (`orchestrator/proc.py`,
+`ps`/`restart`/`stop`/`start`). Nobody looks up a PID:
+
+- **Identity is PID plus creation time** (`pid_started_at` in the registry, `supervisor.same_process`).
+  A recorded PID that is alive but younger than the record is a different process — never adopted,
+  never killed.
+- **Restart**: the command writes `state/restart-requested.<job>.json` with its own id; the supervisor
+  stops the tree, waits until the child is confirmed gone, and only then launches. A child that will
+  not exit is left running and reported (`last_restart.result`) — never a second copy beside it. The
+  exit is logged as requested: no failure, no backoff, no churn count, and `last_exit_requested` rides
+  `supersnap.job_run_info` so the live-loop check does not read its code as a failed tick. A request
+  older than 10 minutes is ignored, so it cannot excuse a later crash.
+- **Holds** (`orchestrator/holds.py`, `state/holds.json`): a held name is stopped and never started,
+  by the supervisor or the watchdog's auto-restart, and its findings go OK. Two exceptions, on
+  purpose: a held LIVE loop is still a WARN in session, and any hold over 12 hours is a WARN.
+  `install` clears every hold.
+- **Duplicates**: the watchdog reads the OS process list and reports two instances of one job's
+  command line (WARN; CRITICAL for a `--live` argv). A launcher and its child are one instance.
+
+Do not add a path that kills a supervised child by PID from outside the supervisor; it is the one
+process that knows whether the old one is gone.
 
 The registry is a picture of what the supervisor is **currently** driving, which gives three states to
 watch:
