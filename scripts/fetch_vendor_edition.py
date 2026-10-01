@@ -316,6 +316,22 @@ def _login_needed(page) -> bool:
     return page.locator("input[type=password]").count() > 0
 
 
+def _open_authenticated(page, url: str, hits: list[str]) -> None:
+    """Open the dashboard, logging in if the saved session has lapsed.
+
+    A 403 from a logged-OUT page load is the vendor saying "who are you", not "slow down": on
+    2026-09-30 the expired session's first /securities call came back 403, the auto-login then
+    worked and loaded 12,489 symbols, and the stale 403 still in `hits` was read as throttling --
+    a 24-hour cooldown, an exit 1, and the next morning's run skipped too. So what the watcher
+    saw before a successful login is forgotten; a 403 on the authenticated reload still counts.
+    """
+    _open_dashboard(page, url)
+    if _login_needed(page):
+        _auto_login(page)
+        hits.clear()
+        _open_dashboard(page, url)
+
+
 def _research_tab(page):
     """The Insights panel's Research category: a toolbar div labelled "Research", not a tab role
     (seen 2026-09-27)."""
@@ -489,10 +505,7 @@ def cmd_edition(args) -> int:
         page = ctx.new_page()
         _watch_for_throttling(page, hits)
         try:
-            _open_dashboard(page, cfg["dashboard_url"])
-            if _login_needed(page):
-                _auto_login(page)
-                _open_dashboard(page, cfg["dashboard_url"])
+            _open_authenticated(page, cfg["dashboard_url"], hits)
             headers = _research_headers(page)
             opened = 0
             for i in range(min(headers.count(), wanted)):

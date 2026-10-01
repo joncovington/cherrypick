@@ -205,6 +205,45 @@ def test_edition_symbols_skip_the_breadth_table_but_keep_names_discussed_elsewhe
     assert fve.edition_symbols(page) == ["AMD", "NVDA"]
 
 
+def _fake_session(monkeypatch, *, logged_out: bool, forbid_after_login: bool = False):
+    """Stand in for the browser: the first dashboard load 403s whenever the session has lapsed (what
+    the vendor does to an unauthenticated /securities call), and optionally again after login."""
+    hits: list[str] = []
+    state = {"logged_in": not logged_out}
+
+    def open_dashboard(_page, _url):
+        if not state["logged_in"] or forbid_after_login:
+            hits.append("403 https://vendor.example/api/v1/securities")
+
+    def auto_login(_page):
+        state["logged_in"] = True
+
+    monkeypatch.setattr(fve, "_open_dashboard", open_dashboard)
+    monkeypatch.setattr(fve, "_login_needed", lambda _page: not state["logged_in"])
+    monkeypatch.setattr(fve, "_auto_login", auto_login)
+    return hits
+
+
+def test_a_403_from_the_logged_out_load_is_not_throttling(monkeypatch):
+    """2026-09-30: an expired session's 403, followed by a successful auto-login, was read as the
+    vendor throttling -- 24-hour cooldown, exit 1, and the next morning's run skipped as well."""
+    hits = _fake_session(monkeypatch, logged_out=True)
+    fve._open_authenticated(object(), "https://vendor.example", hits)
+    assert hits == []
+
+
+def test_a_403_after_logging_in_still_counts(monkeypatch):
+    hits = _fake_session(monkeypatch, logged_out=True, forbid_after_login=True)
+    fve._open_authenticated(object(), "https://vendor.example", hits)
+    assert len(hits) == 1
+
+
+def test_a_403_on_a_live_session_still_counts(monkeypatch):
+    hits = _fake_session(monkeypatch, logged_out=False, forbid_after_login=True)
+    fve._open_authenticated(object(), "https://vendor.example", hits)
+    assert len(hits) == 1
+
+
 def test_the_user_agent_is_regular_chrome_of_the_installed_version():
     ua = fve.chrome_user_agent("151.0.7922.34", "win32")
     assert "Headless" not in ua
