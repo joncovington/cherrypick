@@ -79,8 +79,10 @@ Things about this data that will mislead you if you do not know them:
   the phase as something other than what the pack says.
 - `levels` (gamma flip, call wall, put wall) come from this suite's own GEX engine. Pre-open they
   are the prior session's last confirmed recording — label them so.
-- `wti_proxy` and `gold_proxy` are ETF proxies (USO, GLD), not futures prices. Say "the crude
-  proxy", never a WTI dollar price the pack does not contain.
+- Crude and gold as futures are `premarket.futures.cl` (/CL) and `premarket.futures.gc` (/GC):
+  real contract prices, against their prior settle. `wti_proxy` and `gold_proxy` are ETF proxies
+  (USO, GLD), not futures prices — quote the futures, and fall back to "the crude proxy" only when
+  the future is unmeasured, never as a WTI or gold dollar price.
 
 You are also given, when they exist:
 

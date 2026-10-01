@@ -69,7 +69,7 @@ less than the file on disk is refused. **Every reader takes values strictly befo
 
 ## The pre-market tape
 
-`premarket` carries /ES /NQ /YM /RTY /CL /BZ against their prior settle, plus NDX, DJX and IWM's
+`premarket` carries /ES /NQ /YM /RTY /CL /BZ /GC against their prior settle, plus NDX, DJX and IWM's
 prior-session moves.
 
 - **The contract comes from `state/futures_contracts.json`, never assembled here**; a map older than

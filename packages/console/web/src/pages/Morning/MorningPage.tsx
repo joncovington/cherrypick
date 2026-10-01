@@ -45,8 +45,27 @@ function pnlClass(v: number | null | undefined): string {
   return v > 0 ? "pnl-pos" : "pnl-neg";
 }
 
-/** The scorecard order — the pack may carry more readings; these are the six the page fronts. */
-const SCORECARD = ["spx", "vix", "vix3m", "vvix", "wti_proxy", "gold_proxy"];
+/** The scorecard order — the pack may carry more readings; these are the ones the page fronts. */
+const SCORECARD = ["spx", "vix", "vix3m", "vvix"];
+
+/**
+ * Crude and gold close the scorecard as the /CL and /GC futures from the pre-market tape, each
+ * paired with the ETF proxy a pack carried before it had that future (no tape before fact
+ * version 4, no /GC before 2026-10-01). The proxy only stands in when the pack has no such future
+ * at all: a future the pack holds but could not measure renders unmeasured, because swapping in
+ * USO would quietly answer a different question. The proxy's own label says it is one.
+ */
+const COMMODITIES: { future: string; proxy: string }[] = [
+  { future: "cl", proxy: "wti_proxy" },
+  { future: "gc", proxy: "gold_proxy" },
+];
+
+function commodityTile(pack: MorningPack, future: string, proxy: string): ReactNode {
+  const f = pack.premarket?.futures[future];
+  if (f !== undefined) return <ReadingTile key={future} id={future} r={f} />;
+  const r = pack.readings[proxy];
+  return r !== undefined ? <ReadingTile key={proxy} id={proxy} r={r} /> : null;
+}
 
 function basisLabel(r: MorningReading): string {
   if (r.basis === "live") return "live pre-open";
@@ -515,7 +534,7 @@ function CalendarCard({ pack }: { pack: MorningPack }) {
   );
 }
 
-const FUTURES_ORDER = ["es", "nq", "ym", "rty", "cl", "bz"];
+const FUTURES_ORDER = ["es", "nq", "ym", "rty", "cl", "bz", "gc"];
 
 /** Why a future shows no change — the pack's reason codes, in words. */
 function changeReason(f: MorningFuture): string {
@@ -740,6 +759,7 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
                 const r = current.readings[id];
                 return r !== undefined ? <ReadingTile key={id} id={id} r={r} /> : null;
               })}
+              {COMMODITIES.map(({ future, proxy }) => commodityTile(current, future, proxy))}
             </div>
           </section>
 

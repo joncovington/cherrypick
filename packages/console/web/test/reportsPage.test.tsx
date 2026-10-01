@@ -152,3 +152,77 @@ describe("the deployment card survives every shape of missing block", () => {
     expect(renderMorning()).toContain("only 2 of 5 signals measured");
   });
 });
+
+/** A futures leg as the reader shapes it; `value: null` is a leg the pack holds but could not measure. */
+function future(label: string, value: number | null) {
+  return {
+    value,
+    basis: value === null ? null : "live",
+    session: null,
+    asOf: null,
+    source: null,
+    label,
+    product: null,
+    priorSettle: null,
+    priorSettleSession: null,
+    changeVsPriorClosePct: null,
+    changeReason: value === null ? "no_contract_mapped" : null,
+  };
+}
+
+const PROXIES = {
+  wti_proxy: { value: 71.04, basis: "prior", session: "2026-08-14", asOf: null, source: "stream_cache:USO", label: "WTI crude (ETF proxy)" },
+  gold_proxy: { value: 243.18, basis: "prior", session: "2026-08-14", asOf: null, source: "stream_cache:GLD", label: "Gold (ETF proxy)" },
+};
+
+function setCommodities(premarket: unknown): string {
+  const current = { ...PACK_BASE, readings: { ...PACK_BASE.readings, ...PROXIES }, premarket };
+  morning = { sessions: ["2026-08-17"], current, note: null } as unknown as MorningPayload;
+  return renderMorning();
+}
+
+describe("the scorecard fronts crude and gold as futures", () => {
+  it("shows /CL and /GC from the pre-market tape, not the ETF proxies", () => {
+    const html = setCommodities({
+      futures: { cl: future("WTI crude (/CL)", 61.37), gc: future("Gold (/GC)", 3412.6) },
+      indexes: {},
+      measuredFutures: 2,
+      recordOnly: true,
+    });
+    expect(html).toContain("WTI crude (/CL)");
+    expect(html).toContain("Gold (/GC)");
+    expect(html).toContain("3,412.60");
+    expect(html).not.toContain("ETF proxy");
+  });
+
+  it("falls back to the proxy only for a future the pack does not carry", () => {
+    // A pack from before /GC was on the tape: crude is the future, gold is still GLD.
+    const html = setCommodities({
+      futures: { cl: future("WTI crude (/CL)", 61.37) },
+      indexes: {},
+      measuredFutures: 1,
+      recordOnly: true,
+    });
+    expect(html).toContain("WTI crude (/CL)");
+    expect(html).not.toContain("WTI crude (ETF proxy)");
+    expect(html).toContain("Gold (ETF proxy)");
+  });
+
+  it("an unmeasured future stays unmeasured rather than borrowing the proxy's number", () => {
+    const html = setCommodities({
+      futures: { cl: future("WTI crude (/CL)", null), gc: future("Gold (/GC)", null) },
+      indexes: {},
+      measuredFutures: 0,
+      recordOnly: true,
+    });
+    expect(html).toContain("Gold (/GC)");
+    expect(html).not.toContain("243.18");
+    expect(html).not.toContain("71.04");
+  });
+
+  it("a pack with no tape at all still fronts both proxies", () => {
+    const html = setCommodities(undefined);
+    expect(html).toContain("WTI crude (ETF proxy)");
+    expect(html).toContain("Gold (ETF proxy)");
+  });
+});

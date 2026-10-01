@@ -5,11 +5,13 @@ by the suite's single producer. This module declares that need through the same
 ``state/stream_requests/`` contract every module uses: quote-only symbols (no chains, no
 expirations, no window hints), unioned by the streamer with everyone else's requests.
 
-Two deliberate substitutions keep the package credential-free and inside what the streamer can do:
+Two deliberate limits keep the package credential-free and inside what the streamer can do:
 
-- **No futures.** The streamer's chain path is equity/index only, and the overview needs quotes,
-  not chains -- so WTI and gold ride on their ETF proxies (USO, GLD), labeled as proxies in every
-  reading that uses them. The report never claims a futures price it did not observe.
+- **Futures only through the contract map.** A future is quoted as a leg, and its contract comes
+  from `state/futures_contracts.json` (written outside the package, by a script holding the
+  credential). WTI and gold are read both ways: as /CL and /GC on the pre-market tape, and as their
+  ETF proxies (USO, GLD), labeled as proxies, which still carry a reading when the map is stale.
+  The report never claims a futures price it did not observe.
 - **No IV rank.** tastytrade market metrics need a credential; this package has none. The reading
   is simply absent rather than sourced through a side door.
 """
@@ -39,8 +41,10 @@ SECTOR_ETFS = {
     "XLY": "Discretionary",
 }
 
-# Commodity proxies -- ETFs standing in for futures the streamer cannot subscribe. Every reading
-# built from these carries the proxy label; the render never prints them as WTI/gold spot.
+# Commodity proxies -- ETFs standing in for crude and gold. The futures themselves (/CL, /GC) are
+# on the pre-market tape below; the proxies stay because they need no contract map, and because the
+# narrative and older packs read them. Every reading built from these carries the proxy label; the
+# render never prints them as WTI/gold spot.
 COMMODITY_PROXIES = {
     "USO": "WTI crude (ETF proxy)",
     "GLD": "Gold (ETF proxy)",
@@ -96,7 +100,8 @@ QUOTE_ONLY_SYMBOLS = tuple(
 # The pre-market tape (added 2026-09-27): reading -> (product code, label). The CONTRACT is never
 # assembled here -- it comes from `state/futures_contracts.json`, written by
 # scripts/refresh_futures_contracts.py from the broker's instruments endpoint, exactly as the gex
-# recorder reads it. Crude (CL) and Brent (BZ) are real futures, so unlike USO they are not proxies.
+# recorder reads it. Crude (CL), Brent (BZ) and gold (GC, added 2026-10-01) are real futures, so
+# unlike USO and GLD they are not proxies.
 PREMARKET_FUTURES = {
     "es": ("ES", "S&P 500 e-mini (/ES)"),
     "nq": ("NQ", "Nasdaq-100 e-mini (/NQ)"),
@@ -104,6 +109,7 @@ PREMARKET_FUTURES = {
     "rty": ("RTY", "Russell 2000 e-mini (/RTY)"),
     "cl": ("CL", "WTI crude (/CL)"),
     "bz": ("BZ", "Brent crude (/BZ)"),
+    "gc": ("GC", "Gold (/GC)"),
 }
 
 # A map older than this names contracts that may have rolled; the same bound the gex recorder uses.

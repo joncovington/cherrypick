@@ -40,8 +40,9 @@ from cherrypick.core.auth import SHARED_SERVICE, CredentialStore, SessionManager
 #
 # ES/NQ/YM/RTY/CL/BZ (added 2026-09-27) are the morning pack's pre-market tape: one contract each,
 # the ACTIVE month, for the same reason as ZN -- liquidity leaves an expiring contract before it
-# expires, and the pre-market read wants the contract the market is actually trading.
-PRODUCTS = {"VX": 2, "ZN": 1, "ES": 1, "NQ": 1, "YM": 1, "RTY": 1, "CL": 1, "BZ": 1}
+# expires, and the pre-market read wants the contract the market is actually trading. GC (added
+# 2026-10-01) joins them so the morning page can front gold as /GC rather than its GLD proxy.
+PRODUCTS = {"VX": 2, "ZN": 1, "ES": 1, "NQ": 1, "YM": 1, "RTY": 1, "CL": 1, "BZ": 1, "GC": 1}
 
 # Products read as a curve (consecutive expirations); every other product takes its active month.
 CURVE_PRODUCTS = {"VX"}
