@@ -60,10 +60,16 @@ export function fmtPctSigned(v: number | null, digits = 2): string {
 }
 
 /** "12s", "4m 12s", "—" — an age in seconds, rendered compactly. */
-export function ageLabel(seconds: number | null): string {
+/** An age as hours, minutes and seconds, naming only the units it needs: `45s`, `3m 12s`,
+ *  `12h 11m 7s`. Minutes alone read "731m 22s" for a half-day-old mark. `compact` drops the
+ *  seconds once an age reaches an hour (`12h 11m`), for chips where width is short. */
+export function ageLabel(seconds: number | null, compact = false): string {
   if (seconds === null) return "—";
-  if (seconds < 90) return `${Math.round(seconds)}s`;
-  const m = Math.floor(seconds / 60);
-  const s = Math.round(seconds % 60);
-  return `${String(m)}m ${String(s)}s`;
+  const total = Math.max(0, Math.round(seconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return compact ? `${String(h)}h ${String(m)}m` : `${String(h)}h ${String(m)}m ${String(s)}s`;
+  if (m > 0) return `${String(m)}m ${String(s)}s`;
+  return `${String(s)}s`;
 }

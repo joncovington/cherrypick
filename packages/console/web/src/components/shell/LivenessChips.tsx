@@ -32,7 +32,7 @@ export function LivenessChips() {
             : `${p.kind} · cadence unknown`;
         return (
           <ModuleChipLink key={p.id} id={p.id} className={`chip ${cls}`} title={title}>
-            {p.label} {ageLabel(p.ageSeconds)}
+            {p.label} {ageLabel(p.ageSeconds, true)}
             {over && " ⚠"}
           </ModuleChipLink>
         );

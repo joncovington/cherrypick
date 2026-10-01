@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import type { SystemLevel, SupervisorJob } from "@console/shared";
+import type { SystemFinding, SystemLevel, SupervisorJob } from "@console/shared";
 import {
   useLogs,
   useLogSources,
@@ -118,12 +118,74 @@ function Section({ title, controls, children, note }: { title: string; controls?
 
 // --------------------------------------------------------------------------- health
 
+/**
+ * The supervisor's own findings and its jobs': the daemon (`supervisor.*`), each job it runs
+ * (`<module>.task`, `console.task`), the services it keeps up (`service.*`), holds on them, and
+ * duplicate processes. Everything else -- freshness, the streamer, live orders, notifications --
+ * is about what those jobs produce, and reads in the second section.
+ */
+function isSupervisorFinding(key: string): boolean {
+  return key.startsWith("supervisor.") || key.endsWith(".task") || key.startsWith("service.") || key === "holds" || key === "duplicates";
+}
+
+function supervisorRank(key: string): number {
+  if (key.startsWith("supervisor.")) return 0;
+  if (key === "console.task" || key.startsWith("service.")) return 1;
+  if (key === "holds" || key === "duplicates") return 2;
+  return 3;
+}
+
+function FindingsCard({ title, findings: all, note }: { title: string; findings: SystemFinding[]; note?: string }) {
+  const [scope, setScope] = useState<"not OK" | "all">("not OK");
+  const notOk = all.filter((f) => f.status !== "OK");
+  const findings = scope === "all" || notOk.length === 0 ? all : notOk;
+  return (
+    <Section
+      title={`${title} · ${String(notOk.length)} not OK of ${String(all.length)}`}
+      controls={<Toggle value={scope} options={["not OK", "all"] as const} onChange={setScope} label={`${title} scope`} />}
+      note={note}
+    >
+      {notOk.length === 0 && scope === "not OK" && <p className="muted">Every finding is OK; showing all of them.</p>}
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>status</th>
+              <th>check</th>
+              <th>message</th>
+              <th>since</th>
+            </tr>
+          </thead>
+          <tbody>
+            {findings.map((f) => (
+              <tr key={f.key}>
+                <td>
+                  <span className={LEVEL_CHIP[statusLevel(f.status)]}>{f.status}</span>
+                </td>
+                <td title={f.key}>{f.title}</td>
+                <td className="system-wrap">{f.message}</td>
+                <td className="muted" title={f.since ?? undefined}>
+                  {f.since !== null ? agoIso(f.since) : ""}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Section>
+  );
+}
+
 export function HealthTab() {
   const { data, isError } = useSystemHealth();
-  const [scope, setScope] = useState<"not OK" | "all">("not OK");
   if (data === undefined) return <Loading isError={isError} />;
-  const notOk = data.watchdog.findings.filter((f) => f.status !== "OK");
-  const findings = scope === "all" || notOk.length === 0 ? data.watchdog.findings : notOk;
+  // Problems first (the server's order), then the daemon itself ahead of what it runs.
+  const supervisorFindings = data.watchdog.findings
+    .filter((f) => isSupervisorFinding(f.key))
+    .map((f, i) => ({ f, i }))
+    .sort((a, b) => (a.f.status === "OK") === (b.f.status === "OK") ? supervisorRank(a.f.key) - supervisorRank(b.f.key) || a.i - b.i : a.i - b.i)
+    .map(({ f }) => f);
+  const otherFindings = data.watchdog.findings.filter((f) => !isSupervisorFinding(f.key));
 
   return (
     <div className="system-page">
@@ -141,39 +203,12 @@ export function HealthTab() {
         ))}
       </div>
 
-      <Section
-        title={`watchdog findings · ${data.watchdog.overall ?? "no report"} · ${String(notOk.length)} not OK of ${String(data.watchdog.findings.length)}`}
-        controls={<Toggle value={scope} options={["not OK", "all"] as const} onChange={setScope} label="findings scope" />}
-        note={`Last run ${ago(data.watchdog.ageSeconds)} ago (${et(data.watchdog.at)}), every ${String(data.watchdog.intervalMinutes ?? "?")} min; a problem renotifies every ${String(data.watchdog.renotifyMinutes ?? "?")} min. "Since" is how long the finding has held that status.`}
-      >
-        {notOk.length === 0 && scope === "not OK" && <p className="muted">Every finding is OK; showing all of them.</p>}
-        <div className="table-scroll">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>status</th>
-                <th>check</th>
-                <th>message</th>
-                <th>since</th>
-              </tr>
-            </thead>
-            <tbody>
-              {findings.map((f) => (
-                <tr key={f.key}>
-                  <td>
-                    <span className={LEVEL_CHIP[statusLevel(f.status)]}>{f.status}</span>
-                  </td>
-                  <td title={f.key}>{f.title}</td>
-                  <td className="system-wrap">{f.message}</td>
-                  <td className="muted" title={f.since ?? undefined}>
-                    {f.since !== null ? agoIso(f.since) : ""}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Section>
+      <FindingsCard title="supervisor & jobs" findings={supervisorFindings} />
+      <FindingsCard
+        title="everything else"
+        findings={otherFindings}
+        note={`The watchdog last ran ${ago(data.watchdog.ageSeconds)} ago (${et(data.watchdog.at)}), every ${String(data.watchdog.intervalMinutes ?? "?")} min, overall ${data.watchdog.overall ?? "no report"}; a problem renotifies every ${String(data.watchdog.renotifyMinutes ?? "?")} min. "Since" is how long a finding has held that status.`}
+      />
 
       <div className="cards cards-wide">
         <Section title="live trading posture">
