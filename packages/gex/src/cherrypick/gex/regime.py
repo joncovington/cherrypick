@@ -35,6 +35,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from cherrypick.core import calendar as _calendar
+from cherrypick.core import clock as _core_clock
 from cherrypick.core import home as _home
 from cherrypick.core import structures as _structures
 from cherrypick.core.clock import ET as _ET
@@ -123,8 +124,6 @@ SAMPLE_INTERVAL_SECONDS = 60
 # (service.DEFAULT_SPOT_MAX_AGE_SECONDS) and the trading modules' freshness limit.
 MAX_QUOTE_AGE_SECONDS = 120
 
-RTH_OPEN_MINUTE = 9 * 60 + 30
-RTH_CLOSE_MINUTE = 16 * 60
 
 # Futures readings, resolved rather than assembled (docs/regime-recorder-plan.md).
 #
@@ -197,13 +196,10 @@ def ensure_tables(conn: sqlite3.Connection, db_path: Path | str | None = None) -
 
 
 def in_rth(now: datetime) -> bool:
-    """Regular trading hours on a trading day, ET. Half-days deliberately sample to 16:00 — the
-    early close leaves refusal rows past the bell, which the age gate turns into refusals, and a
-    shorter honest session is not worth a second calendar."""
-    if not _calendar.is_trading_day(now.date()):
-        return False
-    minute = now.hour * 60 + now.minute
-    return RTH_OPEN_MINUTE <= minute < RTH_CLOSE_MINUTE
+    """Regular trading hours on a trading day, ET (`cherrypick.core.clock.in_rth`). Half-days
+    deliberately sample to 16:00 — the early close leaves refusal rows past the bell, which the age
+    gate turns into refusals, and a shorter honest session is not worth a second calendar."""
+    return _core_clock.in_rth(now)
 
 
 def _read_trades(cache_path: Path | str, symbols: list[str]) -> dict[str, tuple[float | None, float | None]]:

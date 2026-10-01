@@ -56,6 +56,35 @@ def minute_of_day(when: datetime) -> int:
     return when.hour * 60 + when.minute
 
 
+RTH_OPEN_MINUTE = 9 * 60 + 30
+RTH_CLOSE_MINUTE = 16 * 60
+
+
+def in_rth(when: datetime) -> bool:
+    """Regular trading hours (09:30-16:00 ET) on an NYSE trading day.
+
+    A naive `when` is read as ET; an aware one is converted. Half-days still count to 16:00 -- a
+    shorter honest session is not worth a second calendar. One definition because three readers of
+    the GEX history disagreed about what an off-hours row is, and each one that guessed wrong read
+    a frozen overnight value as the session's.
+    """
+    from cherrypick.core import calendar as _calendar  # calendar imports nothing from here
+
+    if when.tzinfo is not None:
+        when = when.astimezone(ET)
+    if not _calendar.is_trading_day(when.date()):
+        return False
+    return RTH_OPEN_MINUTE <= minute_of_day(when) < RTH_CLOSE_MINUTE
+
+
+def rth_bounds(session: str) -> tuple[float, float]:
+    """Epoch seconds of 09:30 and 16:00 ET on an ISO `session` date, DST-correct."""
+    day = datetime.fromisoformat(session)
+    open_ = day.replace(hour=RTH_OPEN_MINUTE // 60, minute=RTH_OPEN_MINUTE % 60, tzinfo=ET)
+    close = day.replace(hour=RTH_CLOSE_MINUTE // 60, minute=RTH_CLOSE_MINUTE % 60, tzinfo=ET)
+    return open_.timestamp(), close.timestamp()
+
+
 def hhmm_to_min(value: str, default: int) -> int:
     """A config 'HH:MM' as minutes-of-day, falling back rather than crashing on junk."""
     try:

@@ -7,12 +7,16 @@ sample after the asked-for moment is invisible, however close)."""
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 
 import pytest
 
 from cherrypick.core import regime
+from cherrypick.core.clock import ET
 
-T0 = 1_776_000_000.0  # an arbitrary fixed moment; everything is relative to it
+# A fixed RTH moment on the session the rows are filed under; everything is relative to it. (It was
+# an arbitrary instant that fell on a Sunday morning, which GEX reads now rightly refuse as off-hours.)
+T0 = datetime(2026, 8, 18, 11, 0, tzinfo=ET).timestamp()
 
 
 @pytest.fixture()
@@ -85,6 +89,31 @@ def test_refuses_beyond_the_staleness_bound(history_db):
     assert out["gex"]["SPX"] == {"status": "unmeasured", "reason": "stale_sample"}
     # Inside the bound the same join measures.
     assert regime.regime_at(T0 + 60 + 899, history_db=history_db)["market"]["status"] == "measured"
+
+
+def test_an_off_hours_gex_row_is_never_the_regime(history_db):
+    """2026-09-30: the recorder wrote around the clock, and off-hours rows were computed off
+    whatever chain was still streaming -- another expiry, filed under the session. An entry at
+    09:35 joined a 09:25 pre-open row, inside the staleness bound. Off-hours rows are evidence of
+    nothing about a session, so the join refuses them as it refuses expired-chain rows."""
+    pre_open = datetime(2026, 8, 18, 9, 25, tzinfo=ET).timestamp()
+    entry = datetime(2026, 8, 18, 9, 35, tzinfo=ET).timestamp()
+    conn = sqlite3.connect(history_db)
+    conn.execute(
+        "INSERT INTO gex_regime_history VALUES "
+        "('SPX','2026-08-18',?,6400.0,-2.0e9,0,6200.0,6500.0,6100.0,'2026-08-21')",
+        (pre_open,),
+    )
+    conn.commit()
+    conn.close()
+
+    out = regime.regime_at(entry, history_db=history_db, symbol="SPX")
+
+    assert out["gex"]["SPX"]["status"] == "unmeasured"
+    # And once the session has an RTH row, that is what joins.
+    assert (
+        regime.regime_at(T0 + 30, history_db=history_db, symbol="SPX")["gex"]["SPX"]["zero_gamma"] == 6380.0
+    )
 
 
 def test_missing_db_and_missing_tables_are_unmeasured_never_a_raise(tmp_path):

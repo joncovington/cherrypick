@@ -59,3 +59,24 @@ def test_hhmm_to_min_does_not_clamp():
     """A config value out of range is returned as given rather than silently squashed — a window of
     '25:00' is a config error to surface, not one to reinterpret as midnight."""
     assert clock.hhmm_to_min("25:00", 0) == 1500
+
+
+def test_in_rth_is_the_regular_session_on_a_trading_day():
+    et = clock.ET
+    assert clock.in_rth(datetime(2026, 9, 30, 9, 30, tzinfo=et))
+    assert clock.in_rth(datetime(2026, 9, 30, 15, 59, tzinfo=et))
+    assert not clock.in_rth(datetime(2026, 9, 30, 9, 29, tzinfo=et))
+    assert not clock.in_rth(datetime(2026, 9, 30, 16, 0, tzinfo=et))  # the bell is outside
+    assert not clock.in_rth(datetime(2026, 9, 26, 11, 0, tzinfo=et))  # Saturday
+    assert not clock.in_rth(datetime(2026, 11, 26, 11, 0, tzinfo=et))  # Thanksgiving
+    # Aware times in another zone are converted, not read at face value: 15:00 UTC is 11:00 EDT.
+    assert clock.in_rth(datetime(2026, 9, 30, 15, 0, tzinfo=timezone.utc))
+    assert not clock.in_rth(datetime(2026, 9, 30, 21, 0, tzinfo=timezone.utc))  # 17:00 EDT
+
+
+def test_rth_bounds_follow_dst():
+    summer_open, summer_close = clock.rth_bounds("2026-07-15")
+    winter_open, _ = clock.rth_bounds("2026-12-15")
+    assert summer_close - summer_open == 6.5 * 3600
+    assert datetime.fromtimestamp(summer_open, timezone.utc).hour == 13  # 09:30 EDT
+    assert datetime.fromtimestamp(winter_open, timezone.utc).hour == 14  # 09:30 EST

@@ -372,7 +372,13 @@ def run_recorder(cfg: dict, *, interval: int | None = None, once: bool = False) 
     return 0
 
 
-def record_regimes(cfg: dict, symbols: list[str] | None = None, min_interval_s: int = 300) -> int:
+def record_regimes(
+    cfg: dict,
+    symbols: list[str] | None = None,
+    min_interval_s: int = 300,
+    *,
+    now_et: datetime | None = None,
+) -> int:
     """Persist a compact GEX regime row per symbol (net GEX by OI and by volume, zero
     gamma, walls, spot) into gex_regime_history — the historical dimension the audit
     found entirely missing: regime-vs-outcome analysis needs to know what GEX WAS, and
@@ -381,7 +387,17 @@ def record_regimes(cfg: dict, symbols: list[str] | None = None, min_interval_s: 
     Throttled internally (one row per symbol per `min_interval_s`), so callers can invoke
     it on whatever cadence they already run; computing a profile is heavier than reading
     a spot, and a 5-minute regime series is plenty for session-level analysis.
-    Best-effort per symbol. Returns rows written."""
+    Best-effort per symbol. Returns rows written.
+
+    **RTH only.** Off-hours the session's own chain often has no greeks yet, so the provider falls
+    forward to the next chain that does -- usually an extra window another module holds, which
+    keeps streaming but has no market to describe. Recorded under today's date, those rows became
+    the overview's pre-open gamma flip and walls (2026-09-21 read walls 7500/7725 off the 09-25
+    chain against the prior session's 7600/7645) and the advisor's "open" walls. Nothing off-hours
+    is a reading of a session, so nothing is written."""
+    when = now_et or datetime.now(_ET)
+    if not _regime.in_rth(when):
+        return 0
     syms = [str(s).strip().upper() for s in (symbols if symbols is not None else cfg.get("symbols") or [])]
     if not syms:
         return 0
@@ -390,8 +406,8 @@ def record_regimes(cfg: dict, symbols: list[str] | None = None, min_interval_s: 
     conn = sqlite3.connect(db_path)
     try:
         _ensure_history_table(conn)
-        today = _today()
-        now = time.time()
+        today = when.astimezone(_ET).date().isoformat()  # `now_et` is tz-aware, like the default
+        now = when.timestamp()
         written = 0
         for sym in syms:
             row = conn.execute(
@@ -440,6 +456,46 @@ def record_regimes(cfg: dict, symbols: list[str] | None = None, min_interval_s: 
                 continue  # one symbol's hiccup must not lose the others
         conn.commit()
         return written
+    finally:
+        conn.close()
+
+
+def repair_regime_history(db_path: Path | str, *, apply: bool = False) -> dict:
+    """Find (and with `apply`, delete) `gex_regime_history` rows recorded outside RTH.
+
+    Until 2026-09-30 the recorder wrote around the clock, and an off-hours row is no session's
+    reading: the session's own chain had no greeks yet, so the provider fell forward to whatever
+    chain was still streaming -- usually another expiry -- and filed it under today. Those rows were
+    the overview's pre-open levels and the advisor's "open" walls. Read-only unless `apply`, which
+    first copies the DB beside itself, so the report a dry run prints is exactly what an apply
+    removes and the removed rows stay recoverable.
+    """
+    db_path = Path(db_path)
+    report: dict = {"ok": True, "applied": bool(apply), "db": str(db_path), "off_hours": 0, "by_date": {}}
+    if not db_path.exists():
+        return {**report, "ok": False, "reason": "no history db"}
+    conn = sqlite3.connect(db_path)
+    try:
+        doomed: list[int] = []
+        for rowid, trade_date, ts in conn.execute("SELECT rowid, trade_date, ts FROM gex_regime_history"):
+            if ts is not None and _regime.in_rth(datetime.fromtimestamp(float(ts), _ET)):
+                continue
+            doomed.append(rowid)
+            report["by_date"][trade_date] = report["by_date"].get(trade_date, 0) + 1
+        report["off_hours"] = len(doomed)
+        report["kept"] = conn.execute("SELECT COUNT(*) FROM gex_regime_history").fetchone()[0] - len(doomed)
+        if apply and doomed:
+            backup = db_path.with_name(f"{db_path.name}.bak-{datetime.now(_ET):%Y%m%d%H%M%S}")
+            conn.execute("VACUUM INTO ?", (str(backup),))
+            report["backup"] = str(backup)
+            for start in range(0, len(doomed), 900):
+                chunk = doomed[start : start + 900]
+                conn.execute(
+                    f"DELETE FROM gex_regime_history WHERE rowid IN ({', '.join('?' * len(chunk))})", chunk
+                )
+            conn.commit()
+        report["by_date"] = dict(sorted(report["by_date"].items()))
+        return report
     finally:
         conn.close()
 

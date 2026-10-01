@@ -31,6 +31,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from cherrypick.core import clock as _core_clock
 from cherrypick.core import config as _cfg
 from cherrypick.core import db as _db
 from cherrypick.core import home as _home
@@ -329,24 +330,22 @@ def _market(session: str) -> dict[str, Any]:
         return rows[0] if rows else None
 
     def gex(conn):
+        # RTH rows only, for the snapshot and the counts alike. The recorder used to run around the
+        # clock and freeze on the last streamed value once the market quieted, so an unbounded
+        # per-date count double-weighted whatever sign the session ENDED on: on 2026-08-21 the
+        # unfiltered count read 181 positive / 26 negative while the RTH-only truth was 67 / 11 —
+        # two-thirds of the "distribution" was one frozen overnight value repeated every five
+        # minutes. The model flagged the resulting snapshot-vs-counts contradiction six sessions
+        # running; this was most of it. The `latest` snapshot kept reading those rows until
+        # 2026-09-30, when the same off-hours rows were found feeding the overview's gates.
+        rth_open, rth_close = _core_clock.rth_bounds(session)
         latest = _store.rows(
             conn,
             "SELECT symbol, ts, spot, net_gex, net_gex_vol, zero_gamma, call_wall, put_wall"
-            " FROM gex_regime_history WHERE trade_date = ? ORDER BY ts DESC LIMIT 1",
-            (session,),
+            " FROM gex_regime_history WHERE trade_date = ? AND ts >= ? AND ts < ?"
+            " ORDER BY ts DESC LIMIT 1",
+            (session, rth_open, rth_close),
         )
-        # RTH rows only. The recorder runs around the clock and freezes on the last streamed value
-        # once the market quiets, so an unbounded per-date count double-weights whatever sign the
-        # session ENDED on: on 2026-08-21 the unfiltered count read 181 positive / 26 negative while
-        # the RTH-only truth was 67 / 11 — two-thirds of the "distribution" was one frozen overnight
-        # value repeated every five minutes. The model flagged the resulting snapshot-vs-counts
-        # contradiction six sessions running; this was most of it.
-        from datetime import datetime as _dt
-        from zoneinfo import ZoneInfo
-
-        et = ZoneInfo("America/New_York")
-        rth_open = _dt.fromisoformat(f"{session}T09:30:00").replace(tzinfo=et).timestamp()
-        rth_close = _dt.fromisoformat(f"{session}T16:00:00").replace(tzinfo=et).timestamp()
         buckets = _store.rows(
             conn,
             "SELECT CASE WHEN net_gex >= 0 THEN 'positive' ELSE 'negative' END sign, COUNT(*) n"
@@ -1782,12 +1781,25 @@ def _flies_band_containment() -> dict[str, Any]:
         )
 
     def walls(conn):
-        return _store.rows(
+        # Each session's first RTH reading. The day's first ROW was 00:00 ET, written off whatever
+        # chain was still streaming overnight (usually another expiry's), so the "open" walls and
+        # open spot described no session at all. Walked in Python because the 09:30 boundary is a
+        # DST-dependent instant, not a fixed time of day in epoch arithmetic.
+        out: list[dict] = []
+        seen: set[str] = set()
+        for row in _store.rows(
             conn,
-            "SELECT g.trade_date, g.spot open_spot, g.put_wall, g.call_wall FROM gex_regime_history g"
-            " WHERE g.symbol = 'SPX' AND g.ts = (SELECT MIN(ts) FROM gex_regime_history"
-            "  WHERE symbol = 'SPX' AND trade_date = g.trade_date)",
-        )
+            "SELECT trade_date, ts, spot open_spot, put_wall, call_wall FROM gex_regime_history"
+            " WHERE symbol = 'SPX' ORDER BY trade_date, ts",
+        ):
+            day = row["trade_date"]
+            if day in seen or row["ts"] is None:
+                continue
+            rth_open, rth_close = _core_clock.rth_bounds(day)
+            if rth_open <= float(row["ts"]) < rth_close:
+                seen.add(day)
+                out.append({k: row[k] for k in ("trade_date", "open_spot", "put_wall", "call_wall")})
+        return out
 
     def vix1d(conn):
         return _store.rows(

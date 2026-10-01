@@ -1,7 +1,9 @@
 /**
  * GEX profile assembled entirely from the shared stream cache read-only —
- * same source and expiration-pick discipline as the gex module's provider:
- * the nearest expiration that actually has live greeks.
+ * same source and expiration-pick discipline as the gex module's provider
+ * in session (the nearest expiration that actually has live greeks), the
+ * last session's chain off-hours (labelled), and the same leftover-strike
+ * cut either way.
  */
 
 import fs from "node:fs";
@@ -53,7 +55,64 @@ function spotHistory(config: ConsoleConfig, symbol: string): Array<{ ts: number;
   }
 }
 
-export function buildGexProfile(config: ConsoleConfig, symbol: string): Record<string, unknown> {
+/**
+ * A strike whose greeks stopped updating this long before its chain's newest row is a leftover:
+ * the producer re-centred its window away and nothing deletes the row, so its gamma is frozen at
+ * whatever it was when spot was nearby. Same rule and number as the gex provider's
+ * `LEFTOVER_ROW_SECONDS` -- on 2026-09-30 a week of leftovers on the 10-02 chain moved its
+ * zero-gamma from 7,420 to 6,875.
+ */
+export const LEFTOVER_ROW_SECONDS = 600;
+
+/** ET calendar date, minutes since midnight and weekday (0 = Sunday) of an instant. */
+export function etParts(nowMs: number): { date: string; minutes: number; weekday: number } {
+  const d = new Date(nowMs);
+  const date = d.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const [h, m] = d
+    .toLocaleTimeString("en-GB", { timeZone: "America/New_York", hour12: false })
+    .split(":")
+    .map(Number);
+  const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
+  return { date, minutes: (h! % 24) * 60 + m!, weekday };
+}
+
+/**
+ * Which expirations may back the profile now, in preference order, and what they mean.
+ *
+ * In session (a weekday, 09:30-16:00 ET): the nearest expiration on or after today -- the session's
+ * chain, or the next one when today's is not live, as the recorder does. Off-hours there is no
+ * session to describe, and what used to fill the gap was whatever chain was still streaming: usually
+ * another module's extra window, a different expiry. Off-hours therefore shows the LAST session's
+ * chain, labelled -- today's after the bell, otherwise the latest one before today. Never a later
+ * expiry. No NYSE holiday calendar here; on a holiday the expiry chip still names what is shown.
+ */
+export function candidateExpirations(
+  expirations: string[],
+  nowMs: number,
+): { mode: "live" | "last_session"; order: string[] } {
+  const { date, minutes, weekday } = etParts(nowMs);
+  const weekdayNow = weekday >= 1 && weekday <= 5;
+  if (weekdayNow && minutes >= 9 * 60 + 30 && minutes < 16 * 60) {
+    return { mode: "live", order: expirations.filter((e) => e >= date) };
+  }
+  const past = expirations.filter((e) => e < date).reverse();
+  const afterBell = weekdayNow && minutes >= 16 * 60 && expirations.includes(date);
+  return { mode: "last_session", order: afterBell ? [date, ...past] : past };
+}
+
+/** The streamer symbols to drop as leftovers, given each strike's greeks `updated_at`. */
+export function leftoverSymbols(stamps: Map<string, number>): Set<string> {
+  let newest = -Infinity;
+  for (const ts of stamps.values()) newest = Math.max(newest, ts);
+  const cutoff = newest - LEFTOVER_ROW_SECONDS;
+  return new Set([...stamps].filter(([, ts]) => ts < cutoff).map(([sym]) => sym));
+}
+
+export function buildGexProfile(
+  config: ConsoleConfig,
+  symbol: string,
+  nowMs: number = Date.now(),
+): Record<string, unknown> {
   const p = config.paths.streamCacheDb;
   if (!fs.existsSync(p)) return { ok: false, error: "stream cache missing" };
   let db: Database.Database | null = null;
@@ -79,7 +138,7 @@ export function buildGexProfile(config: ConsoleConfig, symbol: string): Record<s
       .all(symbol)
       .map((r) => r.expiration);
     const greeksStmt = db.prepare<[string], Record<string, unknown>>(
-      "SELECT gamma, iv FROM stream_greeks WHERE symbol = ?",
+      "SELECT gamma, iv, updated_at FROM stream_greeks WHERE symbol = ?",
     );
     const oiStmt = db.prepare<[string], Record<string, unknown>>(
       "SELECT open_interest FROM stream_oi WHERE symbol = ?",
@@ -88,12 +147,9 @@ export function buildGexProfile(config: ConsoleConfig, symbol: string): Record<s
       "SELECT volume FROM stream_trades WHERE symbol = ?",
     );
 
-    // Prefer live expirations (today onward); fall back to the most recent
-    // past one so a weekend still shows Friday's cached profile.
-    const today = new Date().toISOString().slice(0, 10);
-    const future = expirations.filter((e) => e >= today);
-    const past = expirations.filter((e) => e < today).reverse();
-    for (const expiration of [...future, ...past]) {
+    // "Today" is the ET date: this read `toISOString()`, the UTC date, which turns over at 20:00 ET.
+    const { mode, order } = candidateExpirations(expirations, nowMs);
+    for (const expiration of order) {
       const rows = db
         .prepare<[string, string], { streamer_symbol: string; data_json: string }>(
           "SELECT streamer_symbol, data_json FROM stream_chain WHERE underlying_symbol = ? AND expiration = ?",
@@ -102,6 +158,7 @@ export function buildGexProfile(config: ConsoleConfig, symbol: string): Record<s
 
       const entries: ChainEntryInput[] = [];
       const greeks = new Map<string, { gamma: number; iv: number }>();
+      const stamps = new Map<string, number>();
       const oi = new Map<string, number>();
       const volume = new Map<string, number>();
       for (const row of rows) {
@@ -124,6 +181,7 @@ export function buildGexProfile(config: ConsoleConfig, symbol: string): Record<s
             gamma: g["gamma"],
             iv: typeof g["iv"] === "number" ? g["iv"] * 100 : 0,
           });
+          if (typeof g["updated_at"] === "number") stamps.set(row.streamer_symbol, g["updated_at"]);
         }
         const o = oiStmt.get(row.streamer_symbol);
         if (typeof o?.["open_interest"] === "number") oi.set(row.streamer_symbol, o["open_interest"]);
@@ -131,6 +189,14 @@ export function buildGexProfile(config: ConsoleConfig, symbol: string): Record<s
         if (typeof v?.["volume"] === "number") volume.set(row.streamer_symbol, v["volume"]);
       }
       if (greeks.size === 0) continue; // no live greeks on this expiration — try the next
+
+      const leftovers = leftoverSymbols(stamps);
+      for (const sym of leftovers) {
+        greeks.delete(sym);
+        oi.delete(sym);
+        stamps.delete(sym);
+      }
+      const chainAsOf = stamps.size > 0 ? Math.max(...stamps.values()) : null;
 
       const profile = computeGexProfile(entries, greeks, oi, volume, spot);
       if (!profile.ok) continue;
@@ -156,6 +222,11 @@ export function buildGexProfile(config: ConsoleConfig, symbol: string): Record<s
         spot,
         spotUpdatedAt,
         expiration,
+        // "live" in session; "last_session" off-hours, when the chart is the last session's chain
+        // as of `chainAsOf` (its newest greeks) and must say so rather than read as now.
+        sessionMode: mode,
+        chainAsOf,
+        leftoverRowsDropped: leftovers.size,
         series: profile.series,
         totals: profile.totals,
         volumeTotals: volumeTotals(profile.series, spot),

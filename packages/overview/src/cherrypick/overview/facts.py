@@ -30,6 +30,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from cherrypick.core import calendar as _calendar
+from cherrypick.core import clock as _clock
 from cherrypick.core import db as _db
 
 # One ET for the suite — see cherrypick.core.clock.
@@ -324,17 +325,29 @@ def _gex_levels(readings: dict[str, Any]) -> dict:
         conn = _db.connect_ro(_paths.gex_history_db())
     except Exception:  # noqa: BLE001
         return levels
+    # The newest RTH row, not the newest row. The recorder used to run around the clock, and an
+    # off-hours row is not the prior session: the session's own chain has no greeks yet, so it fell
+    # forward to whatever chain was still streaming. On 2026-09-21 the pre-open pack read walls
+    # 7500/7725 off the 09-25 chain against the prior session's 7600/7645 -- a band five times
+    # wider, read straight into the wall gate. Rows are walked newest-first, so this stops at the
+    # first RTH one rather than reading the table.
+    row = None
     try:
-        rows = _rows(
-            conn,
+        cursor = conn.execute(
             "SELECT trade_date, ts, zero_gamma, call_wall, put_wall, net_gex "
-            "FROM gex_regime_history WHERE symbol = 'SPX' "
-            "ORDER BY ts DESC LIMIT 1",
+            "FROM gex_regime_history WHERE symbol = 'SPX' ORDER BY ts DESC"
         )
+        for candidate in cursor:
+            if candidate["ts"] is not None and _clock.in_rth(
+                datetime.fromtimestamp(float(candidate["ts"]), _ET)
+            ):
+                row = candidate
+                break
+    except Exception:  # noqa: BLE001 -- a missing table is no reading, never a raise
+        row = None
     finally:
         conn.close()
-    if rows:
-        row = rows[0]
+    if row is not None:
         for key in ("zero_gamma", "call_wall", "put_wall", "net_gex"):
             value = row[key]
             levels[key] = float(value) if value is not None else None

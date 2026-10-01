@@ -31,8 +31,10 @@ import-self-contained.
 from __future__ import annotations
 
 import statistics
+from datetime import datetime
 from pathlib import Path
 
+from cherrypick.core import clock as _clock
 from cherrypick.core import db as _db
 from cherrypick.core import home as _home
 
@@ -162,13 +164,24 @@ def _gex_block(conn, ts: float, max_staleness: float, symbol: str | None) -> dic
         # ones are identifiable, and a regime series is evidence — the honest move is to stop
         # believing them, not to remove the record that they happened. A symbol whose only samples
         # are expired-chain ones now reads `no_sample_at_or_before`, which is true.
-        row = conn.execute(
+        #
+        # RTH rows only, on the same terms (2026-09-30). The recorder wrote around the clock until
+        # then, and off-hours the session's own chain has no greeks yet, so the provider fell
+        # forward to whatever chain was still streaming -- another expiry, filed under today. 79% of
+        # the rows on disk are of that kind. Without this, an entry at 09:35 joined a 09:25 pre-open
+        # reading off a different chain, inside the staleness bound. Walked newest-first, so it
+        # stops at the first RTH row rather than reading the table.
+        row = None
+        for candidate in conn.execute(
             "SELECT ts, spot, net_gex, net_gex_vol, zero_gamma, call_wall, put_wall, expiration "
             "FROM gex_regime_history WHERE symbol = ? AND ts <= ? "
             "AND (expiration IS NULL OR expiration >= trade_date) "
-            "ORDER BY ts DESC LIMIT 1",
+            "ORDER BY ts DESC",
             (sym, ts),
-        ).fetchone()
+        ):
+            if _clock.in_rth(datetime.fromtimestamp(float(candidate["ts"]), _clock.ET)):
+                row = candidate
+                break
         if row is None:
             out[sym] = _unmeasured("no_sample_at_or_before")
         elif (ts - float(row["ts"])) > max_staleness:

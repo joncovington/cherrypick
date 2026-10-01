@@ -4,6 +4,7 @@
   stream     run the streamer to populate this module's own cache.
   record     the always-on spot-trail recorder.
   pin-study  which recorded level the close settled nearest, over stored history. Read-only.
+  repair-history  find off-hours GEX regime rows; `--apply` removes them (DB copied first).
 
 The read surface for GEX is the console (packages/console) — this module computes and records; it
 does not serve.
@@ -74,6 +75,25 @@ def _cmd_pin_study(cfg: dict, args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_repair_history(cfg: dict, args: argparse.Namespace) -> int:
+    report = _service.repair_regime_history(cfg["history_db_path"], apply=args.apply)
+    if args.json:
+        print(json.dumps(report, indent=2))
+        return 0 if report["ok"] else 1
+    if not report["ok"]:
+        print(f"nothing to repair: {report.get('reason')}")
+        return 1
+    verb = "removed" if report["applied"] else "would remove"
+    print(f"{verb} {report['off_hours']} off-hours rows, keeping {report['kept']}")
+    for day, n in report["by_date"].items():
+        print(f"  {day}  {n}")
+    if report.get("backup"):
+        print(f"backup: {report['backup']}")
+    elif not report["applied"] and report["off_hours"]:
+        print("dry run -- pass --apply to remove them (the DB is copied first)")
+    return 0
+
+
 def _cmd_record(cfg: dict, args: argparse.Namespace) -> int:
     if args.status:
         print(json.dumps(_service.recorder_status(cfg)))
@@ -113,12 +133,18 @@ def main(argv: list[str] | None = None) -> int:
     ps.add_argument("--open-window", type=int, default=30, help="minutes after 09:30 for the open reading")
     ps.add_argument("--json", action="store_true", help="emit the full result as JSON")
 
+    rh = sub.add_parser("repair-history", help="find (--apply: remove) off-hours GEX regime rows; dry run")
+    rh.add_argument("--apply", action="store_true", help="delete them, after copying the DB beside itself")
+    rh.add_argument("--json", action="store_true", help="emit the report as JSON")
+
     args = parser.parse_args(argv)
     cfg = _config.load()
     if args.command == "pin-study":
         # A read over stored history needs nothing streamed; registering would grow the shared
         # producer's symbol union as a side effect of running a study.
         return _cmd_pin_study(cfg, args)
+    if args.command == "repair-history":
+        return _cmd_repair_history(cfg, args)  # stored history only, like pin-study
     # Tell the streamer which underlyings we need kept fresh in the shared cache (best-effort).
     _stream_request.register(cfg)
     if args.command == "gex":

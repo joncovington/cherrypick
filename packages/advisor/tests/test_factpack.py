@@ -7,6 +7,7 @@ import pathlib
 
 import fakes
 import pytest
+from cherrypick.core import clock as core_clock
 
 from cherrypick.advisor import clock as _clock
 from cherrypick.advisor import factpack, paths, store
@@ -126,6 +127,15 @@ def test_gex_counts_are_rth_only(seeded):
     pack = factpack.build(SESSION, "midday")
     counts = pack["market"]["gex"]["today_counts"]
     assert counts == {"positive": 1, "negative": 1}
+
+
+def test_gex_latest_snapshot_is_the_last_rth_row_not_the_overnight_copy(seeded):
+    """The snapshot read the newest row of the date whatever its hour, so after the close it was
+    the overnight copy -- the same off-hours rows that fed the overview's gates (2026-09-30)."""
+    rth_open, rth_close = core_clock.rth_bounds(SESSION)
+    latest = factpack.build(SESSION, "midday")["market"]["gex"]["latest"]
+    assert latest is not None
+    assert rth_open <= latest["ts"] < rth_close
 
 
 def test_todays_range_only(seeded):
@@ -672,20 +682,33 @@ def test_flies_band_containment_separates_breach_from_containment(tmp_home):
         ],
     )
     gex = fakes.make_db(paths.module_data_dir("gex") / "gex_history.db", fakes.GEX_DDL)
+    rth_open, _ = core_clock.rth_bounds(SESSION)
     fakes.insert(
         gex,
         "gex_regime_history",
         [
+            # An overnight row filed under the session, off another expiry's chain: it must not be
+            # read as the morning's walls (that was the day's first ROW until 2026-09-30).
             {
                 "symbol": "SPX",
                 "trade_date": SESSION,
-                "ts": 1.0,
+                "ts": rth_open - 9 * 3600,
+                "spot": 5590.0,
+                # A band the session's range (5540..5610) breaks: reading it as the morning's walls
+                # turns the 1.0 hit rate below into 0.0.
+                "put_wall": 5580.0,
+                "call_wall": 5600.0,
+            },
+            {
+                "symbol": "SPX",
+                "trade_date": SESSION,
+                "ts": rth_open + 60,
                 "spot": 5555.0,
                 "put_wall": 5500.0,
                 "call_wall": 5700.0,
             },
-            {"symbol": "SPX", "trade_date": SESSION, "ts": 2.0, "spot": 5540.0},
-            {"symbol": "SPX", "trade_date": SESSION, "ts": 3.0, "spot": 5610.0},
+            {"symbol": "SPX", "trade_date": SESSION, "ts": rth_open + 120, "spot": 5540.0},
+            {"symbol": "SPX", "trade_date": SESSION, "ts": rth_open + 180, "spot": 5610.0},
         ],
     )
     out = factpack._flies_band_containment()

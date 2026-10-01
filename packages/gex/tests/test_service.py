@@ -6,11 +6,15 @@ No streamer, no network — just a temp SQLite shaped like the real stream_cache
 import json
 import sqlite3
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from cherrypick.core import gex
+from cherrypick.core.clock import ET
 
 from cherrypick.gex import provider, service
+
+# A Wednesday, mid-session: the recorder only writes during RTH, so tests that want a row say when.
+IN_SESSION = datetime(2026, 9, 30, 11, 0, tzinfo=ET)
 
 # Two days out, not today: the provider's forward-only horizon compares against the CURRENT date,
 # and a chain seeded to expire "today" in local time is already expired once UTC (and ET) cross
@@ -193,7 +197,7 @@ def test_record_regimes_persists_a_compact_summary_row(tmp_path):
     import sqlite3
 
     cfg = _cfg(tmp_path)
-    assert service.record_regimes(cfg) == 1  # only SPX has a cached chain here
+    assert service.record_regimes(cfg, now_et=IN_SESSION) == 1  # only SPX has a cached chain here
     conn = sqlite3.connect(cfg["history_db_path"])
     conn.row_factory = sqlite3.Row
     row = conn.execute("SELECT * FROM gex_regime_history").fetchone()
@@ -206,16 +210,115 @@ def test_record_regimes_persists_a_compact_summary_row(tmp_path):
 
 def test_record_regimes_throttles_to_one_row_per_interval(tmp_path):
     cfg = _cfg(tmp_path)
-    assert service.record_regimes(cfg) == 1
+    assert service.record_regimes(cfg, now_et=IN_SESSION) == 1
     # An immediate second call is inside the 5-minute throttle: no second row.
-    assert service.record_regimes(cfg) == 0
+    assert service.record_regimes(cfg, now_et=IN_SESSION) == 0
     # But an explicit zero interval writes again (the cadence knob is the caller's).
-    assert service.record_regimes(cfg, min_interval_s=0) == 1
+    assert service.record_regimes(cfg, min_interval_s=0, now_et=IN_SESSION) == 1
 
 
 def test_record_regimes_skips_symbols_without_chains(tmp_path):
     cfg = _cfg(tmp_path)
-    assert service.record_regimes(cfg, symbols=["QQQ"]) == 0
+    assert service.record_regimes(cfg, symbols=["QQQ"], now_et=IN_SESSION) == 0
+
+
+def test_record_regimes_writes_nothing_outside_rth(tmp_path):
+    """Off-hours rows were readings of no session: the provider fell forward to whatever chain was
+    still streaming (another module's extra window) and the row was filed under today. The overview
+    read one as the pre-open gamma flip and walls, and the advisor as the day's "open" walls."""
+    cfg = _cfg(tmp_path)
+    for when in (
+        datetime(2026, 9, 30, 8, 45, tzinfo=ET),  # pre-open, the overview's own run time
+        datetime(2026, 9, 30, 16, 0, tzinfo=ET),  # the bell itself is outside
+        datetime(2026, 9, 30, 23, 0, tzinfo=ET),  # overnight
+        datetime(2026, 9, 26, 11, 0, tzinfo=ET),  # a Saturday at midday
+        datetime(2026, 11, 26, 11, 0, tzinfo=ET),  # Thanksgiving
+    ):
+        assert service.record_regimes(cfg, min_interval_s=0, now_et=when) == 0, when
+    # The gate sits before any write, so off-hours does not even create the history DB.
+    assert not cfg["history_db_path"].exists()
+
+
+def _history_with_off_hours_rows(tmp_path):
+    db = tmp_path / "gex_history.db"
+    conn = sqlite3.connect(db)
+    service._ensure_history_table(conn)
+    rows = [
+        ("2026-09-21", datetime(2026, 9, 21, 0, 5, tzinfo=ET)),  # overnight, another expiry's chain
+        ("2026-09-21", datetime(2026, 9, 21, 8, 41, tzinfo=ET)),  # pre-open: the overview's read
+        ("2026-09-21", datetime(2026, 9, 21, 10, 0, tzinfo=ET)),  # a real reading
+        ("2026-09-21", datetime(2026, 9, 21, 16, 30, tzinfo=ET)),  # after the bell
+        ("2026-09-20", datetime(2026, 9, 20, 12, 0, tzinfo=ET)),  # a Sunday
+    ]
+    conn.executemany(
+        "INSERT INTO gex_regime_history (symbol, trade_date, ts, net_gex) VALUES ('SPX', ?, ?, 1.0)",
+        [(d, w.timestamp()) for d, w in rows],
+    )
+    conn.commit()
+    conn.close()
+    return db
+
+
+def test_repair_history_dry_run_reports_and_touches_nothing(tmp_path):
+    db = _history_with_off_hours_rows(tmp_path)
+    report = service.repair_regime_history(db)
+    assert report["off_hours"] == 4 and report["kept"] == 1
+    assert report["by_date"] == {"2026-09-20": 1, "2026-09-21": 3}
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT COUNT(*) FROM gex_regime_history").fetchone()[0] == 5
+    conn.close()
+    assert not list(tmp_path.glob("gex_history.db.bak-*"))
+
+
+def test_repair_history_apply_keeps_only_rth_rows_and_a_backup(tmp_path):
+    db = _history_with_off_hours_rows(tmp_path)
+    report = service.repair_regime_history(db, apply=True)
+    conn = sqlite3.connect(db)
+    left = [r[0] for r in conn.execute("SELECT ts FROM gex_regime_history")]
+    conn.close()
+    assert left == [datetime(2026, 9, 21, 10, 0, tzinfo=ET).timestamp()]
+    backup = sqlite3.connect(report["backup"])
+    assert backup.execute("SELECT COUNT(*) FROM gex_regime_history").fetchone()[0] == 5
+    backup.close()
+
+
+def _stamp_greeks(db, stamps: dict[str, float]) -> None:
+    """Set each strike's greeks AND open-interest age, as the producer would on a live subscription."""
+    conn = sqlite3.connect(db)
+    for sym, ts in stamps.items():
+        conn.execute("UPDATE stream_greeks SET updated_at = ? WHERE symbol = ?", (ts, sym))
+        conn.execute("UPDATE stream_oi SET updated_at = ? WHERE symbol = ?", (ts, sym))
+    conn.commit()
+    conn.close()
+
+
+def test_a_leftover_strike_is_not_summed_into_the_profile(tmp_path):
+    """A strike the producer's window re-centred away from keeps its last greeks forever. On
+    2026-09-30 a week of them on bwb's 10-02 window moved that chain's zero-gamma 545 points."""
+    cfg = _cfg(tmp_path)
+    now = time.time()
+    # C610 stopped updating an hour before the rest of its chain: a leftover.
+    _stamp_greeks(cfg["stream_cache_db"], {".SPX_c600": now, ".SPX_p600": now - 5, ".SPX_c610": now - 3600})
+
+    snap = provider.snapshot_from_stream_cache(cfg["stream_cache_db"], "SPX")
+
+    assert snap.leftover_rows_dropped == 1
+    assert ".SPX_c610" not in snap.greeks and ".SPX_c610" not in snap.oi
+    assert set(snap.greeks) == {".SPX_c600", ".SPX_p600"}
+    # And the age it reports is the live chain's, not the leftover's hour.
+    assert snap.input_age_seconds is not None and snap.input_age_seconds < 60
+
+
+def test_a_chain_updating_together_keeps_every_strike(tmp_path):
+    """The cut is relative to the chain's own newest row, so a whole chain that is merely old (a
+    quiet feed) keeps every strike -- staleness of the FEED is input_age_seconds' job, not this."""
+    cfg = _cfg(tmp_path)
+    old = time.time() - 7200
+    _stamp_greeks(cfg["stream_cache_db"], {".SPX_c600": old, ".SPX_p600": old - 30, ".SPX_c610": old - 60})
+
+    snap = provider.snapshot_from_stream_cache(cfg["stream_cache_db"], "SPX")
+
+    assert snap.leftover_rows_dropped == 0 and len(snap.greeks) == 3
 
 
 def test_build_gex_reports_missing_cache(tmp_path):

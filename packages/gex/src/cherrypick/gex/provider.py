@@ -51,6 +51,19 @@ class GexSnapshot:
     # ANNOTATED, not filtered: this is a read-only dashboard, and a stale chart labelled stale is
     # more useful to a human than a blank one. The trading path (flies' provider) does refuse.
     input_age_seconds: float | None = None
+    # Strike rows dropped as leftovers of an earlier window (see LEFTOVER_ROW_SECONDS).
+    leftover_rows_dropped: int = 0
+
+
+# A strike whose greeks stopped updating this long before the chain's newest row is a LEFTOVER: the
+# producer re-centred its window away from it and unsubscribed it, but nothing deletes the row, so
+# its gamma stays frozen at whatever it was when spot was nearby. Summed in, it is gamma exposure
+# from a different market. Measured 2026-09-30: on that day's 0DTE chain 30 leftovers moved net GEX
+# by 0.07% (far-OTM 0DTE gamma is tiny), but on the 10-02 chain -- an extra window bwb had held for
+# a week -- 284 leftovers up to 5.4 days old moved zero-gamma from 7,420 to 6,875. That is the chain
+# this provider falls forward to when the session's own chain is not live. Live rows refresh every
+# few seconds and a re-centred one is minutes to days behind, so the gap separates them cleanly.
+LEFTOVER_ROW_SECONDS = 600
 
 
 # SQLite's default host-parameter limit is 999; stay under it with room to spare.
@@ -210,6 +223,7 @@ def snapshot_from_stream_cache(db_path: Path | str, symbol: str, today: str | No
         oi: dict[str, int] = {}
         volume: dict[str, int] = {}
         oldest_age: float | None = None
+        dropped = 0
         now_ts = time.time()
 
         def _note_age(updated) -> None:
@@ -224,17 +238,27 @@ def snapshot_from_stream_cache(db_path: Path | str, symbol: str, today: str | No
             # Filter every follow-up read to this chain's own symbols — an unfiltered SELECT * would
             # scan every other tracked symbol's rows on each refresh, for no benefit.
             ph = ", ".join("?" * len(chain_syms))
-            for r in conn.execute(f"SELECT * FROM stream_greeks WHERE symbol IN ({ph})", chain_syms):
+            rows = conn.execute(f"SELECT * FROM stream_greeks WHERE symbol IN ({ph})", chain_syms).fetchall()
+            stamps = [float(r["updated_at"]) for r in rows if r["updated_at"] is not None]
+            cutoff = (max(stamps) - LEFTOVER_ROW_SECONDS) if stamps else None
+            for r in rows:
+                if cutoff is not None and r["updated_at"] is not None and float(r["updated_at"]) < cutoff:
+                    dropped += 1
+                    continue
                 _note_age(r["updated_at"])
                 greeks[r["symbol"]] = {
                     "gamma": float(r["gamma"] or 0),
                     "iv": _normalise_iv(float(r["iv"] or 0)),
                 }
             # Live OI comes from DXLink Summary events (stream_oi), never the static chain metadata.
+            # Only for strikes whose greeks survived: a leftover's OI carries no gamma to weight,
+            # and its age would make a live chain read as stale.
             for r in conn.execute(
                 f"SELECT symbol, open_interest, updated_at FROM stream_oi WHERE symbol IN ({ph})",
                 chain_syms,
             ):
+                if r["symbol"] not in greeks:
+                    continue
                 _note_age(r["updated_at"])
                 oi[r["symbol"]] = int(r["open_interest"] or 0)
             # Live per-option volume comes from DXLink Trade events (stream_trades.volume).
@@ -252,6 +276,7 @@ def snapshot_from_stream_cache(db_path: Path | str, symbol: str, today: str | No
             oi=oi,
             volume=volume,
             input_age_seconds=round(oldest_age, 1) if oldest_age is not None else None,
+            leftover_rows_dropped=dropped,
         )
     finally:
         conn.close()

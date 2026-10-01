@@ -222,7 +222,8 @@ def test_gex_levels_and_sector_board_flow_into_gates():
         ("XLE", PRIOR, 91.50, NOW_TS - 60000),
     ]
     _make_cache(rows_summary=summaries)
-    _make_gex(rows=[("SPX", PRIOR, NOW_TS - 70000, 7560.58, 7800.0, 7500.0, 1.2e9)])
+    # 15:30 ET on the prior Friday: an RTH reading, which is the only kind the levels may use.
+    _make_gex(rows=[("SPX", PRIOR, FRIDAY_CLOSE_TS - 1800, 7560.58, 7800.0, 7500.0, 1.2e9)])
     pack = facts.build(SESSION, now=NOW)
 
     assert pack["levels"]["zero_gamma"] == 7560.58
@@ -235,6 +236,26 @@ def test_gex_levels_and_sector_board_flow_into_gates():
     assert sectors["measured"] == 2
 
     assert pack["phase"]["phase"] == "green"
+
+
+def test_gex_levels_skip_off_hours_rows_for_the_prior_sessions_last_rth_reading():
+    """The 2026-09-21 shape: the newest rows were written overnight and pre-open off a different
+    expiry's chain (the session's own had no greeks yet), filed under the new date. The levels
+    must be the prior session's last RTH reading, which is what the docstring always promised."""
+    _make_cache()
+    _make_gex(
+        rows=[
+            ("SPX", PRIOR, FRIDAY_CLOSE_TS - 1800, 7646.0, 7645.0, 7600.0, -45.17e9),  # Fri 15:30 ET
+            ("SPX", PRIOR, FRIDAY_CLOSE_TS + 3600, 7700.0, 7725.0, 7500.0, -2.0e9),  # Fri 17:00 ET
+            ("SPX", "2026-08-15", FRIDAY_CLOSE_TS + 86400, 7700.0, 7725.0, 7500.0, -2.0e9),  # Saturday
+            ("SPX", SESSION, NOW_TS - 300, 7646.0, 7725.0, 7500.0, -2.15e9),  # Mon 08:25 ET
+        ]
+    )
+    levels = facts.build(SESSION, now=NOW)["levels"]
+
+    assert (levels["put_wall"], levels["call_wall"]) == (7600.0, 7645.0)
+    assert levels["net_gex"] == -45.17e9
+    assert levels["session"] == PRIOR
 
 
 def test_close_history_dates_each_column_to_its_own_session():

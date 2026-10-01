@@ -53,6 +53,7 @@ python run.py stream --symbol SPX     # standalone streamer -> own data/stream_c
 python run.py record                  # always-on spot-trail + regime recorder (--once / --interval / --status)
 python run.py gex --symbol SPX --json # one-shot payload to the terminal
 python run.py pin-study [--json]      # which recorded level the close settled nearest, over stored history
+python run.py repair-history [--json] # report off-hours gex_regime_history rows (--apply removes; DB copied first)
 python -m pytest                      # tests seed a temp cache; no streamer required
 ruff check . ; ruff format .          # line-length 110
 ```
@@ -96,4 +97,15 @@ file's directory.
   `expiration >= trade_date`. This series (`gex_regime_history`) is not MEIC's gate input — the gate
   reads its own same-tick 0DTE snapshot — so it affects the advisor's pack, the console's GEX page and
   `core.regime.regime_at`, not `meic.analytics.gex_gate_counterfactual`.
+- **GEX regime rows are RTH only** (`core.clock.in_rth`). Off-hours the session's chain has no greeks
+  yet, so the horizon falls forward to whatever chain is still streaming — another expiry — and until
+  2026-09-30 the recorder filed that under today: 79% of the rows on disk, and the overview's pre-open
+  levels and the advisor's "open" walls read them. `record_regimes` now writes nothing off-hours, and
+  every reader (`core.regime`, overview's levels, the advisor's snapshot and walls) filters the old
+  rows on read, the expired-chain rule's posture. `repair-history` reports them; `--apply` is there,
+  but the convention is to keep the record.
+- **Leftover strikes are not summed.** A strike the producer's window re-centred away from keeps its
+  last greeks forever; `provider.LEFTOVER_ROW_SECONDS` drops rows that far behind their chain's newest
+  (the console's `gexProfile.ts` uses the same cut). Negligible on a 0DTE chain; on a multi-day extra
+  window it moved zero-gamma 545 points.
 - **Scratch work lives in a git-ignored `.tmp/`.**

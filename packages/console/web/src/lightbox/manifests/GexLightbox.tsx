@@ -24,6 +24,10 @@ interface GexProfilePayload {
   spot?: number;
   spotUpdatedAt?: number | null;
   expiration?: string;
+  /** "last_session" off-hours: the chart is the last session's chain, as of `chainAsOf`. */
+  sessionMode?: "live" | "last_session";
+  chainAsOf?: number | null;
+  leftoverRowsDropped?: number;
   series?: GexStrikeRow[];
   totals?: {
     total_call_gex: number;
@@ -364,6 +368,14 @@ export function GexLightbox({ slide }: { slide: string }) {
           {p?.ok && (
             <span className="chip">
               exp {p.expiration} · spot {p.spot?.toFixed(2)}
+            </span>
+          )}
+          {p?.ok && p.sessionMode === "last_session" && (
+            <span
+              className="chip chip-warn"
+              title="outside regular hours: the last session's chain, not a live reading"
+            >
+              last session{p.chainAsOf != null ? ` · as of ${formatAsOf(p.chainAsOf)} ET` : ""}
             </span>
           )}
           {p?.ok && p.spotUpdatedAt != null && (
