@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Run the CI workflow's checks locally, against the environment dev-install already set up.
 #
-# Mirrors .github/workflows/ci.yml's three jobs: docs (linter tests + guardrails), the Python matrix
-# (ruff check, ruff format --check, pytest per package) and the console (install, build, test). The
+# Mirrors .github/workflows/ci.yml's jobs: docs (linter tests + guardrails), the Python matrix
+# (ruff check, ruff format --check, pytest per package), the guard mutants (scripts/guard_mutants.py)
+# and the console (install, build, test). The
 # package list is read from the workflow's own matrix rather than kept here, so a package added to CI
 # is run here too -- a hand-kept copy of that list is exactly how five packages once went unrun.
 #
@@ -20,6 +21,7 @@
 #   * every package with a changed file runs;
 #   * EVERYTHING runs when core, scripts/, .github/ or a root pyproject changes -- every package
 #     depends on core, and the others are the CI machinery itself;
+#   * the guard mutants run when any package they test changed (read from the mutant table itself);
 #   * the console runs when it changed OR when any package it calls changed. That set is READ from the
 #     console's own source (every `cherrypick.<pkg>` / `packages/<pkg>` its server code and tests name:
 #     the mirror tests run module CLIs, the bridges spawn module verbs), not kept here, so a new bridge
@@ -47,13 +49,13 @@ changed_targets() {
     else
         cd "$ROOT"
         if ! git rev-parse --verify -q origin/main >/dev/null; then
-            echo "docs $MATRIX console"  # no base to diff against: run everything
+            echo "docs $MATRIX guards console"  # no base to diff against: run everything
             return
         fi
         files="$( { git diff --name-only origin/main; git ls-files --others --exclude-standard; } | sort -u )"
     fi
     if echo "$files" | grep -qE '^(packages/core/|scripts/|\.github/|pyproject\.toml$)'; then
-        echo "docs $MATRIX console"
+        echo "docs $MATRIX guards console"
         return
     fi
     local out="docs" pkgs="" p
@@ -61,6 +63,9 @@ changed_targets() {
         if echo "$files" | grep -q "^packages/$p/"; then pkgs="$pkgs $p"; fi
     done
     out="$out$pkgs"
+    for p in $(python "$ROOT/scripts/guard_mutants.py" --list-packages); do
+        if echo "$files" | grep -q "^packages/$p/"; then out="$out guards"; break; fi
+    done
     local run_console=0
     if echo "$files" | grep -q '^packages/console/'; then
         run_console=1
@@ -84,7 +89,7 @@ if [ "${1:-}" = "--changed" ]; then
 elif [ $# -gt 0 ]; then
     TARGETS="$*"
 else
-    TARGETS="docs $MATRIX console"
+    TARGETS="docs $MATRIX guards console"
 fi
 if [ $PLAN = 1 ]; then echo "$TARGETS"; exit 0; fi
 echo "targets: $TARGETS"
@@ -107,6 +112,10 @@ for t in $TARGETS; do
             cd "$ROOT"
             step docs-linter-tests python -m pytest tools/tests -q
             step docs-check python tools/check_docs.py
+            ;;
+        guards)
+            cd "$ROOT"
+            step guard-mutants python scripts/guard_mutants.py
             ;;
         console)
             cd "$ROOT/packages/console"

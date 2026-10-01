@@ -51,6 +51,9 @@ CATCHUP_MINUTES = {
     # degrades safely -- the recorder drops its futures readings rather than sampling a
     # rolled-off contract -- so catching one up late is strictly better than skipping it.
     "futures-contracts": 8 * 60,
+    # The guard check is worth something only before entries open: a late one still reports, but
+    # past 09:25 it can no longer warn ahead of the bell, so it stops catching up there.
+    "guard-mutants": 35,
     # Very generous: the calendar reaches weeks ahead, so a late pull is harmless while a skipped
     # one eventually starves the scanner. Catching up beats waiting for tomorrow.
     "earnings-dolt-pull": 12 * 60,
@@ -991,6 +994,23 @@ def derive_jobs(
             kind=KIND_DAILY,
             at_et="08:45",
             catchup_minutes=CATCHUP_MINUTES["futures-contracts"],
+            trading_days_only=True,
+            enabled=True,
+        ),
+    )
+    add(
+        "guard-mutants",
+        lambda: JobSpec(
+            id="guard-mutants",
+            # Before the bell: re-runs each guard's test under a mutant that breaks it, so a guard
+            # that can no longer fail is a WARNING before anything trades, not a surprise after.
+            # `--if-changed` makes a quiet morning a no-op -- a guard only stops failing when code
+            # changes, and CI checks every push -- while an uncommitted edit on this machine is
+            # still re-checked. Tests and in-memory patches only; no ledger, no broker.
+            argv=(pythonw, _suite_script(launcher, "guard_mutants.py"), "--if-changed"),
+            kind=KIND_DAILY,
+            at_et="08:50",
+            catchup_minutes=CATCHUP_MINUTES["guard-mutants"],
             trading_days_only=True,
             enabled=True,
         ),

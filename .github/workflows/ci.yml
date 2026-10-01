@@ -78,6 +78,29 @@ jobs:
       - name: Test (pytest)
         run: pytest
 
+  # Every guard shown to fail (the root CLAUDE.md's rule, run rather than remembered): each guard's
+  # test runs clean, where it must pass, and under a mutant that breaks the guard in memory, where it
+  # must fail on an assertion. A guard can only stop failing when code changes, so this runs on every
+  # push; the pre-bell `guard-mutants` job re-checks only what this machine changed since. The
+  # packages to install are READ from the mutant table, so a new mutant is covered without editing
+  # this file.
+  guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install the packages the mutants test
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "packages/core[dev,broker]"
+          for p in $(python scripts/guard_mutants.py --list-packages); do
+            if [ "$p" != core ]; then pip install -e "packages/$p[dev]"; fi
+          done
+      - name: Each guard fails under its mutant
+        run: python scripts/guard_mutants.py
+
   # The console is the one Node package (pnpm workspace inside packages/console), so it gets its
   # own job rather than a row in the Python matrix. Typecheck stands in for lint; the vitest run
   # includes the dry-run-only source scan (the invariant that no code path can place an order).

@@ -299,6 +299,7 @@ def test_derive_full_suite_job_table():
         "log-archive",
         "suite-backup",
         "futures-contracts",
+        "guard-mutants",
         "earnings-dolt-pull",
         "report-edition",
         "report-edition-retry",
