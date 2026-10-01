@@ -1,5 +1,5 @@
 import type { AlertDaemonHealth } from "@console/shared";
-import { useOverview } from "../../lib/api";
+import { useMorningReport, useOverview } from "../../lib/api";
 import { EquityCard } from "./EquityCard";
 import { EquityBottomRow } from "./EquityBottomRow";
 import { useSystem } from "./SuiteCards";
@@ -55,6 +55,27 @@ function AlertDaemonChip({ health }: { health: AlertDaemonHealth }) {
   );
 }
 
+function phaseChipClass(phase: string): string {
+  if (phase === "green") return "chip-ok";
+  if (phase === "yellow") return "chip-warn";
+  if (phase === "red") return "chip-missing";
+  return "chip";
+}
+
+/** The morning pack's phase: the day's first verdict on the market. */
+function MorningChip() {
+  const phase = useMorningReport().data?.current?.phase ?? null;
+  if (phase === null) return null;
+  return (
+    <span className={`chip ${phaseChipClass(phase.phase)}`}>
+      morning {phase.phase.toUpperCase()}
+      {phase.gatesMeasured !== null &&
+        phase.gatesTotal !== null &&
+        ` · ${String(phase.gatesMet ?? 0)} of ${String(phase.gatesTotal)} measured gates met`}
+    </span>
+  );
+}
+
 export function OverviewPage() {
   const { isError } = useOverview();
   const { data: system } = useSystem();
@@ -64,14 +85,18 @@ export function OverviewPage() {
     <div className="page overview-page">
       <div className="page-title-row">
         <h1>Overview</h1>
-        {liveCount > 0 && <span className="chip chip-missing">{liveCount} module{liveCount === 1 ? "" : "s"} LIVE</span>}
-        {system && (
-          <span className={`chip ${system.halted.active ? "chip-missing" : "chip-ok"}`}>
-            {system.halted.active ? "LIVE HALTED" : "halt flag clear"}
-          </span>
-        )}
-        {system?.alertDaemon != null && <AlertDaemonChip health={system.alertDaemon} />}
-        {isError && <span className="chip chip-missing">console API unreachable</span>}
+        {/* Every chip sits right, opposite the heading. */}
+        <div className="page-title-chips">
+          {isError && <span className="chip chip-missing">console API unreachable</span>}
+          {liveCount > 0 && <span className="chip chip-missing">{liveCount} module{liveCount === 1 ? "" : "s"} LIVE</span>}
+          {system && (
+            <span className={`chip ${system.halted.active ? "chip-missing" : "chip-ok"}`}>
+              {system.halted.active ? "LIVE HALTED" : "halt flag clear"}
+            </span>
+          )}
+          {system?.alertDaemon != null && <AlertDaemonChip health={system.alertDaemon} />}
+          <MorningChip />
+        </div>
       </div>
 
       <div className="overview-body">

@@ -1,7 +1,5 @@
-import { useState } from "react";
-import { LogsCard } from "../../pages/Overview/EquityCard";
 import { useWsState } from "../../lib/useQuote";
-import { useOverview, useMorningReport, useStatus } from "../../lib/api";
+import { useOverview, useStatus } from "../../lib/api";
 import { LivenessChips } from "./LivenessChips";
 
 const DXLINK_LABEL: Record<string, string> = {
@@ -11,22 +9,13 @@ const DXLINK_LABEL: Record<string, string> = {
   error: "⚠ dxlink error",
 };
 
-type Segment = "logs" | null;
-
-function phaseChipClass(phase: string): string {
-  if (phase === "green") return "chip-ok";
-  if (phase === "yellow") return "chip-warn";
-  if (phase === "red") return "chip-missing";
-  return "chip";
-}
-
 /**
- * The one-line status bar along the bottom of every page: the suite's health first (the console's
- * DXLink session, a read-only credential, each producer's liveness against its own cadence), then
- * watchdog and morning-phase state and the logs, which open in a drawer. The session chip (market
- * open / trading day, closed) sits in the top bar beside the clock. (The SPX/XSP/QQQ/IWM
- * quotes and the module/service counts went on 2026-10-01; the top bar's futures ticker carries
- * the market now.)
+ * The status bar along the bottom of every page: the suite's health (the console's DXLink session,
+ * a read-only credential, each producer's liveness against its own cadence) and the watchdog's
+ * verdict. The session chip (market open / trading day, closed) sits in the top bar beside the
+ * clock, and the morning phase on the Overview's title row. (The SPX/XSP/QQQ/IWM quotes, the
+ * module/service counts and the logs drawer went on 2026-10-01: the futures ticker carries the
+ * market, and the System page the logs.)
  *
  * It began as the Overview's own bar in the no-scroll redesign (2026-09); since 2026-10-01 it is
  * the shell's, on every page, and the health chips moved down into it from the header so the top
@@ -34,17 +23,12 @@ function phaseChipClass(phase: string): string {
  * Overview beside the LIVE chip, the two facts about live trading read together.
  */
 export function StatusBar() {
-  const [open, setOpen] = useState<Segment>(null);
   const ws = useWsState();
   const { data: status, isError: statusError } = useStatus();
   // The WS heartbeat is the fresher signal when the socket is open.
   const dxlink = ws.socket === "open" ? ws.dxlink : (status?.dxlink ?? "disconnected");
   const { data: overview } = useOverview();
   const wd = overview?.watchdog;
-  const { data: morning } = useMorningReport();
-  const phase = morning?.current?.phase ?? null;
-
-  const toggle = (seg: Segment) => setOpen((cur) => (cur === seg ? null : seg));
 
   return (
     <div className="statusbar-wrap">
@@ -70,30 +54,16 @@ export function StatusBar() {
           </>
         )}
         <LivenessChips />
-        <span className="statusbar-sep" />
         {wd?.overall && (
-          <span className={`chip ${wd.overall === "OK" ? "chip-ok" : "chip-warn"}`}>
+          <span
+            className={`chip ${wd.overall === "OK" ? "chip-ok" : "chip-warn"}`}
+            title={wd.ageSeconds !== null ? `the watchdog last ran ${String(Math.round(wd.ageSeconds / 60))} min ago` : undefined}
+          >
             watchdog {wd.overall}
-            {wd.ageSeconds !== null && ` · ${Math.round(wd.ageSeconds / 60)}m ago`}
+            {wd.ageSeconds !== null && ` · ${Math.round(wd.ageSeconds / 60)}m`}
           </span>
         )}
-        {phase && (
-          <span className={`chip ${phaseChipClass(phase.phase)}`}>
-            morning {phase.phase.toUpperCase()}
-            {phase.gatesMeasured !== null && phase.gatesTotal !== null &&
-              ` · ${String(phase.gatesMet ?? 0)} of ${String(phase.gatesTotal)} measured gates met`}
-          </span>
-        )}
-        <span className="statusbar-sep" />
-        <button type="button" className="statusbar-seg" onClick={() => toggle("logs")}>
-          recent logs
-        </button>
       </div>
-      {open !== null && (
-        <div className="statusbar-drawer">
-          <LogsCard />
-        </div>
-      )}
     </div>
   );
 }
