@@ -1,9 +1,8 @@
 import { Link } from "react-router-dom";
-import type { DeskEntriesRow, DeskEvidenceRow, DeskExposureRow } from "@console/shared";
+import type { DeskEntriesRow, DeskExposureRow } from "@console/shared";
 import { Card, SkeletonRows } from "../../components/DataTable";
 import { fmtMoney, ageLabel } from "../../lib/format";
 import { useDesk } from "../../lib/api";
-import { ModuleChipLink } from "../../components/ModuleLink";
 
 export function ExposureCard() {
   const { data, isLoading, dataUpdatedAt } = useDesk();
@@ -137,34 +136,5 @@ export function EntriesCard() {
         which.
       </p>
     </Card>
-  );
-}
-
-export function EvidenceClockRow() {
-  const { data } = useDesk();
-  const rows = data?.evidence ?? [];
-  return (
-    <div className="evidence-row">
-      <span className="fine-label">evidence clock</span>
-      {rows.length === 0 ? (
-        <span className="muted" style={{ fontSize: 11 }}>
-          no era data yet
-        </span>
-      ) : (
-        rows.map((r: DeskEvidenceRow) => (
-          <ModuleChipLink
-            key={r.module}
-            id={r.module}
-            className="chip"
-            title={r.lastBreakDate !== null ? `last break ${r.lastBreakDate}: ${r.lastBreakReason ?? ""}` : "no measurement break recorded"}
-          >
-            {r.module} {r.sessionsSince ?? "—"} {r.lastBreakDate !== null ? `since ${r.lastBreakDate}` : "· no break"}
-          </ModuleChipLink>
-        ))
-      )}
-      <span className="muted evidence-note">
-        sessions since the last measurement break · hover for the break · results either side are never pooled
-      </span>
-    </div>
   );
 }

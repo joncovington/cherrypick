@@ -2680,19 +2680,6 @@ select.text-input {
   margin-bottom: 0.35rem;
 }
 
-.evidence-row {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-  flex-shrink: 0;
-}
-
-.evidence-note {
-  font-size: 11px;
-  margin-left: auto;
-}
-
 /* The shell's bottom bar, on every page. It used to be held to one line because it sat INSIDE the
    Overview, where a second row pushed it below the fold; as the shell's own row it can wrap, and a
    second row only takes its height from the content area above, which scrolls. A clipped health

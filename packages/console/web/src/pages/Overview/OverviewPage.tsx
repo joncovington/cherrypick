@@ -3,15 +3,15 @@ import { useOverview } from "../../lib/api";
 import { EquityCard } from "./EquityCard";
 import { EquityBottomRow } from "./EquityBottomRow";
 import { useSystem } from "./SuiteCards";
-import { ExposureCard, EntriesCard, EvidenceClockRow } from "./DeskCards";
+import { ExposureCard, EntriesCard } from "./DeskCards";
 
 /**
  * The suite's morning-to-close picture, redesigned (2026-09) to fit 1440×900 with no page
  * scroll: the suite matrix (exposure + entries) on the left, equity + session heatmap +
- * end-of-day on the right, and an evidence-clock chip row. Live quotes, system, logs,
- * watchdog·session·morning-phase and the per-producer liveness strip are in the shell's
- * one-line status bar (`components/shell/StatusBar`), on every page since 2026-10-01. See `docs/history/` for what the taller card-stack layout it replaces
- * looked like.
+ * end-of-day on the right. Logs, watchdog, morning phase and the per-producer liveness strip are
+ * in the shell's status bar (`components/shell/StatusBar`), on every page since 2026-10-01, when
+ * the evidence-clock chip row also went. See `docs/history/` for what the taller card-stack
+ * layout it replaces looked like.
  */
 function ago(seconds: number | null): string {
   if (seconds === null) return "never";
@@ -86,7 +86,6 @@ export function OverviewPage() {
         </div>
       </div>
 
-      <EvidenceClockRow />
     </div>
   );
 }
