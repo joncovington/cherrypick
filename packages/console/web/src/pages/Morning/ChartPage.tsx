@@ -411,9 +411,16 @@ function SignalsCard({ c }: { c: TechnicalsChart }) {
   );
 }
 
+/**
+ * What the tab opens on when the URL names no symbol. SPY rather than SPX: the technicals store
+ * charts what the Dolt `stocks` clone carries, which has no cash indexes (SPX, NDX and VIX are its
+ * `not_in_dolt`), so SPX would open on "no chart". SPY is the market at the same shape.
+ */
+const DEFAULT_SYMBOL = "SPY";
+
 export function ChartPage() {
   const [params, setParams] = useSearchParams();
-  const symbol = params.get("symbol")?.toUpperCase() || undefined;
+  const symbol = params.get("symbol")?.toUpperCase() || DEFAULT_SYMBOL;
   const { data, isLoading, isError } = useTechnicalsChart(symbol);
   const c = data?.chart ?? null;
   const index = data?.index;
