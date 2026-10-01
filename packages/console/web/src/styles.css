@@ -247,21 +247,33 @@ a.chip:hover {
   font-variant-numeric: tabular-nums;
 }
 
+/* Symbol on the left spanning both rows; price over change on the right. */
 .futures-chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.45rem;
-  padding: 0.12rem 0.55rem;
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  column-gap: 0.5rem;
+  align-items: center;
+  padding: 0.1rem 0.55rem;
   font-size: 12px;
+  line-height: 1.2;
   color: var(--text);
 }
 
 .futures-chip-symbol {
+  grid-row: 1 / span 2;
   color: var(--text-muted);
 }
 
 .futures-chip-price {
   font-weight: 600;
+  text-align: right;
+}
+
+.futures-chip-change {
+  font-size: 10.5px;
+  text-align: right;
+  white-space: pre; /* the placeholder space keeps the row's height before the settle arrives */
 }
 
 .futures-chip-up {

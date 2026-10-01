@@ -6,8 +6,9 @@ import type { QuoteState } from "../../lib/wsClient";
 
 /**
  * The top bar's futures ticker: /ES /NQ /CL /GC /ZB as chips, each with its live price and its
- * percentage change on the day, green when up and red when down, flashing on every tick. The change
- * in points is on hover: five chips with both did not fit beside the clock at 1500px.
+ * change on the day in points and percent, green when up and red when down, flashing on every tick.
+ * The chip stacks price over change: five chips with both on one line did not fit beside the clock
+ * at 1500px.
  *
  * The contract for each product comes from the server (`state/futures_contracts.json`, the broker's
  * own answer, never assembled here); the prices ride the ordinary quote socket, so a contract the
@@ -102,7 +103,6 @@ function Tick({ entry }: { entry: FuturesTickerEntry }) {
       : [
           `${entry.name} · ${entry.contract ?? entry.streamerSymbol ?? ""}`,
           entry.expiration !== null ? `expires ${entry.expiration}` : null,
-          change !== undefined ? `${formatChange(entry.product, change)} on the day` : null,
           q?.prevClose !== undefined ? `prior settle ${formatPrice(entry.product, q.prevClose)}` : null,
           q !== undefined && !live ? "cached price (live feed down), no change shown" : null,
         ]
@@ -113,7 +113,11 @@ function Tick({ entry }: { entry: FuturesTickerEntry }) {
     <span ref={chipRef} className={`chip futures-chip ${tone}`} title={title}>
       <span className="futures-chip-symbol">{entry.label}</span>
       <span className="futures-chip-price">{price !== undefined ? formatPrice(entry.product, price) : "—"}</span>
-      {changePct !== undefined && <span className="futures-chip-change">{formatPct(changePct)}</span>}
+      <span className="futures-chip-change">
+        {change !== undefined && changePct !== undefined
+          ? `${formatChange(entry.product, change)} ${formatPct(changePct)}`
+          : " "}
+      </span>
     </span>
   );
 }
