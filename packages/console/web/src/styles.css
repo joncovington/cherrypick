@@ -2621,7 +2621,7 @@ select.text-input {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
   gap: 0.6rem;
 }
 
@@ -2652,13 +2652,6 @@ select.text-input {
   gap: 0.4rem;
 }
 
-.live-flies-head {
-  display: flex;
-  align-items: baseline;
-  gap: 0.6rem;
-  font-size: 12px;
-}
-
 .overview-right .card {
   flex: 1;
   min-height: 0;
@@ -2680,11 +2673,25 @@ select.text-input {
 /* The refusal reason is free text from whichever module wrote it -- curve's own block_detail can
    be a raw JSON blob rather than a short phrase. Truncate rather than letting one long value set
    the whole column's width; the full text is still one hover away via the cell's title. */
-.desk-top-refusal {
-  max-width: 16rem;
+/* 8rem: a nowrap cell's minimum width is its whole text up to this cap, so a wider cap pushed the
+   table past the card at 1440px and the edge cut the count off rather than the ellipsis. */
+.desk-refusal {
+  display: flex;
+  max-width: 8rem;
+  white-space: nowrap;
+}
+.desk-refusal-reason {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.desk-refusal-count {
+  flex-shrink: 0;
+}
+td > .desk-refusal-reason {
+  display: block;
+  max-width: 8rem;
 }
 
 /* Module-name links in the suite matrix (ExposureCard/EntriesCard) -- plain text until hovered,

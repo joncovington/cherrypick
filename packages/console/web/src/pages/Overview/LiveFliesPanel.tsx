@@ -65,12 +65,15 @@ export function LiveFliesPanel() {
 
   return (
     <div className="live-flies-panel">
-      <div className="live-flies-head">
-        <span className="fine-label">live flies</span>
-        <span className="muted">{session !== null ? `session ${session}` : "reading…"}</span>
-      </div>
       <div className="grid-12">
-        <NetTodayTile today={today} label="session P&L" to="/flies/history?mode=live" span={4} />
+        {/* The panel's own heading lives in this tile's label, so the column's first row starts level
+            with the desk card beside it rather than a heading's height below. */}
+        <NetTodayTile
+          today={today}
+          label={`live flies P&L${session !== null ? ` · ${session.slice(5)}` : ""}`}
+          to="/flies/history?mode=live"
+          span={4}
+        />
         <CompletionTile today={today} to="/flies/completion?mode=live" span={4} />
         <WorstCaseTile open={today?.open ?? 0} worstNow={worstNow} peak={peak?.peak ?? null} peakAt={peak?.at ?? null} />
         <ForestCard mode="live" filter={filter} variant="hero" height={220} span={12} h={304} to="/flies/forest?mode=live" />

@@ -26,13 +26,29 @@ function BookControls({ rotation }: { rotation: BookRotation }) {
   );
 }
 
+/**
+ * "reason ×count": the reason truncates, the count never does. The count is the part that says
+ * how often a rule fired, and a fixed-width ellipsis took it first.
+ */
+function RefusalCell({ text }: { text: string | null }) {
+  if (text === null) return <>—</>;
+  const at = text.lastIndexOf(" ×");
+  if (at < 0) return <span className="desk-refusal-reason">{text}</span>;
+  return (
+    <span className="desk-refusal">
+      <span className="desk-refusal-reason">{text.slice(0, at)}</span>
+      <span className="desk-refusal-count">{text.slice(at)}</span>
+    </span>
+  );
+}
+
 export function ExposureCard({ rotation }: { rotation: BookRotation }) {
   const { book: data, isLoading, dataUpdatedAt } = useBook(rotation);
   const rows = data?.exposure ?? [];
   const totalOpen = rows.reduce<number | null>((s, r) => (r.open !== null ? (s ?? 0) + r.open : s), null);
   return (
     <Card
-      title={`Open exposure — right now · ${rotation.book}`}
+      title={`Open exposure · ${rotation.book}`}
       collapseKey="Open exposure — right now"
       updatedAt={dataUpdatedAt}
       className="desk-card"
@@ -98,7 +114,7 @@ export function EntriesCard({ rotation }: { rotation: BookRotation }) {
   const totalNoFill = rows.reduce((s, r) => s + r.noFill, 0);
   return (
     <Card
-      title={`Today's entries — filled and refused · ${rotation.book}`}
+      title={`Today's entries · ${rotation.book}`}
       collapseKey="Today's entries — filled and refused"
       updatedAt={dataUpdatedAt}
       className="desk-card"
@@ -134,8 +150,8 @@ export function EntriesCard({ rotation }: { rotation: BookRotation }) {
                       <td className={r.sessionNet !== null ? (r.sessionNet >= 0 ? "pnl-pos" : "pnl-neg") : "muted"}>
                         {fmtMoney(r.sessionNet)}
                       </td>
-                      <td className="muted desk-top-refusal" style={{ textAlign: "left" }} title={r.topRefusal ?? undefined}>
-                        {r.topRefusal ?? "—"}
+                      <td className="muted" style={{ textAlign: "left" }} title={r.topRefusal ?? undefined}>
+                        <RefusalCell text={r.topRefusal} />
                       </td>
                     </>
                   ) : (
