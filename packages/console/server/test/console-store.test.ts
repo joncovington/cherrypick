@@ -19,7 +19,11 @@ describe("the console's own store", () => {
               CREATE TABLE staged_orders (id TEXT);
               CREATE TABLE console_prefs (key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at TEXT NOT NULL);`);
     const ins = pre.prepare("INSERT INTO candles VALUES (?, ?, ?)");
-    for (let i = 0; i < 500; i++) ins.run("SPY", i, 500 + i);
+    // One transaction: 500 autocommitted inserts are 500 disk syncs, which under a full parallel
+    // CI run on Windows took 11 s and timed the test out.
+    pre.transaction(() => {
+      for (let i = 0; i < 500; i++) ins.run("SPY", i, 500 + i);
+    })();
     pre.prepare("INSERT INTO console_prefs VALUES (?, ?, ?)").run("mode", JSON.stringify("live"), "2026-09-01");
     pre.close();
 
