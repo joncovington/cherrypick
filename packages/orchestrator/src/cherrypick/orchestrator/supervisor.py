@@ -93,6 +93,79 @@ def jobs_path() -> Path:
     return cfgmod.STATE_DIR / JOBS_FILE
 
 
+# ------------------------------------------------------------------ child stderr
+_STDERR_TAIL_LINES = 15
+_STDERR_TAIL_BYTES = 64_000
+_STDERR_LINE_CHARS = 300
+
+
+def stderr_log_path(job_id: str) -> Path:
+    """Where a job's stderr goes (`logs/jobs/<id>.stderr.log`); see `Supervisor._open_stderr`."""
+    return cfgmod.log_file(f"jobs/{job_id}.stderr.log")
+
+
+def stderr_tail(job_id: str, offset: int | None) -> str | None:
+    """The last lines this run wrote to stderr, account numbers masked, or None if it wrote
+    nothing. Read from the offset its launch recorded, so a previous run's traceback is never
+    reported as this one's. Masked because a traceback quotes whatever it was handed, and this text
+    travels: into supervisor.log, the job registry, `status`, the watchdog's findings."""
+    try:
+        path = stderr_log_path(job_id)
+        size = path.stat().st_size
+        start = offset if isinstance(offset, int) and 0 <= offset <= size else 0
+        start = max(start, size - _STDERR_TAIL_BYTES)
+        with path.open("rb") as fh:
+            fh.seek(start)
+            data = fh.read()
+    except OSError:
+        return None
+    lines = [
+        line[:_STDERR_LINE_CHARS]
+        for line in data.decode("utf-8", errors="replace").splitlines()
+        if line.strip() and not line.startswith("--- ")
+    ]
+    if not lines:
+        return None
+    from cherrypick.core.redact import redact_accounts
+
+    return redact_accounts("\n".join(lines[-_STDERR_TAIL_LINES:]))
+
+
+# ------------------------------------------------------------------ requested restarts
+_RESTART_REQUEST_MAX_AGE_S = 600
+
+
+def restart_request_path(job_id: str) -> Path:
+    return cfgmod.state_file(f"restart-requested.{job_id}.json")
+
+
+def request_restart(job_id: str, by: str) -> None:
+    """Mark the NEXT exit of `job_id` as asked for. Written before anything kills the job (the
+    `restart-console` command, a rebuild-and-restart), so the supervisor logs it as a restart, not a
+    crash, and does not count it toward churn. A kill without one still looks like a crash -- which
+    is right: the supervisor cannot tell a deliberate taskkill from anything else."""
+    atomic_write_json(restart_request_path(job_id), {"requested_at": time.time(), "by": by})
+
+
+def consume_restart_request(job_id: str) -> dict | None:
+    """The pending request for `job_id`, removed as it is read; None if there is none or it is older
+    than `_RESTART_REQUEST_MAX_AGE_S` (a request whose kill never happened must not excuse a crash
+    hours later)."""
+    path = restart_request_path(job_id)
+    req = read_json(path)
+    if req is None:
+        return None
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    try:
+        fresh = time.time() - float(req.get("requested_at")) <= _RESTART_REQUEST_MAX_AGE_S
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return req if fresh else None
+
+
 def lock_path() -> Path:
     return cfgmod.STATE_DIR / LOCK_FILE
 
@@ -389,6 +462,17 @@ class Supervisor:
         st["running_pid"] = None
         st["last_exit_code"] = code
         st["last_exit_at"] = _utc_iso()
+        req = consume_restart_request(spec.id)
+        if req is not None:
+            # Asked for: not a failure, not churn, and back as soon as the loop gets to it.
+            st["backoff_until"] = None
+            st["skip_start_count"] = True
+            st["module_stopped"] = False
+            st.pop("last_error", None)
+            _log(
+                f"{spec.id}: restart requested by {req.get('by') or 'unknown'} (exit {code}) — not a failure"
+            )
+            return
         # A WINDOWED resident exiting 0 is a statement -- "my own gate closed", or "another instance
         # holds my lock" -- not "the run finished, go again". Reading it as the latter is what
         # produced the 16:00 storm: the module's gate closes on the dot while `in_window` still says
@@ -412,6 +496,7 @@ class Supervisor:
         if code == 0:
             st["consecutive_failures"] = 0
             st["backoff_until"] = None
+            st.pop("last_error", None)
         else:
             n = int(st.get("consecutive_failures") or 0) + 1
             st["consecutive_failures"] = n
@@ -419,6 +504,15 @@ class Supervisor:
             delay = min(cap, _BACKOFF_BASE_SECONDS * (2 ** (n - 1)))
             st["backoff_until"] = time.time() + delay
             _log(f"{spec.id}: exit {code} (failure #{n}), backoff {delay}s")
+            # What the child said on the way out, where people already look: this log, the job
+            # registry (`status`), and the watchdog's churn finding. A bare "exit 1" was all
+            # `report-edition` left on 2026-09-30; its own stderr held the reason.
+            tail = stderr_tail(spec.id, st.get("stderr_offset"))
+            if tail:
+                st["last_error"] = tail
+                _log(f"{spec.id}: stderr (last lines):\n    " + tail.replace("\n", "\n    "))
+            else:
+                st.pop("last_error", None)
 
     def _known_pids(self) -> set[int]:
         """PIDs this supervisor spawned or adopted this run — its own, plus every job's tracked
@@ -464,19 +558,51 @@ class Supervisor:
         st["consecutive_failures"] = 0
         st["backoff_until"] = None
 
+    def _open_stderr(self, spec: jobspec.JobSpec, st: dict[str, Any]):
+        """The file this child's stderr goes to: `logs/jobs/<id>.stderr.log`, appended, one header
+        line per launch, its offset kept so an exit can read back just this run's output.
+
+        A FILE, never a pipe. The supervisor would have to drain a pipe while the child runs, and a
+        pipe dies with the supervisor -- a child that outlives a supervisor restart (the adopt path)
+        would then fail on its next write. A file it simply keeps writing. Until 2026-10-01 this was
+        the null device, so nine console restarts and a collector's exit 1 that morning left nothing
+        behind: a traceback had nowhere to land. Healthy jobs write nothing, so the files grow only
+        when something is wrong; `rotate_if_large` bounds them like the supervisor's own log.
+        Any failure to open falls back to the null device -- losing the evidence must never stop a
+        job from starting."""
+        try:
+            path = stderr_log_path(spec.id)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            rotate_if_large(path, max_bytes=1_000_000, keep=2)
+            fh = path.open("ab")
+            fh.write(
+                f"--- {datetime.now().isoformat(timespec='seconds')} start: {' '.join(spec.argv)}\n".encode()
+            )
+            fh.flush()
+            st["stderr_offset"] = fh.tell()
+            return fh
+        except OSError:
+            st.pop("stderr_offset", None)
+            return subprocess.DEVNULL
+
     def _spawn(self, spec: jobspec.JobSpec, st: dict[str, Any]) -> bool:
+        err = self._open_stderr(spec, st)
         try:
             handle = subprocess.Popen(
                 list(spec.argv),
                 cwd=spec.cwd or None,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=err,
                 creationflags=CREATE_NO_WINDOW,
             )
         except OSError as exc:
             self._record_exit(spec, st, -1)
             _log(f"{spec.id}: spawn failed: {exc}")
             return False
+        finally:
+            # The child holds its own inherited copy; the supervisor's is not needed past launch.
+            if err is not subprocess.DEVNULL:
+                err.close()
         self._handles[spec.id] = handle
         st["running_pid"] = handle.pid
         st["last_start"] = _utc_iso()
@@ -622,7 +748,12 @@ class Supervisor:
             # the 2026-08-17 registry showed 0 failures beside 161 spawns. This is the only number
             # that would have made either the churn or the storm legible to anything but a human
             # reading supervisor.log.
-            st["starts_in_window"] = int(st.get("starts_in_window") or 0) + 1
+            #
+            # A start that follows a REQUESTED restart is not churn: someone asked for it
+            # (`restart-console`, a rebuild), and counting it is how nine deliberate console
+            # restarts read as a crash-looping job on 2026-09-30.
+            if not st.pop("skip_start_count", False):
+                st["starts_in_window"] = int(st.get("starts_in_window") or 0) + 1
             _log(f"{spec.id}: resident child started (pid {st['running_pid']})")
         return ok
 

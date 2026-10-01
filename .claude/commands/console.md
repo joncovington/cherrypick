@@ -62,12 +62,16 @@ Answer "is it up, and if not, why" in this order — each step explains a differ
 
 The supervisor is the restart mechanism — kill the tree and let it come back:
 
-1. Find the listener's owning process on the port, confirm it is `node` running
-   `packages/console/server/dist/index.js`, then `taskkill /T /F /PID <pid>`. **`/T` matters**:
-   `run.py` is a launcher and node is its grandchild, so killing only the tracked PID leaves node
-   holding the port and every replacement dies on `EADDRINUSE`.
-2. Wait for the supervisor's next pass (~1s) plus any crash backoff, then run Status. Note the
-   supervisor backs off 30s after the first failure, doubling to a 10-minute cap.
+1. `python packages/orchestrator/run.py restart-console`. It finds the console (the supervisor's
+   registry, else whoever listens on the port), **marks the restart as requested**, then kills the
+   whole tree. Use it rather than a bare `taskkill`: a kill exits the child 1, and without the mark
+   the supervisor cannot tell it from a crash — it climbs the failure ladder and counts the start as
+   churn (nine "crashes" on 2026-09-30 were all deliberate restarts). If you must kill by hand,
+   `taskkill /T /F /PID <pid>` — **`/T` matters**: `run.py` is a launcher and node is its grandchild,
+   so killing only the tracked PID leaves node holding the port and every replacement dies on
+   `EADDRINUSE`.
+2. Wait for the supervisor's next pass (~1s), then run Status. A requested restart comes straight
+   back; an unmarked kill backs off 30s after the first failure, doubling to a 10-minute cap.
 3. To pick up a **code change** the build must come first: from `packages/console`, `pnpm build`,
    then restart.
 

@@ -44,11 +44,23 @@ def _all_window_events(_self, _window_key):
     return WINDOW_EVENTS
 
 
+def _devnull_stderr(_self, _spec, _st):
+    import subprocess
+
+    return subprocess.DEVNULL
+
+
+def _nothing(*_args, **_kwargs):
+    return None
+
+
 REPLACEMENTS = {
     "always_true": lambda: _always_true,
     "whole_day": lambda: _whole_day,
     "never_a_leftover": lambda: 10**12,
     "all_window_events": lambda: _all_window_events,
+    "devnull_stderr": lambda: _devnull_stderr,
+    "nothing": lambda: _nothing,
 }
 
 
@@ -120,6 +132,26 @@ MUTANTS: tuple[Mutant, ...] = (
         module="cherrypick.core.streamer",
         attr="ChainStreamer._nearest_window",
         replacement="always_true",
+    ),
+    Mutant(
+        id="supervisor-stderr-capture",
+        breaks="the supervisor discards its children's stderr again",
+        package="orchestrator",
+        tests=(
+            "tests/test_supervisor_stderr.py::test_a_childs_stderr_goes_to_its_own_file_with_a_launch_header",
+        ),
+        module="cherrypick.orchestrator.supervisor",
+        attr="Supervisor._open_stderr",
+        replacement="devnull_stderr",
+    ),
+    Mutant(
+        id="supervisor-restart-request",
+        breaks="a requested restart is counted as a crash",
+        package="orchestrator",
+        tests=("tests/test_supervisor_stderr.py::test_a_requested_restart_is_not_a_failure",),
+        module="cherrypick.orchestrator.supervisor",
+        attr="consume_restart_request",
+        replacement="nothing",
     ),
 )
 

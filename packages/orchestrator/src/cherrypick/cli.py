@@ -848,6 +848,9 @@ def cmd_restart_console(cfg) -> None:
     if pid is None:
         rec = {"ok": True, "skipped": "console is not running (nothing tracked, nothing listening)"}
     else:
+        # Say so first: the kill exits the child 1, which without this reads as a crash -- the
+        # failure ladder, a churn WARN, and on 2026-09-30 nine "crashes" that were all requests.
+        supervisor.request_restart("console", by="restart-console")
         ok = supervisor._terminate_tree(pid)
         rec = {
             "ok": ok,

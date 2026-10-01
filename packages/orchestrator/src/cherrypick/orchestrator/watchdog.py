@@ -250,6 +250,16 @@ def _check_console(cfg: dict[str, Any]) -> list[Finding]:
 _RESIDENT_CHURN_STARTS = 6
 
 
+def _last_error_line(st: dict[str, Any] | None) -> str | None:
+    """The last line of what a job wrote to stderr before its most recent failed exit -- for a
+    traceback, the exception itself. The supervisor stores it (`last_error`, already masked); a
+    finding that can quote it says why, not only that, a job is failing."""
+    tail = (st or {}).get("last_error")
+    if not isinstance(tail, str) or not tail.strip():
+        return None
+    return tail.strip().splitlines()[-1][:200]
+
+
 def _check_resident_health(cfg: dict[str, Any]) -> list[Finding]:
     """Restart churn and unexpected stops across every resident job.
 
@@ -281,6 +291,7 @@ def _check_resident_health(cfg: dict[str, Any]) -> list[Finding]:
             continue
         starts = int(st.get("starts_in_window") or 0)
         if starts > _RESIDENT_CHURN_STARTS:
+            said = _last_error_line(st)
             findings.append(
                 Finding(
                     f"{jid}.churn",
@@ -288,7 +299,8 @@ def _check_resident_health(cfg: dict[str, Any]) -> list[Finding]:
                     f"{jid} is restarting repeatedly",
                     f"{starts} starts since its window opened. A supervised job that keeps being "
                     "restarted is not running -- check logs/supervisor.log for the reason "
-                    "(silence, or a crash) and the module's own log beside it.",
+                    "(silence, or a crash) and the module's own log beside it."
+                    + (f" Last error: {said}" if said else ""),
                 )
             )
         # A resident that publishes no heartbeat is not silence-supervised at all. That degrade is
@@ -1753,6 +1765,9 @@ def _check_live(name: str, mcfg: dict[str, Any], now_et: datetime, in_session: b
                         shown = "unparseable last-start time"
                     elif failed:
                         shown = f"last tick {age_min:.0f} min ago, exit={info.get('last_exit_code')}"
+                        said = _last_error_line(job)
+                        if said:
+                            shown += f" ({said})"
                     else:
                         shown = f"last tick {age_min:.0f} min ago"
                     findings.append(

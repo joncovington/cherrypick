@@ -59,6 +59,14 @@ fake clocks) and spawns short-lived headless ticks, recording per-job state in
 stdlib + local files only — no broker, network or AI — and every registration check dual-reads
 (schtasks fallback) until the transition window closes.
 
+**A child's stderr goes to `logs/jobs/<job-id>.stderr.log`** (a file, never a pipe: a child that
+outlives a supervisor restart keeps writing). On a failed exit the supervisor masks the run's last
+lines through `core.redact` and puts them in `supervisor.log` and the registry as `last_error`, which
+`status` shows and the churn and live-loop findings quote. **Restart a job with a marker, not a bare
+kill**: `restart-console` writes `state/restart-requested.<job>.json` before killing, and the
+supervisor logs that exit as requested — no failure, no backoff, no churn count. A marker older than
+10 minutes is ignored, so a request whose kill never came cannot excuse a later crash.
+
 The registry is a picture of what the supervisor is **currently** driving, which gives three states to
 watch:
 
