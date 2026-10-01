@@ -157,7 +157,8 @@ def build(conn, symbol: str, session: str | None = None) -> dict[str, Any] | Non
             "high": [_r(b.high) for b in shown],
             "low": [_r(b.low) for b in shown],
             "close": [_r(b.close) for b in shown],
-            "volume": [round(b.volume) for b in shown],
+            # An index has no volume: null, never the 0 the store's reader puts in its place.
+            "volume": [None if symbol in symbols.INDEXES else round(b.volume) for b in shown],
         },
         "grid": grid,
         "cci14": tail(indicators.cci(highs, lows, closes, 14)),
@@ -166,7 +167,8 @@ def build(conn, symbol: str, session: str | None = None) -> dict[str, Any] | Non
         "trend_short": tail(trend.scores(closes, trend.SHORT_TERM), 0),
         "trend_long": tail(trend.scores(closes, trend.LONG_TERM), 0),
         "sentiment": trend.sentiment(closes),
-        "rank": _rank(conn, closes, bars[-1].date),
+        # The 1-10 rank is a decile across US-listed stocks; an index is not one of them.
+        "rank": None if symbol in symbols.INDEXES else _rank(conn, closes, bars[-1].date),
         # Ours from Dolt's IV where it covers the name, else tastytrade's; `source` says which.
         "iv_rank": store.iv_rank(conn, symbol, bars[-1].date),
         "signals": [
@@ -190,12 +192,13 @@ def _write(path, doc) -> None:
 
 
 def write_all(session: str | None = None, conn=None) -> dict:
-    """Every stock the store holds and the `INDEX_FUNDS`, plus an index the console's picker reads."""
+    """Every stock the store holds, the `INDEX_FUNDS` and the cash indexes, plus an index file the
+    console's picker reads."""
     own = conn is None
     conn = conn or store.connect()
     written, sessions = [], set()
     names = store.stocks(conn, symbols.all_symbols())
-    for sym in [*INDEX_FUNDS, *(s for s in names if s not in INDEX_FUNDS)]:
+    for sym in [*symbols.INDEXES, *INDEX_FUNDS, *(s for s in names if s not in INDEX_FUNDS)]:
         doc = build(conn, sym, session)
         if doc is None:
             continue

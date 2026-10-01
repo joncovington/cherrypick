@@ -312,6 +312,7 @@ def test_derive_full_suite_job_table():
         "market-files-retry",
         "technicals-land",
         "technicals-dividends",
+        "technicals-index-bars",
         "technicals-iv-rank",
         "technicals-report",
         "earnings-moves",
@@ -965,6 +966,16 @@ def test_the_dividend_fetch_is_a_script_on_by_default():
     cfg = suite_cfg()
     cfg["technicals"] = {"dividends": False}
     assert not {j.id: j for j in derive(cfg)[0]}["technicals-dividends"].enabled
+
+
+def test_the_index_bar_fetch_runs_before_the_landing_that_reads_it():
+    by_id = {j.id: j for j in derive(suite_cfg())[0]}
+    job = by_id["technicals-index-bars"]
+    assert job.enabled and job.argv[-1].endswith("fetch_index_bars.py")
+    assert job.at_et < by_id["technicals-land"].at_et, "the landing must find the previous session's bar"
+    cfg = suite_cfg()
+    cfg["technicals"] = {"index_bars": False}
+    assert not {j.id: j for j in derive(cfg)[0]}["technicals-index-bars"].enabled
 
 
 def test_earnings_moves_are_priced_after_the_close_and_before_the_pack():

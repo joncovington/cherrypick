@@ -44,5 +44,11 @@ def tastytrade_iv_rank() -> Path:
     return market_report_dir() / "iv" / "tastytrade.json"
 
 
+def index_bars() -> Path:
+    """Daily bars for the cash indexes Dolt does not carry (SPX), from the broker's daily candles,
+    written by scripts/fetch_index_bars.py. Read-only here."""
+    return market_report_dir() / "index" / "bars.db"
+
+
 def universe_candidates() -> Path:
     return market_report_dir() / "universe" / "candidates.json"

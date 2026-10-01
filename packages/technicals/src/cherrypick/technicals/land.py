@@ -20,7 +20,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any
 
-from . import levels, store, symbols
+from . import levels, paths, store, symbols
 
 # Three years of bars for a new symbol: the depth of the vendor's own chart data (753 sessions),
 # which is what the level engine is scored against.
@@ -121,6 +121,32 @@ def keep(rows, starts: dict[str, str]):
             yield row
 
 
+def land_index_bars(conn, wanted) -> list[str]:
+    """The cash indexes (`symbols.INDEXES`) from the broker's daily candles, the file
+    scripts/fetch_index_bars.py writes -- Dolt carries none. Every row, upserted: a few hundred per
+    index, so a restated candle lands without a window to manage. No volume: an index has none.
+    Returns the symbols landed; a missing or unreadable file lands nothing."""
+    want = [s for s in symbols.INDEXES if s in set(wanted)]
+    path = paths.index_bars()
+    if not want or not path.exists():
+        return []
+    import sqlite3
+
+    try:
+        src = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+        try:
+            rows = src.execute(
+                f"SELECT symbol, date, open, high, low, close FROM index_bars WHERE symbol IN ({','.join('?' * len(want))})",
+                want,
+            ).fetchall()
+        finally:
+            src.close()
+    except sqlite3.Error:
+        return []
+    store.upsert_bars(conn, ((s, d, _f(o), _f(h), _f(lo), _f(c), None) for s, d, o, h, lo, c in rows))
+    return sorted({r[0] for r in rows})
+
+
 def land(
     cfg: dict | None = None, wanted: list[str] | None = None, today: date | None = None
 ) -> dict[str, Any]:
@@ -131,6 +157,10 @@ def land(
     conn = store.connect()
     starts = plan_starts(wanted, store.latest_dates(conn), today)
     report: dict[str, Any] = {"symbols": len(wanted), "bars": 0, "splits": 0, "dividends": 0, "iv": 0}
+    # First, and independent of Dolt: the indexes come from the broker's file, so a Dolt outage
+    # does not hold them back.
+    report["indexes"] = land_index_bars(conn, wanted)
+    conn.commit()
     try:
         stocks = _connect(cfg, cfg["stocks_db"])
     except Exception as exc:  # noqa: BLE001 -- no server is a failed landing, reported, not a crash
@@ -145,7 +175,7 @@ def land(
         listing = {row[0]: int(row[1] or 0) for row in cur.fetchall()}
         listed = set(listing)
         store.upsert_listings(conn, ((s, listing[s]) for s in wanted if s in listing))
-        report["not_in_dolt"] = sorted(s for s in wanted if s not in listed)
+        report["not_in_dolt"] = sorted(s for s in wanted if s not in listed and s not in report["indexes"])
         starts = {s: d for s, d in starts.items() if s in listed}
         if not starts:
             stocks.close()

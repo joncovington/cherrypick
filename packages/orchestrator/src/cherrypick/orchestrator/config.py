@@ -340,6 +340,11 @@ def technicals_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # day's IV has posted.
         "iv_rank": bool(tc.get("iv_rank", True)),
         "iv_rank_at": tc.get("iv_rank_at", "18:50"),
+        # `index_bars_at`: scripts/fetch_index_bars.py, the cash indexes' daily bars (SPX) from the
+        # broker's candles, which Dolt does not carry. Ahead of `land_at`, so the previous session's
+        # candle is final and lands the same morning.
+        "index_bars": bool(tc.get("index_bars", True)),
+        "index_bars_at": tc.get("index_bars_at", "06:00"),
     }
 
 

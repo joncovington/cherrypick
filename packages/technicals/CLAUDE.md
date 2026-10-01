@@ -60,7 +60,15 @@ table. Read in **month-wide date windows with no symbol filter**, keep wanted sy
 **What it lands** (`symbols.all_symbols()`): every universe **candidate** (not only members — the
 stage engine is scored against the vendor's whole table), the 35 rotation ETFs (every fund the
 vendor's rotation placed across Sept 21-25, plus XLK, XLV, XLC), and the benchmarks (SPY, AOR, AGG,
-RSP, QQQ, DIA, IWM). Dolt carries no SPX; SPY stands in until an engine needs the index.
+RSP, QQQ, DIA, IWM). Dolt carries no SPX; SPY stands in for it in every engine.
+
+**The cash indexes (`symbols.INDEXES`, SPX) are charted, never measured.** Their bars come from the
+broker's daily candles, which `scripts/fetch_index_bars.py` writes to `market-report/index/bars.db`
+at 06:00 (a session missing from the daily series is rebuilt from hourly candles only when those
+reproduce the daily bars they overlap; `source` says which). `land_index_bars` lands them before
+Dolt is touched, with no volume. `store.stocks` excludes them, so an index never enters breadth,
+stages, ranks or scoring though the universe lists SPX as a candidate; its chart carries no rank
+(a decile of stocks) and null volume.
 
 ## Solved rules (keep the numbers; re-score, do not re-litigate)
 

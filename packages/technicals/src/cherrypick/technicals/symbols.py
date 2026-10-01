@@ -30,9 +30,15 @@ ROTATION_ETFS = (
 ASSET_ETFS = ("EFA", "IWM", "LQD", "PDBC", "SPY", "TIP", "TLT", "UUP", "VNQ")
 
 # What the engines measure against. AOR is the asset-class benchmark (decided 2026-09-27); AGG with
-# SPY gives a US-only 60/40 should that ever be wanted. SPY also stands in for SPX, which Dolt does
-# not carry.
+# SPY gives a US-only 60/40 should that ever be wanted. SPY also stands in for SPX in the engines:
+# SPX is charted (below) but no engine measures against it.
 BENCHMARKS = ("SPY", "AOR", "AGG", "RSP", "QQQ", "DIA", "IWM")
+
+
+# Cash indexes, charted from the broker's daily candles (scripts/fetch_index_bars.py) because Dolt
+# carries none. Charts only: an index is not a stock, so `store.stocks` keeps it out of breadth,
+# stages, ranks and every scored measure, though the universe lists SPX as a candidate.
+INDEXES = ("SPX",)
 
 
 def candidates() -> list[str]:

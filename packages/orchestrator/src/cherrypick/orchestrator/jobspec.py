@@ -77,6 +77,8 @@ CATCHUP_MINUTES = {
     # A reading of the day's close: a run after the next open would record the next session instead,
     # which the file keys correctly but is not the day that was missed.
     "technicals-iv-rank": 600,
+    # Ahead of the 06:15 landing; a late fetch is the same fetch, and the landing after it picks it up.
+    "technicals-index-bars": 12 * 60,
     "market-files": 600,
     "market-files-retry": 40,
     # Priced at the close for the next morning's pack; a late run still prices that close.
@@ -792,6 +794,23 @@ def derive_jobs(
             trading_days_only=False,
             enabled=div_on,
             enabled_reason="" if div_on else "disabled in config (technicals.dividends)",
+        ),
+    )
+    ixb_on = tc["enabled"] and tc["index_bars"]
+    add(
+        "technicals-index-bars",
+        lambda: JobSpec(
+            id="technicals-index-bars",
+            # A script, not package code: it reads the broker (DXLink daily candles for the cash
+            # indexes Dolt does not carry, SPX) with the shared credential, read-only. technicals
+            # reads the file it writes.
+            argv=(pythonw, _suite_script(launcher, "fetch_index_bars.py")),
+            kind=KIND_DAILY,
+            at_et=tc["index_bars_at"],
+            catchup_minutes=CATCHUP_MINUTES["technicals-index-bars"],
+            trading_days_only=False,
+            enabled=ixb_on,
+            enabled_reason="" if ixb_on else "disabled in config (technicals.index_bars)",
         ),
     )
     ivr_on = tc["enabled"] and tc["iv_rank"]

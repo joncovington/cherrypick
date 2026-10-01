@@ -81,9 +81,13 @@ def upsert_listings(conn, rows) -> int:
 
 def stocks(conn, symbols: list[str]) -> list[str]:
     """The given symbols Dolt lists as operating companies, not funds. Breadth is a stock measure:
-    the vendor's table holds no ETFs, and counting the rotation funds in it would move the share."""
+    the vendor's table holds no ETFs, and counting the rotation funds in it would move the share.
+    Nor are the cash indexes stocks: the universe lists SPX as a candidate, and with its bars now
+    landed it would otherwise be counted in breadth, stages and every scored measure."""
+    from .symbols import INDEXES
+
     etf = {r["symbol"] for r in conn.execute("SELECT symbol FROM listings WHERE is_etf = 1")}
-    return [s for s in symbols if s not in etf]
+    return [s for s in symbols if s not in etf and s not in INDEXES]
 
 
 def record_landing(conn, through: str | None, symbols: int, bars: int, report: dict) -> None:
