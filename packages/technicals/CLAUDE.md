@@ -32,6 +32,14 @@ disagree on which print is the open) — a known source difference, not a defect
 is kept; a one-day move beyond 3x either way (a ticker that changed hands) starts the series over.
 Real large moves (GME, MRNA) are kept.
 
+**A split Dolt misses is fetched once, by hand.** Dolt held three of TQQQ's eight splits
+(2026-10-01), and tastytrade has no split endpoint. `scripts/fetch_split_history.py SYMBOL` reads a
+public split-history page into `market-report/splits/split_history.db` (`split_history`), checking
+each row against the clone's raw overnight jump: `verified` 1/0/NULL. `store.splits` adds the
+verified and uncheckable rows to Dolt's, and `dedupe_splits` keeps one of any pair both state; a
+contradicted row is never applied. Not scheduled — run it for a symbol when its adjusted series
+shows a fake split-sized crash.
+
 **Dividends: two sources, reconciled.** Dolt alone matched only 86.8% of prices (gaps, zeros, wrong
 amounts). `scripts/fetch_dividends.py` fetches tastytrade's per-symbol history (paced, a week
 between refreshes); `dividends.reconcile` merges: same event within three days, gaps filled from

@@ -33,6 +33,12 @@ def tastytrade_dividends() -> Path:
     return market_report_dir() / "dividends" / "tastytrade.json"
 
 
+def split_history() -> Path:
+    """Splits fetched from a public source for symbols Dolt's split table misses, written by
+    scripts/fetch_split_history.py. Read-only here."""
+    return market_report_dir() / "splits" / "split_history.db"
+
+
 def tastytrade_iv_rank() -> Path:
     """Tastytrade's IV rank by session, written by scripts/fetch_iv_rank.py. Read-only here."""
     return market_report_dir() / "iv" / "tastytrade.json"

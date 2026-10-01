@@ -142,13 +142,49 @@ def dividends(conn, symbol: str) -> tuple[list[_adjust.Dividend], list[dict]]:
     return reconcile(dolt, tastytrade_dividends(symbol))
 
 
-def adjusted_bars(conn, symbol: str) -> list[_adjust.AdjustedBar]:
-    splits = [
+_PUBLIC_SPLITS: dict = {"mtime": None, "symbols": {}}
+
+
+def public_splits(symbol: str) -> list[_adjust.Split]:
+    """Splits scripts/fetch_split_history.py fetched for symbols Dolt's split table misses (TQQQ held
+    three of its eight), re-read only when the file changes. Rows the raw prices CONTRADICTED
+    (`verified = 0`) are left out; verified and uncheckable ones are used. Empty when the file or
+    the symbol is absent: Dolt alone then decides."""
+    path = paths.split_history()
+    try:
+        stamp = (str(path), path.stat().st_mtime)
+        if stamp != _PUBLIC_SPLITS["mtime"]:
+            ro = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+            try:
+                by_symbol: dict[str, list[_adjust.Split]] = {}
+                for sym, ex, to, fr in ro.execute(
+                    "SELECT symbol, ex_date, to_factor, for_factor FROM split_history "
+                    "WHERE verified IS NULL OR verified = 1"
+                ):
+                    by_symbol.setdefault(sym, []).append(_adjust.Split(ex, to, fr))
+            finally:
+                ro.close()
+            _PUBLIC_SPLITS.update(mtime=stamp, symbols=by_symbol)
+    except (OSError, sqlite3.Error):
+        return []
+    return list(_PUBLIC_SPLITS["symbols"].get(symbol, []))
+
+
+def splits(conn, symbol: str) -> list[_adjust.Split]:
+    """Dolt's splits plus the public history's. Overlap is expected (both carry TQQQ's 2025 split);
+    `adjust.dedupe_splits` keeps one of any same-ratio pair within DUPLICATE_DAYS, the one the raw
+    prices jump on, so a split both sources state is applied once."""
+    dolt = [
         _adjust.Split(r["ex_date"], r["to_factor"], r["for_factor"])
         for r in conn.execute("SELECT * FROM splits WHERE symbol = ?", (symbol,))
     ]
+    return dolt + public_splits(symbol)
+
+
+def adjusted_bars(conn, symbol: str) -> list[_adjust.AdjustedBar]:
+    splits_ = splits(conn, symbol)
     raw = raw_bars(conn, symbol)
-    adjusted = _adjust.adjust(raw, _adjust.dedupe_splits(raw, splits), dividends(conn, symbol)[0])
+    adjusted = _adjust.adjust(raw, _adjust.dedupe_splits(raw, splits_), dividends(conn, symbol)[0])
     return adjusted[_adjust.series_break(adjusted) :]
 
 
