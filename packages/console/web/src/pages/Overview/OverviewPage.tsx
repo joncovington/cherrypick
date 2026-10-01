@@ -1,6 +1,7 @@
 import type { AlertDaemonHealth } from "@console/shared";
 import { useMorningReport, useOverview } from "../../lib/api";
 import { LiveFliesPanel } from "./LiveFliesPanel";
+import { useBookRotation } from "../../lib/useBookRotation";
 import { useSystem } from "./SuiteCards";
 import { ExposureCard, EntriesCard } from "./DeskCards";
 
@@ -77,6 +78,8 @@ function MorningChip() {
 }
 
 export function OverviewPage() {
+  // One clock for both desk cards, so they always show the same book.
+  const rotation = useBookRotation();
   const { isError } = useOverview();
   const { data: system } = useSystem();
   const liveCount = system?.modules.filter((m) => m.liveTrading === true).length ?? 0;
@@ -101,8 +104,8 @@ export function OverviewPage() {
 
       <div className="overview-body">
         <div className="overview-left">
-          <ExposureCard />
-          <EntriesCard />
+          <ExposureCard rotation={rotation} />
+          <EntriesCard rotation={rotation} />
         </div>
         <div className="overview-right">
           <LiveFliesPanel />

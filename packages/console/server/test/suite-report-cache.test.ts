@@ -157,3 +157,64 @@ describe("the evidence clock", () => {
     expect(meic?.lastBreakReason).toContain("1 arm-scoped break");
   });
 });
+
+describe("the live desk", () => {
+  it("names the paper-only modules as having no live path, never as a live zero", async () => {
+    const { readDeskLive } = await import("../src/readers/desk.js");
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "console-desk-live-"));
+    const base = configFor(tmp);
+    const config = {
+      ...base,
+      paths: {
+        ...base.paths,
+        calendarsDir: path.join(tmp, "calendars"),
+        pmccDir: path.join(tmp, "pmcc"),
+        curveDir: path.join(tmp, "curve"),
+        bwbDir: path.join(tmp, "bwb"),
+        pmccConfigCandidates: [],
+        calendarsConfigCandidates: [],
+        curveConfigCandidates: [],
+      },
+    } as ConsoleConfig;
+    const live = readDeskLive(config);
+    expect(live.mode).toBe("live");
+    for (const m of ["calendars", "pmcc", "curve"]) {
+      const exp = live.exposure.find((r) => r.module === m);
+      const ent = live.entries.find((r) => r.module === m);
+      expect(exp).toMatchObject({ available: false, open: null, note: "paper-only · no live path" });
+      expect(ent).toMatchObject({ available: false, note: "paper-only · no live path" });
+    }
+    // The four with a live path are rows, in the paper card's order.
+    expect(live.exposure.map((r) => r.module)).toEqual(["meic", "flies", "earnings", "calendars", "pmcc", "curve", "bwb"]);
+    expect(live.exposure.filter((r) => r.available).map((r) => r.module)).toEqual(["meic", "flies", "earnings", "bwb"]);
+  });
+});
+
+describe("live flies entries", () => {
+  it("come from the decisions journal and the session's positions, not the empty attempts table", async () => {
+    const Database = (await import("better-sqlite3")).default;
+    const { readFliesLiveEntries } = await import("../src/readers/desk.js");
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "console-flies-live-"));
+    const config = configFor(tmp);
+    fs.mkdirSync(config.paths.fliesDir, { recursive: true });
+    const db = new Database(path.join(config.paths.fliesDir, "live_trades.db"));
+    db.exec(`CREATE TABLE fly_positions (id INTEGER PRIMARY KEY, trade_date TEXT, status TEXT);
+             CREATE TABLE fly_decisions (id INTEGER PRIMARY KEY, trade_date TEXT, reason TEXT, accepted INTEGER, occurrences INTEGER);
+             CREATE TABLE fly_entry_attempts (id INTEGER PRIMARY KEY, trade_date TEXT, outcome TEXT);`);
+    const pos = db.prepare("INSERT INTO fly_positions (trade_date, status) VALUES (?, ?)");
+    for (const st of ["settled", "settled", "open", "cancelled"]) pos.run("2026-09-30", st);
+    pos.run("2026-09-29", "settled"); // another session: not counted
+    const dec = db.prepare("INSERT INTO fly_decisions (trade_date, reason, accepted, occurrences) VALUES (?, ?, ?, ?)");
+    dec.run("2026-09-30", "duplicate_structure", 0, 215);
+    dec.run("2026-09-30", "outside_entry_window", 0, 88);
+    dec.run("2026-09-30", "entered", 1, 4); // accepted: not a refusal
+    db.close();
+    expect(readFliesLiveEntries(config, "2026-09-30")).toEqual({
+      filled: 3,
+      noFill: 1,
+      refused: 303,
+      topRefusal: "duplicate_structure ×215",
+    });
+    expect(readFliesLiveEntries(config, null)).toEqual({ filled: 0, refused: 0, noFill: 0, topRefusal: null });
+  });
+});

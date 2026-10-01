@@ -1,15 +1,44 @@
 import { Link } from "react-router-dom";
 import type { DeskEntriesRow, DeskExposureRow } from "@console/shared";
 import { Card, SkeletonRows } from "../../components/DataTable";
+import { ModeToggle } from "../../components/ModeToggle";
 import { fmtMoney, ageLabel } from "../../lib/format";
-import { useDesk } from "../../lib/api";
+import { useDesk, useDeskLive } from "../../lib/api";
+import type { BookRotation } from "../../lib/useBookRotation";
 
-export function ExposureCard() {
-  const { data, isLoading, dataUpdatedAt } = useDesk();
+/**
+ * The two desk cards rotate between the paper book and the live one on a shared clock
+ * (`useBookRotation`), held still while the pointer is over either. The toggle in each header says
+ * which book is up and switches it; the paper-only modules read "no live path" on the live side.
+ */
+function useBook(rotation: BookRotation) {
+  const paper = useDesk();
+  const live = useDeskLive();
+  const q = rotation.book === "live" ? live : paper;
+  return { book: q.data, isLoading: q.isLoading, dataUpdatedAt: q.dataUpdatedAt };
+}
+
+function BookControls({ rotation }: { rotation: BookRotation }) {
+  return (
+    <div style={{ marginLeft: "auto" }} title="rotates paper ⇄ live every 15s; hover to hold">
+      <ModeToggle mode={rotation.book} onChange={rotation.show} />
+    </div>
+  );
+}
+
+export function ExposureCard({ rotation }: { rotation: BookRotation }) {
+  const { book: data, isLoading, dataUpdatedAt } = useBook(rotation);
   const rows = data?.exposure ?? [];
   const totalOpen = rows.reduce<number | null>((s, r) => (r.open !== null ? (s ?? 0) + r.open : s), null);
   return (
-    <Card title="Open exposure — right now" updatedAt={dataUpdatedAt} className="desk-card">
+    <Card
+      title={`Open exposure — right now · ${rotation.book}`}
+      collapseKey="Open exposure — right now"
+      updatedAt={dataUpdatedAt}
+      className="desk-card"
+      controls={<BookControls rotation={rotation} />}
+      onHoverChange={rotation.setPaused}
+    >
       <div className="table-scroll desk-table-scroll">
         <table className="data-table num-from-1">
           <thead>
@@ -54,22 +83,28 @@ export function ExposureCard() {
         </table>
       </div>
       <p className="muted" style={{ fontSize: 11, marginTop: "0.5rem", marginBottom: 0 }}>
-        Counts and capital at risk are honest sums; unrealised is not, for the same reason the
-        equity card draws no combined line — the books differ in scale by more than an order of
-        magnitude. A module name opens its slides.
+        Counts and capital at risk are honest sums; unrealised is not — the books differ in scale
+        by more than an order of magnitude. A module name opens its slides.
       </p>
     </Card>
   );
 }
 
-export function EntriesCard() {
-  const { data, isLoading, dataUpdatedAt } = useDesk();
+export function EntriesCard({ rotation }: { rotation: BookRotation }) {
+  const { book: data, isLoading, dataUpdatedAt } = useBook(rotation);
   const rows = data?.entries ?? [];
   const totalFilled = rows.reduce((s, r) => s + r.filled, 0);
   const totalRefused = rows.reduce((s, r) => s + r.refused, 0);
   const totalNoFill = rows.reduce((s, r) => s + r.noFill, 0);
   return (
-    <Card title="Today's entries — filled and refused" updatedAt={dataUpdatedAt} className="desk-card">
+    <Card
+      title={`Today's entries — filled and refused · ${rotation.book}`}
+      collapseKey="Today's entries — filled and refused"
+      updatedAt={dataUpdatedAt}
+      className="desk-card"
+      controls={<BookControls rotation={rotation} />}
+      onHoverChange={rotation.setPaused}
+    >
       <div className="table-scroll desk-table-scroll">
         <table className="data-table num-from-1">
           <thead>
@@ -109,8 +144,8 @@ export function EntriesCard() {
                       <td className="muted">—</td>
                       <td className="muted">—</td>
                       <td className="muted">—</td>
-                      <td className="muted" style={{ textAlign: "left" }} title={r.note ?? undefined}>
-                        —
+                      <td className="muted" style={{ textAlign: "left" }}>
+                        {r.note ?? "—"}
                       </td>
                     </>
                   )}

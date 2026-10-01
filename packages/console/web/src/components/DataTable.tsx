@@ -144,16 +144,22 @@ interface CardProps {
   /** Collapsed the first time this key is seen (e.g. the guide/help slide, read once then
    *  skimmed) -- an explicit later toggle always wins over this. */
   defaultCollapsed?: boolean;
+  /** Pointer over the card, e.g. to hold a rotating card still while it is being read. */
+  onHoverChange?: (hovered: boolean) => void;
   children: ReactNode;
 }
 
 /** Card shell with the house header: collapse caret, title, controls, freshness stamp. */
-export function Card({ title, collapseKey, updatedAt, isError = false, controls, className, defaultCollapsed, children }: CardProps) {
+export function Card({ title, collapseKey, updatedAt, isError = false, controls, className, defaultCollapsed, onHoverChange, children }: CardProps) {
   const key = collapseKey ?? (typeof title === "string" ? title : "card");
   const [collapsed, toggle] = useCollapsed(key, defaultCollapsed);
   const asOf = asOfLabel(updatedAt);
   return (
-    <section className={`card ${className ?? ""} ${isError ? "card-stale" : ""}`}>
+    <section
+      className={`card ${className ?? ""} ${isError ? "card-stale" : ""}`}
+      onMouseEnter={onHoverChange !== undefined ? () => onHoverChange(true) : undefined}
+      onMouseLeave={onHoverChange !== undefined ? () => onHoverChange(false) : undefined}
+    >
       <div className="card-head">
         <button
           type="button"

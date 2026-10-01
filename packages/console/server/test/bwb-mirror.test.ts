@@ -94,17 +94,8 @@ describe("the mirror check itself", () => {
   });
 });
 
-/**
- * The reader against a fresh, empty bwb ledger -- the honest zero-state the module's suite CLAUDE.md
- * requires: no fabricated rows, and a store that exists but holds nothing must render as "nothing
- * yet", not as an error and not as fake data.
- */
-describe("readBwb against an empty ledger", () => {
-  it("reports a present-but-empty store, never fabricated rows", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bwb-console-test-"));
-    const dbFile = path.join(dir, "paper_trades.db");
-    const db = new Database(dbFile);
-    db.exec(`
+/** The tables `readBwb` reads, as the module creates them. */
+const BWB_SCHEMA = `
       CREATE TABLE bwb_positions (id INTEGER PRIMARY KEY, position_id TEXT, symbol TEXT, arm TEXT,
         entry_session TEXT, structure_signature TEXT, status TEXT, exit_reason TEXT,
         body_strike REAL, near_strike REAL, far_strike REAL, expiration TEXT, entry_spot REAL,
@@ -121,7 +112,19 @@ describe("readBwb against an empty ledger", () => {
       CREATE TABLE bwb_loop_iterations (id INTEGER PRIMARY KEY, ran_at REAL, session_date TEXT,
         phase TEXT, status TEXT);
       CREATE TABLE measurement_breaks (id INTEGER PRIMARY KEY, break_date TEXT, key TEXT, note TEXT);
-    `);
+`;
+
+/**
+ * The reader against a fresh, empty bwb ledger -- the honest zero-state the module's suite CLAUDE.md
+ * requires: no fabricated rows, and a store that exists but holds nothing must render as "nothing
+ * yet", not as an error and not as fake data.
+ */
+describe("readBwb against an empty ledger", () => {
+  it("reports a present-but-empty store, never fabricated rows", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bwb-console-test-"));
+    const dbFile = path.join(dir, "paper_trades.db");
+    const db = new Database(dbFile);
+    db.exec(BWB_SCHEMA);
     db.close();
 
     const config = loadConfig();
@@ -175,5 +178,19 @@ describe("trigger fire conditions, against bwb's documented rules", () => {
     expect(flipFires(true, 6006, 6000)).toBe(true); // latched, reclaimed past the buffer
     expect(flipFires(true, 6000.5, 6000)).toBe(false); // latched, reclaim not past the buffer yet
     expect(flipFires(false, 6006, 6000)).toBe(false); // never traded below flip -- no latch
+  });
+});
+
+describe("readBwb's live book", () => {
+  it("reads live_trades.db when asked for live, and never the paper file", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bwb-console-live-"));
+    const db = new Database(path.join(dir, "live_trades.db"));
+    db.exec(BWB_SCHEMA);
+    db.close();
+    const config = loadConfig();
+    config.paths.bwbDir = dir;
+    // Only the live ledger exists: the paper read finds no store, the live read finds this one.
+    expect(readBwb(config).dbPresent).toBe(false);
+    expect(readBwb(config, "live").dbPresent).toBe(true);
   });
 });

@@ -34,6 +34,7 @@ import type {
   CalendarsPosition,
   CalendarsWeekRow,
   CalendarsWeeks,
+  DeskBookPayload,
   DeskPayload,
   FuturesTickerPayload,
   SystemDataPayload,
@@ -95,6 +96,15 @@ export function useDesk() {
   return useQuery<DeskPayload>({
     queryKey: ["desk"],
     queryFn: () => getJson<DeskPayload>("/api/desk"),
+    refetchInterval: 15_000,
+  });
+}
+
+/** The live book's exposure and entries, which the Overview's cards rotate to. */
+export function useDeskLive() {
+  return useQuery<DeskBookPayload>({
+    queryKey: ["desk", "live"],
+    queryFn: () => getJson<DeskBookPayload>("/api/desk/live"),
     refetchInterval: 15_000,
   });
 }

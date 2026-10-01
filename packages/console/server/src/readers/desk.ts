@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { DeskPayload, DeskLiveness, DeskExposureRow, DeskEntriesRow, DeskEvidenceRow, DeskEodRow } from "@console/shared";
+import type { DeskBookPayload, DeskPayload, DeskLiveness, DeskExposureRow, DeskEntriesRow, DeskEvidenceRow, DeskEodRow } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { withReadOnlyDb, readJson } from "./db.js";
 import { streamerFreshness } from "./streamcache.js";
@@ -356,4 +356,133 @@ export function readDesk(config: ConsoleConfig): DeskPayload {
     evidence,
     eod: { session: lastSession?.session ?? null, rows: eodRows },
   };
+}
+
+/**
+ * The live flies loop journals DECISIONS (`fly_decisions`: reason, accepted, occurrences), not the
+ * per-tick `fly_entry_attempts` the paper loop writes -- that table is empty in the live ledger, so
+ * the shared attempts read counted nothing beside a session net of six trades. Filled and no-fill
+ * come from the positions the session entered (a cancelled entry is one that never filled);
+ * refused is the decisions it turned down, by occurrence, the same measure as paper's refusals.
+ */
+export function readFliesLiveEntries(config: ConsoleConfig, session: string | null): { filled: number; refused: number; noFill: number; topRefusal: string | null } {
+  const empty = { filled: 0, refused: 0, noFill: 0, topRefusal: null };
+  if (session === null) return empty;
+  return withReadOnlyDb(path.join(config.paths.fliesDir, "live_trades.db"), empty, (db) => {
+    const pos = db
+      .prepare("SELECT status, COUNT(*) AS n FROM fly_positions WHERE trade_date = ? GROUP BY status")
+      .all(session) as Array<{ status: string | null; n: number }>;
+    const refusals = db
+      .prepare(
+        "SELECT reason, SUM(occurrences) AS n FROM fly_decisions WHERE trade_date = ? AND accepted = 0 GROUP BY reason ORDER BY n DESC",
+      )
+      .all(session) as Array<{ reason: string; n: number }>;
+    const top = refusals[0];
+    return {
+      filled: pos.filter((r) => r.status !== "cancelled" && r.status !== "voided").reduce((t, r) => t + r.n, 0),
+      noFill: pos.filter((r) => r.status === "cancelled").reduce((t, r) => t + r.n, 0),
+      refused: refusals.reduce((t, r) => t + r.n, 0),
+      topRefusal: top !== undefined ? `${top.reason} ×${String(top.n)}` : null,
+    };
+  });
+}
+
+/** Calendars, pmcc and curve are paper-only by design: they have no live book to show. */
+const PAPER_ONLY = ["calendars", "pmcc", "curve"] as const;
+const PAPER_ONLY_NOTE = "paper-only · no live path";
+
+/**
+ * The live book's exposure and entries, for the Overview's cards to rotate to. The same readers as
+ * the paper composition above, asked for `live`: meic, flies, earnings and bwb each have a narrow
+ * live path; the paper-only modules are rows that say so rather than zeros.
+ *
+ * Session net comes from the live ledger only where a reader states one (flies' latest live
+ * session). The paper column reads the suite report, which is paper by construction, so the other
+ * live rows show no figure rather than borrow one.
+ */
+export function readDeskLive(config: ConsoleConfig): DeskBookPayload {
+  const fliesAnalytics = readFliesAnalytics(config, "live", { arm: null, date: null, symbol: null, era: null });
+  const meicExposure = readMeicOpenExposure(config, "live");
+  const earningsDetail = readEarningsDetail(config, "live", null);
+  const bwb = readBwb(config, "live");
+  const meicLoop = readMeicLoopStatus(config, "live");
+  const fliesLoop = readFliesLoopStatus(config, "live");
+
+  const paperOnlyExposure = (module: string): DeskExposureRow => ({
+    module, open: null, atRisk: null, atRiskLabel: "", unrealisedNet: null, markAgeSeconds: null, available: false, note: PAPER_ONLY_NOTE,
+  });
+  const exposure: DeskExposureRow[] = [
+    {
+      module: "meic",
+      open: meicExposure.open,
+      atRisk: meicExposure.capitalAtRisk,
+      atRiskLabel: "capital at risk",
+      unrealisedNet: null,
+      markAgeSeconds: meicLoop.ageSeconds,
+      available: true,
+      note: null,
+    },
+    {
+      module: "flies",
+      open: fliesAnalytics.today.open,
+      atRisk: Math.abs(fliesAnalytics.today.maxPossibleLoss),
+      atRiskLabel: "max possible loss",
+      unrealisedNet: null,
+      markAgeSeconds: fliesLoop.ageSeconds,
+      available: true,
+      note: null,
+    },
+    {
+      module: "earnings",
+      open: earningsDetail.openCount,
+      atRisk: earningsDetail.capitalAtRisk,
+      atRiskLabel: "capital at risk",
+      unrealisedNet: null,
+      markAgeSeconds: null,
+      available: true,
+      note: null,
+    },
+    ...PAPER_ONLY.map(paperOnlyExposure),
+    {
+      module: "bwb",
+      open: bwb.openCount,
+      atRisk: sumDollarsAtRisk(bwb.openPositions, (p) => p.entryMaxLoss),
+      atRiskLabel: "at risk (zero-floor by design)",
+      unrealisedNet: sumUnrealised(bwb.openPositions),
+      markAgeSeconds: bwb.today.lastIteration?.ageSeconds ?? null,
+      available: true,
+      note: null,
+    },
+  ];
+
+  const meicCounts = countOutcomes(readEntryAttempts(config, "meic", "live", null).timeline);
+  const fliesCounts = readFliesLiveEntries(config, fliesAnalytics.today.tradeDate);
+  const bwbCounts = countOutcomes(
+    bwb.entryAttemptsToday.map((a: { outcome: string }) => ({ outcome: a.outcome, blockDetail: null })),
+  );
+  const earningsMetrics = readScreenMetrics("live", sessionDateEt()).metrics;
+  const funnel = earningsMetrics?.funnel ?? null;
+  const earningsCounts = {
+    filled: funnel?.opened ?? 0,
+    refused: funnel?.rejected ?? 0,
+    noFill: funnel !== null ? Math.max(0, funnel.accepted - funnel.opened) : 0,
+    topRefusal: earningsMetrics?.reasons[0]?.reason ?? null,
+  };
+  const paperOnlyEntries = (module: string): DeskEntriesRow => ({
+    module, filled: 0, refused: 0, noFill: 0, sessionNet: null, topRefusal: null, available: false, note: PAPER_ONLY_NOTE,
+  });
+  const entries: DeskEntriesRow[] = [
+    { module: "meic", ...meicCounts, sessionNet: null, available: true, note: null },
+    {
+      module: "flies",
+      ...fliesCounts,
+      sessionNet: fliesAnalytics.today.tradeDate !== null ? fliesAnalytics.today.netPnl : null,
+      available: true,
+      note: null,
+    },
+    { module: "earnings", ...earningsCounts, sessionNet: null, available: true, note: null },
+    ...PAPER_ONLY.map(paperOnlyEntries),
+    { module: "bwb", ...bwbCounts, sessionNet: null, available: true, note: null },
+  ];
+  return { mode: "live", exposure, entries };
 }

@@ -12,6 +12,7 @@ import type {
   BwbOpenPosition,
   BwbPayload,
   Paged,
+  TradingMode,
 } from "@console/shared";
 import type { ConsoleConfig } from "../config.js";
 import { hasColumn, num, str, type DatabaseHandle, withReadOnlyDb } from "./db.js";
@@ -86,8 +87,11 @@ const KNOWN_COLUMNS: Record<string, string[]> = {
   ],
 };
 
-function dbPath(config: ConsoleConfig): string {
-  return path.join(config.paths.bwbDir, DB_FILE);
+/** The live book is the same schema in its own file (the module's narrow live path, 2026-09). */
+const LIVE_DB_FILE = "live_trades.db";
+
+function dbPath(config: ConsoleConfig, mode: TradingMode = "paper"): string {
+  return path.join(config.paths.bwbDir, mode === "live" ? LIVE_DB_FILE : DB_FILE);
 }
 
 /** The same session `latestSession` resolves for every other card on this page, exposed for
@@ -344,7 +348,7 @@ function schemaDrift(db: DatabaseHandle): string[] {
   return drift.sort();
 }
 
-export function readBwb(config: ConsoleConfig): BwbPayload {
+export function readBwb(config: ConsoleConfig, mode: TradingMode = "paper"): BwbPayload {
   const empty: BwbPayload = {
     session: null,
     dbPresent: false,
@@ -364,7 +368,7 @@ export function readBwb(config: ConsoleConfig): BwbPayload {
     today: { lastIteration: null },
   };
 
-  return withReadOnlyDb<BwbPayload>(dbPath(config), empty, (db) => {
+  return withReadOnlyDb<BwbPayload>(dbPath(config, mode), empty, (db) => {
     const session = latestSession(db);
     const openPositions = readOpenPositions(db);
 
