@@ -23,7 +23,8 @@ function phaseChipClass(phase: string): string {
 /**
  * The one-line status bar along the bottom of every page: the suite's health first (the console's
  * DXLink session, a read-only credential, each producer's liveness against its own cadence), then
- * watchdog/session/morning-phase state and the logs, which open in a drawer. (The SPX/XSP/QQQ/IWM
+ * watchdog and morning-phase state and the logs, which open in a drawer. The session chip (market
+ * open / trading day, closed) sits in the top bar beside the clock. (The SPX/XSP/QQQ/IWM
  * quotes and the module/service counts went on 2026-10-01; the top bar's futures ticker carries
  * the market now.)
  *
@@ -74,11 +75,6 @@ export function StatusBar() {
           <span className={`chip ${wd.overall === "OK" ? "chip-ok" : "chip-warn"}`}>
             watchdog {wd.overall}
             {wd.ageSeconds !== null && ` · ${Math.round(wd.ageSeconds / 60)}m ago`}
-          </span>
-        )}
-        {wd && (
-          <span className="chip">
-            {wd.isTradingDay ? (wd.inSession ? "market open" : "trading day, closed") : "non-trading day"}
           </span>
         )}
         {phase && (

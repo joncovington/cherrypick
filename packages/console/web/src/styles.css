@@ -145,8 +145,15 @@ body {
   min-height: 2.6rem;
 }
 
-.status-clock {
+.status-right {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+
+.status-clock {
   font-family: var(--num-face);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
