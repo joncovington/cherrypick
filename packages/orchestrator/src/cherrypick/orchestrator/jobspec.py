@@ -504,6 +504,27 @@ def derive_jobs(
         ),
     )
 
+    # --- flies-payoff-post: the settled payoff chart to Discord, once per ledger per session
+    fp = cfgmod.flies_payoff_post_settings(cfg)
+    add(
+        "flies-payoff-post",
+        lambda: JobSpec(
+            id="flies-payoff-post",
+            # scripts/, not a package: it drives a browser and posts to a webhook, so a failure
+            # costs a picture and never a settlement. Idempotent per ledger per session, so the
+            # window repeats it until live's official print lands.
+            argv=(pythonw, _suite_script(launcher, "flies_payoff_post.py"))
+            + tuple(arg for m in fp["modes"] for arg in ("--mode", m)),
+            kind=KIND_INTERVAL,
+            interval_seconds=fp["interval_minutes"] * 60,
+            window_start=fp["start"],
+            window_end=fp["end"],
+            trading_days_only=True,
+            enabled=fp["enabled"],
+            enabled_reason="" if fp["enabled"] else "disabled in config (flies_payoff_post)",
+        ),
+    )
+
     # --- console (the suite's read surface): the one job with no window at all
     con = cfgmod.console_settings(cfg)
     if not con["enabled"]:

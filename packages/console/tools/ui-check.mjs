@@ -20,8 +20,14 @@
  *   pnpm ui-check --route /earnings --click overview --expect "across both books"
  *   pnpm ui-check --route /meic --shot meic.png --full
  *   pnpm ui-check --route /flies/session --links      # every card link lands on its page, no overlay
+ *   pnpm ui-check --route "/flies/session?mode=live" --card "payoff at expiry — 2026-09-30" --shot p.png --scale 2
  *
- * Exit codes: 0 pass (or skipped), 1 an --expect was missing, 2 the console was unreachable.
+ * `--card <text>` crops `--shot` to the first grid card whose title contains the text (case-folded)
+ * and that has drawn a chart; no such card is a missing expectation, never a whole-page fallback.
+ *
+ * Exit codes: 0 pass (or skipped), 1 an --expect or --card was missing, 2 the console was unreachable.
+ * A skip (no browser, no puppeteer) also exits 0 and writes no file, so a caller that needs the shot
+ * must check the file exists.
  */
 
 import fs from "node:fs";
@@ -70,6 +76,8 @@ function parseArgs(argv) {
     else if (a === "--dump") out.dump = next();
     else if (a === "--full") out.full = true;
     else if (a === "--links") out.links = true;
+    else if (a === "--card") out.card = next();
+    else if (a === "--scale") out.scale = Number(next());
     else if (a === "--viewport") out.viewport = next();
     else if (a === "--timeout") out.timeout = Number(next());
     else if (a === "--help" || a === "-h") out.help = true;
@@ -198,7 +206,7 @@ async function main() {
     executablePath: browserPath,
     headless: true,
     args: ["--disable-gpu", "--no-sandbox", "--hide-scrollbars"],
-    defaultViewport: { width, height },
+    defaultViewport: { width, height, deviceScaleFactor: args.scale ?? 1 },
   });
 
   const pageErrors = [];
@@ -236,7 +244,34 @@ async function main() {
       fs.writeFileSync(args.dump, html, "utf-8");
       console.log(`ui-check: dumped ${html.length} bytes -> ${args.dump}`);
     }
-    if (args.shot !== undefined) {
+    if (args.card !== undefined) {
+      // The card's title is matched on textContent (CSS upper-cases it on screen), and a chart must
+      // have drawn: a card still showing its skeleton is the right card at the wrong moment.
+      const handle = await page
+        .waitForFunction(
+          (want) =>
+            [...document.querySelectorAll("section.gcard")].find(
+              (s) =>
+                (s.querySelector(".gcard-head")?.textContent ?? "").toLowerCase().includes(want) &&
+                s.querySelector("svg") !== null,
+            ),
+          { timeout: args.timeout },
+          args.card.toLowerCase(),
+        )
+        .catch(() => null);
+      const card = handle?.asElement() ?? null;
+      if (card === null) {
+        console.error(`ui-check: no card titled ${JSON.stringify(args.card)} with a drawn chart.`);
+        return FAIL_EXPECT;
+      }
+      // A chart measures itself after mount (lib/useMeasure.ts); let that layout land.
+      await new Promise((r) => setTimeout(r, 1500));
+      if (args.shot !== undefined) {
+        fs.mkdirSync(path.dirname(path.resolve(args.shot)), { recursive: true });
+        await card.screenshot({ path: args.shot });
+        console.log(`ui-check: card screenshot -> ${args.shot}`);
+      }
+    } else if (args.shot !== undefined) {
       fs.mkdirSync(path.dirname(path.resolve(args.shot)), { recursive: true });
       await page.screenshot({ path: args.shot, fullPage: args.full === true });
       console.log(`ui-check: screenshot -> ${args.shot}${args.full === true ? " (full page)" : ""}`);

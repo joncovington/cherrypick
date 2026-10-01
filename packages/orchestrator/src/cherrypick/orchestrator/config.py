@@ -570,6 +570,22 @@ def status_digest_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def flies_payoff_post_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved flies payoff-chart post (scripts/flies_payoff_post.py -> Discord). OFF by default.
+    A webhook push and a browser capture, so its own supervisor job, never the watchdog tick. It
+    posts each ledger once per session, only after the module says that ledger has settled (live
+    waits for the official print), so the job repeats inside a window rather than firing once."""
+    fp = cfg.get("flies_payoff_post", {}) or {}
+    return {
+        "enabled": bool(fp.get("enabled", False)),
+        "modes": [m for m in (fp.get("modes") or ["live", "paper"]) if m in ("live", "paper")],
+        "interval_minutes": int(fp.get("interval_minutes", 10)),
+        # Both ledgers settle at 16:20; live keeps retrying until the official print lands.
+        "start": fp.get("start", "16:25"),
+        "end": fp.get("end", "19:00"),
+    }
+
+
 def symbol_watch_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     """Resolved earnings forward-preview scan config -- packages/earnings' own
     `cherrypick.earnings.symbol_watch`, the source of scout's read-only Earnings page "Upcoming"

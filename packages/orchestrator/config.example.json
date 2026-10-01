@@ -517,6 +517,18 @@
       "discord"
     ]
   },
+  "flies_payoff_post": {
+    "_comment": "Posts the flies 'payoff at expiry' chart to Discord once each ledger has settled: the console's payoff card for the session (captured by packages/console/tools/ui-check.mjs --card), captioned with each arm's settled net and the settlement print. Runs scripts/flies_payoff_post.py, never a package and never the watchdog tick. One post per ledger per session (state/flies-payoff-post.json); live waits for the official print. Needs the console up, node, and Chrome or Edge. OFF by default; set enabled=true and store the webhook (cherrypick secrets-set --channel discord).",
+    "enabled": false,
+    "modes": [
+      "live",
+      "paper"
+    ],
+    "interval_minutes": 10,
+    "start": "16:25",
+    "end": "19:00",
+    "_window_note": "ET wall-clock, trading days only. Both ledgers settle at 16:20; each run posts whatever has settled and not been posted, so the window covers a late official print."
+  },
   "notify": {
     "_channels_note": "push channels: 'log' (always on, the floor), 'desktop', 'slack', 'discord'. Slack/Discord webhook URLs live in the OS keyring (cherrypick secrets-set --channel slack|discord), never in this file or env vars.",
     "channels": [
