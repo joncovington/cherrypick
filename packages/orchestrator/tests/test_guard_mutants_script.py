@@ -33,7 +33,10 @@ runner = _load("guard_mutants")
 
 @pytest.mark.parametrize("mutant", plugin.MUTANTS, ids=lambda m: m.id)
 def test_every_mutant_target_still_exists(mutant):
-    """A rename must fail loudly here, not leave a mutant patching nothing every morning."""
+    """A rename must fail loudly here, not leave a mutant patching nothing every morning. Skipped
+    where the target's package is not installed (this package's own CI job installs core and the
+    orchestrator only); CI's `guards` job installs every one, and a vanished target fails it there."""
+    pytest.importorskip(mutant.module)
     owner, name = plugin.resolve(mutant)
     assert hasattr(owner, name)
 
@@ -47,6 +50,19 @@ def test_every_mutant_names_a_test_that_exists(mutant):
         assert f"def {func}(" in (root / path).read_text(encoding="utf-8"), node
 
 
+# A stand-in aimed at this package's own module, so the verdict tests run wherever the orchestrator
+# is installed -- a real mutant's target lives in a package this package's CI job does not install.
+FAKE = plugin.Mutant(
+    id="fake",
+    breaks="a stand-in for the verdict tests",
+    package="orchestrator",
+    tests=("tests/test_util.py::test_clean_json_object",),
+    module="cherrypick.orchestrator.util",
+    attr="first_json",
+    replacement="always_true",
+)
+
+
 def _stub(monkeypatch, *, clean=(0, ""), mutated=(1, "E       AssertionError: assert 1 == 0")):
     def fake(package, tests, mutant_id=None):
         return mutated if mutant_id else clean
@@ -56,19 +72,19 @@ def _stub(monkeypatch, *, clean=(0, ""), mutated=(1, "E       AssertionError: as
 
 def test_a_mutant_killed_by_an_assertion_is_ok(monkeypatch):
     _stub(monkeypatch)
-    report = runner.check(plugin.MUTANTS[:1])
+    report = runner.check([FAKE])
     assert report["ok"] and report["mutants"][0]["verdict"] == "killed"
 
 
 def test_a_surviving_mutant_fails_the_check(monkeypatch):
     _stub(monkeypatch, mutated=(0, "1 passed"))
-    report = runner.check(plugin.MUTANTS[:1])
+    report = runner.check([FAKE])
     assert not report["ok"] and report["mutants"][0]["verdict"] == "survived"
 
 
 def test_a_crash_is_not_a_kill(monkeypatch):
     _stub(monkeypatch, mutated=(1, "E   TypeError: unsupported operand"))
-    report = runner.check(plugin.MUTANTS[:1])
+    report = runner.check([FAKE])
     assert not report["ok"] and report["mutants"][0]["verdict"] == "error"
 
 
@@ -80,7 +96,7 @@ def test_a_failing_clean_run_fails_the_check_without_trying_mutants(monkeypatch)
         return (1, "E   assert False") if mutant_id is None else (1, "E   AssertionError")
 
     monkeypatch.setattr(runner, "run_pytest", fake)
-    report = runner.check(plugin.MUTANTS[:1])
+    report = runner.check([FAKE])
     assert not report["ok"] and calls == [None]
 
 
@@ -117,12 +133,13 @@ def test_if_changed_runs_when_git_cannot_answer(monkeypatch, tmp_path):
 
 def test_a_vanished_target_is_an_error(monkeypatch):
     _stub(monkeypatch)
+    # The module exists and the attribute does not: a rename, not a package that was never installed.
     gone = plugin.Mutant(
         id="gone",
         breaks="x",
-        package="gex",
+        package="orchestrator",
         tests=("t",),
-        module="cherrypick.gex.provider",
+        module="cherrypick.orchestrator.util",
         attr="NO_SUCH_ATTRIBUTE",
         replacement="always_true",
     )

@@ -41,6 +41,14 @@ def test_top_level_non_dict_is_ignored():
     assert first_json("[1, 2, 3]") == {}
 
 
+def test_mask_account_is_cores_rule():
+    """One rule for the suite (cherrypick.core.redact); a local copy is how the two drifted on
+    stripping before they were folded."""
+    from cherrypick.core import redact
+
+    assert mask_account is redact.mask_account
+
+
 def test_mask_account_keeps_last_four():
     assert mask_account("5WT12345") == "****2345"
     assert mask_account(12345678) == "****5678"

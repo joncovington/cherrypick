@@ -42,10 +42,6 @@ def test_mask_account_strips_before_taking_the_last_four():
     assert mask_account("  23  ") == "****"
 
 
-def test_the_orchestrator_and_the_desk_mask_with_cores_rule():
-    from cherrypick.desk import policy
-    from cherrypick.orchestrator import util
-
-    from cherrypick.core import redact
-
-    assert util.mask_account is redact.mask_account and policy.mask_account is redact.mask_account
+# That the orchestrator and the desk mask with THIS rule is asserted in their own tests
+# (test_util.py, test_policy.py): core is import-self-contained, and its CI job installs core alone,
+# so a test here importing either package failed every run from 2026-09-30 to 2026-10-01.

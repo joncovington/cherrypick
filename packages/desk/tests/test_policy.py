@@ -245,3 +245,10 @@ def test_management_refuses_an_unresolved_account():
     cfg = _cfg()
     refusals = policy.evaluate_management(cfg=cfg, account_number=None)
     assert any("no account resolved" in r for r in refusals)
+
+
+def test_the_desk_masks_with_cores_rule():
+    """One rule for the suite (cherrypick.core.redact), never a local copy."""
+    from cherrypick.core import redact
+
+    assert policy.mask_account is redact.mask_account
