@@ -101,9 +101,10 @@ file's directory.
   yet, so the horizon falls forward to whatever chain is still streaming — another expiry — and until
   2026-09-30 the recorder filed that under today: 79% of the rows on disk, and the overview's pre-open
   levels and the advisor's "open" walls read them. `record_regimes` now writes nothing off-hours, and
-  every reader (`core.regime`, overview's levels, the advisor's snapshot and walls) filters the old
-  rows on read, the expired-chain rule's posture. `repair-history` reports them; `--apply` is there,
-  but the convention is to keep the record.
+  every reader (`core.regime`, overview's levels, the advisor's snapshot and walls) filters on read
+  as well, the expired-chain rule's posture. The 15,014 off-hours rows were removed on 2026-10-01 with
+  `repair-history --apply` (3,952 RTH rows kept); the full table is in
+  `gex_history.db.bak-20261001001211` beside the DB. `repair-history` alone only reports.
 - **Leftover strikes are not summed.** A strike the producer's window re-centred away from keeps its
   last greeks forever; `provider.LEFTOVER_ROW_SECONDS` drops rows that far behind their chain's newest
   (the console's `gexProfile.ts` uses the same cut). Negligible on a 0DTE chain; on a multi-day extra
