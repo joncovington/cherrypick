@@ -181,14 +181,21 @@ function setCommodities(premarket: unknown): string {
   return renderMorning();
 }
 
-describe("the scorecard fronts crude and gold as futures", () => {
-  it("shows /CL and /GC from the pre-market tape, not the ETF proxies", () => {
+describe("the scorecard fronts the S&P, crude and gold as futures", () => {
+  it("shows /ES, /CL and /GC from the pre-market tape, not SPX or the ETF proxies", () => {
     const html = setCommodities({
-      futures: { cl: future("WTI crude (/CL)", 61.37), gc: future("Gold (/GC)", 3412.6) },
+      futures: {
+        es: future("S&P 500 e-mini (/ES)", 7751.75),
+        cl: future("WTI crude (/CL)", 61.37),
+        gc: future("Gold (/GC)", 3412.6),
+      },
       indexes: {},
-      measuredFutures: 2,
+      measuredFutures: 3,
       recordOnly: true,
     });
+    expect(html).toContain("S&amp;P 500 e-mini (/ES)");
+    expect(html).toContain("7,751.75");
+    expect(html).not.toContain("S&amp;P 500 (SPX)");
     expect(html).toContain("WTI crude (/CL)");
     expect(html).toContain("Gold (/GC)");
     expect(html).toContain("3,412.60");
@@ -196,9 +203,9 @@ describe("the scorecard fronts crude and gold as futures", () => {
   });
 
   it("falls back to the proxy only for a future the pack does not carry", () => {
-    // A pack from before /GC was on the tape: crude is the future, gold is still GLD.
+    // A pack from before /GC was on the tape: /ES and crude are futures, gold is still GLD.
     const html = setCommodities({
-      futures: { cl: future("WTI crude (/CL)", 61.37) },
+      futures: { es: future("S&P 500 e-mini (/ES)", 7751.75), cl: future("WTI crude (/CL)", 61.37) },
       indexes: {},
       measuredFutures: 1,
       recordOnly: true,
@@ -210,18 +217,24 @@ describe("the scorecard fronts crude and gold as futures", () => {
 
   it("an unmeasured future stays unmeasured rather than borrowing the proxy's number", () => {
     const html = setCommodities({
-      futures: { cl: future("WTI crude (/CL)", null), gc: future("Gold (/GC)", null) },
+      futures: {
+        es: future("S&P 500 e-mini (/ES)", null),
+        cl: future("WTI crude (/CL)", null),
+        gc: future("Gold (/GC)", null),
+      },
       indexes: {},
       measuredFutures: 0,
       recordOnly: true,
     });
     expect(html).toContain("Gold (/GC)");
+    expect(html).not.toContain("7,798.99");
     expect(html).not.toContain("243.18");
     expect(html).not.toContain("71.04");
   });
 
-  it("a pack with no tape at all still fronts both proxies", () => {
+  it("a pack with no tape at all still fronts SPX and both proxies", () => {
     const html = setCommodities(undefined);
+    expect(html).toContain("S&amp;P 500 (SPX)");
     expect(html).toContain("WTI crude (ETF proxy)");
     expect(html).toContain("Gold (ETF proxy)");
   });

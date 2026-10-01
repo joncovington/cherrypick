@@ -45,26 +45,30 @@ function pnlClass(v: number | null | undefined): string {
   return v > 0 ? "pnl-pos" : "pnl-neg";
 }
 
-/** The scorecard order — the pack may carry more readings; these are the ones the page fronts. */
-const SCORECARD = ["spx", "vix", "vix3m", "vvix"];
-
 /**
- * Crude and gold close the scorecard as the /CL and /GC futures from the pre-market tape, each
- * paired with the ETF proxy a pack carried before it had that future (no tape before fact
- * version 4, no /GC before 2026-10-01). The proxy only stands in when the pack has no such future
- * at all: a future the pack holds but could not measure renders unmeasured, because swapping in
- * USO would quietly answer a different question. The proxy's own label says it is one.
+ * The scorecard order — the pack may carry more readings; these are the ones the page fronts.
+ *
+ * The S&P, crude and gold tiles are the /ES, /CL and /GC futures from the pre-market tape, which
+ * trade before the open when SPX and the ETFs do not. Each is paired with the reading a pack
+ * carried before it had that future (no tape before fact version 4, no /GC before 2026-10-01).
+ * That reading only stands in when the pack has no such future at all: a future the pack holds
+ * but could not measure renders unmeasured, because swapping in SPX's close or USO would quietly
+ * answer a different question. Each reading's own label says what it is.
  */
-const COMMODITIES: { future: string; proxy: string }[] = [
-  { future: "cl", proxy: "wti_proxy" },
-  { future: "gc", proxy: "gold_proxy" },
+const SCORECARD: { reading: string; future?: string }[] = [
+  { reading: "spx", future: "es" },
+  { reading: "vix" },
+  { reading: "vix3m" },
+  { reading: "vvix" },
+  { reading: "wti_proxy", future: "cl" },
+  { reading: "gold_proxy", future: "gc" },
 ];
 
-function commodityTile(pack: MorningPack, future: string, proxy: string): ReactNode {
-  const f = pack.premarket?.futures[future];
-  if (f !== undefined) return <ReadingTile key={future} id={future} r={f} />;
-  const r = pack.readings[proxy];
-  return r !== undefined ? <ReadingTile key={proxy} id={proxy} r={r} /> : null;
+function scorecardTile(pack: MorningPack, reading: string, future?: string): ReactNode {
+  const f = future !== undefined ? pack.premarket?.futures[future] : undefined;
+  if (f !== undefined) return <ReadingTile key={reading} id={future!} r={f} />;
+  const r = pack.readings[reading];
+  return r !== undefined ? <ReadingTile key={reading} id={reading} r={r} /> : null;
 }
 
 function basisLabel(r: MorningReading): string {
@@ -755,11 +759,7 @@ export function MorningPage({ tabs }: { tabs?: ReactNode } = {}) {
               {current.generatedAt !== null && <span className="card-asof">generated {current.generatedAt}</span>}
             </div>
             <div className="stats-grid">
-              {SCORECARD.map((id) => {
-                const r = current.readings[id];
-                return r !== undefined ? <ReadingTile key={id} id={id} r={r} /> : null;
-              })}
-              {COMMODITIES.map(({ future, proxy }) => commodityTile(current, future, proxy))}
+              {SCORECARD.map(({ reading, future }) => scorecardTile(current, reading, future))}
             </div>
           </section>
 
