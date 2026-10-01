@@ -227,6 +227,34 @@ a.chip:hover {
   border-bottom: 1px solid var(--border);
 }
 
+/* The Overview's futures ticker: right-aligned in the title row, one cell per contract. */
+.futures-ticker {
+  display: flex;
+  align-items: baseline;
+  gap: 1.25rem;
+  margin-left: auto;
+  font-family: var(--num-face);
+  font-variant-numeric: tabular-nums;
+}
+
+.futures-tick {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  white-space: nowrap;
+}
+
+.futures-tick-label {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.futures-tick-price {
+  font-size: 1.05rem;
+  padding: 0 0.2rem;
+  border-radius: 3px;
+}
+
 .chart-symbol-row {
   display: flex;
   align-items: center;

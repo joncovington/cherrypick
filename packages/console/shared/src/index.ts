@@ -13,3 +13,4 @@ export * from "./types/performance.js";
 export * from "./types/live.js";
 export * from "./types/regimeCuts.js";
 export * from "./types/openingRange.js";
+export * from "./types/futures.js";

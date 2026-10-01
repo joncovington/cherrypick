@@ -35,6 +35,7 @@ import type {
   CalendarsWeekRow,
   CalendarsWeeks,
   DeskPayload,
+  FuturesTickerPayload,
 } from "@console/shared";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -98,6 +99,16 @@ export function useReview(session?: string) {
     queryFn: () => getJson<ReviewPayload>(`/api/review${session ? `?session=${session}` : ""}`),
     // The fact set changes twice a day, not continuously — polling it hard would be noise.
     refetchInterval: 60_000,
+  });
+}
+
+/** Which contract each futures-ticker product is today. The map changes once a day at most; the
+ *  prices are on the quote socket, so this only needs to notice a roll. */
+export function useFuturesTicker() {
+  return useQuery<FuturesTickerPayload>({
+    queryKey: ["futures-ticker"],
+    queryFn: () => getJson<FuturesTickerPayload>("/api/futures-ticker"),
+    refetchInterval: 300_000,
   });
 }
 

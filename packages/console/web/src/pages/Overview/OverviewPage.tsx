@@ -5,6 +5,7 @@ import { EquityBottomRow } from "./EquityBottomRow";
 import { useSystem } from "./SuiteCards";
 import { ExposureCard, EntriesCard, EvidenceClockRow } from "./DeskCards";
 import { StatusBar } from "./StatusBar";
+import { FuturesTicker } from "./FuturesTicker";
 
 /**
  * The suite's morning-to-close picture, redesigned (2026-09) to fit 1440×900 with no page
@@ -69,6 +70,7 @@ export function OverviewPage() {
         {liveCount > 0 && <span className="chip chip-missing">{liveCount} module{liveCount === 1 ? "" : "s"} LIVE</span>}
         {system?.alertDaemon != null && <AlertDaemonChip health={system.alertDaemon} />}
         {isError && <span className="chip chip-missing">console API unreachable</span>}
+        <FuturesTicker />
       </div>
 
       <div className="overview-body">
