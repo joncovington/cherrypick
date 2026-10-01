@@ -443,6 +443,103 @@ def daily_bars(conn: sqlite3.Connection, symbol: str, *, through: str, limit: in
     return bars[-int(limit) :]
 
 
+_EPOCH = _dt.date(1970, 1, 1)
+# How far a Summary event's own `day_id` may sit from the day it arrived before it is distrusted:
+# a snapshot of Friday's session arriving on Monday morning is three days back, a long weekend
+# four. Anything further is not a session date but a malformed field.
+_DAY_ID_MAX_SKEW = 10
+
+
+def summary_session_date(day_id, received: str) -> str:
+    """The trading date a Summary event DESCRIBES: its own `day_id` (days since 1970-01-01), or
+    the day it was received when the event carries none it can be trusted on.
+
+    Keyed by receipt, a snapshot of the last session -- which the feed resends on every subscribe,
+    so on every reconnect outside the session -- was filed under the NEXT day: on 2026-10-01 the
+    00:02 ET reconnect wrote 09-30's open, high and low into a 10-01 row. For a symbol whose live
+    events carry no close (SPX, XSP), the stale snapshot's close then survived the whole session
+    under the COALESCE upsert: 09-28 held 09-25's close all day.
+    """
+    try:
+        recv = _dt.date.fromisoformat(str(received))
+    except ValueError:
+        return str(received)
+    if isinstance(day_id, int) and not isinstance(day_id, bool) and day_id > 0:
+        day = _EPOCH + _dt.timedelta(days=day_id)
+        if abs((recv - day).days) <= _DAY_ID_MAX_SKEW:
+            return day.isoformat()
+    return recv.isoformat()
+
+
+def repair_misfiled_summary(conn: sqlite3.Connection) -> dict:
+    """Undo what keying Summary rows by receipt date wrote (see `summary_session_date`). Returns
+    the rows removed or corrected per rule. Run by the producer -- the cache's one writer -- before
+    the close fill and the candle backfill, so a removed row is refilled from candles at once.
+
+    Three rules, each a fingerprint the old keying leaves and a real session cannot:
+
+    * **A row on a non-trading day** is a snapshot of the session before it, filed under a weekend
+      or holiday. Removed.
+    * **A row whose open, high and low all equal the previous trading day's** is that session's
+      snapshot filed a day late, which no later event of its own overwrote. Removed.
+    * **A close equal to the row's own prior close, contradicted by the next session's prior
+      close**, is the previous session's close frozen in by a snapshot (09-28's held 09-25's
+      7743.41 while 09-29 said 7683.69). Replaced by the next session's figure, the same
+      exchange-official number `fill_closes_from_next_prev` relies on. A flat close the next
+      session confirms is left alone: a real unchanged close is common.
+
+    Only what the evidence settles is touched. Elsewhere a row's close and the next row's prior
+    close can differ by cents (a candle against the exchange record) with no way to say which is
+    right, and those stay as they are.
+    """
+    out = {"non_trading_day": 0, "repeated_snapshot": 0, "frozen_close": 0}
+    try:
+        rows = conn.execute(
+            "SELECT symbol, trade_date, day_open, day_high, day_low, day_close, prev_day_close "
+            "FROM stream_summary ORDER BY symbol, trade_date"
+        ).fetchall()
+    except sqlite3.Error:
+        return out
+    by_key = {(r[0], str(r[1])): r for r in rows}
+
+    def _day(text):
+        try:
+            return _dt.date.fromisoformat(str(text))
+        except ValueError:
+            return None
+
+    for symbol, day_text, o, h, lo, *_ in rows:
+        day = _day(day_text)
+        if day is None:
+            continue
+        if not _cal.is_trading_day(day):
+            conn.execute("DELETE FROM stream_summary WHERE symbol = ? AND trade_date = ?", (symbol, day_text))
+            out["non_trading_day"] += 1
+            continue
+        prior = by_key.get((symbol, _cal.previous_trading_day(day).isoformat()))
+        if prior is not None and None not in (o, h, lo) and (o, h, lo) == (prior[2], prior[3], prior[4]):
+            conn.execute("DELETE FROM stream_summary WHERE symbol = ? AND trade_date = ?", (symbol, day_text))
+            by_key.pop((symbol, str(day_text)), None)
+            out["repeated_snapshot"] += 1
+
+    for (symbol, day_text), r in list(by_key.items()):
+        close, prev = to_float(r[5]), to_float(r[6])
+        day = _day(day_text)
+        if day is None or close is None or prev is None or close != prev or not _cal.is_trading_day(day):
+            continue
+        nxt = by_key.get((symbol, _cal.next_trading_day(day).isoformat()))
+        confirmed = to_float(nxt[6]) if nxt is not None else None
+        if confirmed is not None and confirmed > 0 and confirmed != close:
+            conn.execute(
+                "UPDATE stream_summary SET day_close = ? WHERE symbol = ? AND trade_date = ?",
+                (confirmed, symbol, day_text),
+            )
+            out["frozen_close"] += 1
+    if any(out.values()):
+        conn.commit()
+    return out
+
+
 def fill_closes_from_next_prev(conn: sqlite3.Connection) -> int:
     """Fill a missing `day_close` from the NEXT session's `prev_day_close`. Returns rows filled.
 

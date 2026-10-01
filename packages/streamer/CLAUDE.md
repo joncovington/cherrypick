@@ -61,6 +61,12 @@ Config: copy `config.example.json` → `config.json` (git-ignored, machine-local
   - **A confirmed session value is never erased by a later event that omits it.** The `stream_summary`
     upsert COALESCEs every OHLC field against what is stored; a bare overwrite once let late Summary
     events null out 22 sessions of SPX/XSP closes. A value only gets more known through a session.
+  - **A Summary row is keyed by the session the event describes (`day_id`), never by when it
+    arrived.** Every subscribe resends the last session, so receipt-keying filed that snapshot under
+    the next day; for SPX/XSP, whose live events carry no close, the stale close then survived the
+    COALESCE all session. `streamcache.repair_misfiled_summary` removes what it left (weekend rows,
+    a session's snapshot a day late) and corrects a frozen close on every connect, before the close
+    fill and the backfill.
   - **Quote and Greeks are filtered by what a symbol can publish, not what it is.** `build_streamer`
     asks `streamcache.publishes_quotes` / `publishes_greeks` per leg: nothing cash-settled has greeks,
     an index has no book to quote. ETF and single-name legs keep Quote. The quoteless set is a

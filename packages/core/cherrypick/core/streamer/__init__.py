@@ -569,7 +569,10 @@ class ChainStreamer:
                             "updated_at=excluded.updated_at",
                             (
                                 event.event_symbol,
-                                _et_date(ts),
+                                # The session the event DESCRIBES, not the day it arrived: every
+                                # subscribe resends the last session, and receipt-keying filed
+                                # that snapshot under the next day (`summary_session_date`).
+                                streamcache.summary_session_date(getattr(event, "day_id", None), _et_date(ts)),
                                 streamcache.to_float(getattr(event, "day_open_price", None)),
                                 high,
                                 low,
@@ -619,6 +622,19 @@ class ChainStreamer:
             purged = streamcache.purge_nonpositive_closes(state.conn)
             if purged:
                 self.log.info("Purged %d stored close(s) that were not prices", purged)
+            # Undo what receipt-date keying wrote before anything reads the rows: weekend rows,
+            # a session's snapshot filed a day late, a close frozen in from the session before.
+            # First, so the close fill below and the backfill's deficit check see the repaired
+            # table, and a removed row is refetched from candles in this same pass.
+            misfiled = streamcache.repair_misfiled_summary(state.conn)
+            if any(misfiled.values()):
+                self.log.info(
+                    "Repaired misfiled daily rows: %d on non-trading days, %d repeated snapshots "
+                    "removed; %d frozen closes corrected",
+                    misfiled["non_trading_day"],
+                    misfiled["repeated_snapshot"],
+                    misfiled["frozen_close"],
+                )
             # SPX's Summary carries open/high/low and prev_day_close but never a usable
             # day_close_price, so its live-written sessions hold a null close a plain read sees as
             # the series ending. The next session's prev_day_close is that close; fill from it

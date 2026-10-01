@@ -29,9 +29,10 @@ class _FakeStreamer:
             yield e
 
 
-def _summary_event(symbol, *, oi=None, o=None, h=None, lo=None, c=None, prev=None):
+def _summary_event(symbol, *, oi=None, o=None, h=None, lo=None, c=None, prev=None, day_id=None):
     return SimpleNamespace(
         event_symbol=symbol,
+        day_id=day_id,
         open_interest=oi,
         day_open_price=o,
         day_high_price=h,
@@ -164,3 +165,18 @@ def test_a_close_that_arrives_late_is_still_written(tmp_path):
     )
     row = conn.execute("SELECT * FROM stream_summary WHERE symbol='SPX'").fetchone()
     assert row["day_close"] == 6040.0
+
+
+def test_a_snapshot_of_the_last_session_lands_on_that_session_not_today(tmp_path):
+    """Every subscribe resends the last session's Summary. Keyed by receipt, the 00:02 ET reconnect
+    on 2026-10-01 filed 09-30's open/high/low under 10-01. The event's own `day_id` names its
+    session; the row goes there."""
+    from datetime import date, datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    today = datetime.now(ZoneInfo("America/New_York")).date()
+    yesterday = today - timedelta(days=1)
+    day_id = (yesterday - date(1970, 1, 1)).days
+    conn = _run_summary(tmp_path, [_summary_event("SPX", o=7688.99, h=7722.88, lo=7651.54, prev=7670.84, day_id=day_id)])
+    dates = [r["trade_date"] for r in conn.execute("SELECT trade_date FROM stream_summary WHERE symbol='SPX'")]
+    assert dates == [yesterday.isoformat()]

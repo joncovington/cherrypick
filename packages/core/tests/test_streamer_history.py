@@ -404,3 +404,77 @@ def test_recency_counts_a_close_carried_on_the_next_rows_prev_close(tmp_path):
         "08-24's prev_day_close carries 08-21's close, so the series reaches 08-21 -- not 08-20, "
         "which is all day_close alone can see"
     )
+
+
+# --------------------------------------------------------------------------- misfiled rows
+
+
+def test_a_summary_row_is_keyed_by_the_session_it_describes():
+    # 2026-09-30 is day 20726 since 1970-01-01.
+    assert streamcache.summary_session_date(20726, "2026-10-01") == "2026-09-30"
+    assert streamcache.summary_session_date(None, "2026-10-01") == "2026-10-01", "no day_id: the receipt date"
+    assert streamcache.summary_session_date(0, "2026-10-01") == "2026-10-01", "0 is not a session"
+    assert streamcache.summary_session_date(True, "2026-10-01") == "2026-10-01", "a bool is not a day_id"
+    # A day_id far from the day it arrived is a malformed field, not a session.
+    assert streamcache.summary_session_date(20000, "2026-10-01") == "2026-10-01"
+
+
+def _seed(conn, rows):
+    for symbol, day, o, h, lo, close, prev in rows:
+        conn.execute(
+            "INSERT INTO stream_summary (symbol, trade_date, day_open, day_high, day_low, day_close, "
+            "prev_day_close, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            (symbol, day, o, h, lo, close, prev, time.time()),
+        )
+    conn.commit()
+
+
+def test_the_producer_repairs_what_receipt_date_keying_wrote(tmp_path):
+    """The three fingerprints, as the cache held them on 2026-10-01, beside rows that only look
+    like them and must stay."""
+    conn = streamcache.connect(tmp_path / "cache.db")
+    _seed(
+        conn,
+        [
+            # Friday's snapshot filed under Saturday: not a session.
+            ("SPY", "2026-09-26", 768.0, 771.0, 765.0, 771.35, 769.0),
+            # 09-28 held 09-25's close all day; 09-29 says 09-28 closed at 7683.69.
+            ("SPX", "2026-09-25", 7709.86, 7752.07, 7693.08, 7743.41, 7704.13),
+            ("SPX", "2026-09-28", 7721.7, 7724.15, 7666.6, 7743.41, 7743.41),
+            ("SPX", "2026-09-29", 7699.6, 7699.6, 7653.55, 7670.84, 7683.69),
+            # 09-30's session, then its snapshot filed under 10-01 with no 10-01 event over it.
+            ("SPX", "2026-09-30", 7688.99, 7722.88, 7651.54, None, 7670.84),
+            ("SPX", "2026-10-01", 7688.99, 7722.88, 7651.54, None, 7670.84),
+            # A genuinely flat close, which the next session confirms: left alone.
+            ("HYG", "2026-09-22", 78.6, 78.8, 78.5, 78.67, 78.67),
+            ("HYG", "2026-09-23", 78.7, 78.9, 78.4, 78.5, 78.67),
+        ],
+    )
+    out = streamcache.repair_misfiled_summary(conn)
+    assert out == {"non_trading_day": 1, "repeated_snapshot": 1, "frozen_close": 1}
+    got = {(r[0], r[1]): r[2] for r in conn.execute("SELECT symbol, trade_date, day_close FROM stream_summary")}
+    assert ("SPY", "2026-09-26") not in got
+    assert ("SPX", "2026-10-01") not in got, "the 09-30 snapshot filed under 10-01"
+    assert got[("SPX", "2026-09-30")] is None, "09-30's own row stays, still awaiting its close"
+    assert got[("SPX", "2026-09-28")] == 7683.69
+    assert got[("SPX", "2026-09-25")] == 7743.41
+    assert got[("HYG", "2026-09-22")] == 78.67, "a flat close the next session confirms is real"
+    assert streamcache.repair_misfiled_summary(conn) == {"non_trading_day": 0, "repeated_snapshot": 0, "frozen_close": 0}
+
+
+def test_the_misfiled_snapshot_is_gone_before_the_close_fill_could_read_it(tmp_path):
+    """Run as the producer runs them: the repair, then the close fill. Left in place, the 10-01
+    snapshot's prior close (09-29's, 7670.84) would have been written as 09-30's close."""
+    conn = streamcache.connect(tmp_path / "cache.db")
+    _seed(
+        conn,
+        [
+            ("SPX", "2026-09-29", 7699.6, 7699.6, 7653.55, 7670.84, 7683.69),
+            ("SPX", "2026-09-30", 7688.99, 7722.88, 7651.54, None, 7670.84),
+            ("SPX", "2026-10-01", 7688.99, 7722.88, 7651.54, None, 7670.84),
+        ],
+    )
+    streamcache.repair_misfiled_summary(conn)
+    streamcache.fill_closes_from_next_prev(conn)
+    close = conn.execute("SELECT day_close FROM stream_summary WHERE symbol='SPX' AND trade_date='2026-09-30'").fetchone()[0]
+    assert close is None, "09-30's close waits for 10-01's own prior close, never borrows 09-29's"
