@@ -146,6 +146,7 @@ body {
 }
 
 .status-clock {
+  margin-left: auto;
   font-family: var(--num-face);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -227,32 +228,48 @@ a.chip:hover {
   border-bottom: 1px solid var(--border);
 }
 
-/* The Overview's futures ticker: right-aligned in the title row, one cell per contract. */
+/* The top bar's futures ticker: one chip per contract beside the menu. The chip carries the
+   day's direction in its colour; the tick flash (.flash-up/.flash-down) rides over it. */
 .futures-ticker {
   display: flex;
-  align-items: baseline;
-  gap: 1.25rem;
-  margin-left: auto;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  overflow-x: auto;
   font-family: var(--num-face);
   font-variant-numeric: tabular-nums;
 }
 
-.futures-tick {
+.futures-chip {
   display: inline-flex;
   align-items: baseline;
   gap: 0.45rem;
-  white-space: nowrap;
+  padding: 0.12rem 0.55rem;
+  font-size: 12px;
+  color: var(--text);
 }
 
-.futures-tick-label {
+.futures-chip-symbol {
   color: var(--text-muted);
-  font-size: 0.8rem;
 }
 
-.futures-tick-price {
-  font-size: 1.05rem;
-  padding: 0 0.2rem;
-  border-radius: 3px;
+.futures-chip-price {
+  font-weight: 600;
+}
+
+.futures-chip-up {
+  color: var(--ok);
+  border-color: rgba(67, 181, 122, 0.45);
+}
+
+.futures-chip-down {
+  color: var(--err);
+  border-color: rgba(217, 92, 74, 0.45);
+}
+
+.futures-chip-cached {
+  color: var(--text-muted);
+  border-style: dashed;
 }
 
 .chart-symbol-row {
@@ -2657,20 +2674,22 @@ select.text-input {
   margin-left: auto;
 }
 
-/* One line, always -- a status bar that wraps to a second row pushes the bottom of it below the
-   fold, defeating the whole point of the no-scroll redesign. It scrolls horizontally in its own
-   container instead, the same "wide content scrolls in its own box, the page never does" rule
-   every other overflow-prone table on this page already follows. */
+/* The shell's bottom bar, on every page. It used to be held to one line because it sat INSIDE the
+   Overview, where a second row pushed it below the fold; as the shell's own row it can wrap, and a
+   second row only takes its height from the content area above, which scrolls. A clipped health
+   chip was the worse failure: a stale producer's warning scrolled out of sight. */
+.statusbar-wrap {
+  position: relative; /* the drawer opens upward from the top of the bar, however tall it is */
+  flex-shrink: 0;
+}
+
 .statusbar {
   display: flex;
   align-items: center;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  gap: 0.6rem;
-  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
   border-top: 1px solid var(--border);
   background: var(--bg-raised);
-  margin: 0.5rem -1.25rem -1.25rem;
   padding: 0.35rem 1.25rem;
   font-size: 12px;
   color: var(--text-muted);
@@ -2703,17 +2722,11 @@ select.text-input {
   background: var(--border);
 }
 
-.statusbar-hint {
-  margin-left: auto;
-  font-size: 11px;
-  white-space: nowrap;
-}
-
 .statusbar-drawer {
   position: absolute;
   left: 1.25rem;
   right: 1.25rem;
-  bottom: 2.4rem;
+  bottom: calc(100% + 0.25rem);
   max-height: min(60vh, 28rem);
   overflow: auto;
   z-index: 25;
@@ -3014,6 +3027,32 @@ select.text-input {
   min-height: 0;
   display: grid;
   grid-template-columns: 222px minmax(0, 1fr);
+}
+/* Collapsed (the default since 2026-10-01): the rail folds to a strip holding only its toggle. */
+.mf.mf-rail-collapsed {
+  grid-template-columns: 26px minmax(0, 1fr);
+}
+.mf-nav-collapsed {
+  overflow: hidden;
+}
+.mf-nav-toggle {
+  display: block;
+  width: 100%;
+  padding: 0.1rem 0.5rem 0.4rem;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1;
+  text-align: right;
+  cursor: pointer;
+}
+.mf-nav-collapsed .mf-nav-toggle {
+  padding: 0.1rem 0;
+  text-align: center;
+}
+.mf-nav-toggle:hover {
+  color: var(--text);
 }
 .mf-nav {
   border-right: 1px solid var(--border);

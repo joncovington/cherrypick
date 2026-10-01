@@ -4,16 +4,13 @@ import { EquityCard } from "./EquityCard";
 import { EquityBottomRow } from "./EquityBottomRow";
 import { useSystem } from "./SuiteCards";
 import { ExposureCard, EntriesCard, EvidenceClockRow } from "./DeskCards";
-import { StatusBar } from "./StatusBar";
-import { FuturesTicker } from "./FuturesTicker";
 
 /**
  * The suite's morning-to-close picture, redesigned (2026-09) to fit 1440×900 with no page
  * scroll: the suite matrix (exposure + entries) on the left, equity + session heatmap +
- * end-of-day on the right, an evidence-clock chip row, and live quotes / system / logs /
- * watchdog·session·morning-phase·halt demoted to a one-line status bar with a drawer. The
- * per-producer liveness strip lives in the global header (`StatusHeader`) beside the clock, not
- * on this page alone. See `docs/history/` for what the taller card-stack layout it replaces
+ * end-of-day on the right, and an evidence-clock chip row. Live quotes, system, logs,
+ * watchdog·session·morning-phase and the per-producer liveness strip are in the shell's
+ * one-line status bar (`components/shell/StatusBar`), on every page since 2026-10-01. See `docs/history/` for what the taller card-stack layout it replaces
  * looked like.
  */
 function ago(seconds: number | null): string {
@@ -68,9 +65,13 @@ export function OverviewPage() {
       <div className="page-title-row">
         <h1>Overview</h1>
         {liveCount > 0 && <span className="chip chip-missing">{liveCount} module{liveCount === 1 ? "" : "s"} LIVE</span>}
+        {system && (
+          <span className={`chip ${system.halted.active ? "chip-missing" : "chip-ok"}`}>
+            {system.halted.active ? "LIVE HALTED" : "halt flag clear"}
+          </span>
+        )}
         {system?.alertDaemon != null && <AlertDaemonChip health={system.alertDaemon} />}
         {isError && <span className="chip chip-missing">console API unreachable</span>}
-        <FuturesTicker />
       </div>
 
       <div className="overview-body">
@@ -86,7 +87,6 @@ export function OverviewPage() {
       </div>
 
       <EvidenceClockRow />
-      <StatusBar />
     </div>
   );
 }

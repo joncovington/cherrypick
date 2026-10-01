@@ -3,10 +3,10 @@ import { ageLabel } from "../../lib/format";
 import { ModuleChipLink } from "../ModuleLink";
 
 /**
- * The header's per-producer liveness strip: age of the last event/iteration against each
- * producer's own declared cadence, so a stalled feed cannot look like a quiet market. Lives in
- * the global `StatusHeader` (2026-09) beside the clock and market-data chip, so it's the same
- * on every page rather than only on Overview.
+ * The per-producer liveness strip: age of the last event/iteration against each producer's own
+ * declared cadence, so a stalled feed cannot look like a quiet market. Lives in the shell's bottom
+ * `StatusBar` (moved down from the header on 2026-10-01), so it's the same on every page rather
+ * than only on Overview.
  *
  * `cadenceSeconds === null` means the cadence could not be read -- the chip still shows the age,
  * with no colour judgement, rather than guessing a threshold.

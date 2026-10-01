@@ -1,7 +1,8 @@
 import { Suspense } from "react";
 import { useParams } from "react-router-dom";
 import { NotFoundPage } from "./NotFoundPage";
-import { ModuleNav } from "../components/shell/ModuleNav";
+import { ModuleNav, RAIL_PREF } from "../components/shell/ModuleNav";
+import { useBoolPref } from "../lib/prefs";
 import { FrameChrome } from "../lightbox/ModuleFrame";
 import { MODULE_FRAMES } from "../lightbox/registry";
 import { isModuleId } from "../lightbox/moduleOrder";
@@ -20,6 +21,7 @@ import { NAV_DECL, resolveSlide } from "../lightbox/navGroups";
  */
 export function ModuleRoute() {
   const { module = "", slide = "" } = useParams();
+  const railExpanded = useBoolPref(RAIL_PREF);
   if (!isModuleId(module)) return <NotFoundPage />;
 
   const Frame = MODULE_FRAMES[module];
@@ -28,7 +30,7 @@ export function ModuleRoute() {
   const label = slides.find((s) => s.id === activeId)?.label ?? activeId;
 
   return (
-    <div className="mf">
+    <div className={railExpanded ? "mf" : "mf mf-rail-collapsed"}>
       <ModuleNav module={module} slide={activeId} />
       <Suspense
         fallback={

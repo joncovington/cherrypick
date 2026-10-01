@@ -13,6 +13,10 @@ export interface QuoteTick {
   ask?: number;
   last?: number;
   dayVolume?: number;
+  /** The prior session's close from DXLink's Summary event — for a future, its settle. Only the
+   *  console's own feed carries it; a streamer-cache snapshot never does, so a change measured
+   *  against it is always the feed's own, never a stale cache row's. */
+  prevClose?: number;
   /** Source of this value: the console's own DXLink session or the streamer cache. */
   source: "dxlink" | "cache";
   ts: number;

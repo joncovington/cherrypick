@@ -4,6 +4,11 @@ import { type ModuleId } from "../../lightbox/moduleOrder";
 import { NAV_DECL, navGroups } from "../../lightbox/navGroups";
 import { SUITE_LINKS, MODULE_LINKS, CONFIG_LINK, type NavLinkDef } from "./navLinks";
 import { useDirtyCount } from "../../pages/Config/stagedStore";
+import { useBoolPref, writePref } from "../../lib/prefs";
+
+/** The rail's open/closed state, a console preference so it follows the reader to the desktop
+ *  shell. Absent means collapsed: the rail starts folded to the left edge (2026-10-01). */
+export const RAIL_PREF = "navExpanded";
 
 /**
  * The left rail: every page in the suite, with the current module opened out into its tabs.
@@ -20,8 +25,13 @@ import { useDirtyCount } from "../../pages/Config/stagedStore";
  * The query string rides along on every tab link: the header's arm/date/era selects live there,
  * and a tab change that silently dropped the reader's scope would be the same class of lie as a
  * stale date in a breadcrumb.
+ *
+ * Collapsed by default to a thin strip holding only its toggle, which gives the page the width. The
+ * links stay in the document under `hidden` rather than unmounting, so they are out of sight and
+ * out of the tab order but the rail's structure is the same either way.
  */
 export function ModuleNav({ module, slide }: { module: ModuleId; slide: string }) {
+  const expanded = useBoolPref(RAIL_PREF);
   const [params] = useSearchParams();
   const qs = params.toString();
   const withQs = (path: string) => (qs ? `${path}?${qs}` : path);
@@ -75,15 +85,27 @@ export function ModuleNav({ module, slide }: { module: ModuleId; slide: string }
   };
 
   return (
-    <nav className="mf-nav" aria-label="modules">
-      {SUITE_LINKS.map((l) => link(l))}
-      <div className="mf-nav-section">Modules</div>
-      {MODULE_LINKS.map((l) => link(l))}
-      <div className="mf-nav-section">Suite</div>
-      {link(
-        CONFIG_LINK,
-        dirty > 0 && <span className="nav-dot" title={`${String(dirty)} unsaved change${dirty === 1 ? "" : "s"}`} />,
-      )}
+    <nav className={expanded ? "mf-nav" : "mf-nav mf-nav-collapsed"} aria-label="modules">
+      <button
+        type="button"
+        className="mf-nav-toggle"
+        aria-expanded={expanded}
+        aria-controls="mf-nav-links"
+        title={expanded ? "collapse the navigation" : "expand the navigation"}
+        onClick={() => void writePref(RAIL_PREF, !expanded)}
+      >
+        {expanded ? "«" : "»"}
+      </button>
+      <div id="mf-nav-links" hidden={!expanded}>
+        {SUITE_LINKS.map((l) => link(l))}
+        <div className="mf-nav-section">Modules</div>
+        {MODULE_LINKS.map((l) => link(l))}
+        <div className="mf-nav-section">Suite</div>
+        {link(
+          CONFIG_LINK,
+          dirty > 0 && <span className="nav-dot" title={`${String(dirty)} unsaved change${dirty === 1 ? "" : "s"}`} />,
+        )}
+      </div>
     </nav>
   );
 }

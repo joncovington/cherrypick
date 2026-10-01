@@ -187,13 +187,17 @@ alone):
   credentials** — the one setting path is `python -m cherrypick.core.auth setup`; the console CLI's
   `set` prints that pointer, `probe` re-validates, `clear` touches only the pre-unification Node
   slots. Scope is detected per process by a dry-run probe, never persisted; a **read-only** refresh
-  token gets a loud warning, a read-only header chip, and every write-oriented function disables
+  token gets a loud warning, a read-only status-bar chip, and every write-oriented function disables
   itself. **No order-placement code path exists here**, and it never touches any module's
   `enable_live_trading`.
 
 ## Pages
 
-**Module frame.** Every page renders a persistent left rail and a content pane inside the shell.
+**Shell.** A top bar (menu, the futures ticker, the clock) and a bottom status bar (health chips,
+watchdog/session/morning phase, logs) are on every page; only the content between them scrolls.
+
+**Module frame.** Every page renders a left rail and a content pane inside the shell. The rail
+starts collapsed to its toggle; open or shut is the `navExpanded` console preference.
 `registry.ts`'s `MODULE_FRAMES` and `navGroups.ts`'s `NAV_DECL` are full `Record`s over `ModuleId`, so
 a page added to `moduleOrder.ts` without both does not compile. Advisor stays one page with its own
 four tabs, because its write actions are wired through page-spanning state (`navGroups.ts` says why).

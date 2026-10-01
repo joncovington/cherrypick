@@ -106,6 +106,13 @@ describe("the module frame", () => {
     expect(text(html)).toContain("Flies / forest");
   });
 
+  it("the rail starts collapsed: a toggle, with its links hidden rather than gone", () => {
+    const html = render("/flies/forest");
+    expect(html).toContain("mf-rail-collapsed");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toMatch(/<div id="mf-nav-links" hidden="">/);
+  });
+
   it("the bare module route opens on the first tab", () => {
     expect(text(render("/flies"))).toContain("Flies / session");
   });

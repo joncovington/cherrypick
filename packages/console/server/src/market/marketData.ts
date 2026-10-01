@@ -33,7 +33,7 @@ export class MarketDataService extends EventEmitter {
   private detachFeedListener: (() => void) | null = null;
   private lastFeedEventAt = 0;
   private reconnecting = false;
-  private ticks = new Map<string, { bid?: number; ask?: number; last?: number; ts: number }>();
+  private ticks = new Map<string, { bid?: number; ask?: number; last?: number; prevClose?: number; ts: number }>();
 
   constructor(private readonly config: ConsoleConfig) {
     super();
@@ -49,11 +49,21 @@ export class MarketDataService extends EventEmitter {
     this.emit("state", s);
   }
 
-  /** Snapshot for instant paint: last cached values from the Python streamer. */
+  /** Snapshot for instant paint: last cached values from the Python streamer, plus the prior
+   *  close this process already holds. DXLink sends a Summary once per upstream subscription, so a
+   *  second viewer of an already-subscribed symbol would otherwise wait for the next one. */
   snapshot(symbol: string): QuoteTick | null {
     const q = cachedQuote(this.config, symbol);
-    if (q === null) return null;
-    return { type: "tick", symbol, ...q, source: "cache", ts: Date.now() };
+    const prevClose = this.ticks.get(symbol)?.prevClose;
+    if (q === null && prevClose === undefined) return null;
+    return {
+      type: "tick",
+      symbol,
+      ...(q ?? {}),
+      ...(prevClose !== undefined ? { prevClose } : {}),
+      source: "cache",
+      ts: Date.now(),
+    };
   }
 
   /** Last tick this process saw for a symbol, if newer than maxAgeS — the
@@ -61,7 +71,7 @@ export class MarketDataService extends EventEmitter {
   recent(symbol: string, maxAgeS: number): { bid?: number; ask?: number; last?: number } | null {
     const t = this.ticks.get(symbol);
     if (t === undefined || Date.now() - t.ts > maxAgeS * 1000) return null;
-    const { ts: _ts, ...q } = t;
+    const { ts: _ts, prevClose: _prevClose, ...q } = t;
     return q;
   }
 
@@ -356,10 +366,14 @@ export class MarketDataService extends EventEmitter {
       const ask = numField("askPrice");
       const last = numField("price");
       const vol = numField("dayVolume");
+      // Summary only. Its `prevDayClosePrice` is the prior session's close (a future's settle);
+      // the same event's `dayClosePrice` is today's, unset until the close, and never read here.
+      const prevClose = numField("prevDayClosePrice");
       if (bid !== undefined) { tick.bid = bid; has = true; }
       if (ask !== undefined) { tick.ask = ask; has = true; }
       if (last !== undefined) { tick.last = last; has = true; }
       if (vol !== undefined) { tick.dayVolume = vol; has = true; }
+      if (prevClose !== undefined) { tick.prevClose = prevClose; has = true; }
       if (has) {
         this.lastFeedEventAt = tick.ts;
         // Bounded merge-memory; a full reset is fine — it refills from flow.
@@ -368,6 +382,7 @@ export class MarketDataService extends EventEmitter {
         if (bid !== undefined) cur.bid = bid;
         if (ask !== undefined) cur.ask = ask;
         if (last !== undefined) cur.last = last;
+        if (prevClose !== undefined) cur.prevClose = prevClose;
         cur.ts = tick.ts;
         this.ticks.set(symbol, cur);
         this.emit("tick", tick);

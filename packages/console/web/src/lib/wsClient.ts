@@ -4,6 +4,8 @@ export interface QuoteState {
   bid?: number;
   ask?: number;
   last?: number;
+  /** The prior session's close (a future's settle), from the feed's Summary event. */
+  prevClose?: number;
   source: "dxlink" | "cache";
   /** Direction of the most recent last/mid change, for tick flashes. */
   direction: "up" | "down" | null;
@@ -86,6 +88,7 @@ class WsClient {
       bid: tick.bid ?? prev?.bid,
       ask: tick.ask ?? prev?.ask,
       last: tick.last ?? prev?.last,
+      prevClose: tick.prevClose ?? prev?.prevClose,
       source: tick.source,
       direction: prev?.direction ?? null,
       ts: tick.ts,

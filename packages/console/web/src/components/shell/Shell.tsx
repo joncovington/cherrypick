@@ -1,5 +1,6 @@
 import { Outlet, useLocation } from "react-router-dom";
 import { StatusHeader } from "./StatusHeader";
+import { StatusBar } from "./StatusBar";
 import { ToastStack } from "./ToastStack";
 import { isModuleId } from "../../lightbox/moduleOrder";
 import { useBoolPref, usePrefsSync } from "../../lib/prefs";
@@ -33,6 +34,7 @@ export function Shell() {
           <Outlet />
         </div>
       </main>
+      <StatusBar />
       <ToastStack />
     </div>
   );
