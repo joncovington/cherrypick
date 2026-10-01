@@ -73,3 +73,42 @@ def test_the_warning_quotes_the_recorded_error_and_names_the_recheck():
     finding = _calendar_finding()
     assert finding is not None and finding.status == watchdog.WARN
     assert "ConnectionError: refused" in finding.message and "--recheck" in finding.message
+
+
+# --------------------------------------------------------------------------- compaction
+
+
+def _clone(tmp_path: Path, name: str, loose: int, archived: int = 1000) -> Path:
+    noms = tmp_path / name / ".dolt" / "noms"
+    (noms / "oldgen").mkdir(parents=True)
+    (noms / ("a" * 32)).write_bytes(b"x" * loose)  # a table file a pull left
+    (noms / "oldgen" / f"{'b' * 32}.darc").write_bytes(b"x" * archived)  # already compacted
+    (noms / "manifest").write_bytes(b"x" * 50)
+    return tmp_path / name
+
+
+def test_loose_bytes_counts_table_files_not_archives_or_the_manifest(tmp_path):
+    repo = _clone(tmp_path, "stocks", loose=700, archived=5000)
+    assert rdd.loose_bytes(repo) == 700
+    assert rdd.loose_bytes(tmp_path / "missing") == 0
+
+
+def test_only_a_clone_past_the_threshold_is_compacted(tmp_path):
+    _clone(tmp_path, "stocks", loose=900)
+    _clone(tmp_path, "earnings", loose=100)
+    ran = []
+    out = rdd.compact_loose(tmp_path, ["stocks", "earnings"], threshold=500, gc=ran.append)
+    assert ran == ["stocks"]
+    assert out["stocks"]["compacted"] is True and "before_bytes" in out["stocks"]
+    assert out["earnings"] == {"loose_bytes": 100, "compacted": False}
+
+
+def test_a_failed_compaction_is_recorded_not_raised(tmp_path):
+    _clone(tmp_path, "stocks", loose=900)
+
+    def boom(name):
+        raise RuntimeError("server busy")
+
+    out = rdd.compact_loose(tmp_path, ["stocks"], threshold=500, gc=boom)
+    assert out["stocks"]["compacted"] is False
+    assert out["stocks"]["error"] == "RuntimeError: server busy"

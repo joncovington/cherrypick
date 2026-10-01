@@ -20,6 +20,11 @@ The state file is what makes the staleness VISIBLE: `state/dolt_data.json` recor
 furthest date, and the watchdog reads that file (it is stdlib-and-files only, so it cannot query
 Dolt itself) to warn before the horizon runs out rather than after.
 
+After the pulls it compacts any clone whose loose storage has grown past a threshold (see
+`compact_loose`): each pull leaves uncompressed table files behind, and on 2026-10-01 the first
+compaction took `stocks` from 4.71 GB to 3.02 GB and `earnings` from 1.83 GB to 1.35 GB with the
+data unchanged.
+
     python scripts/refresh_dolt_data.py [--dry-run]
     python scripts/refresh_dolt_data.py --recheck   # re-read the calendar only
 """
@@ -114,6 +119,66 @@ def calendar_max_date(
     return None, error
 
 
+# Compaction. Dolt keeps a clone's history in compressed archives (`*.darc`); each pull adds
+# uncompressed table files beside them, plus its write journal, and nothing reclaims either until
+# a garbage collection rewrites them. Compacting only past a threshold makes it free on the days
+# there is nothing to reclaim, and impossible to fall behind a run of large pulls.
+COMPACT_LOOSE_BYTES = 500 * 1024 * 1024
+
+
+def loose_bytes(repo: Path) -> int:
+    """Bytes in a clone's storage that are not yet compacted: the 32-character, extensionless table
+    files and journal Dolt writes under `.dolt/noms`. Archives, the manifest and the lock are not."""
+    noms = repo / ".dolt" / "noms"
+    if not noms.is_dir():
+        return 0
+    total = 0
+    for f in noms.rglob("*"):
+        if f.is_file() and len(f.name) == 32 and "." not in f.name:
+            total += f.stat().st_size
+    return total
+
+
+def _storage_bytes(repo: Path) -> int:
+    return sum(f.stat().st_size for f in (repo / ".dolt").rglob("*") if f.is_file())
+
+
+def _gc_via_server(name: str) -> None:
+    """`CALL DOLT_GC()` on the running sql-server: the documented way to compact a clone a server is
+    serving. It rewrites storage, never data; the scanner reads the same rows before and after."""
+    import mysql.connector as _mysql
+
+    cn = _mysql.connect(host="127.0.0.1", port=3306, user="root", database=name, connection_timeout=30)
+    try:
+        cur = cn.cursor()
+        cur.execute("CALL DOLT_GC()")
+        cur.fetchall()
+    finally:
+        cn.close()
+
+
+def compact_loose(base: Path, names, threshold: int = COMPACT_LOOSE_BYTES, gc=_gc_via_server) -> dict:
+    """Compact each named clone whose loose storage exceeds `threshold`. Per clone: what was loose,
+    and when compacted, the storage before and after, how long it took, or why it failed. A failed
+    compaction leaves the clone as it was and is recorded, never raised: the pull already landed."""
+    out = {}
+    for name in names:
+        repo = base / name
+        loose = loose_bytes(repo)
+        rec = {"loose_bytes": loose, "compacted": False}
+        if loose > threshold:
+            before = _storage_bytes(repo)
+            t0 = time.monotonic()
+            try:
+                gc(name)
+                rec.update({"compacted": True, "before_bytes": before, "after_bytes": _storage_bytes(repo)})
+            except Exception as exc:  # noqa: BLE001 -- recorded; the data and the pull are unaffected
+                rec["error"] = f"{type(exc).__name__}: {exc}"
+            rec["seconds"] = round(time.monotonic() - t0, 1)
+        out[name] = rec
+    return out
+
+
 def _write_state(payload: dict) -> None:
     path = _home.state_dir() / STATE_NAME
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -161,9 +226,13 @@ def main(argv=None) -> int:
             results[name] = _pull(base / name)
 
     max_date, error = calendar_max_date()
+    # After the calendar read, so a compaction can never delay the number the watchdog acts on; and
+    # only for clones that pulled cleanly -- a failed pull is the thing to look at, not its storage.
+    compaction = {} if args.dry_run else compact_loose(base, [n for n, r in results.items() if r.get("ok")])
     payload = {
         "refreshed_at": datetime.now(UTC).isoformat(),
         "databases": results,
+        "compaction": compaction,
         # The one number the watchdog acts on: past this date the scanner has nothing to scan.
         "earnings_calendar_max_date": max_date,
         "earnings_calendar_error": error,
