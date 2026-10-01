@@ -247,6 +247,17 @@ def test_dry_run_entry_places_nothing_live_and_leaves_the_ledger_empty(tmp_path)
     assert _open_trades(db_path, "XSP") == []
 
 
+def test_live_takes_no_entry_on_a_quarter_end_session(tmp_path):
+    """All day on the last trading day of a quarter: nothing placed, the reason named. The shared
+    `paper.evaluate_entry` is untouched -- its own quarterly rules are partial-day."""
+    db_path = _init_db(tmp_path)
+    broker = FakeBroker()
+    snap = _entry_snapshot(date="2026-12-31", expiration="2026-12-31")
+    summary = live_loop.run_once(_config(), snap, db_path, broker, live=True, log=lambda *_: None)
+    assert summary["entry"]["reason"] == "quarter_end_no_new_entries"
+    assert broker.placed == []
+
+
 def test_live_entry_records_the_real_order_id(tmp_path):
     db_path = _init_db(tmp_path)
     broker = FakeBroker()

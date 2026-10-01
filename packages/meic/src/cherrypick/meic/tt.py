@@ -37,7 +37,9 @@ from typing import Any
 sys.path.insert(0, os.path.dirname(__file__))
 
 from cherrypick.core import broker as _broker
+from cherrypick.core import calendar as _cal
 from cherrypick.core import dxfeed as _dx
+from cherrypick.core import live as _live
 
 # One ET for the suite — see cherrypick.core.clock.
 from cherrypick.core.clock import ET as _ET
@@ -1009,6 +1011,18 @@ def _build_order(spec: dict):
     return _broker.build_order(spec)
 
 
+def _quarter_end_today() -> bool:
+    """Is today (ET) the last trading day of a quarter? A seam, so the test suite's live-submit
+    tests are not refused on a real quarter end (tests/conftest.py)."""
+    return _cal.is_quarterly_expiry(datetime.now(_ET).date())
+
+
+def _opens_position(spec: dict) -> bool:
+    """Whether an order spec opens anything: any leg whose action is "... to open"
+    (`core.broker.build_order`'s human action strings)."""
+    return any("to open" in str(leg.get("action", "")).lower() for leg in spec.get("legs") or [])
+
+
 async def cmd_execute_trade(args) -> dict:
     if not _live_trading_enabled() and not getattr(args, "dry_run", True):
         return {
@@ -1023,6 +1037,15 @@ async def cmd_execute_trade(args) -> dict:
     ext = str(spec.get("external_identifier") or f"meic-{uuid.uuid4().hex}")
     spec["external_identifier"] = ext
     dry_run = getattr(args, "dry_run", True) or not _live_trading_enabled()
+    # No new live position on the last trading day of a quarter (2026-09-30). This is the agent
+    # path's one door to the broker, and it also flattens positions, so only an OPENING order is
+    # refused -- a close must always get through. The dry-run preflight still runs: it places nothing.
+    if not dry_run and _opens_position(spec) and _quarter_end_today():
+        return {
+            "ok": False,
+            "reason": _live.QUARTER_END_REASON,
+            "error": "Quarter-end session: no new live entries today. Closing orders are unaffected.",
+        }
     account = None
     try:
         account = await _get_account(getattr(args, "account_number", None))

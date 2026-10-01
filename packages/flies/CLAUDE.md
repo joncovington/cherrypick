@@ -459,6 +459,11 @@ talkative as a human reader needs.
   `triple_witching_no_new_entries` — MEIC's rule and reason string, verbatim). On 2026-09-18 every
   afternoon entry across paper and live settled through its short strike uncompleted while every
   morning entry completed. First binding session 2026-12-18; journaled as a break on both ledgers.
+- **No new LIVE entry on a quarter-end session, all day** (`core.calendar.is_quarterly_expiry`,
+  refusal `core.live.QUARTER_END_REASON`). In `live_loop.run_once`'s entry step, never the engine,
+  so paper trades the day; fills, completions and settlement still run. Arming is allowed and says
+  so (`warning` in the `--install-task` JSON; the watchdog posts it to Discord). First binding
+  session 2026-12-31; journaled on the live ledger.
 - **SPX/XSP only** — European cash-settled, so early exercise is structurally impossible. Cash
   exercise/assignment at expiry is not free: tastytrade charges **$5 per ITM STRIKE** — per distinct
   settling option symbol, not per contract — so a completed fly pays at most 3 charges. Modeled

@@ -62,6 +62,9 @@ DEFAULT_CANCEL_AFTER_MIN = 20
 DEFAULT_WATCH_SECONDS = 30
 DEFAULT_WATCH_POLL_SECONDS = 10
 ARMED_BY = "live-bwb-start"
+# No new live risk on the last trading day of a quarter (core.calendar.is_quarterly_expiry,
+# 2026-09-30): the entry and the add-on both refuse under core's one spelling.
+QUARTER_END_REASON = _live.QUARTER_END_REASON
 
 _logger = logging.getLogger("bwb_live_loop")
 
@@ -646,6 +649,9 @@ def _try_live_entry(
 
     if now_min < entry_time_min(config) or now_min >= entry_cutoff_min(config):
         return {"entry": "outside_window"}
+    # Live-only: paper plans its entries in paper_loop and never reaches this function.
+    if _cal.is_quarterly_expiry(when.date()):
+        return refuse(QUARTER_END_REASON)
     per_day = int(live_cfg.get("max_structures_per_day", 1))
     if db.established_today(conn, arm, day) >= per_day:
         return {"entry": "done", "reason": "max_structures_per_day_reached"}
@@ -831,6 +837,20 @@ def _make_fire(broker, config: dict, *, live: bool, day: str, when: datetime, lo
         pid = position["position_id"]
         symbol = position["symbol"]
         if position.get("addon_fill_status") == "pending" or position.get("addon_order_id"):
+            return False
+        # An add-on is new risk, so it waits out a quarter-end session like an entry. Deferred, not
+        # lost: the trigger stays armed on the position and fires on the next session's first
+        # credit tick. The paper books fire on their own schedule, untouched.
+        if _cal.is_quarterly_expiry(when.date()):
+            db.record_decision(
+                conn,
+                trade_date=day,
+                arm=position["arm"],
+                symbol=symbol,
+                mode="addon",
+                reason=QUARTER_END_REASON,
+                accepted=False,
+            )
             return False
         if state["placed_this_tick"] >= 1:
             db.record_decision(

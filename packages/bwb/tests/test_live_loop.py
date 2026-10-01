@@ -361,6 +361,29 @@ def test_margin_caps_refuse_with_the_numbers_and_reserve_the_addon_for_a_firing_
     assert out["entry"]["entry"] == "placed"
 
 
+def test_a_quarter_end_session_takes_no_live_entry(live_config, conn, cache, planned):
+    """The last trading day of a quarter refuses the live entry, journaled under core's reason."""
+    broker = FakeBroker()
+    out = _tick(live_config, conn, broker, cache, when=datetime(2026, 9, 30, 10, 5))
+    assert out["entry"]["reason"] == live_loop.QUARTER_END_REASON
+    assert broker.placed == []
+    assert ("entry", live_loop.QUARTER_END_REASON, 0) in _decisions(conn, "entry")
+
+
+def test_a_quarter_end_session_defers_a_live_add_on(live_config, conn):
+    """An add-on is new risk: on a quarter-end session the fire hook places nothing and reports not
+    fired, so the trigger stays armed for the next session."""
+    broker = FakeBroker()
+    fire = live_loop._make_fire(
+        broker, live_config, live=True, day="2026-09-30", when=datetime(2026, 9, 30, 11, 0),
+        log=lambda *_: None, placed={},
+    )  # fmt: skip
+    position = {"position_id": "SPX:control:2026-09-28:1", "symbol": "SPX", "arm": "control"}
+    assert fire(conn, position, {}, {}) is False
+    assert broker.placed == []
+    assert ("addon", live_loop.QUARTER_END_REASON, 0) in _decisions(conn, "addon")
+
+
 def test_the_mark_drawdown_breaker_blocks_the_next_entry_and_touches_no_position(
     live_config, conn, cache, planned
 ):

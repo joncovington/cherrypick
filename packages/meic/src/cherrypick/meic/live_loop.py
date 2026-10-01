@@ -58,8 +58,10 @@ import os
 import sys
 from datetime import datetime
 
+from cherrypick.core import calendar as _cal  # noqa: E402
 from cherrypick.core import execution as _execution  # noqa: E402
 from cherrypick.core import home as _home  # noqa: E402
+from cherrypick.core import live as _live  # noqa: E402
 
 from cherrypick.meic import credentials as _creds  # noqa: E402
 from cherrypick.meic import (
@@ -341,6 +343,10 @@ def _manage_entry(
     `paper.evaluate_entry` (the exact function paper_loop calls); on a real fill, builds the
     ic_trades row via `paper.synthetic_entry_fill` and overrides the synthetic order id / net
     credit with what was actually submitted before saving."""
+    # No new live IC on the last trading day of a quarter, all day (2026-09-30). Here and not in
+    # `paper.evaluate_entry`, which paper shares: its own quarterly rule is a partial-day one.
+    if _cal.is_quarterly_expiry(_cal.date.fromisoformat(str(snapshot["date"]))):
+        return {"entry": "skipped", "reason": _live.QUARTER_END_REASON}
     open_ics = paper._get_open_trades(symbol, EXECUTION_MODE, snapshot["date"], db_path)
     if len(open_ics) >= params["max_concurrent_ics"]:
         return {"entry": "skipped", "reason": "max_concurrent_ics_reached"}

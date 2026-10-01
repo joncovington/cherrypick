@@ -186,3 +186,38 @@ def _cfg():
         "eod_insight": {"enabled": False},
         "modules": {},
     }
+
+
+# --------------------------------------------------------------------- quarter-end live warning
+def _armed(tmp_path, monkeypatch, module, day):
+    monkeypatch.setattr(cfgmod, "STATE_DIR", tmp_path)
+    (tmp_path / f"{module}-live-arm.json").write_text(
+        json.dumps({"date": day, "at": "t", "armed_by": f"live-{module}-start"}), encoding="utf-8"
+    )
+
+
+def test_a_loop_armed_on_a_quarter_end_session_is_a_warning(monkeypatch, tmp_path):
+    """WARN reaches Discord through the notify channels: the operator who armed it is told the
+    day will place nothing new."""
+    _armed(tmp_path, monkeypatch, "flies", "2026-09-30")
+    findings = wd._check_quarter_end_live({}, datetime(2026, 9, 30, 9, 40, tzinfo=_ET))
+    assert [(f.key, f.status) for f in findings] == [("flies.live_quarter_end", wd.WARN)]
+    assert "NO new entries" in findings[0].message
+
+
+def test_an_armed_loop_on_an_ordinary_session_raises_nothing(monkeypatch, tmp_path):
+    _armed(tmp_path, monkeypatch, "flies", "2026-09-29")
+    assert wd._check_quarter_end_live({}, datetime(2026, 9, 29, 9, 40, tzinfo=_ET)) == []
+
+
+def test_meic_live_by_its_flag_on_a_quarter_end_session_is_a_warning(monkeypatch, tmp_path):
+    """MEIC has no arm record: its own `enable_live_trading` is the armed signal."""
+    monkeypatch.setattr(cfgmod, "STATE_DIR", tmp_path)
+    from cherrypick.orchestrator import liveops
+
+    monkeypatch.setattr(liveops, "_live_enabled", lambda name, root: (name == "meic", None))
+    cfg = {
+        "modules": {"meic": {"enabled": True, "path": "../meic"}, "earnings": {"enabled": True, "path": "x"}}
+    }
+    findings = wd._check_quarter_end_live(cfg, datetime(2026, 9, 30, 9, 40, tzinfo=_ET))
+    assert [f.key for f in findings] == ["meic.live_quarter_end"]

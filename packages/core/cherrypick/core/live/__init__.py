@@ -33,7 +33,36 @@ __all__ = [
     "supervisor_heartbeat_fresh",
     "arm",
     "disarm",
+    "quarter_end_warning",
+    "QUARTER_END_REASON",
 ]
+
+# The refusal every live loop records on the last trading day of a quarter, when it takes no new
+# entry at all (flies, bwb, meic; 2026-09-30). One spelling, so a journal query finds all three.
+QUARTER_END_REASON = "quarter_end_no_new_entries"
+
+
+def quarter_end_warning(day: str) -> str | None:
+    """The arm-time warning for a live loop armed on the last trading day of a quarter, else None.
+
+    Arming is allowed on such a day -- fills, resting orders and settlement still need the loop --
+    but every live loop refuses new entries all day (2026-09-30), so an operator arming one must be
+    told that the day will place nothing new. The watchdog raises the same fact to Discord off the
+    arm record; this is the copy the arming command prints."""
+    from datetime import date as _date
+
+    from cherrypick.core import calendar as _cal
+
+    try:
+        if not _cal.is_quarterly_expiry(_date.fromisoformat(str(day))):
+            return None
+    except ValueError:
+        return None
+    return (
+        f"{day} is the last trading day of the quarter: the live loop is armed, but it will place "
+        "NO new entries today. Fills, resting orders and settlement still run."
+    )
+
 
 SUPERVISOR_HEARTBEAT = "supervisor.last.json"
 
@@ -130,13 +159,17 @@ def arm(
             spawn_first_tick()
         except OSError:
             pass  # the next scheduled tick covers it
-    return {
+    out = {
         "ok": True,
         "driver": "supervisor",
         "cadence": f"every tick_interval (supervisor job {module}-live)",
         "armed_for": date,
         "detail": f"arm record written: {path}",
     }
+    warning = quarter_end_warning(date)
+    if warning is not None:
+        out["warning"] = warning
+    return out
 
 
 def disarm(module: str, *, legacy_paths: Iterable[str | Path] = ()) -> dict:

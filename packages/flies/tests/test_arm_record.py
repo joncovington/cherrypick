@@ -55,6 +55,24 @@ def test_arm_under_supervisor_writes_record_and_never_touches_schtasks(
     assert spawned and spawned[0][-2:] == ["--once", "--live"]
 
 
+@pytest.mark.parametrize("day,warned", [("2026-12-31", True), ("2026-12-30", False)])
+def test_arming_on_a_quarter_end_session_arms_and_says_no_entries_today(
+    fresh_supervisor_heartbeat, no_schtasks, monkeypatch, day, warned
+):
+    """Arming is allowed (fills, resting orders and settlement still need the loop), but the
+    command's own output must say the day will place nothing new."""
+    from zoneinfo import ZoneInfo
+
+    monkeypatch.setattr(ll.subprocess, "Popen", lambda argv, **kw: None)
+    when = datetime.fromisoformat(f"{day}T09:00:00").replace(tzinfo=ZoneInfo("America/New_York"))
+    monkeypatch.setattr(ll.provider, "now_et", lambda: when)
+    out = ll.install_task()
+    assert out["ok"] and out["armed_for"] == day
+    assert ("warning" in out) is warned
+    if warned:
+        assert "NO new entries" in out["warning"]
+
+
 def test_disarm_removes_record_and_legacy_stamp(fresh_supervisor_heartbeat, monkeypatch):
     monkeypatch.setattr(ll.subprocess, "Popen", lambda argv, **kw: None)
     monkeypatch.setattr(ll, "task_installed", lambda: False)

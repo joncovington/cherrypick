@@ -1954,6 +1954,27 @@ def test_live_tick_takes_no_entry_on_an_early_close_session(live_conn):
     assert summary["entered"] == 1
 
 
+def test_live_tick_takes_no_entry_on_a_quarter_end_session(live_conn):
+    """The last trading day of a quarter places no new live entry, all day, and says why; the day
+    before enters. Live-only: the engine paper shares still admits the same snapshot. Dated to a
+    past quarter end so the real today can never coincide with it (see conftest)."""
+    quarter_end = "2026-06-30"
+    broker = FakeBroker()
+    summary = live_loop.run_once(
+        _loop_cfg(), _snapshot(date=quarter_end), live_conn, broker, live=True, log=lambda *_: None
+    )
+    assert summary["entered"] == 0
+    assert broker.placed == []
+    row = live_conn.execute("SELECT reason FROM fly_decisions WHERE mode = 'entry'").fetchone()
+    assert row["reason"] == live_loop.QUARTER_END_REASON
+    params = live_loop._merged_live_params(_loop_cfg(), "control")
+    assert engine.evaluate_credit_spread_entry(_snapshot(date=quarter_end), params, [])[0]
+    summary = live_loop.run_once(
+        _loop_cfg(), _snapshot(date="2026-06-29"), live_conn, FakeBroker(), live=True, log=lambda *_: None
+    )
+    assert summary["entered"] == 1
+
+
 def test_live_start_overrides_the_arms_and_only_ever_later(live_conn):
     """Shown to fail: a live start of 10:30 refuses a 10:20 tick that the arm's own window admits,
     admits 10:31, never moves the start EARLIER than the arm's floor, and is off when unset."""

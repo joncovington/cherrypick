@@ -91,3 +91,18 @@ def test_supervisor_heartbeat_freshness():
     assert not live.supervisor_heartbeat_fresh()
     (state / live.SUPERVISOR_HEARTBEAT).write_text("not json", encoding="utf-8")
     assert not live.supervisor_heartbeat_fresh()
+
+
+def test_arming_on_a_quarter_end_session_carries_the_warning():
+    """Arming still succeeds on the last trading day of a quarter; the result says no new entries."""
+    _fresh_heartbeat()
+    out = live.arm("bwb", date="2026-12-31", at="t", armed_by="live-bwb-start")
+    assert out["ok"] and "NO new entries" in out["warning"]
+    out = live.arm("bwb", date="2026-12-30", at="t", armed_by="live-bwb-start")
+    assert out["ok"] and "warning" not in out
+
+
+def test_quarter_end_warning_is_the_calendar_rule():
+    assert live.quarter_end_warning("2026-09-30") is not None
+    assert live.quarter_end_warning("2026-09-29") is None
+    assert live.quarter_end_warning("not a date") is None

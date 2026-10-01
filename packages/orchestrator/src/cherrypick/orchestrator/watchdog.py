@@ -846,6 +846,44 @@ def _streamer_churn_finding(label: str, status: dict[str, Any]) -> Finding | Non
     return finding
 
 
+# The live loops that take no new entry on the last trading day of a quarter (2026-09-30), by how
+# each is armed: flies and bwb by a per-day arm record, meic by its own `enable_live_trading` flag.
+QUARTER_END_ARMED_BY_RECORD = ("flies", "bwb")
+QUARTER_END_ARMED_BY_FLAG = ("meic",)
+
+
+def _check_quarter_end_live(cfg: dict[str, Any], now: datetime) -> list[Finding]:
+    """A live loop armed on a quarter-end session: WARN, which reaches Discord through the notify
+    channels (renotified per `renotify_minutes` while it holds). The loops refuse every new entry
+    that day on their own; this tells whoever armed one that the day will place nothing new. Read
+    off files only -- the arm records and the module's own config -- never by importing a module."""
+    from cherrypick.core import calendar as _cal
+    from cherrypick.core import live as _live
+
+    from . import liveops
+
+    today = now.date()
+    if not _cal.is_quarterly_expiry(today):
+        return []
+    warning = _live.quarter_end_warning(today.isoformat()) or ""
+    armed = [m for m in live_armed_modules(now) if m in QUARTER_END_ARMED_BY_RECORD]
+    for name, mcfg in cfgmod.enabled_modules(cfg).items():
+        if (
+            name in QUARTER_END_ARMED_BY_FLAG
+            and liveops._live_enabled(name, cfgmod.module_root(mcfg, name))[0]
+        ):
+            armed.append(name)
+    return [
+        Finding(
+            f"{name}.live_quarter_end",
+            WARN,
+            f"{name.upper() if len(name) <= 4 else name.capitalize()} LIVE armed on a quarter-end session",
+            warning,
+        )
+        for name in armed
+    ]
+
+
 def live_armed_modules(now: datetime | None = None) -> list[str]:
     """Modules whose live arm record is valid right now (dated today in ET, before its disarm time
     plus grace) -- the same test the supervisor uses to enable a `<module>-live` job, read off the
@@ -2109,6 +2147,18 @@ def run(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
                     f"{type(exc).__name__}: {exc}",
                 )
             )
+
+    try:
+        findings += _check_quarter_end_live(cfg, now)
+    except Exception as exc:
+        findings.append(
+            Finding(
+                "live_quarter_end.error",
+                WARN,
+                "Quarter-end live check failed",
+                f"{type(exc).__name__}: {exc}",
+            )
+        )
 
     # The supervisor + its anchor task (skips itself entirely on a pre-cutover box).
     try:

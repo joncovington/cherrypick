@@ -22,3 +22,16 @@ def managed_home(tmp_path, monkeypatch):
     monkeypatch.delenv("FLIES_DB_PATH", raising=False)
     monkeypatch.delenv("FLIES_CONFIG", raising=False)
     return home
+
+
+@pytest.fixture(autouse=True)
+def todays_date_is_not_a_quarter_end(monkeypatch):
+    """The live tests date their fixtures to the real today (run_watch and run_settle_live resolve
+    "today" themselves), so on a real quarter end the live gate refused every one of them -- the
+    suite went red on 2026-09-30, the day the gate landed. The real today is pinned off; a test that
+    dates its snapshot to a quarter end still meets the gate exactly."""
+    from cherrypick.flies import live_loop, provider
+
+    today = provider.now_et().date().isoformat()
+    real = live_loop._quarter_end
+    monkeypatch.setattr(live_loop, "_quarter_end", lambda day: str(day) != today and real(day))

@@ -449,6 +449,47 @@ def test_cmd_execute_trade_blocks_live_when_disabled(monkeypatch):
     }
 
 
+def _quarter_end_order(action):
+    return json.dumps(
+        {"legs": [{"symbol": "XSP_C", "instrument_type": "Equity Option", "action": action, "quantity": 1}]}
+    )
+
+
+def test_cmd_execute_trade_refuses_a_live_open_on_a_quarter_end_session(monkeypatch):
+    """The agent path's one door to the broker: an opening order is refused before any account is
+    read, and says why."""
+    monkeypatch.setattr(tt, "_live_trading_enabled", lambda: True)
+    monkeypatch.setattr(tt, "_quarter_end_today", lambda: True)
+
+    async def _no_account(account_number=None):
+        raise AssertionError("a refused open must never reach the account")
+
+    monkeypatch.setattr(tt, "_get_account", _no_account)
+    args = type(
+        "Args", (), {"dry_run": False, "order": _quarter_end_order("Sell to Open"), "account_number": None}
+    )()
+    result = asyncio.run(tt.cmd_execute_trade(args))
+    assert result["ok"] is False and result["reason"] == "quarter_end_no_new_entries"
+
+
+def test_cmd_execute_trade_lets_a_live_close_through_on_a_quarter_end_session(monkeypatch):
+    """A close must always get through: flattening is not a new entry."""
+    monkeypatch.setattr(tt, "_live_trading_enabled", lambda: True)
+    monkeypatch.setattr(tt, "_quarter_end_today", lambda: True)
+    reached = []
+
+    async def _account(account_number=None):
+        reached.append(True)
+        raise RuntimeError("stop here")
+
+    monkeypatch.setattr(tt, "_get_account", _account)
+    args = type(
+        "Args", (), {"dry_run": False, "order": _quarter_end_order("Buy to Close"), "account_number": None}
+    )()
+    asyncio.run(tt.cmd_execute_trade(args))
+    assert reached, "a closing order must proceed to the broker on a quarter-end session"
+
+
 def test_cmd_execute_trade_dry_run_returns_without_submitting(monkeypatch):
     order_spec = {
         "price": 1.0,

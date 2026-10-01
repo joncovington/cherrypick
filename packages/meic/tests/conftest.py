@@ -63,3 +63,13 @@ def _isolated_home(tmp_path_factory, monkeypatch):
     for leaked in ("MEIC_DATA_DIR", "MEIC_LOGS_DIR", "MARKETDATA_DATA_DIR", "CHERRYPICK_MODULES_HOME"):
         monkeypatch.delenv(leaked, raising=False)
     return home
+
+
+@pytest.fixture(autouse=True)
+def _today_is_not_a_quarter_end(monkeypatch):
+    """`tt execute_trade --live` refuses opening orders on a quarter end by the real clock, so the
+    live-submit tests went red on 2026-09-30, the day that guard landed. Pinned off here; the guard's
+    own tests pin it on."""
+    from cherrypick.meic import tt
+
+    monkeypatch.setattr(tt, "_quarter_end_today", lambda: False)

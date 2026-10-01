@@ -105,6 +105,16 @@ _NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 DEFAULT_SETTLE = "16:20"
 DEFAULT_DISARM = "17:00"
+# The live-only end-of-quarter refusal (core.calendar.is_quarterly_expiry), core's one spelling.
+QUARTER_END_REASON = _live.QUARTER_END_REASON
+
+
+def _quarter_end(day: str) -> bool:
+    """Is `day` the last trading day of a quarter? A seam so the test suite, whose live fixtures are
+    dated the real today, does not refuse every entry on a real quarter end (tests/conftest.py)."""
+    return _cal.is_quarterly_expiry(_cal.date.fromisoformat(str(day)))
+
+
 DEFAULT_CUTOFF = "15:30"
 DEFAULT_WATCH_SECONDS = 60
 DEFAULT_WATCH_POLL_SECONDS = 10
@@ -793,8 +803,16 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
     # one-incomplete-at-a-time rule, freeing the slot never re-opens the day's budget. This is
     # the rung-1 throttle: set 1 for the plan doc's strict one-structure-per-day posture.
     day_capped = False
+    # No new live entry on the last trading day of a quarter (2026-09-30), all day. Live-only by
+    # construction: paper enters through book.py, never here, so the paper books keep measuring the
+    # day. Everything above this step -- fills, resting orders, completions -- still runs, and
+    # settlement is its own path. Applied on the dry run too, so the rehearsal says what live does.
+    if _quarter_end(day):
+        day_capped = True
+        summary["skips"].append({"entry": "quarter-end session: no new live entries"})
+        journal("entry", QUARTER_END_REASON, center=wanted_center)
     day_cap = live_cfg.get("max_structures_per_day")
-    if live and day_cap:
+    if live and day_cap and not day_capped:
         established = conn.execute(
             "SELECT COUNT(*) FROM fly_positions WHERE trade_date = ? AND arm = ? AND status != 'cancelled'",
             (day, arm),
@@ -1638,7 +1656,7 @@ def install_task() -> dict:
         subprocess.run(
             ["schtasks", "/Run", "/TN", _TASK_NAME], capture_output=True, text=True, creationflags=_NO_WINDOW
         )
-    return {
+    out = {
         "ok": ok,
         "driver": "schtasks",
         "task": _TASK_NAME,
@@ -1647,6 +1665,10 @@ def install_task() -> dict:
         "battery": battery,
         "detail": (r.stdout or r.stderr).strip(),
     }
+    warning = _live.quarter_end_warning(armed_for) if ok else None
+    if warning is not None:
+        out["warning"] = warning
+    return out
 
 
 def uninstall_task() -> dict:

@@ -87,6 +87,10 @@ confirmation, a current status readout, and a visible way to stop.
      It self-exits at `disarm_time`. If it fails to start, say so and CONTINUE — the loop
      confirms fills without it (just later); a failed daemon never blocks arming.
 
+   **If the JSON carries a `warning`, report it first and prominently.** Today it means a
+   quarter-end session: arming succeeded, but the loop places no new entries all day (fills,
+   resting orders and settlement still run), and the watchdog posts the same warning to Discord.
+
 5. **Verify + report**: confirm `--status` now shows `armed_for` = today, and (supervisor-driven)
    that `python packages/orchestrator/run.py status` shows the `flies-live` job enabled with a
    future `next_run`. Then report: the driver (supervisor job or legacy task), the armed-for

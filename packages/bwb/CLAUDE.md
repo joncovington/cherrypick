@@ -159,6 +159,10 @@ Built to test whether the paper result survives a fill without disturbing the pa
   per-expiration worst-case margin caps from expiry payoffs, RESERVING an unfired position's future
   add-on whenever the arm can fire; the settled-net breaker; and the mark-drawdown breaker, which
   blocks the NEXT entry only, never an exit.
+- **No new live risk on a quarter-end session** (`core.calendar.is_quarterly_expiry`, refusal
+  `core.live.QUARTER_END_REASON`): the entry refuses, and an armed add-on is deferred (not lost: it
+  fires on the next session's first credit tick). Paper is untouched; arming warns. First binding
+  session 2026-12-31, journaled on the live ledger.
 - **Every fill is the broker's word.** An entry row is born `pending` (not marked or managed); the
   actual credit overwrites the modelled one on confirmation, realised slippage is measured against
   the mid at submission, and a terminal order leaves a `cancelled` row. The add-on records only a

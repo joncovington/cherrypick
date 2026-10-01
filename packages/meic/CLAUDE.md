@@ -574,6 +574,9 @@ side, own status/exit/P&L), `daily_summary` (key `summary_date`), `loop_log` (ap
    **Quarterly expiry hard stops** (`quarterly_expiry_dates` / `triple_witching_dates`): (a) no entries
    in open_volatile; (b) call OTM ≥ 0.0067; (c) halt entries for the session once intraday range exceeds
    0.5% of spot; (d) on triple witching, no entries after 12:30 and force-close all by 14:00.
+   (e) **Live only: no new entry all day on a quarterly expiry** (the last trading day of a quarter,
+   2026-09-30). `tt execute_trade --live` refuses any opening order that day with
+   `quarter_end_no_new_entries`; closes still go through. Paper keeps (a)-(c) and trades the day.
 
    **Regime gate (ICs only)**: `trending_regime` rejects IC entries for this symbol this iteration. A
    VIX pause hits every symbol; ATR and GEX pauses are symbol-specific. Log reason and metric. ORB is

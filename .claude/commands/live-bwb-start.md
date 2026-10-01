@@ -87,6 +87,11 @@ means several live positions ride at once under `max_open_margin_dollars`.
      and fires the first tick immediately. A refusal (`ok: false`, no supervisor) is final: report
      it, do not work around it.
 
+   **If the JSON carries a `warning`, report it first and prominently.** Today it means a
+   quarter-end session: arming succeeded, but the loop places no new entry and fires no add-on all
+   day (fills, resting orders and settlement still run), and the watchdog posts the same warning
+   to Discord.
+
 5. **Verify + report**: confirm `--status` now shows `armed_for` = today, and that
    `python packages/orchestrator/run.py status` shows the `bwb-live` job enabled with a future
    `next_run`. Then report: the armed-for date, the arm, the self-disarm time, the log to watch
