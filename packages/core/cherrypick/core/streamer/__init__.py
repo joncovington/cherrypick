@@ -572,7 +572,9 @@ class ChainStreamer:
                                 # The session the event DESCRIBES, not the day it arrived: every
                                 # subscribe resends the last session, and receipt-keying filed
                                 # that snapshot under the next day (`summary_session_date`).
-                                streamcache.summary_session_date(getattr(event, "day_id", None), _et_date(ts)),
+                                streamcache.summary_session_date(
+                                    getattr(event, "day_id", None), _et_date(ts)
+                                ),
                                 streamcache.to_float(getattr(event, "day_open_price", None)),
                                 high,
                                 low,
@@ -705,18 +707,21 @@ class ChainStreamer:
             self.log.info("Backfilling daily history %s from %s", deficits, start.date().isoformat())
             await streamer.subscribe_candle(list(deficits), interval="1d", start_time=start)
             bars: dict[str, list[dict]] = {}
-            listener = streamer.listen(Candle).__aiter__()
             deadline = time.monotonic() + _HISTORY_MAX_WAIT_S
             try:
                 while time.monotonic() < deadline:
+                    # One get_event per wait, never wait_for around a listen() generator's
+                    # __anext__: the timeout cancels the GENERATOR, every later __anext__ raises
+                    # StopAsyncIteration, and a first candle slower than the quiet gap ended the
+                    # backfill with nothing while the deadline below never got a say.
                     try:
-                        event = await asyncio.wait_for(listener.__anext__(), timeout=_HISTORY_QUIET_GAP_S)
+                        event = await asyncio.wait_for(
+                            streamer.get_event(Candle), timeout=_HISTORY_QUIET_GAP_S
+                        )
                     except TimeoutError:
                         if bars:
                             break  # the burst has gone quiet — history is delivered front-loaded
                         continue  # nothing yet; keep waiting until the deadline
-                    except StopAsyncIteration:
-                        break
                     base = str(event.event_symbol or "").split("{", 1)[0]
                     if base not in deficits:
                         continue

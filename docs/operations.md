@@ -79,7 +79,7 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `review-provisional` | daily **16:30**, trading days | `run.py review --provisional` | on | see below |
 | `review-final` | daily **10:15**, trading days | `run.py review --final` | on | finalises the prior session and re-runs reconciliation |
 | `review-narrative` | daily **10:45**, trading days | `scripts/eod_narrative.py` | off, needs `claude` | the agent-written note, beside the facts, never inside them |
-| `market-files` / `market-files-retry` | daily **18:45** / **07:45**, trading days | `scripts/fetch_market_files.py fetch` | on | the files the morning pack reads |
+| `market-files` / `market-files-retry` | daily **18:45** / **07:45**, trading days | `scripts/fetch_market_files.py fetch` | on | the files the morning pack reads, OCC's option volume included |
 | `earnings-moves` | daily **18:40**, trading days | `scripts/fetch_earnings_moves.py` | on | |
 | `fetch-headlines` | daily **08:45**, trading days | `scripts/fetch_headlines.py` | on | |
 | `futures-contracts` | daily **08:45**, trading days | `scripts/refresh_futures_contracts.py` | on | |
@@ -96,6 +96,7 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `advisor-<slot>` | as configured — **none by default** | `scripts/advisor_checkpoint.py --slot <s>` | off | optional light intraday checkpoints, declared in `advisor.checkpoints` |
 | `reconcile` | daily **16:30** | `run.py reconcile --scheduled` | off | worth turning on once anything trades live |
 | `suite-backup` | daily **01:30** | `run.py backup` | on | one zip at `backup.dest`; `doctor` warns past 36 h |
+| `config-backup` | every `config_backup.interval_minutes` (15) | `run.py config-backup` | **off** (opt in) | commits the config files the home repo's allow-list tracks and pushes to its remote; `doctor` warns when on but not set up or failing |
 | `log-archive` | monthly, day 1 @ **03:30** | `run.py archive` | on | catchup 7 days (idempotent, finished months only) |
 
 Missed-fire policy after sleep/hibernate: interval jobs fire once immediately and resume cadence

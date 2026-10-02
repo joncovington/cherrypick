@@ -246,12 +246,14 @@ them; `python run.py capabilities` shows the resolved view, `--detect --write` p
 
 ### 1. Install
 
-On **Windows**, download or clone the repository and double-click **`install.cmd`**. On **macOS or
-Linux**:
+Install from the [latest release](https://github.com/joncovington/cherrypick/releases/latest), not from
+`main`, which is where development happens. On **Windows**, download the release's ZIP (or clone and
+check out the release, as below) and double-click **`install.cmd`**. On **macOS or Linux**:
 
 ```bash
 git clone https://github.com/joncovington/cherrypick.git
 cd cherrypick
+git checkout "$(git describe --tags --abbrev=0 origin/main)"   # the latest release
 ./install.sh
 ```
 

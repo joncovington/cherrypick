@@ -20,7 +20,7 @@ def _cfg(data_dir="~/.cherrypick/data/earnings"):
                     "dolt_service": {"task_name": "cherrypick-earnings-dolt", "data_dir": data_dir},
                 },
             }
-        }
+        },
     }
 
 

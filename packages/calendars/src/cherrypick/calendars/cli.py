@@ -114,7 +114,9 @@ def cmd_record_break(args) -> int:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(prog="calendars", description="weekly SPY double-calendar paper module (EXPERIMENTAL)")
+    ap = argparse.ArgumentParser(
+        prog="calendars", description="weekly SPY double-calendar paper module (EXPERIMENTAL)"
+    )
     ap.add_argument("--config")
     ap.add_argument("--db")
     sub = ap.add_subparsers(dest="command", required=True)

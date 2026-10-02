@@ -1,6 +1,7 @@
 """Fetch the daily market files the morning pack reads: Cboe's index histories (SKEW, VIX, VVIX,
 VXN), Cboe's delayed SPX chain (reduced to the 30-day 25-delta risk reversal), Treasury's par yield
-curve, and the release calendars (BEA always, FRED when a key is stored).
+curve, the release calendars (BEA always, FRED when a key is stored), and OCC's option volume by
+underlying with Nasdaq Trader's symbol directory (the pack's `hot_options` ranking).
 
 Why a script: these are network fetches, and `packages/overview` is network-free by rule. It writes
 only `~/.cherrypick/data/market-files/`, and a failure leaves every file already there untouched.
@@ -14,6 +15,11 @@ by about 18:00 ET, a day ahead of FRED; BEA's release-dates file is keyless. BLS
 so CPI, jobs and PPI dates come only through FRED's release-dates API, which needs a free key
 (`fred-key` stores it in the OS keyring). FRED's keyless CSV download hangs from here, so FRED is
 reached only through its API.
+
+OCC publishes a session's volume late that evening (2026-10-01's appeared between 23:12 and 23:22
+ET), after the 18:45 run, so the 07:45 retry is the one that lands it; each run lands every one of
+the last `occ.OCC_SESSIONS` sessions it lacks (one ~4 MB CSV each, reduced to sides by underlying
+on arrival) and leaves an unpublished one for the next run. The first run backfills them all.
 
 A handful of requests per run, a few seconds apart.
 
@@ -34,10 +40,12 @@ import urllib.request
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-from cherrypick.overview import files
+from cherrypick.overview import files, occ
 
 UA = "cherrypick-marketfiles/1.0"
 PAUSE_RANGE_S = (2.0, 5.0)
+# OCC is asked more slowly: a backfill is two dozen ~4 MB files from one host.
+OCC_PAUSE_RANGE_S = (5.0, 10.0)
 TIMEOUT_S = 60
 
 FRED_SERVICE = "cherrypick-fred"
@@ -64,8 +72,8 @@ def _get(url: str) -> bytes:
         return resp.read()
 
 
-def _pause() -> None:
-    time.sleep(random.uniform(*PAUSE_RANGE_S))
+def _pause(pause_range: tuple[float, float] = PAUSE_RANGE_S) -> None:
+    time.sleep(random.uniform(*pause_range))
 
 
 def _write(path: Path, text: str) -> None:
@@ -237,6 +245,82 @@ def fetch_fred(report: dict, today: date) -> None:
     report["calendar"]["fred_releases"] = len(rows)
 
 
+def fetch_occ(report: dict, today: date, get=None) -> None:
+    """Land OCC's daily volume for each recent session not yet stored, oldest first. A session OCC
+    has not published yet (a tiny "no data" reply) is left for the next run, and is a problem only
+    once it is two sessions old; a throttling reply ends the step with what it has.
+
+    The one place OCC is fetched: the stock universe's evening harvest calls this too, so its
+    volume screen reads the same files the pack ranks."""
+    from cherrypick.core import calendar as cal
+
+    get = get or _get
+    day = today if cal.is_trading_day(today) else cal.previous_trading_day(today)
+    wanted = []
+    while len(wanted) < occ.OCC_SESSIONS:
+        wanted.append(day)
+        day = cal.previous_trading_day(day)
+    stored = set(occ.stored_sessions())
+    out = report["occ"] = {"landed": [], "unpublished": []}
+    first = True
+    for d in sorted(wanted):
+        if d.isoformat() in stored:
+            continue
+        if not first:
+            _pause(OCC_PAUSE_RANGE_S)
+        first = False
+        try:
+            body = get(occ.OCC_URL.format(yyyymmdd=d.strftime("%Y%m%d")))
+        except urllib.error.HTTPError as exc:
+            report["problems"].append(f"OCC {d}: HTTP {exc.code}")
+            if exc.code in (403, 429):
+                break
+            continue
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            report["problems"].append(f"OCC {d}: {exc}")
+            continue
+        if len(body) < occ.OCC_MIN_BYTES:
+            out["unpublished"].append(d.isoformat())
+            if cal.previous_trading_day(today) > d:
+                report["problems"].append(f"OCC {d}: still not published")
+            continue
+        parsed = occ.parse_occ(body.decode("utf-8", errors="replace"))
+        if parsed is None:
+            report["problems"].append(f"OCC {d}: the file is not a daily volume report; nothing stored")
+            continue
+        if parsed["session"] != d.isoformat():
+            report["problems"].append(f"OCC {d}: the file is for {parsed['session']}; nothing stored")
+            continue
+        parsed.update(source="occ_volume_query", fetched_at=datetime.now(UTC).isoformat())
+        parsed["columns"] = occ.COLUMNS
+        _write(occ.session_path(parsed["session"]), json.dumps(parsed, separators=(",", ":")))
+        out["landed"].append(parsed["session"])
+    out["stored"] = len(occ.stored_sessions())
+
+
+def fetch_listings(report: dict, get=None) -> None:
+    """Nasdaq Trader's directory of US-listed securities, for whether an underlying is a stock or a
+    fund. A download that parses to too few rows, or to far fewer than the file on disk, is refused."""
+    get = get or _get
+    try:
+        text = get(occ.LISTINGS_URL).decode("utf-8", errors="replace")
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        report["problems"].append(f"Nasdaq Trader directory: {exc}")
+        return
+    new = occ.parse_listings(text)
+    old, _ = occ.read_listings()
+    if not new:
+        report["problems"].append("Nasdaq Trader directory: parsed to nothing; kept the old one")
+        return
+    if old and len(new) < 0.9 * len(old):
+        report["problems"].append(
+            f"Nasdaq Trader directory not replaced: {len(new)} symbols, against {len(old)} on disk"
+        )
+        return
+    _write(occ.listings_path(), text)
+    report["listings"] = {"symbols": len(new), "as_of": occ.listings_as_of(text)}
+
+
 def _warn(title: str, message: str) -> None:
     print(f"WARNING: {title}\n{message}", file=sys.stderr)
     try:
@@ -259,6 +343,10 @@ def cmd_fetch(_args) -> int:
     _pause()
     fetch_bea(report)
     fetch_fred(report, today)
+    _pause()
+    fetch_listings(report)
+    _pause()
+    fetch_occ(report, today)
     report["ok"] = not report["problems"]
     print(json.dumps(report, indent=1))
     if report["problems"]:

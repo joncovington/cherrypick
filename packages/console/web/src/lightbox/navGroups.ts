@@ -234,7 +234,15 @@ export const LIVE_SLIDES = [{ id: "today", label: "today" }] as const satisfies 
 export const REPORTS_SLIDES = [
   { id: "morning", label: "morning" },
   { id: "eod", label: "eod" },
-  { id: "chart", label: "chart" },
+] as const satisfies readonly NavSlide[];
+
+/**
+ * Charts (2026-10-01): the live intraday futures chart and the technicals package's one-name chart.
+ * `technicals` was Reports' `chart` tab; `/reports/chart` redirects here with its query string.
+ */
+export const CHARTS_SLIDES = [
+  { id: "intraday", label: "intraday" },
+  { id: "technicals", label: "technicals" },
 ] as const satisfies readonly NavSlide[];
 
 export const ADVISOR_SLIDES = [{ id: "advisor", label: "advisor" }] as const satisfies readonly NavSlide[];
@@ -348,6 +356,7 @@ export const NAV_DECL: Record<ModuleId, ModuleNavDecl> = {
   },
   gex: { slides: GEX_SLIDES },
   live: { slides: LIVE_SLIDES },
+  charts: { slides: CHARTS_SLIDES },
   reports: { slides: REPORTS_SLIDES },
   advisor: { slides: ADVISOR_SLIDES },
   system: { slides: SYSTEM_SLIDES },

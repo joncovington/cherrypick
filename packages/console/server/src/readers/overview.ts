@@ -38,6 +38,8 @@ import type {
   MorningPremarket,
   MorningMoves,
   MorningYields,
+  MorningHotOptions,
+  MorningHotOptionsRow,
   TechnicalsReport,
   TechnicalsBreadthDay,
   TechnicalsSectorStages,
@@ -411,6 +413,44 @@ function shapeYields(raw: unknown): MorningYields {
   };
 }
 
+function shapeHotRow(raw: unknown): MorningHotOptionsRow {
+  const r = rec(raw);
+  return {
+    symbol: str(r["symbol"]) ?? "?",
+    rank: num(r["rank"]),
+    contracts: num(r["contracts"]),
+    calls: num(r["calls"]),
+    puts: num(r["puts"]),
+    putCall: num(r["put_call"]),
+    customerSidePct: num(r["customer_side_pct"]),
+    avgContracts: num(r["avg_contracts"]),
+    relativeVolume: num(r["relative_volume"]),
+  };
+}
+
+function shapeHotRows(raw: unknown): MorningHotOptionsRow[] | null {
+  return Array.isArray(raw) ? raw.map(shapeHotRow) : null;
+}
+
+function shapeHotOptions(raw: unknown): MorningHotOptions {
+  const h = rec(raw);
+  return {
+    session: str(h["session"]),
+    lagSessions: num(h["lag_sessions"]),
+    listingsAsOf: str(h["listings_as_of"]),
+    totalContracts: num(h["total_contracts"]),
+    totalPutCall: num(h["total_put_call"]),
+    underlyings: num(h["underlyings"]),
+    baselineSessions: num(h["baseline_sessions"]),
+    indexes: shapeHotRows(h["indexes"]) ?? [],
+    equities: shapeHotRows(h["equities"]),
+    funds: shapeHotRows(h["funds"]),
+    unclassified: strList(h["unclassified"]),
+    classification: str(h["classification"]),
+    reason: str(h["reason"]),
+  };
+}
+
 function shapePack(session: string, facts: Record<string, unknown>): MorningPack {
   const readings: Record<string, MorningReading> = {};
   for (const [key, raw] of Object.entries(rec(facts["readings"]))) {
@@ -435,6 +475,8 @@ function shapePack(session: string, facts: Record<string, unknown>): MorningPack
     premarket: facts["premarket"] !== undefined ? shapePremarket(facts["premarket"]) : null,
     moves: facts["moves"] !== undefined ? shapeMoves(facts["moves"]) : null,
     yields: facts["yields"] !== undefined ? shapeYields(facts["yields"]) : null,
+    // Fact version 5.
+    hotOptions: facts["hot_options"] !== undefined ? shapeHotOptions(facts["hot_options"]) : null,
   };
 }
 

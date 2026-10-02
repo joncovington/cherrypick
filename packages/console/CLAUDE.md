@@ -181,6 +181,12 @@ alone):
 - **Market data**: the console opens its own DXLink session via the official `@tastytrade/api` SDK
   (`quoteStreamer`). The Python streamer and `stream_cache.db` are untouched; the cache is read
   read-only as the off-hours / disconnected fallback.
+  - **The feed aggregates at 1s** (`FEED_AGGREGATION_S`), not the SDK's 10s, which held every event
+    type — a live candle included — to one update per symbol per 10 seconds (measured with
+    `scripts/probe_candles.py --aggregation 10`).
+  - **Candles go to the feed directly** (`addCandleSubscription`/`removeCandleSubscription`): the
+    SDK's `unsubscribe()` loops over every event type except Candle, so a candle subscribed through
+    it can never be removed.
 - **Single source of broker auth.** The console reads THE suite credential (`production:client_secret`
   / `production:refresh_token` under the `cherrypick-broker` keyring service) through Python
   (`auth/suiteBridge.ts`), since Python-keyring targets aren't addressable from Node. **It never writes
@@ -258,9 +264,30 @@ a second place its shape is decided. The tab is in the URL (`?tab=eod`) because 
   report dated strictly before the pack's session** — a same-day report was written after that
   close and would show the morning what it could not have known. A test pins the `<` and was shown to
   fail at `<=`.
-- `/reports/chart?symbol=X` draws `data/technicals/charts/<X>.json` (`readers/technicals.ts`,
-  `pages/Morning/ChartPage.tsx`). The symbol becomes a file name, so the reader accepts only ticker
-  characters; a test sends `../` and was shown to fail with the pattern loosened.
+- Its leaders and scan matches link to the technicals chart, which is on the Charts page.
+
+**Charts** (`/charts`, `lightbox/manifests/ChartsLightbox.tsx`) — two tabs, both chart only:
+
+- `/charts/intraday?product=ES&period=5m` is a live futures chart (1m/5m/15m) over the console's own
+  DXLink session, extended hours included (`market/candles.ts`, `pages/Intraday/IntradayPage.tsx`).
+  The contract is the futures ticker's, from `state/futures_contracts.json`. What the feed does, as
+  `scripts/probe_candles.py` measured it, and the rule each finding set (`server/test/candles.test.ts`,
+  each case shown to fail):
+  - `X{=1m}` comes back labelled `X{=m}`, so events are matched by the parsed period, never by the
+    string subscribed.
+  - History is one snapshot, newest first, between SNAPSHOT_BEGIN and SNAPSHOT_END. It is buffered
+    and sent whole (`replace`), and so is a re-snapshot after the feed resubscribes.
+  - The snapshot ends with a REMOVE sentinel that has no prices; no bar without a full positive OHLC
+    is ever drawn.
+  - The bar in progress is re-sent under its own time, so a live event replaces the bar at `t`.
+  - Series are viewer-gated with a 30s linger, like quotes, and resubscribe from the newest bar held
+    after a feed rebuild. The axis is ET (`etTickMark`); the library's day ticks fall at UTC midnight
+    and are labelled with their ET time.
+- `/charts/technicals?symbol=X` draws `data/technicals/charts/<X>.json` (`readers/technicals.ts`,
+  `pages/Morning/ChartPage.tsx`); it was Reports' `chart` tab, and `/reports/chart` redirects here
+  with its query. Shown only while the technicals feature is on. The symbol becomes a file name, so the
+  reader accepts only ticker characters; a test sends `../` and was shown to fail with the pattern
+  loosened.
 
 **Module advisor slides.** `readers/advisor.ts`'s `readAdvisorModule` serves
 `/api/advisor/module/:module`: active experiments with progress against length and stall budget, the

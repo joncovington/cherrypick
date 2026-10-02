@@ -4,18 +4,33 @@ The entries up to v0.9.0 are retrospective: the suite tagged no versions until t
 reconstructed from commit history rather than written at release time. Versions mark
 architectural boundaries (a new package, a scheduler cutover, a read-side or trading-mode change),
 not commit counts. Per-package `pyproject.toml` versions remain at their `0.1.0` placeholder — this
-file tracks the *suite*, not any one package.
+file tracks the *suite*, not any one package. From v0.10.0 every version is a published GitHub
+Release, cut from `main` when a batch of work is finished, and the install docs point at the latest
+one; [docs/releasing.md](docs/releasing.md) has the procedure. `[Unreleased]` is what `main` holds
+beyond the latest release.
 
 ## [Unreleased]
 
-- **Fixed: the suite-wide account listing ran a bare argv.** `accounts._first_broker_module`
-  called `cfgmod.broker_tool(mcfg)` without the module name, so for any module whose config block
-  does not declare `broker_tool` itself (meic ships without one), `cherrypick account --set` and
-  the Live Ops listing probed the login with `python list_accounts` — empty stdout, and
-  "list_accounts not ok" on every such machine, while `account --module`, `connect` and
-  `reconcile` (all of which pass the name) resolved the same tool fine. Now passes the name like
-  every other call site; guarded by a regression test asserting the argv the probe hands the
-  broker tool.
+- **Hot options** in the morning pack (fact version 5). `scripts/fetch_market_files.py` lands OCC's
+  daily option volume by underlying (one keyless CSV a session, reduced to call/put sides by account
+  type) and Nasdaq Trader's symbol directory; `cherrypick.overview.occ` ranks the prior session the
+  way the Options Insider's Hot Options Report does — VIX, SPY, SPX, IWM and QQQ, then the top ten
+  single-name equities and top five funds — with call/put, the customer share of sides and volume
+  against 20 prior sessions. Rendered on the console's Morning tab and in the markdown. Record-only.
+- **One OCC fetch.** The stock universe's harvest no longer downloads OCC's file itself: it lands
+  missing sessions through the same fetcher and reads contracts from the shared store. The two
+  copies agreed on every underlying of all 13 sessions both held, and the universe builds
+  identically from either. `universe/occ-volume/` is no longer read or written.
+- **Releases.** v0.10.0 is published as the first GitHub Release, and README, INSTALL and
+  QUICKSTART now install from the latest release instead of `main` (git users check out its tag;
+  updating is a fetch and the same checkout). Pushing a `v*` tag on `main` publishes the next one
+  with its changelog section as the notes (`.github/workflows/release.yml`, `tools/release_notes.py`).
+  [docs/releasing.md](docs/releasing.md) has the procedure.
+- **Charts page** (console). A live intraday futures chart — /ES, /NQ, /CL, /GC, /ZB in 1-, 5- or
+  15-minute candles, extended hours, the bar in progress updating about once a second — over the
+  console's own DXLink session, measured first with `scripts/probe_candles.py`. The technicals chart
+  moved here from Reports (`/charts/technicals`; `/reports/chart` redirects). The console's feed now
+  aggregates at 1s instead of the SDK's 10s.
 
 ## v0.10.0 — 2026-10-01 — the public release
 The first release meant to be installed by someone other than its author: one command takes a fresh

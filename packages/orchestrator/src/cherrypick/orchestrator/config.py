@@ -364,8 +364,10 @@ def morning_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         and not missing_capabilities(cfg, FEATURE_REQUIRES["morning.narrative"]),
         "narrative_at": mv.get("narrative_at", "09:00"),
         # The daily market files the pack reads (scripts/fetch_market_files.py): Cboe's index
-        # histories, Treasury's curve (posted by ~18:00 ET), the release calendars. Credential-free,
-        # so on with the pack. The evening run is the fetch; the pre-pack run catches a missed one.
+        # histories, Treasury's curve (posted by ~18:00 ET), the release calendars, OCC's option
+        # volume by underlying. Credential-free, so on with the pack. The evening run is the fetch
+        # and the pre-pack run catches a missed one -- except OCC, which posts ~23:15 ET, so the
+        # pre-pack run is the one that lands the prior session; each run lands what it lacks.
         "files": mv.get("files", True),
         "files_at": mv.get("files_at", "18:45"),
         "files_retry_at": mv.get("files_retry_at", "07:45"),
@@ -556,6 +558,24 @@ def backup_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "enabled": bool(b.get("enabled", True)),
         "at": b.get("at", "01:30"),
         "dest": Path(os.path.expandvars(os.path.expanduser(dest))) if dest else _home.home() / "backups",
+    }
+
+
+def config_backup_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved settings for the config-history job (`orchestrator.config_backup`). OFF by default:
+    it only means anything once the person has made the cherrypick home a git repository
+    (`run.py config-backup --init`), and pushing goes to a remote of their choosing. Every
+    `interval_minutes` it commits whatever the home repo's own .gitignore allows (the config files,
+    never data, state or logs) and, with `push`, pushes when a remote is set."""
+    cb = cfg.get("config_backup", {}) or {}
+    try:
+        interval = max(1, int(cb.get("interval_minutes", 15)))
+    except (TypeError, ValueError):
+        interval = 15
+    return {
+        "enabled": cb.get("enabled") is True,
+        "interval_minutes": interval,
+        "push": cb.get("push", True) is not False,
     }
 
 

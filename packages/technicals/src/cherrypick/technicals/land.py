@@ -136,7 +136,8 @@ def land_index_bars(conn, wanted) -> list[str]:
         src = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
         try:
             rows = src.execute(
-                f"SELECT symbol, date, open, high, low, close FROM index_bars WHERE symbol IN ({','.join('?' * len(want))})",
+                "SELECT symbol, date, open, high, low, close FROM index_bars "
+                f"WHERE symbol IN ({','.join('?' * len(want))})",
                 want,
             ).fetchall()
         finally:

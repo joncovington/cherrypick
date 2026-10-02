@@ -11,6 +11,9 @@ from datetime import datetime
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
+import pytest
+
+import cherrypick.core.streamer as streamer_module
 from cherrypick.core import streamcache
 from cherrypick.core.streamer import ChainStreamer, _State
 
@@ -70,23 +73,51 @@ def test_completed_summary_days_counts_closed_past_rows(tmp_path):
 
 
 # --------------------------------------------------------------------------- the engine task
-class _FakeCandleStreamer:
-    """Serves a fixed candle burst then ends the stream (StopAsyncIteration ends the collector)."""
+@pytest.fixture(autouse=True)
+def _fast_collector(monkeypatch):
+    """The collector's real quiet gap (5 s) and deadline (90 s), scaled down so the suite stays fast.
+    The ratio that matters is kept: a candle can arrive later than one quiet gap."""
+    monkeypatch.setattr(streamer_module, "_HISTORY_QUIET_GAP_S", 0.2)
+    monkeypatch.setattr(streamer_module, "_HISTORY_MAX_WAIT_S", 5.0)
 
-    def __init__(self, events):
+
+class _FakeCandleStreamer:
+    """The SDK's shape: one receive queue per event type, read by `get_event()` (a fresh await per
+    call) or by `listen()` (a generator over the same queue). After subscribe, the burst lands after
+    `delay` seconds and the stream then goes quiet, as the feed's front-loaded history does.
+
+    `listen()` is a real async generator on purpose: a `wait_for` timeout around its `__anext__`
+    cancels the generator itself, exactly as it does on the SDK, which is the bug the collector had.
+    """
+
+    def __init__(self, events, *, delay=0.0):
         self._events = events
+        self._delay = delay
+        self._queue = None
+        self._feeder = None
         self.subscribed = None
         self.unsubscribed = []
 
     async def subscribe_candle(self, symbols, interval, start_time=None, **_):
         self.subscribed = (list(symbols), interval, start_time)
+        self._queue = asyncio.Queue()
+
+        async def feed():
+            await asyncio.sleep(self._delay)
+            for e in self._events:
+                self._queue.put_nowait(e)
+
+        self._feeder = asyncio.ensure_future(feed())
 
     async def unsubscribe_candle(self, ticker, interval=None, **_):
         self.unsubscribed.append((ticker, interval))
 
+    async def get_event(self, _event_type):
+        return await self._queue.get()
+
     async def listen(self, _event_type):
-        for e in self._events:
-            yield e
+        while True:
+            yield await self._queue.get()
 
 
 def _candle(symbol, day, *, o, h, lo, c):
@@ -95,7 +126,7 @@ def _candle(symbol, day, *, o, h, lo, c):
     return SimpleNamespace(event_symbol=f"{symbol}{{=d}}", time=stamp, open=o, high=h, low=lo, close=c)
 
 
-def _run_backfill(tmp_path, events, *, wanted=5, symbols=("TNA",), pre_rows=()):
+def _run_backfill(tmp_path, events, *, wanted=5, symbols=("TNA",), pre_rows=(), delay=0.0):
     engine = ChainStreamer(
         session_factory=lambda: None,
         db_path=tmp_path / "cache.db",
@@ -110,7 +141,7 @@ def _run_backfill(tmp_path, events, *, wanted=5, symbols=("TNA",), pre_rows=()):
         )
     conn.commit()
     state = _State(conn, list(symbols))
-    fake = _FakeCandleStreamer(events)
+    fake = _FakeCandleStreamer(events, delay=delay)
     asyncio.run(engine._backfill_history(fake, state, object))
     return conn, fake
 
@@ -135,6 +166,28 @@ def test_backfill_fills_absent_dates_from_candles(tmp_path):
         ("2026-08-13", 70.5),
     ]
     assert rows[1]["prev_day_close"] == 69.5
+
+
+def test_backfill_waits_past_a_quiet_gap_for_the_first_candle(tmp_path):
+    """The deadline, not the first quiet gap, bounds the wait for history to START.
+
+    The collector once read candles through `wait_for(listen().__anext__(), quiet_gap)`. The first
+    timeout cancelled the listen generator, the next `__anext__` raised StopAsyncIteration, and the
+    loop ended: any symbol whose first candle took longer than the quiet gap (5 s live) was logged
+    "received no candles" and its deficit stayed open, while the 90 s deadline meant to bound that
+    wait never got a say. Found 2026-10-01, when a candle probe built the same way died identically.
+    """
+    conn, fake = _run_backfill(
+        tmp_path,
+        [
+            _candle("TNA", "2026-08-12", o=69.0, h=70.0, lo=68.5, c=69.5),
+            _candle("TNA", "2026-08-13", o=69.5, h=71.0, lo=69.0, c=70.5),
+        ],
+        delay=0.5,  # longer than the (scaled) quiet gap, well inside the deadline
+    )
+    rows = conn.execute("SELECT trade_date FROM stream_summary ORDER BY trade_date").fetchall()
+    assert [r["trade_date"] for r in rows] == ["2026-08-12", "2026-08-13"]
+    assert fake.unsubscribed == [("TNA", "1d")]
 
 
 def _recent_sessions(count):
@@ -452,14 +505,20 @@ def test_the_producer_repairs_what_receipt_date_keying_wrote(tmp_path):
     )
     out = streamcache.repair_misfiled_summary(conn)
     assert out == {"non_trading_day": 1, "repeated_snapshot": 1, "frozen_close": 1}
-    got = {(r[0], r[1]): r[2] for r in conn.execute("SELECT symbol, trade_date, day_close FROM stream_summary")}
+    got = {
+        (r[0], r[1]): r[2] for r in conn.execute("SELECT symbol, trade_date, day_close FROM stream_summary")
+    }
     assert ("SPY", "2026-09-26") not in got
     assert ("SPX", "2026-10-01") not in got, "the 09-30 snapshot filed under 10-01"
     assert got[("SPX", "2026-09-30")] is None, "09-30's own row stays, still awaiting its close"
     assert got[("SPX", "2026-09-28")] == 7683.69
     assert got[("SPX", "2026-09-25")] == 7743.41
     assert got[("HYG", "2026-09-22")] == 78.67, "a flat close the next session confirms is real"
-    assert streamcache.repair_misfiled_summary(conn) == {"non_trading_day": 0, "repeated_snapshot": 0, "frozen_close": 0}
+    assert streamcache.repair_misfiled_summary(conn) == {
+        "non_trading_day": 0,
+        "repeated_snapshot": 0,
+        "frozen_close": 0,
+    }
 
 
 def test_the_misfiled_snapshot_is_gone_before_the_close_fill_could_read_it(tmp_path):
@@ -476,5 +535,7 @@ def test_the_misfiled_snapshot_is_gone_before_the_close_fill_could_read_it(tmp_p
     )
     streamcache.repair_misfiled_summary(conn)
     streamcache.fill_closes_from_next_prev(conn)
-    close = conn.execute("SELECT day_close FROM stream_summary WHERE symbol='SPX' AND trade_date='2026-09-30'").fetchone()[0]
+    close = conn.execute(
+        "SELECT day_close FROM stream_summary WHERE symbol='SPX' AND trade_date='2026-09-30'"
+    ).fetchone()[0]
     assert close is None, "09-30's close waits for 10-01's own prior close, never borrows 09-29's"
