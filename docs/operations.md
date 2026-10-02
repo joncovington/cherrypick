@@ -79,7 +79,7 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `review-provisional` | daily **16:30**, trading days | `run.py review --provisional` | on | see below |
 | `review-final` | daily **10:15**, trading days | `run.py review --final` | on | finalises the prior session and re-runs reconciliation |
 | `review-narrative` | daily **10:45**, trading days | `scripts/eod_narrative.py` | off, needs `claude` | the agent-written note, beside the facts, never inside them |
-| `market-files` / `market-files-retry` | daily **18:45** / **07:45**, trading days | `scripts/fetch_market_files.py fetch` | on | the files the morning pack reads |
+| `market-files` / `market-files-retry` | daily **18:45** / **07:45**, trading days | `scripts/fetch_market_files.py fetch` | on | the files the morning pack reads, OCC's option volume included |
 | `earnings-moves` | daily **18:40**, trading days | `scripts/fetch_earnings_moves.py` | on | |
 | `fetch-headlines` | daily **08:45**, trading days | `scripts/fetch_headlines.py` | on | |
 | `futures-contracts` | daily **08:45**, trading days | `scripts/refresh_futures_contracts.py` | on | |

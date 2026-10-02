@@ -364,8 +364,10 @@ def morning_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         and not missing_capabilities(cfg, FEATURE_REQUIRES["morning.narrative"]),
         "narrative_at": mv.get("narrative_at", "09:00"),
         # The daily market files the pack reads (scripts/fetch_market_files.py): Cboe's index
-        # histories, Treasury's curve (posted by ~18:00 ET), the release calendars. Credential-free,
-        # so on with the pack. The evening run is the fetch; the pre-pack run catches a missed one.
+        # histories, Treasury's curve (posted by ~18:00 ET), the release calendars, OCC's option
+        # volume by underlying. Credential-free, so on with the pack. The evening run is the fetch
+        # and the pre-pack run catches a missed one -- except OCC, which posts ~23:15 ET, so the
+        # pre-pack run is the one that lands the prior session; each run lands what it lacks.
         "files": mv.get("files", True),
         "files_at": mv.get("files_at", "18:45"),
         "files_retry_at": mv.get("files_retry_at", "07:45"),

@@ -8,6 +8,17 @@ file tracks the *suite*, not any one package.
 
 ## [Unreleased]
 
+- **Hot options** in the morning pack (fact version 5). `scripts/fetch_market_files.py` lands OCC's
+  daily option volume by underlying (one keyless CSV a session, reduced to call/put sides by account
+  type) and Nasdaq Trader's symbol directory; `cherrypick.overview.occ` ranks the prior session the
+  way the Options Insider's Hot Options Report does — VIX, SPY, SPX, IWM and QQQ, then the top ten
+  single-name equities and top five funds — with call/put, the customer share of sides and volume
+  against 20 prior sessions. Rendered on the console's Morning tab and in the markdown. Record-only.
+- **One OCC fetch.** The stock universe's harvest no longer downloads OCC's file itself: it lands
+  missing sessions through the same fetcher and reads contracts from the shared store. The two
+  copies agreed on every underlying of all 13 sessions both held, and the universe builds
+  identically from either. `universe/occ-volume/` is no longer read or written.
+
 ## v0.10.0 — 2026-10-01 — the public release
 The first release meant to be installed by someone other than its author: one command takes a fresh
 clone to a running console, the experimental modules ship switched off, every example config
