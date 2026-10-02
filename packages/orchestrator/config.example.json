@@ -495,10 +495,7 @@
     "enabled": false,
     "task_name": "cherrypick-desk-notify",
     "interval_minutes": 1,
-    "channels": [
-      "log",
-      "discord"
-    ],
+    "channels": ["log"],
     "journal_path": null,
     "_journal_path_note": "Override the desk journal location. null uses the desk's own default, ~/.cherrypick/state/desk/journal.jsonl.",
     "broker_keyring_service": "meicagent",
@@ -514,10 +511,7 @@
     "_window_note": "ET wall-clock, trading days only. 10:00 gives the first card a half-session to describe; 16:10 lets the ~16:00 fire land after the 0DTE modules settle.",
     "close_at": "16:35",
     "_close_note": "The one daily CLOSE card (status-digest-close job): same composition, posted after the 0DTE books settle and the official 16:30 review-provisional build, with deltas against the last hourly post.",
-    "channels": [
-      "log",
-      "discord"
-    ]
+    "channels": ["log"]
   },
   "flies_payoff_post": {
     "_comment": "Posts the flies 'payoff at expiry' chart to Discord once each ledger has settled: the console's payoff card for the session (captured by packages/console/tools/ui-check.mjs --card), captioned with each arm's settled net and the settlement print. Runs scripts/flies_payoff_post.py, never a package and never the watchdog tick. One post per ledger per session (state/flies-payoff-post.json); live waits for the official print. Needs the console up, node, and Chrome or Edge. OFF by default; set enabled=true and store the webhook (cherrypick secrets-set --channel discord).",
@@ -532,15 +526,9 @@
     "_window_note": "ET wall-clock, trading days only. Both ledgers settle at 16:20; each run posts whatever has settled and not been posted, so the window covers a late official print."
   },
   "notify": {
-    "_channels_note": "push channels: 'log' (always on, the floor), 'desktop', 'slack', 'discord'. Slack/Discord webhook URLs live in the OS keyring (cherrypick secrets-set --channel slack|discord), never in this file or env vars.",
-    "channels": [
-      "log",
-      "desktop"
-    ],
-    "trade_channels": [
-      "log",
-      "discord"
-    ],
+    "_channels_note": "Push channels are OFF by default: only 'log' (always on, the floor) is listed, and the console's own on-screen toasts need no setting. Add 'desktop', 'slack' or 'discord' to turn one on. push channels: 'log' (always on, the floor), 'desktop', 'slack', 'discord'. Slack/Discord webhook URLs live in the OS keyring (cherrypick secrets-set --channel slack|discord), never in this file or env vars.",
+    "channels": ["log"],
+    "trade_channels": ["log"],
     "desktop_app_name": "cherrypick",
     "trade_summary": {
       "_mode_note": "How MEIC trade events reach you: 'per-trade' (default) pushes each entry/stop/exit individually, with profile_prefixes below routing matching study arms to the digest; 'summary' routes EVERY MEIC trade to the periodic digest (one per-symbol roll-up every interval_minutes) and ignores profile_prefixes. Either way the digest is intraday-only: it pushes 09:15-17:00 ET on trading days (the tail covers the closing exits), and a flush due outside that window is held for the next in-window tick rather than dropped.",

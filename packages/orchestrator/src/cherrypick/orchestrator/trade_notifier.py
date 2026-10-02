@@ -21,7 +21,7 @@ Three paper-DB schemas are wired, dispatched by `paper.trade_schema`:
                  two — entry, completion, settlement — because a credit spread turning into a
                  net-credit butterfly is the event the whole module exists to catch.
 
-Trade lines go to the `notify.trade_channels` set (default log + discord) rather than every channel, so
+Trade lines go to the `notify.trade_channels` set (default log only) rather than every channel, so
 frequent paper fills don't spam desktop toasts.
 """
 
@@ -1550,7 +1550,7 @@ def run(cfg: dict | None = None, *, dry_run: bool = False) -> dict:
     try:
         cfg = cfgmod.load_config() if cfg is None else cfg  # an explicit {} must stay {}, not fall back
         notify_cfg = cfg.get("notify", {})
-        channels = notify_cfg.get("trade_channels", ["log", "discord"])
+        channels = notify_cfg.get("trade_channels", ["log"])
         recorder = _DryRunNotifier() if dry_run else None
         notifier = recorder if recorder is not None else Notifier({**notify_cfg, "channels": channels})
         summary_cfg = notify_cfg.get("trade_summary", {})

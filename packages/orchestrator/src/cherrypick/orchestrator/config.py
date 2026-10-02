@@ -623,7 +623,7 @@ def desk_notify_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         "enabled": dn.get("enabled", False),
         "task_name": dn.get("task_name", "cherrypick-desk-notify"),
         "interval_minutes": dn.get("interval_minutes", 1),
-        "channels": dn.get("channels") or ["log", "discord"],
+        "channels": dn.get("channels") or ["log"],
         "journal_path": dn.get("journal_path"),
         "broker_keyring_service": dn.get("broker_keyring_service", "meicagent"),
         "account_number": dn.get("account_number"),
@@ -648,7 +648,7 @@ def status_digest_settings(cfg: dict[str, Any]) -> dict[str, Any]:
         # review-provisional build (16:30) — the day's final intraday word, deltas against the
         # last hourly post.
         "close_at": sd.get("close_at", "16:35"),
-        "channels": sd.get("channels") or ["log", "discord"],
+        "channels": sd.get("channels") or ["log"],
     }
 
 

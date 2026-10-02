@@ -309,5 +309,5 @@ def test_settings_reader_defaults():
         "start": "10:00",
         "end": "16:10",
         "close_at": "16:35",
-        "channels": ["log", "discord"],
+        "channels": ["log"],
     }

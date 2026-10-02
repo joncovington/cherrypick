@@ -26,7 +26,7 @@ _MINIMAL_TEMPLATE: dict[str, Any] = {
     "timezone": "America/New_York",
     "modules": {},
     "watchdog": {"task_name": "cherrypick-watchdog", "interval_minutes": 10, "renotify_minutes": 60},
-    "notify": {"channels": ["log", "desktop"], "trade_channels": ["log"], "desktop_app_name": "cherrypick"},
+    "notify": {"channels": ["log"], "trade_channels": ["log"], "desktop_app_name": "cherrypick"},
 }
 
 
