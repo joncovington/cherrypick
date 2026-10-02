@@ -30,8 +30,8 @@ whichever is missing.
 
 ## Windows
 
-1. **Get the code.** Download the repository (green **Code** button → **Download ZIP**, then unzip it
-   somewhere easy to find, such as `Documents`), or clone it with git.
+1. **Get the code.** Download the [latest release][latest] (under **Assets**, **Source code
+   (zip)**, then unzip it somewhere easy to find, such as `Documents`), or clone it with git.
 2. **Run the installer.** Either double-click **`install.cmd`** in the cherrypick folder, or open
    PowerShell, go to the folder first, and run it from there:
 
@@ -45,15 +45,19 @@ whichever is missing.
    ```powershell
    git clone https://github.com/joncovington/cherrypick.git
    cd cherrypick
+   git checkout (git describe --tags --abbrev=0 origin/main)   # the latest release
    .\install.cmd
    ```
 
 ## macOS and Linux
 
-1. **Get the code** (the ZIP works here too — unzip it and `cd` into the folder):
+1. **Get the code**: the [latest release][latest]'s ZIP works here too (unzip it and `cd` into the
+   folder), or with git:
 
    ```bash
    git clone https://github.com/joncovington/cherrypick.git
+   cd cherrypick
+   git checkout "$(git describe --tags --abbrev=0 origin/main)"   # the latest release
    ```
 
 2. **Go to the folder, then run the installer** from inside it:
@@ -66,6 +70,12 @@ whichever is missing.
 On macOS and Linux the supervisor's anchor is a tagged entry in your user crontab. That backend is
 newer than the Windows Task Scheduler one and less proven on a real host — check
 `python packages/orchestrator/run.py status` after the first trading session, and report anything odd.
+
+Install from a release, not from `main`: `main` is where development happens and is often ahead of
+the latest release. The git lines above check out the newest release tag, which leaves git in
+"detached HEAD", as expected. How releases are cut: [docs/releasing.md](docs/releasing.md).
+
+[latest]: https://github.com/joncovington/cherrypick/releases/latest
 
 ## What the installer does
 
@@ -196,6 +206,22 @@ Your data, configuration and broker login are **kept** (`~/.cherrypick` and the 
 running the installer again picks up where you left off. To remove everything, delete
 `~/.cherrypick` and the checkout by hand afterwards, and remove the `cherrypick-broker` entry from
 your keyring.
+
+## Updating to a new release
+
+Stop the suite (`uninstall.cmd` / `./uninstall.sh`; history and settings are kept), get the new
+release, and run the installer again. With the ZIP, unzip the new release over the old folder. With
+git, from the checkout:
+
+```bash
+git fetch --tags origin
+git checkout "$(git describe --tags --abbrev=0 origin/main)"
+```
+
+In PowerShell the second line is `git checkout (git describe --tags --abbrev=0 origin/main)`.
+
+Read that release's notes on the [Releases page](https://github.com/joncovington/cherrypick/releases)
+first: they say what changed and anything you need to do.
 
 ## For developers
 

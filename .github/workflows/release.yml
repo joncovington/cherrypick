@@ -1,0 +1,39 @@
+name: Release
+
+# A pushed `v*` tag publishes a GitHub Release, with that version's CHANGELOG.md section as its notes.
+# The install docs point at the latest release, so this is the one step that changes what a new
+# install gets: merging to main does not. docs/releasing.md has the whole procedure.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # every branch, so the tag can be checked against main
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      # A release is cut from main, never from a feature branch: the install docs find the latest
+      # release as the newest tag on main, so a tag elsewhere would be one nobody is offered.
+      - name: The tag is on main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME is not on main. Tag a commit on main."
+            exit 1
+          fi
+      - name: Notes from the changelog
+        run: |
+          python tools/release_notes.py "$GITHUB_REF_NAME" > notes.md
+          python tools/release_notes.py --title "$GITHUB_REF_NAME" > title.txt
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "$(cat title.txt)" --notes-file notes.md
