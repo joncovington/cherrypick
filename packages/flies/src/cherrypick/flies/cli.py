@@ -226,6 +226,61 @@ def cmd_fill_model(args) -> int:
     return 0
 
 
+def backfill_events(conn, *, write: bool, root=None) -> dict:
+    """Stamp `entry_event_*` / `completion_event_*` on rows recorded before the event tag existed,
+    from the calendar store alone (`cherrypick.core.events`). Only rows with no tag yet, and only
+    days every calendar source can speak for: a day it cannot is left NULL ("not recorded"), never
+    stamped 'unknown' as if the loop had looked. Dry run unless `write`."""
+    from datetime import date
+
+    from cherrypick.core import events as _events
+
+    rows = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT position_id, trade_date, entry_time, completed_at FROM fly_positions "
+            "WHERE entry_event_bucket IS NULL AND entry_time IS NOT NULL ORDER BY trade_date"
+        )
+    ]
+    days: dict = {}
+    counts: dict = {"rows": len(rows), "stamped": 0, "unknown_day": 0, "buckets": {}}
+    for r in rows:
+        day = r["trade_date"]
+        if day not in days:
+            days[day] = _events.day_events(date.fromisoformat(day), root=root)
+        doc = days[day]
+        if not doc["known"]:
+            counts["unknown_day"] += 1
+            continue
+        update = {"position_id": r["position_id"]}
+        for phase, stamp in (("entry", r["entry_time"]), ("completion", r["completed_at"])):
+            if not stamp:
+                continue
+            bucket, value, labels = _events.phase(doc, bookmod._minute_of_day(stamp))
+            update.update(
+                {
+                    f"{phase}_event_bucket": bucket,
+                    f"{phase}_event_value": value,
+                    f"{phase}_event_labels": labels,
+                }
+            )
+        counts["buckets"][update["entry_event_bucket"]] = (
+            counts["buckets"].get(update["entry_event_bucket"], 0) + 1
+        )
+        counts["stamped"] += 1
+        if write:
+            dbmod.save_position(conn, update)
+    counts["unknown_days"] = sorted(d for d, doc in days.items() if not doc["known"])
+    return counts
+
+
+def cmd_backfill_events(args) -> int:
+    conn = dbmod.connect(args.db)
+    out = backfill_events(conn, write=args.write)
+    print(json.dumps({"ok": True, "write": args.write, **out}, indent=2))
+    return 0
+
+
 def regime_cuts_dir() -> str:
     """Where the artifact lands: beside advice_active.json, resolved the way paper_loop resolves it."""
     from cherrypick.flies import paper_loop
@@ -307,6 +362,12 @@ def main(argv=None) -> int:
     p_rev.add_argument("--window", type=float, default=10.0, help="max minutes between the two entries")
     p_rev.add_argument("--detail", action="store_true", help="include every pair")
     p_rev.set_defaults(func=cmd_reversal_book)
+
+    p_events = sub.add_parser(
+        "backfill-events", help="stamp the day's scheduled releases on rows recorded before the tag"
+    )
+    p_events.add_argument("--write", action="store_true", help="write (default: dry run)")
+    p_events.set_defaults(func=cmd_backfill_events)
 
     p_fill = sub.add_parser(
         "fill-model",

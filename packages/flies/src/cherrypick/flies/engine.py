@@ -451,6 +451,7 @@ def classify_regime(snapshot: dict, params: dict, center: float | None = None) -
     skew_bucket, skew_value = _classify_skew(snapshot, params)
     offset_bucket, offset_value = _classify_center_offset(snapshot, params, center)
     trend_bucket, trend_value = _classify_trend(snapshot, params)
+    event_bucket, event_value, event_labels = _classify_event(snapshot)
     gex = snapshot.get("gex") or {}
     gex_stats = snapshot.get("gex_stats") or {}
     return {
@@ -460,6 +461,7 @@ def classify_regime(snapshot: dict, params: dict, center: float | None = None) -
         "skew_bucket": skew_bucket,
         "center_offset_bucket": offset_bucket,
         "trend_bucket": trend_bucket,
+        "event_bucket": event_bucket,
         # The measures behind the buckets.
         "vol_value": vol_value,
         "gex_concentration": gex_value,
@@ -467,6 +469,8 @@ def classify_regime(snapshot: dict, params: dict, center: float | None = None) -
         "skew_value": skew_value,
         "center_offset_value": offset_value,
         "trend_value": trend_value,
+        "event_value": event_value,
+        "event_labels": event_labels,
         # GEX surface provenance: what the number was, and how much data stood behind it. Without
         # the coverage/age pair, a regime tag from a healthy surface is indistinguishable from one
         # computed off four surviving stale strikes.
@@ -476,6 +480,22 @@ def classify_regime(snapshot: dict, params: dict, center: float | None = None) -
         "gex_strikes": gex_stats.get("strikes_with_data"),
         "gex_input_age": gex_stats.get("oldest_input_age_seconds"),
     }
+
+
+def _classify_event(snapshot: dict) -> tuple[str, float | None, str | None]:
+    """The day's scheduled releases against this moment (2026-10-02, `cherrypick.core.events.phase`):
+    bucket 'after' (a major release -- CPI, PPI, NFP, retail sales, PCE, GDP, JOLTS, FOMC -- has
+    already come out today), 'before' (one is still to come), 'none' (no major release today) or
+    'unknown' (a calendar source cannot speak for the day: unknown is never quiet); value = minutes
+    since the latest major release; labels = every release that day, minor ones included.
+
+    Tagged, never gated. Over control's 08-03..10-02 era, release days as a whole completed like
+    quiet ones (75% vs 76%) and restricting their mornings cost money; only the three NFP sessions
+    stood apart (61%, all losing days). Three sessions settle nothing, so the tag exists to let every
+    later release day count."""
+    from cherrypick.core import events as _events
+
+    return _events.phase(snapshot.get("events"), snapshot.get("now_min"))
 
 
 def _classify_trend(snapshot: dict, params: dict) -> tuple[str, float | None]:

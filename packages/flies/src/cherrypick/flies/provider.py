@@ -277,6 +277,9 @@ def build_snapshot(
             # The session's own open/high/low and prior close (2026-08-04). Descriptive input for
             # the `trend` regime tag only -- no gate reads it. See `_session_bounds`.
             "session": _session_bounds(conn, symbol, today.isoformat()),
+            # The day's scheduled releases (2026-10-02): input for the `event` regime tag only -- no
+            # gate reads it. Read from the local calendar store, never the network; see `_day_events`.
+            "events": _day_events(today),
             # Kept so a session's results can be audited against how good its data actually was —
             # a day that skipped every entry on stale quotes should be visible as that, not as a
             # day the strategy found nothing.
@@ -320,6 +323,35 @@ def _attach_deltas(conn, legs_by_symbol: dict[str, dict], now_ts: float, max_age
             legs_by_symbol[r["symbol"]]["delta"] = float(r["delta"])
             fresh += 1
     return fresh
+
+
+_EVENTS_CACHE: dict = {}
+
+
+def _day_events(day) -> dict:
+    """`cherrypick.core.events.day_events` for the session, read once per (day, calendar files'
+    modification times) -- the loop ticks every 15 seconds and the files change once a day. A
+    failure to read reads as unknown, never as a quiet day."""
+    from cherrypick.core import events as _events
+
+    try:
+        root = _events.calendar_dir()
+        stamp = tuple(
+            p.stat().st_mtime if p.exists() else None
+            for p in (_events.bea_path(root), _events.fred_path(root), _events.fred_history_path(root))
+        )
+        key = (day.isoformat(), stamp)
+        if key not in _EVENTS_CACHE:
+            _EVENTS_CACHE.clear()
+            _EVENTS_CACHE[key] = _events.day_events(day, root=root)
+        return _EVENTS_CACHE[key]
+    except Exception as exc:  # noqa: BLE001 -- telemetry input: unknown, never a refused snapshot
+        return {
+            "date": day.isoformat(),
+            "known": False,
+            "missing": [f"error: {type(exc).__name__}"],
+            "events": [],
+        }
 
 
 def _session_bounds(conn, symbol: str, trade_date: str) -> dict:

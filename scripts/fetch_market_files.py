@@ -217,13 +217,32 @@ def fred_release_pages(key: str, today: date, get=None) -> list[dict]:
     raise RuntimeError(f"more than {FRED_MAX_PAGES} pages of release dates; not writing a partial calendar")
 
 
-def fetch_fred(report: dict, today: date) -> None:
+def _fred_key() -> str | None:
     try:
         from cherrypick.core.auth.credentials import CredentialStore
 
-        key = CredentialStore(FRED_SERVICE).get_secret(FRED_KEY)
+        return CredentialStore(FRED_SERVICE).get_secret(FRED_KEY)
     except Exception:  # noqa: BLE001 -- no keyring or no key: FRED is optional
-        key = None
+        return None
+
+
+def _merge_fred_history(rows: list[dict], start: date) -> None:
+    """Fold a fetch covering `start`..`start + 45 days` into fred_history.json. fred.json holds only
+    the window ahead and is replaced each run, so without this every past release date is lost the
+    day after it -- and a past session's events (`cherrypick.core.events`) could never be read."""
+    from cherrypick.core import events as _events
+
+    path = _events.fred_history_path(files.store_dir() / "calendar")
+    try:
+        old = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        old = None
+    end = start + timedelta(days=_events.FRED_WINDOW_DAYS)
+    _write(path, json.dumps(_events.merge_fred_history(old, rows, start.isoformat(), end.isoformat())))
+
+
+def fetch_fred(report: dict, today: date) -> None:
+    key = _fred_key()
     if not key:
         report["calendar"]["fred"] = "no key stored (run `fred-key`); CPI, jobs and PPI dates are absent"
         return
@@ -242,6 +261,7 @@ def fetch_fred(report: dict, today: date) -> None:
         files.fred_releases_path(),
         json.dumps({"fetched_at": datetime.now(UTC).isoformat(), "releases": rows}),
     )
+    _merge_fred_history(rows, today)
     report["calendar"]["fred_releases"] = len(rows)
 
 
@@ -366,11 +386,38 @@ def cmd_fred_key(_args) -> int:
     return 0
 
 
+def cmd_fred_history(args) -> int:
+    """Seed fred_history.json from `--since` to today, one 45-day window at a time (read-only GETs;
+    the key never reaches the output). Needed once: the daily fetch keeps it current after that."""
+    key = _fred_key()
+    if not key:
+        print(json.dumps({"ok": False, "error": "no FRED key stored (run `fred-key`)"}))
+        return 1
+    start, today = date.fromisoformat(args.since), datetime.now(files.ET).date()
+    windows = 0
+    while start <= today:
+        try:
+            pages = fred_release_pages(key, start)
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError, RuntimeError) as exc:
+            print(json.dumps({"ok": False, "error": str(exc).replace(key, "****"), "windows": windows}))
+            return 1
+        rows = fred_releases({"release_dates": [r for p in pages for r in p.get("release_dates") or []]})
+        _merge_fred_history(rows, start)
+        windows += 1
+        start += timedelta(days=45)
+        _pause()
+    print(json.dumps({"ok": True, "since": args.since, "windows": windows}))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     sub = ap.add_subparsers(dest="cmd")
     sub.add_parser("fetch").set_defaults(fn=cmd_fetch)
     sub.add_parser("fred-key").set_defaults(fn=cmd_fred_key)
+    hist = sub.add_parser("fred-history", help="seed the FRED release history back to --since (once)")
+    hist.add_argument("--since", required=True, help="YYYY-MM-DD")
+    hist.set_defaults(fn=cmd_fred_history)
     args = ap.parse_args(argv)
     return (getattr(args, "fn", None) or cmd_fetch)(args)
 

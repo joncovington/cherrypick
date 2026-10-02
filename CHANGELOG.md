@@ -11,6 +11,19 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: every flies entry and completion records the day's scheduled releases.**
+  - **The calendar.** A new `cherrypick.core.events` reads the release calendar the morning fetch
+    already stores: BEA, FRED and the curated FOMC days. It says when a source cannot speak for a
+    day, so a missing FRED key reads unknown, never quiet.
+  - **History.** The fetcher now keeps `fred_history.json`, which never drops a date; until now
+    each run replaced FRED's 45-day window. `fetch_market_files.py fred-history --since` seeds it.
+  - **The tag.** flies records `event_bucket` (after/before/none/unknown against the major
+    releases), the minutes since the latest one, and every release's label.
+  - **Reading it.** The regime cuts carry the dimension; `run.py backfill-events` stamps earlier
+    rows (a dry run unless `--write`).
+  - **No gate.** Release days completed like quiet ones over 43 sessions, and restricting their
+    mornings cost money; the flies experiment log has the numbers. Overview now shares core's BEA
+    parser.
 - **Fixed: two 2026 FOMC dates were wrong, and 2027 is now bundled.** `core.calendar` had the June
   decision on 06-10 (the meeting was 16-17) and December on 12-16 (the meeting is 8-9). MEIC blocks
   entries 13:30-14:30 and force-closes at 13:30 on FOMC days, so on 12-09 it would have held

@@ -313,13 +313,23 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
 `vol_bucket` (ATM straddle/spot), `gex_bucket` (gamma concentration, `"unknown"` without OI),
 `time_bucket`, `skew_bucket` (OTM put vs call at the traded strikes), `center_offset_bucket` (signed
 `centre − spot`, one strike per bucket), `trend_bucket` (`spot − day_open`, from the cache's
-`stream_summary` via `provider._session_bounds`). **Inert — nothing gates on it.** It exists to build
+`stream_summary` via `provider._session_bounds`), `event_bucket` (the day's scheduled releases
+against the moment, from `cherrypick.core.events` via `provider._day_events`). **Inert — nothing
+gates on it.** It exists to build
 a future selector that picks the winning entry/completion candidate for the current regime, and
 **a regime selector must score its candidates at a common price** (the iron dispatch above is the
 cautionary case). A tag definition is expensive to change once data accumulates, so think before
 changing one. The narrative behind every dimension:
 [docs/history.md](docs/history.md#regime-tagging-how-each-dimension-got-its-present-form).
 
+- **`event` is the one tag read from a calendar, not the market** (2026-10-02). `after` (a major
+  release has come out today: CPI, PPI, NFP, retail sales, PCE, GDP, JOLTS, FOMC), `before`, `none`,
+  or `unknown` when any calendar source cannot speak for the day. **Unknown is never quiet:** a
+  machine with no FRED key tags `unknown`, not `none`. `event_value` is minutes since the latest
+  major release; `event_labels` lists every release, minor ones too. Backfillable exactly
+  (`run.py backfill-events`, dry run unless `--write`), because a calendar is history. FRED mixes
+  headline dates with revisions (retail sales 2026-09-28 reads as a release day), and the agencies'
+  own calendars are the planned fix.
 - **Store the measure, not just the bucket.** `classify_regime` returns the continuous measure behind
   each bucket plus the GEX surface's provenance (`net_gex`, `gamma_flip`, `gex_strikes`,
   `gex_input_age`); `analytics.by_regime(..., bucket_edges=[...])` re-cuts it. Regime data has no

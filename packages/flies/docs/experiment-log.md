@@ -594,3 +594,35 @@ about $3.20 a spread.
   only if it is ahead on both and not on the strength of one or two sessions.
 - **Its book starts at its own `arm_added` break,** and it shares the 10-05 completion-price break
   with every legged arm.
+
+## 2026-10-02 — release days: no gate, no morning restriction; every entry now tagged with its day's releases
+
+The question was whether scheduled releases (PCE, JOLTS, CPI and the rest) should gate entries. It
+was asked after the 10-02 jobs report, when paper `control` completed 6 of 10 and live 2 of 5. Read
+over paper `control` (345 settled 5-wide SPX spreads, 43 sessions, 08-03..10-02). The release dates
+come from BEA's file, FRED's history and the curated FOMC list.
+
+| Session | Sessions | Completion | Per spread | Losing days |
+|---|---|---|---|---|
+| No major release | 29 | 76% | +$4.93 | 12 / 29 |
+| Major release at 8:30 | 11 | 75% | +$1.52 | 4 / 11 |
+| JOLTS at 10:00 | 3 | 94% | +$47.79 | 0 / 3 |
+| **NFP** | **3** | **61%** | **−$41.65** | **3 / 3** |
+
+- **Release days as a whole complete like quiet ones.** CPI, PCE, GDP, PPI, JOLTS and FOMC days were
+  all positive. A whole-day gate on releases would have cost money.
+- **Restricting the morning is a negative result.** Release days' 10:00–10:30 entries completed 82%,
+  the same as quiet days: an 8:30 release has been absorbed by 10:00. Every morning rule on release
+  days lost money: start 10:30 (−$269, 5 sessions better and 6 worse), start 11:00 (−$823, 4/7),
+  skip 10:20–11:30 (−$783, 2/9). The weak stretch on release days is 11:00–12:30 (50–62%), not the
+  morning.
+- **Only NFP stands apart, and three sessions do not establish it.** All three NFP days lost, but
+  their misses fell at different times. On 08-07 and 09-04 they came at 10:00–10:15; on 10-02 at
+  10:27–11:20, after the early entries had completed. No time window holds across all three. Every
+  rule that wins on them amounts to trading less on NFP days, and three sessions chosen after the
+  fact give p 0.25 at best. A lead, not a finding.
+
+**Declared: the `event` regime tag, from 2026-10-02.** Every entry and completion records the
+day's releases (`event_bucket`, `event_value` minutes since the latest major release,
+`event_labels`). Earlier rows are backfilled from the calendar store, and the regime cuts carry the
+dimension. Tag only, so not a break. Read NFP again once there are several more of them.
