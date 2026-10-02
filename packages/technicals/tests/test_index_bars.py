@@ -9,8 +9,7 @@ reproduces the daily bars it overlaps -- otherwise it stays a gap rather than an
 from __future__ import annotations
 
 import importlib.util
-import sqlite3
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -87,7 +86,8 @@ def _index_file(rows):
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = fib.connect(path)
     conn.executemany(
-        "INSERT INTO index_bars (symbol, date, open, high, low, close, source, fetched_at) VALUES (?,?,?,?,?,?,?,?)",
+        "INSERT INTO index_bars (symbol, date, open, high, low, close, source, fetched_at) "
+        "VALUES (?,?,?,?,?,?,?,?)",
         [(*r, "daily", 0.0) for r in rows],
     )
     conn.commit()
