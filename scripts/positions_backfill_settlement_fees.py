@@ -13,7 +13,7 @@ functions the modules charge it with:
   + SUM(<prefix>assignments.fees)                           each physical assignment's disposal fee
 
 -- `itm - assigned` is the guard calendars and pmcc have always carried. curve lacked it until
-2026-09-24 (995fcbe8), which charged an assigned leg twice; no curve position had been assigned, so
+2026-09-24 (63a2c75b), which charged an assigned leg twice; no curve position had been assigned, so
 no row carries that. Refuses (and writes nothing to that ledger) where the recovered figure exceeds
 the row's recorded `exit_cost`, since the settlement part cannot be larger than the costs it is part
 of. Runnable from anywhere; ledgers resolve off `$CHERRYPICK_HOME` (default `~/.cherrypick`), or

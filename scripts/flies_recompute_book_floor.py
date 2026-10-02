@@ -8,7 +8,7 @@ Runnable from anywhere; ledgers resolve off `$CHERRYPICK_HOME` (default `~/.cher
 **What was wrong.** Settlement folds the expiry fee its real price charged into each position's
 `fees`, and `fly.position_pnl` trusted that figure at every price, so a settled book's `worst` paired
 a hypothetical price with the real settlement's fees. 2026-09-24's live control recorded -$224.11,
-a combination no single price produces; the book's true worst is -$223.11. Fixed in c138a6d0, which
+a combination no single price produces; the book's true worst is -$223.11. Fixed in d6f814a8, which
 only reached books settled after it. This brings the rest into line.
 
 **What it rewrites, and what it leaves.** Only the floor columns of settled `fly_books` rows --

@@ -8,7 +8,7 @@ rules go in [../CLAUDE.md](../CLAUDE.md); this file holds the things that are ne
 
 The one half of the two-open change that did not land. The deferral that became item "Two open
 spreads" (Done, below) said to turn it on live *with* the second spread -- it is the gate built for a
-second entry into a tape that already stranded the first -- but a0a820d4 landed the cap-only rule
+second entry into a tape that already stranded the first -- but 94836aec landed the cap-only rule
 alone, and nothing tracked the gate after that.
 
 - **First:** replay live's entries since 2026-09-25 under `miss_stop_minutes` (the `replay_gates.py`
@@ -118,7 +118,7 @@ failed on the outright rows.
 
 ### Two open spreads at once in the live pilot -- DONE 2026-09-25 (cap only, no count limit)
 
-Landed in a0a820d4: `live.max_incomplete_spreads` defaults to no limit, so the `$1,000` cap is the
+Landed in 94836aec: `live.max_incomplete_spreads` defaults to no limit, so the `$1,000` cap is the
 only sizing gate (1 restores the old rule). The replay was run first (control, 08-21..09-24): the
 one-incomplete rule netted +$2,130 (max drawdown -$883, worst session -$298), the cap alone +$3,119
 (-$1,256, -$818). `miss_stop_minutes` was NOT turned on live with it. The original deferral note

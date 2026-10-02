@@ -344,7 +344,7 @@ MEIC stops being a producer and becomes a consumer + a thin sidecar:
 
 **⚡ THE CUTOVER WAS EXECUTED LIVE (2026-07-21, pre-open):** stopped MEIC's streamer, validated the
 standalone streamer live (1982 symbols, all 7 underlyings, fresh), flipped the real config (top-level
-`streamer` enabled, `modules.meic.streamer` disabled), repointed flies, and committed (`e1da682`). The
+`streamer` enabled, `modules.meic.streamer` disabled), repointed flies, and committed (`c62adcb`). The
 standalone streamer is the sole producer. See the memory note `streamer-package-extraction` for the exact
 actions + rollback.
 9. **Watchdog stale-restart (generalized)** ✓ — extracted the streamer silence-restart from `_check_meic`

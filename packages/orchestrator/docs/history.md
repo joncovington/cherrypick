@@ -272,7 +272,7 @@ module's SLA under another's name and the watchdog raised a CRITICAL titled for 
 - **Ambiguity is reported, never remediated — and restart is the most expensive remedy there is.**
   A streamer recycle reloads every chain and costs a 240s settle; a module restart drops in-flight
   ticks. So the bar for restarting scales with what the restart costs, and everything below it pages
-  a human instead. `e4f427e` applied this to the producer (a hint-only widening waits out a cooldown,
+  a human instead. `1092ecc` applied this to the producer (a hint-only widening waits out a cooldown,
   a missing symbol does not); the resident jobs now follow it too — an unjudgeable child is left
   running rather than killed on suspicion. What makes that safe is `watchdog._check_resident_health`
   (mirrored in `doctor`), which reports the three states nothing else can see: restart **churn**
