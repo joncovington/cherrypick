@@ -128,7 +128,8 @@ Step "Writing your configuration (kept if it already exists)"
 Note "Config: $HOME\.cherrypick\config.json"
 
 Step "Checking optional extras on this machine"
-Run $VPy @($RunPy, "capabilities", "--detect", "--write") "Recording capabilities"
+$null = & $VPy $RunPy capabilities --detect --write
+if ($LASTEXITCODE -ne 0) { Fail "Recording capabilities failed (exit $LASTEXITCODE)." }
 $caps = & $VPy $RunPy capabilities | ConvertFrom-Json
 $hasDolt = [bool]$caps.capabilities.dolt
 $hasClaude = [bool]$caps.capabilities.claude
@@ -166,7 +167,7 @@ if ($hasDolt) {
                 Push-Location $dataDir
                 try { Run "dolt" @("clone", "post-no-preference/$db", $db) "Downloading $db" } finally { Pop-Location }
             }
-            Run $VPy @($RunPy, "capabilities", "--detect", "--write") "Recording capabilities"
+            $null = & $VPy $RunPy capabilities --detect --write
             $hasDolt = [bool]((& $VPy $RunPy capabilities | ConvertFrom-Json).capabilities.dolt)
         }
     }
