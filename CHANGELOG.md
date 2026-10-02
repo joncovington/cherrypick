@@ -11,6 +11,14 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Fixed: the console's bridges reached the system Python on Linux.** The launcher prepends its
+  own interpreter's directory to node's PATH so a bare `python` resolves to the one with the suite,
+  but it resolved the path through symlinks — and a Linux venv's `bin/python` is a symlink to the
+  BASE interpreter, so the PATH entry became `/usr/bin` and every bridge (config editor, keyring,
+  positions, features) answered "the orchestrator package must be installed". Windows venvs copy a
+  real launcher in, so `resolve()` happened to be correct there; on Linux the venv must be reached
+  THROUGH the symlink. Now `absolute()`, guarded by a regression test that builds both venv shapes
+  (symlinked and real-file interpreter) and pins which directory leads the child's PATH.
 - **Fixed: the suite-wide account listing ran a bare argv.** `accounts._first_broker_module`
   called `cfgmod.broker_tool(mcfg)` without the module name, so for any module whose config block
   does not declare `broker_tool` itself (meic ships without one), `cherrypick account --set` and
