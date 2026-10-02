@@ -18,6 +18,11 @@ MON, TUE, WED, THU, FRI, SAT, SUN = range(7)
 
 # Curated FOMC announcement days (the second, decision day of each meeting). The Fed *announces*
 # these, so they cannot be computed — bundle known years and extend as the Fed publishes new schedules.
+# Source: federalreserve.gov/monetarypolicy/fomccalendars.htm, checked 2026-10-02. That check found
+# two 2026 dates wrong since they were bundled: June was 06-10 (the meeting was 16-17) and December
+# 12-16 (the meeting is 8-9). MEIC's FOMC blackout and 13:30 force-close fire on these days, so a
+# wrong date both misses the real announcement and closes positions on an ordinary afternoon.
+# Re-check against the Fed's page whenever a year is added.
 _FOMC_DATES: dict[int, tuple[str, ...]] = {
     2025: (
         "2025-01-29",
@@ -33,11 +38,21 @@ _FOMC_DATES: dict[int, tuple[str, ...]] = {
         "2026-01-28",
         "2026-03-18",
         "2026-04-29",
-        "2026-06-10",
+        "2026-06-17",
         "2026-07-29",
         "2026-09-16",
         "2026-10-28",
-        "2026-12-16",
+        "2026-12-09",
+    ),
+    2027: (
+        "2027-01-27",
+        "2027-03-17",
+        "2027-04-28",
+        "2027-06-09",
+        "2027-07-28",
+        "2027-09-15",
+        "2027-10-27",
+        "2027-12-08",
     ),
 }
 
