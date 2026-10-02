@@ -39,7 +39,7 @@ export function ModuleNav({ module, slide }: { module: ModuleId; slide: string }
   const qs = params.toString();
   const withQs = (path: string) => (qs ? `${path}?${qs}` : path);
   const dirty = useDirtyCount();
-  // An off module, the advisor and its tabs, and Reports' chart leave the rail when the suite has
+  // An off module, the advisor and its tabs, and the technicals chart leave the rail when the suite has
   // turned them off (`visibility.ts`); Config keeps every toggle, so it is never filtered.
   const features = useFeatures();
   const { suite, modules } = visibleNavLinks(features);

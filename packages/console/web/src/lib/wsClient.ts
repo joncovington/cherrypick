@@ -1,4 +1,12 @@
-import type { ClientMessage, ServerMessage, QuoteTick, MarketDataState } from "@console/shared";
+import type {
+  CandleBar,
+  CandleMessage,
+  CandlePeriod,
+  ClientMessage,
+  ServerMessage,
+  QuoteTick,
+  MarketDataState,
+} from "@console/shared";
 
 export interface QuoteState {
   bid?: number;
@@ -19,6 +27,9 @@ export interface WsState {
 }
 
 type Listener = () => void;
+type CandleListener = (msg: CandleMessage) => void;
+
+const candleKey = (symbol: string, period: CandlePeriod): string => `${symbol}|${period}`;
 
 /**
  * Singleton reconnecting WebSocket client with client-side refcounting:
@@ -34,6 +45,10 @@ class WsClient {
   private stateListeners = new Set<Listener>();
   private backoff = 1_000;
   private reconnectTimer: number | null = null;
+  /** Candle series, refcounted like quotes: `symbol|period` → holders, bars and listeners. */
+  private candleRefs = new Map<string, { symbol: string; period: CandlePeriod; n: number }>();
+  private candleBars = new Map<string, Map<number, CandleBar>>();
+  private candleListeners = new Map<string, Set<CandleListener>>();
 
   private connect(): void {
     if (this.ws !== null || this.reconnectTimer !== null) return;
@@ -47,6 +62,7 @@ class WsClient {
       this.setState({ ...this.state, socket: "open" });
       const symbols = [...this.refs.keys()];
       if (symbols.length > 0) this.send({ op: "subscribe", symbols });
+      for (const { symbol, period } of this.candleRefs.values()) this.send({ op: "candles", symbol, period });
     };
     ws.onmessage = (ev) => {
       let msg: ServerMessage;
@@ -56,6 +72,7 @@ class WsClient {
         return;
       }
       if (msg.type === "tick") this.applyTick(msg);
+      else if (msg.type === "candles") this.applyCandles(msg);
       else if (msg.type === "status") {
         this.setState({ ...this.state, marketData: msg.marketData, dxlink: msg.dxlink });
       }
@@ -63,7 +80,7 @@ class WsClient {
     ws.onclose = () => {
       this.ws = null;
       this.setState({ ...this.state, socket: "closed", marketData: "cached", dxlink: "disconnected" });
-      if (this.refs.size > 0) this.scheduleReconnect();
+      if (this.refs.size > 0 || this.candleRefs.size > 0) this.scheduleReconnect();
     };
     ws.onerror = () => ws.close();
   }
@@ -101,6 +118,18 @@ class WsClient {
     for (const l of this.quoteListeners.get(tick.symbol) ?? []) l();
   }
 
+  private applyCandles(msg: CandleMessage): void {
+    const key = candleKey(msg.symbol, msg.period);
+    if (!this.candleRefs.has(key)) return;
+    let bars = this.candleBars.get(key);
+    if (bars === undefined || msg.replace) {
+      bars = new Map();
+      this.candleBars.set(key, bars);
+    }
+    for (const b of msg.bars) bars.set(b.t, b);
+    for (const l of this.candleListeners.get(key) ?? []) l(msg);
+  }
+
   private setState(s: WsState): void {
     this.state = s;
     for (const l of this.stateListeners) l();
@@ -125,6 +154,53 @@ class WsClient {
     } else {
       this.refs.set(symbol, n - 1);
     }
+  }
+
+  acquireCandles(symbol: string, period: CandlePeriod): void {
+    const key = candleKey(symbol, period);
+    const cur = this.candleRefs.get(key);
+    if (cur !== undefined) {
+      cur.n += 1;
+      return;
+    }
+    this.candleRefs.set(key, { symbol, period, n: 1 });
+    this.connect();
+    this.send({ op: "candles", symbol, period });
+  }
+
+  releaseCandles(symbol: string, period: CandlePeriod): void {
+    const key = candleKey(symbol, period);
+    const cur = this.candleRefs.get(key);
+    if (cur === undefined) return;
+    if (cur.n > 1) {
+      cur.n -= 1;
+      return;
+    }
+    this.candleRefs.delete(key);
+    this.candleBars.delete(key);
+    this.send({ op: "candlesOff", symbol, period });
+  }
+
+  /** Every bar held for a series, oldest first. */
+  getCandles(symbol: string, period: CandlePeriod): CandleBar[] {
+    return [...(this.candleBars.get(candleKey(symbol, period))?.values() ?? [])].sort((a, b) => a.t - b.t);
+  }
+
+  candleCount(symbol: string, period: CandlePeriod): number {
+    return this.candleBars.get(candleKey(symbol, period))?.size ?? 0;
+  }
+
+  onCandles(symbol: string, period: CandlePeriod, l: CandleListener): () => void {
+    const key = candleKey(symbol, period);
+    let set = this.candleListeners.get(key);
+    if (set === undefined) {
+      set = new Set();
+      this.candleListeners.set(key, set);
+    }
+    set.add(l);
+    return () => {
+      set.delete(l);
+    };
   }
 
   getQuote(symbol: string): QuoteState | undefined {

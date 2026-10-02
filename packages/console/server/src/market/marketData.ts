@@ -13,6 +13,14 @@ const HEARTBEAT_SILENCE_MS = 60_000;
  *  longer than HEARTBEAT_SILENCE_MS means the session died, not a quiet tape. */
 const SENTINEL_SYMBOL = "SPX";
 const TICK_MEMORY_MAX = 5_000;
+/** The feed's acceptAggregationPeriod, in seconds. The SDK sets 10, which conflates every event
+ *  type to one update per symbol per 10s; measured 2026-10-01 (`scripts/probe_candles.py
+ *  --aggregation 10`) a live /ES candle then moved exactly every 10s, against ~1.5s at 0.1. One
+ *  second keeps the live chart moving with the tape without flooding the quote socket. */
+const FEED_AGGREGATION_S = 1;
+
+type QuoteStreamer = ReturnType<typeof getClient>["quoteStreamer"];
+type FeedSetup = Parameters<NonNullable<QuoteStreamer["dxLinkFeed"]>["configure"]>[0];
 
 interface SymbolEntry {
   refs: number;
@@ -194,6 +202,12 @@ export class MarketDataService extends EventEmitter {
     this.connecting = (async () => {
       const streamer = getClient().quoteStreamer;
       await streamer.connect();
+      // configure() replaces the whole accept config, so the SDK's COMPACT format is restated. The
+      // enum is not re-exported by @tastytrade/api; its value is the wire string.
+      streamer.dxLinkFeed?.configure({
+        acceptAggregationPeriod: FEED_AGGREGATION_S,
+        acceptDataFormat: "COMPACT" as FeedSetup["acceptDataFormat"],
+      });
       this.detachFeedListener?.();
       this.detachFeedListener = streamer.addEventListener((events: unknown) => {
         this.handleEvents(events);
@@ -211,6 +225,27 @@ export class MarketDataService extends EventEmitter {
       this.setState("error");
       throw err;
     });
+  }
+
+  /**
+   * A Candle subscription on the console's session, `candleSymbol` already carrying its `{=…}`
+   * attributes. Talks to the feed directly: the SDK's `unsubscribe()` loops over every event type
+   * EXCEPT Candle, so a candle subscribed through it can never be removed.
+   */
+  async addCandleSubscription(candleSymbol: string, fromTime: number): Promise<void> {
+    await this.withFeed(() => {
+      const feed = getClient().quoteStreamer.dxLinkFeed;
+      if (feed === null) throw new Error("DxLink feed is not connected");
+      feed.addSubscriptions({ type: "Candle", symbol: candleSymbol, fromTime });
+    });
+  }
+
+  removeCandleSubscription(candleSymbol: string): void {
+    try {
+      getClient().quoteStreamer.dxLinkFeed?.removeSubscriptions({ type: "Candle", symbol: candleSymbol });
+    } catch {
+      /* connection already gone; a rebuilt feed starts with no subscriptions */
+    }
   }
 
   /**

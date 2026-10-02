@@ -8,6 +8,12 @@ file tracks the *suite*, not any one package.
 
 ## [Unreleased]
 
+- **Charts page** (console). A live intraday futures chart — /ES, /NQ, /CL, /GC, /ZB in 1-, 5- or
+  15-minute candles, extended hours, the bar in progress updating about once a second — over the
+  console's own DXLink session, measured first with `scripts/probe_candles.py`. The technicals chart
+  moved here from Reports (`/charts/technicals`; `/reports/chart` redirects). The console's feed now
+  aggregates at 1s instead of the SDK's 10s.
+
 ## v0.10.0 — 2026-10-01 — the public release
 The first release meant to be installed by someone other than its author: one command takes a fresh
 clone to a running console, the experimental modules ship switched off, every example config

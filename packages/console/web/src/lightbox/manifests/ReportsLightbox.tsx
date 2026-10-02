@@ -1,6 +1,5 @@
 import { MorningPage } from "../../pages/Morning/MorningPage";
 import { ReviewPage } from "../../pages/Review/ReviewPage";
-import { ChartPage } from "../../pages/Morning/ChartPage";
 import { ModuleFrame } from "../ModuleFrame";
 import type { SlideDef } from "../types";
 
@@ -14,8 +13,6 @@ import type { SlideDef } from "../types";
 const slides: SlideDef[] = [
   { id: "morning", label: "morning", render: () => <MorningPage /> },
   { id: "eod", label: "eod", render: () => <ReviewPage /> },
-  // One name at a time from the technicals package: `/reports/chart?symbol=MSFT`.
-  { id: "chart", label: "chart", render: () => <ChartPage /> },
 ];
 
 export function ReportsLightbox({ slide }: { slide: string }) {

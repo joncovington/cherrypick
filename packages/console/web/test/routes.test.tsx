@@ -274,9 +274,15 @@ describe("a page the suite has turned off", () => {
     expect(html).toContain('href="/config"');
   });
 
-  it("Reports loses its chart tab when technicals is off", () => {
-    expect(renderWith("/reports", base)).not.toContain('href="/reports/chart"');
-    expect(renderWith("/reports", { ...base, features: { ...base.features, technicals: true } })).toContain('href="/reports/chart"');
+  it("Charts loses its technicals tab when technicals is off, and keeps the live intraday chart", () => {
+    expect(renderWith("/charts", base)).not.toContain('href="/charts/technicals"');
+    expect(renderWith("/charts", base)).toContain('href="/charts/intraday"');
+    expect(renderWith("/charts", { ...base, features: { ...base.features, technicals: true } })).toContain('href="/charts/technicals"');
+  });
+
+  it("Reports no longer carries a chart tab", () => {
+    const on = { ...base, features: { ...base.features, technicals: true } };
+    expect(renderWith("/reports", on)).not.toContain('href="/reports/chart"');
   });
 
   it("an experimental module that is on carries the chip in its title", () => {
@@ -301,5 +307,10 @@ describe("the old report routes", () => {
     for (const path of ["/morning", "/review"]) {
       expect(render(path)).not.toContain("Page not found");
     }
+  });
+
+  it("/reports/chart, the technicals chart's old home, is still routed", () => {
+    // Morning-pack links and bookmarks carry `?symbol=`; the redirect keeps it (`MovedTo`).
+    expect(render("/reports/chart?symbol=MSFT")).not.toContain("Page not found");
   });
 });

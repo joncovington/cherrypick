@@ -62,19 +62,21 @@ describe("gex, the advisor and the reports", () => {
     expect(isSlideVisible("flies", "advisor", ALL_ON)).toBe(true);
   });
 
-  it("Reports' chart follows technicals; the narratives follow their own features", () => {
+  it("the technicals chart follows technicals; the narratives follow their own features", () => {
     const off = withOff({ features: { advisor: true, technicals: false, review_narrative: false, morning_narrative: true } });
-    expect(isSlideVisible("reports", "chart", off)).toBe(false);
+    expect(isSlideVisible("charts", "technicals", off)).toBe(false);
+    // The live intraday chart is the console's own feed: technicals being off does not hide it.
+    expect(isSlideVisible("charts", "intraday", off)).toBe(true);
     expect(isSlideVisible("reports", "morning", off)).toBe(true);
-    expect(isSlideVisible("reports", "chart", ALL_ON)).toBe(true);
+    expect(isSlideVisible("charts", "technicals", ALL_ON)).toBe(true);
     expect(isFeatureOn("technicals", off)).toBe(false);
     expect(isFeatureOn("review_narrative", off)).toBe(false);
     expect(isFeatureOn("morning_narrative", off)).toBe(true);
   });
 
-  it("Config, System, Live, Reports and the Overview are never hidden", () => {
+  it("Config, System, Live, Charts, Reports and the Overview are never hidden", () => {
     const everythingOff = withOff({ modules: {}, services: { "gex-recorder": false }, features: { advisor: false, technicals: false } });
-    for (const id of ["config", "system", "live", "reports", ""]) expect(isModuleVisible(id, everythingOff)).toBe(true);
+    for (const id of ["config", "system", "live", "charts", "reports", ""]) expect(isModuleVisible(id, everythingOff)).toBe(true);
   });
 });
 
@@ -91,7 +93,7 @@ describe("fail open", () => {
     const failed: SuiteFeatures = { ok: false, error: "config bridge unavailable" };
     for (const id of ["earnings", "gex", "advisor"]) expect(isModuleVisible(id, failed)).toBe(true);
     expect(isFeatureOn("advisor", failed)).toBe(true);
-    expect(isSlideVisible("reports", "chart", failed)).toBe(true);
+    expect(isSlideVisible("charts", "technicals", failed)).toBe(true);
     expect(offReason("earnings", failed)).toBeNull();
     expect(visibleNavLinks(failed).modules).toHaveLength(8);
   });
