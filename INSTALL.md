@@ -93,9 +93,15 @@ there, never overwrite your configuration, and are how you add Dolt or Claude Co
 8. **Broker login.** `python -m cherrypick.core.auth setup` asks for your OAuth `client_secret` and
    `refresh_token` (hidden input) and stores them in the OS keyring — Windows Credential Manager,
    the macOS Keychain or the Linux Secret Service — never in a file.
-9. **Start.** `run.py install` registers the one anchor task and starts the supervisor, which then
+9. **Settings history (optional, off unless you say yes).** `run.py config-backup --init --enable
+   [--remote <url>]` makes `~/.cherrypick` a git repository that tracks only `config.json` and
+   `config/*.json`, and the supervisor's `config-backup` job commits changes every 15 minutes and
+   pushes them to the remote, if you gave one. Use a **private** remote. Needs git; skipped without it.
+   Switch it on or off later on the console's Config page or with `run.py config-backup --enable` /
+   `--disable`.
+10. **Start.** `run.py install` registers the one anchor task and starts the supervisor, which then
    starts the data feed, every enabled module's paper loop and the console.
-10. **Open** <http://127.0.0.1:5070>.
+11. **Open** <http://127.0.0.1:5070>.
 
 | Option (Windows / macOS and Linux) | Effect |
 |---|---|
@@ -103,6 +109,7 @@ there, never overwrite your configuration, and are how you add Dolt or Claude Co
 | `-Yes` / `--yes` | Accept every default without asking (Dolt: no; connect: yes). The disclaimer still needs `-AcceptDisclaimer`. |
 | `-SkipDolt` / `--skip-dolt` | Do not offer the Dolt setup. Earnings and technicals stay off. |
 | `-WithDesk` / `--with-desk` | Also install the EXPERIMENTAL manual desk. Installing it does not enable it. |
+| `-ConfigHistory` / `--config-history` | Keep a git history of your settings without being asked (add `-ConfigRemote <url>` / `--config-remote <url>` to push it to a private repository you own). |
 | `-NoStart` / `--no-start` | Install only. Start later with `.venv/bin/python packages/orchestrator/run.py install` (`.venv\Scripts\python` on Windows). |
 
 **The supervisor runs the interpreter that ran `install`** — the installer's `.venv`. Run your own

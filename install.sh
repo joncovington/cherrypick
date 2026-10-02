@@ -10,21 +10,26 @@
 #   --skip-dolt          do not offer the Dolt setup (earnings and technicals stay off)
 #   --with-desk          also install the EXPERIMENTAL manual desk (packages/desk)
 #   --no-start           install only; do not start the suite
+#   --config-history [--config-remote URL]  keep a git history of your settings
 #
 # The supervisor's cron backend on POSIX is newer than the Windows one and less proven; see
 # INSTALL.md.
 
 set -euo pipefail
 
-YES=0; ACCEPT=0; SKIP_DOLT=0; WITH_DESK=0; NO_START=0
+YES=0; ACCEPT=0; SKIP_DOLT=0; WITH_DESK=0; NO_START=0; CONFIG_HISTORY=0; CONFIG_REMOTE=""
+EXPECT_REMOTE=0
 for arg in "$@"; do
+    if [ "$EXPECT_REMOTE" = 1 ]; then CONFIG_REMOTE="$arg"; EXPECT_REMOTE=0; continue; fi
     case "$arg" in
+        --config-history) CONFIG_HISTORY=1 ;;
+        --config-remote) EXPECT_REMOTE=1 ;;
         --yes) YES=1 ;;
         --accept-disclaimer) ACCEPT=1 ;;
         --skip-dolt) SKIP_DOLT=1 ;;
         --with-desk) WITH_DESK=1 ;;
         --no-start) NO_START=1 ;;
-        -h|--help) sed -n 2,14p "$0"; exit 0 ;;
+        -h|--help) sed -n 2,15p "$0"; exit 0 ;;
         *) echo "unknown option: $arg" >&2; exit 2 ;;
     esac
 done
@@ -173,6 +178,34 @@ elif ask "Connect now?" y; then
     "$VPY" -m cherrypick.core.auth setup || warn "Not connected. Run this installer again to try once more."
 else
     warn "Skipped. Market data will not flow until you connect; run this installer again to do it."
+fi
+
+# ------------------------------------------------------------------------------- config history
+step "Optional: a history of your settings"
+note "cherrypick can keep a git history of your settings (config files only; never your trading"
+note "data or passwords) and, if you give it one, push it to a PRIVATE repository you own, so a"
+note "change can be undone and a new computer set up the same way."
+if ! command -v git >/dev/null 2>&1; then
+    note "git is not installed, so this is skipped. Install git and run the installer again to add it."
+else
+    WANT=$CONFIG_HISTORY; EXISTING=0
+    [ -d "$HOME/.cherrypick/.git" ] && { WANT=1; EXISTING=1; }
+    if [ "$WANT" != 1 ] && [ "$YES" != 1 ] && ask "Keep a history of your settings?" n; then WANT=1; fi
+    if [ "$WANT" = 1 ]; then
+        REMOTE="$CONFIG_REMOTE"
+        if [ -z "$REMOTE" ] && [ "$YES" != 1 ] && [ "$EXISTING" != 1 ]; then
+            read -r -p "    Private git repository URL to push to (Enter to keep it on this computer only): " REMOTE || REMOTE=""
+        fi
+        if [ -n "$REMOTE" ]; then
+            "$VPY" "$RUNPY" config-backup --init --enable --remote "$REMOTE" >/dev/null && OK=1 || OK=0
+        else
+            "$VPY" "$RUNPY" config-backup --init --enable >/dev/null && OK=1 || OK=0
+        fi
+        if [ "$OK" = 1 ]; then note "On: your settings are committed every 15 minutes when they change."
+        else warn "Could not set it up; run '.venv/bin/python packages/orchestrator/run.py config-backup --init' to see why."; fi
+    else
+        note "Skipped. You can switch it on later on the console's Config page or with run.py config-backup."
+    fi
 fi
 
 # ------------------------------------------------------------------------------- start
