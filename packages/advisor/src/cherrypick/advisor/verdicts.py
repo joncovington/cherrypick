@@ -76,9 +76,13 @@ def readings(module: str, *, start: str | None = None, end: str | None = None) -
 
 def _delta(advised: dict | None, base: dict | None) -> dict[str, Any]:
     """Advised minus base on the handful of fields a comparison actually turns on. `None` stays
-    `None`: a field neither side recorded has no difference to report."""
+    `None`: a field neither side recorded has no difference to report.
+
+    The Sharpe compared is the per-SESSION one. The per-trade `sharpe` rewards an arm for taking
+    more entries on the same days — they are not independent draws — so a delta in it says more
+    about entry count than about the risk the arm ran."""
     out: dict[str, Any] = {}
-    for field in ("net_pnl", "win_rate", "return_on_capital", "sharpe"):
+    for field in ("net_pnl", "win_rate", "return_on_capital", "session_sharpe"):
         a = (advised or {}).get(field)
         b = (base or {}).get(field)
         out[field] = round(a - b, 4) if isinstance(a, (int, float)) and isinstance(b, (int, float)) else None

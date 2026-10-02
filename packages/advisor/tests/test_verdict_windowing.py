@@ -212,3 +212,13 @@ def test_underpowered_reads_a_reading_spelled_either_way():
     assert verdicts._underpowered({"sample": 9, "days": 6}, rule) is False
     assert verdicts._underpowered({"sample": 9, "sessions": 6}, rule) is False
     assert verdicts._underpowered({"sample": 9, "sessions": 4}, rule) is True
+
+
+def test_delta_compares_the_per_session_sharpe_not_the_per_trade_one():
+    """An arm that takes more entries on the same days moves the per-trade Sharpe without running
+    any different risk; the delta must not report that as a difference between the arms."""
+    advised = {"net_pnl": 120.0, "sharpe": 0.9, "session_sharpe": 0.31}
+    base = {"net_pnl": 100.0, "sharpe": 0.2, "session_sharpe": 0.25}
+    delta = verdicts._delta(advised, base)
+    assert delta["session_sharpe"] == 0.06
+    assert "sharpe" not in delta

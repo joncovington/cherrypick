@@ -34,8 +34,8 @@ from . import report
 
 # --------------------------------------------------------------------------- readings
 # The reading IS the shared bundle (cherrypick.core.metrics.calibration_reading): sample /
-# win_rate / sessions / net_pnl plus return_on_capital, per-trade sharpe, session-ordered max
-# drawdown, sample_progress, and the 2x-slippage restatement with coverage counts — one
+# win_rate / sessions / net_pnl plus return_on_capital, per-trade and per-session sharpe,
+# session-ordered max drawdown, sample_progress, and the 2x-slippage restatement with coverage counts — one
 # metric vocabulary for every tag on every module, and the shape the hardened qualification
 # checks (min_return_on_capital, require_slippage_survival) consume.
 _reading = calibration_reading

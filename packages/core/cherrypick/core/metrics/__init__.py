@@ -10,6 +10,8 @@ own richer per-module analytics; THIS bundle is what `calibrate` injects into
   fraction of the capital genuinely at risk.
 - sharpe: per-trade, deliberately NOT annualized (discrete event trades; annualizing a
   0DTE series and an overnight-earnings series differently would defeat comparability).
+- session_sharpe / psr: the same ratio over per-SESSION nets, and the probability it is above
+  zero. What an account feels is the day, not the entry — see `session_sharpe`.
 - max_drawdown: over the session-ordered equity path of the group.
 - Unknowns stay None, never 0: a record without capital contributes nothing to RoC, and
   the *_coverage counts say how much of the sample carries each datum. A misleadingly
@@ -200,6 +202,56 @@ def session_nets(records: Sequence[Mapping]) -> list[float]:
     return [round(by_session[s], 2) for s in sorted(by_session)]
 
 
+def session_sharpe(values: Sequence[float], min_n: int = MIN_EFFECTIVE_N) -> float | None:
+    """Per-session Sharpe: mean/stdev of `session_nets`, un-annualized.
+
+    The per-trade `sharpe` answers how steady one entry is, which is not the risk an arm runs.
+    Entries on one day observe one market (MEIC took 265 one-lot entries in a single session), so
+    a per-trade series counts one bad day as many independent small losses and reads smoother than
+    the book that held them. This is the ratio over the series the account actually lives through.
+
+    Un-annualized for the bundle's comparability reason: a 0DTE book observes ~252 sessions a year
+    and a weekly one ~52, so the factor belongs to the surface that knows which it is showing
+    (the console's `riskMetrics.PERIODS`). For a daily book, x sqrt(252) gives the familiar figure.
+
+    Sessions the arm declined to trade are absent from `session_nets`, so a gated arm reads
+    smoother than its capital was. Refuses below `min_n` sessions, for the CVaR reason: a ratio
+    over a handful of days reads as a risk number and is not one."""
+    if len(values) < min_n:
+        return None
+    return sharpe(values)
+
+
+def probabilistic_sharpe(
+    values: Sequence[float], benchmark: float = 0.0, min_n: int = MIN_EFFECTIVE_N
+) -> float | None:
+    """Probabilistic Sharpe Ratio (Bailey & López de Prado, 2012): the probability that the true
+    per-observation Sharpe exceeds `benchmark`, given the sample's length, skew and kurtosis.
+
+        PSR = Phi( (SR - SR*) * sqrt(n - 1) / sqrt(1 - skew*SR + (kurt - 1)/4 * SR^2) )
+
+    with kurt the raw (non-excess) kurtosis, 3 for a normal series. Short premium is negatively
+    skewed and fat-tailed, and both widen the denominator — so a book that has not met its tail yet
+    reads less certain than its Sharpe suggests, which is the reason to show this beside it. Feed
+    it `session_nets`; rows within a day are not draws. None below `min_n`, on a flat series, or
+    where the moments drive the variance term non-positive (no defined probability)."""
+    n = len(values)
+    if n < min_n:
+        return None
+    mean = sum(values) / n
+    m2 = sum((v - mean) ** 2 for v in values) / n
+    if m2 <= 0:
+        return None
+    sr = mean / (m2 * n / (n - 1)) ** 0.5
+    skew = (sum((v - mean) ** 3 for v in values) / n) / m2**1.5
+    kurt = (sum((v - mean) ** 4 for v in values) / n) / m2**2
+    var_term = 1 - skew * sr + (kurt - 1) / 4 * sr**2
+    if var_term <= 0:
+        return None
+    z = (sr - benchmark) * (n - 1) ** 0.5 / var_term**0.5
+    return round(statistics.NormalDist().cdf(z), 4)
+
+
 def session_nets_dated(records: Sequence[Mapping]) -> list[tuple[str, float]]:
     """`session_nets`, paired with the session it belongs to -- for a caller that needs the date
     label (a chart x-axis), not just the ordered value series. Same pooling and exclusion rule,
@@ -332,6 +384,10 @@ def calibration_reading(records: Sequence[Mapping]) -> dict:
         "cvar_quantile": CVAR_QUANTILE,
         "cvar_min_sessions": CVAR_MIN_SESSIONS,
         "drawdown_span": drawdown_span(session_nets(ordered)),
+        # Per-session risk-adjusted reads, beside the per-trade `sharpe` (kept, unchanged: stored
+        # readings and the arm-identity check compare on it). Report-only, like the block above.
+        "session_sharpe": session_sharpe(session_nets(ordered)),
+        "psr": probabilistic_sharpe(session_nets(ordered)),
         # 2026-09 expansion (docs/metrics-plan.md's own capture-rate idea, console Phase 3a):
         # capture_rate needs FULL max_profit coverage across the sample before reporting a value,
         # same discipline as return_on_capital above -- a partial-coverage ratio would silently

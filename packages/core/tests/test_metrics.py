@@ -164,6 +164,53 @@ def test_session_nets_dated_matches_session_nets_values_and_order():
     assert [v for _, v in dated] == metrics.session_nets(records)
 
 
+def _days(n, entries_per_day=1, day_net=lambda i: 10.0 if i % 3 else -12.0):
+    """`n` sessions, each split across `entries_per_day` equal entries that sum to that day's net."""
+    return [
+        _rec(day_net(i) / entries_per_day, session=f"2026-07-{i + 1:02d}")
+        for i in range(n)
+        for _ in range(entries_per_day)
+    ]
+
+
+def test_session_sharpe_is_blind_to_how_a_day_was_split_into_entries():
+    """The reason it exists: the same days, split into ten entries each, must read the same per
+    session — while the per-trade ratio drifts with the entry count it has no business seeing."""
+    one, ten = _days(20), _days(20, entries_per_day=10)
+    one_r, ten_r = metrics.calibration_reading(one), metrics.calibration_reading(ten)
+    assert one_r["session_sharpe"] is not None
+    assert one_r["session_sharpe"] == ten_r["session_sharpe"]
+    assert one_r["sharpe"] != ten_r["sharpe"]
+
+
+def test_session_sharpe_and_psr_refuse_below_the_effective_n():
+    short = metrics.session_nets(_days(metrics.MIN_EFFECTIVE_N - 1))
+    assert metrics.session_sharpe(short) is None
+    assert metrics.probabilistic_sharpe(short) is None
+    enough = metrics.session_nets(_days(metrics.MIN_EFFECTIVE_N))
+    assert metrics.session_sharpe(enough) is not None
+    assert metrics.probabilistic_sharpe(enough) is not None
+
+
+def test_psr_is_a_coin_flip_on_a_zero_edge_and_firms_with_length():
+    flat = [10.0, -10.0] * 10
+    assert metrics.probabilistic_sharpe(flat) == pytest.approx(0.5)
+    edge = [12.0, -8.0, 15.0, -10.0, 6.0]
+    short_psr = metrics.probabilistic_sharpe(edge * 3)
+    long_psr = metrics.probabilistic_sharpe(edge * 12)
+    assert 0.5 < short_psr < long_psr < 1.0
+
+
+def test_psr_marks_down_negative_skew_at_the_same_sharpe():
+    """Short premium's shape: many small wins, a rare large loss. Its mirror image has the same
+    mean, stdev and kurtosis — so the same Sharpe — and must read MORE certain."""
+    short_premium = [8.0] * 18 + [-60.0, -40.0]
+    mean = sum(short_premium) / len(short_premium)
+    mirror = [2 * mean - v for v in short_premium]
+    assert metrics.sharpe(short_premium) == metrics.sharpe(mirror)
+    assert metrics.probabilistic_sharpe(short_premium) < metrics.probabilistic_sharpe(mirror)
+
+
 def test_worst_session_is_the_worst_day_not_the_worst_trade():
     records = [
         _rec(-50.0, session="2026-07-21"),

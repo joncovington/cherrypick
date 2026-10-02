@@ -40,6 +40,12 @@ and nothing computes them today.
 - **Per-trade, un-annualized, cross-module.** The existing `sharpe` convention extends to every new
   ratio: annualizing a 0DTE series and an overnight-earnings series differently would defeat the
   bundle's whole purpose. Sortino and SQN take the same per-trade net series Sharpe already takes.
+  *Amended 2026-10-01:* a per-trade ratio alone was the wrong read of an arm's risk — MEIC takes
+  hundreds of entries a session, and entries on one day are not independent draws. The bundle now
+  also carries `session_sharpe` (the same ratio over per-session nets, still un-annualized) and
+  `psr` (Probabilistic Sharpe Ratio over those sessions), both refused below `MIN_EFFECTIVE_N`.
+  The advisor's A/B delta compares `session_sharpe`; `sharpe` stays per-trade for stored readings
+  and the arm-identity check.
 - **Unknowns stay `None`, never 0, with coverage counts.** A tail metric below its minimum sample
   refuses; a record without capital contributes nothing to RoC. New metrics inherit the
   `*_coverage` convention verbatim.
