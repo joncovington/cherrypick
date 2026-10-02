@@ -918,6 +918,29 @@ def cmd_capabilities(cfg, args) -> None:
     _emit(caps.gated_features(cfg))
 
 
+def cmd_config_backup(cfg, args) -> None:
+    """One config-history pass (default), set it up (--init [--remote URL]), or switch the
+    scheduled job (--enable / --disable). See orchestrator/config_backup.py."""
+    from .orchestrator import config_backup as cb
+
+    if args.enable and args.disable:
+        _emit({"ok": False, "error": "--enable and --disable together"})
+        sys.exit(2)
+    out: dict = {}
+    if args.init:
+        out["init"] = cb.init(remote=args.remote)
+    if args.enable or args.disable:
+        out["switch"] = cb.set_enabled(bool(args.enable))
+    if not out:
+        out = cb.run(push=cfgmod.config_backup_settings(cfg)["push"])
+    _emit(out)
+    if args.init or args.enable or args.disable:
+        ok = all(v.get("ok", True) for v in out.values())
+    else:
+        ok = out.get("ok", True)
+    sys.exit(0 if ok else 1)
+
+
 def cmd_init(force: bool) -> None:
     result = init.run(force=force)
     _emit(result)
@@ -1314,6 +1337,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=[
             "init",
             "capabilities",
+            "config-backup",
             "install",
             "uninstall",
             "status",
@@ -1409,6 +1433,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--clear", action="store_true", help="For account: unset the designated account")
     parser.add_argument(
         "--detect", action="store_true", help="For capabilities: probe this machine for claude and dolt"
+    )
+    parser.add_argument(
+        "--init",
+        action="store_true",
+        help="For config-backup: make the cherrypick home a config-only git repo",
+    )
+    parser.add_argument(
+        "--remote", default=None, help="For config-backup --init: a git remote URL to push to"
+    )
+    parser.add_argument(
+        "--enable", action="store_true", help="For config-backup: switch the scheduled job on"
+    )
+    parser.add_argument(
+        "--disable", action="store_true", help="For config-backup: switch the scheduled job off"
     )
     parser.add_argument(
         "--write", action="store_true", help="For capabilities --detect: record the answers in config.json"
@@ -1529,6 +1567,7 @@ def main() -> None:
         "status": lambda: cmd_status(cfg),
         "doctor": lambda: cmd_doctor(cfg, fast=args.fast),
         "capabilities": lambda: cmd_capabilities(cfg, args),
+        "config-backup": lambda: cmd_config_backup(cfg, args),
         "watchdog": lambda: cmd_watchdog(cfg),
         "preopen-check": lambda: cmd_preopen_check(cfg),
         "streamer-health": lambda: cmd_streamer_health(cfg),
