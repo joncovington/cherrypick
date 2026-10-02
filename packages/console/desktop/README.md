@@ -6,6 +6,8 @@ The cherrypick console as a desktop window.
 pnpm start        # builds, then launches (from packages/console/desktop)
 ```
 
+From the repo root, `console-desktop.cmd` (Windows) or `./console-desktop.sh` runs the same thing.
+
 ## Window only, deliberately
 
 This shell **never starts the console server**. The supervisor owns that process, and a second
@@ -13,16 +15,17 @@ console would take the port the supervisor's own child needs — after which eve
 dies on `EADDRINUSE`. One owner of `:5070`, always.
 
 So when the port does not answer, the useful thing the shell can do is *diagnose*. It reads the same
-local files `/console --status` reads and names which of four things went wrong, with the one command
-that fixes it:
+local files `/console --status` reads and names what went wrong, with the one command that fixes it:
 
 | What it found | What it says |
 |---|---|
 | No supervisor heartbeat, or one older than 90s | The supervisor is not running — `run.py install` |
+| No `console` job in the supervisor's table | The supervisor is running older code — restart it |
 | The `console` job disabled, reason "not built" | `pnpm install && pnpm build` |
 | The `console` job disabled in config | Set `"console": {"enabled": true}` |
 | `resident_state: backoff` | It is crash-looping — read `logs/console/console.log` |
-| The job is up but its heartbeat is stale | It is wedged; the supervisor is about to restart it |
+| The job is up but its heartbeat is over 60s old | It is wedged; the supervisor is about to restart it |
+| The job is up and its heartbeat is fresh | It is still starting |
 
 It retries every 5s, so a console that comes back is picked up without touching the window. Quitting
 the shell never stops the console.

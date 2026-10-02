@@ -2,10 +2,12 @@
 
 The deterministic half of the suite's AI advisor: fact packs in, bounded paper experiments out.
 
-Eight times a trading day a scheduled script shows an AI model a **fact pack** — a deterministic,
-aggregate-only snapshot of what the paper books did today (plus clearly-labeled read-only live
-context) — and asks it what it notices and what it would change. Seven light checkpoints run
-intraday; one deep run after the close designs experiments and passes verdicts.
+After each close a scheduled script shows an AI model a **fact pack**: a deterministic,
+aggregate-only snapshot of what the paper books did today (plus clearly labelled read-only live
+context). The model is asked what it notices and what it would change. That one deep run, at 17:00
+ET by default, designs experiments and passes verdicts. Light intraday checkpoints are still
+supported but none are scheduled by default; list their times in `advisor.checkpoints` to bring
+them back.
 
 This package builds those packs, validates every reply, and runs the resulting proposals as paper
 A/B experiments. It contains **no AI**: the model is invoked by `scripts/advisor_checkpoint.py`,
@@ -32,7 +34,9 @@ factpack.py     deterministic pack builder (light/deep); every foreign DB opened
 proposals.py    raw-reply parse + taxonomy validation
 experiments.py  lifecycle: admit / cap / queue / activate / tune / expire, with a journal
 enact.py        next-session walk + core.advice.write per active experiment
-verdicts.py     ledger readers -> compare_profiles -> qualify_readings
+enactment.py    did each module's loop actually apply the artifact it was issued?
+verdicts.py     ledger readers -> group_by_tag -> calibration_reading -> qualify_readings
+settings.py     the governance knobs, read from the suite config's advisor block
 bounds.py       per-module advice bounds + enablement, read from deployed configs (read-only)
 store.py        advisor.db (SQLite WAL) and the one read-only opener for everyone else's data
 ```
@@ -41,13 +45,15 @@ store.py        advisor.db (SQLite WAL) and the one read-only opener for everyon
 
 ```
 python -m cherrypick.advisor init-db
-python -m cherrypick.advisor factpack --slot open       # writes data/advisor/packs/<session>-open.json
+python -m cherrypick.advisor factpack --slot deep       # writes ~/.cherrypick/data/advisor/packs/<session>-deep.json
 python -m cherrypick.advisor status
 ```
 
-Nothing runs on a schedule until `advisor.enabled` is set in the orchestrator config, and no module
-accepts advice until a human puts an `advice` block in that module's deployed config. Both are off
-by default.
+Nothing runs on a schedule until `advisor.enabled` is set in `~/.cherrypick/config.json` and the
+machine has the `claude` capability (Claude Code, recorded by `run.py capabilities`). No module
+accepts advice until a human turns on an `advice` block in that module's own config
+(`~/.cherrypick/config/<module>.json`). All of these are off by default, and the console hides the
+advisor while it is off.
 
 See [CLAUDE.md](CLAUDE.md) for the operating contract and the guardrails that are enforced by tests
 rather than prose.

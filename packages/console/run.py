@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -26,6 +27,23 @@ SERVER_ENTRY = HERE / "server" / "dist" / "index.js"
 # terminal sees the server's output exactly as before. 0 off-Windows, so the call site stays portable.
 CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
+
+
+def _child_env() -> dict[str, str]:
+    """The environment node runs in, with THIS interpreter's directory first on PATH.
+
+    The server shells out to a bare `python` for everything Python owns (the keyring bridge, the
+    config editor, positions, the advisor, module CLIs). The installer puts the suite in a `.venv`
+    that is on nobody's PATH, and the supervisor starts this launcher with that venv's interpreter,
+    so without this a fresh install's console would reach the system Python, which has none of the
+    suite: no credential, no Config page, no positions. Putting the directory of the interpreter
+    that is running this script first makes `python` resolve to the one that has the suite (a venv's
+    Scripts/ or bin/ holds both python and pythonw).
+    """
+    env = dict(os.environ)
+    here = str(Path(sys.executable).resolve().parent)
+    env["PATH"] = here + os.pathsep + env.get("PATH", "")
+    return env
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="cherrypick console launcher")
@@ -50,7 +68,9 @@ def main() -> int:
 
     if args.command == "credentials":
         cli = HERE / "server" / "dist" / "cli" / "credentials-cli.js"
-        return subprocess.call([node, str(cli), args.action], creationflags=CREATE_NO_WINDOW)
+        return subprocess.call(
+            [node, str(cli), args.action], creationflags=CREATE_NO_WINDOW, env=_child_env()
+        )
 
     if not args.serve:
         parser.error("only 'dashboard --serve' is supported")
@@ -73,7 +93,7 @@ def main() -> int:
             cfg_path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
             print(f"wrote serve.port={args.port} to {cfg_path}")
 
-    return subprocess.call([node, str(SERVER_ENTRY)], creationflags=CREATE_NO_WINDOW)
+    return subprocess.call([node, str(SERVER_ENTRY)], creationflags=CREATE_NO_WINDOW, env=_child_env())
 
 
 if __name__ == "__main__":

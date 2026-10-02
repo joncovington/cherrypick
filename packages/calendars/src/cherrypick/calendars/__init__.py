@@ -1,4 +1,4 @@
-"""cherrypick.calendars — weekly SPX double-calendar paper module.
+"""cherrypick.calendars — weekly SPY double-calendar paper module (EXPERIMENTAL).
 
 Every Monday (Tuesday after a Monday holiday), one put calendar at the expected-move-down strike and
 one call calendar at the expected-move-up strike: short legs expiring that week's Friday, long legs

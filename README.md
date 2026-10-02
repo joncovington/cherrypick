@@ -106,7 +106,7 @@ suite once collected $4.00 of credit against $4.96 of fees.
   mechanical control book, a permissive path book recording every tick, and a read-side replay that
   scores profit targets, stops and exit timings over the recorded path — validated against the real
   books to the cent. Paper-only and credential-free. See [packages/calendars](packages/calendars).
-- **PMCC-99** — ⚠️ **EXPERIMENTAL, off by default.** Deep-ITM covered calls on TQQQ: buy an 85-90-delta ~21DTE call as a stock
+- **PMCC-99** — ⚠️ **EXPERIMENTAL, off by default.** Deep-ITM covered calls on TQQQ and XSP: buy an 85-90-delta ~21DTE call as a stock
   substitute, sell the ATM ~7DTE call nearest spot (no yield floor), hold to the short's own
   expiration and close both legs together. Single `control` book plus an advised A/B against the
   old early-tv-exit rule; early assignment is measured, never modelled, so paper results are an
@@ -359,10 +359,12 @@ record. With channels set, you are notified when a paper trade fills and warned 
 it can run unattended. Test any time with `python run.py notify-test`.
 
 Trade pushes go to their own channel set (`notify.trade_channels`) so frequent paper fills don't spam the
-warning channels. If an engine runs several arms at once and per-trade pushes get noisy, switch
-`notify.trade_summary.mode` to `summary` — every trade then rolls up into one periodic per-symbol digest
+warning channels. MEIC can trade often, so its trades can roll up into one periodic per-symbol digest
 (`MEIC digest 13:45 ET — SPX: 30 entries (open×10 width-10×10 width-5×10) · 2 exits net +$48 · day 7
-trades net +$61`) on whatever `interval_minutes` you set.
+trades net +$61`) every `interval_minutes` instead of one push each. Arms whose names start with an entry
+in `notify.trade_summary.profile_prefixes` go to the digest (the shipped list includes `control`);
+setting `notify.trade_summary.mode` to `summary` sends every MEIC trade there. Other modules push each
+trade.
 
 ## Where everything lives
 
@@ -378,13 +380,15 @@ and reports all live under one per-user directory — relocate the whole thing b
   data/marketdata/stream_cache.db   # the shared market-data cache — one writer, every module reads it
   data/<module>/paper_trades.db     # paper ledger (live ledgers are separate files)
   data/earnings/{earnings,options,stocks}/  # the optional Dolt clones
-  logs/                             # suite + per-module logs, EOD reports, digests
-  state/                            # supervisor job state, heartbeats
+  data/review/                      # the end-of-day review: fact sets and their renders
+  logs/                             # suite + per-module logs
+  state/                            # supervisor job state, heartbeats, stream requests
 ```
 
-Paths inside your config resolve **relative** to the config file's own directory, so nothing hardcodes a
-location on your machine. Paper and live ledgers are separate files, never queryable through one
-connection.
+Data paths in the config start with `~`, and a module's relative `path` (`../meic`) resolves against
+`packages/orchestrator`, so nothing hardcodes a location on your machine. If you set
+`CHERRYPICK_HOME`, a relative module `path` resolves against that directory instead, so give absolute
+ones. Paper and live ledgers are separate files, never queryable through one connection.
 
 ## Good to know
 

@@ -204,7 +204,7 @@
       }
     },
     "pmcc": {
-      "_comment": "EXPERIMENTAL, off by default: switch on with modules.pmcc.enabled once you have read its package README. PMCC-99 deep-ITM covered-call paper module (packages/pmcc): buys an 85-90-delta ~21DTE call, sells the ATM ~7DTE call nearest spot, on TQQQ; enters any day the (symbol, book) slot is free and holds to the short's own expiration (~1-2 weeks). Paper-only and credential-free -- no keyring_service, no broker_tool, no live block; market data comes entirely from the shared stream cache via the streamer's `expirations` and `window_hints` request fields.",
+      "_comment": "EXPERIMENTAL, off by default: switch on with modules.pmcc.enabled once you have read its package README. PMCC-99 deep-ITM covered-call paper module (packages/pmcc): buys an 85-90-delta ~21DTE call, sells the ATM ~7DTE call nearest spot, on TQQQ (physically settled) and XSP (cash-settled); enters any day the (symbol, book) slot is free and holds to the short's own expiration (~1-2 weeks). Paper-only and credential-free -- no keyring_service, no broker_tool, no live block; market data comes entirely from the shared stream cache via the streamer's `expirations` and `window_hints` request fields.",
       "enabled": false,
       "path": "../pmcc",
       "paper": {
@@ -438,7 +438,7 @@
   },
   "services": [
     {
-      "_comment": "Long-running background daemons the orchestrator keeps alive: started at `install`, restarted by the watchdog if down (single-instance guarded), stopped at `uninstall`. Located by 'path' (relative to this file) or 'repo'. status_argv must print {\"running\": bool}. A running service whose config changed since launch is recycled (stop then start) so it re-reads -- the orchestrator stamps a hash of this entry plus the service's own config file at launch and compares each tick; requires auto_restart, and set 'config_name' if that config file is named for neither the checkout directory nor the id. The gex spot-trail recorder samples every symbol's spot continuously so the GEX dashboard's spot trail has no gaps and builds all session, independent of whether the dashboard is open. Disabled by default.",
+      "_comment": "Long-running background daemons the orchestrator keeps alive: started at `install`, restarted by the watchdog if down (single-instance guarded), stopped at `uninstall`. Located by 'path' (relative to this file) or 'repo'. status_argv must print {\"running\": bool}. A running service whose config changed since launch is recycled (stop then start) so it re-reads -- the orchestrator stamps a hash of this entry plus the service's own config file at launch and compares each tick; requires auto_restart, and set 'config_name' if that config file is named for neither the checkout directory nor the id. The gex spot-trail recorder samples every symbol's spot continuously so the GEX dashboard's spot trail has no gaps and builds all session, independent of whether the dashboard is open. On by default: GEX is part of the base install (set enabled to false to turn the recorder off).",
       "id": "gex-recorder",
       "enabled": true,
       "path": "../gex",

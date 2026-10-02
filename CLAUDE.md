@@ -23,7 +23,7 @@ consolidated, are in [docs/history/root-claude-md-2026-09-29.md](docs/history/ro
   are distinct structures, never pooled; both European cash and American physical settlement are
   modelled, and a symbol declared as neither is refused at entry; ex-dividend weeks are skipped. No
   live path.
-- **packages/pmcc** — PMCC-99 deep-ITM covered calls on TQQQ; **paper-only, credential-free**, the
+- **packages/pmcc** — PMCC-99 deep-ITM covered calls on TQQQ and XSP; **paper-only, credential-free**, the
   calendars posture (chains via `expirations`/`window_hints`). Book `control` plus the advisor's
   `advised:control` twin (`tv_managed_exit` as an A/B against hold-to-expiry). **Early assignment is
   measured, never modelled**: ex-dividend spans refused, near-zero-extrinsic marks flagged

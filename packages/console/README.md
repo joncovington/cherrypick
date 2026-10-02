@@ -12,8 +12,9 @@ interactive tooling, in one app on `http://127.0.0.1:5070/`.
 
 ## Prerequisites
 
-- Node.js 22+ and pnpm (`npm install -g pnpm`)
-- Python (only for the `run.py` launcher)
+- Node.js 22+ and pnpm 11 (`npm install -g pnpm@11`; the root installer does this for you)
+- Python with the suite installed: the `run.py` launcher, the keyring read and the Config page's
+  edits all go through it
 
 ## Build and run
 
@@ -57,16 +58,18 @@ pnpm dev:web      # Vite on 127.0.0.1:5173, proxies /api and /ws to 5070
 ## Layout
 
 - `shared/` — TypeScript types shared by server and web
-- `server/` — Fastify backend: module-store readers (read-only), status/overview API, and (from M3)
-  the console's own DXLink market-data session fanned out over WebSocket
+- `server/` — Fastify backend on `127.0.0.1` only: module-store readers (read-only), the `/api`
+  routes, and the console's own DXLink market-data session fanned out over WebSocket (`/ws`)
 - `web/` — React + Vite single-page app
+- `desktop/` — the optional Electron window (below)
+- `run.py` — the Python launcher the supervisor runs
 
-See `CLAUDE.md` for the data rules (read-only over module stores, own credential, no order
-placement) and `docs/verify-notes.md` for the M0 spike findings.
+See `CLAUDE.md` for the data rules (read-only over module stores, reads the shared credential and
+never writes it, no order path) and `docs/verify-notes.md` for the M0 spike findings.
 
 ## Desktop window
 
 `pnpm --filter @console/desktop start` opens the console in its own window (tray icon, remembered
-size). It is a window and nothing else — the supervisor still owns the server — and when the console
-is not answering it says which of four things went wrong rather than showing a connection error. See
-[desktop/README.md](desktop/README.md).
+size); `console-desktop.cmd` / `./console-desktop.sh` at the repo root do the same. It is a window
+and nothing else — the supervisor still owns the server — and when the console is not answering it
+says what went wrong rather than showing a connection error. See [desktop/README.md](desktop/README.md).

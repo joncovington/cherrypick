@@ -33,6 +33,9 @@ The daemon does **not** hold a hardcoded symbol list. Each consumer writes one f
   `SELECT` every poll, keeping each returned symbol subscribed beyond the ATM window. This is how MEIC
   keeps the legs of an open iron condor fresh. (`legs` is a static list for a module that would rather
   name symbols than query for them.)
+- Optional per-symbol fields: `expirations` (extra expiries to serve, which is how calendars and pmcc
+  get their chains), `window_hints` (a wider ATM window), `window_events`, `nearest_window` and
+  `history_days`. Each is documented in `cherrypick.core.streamrequests`, which owns the write side.
 
 The coupling surface is **data plus the module's own SQL — never code**, so no package imports another.
 A consumer writes only its own file; the streamer only ever reads them.
@@ -45,6 +48,8 @@ python run.py --status                    # one JSON health object, then exit
 python run.py --stop                      # SIGTERM a running daemon
 python run.py --symbol SPX --symbol XSP   # override configured symbols for this run
 python run.py --secrets-set               # store the shared tastytrade OAuth bearer secrets (hidden input)
+python run.py --secrets-status            # which of those secrets are present
+python run.py --prune                     # report dead chain rows in the cache; add --apply to delete them
 ```
 
 Config: `~/.cherrypick/config/streamer.json`, or copy `config.example.json` → `config.json` in this
@@ -63,7 +68,8 @@ Normally you do not install or start this by hand: the suite's installer at the 
 ## How the orchestrator supervises it
 
 The streamer gets its own supervisor job, `streamer-health`, separate from the 10-minute watchdog tick
-and running every 60 s inside the session. That is deliberate — the failure window here is
+and running every 60 s from 09:00 to 16:00 ET on trading days (`watchdog.streamer_health` in the
+orchestrator's config). That is deliberate — the failure window here is
 unrecoverable in a way nothing else's is:
 
 - **The 09:30 deadline is hard.** A producer that is down through 09:30–09:35 loses that day's opening
@@ -89,4 +95,5 @@ never a faster full watchdog tick.
   into this package — the GEX math once drifted ~75× when it was copied.
 
 Development guidance and the full invariant list: [CLAUDE.md](CLAUDE.md). Why the streamer was split
-out of MEIC: [docs/streamer-package-plan.md](../../docs/history/streamer-package-plan.md).
+out of MEIC: [docs/history/streamer-package-plan.md](../../docs/history/streamer-package-plan.md). The
+incidents behind the rules: [docs/history.md](docs/history.md).

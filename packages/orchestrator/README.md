@@ -30,7 +30,7 @@ pip install -e ".[dev]"
 For development, `scripts/dev-install.ps1` (or `.sh`) from the repo root does that plus every other
 package, with the `[dev]` extras, in one go.
 
-## The five commands that matter
+## The commands that matter
 
 Run them as `python run.py <cmd>` from this directory, or as `cherrypick <cmd>` once pip-installed.
 
@@ -68,8 +68,9 @@ under **`~/.cherrypick`** (relocate the lot with `$CHERRYPICK_HOME`):
 ~/.cherrypick/state/          # supervisor job state, heartbeats, watchdog state
 ```
 
-Module paths inside `config.json` resolve **relative to that file's directory**, so nothing hardcodes
-an absolute path. `python run.py settings` opens a local editor for every config file in the suite plus
+A module's relative `path` in `config.json` (`../meic`) resolves against **this package's directory**,
+and data paths start with `~`, so nothing hardcodes an absolute path. With `$CHERRYPICK_HOME` set, a
+relative module `path` resolves against that directory instead, so give absolute ones. `python run.py settings` opens a local editor for every config file in the suite plus
 the keyring secrets manager.
 
 One scheduling fact worth knowing up front: since the 2026-08-09 cutover the OS scheduler holds exactly

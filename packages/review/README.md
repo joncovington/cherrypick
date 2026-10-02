@@ -7,7 +7,8 @@ change — for every module with a ledger reader, together, so modules can be co
 - **Read-only over every other package.** It reads each module's ledger through
   `cherrypick.core.ledgers` (the one home for per-schema net, cost and session rules) and writes only
   to its own store. It never touches a module's database or an order.
-- **No credentials, no network, no AI.** Every figure is computed from recorded rows. The narrative
+- **No credentials, no network, no AI, no paywalled data.** Every figure is computed from the
+  suite's own recorded rows. The narrative
   is written outside the package by `scripts/eod_narrative.py`, which reads the fact set and nothing
   else, so a failed narrative costs a note and never a report.
 - **Arms are kept apart.** Each module's arms are a paired comparison, so the fact set reports them
@@ -22,7 +23,7 @@ change — for every module with a ledger reader, together, so modules can be co
 - `eod-<date>.note.md` — the narrative, beside the facts and never inside them (only when the
   narrative is switched on).
 
-The console's Review page reads the same JSON. Logs go to `~/.cherrypick/logs/review/`.
+The console's Reports page (EOD tab) reads the same JSON. Logs go to `~/.cherrypick/logs/review/`.
 
 ## Commands
 
@@ -39,10 +40,11 @@ day, because earnings settles overnight and session D is finalised on D+1.
 ## How the suite runs it
 
 You don't normally run it by hand. The orchestrator's supervisor has two daily jobs, on trading days
-only: `review-provisional` (16:30 ET, `run.py review`) and `review-final` (10:15 ET the next morning,
-`run.py review --final`, which also runs `reconcile`). Both times, and the switch, are in the `review`
-block of `~/.cherrypick/config.json`. A third job, `review-narrative`, runs the narrative script; it
-is off by default (`review.narrative`) and needs the `claude` capability.
+only: `review-provisional` (16:30 ET, `run.py review --provisional`) and `review-final` (10:15 ET the
+next morning, `run.py review --final`, which also runs `reconcile`). Both times, and the switch, are
+in the `review` block of `~/.cherrypick/config.json`. A third job, `review-narrative` (10:45 ET),
+runs the narrative script after the final pass; it is off by default (`review.narrative`) and needs
+the `claude` capability (Claude Code, recorded by `run.py capabilities`).
 
 Operating contract and the rules the fact set enforces: [CLAUDE.md](CLAUDE.md). Incidents behind
 those rules: [docs/history.md](docs/history.md).

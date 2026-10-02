@@ -12,15 +12,16 @@
  * avoids. Mirrors the orchestrator's own `util.rotate_if_large`.
  */
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { Writable } from "node:stream";
+import { cherrypickHome } from "@console/shared";
 
 export const MAX_LOG_BYTES = 5 * 1024 * 1024;
 export const KEEP_BACKUPS = 3;
 
 export function logDir(): string {
-  return path.join(os.homedir(), ".cherrypick", "logs", "console");
+  // The suite home, so CHERRYPICK_HOME relocates the console's log with everything else.
+  return path.join(cherrypickHome(), "logs", "console");
 }
 
 export function logPath(): string {
