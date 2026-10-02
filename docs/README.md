@@ -1,5 +1,11 @@
 # cherrypick — Documentation
 
+> **⚠️ Experimental, educational software — not financial advice.** cherrypick is a prototype for
+> learning about and researching options strategies. Its live-trading paths place **real,
+> irreversible orders** at your own risk; options trading involves substantial risk of loss and is
+> not suitable for all investors. Paper results are simulated and do not represent actual trading.
+> Provided "as is", without warranty. **Read [DISCLAIMER.md](../DISCLAIMER.md) before use.**
+
 Reference documentation for the cherrypick suite, organized by functional area. Start with the
 [User Guide](PROJECT.md) if you just want to install and run it; use the files below when you need to
 understand *how* a part of the suite works or *why* it's built the way it is.

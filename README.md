@@ -1,5 +1,11 @@
 # cherrypick
 
+> **⚠️ Experimental, educational software — not financial advice.** cherrypick is a prototype for
+> learning about and researching options strategies. Its live-trading paths place **real,
+> irreversible orders** at your own risk; options trading involves substantial risk of loss and is
+> not suitable for all investors. Paper results are simulated and do not represent actual trading.
+> Provided "as is", without warranty. **Read [DISCLAIMER.md](DISCLAIMER.md) before use.**
+
 **Test many variations of an options strategy against the live market — in paper mode — to see which entry rules actually add edge.**
 
 cherrypick runs your options strategies on a schedule against the live market in **paper mode**, recording

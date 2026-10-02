@@ -1,3 +1,6 @@
+> ⚠️ In live mode this places a **real, irreversible order**. Experimental, educational software, not
+> financial advice — see `DISCLAIMER.md` at the repo root.
+
 Execute a new MEIC iron condor entry. Only invoke when the entry decision (Step 6) is yes.
 
 Requires: strategy strikes, wing width, and quotes already evaluated this iteration.

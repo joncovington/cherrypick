@@ -1,5 +1,11 @@
 # Guardrails & modes
 
+> **⚠️ Experimental, educational software — not financial advice.** cherrypick is a prototype for
+> learning about and researching options strategies. Its live-trading paths place **real,
+> irreversible orders** at your own risk; options trading involves substantial risk of loss and is
+> not suitable for all investors. Paper results are simulated and do not represent actual trading.
+> Provided "as is", without warranty. **Read [DISCLAIMER.md](../DISCLAIMER.md) before use.**
+
 The safety model. These are not style preferences — several are **load-bearing invariants** with
 incident history behind them. If you extend the suite, preserve them.
 

@@ -1,5 +1,12 @@
 # cherrypick-bwb
 
+> **⚠️ Experimental, educational software — not financial advice.** cherrypick is a prototype for
+> learning about and researching options strategies. Its live-trading paths place **real,
+> irreversible orders** at your own risk; options trading involves substantial risk of loss and is
+> not suitable for all investors. Paper results are simulated and do not represent actual trading.
+> Provided "as is", without warranty. This module has a live-trading path (armed per day by `/live-bwb-start`,
+> off by default) that places real orders through your broker account. **Read [DISCLAIMER.md](../../DISCLAIMER.md) before use.**
+
 bwb: a module that lays a **daily-laddered SPX put broken-wing butterfly** at the
 expected move for a net credit, ~7 DTE, held to expiry — a new one every session, so ~5-7
 positions ride concurrently per book at steady state. Four books trade the IDENTICAL base

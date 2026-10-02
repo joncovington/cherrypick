@@ -1,5 +1,12 @@
 # cherrypick-flies
 
+> **⚠️ Experimental, educational software — not financial advice.** cherrypick is a prototype for
+> learning about and researching options strategies. Its live-trading paths place **real,
+> irreversible orders** at your own risk; options trading involves substantial risk of loss and is
+> not suitable for all investors. Paper results are simulated and do not represent actual trading.
+> Provided "as is", without warranty. This module has a live-trading path (armed per day by `/live-flies-start`,
+> off by default) that places real orders through your broker account. **Read [DISCLAIMER.md](../../DISCLAIMER.md) before use.**
+
 **What this module does:** flies trades a strategy called a 0DTE net-credit butterfly on
 same-day-expiring SPX/XSP options — nicknamed the "profit forest." It runs as **paper trading**
 (simulated, no real money) by default, with a small, tightly-controlled **live pilot** now

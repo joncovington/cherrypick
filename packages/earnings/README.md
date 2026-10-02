@@ -1,5 +1,12 @@
 # cherrypick-earnings
 
+> **⚠️ Experimental, educational software — not financial advice.** cherrypick is a prototype for
+> learning about and researching options strategies. Its live-trading paths place **real,
+> irreversible orders** at your own risk; options trading involves substantial risk of loss and is
+> not suitable for all investors. Paper results are simulated and do not represent actual trading.
+> Provided "as is", without warranty. This module has a live-trading path (`enable_live_trading`, off by default)
+> that places real orders through your broker account. **Read [DISCLAIMER.md](../../DISCLAIMER.md) before use.**
+
 **What this module does:** earnings trades defined-risk options strategies around company
 earnings announcements — opening a position the evening before a report and closing it the
 next morning, without watching it overnight. It picks from six different structures each night

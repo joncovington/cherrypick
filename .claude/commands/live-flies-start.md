@@ -63,10 +63,19 @@ confirmation, a current status readout, and a visible way to stop.
    - **The per-day contract**: state that this arms TODAY only — the loop self-disarms at the
      configured `disarm_time` and tomorrow needs a fresh `/live-flies-start`.
 
-3. **Ask for explicit confirmation** using the AskUserQuestion tool (never free-text parsing)
+3. **Show the disclaimer, verbatim, every time** (from `DISCLAIMER.md` at the repo root; never
+   paraphrase it, shorten it or skip it because it was shown before):
+
+   > ⚠️ **EXPERIMENTAL PROTOTYPE — EDUCATIONAL USE ONLY — NOT FINANCIAL ADVICE.** This places
+   > **REAL, irreversible orders with real money** in your brokerage account. Options trading carries
+   > substantial risk of loss and is not suitable for all investors. The software can fail (bugs,
+   > stale data, outages); its limits reduce accidents but do not make trading safe. **You alone are
+   > responsible for every order and every loss.** Full text: `DISCLAIMER.md`.
+
+   Then **ask for explicit confirmation** using the AskUserQuestion tool (never free-text parsing)
    with a question naming the masked account, the arm/symbol, the concurrency rule (one
    incomplete position at a time), and the self-disarm time — exactly two options:
-   **"YES — arm live trading for today"** and **"No, cancel"**. Anything but the literal YES
+   **"YES — I accept the disclaimer; arm live trading for today"** and **"No, cancel"**. Anything but the literal YES
    option stops here with no action taken.
 
 4. **Arm.** Once YES is confirmed:

@@ -1,5 +1,12 @@
 # cherrypick-meic
 
+> **⚠️ Experimental, educational software — not financial advice.** cherrypick is a prototype for
+> learning about and researching options strategies. Its live-trading paths place **real,
+> irreversible orders** at your own risk; options trading involves substantial risk of loss and is
+> not suitable for all investors. Paper results are simulated and do not represent actual trading.
+> Provided "as is", without warranty. This module has a live-trading path (`enable_live_trading`, off by default)
+> that places real orders through your broker account. **Read [DISCLAIMER.md](../../DISCLAIMER.md) before use.**
+
 **What this module does:** MEIC trades multiple-entry iron condors — a defined-risk,
 premium-selling strategy — on same-day-expiring (0DTE) index options like SPX and XSP. It can
 run as **paper trading** (simulated, no real money, the recommended starting point) or as a

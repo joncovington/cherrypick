@@ -11,7 +11,17 @@ directory and adds a mode pre-check.
    `src/…`, `CLAUDE.md`, `.claude/…` all live under `packages/meic/`. Run the steps from there.
 
 2. **Mode pre-check.** Read MEIC's config (`~/.cherrypick/config/meic.json`, or `packages/meic/config.json` until migrated) → `enable_live_trading`. If `true`, this session
-   can place **live orders** — stop and confirm with me before starting. If `false`/absent (paper),
+   can place **live orders** — stop. **Show the disclaimer, verbatim, every time** (from `DISCLAIMER.md` at the repo root; never
+   paraphrase it, shorten it or skip it because it was shown before):
+
+   > ⚠️ **EXPERIMENTAL PROTOTYPE — EDUCATIONAL USE ONLY — NOT FINANCIAL ADVICE.** This places
+   > **REAL, irreversible orders with real money** in your brokerage account. Options trading carries
+   > substantial risk of loss and is not suitable for all investors. The software can fail (bugs,
+   > stale data, outages); its limits reduce accidents but do not make trading safe. **You alone are
+   > responsible for every order and every loss.** Full text: `DISCLAIMER.md`.
+
+   Then confirm with the AskUserQuestion tool, exactly two options: **"YES — I accept the
+   disclaimer; start a LIVE session"** and **"No, cancel"**. Anything else stops here. If `false`/absent (paper),
    continue.
 
 3. **Follow the module's start flow** — `packages/meic/.claude/commands/meic-start.md`:
