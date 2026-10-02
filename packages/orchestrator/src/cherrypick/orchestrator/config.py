@@ -561,6 +561,24 @@ def backup_settings(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def config_backup_settings(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Resolved settings for the config-history job (`orchestrator.config_backup`). OFF by default:
+    it only means anything once the person has made the cherrypick home a git repository
+    (`run.py config-backup --init`), and pushing goes to a remote of their choosing. Every
+    `interval_minutes` it commits whatever the home repo's own .gitignore allows (the config files,
+    never data, state or logs) and, with `push`, pushes when a remote is set."""
+    cb = cfg.get("config_backup", {}) or {}
+    try:
+        interval = max(1, int(cb.get("interval_minutes", 15)))
+    except (TypeError, ValueError):
+        interval = 15
+    return {
+        "enabled": cb.get("enabled") is True,
+        "interval_minutes": interval,
+        "push": cb.get("push", True) is not False,
+    }
+
+
 def data_epoch(cfg: dict[str, Any]) -> dict[str, Any] | None:
     """The active data-epoch marker, or None when unset. An epoch is declared when a
     correctness fix RESTATES what recorded paper history means (e.g. the phase-0

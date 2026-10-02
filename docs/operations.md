@@ -96,6 +96,7 @@ shows and which is healthy. "Default" means what `config.example.json` ships.
 | `advisor-<slot>` | as configured — **none by default** | `scripts/advisor_checkpoint.py --slot <s>` | off | optional light intraday checkpoints, declared in `advisor.checkpoints` |
 | `reconcile` | daily **16:30** | `run.py reconcile --scheduled` | off | worth turning on once anything trades live |
 | `suite-backup` | daily **01:30** | `run.py backup` | on | one zip at `backup.dest`; `doctor` warns past 36 h |
+| `config-backup` | every `config_backup.interval_minutes` (15) | `run.py config-backup` | **off** (opt in) | commits the config files the home repo's allow-list tracks and pushes to its remote; `doctor` warns when on but not set up or failing |
 | `log-archive` | monthly, day 1 @ **03:30** | `run.py archive` | on | catchup 7 days (idempotent, finished months only) |
 
 Missed-fire policy after sleep/hibernate: interval jobs fire once immediately and resume cadence

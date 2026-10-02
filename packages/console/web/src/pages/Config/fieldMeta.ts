@@ -193,6 +193,33 @@ export const FIELDS: FieldMeta[] = [
   },
   { target: "orchestrator", pointer: "/reconcile/schedule/enabled", label: "Daily reconcile job", type: "boolean", section: "notify" },
   { target: "orchestrator", pointer: "/review/narrative", label: "Review narrative", type: "boolean", section: "notify" },
+  {
+    target: "orchestrator",
+    pointer: "/config_backup/enabled",
+    label: "Settings history (git)",
+    type: "boolean",
+    section: "notify",
+    help:
+      "Commits your config files when they change (never data or passwords) and pushes them if a remote " +
+      "is set. Needs a one-time `run.py config-backup --init`; doctor says if it is not set up.",
+  },
+  {
+    target: "orchestrator",
+    pointer: "/config_backup/interval_minutes",
+    label: "Settings history interval",
+    type: "number",
+    min: 1,
+    max: 1440,
+    section: "notify",
+  },
+  {
+    target: "orchestrator",
+    pointer: "/config_backup/push",
+    label: "Push settings history",
+    type: "boolean",
+    section: "notify",
+    help: "Push each commit to the repository's remote. Use a PRIVATE remote: the files hold your strategy settings.",
+  },
 
   // --- dev knobs ---------------------------------------------------------------------------
   {

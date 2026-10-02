@@ -298,6 +298,7 @@ def test_derive_full_suite_job_table():
         "symbol-watch",
         "reconcile",
         "log-archive",
+        "config-backup",
         "suite-backup",
         "futures-contracts",
         "guard-mutants",
