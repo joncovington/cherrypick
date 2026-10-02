@@ -107,6 +107,11 @@ ARMS = (
     # is not above spot, and its unknown -- whether an OTM spread at the wall pays enough credit to
     # clear the gates -- is exactly what the refusal rows will measure.
     "callwall",
+    # control plus a volatility floor (2026-10-05): no entry while the ATM straddle is under
+    # `min_entry_straddle_pct` of spot (`low_vol_refusal`). One variable vs control. The low-vol
+    # third of control's sessions completed 70% against a ~75% break-even; whether refusing them
+    # pays is what this arm measures, forward, because the in-sample cut is not significant.
+    "vol-floor",
 )
 
 
@@ -866,6 +871,29 @@ def trend_bucket_refusal(snapshot: dict, params: dict) -> str | None:
     return "trend_bucket_refused" if bucket == wanted else None
 
 
+def low_vol_refusal(snapshot: dict, params: dict) -> str | None:
+    """Refuse an entry while the ATM straddle is below `min_entry_straddle_pct` of spot (null/absent
+    = off). The `vol-floor` arm's one variable (2026-10-05).
+
+    Completion is a race for spot to travel a wing width in one direction before the close, and a
+    cheap straddle is the market saying it will not travel far: over control's 2026-08-03..10-02
+    era the lowest-vol third of sessions completed 70% for -$11 a spread, against 80-82% and +$17
+    on the rest, below the ~75% break-even. As a gate, refusing entries under 0.0022 (about 17 SPX
+    points at 7,700) kept 277 of 345 and raised completion from 78% to 81%, ahead in both halves of
+    the era (+$762, +$1,308) -- in-sample and not significant (12 sessions better, 9 worse), which
+    is why it is an arm and not a default. A ratio rather than points so it means the same thing as
+    spot moves; the same measure `classify_regime` stores as `vol_value`. Fails OPEN when the ATM
+    pair is unquoted: an entry with no ATM quotes is refused on its own legs anyway.
+    """
+    floor = params.get("min_entry_straddle_pct")
+    if not floor:
+        return None
+    _bucket, ratio = _classify_vol(snapshot, params)
+    if ratio is None:
+        return None
+    return "straddle_below_floor" if ratio < float(floor) else None
+
+
 def miss_stop_refusal(params: dict, day_book: list, now_min: int | None) -> str | None:
     """Refuse a new entry once any of today's spreads has sat uncompleted for
     `miss_stop_minutes` or longer (null/absent = off).
@@ -1156,6 +1184,9 @@ def evaluate_credit_spread_entry(
     refusal = miss_stop_refusal(params, _day_book(open_positions, day_positions), snapshot.get("now_min"))
     if refusal:
         return False, refusal, None
+    refusal = low_vol_refusal(snapshot, params)
+    if refusal:
+        return False, refusal, None
 
     center, center_reason = select_center(snapshot, params)
     if center is None:
@@ -1364,12 +1395,16 @@ def evaluate_completion(snapshot: dict, position: dict, params: dict) -> tuple:
             "fees": completed_fees,
         }
     )
+    if pays_limit(snapshot, params):
+        return _complete_at_limit(position, params, symbol, debit, debit - conceded_pts, long_strike)
+
     # Every return carries the priced debit, including the refusals. A refusal that discarded the
     # price would make "never completed" permanently ambiguous between "the market never offered it"
     # and "our buffer was too tight" -- and those call for opposite fixes. The caller records the
-    # running minimum, which is what makes that question answerable after the fact.
+    # running minimum (`market_debit`), which is what makes that question answerable after the fact.
     plan = {
         "debit": round(debit, 4),
+        "market_debit": round(debit, 4),
         "slippage": conceded_pts,
         "net": round(net, 4),
         "completion_fee": completion_fee,
@@ -1383,6 +1418,78 @@ def evaluate_completion(snapshot: dict, position: dict, params: dict) -> tuple:
     if floor < params.get("min_floor_dollars", 0.0):
         return False, "floor_below_minimum_after_fees", plan
 
+    return True, "ok", plan
+
+
+# A legged completion PAYS THE LIVE LIMIT from this session on (a declared measurement break,
+# journaled by paper_loop._note_completion_rule). Every live completion has filled at exactly its
+# resting limit -- 42 of 42 over 2026-08-03..10-02, none better by more than 0.05 -- while paper paid
+# its modelled debit, which by its next tick had usually run past the limit: a median 0.04 a share
+# ($4 a position) better than live ever got. The trigger is unchanged; only the price paid moves.
+COMPLETION_PRICE_FROM = "2026-10-05"
+
+
+def pays_limit(snapshot: dict, params: dict) -> bool:
+    """Does a legged completion on this snapshot pay the live limit? From `completion_price_from`
+    (default COMPLETION_PRICE_FROM) unless an arm sets `completion_price: "modelled"`. Keyed on the
+    session date, so no session ever mixes the two rules and a replay of an earlier day is
+    unchanged."""
+    if params.get("completion_price", "limit") != "limit":
+        return False
+    return str(snapshot.get("date") or "") >= params.get("completion_price_from", COMPLETION_PRICE_FROM)
+
+
+def completion_limit(position: dict, params: dict) -> tuple[float, str]:
+    """The limit a live completion order for `position` rests at -- `max_safe_completion_debit`
+    floored to the tick, exactly what `live_orders.resting_completion_spec` submits -- and which gate
+    set it: the price gate (`credit - fee_buffer`) or the floor gate (`min_floor_dollars`). Shared with
+    live so the two can never disagree about the price."""
+    from cherrypick.flies import live_orders  # function-local: live_orders imports this module
+
+    buffer_pts = params.get("fee_buffer", 0.10)
+    bound = live_orders.max_safe_completion_debit(position, params.get("min_floor_dollars", 0.0), buffer_pts)
+    binding = "price" if bound >= position["net"] - buffer_pts - 1e-9 else "floor"
+    return live_orders.tick_floor(bound), binding
+
+
+def _complete_at_limit(
+    position: dict, params: dict, symbol: str, market_debit: float, mid: float, long_strike: float
+) -> tuple:
+    """A legged completion under the live rule: complete when the modelled debit is at or under the
+    live limit, and pay the limit -- what a resting limit order that the market reached fills at.
+    The refusal reasons are the two gates' own, named by whichever set the limit, so the
+    `buffer_blocked` / `floor_blocked` reads keep their meaning."""
+    qty = position.get("quantity", 1)
+    limit, binding = completion_limit({**position, "symbol": symbol}, params)
+    completion_fee = fly.vertical_open_fee(symbol, qty)
+    net = position["net"] - limit
+    floor = fly.position_floor(
+        {
+            "kind": "fly",
+            "side": position["side"],
+            "center": position["center"],
+            "wing_width": position["wing_width"],
+            "net": net,
+            "quantity": qty,
+            "fees": position.get("fees", 0.0) + completion_fee,
+        }
+    )
+    plan = {
+        "debit": round(limit, 4),
+        "market_debit": round(market_debit, 4),
+        "limit": round(limit, 4),
+        # What paying the limit conceded against mid, in points -- already inside the price paid,
+        # so (as for every modelled fill) a measure, never a second cost.
+        "slippage": round(limit - mid, 4),
+        "net": round(net, 4),
+        "completion_fee": completion_fee,
+        "floor": round(floor, 2),
+        "long_strike": long_strike,
+        "gate_debit": round(limit, 4),  # the debit this would have had to beat: the limit itself
+    }
+    if limit <= 0 or market_debit > limit + 1e-9:
+        reason = "completing_debit_too_high" if binding == "price" else "floor_below_minimum_after_fees"
+        return False, reason, plan
     return True, "ok", plan
 
 

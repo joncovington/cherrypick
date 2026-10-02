@@ -240,6 +240,62 @@ def _note_cadence_change(conn, interval_seconds: int) -> None:
         _log(f"cadence-change journaling failed (non-fatal): {type(exc).__name__}: {exc}")
 
 
+def _note_completion_rule(conn, config: dict) -> None:
+    """Journal the 2026-10-05 completion-price break (`engine.COMPLETION_PRICE_FROM`): from that
+    session every legged completion pays the live limit instead of its modelled debit. Book-wide,
+    because every legged arm changes together -- one variable still separates each pair of arms --
+    and dated the first binding session, so a loop deployed before it records the break ahead of
+    time and regime cuts list it as declared until it passes. Idempotent (one row per date/scope/
+    kind) and best-effort: telemetry, never a reason to skip a tick. Follows an arm config that
+    pins `completion_price_from` in `defaults`, so the row always names the date that binds."""
+    try:
+        from cherrypick.flies import engine
+
+        defaults = config.get("defaults") or {}
+        if defaults.get("completion_price", "limit") != "limit":
+            return
+        day = defaults.get("completion_price_from", engine.COMPLETION_PRICE_FROM)
+        dbmod.record_measurement_break(
+            conn,
+            break_date=day,
+            scope="*",
+            kind="completion_rule",
+            reason=(
+                f"legged completions pay the live limit from {day} (engine.pays_limit): the trigger is "
+                "unchanged, the price is the resting limit live fills at instead of the modelled debit "
+                "(about $4 a completion less); completion P&L either side of it is not poolable"
+            ),
+            detail="docs/fill-model.md; live: 42 of 42 completions 2026-08-03..10-02 filled at their limit",
+        )
+    except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
+        _log(f"completion-rule journaling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
+VOL_FLOOR_ARM_FROM = "2026-10-05"
+
+
+def _note_vol_floor_arm(conn, config: dict) -> None:
+    """Journal the `vol-floor` arm's entry to the roster (an `arm_added` break dated its first
+    session), once a machine's config enables it. Idempotent; best-effort, never a reason to skip
+    a tick. Its book starts there, so the regime cuts never read it against control's earlier era."""
+    try:
+        arm = (config.get("arms") or {}).get("vol-floor")
+        if not isinstance(arm, dict) or not arm.get("enabled", True):
+            return
+        dbmod.record_measurement_break(
+            conn,
+            break_date=VOL_FLOOR_ARM_FROM,
+            scope="vol-floor",
+            kind="arm_added",
+            reason=(
+                "vol-floor arm enters the roster: control plus no entry while the ATM straddle is under "
+                f"min_entry_straddle_pct ({arm.get('min_entry_straddle_pct')}) of spot"
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 -- never let telemetry break the loop
+        _log(f"vol-floor arm journaling failed (non-fatal): {type(exc).__name__}: {exc}")
+
+
 def _entry_cadence_state_path() -> str:
     return os.path.join(_paper_data_dir(), "entry_cadence.json")
 
@@ -782,6 +838,8 @@ def main(argv=None) -> int:
             _log(f"loop starting, interval {args.interval}s, cache {cache_path}")
             _note_cadence_change(conn, args.interval)
             _note_entry_cadence_change(conn, config)
+            _note_completion_rule(conn, config)
+            _note_vol_floor_arm(conn, config)
             # Stale-checkout guard (2026-08-05). The loop imports from the working tree, so a session
             # run from an older branch writes NULL to any regime column that branch predates --
             # silently, all day, with no backfill path afterwards. Logged rather than enforced: a

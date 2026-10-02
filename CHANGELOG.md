@@ -11,6 +11,22 @@ beyond the latest release.
 
 ## [Unreleased]
 
+- **Added: the flies `vol-floor` paper arm (from 2026-10-05).** `control` plus one variable: no
+  entry while the ATM straddle is under 0.0022 of spot (`engine.low_vol_refusal`). The low-vol third
+  of control's sessions completed 70% against a ~75% break-even. In-sample it was ahead in both
+  halves, but not significantly, so it is an arm, not a default. The rule it will be judged by is
+  declared in the flies experiment log, which also records why side, placement, credit, trend,
+  later cutoffs, wider wings and stacking on completed flies would not raise completion.
+- **Documented: entry credit is not a useful flies entry gate (a negative result).** Neither a
+  minimum entry credit nor a 2.40–2.59 band improved `control` on a replay of 43 sessions.
+  Completion is 78% in every credit bucket, and a high credit mostly reflects the side sold and
+  where the short strike sat. Recorded in the flies experiment log.
+- **Changed (a measurement break, 2026-10-05): paper flies completions pay the live limit.**
+  Live has filled every completion at exactly its resting limit, while paper paid its modelled
+  debit, about $4 a completion better than live ever got. From 2026-10-05 every legged arm pays the
+  limit live's order rests at, on the unchanged trigger. The paper loop journals a book-wide
+  `completion_rule` break; do not pool completion P&L across it. `completion_price: "modelled"`
+  keeps the old rule for an arm.
 - **Added: flies records what live fills needed, and paper shadows a live completion.** Every live
   order now gets a `fly_live_orders` row (filled or not): its limit, the broker's own fill time and
   leg-fill price, and at the fill, spot past the centre, spot past the completing long strike, and

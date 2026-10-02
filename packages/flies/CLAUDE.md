@@ -119,6 +119,14 @@ assumed:
   `analytics.shadow_completion` replays it at any grid value. **Switching paper to a live-like
   rule changes what control's numbers mean: fit first, shadow second, switch only at a declared
   boundary.**
+- **From 2026-10-05 every paper legged completion PAYS THE LIVE LIMIT** (`engine.pays_limit`,
+  `completion_price` / `completion_price_from`). The trigger is unchanged: the modelled debit at
+  or under the limit. The price is `engine.completion_limit`, the one formula live's resting order
+  is priced from; live filled at it 42 times out of 42. The plan's `market_debit` keeps the
+  modelled market price, and the best-debit counterfactuals record that, never the price paid. A
+  book-wide `completion_rule` break (`paper_loop._note_completion_rule`): **never pool completion
+  P&L across 2026-10-05.** The trigger's timing is the next step, fitted from quoted live paths
+  against the shadow, as a second break.
 
 **Two overlays on the legged book, both tag-don't-gate** (2026-09-19):
 - **The hedge overlay** (`engine.hedge_candidate`, `book.py` step 1e, `analytics.hedge_overlay`,
@@ -287,6 +295,17 @@ example config's arm set. Full history per arm: [docs/history.md](docs/history.m
   (5/10 and 10/20) as separate arms, each with its own `max_bwb_tail_dollars`. **Paper only, never a
   live candidate.** Read the roll as the result (`best_roll_debit`, unrolled vs rolled P&L). No hedge
   overlay — insuring the far wing is the roll's job.
+- `vol-floor` — `control` plus one variable (from 2026-10-05): no entry while the ATM straddle is
+  under `min_entry_straddle_pct` (0.0022) of spot (`engine.low_vol_refusal`, refusal
+  `straddle_below_floor`).
+  - **Why:** completion is a race for spot to travel a wing width one way before the close, and
+    control's low-vol third of sessions completed 70% against a ~75% break-even.
+  - **The threshold:** a ratio, so it survives spot moving. It was matched to the 17-point cut's
+    refusal rate and not re-optimised. In-sample it was ahead in both halves of the era but not
+    significantly: a test, not a default.
+  - **The one variable is pinned:** `tests/test_vol_floor.py` checks this machine's definition
+    equals control's apart from the floor.
+  - **The judging rule** is declared in the experiment log (2026-10-02).
 
 ### Regime tagging
 

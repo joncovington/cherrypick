@@ -477,3 +477,120 @@ spot from the gex trail; 2026-08-01..10-02, SPX and XSP):
   fires a median 2.5–6.5 minutes early. At 1.0 width it agrees on only 65%: 18 fills arrived before
   spot got there, because the limit depends on the credit as well as on spot. Spot alone is a
   coarse rule. The price rules need quoted paths, which start today.
+
+## 2026-10-02 — live vs paper completions, read from the backfill; paper pays the limit from 10-05 (a break)
+
+Read-only over the backfilled live ledger (SPX, 2026-08-03..10-02) and paper on the same days, in
+the arm live traded each day.
+
+| | Live | Paper (same days, same arm) |
+|---|---|---|
+| Completion rate | 76% (42 of 55) | 79% (81 of 103) |
+| Completion rate, 19 matched entries (same side and centre, within 10 min) | 89% | 84% |
+| Spot past the centre at completion (median) | 5.1 pts (1.03 widths) | 7.1 pts |
+| Credit minus completion price, per share (median) | 0.25, every time | 0.29 |
+| Minutes to complete (median) | 19 | 31 |
+
+- **The live limit is credit − 0.25 on every order**, set by the `min_floor_dollars` bound, and the
+  broker fills at exactly it: no improvement above 0.05, median 0.
+- **Paper completes later, further out, and about $4 a completion better than live ever got.** Its
+  trigger waits until mid plus the haircut is under the limit, and by its tick the market has usually
+  run past. On the 16 matched pairs where both completed, paper needed about 2.7 points more spot
+  travel. The rates are level, so paper is neither a ceiling nor a floor on completion: it is late
+  and generous.
+- **Spot distance is not the mechanism.** 18 of 42 fills came before spot reached the completing long
+  strike: decay and volatility bring the debit down too. When spot did reach it, the order filled 24
+  times out of 25, a median 68 seconds later. The exception is 2026-09-30, the 7715 put: 1.49 widths
+  at 10:54 and no fill.
+- **The misses are the P&L.** 42 completions made +$3,350 and 13 misses lost −$3,442, about $265
+  each. In 8 of the misses spot never got 0.65 widths past the centre, and in 3 it went straight the
+  wrong way.
+- **Entries fill on submission at the limit**, conceding 0.05 to the fresh mid. Paper charges about
+  0.04 there: close enough to leave alone.
+
+**Declared: from 2026-10-05 every paper legged completion pays the live limit** (`engine.pays_limit`)
+on the unchanged trigger. It is a book-wide `completion_rule` break, journaled by the paper loop.
+Never pool completion P&L across it; the regime-cut era restarts there. The trigger is the next
+step, fitted from quoted live paths against the shadow, and it will be a second break.
+
+## 2026-10-02 — entry credit as a gate: neither a floor nor a band (a negative result)
+
+Asked whether `control` should enter only on a larger credit. Replayed by dropping the refused
+entries and keeping each remaining spread's recorded P&L, the `replay_gates` method (structures
+settle independently). Paper `control`: 345 settled 5-wide SPX spreads, 43 sessions,
+2026-08-03..10-02, no floor net +$2,932. The deployed `min_credit_pct_of_width` of 0.20 (1.00 on a
+5-wide) refuses nothing at the money.
+
+| Rule | Spreads kept | Net | Per spread | Sessions better / worse |
+|---|---|---|---|---|
+| no floor (deployed) | 345 | +$2,932 | +$8.50 | — |
+| credit ≥ 2.30 | 183 | +$3,686 | +$20.14 | 16 / 27 |
+| credit ≥ 2.40 | 145 | +$2,530 | +$17.45 | 17 / 26 |
+| credit ≥ 2.60 | 58 | +$2,508 | +$43.25 | 16 / 27 |
+| credit 2.40–2.59 only | 87 | +$22 | +$0.25 | 15 / 28 |
+
+- **A floor raises the per-spread figure and loses more sessions than it wins at every level.**
+- **What a high credit is.** It is the short strike sitting in the money at entry (r +0.41) and
+  low skew (r −0.43). 57 of the 58 entries at 2.60 or more were call spreads.
+- **The ≥ 2.60 edge is five sessions.** Those five give $2,298 of its $2,508.
+- **Other arms do not reproduce it.** Credits of 2.60 or more lost in `gex` (−$66 a spread),
+  `advised:miss-stop-90` (−$78) and `advised:no-entry-on-up-trend` (−$14).
+- **The completion rate is 78% in every credit bucket.** A larger credit only softens a miss
+  (−$164 against about −$255).
+- **The band looked like live's best bucket, and paper does not reproduce it.** Live's 2.40–2.59
+  entries completed 88% (22 of 25, +$58 a spread) against 67% and −$51 for the other 27 control-era
+  entries. That gap holds inside the control era alone, so it is not the earlier gex period. But it
+  sits in eight sessions, the completion difference is Fisher p 0.11, and paper `control` on the same
+  dates (09-17..10-02, 101 spreads) shows nothing: +$13.00 a spread in the band against +$12.51
+  outside it. Live credits also run about 0.12 above paper's for the same structure (the fresh
+  re-price), so a live credit bucket is not the paper bucket of the same name.
+
+No gate, no arm. The credit is a proxy for where the entry sits and which side it takes. If anything
+here is worth testing, it is the side split: calls +$17 a spread, puts +$1. That is a two-arm
+question held out over future sessions, and in a single up-trending tape it is more likely the tape
+than a rule.
+
+## 2026-10-02 — what moves the completion rate; the `vol-floor` arm declared (no result yet)
+
+The question was what would raise `control`'s completion rate. Read over paper `control`
+(345 settled 5-wide SPX spreads, 43 sessions, 2026-08-03..10-02). Completed spreads averaged +$80
+and misses −$242, so break-even is about 75% completion. Control runs 77.7%, and each point is worth
+about $3.20 a spread.
+
+- **Misses are wrong-direction days, not short ones.** Using the gex spot trail, spot travelled a full
+  wing width past the centre in at least one direction before 15:30 on 343 of 345 spreads. The worst
+  8 sessions hold 44% of the misses; 9 sessions had none.
+- **What does not move completion:**
+  - where spot sat in the strike interval at entry (77–80% across it);
+  - the entry credit (78% in every bucket);
+  - trend from the open, with or against (75% against 77%);
+  - flipping `choose_side`. A spot-travel proxy, calibrated on the side actually sold (93% agreement
+    with paper's own completions), gives the other side 77.4% against 76.8%;
+  - keeping live's completion order past 15:30. None of the 13 live misses saw spot travel a width
+    after the cutoff;
+  - wider wings (width-2 63%, down to width-10 12%).
+- **Stacking on a completed fly is a negative result.** The replay allowed a new legged entry on the
+  centre of a fly already completed (the duplicate rule refuses these today; the legs share the fly's
+  strikes and signs).
+  - 136 stacks completed only 67% (by the proxy), and lost about $13 each net of the shared
+    settlement fee. They come late: spot has to have completed one fly and come back.
+  - Unlimited stacking: 811 entries, −$3,433, worst day −$3,720 against −$836.
+  - Even completing a stack at net 0.15 (risk-free at two contracts) only breaks even.
+- **What separates completion:**
+  - volatility: the low-vol third of sessions 70% and −$11 a spread, the rest 80–82% and +$17;
+  - time of entry: 10:00–11:00 83–84%, 11:00–13:00 68–70%, after 14:00 50%;
+  - a flat open: within 5 points of the open, before 11:00, 91% on 34 spreads.
+
+  Each rule raised completion 3–6 points in both halves of the era, but only the volatility floor
+  was ahead on P&L in both halves. Midday skip is already under test as an advised arm.
+
+**Declared: the `vol-floor` arm, from 2026-10-05.**
+- **The arm:** `control` plus no entry while the ATM straddle is under 0.0022 of spot (about 17
+  points at 7,700). The ratio was matched to the 17-point cut's 21% refusal rate, not re-optimised.
+- **In-sample:** it kept 277 of 345 entries, raised completion from 78% to 81%, and was ahead in
+  both halves (+$762, +$1,308). That is not significant: 12 sessions better, 9 worse.
+- **How it will be read:** against `control` on the same sessions after at least 14 sessions
+  (`MIN_EFFECTIVE_N`), on per-session net (sign test) and on completion rate. It earns promotion
+  only if it is ahead on both and not on the strength of one or two sessions.
+- **Its book starts at its own `arm_added` break,** and it shares the 10-05 completion-price break
+  with every legged arm.
