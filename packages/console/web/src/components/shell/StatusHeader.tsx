@@ -16,7 +16,9 @@ export function StatusHeader() {
       <HeaderMenu />
       <FuturesTicker />
       <div className="status-right">
-        {wd && (
+        {/* No pill until the watchdog has reported once: an absent state file reads as "not a
+            trading day", which is what a fresh install showed on a weekday for its first minutes. */}
+        {wd && wd.ts !== null && (
           <span className={`chip ${wd.inSession ? "chip-ok" : ""}`}>
             {wd.isTradingDay ? (wd.inSession ? "market open" : "trading day, closed") : "non-trading day"}
           </span>
