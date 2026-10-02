@@ -177,12 +177,10 @@ python packages/orchestrator/run.py restart console   # restart just the console
 
 **Optional: a desktop window.** The console can also open in its own window (an Electron shell with a
 tray icon). It is a window only — it never starts the server, so the supervisor's console must be
-running. From the checkout:
-
-```bash
-cd packages/console
-pnpm --filter @console/desktop start
-```
+running. Double-click **`console-desktop.cmd`** in the installation folder on Windows, or run
+**`./console-desktop.sh`** there on macOS and Linux. Both run `pnpm start` in
+`packages/console/desktop`, which builds the shell first, so the first launch takes a minute. Keep the
+terminal it opens; closing the console window ends it.
 
 ## Stopping and uninstalling
 

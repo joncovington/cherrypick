@@ -143,15 +143,15 @@ What you will see:
 - A small **read-only** badge at the bottom means your tastytrade key has the read scope only. That
   is right for paper mode.
 
+Right after installing, before the first trading session, the **Overview** looks like this: the
+three base strategies listed with nothing open yet.
+
+![The console's Overview page on a fresh install](docs/images/console-overview.png)
+
 **Optional: the console in its own window.** If you would rather have cherrypick as a desktop app
-than a browser tab, open a terminal in the installation folder and run:
-
-```
-cd packages/console/desktop
-pnpm start
-```
-
-It is the same console in its own window. Closing the window does not stop cherrypick.
+than a browser tab, double-click **`console-desktop.cmd`** in the installation folder (Windows), or
+run `./console-desktop.sh` in a terminal there (Mac). The first time takes a minute while it builds.
+It is the same console in its own window; closing the window does not stop cherrypick.
 
 ## Running cherrypick commands yourself (the virtual environment)
 
@@ -175,6 +175,10 @@ The prompt now starts with `(.venv)`. From there, commands are simply `python ..
 python packages/orchestrator/run.py doctor            # a health check of everything, in plain words
 python packages/orchestrator/run.py restart console   # restart just the console
 ```
+
+On Windows it looks like this (output shortened; the `…` stands for the rest of the checks):
+
+![A PowerShell window: activating the virtual environment, then run.py doctor reporting ALL GREEN](docs/images/terminal-venv-doctor.png)
 
 Type `deactivate` when you are done, or just close the window.
 
