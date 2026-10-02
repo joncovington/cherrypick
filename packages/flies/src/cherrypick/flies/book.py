@@ -15,7 +15,6 @@ from cherrypick.flies import (
     engine,  # noqa: E402
     fill_model,  # noqa: E402
     fly,  # noqa: E402
-    live_orders,  # noqa: E402
 )
 from cherrypick.flies import db as dbmod  # noqa: E402
 
@@ -289,15 +288,12 @@ def _to_position(row: dict) -> dict:
 
 
 def shadow_completion_limit(position: dict, symbol: str, params: dict) -> float | None:
-    """The limit a LIVE completion order for this legged entry would rest at: the same
-    `max_safe_completion_debit` floored to the tick that `live_orders.resting_completion_spec`
-    submits, off the entry's own credit and fees. None when that floors to nothing submittable --
-    live would refuse to place it, so the shadow places nothing either."""
-    bound = live_orders.max_safe_completion_debit(
-        {**position, "symbol": symbol}, params.get("min_floor_dollars", 0.0), params.get("fee_buffer", 0.10)
-    )
-    price = live_orders.tick_floor(bound)
-    return price if price > 0 else None
+    """The limit a LIVE completion order for this legged entry would rest at
+    (`engine.completion_limit`, the one formula live and paper share), off the entry's own credit
+    and fees. None when that floors to nothing submittable -- live would refuse to place it, so the
+    shadow places nothing either."""
+    limit, _ = engine.completion_limit({**position, "symbol": symbol}, params)
+    return limit if limit > 0 else None
 
 
 def _record_shadow_touches(conn, position: dict, snapshot: dict, when: str) -> None:
@@ -489,7 +485,9 @@ def process_snapshot(
     for pos in [p for p in positions if p["kind"] == "short_vertical" and p["status"] == "open"]:
         debit_done, debit_reason, debit_plan = engine.evaluate_completion(snapshot, pos, params)
         if debit_plan is not None:
-            _record_best_debit(conn, pos, debit_plan["debit"], now)
+            # The MARKET's modelled debit, never the price a completion would pay: from 2026-10-05
+            # a completion pays the limit, and a running minimum of limits would say nothing.
+            _record_best_debit(conn, pos, debit_plan["market_debit"], now)
 
         iron_done = iron_plan = None
         if "iron" in params.get("completion_modes", ["debit"]):
@@ -509,7 +507,7 @@ def process_snapshot(
                 position_id=pos["position_id"],
                 detail=None
                 if debit_plan is None
-                else f"debit {debit_plan['debit']:.2f} vs gate {debit_plan['gate_debit']:.2f}",
+                else f"debit {debit_plan['market_debit']:.2f} vs gate {debit_plan['gate_debit']:.2f}",
             )
             if iron_plan is not None and not iron_done:
                 journal(

@@ -477,3 +477,38 @@ spot from the gex trail; 2026-08-01..10-02, SPX and XSP):
   fires a median 2.5–6.5 minutes early. At 1.0 width it agrees on only 65%: 18 fills arrived before
   spot got there, because the limit depends on the credit as well as on spot. Spot alone is a
   coarse rule. The price rules need quoted paths, which start today.
+
+## 2026-10-02 — live vs paper completions, read from the backfill; paper pays the limit from 10-05 (a break)
+
+Read-only over the backfilled live ledger (SPX, 2026-08-03..10-02) and paper on the same days, in
+the arm live traded each day.
+
+| | Live | Paper (same days, same arm) |
+|---|---|---|
+| Completion rate | 76% (42 of 55) | 79% (81 of 103) |
+| Completion rate, 19 matched entries (same side and centre, within 10 min) | 89% | 84% |
+| Spot past the centre at completion (median) | 5.1 pts (1.03 widths) | 7.1 pts |
+| Credit minus completion price, per share (median) | 0.25, every time | 0.29 |
+| Minutes to complete (median) | 19 | 31 |
+
+- **The live limit is credit − 0.25 on every order**, set by the `min_floor_dollars` bound, and the
+  broker fills at exactly it: no improvement above 0.05, median 0.
+- **Paper completes later, further out, and about $4 a completion better than live ever got.** Its
+  trigger waits until mid plus the haircut is under the limit, and by its tick the market has usually
+  run past. On the 16 matched pairs where both completed, paper needed about 2.7 points more spot
+  travel. The rates are level, so paper is neither a ceiling nor a floor on completion: it is late
+  and generous.
+- **Spot distance is not the mechanism.** 18 of 42 fills came before spot reached the completing long
+  strike: decay and volatility bring the debit down too. When spot did reach it, the order filled 24
+  times out of 25, a median 68 seconds later. The exception is 2026-09-30, the 7715 put: 1.49 widths
+  at 10:54 and no fill.
+- **The misses are the P&L.** 42 completions made +$3,350 and 13 misses lost −$3,442, about $265
+  each. In 8 of the misses spot never got 0.65 widths past the centre, and in 3 it went straight the
+  wrong way.
+- **Entries fill on submission at the limit**, conceding 0.05 to the fresh mid. Paper charges about
+  0.04 there: close enough to leave alone.
+
+**Declared: from 2026-10-05 every paper legged completion pays the live limit** (`engine.pays_limit`)
+on the unchanged trigger. It is a book-wide `completion_rule` break, journaled by the paper loop.
+Never pool completion P&L across it; the regime-cut era restarts there. The trigger is the next
+step, fitted from quoted live paths against the shadow, and it will be a second break.

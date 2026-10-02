@@ -866,7 +866,7 @@ def run_once(config: dict, snapshot: dict, conn, broker, *, live: bool, log=prin
             # Telemetry: keep the counterfactual best-debit record honest while the order rests.
             _, _, plan = engine.evaluate_completion(snapshot, pos, params)
             if plan is not None:
-                bookmod._record_best_debit(conn, pos, plan["debit"], clock.now_iso())
+                bookmod._record_best_debit(conn, pos, plan["market_debit"], clock.now_iso())
             if _cutoff_reached(snapshot.get("now_min"), params):
                 res = broker.cancel(pos["completion_order_id"])
                 if res.get("ok"):

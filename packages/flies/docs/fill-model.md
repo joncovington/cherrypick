@@ -102,6 +102,10 @@ via `analytics.fill_realism` and `analytics.shadow_completion`.
 
 ## What comes next, and what would change paper
 
+0. **Price: done, from 2026-10-05.** Live filled at its limit 42 times out of 42, so the price was
+   never in doubt. Every paper legged completion now pays the live limit (`engine.pays_limit`)
+   instead of its modelled debit, on the unchanged trigger: about $4 less a completion, and a
+   book-wide `completion_rule` break. What follows is the trigger, a separate and later break.
 1. **Collect.** Let live orders accumulate quoted paths. A price rule needs a few dozen completion
    orders with quotes, filled and unfilled, before its grid value means anything.
 2. **Fit.** Pick the basis and value whose rule fit agrees best with live, with the smallest timing
@@ -118,6 +122,17 @@ via `analytics.fill_realism` and `analytics.shadow_completion`.
 4. **Switch at a declared boundary.** Replacing paper's completion rule changes what control's
    completion rate and net mean. That is a measurement-affecting change: it lands at a declared
    boundary, journaled as a `measurement_breaks` row, and never mid-era.
+
+5. **The live limit itself is a lever, and the same data prices it.** The completion is a buy, so a
+   HIGHER limit fills sooner, with less spot travel, and nets less; a lower one locks in more and
+   needs spot to go further. Today the `min_floor_dollars` bound caps the limit at credit − 0.25.
+   - **The odds are lopsided:** a miss cost about $265 against $25 for a completion, so 0.10 more
+     on the limit ($10 a completion) pays for itself if it converts more than about one miss in 27
+     completions.
+   - **Measuring it:** first touch of `mid_gap <= δ` (and the natural's) on the shadow and on live
+     quoted paths is "would a limit δ higher have filled, and when".
+   - **Changing it** is a live, measurement-affecting change. Rule 6 permits a lower floor only
+     against that measured alternative.
 
 Entries are recorded the same way. There is no paper entry shadow yet: paper enters at its modelled
 credit on the tick, and what a live entry needs (fill rate per submission, time to fill, the mid gap
